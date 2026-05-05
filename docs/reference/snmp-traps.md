@@ -1,7 +1,7 @@
 # SNMP trap / INFORM reference
 
-l8opensim emits **SNMPv2c** notifications only. The PDU encoder in
-`go/simulator/trap_v2c.go` handles TRAPs and INFORMs; SNMPv1 traps and SNMPv3
+nl6 emits **SNMPv2c** notifications only. The PDU encoder in
+`go/nl6/trap_v2c.go` handles TRAPs and INFORMs; SNMPv1 traps and SNMPv3
 notifications are deferred and tracked as follow-up work. This page covers
 the wire format, the JSON catalog schema, the HTTP endpoints, and the status
 JSON shape. For enabling the feature, CLI flags, and troubleshooting see
@@ -105,7 +105,7 @@ silently ignored.
 ## Catalog JSON schema
 
 The embedded universal catalog at
-`go/simulator/resources/_common/traps.json` is the authoritative example
+`go/nl6/resources/_common/traps.json` is the authoritative example
 of the schema:
 
 ```json
@@ -234,14 +234,14 @@ auto-start batch gets the same collector, mode, community, and interval.
 ```bash
 # SNMPv2c TRAP → 192.168.1.10:162, 100 auto-created devices, default
 # interval=30s / community=public
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 100 \
   -trap-collector 192.168.1.10:162
 
 # INFORM mode (acknowledged) — requires -trap-source-per-device=true
 # (the default). The check is enforced at device-attach time: if it's
 # disabled, attach fails per-device and trapConfig is cleared.
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 50 \
   -trap-collector 192.168.1.10:162 \
   -trap-mode inform \
@@ -436,4 +436,4 @@ purposes at
 - [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) — how to enable, INFORM constraints, `snmptrapd` smoke test
 - [SNMP reference](snmp.md) — polling-side SNMP (v2c/v3 GETs, GETNEXTs, OID lookup, HC counters)
 - [Web API](web-api.md) — control-plane REST surface
-- Epic [#52](https://github.com/labmonkeys-space/l8opensim/issues/52) and PR [#65](https://github.com/labmonkeys-space/l8opensim/pull/65) for the original design and implementation context
+- Epic [#52](https://github.com/labmonkeys-space/nl6/issues/52) and PR [#65](https://github.com/labmonkeys-space/nl6/pull/65) for the original design and implementation context

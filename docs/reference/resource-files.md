@@ -1,6 +1,6 @@
 # Resource files
 
-Every device type has a directory under `go/simulator/resources/` containing
+Every device type has a directory under `go/nl6/resources/` containing
 one or more JSON files. At startup, `resources.go` loads and caches every
 `*.json` file in each directory, merging the `snmp`, `ssh`, and (optionally)
 `api` sections. There are currently 379 JSON files across 28 device-type
@@ -51,7 +51,7 @@ merged, so split files however you like.
 A typical naming convention:
 
 ```
-go/simulator/resources/asr9k/
+go/nl6/resources/asr9k/
 ├── asr9k_snmp_system.json         # MIB-II system group
 ├── asr9k_snmp_interfaces.json     # IF-MIB / IF-MIB-HC
 ├── asr9k_snmp_entity.json         # Entity MIB
@@ -60,7 +60,7 @@ go/simulator/resources/asr9k/
 └── asr9k_api.json                 # (storage devices only)
 ```
 
-Browse [`go/simulator/resources/asr9k/`](https://github.com/labmonkeys-space/l8opensim/tree/main/go/simulator/resources/asr9k)
+Browse [`go/nl6/resources/asr9k/`](https://github.com/labmonkeys-space/nl6/tree/main/go/nl6/resources/asr9k)
 for a representative example.
 
 ## Round-robin and category selection

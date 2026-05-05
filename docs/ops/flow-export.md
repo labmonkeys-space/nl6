@@ -1,6 +1,6 @@
 # Flow export (operator guide)
 
-l8opensim can emit synthetic flow telemetry to any NetFlow v5 (Cisco), NetFlow
+nl6 can emit synthetic flow telemetry to any NetFlow v5 (Cisco), NetFlow
 v9 (RFC 3954), IPFIX (RFC 7011), or sFlow v5 collector. Each device generates
 flows appropriate to its role — an edge router emits different traffic shapes
 than a firewall or a data-center switch.
@@ -25,27 +25,27 @@ single shared socket bound in the host namespace.
 
 ```bash
 # NetFlow v9 to a local collector on port 2055
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055
 
 # IPFIX instead (port 4739 is the IPFIX default)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:4739 -flow-protocol ipfix
 
 # NetFlow v5 (Cisco — 30 records per PDU, no template)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 -flow-protocol netflow5
 
 # sFlow v5 (default UDP port 6343). See the sFlow caveat in the reference.
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:6343 -flow-protocol sflow
 
 # Faster ticks for high-fidelity testing
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 10 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 10 \
   -flow-collector 127.0.0.1:9999 -flow-tick-interval 1
 
 # Fall back to the host IP as the source (shared socket)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 -flow-source-per-device=false
 ```
 
@@ -63,7 +63,7 @@ one batch per collector / protocol.
 ```bash
 # 1. Boot with NO flow seed — only the global knobs (tick cadence,
 #    template cadence, source-per-device policy).
-sudo ./simulator \
+sudo ./nl6 \
   -flow-tick-interval 1 \
   -flow-template-interval 300 \
   -flow-source-per-device=true

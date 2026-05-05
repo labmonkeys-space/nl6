@@ -38,7 +38,7 @@ jobs:
 
       - name: Assert baked version matches tag
         run: |
-          baked=$(./go/simulator/simulator -version)
+          baked=$(./go/nl6/nl6 -version)
           if [ -z "$baked" ] || [ -z "${GITHUB_REF_NAME}" ]; then
             echo "version assertion failed: empty value — baked='$baked', tag='${GITHUB_REF_NAME}'"
             exit 1
@@ -75,7 +75,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: simulator-binaries
+          name: nl6-binaries
           path: dist/
           retention-days: 7
 
@@ -84,8 +84,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/simulator-linux-amd64
-            dist/simulator-linux-arm64
+            dist/nl6-linux-amd64
+            dist/nl6-linux-arm64
 
   docker:
     name: Publish Docker image

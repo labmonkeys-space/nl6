@@ -1,9 +1,9 @@
 # UDP syslog reference
 
-l8opensim emits UDP syslog messages in either **RFC 5424** (modern,
+nl6 emits UDP syslog messages in either **RFC 5424** (modern,
 structured) or **RFC 3164** (legacy BSD) format. Only one format is
 active per simulator process. The two encoders sit behind a shared
-`SyslogEncoder` interface in `go/simulator/syslog_wire.go`; the per-
+`SyslogEncoder` interface in `go/nl6/syslog_wire.go`; the per-
 device `SyslogExporter` holds a UDP socket (per-device or shared) and
 fires messages at times drawn by a central Poisson scheduler. This
 page covers the wire format, the catalog JSON schema, the HTTP
@@ -41,8 +41,8 @@ flags, and troubleshooting see
 
 The simulator emits syslog over **UDP only** — TCP (RFC 6587) and TLS
 (RFC 5425) transports are follow-up work
-([#92](https://github.com/labmonkeys-space/l8opensim/issues/92),
-[#93](https://github.com/labmonkeys-space/l8opensim/issues/93)).
+([#92](https://github.com/labmonkeys-space/nl6/issues/92),
+[#93](https://github.com/labmonkeys-space/nl6/issues/93)).
 UDP is the form most network-device simulation scenarios test against;
 adding TCP/TLS requires connection management that doesn't fit the
 fire-and-forget single-socket design.
@@ -159,7 +159,7 @@ and control chars → `_`.
 ## Catalog JSON schema
 
 The embedded universal catalog at
-`go/simulator/resources/_common/syslog.json` is the authoritative
+`go/nl6/resources/_common/syslog.json` is the authoritative
 example:
 
 ```json
@@ -289,12 +289,12 @@ auto-start batch gets the same collector, format, and interval.
 
 ```bash
 # RFC 5424 → 192.168.1.10:514, 100 auto-created devices
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 100 \
   -syslog-collector 192.168.1.10:514
 
 # RFC 3164 legacy BSD format for downstream parsers that don't groket 5424
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 50 \
   -syslog-collector 192.168.1.10:514 \
   -syslog-format 3164
@@ -453,4 +453,4 @@ Documented with types, defaults, and purposes at
 - [UDP syslog export (operator guide)](../ops/syslog-export.md) — enabling, per-device source binding, smoke test
 - [SNMP trap reference](snmp-traps.md) — sibling feature; unified template vocabulary and catalog overlay semantics
 - [Web API](web-api.md) — control-plane REST surface
-- Epic [#76](https://github.com/labmonkeys-space/l8opensim/issues/76) for original design and implementation context; epic [#103](https://github.com/labmonkeys-space/l8opensim/issues/103) for per-type catalogs + unified vocabulary
+- Epic [#76](https://github.com/labmonkeys-space/nl6/issues/76) for original design and implementation context; epic [#103](https://github.com/labmonkeys-space/nl6/issues/103) for per-type catalogs + unified vocabulary

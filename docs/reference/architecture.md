@@ -1,6 +1,6 @@
 # Architecture
 
-l8opensim is a single Go program that stands up thousands of simulated
+nl6 is a single Go program that stands up thousands of simulated
 devices inside a dedicated Linux network namespace. Each simulated device has
 its own IP address on a TUN interface, its own SNMP listener, its own SSH
 server, and — for storage devices — its own HTTPS REST endpoint.
@@ -12,7 +12,7 @@ decisions that make the 30,000-device target tractable.
 
 The diagram below is laid out as a [C4 container](https://c4model.com/#ContainerDiagram)
 view (rendered as a Mermaid flowchart): it shows what lives inside the
-l8opensim process boundary, the host-side Linux infrastructure it depends on,
+nl6 process boundary, the host-side Linux infrastructure it depends on,
 and how operators and monitoring systems interact with it.
 
 ```mermaid
@@ -21,10 +21,8 @@ flowchart LR
     operator(["Operator<br/><small>human</small>"]):::person
     nms(["NMS / Monitoring<br/><small>OpenNMS, Prometheus,<br/>flow collectors</small>"]):::ext
 
-    subgraph l8opensim ["l8opensim (Go process)"]
+    subgraph nl6 ["nl6 (Go process)"]
         simulator["<b>Simulator</b><br/><small>Go binary</small><br/>Device lifecycle,<br/>SNMP v2c/v3 + SSH + HTTPS REST,<br/>metrics engine, flow exporter"]
-        l8["<b>L8 Overlay</b><br/><small>Go</small><br/>Optional vnet mesh +<br/>HTTPS web proxy :9095"]
-        proxy["<b>Reverse Proxy</b><br/><small>Go</small><br/>L8 frontend to<br/>simulator backend"]
         resources[("<b>Resources</b><br/><small>379 JSON files</small><br/>28 device-type directories<br/>SNMP / SSH / REST fixtures")]
     end
 
@@ -34,8 +32,6 @@ flowchart LR
     end
 
     operator -->|"CLI flags, REST API<br/><small>HTTP :8080</small>"| simulator
-    operator -->|"Web UI<br/><small>HTTPS :9095</small>"| l8
-    l8 --> proxy --> simulator
     simulator -->|loads on startup| resources
     simulator -->|creates, writes<br/><small>ioctl</small>| tun
     simulator -->|runs inside| netns
@@ -45,21 +41,26 @@ flowchart LR
     classDef person fill:#08427b,stroke:#052e56,color:#fff
     classDef ext fill:#999,stroke:#666,color:#fff
     classDef default fill:#438dd5,stroke:#2e6da4,color:#fff
-    class simulator,l8,proxy,resources,netns,tun default
+    class simulator,resources,netns,tun default
 ```
+
+The `opensim` namespace name is an operational identifier kept stable across
+the project rename so existing rescue tooling (e.g., scripts that grep
+`ip netns list` for `opensim`) continues to work — see
+[Network namespace](../ops/network-namespace.md).
 
 ## Package layout
 
 | Path | Purpose |
 |------|---------|
-| `go/simulator/` | Core simulator — all device simulation logic and tests. |
-| `go/simulator/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 28 device-type directories, plus the `worldcities/` datasets used for `sysLocation`. |
+| `go/nl6/` | Core simulator — all device simulation logic and tests. |
+| `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 28 device-type directories, plus the `worldcities/` datasets used for `sysLocation`. |
 
 Top-level helper scripts: `diagnose_system.sh`, `ubuntu_setup.sh`,
-`increase_file_limits.sh`. The [`Makefile`](https://github.com/labmonkeys-space/l8opensim/blob/main/Makefile)
+`increase_file_limits.sh`. The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile)
 is the canonical build entry point.
 
-## Core simulator components (`go/simulator/`)
+## Core simulator components (`go/nl6/`)
 
 ### Device lifecycle
 
@@ -130,6 +131,6 @@ are merged at load time. See [Resource files](resource-files.md).
 
 ## Container image
 
-The simulator is published as `ghcr.io/labmonkeys-space/l8opensim` on
+The simulator is published as `ghcr.io/labmonkeys-space/nl6` on
 push to `main` and on release tags — see the project's CI workflow
 files.

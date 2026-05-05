@@ -23,7 +23,7 @@ import (
 )
 
 // TestVersionFlagPrintsInjectedVersion builds the simulator with a
-// known -ldflags injection and asserts that `./simulator -version`
+// known -ldflags injection and asserts that `./nl6 -version`
 // prints exactly that string + newline and exits 0. Covers spec
 // Requirement 1 (build-time injection) and Requirement 2 (-version
 // flag behaviour) in a single round-trip.

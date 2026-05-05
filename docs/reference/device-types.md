@@ -1,7 +1,7 @@
 # Device types
 
-l8opensim ships resource files for **28 device types across 8 categories**.
-Each device type has its own directory under `go/simulator/resources/`
+nl6 ships resource files for **28 device types across 8 categories**.
+Each device type has its own directory under `go/nl6/resources/`
 containing JSON responses for SNMP OIDs, SSH commands, and (for storage
 devices) REST API endpoints. See [Resource files](resource-files.md) for the
 JSON format.
@@ -106,4 +106,4 @@ directory.
 
 Device `sysLocation` values are drawn from a bundled 98-city dataset so large
 fleets have plausible geographic spread. The dataset ships under
-`go/simulator/resources/worldcities/`.
+`go/nl6/resources/worldcities/`.

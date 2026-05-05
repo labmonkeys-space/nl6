@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Ubuntu Server Setup Script for Layer 8 Data Center Simulator
+# Ubuntu Server Setup Script for nl6 — network device simulator
 # This script installs all required dependencies and configures the system
 
 set -e  # Exit on any error
 
-echo "🚀 Setting up Layer 8 Data Center Simulator on Ubuntu Server..."
+echo "🚀 Setting up nl6 — network device simulator on Ubuntu Server..."
 echo "========================================================"
 
 # Check if running as root
@@ -72,7 +72,7 @@ sysctl -p
 # Configure system limits for high file descriptor usage
 echo "🔧 Configuring system limits..."
 cat >> /etc/security/limits.conf << EOF
-# Layer 8 Data Center Simulator limits
+# nl6 — network device simulator limits
 * soft nofile 65536
 * hard nofile 65536
 * soft nproc 32768
@@ -98,7 +98,7 @@ systemctl daemon-reload
 echo "🔧 Configuring kernel networking parameters..."
 cat >> /etc/sysctl.conf << EOF
 
-# Layer 8 Data Center Simulator kernel parameters
+# nl6 — network device simulator kernel parameters
 net.core.rmem_default = 262144
 net.core.rmem_max = 16777216
 net.core.wmem_default = 262144
@@ -121,12 +121,12 @@ sysctl -p
 echo "🔧 Installing SNMP MIBs..."
 download-mibs
 
-# Create simulator user (optional, for non-root operation where possible)
-if ! id "simulator" &>/dev/null; then
-    echo "👤 Creating simulator user..."
-    useradd -r -s /bin/bash -d /opt/simulator simulator
-    mkdir -p /opt/simulator
-    chown simulator:simulator /opt/simulator
+# Create nl6 user (optional, for non-root operation where possible)
+if ! id "nl6" &>/dev/null; then
+    echo "👤 Creating nl6 user..."
+    useradd -r -s /bin/bash -d /opt/nl6 nl6
+    mkdir -p /opt/nl6
+    chown nl6:nl6 /opt/nl6
 fi
 
 # Set up firewall rules to allow simulator ports
@@ -149,21 +149,21 @@ else
     echo "⚠️  UFW not installed, manual firewall configuration may be needed"
 fi
 
-# Create directories for simulator
-echo "📁 Creating simulator directories..."
-mkdir -p /opt/simulator/{logs,data,config}
-chown -R simulator:simulator /opt/simulator
+# Create directories for nl6
+echo "📁 Creating nl6 directories..."
+mkdir -p /opt/nl6/{logs,data,config}
+chown -R nl6:nl6 /opt/nl6
 
-# Set up log rotation for simulator
-cat > /etc/logrotate.d/simulator << EOF
-/opt/simulator/logs/*.log {
+# Set up log rotation for nl6
+cat > /etc/logrotate.d/nl6 << EOF
+/opt/nl6/logs/*.log {
     daily
     missingok
     rotate 7
     compress
     delaycompress
     notifempty
-    create 644 simulator simulator
+    create 644 nl6 nl6
 }
 EOF
 
@@ -208,18 +208,18 @@ echo "📋 Next steps:"
 echo "1. Reboot the server to ensure all changes take effect:"
 echo "   sudo reboot"
 echo ""
-echo "2. After reboot, clone and build the simulator:"
-echo "   git clone <your-repo>"
-echo "   cd opensim/go"
-echo "   go build -o simulator/simulator ./simulator"
+echo "2. After reboot, clone and build nl6:"
+echo "   git clone https://github.com/labmonkeys-space/nl6.git"
+echo "   cd nl6/go/nl6"
+echo "   go build -o nl6 ."
 echo ""
-echo "3. Run the simulator with root privileges:"
-echo "   sudo ./simulator/simulator"
+echo "3. Run nl6 with root privileges:"
+echo "   sudo ./nl6"
 echo ""
 echo "⚠️  Important notes:"
 echo "- The simulator requires root privileges for TUN interface creation"
 echo "- Default ports: Web UI (8080), SNMP (161+), SSH (22+)"
-echo "- Log files will be in /opt/simulator/logs/"
+echo "- Log files will be in /opt/nl6/logs/"
 echo "- System limits have been increased for high device counts"
 echo ""
 echo "🔧 Troubleshooting:"

@@ -1,6 +1,6 @@
 # Flow export reference
 
-l8opensim emits synthetic flow telemetry in four protocols: **NetFlow v5**
+nl6 emits synthetic flow telemetry in four protocols: **NetFlow v5**
 (Cisco), **NetFlow v9** (RFC 3954), **IPFIX** (RFC 7011), and **sFlow v5**
 (`sflow_version_5.txt`). This page covers the protocol-level details. For
 deployment, collector setup, and `rp_filter` tuning see
@@ -39,7 +39,7 @@ so `-flow-template-interval` is a silent no-op under both v5 and sFlow.
 ## sFlow caveat
 
 sFlow is a packet-sampling protocol built for real devices that observe real
-traffic. l8opensim has no packet stream to sample — sFlow output is
+traffic. nl6 has no packet stream to sample — sFlow output is
 synthesised from the same `FlowCache` records the other protocols consume,
 re-wrapped as `FLOW_SAMPLE` records with a fixed, synthetic `sampling_rate`
 of `10 × FlowProfile.ConcurrentFlows`. Collectors that multiply sample rate
@@ -78,7 +78,7 @@ gets the same collector, protocol, and timeouts.
 
 ```bash
 # NetFlow v9 → 192.168.1.10:2055, 100 auto-created devices
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 \
   -flow-protocol netflow9

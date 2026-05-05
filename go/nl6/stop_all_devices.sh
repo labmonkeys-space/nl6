@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Layer 8 Data Center Simulator - Stop All Devices and Server
+# nl6 — network device simulator - Stop All Devices and Server
 # This script stops the simulator server and cleans up all devices
 
 set -e  # Exit on any error
 
 # Configuration
 SERVER_PORT="8080"
-PID_FILE="simulator.pid"
+PID_FILE="nl6.pid"
 LOG_FILE="startup.log"
 
 # Colors for output
@@ -17,7 +17,7 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}🛑 Layer 8 Data Center Simulator - Stopping All Devices${NC}"
+echo -e "${BLUE}🛑 nl6 — network device simulator - Stopping All Devices${NC}"
 echo "=================================================="
 
 # Function to delete all devices via API

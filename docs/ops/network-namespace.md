@@ -1,9 +1,16 @@
 # Network namespace
 
-By default, l8opensim runs every simulated device inside a dedicated Linux
+By default, nl6 runs every simulated device inside a dedicated Linux
 network namespace named `opensim`. This page covers what that namespace
 contains, why the simulator prefers it over the root namespace, and the
 `rp_filter` / `FORWARD` knobs you may need to tune.
+
+> **Note on the namespace name.** The literal `opensim` is intentionally
+> stable across the project rename from `l8opensim` to `nl6`. Renaming the
+> namespace would break operator scripts and rescue tooling that grep
+> `ip netns list` for `opensim`, and would force every running deployment
+> to migrate at upgrade time. Treat `opensim` as an operational identifier
+> divorced from project branding.
 
 ## Why the namespace?
 

@@ -1,4 +1,4 @@
-// OpenSim Device Simulator - UI Functions
+// nl6 Device Simulator - UI Functions
 
 const elements = {
     createForm: document.getElementById('createForm'),

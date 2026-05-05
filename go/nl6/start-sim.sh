@@ -1,2 +1,2 @@
 sudo su - < exit.txt
-sudo ./simulator &
+sudo ./nl6 &

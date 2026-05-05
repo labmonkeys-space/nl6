@@ -36,8 +36,8 @@ function resolveGoVersion(): string {
 }
 
 const config: Config = {
-  title: 'l8opensim',
-  tagline: 'Layer 8 data center simulator — SNMP/SSH/HTTPS at 30,000-device scale',
+  title: 'nl6',
+  tagline: 'Network device simulator — SNMP/SSH/HTTPS at 30,000-device scale',
   // Favicon deliberately omitted until a branded asset is added under static/img/.
   // Docusaurus warns cleanly when the field is absent rather than when it's
   // pointing at a missing file.
@@ -48,11 +48,11 @@ const config: Config = {
 
   // Canonical published URL; baseUrl is the project-scoped path.
   url: 'https://labmonkeys-space.github.io',
-  baseUrl: '/l8opensim/',
+  baseUrl: '/nl6/',
 
   // GitHub Pages deployment config.
   organizationName: 'labmonkeys-space',
-  projectName: 'l8opensim',
+  projectName: 'nl6',
   trailingSlash: false,
 
   // Strict-mode: matches the MkDocs `--strict` posture the project previously had.
@@ -101,7 +101,7 @@ const config: Config = {
           path: 'docs',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/labmonkeys-space/l8opensim/edit/main/',
+          editUrl: 'https://github.com/labmonkeys-space/nl6/edit/main/',
         },
         blog: false,
         theme: {
@@ -116,7 +116,7 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'l8opensim',
+      title: 'nl6',
       items: [
         {
           type: 'docSidebar',
@@ -137,7 +137,7 @@ const config: Config = {
           label: 'Reference',
         },
         {
-          href: 'https://github.com/labmonkeys-space/l8opensim',
+          href: 'https://github.com/labmonkeys-space/nl6',
           label: 'GitHub',
           position: 'right',
         },
@@ -159,15 +159,15 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/labmonkeys-space/l8opensim',
+              href: 'https://github.com/labmonkeys-space/nl6',
             },
             {
               label: 'Issues',
-              href: 'https://github.com/labmonkeys-space/l8opensim/issues',
+              href: 'https://github.com/labmonkeys-space/nl6/issues',
             },
             {
               label: 'Releases',
-              href: 'https://github.com/labmonkeys-space/l8opensim/releases',
+              href: 'https://github.com/labmonkeys-space/nl6/releases',
             },
           ],
         },

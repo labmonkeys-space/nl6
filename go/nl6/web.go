@@ -390,7 +390,7 @@ func generateRouteScriptHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func pprofMemoryHandler(w http.ResponseWriter, r *http.Request) {
-	filename := fmt.Sprintf("opensim_heap_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
+	filename := fmt.Sprintf("nl6_heap_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	if err := pprof.WriteHeapProfile(w); err != nil {
@@ -399,7 +399,7 @@ func pprofMemoryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func cpuProfileHandler(w http.ResponseWriter, r *http.Request) {
-	filename := fmt.Sprintf("opensim_cpu_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
+	filename := fmt.Sprintf("nl6_cpu_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	if err := pprof.StartCPUProfile(w); err != nil {

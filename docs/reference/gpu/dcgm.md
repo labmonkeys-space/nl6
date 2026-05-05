@@ -10,7 +10,7 @@ shape of the output data) and [Pollaris and parsing rules](pollaris.mdx)
 
 ## Overview
 
-l8opensim simulates NVIDIA Data Center GPU Manager (DCGM) servers. Each
+nl6 simulates NVIDIA Data Center GPU Manager (DCGM) servers. Each
 simulated device represents a GPU server (e.g. DGX A100, DGX H100, HGX
 H200) with multiple GPUs. The simulation exposes GPU metrics via all three
 existing protocols: SNMP (enterprise MIB OIDs), SSH (`nvidia-smi` CLI), and
@@ -487,8 +487,8 @@ resources := &DeviceResources{
 
 ## Phase 6: Build and Verify
 
-1. `cd go && go build ./simulator/` — verify compilation
-2. `cd go && go vet ./simulator/` — verify no issues
+1. `cd go && go build ./nl6/` — verify compilation
+2. `cd go && go vet ./nl6/` — verify no issues
 3. Start the simulator and create a single NVIDIA DGX H100 device
 4. Verify SNMP walk returns GPU OIDs with cycling values
 5. Verify SSH `nvidia-smi` returns formatted output

@@ -1,6 +1,6 @@
 # Scaling
 
-l8opensim is tested up to **30,000 concurrent simulated devices on a single
+nl6 is tested up to **30,000 concurrent simulated devices on a single
 host**. Each device has its own IP, SNMP listener, SSH server, and flow
 exporter, so the working set is dominated by file descriptors and the Go
 runtime's goroutine / heap footprint rather than raw CPU.

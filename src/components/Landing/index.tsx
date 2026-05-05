@@ -8,25 +8,25 @@ type HeroMeta = {appVersion: string; license: string; goVersion: string};
 
 function Panel({title, meta, children}: {title?: string; meta?: string; children: React.ReactNode}) {
   return (
-    <div className="l8-panel">
+    <div className="nl6-panel">
       {title && (
-        <div className="l8-panel__hd">
-          <span className="l8-panel__title">{title}</span>
-          {meta && <span className="l8-panel__meta">{meta}</span>}
+        <div className="nl6-panel__hd">
+          <span className="nl6-panel__title">{title}</span>
+          {meta && <span className="nl6-panel__meta">{meta}</span>}
         </div>
       )}
-      <div className="l8-panel__bd">{children}</div>
+      <div className="nl6-panel__bd">{children}</div>
     </div>
   );
 }
 
 function Stat({label, value, unit}: {label: string; value: string; unit?: string}) {
   return (
-    <div className="l8-stat">
-      <div className="l8-stat__label">{label}</div>
-      <div className="l8-stat__val">
-        <span className="l8-stat__num">{value}</span>
-        {unit && <span className="l8-stat__unit">{unit}</span>}
+    <div className="nl6-stat">
+      <div className="nl6-stat__label">{label}</div>
+      <div className="nl6-stat__val">
+        <span className="nl6-stat__num">{value}</span>
+        {unit && <span className="nl6-stat__unit">{unit}</span>}
       </div>
     </div>
   );
@@ -35,12 +35,12 @@ function Stat({label, value, unit}: {label: string; value: string; unit?: string
 function Copyable({text, prompt = '$'}: {text: string; prompt?: string}) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="l8-copy">
-      <span className="l8-copy__prompt">{prompt}</span>
-      <code className="l8-copy__text">{text}</code>
+    <div className="nl6-copy">
+      <span className="nl6-copy__prompt">{prompt}</span>
+      <code className="nl6-copy__text">{text}</code>
       <button
         type="button"
-        className="l8-copy__btn"
+        className="nl6-copy__btn"
         onClick={() => {
           navigator.clipboard?.writeText(text);
           setCopied(true);
@@ -88,10 +88,10 @@ function Icon({name}: {name: string}) {
 
 function DocLink({to, t, h}: {to: string; t: string; h: string}) {
   return (
-    <a href={to} className="l8-docs__link">
-      <span className="l8-docs__link-t">{t}</span>
-      <span className="l8-docs__link-h">{h}</span>
-      <span className="l8-docs__link-arr">→</span>
+    <a href={to} className="nl6-docs__link">
+      <span className="nl6-docs__link-t">{t}</span>
+      <span className="nl6-docs__link-h">{h}</span>
+      <span className="nl6-docs__link-arr">→</span>
     </a>
   );
 }
@@ -102,34 +102,34 @@ export default function Landing(): JSX.Element {
   const {appVersion, license, goVersion} = siteConfig.customFields as HeroMeta;
 
   return (
-    <main className="l8-page">
-      <div className="l8-container">
+    <main className="nl6-page">
+      <div className="nl6-container">
         {/* hero */}
-        <section className="l8-hero">
-          <div className="l8-hero__grid">
+        <section className="nl6-hero">
+          <div className="nl6-hero__grid">
             <div>
-              <div className="l8-hero__eyebrow">
-                <span className="l8-dot" /> {appVersion} · {license} · {goVersion}
+              <div className="nl6-hero__eyebrow">
+                <span className="nl6-dot" /> {appVersion} · {license} · {goVersion}
               </div>
-              <h1 className="l8-hero__title">
+              <h1 className="nl6-hero__title">
                 A network load target<br />
-                for the <span className="l8-hi">monitoring tools</span><br />
+                for the <span className="nl6-hi">monitoring tools</span><br />
                 you're writing.
               </h1>
-              <p className="l8-hero__body">
-                l8opensim simulates up to <b>30,000</b> network devices, GPU servers, storage systems
+              <p className="nl6-hero__body">
+                nl6 simulates up to <b>30,000</b> network devices, GPU servers, storage systems
                 and Linux hosts on a single Linux host — each with its own IP, SNMP listener, SSH
                 server, HTTPS REST endpoint and flow exporter. Built on TUN interfaces and network
                 namespaces.
               </p>
-              <div className="l8-hero__ctas">
-                <a className="l8-btn l8-btn--primary" href={quickStart}>quick start →</a>
-                <a className="l8-btn" href="https://github.com/labmonkeys-space/l8opensim">github ↗</a>
+              <div className="nl6-hero__ctas">
+                <a className="nl6-btn nl6-btn--primary" href={quickStart}>quick start →</a>
+                <a className="nl6-btn" href="https://github.com/labmonkeys-space/nl6">github ↗</a>
               </div>
             </div>
             <div style={{display: 'grid', gap: 16}}>
               <Terminal />
-              <div className="l8-hero__stats">
+              <div className="nl6-hero__stats">
                 <Stat label="devices / host" value="30,000" unit="max" />
                 <Stat label="device types"   value="28"     unit="in 8 cat." />
                 <Stat label="mem / device"   value="~1"     unit="KB" />
@@ -140,58 +140,58 @@ export default function Landing(): JSX.Element {
         </section>
 
         {/* 01 quick start */}
-        <section className="l8-sec">
-          <div className="l8-sec__hd">
-            <span className="l8-sec__num">01</span>
-            <h2 className="l8-sec__title">quick start</h2>
-            <span className="l8-sec__sub">build from source · or pull with docker</span>
+        <section className="nl6-sec">
+          <div className="nl6-sec__hd">
+            <span className="nl6-sec__num">01</span>
+            <h2 className="nl6-sec__title">quick start</h2>
+            <span className="nl6-sec__sub">build from source · or pull with docker</span>
           </div>
-          <div className="l8-grid-3">
+          <div className="nl6-grid-3">
             <Panel title="01 · clone" meta="git">
-              <Copyable text="git clone https://github.com/labmonkeys-space/l8opensim.git" />
-              <Copyable text="cd l8opensim" />
+              <Copyable text="git clone https://github.com/labmonkeys-space/nl6.git" />
+              <Copyable text="cd nl6" />
             </Panel>
             <Panel title="02 · build" meta="make · go 1.26+">
               <Copyable text="make tidy" />
               <Copyable text="make build" />
             </Panel>
             <Panel title="03 · run" meta="needs root">
-              <Copyable text="sudo ./go/simulator/simulator -auto-start-ip 10.0.0.1 -auto-count 100" />
+              <Copyable text="sudo ./go/nl6/nl6 -auto-start-ip 10.0.0.1 -auto-count 100" />
             </Panel>
           </div>
-          <div className="l8-sec__or"><span>or with docker</span></div>
-          <div className="l8-grid-2">
+          <div className="nl6-sec__or"><span>or with docker</span></div>
+          <div className="nl6-grid-2">
             <Panel title="01 · pull" meta="no toolchain">
-              <Copyable text="docker pull ghcr.io/labmonkeys-space/l8opensim:latest" />
+              <Copyable text="docker pull ghcr.io/labmonkeys-space/nl6:latest" />
             </Panel>
             <Panel title="02 · run" meta="needs --cap-add=net_admin">
               <Copyable text={`docker run --rm -it \\
   --cap-add=NET_ADMIN \\
   --device=/dev/net/tun \\
   --network=host \\
-  ghcr.io/labmonkeys-space/l8opensim:latest \\
+  ghcr.io/labmonkeys-space/nl6:latest \\
   -auto-start-ip 10.0.0.1 -auto-count 100`} />
             </Panel>
           </div>
         </section>
 
         {/* 02 features */}
-        <section className="l8-sec">
-          <div className="l8-sec__hd">
-            <span className="l8-sec__num">02</span>
-            <h2 className="l8-sec__title">what's in the box</h2>
-            <span className="l8-sec__sub">six pillars</span>
+        <section className="nl6-sec">
+          <div className="nl6-sec__hd">
+            <span className="nl6-sec__num">02</span>
+            <h2 className="nl6-sec__title">what's in the box</h2>
+            <span className="nl6-sec__sub">six pillars</span>
           </div>
-          <div className="l8-features">
+          <div className="nl6-features">
             {FEATURES.map((f, i) => (
-              <div key={f.title} className="l8-panel">
-                <div className="l8-panel__hd">
-                  <span className="l8-panel__meta" style={{color: 'var(--l8-fg-mute)'}}>{String(i + 1).padStart(2, '0')}</span>
+              <div key={f.title} className="nl6-panel">
+                <div className="nl6-panel__hd">
+                  <span className="nl6-panel__meta" style={{color: 'var(--nl6-fg-mute)'}}>{String(i + 1).padStart(2, '0')}</span>
                 </div>
-                <div className="l8-panel__bd">
-                  <div className="l8-feat__ic"><Icon name={f.icon} /></div>
-                  <div className="l8-feat__t">{f.title}</div>
-                  <p className="l8-feat__b">{f.body}</p>
+                <div className="nl6-panel__bd">
+                  <div className="nl6-feat__ic"><Icon name={f.icon} /></div>
+                  <div className="nl6-feat__t">{f.title}</div>
+                  <p className="nl6-feat__b">{f.body}</p>
                 </div>
               </div>
             ))}
@@ -199,17 +199,17 @@ export default function Landing(): JSX.Element {
         </section>
 
         {/* 03 catalog */}
-        <section className="l8-sec">
-          <div className="l8-sec__hd">
-            <span className="l8-sec__num">03</span>
-            <h2 className="l8-sec__title">device catalog</h2>
-            <span className="l8-sec__sub">28 types · 8 categories · 341 resource files</span>
+        <section className="nl6-sec">
+          <div className="nl6-sec__hd">
+            <span className="nl6-sec__num">03</span>
+            <h2 className="nl6-sec__title">device catalog</h2>
+            <span className="nl6-sec__sub">28 types · 8 categories · 341 resource files</span>
           </div>
-          <div className="l8-grid-4">
+          <div className="nl6-grid-4">
             {CATEGORIES.map(cat => (
               <Panel key={cat.name} title={cat.name.toLowerCase()} meta={`${cat.items.length}`}>
-                <ul className="l8-cat__list">
-                  {cat.items.map(i => (<li key={i}><span className="l8-cat__bullet">›</span>{i}</li>))}
+                <ul className="nl6-cat__list">
+                  {cat.items.map(i => (<li key={i}><span className="nl6-cat__bullet">›</span>{i}</li>))}
                 </ul>
               </Panel>
             ))}
@@ -217,22 +217,22 @@ export default function Landing(): JSX.Element {
         </section>
 
         {/* 04 status & scale */}
-        <section className="l8-sec">
-          <div className="l8-sec__hd">
-            <span className="l8-sec__num">04</span>
-            <h2 className="l8-sec__title">status & scale</h2>
-            <span className="l8-sec__sub">what works · how big</span>
+        <section className="nl6-sec">
+          <div className="nl6-sec__hd">
+            <span className="nl6-sec__num">04</span>
+            <h2 className="nl6-sec__title">status & scale</h2>
+            <span className="nl6-sec__sub">what works · how big</span>
           </div>
-          <div className="l8-grid-3">
+          <div className="nl6-grid-3">
             {STATUS.map(s => (
               <Panel key={s.k} title={s.k.toLowerCase()} meta={`${s.items.length}`}>
-                <ul className="l8-status__list">
-                  {s.items.map(i => (<li key={i}><span className="l8-status__tick">■</span>{i}</li>))}
+                <ul className="nl6-status__list">
+                  {s.items.map(i => (<li key={i}><span className="nl6-status__tick">■</span>{i}</li>))}
                 </ul>
               </Panel>
             ))}
           </div>
-          <div className="l8-scale">
+          <div className="nl6-scale">
             <Stat label="concurrent devices" value="30,000" unit="tested" />
             <Stat label="device types"       value="28" />
             <Stat label="resource files"     value="341" unit="json" />
@@ -242,17 +242,17 @@ export default function Landing(): JSX.Element {
         </section>
 
         {/* 05 docs map */}
-        <section className="l8-sec">
-          <div className="l8-sec__hd">
-            <span className="l8-sec__num">05</span>
-            <h2 className="l8-sec__title">documentation map</h2>
-            <span className="l8-sec__sub">jump in</span>
+        <section className="nl6-sec">
+          <div className="nl6-sec__hd">
+            <span className="nl6-sec__num">05</span>
+            <h2 className="nl6-sec__title">documentation map</h2>
+            <span className="nl6-sec__sub">jump in</span>
           </div>
-          <div className="l8-grid-4">
+          <div className="nl6-grid-4">
             {DOCS.map(d => (
               <Panel key={d.group} title={d.group.toLowerCase()}>
-                <p className="l8-docs__body">{d.body}</p>
-                <ul className="l8-docs__links">
+                <p className="nl6-docs__body">{d.body}</p>
+                <ul className="nl6-docs__links">
                   {d.links.map(l => (
                     <li key={l.h}><DocLinkBU t={l.t} h={l.h} /></li>
                   ))}
@@ -263,17 +263,17 @@ export default function Landing(): JSX.Element {
         </section>
 
         {/* cta */}
-        <section className="l8-sec" style={{borderBottom: 'none'}}>
+        <section className="nl6-sec" style={{borderBottom: 'none'}}>
           <Panel>
-            <div className="l8-cta">
+            <div className="nl6-cta">
               <div>
-                <div className="l8-cta__eye">→ get started</div>
-                <h2 className="l8-cta__t">Spin up tens of thousands of devices in&nbsp;seconds.</h2>
-                <p className="l8-cta__b">Apache-2.0. No agents, no cloud, no per-device fees. Just TUN interfaces and a little Go.</p>
+                <div className="nl6-cta__eye">→ get started</div>
+                <h2 className="nl6-cta__t">Spin up tens of thousands of devices in&nbsp;seconds.</h2>
+                <p className="nl6-cta__b">Apache-2.0. No agents, no cloud, no per-device fees. Just TUN interfaces and a little Go.</p>
               </div>
-              <div className="l8-cta__r">
-                <a className="l8-btn l8-btn--primary" href={quickStart}>quick start →</a>
-                <a className="l8-btn" href="https://github.com/labmonkeys-space/l8opensim">github ↗</a>
+              <div className="nl6-cta__r">
+                <a className="nl6-btn nl6-btn--primary" href={quickStart}>quick start →</a>
+                <a className="nl6-btn" href="https://github.com/labmonkeys-space/nl6">github ↗</a>
               </div>
             </div>
           </Panel>

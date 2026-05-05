@@ -88,7 +88,7 @@ add_permanent_routes_netplan() {
     echo -e "${BLUE}📡 Configuring routes for interface: $primary_interface${NC}"
 
     # Create the netplan file with proper structure
-    echo "# Static routes for Layer 8 Data Center Simulator" | sudo tee "$netplan_file" > /dev/null
+    echo "# Static routes for nl6" | sudo tee "$netplan_file" > /dev/null
     echo "# Generated on $(date)" | sudo tee -a "$netplan_file" > /dev/null
     echo "# Interface: $primary_interface" | sudo tee -a "$netplan_file" > /dev/null
     echo "network:" | sudo tee -a "$netplan_file" > /dev/null
@@ -157,7 +157,7 @@ add_permanent_routes_systemd_networkd() {
     # Detect primary network interface
     local primary_interface=$(ip route show default | head -1 | awk '{print $5}')
 
-    echo "# Static routes for Layer 8 Data Center Simulator" | sudo tee "$route_file" > /dev/null
+    echo "# Static routes for nl6" | sudo tee "$route_file" > /dev/null
     echo "# Generated on $(date)" | sudo tee -a "$route_file" > /dev/null
     echo "[Match]" | sudo tee -a "$route_file" > /dev/null
     echo "Name=$primary_interface" | sudo tee -a "$route_file" > /dev/null
@@ -189,7 +189,7 @@ add_permanent_routes_interfaces() {
 
     # Add routes to interfaces file
     echo "" | sudo tee -a "$interfaces_file" > /dev/null
-    echo "# Static routes for Layer 8 Data Center Simulator - Added $(date)" | sudo tee -a "$interfaces_file" > /dev/null
+    echo "# Static routes for nl6 - Added $(date)" | sudo tee -a "$interfaces_file" > /dev/null
 `
 
 	for subnet := range subnets {
@@ -258,7 +258,7 @@ add_permanent_routes_networkmanager() {
 add_permanent_routes_network_scripts() {
     local route_file="/etc/sysconfig/network-scripts/route-$(ip route show default | head -1 | awk '{print $5}')"
 
-    echo "# Static routes for Layer 8 Data Center Simulator" | sudo tee "$route_file" > /dev/null
+    echo "# Static routes for nl6" | sudo tee "$route_file" > /dev/null
     echo "# Generated on $(date)" | sudo tee -a "$route_file" > /dev/null
 `
 
@@ -295,7 +295,7 @@ add_permanent_routes_suse() {
     fi
 
     # Add routes
-    echo "# Static routes for Layer 8 Data Center Simulator - Added $(date)" | sudo tee -a "$route_file" > /dev/null
+    echo "# Static routes for nl6 - Added $(date)" | sudo tee -a "$route_file" > /dev/null
 `
 
 	for subnet := range subnets {

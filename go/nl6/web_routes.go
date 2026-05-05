@@ -75,7 +75,7 @@ func generateScriptHeader(subnets map[string]bool) string {
 
 	header.WriteString(`#!/bin/bash
 #
-# Enhanced Static Route Configuration Script for Layer 8 Data Center Simulator
+# Enhanced Static Route Configuration Script for nl6
 # Generated on: ` + time.Now().Format("2006-01-02 15:04:05") + `
 #
 # This script creates PERMANENT routes by default (persist after reboot)

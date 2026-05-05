@@ -1,6 +1,6 @@
 # GPU simulation
 
-l8opensim simulates NVIDIA DGX and HGX GPU servers — complete with NVIDIA
+nl6 simulates NVIDIA DGX and HGX GPU servers — complete with NVIDIA
 DCGM OIDs, `nvidia-smi` SSH output, and DCGM-shaped REST endpoints. This
 section consolidates the GPU-specific design notes originally kept under
 `plans/`.

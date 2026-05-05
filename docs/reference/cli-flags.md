@@ -6,7 +6,7 @@ the authoritative catalog — new flags land here first.
 Run the simulator with:
 
 ```bash
-sudo ./simulator [options]
+sudo ./nl6 [options]
 ```
 
 Root is required because the simulator creates TUN interfaces and manages the
@@ -165,30 +165,30 @@ prerequisites and `netcat` smoke-test, and
 
 ```bash
 # Start server only (all interfaces up/up by default)
-sudo ./simulator
+sudo ./nl6
 
 # Auto-create 5 devices starting from 192.168.100.1
-sudo ./simulator -auto-start-ip 192.168.100.1 -auto-count 5
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5
 
 # Custom API port and subnet
-sudo ./simulator -auto-start-ip 10.10.10.1 -auto-count 100 -port 9090
+sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 100 -port 9090
 
 # Non-privileged SNMP port (no CAP_NET_BIND_SERVICE needed)
-sudo ./simulator -auto-start-ip 10.10.10.1 -auto-count 10 -snmp-port 1161
+sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 10 -snmp-port 1161
 
 # SNMPv3 with MD5 auth and AES128 privacy
-sudo ./simulator -snmpv3-engine-id 0x80001234 -snmpv3-auth md5 -snmpv3-priv aes128
+sudo ./nl6 -snmpv3-engine-id 0x80001234 -snmpv3-auth md5 -snmpv3-priv aes128
 
 # Disable network namespace isolation
-sudo ./simulator -no-namespace -auto-start-ip 192.168.100.1 -auto-count 10
+sudo ./nl6 -no-namespace -auto-start-ip 192.168.100.1 -auto-count 10
 
 # Maintenance window — all interfaces admin-shutdown
-sudo ./simulator -auto-start-ip 192.168.100.1 -auto-count 10 -if-scenario 1
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 -if-scenario 1
 
 # Link failure — all interfaces admin-up but oper-down
-sudo ./simulator -auto-start-ip 192.168.100.1 -auto-count 10 -if-scenario 3
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 -if-scenario 3
 
 # Partial outage — 30% of interfaces oper-down
-sudo ./simulator -auto-start-ip 192.168.100.1 -auto-count 10 \
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 \
     -if-scenario 4 -if-failure-pct 30
 ```

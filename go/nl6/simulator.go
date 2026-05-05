@@ -137,7 +137,7 @@ func main() {
 
 	// `-version` prints the baked-in Version and exits before any
 	// simulator setup runs (no flag dependencies, no TUN, no netns, no
-	// port binds). Lets `./simulator -version` work without root and
+	// port binds). Lets `./nl6 -version` work without root and
 	// without touching system state.
 	if *showVersion {
 		fmt.Println(Version)
@@ -152,7 +152,7 @@ func main() {
 
 	// Show help if requested
 	if *showHelp {
-		fmt.Println("Layer 8 Data Center Simulator with TUN/TAP support")
+		fmt.Println("nl6 — network device simulator with TUN/TAP support")
 		fmt.Println()
 		fmt.Println("Usage:")
 		fmt.Printf("  %s [options]\n", os.Args[0])
@@ -184,7 +184,7 @@ func main() {
 	// Check if running as root
 	if os.Geteuid() != 0 {
 		log.Println("WARNING: Not running as root. TUN/TAP interface creation will fail.")
-		log.Println("Please run with: sudo ./simulator")
+		log.Println("Please run with: sudo ./nl6")
 	}
 
 	// Initialize manager with namespace support (unless disabled)
@@ -327,7 +327,7 @@ func main() {
 
 	// Start API server in background
 	apiPort := ":" + *port
-	log.Printf("Layer 8 Data Center Simulator server starting on port %s", apiPort)
+	log.Printf("nl6 — network device simulator starting on port %s", apiPort)
 	log.Println()
 	log.Println("Web UI:")
 	log.Printf("  http://localhost%s/", apiPort)
@@ -399,7 +399,7 @@ func main() {
 	log.Println()
 	log.Println("SNMPv3 + SSH Examples:")
 	log.Println("  Create devices with SNMPv3 support:")
-	log.Printf("    sudo ./sim -auto-start-ip 192.168.100.1 -auto-count 2 \\")
+	log.Printf("    sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 2 \\")
 	log.Println()
 	log.Printf("      -snmpv3-engine-id 800000090300AABBCCDD -snmpv3-auth md5")
 	log.Println()

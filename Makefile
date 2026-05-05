@@ -1,7 +1,7 @@
-BINARY       := simulator
-BUILD_DIR    := go/simulator
+BINARY       := nl6
+BUILD_DIR    := go/nl6
 GO_DIR       := go
-SIM_IMAGE    := ghcr.io/labmonkeys-space/l8opensim:latest
+SIM_IMAGE    := ghcr.io/labmonkeys-space/nl6:latest
 # Space-separated list of -t tags for docker-push; override in CI with release tags.
 DOCKER_TAGS  ?= $(SIM_IMAGE)
 
@@ -70,10 +70,10 @@ check-tidy: check-go
 ## dist: Build release binaries for linux/amd64 and linux/arm64 into dist/
 dist: check-go
 	mkdir -p dist
-	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./simulator
-	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./simulator
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./nl6
 
-## test: Run tests (simulator package requires Linux)
+## test: Run tests (nl6 package requires Linux)
 test: check-go
 ifneq ($(UNAME_S),Linux)
 	@echo "Note: no tests to run on $(UNAME_S) — the simulator package uses"

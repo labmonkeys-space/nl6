@@ -15,7 +15,7 @@ COPY go/ .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags "-X main.Version=${APP_VERSION}" \
-    -o /simulator ./simulator
+    -o /nl6 ./nl6
 
 # ----
 
@@ -25,10 +25,10 @@ RUN apk add --no-cache iproute2 iptables
 
 WORKDIR /app
 
-COPY --from=build /simulator /usr/local/bin/simulator
-COPY go/simulator/resources/ /app/resources/
-COPY go/simulator/web/ /app/web/
+COPY --from=build /nl6 /usr/local/bin/nl6
+COPY go/nl6/resources/ /app/resources/
+COPY go/nl6/web/ /app/web/
 
 EXPOSE 8080/tcp 161/udp
 
-ENTRYPOINT ["/usr/local/bin/simulator"]
+ENTRYPOINT ["/usr/local/bin/nl6"]

@@ -1,6 +1,6 @@
 # UDP syslog export (operator guide)
 
-l8opensim can emit UDP syslog messages in either **RFC 5424** (the modern
+nl6 can emit UDP syslog messages in either **RFC 5424** (the modern
 structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy
 BSD format most network gear still defaults to) from every simulated
 device to a single collector such as `rsyslog`, `syslog-ng`, or
@@ -20,24 +20,24 @@ enable it; the other flags have sensible defaults for modern collectors.
 
 ```bash
 # 100 devices, RFC 5424, one message every ~10s per device (Poisson-distributed)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -syslog-collector 192.168.1.10:514
 
 # Legacy BSD format (required by some older collectors + network gear that still
 # auto-detects based on leading '<PRI>Mmm DD' shape)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -syslog-collector 192.168.1.10:514 \
   -syslog-format 3164
 
 # Tighter interval + global rate cap (≤ 500 messages/s across all devices)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 1000 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 1000 \
   -syslog-collector 192.168.1.10:514 \
   -syslog-interval 1s -syslog-global-cap 500
 
 # Custom catalog (overrides universal + disables per-type overlays)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -syslog-collector 192.168.1.10:514 \
-  -syslog-catalog /etc/opensim/my-syslog.json
+  -syslog-catalog /etc/nl6/my-syslog.json
 ```
 
 ## 5424 vs 3164
@@ -130,7 +130,7 @@ UDP sink:
 nc -ul 514 | sed -u 's/^/recv: /'
 
 # In another terminal — point the simulator at it
-sudo ./simulator -auto-start-ip 127.0.0.1 -auto-count 5 \
+sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
   -syslog-collector 127.0.0.1:514 -syslog-interval 2s
 ```
 

@@ -1,7 +1,7 @@
 name: Docs
 
 # Publishes the Docusaurus site at
-# https://labmonkeys-space.github.io/l8opensim/ on every push to main. Toolchain
+# https://labmonkeys-space.github.io/nl6/ on every push to main. Toolchain
 # and Node version are pinned via package-lock.json and .nvmrc respectively.
 #
 # First-deploy manual step: after this workflow succeeds for the first time

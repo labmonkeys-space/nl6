@@ -1,6 +1,6 @@
 # SNMP trap / INFORM export (operator guide)
 
-l8opensim can emit SNMPv2c notifications — both fire-and-forget **TRAP**s (PDU
+nl6 can emit SNMPv2c notifications — both fire-and-forget **TRAP**s (PDU
 `0xA7`) and acknowledged **INFORM**s (PDU `0xA6`) — from every simulated device
 to a single collector such as OpenNMS `trapd` or `snmptrapd`. Each device
 generates its own notifications with its own IP as the UDP source, so
@@ -19,23 +19,23 @@ it; the other eight flags have sensible defaults for OpenNMS and `snmptrapd`.
 
 ```bash
 # 100 devices firing a random catalog trap every ~30s (Poisson-distributed)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -trap-collector 192.168.1.10:162
 
 # Tighter interval + global rate cap (≤ 200 trap packets/s across all devices)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 1000 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 1000 \
   -trap-collector 192.168.1.10:162 \
   -trap-interval 5s -trap-global-cap 200
 
 # INFORM mode — requires per-device source binding (the default)
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -trap-collector 192.168.1.10:162 -trap-mode inform \
   -trap-inform-timeout 3s -trap-inform-retries 1
 
 # Custom catalog
-sudo ./simulator -auto-start-ip 10.0.0.1 -auto-count 100 \
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -trap-collector 192.168.1.10:162 \
-  -trap-catalog /etc/opensim/my-traps.json
+  -trap-catalog /etc/nl6/my-traps.json
 ```
 
 ## TRAP vs INFORM
@@ -120,7 +120,7 @@ formatted logging to stdout:
 sudo snmptrapd -f -Of -Lo -c /etc/snmp/snmptrapd.conf 162
 
 # In another terminal — point the simulator at it
-sudo ./simulator -auto-start-ip 127.0.0.1 -auto-count 5 \
+sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
   -trap-collector 127.0.0.1:162 -trap-interval 2s
 ```
 

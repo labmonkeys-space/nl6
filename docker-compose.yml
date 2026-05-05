@@ -1,7 +1,7 @@
 services:
   simulator:
     build: .
-    image: ghcr.io/labmonkeys-space/l8opensim:latest
+    image: ghcr.io/labmonkeys-space/nl6:latest
     # TUN interfaces and network namespaces require these capabilities.
     cap_add:
       - NET_ADMIN

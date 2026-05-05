@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Layer 8 Data Center Simulator - System Optimization and Device Startup Script
+# nl6 — network device simulator - System Optimization and Device Startup Script
 # This script optimizes system settings for high-load SNMP operations before starting devices
 # Optimized for handling 1000+ parallel SNMP walks
 
@@ -11,7 +11,7 @@ SERVER_PORT="8080"
 BASE_IP="10.20.30"
 START_IP_LAST_OCTET=1
 LOG_FILE="startup.log"
-PID_FILE="simulator.pid"
+PID_FILE="nl6.pid"
 
 # Colors for output
 RED='\033[0;31m'
@@ -34,7 +34,7 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-echo -e "${BLUE}🚀 Layer 8 Data Center Simulator - System Optimization & Startup${NC}"
+echo -e "${BLUE}🚀 nl6 — network device simulator - System Optimization & Startup${NC}"
 echo "============================================================"
 
 # ========================================
@@ -171,7 +171,7 @@ if [ "$available_mem" -lt 2 ]; then
     print_warn "Less than 2GB available memory. May experience issues with many devices"
 fi
 
-echo -e "${BLUE}🚀 Starting Layer 8 Data Center Simulator${NC}"
+echo -e "${BLUE}🚀 Starting nl6 — network device simulator${NC}"
 echo "====================================="
 echo "Server Port: $SERVER_PORT"
 echo "Starting IP: ${BASE_IP}.${START_IP_LAST_OCTET}"
@@ -244,7 +244,7 @@ fi
 
 # Start the simulator server in background
 echo -e "${BLUE}🌐 Starting simulator server on port $SERVER_PORT...${NC}"
-sudo ./simulator -port "$SERVER_PORT" > "$LOG_FILE" 2>&1 &
+sudo ./nl6 -port "$SERVER_PORT" > "$LOG_FILE" 2>&1 &
 SIMULATOR_PID=$!
 echo $SIMULATOR_PID > "$PID_FILE"
 

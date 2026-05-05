@@ -1,4 +1,4 @@
-module github.com/labmonkeys-space/l8opensim/go
+module github.com/labmonkeys-space/nl6/go
 
 go 1.26.1
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# System Diagnostic Script for Layer 8 Data Center Simulator
+# System Diagnostic Script for nl6 — network device simulator
 # Run this on the fresh Ubuntu server to identify missing components
 
-echo "🔍 Layer 8 Data Center Simulator - System Diagnostics"
+echo "🔍 nl6 — network device simulator - System Diagnostics"
 echo "================================================="
 echo ""
 
@@ -173,11 +173,11 @@ fi
 
 echo ""
 if [ $total_issues -eq 0 ]; then
-    echo "🎉 System appears ready for Layer 8 Data Center Simulator!"
+    echo "🎉 System appears ready for nl6 — network device simulator!"
     echo ""
     echo "✅ Next steps:"
-    echo "1. Build the simulator: go build -o simulator/simulator ./simulator"
-    echo "2. Run with root privileges: sudo ./simulator/simulator"
+    echo "1. Build: cd go/nl6 && go build -o nl6 ."
+    echo "2. Run with root privileges: sudo ./nl6"
 else
     echo "⚠️  Found $total_issues issue(s) that need to be addressed"
     echo ""

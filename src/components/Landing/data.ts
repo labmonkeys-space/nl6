@@ -1,4 +1,4 @@
-// Content tables for the l8opensim landing page.
+// Content tables for the nl6 landing page.
 // Kept as a plain module so it's cheap to tweak without touching components.
 
 export type Feature = { icon: string; title: string; body: string };
@@ -63,7 +63,7 @@ export const DOCS: DocGroup[] = [
 
 export const STATUS: StatusGroup[] = [
   { k: 'Stable',        items: ['SNMP v2c/v3', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX', 'TUN + netns isolation', 'Web UI + REST API'] },
-  { k: 'Experimental',  items: ['sFlow v5 (synthetic)', 'Layer 8 overlay'] },
+  { k: 'Experimental',  items: ['sFlow v5 (synthetic)'] },
   { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '~50 MB base + ~1 KB / device', 'CPU: minimal in steady state'] },
 ];
 

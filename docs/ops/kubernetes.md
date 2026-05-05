@@ -1,6 +1,6 @@
 # Kubernetes (not supported)
 
-l8opensim does not currently ship a supported Kubernetes deployment. This
+nl6 does not currently ship a supported Kubernetes deployment. This
 page is the honest accounting of *why* — the simulator's design fights
 Kubernetes' isolation model in several places, and the workarounds shift
 the risk onto cluster operators rather than removing it.
@@ -61,7 +61,7 @@ break per-device flow / trap / syslog egress without surfacing an error.
 Several names and addresses are hardcoded:
 
 - Network namespace name: `opensim`
-  (`go/simulator/netns.go` → `NETNS_NAME`).
+  (`go/nl6/netns.go` → `NETNS_NAME`).
 - veth pair names: `veth-sim-host`, `veth-sim-ns`.
 - veth bridge CIDR: `10.254.0.0/30`.
 

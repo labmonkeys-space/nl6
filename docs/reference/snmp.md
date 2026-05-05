@@ -1,8 +1,8 @@
 # SNMP reference
 
-l8opensim answers SNMP v2c and v3 queries on UDP port 161 (override with
+nl6 answers SNMP v2c and v3 queries on UDP port 161 (override with
 [`-snmp-port`](cli-flags.md#core-flags)) for every simulated device. The
-stack is implemented in `go/simulator/snmp*.go` — see
+stack is implemented in `go/nl6/snmp*.go` — see
 [Architecture](architecture.md) for the component map.
 
 ## Protocol coverage
@@ -42,7 +42,7 @@ loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
 ## Dynamic IF-MIB counters
 
 Every per-interface counter listed below is generated dynamically by
-`go/simulator/if_counters.go:IfCounterCycler`:
+`go/nl6/if_counters.go:IfCounterCycler`:
 
 **ifXTable Counter64 HC columns** (`.1.3.6.1.2.1.31.1.1.1.X`):
 
@@ -180,7 +180,7 @@ Every network device ships with a properly aligned Entity MIB: chassis, line
 cards, power supplies, fans, and temperature sensors — plus the
 `entAliasMappingTable` linking physical ports to logical interfaces.
 Vendor-specific OIDs (Cisco, Juniper, Arista, NVIDIA, etc.) are provided per
-device type under `go/simulator/resources/<device>/`. See
+device type under `go/nl6/resources/<device>/`. See
 [Resource files](resource-files.md) for the JSON schema and
 [Device types](device-types.md) for the catalog.
 
@@ -188,7 +188,7 @@ device type under `go/simulator/resources/<device>/`. See
 
 SNMP defines both a request/response path — the GET / GETNEXT / GETBULK /
 SET operations documented above — and a push path where a device initiates
-a notification to a monitoring collector. l8opensim implements the push
+a notification to a monitoring collector. nl6 implements the push
 path for SNMPv2c only: fire-and-forget TRAPs (PDU `0xA7`) and
 acknowledged INFORMs (PDU `0xA6`). SNMPv1 traps and SNMPv3 notifications
 are deferred.

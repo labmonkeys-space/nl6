@@ -16,7 +16,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo "=========================================="
-echo "Systemd-networkd Configuration for OpenSim"
+echo "Systemd-networkd Configuration for nl6"
 echo "=========================================="
 echo ""
 
@@ -37,7 +37,7 @@ mkdir -p "$NETWORK_DIR"
 
 # Create the configuration file
 cat > "$CONFIG_FILE" << 'EOF'
-# Ignore all sim* interfaces (OpenSim network device simulator)
+# Ignore all sim* interfaces (nl6 network device simulator)
 # This prevents systemd-networkd from monitoring these interfaces,
 # which would cause excessive CPU/memory usage with many devices.
 

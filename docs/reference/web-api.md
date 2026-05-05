@@ -305,7 +305,7 @@ string `dev`. Operators troubleshooting a version mismatch can call the
 same string from the CLI without starting the server:
 
 ```bash
-./simulator -version
+./nl6 -version
 # → v0.5.0
 ```
 

@@ -145,8 +145,8 @@ func (sm *SimulatorManager) generateSharedTLSCert() {
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(2025),
 		Subject: pkix.Name{
-			CommonName:   "opensim-ca",
-			Organization: []string{"OpenSim"},
+			CommonName:   "nl6-ca",
+			Organization: []string{"nl6"},
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
@@ -177,8 +177,8 @@ func (sm *SimulatorManager) generateSharedTLSCert() {
 	serverTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			CommonName:   "opensim-device",
-			Organization: []string{"OpenSim"},
+			CommonName:   "nl6-device",
+			Organization: []string{"nl6"},
 		},
 		// Use wildcard-style: accept any IP by including 0.0.0.0
 		IPAddresses: []net.IP{net.IPv4zero, net.IPv6zero},

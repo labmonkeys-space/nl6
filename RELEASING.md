@@ -1,4 +1,4 @@
-# Releasing l8opensim
+# Releasing nl6
 
 There are only two things to know:
 
@@ -6,11 +6,11 @@ There are only two things to know:
   (e.g. `v0.3.2`) to `main` runs `.github/workflows/release.yml`: it builds
   Linux amd64/arm64 binaries, publishes a GitHub Release with
   auto-generated notes, and pushes a multi-platform Docker image to
-  `ghcr.io/labmonkeys-space/l8opensim:<tag>` and the floating `:latest`
+  `ghcr.io/labmonkeys-space/nl6:<tag>` and the floating `:latest`
   alias. The public landing page advertises this version.
 - **Release candidates are `main`.** Every push to `main` runs
   `.github/workflows/ci.yml`, which (on success) publishes the floating
-  Docker image `ghcr.io/labmonkeys-space/l8opensim:rc`. There are **no
+  Docker image `ghcr.io/labmonkeys-space/nl6:rc`. There are **no
   RC git tags, no numbered RCs, no pre-release GitHub Releases** — `:rc`
   always reflects the latest main and testers pull it to exercise
   unreleased work. The landing page is unaffected.
@@ -38,7 +38,7 @@ The checklist below covers only what a human still has to decide or verify.
    (`Release` only runs after a tag push, so it has nothing to report yet).
    Don't release on a red main.
 2. **No release-blocking PRs open.** Skim
-   [`gh pr list --repo labmonkeys-space/l8opensim`](https://github.com/labmonkeys-space/l8opensim/pulls)
+   [`gh pr list --repo labmonkeys-space/nl6`](https://github.com/labmonkeys-space/nl6/pulls)
    for anything labelled `release-blocker` or in-flight that should ship
    together with the tag.
 3. **Pick a version.** Follow [SemVer](https://semver.org/):
@@ -70,17 +70,17 @@ git push origin vX.Y.Z
 ```
 
 > **Note on the fork.** This repo is a fork of `saichler/l8opensim`. Tags live
-> on `labmonkeys-space/l8opensim` (origin). Never push release tags to
+> on `labmonkeys-space/nl6` (origin). Never push release tags to
 > upstream.
 
 ## Exercising pre-release changes
 
 There is no separate RC release step. Every merge to `main` triggers
-`ci.yml`, which on success publishes `ghcr.io/labmonkeys-space/l8opensim:rc`.
+`ci.yml`, which on success publishes `ghcr.io/labmonkeys-space/nl6:rc`.
 Testers who want the latest unreleased work pull:
 
 ```sh
-docker pull ghcr.io/labmonkeys-space/l8opensim:rc
+docker pull ghcr.io/labmonkeys-space/nl6:rc
 ```
 
 The `:rc` tag is always overwritten in place — it points at whatever `main`
@@ -103,15 +103,15 @@ Watch the two workflows that run in sequence:
 Verify:
 
 - [ ] GitHub Release exists with the correct tag and attached
-      `simulator-linux-amd64` + `simulator-linux-arm64` binaries.
+      `nl6-linux-amd64` + `nl6-linux-arm64` binaries.
 - [ ] Release notes are acceptable — edit on GitHub if the auto-generated
       content bundled in too much noise.
-- [ ] `ghcr.io/labmonkeys-space/l8opensim:vX.Y.Z` and `:latest` both updated
+- [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
-- [ ] <https://labmonkeys-space.github.io/l8opensim/> hero eyebrow shows
+- [ ] <https://labmonkeys-space.github.io/nl6/> hero eyebrow shows
       `vX.Y.Z · Apache-2.0 · Go <minor>`. If the site didn't refresh,
       retrigger the docs workflow manually:
-      `gh workflow run docs.yml --repo labmonkeys-space/l8opensim`.
+      `gh workflow run docs.yml --repo labmonkeys-space/nl6`.
 
 ## Troubleshooting
 
@@ -132,7 +132,7 @@ is triggered by `workflow_run` which runs on the default branch context. If
 `main` advanced past the release commit and the latest tag is no longer
 reachable from `HEAD` (rare — would require a revert), `git describe --tags
 --abbrev=0` could resolve to an earlier tag. Check
-<https://github.com/labmonkeys-space/l8opensim/actions/workflows/docs.yml> for
+<https://github.com/labmonkeys-space/nl6/actions/workflows/docs.yml> for
 the last docs run's resolved version, and retrigger manually with
 `gh workflow run docs.yml` if needed.
 

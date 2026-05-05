@@ -50,50 +50,50 @@ export default function Terminal(): JSX.Element {
       const done = Math.round(pct / 2.5);
       const cells = Array.from({length: 40}, (_, k) => (k < done ? '█' : '░')).join('');
       out.push(
-        <div key={i} className="l8-tl l8-tl--bar">
-          <span className="l8-tl__pfx">»</span>
-          <span className="l8-tl__bar">[{cells}] {String(pct).padStart(3, ' ')}%</span>
+        <div key={i} className="nl6-tl nl6-tl--bar">
+          <span className="nl6-tl__pfx">»</span>
+          <span className="nl6-tl__bar">[{cells}] {String(pct).padStart(3, ' ')}%</span>
         </div>,
       );
     } else if (line.k === 'cmd') {
       out.push(
-        <div key={i} className="l8-tl l8-tl--cmd">
-          <span className="l8-tl__pfx l8-tl__pfx--prompt">noc@laptop</span>
-          <span className="l8-tl__colon">:</span>
-          <span className="l8-tl__path">~</span>
-          <span className="l8-tl__colon">$</span>
-          <span className="l8-tl__txt">&nbsp;{isCurrent ? line.text.slice(0, chars) : line.text}</span>
-          {isCurrent && <span className="l8-tl__caret" />}
+        <div key={i} className="nl6-tl nl6-tl--cmd">
+          <span className="nl6-tl__pfx nl6-tl__pfx--prompt">noc@laptop</span>
+          <span className="nl6-tl__colon">:</span>
+          <span className="nl6-tl__path">~</span>
+          <span className="nl6-tl__colon">$</span>
+          <span className="nl6-tl__txt">&nbsp;{isCurrent ? line.text.slice(0, chars) : line.text}</span>
+          {isCurrent && <span className="nl6-tl__caret" />}
         </div>,
       );
     } else if (line.k === 'blank') {
-      out.push(<div key={i} className="l8-tl l8-tl--blank">&nbsp;</div>);
+      out.push(<div key={i} className="nl6-tl nl6-tl--blank">&nbsp;</div>);
     } else if (line.k === 'ok') {
       out.push(
-        <div key={i} className="l8-tl l8-tl--ok">
-          <span className="l8-tl__pfx">✓</span>
-          <span className="l8-tl__txt">{isCurrent ? line.text.slice(0, chars) : line.text}</span>
-          {isCurrent && <span className="l8-tl__caret" />}
+        <div key={i} className="nl6-tl nl6-tl--ok">
+          <span className="nl6-tl__pfx">✓</span>
+          <span className="nl6-tl__txt">{isCurrent ? line.text.slice(0, chars) : line.text}</span>
+          {isCurrent && <span className="nl6-tl__caret" />}
         </div>,
       );
     } else {
       out.push(
-        <div key={i} className="l8-tl">
-          <span className="l8-tl__pfx">·</span>
-          <span className="l8-tl__txt">{isCurrent ? line.text.slice(0, chars) : line.text}</span>
-          {isCurrent && <span className="l8-tl__caret" />}
+        <div key={i} className="nl6-tl">
+          <span className="nl6-tl__pfx">·</span>
+          <span className="nl6-tl__txt">{isCurrent ? line.text.slice(0, chars) : line.text}</span>
+          {isCurrent && <span className="nl6-tl__caret" />}
         </div>,
       );
     }
   }
 
   return (
-    <div className="l8-term">
-      <div className="l8-term__hd">
-        <span className="l8-term__dots"><i /><i /><i /></span>
-        <span className="l8-term__title">noc@laptop — ~ — 132×36</span>
+    <div className="nl6-term">
+      <div className="nl6-term__hd">
+        <span className="nl6-term__dots"><i /><i /><i /></span>
+        <span className="nl6-term__title">noc@laptop — ~ — 132×36</span>
       </div>
-      <div className="l8-term__body">{out}</div>
+      <div className="nl6-term__body">{out}</div>
     </div>
   );
 }

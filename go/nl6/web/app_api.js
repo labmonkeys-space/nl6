@@ -1,4 +1,4 @@
-// OpenSim Device Simulator - API Functions
+// nl6 Device Simulator - API Functions
 
 const API_BASE = '/api/v1';
 let devices = [];
@@ -548,7 +548,7 @@ function downloadPprofMemory() {
         setLoading('pprofMemoryLoading', true);
         const link = document.createElement('a');
         link.href = API_BASE + '/debug/pprof-memory';
-        link.download = 'opensim_heap.pprof';
+        link.download = 'nl6_heap.pprof';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
@@ -567,7 +567,7 @@ function downloadCpuProfile() {
         showAlert('Capturing CPU profile for 5 seconds...', 'warning');
         const link = document.createElement('a');
         link.href = API_BASE + '/debug/cpu-profile';
-        link.download = 'opensim_cpu.pprof';
+        link.download = 'nl6_cpu.pprof';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();

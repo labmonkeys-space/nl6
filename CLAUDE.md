@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build
-cd go/simulator
+cd go/nl6
 go mod tidy
-go build -o simulator .
+go build -o nl6 .
 
 # Run (requires root for TUN/network namespace)
-sudo ./simulator [flags]
+sudo ./nl6 [flags]
 
 # Key flags
 -auto-start-ip <IP>     # Auto-create devices starting at this IP
@@ -61,21 +61,21 @@ cd go
 go test ./...
 
 # Run a single test
-go test ./simulator/ -run TestSomething
+go test ./nl6/ -run TestSomething
 ```
 
 ## Architecture
 
-**l8opensim** is a Go-based network device simulator capable of running 30,000+ concurrent simulated devices, each responding to SNMP (v2c/v3), SSH, and HTTPS REST protocols. It uses Linux TUN interfaces and network namespaces to give each device its own IP address.
+**nl6** is a Go-based network device simulator capable of running 30,000+ concurrent simulated devices, each responding to SNMP (v2c/v3), SSH, and HTTPS REST protocols. It uses Linux TUN interfaces and network namespaces to give each device its own IP address.
 
 ### Package layout
 
 | Path | Purpose |
 |------|---------|
-| `go/simulator/` | Core simulator — all device simulation logic and tests |
-| `go/simulator/resources/` | 379 JSON files (28 device types) with SNMP/SSH/REST response data |
+| `go/nl6/` | Core simulator — all device simulation logic and tests |
+| `go/nl6/resources/` | 379 JSON files (28 device types) with SNMP/SSH/REST response data |
 
-### Core simulator components (`go/simulator/`)
+### Core simulator components (`go/nl6/`)
 
 **Device lifecycle:** `simulator.go` (CLI/entry) → `manager.go` (SimulatorManager, shared keys/certs) → `device.go` (per-device startup, protocol server lifecycle)
 
@@ -236,8 +236,8 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
 
 ## Pull requests
 
-This repo is a fork. Always create PRs against **origin** (`labmonkeys-space/l8opensim`), never against upstream (`saichler/l8opensim`):
+This repo is a fork (originally from `saichler/l8opensim`). Always create PRs against **origin** (`labmonkeys-space/nl6`), never against upstream:
 
 ```bash
-gh pr create --repo labmonkeys-space/l8opensim --base main ...
+gh pr create --repo labmonkeys-space/nl6 --base main ...
 ```

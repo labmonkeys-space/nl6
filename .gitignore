@@ -31,9 +31,9 @@ go.work.sum
 .idea/
 .vscode/
 vendor
-go/simulator/simulator
-go/simulator/simulator.pid
-go/simulator/startup.log
+go/nl6/nl6
+go/nl6/nl6.pid
+go/nl6/startup.log
 
 # Release build artifacts
 dist/

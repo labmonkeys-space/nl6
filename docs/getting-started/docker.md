@@ -1,14 +1,14 @@
 # Docker
 
 The simulator is published as a single container image at
-`ghcr.io/labmonkeys-space/l8opensim:latest`, built from the root
+`ghcr.io/labmonkeys-space/nl6:latest`, built from the root
 `Dockerfile` and pushed to the GitHub Container Registry on push to
 `main` and on release tags.
 
 ## Pull and run the simulator
 
 ```bash
-docker pull ghcr.io/labmonkeys-space/l8opensim:latest
+docker pull ghcr.io/labmonkeys-space/nl6:latest
 
 # The simulator needs TUN + netns privileges. --network=host isn't strictly
 # required but makes the HTTP control plane reachable on :8080 directly.
@@ -16,7 +16,7 @@ docker run --rm -it \
   --cap-add=NET_ADMIN \
   --device=/dev/net/tun \
   --network=host \
-  ghcr.io/labmonkeys-space/l8opensim:latest \
+  ghcr.io/labmonkeys-space/nl6:latest \
   -auto-start-ip 192.168.100.1 -auto-count 10
 ```
 

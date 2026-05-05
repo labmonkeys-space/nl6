@@ -24,7 +24,7 @@ Port `161` requires root or `CAP_NET_BIND_SERVICE`. If you can't grant
 either, run the simulator on a non-privileged port:
 
 ```bash
-sudo ./simulator -auto-start-ip 192.168.100.1 -auto-count 5 -snmp-port 1161
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 -snmp-port 1161
 ```
 
 Then query it with `snmpwalk -v2c -c public -p 1161 …`.

@@ -43,7 +43,7 @@ who only used `-auto-start-ip` + one collector:
 
 ```bash
 # Still works, still produces the same wire behaviour
-sudo ./simulator \
+sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 \
   -trap-collector 192.168.1.10:162 \
@@ -61,7 +61,7 @@ CLI-wide collector.
 
 ```bash
 # Before: CLI seed implicitly applied to REST-created devices
-sudo ./simulator -syslog-collector 192.168.1.10:514
+sudo ./nl6 -syslog-collector 192.168.1.10:514
 
 curl -X POST http://localhost:8080/api/v1/devices \
   -d '{"start_ip":"10.0.0.50", "device_count":1}'
@@ -71,7 +71,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 **After:** REST-created devices must opt in via the request body.
 
 ```bash
-sudo ./simulator   # no CLI export flags
+sudo ./nl6   # no CLI export flags
 
 curl -X POST http://localhost:8080/api/v1/devices \
   -H 'Content-Type: application/json' \
