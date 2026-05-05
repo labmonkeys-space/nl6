@@ -46,9 +46,9 @@ const config: Config = {
     v4: true,
   },
 
-  // Canonical published URL; baseUrl is the project-scoped path.
-  url: 'https://labmonkeys-space.github.io',
-  baseUrl: '/nl6/',
+  // Canonical published URL — custom domain at the apex.
+  url: 'https://nl6.eu',
+  baseUrl: '/',
 
   // GitHub Pages deployment config.
   organizationName: 'labmonkeys-space',
