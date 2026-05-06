@@ -69,10 +69,6 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-> **Note on the fork.** This repo is a fork of `saichler/l8opensim`. Tags live
-> on `labmonkeys-space/nl6` (origin). Never push release tags to
-> upstream.
-
 ## Exercising pre-release changes
 
 There is no separate RC release step. Every merge to `main` triggers

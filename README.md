@@ -162,7 +162,7 @@ details.
 
 ## Heritage
 
-Originally forked from [`saichler/l8opensim`](https://github.com/saichler/l8opensim); see commit history for upstream attribution. PRs target `labmonkeys-space/nl6` (not the upstream): `gh pr create --repo labmonkeys-space/nl6 --base main`.
+Originally forked from [`saichler/l8opensim`](https://github.com/saichler/l8opensim); see commit history for upstream attribution.
 
 ---
 

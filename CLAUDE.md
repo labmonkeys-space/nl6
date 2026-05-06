@@ -229,15 +229,29 @@ In every branch the result is run through `sanitiseHostname`: spaces become hyph
 
 Each device type has resource files under `resources/<device-type>/` containing JSON for SNMP OID responses, SSH command responses, and REST API responses.
 
+## Source file headers
+
+This repo is a fork of `saichler/l8opensim`. Header policy depends on whether a source file is **forked** (basename exists in `go/simulator/*.go` upstream) or **new** (created in this fork):
+
+- **Forked files** keep upstream's full Apache 2.0 boilerplate header verbatim. Do not replace, trim, or modify it — Apache 2.0 §4(c) requires the original copyright notice be preserved when redistributing.
+- **New files** (every file in `go/nl6/` whose basename has no upstream counterpart) get the canonical SPDX-short header, no exceptions:
+
+  ```go
+  /*
+   * Copyright <YEAR> Ronny Trommer <ronny@no42.org>
+   * SPDX-License-Identifier: Apache-2.0
+   */
+  ```
+
+  - `<YEAR>` = file's creation year. Do not bump it on every edit.
+  - Email in angle brackets (`<…>`), not parens — REUSE/SPDX scanner convention.
+  - **No `Created by` line.** Authorship lives in `git log`, not in headers — it goes stale and conflates authorship (factual) with copyright (legal).
+  - Header sits at the very top of the file, with one blank line between the closing `*/` and the next non-blank line (`//go:build` directive, `package` clause, or a leading comment block).
+
+This overrides the OpenNMS Group form in the global `CLAUDE.md` for this repo only — the override is intentional because this fork is a personal project under no42.org, not OpenNMS Group work.
+
 ## Commit convention
 
 Follow Conventional Commits: `<type>[scope]: <description>`
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`, `build`, `revert`
 
-## Pull requests
-
-This repo is a fork (originally from `saichler/l8opensim`). Always create PRs against **origin** (`labmonkeys-space/nl6`), never against upstream:
-
-```bash
-gh pr create --repo labmonkeys-space/nl6 --base main ...
-```
