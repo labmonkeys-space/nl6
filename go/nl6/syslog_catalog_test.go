@@ -1,6 +1,6 @@
 /*
- * © 2025 Labmonkeys Space
- * Apache-2.0 — see LICENSE.
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package main

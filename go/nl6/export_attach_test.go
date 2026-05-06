@@ -1,16 +1,6 @@
 /*
- * © 2025 Labmonkeys Space
- * Apache-2.0 — see LICENSE.
- *
- * Integration-style tests that exercise the REAL
- * `startDeviceTrapExporter` / `startDeviceSyslogExporter` attach paths
- * end-to-end (review decision D3 from phase-4 trap-refactor review).
- *
- * The existing `startTrapForTest` / `startSyslogForTest` helpers
- * construct exporters directly and bypass the attach logic — useful
- * for happy-path behaviour but leaves the shared-pool wiring,
- * first-attach log, scheduler register, and per-device-interval
- * warning uncovered. These tests close that gap.
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package main

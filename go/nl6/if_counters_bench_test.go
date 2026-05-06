@@ -1,8 +1,6 @@
 /*
- * Copyright 2026 The OpenNMS Group, Inc.
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
  * SPDX-License-Identifier: Apache-2.0
- *
- * Created by Ronny Trommer <ronny@opennms.com>
  */
 
 package main

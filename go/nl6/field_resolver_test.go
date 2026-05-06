@@ -1,7 +1,6 @@
 /*
- * © 2025 Labmonkeys Space
- *
- * Layer 8 Ecosystem is licensed under the Apache License, Version 2.0.
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 package main
