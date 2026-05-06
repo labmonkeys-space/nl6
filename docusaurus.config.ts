@@ -171,8 +171,15 @@ const config: Config = {
             },
           ],
         },
+        {
+          title: 'Legal',
+          items: [
+            {label: 'Imprint', to: '/imprint'},
+            {label: 'Privacy', to: '/privacy'},
+          ],
+        },
       ],
-      copyright: `© ${new Date().getFullYear()} labmonkeys-space. Built with Docusaurus.`,
+      copyright: `© ${new Date().getFullYear()} Labmonkeys Space. Licensed under Apache-2.0. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
