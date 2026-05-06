@@ -18,6 +18,7 @@ Germany
 ## Contact
 
 - Email: [hostmaster@no42.org](mailto:hostmaster@no42.org)
+- Phone: +49 (0) 07130 5319759
 - GitHub: [Ronny Trommer](https://github.com/indigo423)
 
 ## Editorial responsibility (§ 18 (2) MStV)
