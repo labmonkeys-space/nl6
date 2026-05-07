@@ -114,7 +114,7 @@ export default function Landing(): JSX.Element {
               <h1 className="nl6-hero__title">
                 A network load target<br />
                 for the <span className="nl6-hi">monitoring tools</span><br />
-                you're writing.
+                you're building.
               </h1>
               <p className="nl6-hero__body">
                 nl6 simulates up to <b>30,000</b> network devices, GPU servers, storage systems
