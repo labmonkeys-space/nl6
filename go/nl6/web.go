@@ -470,6 +470,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/devices/{ip}/trap", fireTrapHandler).Methods("POST")
 	api.HandleFunc("/syslog/status", syslogStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
+	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 

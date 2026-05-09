@@ -131,6 +131,10 @@ func main() {
 		syslogGlobalCap       = flag.Int("syslog-global-cap", 0, "Simulator-wide rate ceiling for syslog fires (0 = unlimited)")
 		syslogCatalog         = flag.String("syslog-catalog", "", "Path to a JSON syslog catalog; overrides the embedded universal 6-entry catalog when set")
 		syslogSourcePerDevice = flag.Bool("syslog-source-per-device", true, "Bind a per-device UDP socket in the opensim ns so syslog packets use the device IP as source (default true). Bind failures fall back to shared socket with a warning (never fatal for syslog)")
+
+		// gNMI flags. See CLAUDE.md "gNMI target" for detail.
+		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
+		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on)")
 	)
 
 	flag.Parse()
@@ -288,6 +292,17 @@ func main() {
 		MeanSchedulerInterval: *syslogInterval,
 	}); err != nil {
 		log.Fatalf("Failed to initialize syslog subsystem: %v", err)
+	}
+
+	// Start the gNMI subsystem. Always-on per-device when not disabled
+	// (design.md §D2): every device created from this point onward
+	// binds a TLS-wrapped gRPC listener on -gnmi-port. The opt-out
+	// is the subsystem-wide -gnmi-disable flag.
+	if err := manager.StartGnmiSubsystem(GnmiSubsystemConfig{
+		Port:     *gnmiPort,
+		Disabled: *gnmiDisable,
+	}); err != nil {
+		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}
 
 	// Build the CLI-seed syslog config for the auto-start batch. Mirrors

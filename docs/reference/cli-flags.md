@@ -146,6 +146,18 @@ prerequisites and `snmptrapd` smoke-test, and
 | `-trap-inform-timeout` | duration | `5s` | **seed** | Per-retry timeout in INFORM mode. |
 | `-trap-inform-retries` | int | `2` | **seed** | Maximum retransmissions per INFORM before it's declared failed. |
 
+## gNMI target flags
+
+The gNMI subsystem is always-on by default and serves a read-only OpenConfig
+interfaces subset over gRPC + TLS on every device. See
+[gNMI target reference](gnmi.md) for path coverage, subscribe semantics, and
+`gnmic` invocation examples.
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI listener on each device. |
+| `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
+
 ## UDP syslog export flags
 
 See [UDP syslog export (operator guide)](../ops/syslog-export.md) for
