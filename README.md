@@ -86,6 +86,7 @@ Then query any device:
 ```bash
 snmpget -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
 ssh simadmin@192.168.100.1                            # password: simadmin
+gnmic -a 192.168.100.1:9339 --skip-verify capabilities
 ```
 
 Per-device exports (flow + trap + syslog in a single create call):

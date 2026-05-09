@@ -103,6 +103,16 @@ integration) + `netflow5.go` / `netflow9.go` / `ipfix.go` / `sflow.go`.
 One shared UDP socket and ticker goroutine; per-device `FlowExporter` owns
 a `FlowCache`. See [Flow export reference](flow-export.md).
 
+### gNMI target
+
+`gnmi_paths.go` (path resolver), `gnmi_handlers.go` (Capabilities / Get /
+Subscribe / Set), `gnmi_subscribe.go` (per-stream ticker + bounded send
+buffer), `gnmi_server.go` (per-device gRPC + TLS listener lifecycle),
+`gnmi_manager.go` (subsystem config + status). Counter values come from the
+same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow,
+so all three protocols agree byte-for-byte at the same instant. Read-only;
+`Set` returns `Unimplemented`. See [gNMI target reference](gnmi.md).
+
 ### Resource loading
 
 `resources.go` loads and caches the 379 JSON files at startup. Each device

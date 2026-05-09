@@ -24,6 +24,8 @@ sudo ./nl6 [flags]
 -no-namespace           # Disable network namespace isolation
 -version                # Print version string and exit (no startup side effects)
 -if-error-scenario <s>  # Auto-start-batch per-device error/discard scenario: clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via if_error_scenario.
+-gnmi-port <port>       # TCP port for gNMI listener on each device (default: 9339)
+-gnmi-disable           # Disable the gNMI subsystem; no device listens on the gNMI port (default: false, subsystem on)
 
 # Flow export flags (NetFlow v5 / v9 / IPFIX / sFlow v5)
 # Flags marked [seed] apply ONLY to auto-start devices (-auto-start-ip batch).
@@ -87,7 +89,7 @@ go test ./nl6/ -run TestSomething
 
 **Network infrastructure:** `tun.go` creates TUN interfaces, `netns.go` manages the `opensim` network namespace, `prealloc.go` does parallel pre-allocation of TUN interfaces (configurable worker count 100–200) for fast scaling.
 
-**Web API:** `web.go` (route setup) + `api.go` (handlers) + `web_routes*.go` (Linux route script generation). Serves device CRUD, CSV export, system stats, simulator version (`GET /api/v1/version` → `{"version":"vX.Y.Z"}`, immutable per process, `Cache-Control: max-age=3600`), flow export status (`GET /api/v1/flows/status`), trap export status (`GET /api/v1/traps/status`), and on-demand trap firing (`POST /api/v1/devices/{ip}/trap`).
+**Web API:** `web.go` (route setup) + `api.go` (handlers) + `web_routes*.go` (Linux route script generation). Serves device CRUD, CSV export, system stats, simulator version (`GET /api/v1/version` → `{"version":"vX.Y.Z"}`, immutable per process, `Cache-Control: max-age=3600`), flow export status (`GET /api/v1/flows/status`), trap export status (`GET /api/v1/traps/status`), syslog export status (`GET /api/v1/syslog/status`), gNMI subsystem status (`GET /api/v1/gnmi/status`), and on-demand trap firing (`POST /api/v1/devices/{ip}/trap`).
 
 **Flow export (per-device config, phase 3):** `flow_exporter.go` (FlowExporter, FlowEncoder interface, SimulatorManager integration) + `netflow9.go` (NetFlow9Encoder, RFC 3954) + `ipfix.go` (IPFIXEncoder, RFC 7011) + `netflow5.go` (NetFlow5Encoder, Cisco v5: 24B header, 48B/record, IPv4-only, 30-record datagram cap, no templates) + `sflow.go` (SFlowEncoder, sFlow v5 per sflow_version_5.txt: 28B XDR datagram header, variable-length flow_sample records carrying sampled_header=IPv4+UDP/TCP synthesized from the FlowRecord 5-tuple, no template mechanism). Each device owns its collector/protocol/timeouts on `DeviceFlowConfig`; the manager owns a shared-socket pool keyed by `(collector, protocol)` and one ticker goroutine. `FlowStatus` is an array-of-collectors aggregated by `(collector, protocol)`. Protocols:
 
@@ -211,6 +213,8 @@ In every branch the result is run through `sanitiseHostname`: spaces become hyph
 **Syslog HTTP endpoints:**
 - `GET /api/v1/syslog/status` — JSON array-of-collectors: `{subsystem_active, collectors: [{collector, format, devices, sent, send_failures}], devices_exporting, rate_limiter_tokens_available?, catalogs_by_type?}`. Same `subsystem_active` semantics as trap. The `(collector, format)` tuple lets devices emit different wire formats to the same collector without interleaving on one socket.
 - `POST /api/v1/devices/{ip}/syslog` — body `{"name":"interface-down","templateOverrides":{"IfIndex":"3","IfName":"Gi0/3"}}` → `202 Accepted` + `{}`. `400` for unknown catalog entry or malformed JSON, `404` for unknown device, `503` when the subsystem is not running or the device has no syslog config. Typo'd fields rejected via `DisallowUnknownFields`.
+
+**gNMI target:** `gnmi_paths.go` (path resolver — wildcard expansion, single-name reverse-ifDescr lookup, subtree flattening, scoped to `/interfaces/interface[name=*]/state/{name,ifindex,oper-status,admin-status,counters/*}`) + `gnmi_handlers.go` (`gnmi.GNMIServer`: `Capabilities`, `Get`, `Subscribe`, `Set` returning `Unimplemented`) + `gnmi_subscribe.go` (per-stream ticker + send goroutine with 100-deep oldest-drop send buffer; ONCE handled synchronously) + `gnmi_server.go` (per-device gRPC + TLS listener bound inside the `opensim` netns; reuses `SimulatorManager.sharedTLSCert` — same cert as the HTTPS REST surface) + `gnmi_manager.go` (`GnmiSubsystemConfig`, `StartGnmiSubsystem` / shutdown-only `StopGnmiSubsystem`, atomic counters for `active_subscriptions`, `updates_sent`, `updates_dropped`). Read-only by design — `Set` returns `Unimplemented`. Subscribe modes: STREAM/SAMPLE + ONCE; ON_CHANGE rejected with `InvalidArgument`; POLL rejected with `Unimplemented`; TARGET_DEFINED treated as SAMPLE; sub-second `sample_interval` clamped to 1s silently. Encoding: `JSON_IETF` default + `PROTO` advertised. Counter values reuse `IfCounterCycler.GetDynamicAt`, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant. `subsystem_active=false` when `-gnmi-disable` is set.
 
 **Resource loading:** `resources.go` loads and caches the 379 JSON files at startup. Each device type directory has split JSON files for SNMP, SSH, and REST responses that are merged at load time.
 

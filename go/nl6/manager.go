@@ -409,6 +409,10 @@ func (sm *SimulatorManager) Shutdown() error {
 	// syslog export was never started.
 	sm.StopSyslogExport()
 
+	// Stop the gNMI subsystem. Walks every device and gracefully stops
+	// its per-device gRPC server. Safe to call when never started.
+	sm.StopGnmiSubsystem()
+
 	if sm.useNamespace && sm.netNamespace != nil {
 		// Fast path: when using a namespace, deleting it instantly destroys all
 		// TUN interfaces inside it. No need to delete them one by one.

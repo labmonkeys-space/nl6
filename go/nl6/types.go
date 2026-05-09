@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
 )
 
 // TUN interface management structures
@@ -101,8 +102,14 @@ type DeviceSimulator struct {
 	// per-device cycler state).
 	IfErrorScenario string
 	netNamespace    *NetNamespace // Network namespace (nil if using root namespace)
-	running         bool
-	mu              sync.RWMutex
+	// gNMI per-device gRPC server. Created in startGnmiServer when the
+	// gNMI subsystem is enabled (the default). nil means "no listener
+	// for this device" — either because the subsystem was disabled at
+	// startup or because the device hasn't completed startGnmiServer.
+	gnmiServer   *grpc.Server
+	gnmiListener net.Listener
+	running      bool
+	mu           sync.RWMutex
 }
 
 // SNMPv3 USM (User-based Security Model) configuration
@@ -273,6 +280,19 @@ type SimulatorManager struct {
 	syslogGlobalCap       int
 	syslogSourcePerDevice bool
 	syslogCatalogPath     string // "" when using embedded catalog
+
+	// gNMI subsystem state. Per design.md, the per-device gRPC servers
+	// own their own listeners; the manager retains only the
+	// subsystem-wide knobs (port, disabled flag) plus the aggregate
+	// counters surfaced by GET /api/v1/gnmi/status. All counters are
+	// accessed via sync/atomic.
+	gnmiPort                 int
+	gnmiSubsystemDisabled    atomic.Bool // -gnmi-disable; lock-free read on every device start (P6)
+	gnmiSubsystemActive      atomic.Bool
+	gnmiActiveSubscriptions  int64  // atomic; live ONCE + STREAM streams (P16)
+	gnmiUpdatesSent          uint64 // atomic; cumulative SubscribeResponse.update entries
+	gnmiUpdatesDropped       uint64 // atomic; oldest-drop overflow events (§D8)
+	gnmiTLSHandshakeFailures uint64 // atomic; per-device listener Accept errors (P17)
 
 	mu sync.RWMutex
 }

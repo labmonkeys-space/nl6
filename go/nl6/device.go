@@ -675,6 +675,15 @@ func (d *DeviceSimulator) Start() error {
 		errors = append(errors, fmt.Sprintf("SSH: %v", err))
 	}
 
+	// Start gNMI server (skipped when subsystem is disabled). Wired
+	// here — between SSH and HTTPS REST — so the listener is bound
+	// before the API server, matching tasks.md §4.5.
+	if manager != nil && !manager.gnmiSubsystemDisabled.Load() {
+		if err := d.startGnmiServer(manager.gnmiPort); err != nil {
+			errors = append(errors, fmt.Sprintf("gNMI: %v", err))
+		}
+	}
+
 	// Start API server (if device has API resources)
 	if d.apiServer != nil && len(d.resources.API) > 0 {
 		if err := d.apiServer.Start(); err != nil {
@@ -686,6 +695,7 @@ func (d *DeviceSimulator) Start() error {
 		// Stop any services that did start
 		d.snmpServer.Stop()
 		d.sshServer.Stop()
+		d.stopGnmiServer()
 		if d.apiServer != nil {
 			d.apiServer.Stop()
 		}
@@ -708,6 +718,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.snmpServer == nil &&
 		d.sshServer == nil &&
 		d.apiServer == nil &&
+		d.gnmiServer == nil &&
 		d.flowExporter == nil &&
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&
@@ -737,6 +748,11 @@ func (d *DeviceSimulator) Stop() error {
 		}
 		d.apiServer = nil
 	}
+
+	// gNMI graceful stop. No persisted counter aggregate — the manager
+	// keeps simulator-wide totals atomically in gnmiUpdatesSent /
+	// gnmiUpdatesDropped, which survive device delete by design.
+	d.stopGnmiServer()
 
 	if d.flowExporter != nil {
 		// Persist cumulative counters into the simulator-wide
@@ -823,6 +839,7 @@ func (d *DeviceSimulator) stopListenersOnly() {
 	if d.apiServer != nil {
 		d.apiServer.Stop()
 	}
+	d.stopGnmiServer()
 	if d.flowExporter != nil {
 		// Persist counters before Close (review decision D1.b). The
 		// `if !d.running` early-return above makes this single-shot.
