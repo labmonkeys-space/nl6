@@ -12,7 +12,7 @@ export type TerminalLine =
 
 export const FEATURES: Feature[] = [
   { icon: 'scale', title: '30,000 devices', body: 'Tested scale on a single host. Parallel TUN pre-allocation, lock-free sync.Map for O(1) OID lookups, pre-computed next-OID mappings.' },
-  { icon: 'proto', title: 'Protocols', body: 'SNMP v2c/v3 (MD5/SHA1 · DES/AES128), SSH with VT100, HTTPS REST, NetFlow v5 / v9 / IPFIX. sFlow v5 (experimental).' },
+  { icon: 'proto', title: 'Protocols', body: 'SNMP v2c/v3 (MD5/SHA1 · DES/AES128), SSH with VT100, HTTPS REST, NetFlow v5 / v9 / IPFIX, gNMI (OpenConfig interfaces). sFlow v5 (experimental).' },
   { icon: 'devices', title: '28 device types', body: 'Routers, switches, firewalls, servers, GPU servers (DGX/HGX), storage systems, Linux servers — across 8 categories.' },
   { icon: 'gpu', title: 'GPU simulation', body: 'NVIDIA DGX-A100 / H100 / HGX-H200 with per-GPU DCGM OIDs — utilization, VRAM, temp, power, fan, SM/memory clocks.' },
   { icon: 'isol', title: 'Namespace isolation', body: 'Each device runs in the dedicated opensim network namespace with its own TUN interface and IP.' },
@@ -51,6 +51,7 @@ export const DOCS: DocGroup[] = [
     { t: 'SNMP',          h: '/reference/snmp' },
     { t: 'SNMP traps',    h: '/reference/snmp-traps' },
     { t: 'Flow export',   h: '/reference/flow-export' },
+    { t: 'gNMI',          h: '/reference/gnmi' },
     { t: 'Resource files',h: '/reference/resource-files' },
   ]},
   { group: 'GPU simulation', body: 'DGX/HGX simulation, DCGM OID layout, pollaris parser.', links: [
@@ -62,7 +63,7 @@ export const DOCS: DocGroup[] = [
 ];
 
 export const STATUS: StatusGroup[] = [
-  { k: 'Stable',        items: ['SNMP v2c/v3', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX', 'TUN + netns isolation', 'Web UI + REST API'] },
+  { k: 'Stable',        items: ['SNMP v2c/v3', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX', 'gNMI (OpenConfig)', 'TUN + netns isolation', 'Web UI + REST API'] },
   { k: 'Experimental',  items: ['sFlow v5 (synthetic)'] },
   { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '~50 MB base + ~1 KB / device', 'CPU: minimal in steady state'] },
 ];

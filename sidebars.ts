@@ -46,6 +46,7 @@ const sidebars: SidebarsConfig = {
         'reference/snmp-traps',
         'reference/syslog-export',
         'reference/flow-export',
+        'reference/gnmi',
         'reference/resource-files',
         {
           type: 'category',
