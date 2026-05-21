@@ -47,6 +47,7 @@ const sidebars: SidebarsConfig = {
         'reference/syslog-export',
         'reference/flow-export',
         'reference/gnmi',
+        'reference/interface-state',
         'reference/resource-files',
         {
           type: 'category',

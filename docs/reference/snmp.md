@@ -162,9 +162,9 @@ see [GPU simulation](gpu/index.md).
 ## Interface-state scenarios
 
 The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag controls
-the `ifAdminStatus` / `ifOperStatus` values reported across every simulated
-interface. Scenario 4 uses a deterministic `ifIndex % 100 < n` rule so
-results are reproducible across restarts.
+the *initial* `ifAdminStatus` / `ifOperStatus` values reported across every
+simulated interface. Scenario 4 uses a deterministic `ifIndex % 100 < n`
+rule so results are reproducible across restarts.
 
 ```bash
 # Spot-check admin status (should all be "1" in scenarios 2/3/4)
@@ -173,6 +173,30 @@ snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1.7
 # Verify oper status after scenario 3 (all-failure)
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1.8
 ```
+
+**Dynamic state engine (post-v0.8.0).** `ifOperStatus.<N>` (`.8`),
+`ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are now served
+live from the per-device interface state engine — not from the cached
+JSON value. Two mutation sources update them at runtime:
+
+- **Flap scheduler** — `-if-flap-scenario {clean|rare|typical|aggressive}`
+  drives Poisson-distributed link flaps per (device, ifIndex). See the
+  [interface state engine reference](interface-state.md).
+- **REST control plane** — `POST /api/v1/devices/{ip}/interfaces/{N}/{oper,admin}-status`
+  flips state for test-harness use.
+
+Cross-protocol consistency: SNMP `ifOperStatus.<N>` and gNMI
+`/interfaces/interface[name=*]/state/oper-status` read from the same
+slot table and agree byte-for-byte at every instant. The trap and
+syslog catalog firings remain decoupled (Tier C follow-up).
+
+**RFC 2863 note on `ifLastChange`.** Strict reading of RFC 2863 specifies
+`ifLastChange` as "value of sysUpTime at the time the interface entered
+its current operational state". The simulator computes the value relative
+to the per-device state-engine construction time, not the SNMP agent's
+`sysUpTime`. Today these epochs coincide (state engine constructs once,
+during device boot, guarded against re-init by a panic). If a future
+"reload scenario" feature is added, this divergence must be re-examined.
 
 ## Entity MIB and vendor OIDs
 
