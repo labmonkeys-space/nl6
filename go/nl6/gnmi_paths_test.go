@@ -472,6 +472,41 @@ func TestPathResolver_OperStatusMatchesSNMPAtSameInstant(t *testing.T) {
 	}
 }
 
+// TestGnmiStateLeaves_OrderInvariant pins the wire-order of the
+// ON_CHANGE-eligible state leaves. Initial-snapshot delivery and the
+// `allLeaves()` ordering depend on this list; a reorder would change
+// the byte stream collectors see across runs. Update this test
+// deliberately when adding/reordering state leaves so the impact is
+// visible in code review.
+func TestGnmiStateLeaves_OrderInvariant(t *testing.T) {
+	want := []string{"name", "ifindex", "oper-status", "admin-status", "last-change"}
+	if len(gnmiStateLeaves) != len(want) {
+		t.Fatalf("gnmiStateLeaves length: got %d, want %d", len(gnmiStateLeaves), len(want))
+	}
+	for i, leaf := range want {
+		if gnmiStateLeaves[i] != leaf {
+			t.Errorf("gnmiStateLeaves[%d]: got %q, want %q", i, gnmiStateLeaves[i], leaf)
+		}
+	}
+}
+
+// TestGnmiStateLeaves_DisjointFromCounters asserts that the state-leaf
+// set and the counter-leaf set never overlap. A future contributor
+// accidentally adding a counter name to `gnmiStateLeaves` (or vice
+// versa) would silently break ON_CHANGE counter-rejection because
+// `isStateOnlyLeaf` would return true for an intended counter leaf.
+func TestGnmiStateLeaves_DisjointFromCounters(t *testing.T) {
+	stateSet := make(map[string]bool, len(gnmiStateLeaves))
+	for _, l := range gnmiStateLeaves {
+		stateSet[l] = true
+	}
+	for _, c := range gnmiCounterLeaves {
+		if stateSet[c.leaf] {
+			t.Errorf("leaf %q appears in both gnmiStateLeaves and gnmiCounterLeaves — disjointness invariant violated", c.leaf)
+		}
+	}
+}
+
 // Sanity-check helpers — buildTestResources is in if_counters_test.go,
 // reused here. Compile-time check that we link the same sync.Map type.
 var _ = sync.Map{}

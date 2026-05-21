@@ -232,8 +232,14 @@ func (s *gnmiServer) Subscribe(stream gnmipb.GNMI_SubscribeServer) error {
 	// `gnmiStateEventsDropped` in /api/v1/gnmi/status — NOT via the
 	// `updatesDropped` counter the SAMPLE path uses. So we don't pass
 	// `updatesDropped` to runOnChangeSubscribe.
-	anyOnChange, anySample := classifyOnChangeMode(subs)
+	anyOnChange, anySample, anyUnsupported := classifyOnChangeMode(subs)
 	switch {
+	case anyUnsupported:
+		// POLL on a per-subscription mode field, or any unknown future
+		// SubscriptionMode enum value, is not supported. (POLL at the
+		// SubscriptionList level is rejected earlier with Unimplemented.)
+		return status.Error(codes.Unimplemented,
+			"per-subscription mode POLL (or unknown SubscriptionMode value) is not supported; use ON_CHANGE or SAMPLE")
 	case anyOnChange && anySample:
 		return status.Error(codes.InvalidArgument,
 			"subscription_list mixes ON_CHANGE and SAMPLE/TARGET_DEFINED subscriptions; split into two separate SubscribeRequests")

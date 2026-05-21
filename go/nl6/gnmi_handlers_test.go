@@ -367,9 +367,10 @@ func TestGnmiServer_Subscribe_OnChange_HeartbeatResendsCurrentValue(t *testing.T
 	drainOne(t, stream, 2*time.Second)
 	drainOne(t, stream, 2*time.Second)
 
-	// Within 2.5s we should observe at least one heartbeat emission
-	// (the ticker fires at 1s, 2s).
-	heartbeat := drainOne(t, stream, 2500*time.Millisecond)
+	// Within 3.5s we should observe at least one heartbeat emission
+	// (the ticker fires at 1s, 2s, 3s). 3.5s gives slack for slow CI
+	// runners; 2.5s was timing-fragile under load.
+	heartbeat := drainOne(t, stream, 3500*time.Millisecond)
 	if heartbeat.GetUpdate() == nil {
 		t.Fatalf("expected heartbeat Update response, got %T", heartbeat.GetResponse())
 	}

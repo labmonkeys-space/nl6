@@ -27,7 +27,9 @@ import (
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 // generateTestTLSCert produces a self-signed cert valid for 127.0.0.1
@@ -278,7 +280,20 @@ func TestGnmiServer_MaxConcurrentStreams_Cap16(t *testing.T) {
 	defer cancel17()
 	stream17, err := client.Subscribe(ctx17)
 	if err != nil {
-		return // also acceptable — some gRPC versions error at Subscribe time
+		// Cap-enforced paths surface as either ResourceExhausted
+		// (gRPC ≥1.60 server-side cap signal) or DeadlineExceeded
+		// (older gRPC: client context expired waiting for the
+		// stream slot). Both are valid "cap enforced" signals.
+		// Anything else (Unauthenticated, Internal, Canceled) is
+		// a regression in an unrelated layer that the cap test
+		// shouldn't silently pass through.
+		switch status.Code(err) {
+		case codes.ResourceExhausted, codes.DeadlineExceeded:
+			return
+		default:
+			t.Errorf("17th Subscribe failed at call time with unexpected code: got code=%v err=%v", status.Code(err), err)
+			return
+		}
 	}
 	_ = stream17.Send(&gnmipb.SubscribeRequest{
 		Request: &gnmipb.SubscribeRequest_Subscribe{

@@ -24,6 +24,14 @@ import (
 // different burst profiles.
 const onChangeBufferDepth = 16
 
+// maxSubsPerStream caps the number of subscriptions accepted in a
+// single SubscribeRequest. A hostile client could otherwise open
+// MaxConcurrentStreams streams × thousands of subs each and spawn
+// O(streams × subs) heartbeat goroutines. 64 covers realistic
+// monitoring fanout (per-interface oper+admin+last-change on a
+// large device fits comfortably).
+const maxSubsPerStream = 64
+
 // runOnChangeSubscribe handles a SubscribeRequest where every
 // subscription has mode=ON_CHANGE. The handler validates that every
 // sub's resolved path touches only static (state-engine-backed) leaves;
@@ -61,6 +69,18 @@ func runOnChangeSubscribe(
 	enc gnmipb.Encoding,
 	updatesSent *uint64,
 ) error {
+	// Per-stream subscription cap. MaxConcurrentStreams=16 bounds
+	// streams per connection but a single stream may carry any number
+	// of subscriptions, each spawning a heartbeat goroutine. Bound
+	// `len(subs)` so a hostile client (16 streams × 10k subs each =
+	// 160k goroutines) can't exhaust the runtime. 64 subs/stream is
+	// generous for realistic monitoring topologies.
+	if len(subs) > maxSubsPerStream {
+		return status.Errorf(codes.ResourceExhausted,
+			"subscription_list has %d subscriptions; per-stream maximum is %d. Split into multiple streams or merge paths.",
+			len(subs), maxSubsPerStream)
+	}
+
 	// Per §D5: every sub's path must resolve to leaves drawn exclusively
 	// from the static-leaf set. We validate via `ClassifyLeaves` which
 	// walks the path shape without doing wildcard expansion or counter
@@ -162,15 +182,21 @@ func runOnChangeSubscribe(
 	var hbWg sync.WaitGroup
 	for i, sub := range subs {
 		raw := sub.GetHeartbeatInterval()
-		hb := time.Duration(raw)
-		if hb <= 0 {
-			// Diagnostic: raw uint64 values > MaxInt64 wrap to negative
-			// time.Duration. Likely operator typo. raw==0 is the
-			// documented "no heartbeat" signal — silent skip.
-			if raw != 0 {
-				log.Printf("gNMI ON_CHANGE: heartbeat_interval=%d wrapped to negative time.Duration; treating as no-heartbeat. Maximum supported: %d (~292 years).", raw, time.Duration(1<<63-1))
-			}
+		if raw == 0 {
+			// Documented "no heartbeat" signal — skip without log.
 			continue
+		}
+		// Clamp uint64 → int64 to avoid wrap-to-negative on absurd
+		// values (e.g. a client typo'd `time.Hour*24*7` nanos cast
+		// wrong). The operator probably meant "a very long
+		// heartbeat", not "no heartbeat" — preserve intent by
+		// clamping to MaxInt64 rather than silently dropping.
+		var hb time.Duration
+		if raw > uint64(time.Duration(1<<63-1)) {
+			log.Printf("gNMI ON_CHANGE: heartbeat_interval=%d exceeds MaxInt64; clamped to %s", raw, time.Duration(1<<63-1))
+			hb = time.Duration(1<<63 - 1)
+		} else {
+			hb = time.Duration(raw)
 		}
 		if hb < minSampleInterval {
 			hb = minSampleInterval
@@ -230,9 +256,13 @@ func runOnChangeSubscribe(
 			}
 			gnmiUpdates, err := encodeUpdates(updates, enc)
 			if err != nil {
-				cancel()
-				hbWg.Wait()
-				return err
+				// Encoder errors on a heartbeat tick should NOT kill
+				// the stream — SAMPLE's tick path logs and skips, and
+				// asymmetry between SAMPLE and ON_CHANGE makes
+				// operator debugging harder. Log once per tick and
+				// continue; the next genuine event still fires.
+				log.Printf("gNMI ON_CHANGE: heartbeat encoder error (path=%v, skipping tick): %v", subs[hbEv.subIdx].GetPath(), err)
+				continue
 			}
 			if len(gnmiUpdates) == 0 {
 				continue
@@ -383,48 +413,22 @@ func subChangeMatch(leaf string, changed StateLeafBits) bool {
 	}
 }
 
-// leafNameFromPath extracts the trailing leaf name from a resolved
-// gNMI Path. The resolver's path-builders use a canonical shape
-// (`/interfaces/interface[name=*]/state/<leaf>` for state leaves,
-// `/state/counters/<leaf>` for counters), so the last PathElem name is
-// the leaf identifier.
-func leafNameFromPath(p *gnmipb.Path) string {
-	elems := p.GetElem()
-	if len(elems) == 0 {
-		return ""
-	}
-	return elems[len(elems)-1].GetName()
-}
-
-// ifIndexFromPath extracts the ifIndex of the interface from a resolved
-// path by reversing the resolver's descrToIndex map. Returns 0 when
-// the lookup fails — defensively matches "not this device's interface".
-func ifIndexFromPath(p *gnmipb.Path, resolver *pathResolver) int {
-	for _, e := range p.GetElem() {
-		if e.GetName() == "interface" {
-			if name, ok := e.GetKey()["name"]; ok {
-				if idx, ok := resolver.descrToIndex[name]; ok {
-					return idx
-				}
-			}
-		}
-	}
-	return 0
-}
-
 // classifyOnChangeMode walks the subs and returns three flags:
-// any-ON_CHANGE, any-SAMPLE-or-TARGET_DEFINED, total count. The Subscribe
-// handler uses this to decide whether to route to runOnChangeSubscribe
-// (all ON_CHANGE), runStreamSubscribe (all SAMPLE / TARGET_DEFINED), or
-// reject as mixed mode.
-func classifyOnChangeMode(subs []*gnmipb.Subscription) (anyOnChange, anySample bool) {
+// any-ON_CHANGE, any-SAMPLE-or-TARGET_DEFINED, any-unknown (which
+// includes POLL on the per-sub mode field). The Subscribe handler
+// uses this to decide whether to route to runOnChangeSubscribe (all
+// ON_CHANGE), runStreamSubscribe (all SAMPLE / TARGET_DEFINED), or
+// reject as mixed mode / unsupported.
+func classifyOnChangeMode(subs []*gnmipb.Subscription) (anyOnChange, anySample, anyUnsupported bool) {
 	for _, sub := range subs {
 		switch sub.GetMode() {
 		case gnmipb.SubscriptionMode_ON_CHANGE:
 			anyOnChange = true
-		default: // SAMPLE, TARGET_DEFINED
+		case gnmipb.SubscriptionMode_SAMPLE, gnmipb.SubscriptionMode_TARGET_DEFINED:
 			anySample = true
+		default: // POLL (per-sub-field) and any future enum value
+			anyUnsupported = true
 		}
 	}
-	return anyOnChange, anySample
+	return anyOnChange, anySample, anyUnsupported
 }
