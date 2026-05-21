@@ -19,8 +19,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
-	"crypto/hmac"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
 	"fmt"
@@ -91,13 +89,10 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 		return nil, fmt.Errorf("failed to encode SNMPv3 message: %v", err)
 	}
 
-	// Add authentication if enabled
-	// For simulation purposes, we skip HMAC authentication as it requires
-	// proper RFC 3414 key derivation which is complex to implement correctly
-	if s.v3Config.AuthProtocol != SNMPV3_AUTH_NONE && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_AUTH) != 0 {
-		// log.Printf("SNMPv3: Skipping HMAC authentication for simulation (would require proper key derivation)")
-		// In a full implementation, you would call s.authenticateMessage(msgBytes, &secParams)
-	}
+	// Simulation deliberately skips HMAC authentication — proper RFC 3414
+	// key derivation is out of scope for the simulator. A production agent
+	// would authenticate here when AuthProtocol != NONE and the message
+	// AUTH flag is set.
 
 	return msgBytes, nil
 }
@@ -258,8 +253,10 @@ func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
 	}
 	copy(iv[8:16], salt)
 
-	// Create CFB encrypter
-	stream := cipher.NewCFBEncrypter(block, iv)
+	// Create CFB encrypter. SNMPv3 AES privacy (RFC 3826) MANDATES
+	// CFB mode; AEAD alternatives would break interoperability with
+	// every SNMPv3-capable manager.
+	stream := cipher.NewCFBEncrypter(block, iv) //nolint:staticcheck // RFC 3826 requires CFB for SNMPv3 AES privacy
 
 	// Encrypt the data
 	encrypted := make([]byte, len(data))
@@ -295,8 +292,8 @@ func (s *SNMPServer) decryptAES128(encrypted []byte, privParams []byte) ([]byte,
 		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
 	}
 
-	// Create CFB decrypter
-	stream := cipher.NewCFBDecrypter(block, iv)
+	// Create CFB decrypter. RFC 3826 requirement — see encryptAES128.
+	stream := cipher.NewCFBDecrypter(block, iv) //nolint:staticcheck // RFC 3826 requires CFB for SNMPv3 AES privacy
 
 	// Decrypt the data
 	decrypted := make([]byte, len(encrypted))
@@ -405,72 +402,3 @@ func (s *SNMPServer) encodeSNMPv3Message(msg *SNMPv3Message, usmParams []byte) (
 	return encodeSequence(contents), nil
 }
 
-// authenticateMessage adds authentication to the SNMPv3 message
-func (s *SNMPServer) authenticateMessage(msgBytes []byte, params *SNMPv3SecurityParams) ([]byte, error) {
-	switch s.v3Config.AuthProtocol {
-	case SNMPV3_AUTH_MD5:
-		return s.authenticateMD5(msgBytes, params)
-	case SNMPV3_AUTH_SHA1:
-		return s.authenticateSHA1(msgBytes, params)
-	default:
-		return msgBytes, nil
-	}
-}
-
-// authenticateMD5 adds MD5 authentication to the message
-func (s *SNMPServer) authenticateMD5(msgBytes []byte, params *SNMPv3SecurityParams) ([]byte, error) {
-	// Generate authentication key from password
-	authKey := s.generateAuthKey(s.v3Config.Password, "md5")
-
-	// Calculate HMAC
-	mac := hmac.New(md5.New, authKey)
-	mac.Write(msgBytes)
-	digest := mac.Sum(nil)
-
-	// Take first 12 bytes as authentication parameter
-	authParam := digest[:12]
-
-	// Find and replace the authentication parameters in the message
-	return s.replaceAuthParams(msgBytes, authParam), nil
-}
-
-// authenticateSHA1 adds SHA1 authentication to the message
-func (s *SNMPServer) authenticateSHA1(msgBytes []byte, params *SNMPv3SecurityParams) ([]byte, error) {
-	// Generate authentication key from password
-	authKey := s.generateAuthKey(s.v3Config.Password, "sha1")
-
-	// Calculate HMAC
-	mac := hmac.New(sha1.New, authKey)
-	mac.Write(msgBytes)
-	digest := mac.Sum(nil)
-
-	// Take first 12 bytes as authentication parameter
-	authParam := digest[:12]
-
-	// Find and replace the authentication parameters in the message
-	return s.replaceAuthParams(msgBytes, authParam), nil
-}
-
-// generateAuthKey generates authentication key from password
-func (s *SNMPServer) generateAuthKey(password string, hashType string) []byte {
-	// Simplified key generation - in production use proper key derivation
-	switch hashType {
-	case "md5":
-		h := md5.New()
-		h.Write([]byte(password))
-		return h.Sum(nil)
-	case "sha1":
-		h := sha1.New()
-		h.Write([]byte(password))
-		return h.Sum(nil)
-	default:
-		return []byte(password) // Fallback
-	}
-}
-
-// replaceAuthParams replaces authentication parameters in the message
-func (s *SNMPServer) replaceAuthParams(msgBytes []byte, authParam []byte) []byte {
-	// This is a simplified implementation
-	// In a full implementation, you'd properly locate and replace the auth params
-	return msgBytes
-}

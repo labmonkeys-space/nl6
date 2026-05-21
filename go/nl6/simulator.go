@@ -57,14 +57,6 @@ func parsePrivProtocol(proto string) int {
 	}
 }
 
-// getFirstDeviceKey returns the first device key from the map
-func getFirstDeviceKey(devices map[string]*DeviceSimulator) string {
-	for key := range devices {
-		return key
-	}
-	return ""
-}
-
 // setupSignalHandler sets up graceful shutdown on SIGINT/SIGTERM
 func setupSignalHandler() {
 	sigChan := make(chan os.Signal, 1)

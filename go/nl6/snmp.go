@@ -65,13 +65,11 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 			// log.Printf("SNMPv3: Using default OID for encrypted request (decryption failed)")
 		} else {
 			// log.Printf("SNMPv3: Successfully decrypted scoped PDU (%d bytes)", len(decryptedPDU))
-			// Verify the decrypted data looks valid (starts with SEQUENCE tag)
+			// Verify the decrypted data looks valid (starts with SEQUENCE tag).
+			// On invalid decrypt we fall through to the default OID; no log
+			// to keep the SNMPv3 hot path quiet under adversarial input.
 			if len(decryptedPDU) > 0 && decryptedPDU[0] == ASN1_SEQUENCE {
 				scopedPDU = decryptedPDU
-				// log.Printf("SNMPv3: Decrypted data appears valid (starts with SEQUENCE)")
-			} else {
-				// log.Printf("SNMPv3: Decrypted data appears invalid (tag: 0x%02X), using default OID",
-				//	func() byte { if len(decryptedPDU) > 0 { return decryptedPDU[0] } else { return 0 } }())
 			}
 		}
 	}
@@ -117,90 +115,6 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		return []byte{}
 	}
 	return responseBytes
-}
-
-// extractOIDFromScopedPDU extracts the first OID from a scoped PDU
-func (s *SNMPServer) extractOIDFromScopedPDU(scopedPDU []byte) (string, error) {
-	if len(scopedPDU) < 10 {
-		return "", fmt.Errorf("scoped PDU too short")
-	}
-
-	pos := 0
-
-	// Parse contextEngineID (OCTET STRING)
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OCTET_STRING {
-		return "", fmt.Errorf("expected contextEngineID OCTET STRING")
-	}
-	pos++
-	engineIDLen, newPos := parseLength(scopedPDU, pos)
-	pos = newPos + engineIDLen
-
-	// Parse contextName (OCTET STRING)
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OCTET_STRING {
-		return "", fmt.Errorf("expected contextName OCTET STRING")
-	}
-	pos++
-	contextNameLen, newPos := parseLength(scopedPDU, pos)
-	pos = newPos + contextNameLen
-
-	// Parse PDU - should be GetRequest (0xA0) or GetNext (0xA1)
-	if pos >= len(scopedPDU) {
-		return "", fmt.Errorf("unexpected end of scoped PDU")
-	}
-
-	pduType := scopedPDU[pos]
-
-	if pduType != ASN1_GET_REQUEST && pduType != ASN1_GET_NEXT && pduType != ASN1_GET_BULK {
-		return "", fmt.Errorf("unsupported PDU type in scoped PDU: 0x%02X", pduType)
-	}
-	pos++
-
-	// Skip PDU length
-	_, newPos = parseLength(scopedPDU, pos)
-	pos = newPos
-
-	// Parse request ID, error status, error index (skip them)
-	for i := 0; i < 3; i++ {
-		if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
-			return "", fmt.Errorf("expected INTEGER in PDU")
-		}
-		pos++
-		intLen, newPos := parseLength(scopedPDU, pos)
-		pos = newPos + intLen
-	}
-
-	// Parse variable bindings (SEQUENCE)
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_SEQUENCE {
-		return "", fmt.Errorf("expected variable bindings SEQUENCE")
-	}
-	pos++
-	_, newPos = parseLength(scopedPDU, pos)
-	pos = newPos
-
-	// Parse first variable binding (SEQUENCE)
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_SEQUENCE {
-		return "", fmt.Errorf("expected first variable binding SEQUENCE")
-	}
-	pos++
-	_, newPos = parseLength(scopedPDU, pos)
-	pos = newPos
-
-	// Parse OID (OBJECT IDENTIFIER)
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OBJECT_ID {
-		return "", fmt.Errorf("expected OID in variable binding")
-	}
-	pos++
-	oidLen, newPos := parseLength(scopedPDU, pos)
-	pos = newPos
-
-	if pos+oidLen > len(scopedPDU) {
-		return "", fmt.Errorf("OID length exceeds remaining data")
-	}
-
-	oidBytes := scopedPDU[pos : pos+oidLen]
-	oid := decodeOID(oidBytes)
-
-	return oid, nil
 }
 
 // extractOIDAndTypeFromScopedPDU extracts both OID and PDU type from a scoped PDU

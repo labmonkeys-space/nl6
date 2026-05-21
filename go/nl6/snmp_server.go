@@ -21,17 +21,15 @@ import (
 	"sync"
 )
 
-// Pool for SNMP read buffers to avoid per-request allocation
+// Pool for SNMP read buffers to avoid per-request allocation.
+// `sync.Pool` is documented to perform best with pointer-typed values —
+// non-pointer slice headers cost an extra allocation per Get/Put pair
+// (staticcheck SA6002), so we wrap in `*[]byte`.
 var snmpBufPool = sync.Pool{
-	New: func() interface{} { return make([]byte, 1024) },
-}
-
-// Helper function for minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	New: func() interface{} {
+		buf := make([]byte, 1024)
+		return &buf
+	},
 }
 
 // snmpSocketBufSize is the kernel socket buffer size for SNMP UDP sockets.
@@ -85,10 +83,10 @@ func (s *SNMPServer) handleRequests() {
 			break
 		}
 
-		buffer := snmpBufPool.Get().([]byte)
-		n, clientAddr, err := s.listener.ReadFromUDP(buffer)
+		bufPtr := snmpBufPool.Get().(*[]byte)
+		n, clientAddr, err := s.listener.ReadFromUDP(*bufPtr)
 		if err != nil {
-			snmpBufPool.Put(buffer)
+			snmpBufPool.Put(bufPtr)
 			if s.running {
 				log.Printf("SNMP server error reading UDP: %v", err)
 			}
@@ -97,8 +95,8 @@ func (s *SNMPServer) handleRequests() {
 
 		// Process inline — SNMP is stateless UDP, handler is CPU-only.
 		// The UDP listener is per-device, so there's no cross-device contention.
-		s.handleSingleRequest(buffer[:n], clientAddr)
-		snmpBufPool.Put(buffer)
+		s.handleSingleRequest((*bufPtr)[:n], clientAddr)
+		snmpBufPool.Put(bufPtr)
 	}
 }
 

@@ -82,9 +82,13 @@ func testDevice(ipStr string) *DeviceSimulator {
 	return &DeviceSimulator{IP: net.ParseIP(ipStr).To4()}
 }
 
-// testPool returns a sync.Pool supplying 1500-byte buffers.
+// testPool returns a sync.Pool supplying 1500-byte buffers, wrapped
+// in `*[]byte` to match the SA6002-correct production shape.
 func testPool() *sync.Pool {
-	return &sync.Pool{New: func() interface{} { return make([]byte, 1500) }}
+	return &sync.Pool{New: func() interface{} {
+		buf := make([]byte, 1500)
+		return &buf
+	}}
 }
 
 // receivePacket reads one packet from ch with a short deadline.
