@@ -331,6 +331,14 @@ type SimulatorManager struct {
 	// convention — test-harness use case, no rate-limit competition).
 	revertTimers sync.Map // revertKey → *revertTimer
 
+	// revertTimerCounts is the per-device atomic counter of in-flight
+	// auto-revert goroutines (string IP → *atomic.Int64). Schedule
+	// rejects when the counter would exceed `maxRevertTimersPerDevice`;
+	// the goroutine's defer decrements on exit. Live entries linger
+	// across device delete because cleanup runs in the goroutine; this
+	// is fine because they zero out and stop growing.
+	revertTimerCounts sync.Map // string IP → *atomic.Int64
+
 	mu sync.RWMutex
 }
 

@@ -210,6 +210,15 @@ func TestSetOperStatus_MalformedBody400(t *testing.T) {
 
 func TestSetOperStatus_DurationAutoReverts(t *testing.T) {
 	f := newStateAPIFixture(t)
+	// Listener so Broadcast counts; otherwise state_events_emitted is
+	// unaffected (sync.Map.Range over zero listeners is the no-op path).
+	ic := f.device.metricsCycler.ifCounters.Load()
+	ch := make(chan StateChange, 16)
+	ic.State().AddListener(ch)
+	defer ic.State().RemoveListener(ch)
+	f.mgr.gnmiSubsystemActive.Store(true)
+	beforeEmitted := f.mgr.GetGnmiStatus().StateEventsEmitted
+
 	body := strings.NewReader(`{"status":"DOWN","duration":"100ms"}`)
 	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
 	rr := httptest.NewRecorder()
@@ -217,20 +226,37 @@ func TestSetOperStatus_DurationAutoReverts(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("status: got %d, want 202", rr.Code)
 	}
-	ic := f.device.metricsCycler.ifCounters.Load()
 	// Immediately after: DOWN.
 	if got := ic.State().OperStatus(1); got != OperDown {
 		t.Errorf("immediate post-POST: got %d, want OperDown", got)
 	}
 	// After the duration elapses: back to UP.
 	deadline := time.Now().Add(2 * time.Second)
+	reverted := false
 	for time.Now().Before(deadline) {
 		if ic.State().OperStatus(1) == OperUp {
-			return
+			reverted = true
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Errorf("auto-revert never fired: OperStatus(1) = %d after 2s", ic.State().OperStatus(1))
+	if !reverted {
+		t.Fatalf("auto-revert never fired: OperStatus(1) = %d after 2s", ic.State().OperStatus(1))
+	}
+	// Two transitions (DOWN, then auto-revert UP), each with a registered
+	// listener, MUST bump state_events_emitted by exactly 2 per spec
+	// "Duration field triggers auto-revert". Drain the listener so the
+	// goroutine's Broadcast retries don't keep firing.
+	for drain := 0; drain < 2; drain++ {
+		select {
+		case <-ch:
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	afterEmitted := f.mgr.GetGnmiStatus().StateEventsEmitted
+	if afterEmitted-beforeEmitted != 2 {
+		t.Errorf("state_events_emitted: got delta %d, want 2 (one for DOWN, one for auto-revert UP)", afterEmitted-beforeEmitted)
+	}
 }
 
 func TestGnmiStatus_IncludesStateEventCounters(t *testing.T) {

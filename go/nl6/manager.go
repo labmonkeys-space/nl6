@@ -237,6 +237,9 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		if device.IfErrorScenario != "" && device.IfErrorScenario != string(IfErrorClean) {
 			info.IfErrorScenario = device.IfErrorScenario
 		}
+		if device.IfFlapScenario != "" && device.IfFlapScenario != string(IfFlapClean) {
+			info.IfFlapScenario = device.IfFlapScenario
+		}
 		devices = append(devices, info)
 	}
 

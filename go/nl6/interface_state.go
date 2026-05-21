@@ -153,9 +153,54 @@ func (s *InterfaceState) Seed(ifIndex int, oper, admin uint8) {
 	s.slots[slot].Store(packState(oper, admin, 0))
 }
 
+// StateSnapshot is the atomic (oper, admin, lastChange) tuple
+// returned by `Snapshot`. All three fields reflect the same
+// `slots[slot].Load()` so they cannot tear relative to each other —
+// unlike sequential calls to OperStatus / AdminStatus / LastChangeNs.
+// `Found` distinguishes an out-of-range or unseeded slot from a real
+// one; consumers wanting "real interface vs ghost" should branch on
+// it rather than inferring from defaulted enum values.
+type StateSnapshot struct {
+	Oper         uint8
+	Admin        uint8
+	LastChangeNs uint64
+	Found        bool
+}
+
+// Snapshot atomically reads the (oper, admin, lastChange) tuple for
+// ifIndex from a single `slots[slot].Load()`. Returns
+// `(StateSnapshot{}, false)` for out-of-range ifIndex. For an
+// in-range but unseeded slot, returns `(StateSnapshot{Oper:
+// OperUnknown, Admin: AdminUp, LastChangeNs: bootTimeUnixNs, Found:
+// true})` — same defaults as the individual accessors. Callers that
+// need a consistent point-in-time view (e.g. auto-revert pre-state
+// capture, gNMI ON_CHANGE initial snapshot, cross-leaf consistency
+// tests) MUST use this rather than three separate accessor calls.
+func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
+	slot := ifIndex - 1
+	if slot < 0 || slot >= s.maxIfIndex {
+		return StateSnapshot{}
+	}
+	oper, admin, rel := unpackState(s.slots[slot].Load())
+	if oper == 0 {
+		oper = OperUnknown
+	}
+	if admin == 0 {
+		admin = AdminUp
+	}
+	var lc uint64
+	if rel == lastChangeMask {
+		lc = LastChangeRewindSentinel
+	} else {
+		lc = s.bootTimeUnixNs + rel
+	}
+	return StateSnapshot{Oper: oper, Admin: admin, LastChangeNs: lc, Found: true}
+}
+
 // OperStatus returns the current oper-status enum value for ifIndex.
 // Returns OperUnknown if ifIndex is out of range or the slot is
-// uninitialised. Single atomic load, no allocation.
+// uninitialised. Single atomic load, no allocation. For consistent
+// multi-leaf reads see `Snapshot`.
 func (s *InterfaceState) OperStatus(ifIndex int) uint8 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {

@@ -194,7 +194,15 @@ func NewFlapScheduler(opts FlapSchedulerOptions) *FlapScheduler {
 // replaces the old entry.
 func (s *FlapScheduler) Register(deviceIP net.IP, ifIndexes []int, scenario IfFlapScenario, state *InterfaceState) {
 	mean, _, _ := flapBand(scenario)
-	if mean == 0 || state == nil || len(ifIndexes) == 0 {
+	if mean == 0 {
+		// `clean` is the legitimate quiet path; anything else is a
+		// programmer error (uncanonicalised scenario string).
+		if scenario != IfFlapClean && scenario != "" {
+			log.Printf("flap scheduler: Register skipped for %s ifs=%v — unknown scenario %q (use ParseIfFlapScenario to canonicalise before Register)", deviceIP, ifIndexes, scenario)
+		}
+		return
+	}
+	if state == nil || len(ifIndexes) == 0 {
 		return
 	}
 	s.mu.Lock()
@@ -348,6 +356,15 @@ func (s *FlapScheduler) Run(ctx context.Context) {
 			nextAction = flapActionUp
 		default: // flapActionUp
 			// After up → schedule next down at now + exp(meanInterval).
+			// Mean-zero guard: if the entry's scenario was somehow
+			// corrupted to an unknown value, flapBand returns mean=0
+			// and `nextOffset=0` would busy-loop the scheduler. Drop
+			// the entry (no reschedule, no fire counterpart) and log.
+			if mean == 0 {
+				log.Printf("flap scheduler: dropping orphaned entry with unknown scenario %q (ip=%s ifIndex=%d) — no counterpart scheduled", entry.scenario, entry.deviceIP, entry.ifIndex)
+				s.mu.Unlock()
+				continue
+			}
 			nextOffset = time.Duration(s.rnd.ExpFloat64() * float64(mean))
 			nextAction = flapActionDown
 		}
@@ -413,9 +430,9 @@ func (s *FlapScheduler) pendingCountForTest() int {
 func (s *FlapScheduler) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cap := "unlimited"
+	globalCap := "unlimited"
 	if s.limiter != nil {
-		cap = fmt.Sprintf("%.0f/s", float64(s.limiter.Limit()))
+		globalCap = fmt.Sprintf("%.0f/s", float64(s.limiter.Limit()))
 	}
-	return fmt.Sprintf("flap scheduler: %d scheduled (cap=%s)", s.heap.Len(), cap)
+	return fmt.Sprintf("flap scheduler: %d scheduled (cap=%s)", s.heap.Len(), globalCap)
 }

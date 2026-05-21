@@ -32,9 +32,16 @@ import (
 
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		sendErrorResponse(w, "Invalid JSON", http.StatusBadRequest)
+	// 64 KiB cap is generous for the create-devices schema (most
+	// requests are well under 1 KiB). DisallowUnknownFields surfaces
+	// typo'd JSON keys (e.g. `if_flap_secnario`) as 400 rather than
+	// silently dropping them — matches the trap/syslog/interface-state
+	// POST conventions.
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		sendErrorResponse(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 

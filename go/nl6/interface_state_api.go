@@ -9,11 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -22,6 +25,24 @@ import (
 // ErrIfStateDeviceNotFound is returned when the REST handler cannot
 // resolve the {ip} path component to a known device.
 var ErrIfStateDeviceNotFound = errors.New("device not found")
+
+// ErrIfStateRevertCapExceeded is returned when a duration POST would
+// push the device's pending-revert-timer count past
+// `maxRevertTimersPerDevice`. The handler maps this to 429.
+var ErrIfStateRevertCapExceeded = errors.New("auto-revert timer capacity exceeded for this device")
+
+// maxRevertTimersPerDevice bounds the number of in-flight auto-revert
+// goroutines a single device can have pending. Realistic test
+// harness usage stays well under 10; the 100 ceiling is generous but
+// caps a misbehaving client that POSTs duration=24h thousands of
+// times.
+const maxRevertTimersPerDevice = 100
+
+// maxIfIndexREST caps the `ifIndex` path component accepted by the
+// REST handlers. The state engine also bounds via `maxIfIndex`, but
+// validating early avoids allocating the sorted "valid" list for
+// obviously-bogus values like MaxInt.
+const maxIfIndexREST = 65535
 
 // ErrIfStateIfIndexInvalid is returned when the {ifIndex} path component
 // is not present in the device's known interface set. The error carries
@@ -60,13 +81,28 @@ func parseStateChangeRequest(w http.ResponseWriter, r *http.Request, isOper bool
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			return 0, 0, fmt.Errorf("payload too large (max 4 KiB)")
+		}
+		// Empty body and `{}` both indicate the operator forgot the
+		// required `status` field; surface that rather than the raw
+		// JSON parser error.
+		if errors.Is(err, io.EOF) {
+			return 0, 0, errors.New("status is required (\"UP\", \"DOWN\", or \"TESTING\")")
+		}
 		return 0, 0, fmt.Errorf("invalid JSON: %w", err)
 	}
-	if req.Status == "" {
+	// Reject bodies with trailing tokens (e.g. `{"status":"UP"} EXTRA`).
+	if dec.More() {
+		return 0, 0, errors.New("invalid JSON: trailing data after first object")
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(req.Status))
+	if normalized == "" {
 		return 0, 0, errors.New("status is required (\"UP\", \"DOWN\", or \"TESTING\")")
 	}
 	var target uint8
-	switch strings.ToUpper(strings.TrimSpace(req.Status)) {
+	switch normalized {
 	case "UP":
 		if isOper {
 			target = OperUp
@@ -116,11 +152,25 @@ type revertKey struct {
 }
 
 // revertTimer wraps the cancellable timer for one pending auto-revert.
-// `stop` is closed by `device.Stop()` / `manager.Shutdown()` to cancel
-// the goroutine without firing the revert.
+// `stop` is closed (idempotently via `closeOnce`) by `device.Stop()`,
+// `manager.Shutdown()`, or a superseding duration POST. `done` is set
+// by the goroutine right after winning the timer-vs-cancel select so
+// that cancellers arriving in the cancel-after-fire window can detect
+// the race and skip their own close, while the goroutine — if its CAS
+// loses — bails before mutating a dead state.
 type revertTimer struct {
-	timer *time.Timer
-	stop  chan struct{}
+	timer     *time.Timer
+	stop      chan struct{}
+	closeOnce sync.Once
+	done      atomic.Bool
+	deviceIP  string // for per-device cap decrement on goroutine exit
+}
+
+// closeStop is the only safe way to close rt.stop. Concurrent callers
+// (device.Stop racing manager.Shutdown, or a second POST racing
+// either) used to panic on double-close.
+func (rt *revertTimer) closeStop() {
+	rt.closeOnce.Do(func() { close(rt.stop) })
 }
 
 // mutateInterfaceState is the shared body of the oper-status / admin-status
@@ -172,15 +222,16 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		return &ErrIfStateIfIndexInvalid{IfIndex: ifIndex, Valid: valid}
 	}
 
-	// Snapshot the pre-mutation value BEFORE the SetOperStatus call so
-	// auto-revert can restore it accurately. We grab both fields so a
-	// future "POST admin-status" doesn't lose a prior oper-status
-	// snapshot — the snapshot is leaf-specific.
+	// Snapshot the pre-mutation tuple atomically. Using the
+	// Snapshot API rather than two sequential accessor calls
+	// prevents the flap scheduler from flipping the slot between
+	// our reads.
+	snap := state.Snapshot(ifIndex)
 	var preSnap uint8
 	if isOper {
-		preSnap = state.OperStatus(ifIndex)
+		preSnap = snap.Oper
 	} else {
-		preSnap = state.AdminStatus(ifIndex)
+		preSnap = snap.Admin
 	}
 
 	var (
@@ -197,27 +248,65 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 	}
 
 	if revertAfter > 0 {
-		sm.scheduleAutoRevert(ip, ifIndex, isOper, preSnap, revertAfter, state)
+		if err := sm.scheduleAutoRevert(ip, ifIndex, isOper, preSnap, revertAfter, state); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
+// revertCounterFor returns the per-device atomic counter for in-flight
+// auto-revert timers, creating it on first use. Counters live on
+// `sm.revertTimerCounts` (sync.Map keyed by IP) so that scheduleAutoRevert
+// can do a CAS-style cap check without holding any global lock.
+func (sm *SimulatorManager) revertCounterFor(ip string) *atomic.Int64 {
+	if v, ok := sm.revertTimerCounts.Load(ip); ok {
+		return v.(*atomic.Int64)
+	}
+	c := new(atomic.Int64)
+	actual, _ := sm.revertTimerCounts.LoadOrStore(ip, c)
+	return actual.(*atomic.Int64)
+}
+
 // scheduleAutoRevert registers a new pending revert timer for the given
 // (ip, ifIndex, leaf). If a previous timer is in flight for the same key,
-// it is cancelled (Swap + Stop + signal) — the new POST supersedes it.
-func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bool, revertTo uint8, delay time.Duration, state *InterfaceState) {
+// it is cancelled (Swap + closeStop) — the new POST supersedes it.
+//
+// Cancellation correctness (post review): three races used to be
+// possible — (i) a second POST's `Swap+close` could not stop a
+// goroutine already past its select; (ii) `device.Stop()` could not
+// prevent a mid-fire mutation on a torn-down state engine; (iii)
+// concurrent cancellers could double-close `rt.stop` and panic. The
+// `done atomic.Bool` plus `closeOnce sync.Once` close all three
+// windows: the goroutine CAS's `done` true the instant it picks the
+// timer-fire branch — if a canceller has set `done` first the
+// goroutine bails without mutating. Cancellers always go through
+// `rt.closeStop()` which is idempotent.
+//
+// Per-device cap: `maxRevertTimersPerDevice` (100) limits how many
+// in-flight goroutines a single device can register. Over-cap POSTs
+// return `ErrIfStateRevertCapExceeded`, mapped to 429 at the handler.
+func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bool, revertTo uint8, delay time.Duration, state *InterfaceState) error {
+	counter := sm.revertCounterFor(ip)
+	if counter.Add(1) > maxRevertTimersPerDevice {
+		counter.Add(-1)
+		return ErrIfStateRevertCapExceeded
+	}
+
 	key := revertKey{ip: ip, ifIndex: ifIndex, isOper: isOper}
 	rt := &revertTimer{
-		stop: make(chan struct{}),
+		stop:     make(chan struct{}),
+		timer:    time.NewTimer(delay),
+		deviceIP: ip,
 	}
-	rt.timer = time.NewTimer(delay)
 
-	// Cancel any prior timer on the same key. LoadAndStore returns the
-	// previous value (or nil); if non-nil, stop it cleanly.
+	// Cancel any prior timer on the same key. Swap returns the previous
+	// entry (or nil); closeStop is idempotent so multiple cancellers on
+	// the same rt are safe.
 	if prev, loaded := sm.revertTimers.Swap(key, rt); loaded {
 		if old, ok := prev.(*revertTimer); ok {
 			old.timer.Stop()
-			close(old.stop)
+			old.closeStop()
 		}
 	}
 
@@ -226,14 +315,22 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 			if r := recover(); r != nil {
 				log.Printf("interface_state: auto-revert goroutine panic (recovered): %v (ip=%s ifIndex=%d)", r, ip, ifIndex)
 			}
+			counter.Add(-1)
 			sm.revertTimers.CompareAndDelete(key, rt)
 		}()
 		select {
 		case <-rt.stop:
-			// Cancelled by device.Stop, manager.Shutdown, or a subsequent
-			// duration POST. No mutation, no broadcast.
+			// Cancelled by device.Stop, manager.Shutdown, or a
+			// subsequent duration POST. No mutation, no broadcast.
+			rt.done.Store(true)
 			return
 		case <-rt.timer.C:
+		}
+		// CAS-style "this goroutine wins". If a canceller arrived in
+		// the cancel-after-fire window and set `done` first, the
+		// mutation is no longer authoritative — bail.
+		if !rt.done.CompareAndSwap(false, true) {
+			return
 		}
 		var c bool
 		var e StateChange
@@ -246,44 +343,51 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 			state.Broadcast(e)
 		}
 	}()
+	return nil
 }
 
 // cancelAutoRevertsForDevice cancels every pending auto-revert timer
 // for the given device IP. Called from `device.Stop()` so a deleted
 // device's pending timers don't fire on an orphaned state engine.
+// Uses `rt.closeStop()` (idempotent) and `rt.done.CompareAndSwap` so
+// that a goroutine already past its select either (a) sees the CAS
+// loss and bails without mutating, or (b) ran to completion before
+// cancel reached it and has already self-cleared from the map. The
+// per-device counter is decremented by the goroutine on exit.
 func (sm *SimulatorManager) cancelAutoRevertsForDevice(ip string) {
-	ipStr := ip
 	sm.revertTimers.Range(func(k, v any) bool {
-		if key, ok := k.(revertKey); ok && key.ip == ipStr {
-			if rt, ok := v.(*revertTimer); ok {
-				rt.timer.Stop()
-				select {
-				case <-rt.stop:
-				default:
-					close(rt.stop)
-				}
-			}
-			sm.revertTimers.Delete(k)
+		key, ok := k.(revertKey)
+		if !ok || key.ip != ip {
+			return true
+		}
+		if rt, ok := v.(*revertTimer); ok {
+			rt.timer.Stop()
+			// Pre-empt the goroutine's mutation; the goroutine's CAS
+			// will then fail and skip SetOperStatus.
+			rt.done.Store(true)
+			rt.closeStop()
+			// Use CompareAndDelete so a NEW timer that the goroutine's
+			// defer hasn't yet self-cleared isn't accidentally removed
+			// by this sweep.
+			sm.revertTimers.CompareAndDelete(k, rt)
 		}
 		return true
 	})
 }
 
 // cancelAllAutoReverts cancels every pending timer. Called from
-// `manager.Shutdown()`.
+// `manager.Shutdown()`. Same correctness story as
+// `cancelAutoRevertsForDevice`.
 func (sm *SimulatorManager) cancelAllAutoReverts() {
 	count := 0
 	sm.revertTimers.Range(func(k, v any) bool {
 		if rt, ok := v.(*revertTimer); ok {
 			rt.timer.Stop()
-			select {
-			case <-rt.stop:
-			default:
-				close(rt.stop)
-			}
+			rt.done.Store(true)
+			rt.closeStop()
 			count++
+			sm.revertTimers.CompareAndDelete(k, rt)
 		}
-		sm.revertTimers.Delete(k)
 		return true
 	})
 	if count > 0 {
@@ -319,13 +423,18 @@ func handleSetInterfaceStatus(w http.ResponseWriter, r *http.Request, isOper boo
 	vars := mux.Vars(r)
 	ip := vars["ip"]
 	ifIndex, err := strconv.Atoi(vars["ifIndex"])
-	if err != nil || ifIndex <= 0 {
-		sendErrorResponse(w, fmt.Sprintf("invalid ifIndex %q", vars["ifIndex"]), http.StatusBadRequest)
+	if err != nil || ifIndex <= 0 || ifIndex > maxIfIndexREST {
+		sendErrorResponse(w, fmt.Sprintf("invalid ifIndex %q (must be in [1, %d])", vars["ifIndex"], maxIfIndexREST), http.StatusBadRequest)
 		return
 	}
 
 	target, revertAfter, err := parseStateChangeRequest(w, r, isOper)
 	if err != nil {
+		// Distinguish payload-too-large (413) from generic 400.
+		if strings.Contains(err.Error(), "payload too large") {
+			sendErrorResponse(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -335,6 +444,8 @@ func handleSetInterfaceStatus(w http.ResponseWriter, r *http.Request, isOper boo
 		switch {
 		case errors.Is(err, ErrIfStateDeviceNotFound):
 			sendErrorResponse(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, ErrIfStateRevertCapExceeded):
+			sendErrorResponse(w, err.Error(), http.StatusTooManyRequests)
 		case errors.As(err, &idxErr):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
