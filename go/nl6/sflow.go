@@ -558,4 +558,3 @@ func (SFlowEncoder) EncodeCounterDatagram(
 
 // _ compile-time guard that SFlowEncoder satisfies FlowEncoder.
 var _ FlowEncoder = SFlowEncoder{}
-

@@ -216,6 +216,10 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
+	// The IV is filled by crypto/rand above; gosec's flow analysis
+	// doesn't trace the rand.Read fill, so the slice literal here
+	// trips G407 as if it were hardcoded.
+	// #nosec G407 -- IV is random (see rand.Read above)
 	mode := cipher.NewCBCEncrypter(block, iv)
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
@@ -259,7 +263,12 @@ func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
 
 	// Create CFB encrypter. SNMPv3 AES privacy (RFC 3826) MANDATES
 	// CFB mode; AEAD alternatives would break interoperability with
-	// every SNMPv3-capable manager.
+	// every SNMPv3-capable manager. The IV is per-RFC-3826: 8-byte
+	// "engine boots + engine time" prefix + 8-byte random salt. The
+	// prefix bytes are intentionally fixed values for the simulation
+	// (this is not a security-bearing agent); gosec G407 flags the
+	// fixed-prefix slice as if it were a static IV.
+	// #nosec G407 -- per RFC 3826 IV layout; simulator deliberately fixes engine-boots/time prefix
 	stream := cipher.NewCFBEncrypter(block, iv) //nolint:staticcheck // RFC 3826 requires CFB for SNMPv3 AES privacy
 
 	// Encrypt the data
@@ -405,4 +414,3 @@ func (s *SNMPServer) encodeSNMPv3Message(msg *SNMPv3Message, usmParams []byte) (
 
 	return encodeSequence(contents), nil
 }
-

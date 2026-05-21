@@ -368,9 +368,20 @@ func main() {
 	log.Printf("  http://localhost%s/ui", apiPort)
 	log.Println()
 
-	// Start web server in background
+	// Start web server in background. Use http.Server with explicit
+	// timeouts (gosec G114) rather than the bare ListenAndServe.
+	// 30s covers the slowest local handler today (device-create
+	// preallocation); operators driving heavier writes can tune this.
 	go func() {
-		log.Fatal(http.ListenAndServe(apiPort, router))
+		srv := &http.Server{
+			Addr:              apiPort,
+			Handler:           router,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		log.Fatal(srv.ListenAndServe())
 	}()
 
 	// Give web server a moment to start

@@ -396,4 +396,3 @@ func encodeTypedValue(oid, value string) []byte {
 		return encodeOctetString(value)
 	}
 }
-
