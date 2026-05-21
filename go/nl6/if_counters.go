@@ -27,6 +27,14 @@ const (
 	hcOutOIDPrefix = ifXTablePrefix + "10."
 
 	hcPeriodSec = 3600.0 // 1-hour sine-wave cycle
+
+	// maxResourceIfIndex caps the largest ifIndex accepted from a
+	// resource JSON file. NewInterfaceState allocates one
+	// atomic.Uint64 per ifIndex up to maxIfIndex, so a corrupted file
+	// listing e.g. .6.4000000000 would otherwise drive a ~32 GB
+	// allocation. 65535 is comfortably above realistic device
+	// interface counts.
+	maxResourceIfIndex = 65535
 )
 
 // ifXTable and ifTable column numbers handled dynamically.
@@ -493,13 +501,14 @@ func (ic *IfCounterCycler) LastDynamicOID() string {
 // oidIndex / sortedOIDs.
 //
 // Implementation is O(log N) in the number of interfaces: parse
-// currentOID once into (table, col, ifIndex), locate the column position
-// in ifCyclerColumns by linear scan over its 21 entries (3 state cols +
-// 6 ifTable counter cols + 12 ifXTable cols), and use sort.SearchInts
-// on sortedIfIndexes to find the successor ifIndex. The previous
-// O(cols × ifIndexes) implementation built and compared an OID string
-// for every (col, ifIndex) pair on each GETNEXT step, which made
-// walking a 1000-interface device ~18000 string allocations per step.
+// currentOID once into (table, col, ifIndex), locate the column
+// position in `ifCyclerColumns` by linear scan (the slice is small
+// and grows rarely; len-driven so additions are picked up
+// automatically), and use sort.SearchInts on sortedIfIndexes to find
+// the successor ifIndex. The previous O(cols × ifIndexes)
+// implementation built and compared an OID string for every (col,
+// ifIndex) pair on each GETNEXT step, which made walking a
+// 1000-interface device ~18000 string allocations per step.
 func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 	if ic == nil || len(ic.sortedIfIndexes) == 0 {
 		return "", ""
@@ -604,9 +613,9 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 		return "", ""
 	}
 
-	// Locate the first ifCyclerColumns entry whose (table, col) is at or
-	// after the parsed (isIfX, col). 18-entry list — linear scan is
-	// faster than sort.Search on a slice this small.
+	// Locate the first ifCyclerColumns entry whose (table, col) is at
+	// or after the parsed (isIfX, col). Linear scan is faster than
+	// sort.Search on a slice this small.
 	colIdx := -1
 	for i, tc := range ifCyclerColumns {
 		entryIsIfX := tc.prefix == ifXTablePrefix
@@ -636,6 +645,15 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 	chosen := ifCyclerColumns[colIdx]
 	chosenIsIfX := chosen.prefix == ifXTablePrefix
 	if chosenIsIfX == isIfX && chosen.col == col {
+		// stateNil short-circuit: if the parsed col is a state col
+		// (.7/.8/.9) and the cycler has no state engine, the column
+		// is unowned. The correct successor is the first non-state
+		// col at the first owned ifIndex — not ifIndex+1 on the
+		// state col itself. emitFromColumn advances colIdx past the
+		// state cols so the right (col, ifIndex) pair is emitted.
+		if stateNil && isStateCol(chosen.col, chosen.prefix) {
+			return emitFromColumn(colIdx, ic.sortedIfIndexes[0])
+		}
 		// Same column as currentOID — find the successor ifIndex.
 		pos := sort.SearchInts(ic.sortedIfIndexes, ifIndex+1)
 		if pos < len(ic.sortedIfIndexes) {
@@ -787,6 +805,10 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	}
 
 	// Collect the exact set of ifIndex values that have HC in-octets OIDs.
+	// Reject ifIndex > maxResourceIfIndex to guard against a corrupted or
+	// adversarial resource file that would otherwise force NewInterfaceState
+	// into an O(maxIfIndex) atomic.Uint64 allocation (e.g. a single
+	// .1.3.6.1.2.1.31.1.1.1.6.4000000000 entry → ~32 GB).
 	knownIdxs := make(map[int]struct{})
 	resources.oidIndex.Range(func(k, _ interface{}) bool {
 		oid, ok := k.(string)
@@ -795,6 +817,10 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		}
 		if strings.HasPrefix(oid, hcInOIDPrefix) {
 			if idx, err := strconv.Atoi(oid[len(hcInOIDPrefix):]); err == nil && idx > 0 {
+				if idx > maxResourceIfIndex {
+					log.Printf("if_counters: ifIndex %d from resource exceeds maxResourceIfIndex %d; skipped (resource file may be corrupted)", idx, maxResourceIfIndex)
+					return true
+				}
 				knownIdxs[idx] = struct{}{}
 			}
 		}

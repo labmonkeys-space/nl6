@@ -139,12 +139,15 @@ func NewInterfaceState(maxIfIndex int, emitted, dropped *uint64) *InterfaceState
 func (s *InterfaceState) Seed(ifIndex int, oper, admin uint8) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
+		log.Printf("interface_state: Seed rejected: ifIndex %d out of range [1..%d]", ifIndex, s.maxIfIndex)
 		return
 	}
 	if oper < OperUp || oper > OperLowerLayerDn {
+		log.Printf("interface_state: Seed rejected: ifIndex %d oper=%d outside IF-MIB range [%d..%d]", ifIndex, oper, OperUp, OperLowerLayerDn)
 		return
 	}
 	if admin < AdminUp || admin > AdminTesting {
+		log.Printf("interface_state: Seed rejected: ifIndex %d admin=%d outside IF-MIB range [%d..%d]", ifIndex, admin, AdminUp, AdminTesting)
 		return
 	}
 	s.slots[slot].Store(packState(oper, admin, 0))
@@ -184,12 +187,17 @@ func (s *InterfaceState) AdminStatus(ifIndex int) uint8 {
 
 // LastChangeNs returns the absolute Unix nanosecond timestamp of the
 // most recent transition on ifIndex (oper or admin). Returns the
-// device boot time if no transition has occurred. Returns 0 if
-// ifIndex is out of range. Returns LastChangeRewindSentinel if a
-// transition occurred while the wall clock was earlier than the engine
-// boot time (NTP step, container suspend/resume) — downstream
-// consumers should treat the sentinel as "transition happened but
-// timestamp is unreliable".
+// engine's boot time (`s.bootTimeUnixNs`, captured at
+// `NewInterfaceState` — *not* the device's real boot time per RFC
+// 2863) if no transition has occurred. Returns 0 if ifIndex is out
+// of range. Returns LastChangeRewindSentinel if a transition
+// occurred while the wall clock was earlier than the engine boot
+// time (NTP step, container suspend/resume) — downstream consumers
+// should treat the sentinel as "transition happened but timestamp
+// is unreliable". The SNMP layer (`if_counters.go`) collapses both
+// `bootTimeUnixNs` (no-transition) and the rewind sentinel to
+// `"0"` on the wire; gNMI subscribers see the engine values
+// directly.
 func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -302,6 +310,14 @@ func (s *InterfaceState) SetAdminStatus(ifIndex int, newVal uint8) (bool, StateC
 // ON_CHANGE Subscribe handler in `gnmi_subscribe_onchange.go` does
 // exactly this via `resolver.Resolve` before its AddListener call.
 func (s *InterfaceState) AddListener(ch chan StateChange) {
+	if ch == nil {
+		log.Printf("interface_state: AddListener rejected: nil channel")
+		return
+	}
+	if cap(ch) == 0 {
+		log.Printf("interface_state: AddListener rejected: unbuffered channel (every event would hit drop-oldest slow path)")
+		return
+	}
 	s.listeners.Store(ch, struct{}{})
 }
 
@@ -334,22 +350,25 @@ func (s *InterfaceState) SetCounters(emitted, dropped *uint64) {
 // mutation sources (REST + flap scheduler) racing on the same device's
 // state engine within microseconds; rare in practice.
 //
-// **Subscriber protocol violation:** Broadcast contains a defer-recover
-// so that a misbehaving consumer who closes its channel without calling
-// RemoveListener first cannot crash the mutator goroutine. The recover
-// path logs the panic and continues to the next listener. Callers that
-// repeatedly trigger this should be audited.
+// **Subscriber protocol violation:** Each per-listener send is wrapped
+// in its own defer-recover so that a misbehaving consumer who closes
+// its channel without calling RemoveListener first cannot abort the
+// Range walk. The recover logs the panic and continues to the next
+// listener — i.e. one bad subscriber never silences the rest. Callers
+// that repeatedly trigger this should be audited.
 func (s *InterfaceState) Broadcast(evt StateChange) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("interface_state: Broadcast panic recovered: %v (likely send-to-closed-channel; subscriber must RemoveListener before closing)", r)
-		}
-	}()
 	s.listeners.Range(func(key, _ any) bool {
 		ch, ok := key.(chan StateChange)
 		if !ok {
 			return true
 		}
+		// Per-listener recover so one panicking subscriber does not
+		// abort the Range walk for every other subscriber.
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("interface_state: Broadcast panic recovered for listener: %v (likely send-to-closed-channel; subscriber must RemoveListener before closing)", r)
+			}
+		}()
 		// Fast path: non-blocking send.
 		select {
 		case ch <- evt:
@@ -395,19 +414,27 @@ func (s *InterfaceState) incDropped() {
 //	[3..5]  admin-status  (3 bits, max 7 — only 1..3 used by IF-MIB)
 //	[6..63] lastChangeNs  (58 bits, max ~9.13 years)
 const (
-	operStatusMask   uint64 = 0x7
-	adminStatusMask  uint64 = 0x7 // duplicate of operStatusMask today; defined separately so a future width-change to one field doesn't silently widen the other
-	adminStatusShift        = 3
-	lastChangeShift         = 6
-	lastChangeMask   uint64 = 0x03FFFFFFFFFFFFFF // 58 bits
-
-	// _fieldLayoutCheck is a compile-time guard that the three field
-	// shifts/widths remain consistent. If any change breaks
-	// `operWidth + adminWidth == lastChangeShift`, the array index
-	// goes negative and the package fails to compile.
 	_operWidth   = 3
 	_adminWidth  = 3
-	_layoutGuard = lastChangeShift - _operWidth - _adminWidth
+	_lastChWidth = 58
+
+	adminStatusShift = _operWidth
+	lastChangeShift  = _operWidth + _adminWidth
+
+	// Masks derived from widths so any change to a width
+	// automatically resizes the corresponding mask — fixes the
+	// previous independent-constant drift hazard surfaced in chunk A
+	// review.
+	operStatusMask  uint64 = (1 << _operWidth) - 1
+	adminStatusMask uint64 = (1 << _adminWidth) - 1
+	lastChangeMask  uint64 = (1 << _lastChWidth) - 1
+
+	// _layoutGuard is a compile-time guard that the three field
+	// widths fit in a uint64 with the documented packing
+	// (operWidth + adminWidth + lastChWidth == 64). If any width
+	// changes without rebalancing the others, the array index goes
+	// negative and the package fails to compile.
+	_layoutGuard = 64 - _operWidth - _adminWidth - _lastChWidth
 )
 
 var _ = [1]struct{}{}[_layoutGuard] // compile error if layout invariant breaks

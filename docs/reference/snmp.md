@@ -198,6 +198,18 @@ to the per-device state-engine construction time, not the SNMP agent's
 during device boot, guarded against re-init by a panic). If a future
 "reload scenario" feature is added, this divergence must be re-examined.
 
+**SNMP / gNMI timestamp resolution divergence on `ifLastChange`.** SNMP
+encodes `ifLastChange` as `TimeTicks` (centiseconds of sysUpTime), so two
+transitions less than 10 ms apart collide to the same wire value. The
+gNMI `state/last-change` leaf exports the engine's nanosecond timestamp
+directly, so the same two transitions are distinguishable there. Under
+the `aggressive` flap scenario (mean ≈1 min) the collision is
+statistically irrelevant, but a custom test harness driving back-to-back
+REST POSTs against the same `(device, ifIndex)` can observe the
+divergence: SNMP `ifLastChange` returns the same TimeTicks value across
+both transitions while the gNMI leaf separates them by their actual
+nanosecond delta.
+
 ## Entity MIB and vendor OIDs
 
 Every network device ships with a properly aligned Entity MIB: chassis, line

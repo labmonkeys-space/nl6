@@ -613,7 +613,9 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 // The list must satisfy: (a) all ifTable entries strictly precede all
 // ifXTable entries; (b) within each table the column numbers strictly
 // increase. A regression that reorders this list silently produces
-// out-of-order GETNEXT walks.
+// out-of-order GETNEXT walks. Also pins membership so an accidental
+// removal of one of the three state cols (or any other owned column)
+// fails loudly rather than passing this ordering check by being shorter.
 func TestIfCyclerColumns_LexOrder(t *testing.T) {
 	prevPrefix := ""
 	prevCol := -1
@@ -627,6 +629,30 @@ func TestIfCyclerColumns_LexOrder(t *testing.T) {
 		}
 		prevPrefix = c.prefix
 		prevCol = c.col
+	}
+
+	// Presence checks: the three state cols and the master HC dial must
+	// be in the slice. Any future deletion of one of these — a likely
+	// breakage if someone touches the column list — fails here.
+	type colKey struct {
+		prefix string
+		col    int
+	}
+	required := []colKey{
+		{ifTablePrefix, colIfAdminStatus},
+		{ifTablePrefix, colIfOperStatus},
+		{ifTablePrefix, colIfLastChange},
+		{ifXTablePrefix, colIfHCInOctets},
+		{ifXTablePrefix, colIfHCOutOctets},
+	}
+	have := make(map[colKey]bool, len(ifCyclerColumns))
+	for _, c := range ifCyclerColumns {
+		have[colKey{c.prefix, c.col}] = true
+	}
+	for _, k := range required {
+		if !have[k] {
+			t.Errorf("ifCyclerColumns missing required entry %v", k)
+		}
 	}
 }
 
