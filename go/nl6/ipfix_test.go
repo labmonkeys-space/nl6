@@ -19,11 +19,11 @@ import (
 // test dependency.
 
 type ipfixMsgHeader struct {
-	Version          uint16
-	Length           uint16
-	ExportTime       uint32
-	SequenceNumber   uint32
-	ObsDomainID      uint32
+	Version        uint16
+	Length         uint16
+	ExportTime     uint32
+	SequenceNumber uint32
+	ObsDomainID    uint32
 }
 
 type ipfixTemplateField struct {
@@ -72,18 +72,18 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 	}
 
 	pkt := &ipfixPacket{}
-	pkt.Header.Version        = binary.BigEndian.Uint16(data[0:])
-	pkt.Header.Length         = binary.BigEndian.Uint16(data[2:])
-	pkt.Header.ExportTime     = binary.BigEndian.Uint32(data[4:])
+	pkt.Header.Version = binary.BigEndian.Uint16(data[0:])
+	pkt.Header.Length = binary.BigEndian.Uint16(data[2:])
+	pkt.Header.ExportTime = binary.BigEndian.Uint32(data[4:])
 	pkt.Header.SequenceNumber = binary.BigEndian.Uint32(data[8:])
-	pkt.Header.ObsDomainID    = binary.BigEndian.Uint32(data[12:])
+	pkt.Header.ObsDomainID = binary.BigEndian.Uint32(data[12:])
 
 	pos := ipfixHeaderSize
 	for pos < len(data) {
 		if pos+4 > len(data) {
 			break
 		}
-		setID  := binary.BigEndian.Uint16(data[pos:])
+		setID := binary.BigEndian.Uint16(data[pos:])
 		setLen := int(binary.BigEndian.Uint16(data[pos+2:]))
 		if setLen < 4 || pos+setLen > len(data) {
 			t.Fatalf("ipfix: invalid Set length %d at offset %d", setLen, pos)
@@ -95,12 +95,12 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 		case setID == ipfixSetIDTemplate: // Template Set
 			tmplPos := 4 // skip Set header
 			for tmplPos+4 <= len(setData) {
-				tmplID     := binary.BigEndian.Uint16(setData[tmplPos:])
+				tmplID := binary.BigEndian.Uint16(setData[tmplPos:])
 				fieldCount := int(binary.BigEndian.Uint16(setData[tmplPos+2:]))
 				tmplPos += 4
 				tmpl := ipfixDecodedTemplate{TemplateID: tmplID}
 				for i := 0; i < fieldCount && tmplPos+4 <= len(setData); i++ {
-					ieID  := binary.BigEndian.Uint16(setData[tmplPos:])
+					ieID := binary.BigEndian.Uint16(setData[tmplPos:])
 					ieLen := binary.BigEndian.Uint16(setData[tmplPos+2:])
 					tmpl.Fields = append(tmpl.Fields, ipfixTemplateField{ieID, ieLen})
 					tmplPos += 4
@@ -112,24 +112,24 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 			recPos := 4 // skip Set header
 			for recPos+ipfixRecordSize <= setLen {
 				r := ipfixDecodedRecord{}
-				r.Bytes    = binary.BigEndian.Uint32(setData[recPos:])
-				r.Packets  = binary.BigEndian.Uint32(setData[recPos+4:])
+				r.Bytes = binary.BigEndian.Uint32(setData[recPos:])
+				r.Packets = binary.BigEndian.Uint32(setData[recPos+4:])
 				r.Protocol = setData[recPos+8]
-				r.ToS      = setData[recPos+9]
+				r.ToS = setData[recPos+9]
 				r.TCPFlags = setData[recPos+10]
-				r.SrcPort  = binary.BigEndian.Uint16(setData[recPos+11:])
-				r.SrcIP    = net.IP(append([]byte{}, setData[recPos+13:recPos+17]...))
-				r.SrcMask  = setData[recPos+17]
-				r.InIface  = binary.BigEndian.Uint16(setData[recPos+18:])
-				r.DstPort  = binary.BigEndian.Uint16(setData[recPos+20:])
-				r.DstIP    = net.IP(append([]byte{}, setData[recPos+22:recPos+26]...))
-				r.DstMask  = setData[recPos+26]
+				r.SrcPort = binary.BigEndian.Uint16(setData[recPos+11:])
+				r.SrcIP = net.IP(append([]byte{}, setData[recPos+13:recPos+17]...))
+				r.SrcMask = setData[recPos+17]
+				r.InIface = binary.BigEndian.Uint16(setData[recPos+18:])
+				r.DstPort = binary.BigEndian.Uint16(setData[recPos+20:])
+				r.DstIP = net.IP(append([]byte{}, setData[recPos+22:recPos+26]...))
+				r.DstMask = setData[recPos+26]
 				r.OutIface = binary.BigEndian.Uint16(setData[recPos+27:])
-				r.NextHop  = net.IP(append([]byte{}, setData[recPos+29:recPos+33]...))
-				r.SrcAS    = binary.BigEndian.Uint16(setData[recPos+33:])
-				r.DstAS    = binary.BigEndian.Uint16(setData[recPos+35:])
-				r.StartMs  = binary.BigEndian.Uint64(setData[recPos+37:])
-				r.EndMs    = binary.BigEndian.Uint64(setData[recPos+45:])
+				r.NextHop = net.IP(append([]byte{}, setData[recPos+29:recPos+33]...))
+				r.SrcAS = binary.BigEndian.Uint16(setData[recPos+33:])
+				r.DstAS = binary.BigEndian.Uint16(setData[recPos+35:])
+				r.StartMs = binary.BigEndian.Uint64(setData[recPos+37:])
+				r.EndMs = binary.BigEndian.Uint64(setData[recPos+45:])
 				pkt.Records = append(pkt.Records, r)
 				recPos += ipfixRecordSize
 			}
@@ -290,18 +290,18 @@ func TestIPFIXEncodePacket_RecordValues(t *testing.T) {
 		}
 	}
 
-	check("Bytes",    got.Bytes,    uint32(9876))
-	check("Packets",  got.Packets,  uint32(7))
+	check("Bytes", got.Bytes, uint32(9876))
+	check("Packets", got.Packets, uint32(7))
 	check("Protocol", got.Protocol, uint8(6))
 	check("TCPFlags", got.TCPFlags, uint8(0x18))
-	check("SrcPort",  got.SrcPort,  uint16(54321))
-	check("DstPort",  got.DstPort,  uint16(443))
-	check("InIface",  got.InIface,  uint16(3))
+	check("SrcPort", got.SrcPort, uint16(54321))
+	check("DstPort", got.DstPort, uint16(443))
+	check("InIface", got.InIface, uint16(3))
 	check("OutIface", got.OutIface, uint16(4))
-	check("SrcAS",    got.SrcAS,    uint16(65001))
-	check("DstAS",    got.DstAS,    uint16(65002))
-	check("SrcMask",  got.SrcMask,  uint8(24))
-	check("DstMask",  got.DstMask,  uint8(16))
+	check("SrcAS", got.SrcAS, uint16(65001))
+	check("DstAS", got.DstAS, uint16(65002))
+	check("SrcMask", got.SrcMask, uint8(24))
+	check("DstMask", got.DstMask, uint8(16))
 
 	if !got.SrcIP.Equal(src) {
 		t.Errorf("SrcIP: got %v, want %v", got.SrcIP, src)
@@ -317,13 +317,13 @@ func TestIPFIXEncodePacket_AbsoluteTimestamps(t *testing.T) {
 
 	const uptimeMs = uint32(30000) // 30 seconds of simulated uptime
 	r := FlowRecord{
-		SrcIP:    net.ParseIP("10.0.0.1").To4(),
-		DstIP:    net.ParseIP("10.0.0.2").To4(),
-		NextHop:  net.IPv4(0, 0, 0, 0).To4(),
-		SrcPort:  1000, DstPort: 443, Protocol: 6,
+		SrcIP:   net.ParseIP("10.0.0.1").To4(),
+		DstIP:   net.ParseIP("10.0.0.2").To4(),
+		NextHop: net.IPv4(0, 0, 0, 0).To4(),
+		SrcPort: 1000, DstPort: 443, Protocol: 6,
 		Bytes: 500, Packets: 5,
-		StartMs: 1000,  // 1000 ms after device start
-		EndMs:   5000,  // 5000 ms after device start
+		StartMs: 1000, // 1000 ms after device start
+		EndMs:   5000, // 5000 ms after device start
 	}
 
 	beforeMs := time.Now().UnixMilli()

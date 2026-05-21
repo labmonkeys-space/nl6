@@ -30,12 +30,12 @@ type SystemStats struct {
 	SimulatorMemoryGB float64 `json:"simulator_memory_gb"`
 
 	// System memory
-	TotalMemoryMB uint64 `json:"total_memory_mb"`
-	TotalMemoryGB float64 `json:"total_memory_gb"`
-	UsedMemoryMB  uint64 `json:"used_memory_mb"`
-	UsedMemoryGB  float64 `json:"used_memory_gb"`
-	FreeMemoryMB  uint64 `json:"free_memory_mb"`
-	FreeMemoryGB  float64 `json:"free_memory_gb"`
+	TotalMemoryMB      uint64  `json:"total_memory_mb"`
+	TotalMemoryGB      float64 `json:"total_memory_gb"`
+	UsedMemoryMB       uint64  `json:"used_memory_mb"`
+	UsedMemoryGB       float64 `json:"used_memory_gb"`
+	FreeMemoryMB       uint64  `json:"free_memory_mb"`
+	FreeMemoryGB       float64 `json:"free_memory_gb"`
 	MemoryUsagePercent float64 `json:"memory_usage_percent"`
 
 	// CPU

@@ -18,28 +18,28 @@ const (
 	nf9TemplateID = 256 // first valid data template ID
 
 	// Field type IDs (RFC 3954, Appendix A)
-	nf9InBytes      = 1
-	nf9InPkts       = 2
-	nf9Protocol     = 4
-	nf9SrcTOS       = 5
-	nf9TCPFlags     = 6
-	nf9L4SrcPort    = 7
-	nf9IPv4SrcAddr  = 8
-	nf9SrcMask      = 9
-	nf9InputSNMP    = 10
-	nf9L4DstPort    = 11
-	nf9IPv4DstAddr  = 12
-	nf9DstMask      = 13
-	nf9OutputSNMP   = 14
-	nf9IPv4NextHop  = 15
-	nf9SrcAS        = 16
-	nf9DstAS        = 17
-	nf9LastSwitched = 21
+	nf9InBytes       = 1
+	nf9InPkts        = 2
+	nf9Protocol      = 4
+	nf9SrcTOS        = 5
+	nf9TCPFlags      = 6
+	nf9L4SrcPort     = 7
+	nf9IPv4SrcAddr   = 8
+	nf9SrcMask       = 9
+	nf9InputSNMP     = 10
+	nf9L4DstPort     = 11
+	nf9IPv4DstAddr   = 12
+	nf9DstMask       = 13
+	nf9OutputSNMP    = 14
+	nf9IPv4NextHop   = 15
+	nf9SrcAS         = 16
+	nf9DstAS         = 17
+	nf9LastSwitched  = 21
 	nf9FirstSwitched = 22
 
 	// Derived sizes.
-	nf9HeaderSize   = 20 // bytes — Packet Header (RFC 3954 §5)
-	nf9RecordSize   = 45 // bytes — one data record with the 18-field template below
+	nf9HeaderSize       = 20 // bytes — Packet Header (RFC 3954 §5)
+	nf9RecordSize       = 45 // bytes — one data record with the 18-field template below
 	nf9TemplFlowSetSize = 80 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 18×4 fields)
 )
 
@@ -77,20 +77,21 @@ func init() {
 
 // buildNF9Template encodes the Template FlowSet for nf9Fields.
 // Layout (80 bytes):
-//   FlowSet Header: flowset_id=0 (2B), length=80 (2B)
-//   Template Header: template_id=256 (2B), field_count=18 (2B)
-//   18 × (field_type 2B + field_length 2B)
+//
+//	FlowSet Header: flowset_id=0 (2B), length=80 (2B)
+//	Template Header: template_id=256 (2B), field_count=18 (2B)
+//	18 × (field_type 2B + field_length 2B)
 func buildNF9Template() []byte {
 	fieldCount := len(nf9Fields)
 	length := 4 + 4 + fieldCount*4 // flowset hdr + tmpl hdr + fields
 	buf := make([]byte, length)
 	pos := 0
 
-	binary.BigEndian.PutUint16(buf[pos:], 0)          // FlowSet ID = 0 (Template)
+	binary.BigEndian.PutUint16(buf[pos:], 0) // FlowSet ID = 0 (Template)
 	pos += 2
 	binary.BigEndian.PutUint16(buf[pos:], uint16(length)) // FlowSet Length
 	pos += 2
-	binary.BigEndian.PutUint16(buf[pos:], nf9TemplateID)  // Template ID
+	binary.BigEndian.PutUint16(buf[pos:], nf9TemplateID) // Template ID
 	pos += 2
 	binary.BigEndian.PutUint16(buf[pos:], uint16(fieldCount)) // Field Count
 	pos += 2
@@ -130,14 +131,15 @@ func (NetFlow9Encoder) MaxRecordSize() int { return 0 }
 // returns the number of bytes written.
 //
 // Parameters:
-//   domainID        — ObservationDomainID (source_id in v9 header); use the
-//                     device IPv4 address as uint32 for per-device identity.
-//   seqNo           — per-domain sequence number (monotonically increasing).
-//   uptimeMs        — device system uptime in milliseconds at export time.
-//   records         — flow records to include in the Data FlowSet.
-//   includeTemplate — when true, a Template FlowSet is prepended; send on the
-//                     first packet and every templateInterval thereafter.
-//   buf             — caller-supplied output buffer; must be >= 1500 bytes.
+//
+//	domainID        — ObservationDomainID (source_id in v9 header); use the
+//	                  device IPv4 address as uint32 for per-device identity.
+//	seqNo           — per-domain sequence number (monotonically increasing).
+//	uptimeMs        — device system uptime in milliseconds at export time.
+//	records         — flow records to include in the Data FlowSet.
+//	includeTemplate — when true, a Template FlowSet is prepended; send on the
+//	                  first packet and every templateInterval thereafter.
+//	buf             — caller-supplied output buffer; must be >= 1500 bytes.
 //
 // Returns an error if buf is too small to hold even a single record.
 func (NetFlow9Encoder) EncodePacket(

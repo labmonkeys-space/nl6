@@ -367,7 +367,7 @@ func (s *SNMPServer) decryptDES(encryptedData []byte, privParams []byte) ([]byte
 
 	// Use cached DES key derived from privacy password using RFC 3414 method
 	key := s.getDESKey()
-	iv := privParams[:8]      // Use privacy parameters as IV
+	iv := privParams[:8] // Use privacy parameters as IV
 
 	// log.Printf("SNMPv3: DES decryption - key: %d bytes, IV: %d bytes, data: %d bytes",
 	//	len(key), len(iv), len(encryptedData))

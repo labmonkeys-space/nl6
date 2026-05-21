@@ -20,7 +20,7 @@ func TestManager_CatalogFor_PerTypeMatch(t *testing.T) {
 	ciscoMerged := universal.MergeOverlay(ciscoOverlay)
 	sm.trapCatalogsByType = map[string]*Catalog{
 		universalCatalogKey: universal,
-		"cisco_ios":        ciscoMerged,
+		"cisco_ios":         ciscoMerged,
 	}
 
 	cat := sm.CatalogFor("10.42.0.1")
@@ -43,7 +43,7 @@ func TestManager_CatalogFor_FallbackForUnknownType(t *testing.T) {
 	ciscoMerged := universal.MergeOverlay(ciscoOverlay)
 	sm.trapCatalogsByType = map[string]*Catalog{
 		universalCatalogKey: universal,
-		"cisco_ios":        ciscoMerged,
+		"cisco_ios":         ciscoMerged,
 	}
 
 	cat := sm.CatalogFor("10.42.0.2")
@@ -114,7 +114,7 @@ func TestManager_SyslogCatalogFor_PerTypeMatch(t *testing.T) {
 	jnxMerged := universal.MergeOverlay(jnxOverlay)
 	sm.syslogCatalogsByType = map[string]*SyslogCatalog{
 		universalCatalogKey: universal,
-		"juniper_mx240":    jnxMerged,
+		"juniper_mx240":     jnxMerged,
 	}
 
 	cat := sm.SyslogCatalogFor("10.42.0.1")

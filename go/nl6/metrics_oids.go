@@ -21,22 +21,22 @@ import "fmt"
 type MetricOIDType int
 
 const (
-	MetricCPUPercent    MetricOIDType = iota // CPU utilization %
-	MetricMemUsed                           // Memory used (KB)
-	MetricMemFree                           // Memory free (KB)
-	MetricMemTotal                          // Memory total (KB, constant)
-	MetricMemUsedPct                        // Memory used % (for vendors that report %)
-	MetricTemperature                       // Temperature in Celsius
+	MetricCPUPercent  MetricOIDType = iota // CPU utilization %
+	MetricMemUsed                          // Memory used (KB)
+	MetricMemFree                          // Memory free (KB)
+	MetricMemTotal                         // Memory total (KB, constant)
+	MetricMemUsedPct                       // Memory used % (for vendors that report %)
+	MetricTemperature                      // Temperature in Celsius
 
 	// GPU-specific metric types (NVIDIA DCGM)
 	MetricGPUUtil     MetricOIDType = iota + 10 // GPU compute utilization %
-	MetricGPUMemUsed                             // GPU VRAM used (MB)
-	MetricGPUMemTotal                            // GPU VRAM total (MB, constant)
-	MetricGPUTemp                                // GPU temperature (Celsius)
-	MetricGPUPower                               // GPU power draw (Watts)
-	MetricGPUFanSpeed                            // GPU fan speed %
-	MetricGPUClockSM                             // GPU SM clock (MHz)
-	MetricGPUClockMem                            // GPU memory clock (MHz)
+	MetricGPUMemUsed                            // GPU VRAM used (MB)
+	MetricGPUMemTotal                           // GPU VRAM total (MB, constant)
+	MetricGPUTemp                               // GPU temperature (Celsius)
+	MetricGPUPower                              // GPU power draw (Watts)
+	MetricGPUFanSpeed                           // GPU fan speed %
+	MetricGPUClockSM                            // GPU SM clock (MHz)
+	MetricGPUClockMem                           // GPU memory clock (MHz)
 )
 
 // vendorOIDs maps resource file names to their vendor-specific metric OIDs.
@@ -148,8 +148,8 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 		".1.3.6.1.4.1.674.10892.5.4.200.10.1.12.1.1": MetricCPUPercent,
 		".1.3.6.1.4.1.674.10892.5.4.700.20.1.8.1.1":  MetricMemTotal,
 		".1.3.6.1.4.1.674.10892.5.4.700.20.1.6.1.1":  MetricTemperature, // systemBoardInletTemp
-		".1.3.6.1.2.1.25.2.3.1.5.1":                   MetricMemTotal,    // hrStorageSize (physical memory)
-		".1.3.6.1.2.1.25.2.3.1.6.1":                   MetricMemUsed,     // hrStorageUsed (physical memory)
+		".1.3.6.1.2.1.25.2.3.1.5.1":                  MetricMemTotal,    // hrStorageSize (physical memory)
+		".1.3.6.1.2.1.25.2.3.1.6.1":                  MetricMemUsed,     // hrStorageUsed (physical memory)
 	},
 
 	// --- HPE iLO ---

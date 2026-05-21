@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
  * © 2025 Sharon Aicler (saichler@gmail.com)
  *
@@ -12,8 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-//go:build linux
 
 package main
 
@@ -48,18 +48,18 @@ const (
 
 // NetNamespace manages the network namespace for simulated devices
 type NetNamespace struct {
-	Name       string
-	NsFd       int  // File descriptor to the namespace
-	OrigNsFd   int  // Original namespace fd to return to
-	Active     bool // Whether namespace is active
-	VethSetup  bool // Whether veth pair is configured
+	Name      string
+	NsFd      int  // File descriptor to the namespace
+	OrigNsFd  int  // Original namespace fd to return to
+	Active    bool // Whether namespace is active
+	VethSetup bool // Whether veth pair is configured
 }
 
 // CreateNetNamespace creates and configures the opensim network namespace
 func CreateNetNamespace() (*NetNamespace, error) {
 	ns := &NetNamespace{
-		Name:   NETNS_NAME,
-		NsFd:   -1,
+		Name:     NETNS_NAME,
+		NsFd:     -1,
 		OrigNsFd: -1,
 	}
 

@@ -1,9 +1,9 @@
+//go:build !linux
+
 /*
  * Copyright 2026 Ronny Trommer <ronny@no42.org>
  * SPDX-License-Identifier: Apache-2.0
  */
-
-//go:build !linux
 
 // Non-Linux stubs for TUN interface management.
 // The real implementations require Linux kernel TUN/TAP and ioctl.

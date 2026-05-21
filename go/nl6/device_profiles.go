@@ -17,16 +17,16 @@ package main
 
 // DeviceProfile defines CPU/memory/temperature metric parameters for a device category.
 type DeviceProfile struct {
-	CPUBaseMin  int   // Minimum base CPU% (e.g., 10)
-	CPUBaseMax  int   // Maximum base CPU% (e.g., 40)
-	CPUSpike    int   // Max amplitude of sine wave spikes
-	MemTotalKB  int64 // Total memory in KB
-	MemBaseMin  int   // Minimum base memory utilization %
-	MemBaseMax  int   // Maximum base memory utilization %
-	MemVariance int   // Memory fluctuation range %
-	TempBaseMin int   // Minimum base temperature in Celsius
-	TempBaseMax int   // Maximum base temperature in Celsius
-	TempSpike   int   // Max amplitude of temperature spikes
+	CPUBaseMin  int         // Minimum base CPU% (e.g., 10)
+	CPUBaseMax  int         // Maximum base CPU% (e.g., 40)
+	CPUSpike    int         // Max amplitude of sine wave spikes
+	MemTotalKB  int64       // Total memory in KB
+	MemBaseMin  int         // Minimum base memory utilization %
+	MemBaseMax  int         // Maximum base memory utilization %
+	MemVariance int         // Memory fluctuation range %
+	TempBaseMin int         // Minimum base temperature in Celsius
+	TempBaseMax int         // Maximum base temperature in Celsius
+	TempSpike   int         // Max amplitude of temperature spikes
 	GPU         *GPUProfile // Non-nil for GPU server devices
 }
 
@@ -92,8 +92,8 @@ var profileServer = DeviceProfile{
 // GPU server profiles
 var profileGPUServerA100 = DeviceProfile{
 	CPUBaseMin: 20, CPUBaseMax: 55, CPUSpike: 25,
-	MemTotalKB:  1024 * 1024 * 1024, // 1 TB system RAM
-	MemBaseMin:  40, MemBaseMax: 75, MemVariance: 12,
+	MemTotalKB: 1024 * 1024 * 1024, // 1 TB system RAM
+	MemBaseMin: 40, MemBaseMax: 75, MemVariance: 12,
 	TempBaseMin: 32, TempBaseMax: 48, TempSpike: 6,
 	GPU: &GPUProfile{
 		GPUCount: 8, VRAMPerGPUMB: 81920,
@@ -106,8 +106,8 @@ var profileGPUServerA100 = DeviceProfile{
 
 var profileGPUServerH100 = DeviceProfile{
 	CPUBaseMin: 25, CPUBaseMax: 60, CPUSpike: 28,
-	MemTotalKB:  2 * 1024 * 1024 * 1024, // 2 TB system RAM
-	MemBaseMin:  45, MemBaseMax: 80, MemVariance: 12,
+	MemTotalKB: 2 * 1024 * 1024 * 1024, // 2 TB system RAM
+	MemBaseMin: 45, MemBaseMax: 80, MemVariance: 12,
 	TempBaseMin: 34, TempBaseMax: 50, TempSpike: 7,
 	GPU: &GPUProfile{
 		GPUCount: 8, VRAMPerGPUMB: 81920,
@@ -120,8 +120,8 @@ var profileGPUServerH100 = DeviceProfile{
 
 var profileGPUServerH200 = DeviceProfile{
 	CPUBaseMin: 25, CPUBaseMax: 60, CPUSpike: 28,
-	MemTotalKB:  2 * 1024 * 1024 * 1024, // 2 TB system RAM
-	MemBaseMin:  45, MemBaseMax: 80, MemVariance: 12,
+	MemTotalKB: 2 * 1024 * 1024 * 1024, // 2 TB system RAM
+	MemBaseMin: 45, MemBaseMax: 80, MemVariance: 12,
 	TempBaseMin: 34, TempBaseMax: 50, TempSpike: 7,
 	GPU: &GPUProfile{
 		GPUCount: 8, VRAMPerGPUMB: 144384,
@@ -135,11 +135,11 @@ var profileGPUServerH200 = DeviceProfile{
 // deviceProfileMap maps resource file names to their device profiles.
 var deviceProfileMap = map[string]DeviceProfile{
 	// Core Routers
-	"asr9k.json":            profileCoreRouter,
-	"cisco_crs_x.json":      profileCoreRouter,
-	"huawei_ne8000.json":    profileCoreRouter,
-	"nokia_7750_sr12.json":  profileCoreRouter,
-	"juniper_mx960.json":    profileCoreRouter,
+	"asr9k.json":           profileCoreRouter,
+	"cisco_crs_x.json":     profileCoreRouter,
+	"huawei_ne8000.json":   profileCoreRouter,
+	"nokia_7750_sr12.json": profileCoreRouter,
+	"juniper_mx960.json":   profileCoreRouter,
 
 	// Edge Routers
 	"juniper_mx240.json": profileEdgeRouter,
@@ -156,10 +156,10 @@ var deviceProfileMap = map[string]DeviceProfile{
 	"dlink_dgs3630.json":       profileCampusSwitch,
 
 	// Firewalls
-	"palo_alto_pa3220.json":       profileFirewall,
+	"palo_alto_pa3220.json":        profileFirewall,
 	"fortinet_fortigate_600e.json": profileFirewall,
-	"sonicwall_nsa6700.json":      profileFirewall,
-	"check_point_15600.json":      profileFirewall,
+	"sonicwall_nsa6700.json":       profileFirewall,
+	"check_point_15600.json":       profileFirewall,
 
 	// Servers / BMC
 	"dell_poweredge_r750.json": profileServer,
