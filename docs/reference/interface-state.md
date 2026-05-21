@@ -241,3 +241,23 @@ on-demand endpoints (`POST .../trap`, `POST .../syslog`).
   enforces single-init per device to prevent silently orphaning gNMI
   ON_CHANGE listeners. Any future code path that needs to re-init must
   first migrate listeners explicitly.
+- **`ifAdminStatus` collapses three cases to `up(1)`** — out-of-range
+  ifIndex, in-range-but-unseeded slot, and explicit AdminUp all return
+  the same value. IF-MIB does not define an "unknown" enum for
+  `ifAdminStatus` (only `up(1) | down(2) | testing(3)`), so the engine
+  cannot surface a sentinel without violating the on-wire contract.
+  Consumers that need to distinguish "ghost interface" from "real
+  interface up" MUST consult `IfIndices()` upstream rather than
+  inferring from `AdminStatus(ifIndex)`. `ifOperStatus` is asymmetric
+  here — IF-MIB defines `unknown(4)`, so `OperStatus` returns
+  `OperUnknown` for the same ghost cases.
+- **Wall-relative timestamps cap at ~9.13 years.** `last-change` is
+  packed into a 58-bit relative-nanoseconds field; the all-ones value
+  (`0x03FF…FF`, ~9.13y from engine boot) is reserved as the in-band
+  clock-rewind sentinel. A simulator running past this uptime would
+  see legitimate timestamps collide with the sentinel and surface as
+  `LastChangeRewindSentinel` on the gNMI wire / `"0"` on SNMP. This
+  is well outside realistic test-harness operational scope — the
+  simulator does not target multi-year continuous-uptime workloads.
+  If you need longer ranges, the slot layout (3+3+58) can be widened
+  by re-packing.

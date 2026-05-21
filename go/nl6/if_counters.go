@@ -98,17 +98,32 @@ var ifCyclerColumns = []struct {
 }
 
 // stateEnumStrings is a lookup table mapping IF-MIB integer enum values
-// (1..7 for ifOperStatus, 1..3 for ifAdminStatus, in-range cases for
-// both) to their decimal-string SNMP wire encoding. Avoids per-call
+// to their decimal-string SNMP wire encoding. Avoids per-call
 // `strconv.Itoa` allocation on the hot read path. Index 0 is the
 // uninitialised / out-of-range default ("0").
 var stateEnumStrings = [8]string{"0", "1", "2", "3", "4", "5", "6", "7"}
 
-// enumString converts an IF-MIB enum uint8 to its SNMP decimal string
-// without allocating. Values outside 0..7 return "0" (defensive — the
-// state engine never emits these).
-func enumString(v uint8) string {
-	if v > 7 {
+// operEnumString converts an IF-MIB ifOperStatus value (legal range
+// 1..7, RFC 2863) to its SNMP decimal string without allocating.
+// Values outside the legal range render as `"0"` — wire-invalid, but
+// matches the engine's "never emit out-of-range" contract: a
+// regression that lets such a value escape OperStatus surfaces as a
+// loud SNMP value of "0" rather than misencoding as an in-range enum.
+func operEnumString(v uint8) string {
+	if v < OperUp || v > OperLowerLayerDn {
+		return "0"
+	}
+	return stateEnumStrings[v]
+}
+
+// adminEnumString converts an IF-MIB ifAdminStatus value (legal range
+// 1..3, RFC 2863) to its SNMP decimal string without allocating.
+// Values outside the legal admin range render as `"0"` even when they
+// would have been valid as an ifOperStatus value (e.g. 4..7); the
+// type-split prevents an oper-range value from being misencoded as
+// admin if a future refactor crosses wires.
+func adminEnumString(v uint8) string {
+	if v < AdminUp || v > AdminTesting {
 		return "0"
 	}
 	return stateEnumStrings[v]
@@ -389,9 +404,9 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	if !ifX && ic.state != nil {
 		switch col {
 		case colIfAdminStatus:
-			return enumString(ic.state.AdminStatus(ifIndex))
+			return adminEnumString(ic.state.AdminStatus(ifIndex))
 		case colIfOperStatus:
-			return enumString(ic.state.OperStatus(ifIndex))
+			return operEnumString(ic.state.OperStatus(ifIndex))
 		case colIfLastChange:
 			// TimeTicks (hundredths of a second since the state-engine
 			// boot epoch). Pre-transition slots render as "0"; rewind-
