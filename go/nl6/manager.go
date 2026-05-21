@@ -413,6 +413,17 @@ func (sm *SimulatorManager) Shutdown() error {
 	// its per-device gRPC server. Safe to call when never started.
 	sm.StopGnmiSubsystem()
 
+	// Stop the flap scheduler (state-engine mutator goroutine). Safe to
+	// call when never started. Cancels the Run context so the goroutine
+	// unwinds even when blocked in `limiter.Wait`.
+	sm.StopFlapSubsystem()
+
+	// Cancel every pending REST auto-revert timer (POST .../oper-status
+	// with a `duration` field). Without this, in-flight timers would
+	// keep their goroutines alive across Shutdown, mutating an
+	// effectively-dead state engine.
+	sm.cancelAllAutoReverts()
+
 	if sm.useNamespace && sm.netNamespace != nil {
 		// Fast path: when using a namespace, deleting it instantly destroys all
 		// TUN interfaces inside it. No need to delete them one by one.

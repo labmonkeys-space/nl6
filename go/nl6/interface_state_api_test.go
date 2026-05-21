@@ -1,0 +1,464 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import (
+	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gorilla/mux"
+)
+
+// stateAPIFixture stands up a SimulatorManager with one device whose
+// metricsCycler is initialised so InterfaceState is populated. Returns
+// the router so tests can exercise the HTTP surface end-to-end. The
+// global `manager` var is swapped to point at this fixture and restored
+// on cleanup.
+type stateAPIFixture struct {
+	mgr    *SimulatorManager
+	device *DeviceSimulator
+	router *mux.Router
+}
+
+func newStateAPIFixture(t *testing.T) *stateAPIFixture {
+	t.Helper()
+
+	res := buildTestResources(t, []uint64{1_000_000_000, 1_000_000_000})
+	// Seed initial state values via JSON so the InterfaceState boot
+	// value is predictable (all interfaces start UP). The JSON stores
+	// IF-MIB integer enum: 1=UP for both ifAdminStatus.<N> at .7 and
+	// ifOperStatus.<N> at .8. Tests that need DOWN start with a
+	// programmatic SetOperStatus or a REST POST.
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.7.1", "1")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.8.1", "1")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.7.2", "1")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.8.2", "1")
+
+	device := &DeviceSimulator{
+		ID:            "test-device",
+		IP:            net.IPv4(10, 42, 0, 1),
+		metricsCycler: NewMetricsCycler(0, GetDeviceProfile("")),
+	}
+	device.metricsCycler.InitIfCountersWithScenario(res, 1, IfErrorClean)
+
+	mgr := &SimulatorManager{
+		devices:          map[string]*DeviceSimulator{device.ID: device},
+		deviceIPs:        map[string]struct{}{device.IP.String(): {}},
+		deviceTypesByIP:  map[string]string{},
+		resourcesCache:   map[string]*DeviceResources{},
+		tunInterfacePool: map[string]*TunInterface{},
+	}
+
+	// Swap the package-level manager so the HTTP handler can reach the
+	// fixture. Restored on cleanup so other tests aren't perturbed.
+	t.Cleanup(swapGlobalManager(mgr))
+
+	// Wire the state engine counters to the manager aggregates so the
+	// /api/v1/gnmi/status integration test in this file can observe
+	// state_events_emitted updates.
+	if ic := device.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+		ic.State().SetCounters(&mgr.gnmiStateEventsEmitted, &mgr.gnmiStateEventsDropped)
+	}
+
+	return &stateAPIFixture{mgr: mgr, device: device, router: setupRoutes()}
+}
+
+var globalManagerSwapLock sync.Mutex
+
+func swapGlobalManager(replacement *SimulatorManager) func() {
+	globalManagerSwapLock.Lock()
+	prev := manager
+	manager = replacement
+	return func() {
+		manager = prev
+		globalManagerSwapLock.Unlock()
+	}
+}
+
+func TestSetOperStatus_HappyPath202(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d, want 202; body=%s", rr.Code, rr.Body.String())
+	}
+
+	// State engine must reflect the mutation.
+	ic := f.device.metricsCycler.ifCounters.Load()
+	if got := ic.State().OperStatus(1); got != OperDown {
+		t.Errorf("OperStatus(1) post-mutation: got %d, want OperDown(2)", got)
+	}
+
+	// SNMP path via GetDynamic must agree.
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.8.1"); got != "2" {
+		t.Errorf("SNMP ifOperStatus.1 post-mutation: got %q, want \"2\"", got)
+	}
+
+	// state_events_emitted bumped by 1 (one mutation; no listeners so
+	// the broadcast Range iterates zero entries — emitted only counts
+	// successful sends to listeners. With 0 listeners, emitted stays 0.
+	// Add a listener and re-run to verify emitted increments.
+	ch := make(chan StateChange, 16)
+	ic.State().AddListener(ch)
+	body = strings.NewReader(`{"status":"UP"}`)
+	req = httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr = httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("revert: got %d, want 202", rr.Code)
+	}
+	select {
+	case ev := <-ch:
+		if ev.Oper != OperUp {
+			t.Errorf("listener event Oper = %d, want OperUp", ev.Oper)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("listener did not receive event")
+	}
+	if atomic.LoadUint64(&f.mgr.gnmiStateEventsEmitted) == 0 {
+		t.Errorf("gnmiStateEventsEmitted: got 0, want >= 1")
+	}
+}
+
+func TestSetAdminStatus_HappyPath202(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/2/admin-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d, want 202; body=%s", rr.Code, rr.Body.String())
+	}
+	ic := f.device.metricsCycler.ifCounters.Load()
+	if got := ic.State().AdminStatus(2); got != AdminDown {
+		t.Errorf("AdminStatus(2): got %d, want AdminDown(2)", got)
+	}
+	// oper-status untouched.
+	if got := ic.State().OperStatus(2); got != OperUp {
+		t.Errorf("OperStatus(2) should be unaffected: got %d, want OperUp", got)
+	}
+}
+
+func TestSetOperStatus_UnknownDevice404(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/192.168.99.99/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSetOperStatus_UnknownIfIndex400(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/99/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400; body=%s", rr.Code, rr.Body.String())
+	}
+	// Body should include validIfIndexes for self-service.
+	var body400 map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body400); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if _, ok := body400["validIfIndexes"]; !ok {
+		t.Errorf("400 body missing validIfIndexes key: %v", body400)
+	}
+}
+
+func TestSetOperStatus_MalformedBody400(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"missing-status", `{}`},
+		{"unknown-field", `{"status":"DOWN","wrong":"foo"}`},
+		{"invalid-status", `{"status":"BANANA"}`},
+		{"invalid-duration", `{"status":"DOWN","duration":"banana"}`},
+		{"negative-duration", `{"status":"DOWN","duration":"-1s"}`},
+		{"not-json", `not json`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newStateAPIFixture(t)
+			req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", strings.NewReader(tc.body))
+			rr := httptest.NewRecorder()
+			f.router.ServeHTTP(rr, req)
+			if rr.Code != http.StatusBadRequest {
+				t.Errorf("status: got %d, want 400; body=%s", rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestSetOperStatus_DurationAutoReverts(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN","duration":"100ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d, want 202", rr.Code)
+	}
+	ic := f.device.metricsCycler.ifCounters.Load()
+	// Immediately after: DOWN.
+	if got := ic.State().OperStatus(1); got != OperDown {
+		t.Errorf("immediate post-POST: got %d, want OperDown", got)
+	}
+	// After the duration elapses: back to UP.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if ic.State().OperStatus(1) == OperUp {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("auto-revert never fired: OperStatus(1) = %d after 2s", ic.State().OperStatus(1))
+}
+
+func TestGnmiStatus_IncludesStateEventCounters(t *testing.T) {
+	f := newStateAPIFixture(t)
+	// Mark gNMI subsystem active so listeners count is meaningful (the
+	// handler short-circuits to 0 when inactive).
+	f.mgr.gnmiSubsystemActive.Store(true)
+
+	// Drive a state change so emitted increments. Need a listener so
+	// the broadcast actually fans out and bumps the counter.
+	ic := f.device.metricsCycler.ifCounters.Load()
+	ch := make(chan StateChange, 16)
+	ic.State().AddListener(ch)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST failed: %d %s", rr.Code, rr.Body.String())
+	}
+	<-ch // drain
+
+	req = httptest.NewRequest("GET", "/api/v1/gnmi/status", nil)
+	rr = httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("gnmi/status GET: got %d", rr.Code)
+	}
+	var st GnmiStatus
+	if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if st.StateEventsEmitted < 1 {
+		t.Errorf("state_events_emitted: got %d, want >= 1", st.StateEventsEmitted)
+	}
+	if st.StateEventsDropped != 0 {
+		t.Errorf("state_events_dropped: got %d, want 0", st.StateEventsDropped)
+	}
+}
+
+func TestSetOperStatus_TESTINGStatusAccepted(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"TESTING"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d, want 202; body=%s", rr.Code, rr.Body.String())
+	}
+	ic := f.device.metricsCycler.ifCounters.Load()
+	if got := ic.State().OperStatus(1); got != OperTesting {
+		t.Errorf("OperStatus: got %d, want OperTesting(3)", got)
+	}
+}
+
+// TestSetAdminStatus_SNMPCrossProtocol covers the spec scenario
+// "Admin-status POST round-trips through SNMP" — assert SNMP
+// ifAdminStatus.<N> returns the new value AND ifLastChange.<N> updates.
+func TestSetAdminStatus_SNMPCrossProtocol(t *testing.T) {
+	f := newStateAPIFixture(t)
+	// Sleep past 1 TimeTick so ifLastChange will register a non-zero
+	// value after the mutation.
+	time.Sleep(25 * time.Millisecond)
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/2/admin-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got %d, want 202", rr.Code)
+	}
+	ic := f.device.metricsCycler.ifCounters.Load()
+	// SNMP ifAdminStatus.<N> at .7.<N>.
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.2"); got != "2" {
+		t.Errorf("SNMP ifAdminStatus.2: got %q, want \"2\" (DOWN)", got)
+	}
+	// SNMP ifLastChange.<N> at .9.<N> must now be > 0 (a real transition).
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.9.2"); got == "0" {
+		t.Errorf("SNMP ifLastChange.2: got \"0\", want non-zero (real transition happened)")
+	}
+}
+
+// TestSetOperStatus_NoMetricsCycler503 covers the spec scenario gap
+// "device exists but no state engine returns 503". Pre-patch this was
+// uncovered.
+func TestSetOperStatus_NoMetricsCycler503(t *testing.T) {
+	// Build a fixture with a device that has NO metricsCycler.
+	device := &DeviceSimulator{
+		ID: "no-cycler-device",
+		IP: net.IPv4(10, 42, 99, 1),
+		// metricsCycler intentionally nil
+	}
+	mgr := &SimulatorManager{
+		devices:          map[string]*DeviceSimulator{device.ID: device},
+		deviceIPs:        map[string]struct{}{device.IP.String(): {}},
+		deviceTypesByIP:  map[string]string{},
+		resourcesCache:   map[string]*DeviceResources{},
+		tunInterfacePool: map[string]*TunInterface{},
+	}
+	t.Cleanup(swapGlobalManager(mgr))
+	router := setupRoutes()
+
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.99.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status: got %d, want 503; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestSetOperStatus_DurationCapped covers the new maxRevertAfter bound.
+// Duration > 24h must reject with 400.
+func TestSetOperStatus_DurationCapped(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN","duration":"25h"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want 400 for duration > 24h", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "maximum") {
+		t.Errorf("error body should mention max: got %s", rr.Body.String())
+	}
+}
+
+// TestSetOperStatus_DurationSnapshotsPreState verifies the new
+// snapshot-based revert semantics: POST DOWN duration=100ms on an
+// already-DOWN slot stays DOWN after the timer fires (no spurious flip
+// to UP, which the old flip-to-opposite design would have produced).
+func TestSetOperStatus_DurationSnapshotsPreState(t *testing.T) {
+	f := newStateAPIFixture(t)
+	ic := f.device.metricsCycler.ifCounters.Load()
+
+	// Pre-state: flip ifIndex 1 to DOWN manually so the next POST
+	// is an idempotent no-op at the immediate step.
+	state := ic.State()
+	state.SetOperStatus(1, OperDown)
+
+	// POST DOWN with duration: revert should keep it DOWN (snapshot).
+	body := strings.NewReader(`{"status":"DOWN","duration":"100ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST: %d %s", rr.Code, rr.Body.String())
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := state.OperStatus(1); got != OperDown {
+		t.Errorf("snapshot revert: got %d, want OperDown (pre-state was DOWN; revert must NOT flip to UP)", got)
+	}
+}
+
+// TestSetOperStatus_DurationCancelsPriorTimer covers the
+// duplicate-POST-cancels-prior contract.
+func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
+	f := newStateAPIFixture(t)
+	// First POST: DOWN with 200ms duration (will revert to UP).
+	body := strings.NewReader(`{"status":"DOWN","duration":"200ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("first POST: %d", rr.Code)
+	}
+	// Second POST 50ms later: TESTING with 200ms duration. Should
+	// cancel the first revert AND register a new one whose revert
+	// target is "snapshot at time of second POST" = OperDown.
+	time.Sleep(50 * time.Millisecond)
+	body = strings.NewReader(`{"status":"TESTING","duration":"200ms"}`)
+	req = httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr = httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("second POST: %d", rr.Code)
+	}
+	// After ~300ms total, the second revert should have fired —
+	// snapshot at second POST was OperDown → revert back to OperDown.
+	// The first revert (would have flipped to UP) MUST have been
+	// cancelled.
+	time.Sleep(300 * time.Millisecond)
+	ic := f.device.metricsCycler.ifCounters.Load()
+	state := ic.State()
+	if got := state.OperStatus(1); got != OperDown {
+		t.Errorf("after second-POST revert: got %d, want OperDown (snapshot before second POST)", got)
+	}
+}
+
+// TestSetOperStatus_EndpointAvailableUnderAggressiveScenario covers the
+// "endpoint available regardless of -if-flap-scenario" requirement.
+func TestSetOperStatus_EndpointAvailableUnderAggressiveScenario(t *testing.T) {
+	f := newStateAPIFixture(t)
+	// Set the device's flap scenario to aggressive (post-creation
+	// mutation; production normally sets this at AddDevice time).
+	f.device.IfFlapScenario = string(IfFlapAggressive)
+
+	body := strings.NewReader(`{"status":"DOWN"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Errorf("endpoint should work under aggressive scenario: got %d", rr.Code)
+	}
+}
+
+// TestCancelAutoRevertsForDevice covers the device-lifecycle hook —
+// pending revert timers are cancelled when the device is being torn
+// down.
+func TestCancelAutoRevertsForDevice(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN","duration":"1h"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST: %d", rr.Code)
+	}
+	// Verify timer is registered.
+	count := 0
+	f.mgr.revertTimers.Range(func(_, _ any) bool { count++; return true })
+	if count != 1 {
+		t.Errorf("revertTimers entries: got %d, want 1", count)
+	}
+	// Cancel as device.Stop would.
+	f.mgr.cancelAutoRevertsForDevice("10.42.0.1")
+	count = 0
+	f.mgr.revertTimers.Range(func(_, _ any) bool { count++; return true })
+	if count != 0 {
+		t.Errorf("revertTimers entries after cancel: got %d, want 0", count)
+	}
+}

@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"sync"
@@ -101,7 +102,14 @@ type DeviceSimulator struct {
 	// the lifetime of the device (matches the immutability of other
 	// per-device cycler state).
 	IfErrorScenario string
-	netNamespace    *NetNamespace // Network namespace (nil if using root namespace)
+	// IfFlapScenario is the per-device link-flap scenario: "clean"
+	// (default; no flaps) | "rare" | "typical" | "aggressive". Set at
+	// device creation from either the auto-start ExportSeed or the
+	// `if_flap_scenario` field in POST /api/v1/devices, and frozen for
+	// the lifetime of the device. When non-clean the flap scheduler
+	// registers the device's ifIndexes at the end of CreateDevicesWithOptions.
+	IfFlapScenario string
+	netNamespace   *NetNamespace // Network namespace (nil if using root namespace)
 	// gNMI per-device gRPC server. Created in startGnmiServer when the
 	// gNMI subsystem is enabled (the default). nil means "no listener
 	// for this device" — either because the subsystem was disabled at
@@ -272,11 +280,11 @@ type SimulatorManager struct {
 	syslogCatalogsByType  map[string]*SyslogCatalog
 	syslogScheduler       atomic.Pointer[SyslogScheduler] // lock-free read so device.Stop can deregister without taking sm.mu
 	syslogEncodersByFmt   map[SyslogFormat]SyslogEncoder  // one encoder per format; lazily populated
-	syslogLimiter         *rate.Limiter                  // independent of trap's limiter (design.md §D9)
-	syslogConns           sync.Map                       // key: syslogConnKey, value: *net.UDPConn (shared-socket fallback pool)
-	syslogAggregates      sync.Map                       // key: syslogConnKey, value: *syslogCollectorAggregate — monotonic counters surviving device delete
-	syslogFirstAttachLog  atomic.Bool                    // CAS-gated so the "syslog export active" line fires once per lifecycle; race-free reset on Stop
-	syslogIntervalWarned  atomic.Bool                    // CAS-gated divergence warning — one line per lifecycle, not per device (phase-5 review P13)
+	syslogLimiter         *rate.Limiter                   // independent of trap's limiter (design.md §D9)
+	syslogConns           sync.Map                        // key: syslogConnKey, value: *net.UDPConn (shared-socket fallback pool)
+	syslogAggregates      sync.Map                        // key: syslogConnKey, value: *syslogCollectorAggregate — monotonic counters surviving device delete
+	syslogFirstAttachLog  atomic.Bool                     // CAS-gated so the "syslog export active" line fires once per lifecycle; race-free reset on Stop
+	syslogIntervalWarned  atomic.Bool                     // CAS-gated divergence warning — one line per lifecycle, not per device (phase-5 review P13)
 	syslogGlobalCap       int
 	syslogSourcePerDevice bool
 	syslogCatalogPath     string // "" when using embedded catalog
@@ -293,6 +301,35 @@ type SimulatorManager struct {
 	gnmiUpdatesSent          uint64 // atomic; cumulative SubscribeResponse.update entries
 	gnmiUpdatesDropped       uint64 // atomic; oldest-drop overflow events (§D8)
 	gnmiTLSHandshakeFailures uint64 // atomic; per-device listener Accept errors (P17)
+	gnmiStateEventsEmitted   uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
+	gnmiStateEventsDropped   uint64 // atomic; per-channel oldest-drop overflow
+
+	// Flap subsystem state (interface state engine driver). Shared
+	// scheduler, same lock-free atomic.Pointer pattern as trap/syslog
+	// so the per-device DeleteDevice path can Deregister without
+	// re-entering sm.mu. Scenario opt-in is per device (auto-start
+	// batch via -if-flap-scenario; REST devices via if_flap_scenario
+	// on the POST body).
+	//
+	// `flapRunCancel` is the cancel func paired with the context the
+	// scheduler's Run goroutine receives. StopFlapSubsystem invokes it
+	// so any blocking `rate.Limiter.Wait(ctx)` inside Run unblocks
+	// immediately — without it, Stop's close-on-stopCh wouldn't reach
+	// the goroutine until the next token grant. Lifetime is bound by
+	// sm.mu: written under Lock in Start, cleared under Lock in Stop.
+	flapScheduler  atomic.Pointer[FlapScheduler]
+	flapGlobalCap  int
+	flapDefaultIfs IfFlapScenario // auto-start seed only; REST devices default to clean
+	flapRunCancel  context.CancelFunc
+
+	// revertTimers tracks pending REST auto-revert goroutines (POST
+	// .../oper-status with a `duration` field). Keyed by `revertKey{ip,
+	// ifIndex, isOper}` so a second duration POST on the same leaf
+	// cancels the first. `device.Stop()` cancels every entry for the
+	// device IP; `manager.Shutdown()` cancels all. Bypasses the flap
+	// scheduler's global cap (matches trap/syslog on-demand HTTP fire
+	// convention — test-harness use case, no rate-limit competition).
+	revertTimers sync.Map // revertKey → *revertTimer
 
 	mu sync.RWMutex
 }
@@ -331,6 +368,12 @@ type CreateDevicesRequest struct {
 	// pattern). Validated at handler time; unknown values reject the
 	// batch with 400.
 	IfErrorScenario string `json:"if_error_scenario,omitempty"`
+
+	// IfFlapScenario selects the per-device link-flap scenario:
+	// "clean" (default; no flaps) | "rare" | "typical" | "aggressive".
+	// Empty maps to "clean". Same opt-in-explicit semantics as
+	// if_error_scenario: REST bodies do NOT inherit the CLI seed.
+	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
 }
 
 // RoundRobinDeviceTypes defines all 28 device flavors for round robin creation
@@ -387,6 +430,9 @@ type DeviceInfo struct {
 	// creation time. Omitted from JSON when "" so clean-default devices
 	// don't clutter GET responses.
 	IfErrorScenario string `json:"if_error_scenario,omitempty"`
+	// IfFlapScenario surfaces the per-device link-flap scenario set at
+	// creation time. Omitted when clean-default for the same reason.
+	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
 }
 
 type APIResponse struct {
@@ -446,6 +492,10 @@ type ExportSeed struct {
 	// for this batch" and lives alongside the export blocks to keep
 	// one plumbing channel instead of several parallel ones.
 	IfErrorScenario IfErrorScenario
+	// IfFlapScenario is the per-device link-flap scenario for every
+	// device created from this seed. Same semantics as IfErrorScenario:
+	// non-empty value seeds the device; empty = "clean" no-flap default.
+	IfFlapScenario IfFlapScenario
 }
 
 // flowConnKey identifies a shared-socket pool entry. One pooled
