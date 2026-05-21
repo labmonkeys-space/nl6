@@ -345,7 +345,9 @@ func TestTypicalScenario_NonZeroPreSeed(t *testing.T) {
 }
 
 // GetDynamic returns "" for IF-MIB OIDs outside the dynamic set, so the
-// SNMP handler falls through to static JSON values.
+// SNMP handler falls through to static JSON values. ifAdminStatus (.7),
+// ifOperStatus (.8), and ifLastChange (.9) are NOT in this set — they
+// are owned by the interface state engine and return non-empty values.
 // Covers spec Requirement 1 "Unknown dynamic column falls through to static JSON".
 func TestGetDynamic_UnknownColumnFallsThrough(t *testing.T) {
 	res := buildTestResources(t, []uint64{1_000_000_000})
@@ -353,13 +355,10 @@ func TestGetDynamic_UnknownColumnFallsThrough(t *testing.T) {
 	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := c.ifCounters.Load()
 
-	// ifType (.3), ifMtu (.4), ifAdminStatus (.7), ifOperStatus (.8)
-	// — none of these columns are in the dynamic set.
+	// ifType (.3) and ifMtu (.4) — not in the dynamic set, must fall through.
 	for _, oid := range []string{
 		".1.3.6.1.2.1.2.2.1.3.1",
 		".1.3.6.1.2.1.2.2.1.4.1",
-		".1.3.6.1.2.1.2.2.1.7.1",
-		".1.3.6.1.2.1.2.2.1.8.1",
 	} {
 		if v := ic.GetDynamic(oid); v != "" {
 			t.Errorf("GetDynamic(%q) = %q; want empty (fall through to static JSON)", oid, v)
