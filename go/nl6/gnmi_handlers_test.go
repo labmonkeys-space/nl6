@@ -7,6 +7,8 @@ package main
 
 import (
 	"context"
+	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,12 +62,12 @@ func (f *fakeSubscribeStream) Recv() (*gnmipb.SubscribeRequest, error) {
 	}
 }
 
-func (f *fakeSubscribeStream) Context() context.Context           { return f.ctx }
-func (f *fakeSubscribeStream) SetHeader(metadata.MD) error        { return nil }
-func (f *fakeSubscribeStream) SendHeader(metadata.MD) error       { return nil }
-func (f *fakeSubscribeStream) SetTrailer(metadata.MD)             {}
-func (f *fakeSubscribeStream) SendMsg(m interface{}) error        { return nil }
-func (f *fakeSubscribeStream) RecvMsg(m interface{}) error        { return nil }
+func (f *fakeSubscribeStream) Context() context.Context     { return f.ctx }
+func (f *fakeSubscribeStream) SetHeader(metadata.MD) error  { return nil }
+func (f *fakeSubscribeStream) SendHeader(metadata.MD) error { return nil }
+func (f *fakeSubscribeStream) SetTrailer(metadata.MD)       {}
+func (f *fakeSubscribeStream) SendMsg(m interface{}) error  { return nil }
+func (f *fakeSubscribeStream) RecvMsg(m interface{}) error  { return nil }
 
 // newTestGnmiServer wires a server backed by a minimal device. Counter
 // pointers are returned so tests can assert on them.
@@ -203,7 +205,11 @@ func TestGnmiServer_Set_Unimplemented(t *testing.T) {
 	}
 }
 
-func TestGnmiServer_Subscribe_OnChangeRejected(t *testing.T) {
+// TestGnmiServer_Subscribe_OnChange_CounterPathRejected — post
+// add-interface-state §D5, ON_CHANGE is supported on static-leaf paths
+// but rejected when any path touches a counter leaf. The error names
+// the offending leaf and recommends SAMPLE.
+func TestGnmiServer_Subscribe_OnChange_CounterPathRejected(t *testing.T) {
 	srv, _, _, _ := newTestGnmiServer(t, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -225,6 +231,193 @@ func TestGnmiServer_Subscribe_OnChangeRejected(t *testing.T) {
 	}
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("expected InvalidArgument, got %v: %v", status.Code(err), err)
+	}
+	if !strings.Contains(err.Error(), "in-octets") {
+		t.Errorf("error should name the offending leaf 'in-octets'; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "SAMPLE") {
+		t.Errorf("error should recommend SAMPLE; got %q", err.Error())
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_StaticPathAccepted — ON_CHANGE on
+// a static-leaf path (oper-status) succeeds: initial batch + sync_response.
+func TestGnmiServer_Subscribe_OnChange_StaticPathAccepted(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path: pathFromString(t, "/interfaces/interface[name=*]/state/oper-status"),
+					Mode: gnmipb.SubscriptionMode_ON_CHANGE,
+				}},
+			},
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Subscribe(stream) }()
+
+	// Initial batch (1 Notification with 2 updates, one per ifIndex).
+	resp := drainOne(t, stream, 2*time.Second)
+	if resp.GetUpdate() == nil {
+		t.Fatalf("first response should be Update, got %T", resp.GetResponse())
+	}
+	if got := len(resp.GetUpdate().GetUpdate()); got != 2 {
+		t.Errorf("initial batch: got %d updates, want 2 (one per ifIndex)", got)
+	}
+	// sync_response after the initial batch.
+	sync := drainOne(t, stream, 2*time.Second)
+	if !sync.GetSyncResponse() {
+		t.Errorf("second response should be sync_response, got %T", sync.GetResponse())
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe goroutine did not exit on cancel")
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_DeliversOnStateChange — after the
+// initial batch, a mutation through InterfaceState produces one
+// matching SubscribeResponse{update}.
+func TestGnmiServer_Subscribe_OnChange_DeliversOnStateChange(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path: pathFromString(t, "/interfaces/interface[name=*]/state/oper-status"),
+					Mode: gnmipb.SubscriptionMode_ON_CHANGE,
+				}},
+			},
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Subscribe(stream) }()
+
+	// Drain initial batch + sync. By the time sync_response arrives,
+	// the handler has already called AddListener (since AddListener
+	// happens BEFORE the initial snapshot per the H2 patch). No sleep
+	// needed — the sync barrier IS the handshake.
+	drainOne(t, stream, 2*time.Second)
+	drainOne(t, stream, 2*time.Second)
+
+	state := srv.device.metricsCycler.ifCounters.Load().State()
+	changed, evt := state.SetOperStatus(2, OperDown)
+	if !changed {
+		t.Fatal("SetOperStatus failed")
+	}
+	state.Broadcast(evt)
+
+	// Expect one Update response carrying oper-status DOWN for ifIndex 2.
+	resp := drainOne(t, stream, 2*time.Second)
+	if resp.GetUpdate() == nil {
+		t.Fatalf("post-mutation response should be Update, got %T", resp.GetResponse())
+	}
+	updates := resp.GetUpdate().GetUpdate()
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(updates))
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe did not exit on cancel")
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_HeartbeatResendsCurrentValue —
+// heartbeat_interval=1s causes the sub to re-emit even without state
+// changes. Verify ≥1 heartbeat within ~2.5s of no real changes.
+func TestGnmiServer_Subscribe_OnChange_HeartbeatResendsCurrentValue(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path:              pathFromString(t, "/interfaces/interface[name=*]/state/oper-status"),
+					Mode:              gnmipb.SubscriptionMode_ON_CHANGE,
+					HeartbeatInterval: uint64(time.Second),
+				}},
+			},
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- srv.Subscribe(stream) }()
+
+	// Drain initial batch + sync.
+	drainOne(t, stream, 2*time.Second)
+	drainOne(t, stream, 2*time.Second)
+
+	// Within 2.5s we should observe at least one heartbeat emission
+	// (the ticker fires at 1s, 2s).
+	heartbeat := drainOne(t, stream, 2500*time.Millisecond)
+	if heartbeat.GetUpdate() == nil {
+		t.Fatalf("expected heartbeat Update response, got %T", heartbeat.GetResponse())
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe did not exit on cancel")
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_MixedModeRejected — a request that
+// mixes ON_CHANGE and SAMPLE subscriptions is rejected with
+// InvalidArgument; the message instructs splitting into two requests.
+func TestGnmiServer_Subscribe_OnChange_MixedModeRejected(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{
+					{
+						Path: pathFromString(t, "/interfaces/interface[name=*]/state/oper-status"),
+						Mode: gnmipb.SubscriptionMode_ON_CHANGE,
+					},
+					{
+						Path:           pathFromString(t, "/interfaces/interface[name=*]/state/counters/in-octets"),
+						Mode:           gnmipb.SubscriptionMode_SAMPLE,
+						SampleInterval: uint64(time.Second),
+					},
+				},
+			},
+		},
+	}
+
+	err := srv.Subscribe(stream)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument, got %v: %v", status.Code(err), err)
+	}
+	if !strings.Contains(err.Error(), "split") {
+		t.Errorf("error should instruct splitting; got %q", err.Error())
 	}
 }
 
@@ -281,5 +474,123 @@ func TestClampSampleInterval_Honoured(t *testing.T) {
 func TestClampSampleInterval_ZeroFallsToMin(t *testing.T) {
 	if got := clampSampleInterval(0); got != minSampleInterval {
 		t.Errorf("unset interval: got %v, want %v", got, minSampleInterval)
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_MultiStaticLeavesAccepted covers the
+// spec scenario "ON_CHANGE accepted on the state subtree's static-only
+// sibling": a request with multiple static leaves (oper-status,
+// admin-status, last-change) explicitly. The handler must accept and
+// emit each sub's initial-snapshot Notification in order.
+func TestGnmiServer_Subscribe_OnChange_MultiStaticLeavesAccepted(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{
+					{Path: pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status"), Mode: gnmipb.SubscriptionMode_ON_CHANGE},
+					{Path: pathFromString(t, "/interfaces/interface[name=TestIf1]/state/admin-status"), Mode: gnmipb.SubscriptionMode_ON_CHANGE},
+					{Path: pathFromString(t, "/interfaces/interface[name=TestIf1]/state/last-change"), Mode: gnmipb.SubscriptionMode_ON_CHANGE},
+				},
+			},
+		},
+	}
+	done := make(chan error, 1)
+	go func() { done <- srv.Subscribe(stream) }()
+
+	// Three subs → three initial-snapshot Notifications + sync_response.
+	for i := 0; i < 3; i++ {
+		resp := drainOne(t, stream, 2*time.Second)
+		if resp.GetUpdate() == nil {
+			t.Fatalf("response %d should be Update, got %T", i, resp.GetResponse())
+		}
+	}
+	sync := drainOne(t, stream, 2*time.Second)
+	if !sync.GetSyncResponse() {
+		t.Errorf("expected sync_response after 3 Notifications, got %T", sync.GetResponse())
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe goroutine did not exit on cancel")
+	}
+}
+
+// TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers covers the H1
+// patch: a device whose IfCounterCycler has known ifIndexes but no
+// `ifDescr.<N>` JSON entries must still deliver ON_CHANGE events
+// (the resolver synthesises `GigabitEthernet0/<N>` as the name and
+// the reverse-lookup map needs to know that synth name).
+//
+// Without the H1 patch, descrToIndex misses the synth name → events
+// silently dropped past the initial snapshot.
+func TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers(t *testing.T) {
+	// Build a resolver fixture with NO ifDescr entries (synth-name path).
+	res := buildTestResources(t, []uint64{1_000_000_000})
+	// Deliberately do NOT add `.1.3.6.1.2.1.2.2.1.2.<N>` (ifDescr) entries.
+	mc := &MetricsCycler{}
+	mc.InitIfCounters(res, 1)
+	device := &DeviceSimulator{
+		ID:            "test-synth",
+		IP:            net.IPv4(10, 42, 0, 99),
+		resources:     res,
+		metricsCycler: mc,
+	}
+	var active int64
+	var sent, dropped uint64
+	srv := newGnmiServer(device, &active, &sent, &dropped)
+	srv.resolver = newPathResolver(device)
+
+	// Verify synth name is in descrToIndex.
+	synth := synthIfName(1)
+	if _, ok := srv.resolver.descrToIndex[synth]; !ok {
+		t.Fatalf("descrToIndex missing synth name %q", synth)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path: pathFromString(t, "/interfaces/interface[name=*]/state/oper-status"),
+					Mode: gnmipb.SubscriptionMode_ON_CHANGE,
+				}},
+			},
+		},
+	}
+	done := make(chan error, 1)
+	go func() { done <- srv.Subscribe(stream) }()
+
+	// Drain initial batch + sync.
+	drainOne(t, stream, 2*time.Second)
+	drainOne(t, stream, 2*time.Second)
+
+	state := mc.ifCounters.Load().State()
+	changed, evt := state.SetOperStatus(1, OperDown)
+	if !changed {
+		t.Fatal("SetOperStatus failed")
+	}
+	state.Broadcast(evt)
+
+	// Without the H1 patch this drain times out.
+	resp := drainOne(t, stream, 2*time.Second)
+	if resp.GetUpdate() == nil {
+		t.Fatal("expected Update with synth-name path, got nothing")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe goroutine did not exit on cancel")
 	}
 }

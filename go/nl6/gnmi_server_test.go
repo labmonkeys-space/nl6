@@ -129,8 +129,8 @@ func dialTestGnmi(t *testing.T, addr string) *grpc.ClientConn {
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, addr, //nolint:staticcheck // need WithBlock semantics
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
-		grpc.WithBlock(),                  //nolint:staticcheck
-		grpc.WithReturnConnectionError(),  //nolint:staticcheck
+		grpc.WithBlock(),                 //nolint:staticcheck
+		grpc.WithReturnConnectionError(), //nolint:staticcheck
 	)
 	if err != nil {
 		t.Fatalf("grpc.DialContext: %v", err)
@@ -188,4 +188,121 @@ func TestGnmiServer_StopTerminatesListener(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("listener at %s still accepting connections after stopGnmiServer", addr)
+}
+
+// TestGnmiServer_MaxConcurrentStreams_Cap16 verifies the per-device
+// gRPC server caps concurrent streams at 16 (§D9 of add-interface-state,
+// lowered from 64). The 17th concurrent Subscribe stream against one
+// device must fail. gRPC reports breached MaxConcurrentStreams as the
+// stream blocking until a slot frees, NOT as ResourceExhausted on
+// connect, so we observe via timing: 16 streams complete their
+// initial-sync handshake; the 17th does not finish within a generous
+// deadline because it's queued waiting for a slot.
+func TestGnmiServer_MaxConcurrentStreams_Cap16(t *testing.T) {
+	// Build a production-shaped server: same options as startGnmiServer
+	// so the cap matches what real devices see.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer listener.Close()
+
+	cert := generateTestTLSCert(t)
+	server := grpc.NewServer(
+		grpc.Creds(credentials.NewServerTLSFromCert(cert)),
+		grpc.MaxConcurrentStreams(gnmiMaxConcurrentStreams),
+	)
+	resolver := newTestPathResolver(t, 1)
+	var active int64
+	var sent, dropped uint64
+	gnmipb.RegisterGNMIServer(server, newGnmiServer(resolver.device, &active, &sent, &dropped))
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
+
+	addr := listener.Addr().String()
+
+	// Constant must be 16 (regression on the §D9 design lock).
+	if gnmiMaxConcurrentStreams != 16 {
+		t.Fatalf("gnmiMaxConcurrentStreams = %d, want 16 (locked by §D9)", gnmiMaxConcurrentStreams)
+	}
+
+	// gRPC's MaxConcurrentStreams is an HTTP/2 SETTINGS frame applied
+	// per-connection. To exercise the cap we open all streams on ONE
+	// grpc.ClientConn — separate connections each get their own quota.
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	client := gnmipb.NewGNMIClient(conn)
+
+	const slots = 16
+	streams := make([]gnmipb.GNMI_SubscribeClient, slots)
+	cancels := make([]context.CancelFunc, slots)
+	for i := 0; i < slots; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels[i] = cancel
+		stream, err := client.Subscribe(ctx)
+		if err != nil {
+			t.Fatalf("Subscribe[%d]: %v", i, err)
+		}
+		streams[i] = stream
+		if err := stream.Send(&gnmipb.SubscribeRequest{
+			Request: &gnmipb.SubscribeRequest_Subscribe{
+				Subscribe: &gnmipb.SubscriptionList{
+					Mode: gnmipb.SubscriptionList_STREAM,
+					Subscription: []*gnmipb.Subscription{{
+						Path:           pathFromString(t, "/interfaces/interface[name=*]/state/ifindex"),
+						Mode:           gnmipb.SubscriptionMode_SAMPLE,
+						SampleInterval: uint64(time.Second),
+					}},
+				},
+			},
+		}); err != nil {
+			t.Fatalf("Send[%d]: %v", i, err)
+		}
+		// Drain at least one response so we know the stream is live
+		// and holding a slot.
+		if _, err := stream.Recv(); err != nil {
+			t.Fatalf("Recv[%d]: %v", i, err)
+		}
+	}
+	defer func() {
+		for i := 0; i < slots; i++ {
+			cancels[i]()
+		}
+	}()
+
+	// 17th stream on the same connection. gRPC queues it until a slot
+	// frees on the server. With a short ctx deadline, Recv must NOT
+	// produce a SubscribeResponse (it's blocked client-side waiting
+	// for the server to accept the HEADERS frame).
+	ctx17, cancel17 := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel17()
+	stream17, err := client.Subscribe(ctx17)
+	if err != nil {
+		return // also acceptable — some gRPC versions error at Subscribe time
+	}
+	_ = stream17.Send(&gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path:           pathFromString(t, "/interfaces/interface[name=*]/state/ifindex"),
+					Mode:           gnmipb.SubscriptionMode_SAMPLE,
+					SampleInterval: uint64(time.Second),
+				}},
+			},
+		},
+	})
+	gotResp := make(chan error, 1)
+	go func() {
+		_, err := stream17.Recv()
+		gotResp <- err
+	}()
+	select {
+	case err := <-gotResp:
+		if err == nil {
+			t.Error("17th concurrent stream got an initial response; MaxConcurrentStreams cap NOT enforced")
+		}
+	case <-time.After(1700 * time.Millisecond):
+		// Recv blocked at ctx deadline → cap enforced; pass.
+	}
 }

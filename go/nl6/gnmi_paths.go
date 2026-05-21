@@ -10,6 +10,7 @@ import (
 	"log"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -68,15 +69,30 @@ func newPathResolver(d *DeviceSimulator) *pathResolver {
 		devIP = d.IP.String()
 	}
 	for _, ifIndex := range sorted {
+		// Seed the reverse lookup from BOTH real ifDescr (when present)
+		// AND the synth name fallback. Without the synth seeding, devices
+		// whose JSON lacks `ifDescr.<N>` for some interfaces emit ON_CHANGE
+		// events whose path's `name` key resolves only via synthIfName at
+		// emit time, but `ifIndexFromPath` lookups miss → events silently
+		// dropped. Real ifDescr takes precedence over synth (same ifDescr
+		// → first wins; synth is appended after).
 		descr := lookupIfDescr(d, ifIndex)
-		if descr == "" {
-			continue
+		if descr != "" {
+			if prev, ok := r.descrToIndex[descr]; ok {
+				log.Printf("gNMI: duplicate ifDescr %q on device %s shadowing ifIndex %d→%d", descr, devIP, prev, ifIndex)
+			} else {
+				r.descrToIndex[descr] = ifIndex
+			}
 		}
-		if prev, ok := r.descrToIndex[descr]; ok {
-			log.Printf("gNMI: duplicate ifDescr %q on device %s shadowing ifIndex %d→%d", descr, devIP, prev, ifIndex)
-			continue
+		// Synth-name fallback: gnmi_paths.go's resolveLeaf uses
+		// synthIfName(ifIndex) when lookupIfDescr returns "". Seed the
+		// reverse lookup with the same form so ifIndexFromPath finds it.
+		synth := synthIfName(ifIndex)
+		if synth != "" && synth != descr {
+			if _, ok := r.descrToIndex[synth]; !ok {
+				r.descrToIndex[synth] = ifIndex
+			}
 		}
-		r.descrToIndex[descr] = ifIndex
 	}
 	return r
 }
@@ -90,9 +106,9 @@ const gnmiVersion = "0.10.0"
 // `/interfaces/interface[name=*]/state/counters/`. Order is the order
 // emitted when a subtree subscribe lands on `state/counters`.
 var gnmiCounterLeaves = []struct {
-	leaf      string
-	prefix    string // ifTablePrefix or ifXTablePrefix
-	column    int
+	leaf   string
+	prefix string // ifTablePrefix or ifXTablePrefix
+	column int
 }{
 	{"in-octets", ifXTablePrefix, colIfHCInOctets},
 	{"out-octets", ifXTablePrefix, colIfHCOutOctets},
@@ -108,10 +124,71 @@ var gnmiCounterLeaves = []struct {
 	{"out-errors", ifTablePrefix, colIfOutErrors},
 }
 
-// gnmiStateLeaves enumerates the 4 non-counter leaves under
+// gnmiStateLeaves enumerates the 5 non-counter leaves under
 // `/interfaces/interface[name=*]/state/`. Counter leaves are listed
-// separately in gnmiCounterLeaves.
-var gnmiStateLeaves = []string{"name", "ifindex", "oper-status", "admin-status"}
+// separately in gnmiCounterLeaves. `last-change` was added by the
+// add-interface-state change (§D6); ON_CHANGE subscriptions on this
+// leaf fire whenever any state mutation updates the slot's
+// lastChangeNs.
+var gnmiStateLeaves = []string{"name", "ifindex", "oper-status", "admin-status", "last-change"}
+
+// operStatusOpenConfig maps the IF-MIB / state-engine integer enum to
+// the OpenConfig identityref string. Explicit `OperUnknown` case avoids
+// relying on the default branch coincidentally returning "UNKNOWN".
+// Values outside the IF-MIB range return "UNKNOWN".
+func operStatusOpenConfig(v uint8) string {
+	switch v {
+	case OperUp:
+		return "openconfig-interfaces:UP"
+	case OperDown:
+		return "openconfig-interfaces:DOWN"
+	case OperTesting:
+		return "openconfig-interfaces:TESTING"
+	case OperUnknown:
+		return "openconfig-interfaces:UNKNOWN"
+	case OperDormant:
+		return "openconfig-interfaces:DORMANT"
+	case OperNotPresent:
+		return "openconfig-interfaces:NOT_PRESENT"
+	case OperLowerLayerDn:
+		return "openconfig-interfaces:LOWER_LAYER_DOWN"
+	default:
+		return "openconfig-interfaces:UNKNOWN"
+	}
+}
+
+// adminStatusOpenConfig maps ifAdminStatus integer enum (UP=1, DOWN=2,
+// TESTING=3) to the OpenConfig identityref string. **Asymmetric vs
+// `operStatusOpenConfig`:** IF-MIB has no `adminUnknown` enum value, so
+// the default branch returns UP rather than UNKNOWN. The state-engine
+// mutators reject out-of-range values, so this fallback is reachable
+// only from a future contributor's bug; the UP default keeps the
+// system in a safer mode than a phantom "UNKNOWN" admin state would.
+func adminStatusOpenConfig(v uint8) string {
+	switch v {
+	case AdminUp:
+		return "openconfig-interfaces:UP"
+	case AdminDown:
+		return "openconfig-interfaces:DOWN"
+	case AdminTesting:
+		return "openconfig-interfaces:TESTING"
+	default:
+		return "openconfig-interfaces:UP"
+	}
+}
+
+// isStateOnlyLeaf returns true when leaf is one of the 5 static-or-state
+// leaves that may be ON_CHANGE subscribed (§D5). Counter leaves return
+// false. Used by the ON_CHANGE Subscribe handler to gate per-sub paths
+// — counter-touching paths are rejected with InvalidArgument.
+func isStateOnlyLeaf(leaf string) bool {
+	for _, l := range gnmiStateLeaves {
+		if l == leaf {
+			return true
+		}
+	}
+	return false
+}
 
 // resolvedUpdate is the resolver's intermediate value type. It carries
 // a fully-formed gNMI Path plus a typed Go value. The handler converts
@@ -121,6 +198,50 @@ type resolvedUpdate struct {
 	// Value is one of: string, uint32, uint64. The gNMI encoder branches
 	// on the dynamic type.
 	Value interface{}
+}
+
+// ClassifyLeaves returns the leaf-name list a path covers, without
+// performing any state-engine or counter reads. Used by the ON_CHANGE
+// handler to validate that every sub's path touches only static leaves
+// BEFORE registering listeners or doing real Resolve work — avoiding
+// the cost of wildcard expansion and counter computation when the
+// validator only needs the path's SHAPE.
+//
+// Returns codes.NotFound for out-of-scope paths and the same codes
+// Resolve would return for shape errors; never returns Unavailable
+// (it doesn't depend on the counter engine being initialised).
+//
+// Leaf names are the trailing identifier (`oper-status`, `in-octets`,
+// etc.). Counter leaves are returned as bare names (`in-octets`, not
+// `counters/in-octets`) so the caller can detect them via the
+// gnmiCounterLeaves table or by checking `isStateOnlyLeaf` returning
+// false.
+func (r *pathResolver) ClassifyLeaves(p *gnmipb.Path) ([]string, error) {
+	if p == nil {
+		return nil, status.Error(codes.NotFound, "empty gNMI path")
+	}
+	if origin := p.GetOrigin(); origin != "" && origin != "openconfig" {
+		return nil, status.Errorf(codes.NotFound, "origin %q not supported (only openconfig)", origin)
+	}
+	elems := p.GetElem()
+	if len(elems) < 2 || elems[0].GetName() != "interfaces" || elems[1].GetName() != "interface" {
+		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface", pathToString(p))
+	}
+	leafSelector, err := r.expandLeafSelector(elems[2:])
+	if err != nil {
+		return nil, err
+	}
+	// expandLeafSelector returns counter leaves prefixed with "counters/".
+	// Strip that prefix so callers can use isStateOnlyLeaf directly.
+	out := make([]string, len(leafSelector))
+	for i, l := range leafSelector {
+		if strings.HasPrefix(l, "counters/") {
+			out[i] = l[len("counters/"):]
+		} else {
+			out[i] = l
+		}
+	}
+	return out, nil
 }
 
 // Resolve walks p and returns one resolvedUpdate per concrete leaf the
@@ -345,10 +466,34 @@ func (r *pathResolver) resolveLeaf(ic *IfCounterCycler, ifIndex int, leaf string
 		value = uint32(ifIndex)
 	case "oper-status":
 		path = buildStateLeafPath(ifName, "oper-status")
-		value = "openconfig-interfaces:UP"
+		// Read from the interface state engine (post add-interface-state).
+		// nil-state defensive path returns the OpenConfig UP default —
+		// matches behavior pre-state-engine for backward-compat.
+		v := uint8(OperUp)
+		if state := ic.State(); state != nil {
+			v = state.OperStatus(ifIndex)
+		}
+		value = operStatusOpenConfig(v)
 	case "admin-status":
 		path = buildStateLeafPath(ifName, "admin-status")
-		value = "openconfig-interfaces:UP"
+		v := uint8(AdminUp)
+		if state := ic.State(); state != nil {
+			v = state.AdminStatus(ifIndex)
+		}
+		value = adminStatusOpenConfig(v)
+	case "last-change":
+		// OpenConfig last-change is uint64 nanoseconds since Unix epoch.
+		// The state engine returns absolute Unix nanos directly. When the
+		// state engine is nil (test harness only — production paths
+		// always have a state engine via InitIfCountersWithScenario), skip
+		// the leaf entirely (ok=false) rather than emitting `0` which a
+		// collector would parse as "1970-01-01" timestamp.
+		state := ic.State()
+		if state == nil {
+			return resolvedUpdate{}, false
+		}
+		path = buildStateLeafPath(ifName, "last-change")
+		value = state.LastChangeNs(ifIndex)
 	default:
 		// Counter leaf — leaf has form "counters/<name>".
 		if len(leaf) <= len("counters/") || leaf[:len("counters/")] != "counters/" {

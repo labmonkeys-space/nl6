@@ -178,17 +178,17 @@ func (s *gnmiServer) Subscribe(stream gnmipb.GNMI_SubscribeServer) error {
 		return status.Errorf(codes.InvalidArgument, "unknown subscription list mode %v", sl.GetMode())
 	}
 
-	// Per-subscription validation: ON_CHANGE rejected; TARGET_DEFINED
-	// promoted to SAMPLE. Compute the effective sample interval per
-	// subscription, clamped to minSampleInterval.
+	// Per-subscription mode classification (post add-interface-state §D5):
+	// ON_CHANGE is now supported for static-leaf paths via
+	// runOnChangeSubscribe. TARGET_DEFINED is treated as SAMPLE.
+	// A SubscribeRequest mixing ON_CHANGE + SAMPLE subscriptions is
+	// rejected with InvalidArgument — the two paths have different
+	// emission models (event-driven vs ticker-driven) and weaving them
+	// in one stream would inflate complexity for negligible value.
+	// Clients split into two separate Subscribe streams.
 	subs := sl.GetSubscription()
 	if len(subs) == 0 {
 		return status.Error(codes.InvalidArgument, "subscription_list must contain at least one subscription")
-	}
-	for _, sub := range subs {
-		if sub.GetMode() == gnmipb.SubscriptionMode_ON_CHANGE {
-			return status.Error(codes.InvalidArgument, "ON_CHANGE subscription mode is not supported")
-		}
 	}
 
 	// Per-subscription tickers: each subscription's `sample_interval`
@@ -220,13 +220,28 @@ func (s *gnmiServer) Subscribe(stream gnmipb.GNMI_SubscribeServer) error {
 	atomic.AddInt64(s.activeSubscriptions, 1)
 	defer atomic.AddInt64(s.activeSubscriptions, -1)
 
-	// ONCE: send one batch + sync_response, return.
+	// ONCE: send one batch + sync_response, return. ONCE ignores
+	// per-sub mode (ON_CHANGE/SAMPLE are STREAM-only concepts).
 	if sl.GetMode() == gnmipb.SubscriptionList_ONCE {
 		return runOnceSubscribe(stream, s.resolver, subs, enc, s.updatesSent)
 	}
 
-	// STREAM/SAMPLE: spawn the per-subscription ticker goroutines + send goroutine.
-	return runStreamSubscribe(stream, s.resolver, subs, enc, s.updatesSent, s.updatesDropped)
+	// STREAM: route by per-sub mode. Mixed-mode requests are rejected.
+	// Note: ON_CHANGE drops are counted by `InterfaceState.eventsDropped`
+	// (per-channel oldest-drop on backpressure), surfaced via
+	// `gnmiStateEventsDropped` in /api/v1/gnmi/status — NOT via the
+	// `updatesDropped` counter the SAMPLE path uses. So we don't pass
+	// `updatesDropped` to runOnChangeSubscribe.
+	anyOnChange, anySample := classifyOnChangeMode(subs)
+	switch {
+	case anyOnChange && anySample:
+		return status.Error(codes.InvalidArgument,
+			"subscription_list mixes ON_CHANGE and SAMPLE/TARGET_DEFINED subscriptions; split into two separate SubscribeRequests")
+	case anyOnChange:
+		return runOnChangeSubscribe(stream, s.resolver, s.device, subs, enc, s.updatesSent)
+	default:
+		return runStreamSubscribe(stream, s.resolver, subs, enc, s.updatesSent, s.updatesDropped)
+	}
 }
 
 // encodingSupported reports whether enc is one of the encodings the

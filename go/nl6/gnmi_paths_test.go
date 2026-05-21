@@ -137,9 +137,10 @@ func TestPathResolver_SubtreeFlatten_State(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	// 4 state leaves + 12 counter leaves = 16
-	if len(updates) != 16 {
-		t.Fatalf("expected 16 leaves under /state, got %d", len(updates))
+	// 5 state leaves (name, ifindex, oper-status, admin-status, last-change)
+	// + 12 counter leaves = 17.
+	if len(updates) != 17 {
+		t.Fatalf("expected 17 leaves under /state, got %d", len(updates))
 	}
 }
 
@@ -316,6 +317,158 @@ func TestPathResolver_CounterMatchesSNMPAtSameInstant(t *testing.T) {
 
 	if gnmiVal != snmpVal {
 		t.Errorf("gNMI in-octets %d != SNMP ifHCInOctets %d at the same instant", gnmiVal, snmpVal)
+	}
+}
+
+// TestPathResolver_LastChangeLeaf verifies the new state/last-change
+// leaf (§D6 of add-interface-state): single-leaf resolution returns
+// uint64 absolute Unix nanos, and the value reflects state-engine
+// mutations.
+func TestPathResolver_LastChangeLeaf(t *testing.T) {
+	r := newTestPathResolver(t, 1)
+	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/last-change")
+
+	// Pre-mutation: equals boot time exactly.
+	updates, err := r.Resolve(p, time.Now())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(updates))
+	}
+	preNs, ok := updates[0].Value.(uint64)
+	if !ok {
+		t.Fatalf("expected uint64, got %T", updates[0].Value)
+	}
+	state := r.device.metricsCycler.ifCounters.Load().State()
+	if state == nil {
+		t.Fatal("state engine not initialised")
+	}
+	if preNs != state.bootTimeUnixNs {
+		t.Errorf("pre-mutation last-change: got %d, want bootTime %d", preNs, state.bootTimeUnixNs)
+	}
+
+	// Mutate; wait past 10ms so the change is observable in the integer slot.
+	time.Sleep(15 * time.Millisecond)
+	changed, evt := state.SetOperStatus(1, OperDown)
+	if !changed {
+		t.Fatal("SetOperStatus failed")
+	}
+
+	updates, err = r.Resolve(p, time.Now())
+	if err != nil {
+		t.Fatalf("Resolve post-mutation: %v", err)
+	}
+	postNs := updates[0].Value.(uint64)
+	if postNs <= preNs {
+		t.Errorf("post-mutation last-change %d should exceed pre %d", postNs, preNs)
+	}
+	if postNs != evt.LastChangeNs {
+		t.Errorf("resolver last-change %d != evt.LastChangeNs %d", postNs, evt.LastChangeNs)
+	}
+}
+
+// TestPathResolver_OperStatusReadsFromState verifies oper-status leaf
+// reflects the state engine (not the static OpenConfig:UP default).
+func TestPathResolver_OperStatusReadsFromState(t *testing.T) {
+	r := newTestPathResolver(t, 1)
+	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status")
+	state := r.device.metricsCycler.ifCounters.Load().State()
+
+	// Initial: state engine has OperUp seeded → resolver returns UP.
+	updates, _ := r.Resolve(p, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:UP" {
+		t.Errorf("initial: got %q, want UP", got)
+	}
+
+	// Mutate → resolver returns DOWN.
+	state.SetOperStatus(1, OperDown)
+	updates, _ = r.Resolve(p, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:DOWN" {
+		t.Errorf("post-mutation: got %q, want DOWN", got)
+	}
+
+	// Mutate to TESTING (rare enum).
+	state.SetOperStatus(1, OperTesting)
+	updates, _ = r.Resolve(p, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:TESTING" {
+		t.Errorf("TESTING: got %q, want TESTING", got)
+	}
+}
+
+// TestPathResolver_AdminStatusReadsFromState mirrors the oper-status
+// test for admin-status. Confirms the two leaves are independent.
+func TestPathResolver_AdminStatusReadsFromState(t *testing.T) {
+	r := newTestPathResolver(t, 1)
+	state := r.device.metricsCycler.ifCounters.Load().State()
+	state.SetAdminStatus(1, AdminDown)
+
+	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/admin-status")
+	updates, _ := r.Resolve(p, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:DOWN" {
+		t.Errorf("admin: got %q, want DOWN", got)
+	}
+	// oper unaffected.
+	pOper := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status")
+	updates, _ = r.Resolve(pOper, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:UP" {
+		t.Errorf("oper untouched: got %q, want UP", got)
+	}
+}
+
+// TestPathResolver_IsStateOnlyLeaf is a unit test for the leaf
+// classification helper used by the ON_CHANGE handler in §6.
+func TestPathResolver_IsStateOnlyLeaf(t *testing.T) {
+	for _, leaf := range []string{"name", "ifindex", "oper-status", "admin-status", "last-change"} {
+		if !isStateOnlyLeaf(leaf) {
+			t.Errorf("isStateOnlyLeaf(%q) = false, want true", leaf)
+		}
+	}
+	for _, leaf := range []string{"counters/in-octets", "counters/out-errors", "unknown"} {
+		if isStateOnlyLeaf(leaf) {
+			t.Errorf("isStateOnlyLeaf(%q) = true, want false", leaf)
+		}
+	}
+}
+
+// TestPathResolver_OperStatusMatchesSNMPAtSameInstant verifies the
+// cross-protocol consistency claim from the gnmi-target spec
+// ("oper-status agrees with SNMP at the same instant"). Both surfaces
+// read the same state-engine slot; mutating via the engine must change
+// both the gNMI identityref AND the SNMP-formatted decimal at the
+// same instant.
+func TestPathResolver_OperStatusMatchesSNMPAtSameInstant(t *testing.T) {
+	r := newTestPathResolver(t, 1)
+	state := r.device.metricsCycler.ifCounters.Load().State()
+	cycler := r.device.metricsCycler.ifCounters.Load()
+
+	cases := []struct {
+		oper    uint8
+		gnmi    string
+		snmpDec string
+	}{
+		{OperUp, "openconfig-interfaces:UP", "1"},
+		{OperDown, "openconfig-interfaces:DOWN", "2"},
+		{OperTesting, "openconfig-interfaces:TESTING", "3"},
+		{OperDormant, "openconfig-interfaces:DORMANT", "5"},
+	}
+	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status")
+	for _, tc := range cases {
+		state.SetOperStatus(1, tc.oper)
+		// gNMI side.
+		updates, err := r.Resolve(p, time.Now())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		gnmiVal, _ := updates[0].Value.(string)
+		if gnmiVal != tc.gnmi {
+			t.Errorf("oper=%d gNMI: got %q, want %q", tc.oper, gnmiVal, tc.gnmi)
+		}
+		// SNMP side via GetDynamic.
+		snmpVal := cycler.GetDynamic(".1.3.6.1.2.1.2.2.1.8.1")
+		if snmpVal != tc.snmpDec {
+			t.Errorf("oper=%d SNMP: got %q, want %q", tc.oper, snmpVal, tc.snmpDec)
+		}
 	}
 }
 
