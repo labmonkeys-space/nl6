@@ -139,21 +139,6 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	return req
 }
 
-// parseOIDFromRequest extracts the first OID from an SNMP request packet
-func (s *SNMPServer) parseOIDFromRequest(data []byte) string {
-	if len(data) < 10 {
-		return ".1.3.6.1.2.1.1.1.0" // Default fallback
-	}
-
-	// Find the OID in the SNMP packet
-	oid := extractOIDFromSNMPPacket(data)
-	if oid == "" {
-		return ".1.3.6.1.2.1.1.1.0" // Default fallback
-	}
-
-	return oid
-}
-
 // Create proper SNMP response packet
 func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) []byte {
 	// Parse incoming request to get actual community and request ID

@@ -6,6 +6,46 @@ run:
 linters:
   default: standard
   # standard set: errcheck, govet, ineffassign, staticcheck, unused
+  settings:
+    errcheck:
+      # Idiomatic Go patterns where errcheck is widely ignored — the
+      # call sites either have nothing useful to do with the error
+      # (Close on a doomed/torn-down connection) or are convention
+      # (http.ResponseWriter.Write after WriteHeader returns the
+      # connection state, not a recoverable error). Anything more
+      # specific (e.g. exec.Cmd.Run, unix.Setns) still surfaces.
+      exclude-functions:
+        - "(net/http.ResponseWriter).Write"
+        - "(*encoding/json.Encoder).Encode"
+        - "syscall.Close"
+        - "(io.Closer).Close"
+        - "(*os.File).Close"
+        - "(net.Conn).Close"
+        - "(net.Listener).Close"
+        - "(*net.UDPConn).Close"
+        - "(*net.TCPConn).Close"
+        - "(*net.TCPListener).Close"
+        - "(golang.org/x/crypto/ssh.Channel).Write"
+        - "(golang.org/x/crypto/ssh.Channel).Close"
+  exclusions:
+    rules:
+      # QF1xxx are stylistic quickfix suggestions (e.g. "could use
+      # tagged switch"). Useful in greenfield code but invasive on an
+      # existing codebase without obvious quality wins. Suppress the
+      # whole family; bug-finding SAxxxx checks remain active.
+      - linters:
+          - staticcheck
+        text: "^QF1[0-9]{3}:"
+      # errcheck false-positives on idiomatic ignored-error patterns.
+      # The exclude-functions list above catches typed receivers; this
+      # text rule catches local-variable `Close()` calls where the
+      # static type isn't on the list (mostly cleanup in defer
+      # statements). cmd.Run, unix.Setns, syscall.SetsockoptInt and
+      # similar non-Close errors are NOT suppressed — those still
+      # need explicit handling.
+      - linters:
+          - errcheck
+        text: 'Error return value of `[a-zA-Z_]+\.Close` is not checked'
 
 issues:
   max-issues-per-linter: 0

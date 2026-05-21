@@ -17,7 +17,6 @@ package main
 
 import (
 	"fmt"
-	"time"
 )
 
 // SNMPv3 message parsing and authentication functions
@@ -110,10 +109,10 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 			return nil, fmt.Errorf("security parameters length %d exceeds remaining data %d", secParamsLen, len(data)-pos)
 		}
 		secParamsData := data[pos : pos+secParamsLen]
-		err = s.parseUSMSecurityParameters(secParamsData, &msg.SecurityParams)
-		if err != nil {
-			// Don't fail completely, just use empty security params for basic functionality
-		}
+		// USM security-param parse errors are non-fatal in simulation
+		// mode — fall through with empty params so the message still
+		// dispatches. Capture-but-ignore is intentional.
+		_ = s.parseUSMSecurityParameters(secParamsData, &msg.SecurityParams)
 		pos += secParamsLen
 	}
 
@@ -194,8 +193,9 @@ func (s *SNMPServer) parseUSMSecurityParameters(data []byte, params *SNMPv3Secur
 		return fmt.Errorf("failed to parse authParams: %v", err)
 	}
 
-	// Parse privacyParameters
-	params.PrivParams, pos, err = parseOctetString(data, pos)
+	// Parse privacyParameters. `pos` is reassigned but unused after this
+	// call (function returns next); the underscore makes that explicit.
+	params.PrivParams, _, err = parseOctetString(data, pos)
 	if err != nil {
 		return fmt.Errorf("failed to parse privParams: %v", err)
 	}
@@ -304,22 +304,11 @@ func (s *SNMPServer) validateSNMPv3Credentials(msg *SNMPv3Message) bool {
 	// - Verify engine boots and time values
 	// - Use proper RFC 3414 key derivation functions
 
-	// Check engine time synchronization (basic)
-	currentTime := int(time.Now().Unix())
-	timeDiff := abs(currentTime - msg.SecurityParams.AuthoritativeEngineTime)
-	if timeDiff > 150 { // 150 second window (default SNMPv3 time window)
-		// In simulation mode, we allow this to continue
-	}
+	// Simulation deliberately skips the SNMPv3 150-second engine-time
+	// window check — operators using nl6 may have intentionally skewed
+	// clocks. Production agents MUST enforce RFC 3414 §3.2.
 
 	return true
-}
-
-// Helper function for absolute value
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
 
 // handleSNMPv3GetBulk processes SNMPv3 GetBulk requests

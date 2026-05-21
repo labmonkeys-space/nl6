@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	mathrand "math/rand"
 	"net"
 	"strings"
 	"time"
@@ -48,8 +47,8 @@ func NewSimulatorManager() *SimulatorManager {
 
 // NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
 func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
-	// Initialize random seed once at startup
-	mathrand.Seed(time.Now().UnixNano())
+	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call
+	// would be a no-op (and is deprecated).
 
 	sm := &SimulatorManager{
 		devices:          make(map[string]*DeviceSimulator),
@@ -295,10 +294,9 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 		preAllocated = device.tunIface.PreAllocated
 	}
 
-	// Stop and cleanup device
-	if err := device.Stop(); err != nil {
-		// log.Printf("Error stopping device %s: %v", deviceID, err)
-	}
+	// Stop and cleanup device. Errors during teardown are non-fatal
+	// (the device is being deleted regardless); ignore intentionally.
+	_ = device.Stop()
 
 	var tunErr error
 	if hasTun {

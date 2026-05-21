@@ -222,8 +222,12 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		return FlowTickStats{}
 	}
 
-	buf := bufPool.Get().([]byte)
-	defer bufPool.Put(buf)
+	// `sync.Pool` stores `*[]byte` (SA6002). Deref once into a local
+	// slice header — the backing array is shared, so writes via `buf`
+	// land in the same memory the pointer references.
+	bufPtr := bufPool.Get().(*[]byte)
+	defer bufPool.Put(bufPtr)
+	buf := *bufPtr
 
 	var stats FlowTickStats
 
@@ -562,9 +566,11 @@ func domainIDtoIP(id uint32) net.IP {
 // defaults are set here; operators override them via SetFlowTickInterval
 // / SetFlowTemplateInterval before creating devices. Safe to call once.
 func (sm *SimulatorManager) initFlowSubsystem() {
+	// sync.Pool wants pointer-typed values to avoid the extra alloc on
+	// every Get/Put pair (staticcheck SA6002); store `*[]byte`.
 	sm.flowBufPool.New = func() interface{} {
 		buf := make([]byte, 1500)
-		return buf
+		return &buf
 	}
 	sm.flowStopCh = make(chan struct{})
 	sm.flowStopOnce = sync.Once{}

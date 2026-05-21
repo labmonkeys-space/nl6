@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"time"
 )
 
 // sFlow v5 wire constants (sflow_version_5.txt).
@@ -560,6 +559,3 @@ func (SFlowEncoder) EncodeCounterDatagram(
 // _ compile-time guard that SFlowEncoder satisfies FlowEncoder.
 var _ FlowEncoder = SFlowEncoder{}
 
-// sflowNowMs is a package-level time source for datagram headers. It exists
-// mainly so tests can hold uptime stable across encode calls if needed.
-func sflowNowMs() int64 { return time.Now().UnixMilli() }

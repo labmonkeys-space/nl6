@@ -27,7 +27,6 @@ type fakeSubscribeStream struct {
 	recvQueue chan *gnmipb.SubscribeRequest
 	sent      chan *gnmipb.SubscribeResponse
 	sendErr   atomic.Value // optional error to return from Send
-	closeOnce atomic.Bool
 }
 
 func newFakeSubscribeStream(ctx context.Context) *fakeSubscribeStream {

@@ -165,63 +165,11 @@ func (s *APIServer) handleAPIRequestMultiMethod(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Server", "Storage-API-Simulator")
 
-	// Handle authentication (basic check for Authorization header)
-	if r.Header.Get("Authorization") == "" {
-		// For simulation purposes, we'll be lenient and allow unauthenticated requests
-		// In production, this would require proper authentication
-	}
+	// Simulation deliberately accepts unauthenticated requests — production
+	// would require an Authorization header check here.
 
 	// Return the simulated response
 	responseData, err := json.MarshalIndent(matchedResource.Response, "", "  ")
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	// Set appropriate HTTP status based on method
-	switch r.Method {
-	case "POST":
-		w.WriteHeader(http.StatusCreated)
-	case "DELETE":
-		w.WriteHeader(http.StatusNoContent)
-		w.Write([]byte{}) // No content for DELETE
-		return
-	case "PUT", "PATCH":
-		w.WriteHeader(http.StatusOK)
-	default:
-		w.WriteHeader(http.StatusOK)
-	}
-
-	w.Write(responseData)
-}
-
-// handleAPIRequest processes incoming API requests and returns simulated responses (legacy single method)
-func (s *APIServer) handleAPIRequest(w http.ResponseWriter, r *http.Request, resource *APIResource) {
-	// Check if method matches (support wildcard for all methods)
-	if resource.Method != "*" && r.Method != resource.Method {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Handle path parameters (e.g., /api/volumes/{uuid})
-	requestPath := r.URL.Path
-	if !matchPathPattern(requestPath, resource.Path) {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
-	}
-
-	// Set appropriate content type
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Server", "Storage-API-Simulator")
-
-	// Handle authentication (basic check for Authorization header)
-	if r.Header.Get("Authorization") == "" {
-		// For simulation purposes, we'll be lenient and allow unauthenticated requests
-		// In production, this would require proper authentication
-	}
-
-	// Return the simulated response
-	responseData, err := json.MarshalIndent(resource.Response, "", "  ")
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

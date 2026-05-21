@@ -179,16 +179,11 @@ func sanitiseMessageBody(s string) string {
 // with millisecond precision.
 type RFC5424Encoder struct{}
 
-// StructuredDataEnterpriseID is the IANA-assigned private enterprise number
-// used in the SD-ID (e.g. `meta@32473`). 32473 is the reserved value from
-// RFC 5612 for documentation / example use. Operators who want a real
-// enterprise number should fork the encoder; this is a simulator, the SD-ID
-// is cosmetic for downstream parsers.
-const syslogSDEnterpriseID = 32473
-
 // syslogSDID is the SD-ID used in emitted STRUCTURED-DATA elements. Kept as
 // a single element because the v1 catalog schema ships a flat key/value map
-// without per-key SD-ID partitioning.
+// without per-key SD-ID partitioning. `meta@32473` uses the IANA-reserved
+// private-enterprise-number for documentation / example (RFC 5612) — this
+// is a simulator and the SD-ID is cosmetic for downstream parsers.
 const syslogSDID = "meta@32473"
 
 // MaxMessageSize returns the MTU-safe encoding ceiling. Catalog entries are
