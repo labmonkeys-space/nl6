@@ -269,9 +269,9 @@ func TestSyslogScheduler_FireErrorDoesNotStopLoop(t *testing.T) {
 // exponential distribution". We use a single device at 10ms mean and
 // collect ~500 samples (~5s runtime). For an Exp(λ=100/s) distribution:
 //
-//   mean = 1/λ = 10ms
-//   variance = 1/λ² = 100ms²
-//   coefficient of variation (stddev/mean) = 1
+//	mean = 1/λ = 10ms
+//	variance = 1/λ² = 100ms²
+//	coefficient of variation (stddev/mean) = 1
 //
 // A periodic scheduler would have CV ≈ 0; a uniform-jittered one ≈ 0.58.
 // Asserting mean within 40% and CV > 0.7 distinguishes exponential from

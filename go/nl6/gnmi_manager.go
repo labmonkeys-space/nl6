@@ -40,6 +40,11 @@ type GnmiStatus struct {
 	UpdatesSent          uint64 `json:"updates_sent"`
 	UpdatesDropped       uint64 `json:"updates_dropped"`
 	TLSHandshakeFailures uint64 `json:"tls_handshake_failures"`
+	// State-engine counters (add-interface-state §D12). Cumulative
+	// since process start; reset only on subsystem restart (currently
+	// shutdown-only).
+	StateEventsEmitted uint64 `json:"state_events_emitted"`
+	StateEventsDropped uint64 `json:"state_events_dropped"`
 }
 
 // StartGnmiSubsystem records the subsystem-wide knobs on the manager.
@@ -124,12 +129,14 @@ func (sm *SimulatorManager) GetGnmiStatus() GnmiStatus {
 		sm.mu.RUnlock()
 	}
 	return GnmiStatus{
-		SubsystemActive:       active,
-		Listeners:             listeners,
-		ActiveSubscriptions:   atomic.LoadInt64(&sm.gnmiActiveSubscriptions),
-		UpdatesSent:           atomic.LoadUint64(&sm.gnmiUpdatesSent),
-		UpdatesDropped:        atomic.LoadUint64(&sm.gnmiUpdatesDropped),
-		TLSHandshakeFailures:  atomic.LoadUint64(&sm.gnmiTLSHandshakeFailures),
+		SubsystemActive:      active,
+		Listeners:            listeners,
+		ActiveSubscriptions:  atomic.LoadInt64(&sm.gnmiActiveSubscriptions),
+		UpdatesSent:          atomic.LoadUint64(&sm.gnmiUpdatesSent),
+		UpdatesDropped:       atomic.LoadUint64(&sm.gnmiUpdatesDropped),
+		TLSHandshakeFailures: atomic.LoadUint64(&sm.gnmiTLSHandshakeFailures),
+		StateEventsEmitted:   atomic.LoadUint64(&sm.gnmiStateEventsEmitted),
+		StateEventsDropped:   atomic.LoadUint64(&sm.gnmiStateEventsDropped),
 	}
 }
 

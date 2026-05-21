@@ -21,8 +21,8 @@ type countingFirer struct {
 	deviceIP net.IP
 	count    atomic.Uint64
 	// firedAt records fire timestamps; used by inter-arrival tests.
-	mu       sync.Mutex
-	firedAt  []time.Time
+	mu      sync.Mutex
+	firedAt []time.Time
 }
 
 func (f *countingFirer) Fire(entry *CatalogEntry, overrides map[string]string) uint32 {

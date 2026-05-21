@@ -1,9 +1,9 @@
+//go:build !linux
+
 /*
  * Copyright 2026 Ronny Trommer <ronny@no42.org>
  * SPDX-License-Identifier: Apache-2.0
  */
-
-//go:build !linux
 
 // Non-Linux stubs for network namespace machinery.
 // These allow the package to compile on non-Linux hosts so that unit tests for

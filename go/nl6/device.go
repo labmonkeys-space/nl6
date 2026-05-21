@@ -274,6 +274,27 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			device.IfErrorScenario = string(scenario) // canonicalise for GET /api/v1/devices
 			device.metricsCycler.InitIfCountersWithScenario(deviceResources, int64(i)^0x4843_0000, scenario)
 
+			// Wire the state engine's per-event counters to the
+			// simulator-wide aggregates so ON_CHANGE fan-out shows up
+			// in /api/v1/gnmi/status (state_events_emitted / dropped).
+			if ic := device.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+				ic.State().SetCounters(&sm.gnmiStateEventsEmitted, &sm.gnmiStateEventsDropped)
+			}
+
+			// Register the device with the flap scheduler if a non-clean
+			// scenario was seeded. The cycler's State() and IfIndices()
+			// are populated by InitIfCountersWithScenario above; the
+			// scheduler holds onto the pointer for the device's lifetime.
+			flapScenario, _ := ParseIfFlapScenario(device.IfFlapScenario)
+			device.IfFlapScenario = string(flapScenario)
+			if flapScenario != IfFlapClean {
+				if scheduler := getFlapScheduler(sm); scheduler != nil {
+					if ic := device.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+						scheduler.Register(currentIP, ic.IfIndices(), flapScenario, ic.State())
+					}
+				}
+			}
+
 			// Initialize flow exporter if this device has flow config.
 			if device.flowConfig != nil {
 				flowProfile := GetFlowProfile(deviceResourceFile)
@@ -558,6 +579,24 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	device.IfErrorScenario = string(scenario)
 	device.metricsCycler.InitIfCountersWithScenario(resources, int64(deviceIndex)^0x4843_0000, scenario)
 
+	// Wire the state engine's per-event counters to the simulator-wide
+	// aggregates so ON_CHANGE fan-out shows up in /api/v1/gnmi/status.
+	// Mirrors the sequential-path wiring in CreateDevicesWithOptions.
+	if ic := device.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+		ic.State().SetCounters(&sm.gnmiStateEventsEmitted, &sm.gnmiStateEventsDropped)
+	}
+
+	// Register with the flap scheduler if a non-clean scenario was seeded.
+	flapScenario, _ := ParseIfFlapScenario(device.IfFlapScenario)
+	device.IfFlapScenario = string(flapScenario)
+	if flapScenario != IfFlapClean {
+		if scheduler := getFlapScheduler(sm); scheduler != nil {
+			if ic := device.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+				scheduler.Register(deviceIP, ic.IfIndices(), flapScenario, ic.State())
+			}
+		}
+	}
+
 	// Initialize flow exporter if this device has flow config.
 	if device.flowConfig != nil {
 		flowProfile := GetFlowProfile(resourceFile)
@@ -800,6 +839,31 @@ func (d *DeviceSimulator) Stop() error {
 			sched.Deregister(d.IP)
 		}
 		d.syslogExporter = nil
+	}
+
+	// Deregister from the flap scheduler if the device opted in to a
+	// non-clean scenario. No per-device exporter to close — the
+	// scheduler holds its state directly. Idempotent for clean devices
+	// (Deregister no-ops on an unknown IP).
+	//
+	// Canonicalisation invariant: `device.IfFlapScenario` is always the
+	// canonical lowercase form (`"clean"`/`"rare"`/`"typical"`/`"aggressive"`)
+	// because both Create paths (auto-start batch in
+	// CreateDevicesWithOptions and REST in createDevicesHandler) run
+	// `ParseIfFlapScenario` and store the canonical string. Direct callers
+	// that bypass these paths and store raw input would skip Deregister
+	// silently — flag in a comment, don't add a runtime parse here.
+	if d.IfFlapScenario != "" && d.IfFlapScenario != string(IfFlapClean) {
+		if sched := getFlapScheduler(manager); sched != nil {
+			sched.Deregister(d.IP)
+		}
+	}
+
+	// Cancel any pending REST auto-revert timers on this device's
+	// interfaces. Prevents a duration POST → device DELETE race from
+	// firing the revert on an orphaned state engine.
+	if manager != nil && d.IP != nil {
+		manager.cancelAutoRevertsForDevice(d.IP.String())
 	}
 
 	// Only destroy TUN interface if it's not pre-allocated and not part of bulk deletion

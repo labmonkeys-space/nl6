@@ -78,7 +78,7 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 		Version: SNMPV3_VERSION,
 		GlobalData: SNMPv3GlobalData{
 			MsgID:            requestMsg.GlobalData.MsgID,
-			MsgMaxSize:       65507,                                                        // Standard max UDP payload
+			MsgMaxSize:       65507,                                                          // Standard max UDP payload
 			MsgFlags:         requestMsg.GlobalData.MsgFlags &^ byte(SNMPV3_MSG_FLAG_REPORT), // Clear report flag
 			MsgSecurityModel: SNMPV3_SECURITY_MODEL_USM,
 		},
@@ -171,7 +171,7 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 
 	// Parse PDU to get request ID
 	if pos < len(scopedPDU) && (scopedPDU[pos] == ASN1_GET_REQUEST || scopedPDU[pos] == ASN1_GET_NEXT || scopedPDU[pos] == ASN1_GET_BULK) {
-		pos++ // Skip PDU type
+		pos++                                    // Skip PDU type
 		_, newPos := parseLength(scopedPDU, pos) // Skip PDU length
 		pos = newPos
 
@@ -474,4 +474,3 @@ func (s *SNMPServer) replaceAuthParams(msgBytes []byte, authParam []byte) []byte
 	// In a full implementation, you'd properly locate and replace the auth params
 	return msgBytes
 }
-

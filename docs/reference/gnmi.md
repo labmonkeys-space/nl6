@@ -25,8 +25,9 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 |---|---|---|
 | `/interfaces/interface[name=*]/state/name` | string | `ifDescr.<N>` |
 | `/interfaces/interface[name=*]/state/ifindex` | uint32 | `<N>` (the ifIndex) |
-| `/interfaces/interface[name=*]/state/oper-status` | enum | static `UP` |
-| `/interfaces/interface[name=*]/state/admin-status` | enum | static `UP` |
+| `/interfaces/interface[name=*]/state/oper-status` | enum | interface state engine (UP / DOWN / TESTING / DORMANT / NOT_PRESENT / LOWER_LAYER_DOWN) |
+| `/interfaces/interface[name=*]/state/admin-status` | enum | interface state engine (UP / DOWN / TESTING) |
+| `/interfaces/interface[name=*]/state/last-change` | uint64 | absolute Unix nanoseconds of the most recent state transition |
 | `/interfaces/interface[name=*]/state/counters/in-octets` | uint64 | `ifHCInOctets.<N>` |
 | `/interfaces/interface[name=*]/state/counters/out-octets` | uint64 | `ifHCOutOctets.<N>` |
 | `/interfaces/interface[name=*]/state/counters/in-unicast-pkts` | uint64 | `ifHCInUcastPkts.<N>` |
@@ -51,17 +52,33 @@ Paths outside the table above — including `/interfaces/interface/config/*`, `/
 | `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces` |
 | `Get` | implemented for any supported path |
 | `Subscribe` (STREAM/SAMPLE) | implemented |
+| `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths; rejected for counter paths |
 | `Subscribe` (ONCE) | implemented; one batch + `sync_response` then close |
 | `Subscribe` (TARGET_DEFINED) | treated as SAMPLE |
-| `Subscribe` (ON_CHANGE) | rejected with `InvalidArgument` |
+| `Subscribe` (mixed ON_CHANGE + SAMPLE) | rejected with `InvalidArgument` — split into two SubscribeRequests |
 | `Subscribe` (POLL) | rejected with `Unimplemented` |
 | `Set` | rejected with `Unimplemented` (read-only simulator) |
 
-**Sample-interval clamp:** any `sample_interval` below 1 second is silently clamped to 1 second.
+**Sample-interval clamp:** any `sample_interval` below 1 second is silently clamped to 1 second. The same clamp applies to `heartbeat_interval` on ON_CHANGE subscriptions.
 
-**Backpressure:** each subscribe stream owns a 100-deep send buffer with oldest-drop on overflow. Drops are counted simulator-wide and exposed via `GET /api/v1/gnmi/status`.
+**Backpressure:** each STREAM/SAMPLE stream owns a 100-deep send buffer with oldest-drop on overflow. ON_CHANGE streams own a 16-deep listener channel (state events are rare; depth 16 absorbs multi-second collector stalls). Both drop counters are simulator-wide and exposed via `GET /api/v1/gnmi/status` as `updates_dropped` and `state_events_dropped` respectively.
 
-**Why ON_CHANGE is rejected:** counter values change continuously under the analytical engine (degenerate trigger every sample), and `oper-status` / `admin-status` are static `UP` (would never trigger). Accepting ON_CHANGE would silently produce useless streams. Reject loudly.
+**Per-leaf ON_CHANGE acceptance.** ON_CHANGE is accepted only when every subscription's resolved path touches the state-engine-backed leaves; counter leaves are rejected because counters change continuously under the analytical engine (every observation produces a different value, which would degenerate to unbounded fan-out). The rejection error names the offending leaf and recommends SAMPLE.
+
+| Leaf | ON_CHANGE | SAMPLE |
+|---|---|---|
+| `state/name` | ✓ | ✓ |
+| `state/ifindex` | ✓ | ✓ |
+| `state/oper-status` | ✓ | ✓ |
+| `state/admin-status` | ✓ | ✓ |
+| `state/last-change` | ✓ | ✓ |
+| `state/counters/*` (12 leaves) | ✗ (rejected with InvalidArgument) | ✓ |
+
+**ON_CHANGE event sources.** Mutations come from the per-device flap scheduler (`-if-flap-scenario`) and the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`). Every transition fans out as a `SubscribeResponse{update}` to every matching subscriber within ~milliseconds. See [interface state engine](interface-state.md) for the full picture.
+
+**Heartbeat.** Per gNMI §3.5.1.5.2, `heartbeat_interval` lets a client request periodic re-emission of the current value even when nothing has changed. Set the field on an ON_CHANGE subscription to enable; sub-second values are clamped to 1 second. `heartbeat_interval=0` (unset) means no heartbeat — emit only on actual state transitions.
+
+**Mixed-mode rejection.** A single `SubscribeRequest` that mixes ON_CHANGE and SAMPLE subscriptions is rejected with `InvalidArgument`. The two paths have different emission models (event-driven vs ticker-driven); weaving them in one stream would inflate complexity for negligible value. Standard collectors (`gnmic`, OpenNMS Telemetryd) naturally issue two separate requests.
 
 ## gnmic invocation examples
 
@@ -324,7 +341,9 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 - **Port surface.** Each device adds one TCP listener on port 9339 (or whatever `-gnmi-port` says). Per-listener cost is ~10 KiB RSS + 1 fd + 1 goroutine. At 30,000 devices the total is ~320 MiB RSS.
 - **Per-device source IP.** Listeners bind inside the `opensim` netns so the source IP for accepted connections matches the device IP. Same model as SNMP / SSH / HTTPS REST.
 - **Collector-side `rp_filter`.** If your collector rejects packets from the `10.42.0.0/16` (or whatever device subnet) range, set `net.ipv4.conf.*.rp_filter=0` or `2`. Same caveat already documented for flow / trap / syslog.
-- **Slowloris hardening.** Per-device gRPC servers cap concurrent streams at 64, reap idle connections after 5 minutes, and ping clients every 30s with a 10s ack timeout. The `Subscribe` handler enforces a 30-second deadline on the initial `SubscribeRequest` — clients that open a stream and never send the `subscription_list` are rejected with `DeadlineExceeded`.
+- **Slowloris hardening.** Per-device gRPC servers cap concurrent streams at 16 (lowered from 64 by the add-interface-state change — see [§D9](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/gnmi-target/spec.md) for rationale), reap idle connections after 5 minutes, and ping clients every 30s with a 10s ack timeout. The `Subscribe` handler enforces a 30-second deadline on the initial `SubscribeRequest` — clients that open a stream and never send the `subscription_list` are rejected with `DeadlineExceeded`. The 17th concurrent stream on a single TCP connection is queued at the HTTP/2 SETTINGS_MAX_CONCURRENT_STREAMS layer until a slot frees — gRPC does not surface a status code in this case; the client's `Subscribe.Recv` simply blocks until a slot frees. Pre-v0.8.0 collectors that previously held >16 streams on one connection will see the 17th hang silently. To service >16 parallel streams, open a second `grpc.ClientConn` (multiple TCP connections each get their own quota).
+- **Soft-breaking change vs v0.7.0:** the stream cap drop (64 → 16) is observable to clients that previously opened more than 16 parallel streams per device-connection. The realistic ceiling is 2–3 (one primary collector + maybe a debug session); 16 is conservative.
+- **ON_CHANGE on subtree paths is rejected.** The `/interfaces/interface[name=*]/state` subtree includes 12 counter leaves; ON_CHANGE on a subtree that touches a counter leaf is rejected with `InvalidArgument` (the error names the offending leaf and recommends SAMPLE). Subscribers wanting ON_CHANGE coverage of the static leaves should enumerate them explicitly: e.g., one sub per `state/oper-status`, `state/admin-status`, `state/last-change`. The whole-`/state` subtree is incompatible with ON_CHANGE under the analytical counter engine because counter values change continuously.
 
 ## See also
 

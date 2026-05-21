@@ -36,24 +36,24 @@ type nf9DecodedTemplate struct {
 }
 
 type nf9DecodedRecord struct {
-	Bytes     uint32
-	Packets   uint32
-	Protocol  uint8
-	ToS       uint8
-	TCPFlags  uint8
-	SrcPort   uint16
-	SrcIP     net.IP
-	SrcMask   uint8
-	InIface   uint16
-	DstPort   uint16
-	DstIP     net.IP
-	DstMask   uint8
-	OutIface  uint16
-	NextHop   net.IP
-	SrcAS     uint16
-	DstAS     uint16
-	LastSw    uint32
-	FirstSw   uint32
+	Bytes    uint32
+	Packets  uint32
+	Protocol uint8
+	ToS      uint8
+	TCPFlags uint8
+	SrcPort  uint16
+	SrcIP    net.IP
+	SrcMask  uint8
+	InIface  uint16
+	DstPort  uint16
+	DstIP    net.IP
+	DstMask  uint8
+	OutIface uint16
+	NextHop  net.IP
+	SrcAS    uint16
+	DstAS    uint16
+	LastSw   uint32
+	FirstSw  uint32
 }
 
 type nf9Packet struct {
@@ -71,12 +71,12 @@ func decodeNF9Packet(t *testing.T, data []byte) *nf9Packet {
 	}
 
 	pkt := &nf9Packet{}
-	pkt.Header.Version    = binary.BigEndian.Uint16(data[0:])
-	pkt.Header.Count      = binary.BigEndian.Uint16(data[2:])
-	pkt.Header.SysUptime  = binary.BigEndian.Uint32(data[4:])
-	pkt.Header.UnixSecs   = binary.BigEndian.Uint32(data[8:])
+	pkt.Header.Version = binary.BigEndian.Uint16(data[0:])
+	pkt.Header.Count = binary.BigEndian.Uint16(data[2:])
+	pkt.Header.SysUptime = binary.BigEndian.Uint32(data[4:])
+	pkt.Header.UnixSecs = binary.BigEndian.Uint32(data[8:])
 	pkt.Header.SequenceNo = binary.BigEndian.Uint32(data[12:])
-	pkt.Header.SourceID   = binary.BigEndian.Uint32(data[16:])
+	pkt.Header.SourceID = binary.BigEndian.Uint32(data[16:])
 
 	pos := nf9HeaderSize
 	for pos < len(data) {
@@ -112,24 +112,24 @@ func decodeNF9Packet(t *testing.T, data []byte) *nf9Packet {
 			recPos := 4 // skip flowset header
 			for recPos+nf9RecordSize <= fsLen {
 				r := nf9DecodedRecord{}
-				r.Bytes    = binary.BigEndian.Uint32(fsData[recPos:])
-				r.Packets  = binary.BigEndian.Uint32(fsData[recPos+4:])
+				r.Bytes = binary.BigEndian.Uint32(fsData[recPos:])
+				r.Packets = binary.BigEndian.Uint32(fsData[recPos+4:])
 				r.Protocol = fsData[recPos+8]
-				r.ToS      = fsData[recPos+9]
+				r.ToS = fsData[recPos+9]
 				r.TCPFlags = fsData[recPos+10]
-				r.SrcPort  = binary.BigEndian.Uint16(fsData[recPos+11:])
-				r.SrcIP    = net.IP(append([]byte{}, fsData[recPos+13:recPos+17]...))
-				r.SrcMask  = fsData[recPos+17]
-				r.InIface  = binary.BigEndian.Uint16(fsData[recPos+18:])
-				r.DstPort  = binary.BigEndian.Uint16(fsData[recPos+20:])
-				r.DstIP    = net.IP(append([]byte{}, fsData[recPos+22:recPos+26]...))
-				r.DstMask  = fsData[recPos+26]
+				r.SrcPort = binary.BigEndian.Uint16(fsData[recPos+11:])
+				r.SrcIP = net.IP(append([]byte{}, fsData[recPos+13:recPos+17]...))
+				r.SrcMask = fsData[recPos+17]
+				r.InIface = binary.BigEndian.Uint16(fsData[recPos+18:])
+				r.DstPort = binary.BigEndian.Uint16(fsData[recPos+20:])
+				r.DstIP = net.IP(append([]byte{}, fsData[recPos+22:recPos+26]...))
+				r.DstMask = fsData[recPos+26]
 				r.OutIface = binary.BigEndian.Uint16(fsData[recPos+27:])
-				r.NextHop  = net.IP(append([]byte{}, fsData[recPos+29:recPos+33]...))
-				r.SrcAS    = binary.BigEndian.Uint16(fsData[recPos+33:])
-				r.DstAS    = binary.BigEndian.Uint16(fsData[recPos+35:])
-				r.LastSw   = binary.BigEndian.Uint32(fsData[recPos+37:])
-				r.FirstSw  = binary.BigEndian.Uint32(fsData[recPos+41:])
+				r.NextHop = net.IP(append([]byte{}, fsData[recPos+29:recPos+33]...))
+				r.SrcAS = binary.BigEndian.Uint16(fsData[recPos+33:])
+				r.DstAS = binary.BigEndian.Uint16(fsData[recPos+35:])
+				r.LastSw = binary.BigEndian.Uint32(fsData[recPos+37:])
+				r.FirstSw = binary.BigEndian.Uint32(fsData[recPos+41:])
 				pkt.Records = append(pkt.Records, r)
 				recPos += nf9RecordSize
 			}
@@ -266,20 +266,20 @@ func TestNF9EncodePacket_RecordValues(t *testing.T) {
 		}
 	}
 
-	check("Bytes",    got.Bytes,    uint32(9876))
-	check("Packets",  got.Packets,  uint32(7))
+	check("Bytes", got.Bytes, uint32(9876))
+	check("Packets", got.Packets, uint32(7))
 	check("Protocol", got.Protocol, uint8(6))
 	check("TCPFlags", got.TCPFlags, uint8(0x18))
-	check("SrcPort",  got.SrcPort,  uint16(54321))
-	check("DstPort",  got.DstPort,  uint16(443))
-	check("InIface",  got.InIface,  uint16(3))
+	check("SrcPort", got.SrcPort, uint16(54321))
+	check("DstPort", got.DstPort, uint16(443))
+	check("InIface", got.InIface, uint16(3))
 	check("OutIface", got.OutIface, uint16(4))
-	check("SrcAS",    got.SrcAS,    uint16(65001))
-	check("DstAS",    got.DstAS,    uint16(65002))
-	check("SrcMask",  got.SrcMask,  uint8(24))
-	check("DstMask",  got.DstMask,  uint8(16))
-	check("FirstSw",  got.FirstSw,  uint32(1000))
-	check("LastSw",   got.LastSw,   uint32(2500))
+	check("SrcAS", got.SrcAS, uint16(65001))
+	check("DstAS", got.DstAS, uint16(65002))
+	check("SrcMask", got.SrcMask, uint8(24))
+	check("DstMask", got.DstMask, uint8(16))
+	check("FirstSw", got.FirstSw, uint32(1000))
+	check("LastSw", got.LastSw, uint32(2500))
 
 	if !got.SrcIP.Equal(src) {
 		t.Errorf("SrcIP: got %v, want %v", got.SrcIP, src)

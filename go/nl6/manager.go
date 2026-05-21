@@ -237,6 +237,9 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		if device.IfErrorScenario != "" && device.IfErrorScenario != string(IfErrorClean) {
 			info.IfErrorScenario = device.IfErrorScenario
 		}
+		if device.IfFlapScenario != "" && device.IfFlapScenario != string(IfFlapClean) {
+			info.IfFlapScenario = device.IfFlapScenario
+		}
 		devices = append(devices, info)
 	}
 
@@ -412,6 +415,17 @@ func (sm *SimulatorManager) Shutdown() error {
 	// Stop the gNMI subsystem. Walks every device and gracefully stops
 	// its per-device gRPC server. Safe to call when never started.
 	sm.StopGnmiSubsystem()
+
+	// Stop the flap scheduler (state-engine mutator goroutine). Safe to
+	// call when never started. Cancels the Run context so the goroutine
+	// unwinds even when blocked in `limiter.Wait`.
+	sm.StopFlapSubsystem()
+
+	// Cancel every pending REST auto-revert timer (POST .../oper-status
+	// with a `duration` field). Without this, in-flight timers would
+	// keep their goroutines alive across Shutdown, mutating an
+	// effectively-dead state engine.
+	sm.cancelAllAutoReverts()
 
 	if sm.useNamespace && sm.netNamespace != nil {
 		// Fast path: when using a namespace, deleting it instantly destroys all

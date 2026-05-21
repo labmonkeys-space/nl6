@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
  * © 2025 Sharon Aicler (saichler@gmail.com)
  *
@@ -12,8 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-//go:build linux
 
 package main
 

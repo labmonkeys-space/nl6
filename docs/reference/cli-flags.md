@@ -89,6 +89,30 @@ its own scenario, so one simulator can host 100 `clean` lab devices
 alongside 5 `degraded` ones for alert-threshold testing. See
 [`if-counters` reference](snmp.md#dynamic-if-mib-counters).
 
+### Link-flap scenario
+
+`-if-flap-scenario` drives Poisson-distributed link flaps per
+`(device, ifIndex)`. Mutations go through the interface state engine
+that powers SNMP `ifOperStatus` / `ifAdminStatus` / `ifLastChange` and
+gNMI ON_CHANGE subscribers, so all three surfaces see the same value at
+the same instant.
+
+| Flag | Values | Default | Scope | Purpose |
+|------|--------|---------|-------|---------|
+| `-if-flap-scenario` | `clean` \| `rare` \| `typical` \| `aggressive` | `clean` | **seed** | Auto-start-batch per-device link-flap scenario. REST devices default to `clean`; opt in via `if_flap_scenario` POST body. |
+| `-if-flap-global-cap` | int (events/sec) | `0` | **global** | Simulator-wide rate ceiling on flap events. `0` is unlimited. |
+
+| Scenario | Mean inter-flap | Down duration | Use case |
+|----------|-----------------|---------------|----------|
+| `clean` *(default)* | ∞ (no flaps) | n/a | Steady-state regression testing |
+| `rare` | ~6 hours / interface | uniform 1–10 s | Long-running fleets, background variance |
+| `typical` | ~15 minutes / interface | uniform 1–30 s | Collector alarm-pipeline stress |
+| `aggressive` | ~1 minute / interface | uniform 1–5 s | Chaos / churn measurement |
+
+See [interface state engine reference](interface-state.md) for the REST
+control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`),
+auto-revert semantics, and the cross-protocol consistency contract.
+
 ## Export flag scope
 
 Export flags (flow / trap / syslog) fall into two categories:

@@ -35,9 +35,9 @@ const embeddedCatalogPath = "resources/_common/traps.json"
 
 // Reserved OIDs that the encoder prepends automatically to every trap.
 // Catalog authors MUST NOT include them in body varbinds.
-// - `sysUpTime.0` and `snmpTrapOID.0` are prepended unconditionally (design.md §D10).
-// - `snmpTrapEnterprise.0` is prepended when the catalog entry sets the
-//   optional `snmpTrapEnterprise` field (follow-up issue #100).
+//   - `sysUpTime.0` and `snmpTrapOID.0` are prepended unconditionally (design.md §D10).
+//   - `snmpTrapEnterprise.0` is prepended when the catalog entry sets the
+//     optional `snmpTrapEnterprise` field (follow-up issue #100).
 const (
 	oidSysUpTime0          = "1.3.6.1.2.1.1.3.0"
 	oidSnmpTrapOID0        = "1.3.6.1.6.3.1.1.4.1.0"

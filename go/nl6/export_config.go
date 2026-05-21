@@ -354,6 +354,9 @@ func applyExportSeed(device *DeviceSimulator, seed *ExportSeed) {
 	if seed.IfErrorScenario != "" {
 		device.IfErrorScenario = string(seed.IfErrorScenario)
 	}
+	if seed.IfFlapScenario != "" {
+		device.IfFlapScenario = string(seed.IfFlapScenario)
+	}
 }
 
 // Compile-time safety: ensure jsonDuration satisfies the json

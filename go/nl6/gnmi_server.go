@@ -33,8 +33,24 @@ const gnmiGracefulStopTimeout = 2 * time.Second
 // `gnmiFirstRecvTimeout` is enforced inside Subscribe to bound how long
 // a client can hold the server-side stream goroutine open without
 // sending the initial SubscriptionList.
+//
+// gnmiMaxConcurrentStreams was lowered 64 → 16 by the add-interface-state
+// change (§D9). Per-device ON_CHANGE fan-out adds one listener channel
+// per subscriber; the cap bounds the worst case for runaway client
+// behavior. The realistic ceiling is 2–3 streams per device (primary
+// collector + maybe a debug session), at which point per-stream cost
+// is depth-16 × ~64 B per StateChange entry × 3 streams ≈ 3 KiB per
+// device, or ~90 MiB at 30k devices.
+//
+// **Soft-breaking change:** the cap is HTTP/2-level (set via the
+// SETTINGS_MAX_CONCURRENT_STREAMS frame). Clients that open >16
+// concurrent Subscribe streams on the same TCP connection will see the
+// 17th QUEUE at the transport layer rather than receive a gRPC status
+// code — gRPC reports breached MaxConcurrentStreams as the stream
+// blocking until a slot frees, not as `codes.ResourceExhausted`. To
+// service >16 parallel streams, open a second TCP connection.
 const (
-	gnmiMaxConcurrentStreams uint32 = 64
+	gnmiMaxConcurrentStreams uint32 = 16
 	gnmiFirstRecvTimeout            = 30 * time.Second
 )
 

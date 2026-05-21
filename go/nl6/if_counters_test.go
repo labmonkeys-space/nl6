@@ -398,9 +398,10 @@ func TestIfCounterCycler_NextDynamicOID_OrderAndBounds(t *testing.T) {
 		t.Errorf("pre-first: got %q, want FirstDynamicOID=%q", got, ic.FirstDynamicOID())
 	}
 
-	// First dynamic row must be ifTable column 11 ifIndex 1 (ifInUcastPkts.1).
-	if got := ic.FirstDynamicOID(); got != ".1.3.6.1.2.1.2.2.1.11.1" {
-		t.Errorf("FirstDynamicOID: got %q, want .1.3.6.1.2.1.2.2.1.11.1", got)
+	// First dynamic row must be ifTable column 7 ifIndex 1 (ifAdminStatus.1
+	// from the interface state engine, ahead of the counter columns).
+	if got := ic.FirstDynamicOID(); got != ".1.3.6.1.2.1.2.2.1.7.1" {
+		t.Errorf("FirstDynamicOID: got %q, want .1.3.6.1.2.1.2.2.1.7.1", got)
 	}
 	// Last dynamic row must be ifXTable column 13 at the largest ifIndex (2).
 	if got := ic.LastDynamicOID(); got != ".1.3.6.1.2.1.31.1.1.1.13.2" {
@@ -417,4 +418,369 @@ func TestIfCounterCycler_NextDynamicOID_OrderAndBounds(t *testing.T) {
 	if got, val := ic.NextDynamicOID(ic.LastDynamicOID()); got != "" || val != "" {
 		t.Errorf("past-last: got (%q, %q), want empty", got, val)
 	}
+}
+
+// TestIfCounterCycler_StateEngine_GetDynamicReadsFromState verifies the
+// §2 integration: ifAdminStatus.<N>, ifOperStatus.<N>, ifLastChange.<N>
+// reads via GetDynamic come from the InterfaceState slot table, not
+// from oidIndex. Mutating the state engine immediately changes the
+// SNMP-visible value.
+func TestIfCounterCycler_StateEngine_GetDynamicReadsFromState(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000})
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	ic := c.ifCounters.Load()
+	if ic == nil || ic.State() == nil {
+		t.Fatal("expected initialised cycler + state engine")
+	}
+
+	// Initial values come from defaults (oidIndex has no .7/.8 entries
+	// for this fixture, so seeding falls back to OperUp / AdminUp).
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.1"); got != "1" {
+		t.Errorf("ifAdminStatus.1 initial: got %q, want \"1\" (AdminUp)", got)
+	}
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.8.1"); got != "1" {
+		t.Errorf("ifOperStatus.1 initial: got %q, want \"1\" (OperUp)", got)
+	}
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.9.1"); got != "0" {
+		t.Errorf("ifLastChange.1 initial: got %q, want \"0\" (no transitions yet)", got)
+	}
+
+	// Wait past two centi-seconds so ifLastChange (TimeTicks) will
+	// register a non-zero value after the mutation. 25ms gives ≥2 ticks
+	// of headroom on coarse-clock CI runners (Windows ~15.6ms granularity).
+	time.Sleep(25 * time.Millisecond)
+
+	// Mutate oper-status; SNMP read must reflect the change.
+	changed, _ := ic.State().SetOperStatus(1, OperDown)
+	if !changed {
+		t.Fatal("SetOperStatus(1, OperDown): expected changed=true")
+	}
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.8.1"); got != "2" {
+		t.Errorf("ifOperStatus.1 post-mutation: got %q, want \"2\" (OperDown)", got)
+	}
+	// ifLastChange should now be non-zero (centi-seconds since boot).
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.9.1"); got == "0" {
+		t.Errorf("ifLastChange.1 post-mutation: got \"0\", want non-zero")
+	}
+
+	// Admin-status is independent and unchanged.
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.1"); got != "1" {
+		t.Errorf("ifAdminStatus.1 unaffected: got %q, want \"1\"", got)
+	}
+}
+
+// TestIfCounterCycler_StateEngine_SeedsFromOidIndex verifies that
+// initial state values come from the device's static JSON when
+// ifOperStatus.<N> / ifAdminStatus.<N> are present.
+func TestIfCounterCycler_StateEngine_SeedsFromOidIndex(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000})
+	// Seed JSON values: oper=DOWN(2), admin=TESTING(3).
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.7.1", "3")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.8.1", "2")
+
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	ic := c.ifCounters.Load()
+
+	if got := ic.State().OperStatus(1); got != OperDown {
+		t.Errorf("seeded OperStatus: got %d, want OperDown(2)", got)
+	}
+	if got := ic.State().AdminStatus(1); got != AdminTesting {
+		t.Errorf("seeded AdminStatus: got %d, want AdminTesting(3)", got)
+	}
+}
+
+// TestIfCounterCycler_NextDynamicOID_WalksStateColumns verifies the
+// state columns (.7, .8, .9) participate in the walk enumeration in
+// MIB lex order, ahead of the counter columns.
+func TestIfCounterCycler_NextDynamicOID_WalksStateColumns(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000, 1_000_000_000})
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	ic := c.ifCounters.Load()
+
+	// From the table prefix, walk should hit .7.1 → .7.2 → .8.1 → .8.2 → .9.1 → .9.2 → .11.1 ...
+	want := []string{
+		".1.3.6.1.2.1.2.2.1.7.1",
+		".1.3.6.1.2.1.2.2.1.7.2",
+		".1.3.6.1.2.1.2.2.1.8.1",
+		".1.3.6.1.2.1.2.2.1.8.2",
+		".1.3.6.1.2.1.2.2.1.9.1",
+		".1.3.6.1.2.1.2.2.1.9.2",
+		".1.3.6.1.2.1.2.2.1.11.1",
+	}
+	cur := ".1.3.6.1.2.1.2.2.1"
+	for i, exp := range want {
+		next, val := ic.NextDynamicOID(cur)
+		if next != exp {
+			t.Fatalf("step %d: got next=%q, want %q", i, next, exp)
+		}
+		if val == "" {
+			t.Errorf("step %d: empty value for %s", i, next)
+		}
+		cur = next
+	}
+}
+
+// TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap stresses
+// the lock-free invariant: a concurrent SNMP-style reader observes
+// either the pre-write or post-write (oper, admin, lastChange) tuple,
+// never a torn intermediate. Race-detector test.
+//
+// The reader pulls the full tuple in a single State().slot-equivalent
+// observation by reading the cycler's three state OIDs back-to-back and
+// asserting each component is a valid enum / non-decreasing timestamp.
+// Cross-goroutine error reporting uses a shared error channel so the
+// writer can be aborted on first failure (avoids racy t.Errorf during
+// test cleanup).
+func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000})
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	ic := c.ifCounters.Load()
+	state := ic.State()
+
+	stop := make(chan struct{})
+	errCh := make(chan error, 1)
+	failure := func(format string, args ...any) {
+		select {
+		case errCh <- fmt.Errorf(format, args...):
+		default:
+		}
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { // writer
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				state.SetOperStatus(1, OperDown)
+				state.SetOperStatus(1, OperUp)
+			}
+		}
+	}()
+	go func() { // reader — observes the full (oper, admin, lastChange) tuple
+		defer wg.Done()
+		var prevLast uint64
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				op := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.8.1")
+				ad := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.1")
+				lc := state.LastChangeNs(1)
+				if op != "1" && op != "2" {
+					failure("torn oper read: %q", op)
+					return
+				}
+				if ad != "1" {
+					failure("torn admin read: %q (admin should never change)", ad)
+					return
+				}
+				// lastChange must be non-decreasing across reads (or
+				// equal — same write seen twice). Sentinel rewind is
+				// possible if the wall clock steps but unlikely in a
+				// 100ms test window; treat it as a failure if observed.
+				if lc == LastChangeRewindSentinel {
+					failure("unexpected clock-rewind sentinel during test")
+					return
+				}
+				if lc < prevLast {
+					failure("non-monotonic lastChange: prev=%d now=%d", prevLast, lc)
+					return
+				}
+				prevLast = lc
+			}
+		}
+	}()
+	time.Sleep(100 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	default:
+	}
+}
+
+// TestIfCyclerColumns_LexOrder pins the MIB lex order of `ifCyclerColumns`.
+// The list must satisfy: (a) all ifTable entries strictly precede all
+// ifXTable entries; (b) within each table the column numbers strictly
+// increase. A regression that reorders this list silently produces
+// out-of-order GETNEXT walks. Also pins membership so an accidental
+// removal of one of the three state cols (or any other owned column)
+// fails loudly rather than passing this ordering check by being shorter.
+func TestIfCyclerColumns_LexOrder(t *testing.T) {
+	prevPrefix := ""
+	prevCol := -1
+	for i, c := range ifCyclerColumns {
+		if c.prefix == prevPrefix {
+			if c.col <= prevCol {
+				t.Errorf("entry %d: same table %s, col %d not > previous col %d", i, c.prefix, c.col, prevCol)
+			}
+		} else if prevPrefix == ifXTablePrefix && c.prefix == ifTablePrefix {
+			t.Errorf("entry %d: ifTable after ifXTable; ifTable must precede ifXTable", i)
+		}
+		prevPrefix = c.prefix
+		prevCol = c.col
+	}
+
+	// Presence checks: the three state cols and the master HC dial must
+	// be in the slice. Any future deletion of one of these — a likely
+	// breakage if someone touches the column list — fails here.
+	type colKey struct {
+		prefix string
+		col    int
+	}
+	required := []colKey{
+		{ifTablePrefix, colIfAdminStatus},
+		{ifTablePrefix, colIfOperStatus},
+		{ifTablePrefix, colIfLastChange},
+		{ifXTablePrefix, colIfHCInOctets},
+		{ifXTablePrefix, colIfHCOutOctets},
+	}
+	have := make(map[colKey]bool, len(ifCyclerColumns))
+	for _, c := range ifCyclerColumns {
+		have[colKey{c.prefix, c.col}] = true
+	}
+	for _, k := range required {
+		if !have[k] {
+			t.Errorf("ifCyclerColumns missing required entry %v", k)
+		}
+	}
+}
+
+// TestIfCounterCycler_NextDynamicOID_WalksFromCol6Boundary verifies the
+// transition from "just before the first state col" (.6 — sysObjectID-
+// space outside the cycler) to the first owned column (.7.<smallestIdx>).
+// Without this test, a future change to firstDynOID / column ordering
+// could silently break the precondition that snmpwalk-from-table-prefix
+// lands on the first state column.
+func TestIfCounterCycler_NextDynamicOID_WalksFromCol6Boundary(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000, 1_000_000_000})
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	ic := c.ifCounters.Load()
+
+	// `.1.3.6.1.2.1.2.2.1.6` is the column just before .7. A walk that
+	// gets here (e.g., after a hypothetical .5 column or a malformed
+	// query) must advance to .7.1.
+	got, _ := ic.NextDynamicOID(".1.3.6.1.2.1.2.2.1.6")
+	if got != ".1.3.6.1.2.1.2.2.1.7.1" {
+		t.Errorf("walk from .6: got %q, want .7.1", got)
+	}
+	// `.1.3.6.1.2.1.2.2.1.6.99` (col 6 ifIndex 99 — not owned) likewise.
+	got, _ = ic.NextDynamicOID(".1.3.6.1.2.1.2.2.1.6.99")
+	if got != ".1.3.6.1.2.1.2.2.1.7.1" {
+		t.Errorf("walk from .6.99: got %q, want .7.1", got)
+	}
+}
+
+// TestIfCounterCycler_NextDynamicOID_StateNilSkipsStateCols verifies the
+// defensive walk path: an IfCounterCycler constructed without a state
+// engine (test-harness mode) skips the three state cols (.7/.8/.9) and
+// advances directly to the counter cols (.11+) rather than bailing the
+// walk to end-of-walk after returning "" from a state-col read.
+func TestIfCounterCycler_NextDynamicOID_StateNilSkipsStateCols(t *testing.T) {
+	// Manually construct a minimal IfCounterCycler with sortedIfIndexes
+	// populated but state==nil. Mirrors what a future test harness
+	// could do; today no production path leaves state nil.
+	ic := &IfCounterCycler{
+		startTime:       time.Now(),
+		maxIfIndex:      2,
+		knownIfIndexes:  map[int]struct{}{1: {}, 2: {}},
+		sortedIfIndexes: []int{1, 2},
+		ifIndexList:     []int{1, 2},
+		firstDynOID:     ".1.3.6.1.2.1.2.2.1.7.1",
+		lastDynOID:      ".1.3.6.1.2.1.31.1.1.1.13.2",
+		ifSpeedBps:      []uint64{1_000_000_000, 1_000_000_000},
+		baseInOctets:    make([]uint64, 2),
+		baseOutOctets:   make([]uint64, 2),
+		phaseIn:         make([]float64, 2),
+		phaseOut:        make([]float64, 2),
+		pktSizeIn:       []float64{500.0, 500.0},
+		pktSizeOut:      []float64{500.0, 500.0},
+		ucastRatioIn:    []float64{0.85, 0.85},
+		mcastRatioIn:    []float64{0.10, 0.10},
+		bcastRatioIn:    []float64{0.05, 0.05},
+		ucastRatioOut:   []float64{0.90, 0.90},
+		mcastRatioOut:   []float64{0.08, 0.08},
+		bcastRatioOut:   []float64{0.02, 0.02},
+		baseInUcast:     make([]uint64, 2),
+		baseInMcast:     make([]uint64, 2),
+		baseInBcast:     make([]uint64, 2),
+		baseOutUcast:    make([]uint64, 2),
+		baseOutMcast:    make([]uint64, 2),
+		baseOutBcast:    make([]uint64, 2),
+		errPpmIn:        make([]uint32, 2),
+		errPpmOut:       make([]uint32, 2),
+		discPpmIn:       make([]uint32, 2),
+		discPpmOut:      make([]uint32, 2),
+		baseInErr:       make([]uint64, 2),
+		baseOutErr:      make([]uint64, 2),
+		baseInDisc:      make([]uint64, 2),
+		baseOutDisc:     make([]uint64, 2),
+		// state intentionally nil
+	}
+
+	// State OID read returns "" when state==nil.
+	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.1"); got != "" {
+		t.Errorf("state-nil GetDynamic(.7.1): got %q, want \"\"", got)
+	}
+	// Walk from table prefix should skip state cols and land at .11.1.
+	got, _ := ic.NextDynamicOID(".1.3.6.1.2.1.2.2.1")
+	if got != ".1.3.6.1.2.1.2.2.1.11.1" {
+		t.Errorf("state-nil walk from table prefix: got %q, want .11.1", got)
+	}
+}
+
+// TestIfCounterCycler_StateEngine_SetCountersRewire verifies that
+// SetCounters re-wires the per-event counter pointers at runtime —
+// documented as "safe to call multiple times if pointers change".
+// Without this test the atomic.Pointer migration could regress
+// silently.
+func TestIfCounterCycler_StateEngine_SetCountersRewire(t *testing.T) {
+	res := buildTestResources(t, []uint64{1_000_000_000})
+	c := &MetricsCycler{}
+	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	state := c.ifCounters.Load().State()
+
+	var emit1, drop1, emit2, drop2 uint64
+	state.SetCounters(&emit1, &drop1)
+	ch := make(chan StateChange, 16)
+	state.AddListener(ch)
+
+	_, evt := state.SetOperStatus(1, OperDown)
+	state.Broadcast(evt)
+	<-ch
+
+	if emit1 != 1 {
+		t.Errorf("first counters: emit1=%d, want 1", emit1)
+	}
+
+	// Re-wire to a new pair.
+	state.SetCounters(&emit2, &drop2)
+	_, evt = state.SetOperStatus(1, OperUp)
+	state.Broadcast(evt)
+	<-ch
+
+	if emit2 != 1 {
+		t.Errorf("re-wired counters: emit2=%d, want 1", emit2)
+	}
+	// First pair must not have moved.
+	if emit1 != 1 {
+		t.Errorf("first counters after re-wire: emit1=%d, want 1 (unchanged)", emit1)
+	}
+
+	// Nil-out: subsequent events should not panic.
+	state.SetCounters(nil, nil)
+	_, evt = state.SetOperStatus(1, OperDown)
+	state.Broadcast(evt)
+	<-ch
 }

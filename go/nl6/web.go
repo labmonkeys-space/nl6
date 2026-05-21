@@ -32,9 +32,16 @@ import (
 
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		sendErrorResponse(w, "Invalid JSON", http.StatusBadRequest)
+	// 64 KiB cap is generous for the create-devices schema (most
+	// requests are well under 1 KiB). DisallowUnknownFields surfaces
+	// typo'd JSON keys (e.g. `if_flap_secnario`) as 400 rather than
+	// silently dropping them — matches the trap/syslog/interface-state
+	// POST conventions.
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		sendErrorResponse(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -65,8 +72,19 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	ifFlapScenario, err := ParseIfFlapScenario(req.IfFlapScenario)
+	if err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	seed := &ExportSeed{Flow: req.Flow, Traps: req.Traps, Syslog: req.Syslog, IfErrorScenario: ifErrScenario}
+	seed := &ExportSeed{
+		Flow:            req.Flow,
+		Traps:           req.Traps,
+		Syslog:          req.Syslog,
+		IfErrorScenario: ifErrScenario,
+		IfFlapScenario:  ifFlapScenario,
+	}
 	if seed.Flow != nil {
 		seed.Flow.ApplyDefaults()
 		if err := seed.Flow.Validate(); err != nil {
@@ -100,10 +118,11 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices
 	// receives the exact "no export" signal rather than an empty shell.
-	// IfErrorScenario set to anything other than the clean default is
-	// also a signal to keep the seed — the scenario field needs to
-	// reach applyExportSeed for the per-device cycler to pick it up.
-	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.IfErrorScenario == IfErrorClean {
+	// Scenario fields set to anything other than their clean defaults are
+	// also signals to keep the seed — they need to reach applyExportSeed
+	// for the per-device cycler and flap scheduler to pick them up.
+	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil &&
+		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean {
 		seed = nil
 	}
 
@@ -471,6 +490,8 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/syslog/status", syslogStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
+	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
+	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 

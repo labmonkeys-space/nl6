@@ -178,4 +178,3 @@ func TestLookupIfDescr_AgainstRealLoadedResources(t *testing.T) {
 		t.Errorf("lookupIfDescr for cisco_ios ifIndex 1: got %q, want a string containing 'Ethernet'", got)
 	}
 }
-

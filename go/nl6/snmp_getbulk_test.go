@@ -1,9 +1,9 @@
+//go:build linux
+
 /*
  * Copyright 2026 Ronny Trommer <ronny@no42.org>
  * SPDX-License-Identifier: Apache-2.0
  */
-
-//go:build linux
 
 // Note: the simulator package uses Linux-only syscalls (TUN/netns) so tests
 // must be run on Linux. The //go:build linux constraint above ensures this file
@@ -213,10 +213,10 @@ func TestParseAllOIDsFromRequest_SingleOID(t *testing.T) {
 func TestParseAllOIDsFromRequest_MultipleOIDs(t *testing.T) {
 	s := &SNMPServer{device: &DeviceSimulator{}}
 	want := []string{
-		".1.3.6.1.2.1.2.2.1.2",  // ifDescr column
-		".1.3.6.1.2.1.2.2.1.5",  // ifSpeed column
-		".1.3.6.1.2.1.2.2.1.7",  // ifAdminStatus column
-		".1.3.6.1.2.1.2.2.1.8",  // ifOperStatus column
+		".1.3.6.1.2.1.2.2.1.2",     // ifDescr column
+		".1.3.6.1.2.1.2.2.1.5",     // ifSpeed column
+		".1.3.6.1.2.1.2.2.1.7",     // ifAdminStatus column
+		".1.3.6.1.2.1.2.2.1.8",     // ifOperStatus column
 		".1.3.6.1.2.1.31.1.1.1.1",  // ifName column
 		".1.3.6.1.2.1.31.1.1.1.18", // ifAlias column
 	}
@@ -301,14 +301,14 @@ func TestHandleGetBulkMultiColumn(t *testing.T) {
 // with GETNEXT semantics and repeater OIDs are iterated max-repetitions times.
 func TestHandleGetBulkNonRepeaters(t *testing.T) {
 	s := newTestServer(map[string]string{
-		".1.3.6.1.2.1.1.1.0":     "Cisco IOS",     // sysDescr (non-repeater target)
+		".1.3.6.1.2.1.1.1.0":     "Cisco IOS", // sysDescr (non-repeater target)
 		".1.3.6.1.2.1.2.2.1.2.1": "eth0",
 		".1.3.6.1.2.1.2.2.1.2.2": "eth1",
 	})
 
 	// non-repeaters=1 (sysDescr column), repeater=ifDescr column, maxRep=2
 	colOIDs := []string{
-		".1.3.6.1.2.1.1.1", // non-repeater: next after sysDescr prefix → sysDescr.0
+		".1.3.6.1.2.1.1.1",     // non-repeater: next after sysDescr prefix → sysDescr.0
 		".1.3.6.1.2.1.2.2.1.2", // repeater: ifDescr column
 	}
 	pdu := buildGetBulkPDU(1, 2, colOIDs)
@@ -404,8 +404,8 @@ func TestParseIncomingRequest_RequestID(t *testing.T) {
 				// Build a GETBULK PDU with a 3-byte request-id.
 				varBindList := encodeSequence(append(encodeOID(".1.3.6.1.2.1.2.2.1.2"), encodeNull()...))
 				pduContents := encodeInteger(12345678)
-				pduContents = append(pduContents, encodeInteger(0)...)   // nonRepeaters
-				pduContents = append(pduContents, encodeInteger(10)...)  // maxRepetitions
+				pduContents = append(pduContents, encodeInteger(0)...)  // nonRepeaters
+				pduContents = append(pduContents, encodeInteger(10)...) // maxRepetitions
 				pduContents = append(pduContents, encodeSequence(varBindList)...)
 				pdu := []byte{ASN1_GET_BULK}
 				pdu = append(pdu, encodeLength(len(pduContents))...)

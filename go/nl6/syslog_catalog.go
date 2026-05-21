@@ -181,15 +181,15 @@ func (s *syslogSeverityJSON) UnmarshalJSON(data []byte) error {
 
 // syslogCatalogEntryJSON is the on-disk shape of one catalog entry.
 type syslogCatalogEntryJSON struct {
-	Name           string              `json:"name"`
-	Weight         int                 `json:"weight"`
-	Facility       syslogFacilityJSON  `json:"facility"`
-	Severity       syslogSeverityJSON  `json:"severity"`
-	AppName        string              `json:"appName"`
-	MsgID          string              `json:"msgId"`
-	StructuredData map[string]string   `json:"structuredData"`
-	Hostname       string              `json:"hostname"`
-	Template       string              `json:"template"`
+	Name           string             `json:"name"`
+	Weight         int                `json:"weight"`
+	Facility       syslogFacilityJSON `json:"facility"`
+	Severity       syslogSeverityJSON `json:"severity"`
+	AppName        string             `json:"appName"`
+	MsgID          string             `json:"msgId"`
+	StructuredData map[string]string  `json:"structuredData"`
+	Hostname       string             `json:"hostname"`
+	Template       string             `json:"template"`
 }
 
 // syslogCatalogJSON is the on-disk shape of the whole catalog file. The
@@ -638,8 +638,8 @@ func validateSyslogEntrySize(entry *SyslogCatalogEntry, source string) error {
 		Now:       9999999999,
 		Uptime:    0xFFFFFFFF,
 		Model:     strings.Repeat("M", 48), // longest realistic: "NVIDIA DGX A100" → 15 chars; 48 is a comfortable upper bound
-		Serial:    "SNFFFFFFFF",             // max-width synthesised format
-		ChassisID: "02:42:ff:ff:ff:ff",      // max-width synthesised format
+		Serial:    "SNFFFFFFFF",            // max-width synthesised format
+		ChassisID: "02:42:ff:ff:ff:ff",     // max-width synthesised format
 	}
 	resolved, err := entry.resolveAgainst(worst, nil)
 	if err != nil {

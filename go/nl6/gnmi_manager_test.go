@@ -6,7 +6,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -113,6 +115,8 @@ func TestGnmiStatus_CountersAggregate(t *testing.T) {
 	atomic.AddInt64(&mgr.gnmiActiveSubscriptions, 3)
 	atomic.AddUint64(&mgr.gnmiUpdatesSent, 1234)
 	atomic.AddUint64(&mgr.gnmiUpdatesDropped, 7)
+	atomic.AddUint64(&mgr.gnmiStateEventsEmitted, 42)
+	atomic.AddUint64(&mgr.gnmiStateEventsDropped, 3)
 	st := mgr.GetGnmiStatus()
 	if st.ActiveSubscriptions != 3 {
 		t.Errorf("active_subscriptions: got %d, want 3", st.ActiveSubscriptions)
@@ -122,6 +126,43 @@ func TestGnmiStatus_CountersAggregate(t *testing.T) {
 	}
 	if st.UpdatesDropped != 7 {
 		t.Errorf("updates_dropped: got %d, want 7", st.UpdatesDropped)
+	}
+	if st.StateEventsEmitted != 42 {
+		t.Errorf("state_events_emitted: got %d, want 42", st.StateEventsEmitted)
+	}
+	if st.StateEventsDropped != 3 {
+		t.Errorf("state_events_dropped: got %d, want 3", st.StateEventsDropped)
+	}
+}
+
+// TestGnmiStatus_JSONShape pins the JSON keys produced by GnmiStatus
+// marshalling. Locks in the contract for /api/v1/gnmi/status so a
+// future refactor renaming a struct field can't silently change the
+// wire shape.
+func TestGnmiStatus_JSONShape(t *testing.T) {
+	mgr := newTestManager()
+	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	st := mgr.GetGnmiStatus()
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	body := string(b)
+	for _, key := range []string{
+		`"subsystem_active":`,
+		`"listeners":`,
+		`"active_subscriptions":`,
+		`"updates_sent":`,
+		`"updates_dropped":`,
+		`"tls_handshake_failures":`,
+		`"state_events_emitted":`,
+		`"state_events_dropped":`,
+	} {
+		if !strings.Contains(body, key) {
+			t.Errorf("JSON body missing expected key %s; got: %s", key, body)
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sort"
@@ -26,6 +27,14 @@ const (
 	hcOutOIDPrefix = ifXTablePrefix + "10."
 
 	hcPeriodSec = 3600.0 // 1-hour sine-wave cycle
+
+	// maxResourceIfIndex caps the largest ifIndex accepted from a
+	// resource JSON file. NewInterfaceState allocates one
+	// atomic.Uint64 per ifIndex up to maxIfIndex, so a corrupted file
+	// listing e.g. .6.4000000000 would otherwise drive a ~32 GB
+	// allocation. 65535 is comfortably above realistic device
+	// interface counts.
+	maxResourceIfIndex = 65535
 )
 
 // ifXTable and ifTable column numbers handled dynamically.
@@ -45,6 +54,9 @@ const (
 	colIfHCOutBroadcastPkts = 13
 
 	// ifTable (.1.3.6.1.2.1.2.2.1.X)
+	colIfAdminStatus  = 7
+	colIfOperStatus   = 8
+	colIfLastChange   = 9
 	colIfInUcastPkts  = 11
 	colIfInDiscards   = 13
 	colIfInErrors     = 14
@@ -62,6 +74,9 @@ var ifCyclerColumns = []struct {
 	prefix string
 	col    int
 }{
+	{ifTablePrefix, colIfAdminStatus},         // .7  (state engine)
+	{ifTablePrefix, colIfOperStatus},          // .8  (state engine)
+	{ifTablePrefix, colIfLastChange},          // .9  (state engine)
 	{ifTablePrefix, colIfInUcastPkts},         // .11
 	{ifTablePrefix, colIfInDiscards},          // .13
 	{ifTablePrefix, colIfInErrors},            // .14
@@ -80,6 +95,47 @@ var ifCyclerColumns = []struct {
 	{ifXTablePrefix, colIfHCOutUcastPkts},     // .11
 	{ifXTablePrefix, colIfHCOutMulticastPkts}, // .12
 	{ifXTablePrefix, colIfHCOutBroadcastPkts}, // .13
+}
+
+// stateEnumStrings is a lookup table mapping IF-MIB integer enum values
+// to their decimal-string SNMP wire encoding. Avoids per-call
+// `strconv.Itoa` allocation on the hot read path. Index 0 is the
+// uninitialised / out-of-range default ("0").
+var stateEnumStrings = [8]string{"0", "1", "2", "3", "4", "5", "6", "7"}
+
+// operEnumString converts an IF-MIB ifOperStatus value (legal range
+// 1..7, RFC 2863) to its SNMP decimal string without allocating.
+// Values outside the legal range render as `"0"` — wire-invalid, but
+// matches the engine's "never emit out-of-range" contract: a
+// regression that lets such a value escape OperStatus surfaces as a
+// loud SNMP value of "0" rather than misencoding as an in-range enum.
+func operEnumString(v uint8) string {
+	if v < OperUp || v > OperLowerLayerDn {
+		return "0"
+	}
+	return stateEnumStrings[v]
+}
+
+// adminEnumString converts an IF-MIB ifAdminStatus value (legal range
+// 1..3, RFC 2863) to its SNMP decimal string without allocating.
+// Values outside the legal admin range render as `"0"` even when they
+// would have been valid as an ifOperStatus value (e.g. 4..7); the
+// type-split prevents an oper-range value from being misencoded as
+// admin if a future refactor crosses wires.
+func adminEnumString(v uint8) string {
+	if v < AdminUp || v > AdminTesting {
+		return "0"
+	}
+	return stateEnumStrings[v]
+}
+
+// isStateCol returns true if (prefix, col) names one of the three
+// state-engine-owned ifTable columns: ifAdminStatus (.7), ifOperStatus
+// (.8), ifLastChange (.9). Used by NextDynamicOID to skip these
+// columns in the rare test-harness path where the cycler was
+// constructed without a state engine.
+func isStateCol(col int, prefix string) bool {
+	return prefix == ifTablePrefix && (col == colIfAdminStatus || col == colIfOperStatus || col == colIfLastChange)
 }
 
 // IfErrorScenario controls per-device error / discard counter behavior.
@@ -234,6 +290,22 @@ type IfCounterCycler struct {
 	baseOutErr  []uint64
 	baseInDisc  []uint64
 	baseOutDisc []uint64
+
+	// state is the interface state engine (oper-status, admin-status,
+	// last-change per ifIndex). Source of truth for the three IF-MIB
+	// state columns (.7, .8, .9) served via GetDynamicAt, and for the
+	// gNMI `state/*` leaves. Set by InitIfCountersWithScenario.
+	state *InterfaceState
+}
+
+// State returns the interface state engine owned by this cycler. May be
+// nil for cyclers constructed outside InitIfCountersWithScenario (test
+// harnesses); callers must nil-check.
+func (ic *IfCounterCycler) State() *InterfaceState {
+	if ic == nil {
+		return nil
+	}
+	return ic.state
 }
 
 // IfIndices returns the cached slice of known ifIndex values for this
@@ -314,6 +386,40 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 		return ""
 	}
 	slot := ifIndex - 1
+
+	// State OIDs (.7 ifAdminStatus, .8 ifOperStatus, .9 ifLastChange)
+	// are pure lookups against the state engine — skip the delta
+	// computation below. The state engine is the single source of
+	// truth; oidIndex retains the initial JSON values only as a
+	// boot-time seed, never read on the hot path.
+	//
+	// **RFC-2863 caveat:** `ifLastChange` is specified as "value of
+	// sysUpTime at the time the interface entered its current
+	// operational state". We measure from the state-engine
+	// construction time (`bootTimeUnixNs`), not the SNMP agent's
+	// `sysUpTime`. Today `InitIfCountersWithScenario` runs exactly once
+	// per device (guarded against re-init via panic) so the two
+	// epochs coincide. If a future "reload scenario" feature is added,
+	// the divergence must be re-examined.
+	if !ifX && ic.state != nil {
+		switch col {
+		case colIfAdminStatus:
+			return adminEnumString(ic.state.AdminStatus(ifIndex))
+		case colIfOperStatus:
+			return operEnumString(ic.state.OperStatus(ifIndex))
+		case colIfLastChange:
+			// TimeTicks (hundredths of a second since the state-engine
+			// boot epoch). Pre-transition slots render as "0"; rewind-
+			// sentinel slots also render as "0" (rewind is observable
+			// elsewhere via the wallRelNs log + LastChangeRewindSentinel
+			// in StateChange.LastChangeNs).
+			lastUnixNs := ic.state.LastChangeNs(ifIndex)
+			if lastUnixNs == LastChangeRewindSentinel || lastUnixNs <= ic.state.bootTimeUnixNs {
+				return "0"
+			}
+			return strconv.FormatUint((lastUnixNs-ic.state.bootTimeUnixNs)/10_000_000, 10)
+		}
+	}
 
 	// Live delta octets = octetsAt(t) − baseInOctets. We work in
 	// delta-space for packet / error / discard derivations because the
@@ -410,13 +516,14 @@ func (ic *IfCounterCycler) LastDynamicOID() string {
 // oidIndex / sortedOIDs.
 //
 // Implementation is O(log N) in the number of interfaces: parse
-// currentOID once into (table, col, ifIndex), locate the column position
-// in ifCyclerColumns by linear scan over its 18 entries, and use
-// sort.SearchInts on sortedIfIndexes to find the successor ifIndex.
-// The previous O(cols × ifIndexes) implementation built and compared an
-// OID string for every (col, ifIndex) pair on each GETNEXT step, which
-// made walking a 1000-interface device ~18000 string allocations per
-// step.
+// currentOID once into (table, col, ifIndex), locate the column
+// position in `ifCyclerColumns` by linear scan (the slice is small
+// and grows rarely; len-driven so additions are picked up
+// automatically), and use sort.SearchInts on sortedIfIndexes to find
+// the successor ifIndex. The previous O(cols × ifIndexes)
+// implementation built and compared an OID string for every (col,
+// ifIndex) pair on each GETNEXT step, which made walking a
+// 1000-interface device ~18000 string allocations per step.
 func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 	if ic == nil || len(ic.sortedIfIndexes) == 0 {
 		return "", ""
@@ -443,9 +550,28 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 		matched = true
 	}
 
+	// stateNil short-circuits the state-engine-owned ifTable columns
+	// (.7 ifAdminStatus, .8 ifOperStatus, .9 ifLastChange) when the
+	// cycler was constructed without a state engine (test-harness path:
+	// caller built IfCounterCycler directly, not via
+	// InitIfCountersWithScenario). With stateNil the walk skips those
+	// columns and starts at colIfInUcastPkts as it did pre-change.
+	stateNil := ic.state == nil
+
 	// emitFromColumn returns the (oid, value) for column at index colIdx in
-	// ifCyclerColumns, at the supplied ifIndex.
+	// ifCyclerColumns, at the supplied ifIndex. When the state engine is
+	// nil and the column is one of the state cols (.7/.8/.9), advance to
+	// the next non-state column rather than returning "" and bailing the
+	// walk to end-of-walk prematurely.
 	emitFromColumn := func(colIdx, ifIndex int) (string, string) {
+		if stateNil {
+			for colIdx < len(ifCyclerColumns) && isStateCol(ifCyclerColumns[colIdx].col, ifCyclerColumns[colIdx].prefix) {
+				colIdx++
+			}
+			if colIdx >= len(ifCyclerColumns) {
+				return "", ""
+			}
+		}
 		c := ifCyclerColumns[colIdx]
 		oid := c.prefix + strconv.Itoa(c.col) + "." + strconv.Itoa(ifIndex)
 		val := ic.GetDynamicAt(oid, t)
@@ -502,9 +628,9 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 		return "", ""
 	}
 
-	// Locate the first ifCyclerColumns entry whose (table, col) is at or
-	// after the parsed (isIfX, col). 18-entry list — linear scan is
-	// faster than sort.Search on a slice this small.
+	// Locate the first ifCyclerColumns entry whose (table, col) is at
+	// or after the parsed (isIfX, col). Linear scan is faster than
+	// sort.Search on a slice this small.
 	colIdx := -1
 	for i, tc := range ifCyclerColumns {
 		entryIsIfX := tc.prefix == ifXTablePrefix
@@ -534,6 +660,15 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 	chosen := ifCyclerColumns[colIdx]
 	chosenIsIfX := chosen.prefix == ifXTablePrefix
 	if chosenIsIfX == isIfX && chosen.col == col {
+		// stateNil short-circuit: if the parsed col is a state col
+		// (.7/.8/.9) and the cycler has no state engine, the column
+		// is unowned. The correct successor is the first non-state
+		// col at the first owned ifIndex — not ifIndex+1 on the
+		// state col itself. emitFromColumn advances colIdx past the
+		// state cols so the right (col, ifIndex) pair is emitted.
+		if stateNil && isStateCol(chosen.col, chosen.prefix) {
+			return emitFromColumn(colIdx, ic.sortedIfIndexes[0])
+		}
 		// Same column as currentOID — find the successor ifIndex.
 		pos := sort.SearchInts(ic.sortedIfIndexes, ifIndex+1)
 		if pos < len(ic.sortedIfIndexes) {
@@ -669,12 +804,26 @@ func (c *MetricsCycler) InitIfCounters(resources *DeviceResources, seed int64) {
 // all dynamic IF-MIB columns with the given error scenario. Interface
 // speeds are read from the device's oidIndex (ifHighSpeed in Mbps
 // preferred; falls back to ifSpeed in bps).
+//
+// **Single-init only.** Calling this method twice on the same
+// MetricsCycler panics — the second call would silently orphan any
+// gNMI ON_CHANGE listeners and flap-scheduler entries already
+// registered against the existing state engine. Any future
+// "reload-scenario" feature must explicitly address listener migration
+// before relaxing this guard.
 func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, seed int64, scenario IfErrorScenario) {
 	if resources == nil || resources.oidIndex == nil {
 		return
 	}
+	if existing := c.ifCounters.Load(); existing != nil && existing.state != nil {
+		panic("InitIfCountersWithScenario: re-init unsafe — state engine already published; orphaned listeners would silently miss every subsequent event")
+	}
 
 	// Collect the exact set of ifIndex values that have HC in-octets OIDs.
+	// Reject ifIndex > maxResourceIfIndex to guard against a corrupted or
+	// adversarial resource file that would otherwise force NewInterfaceState
+	// into an O(maxIfIndex) atomic.Uint64 allocation (e.g. a single
+	// .1.3.6.1.2.1.31.1.1.1.6.4000000000 entry → ~32 GB).
 	knownIdxs := make(map[int]struct{})
 	resources.oidIndex.Range(func(k, _ interface{}) bool {
 		oid, ok := k.(string)
@@ -683,6 +832,10 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		}
 		if strings.HasPrefix(oid, hcInOIDPrefix) {
 			if idx, err := strconv.Atoi(oid[len(hcInOIDPrefix):]); err == nil && idx > 0 {
+				if idx > maxResourceIfIndex {
+					log.Printf("if_counters: ifIndex %d from resource exceeds maxResourceIfIndex %d; skipped (resource file may be corrupted)", idx, maxResourceIfIndex)
+					return true
+				}
 				knownIdxs[idx] = struct{}{}
 			}
 		}
@@ -827,6 +980,46 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		ic.baseOutErr[slot] = totalOutPkts24h * uint64(ic.errPpmOut[slot]) / 1_000_000
 		ic.baseInDisc[slot] = totalInPkts24h * uint64(ic.discPpmIn[slot]) / 1_000_000
 		ic.baseOutDisc[slot] = totalOutPkts24h * uint64(ic.discPpmOut[slot]) / 1_000_000
+	}
+
+	// Build the interface state engine. Seed each slot from the static
+	// ifAdminStatus.<N> / ifOperStatus.<N> JSON values so the initial
+	// state matches what the resources declare; later mutations (flap
+	// scenario, REST control plane) write to this engine directly.
+	// Counter aggregates are wired in by SimulatorManager.StartGnmiSubsystem
+	// once it owns the global counters (§D12).
+	//
+	// JSON values out of IF-MIB range fall back to UP and log a warning
+	// so a typo in the resource file doesn't silently corrupt the seed.
+	ic.state = NewInterfaceState(maxIdx, nil, nil)
+	for idx := range knownIdxs {
+		oper := OperUp
+		admin := AdminUp
+		operOID := ifTablePrefix + strconv.Itoa(colIfOperStatus) + "." + strconv.Itoa(idx)
+		if v, ok := resources.oidIndex.Load(operOID); ok {
+			if s, ok := v.(string); ok {
+				if n, err := strconv.Atoi(s); err == nil {
+					if n >= 1 && n <= 7 {
+						oper = uint8(n)
+					} else {
+						log.Printf("if_counters: ifOperStatus.%d JSON value %q out of IF-MIB range 1..7; defaulting to UP", idx, s)
+					}
+				}
+			}
+		}
+		adminOID := ifTablePrefix + strconv.Itoa(colIfAdminStatus) + "." + strconv.Itoa(idx)
+		if v, ok := resources.oidIndex.Load(adminOID); ok {
+			if s, ok := v.(string); ok {
+				if n, err := strconv.Atoi(s); err == nil {
+					if n >= 1 && n <= 3 {
+						admin = uint8(n)
+					} else {
+						log.Printf("if_counters: ifAdminStatus.%d JSON value %q out of IF-MIB range 1..3; defaulting to UP", idx, s)
+					}
+				}
+			}
+		}
+		ic.state.Seed(idx, oper, admin)
 	}
 
 	// ic is fully constructed before the Store, so concurrent readers
