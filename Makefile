@@ -133,8 +133,29 @@ vuln: check-go
 	cd $(GO_DIR) && $(GOBIN_DIR)/govulncheck ./...
 
 ## sec: Run gosec static security analysis over the Go module
+#
+# Excluded rules and rationale:
+#   G104 — duplicates golangci-lint errcheck; configured there.
+#   G115 — integer overflow conversions: high false-positive rate on
+#          SNMP/gNMI protocol encoding paths that already validate
+#          ranges.
+#   G404 — math/rand is intentional for non-crypto simulator paths
+#          (flap timing, scenario jitter). crypto/rand is used where
+#          it matters (SNMPv3 IV, TLS cert gen).
+#   G204 — `exec.Command` with variable args: invocations pass
+#          operator-controlled (CLI/REST) values only. Subprocess
+#          execution is an explicit design choice for namespace / TUN
+#          management.
+#   G304 — file paths into `resources/`: internal data files only.
+#   G401/G405/G501/G502/G505 — DES/MD5/SHA1 are MANDATED by SNMPv3
+#          (RFC 3414/3826) for privacy and authentication; refusing
+#          them would break interoperability with every SNMPv3 mgr.
+#   G103 — unsafe.Pointer usage for TUN ioctl is required by the
+#          ifr struct layout.
 sec: check-go
-	cd $(GO_DIR) && $(GOBIN_DIR)/gosec ./...
+	cd $(GO_DIR) && $(GOBIN_DIR)/gosec \
+	  -exclude=G104,G115,G404,G204,G304,G401,G405,G501,G502,G505,G103 \
+	  ./...
 
 ## quality: Run all code-quality checks (fmt-check, lint, vuln, sec)
 quality: fmt-check lint vuln sec

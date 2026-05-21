@@ -97,6 +97,10 @@ func (s *APIServer) Start() error {
 	}
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*s.sharedTLSCert},
+		// Per-device API surface. TLS 1.2 is the floor — modern Go
+		// defaults to TLS 1.2 anyway, but pinning makes it explicit
+		// for gosec G402 and for operators reviewing the wire surface.
+		MinVersion: tls.VersionTLS12,
 	}
 	listener = tls.NewListener(listener, tlsConfig)
 
