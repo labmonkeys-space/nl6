@@ -43,7 +43,8 @@ UNAME_S := $(shell uname -s)
 
 .PHONY: all build run test tidy check-tidy dist clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node \
-        docs-install docs-serve docs-build docs-clean
+        docs-install docs-serve docs-build docs-clean \
+        tools-quality fmt-check lint vuln sec quality
 
 all: build
 
@@ -86,6 +87,57 @@ endif
 ## run: Build and run the simulator (Linux only — requires root for TUN interfaces)
 run: check-linux build
 	cd $(BUILD_DIR) && sudo ./$(BINARY)
+
+# ---------------------------------------------------------------------------
+# Code quality tooling
+# ---------------------------------------------------------------------------
+
+# Tool versions are pinned here so local developers and CI run the same
+# binaries. Bump in lockstep across all environments; Dependabot does not
+# track these `go install` versions today.
+GOLANGCI_LINT_VERSION ?= v2.5.0
+GOVULNCHECK_VERSION   ?= v1.1.4
+GOSEC_VERSION         ?= v2.22.0
+GOIMPORTS_VERSION     ?= v0.30.0
+
+GOBIN_DIR := $(shell go env GOPATH)/bin
+
+## tools-quality: Install pinned code-quality tools (golangci-lint, govulncheck, gosec, goimports)
+tools-quality: check-go
+	GOBIN=$(GOBIN_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	GOBIN=$(GOBIN_DIR) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	GOBIN=$(GOBIN_DIR) go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	GOBIN=$(GOBIN_DIR) go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
+
+## fmt-check: Verify Go sources are gofmt- and goimports-clean
+fmt-check: check-go
+	@unformatted=$$(cd $(GO_DIR) && gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+	  echo "The following files need 'gofmt -w':"; \
+	  echo "$$unformatted"; \
+	  exit 1; \
+	fi
+	@unimported=$$(cd $(GO_DIR) && $(GOBIN_DIR)/goimports -l .); \
+	if [ -n "$$unimported" ]; then \
+	  echo "The following files need 'goimports -w':"; \
+	  echo "$$unimported"; \
+	  exit 1; \
+	fi
+
+## lint: Run golangci-lint over the Go module
+lint: check-go
+	cd $(GO_DIR) && $(GOBIN_DIR)/golangci-lint run ./...
+
+## vuln: Run govulncheck against the Go module
+vuln: check-go
+	cd $(GO_DIR) && $(GOBIN_DIR)/govulncheck ./...
+
+## sec: Run gosec static security analysis over the Go module
+sec: check-go
+	cd $(GO_DIR) && $(GOBIN_DIR)/gosec ./...
+
+## quality: Run all code-quality checks (fmt-check, lint, vuln, sec)
+quality: fmt-check lint vuln sec
 
 ## docker-build: Build the simulator Docker image for the host platform
 docker-build: check-docker
