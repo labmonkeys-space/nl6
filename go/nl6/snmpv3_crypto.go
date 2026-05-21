@@ -200,9 +200,13 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	// Use cached DES key from privacy password
 	key := s.getDESKey()
 
-	// Generate random IV (8 bytes for DES)
+	// Generate random IV (8 bytes for DES). `crypto/rand.Read` only
+	// errors on a misconfigured kernel entropy source — fail loudly
+	// since a non-random IV would be a real SNMPv3 privacy break.
 	iv := make([]byte, 8)
-	rand.Read(iv)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate DES IV: %w", err)
+	}
 
 	// Pad data to block size
 	padded := s.padData(data, 8)

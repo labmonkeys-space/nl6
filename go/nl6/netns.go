@@ -84,7 +84,8 @@ func CreateNetNamespace() (*NetNamespace, error) {
 	nsPath := fmt.Sprintf("/var/run/netns/%s", NETNS_NAME)
 	fd, err := syscall.Open(nsPath, syscall.O_RDONLY, 0)
 	if err != nil {
-		deleteNetNamespace(NETNS_NAME)
+		// Best-effort cleanup; the open error is what we surface.
+		_ = deleteNetNamespace(NETNS_NAME)
 		return nil, fmt.Errorf("failed to open namespace fd: %v", err)
 	}
 	ns.NsFd = fd

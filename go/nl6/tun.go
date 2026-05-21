@@ -20,6 +20,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 	"os/exec"
 	"runtime"
@@ -127,7 +128,9 @@ func createTunInterfaceInNamespaceViaExec(nsName string, tunName string, ip net.
 	// Open TUN device
 	tunFd, err := syscall.Open("/dev/net/tun", syscall.O_RDWR, 0)
 	if err != nil {
-		unix.Setns(origFd, syscall.CLONE_NEWNET)
+		// Best-effort restore of original namespace; the Open error
+		// is what we surface to the caller.
+		_ = unix.Setns(origFd, syscall.CLONE_NEWNET)
 		syscall.Close(nsFd)
 		syscall.Close(origFd)
 		exec.Command("ip", "netns", "exec", nsName, "ip", "link", "delete", tunName).Run()
@@ -142,15 +145,21 @@ func createTunInterfaceInNamespaceViaExec(nsName string, tunName string, ip net.
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(tunFd), 0x400454ca, uintptr(unsafe.Pointer(&ifr[0])))
 	if errno != 0 {
 		syscall.Close(tunFd)
-		unix.Setns(origFd, syscall.CLONE_NEWNET)
+		// Best-effort restore — the ioctl error is what we surface.
+		_ = unix.Setns(origFd, syscall.CLONE_NEWNET)
 		syscall.Close(nsFd)
 		syscall.Close(origFd)
 		exec.Command("ip", "netns", "exec", nsName, "ip", "link", "delete", tunName).Run()
 		return nil, fmt.Errorf("TUNSETIFF failed: %v", errno)
 	}
 
-	// Return to original namespace
-	unix.Setns(origFd, syscall.CLONE_NEWNET)
+	// Return to original namespace. Failure here would leak the
+	// goroutine's namespace switch — log and continue (the goroutine
+	// is locked to the OS thread; on next unlock it would migrate
+	// back).
+	if err := unix.Setns(origFd, syscall.CLONE_NEWNET); err != nil {
+		log.Printf("tun: failed to restore original namespace after creating %s in %s: %v", tunName, nsName, err)
+	}
 	syscall.Close(nsFd)
 	syscall.Close(origFd)
 
