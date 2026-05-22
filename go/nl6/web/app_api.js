@@ -17,7 +17,8 @@ let filters = {
     interface: '',
     deviceType: '',
     ports: '',
-    status: ''
+    status: '',
+    exports: ''
 };
 
 async function apiCall(endpoint, options = {}) {

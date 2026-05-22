@@ -26,6 +26,7 @@ const elements = {
     filterDeviceType: document.getElementById('filterDeviceType'),
     filterPorts: document.getElementById('filterPorts'),
     filterStatus: document.getElementById('filterStatus'),
+    filterExports: document.getElementById('filterExports'),
     clearFiltersBtn: document.getElementById('clearFiltersBtn'),
     // System stats elements
     simulatorMemory: document.getElementById('simulatorMemory'),
@@ -64,8 +65,15 @@ function getFilteredDevices() {
         const matchesStatus = !filters.status ||
             (filters.status === 'running' && device.running) ||
             (filters.status === 'stopped' && !device.running);
+        const hasAny = !!(device.flow || device.traps || device.syslog);
+        const matchesExports = !filters.exports ||
+            (filters.exports === 'any'    && hasAny) ||
+            (filters.exports === 'none'   && !hasAny) ||
+            (filters.exports === 'flow'   && !!device.flow) ||
+            (filters.exports === 'trap'   && !!device.traps) ||
+            (filters.exports === 'syslog' && !!device.syslog);
 
-        return matchesId && matchesIp && matchesInterface && matchesDeviceType && matchesPorts && matchesStatus;
+        return matchesId && matchesIp && matchesInterface && matchesDeviceType && matchesPorts && matchesStatus && matchesExports;
     });
 }
 
@@ -76,6 +84,7 @@ function updateFiltersFromInputs() {
     filters.deviceType = elements.filterDeviceType.value;
     filters.ports = elements.filterPorts.value;
     filters.status = elements.filterStatus.value;
+    filters.exports = elements.filterExports.value;
 }
 
 function clearAllFilters() {
@@ -85,6 +94,7 @@ function clearAllFilters() {
     filters.deviceType = '';
     filters.ports = '';
     filters.status = '';
+    filters.exports = '';
 
     elements.filterDeviceId.value = '';
     elements.filterIp.value = '';
@@ -92,9 +102,29 @@ function clearAllFilters() {
     elements.filterDeviceType.value = '';
     elements.filterPorts.value = '';
     elements.filterStatus.value = '';
+    elements.filterExports.value = '';
 
     currentPage = 1;
     renderDevices();
+}
+
+// statusOf returns the canonical status slug for a device: provisioning,
+// deleting, running, or stopped (checked in that order). The transient
+// flags `provisioning` and `deleting` are mirrored from the design's
+// data shape but only `running` is currently set by the API — the slugs
+// remain to keep the rendering uniform for when those flags land.
+function statusOf(d) {
+    if (d.provisioning) return 'provisioning';
+    if (d.deleting) return 'deleting';
+    return d.running ? 'running' : 'stopped';
+}
+
+function statusLabel(s) {
+    return s === 'running' ? 'Running'
+        : s === 'stopped' ? 'Stopped'
+        : s === 'provisioning' ? 'Provisioning'
+        : s === 'deleting' ? 'Deleting'
+        : s;
 }
 
 function applyFilters() {
@@ -125,17 +155,16 @@ function updatePaginationControls() {
     elements.paginationControls.style.display = hasDevices ? 'flex' : 'none';
 
     if (hasDevices) {
-        // Update page info
+        // Update page info — new mono format: "Page N of M · X of Y devices [(filtered from Z)]"
         const showingCount = getCurrentPageDevices().length;
         const totalFiltered = filteredDevices.length;
         const totalDevices = devices.length;
 
-        let pageInfoText = 'Page ' + currentPage + ' of ' + totalPages + ' (' + showingCount + ' of ' + totalFiltered + ' devices';
+        let pageInfoText = 'Page ' + currentPage + ' of ' + totalPages + ' · ' +
+            showingCount + ' of ' + totalFiltered + ' devices';
         if (totalFiltered !== totalDevices) {
-            pageInfoText += ' filtered from ' + totalDevices + ' total';
+            pageInfoText += ' (filtered from ' + totalDevices + ')';
         }
-        pageInfoText += ')';
-
         elements.pageInfo.textContent = pageInfoText;
 
         // Update button states
@@ -167,66 +196,89 @@ function goToNextPage() {
 }
 
 function renderDevices() {
-    // Filter controls are always visible
-
-    if (devices.length === 0) {
-        elements.deviceTable.innerHTML = '<div class="empty-state"><h3>No devices yet</h3><p>Create a device set to populate the simulator inventory.</p></div>';
-        updatePaginationControls();
-        return;
-    }
-
     const filteredDevices = getFilteredDevices();
+    const totalDevices = devices.length;
+
+    // Empty-state — distinct copy when filters exclude everything vs. no devices at all.
     if (filteredDevices.length === 0) {
-        elements.deviceTable.innerHTML = '<div class="empty-state"><h3>No matching devices</h3><p>Adjust the filters or clear them to review the full fleet.</p></div>';
+        const hasAnyDevices = totalDevices > 0;
+        const title = hasAnyDevices ? 'No devices match' : 'No devices yet';
+        const sub = hasAnyDevices
+            ? 'Adjust or clear the filters above.'
+            : 'Provision a device set to populate the simulator inventory.';
+        const cta = hasAnyDevices
+            ? ''
+            : '<button class="btn btn-primary" data-action="scroll-to-create" style="margin-top:10px">Create your first device set</button>';
+        const icon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
+        elements.deviceTable.innerHTML =
+            '<div class="empty-state">' +
+                icon +
+                '<div class="empty-title">' + title + '</div>' +
+                '<div class="empty-sub">' + sub + '</div>' +
+                cta +
+            '</div>';
+        // CTA scrolls to the still-existing inline #create section until PR6 lands the modal.
+        const ctaBtn = elements.deviceTable.querySelector('[data-action="scroll-to-create"]');
+        if (ctaBtn) {
+            ctaBtn.addEventListener('click', () => {
+                const target = document.getElementById('create');
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
         updatePaginationControls();
         return;
     }
 
-    const tableHTML = '<table>' +
-        '<thead>' +
-        '<tr>' +
-        '<th>Device ID</th>' +
-        '<th>IP Address</th>' +
-        '<th>Interface</th>' +
-        '<th>Device Type</th>' +
-        '<th>Ports</th>' +
-        '<th>Exports</th>' +
-        '<th>Status</th>' +
-        '<th>Actions</th>' +
-        '</tr>' +
-        '</thead>' +
-        '<tbody>' +
-        getCurrentPageDevices().map(device =>
-            '<tr>' +
-            '<td><span class="device-id">' + device.id + '</span></td>' +
-            '<td><span class="device-ip">' + device.ip + '</span></td>' +
-            '<td><span class="device-interface">' + (device.interface || 'N/A') + '</span></td>' +
-            '<td><span class="device-type">' + (device.device_type || 'Unknown') + '</span></td>' +
-            '<td><span class="device-ports">SNMP ' + device.snmp_port + ' · SSH ' + device.ssh_port + '</span></td>' +
-            '<td>' + renderExportBadges(device) + '</td>' +
-            '<td><span class="device-status ' + (device.running ? 'status-running' : 'status-stopped') + '">' +
-            (device.running ? 'Running' : 'Stopped') + '</span></td>' +
-            '<td><div class="device-actions">' +
-            '<button class="btn btn-secondary btn-small" data-action="test-ssh" data-ip="' + device.ip + '" data-port="' + device.ssh_port + '">SSH</button>' +
-            '<button class="btn btn-secondary btn-small" data-action="ping" data-ip="' + device.ip + '">Ping</button>' +
-            '<button class="btn btn-danger btn-small" data-action="delete" data-device-id="' + device.id + '">Delete</button>' +
-            '</div></td>' +
-            '</tr>'
-        ).join('') +
-        '</tbody>' +
+    const rowsHTML = getCurrentPageDevices().map(device => {
+        const status = statusOf(device);
+        return '<tr class="frow' + (device.running ? '' : ' is-stopped') + '">' +
+            '<td class="col-name mono"><span class="device-id">' + escapeHtml(device.id) + '</span></td>' +
+            '<td class="col-ip mono">' + escapeHtml(device.ip) + '</td>' +
+            '<td class="col-iface mono">' + escapeHtml(device.interface || 'N/A') + '</td>' +
+            '<td class="col-type">' + escapeHtml(device.device_type || 'Unknown') + '</td>' +
+            '<td class="col-ports">' +
+                renderPortPill('SNMP', device.snmp_port, device.ip, device.running) +
+                renderPortPill('SSH', device.ssh_port, device.ip, device.running) +
+            '</td>' +
+            '<td class="col-exports">' + renderExportBadges(device) + '</td>' +
+            '<td class="col-status">' +
+                '<span class="status-pill s-' + status + '">' + statusLabel(status) + '</span>' +
+            '</td>' +
+            '<td class="col-actions">' +
+                '<div class="row-actions">' +
+                    '<button class="row-action" data-action="test-ssh" data-ip="' + escapeHtml(device.ip) + '" data-port="' + device.ssh_port + '" title="SSH simadmin@' + escapeHtml(device.ip) + '">SSH</button>' +
+                    '<button class="row-action" data-action="ping" data-ip="' + escapeHtml(device.ip) + '" title="Ping ' + escapeHtml(device.ip) + '">Ping</button>' +
+                    '<button class="row-action row-action-danger" data-action="delete" data-device-id="' + escapeHtml(device.id) + '" title="Delete">Delete</button>' +
+                '</div>' +
+            '</td>' +
+        '</tr>';
+    }).join('');
+
+    elements.deviceTable.innerHTML =
+        '<table class="fleet-table">' +
+            '<thead><tr>' +
+                '<th>Device ID</th>' +
+                '<th>IP address</th>' +
+                '<th>Interface</th>' +
+                '<th>Device type</th>' +
+                '<th>Ports</th>' +
+                '<th>Exports</th>' +
+                '<th>Status</th>' +
+                '<th></th>' +
+            '</tr></thead>' +
+            '<tbody>' + rowsHTML + '</tbody>' +
         '</table>';
 
-    elements.deviceTable.innerHTML = tableHTML;
-
-    // Add event listeners for device actions
-    document.querySelectorAll('[data-action]').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const action = e.target.getAttribute('data-action');
-            const ip = e.target.getAttribute('data-ip');
-            const port = e.target.getAttribute('data-port');
-            const deviceId = e.target.getAttribute('data-device-id');
-
-            switch(action) {
+    // Wire row-action + port-pill click handlers.
+    elements.deviceTable.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const t = e.currentTarget;
+            const action = t.getAttribute('data-action');
+            const ip = t.getAttribute('data-ip');
+            const port = t.getAttribute('data-port');
+            const deviceId = t.getAttribute('data-device-id');
+            switch (action) {
                 case 'test-ssh':
                     testConnection(ip, parseInt(port));
                     break;
@@ -236,39 +288,70 @@ function renderDevices() {
                 case 'delete':
                     deleteDevice(deviceId);
                     break;
+                case 'copy-port':
+                    copyPortToClipboard(t, ip, port);
+                    break;
             }
         });
     });
 
-
-    // Update pagination controls
     updatePaginationControls();
 }
 
-// renderExportBadges returns an inline-HTML snippet showing three
-// per-subsystem badges (F/T/S). Configured subsystems render with the
-// accent colour; unconfigured render muted. Each tile carries an
-// `aria-label` describing the state + destination so screen readers
-// don't just hear "F T S" with no context (color-only state
-// communication fails WCAG 1.1.1 / 1.4.1). The `title` attribute
-// duplicates the label as a sighted-user hover-tooltip.
+// renderPortPill returns an interactive button when the device is
+// running (click copies ip:port to clipboard, brief .is-copied state)
+// or an inert dim span when the device is stopped.
+function renderPortPill(kind, port, ip, running) {
+    const label = escapeHtml(kind + ' ' + port);
+    if (!running) {
+        const title = escapeHtml(kind + ' ' + port + ' — device is stopped');
+        return '<span class="port-pill port-pill-off" aria-disabled="true" title="' + title + '">' + label + '</span>';
+    }
+    const title = escapeHtml('Copy ' + ip + ':' + port);
+    return '<button type="button" class="port-pill port-pill-on" data-action="copy-port" data-ip="' + escapeHtml(ip) + '" data-port="' + port + '" title="' + title + '">' + label + '</button>';
+}
+
+// copyPortToClipboard writes `ip:port` to the system clipboard via the
+// modern Clipboard API and flashes `.is-copied` on the pill for ~900ms.
+// Falls back silently if clipboard access is unavailable (non-secure
+// context); the flash still runs so the user sees feedback.
+function copyPortToClipboard(btn, ip, port) {
+    const addr = ip + ':' + port;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(addr).catch(() => {});
+        }
+    } catch (_) {
+        // no-op — pre-secure-context browsers
+    }
+    btn.classList.add('is-copied');
+    setTimeout(() => btn.classList.remove('is-copied'), 900);
+}
+
+// renderExportBadges returns three FLOW/TRAP/SYSLOG badges per row.
+// A badge is `on` when the device's corresponding nested config block
+// is non-null (data.go: DeviceInfo echoes them via omitempty), `off`
+// otherwise. The `title` attribute carries the configured collector
+// address for hover-detail when active, and "export disabled" when
+// off (also exposed via aria-label for screen readers — color-only
+// state communication fails WCAG 1.1.1 / 1.4.1).
 function renderExportBadges(device) {
-    return '<div class="device-exports" role="group" aria-label="Export configuration">' +
-        renderOneBadge('F', 'Flow', device.flow, b => (b.protocol || 'netflow9')) +
-        renderOneBadge('T', 'SNMP traps', device.traps, b => (b.mode || 'trap')) +
-        renderOneBadge('S', 'Syslog', device.syslog, b => (b.format || '5424')) +
+    return '<div class="export-badges" role="group" aria-label="Export configuration">' +
+        renderExportBadge('FLOW', 'Flow', device.flow, b => (b.protocol || 'netflow9')) +
+        renderExportBadge('TRAP', 'SNMP traps', device.traps, b => (b.mode || 'trap')) +
+        renderExportBadge('SYSLOG', 'Syslog', device.syslog, b => (b.format || '5424')) +
         '</div>';
 }
 
-function renderOneBadge(letter, kind, block, kindSuffix) {
+function renderExportBadge(label, kind, block, kindSuffix) {
     if (block && block.collector) {
         const desc = kind + ' export to ' + block.collector + ' (' + kindSuffix(block) + ')';
-        return '<span class="device-export-badge" role="img" aria-label="' + escapeHtml(desc) +
-            '" title="' + escapeHtml(desc) + '">' + letter + '</span>';
+        return '<span class="export-badge on" role="img" aria-label="' + escapeHtml(desc) +
+            '" title="' + escapeHtml(desc) + '">' + label + '</span>';
     }
     const desc = kind + ' export disabled';
-    return '<span class="device-export-badge device-export-badge-muted" role="img" aria-label="' + escapeHtml(desc) +
-        '" title="' + escapeHtml(desc) + '">' + letter + '</span>';
+    return '<span class="export-badge off" role="img" aria-label="' + escapeHtml(desc) +
+        '" title="' + escapeHtml(desc) + '">' + label + '</span>';
 }
 
 function updateStats() {
@@ -367,6 +450,7 @@ elements.filterInterface.addEventListener('input', applyFilters);
 elements.filterDeviceType.addEventListener('input', applyFilters);
 elements.filterPorts.addEventListener('input', applyFilters);
 elements.filterStatus.addEventListener('change', applyFilters);
+elements.filterExports.addEventListener('change', applyFilters);
 elements.clearFiltersBtn.addEventListener('click', clearAllFilters);
 
 // Each periodic poller is wrapped so it no-ops when the tab is hidden

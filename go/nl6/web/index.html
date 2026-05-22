@@ -266,15 +266,23 @@
             <div id="deviceList" class="device-table">
                 <div id="filterControls" class="filter-controls">
                     <div class="filter-grid">
-                        <input type="text" id="filterDeviceId" placeholder="Filter by device ID" class="filter-input">
-                        <input type="text" id="filterIp" placeholder="Filter by IP address" class="filter-input">
-                        <input type="text" id="filterInterface" placeholder="Filter by interface" class="filter-input">
+                        <input type="text" id="filterDeviceId" placeholder="Filter by device ID" class="filter-input mono">
+                        <input type="text" id="filterIp" placeholder="Filter by IP address" class="filter-input mono">
+                        <input type="text" id="filterInterface" placeholder="Filter by interface" class="filter-input mono">
                         <input type="text" id="filterDeviceType" placeholder="Filter by device type" class="filter-input">
-                        <input type="text" id="filterPorts" placeholder="Filter by ports" class="filter-input">
+                        <input type="text" id="filterPorts" placeholder="Filter by ports" class="filter-input mono">
                         <select id="filterStatus" class="filter-input">
                             <option value="">All statuses</option>
                             <option value="running">Running</option>
                             <option value="stopped">Stopped</option>
+                        </select>
+                        <select id="filterExports" class="filter-input">
+                            <option value="">All exports</option>
+                            <option value="any">Any export</option>
+                            <option value="flow">Flow</option>
+                            <option value="trap">Traps</option>
+                            <option value="syslog">Syslog</option>
+                            <option value="none">No exports</option>
                         </select>
                         <button id="clearFiltersBtn" class="btn btn-secondary btn-small">Clear filters</button>
                     </div>
@@ -283,8 +291,8 @@
             </div>
 
             <div id="paginationControls" class="pagination-controls" style="display: none;">
-                <div class="pagination-info">
-                    <span id="pageInfo">Page 1 of 1 (0 devices)</span>
+                <div class="pagination-info muted">
+                    <span id="pageInfo" class="mono"></span>
                 </div>
                 <div class="pagination-buttons">
                     <button id="prevPageBtn" class="btn btn-secondary btn-small" disabled>Previous</button>

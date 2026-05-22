@@ -2481,82 +2481,12 @@ code.mono {
 /* ============================================================
  * Transitional rules — preserved from pre-redesign styles.css.
  * Each rule is GC'd by the PR that retires its DOM consumer:
- *   PR5 (task 5.9): .device-* family, .status-running, .status-stopped
  *   PR6 (task 6.12): .form-group-actions, .btn-secondary, .alert-warning
  *
  * Old-palette tokens (--success, --warning, --muted, --surface-ink) are
  * remapped to new-palette tokens so transitional markup visually matches
- * the new design until PR5/PR6 retire the rules entirely.
+ * the new design until PR6 retires the rules entirely.
  * ============================================================ */
-
-/* --- PR5-removed: device-table cell classes --- */
-.device-id,
-.device-ip,
-.device-interface,
-.device-ports {
-  font-family: var(--mono);
-}
-
-.device-id {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.device-ip,
-.device-interface,
-.device-ports,
-.device-type {
-  color: var(--fg-2);
-}
-
-.device-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.device-status {
-  display: inline-block;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.status-running {
-  color: var(--accent);
-  background: color-mix(in oklch, var(--accent), transparent 88%);
-}
-
-.status-stopped {
-  color: var(--fg-3);
-  background: color-mix(in oklch, var(--fg-3), transparent 88%);
-}
-
-.device-exports {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.device-export-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--bg);
-  font-size: 0.7rem;
-  font-weight: 600;
-  font-family: var(--mono);
-}
-
-.device-export-badge-muted {
-  background: var(--border);
-  color: var(--fg-3);
-}
 
 /* --- PR6-removed: inline form + legacy button/alert variants --- */
 .form-group-actions {
