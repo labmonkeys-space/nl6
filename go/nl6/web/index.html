@@ -11,36 +11,24 @@
 </head>
 <body>
     <div class="page-shell">
-        <header class="hero">
-            <div class="hero-copy">
-                <div class="hero-mark">
-                    <img class="hero-logo" src="/logo.png" alt="nl6 logo">
-                    <span class="eyebrow">nl6</span>
+        <header class="app-bar">
+            <div class="app-bar-mark">
+                <div class="app-bar-logo">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>
+                    </svg>
                 </div>
-                <p class="hero-kicker">nl6 — network device simulator <span class="hero-version" id="appVersion"></span></p>
-                <h1>Build test fleets that look like real infrastructure, not toy demos.</h1>
-                <p class="hero-summary">
-                    nl6 provisions virtual network devices with TUN/TAP interfaces, SNMP, and SSH so teams can
-                    exercise tooling, routing behavior, and data collection against repeatable environments.
-                </p>
-                <div class="hero-actions">
-                    <a class="btn" href="#create">Create devices</a>
-                    <a class="btn btn-secondary" href="#devices">Review fleet</a>
+                <div class="app-bar-text">
+                    <div class="app-bar-name">nl6</div>
+                    <div class="app-bar-sub mono">network device simulator</div>
                 </div>
             </div>
-            <aside class="hero-panel">
-                <p class="panel-label">Operator view</p>
-                <h2>One shell for provisioning, inspection, and export.</h2>
-                <ul class="hero-list">
-                    <li>Provision batches by address range, category, or specific device profile.</li>
-                    <li>Track memory, CPU, and load alongside fleet status.</li>
-                    <li>Export the simulated inventory and generate host route scripts.</li>
-                </ul>
-            </aside>
+            <span class="app-bar-version mono" id="appVersion"></span>
         </header>
 
         <section class="overview-grid" aria-label="System overview">
-            <div class="panel system-stats">
+            <div class="panel system-stats is-compact">
                 <div class="section-heading">
                     <p class="section-kicker">System</p>
                     <h2>Host runtime</h2>
@@ -69,7 +57,7 @@
                 </div>
             </div>
 
-            <div class="panel status">
+            <div class="panel status is-compact">
                 <div class="section-heading">
                     <p class="section-kicker">Fleet</p>
                     <h2>Current inventory</h2>
@@ -94,7 +82,7 @@
                 </div>
             </div>
 
-            <div class="panel status export-status">
+            <div class="panel status export-status is-compact">
                 <div class="section-heading">
                     <p class="section-kicker">Exports</p>
                     <h2>Telemetry streams</h2>
@@ -315,6 +303,13 @@
                 </div>
             </div>
         </section>
+
+        <footer class="app-footer">
+            <div class="app-footer-inner">
+                <span class="mono">nl6 <span class="muted">·</span> <span class="muted">network device simulator</span></span>
+                <span class="app-footer-version mono" id="appFooterVersion"></span>
+            </div>
+        </footer>
     </div>
     <script src="/web/app_api.js"></script>
     <script src="/web/app_ui.js"></script>

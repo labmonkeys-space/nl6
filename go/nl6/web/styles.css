@@ -2481,7 +2481,6 @@ code.mono {
 /* ============================================================
  * Transitional rules — preserved from pre-redesign styles.css.
  * Each rule is GC'd by the PR that retires its DOM consumer:
- *   PR2 (task 2.6): .system-stats, .status panel modifiers
  *   PR5 (task 5.9): .device-* family, .status-running, .status-stopped
  *   PR6 (task 6.12): .form-group-actions, .btn-secondary, .alert-warning
  *
@@ -2489,14 +2488,6 @@ code.mono {
  * remapped to new-palette tokens so transitional markup visually matches
  * the new design until PR5/PR6 retire the rules entirely.
  * ============================================================ */
-
-/* --- PR2-removed: panel modifiers on overview cards --- */
-.panel.system-stats,
-.panel.status,
-.panel.controls,
-.panel.devices {
-  padding: 30px;
-}
 
 /* --- PR5-removed: device-table cell classes --- */
 .device-id,
