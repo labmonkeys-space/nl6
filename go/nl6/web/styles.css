@@ -1880,6 +1880,12 @@ code.mono {
 }
 .collector-stat.is-warn { color: var(--warn); }
 .collector-stat .muted { font-size: 10px; margin-right: 4px; }
+.collector-empty {
+  padding: 8px 12px;
+  color: var(--fg-3);
+  font-size: 11px;
+  list-style: none;
+}
 
 /* Trap mode glyph (→ for TRAP, ↔ for INFORM) + version pill */
 .trap-mode {

@@ -484,7 +484,7 @@ function renderTelemetryCard(kind, data, spec) {
     _telemetryLastData[kind] = data;
 
     const collectors = Array.isArray(data.collectors) ? data.collectors : [];
-    const devices = data.devices_exporting || 0;
+    const devices = Number(data.devices_exporting) || 0;
     // Truthy check rather than `=== true` so a server schema that adds
     // / renames the field doesn't render populated data as "not running";
     // if collectors is non-empty, we trust that signal too.
@@ -536,7 +536,7 @@ function renderTelemetryCard(kind, data, spec) {
                         '<span class="muted"> · </span>' +
                         spec.collectorMeta(c) +
                     '</div>' +
-                    '<span class="collector-count mono">' + (c.devices || 0) + '</span>' +
+                    '<span class="collector-count mono">' + (Number(c.devices) || 0) + '</span>' +
                     stats.map(s =>
                         '<span class="collector-stat' + (s.warn ? ' is-warn' : '') + '"' +
                         (s.title ? ' title="' + escapeHtml(s.title) + '"' : '') + '>' +
@@ -564,7 +564,7 @@ function renderTelemetryCardError(kind, label) {
     if (!card) return;
     card.className = 'export-status-card is-off';
     card.innerHTML =
-        '<button type="button" class="export-card-head" aria-expanded="false" disabled>' +
+        '<button type="button" class="export-card-head" disabled>' +
             '<span class="export-card-chev"></span>' +
             '<span class="status-label">' + escapeHtml(label) + '</span>' +
             '<span class="export-pill off">err</span>' +
