@@ -361,20 +361,32 @@ async function loadSyslogStatus() {
 }
 
 // fmtCount formats a counter as a compact string with k/M/B suffix.
+// Thresholds are placed at 999.5× the prior unit so a value that would
+// round to the next unit's boundary promotes upward — `999500` is `1.0M`,
+// not `1000k`. Negative inputs are clamped to 0; non-finite inputs
+// (Infinity / NaN) return `'0'`.
 function fmtCount(n) {
-    const v = Number(n) || 0;
-    if (v < 1000) return String(v);
-    if (v < 1e6) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + 'k';
-    if (v < 1e9) return (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M';
+    const v = Math.max(0, Number(n) || 0);
+    if (!Number.isFinite(v)) return '0';
+    if (v < 1000) return String(Math.round(v));
+    let scaled = v / 1e3;
+    if (scaled < 999.5) return scaled.toFixed(scaled >= 10 ? 0 : 1) + 'k';
+    scaled = v / 1e6;
+    if (scaled < 999.5) return scaled.toFixed(scaled >= 10 ? 0 : 1) + 'M';
     return (v / 1e9).toFixed(1) + 'B';
 }
 
 // fmtBytes formats a byte count with KiB / MiB / GiB suffix.
+// Thresholds at 1023.5× the prior unit avoid `1024 KiB` displays
+// (promotes to `1.0 MiB` instead). Same input clamping as fmtCount.
 function fmtBytes(n) {
-    const v = Number(n) || 0;
-    if (v < 1024) return v + ' B';
-    if (v < 1048576) return (v / 1024).toFixed(v >= 10240 ? 0 : 1) + ' KiB';
-    if (v < 1073741824) return (v / 1048576).toFixed(v >= 10485760 ? 0 : 1) + ' MiB';
+    const v = Math.max(0, Number(n) || 0);
+    if (!Number.isFinite(v)) return '0 B';
+    if (v < 1024) return Math.round(v) + ' B';
+    let scaled = v / 1024;
+    if (scaled < 1023.5) return scaled.toFixed(scaled >= 10 ? 0 : 1) + ' KiB';
+    scaled = v / 1048576;
+    if (scaled < 1023.5) return scaled.toFixed(scaled >= 10 ? 0 : 1) + ' MiB';
     return (v / 1073741824).toFixed(1) + ' GiB';
 }
 

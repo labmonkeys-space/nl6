@@ -1484,121 +1484,6 @@ code.mono {
   font-size: 11px;
 }
 
-/* ---------- Hero ---------- */
-.hero {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 24px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 32px 32px 28px;
-}
-.hero-mark {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.hero-logo {
-  width: 36px; height: 36px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 70%), color-mix(in oklch, var(--accent), transparent 90%));
-  border: 1px solid color-mix(in oklch, var(--accent), transparent 60%);
-  color: var(--accent);
-  display: flex; align-items: center; justify-content: center;
-}
-.hero-mark .eyebrow {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--fg-2);
-}
-.hero-kicker {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fg-3);
-  margin: 0 0 14px 0;
-  display: flex; align-items: center; gap: 8px;
-}
-.hero-version {
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: color-mix(in oklch, var(--accent), transparent 88%);
-  color: var(--accent);
-  border: 1px solid color-mix(in oklch, var(--accent), transparent 60%);
-  font-size: 10px;
-}
-.hero h1 {
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  font-weight: 600;
-  color: var(--fg);
-  margin: 0 0 12px;
-  text-wrap: pretty;
-  max-width: 36ch;
-}
-.hero-summary {
-  font-size: 13px;
-  color: var(--fg-2);
-  margin: 0 0 18px;
-  max-width: 60ch;
-  line-height: 1.55;
-}
-.hero-actions {
-  display: flex;
-  gap: 10px;
-}
-.hero-actions .btn { padding: 0 18px; height: 32px; }
-.hero-panel {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px 22px;
-}
-.panel-label {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--fg-3);
-  margin: 0 0 8px;
-}
-.hero-panel h2 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--fg);
-  margin: 0 0 14px;
-  line-height: 1.4;
-}
-.hero-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.hero-list li {
-  font-size: 12px;
-  color: var(--fg-2);
-  line-height: 1.5;
-  padding-left: 16px;
-  position: relative;
-}
-.hero-list li::before {
-  content: "›";
-  position: absolute;
-  left: 0;
-  color: var(--accent);
-  font-family: var(--mono);
-}
-
 /* ---------- Panels (shared) ---------- */
 .panel {
   background: var(--panel);
@@ -2212,6 +2097,7 @@ code.mono {
   position: fixed;
   inset: 0;
   background: rgba(7, 9, 12, 0.65);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-start;
