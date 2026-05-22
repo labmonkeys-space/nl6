@@ -155,6 +155,15 @@ function updatePaginationControls() {
     elements.paginationControls.style.display = hasDevices ? 'flex' : 'none';
 
     if (hasDevices) {
+        // Clamp currentPage when the set shrinks under us (deleteDevice,
+        // deleteAllDevices, or any auto-refresh path that bypasses
+        // applyFilters' reset-to-1). Without this clamp the operator
+        // can land on "Page 5 of 2" with empty rows after a "Delete
+        // all" issued from a deep page.
+        if (currentPage > totalPages) {
+            currentPage = totalPages;
+        }
+
         // Update page info — new mono format: "Page N of M · X of Y devices [(filtered from Z)]"
         const showingCount = getCurrentPageDevices().length;
         const totalFiltered = filteredDevices.length;
@@ -307,20 +316,26 @@ function renderPortPill(kind, port, ip, running) {
 }
 
 // copyPortToClipboard writes `ip:port` to the system clipboard via the
-// modern Clipboard API and flashes `.is-copied` on the pill for ~900ms.
-// Falls back silently if clipboard access is unavailable (non-secure
-// context); the flash still runs so the user sees feedback.
+// modern Clipboard API and flashes `.is-copied` on the pill for ~900ms
+// — but ONLY on confirmed write success. On non-secure contexts (the
+// dominant deployment target — plain HTTP on 10.x.x.x LAN) the API is
+// undefined; in that case show a toast carrying the address so the
+// operator can copy it manually. Without this guard the flash was
+// firing regardless of write success and operators would paste stale
+// clipboard content into terminals.
 function copyPortToClipboard(btn, ip, port) {
     const addr = ip + ':' + port;
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(addr).catch(() => {});
-        }
-    } catch (_) {
-        // no-op — pre-secure-context browsers
+    const flash = () => {
+        btn.classList.add('is-copied');
+        setTimeout(() => btn.classList.remove('is-copied'), 900);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(addr).then(flash).catch(() => {
+            showAlert('Could not access clipboard — address: ' + addr, 'warning');
+        });
+        return;
     }
-    btn.classList.add('is-copied');
-    setTimeout(() => btn.classList.remove('is-copied'), 900);
+    showAlert('Clipboard unavailable on this connection — address: ' + addr, 'warning');
 }
 
 // renderExportBadges returns three FLOW/TRAP/SYSLOG badges per row.
