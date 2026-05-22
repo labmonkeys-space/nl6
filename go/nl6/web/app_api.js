@@ -84,6 +84,7 @@ function stopStatusPolling() {
 }
 
 function updateStatusDisplay(status) {
+    renderProgressBanner(status);
     if (status.is_pre_allocating) {
         const progress = status.pre_alloc_total > 0 ? Math.round((status.pre_alloc_progress / status.pre_alloc_total) * 100) : 0;
         const nextMessage = 'Preparing interfaces: ' + status.pre_alloc_progress + ' of ' + status.pre_alloc_total + ' (' + progress + '%)';
@@ -101,6 +102,42 @@ function updateStatusDisplay(status) {
     } else {
         statusAlertMessage = '';
     }
+}
+
+// renderProgressBanner mounts a persistent progress bar above the
+// alerts region while pre-allocation or device creation is active.
+// When both flags are false the banner is removed from the DOM (not
+// merely hidden — keeps the layout calm when idle). The banner reads
+// the same ManagerStatus the existing alert path uses; alerts and the
+// banner coexist (the toast auto-dismisses, the banner persists).
+function renderProgressBanner(status) {
+    const slot = document.getElementById('progressBanner');
+    if (!slot) return;
+    if (!status.is_pre_allocating && !status.is_creating_devices) {
+        slot.innerHTML = '';
+        slot.className = '';
+        return;
+    }
+    let label, progress, total;
+    if (status.is_pre_allocating) {
+        label = 'Preparing TUN interfaces';
+        progress = status.pre_alloc_progress || 0;
+        total = status.pre_alloc_total || 0;
+    } else {
+        label = 'Creating devices';
+        progress = status.device_create_progress || 0;
+        total = status.device_create_total || 0;
+    }
+    const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
+    slot.className = 'progress-banner';
+    slot.innerHTML =
+        '<div class="progress-banner-row">' +
+            '<span class="eyebrow">In progress</span>' +
+            '<span class="mono">' + escapeHtml(label) + ': ' + progress + ' / ' + total + ' (' + pct + '%)</span>' +
+        '</div>' +
+        '<div class="progress-track">' +
+            '<div class="progress-fill" style="width: ' + pct + '%"></div>' +
+        '</div>';
 }
 
 async function loadResources() {
