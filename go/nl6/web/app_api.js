@@ -4,7 +4,6 @@ const API_BASE = '/api/v1';
 let devices = [];
 let resources = [];
 let isStatusPolling = false;
-let statusAlertMessage = '';
 
 // Pagination state
 const DEVICES_PER_PAGE = 50;
@@ -96,31 +95,14 @@ function updateStatusDisplay(status) {
             ? 'Provisioning in progress…'
             : 'Create new device set';
     }
-    if (status.is_pre_allocating) {
-        const progress = status.pre_alloc_total > 0 ? Math.round((status.pre_alloc_progress / status.pre_alloc_total) * 100) : 0;
-        const nextMessage = 'Preparing interfaces: ' + status.pre_alloc_progress + ' of ' + status.pre_alloc_total + ' (' + progress + '%)';
-        if (statusAlertMessage !== nextMessage) {
-            showAlert(nextMessage, 'warning');
-            statusAlertMessage = nextMessage;
-        }
-    } else if (status.is_creating_devices) {
-        const progress = status.device_create_total > 0 ? Math.round((status.device_create_progress / status.device_create_total) * 100) : 0;
-        const nextMessage = 'Creating devices: ' + status.device_create_progress + ' of ' + status.device_create_total + ' (' + progress + '%)';
-        if (statusAlertMessage !== nextMessage) {
-            showAlert(nextMessage, 'warning');
-            statusAlertMessage = nextMessage;
-        }
-    } else {
-        statusAlertMessage = '';
-    }
 }
 
 // renderProgressBanner mounts a persistent progress bar above the
 // alerts region while pre-allocation or device creation is active.
 // When both flags are false the banner is removed from the DOM (not
-// merely hidden — keeps the layout calm when idle). The banner reads
-// the same ManagerStatus the existing alert path uses; alerts and the
-// banner coexist (the toast auto-dismisses, the banner persists).
+// merely hidden — keeps the layout calm when idle). The banner is
+// the sole in-progress signal; the redundant warning-toast path was
+// retired during code review of PR4 (banner replaces it).
 function renderProgressBanner(status) {
     const slot = document.getElementById('progressBanner');
     if (!slot) return;
@@ -132,14 +114,16 @@ function renderProgressBanner(status) {
     let label, progress, total;
     if (status.is_pre_allocating) {
         label = 'Preparing TUN interfaces';
-        progress = status.pre_alloc_progress || 0;
-        total = status.pre_alloc_total || 0;
+        progress = Number(status.pre_alloc_progress) || 0;
+        total = Number(status.pre_alloc_total) || 0;
     } else {
         label = 'Creating devices';
-        progress = status.device_create_progress || 0;
-        total = status.device_create_total || 0;
+        progress = Number(status.device_create_progress) || 0;
+        total = Number(status.device_create_total) || 0;
     }
-    const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
+    // Clamp pct to [0, 100] — a race in the server's atomic counter
+    // store can briefly report progress > total during batch boundaries.
+    const pct = total > 0 ? Math.min(100, Math.max(0, Math.round((progress / total) * 100))) : 0;
     slot.className = 'progress-banner';
     slot.innerHTML =
         '<div class="progress-banner-row">' +
