@@ -53,8 +53,24 @@ function setLoading(elementId, loading) {
 }
 
 // Filter helper functions
+// _filteredCache memoizes getFilteredDevices() so multiple callsites
+// per render (renderDevices + getCurrentPageDevices + getTotalPages +
+// updatePaginationControls) don't re-walk the array. Invalidated on
+// any change to `devices` (reference identity) or any filter field.
+// At 30k devices the filter loop is O(N) — running it 4× per render
+// is the existing waste this layer removes.
+let _filteredCacheDevices = null;
+let _filteredCacheKey = '';
+let _filteredCacheResult = null;
+
 function getFilteredDevices() {
-    return devices.filter(device => {
+    const key = filters.id + '\x00' + filters.ip + '\x00' + filters.interface +
+        '\x00' + filters.deviceType + '\x00' + filters.ports + '\x00' +
+        filters.status + '\x00' + filters.exports;
+    if (_filteredCacheDevices === devices && _filteredCacheKey === key) {
+        return _filteredCacheResult;
+    }
+    const result = devices.filter(device => {
         const matchesId = !filters.id || device.id.toLowerCase().includes(filters.id.toLowerCase());
         const matchesIp = !filters.ip || device.ip.includes(filters.ip);
         const matchesInterface = !filters.interface || (device.interface && device.interface.toLowerCase().includes(filters.interface.toLowerCase()));
@@ -75,6 +91,10 @@ function getFilteredDevices() {
 
         return matchesId && matchesIp && matchesInterface && matchesDeviceType && matchesPorts && matchesStatus && matchesExports;
     });
+    _filteredCacheDevices = devices;
+    _filteredCacheKey = key;
+    _filteredCacheResult = result;
+    return result;
 }
 
 function updateFiltersFromInputs() {
@@ -227,9 +247,8 @@ function renderDevices() {
                 '<div class="empty-sub">' + sub + '</div>' +
                 cta +
             '</div>';
-        // CTA opens the provision modal.
-        const ctaBtn = elements.deviceTable.querySelector('[data-action="open-provision"]');
-        if (ctaBtn) ctaBtn.addEventListener('click', openProvisionModal);
+        // Click is handled by the delegated listener on
+        // elements.deviceTable (see bottom of file).
         updatePaginationControls();
         return;
     }
@@ -274,30 +293,8 @@ function renderDevices() {
             '<tbody>' + rowsHTML + '</tbody>' +
         '</table>';
 
-    // Wire row-action + port-pill click handlers.
-    elements.deviceTable.querySelectorAll('[data-action]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const t = e.currentTarget;
-            const action = t.getAttribute('data-action');
-            const ip = t.getAttribute('data-ip');
-            const port = t.getAttribute('data-port');
-            const deviceId = t.getAttribute('data-device-id');
-            switch (action) {
-                case 'test-ssh':
-                    testConnection(ip, parseInt(port));
-                    break;
-                case 'ping':
-                    pingDevice(ip);
-                    break;
-                case 'delete':
-                    deleteDevice(deviceId);
-                    break;
-                case 'copy-port':
-                    copyPortToClipboard(t, ip, port);
-                    break;
-            }
-        });
-    });
+    // Click is handled by the delegated listener on elements.deviceTable
+    // (see bottom of file). Each render emits markup only.
 
     updatePaginationControls();
 }
@@ -338,13 +335,53 @@ function copyPortToClipboard(btn, ip, port) {
             setTimeout(() => { status.textContent = 'Copied ' + addr; }, 50);
         }
     };
+    // Prefer the modern async Clipboard API when available (secure
+    // context — HTTPS or localhost). Fall back to the deprecated
+    // execCommand path on plain HTTP so copy still works on the
+    // typical 10.42.0.0/16 LAN deployment.
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(addr).then(flash).catch(() => {
-            showAlert('Could not access clipboard — address: ' + addr, 'warning');
+            if (!execCopyFallback(addr, flash)) {
+                showAlert('Could not copy — address: ' + addr, 'warning');
+            }
         });
         return;
     }
-    showAlert('Clipboard unavailable on this connection — address: ' + addr, 'warning');
+    if (!execCopyFallback(addr, flash)) {
+        showAlert('Clipboard unavailable — address: ' + addr, 'warning');
+    }
+}
+
+// execCopyFallback uses a hidden <textarea> + document.execCommand('copy')
+// to put `text` on the system clipboard. Returns true on success, false
+// otherwise. `onSuccess` is called when copy completes. The technique
+// is deprecated but is the only path that works in non-secure contexts
+// where navigator.clipboard is undefined.
+function execCopyFallback(text, onSuccess) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    // Keep off-screen but selectable; readonly prevents the on-screen
+    // keyboard on mobile.
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    const prevSelection = document.activeElement;
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch (_) {
+        ok = false;
+    }
+    document.body.removeChild(ta);
+    if (prevSelection && typeof prevSelection.focus === 'function') {
+        prevSelection.focus();
+    }
+    if (ok) onSuccess();
+    return ok;
 }
 
 // renderExportBadges returns three FLOW/TRAP/SYSLOG badges per row.
@@ -879,6 +916,39 @@ elements.filterPorts.addEventListener('input', applyFilters);
 elements.filterStatus.addEventListener('change', applyFilters);
 elements.filterExports.addEventListener('change', applyFilters);
 elements.clearFiltersBtn.addEventListener('click', clearAllFilters);
+
+// Delegated click handler for every action-emitting element inside the
+// device-table region (per-row SSH / Ping / Delete buttons, port-pill
+// copy buttons, empty-state CTA). Attached ONCE at module init —
+// previously renderDevices re-attached a fresh listener to every
+// matching child on every render, which at fleet scale meant
+// re-allocating ~N×4 closures per 30s poll. Single listener walks the
+// `closest('[data-action]')` chain on each click.
+elements.deviceTable.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-action]');
+    if (!t) return;
+    const action = t.getAttribute('data-action');
+    const ip = t.getAttribute('data-ip');
+    const port = t.getAttribute('data-port');
+    const deviceId = t.getAttribute('data-device-id');
+    switch (action) {
+        case 'test-ssh':
+            testConnection(ip, parseInt(port));
+            break;
+        case 'ping':
+            pingDevice(ip);
+            break;
+        case 'delete':
+            deleteDevice(deviceId);
+            break;
+        case 'copy-port':
+            copyPortToClipboard(t, ip, port);
+            break;
+        case 'open-provision':
+            openProvisionModal();
+            break;
+    }
+});
 
 // Each periodic poller is wrapped so it no-ops when the tab is hidden
 // (background tabs don't need fresh device lists / system stats /
