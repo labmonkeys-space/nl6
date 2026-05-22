@@ -340,6 +340,14 @@ function validateExportBlocksSnapshot(snapshot) {
 
 const _exportStatusInFlight = { flow: false, trap: false, syslog: false };
 
+// _telemetryOpen tracks per-card collapsed state for the telemetry
+// streams panel. Closure-scoped — not persisted across reloads
+// (design.md §D5: open-state persistence here would solve a non-problem).
+// Each card's open/closed state is also cached alongside its last-rendered
+// data so the toggle handler can re-render without an extra fetch.
+const _telemetryOpen = { flow: false, trap: false, syslog: false };
+const _telemetryLastData = { flow: null, trap: null, syslog: null };
+
 async function loadExportStatuses() {
     await Promise.allSettled([
         loadFlowStatus(),
@@ -358,13 +366,10 @@ async function loadFlowStatus() {
         // docs/reference/web-api.md). Don't normalise these without
         // updating both sides.
         const data = (response && response.data) ? response.data : (response || {});
-        renderExportStatus('flow', data, {
-            tupleKey: c => c.collector + ' / ' + (c.protocol || '?'),
-            metricLine: c => 'pkts=' + (c.sent_packets || 0) + ' · bytes=' + (c.sent_bytes || 0)
-        });
+        renderTelemetryCard('flow', data, FLOW_SPEC);
     } catch (error) {
         console.error('Failed to load flow status:', error);
-        renderExportStatusError('flow');
+        renderTelemetryCardError('flow', 'Flow');
     } finally {
         _exportStatusInFlight.flow = false;
     }
@@ -375,20 +380,10 @@ async function loadTrapStatus() {
     _exportStatusInFlight.trap = true;
     try {
         const data = await apiCall('/traps/status'); // status endpoint is not enveloped
-        renderExportStatus('trap', data || {}, {
-            tupleKey: c => c.collector + ' / ' + (c.mode || '?'),
-            metricLine: c => {
-                const parts = ['sent=' + (c.sent || 0)];
-                if (c.mode === 'inform') {
-                    parts.push('acked=' + (c.informs_acked || 0));
-                    parts.push('failed=' + (c.informs_failed || 0));
-                }
-                return parts.join(' · ');
-            }
-        });
+        renderTelemetryCard('trap', data || {}, TRAP_SPEC);
     } catch (error) {
         console.error('Failed to load trap status:', error);
-        renderExportStatusError('trap');
+        renderTelemetryCardError('trap', 'SNMP traps');
     } finally {
         _exportStatusInFlight.trap = false;
     }
@@ -399,52 +394,209 @@ async function loadSyslogStatus() {
     _exportStatusInFlight.syslog = true;
     try {
         const data = await apiCall('/syslog/status'); // not enveloped
-        renderExportStatus('syslog', data || {}, {
-            tupleKey: c => c.collector + ' / ' + (c.format || '?'),
-            metricLine: c => 'sent=' + (c.sent || 0) + ' · failures=' + (c.send_failures || 0)
-        });
+        renderTelemetryCard('syslog', data || {}, SYSLOG_SPEC);
     } catch (error) {
         console.error('Failed to load syslog status:', error);
-        renderExportStatusError('syslog');
+        renderTelemetryCardError('syslog', 'Syslog');
     } finally {
         _exportStatusInFlight.syslog = false;
     }
 }
 
-function renderExportStatus(kind, data, opts) {
-    const summary = document.getElementById(kind + 'StatusSummary');
-    const list = document.getElementById(kind + 'StatusList');
-    if (!summary || !list) return;
+// fmtCount formats a counter as a compact string with k/M/B suffix.
+function fmtCount(n) {
+    const v = Number(n) || 0;
+    if (v < 1000) return String(v);
+    if (v < 1e6) return (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + 'k';
+    if (v < 1e9) return (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M';
+    return (v / 1e9).toFixed(1) + 'B';
+}
+
+// fmtBytes formats a byte count with KiB / MiB / GiB suffix.
+function fmtBytes(n) {
+    const v = Number(n) || 0;
+    if (v < 1024) return v + ' B';
+    if (v < 1048576) return (v / 1024).toFixed(v >= 10240 ? 0 : 1) + ' KiB';
+    if (v < 1073741824) return (v / 1048576).toFixed(v >= 10485760 ? 0 : 1) + ' MiB';
+    return (v / 1073741824).toFixed(1) + ' GiB';
+}
+
+// Per-kind spec for renderTelemetryCard. Each spec exposes:
+//   label          — display name for the card head
+//   columns        — column names shown in the per-collector breakdown
+//   summary(arr)   — array of {k, v, warn?} for the always-visible summary row
+//   collectorStats(c) — array of {k, v, warn?, title?} for one breakdown row
+//   collectorMeta(c)  — HTML for the meta slot to the right of the collector address
+const FLOW_SPEC = {
+    label: 'Flow',
+    columns: ['pkts', 'bytes'],
+    summary: collectors => {
+        const pkts = collectors.reduce((a, c) => a + (c.sent_packets || 0), 0);
+        const bytes = collectors.reduce((a, c) => a + (c.sent_bytes || 0), 0);
+        return [
+            { k: 'pkts', v: fmtCount(pkts) },
+            { k: 'bytes', v: fmtBytes(bytes) }
+        ];
+    },
+    collectorStats: c => [
+        { k: 'pkts', v: fmtCount(c.sent_packets || 0) },
+        { k: 'bytes', v: fmtBytes(c.sent_bytes || 0) }
+    ],
+    collectorMeta: c => '<span class="mono">' + escapeHtml(c.protocol || '?') + '</span>'
+};
+
+const TRAP_SPEC = {
+    label: 'SNMP traps',
+    columns: ['sent', 'failed'],
+    summary: collectors => {
+        const sent = collectors.reduce((a, c) => a + (c.sent || 0), 0);
+        const failed = collectors.reduce((a, c) => a + (c.informs_failed || 0), 0);
+        return [
+            { k: 'sent', v: fmtCount(sent) },
+            { k: 'failed', v: fmtCount(failed), warn: failed > 0 }
+        ];
+    },
+    collectorStats: c => {
+        const sent = c.sent || 0;
+        const failed = c.informs_failed || 0;
+        const title = c.mode === 'inform'
+            ? sent + ' sent (acked ' + (c.informs_acked || 0) + ')'
+            : sent + ' sent';
+        return [
+            { k: 'sent', v: fmtCount(sent), title: title },
+            { k: 'failed', v: fmtCount(failed), warn: failed > 0, title: failed + ' failed' }
+        ];
+    },
+    collectorMeta: c => {
+        const isInform = (c.mode || '').toUpperCase() === 'INFORM';
+        const version = c.version || 'v2c';
+        const tipText = (isInform ? 'Inform' : 'Trap') + ' ' + version;
+        return '<span class="trap-mode" title="' + escapeHtml(tipText) + '">' +
+            '<span class="trap-mode-ver mono">' + escapeHtml(version) + '</span>' +
+            '<span class="trap-mode-arrow mono" aria-hidden="true">' + (isInform ? '↔' : '→') + '</span>' +
+        '</span>';
+    }
+};
+
+const SYSLOG_SPEC = {
+    label: 'Syslog',
+    columns: ['sent', 'failed'],
+    summary: collectors => {
+        const sent = collectors.reduce((a, c) => a + (c.sent || 0), 0);
+        const failed = collectors.reduce((a, c) => a + (c.send_failures || 0), 0);
+        return [
+            { k: 'sent', v: fmtCount(sent) },
+            { k: 'failed', v: fmtCount(failed), warn: failed > 0 }
+        ];
+    },
+    collectorStats: c => {
+        const failed = c.send_failures || 0;
+        return [
+            { k: 'sent', v: fmtCount(c.sent || 0) },
+            { k: 'failed', v: fmtCount(failed), warn: failed > 0 }
+        ];
+    },
+    collectorMeta: c => '<span class="mono">' + escapeHtml(c.format || '?') + '</span>'
+};
+
+// renderTelemetryCard builds one telemetry card (Flow / Traps / Syslog).
+// The card has a clickable head with on/off pill, an always-visible
+// summary row (devices count + per-stream summary stats), and an
+// expand-to-show per-collector breakdown table. Open state lives in
+// _telemetryOpen; the toggle handler calls back into this function with
+// the cached last data so flipping open/closed is instant.
+function renderTelemetryCard(kind, data, spec) {
+    const card = document.getElementById(kind + 'Card');
+    if (!card) return;
+    _telemetryLastData[kind] = data;
 
     const collectors = Array.isArray(data.collectors) ? data.collectors : [];
     const devices = data.devices_exporting || 0;
     // Truthy check rather than `=== true` so a server schema that adds
-    // / renames the field doesn't render populated data as "not
-    // running"; if collectors is non-empty, we trust that signal too.
-    const active = !!data.subsystem_active || collectors.length > 0;
+    // / renames the field doesn't render populated data as "not running";
+    // if collectors is non-empty, we trust that signal too.
+    const enabled = !!data.subsystem_active || collectors.length > 0;
+    const isOpen = _telemetryOpen[kind];
 
-    if (!active) {
-        summary.textContent = 'not running';
-        list.innerHTML = '';
-        return;
+    const chevRight = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>';
+    const chevDown  = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+    const head =
+        '<button type="button" class="export-card-head" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+            '<span class="export-card-chev">' + (isOpen ? chevDown : chevRight) + '</span>' +
+            '<span class="status-label">' + escapeHtml(spec.label) + '</span>' +
+            '<span class="export-pill ' + (enabled ? 'on' : 'off') + '">' + (enabled ? 'on' : 'off') + '</span>' +
+        '</button>';
+
+    const summary = spec.summary(collectors);
+    const summaryBody =
+        '<div class="export-card-summary">' +
+            '<div class="summary-stat">' +
+                '<span class="summary-stat-val mono" style="color: ' + (devices > 0 ? 'var(--accent)' : 'var(--fg-3)') + '">' + devices + '</span>' +
+                '<span class="summary-stat-key">devices</span>' +
+            '</div>' +
+            summary.map(s =>
+                '<div class="summary-stat">' +
+                    '<span class="summary-stat-val mono' + (s.warn ? ' is-warn' : '') + '">' + escapeHtml(s.v) + '</span>' +
+                    '<span class="summary-stat-key">' + escapeHtml(s.k) + '</span>' +
+                '</div>'
+            ).join('') +
+            '<span class="summary-collectors muted mono">' + collectors.length + ' coll.</span>' +
+        '</div>';
+
+    let breakdown = '';
+    if (isOpen) {
+        const cols = spec.columns;
+        const headRow =
+            '<div class="collector-head" style="--stat-cols: ' + cols.length + '">' +
+                '<span class="collector-head-cell">Collector</span>' +
+                '<span class="collector-head-cell col-dev">dev</span>' +
+                cols.map(c => '<span class="collector-head-cell">' + escapeHtml(c) + '</span>').join('') +
+            '</div>';
+        const rows = collectors.length === 0
+            ? '<li class="collector-empty muted">No active collectors yet.</li>'
+            : collectors.map(c => {
+                const stats = spec.collectorStats(c);
+                return '<li style="--stat-cols: ' + stats.length + '">' +
+                    '<div class="collector-row">' +
+                        '<span class="mono">' + escapeHtml(c.collector || '?') + '</span>' +
+                        '<span class="muted"> · </span>' +
+                        spec.collectorMeta(c) +
+                    '</div>' +
+                    '<span class="collector-count mono">' + (c.devices || 0) + '</span>' +
+                    stats.map(s =>
+                        '<span class="collector-stat' + (s.warn ? ' is-warn' : '') + '"' +
+                        (s.title ? ' title="' + escapeHtml(s.title) + '"' : '') + '>' +
+                        escapeHtml(s.v) + '</span>'
+                    ).join('') +
+                '</li>';
+            }).join('');
+        breakdown = headRow + '<ul class="export-status-list">' + rows + '</ul>';
     }
-    if (collectors.length === 0) {
-        summary.textContent = 'running · 0 collectors';
-        list.innerHTML = '';
-        return;
+
+    card.className = 'export-status-card' + (enabled ? '' : ' is-off') + (isOpen ? ' is-open' : '');
+    card.innerHTML = head + summaryBody + breakdown;
+
+    const btn = card.querySelector('.export-card-head');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            _telemetryOpen[kind] = !_telemetryOpen[kind];
+            renderTelemetryCard(kind, _telemetryLastData[kind] || {}, spec);
+        });
     }
-    summary.textContent = collectors.length + (collectors.length === 1 ? ' collector' : ' collectors') + ' · ' + devices + ' devices';
-    list.innerHTML = collectors.map(c =>
-        '<li><strong>' + escapeHtml(opts.tupleKey(c)) + '</strong> — ' +
-        escapeHtml((c.devices || 0) + ' dev · ' + opts.metricLine(c)) + '</li>'
-    ).join('');
 }
 
-function renderExportStatusError(kind) {
-    const summary = document.getElementById(kind + 'StatusSummary');
-    const list = document.getElementById(kind + 'StatusList');
-    if (summary) summary.textContent = 'fetch failed';
-    if (list) list.innerHTML = '';
+function renderTelemetryCardError(kind, label) {
+    const card = document.getElementById(kind + 'Card');
+    if (!card) return;
+    card.className = 'export-status-card is-off';
+    card.innerHTML =
+        '<button type="button" class="export-card-head" aria-expanded="false" disabled>' +
+            '<span class="export-card-chev"></span>' +
+            '<span class="status-label">' + escapeHtml(label) + '</span>' +
+            '<span class="export-pill off">err</span>' +
+        '</button>' +
+        '<div class="export-card-summary"><span class="muted">fetch failed</span></div>';
 }
 
 // escapeHtml is the single sanitiser for both element text and

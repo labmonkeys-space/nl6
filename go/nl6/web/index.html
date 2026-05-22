@@ -81,30 +81,18 @@
                     </div>
                 </div>
             </div>
+        </section>
 
-            <div class="panel status export-status is-compact">
-                <div class="section-heading">
-                    <p class="section-kicker">Exports</p>
-                    <h2>Telemetry streams</h2>
-                    <p class="section-summary">Per-collector aggregates from each export subsystem. Rows are live when at least one device has opted in.</p>
-                </div>
-                <div class="export-status-grid">
-                    <div class="export-status-card">
-                        <p class="status-label">Flow</p>
-                        <h3 id="flowStatusSummary" aria-live="polite">loading…</h3>
-                        <ul id="flowStatusList" class="export-status-list"></ul>
-                    </div>
-                    <div class="export-status-card">
-                        <p class="status-label">SNMP traps</p>
-                        <h3 id="trapStatusSummary" aria-live="polite">loading…</h3>
-                        <ul id="trapStatusList" class="export-status-list"></ul>
-                    </div>
-                    <div class="export-status-card">
-                        <p class="status-label">Syslog</p>
-                        <h3 id="syslogStatusSummary" aria-live="polite">loading…</h3>
-                        <ul id="syslogStatusList" class="export-status-list"></ul>
-                    </div>
-                </div>
+        <section class="panel status export-status is-compact" aria-label="Telemetry streams">
+            <div class="section-heading">
+                <p class="section-kicker">Exports</p>
+                <h2>Telemetry streams</h2>
+                <p class="section-summary">Per-collector aggregates from each export subsystem. Rows are live when at least one device has opted in.</p>
+            </div>
+            <div class="export-status-grid">
+                <div id="flowCard" class="export-status-card" aria-live="polite"></div>
+                <div id="trapCard" class="export-status-card" aria-live="polite"></div>
+                <div id="syslogCard" class="export-status-card" aria-live="polite"></div>
             </div>
         </section>
 
