@@ -328,6 +328,15 @@ function copyPortToClipboard(btn, ip, port) {
     const flash = () => {
         btn.classList.add('is-copied');
         setTimeout(() => btn.classList.remove('is-copied'), 900);
+        // Screen readers get no signal from the colour-only `.is-copied`
+        // flash — announce via the `#copyStatus` aria-live region. Setting
+        // textContent twice (clear, then set) forces a re-announcement on
+        // back-to-back copies of the same address.
+        const status = document.getElementById('copyStatus');
+        if (status) {
+            status.textContent = '';
+            setTimeout(() => { status.textContent = 'Copied ' + addr; }, 50);
+        }
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(addr).then(flash).catch(() => {
@@ -596,8 +605,8 @@ function renderProvisionBasicsStep() {
 }
 
 function renderProvisionTrapsStep() {
-    const skipHint = !provisionDraft.trapCollector
-        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    const hintHidden = provisionDraft.trapCollector ? ' style="display:none"' : '';
+    const skipHint = '<div class="step-skip-hint" data-skip-hint role="note"' + hintHidden + '>No collector — this step will be skipped.</div>';
     return '<div class="modal-form">' +
         '<p class="tab-summary">Devices fire SNMPv2c traps or INFORM requests at a Poisson cadence. Leave the collector blank to skip traps for this batch.</p>' +
         skipHint +
@@ -619,8 +628,8 @@ function renderProvisionTrapsStep() {
 }
 
 function renderProvisionSyslogStep() {
-    const skipHint = !provisionDraft.syslogCollector
-        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    const hintHidden = provisionDraft.syslogCollector ? ' style="display:none"' : '';
+    const skipHint = '<div class="step-skip-hint" data-skip-hint role="note"' + hintHidden + '>No collector — this step will be skipped.</div>';
     return '<div class="modal-form">' +
         '<p class="tab-summary">Devices emit syslog messages at a Poisson cadence. Leave the collector blank to skip syslog for this batch.</p>' +
         skipHint +
@@ -636,8 +645,8 @@ function renderProvisionSyslogStep() {
 }
 
 function renderProvisionFlowStep() {
-    const skipHint = !provisionDraft.flowCollector
-        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    const hintHidden = provisionDraft.flowCollector ? ' style="display:none"' : '';
+    const skipHint = '<div class="step-skip-hint" data-skip-hint role="note"' + hintHidden + '>No collector — this step will be skipped.</div>';
     return '<div class="modal-form">' +
         '<p class="tab-summary">Devices emit synthetic flow telemetry. Leave the collector blank to skip flow export for this batch.</p>' +
         skipHint +
@@ -695,6 +704,13 @@ function onProvisionFieldChange(e) {
     // Stepper also re-renders so the "configured" dot updates.
     renderProvisionStepper();
     renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    // When a telemetry collector field changes, the "this step will be
+    // skipped" hint visibility flips. Toggle directly on the DOM
+    // (preserves focus / caret in the input the user is editing).
+    if (key === 'trapCollector' || key === 'syslogCollector' || key === 'flowCollector') {
+        const hint = document.querySelector('#provisionBody [data-skip-hint]');
+        if (hint) hint.style.display = el.value ? 'none' : '';
+    }
     if (key === 'category') {
         // Category change must repopulate the resourceFile select with
         // the filtered set. Easiest is to re-render the basics body.
@@ -800,17 +816,44 @@ document.getElementById('provisionModal').addEventListener('click', (e) => {
             break;
         case 'modal-jump-step': {
             const idx = parseInt(trigger.getAttribute('data-step'), 10);
-            if (!isNaN(idx) && idx <= provisionStep) { provisionStep = idx; renderProvisionModal(); }
+            // Strict `<` so clicking the current step is a no-op (no
+            // re-render that would blow away mid-edit focus).
+            if (!isNaN(idx) && idx < provisionStep) { provisionStep = idx; renderProvisionModal(); }
             break;
         }
     }
 });
 
-// Escape closes the modal (with dirty confirm).
+// Keyboard handler for the modal: Escape closes (with dirty confirm),
+// Tab cycles focus inside the dialog so it can't escape to the
+// disabled toolbar buttons behind the scrim (WAI-ARIA dialog pattern).
 window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
     const scrim = document.getElementById('provisionModal');
-    if (scrim && scrim.style.display !== 'none') closeProvisionModal();
+    if (!scrim || scrim.style.display === 'none') return;
+
+    if (e.key === 'Escape') {
+        // If a child element handled the Escape (e.g., the browser
+        // closed an open <select> popup), don't also close the modal.
+        if (e.defaultPrevented) return;
+        closeProvisionModal();
+        return;
+    }
+
+    if (e.key === 'Tab') {
+        const focusables = scrim.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+        }
+    }
 });
 
 // Toolbar [+ Create devices] button opens the modal.
