@@ -442,15 +442,38 @@ function clearProvisionDraft() {
     catch (_) {}
 }
 
+// _provisionPriorFocus remembers the element that opened the modal so
+// the close handler can restore keyboard focus to it (WAI-ARIA dialog
+// pattern). Without this, Escape leaves focus on <body> and the user's
+// tab position is lost.
+let _provisionPriorFocus = null;
+
 function openProvisionModal() {
     if (provisionBusy) return;
     provisionStep = 0;
     provisionDirty = false;
+    _provisionPriorFocus = (document.activeElement && document.activeElement !== document.body)
+        ? document.activeElement : null;
     document.body.style.overflow = 'hidden';
     const scrim = document.getElementById('provisionModal');
     scrim.style.display = 'flex';
     scrim.setAttribute('aria-hidden', 'false');
-    renderProvisionModal();
+    // Render inside try/finally so a thrown render error doesn't leak
+    // the body scroll lock (the page would otherwise become permanently
+    // unscrollable until refresh).
+    try {
+        renderProvisionModal();
+        // Focus the first interactive control (Basics → Start IP input)
+        // after layout settles so screen-reader / keyboard users land
+        // inside the modal, not on the toolbar button that opened it.
+        const firstInput = document.querySelector('#provisionBody [data-field]');
+        if (firstInput) firstInput.focus();
+    } catch (err) {
+        document.body.style.overflow = '';
+        scrim.style.display = 'none';
+        scrim.setAttribute('aria-hidden', 'true');
+        throw err;
+    }
 }
 
 function closeProvisionModal(force) {
@@ -462,6 +485,10 @@ function closeProvisionModal(force) {
     scrim.style.display = 'none';
     scrim.setAttribute('aria-hidden', 'true');
     provisionDirty = false;
+    if (_provisionPriorFocus && typeof _provisionPriorFocus.focus === 'function') {
+        _provisionPriorFocus.focus();
+    }
+    _provisionPriorFocus = null;
 }
 
 function resetProvisionStep(stepId) {
@@ -474,8 +501,12 @@ function resetProvisionStep(stepId) {
 
 function isProvisionStepValid(stepId) {
     if (stepId === 'basics') {
-        return PROVISION_IP_RE.test(String(provisionDraft.startIp || '').trim()) &&
-            parseInt(provisionDraft.count, 10) >= 1;
+        // parseInt('1e3', 10) === 1 silently truncates scientific
+        // notation that <input type="number"> accepts. Use Number()
+        // for full parse and require a positive integer.
+        const count = Number(provisionDraft.count);
+        const validCount = Number.isFinite(count) && Number.isInteger(count) && count >= 1;
+        return PROVISION_IP_RE.test(String(provisionDraft.startIp || '').trim()) && validCount;
     }
     const collectorField = stepId === 'traps' ? 'trapCollector'
                          : stepId === 'syslog' ? 'syslogCollector'
@@ -631,7 +662,7 @@ function renderProvisionFooter(step) {
     document.getElementById('modalBackBtn').disabled = isFirst;
     const nextBtn = document.getElementById('modalNextBtn');
     if (isLast) {
-        const count = parseInt(provisionDraft.count, 10) || 0;
+        const count = Number(provisionDraft.count) || 0;
         nextBtn.innerHTML = '+ Create ' + count + ' device' + (count === 1 ? '' : 's');
         nextBtn.disabled = !valid || provisionBusy;
         nextBtn.setAttribute('data-action', 'modal-submit');
@@ -721,7 +752,7 @@ async function submitProvision() {
     try {
         await createDevices(
             provisionDraft.startIp,
-            provisionDraft.count,
+            Number(provisionDraft.count),
             provisionDraft.netmask,
             provisionDraft.resourceFile,
             provisionDraft.category,
