@@ -86,6 +86,16 @@ function stopStatusPolling() {
 
 function updateStatusDisplay(status) {
     renderProgressBanner(status);
+    // Toolbar [+ Create devices] is disabled whenever the simulator is
+    // already busy with a pre-alloc or create batch — clicking it now
+    // would just queue a second batch behind the first.
+    const busy = !!(status.is_pre_allocating || status.is_creating_devices);
+    if (elements && elements.createDevicesBtn) {
+        elements.createDevicesBtn.disabled = busy;
+        elements.createDevicesBtn.title = busy
+            ? 'Provisioning in progress…'
+            : 'Create new device set';
+    }
     if (status.is_pre_allocating) {
         const progress = status.pre_alloc_total > 0 ? Math.round((status.pre_alloc_progress / status.pre_alloc_total) * 100) : 0;
         const nextMessage = 'Preparing interfaces: ' + status.pre_alloc_progress + ' of ' + status.pre_alloc_total + ' (' + progress + '%)';
@@ -152,46 +162,30 @@ async function loadResources() {
     }
 }
 
+// populateResourceSelect is now a no-op stub kept for backwards
+// compatibility with the loadResources() call site. The inline
+// #create form (which owned `deviceCategory` + `resourceFile`
+// selects) was removed in PR6; the provision modal owns its own
+// selects and populates them via renderProvisionBody on each open.
 function populateResourceSelect() {
-    const categorySelect = document.getElementById('deviceCategory');
-
-    // Build unique sorted category list
-    const categories = [...new Set(resources.map(r => r.category))].sort();
-    categorySelect.innerHTML = '<option value="">All categories</option>';
-    categories.forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = cat;
-        categorySelect.appendChild(option);
-    });
-
-    // Populate device type dropdown (initially all)
-    updateDeviceTypeDropdown('');
-
-    // Filter device types when category changes
-    categorySelect.addEventListener('change', function() {
-        updateDeviceTypeDropdown(this.value);
-    });
+    // intentionally empty; modal handles its own dropdown population
 }
 
-function updateDeviceTypeDropdown(category) {
-    const select = document.getElementById('resourceFile');
-    const filtered = category ? resources.filter(r => r.category === category) : resources;
-    const count = filtered.length;
-    const label = category ? category : 'All ' + count + ' types';
-    select.innerHTML = '<option value="">Default (Auto-detect)</option><option value="__round_robin__">Round Robin (' + label + ')</option>';
-
-    filtered.forEach(resource => {
-        const option = document.createElement('option');
-        option.value = resource.filename;
-        option.textContent = resource.name + ' (' + resource.type + ')';
-        select.appendChild(option);
-    });
+// resourceCategories returns the sorted unique list of categories from
+// the loaded resources. Used by the provision modal's basics step.
+function resourceCategories() {
+    return [...new Set(resources.map(r => r.category))].sort();
 }
 
-async function createDevices(startIp, deviceCount, netmask, resourceFile, exportSnapshot) {
+// resourcesForCategory returns the resource entries filtered by
+// category (empty string returns all). Used by the provision modal
+// when populating the device-type select.
+function resourcesForCategory(category) {
+    return category ? resources.filter(r => r.category === category) : resources;
+}
+
+async function createDevices(startIp, deviceCount, netmask, resourceFile, category, exportSnapshot) {
     try {
-        setLoading('createLoading', true);
         const requestData = {
             start_ip: startIp,
             device_count: parseInt(deviceCount),
@@ -201,7 +195,6 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, export
         // Check if round robin mode is selected
         if (resourceFile === '__round_robin__') {
             requestData.round_robin = true;
-            const category = document.getElementById('deviceCategory').value;
             if (category) {
                 requestData.category = category;
             }
@@ -233,8 +226,7 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, export
         await loadDevices();
     } catch (error) {
         showAlert('Failed to create devices: ' + error.message, 'error');
-    } finally {
-        setLoading('createLoading', false);
+        throw error;
     }
 }
 
@@ -262,63 +254,6 @@ function validHostPort(s) {
     return port >= 1 && port <= 65535;
 }
 
-function readFlowBlock() {
-    const collector = document.getElementById('flowCollector').value.trim();
-    if (!collector) return null;
-    const block = { collector };
-    const protocol = document.getElementById('flowProtocol').value;
-    if (protocol) block.protocol = protocol;
-    const active = document.getElementById('flowActiveTimeout').value.trim();
-    if (active) block.active_timeout = active;
-    const inactive = document.getElementById('flowInactiveTimeout').value.trim();
-    if (inactive) block.inactive_timeout = inactive;
-    return block;
-}
-
-function readTrapBlock() {
-    const collector = document.getElementById('trapCollector').value.trim();
-    if (!collector) return null;
-    const block = { collector };
-    const mode = document.getElementById('trapMode').value;
-    if (mode) block.mode = mode;
-    const community = document.getElementById('trapCommunity').value.trim();
-    if (community) block.community = community;
-    const interval = document.getElementById('trapInterval').value.trim();
-    if (interval) block.interval = interval;
-    const informTimeout = document.getElementById('trapInformTimeout').value.trim();
-    if (informTimeout) block.inform_timeout = informTimeout;
-    const informRetries = document.getElementById('trapInformRetries').value.trim();
-    // `!== ''` instead of truthy because `"0"` is a legitimate value (0
-    // retries means "fire once, no retransmit"). The other duration
-    // fields use `if (foo)` because empty-string suppression is correct
-    // there — don't normalise this to match without reading the test
-    // for the zero-retries case in DeviceTrapConfig.Validate.
-    if (informRetries !== '') block.inform_retries = parseInt(informRetries, 10);
-    return block;
-}
-
-function readSyslogBlock() {
-    const collector = document.getElementById('syslogCollector').value.trim();
-    if (!collector) return null;
-    const block = { collector };
-    const format = document.getElementById('syslogFormat').value;
-    if (format) block.format = format;
-    const interval = document.getElementById('syslogInterval').value.trim();
-    if (interval) block.interval = interval;
-    return block;
-}
-
-// readAllExportBlocks captures the three blocks once so validate and
-// submit operate on the same snapshot — avoids a TOCTOU window where
-// an operator typing into a field between validate and POST sends data
-// the validator never saw.
-function readAllExportBlocks() {
-    return {
-        flow: readFlowBlock(),
-        traps: readTrapBlock(),
-        syslog: readSyslogBlock()
-    };
-}
 
 // validateExportBlocksSnapshot returns an error message string when any
 // enabled block has an invalid field, or null when everything is OK.

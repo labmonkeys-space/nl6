@@ -99,138 +99,6 @@
         <div id="progressBanner" aria-live="polite"></div>
         <div id="alerts" class="alerts" aria-live="polite"></div>
 
-        <section id="create" class="panel controls">
-            <div class="section-heading">
-                <p class="section-kicker">Create</p>
-                <h2>Provision a new device set</h2>
-                <p class="section-summary">
-                    Choose an address range, profile strategy, and netmask. nl6 will build the matching fleet and
-                    attach the network interfaces required to reach it.
-                </p>
-            </div>
-            <form id="createForm" class="form-grid">
-                <div class="form-group">
-                    <label for="startIp">Start IP address</label>
-                    <input type="text" id="startIp" placeholder="192.168.100.1" required>
-                </div>
-                <div class="form-group">
-                    <label for="deviceCount">Device count</label>
-                    <input type="number" id="deviceCount" min="1" value="1" required>
-                </div>
-                <div class="form-group">
-                    <label for="netmask">Netmask</label>
-                    <select id="netmask">
-                        <option value="24">24 (/24 - 255.255.255.0)</option>
-                        <option value="16">16 (/16 - 255.255.0.0)</option>
-                        <option value="8">8 (/8 - 255.0.0.0)</option>
-                        <option value="32">32 (/32 - 255.255.255.255)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="deviceCategory">Category</label>
-                    <select id="deviceCategory">
-                        <option value="">All categories</option>
-                    </select>
-                </div>
-                <div class="form-group form-group-wide">
-                    <label for="resourceFile">Device type</label>
-                    <select id="resourceFile">
-                        <option value="">Default (Auto-detect)</option>
-                    </select>
-                </div>
-                <details class="export-section" id="flowSection">
-                    <summary>Flow export (NetFlow / IPFIX / sFlow)</summary>
-                    <p class="export-summary">Devices emit synthetic flow telemetry to the collector. Leave blank to skip flow export for this batch.</p>
-                    <div class="export-grid">
-                        <div class="form-group">
-                            <label for="flowCollector">Collector (host:port)</label>
-                            <input type="text" id="flowCollector" placeholder="192.168.1.10:2055">
-                        </div>
-                        <div class="form-group">
-                            <label for="flowProtocol">Protocol</label>
-                            <select id="flowProtocol">
-                                <option value="netflow9">NetFlow v9 (default)</option>
-                                <option value="ipfix">IPFIX</option>
-                                <option value="netflow5">NetFlow v5</option>
-                                <option value="sflow">sFlow v5</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="flowActiveTimeout">Active timeout</label>
-                            <input type="text" id="flowActiveTimeout" placeholder="30s">
-                        </div>
-                        <div class="form-group">
-                            <label for="flowInactiveTimeout">Inactive timeout</label>
-                            <input type="text" id="flowInactiveTimeout" placeholder="15s">
-                        </div>
-                    </div>
-                </details>
-
-                <details class="export-section" id="trapSection">
-                    <summary>SNMP traps (v2c TRAP / INFORM)</summary>
-                    <p class="export-summary">Devices fire SNMPv2c traps or INFORM requests at a Poisson cadence. Leave blank to skip traps for this batch.</p>
-                    <div class="export-grid">
-                        <div class="form-group">
-                            <label for="trapCollector">Collector (host:port)</label>
-                            <input type="text" id="trapCollector" placeholder="192.168.1.10:162">
-                        </div>
-                        <div class="form-group">
-                            <label for="trapMode">Mode</label>
-                            <select id="trapMode">
-                                <option value="trap">TRAP (fire-and-forget)</option>
-                                <option value="inform">INFORM (acknowledged)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="trapCommunity">Community</label>
-                            <input type="text" id="trapCommunity" placeholder="public">
-                        </div>
-                        <div class="form-group">
-                            <label for="trapInterval">Interval (Poisson mean)</label>
-                            <input type="text" id="trapInterval" placeholder="30s">
-                        </div>
-                        <div class="form-group">
-                            <label for="trapInformTimeout">INFORM retry timeout</label>
-                            <input type="text" id="trapInformTimeout" placeholder="5s">
-                        </div>
-                        <div class="form-group">
-                            <label for="trapInformRetries">INFORM max retries</label>
-                            <input type="number" id="trapInformRetries" min="0" placeholder="2">
-                        </div>
-                    </div>
-                </details>
-
-                <details class="export-section" id="syslogSection">
-                    <summary>UDP syslog (RFC 5424 / RFC 3164)</summary>
-                    <p class="export-summary">Devices emit syslog messages at a Poisson cadence. Leave blank to skip syslog for this batch.</p>
-                    <div class="export-grid">
-                        <div class="form-group">
-                            <label for="syslogCollector">Collector (host:port)</label>
-                            <input type="text" id="syslogCollector" placeholder="192.168.1.10:514">
-                        </div>
-                        <div class="form-group">
-                            <label for="syslogFormat">Format</label>
-                            <select id="syslogFormat">
-                                <option value="5424">RFC 5424 (structured)</option>
-                                <option value="3164">RFC 3164 (legacy BSD)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="syslogInterval">Interval (Poisson mean)</label>
-                            <input type="text" id="syslogInterval" placeholder="10s">
-                        </div>
-                    </div>
-                </details>
-
-                <div class="form-group form-group-actions">
-                    <button type="submit" class="btn">
-                        Create devices
-                        <span id="createLoading" class="loading" style="display: none;"></span>
-                    </button>
-                </div>
-            </form>
-        </section>
-
         <section id="devices" class="panel devices">
             <div class="devices-header">
                 <div class="section-heading">
@@ -242,6 +110,10 @@
                     </p>
                 </div>
                 <div class="toolbar">
+                    <button id="createDevicesBtn" class="btn btn-primary btn-small" title="Create new device set">
+                        + Create devices
+                    </button>
+                    <span class="toolbar-sep" aria-hidden="true"></span>
                     <button id="exportBtn" class="btn btn-secondary btn-small">
                         Export CSV <span id="exportLoading" class="loading" style="display: none;"></span>
                     </button>
@@ -300,6 +172,31 @@
                 </div>
             </div>
         </section>
+
+        <div id="provisionModal" class="modal-scrim" style="display: none;" aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="provisionModalTitle">
+                <div class="modal-head">
+                    <div>
+                        <p class="section-kicker" id="provisionStepIndicator">Create · Step 1 of 4</p>
+                        <h2 id="provisionModalTitle">Provision a new device set</h2>
+                    </div>
+                    <button type="button" class="modal-close" data-action="modal-close" aria-label="Close">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+                    </button>
+                </div>
+                <ol id="provisionStepper" class="modal-stepper" aria-label="Wizard steps"></ol>
+                <div id="provisionBody" class="modal-body"></div>
+                <div class="modal-foot">
+                    <span class="muted prealloc-note"><span class="modal-foot-hint">Draft saved automatically.</span></span>
+                    <div class="modal-foot-actions">
+                        <button type="button" class="btn btn-secondary" data-action="modal-reset" title="Clear this step's fields">Reset</button>
+                        <button type="button" class="btn" data-action="modal-cancel">Cancel</button>
+                        <button type="button" class="btn" data-action="modal-back" id="modalBackBtn">Back</button>
+                        <button type="button" class="btn btn-primary" data-action="modal-next" id="modalNextBtn">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <footer class="app-footer">
             <div class="app-footer-inner">

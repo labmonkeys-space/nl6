@@ -2479,19 +2479,11 @@ code.mono {
 }
 
 /* ============================================================
- * Transitional rules — preserved from pre-redesign styles.css.
- * Each rule is GC'd by the PR that retires its DOM consumer:
- *   PR6 (task 6.12): .form-group-actions, .btn-secondary, .alert-warning
- *
- * Old-palette tokens (--success, --warning, --muted, --surface-ink) are
- * remapped to new-palette tokens so transitional markup visually matches
- * the new design until PR6 retires the rules entirely.
+ * Retained from pre-redesign styles.css — markup still uses these:
+ *   .btn-secondary — every toolbar button + pagination buttons
+ *   .alert-warning — showAlert(...,'warning') toasts
+ * Tokens remapped to the new palette so they match the redesign.
  * ============================================================ */
-
-/* --- PR6-removed: inline form + legacy button/alert variants --- */
-.form-group-actions {
-  grid-column: span 2;
-}
 
 .btn-secondary {
   background: transparent;

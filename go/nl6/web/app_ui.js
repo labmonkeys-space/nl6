@@ -1,7 +1,7 @@
 // nl6 Device Simulator - UI Functions
 
 const elements = {
-    createForm: document.getElementById('createForm'),
+    createDevicesBtn: document.getElementById('createDevicesBtn'),
     deviceList: document.getElementById('deviceList'),
     alerts: document.getElementById('alerts'),
     exportBtn: document.getElementById('exportBtn'),
@@ -208,7 +208,7 @@ function renderDevices() {
             : 'Provision a device set to populate the simulator inventory.';
         const cta = hasAnyDevices
             ? ''
-            : '<button class="btn btn-primary" data-action="scroll-to-create" style="margin-top:10px">Create your first device set</button>';
+            : '<button class="btn btn-primary" data-action="open-provision" style="margin-top:10px">+ Create your first device set</button>';
         const icon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
         elements.deviceTable.innerHTML =
@@ -218,14 +218,9 @@ function renderDevices() {
                 '<div class="empty-sub">' + sub + '</div>' +
                 cta +
             '</div>';
-        // CTA scrolls to the still-existing inline #create section until PR6 lands the modal.
-        const ctaBtn = elements.deviceTable.querySelector('[data-action="scroll-to-create"]');
-        if (ctaBtn) {
-            ctaBtn.addEventListener('click', () => {
-                const target = document.getElementById('create');
-                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
-        }
+        // CTA opens the provision modal.
+        const ctaBtn = elements.deviceTable.querySelector('[data-action="open-provision"]');
+        if (ctaBtn) ctaBtn.addEventListener('click', openProvisionModal);
         updatePaginationControls();
         return;
     }
@@ -385,52 +380,395 @@ function updateSystemStatsDisplay(stats) {
     elements.loadAverage.textContent = stats.load_avg_1.toFixed(2) + ' / ' + stats.load_avg_5.toFixed(2) + ' / ' + stats.load_avg_15.toFixed(2);
 }
 
-// Event listeners
-elements.createForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = elements.createForm.querySelector('button[type="submit"]');
-    const startIp = document.getElementById('startIp').value;
-    const deviceCount = document.getElementById('deviceCount').value;
-    const netmask = document.getElementById('netmask').value;
-    const resourceFile = document.getElementById('resourceFile').value;
-    if (!startIp || !deviceCount) {
-        showAlert('Please fill in all required fields', 'error');
-        return;
+// === Provision modal (PR6) ============================================
+
+const PROVISION_DRAFT_KEY = 'fleet.provision.draft';
+
+const EMPTY_DRAFT = {
+    startIp: '192.168.100.1', count: 5, netmask: '24',
+    category: '', resourceFile: '',
+    flowCollector: '', flowProtocol: 'netflow9', flowActiveTimeout: '', flowInactiveTimeout: '',
+    trapCollector: '', trapMode: 'trap', trapCommunity: 'public', trapInterval: '', trapInformTimeout: '', trapInformRetries: '',
+    syslogCollector: '', syslogFormat: '5424', syslogInterval: ''
+};
+
+const PROVISION_STEPS = [
+    { id: 'basics', label: 'Basics', optional: false },
+    { id: 'traps', label: 'SNMP traps', optional: true },
+    { id: 'syslog', label: 'Syslog', optional: true },
+    { id: 'flow', label: 'Flow', optional: true }
+];
+
+const STEP_FIELDS = {
+    basics: ['startIp', 'count', 'netmask', 'category', 'resourceFile'],
+    traps: ['trapCollector', 'trapMode', 'trapCommunity', 'trapInterval', 'trapInformTimeout', 'trapInformRetries'],
+    syslog: ['syslogCollector', 'syslogFormat', 'syslogInterval'],
+    flow: ['flowCollector', 'flowProtocol', 'flowActiveTimeout', 'flowInactiveTimeout']
+};
+
+const PROVISION_IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+const PROVISION_HOSTPORT_RE = /^(\[[0-9a-fA-F:]+\]|[\w.-]+):\d{1,5}$/;
+
+let provisionDraft = Object.assign({}, EMPTY_DRAFT, loadProvisionDraft() || {});
+let provisionStep = 0;
+let provisionDirty = false;
+let provisionBusy = false;
+
+function loadProvisionDraft() {
+    try { return JSON.parse(localStorage.getItem(PROVISION_DRAFT_KEY) || 'null') || null; }
+    catch (_) { return null; }
+}
+function saveProvisionDraft() {
+    try { localStorage.setItem(PROVISION_DRAFT_KEY, JSON.stringify(provisionDraft)); }
+    catch (_) { /* quota / private-mode */ }
+}
+function clearProvisionDraft() {
+    try { localStorage.removeItem(PROVISION_DRAFT_KEY); }
+    catch (_) {}
+}
+
+function openProvisionModal() {
+    if (provisionBusy) return;
+    provisionStep = 0;
+    provisionDirty = false;
+    document.body.style.overflow = 'hidden';
+    const scrim = document.getElementById('provisionModal');
+    scrim.style.display = 'flex';
+    scrim.setAttribute('aria-hidden', 'false');
+    renderProvisionModal();
+}
+
+function closeProvisionModal(force) {
+    if (!force && provisionDirty) {
+        if (!confirm('Discard your provision draft?')) return;
     }
-    // Snapshot the three per-device export blocks ONCE so the
-    // validator and the request body see identical input. Without this,
-    // an operator typing into a field between validate and POST could
-    // slip unvalidated data past the client check.
-    const exportSnapshot = readAllExportBlocks();
-    const exportError = validateExportBlocksSnapshot(exportSnapshot);
-    if (exportError) {
-        showAlert(exportError, 'error');
-        return;
+    document.body.style.overflow = '';
+    const scrim = document.getElementById('provisionModal');
+    scrim.style.display = 'none';
+    scrim.setAttribute('aria-hidden', 'true');
+    provisionDirty = false;
+}
+
+function resetProvisionStep(stepId) {
+    const fields = STEP_FIELDS[stepId] || [];
+    fields.forEach(f => { provisionDraft[f] = EMPTY_DRAFT[f]; });
+    provisionDirty = true;
+    saveProvisionDraft();
+    renderProvisionModal();
+}
+
+function isProvisionStepValid(stepId) {
+    if (stepId === 'basics') {
+        return PROVISION_IP_RE.test(String(provisionDraft.startIp || '').trim()) &&
+            parseInt(provisionDraft.count, 10) >= 1;
     }
-    // Disable the submit button + mark aria-busy for the duration of
-    // the POST so a double-click can't fire two device-create batches.
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.setAttribute('aria-busy', 'true');
+    const collectorField = stepId === 'traps' ? 'trapCollector'
+                         : stepId === 'syslog' ? 'syslogCollector'
+                         : stepId === 'flow' ? 'flowCollector' : null;
+    if (!collectorField) return true;
+    const v = provisionDraft[collectorField];
+    return !v || PROVISION_HOSTPORT_RE.test(v.trim());
+}
+
+function isProvisionStepConfigured(stepId) {
+    if (stepId === 'traps') return !!provisionDraft.trapCollector;
+    if (stepId === 'syslog') return !!provisionDraft.syslogCollector;
+    if (stepId === 'flow') return !!provisionDraft.flowCollector;
+    return false;
+}
+
+function renderProvisionModal() {
+    const step = PROVISION_STEPS[provisionStep];
+    document.getElementById('provisionStepIndicator').textContent =
+        'Create · Step ' + (provisionStep + 1) + ' of ' + PROVISION_STEPS.length;
+    renderProvisionStepper();
+    renderProvisionBody(step);
+    renderProvisionFooter(step);
+}
+
+function renderProvisionStepper() {
+    const ol = document.getElementById('provisionStepper');
+    const checkIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>';
+    ol.innerHTML = PROVISION_STEPS.map((s, i) => {
+        const isCurrent = i === provisionStep;
+        const isDone = i < provisionStep;
+        const cls = ['modal-step', isCurrent ? 'is-current' : '', isDone ? 'is-done' : ''].filter(Boolean).join(' ');
+        const configured = isProvisionStepConfigured(s.id) && !isCurrent;
+        const aria = isCurrent ? ' aria-current="step"' : '';
+        return '<li class="' + cls + '">' +
+            '<button type="button" class="modal-step-btn" data-action="modal-jump-step" data-step="' + i + '"' +
+                (i > provisionStep ? ' disabled' : '') + aria + '>' +
+                '<span class="modal-step-num">' + (isDone ? checkIcon : (i + 1)) + '</span>' +
+                '<span class="modal-step-label">' + escapeHtml(s.label) +
+                    (s.optional ? '<span class="modal-step-tag muted"> optional</span>' : '') +
+                    (configured ? '<span class="modal-step-dot" title="Configured"></span>' : '') +
+                '</span>' +
+            '</button>' +
+            (i < PROVISION_STEPS.length - 1 ? '<span class="modal-step-sep" aria-hidden="true"></span>' : '') +
+        '</li>';
+    }).join('');
+}
+
+function renderProvisionBody(step) {
+    const body = document.getElementById('provisionBody');
+    let html;
+    if (step.id === 'basics') html = renderProvisionBasicsStep();
+    else if (step.id === 'traps') html = renderProvisionTrapsStep();
+    else if (step.id === 'syslog') html = renderProvisionSyslogStep();
+    else if (step.id === 'flow') html = renderProvisionFlowStep();
+    body.innerHTML = html;
+    wireProvisionFieldListeners(step.id);
+}
+
+function renderProvisionBasicsStep() {
+    const categoryOptions = '<option value="">All categories</option>' +
+        resourceCategories().map(c =>
+            '<option value="' + escapeHtml(c) + '"' + (provisionDraft.category === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
+        ).join('');
+    const filtered = resourcesForCategory(provisionDraft.category);
+    const rrLabel = provisionDraft.category || ('all ' + filtered.length + ' types');
+    const resourceOptions = '<option value="">Default (auto-detect)</option>' +
+        '<option value="__round_robin__"' + (provisionDraft.resourceFile === '__round_robin__' ? ' selected' : '') + '>Round Robin (' + escapeHtml(rrLabel) + ')</option>' +
+        filtered.map(r =>
+            '<option value="' + escapeHtml(r.filename) + '"' + (provisionDraft.resourceFile === r.filename ? ' selected' : '') + '>' + escapeHtml(r.name + ' (' + r.type + ')') + '</option>'
+        ).join('');
+    return '<div class="modal-form">' +
+        '<p class="tab-summary">Address range, profile strategy, and netmask. Required to provision.</p>' +
+        '<div class="form-group"><label>Start IP address</label>' +
+            '<input type="text" class="mono" data-field="startIp" value="' + escapeHtml(provisionDraft.startIp) + '" placeholder="192.168.100.1" required></div>' +
+        '<div class="form-group"><label>Device count</label>' +
+            '<input type="number" min="1" data-field="count" value="' + escapeHtml(provisionDraft.count) + '" required></div>' +
+        '<div class="form-group"><label>Netmask</label>' +
+            '<select data-field="netmask">' +
+                ['24', '16', '8', '32'].map(n => '<option value="' + n + '"' + (provisionDraft.netmask === n ? ' selected' : '') + '>' + n + ' (/' + n + ')</option>').join('') +
+            '</select></div>' +
+        '<div class="form-group"><label>Category</label>' +
+            '<select data-field="category">' + categoryOptions + '</select></div>' +
+        '<div class="form-group form-group-wide"><label>Device type</label>' +
+            '<select data-field="resourceFile">' + resourceOptions + '</select></div>' +
+    '</div>';
+}
+
+function renderProvisionTrapsStep() {
+    const skipHint = !provisionDraft.trapCollector
+        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    return '<div class="modal-form">' +
+        '<p class="tab-summary">Devices fire SNMPv2c traps or INFORM requests at a Poisson cadence. Leave the collector blank to skip traps for this batch.</p>' +
+        skipHint +
+        '<div class="form-group form-group-wide"><label>Collector (host:port)</label>' +
+            '<input type="text" class="mono" data-field="trapCollector" value="' + escapeHtml(provisionDraft.trapCollector) + '" placeholder="192.168.1.10:162"></div>' +
+        '<div class="form-group"><label>Mode</label>' +
+            '<select data-field="trapMode">' +
+                ['trap', 'inform'].map(m => '<option value="' + m + '"' + (provisionDraft.trapMode === m ? ' selected' : '') + '>' + (m === 'trap' ? 'TRAP (fire-and-forget)' : 'INFORM (acknowledged)') + '</option>').join('') +
+            '</select></div>' +
+        '<div class="form-group"><label>Community</label>' +
+            '<input type="text" class="mono" data-field="trapCommunity" value="' + escapeHtml(provisionDraft.trapCommunity) + '" placeholder="public"></div>' +
+        '<div class="form-group"><label>Interval (Poisson mean)</label>' +
+            '<input type="text" class="mono" data-field="trapInterval" value="' + escapeHtml(provisionDraft.trapInterval) + '" placeholder="30s"></div>' +
+        '<div class="form-group"><label>INFORM retry timeout</label>' +
+            '<input type="text" class="mono" data-field="trapInformTimeout" value="' + escapeHtml(provisionDraft.trapInformTimeout) + '" placeholder="5s"></div>' +
+        '<div class="form-group"><label>INFORM max retries</label>' +
+            '<input type="number" min="0" data-field="trapInformRetries" value="' + escapeHtml(provisionDraft.trapInformRetries) + '" placeholder="2"></div>' +
+    '</div>';
+}
+
+function renderProvisionSyslogStep() {
+    const skipHint = !provisionDraft.syslogCollector
+        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    return '<div class="modal-form">' +
+        '<p class="tab-summary">Devices emit syslog messages at a Poisson cadence. Leave the collector blank to skip syslog for this batch.</p>' +
+        skipHint +
+        '<div class="form-group form-group-wide"><label>Collector (host:port)</label>' +
+            '<input type="text" class="mono" data-field="syslogCollector" value="' + escapeHtml(provisionDraft.syslogCollector) + '" placeholder="192.168.1.10:514"></div>' +
+        '<div class="form-group"><label>Format</label>' +
+            '<select data-field="syslogFormat">' +
+                ['5424', '3164'].map(f => '<option value="' + f + '"' + (provisionDraft.syslogFormat === f ? ' selected' : '') + '>' + (f === '5424' ? 'RFC 5424 (structured)' : 'RFC 3164 (legacy BSD)') + '</option>').join('') +
+            '</select></div>' +
+        '<div class="form-group"><label>Interval (Poisson mean)</label>' +
+            '<input type="text" class="mono" data-field="syslogInterval" value="' + escapeHtml(provisionDraft.syslogInterval) + '" placeholder="10s"></div>' +
+    '</div>';
+}
+
+function renderProvisionFlowStep() {
+    const skipHint = !provisionDraft.flowCollector
+        ? '<div class="step-skip-hint" role="note">No collector — this step will be skipped.</div>' : '';
+    return '<div class="modal-form">' +
+        '<p class="tab-summary">Devices emit synthetic flow telemetry. Leave the collector blank to skip flow export for this batch.</p>' +
+        skipHint +
+        '<div class="form-group form-group-wide"><label>Collector (host:port)</label>' +
+            '<input type="text" class="mono" data-field="flowCollector" value="' + escapeHtml(provisionDraft.flowCollector) + '" placeholder="192.168.1.10:2055"></div>' +
+        '<div class="form-group"><label>Protocol</label>' +
+            '<select data-field="flowProtocol">' +
+                [['netflow9', 'NetFlow v9 (default)'], ['ipfix', 'IPFIX'], ['netflow5', 'NetFlow v5'], ['sflow', 'sFlow v5']]
+                    .map(p => '<option value="' + p[0] + '"' + (provisionDraft.flowProtocol === p[0] ? ' selected' : '') + '>' + p[1] + '</option>').join('') +
+            '</select></div>' +
+        '<div class="form-group"><label>Active timeout</label>' +
+            '<input type="text" class="mono" data-field="flowActiveTimeout" value="' + escapeHtml(provisionDraft.flowActiveTimeout) + '" placeholder="30s"></div>' +
+        '<div class="form-group"><label>Inactive timeout</label>' +
+            '<input type="text" class="mono" data-field="flowInactiveTimeout" value="' + escapeHtml(provisionDraft.flowInactiveTimeout) + '" placeholder="15s"></div>' +
+    '</div>';
+}
+
+function renderProvisionFooter(step) {
+    const isLast = provisionStep === PROVISION_STEPS.length - 1;
+    const isFirst = provisionStep === 0;
+    const valid = isProvisionStepValid(step.id);
+    document.getElementById('modalBackBtn').disabled = isFirst;
+    const nextBtn = document.getElementById('modalNextBtn');
+    if (isLast) {
+        const count = parseInt(provisionDraft.count, 10) || 0;
+        nextBtn.innerHTML = '+ Create ' + count + ' device' + (count === 1 ? '' : 's');
+        nextBtn.disabled = !valid || provisionBusy;
+        nextBtn.setAttribute('data-action', 'modal-submit');
+        nextBtn.title = valid ? '' : 'Fill required fields to continue';
+    } else {
+        nextBtn.textContent = 'Next';
+        nextBtn.disabled = !valid;
+        nextBtn.setAttribute('data-action', 'modal-next');
+        nextBtn.title = valid ? '' : 'Fill required fields to continue';
     }
-    try {
-        await createDevices(startIp, deviceCount, netmask, resourceFile, exportSnapshot);
-    } finally {
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.removeAttribute('aria-busy');
+}
+
+function wireProvisionFieldListeners(stepId) {
+    const body = document.getElementById('provisionBody');
+    body.querySelectorAll('[data-field]').forEach(el => {
+        el.addEventListener('input', onProvisionFieldChange);
+        el.addEventListener('change', onProvisionFieldChange);
+    });
+}
+
+function onProvisionFieldChange(e) {
+    const el = e.target;
+    const key = el.getAttribute('data-field');
+    if (!key) return;
+    provisionDraft[key] = el.value;
+    provisionDirty = true;
+    saveProvisionDraft();
+    // Re-render footer (validity changes) and, for category, the
+    // resourceFile select; for resourceFile (round-robin label).
+    // Stepper also re-renders so the "configured" dot updates.
+    renderProvisionStepper();
+    renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    if (key === 'category') {
+        // Category change must repopulate the resourceFile select with
+        // the filtered set. Easiest is to re-render the basics body.
+        renderProvisionBody(PROVISION_STEPS[provisionStep]);
+    }
+}
+
+async function submitProvision() {
+    if (provisionBusy) return;
+    // Build the export snapshot from the draft, then run the strict
+    // validator that the inline form's submit used. Cheap insurance:
+    // catches duration / inform_retries shape issues the per-step
+    // host:port regex doesn't cover.
+    const snapshot = {
+        flow: provisionDraft.flowCollector ? {
+            collector: provisionDraft.flowCollector.trim(),
+            protocol: provisionDraft.flowProtocol,
+            active_timeout: provisionDraft.flowActiveTimeout || undefined,
+            inactive_timeout: provisionDraft.flowInactiveTimeout || undefined
+        } : null,
+        traps: provisionDraft.trapCollector ? (function () {
+            const b = {
+                collector: provisionDraft.trapCollector.trim(),
+                mode: provisionDraft.trapMode,
+                community: provisionDraft.trapCommunity || undefined,
+                interval: provisionDraft.trapInterval || undefined,
+                inform_timeout: provisionDraft.trapInformTimeout || undefined
+            };
+            if (provisionDraft.trapInformRetries !== '' && provisionDraft.trapInformRetries != null) {
+                b.inform_retries = parseInt(provisionDraft.trapInformRetries, 10);
+            }
+            return b;
+        })() : null,
+        syslog: provisionDraft.syslogCollector ? {
+            collector: provisionDraft.syslogCollector.trim(),
+            format: provisionDraft.syslogFormat,
+            interval: provisionDraft.syslogInterval || undefined
+        } : null
+    };
+    // Strip undefined keys so omitempty fires server-side.
+    for (const k of ['flow', 'traps', 'syslog']) {
+        if (snapshot[k]) {
+            for (const f of Object.keys(snapshot[k])) {
+                if (snapshot[k][f] === undefined) delete snapshot[k][f];
+            }
         }
     }
-    elements.createForm.reset();
-    document.getElementById('deviceCount').value = '1';
-    document.getElementById('netmask').value = '24';
-    document.getElementById('resourceFile').value = '';
-    // Reset the export sections: close the <details> and clear inputs.
-    ['flowSection', 'trapSection', 'syslogSection'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.open = false;
-    });
+    const err = validateExportBlocksSnapshot(snapshot);
+    if (err) {
+        showAlert(err, 'error');
+        return;
+    }
+    provisionBusy = true;
+    renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    try {
+        await createDevices(
+            provisionDraft.startIp,
+            provisionDraft.count,
+            provisionDraft.netmask,
+            provisionDraft.resourceFile,
+            provisionDraft.category,
+            snapshot
+        );
+        clearProvisionDraft();
+        provisionDraft = Object.assign({}, EMPTY_DRAFT);
+        provisionDirty = false;
+        closeProvisionModal(true);
+    } catch (_) {
+        // createDevices already pushed a toast; keep the modal open so
+        // the operator can correct and retry.
+    } finally {
+        provisionBusy = false;
+        renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    }
+}
+
+// Event delegation for all modal interactions.
+document.getElementById('provisionModal').addEventListener('click', (e) => {
+    if (e.target.id === 'provisionModal') {
+        // Scrim click
+        closeProvisionModal();
+        return;
+    }
+    const trigger = e.target.closest('[data-action]');
+    if (!trigger) return;
+    const action = trigger.getAttribute('data-action');
+    switch (action) {
+        case 'modal-close':
+        case 'modal-cancel':
+            closeProvisionModal();
+            break;
+        case 'modal-reset':
+            resetProvisionStep(PROVISION_STEPS[provisionStep].id);
+            break;
+        case 'modal-back':
+            if (provisionStep > 0) { provisionStep--; renderProvisionModal(); }
+            break;
+        case 'modal-next':
+            if (provisionStep < PROVISION_STEPS.length - 1) { provisionStep++; renderProvisionModal(); }
+            break;
+        case 'modal-submit':
+            submitProvision();
+            break;
+        case 'modal-jump-step': {
+            const idx = parseInt(trigger.getAttribute('data-step'), 10);
+            if (!isNaN(idx) && idx <= provisionStep) { provisionStep = idx; renderProvisionModal(); }
+            break;
+        }
+    }
 });
+
+// Escape closes the modal (with dirty confirm).
+window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const scrim = document.getElementById('provisionModal');
+    if (scrim && scrim.style.display !== 'none') closeProvisionModal();
+});
+
+// Toolbar [+ Create devices] button opens the modal.
+elements.createDevicesBtn.addEventListener('click', openProvisionModal);
 
 elements.exportBtn.addEventListener('click', exportDevicesCSV);
 elements.routeScriptBtn.addEventListener('click', downloadRouteScript);
