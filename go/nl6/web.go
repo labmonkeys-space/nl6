@@ -495,12 +495,6 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 
-	// Static file for logo
-	router.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		http.ServeFile(w, r, "web/logo.png")
-	}).Methods("GET", "HEAD")
-
 	// Health check
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
