@@ -341,7 +341,7 @@ body {
   border-radius: 3px;
   background: var(--bg);
   font-size: 11px;
-  color: var(--fg-1);
+  color: var(--fg);
   white-space: nowrap;
   cursor: default;
   transition: border-color 120ms, background 120ms;
@@ -371,7 +371,7 @@ body {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 2px;
-  background: color-mix(in oklch, var(--fg-1) 8%, transparent);
+  background: color-mix(in oklch, var(--fg) 8%, transparent);
   color: var(--fg-2);
   letter-spacing: 0.02em;
 }
@@ -2103,6 +2103,7 @@ code.mono {
 
 /* Exports column badges */
 .col-exports { display: flex; gap: 4px; padding: 9px 12px; }
+.export-badges { display: inline-flex; gap: 4px; }
 .export-badge {
   font-family: var(--mono);
   font-size: 9px;
