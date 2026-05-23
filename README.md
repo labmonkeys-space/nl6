@@ -1,4 +1,4 @@
-# nl6 — network device simulator
+<img src="./assets/nl6-logo-with-text.svg" width="200" />
 
 [![CI](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml/badge.svg)](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-labmonkeys--space.github.io-blue?logo=readthedocs)](https://labmonkeys-space.github.io/nl6/)
@@ -7,7 +7,7 @@
 [![Container Image](https://img.shields.io/badge/ghcr.io-nl6-blue?logo=docker)](https://github.com/labmonkeys-space/nl6/pkgs/container/nl6)
 [![Latest Release](https://img.shields.io/github/v/release/labmonkeys-space/nl6?include_prereleases&sort=semver)](https://github.com/labmonkeys-space/nl6/releases)
 
-![nl6 Logo](opensim.png)
+![nl6 Logo](assets/screenshot-v0.9.0.png)
 
 **📖 Documentation: <https://labmonkeys-space.github.io/nl6/>**
 
