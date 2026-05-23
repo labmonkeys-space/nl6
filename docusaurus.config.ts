@@ -116,7 +116,10 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'nl6',
+      logo: {
+        alt: 'nl6 — network device simulator',
+        src: 'img/nl6-logo-with-text.svg',
+      },
       items: [
         {
           type: 'docSidebar',
