@@ -130,25 +130,11 @@ body {
 }
 .icon-btn:hover { background: var(--bg-2); color: var(--fg); }
 
-/* ---------- Stats strip ---------- */
-.stats-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  background: var(--border);
-  border-bottom: 1px solid var(--border);
-}
-.stat-cell { flex: 1 1 140px; }
-.stat-sep { display: none; }
-.stat-cell {
-  background: var(--panel);
-  padding: 9px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  overflow: hidden;
-}
+/* ---------- Stat label / value / sub ----------
+ * Used by the Host runtime + Current Inventory overview cards. The
+ * `.stats-strip` / `.stat-cell` / `.stat-row` / `.stat-sep` container
+ * rules from the cut stats-strip feature were removed with the dead-
+ * section cleanup; only the three label/value/sub leaf rules survive. */
 .stat-label {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -158,7 +144,6 @@ body {
   font-weight: 500;
   white-space: nowrap;
 }
-.stat-row { display:flex; align-items:baseline; gap: 8px; justify-content: flex-start; min-width: 0; flex-wrap: nowrap; }
 .stat-value {
   font-size: 16px;
   font-weight: 600;
@@ -166,11 +151,8 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   white-space: nowrap;
-  flex-shrink: 0;
 }
-.stat-row svg { flex-shrink: 1; min-width: 0; max-width: 60px; }
 .stat-sub { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stat-sep { background: var(--border); width: 1px; }
 
 /* ---------- Main layout ---------- */
 .app-main {
@@ -1015,6 +997,22 @@ code.mono {
   border: 1px dashed var(--border-2);
   border-radius: 8px;
   padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  color: var(--fg-3);
+}
+.device-table .empty-state svg { color: var(--fg-3); }
+.empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.empty-sub {
+  font-size: 12px;
+  color: var(--fg-3);
 }
 
 .fleet-table {
