@@ -38,9 +38,7 @@ function resolveGoVersion(): string {
 const config: Config = {
   title: 'nl6',
   tagline: 'Network device simulator — SNMP/SSH/HTTPS at 30,000-device scale',
-  // Favicon deliberately omitted until a branded asset is added under static/img/.
-  // Docusaurus warns cleanly when the field is absent rather than when it's
-  // pointing at a missing file.
+  favicon: 'img/nl6-logo.svg',
 
   future: {
     v4: true,
