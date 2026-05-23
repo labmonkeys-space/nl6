@@ -499,25 +499,16 @@ code.mono {
 .app-bar-mark { display: flex; align-items: center; gap: 12px; }
 .app-bar-logo {
   width: 32px; height: 32px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, color-mix(in oklch, var(--accent), transparent 70%), color-mix(in oklch, var(--accent), transparent 90%));
-  border: 1px solid color-mix(in oklch, var(--accent), transparent 60%);
-  color: var(--accent);
   display: flex; align-items: center; justify-content: center;
 }
-.app-bar-text { line-height: 1.2; }
+.app-bar-logo svg { display: block; width: 100%; height: 100%; }
 .app-bar-name {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg);
-  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  height: 20px;
 }
-.app-bar-sub {
-  font-size: 10.5px;
-  color: var(--fg-3);
-  letter-spacing: 0.06em;
-}
+.app-bar-name svg { display: block; height: 100%; width: auto; }
 .app-bar-version {
   padding: 3px 9px;
   background: color-mix(in oklch, var(--accent), transparent 88%);
