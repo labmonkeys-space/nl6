@@ -486,40 +486,6 @@ body {
 }
 .bulk-count { font-size: 12px; font-weight: 500; color: var(--fg); }
 
-/* ---------- Fleet table ---------- */
-.fleet-table-wrap {
-  border: 1px solid var(--border);
-  border-radius: 0 0 8px 8px;
-  background: var(--panel);
-  overflow: hidden;
-}
-.fleet-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-.fleet-table th {
-  text-align: left;
-  padding: 8px 10px;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--fg-3);
-  background: var(--panel-2);
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0;
-}
-.fleet-table td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-.fleet-table-wrap.compact .fleet-table td { padding: 4px 10px; font-size: 11.5px; }
-.fleet-table tbody tr:last-child td { border-bottom: none; }
-
 .frow { cursor: pointer; transition: background .08s; }
 .frow:hover { background: var(--bg-2); }
 .frow.cursor { background: var(--bg-2); }
@@ -566,18 +532,6 @@ body {
   background: linear-gradient(90deg, color-mix(in oklch, var(--accent), transparent 60%), var(--accent));
 }
 .uptime-val { font-size: 10.5px; color: var(--fg-2); min-width: 50px; text-align: right; }
-
-.row-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
-.frow:hover .row-actions, .frow.cursor .row-actions { opacity: 1; }
-.row-actions button {
-  width: 24px; height: 24px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 0; background: transparent;
-  color: var(--fg-3);
-  cursor: pointer; border-radius: 4px;
-}
-.row-actions button:hover { background: var(--bg-2); color: var(--fg); }
-.row-actions button:last-child:hover { color: var(--danger); }
 
 .group-row td {
   padding: 0 !important;
@@ -718,88 +672,6 @@ body {
 }
 .palette-foot .spacer { flex: 1; }
 
-/* ---------- Modal ---------- */
-.modal-scrim {
-  position: fixed; inset: 0;
-  background: color-mix(in srgb, black, transparent 30%);
-  backdrop-filter: blur(2px);
-  z-index: 90;
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px;
-}
-.modal {
-  width: min(700px, 100%);
-  max-height: 90vh;
-  background: var(--panel);
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  box-shadow: 0 30px 80px rgba(0,0,0,.5);
-  overflow: hidden;
-  display: flex; flex-direction: column;
-}
-.modal-head {
-  display: flex; align-items: flex-start; gap: 16px;
-  padding: 20px 22px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.modal-head h2 { margin: 4px 0 2px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-.modal-head p { margin: 0; color: var(--fg-3); font-size: 12.5px; }
-.modal-head .icon-btn { margin-left: auto; }
-
-.modal-body {
-  padding: 18px 22px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  overflow-y: auto;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-content: start;
-}
-.form-grid label {
-  display: flex; flex-direction: column; gap: 5px;
-  font-size: 11.5px;
-  color: var(--fg-2);
-}
-.form-grid label.wide { grid-column: span 2; }
-.form-grid label > span { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-3); }
-.form-grid input, .form-grid select {
-  height: 30px;
-  padding: 0 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--fg);
-  font: inherit; font-size: 12.5px;
-  outline: none;
-}
-.form-grid input:focus, .form-grid select:focus { border-color: var(--accent); }
-
-.preview {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.preview-head { display: flex; justify-content: space-between; align-items: center; }
-.preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.preview-table th { text-align: left; padding: 4px 6px; font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-3); font-weight: 500; border-bottom: 1px solid var(--border); }
-.preview-table td { padding: 4px 6px; color: var(--fg-2); border-bottom: 1px dashed var(--border); }
-.preview-table tr:last-child td { border-bottom: none; }
-.preview-more td { color: var(--fg-3); font-style: italic; text-align: center; }
-
-.modal-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px;
-  border-top: 1px solid var(--border);
-  background: var(--panel-2);
-}
-.foot-actions { display: flex; gap: 8px; }
-
 /* ---------- Detail pane / drawer ---------- */
 .detail-pane {
   border-left: 1px solid var(--border);
@@ -887,78 +759,12 @@ body {
 }
 .toggle-row input { accent-color: var(--accent); }
 
-/* ---------- Status pills + new cells ---------- */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  background: var(--bg-2);
-  color: var(--fg-2);
-  white-space: nowrap;
-}
-.status-pill.s-running {
-  color: var(--accent);
-  background: color-mix(in oklch, var(--accent), transparent 88%);
-  border-color: color-mix(in oklch, var(--accent), transparent 60%);
-}
-.status-pill.s-stopped {
-  color: var(--fg-2);
-}
-.status-pill.s-provisioning {
-  color: var(--info);
-  background: color-mix(in oklch, var(--info), transparent 88%);
-  border-color: color-mix(in oklch, var(--info), transparent 60%);
-}
-.status-pill.s-deleting {
-  color: var(--danger);
-  background: color-mix(in oklch, var(--danger), transparent 88%);
-  border-color: color-mix(in oklch, var(--danger), transparent 60%);
-}
-
-.type-cell { display: flex; flex-direction: column; gap: 0; line-height: 1.25; }
-.type-cat { font-size: 10px; color: var(--fg-3); }
-
+/* col-* widths preserved for the live table layout; type-cell / type-cat
+ * survived from the first-block cut "type cells" feature but are
+ * harmless without their markup. */
 .col-iface { width: 72px; color: var(--fg-2); font-size: 11px; }
 .col-ports { width: 140px; }
 .col-status { width: 110px; }
-
-.port-pill {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--chip);
-  color: var(--fg-3);
-  border: 1px solid var(--border);
-  margin-right: 3px;
-}
-
-.topo-iface { font-size: 10px; }
-
-.row-actions button {
-  width: auto;
-  min-width: 28px;
-  padding: 0 6px;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--fg-3);
-  border: 1px solid transparent;
-  letter-spacing: 0.02em;
-}
-.row-actions button:hover {
-  color: var(--fg);
-  background: var(--bg-2);
-  border-color: var(--border);
-}
 
 /* ---------- Alerts ---------- */
 .alerts {
