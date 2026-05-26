@@ -252,11 +252,22 @@ e.g. `"interval_ms": 10000` lands as a 400, not a silent drop.
 curl http://localhost:8080/api/v1/devices
 ```
 
+Each device record includes a `resource_file` field (e.g. `"asr9k.json"`)
+— the canonical identifier accepted by `POST /api/v1/devices`. The
+sibling `device_type` field is a human-readable display label and is
+many-to-one (e.g. `cisco_catalyst_9500`, `cisco_crs_x`, and
+`cisco_nexus_9500` all surface as `"Cisco Router/Switch"`), so use
+`resource_file` for any replay or programmatic recreation use case.
+
 ## Export to CSV
 
 ```bash
 curl http://localhost:8080/api/v1/devices/export -o devices.csv
 ```
+
+The CSV includes a `Resource File` column for the same reason — so an
+exported inventory can be re-imported without hand-mapping display
+labels back to filenames.
 
 ## Generate a route script
 

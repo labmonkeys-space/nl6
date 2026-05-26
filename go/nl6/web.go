@@ -361,7 +361,7 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 	defer writer.Flush()
 
 	// Write CSV headers
-	headers := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status"}
+	headers := []string{"Device ID", "Resource File", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status"}
 	if err := writer.Write(headers); err != nil {
 		http.Error(w, "Failed to write CSV headers", http.StatusInternalServerError)
 		return
@@ -381,6 +381,7 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 
 		record := []string{
 			device.ID,
+			device.ResourceFile,
 			device.IP,
 			interfaceName,
 			fmt.Sprintf("%d", device.SNMPPort),

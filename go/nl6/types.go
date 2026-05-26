@@ -421,13 +421,19 @@ var RoundRobinDeviceTypes = []string{
 }
 
 type DeviceInfo struct {
-	ID         string `json:"id"`
-	IP         string `json:"ip"`
-	Interface  string `json:"interface,omitempty"`
-	SNMPPort   int    `json:"snmp_port"`
-	SSHPort    int    `json:"ssh_port"`
-	Running    bool   `json:"running"`
-	DeviceType string `json:"device_type,omitempty"`
+	ID        string `json:"id"`
+	IP        string `json:"ip"`
+	Interface string `json:"interface,omitempty"`
+	SNMPPort  int    `json:"snmp_port"`
+	SSHPort   int    `json:"ssh_port"`
+	Running   bool   `json:"running"`
+	// ResourceFile is the canonical device identifier (e.g.
+	// "asr9k.json") accepted by POST /api/v1/devices. Emitted so GET
+	// responses can be replayed against POST without the consumer
+	// having to reverse-derive the filename from `device_type` (which
+	// is a many-to-one display label).
+	ResourceFile string `json:"resource_file,omitempty"`
+	DeviceType   string `json:"device_type,omitempty"`
 	// Per-device export configuration echoed for GET /api/v1/devices
 	// consumers. Fields are omitted from JSON when nil. Populated from
 	// the device's runtime state in phases 3–5.
