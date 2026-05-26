@@ -259,15 +259,22 @@ many-to-one (e.g. `cisco_catalyst_9500`, `cisco_crs_x`, and
 `cisco_nexus_9500` all surface as `"Cisco Router/Switch"`), so use
 `resource_file` for any replay or programmatic recreation use case.
 
+The field is omitted (JSON `omitempty`) for devices created via the
+`-auto-start-ip` CLI flag, which boots a fleet without specifying a
+resource file. POST-created devices always carry it.
+
 ## Export to CSV
 
 ```bash
 curl http://localhost:8080/api/v1/devices/export -o devices.csv
 ```
 
-The CSV includes a `Resource File` column for the same reason — so an
-exported inventory can be re-imported without hand-mapping display
-labels back to filenames.
+The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`,
+`SNMP Port`, `SSH Port`, `Status`, `Resource File`. `Resource File` is
+appended at the end so any downstream consumer that indexes columns
+positionally (`cut -f2`, spreadsheet macros) is unaffected by the new
+column. Auto-start devices without a known resource file emit `N/A` in
+that column, matching the `Interface` convention.
 
 ## Generate a route script
 
