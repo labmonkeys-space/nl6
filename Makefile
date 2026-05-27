@@ -95,7 +95,7 @@ run: check-linux build
 # Tool versions are pinned here so local developers and CI run the same
 # binaries. Bump in lockstep across all environments; Dependabot does not
 # track these `go install` versions today.
-GOLANGCI_LINT_VERSION ?= v2.5.0
+GOLANGCI_LINT_VERSION ?= v2.12.2
 GOVULNCHECK_VERSION   ?= v1.1.4
 GOSEC_VERSION         ?= v2.22.0
 GOIMPORTS_VERSION     ?= v0.30.0
