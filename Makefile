@@ -97,8 +97,8 @@ run: check-linux build
 # track these `go install` versions today.
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOVULNCHECK_VERSION   ?= v1.1.4
-GOSEC_VERSION         ?= v2.22.0
-GOIMPORTS_VERSION     ?= v0.30.0
+GOSEC_VERSION         ?= v2.26.1
+GOIMPORTS_VERSION     ?= v0.45.0
 
 GOBIN_DIR := $(shell go env GOPATH)/bin
 
@@ -152,9 +152,14 @@ vuln: check-go
 #          them would break interoperability with every SNMPv3 mgr.
 #   G103 — unsafe.Pointer usage for TUN ioctl is required by the
 #          ifr struct layout.
+#   G706 — log injection via taint analysis: REST handlers parse
+#          `ip` through net.ParseIP and `ifIndex` as int before any
+#          log call, so no untrusted control characters can reach
+#          log.Printf. gosec's taint analyzer does not follow the
+#          validation, producing false positives.
 sec: check-go
 	cd $(GO_DIR) && $(GOBIN_DIR)/gosec \
-	  -exclude=G104,G115,G404,G204,G304,G401,G405,G501,G502,G505,G103 \
+	  -exclude=G104,G115,G404,G204,G304,G401,G405,G501,G502,G505,G103,G706 \
 	  ./...
 
 ## quality: Run all code-quality checks (fmt-check, lint, vuln, sec)
