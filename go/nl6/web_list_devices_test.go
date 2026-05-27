@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,19 +76,35 @@ func TestDeviceInfoOmitsEmptyResourceFile(t *testing.T) {
 	}
 }
 
-// TestExportDevicesCSVHeaderOrder pins the CSV column order so any
-// downstream consumer that indexes columns positionally
-// (`cut -f2`, spreadsheets, parsers keyed by position) does not break
-// silently on a future column addition. "Resource File" is the last
-// column by design (additive at the end, not inserted mid-row).
-func TestExportDevicesCSVHeaderOrder(t *testing.T) {
-	prev := manager
-	manager = &SimulatorManager{
+// TestExportDevicesCSV pins the CSV column order — header AND data
+// rows — so any downstream consumer that indexes columns positionally
+// (`awk -F,`, spreadsheets, parsers keyed by position) does not break
+// silently. "Resource File" is the last column by design (additive at
+// the end, not inserted mid-row). The data-row assertions catch a
+// future regression where headers stay correct but the row writer
+// swaps two adjacent values.
+//
+// Uses `swapGlobalManager` (interface_state_api_test.go) rather than
+// an inline swap so this test serializes correctly with any other
+// test that mutates the package-level `manager` global.
+func TestExportDevicesCSV(t *testing.T) {
+	sm := &SimulatorManager{
 		devices:         map[string]*DeviceSimulator{},
 		deviceIPs:       map[string]struct{}{},
 		deviceTypesByIP: map[string]string{},
 	}
-	t.Cleanup(func() { manager = prev })
+	// Two fixtures: one with an explicit resource file, one with an
+	// empty one (mirrors the auto-start path) to exercise the "N/A"
+	// fallback.
+	sm.devices["asr"] = &DeviceSimulator{
+		ID: "asr9k-10.42.0.3", IP: net.IPv4(10, 42, 0, 3),
+		SNMPPort: 161, SSHPort: 22, resourceFile: "asr9k.json",
+	}
+	sm.devices["def"] = &DeviceSimulator{
+		ID: "default-10.42.0.4", IP: net.IPv4(10, 42, 0, 4),
+		SNMPPort: 161, SSHPort: 22, // resourceFile == "" → N/A
+	}
+	t.Cleanup(swapGlobalManager(sm))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/devices/export", nil)
@@ -101,18 +118,41 @@ func TestExportDevicesCSVHeaderOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse CSV: %v", err)
 	}
-	if len(records) == 0 {
-		t.Fatalf("expected at least a header row, got empty CSV")
+
+	wantHeader := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status", "Resource File"}
+	if len(records) != 1+len(sm.devices) {
+		t.Fatalf("row count = %d, want %d (header + %d devices)", len(records), 1+len(sm.devices), len(sm.devices))
+	}
+	for i, col := range wantHeader {
+		if records[0][i] != col {
+			t.Errorf("header[%d] = %q, want %q", i, records[0][i], col)
+		}
 	}
 
-	want := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status", "Resource File"}
-	got := records[0]
-	if len(got) != len(want) {
-		t.Fatalf("header column count = %d, want %d; got=%v", len(got), len(want), got)
+	// Map iteration order in ListDevices is undefined; index data
+	// rows by Device ID before asserting positional content.
+	rowsByID := map[string][]string{}
+	for _, row := range records[1:] {
+		if len(row) != len(wantHeader) {
+			t.Errorf("row %q has %d columns, want %d", row[0], len(row), len(wantHeader))
+		}
+		rowsByID[row[0]] = row
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("header[%d] = %q, want %q", i, got[i], want[i])
+
+	wantRows := map[string][]string{
+		"asr9k-10.42.0.3":   {"asr9k-10.42.0.3", "10.42.0.3", "N/A", "161", "22", "Stopped", "asr9k.json"},
+		"default-10.42.0.4": {"default-10.42.0.4", "10.42.0.4", "N/A", "161", "22", "Stopped", "N/A"},
+	}
+	for id, want := range wantRows {
+		got, ok := rowsByID[id]
+		if !ok {
+			t.Errorf("missing row for %q", id)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("row %q column[%d] = %q, want %q", id, i, got[i], want[i])
+			}
 		}
 	}
 }

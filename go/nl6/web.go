@@ -362,8 +362,8 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Write CSV headers. "Resource File" is appended at the end so any
 	// downstream consumer that indexes columns positionally
-	// (`cut -f2`, spreadsheet macros) keeps working — inserting
-	// mid-row would silently shift every column to its right.
+	// (`awk -F,`, spreadsheet macros) keeps working — inserting mid-row
+	// would silently shift every column to its right.
 	headers := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status", "Resource File"}
 	if err := writer.Write(headers); err != nil {
 		http.Error(w, "Failed to write CSV headers", http.StatusInternalServerError)

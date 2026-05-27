@@ -259,9 +259,15 @@ many-to-one (e.g. `cisco_catalyst_9500`, `cisco_crs_x`, and
 `cisco_nexus_9500` all surface as `"Cisco Router/Switch"`), so use
 `resource_file` for any replay or programmatic recreation use case.
 
-The field is omitted (JSON `omitempty`) for devices created via the
-`-auto-start-ip` CLI flag, which boots a fleet without specifying a
-resource file. POST-created devices always carry it.
+The field is omitted (JSON `omitempty`) for devices whose underlying
+`device.resourceFile` is empty. Two paths produce that:
+
+- Devices created via the `-auto-start-ip` CLI flag (no CLI equivalent of
+  `resource_file`).
+- POST requests that omit **both** `resource_file` and `round_robin: true`,
+  falling back to the simulator's default resource set.
+
+POSTs that name a `resource_file` or use `round_robin: true` always carry it.
 
 ## Export to CSV
 
@@ -272,9 +278,14 @@ curl http://localhost:8080/api/v1/devices/export -o devices.csv
 The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`,
 `SNMP Port`, `SSH Port`, `Status`, `Resource File`. `Resource File` is
 appended at the end so any downstream consumer that indexes columns
-positionally (`cut -f2`, spreadsheet macros) is unaffected by the new
-column. Auto-start devices without a known resource file emit `N/A` in
+positionally (`awk -F, '{print $2}'`, spreadsheet macros) is unaffected
+by the new column. Devices without a known resource file emit `N/A` in
 that column, matching the `Interface` convention.
+
+Note: `N/A` is a display sentinel, not a valid resource filename. A
+re-import tool that POSTs each row back must translate `N/A` to an
+omitted `resource_file` field, not pass it through as a literal value
+(POST would reject `"N/A"` as a non-existent file).
 
 ## Generate a route script
 
