@@ -214,12 +214,13 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 	var devices []DeviceInfo
 	for _, device := range sm.devices {
 		info := DeviceInfo{
-			ID:         device.ID,
-			IP:         device.IP.String(),
-			SNMPPort:   device.SNMPPort,
-			SSHPort:    device.SSHPort,
-			Running:    device.running,
-			DeviceType: getDeviceTypeFromResourceFile(device.resourceFile),
+			ID:           device.ID,
+			IP:           device.IP.String(),
+			SNMPPort:     device.SNMPPort,
+			SSHPort:      device.SSHPort,
+			Running:      device.running,
+			ResourceFile: device.resourceFile,
+			DeviceType:   getDeviceTypeFromResourceFile(device.resourceFile),
 		}
 		if device.tunIface != nil {
 			info.Interface = device.tunIface.Name

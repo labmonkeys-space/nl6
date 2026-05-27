@@ -360,8 +360,11 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	// Write CSV headers
-	headers := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status"}
+	// Write CSV headers. "Resource File" is appended at the end so any
+	// downstream consumer that indexes columns positionally
+	// (`awk -F,`, spreadsheet macros) keeps working — inserting mid-row
+	// would silently shift every column to its right.
+	headers := []string{"Device ID", "IP Address", "Interface", "SNMP Port", "SSH Port", "Status", "Resource File"}
 	if err := writer.Write(headers); err != nil {
 		http.Error(w, "Failed to write CSV headers", http.StatusInternalServerError)
 		return
@@ -379,6 +382,15 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 			interfaceName = "N/A"
 		}
 
+		// Auto-start devices (CLI -auto-start-ip path) carry an empty
+		// resource_file — substitute N/A to match the Interface
+		// column's convention and avoid an indistinguishable-from-error
+		// empty cell mid-row.
+		resourceFile := device.ResourceFile
+		if resourceFile == "" {
+			resourceFile = "N/A"
+		}
+
 		record := []string{
 			device.ID,
 			device.IP,
@@ -386,6 +398,7 @@ func exportDevicesCSVHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("%d", device.SNMPPort),
 			fmt.Sprintf("%d", device.SSHPort),
 			status,
+			resourceFile,
 		}
 
 		if err := writer.Write(record); err != nil {
