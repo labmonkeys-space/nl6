@@ -11,6 +11,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'getting-started/quick-start',
         'getting-started/docker',
+        'getting-started/fleet',
       ],
     },
   ],

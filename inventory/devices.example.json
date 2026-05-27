@@ -1,0 +1,13 @@
+[
+  {
+    "start_ip": "10.42.0.1",
+    "device_count": 5,
+    "resource_file": "cisco_ios.json"
+  },
+  {
+    "start_ip": "10.42.1.1",
+    "device_count": 3,
+    "round_robin": true,
+    "category": "firewall"
+  }
+]
