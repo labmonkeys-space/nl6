@@ -26,9 +26,15 @@ type lldpFixture struct {
 	devs map[string]*DeviceSimulator // keyed by IP string
 }
 
-// addDevice registers a device at 10.42.0.<host> with interfaces 1..maxIf,
-// sysName = name, sysDescr = "<name> desc".
+// addDevice registers a device at 10.42.0.<host> with interfaces 1..maxIf.
 func (f *lldpFixture) addDevice(t *testing.T, host, maxIf int, name string) *DeviceSimulator {
+	t.Helper()
+	return f.addDeviceAt(t, net.IPv4(10, 42, 0, byte(host)).String(), maxIf, name, int64(host))
+}
+
+// addDeviceAt registers a device at an arbitrary IP with interfaces 1..maxIf
+// (all UP), sysName = name, sysDescr = "<name> desc".
+func (f *lldpFixture) addDeviceAt(t *testing.T, ipStr string, maxIf int, name string, seed int64) *DeviceSimulator {
 	t.Helper()
 	speeds := make([]uint64, maxIf)
 	for i := range speeds {
@@ -44,23 +50,22 @@ func (f *lldpFixture) addDevice(t *testing.T, host, maxIf int, name string) *Dev
 	}
 	indexResources(res)
 
-	ip := net.IPv4(10, 42, 0, byte(host))
 	d := &DeviceSimulator{
-		ID:            fmt.Sprintf("dev%d", host),
-		IP:            ip,
+		ID:            "dev-" + ipStr,
+		IP:            net.ParseIP(ipStr),
 		sysName:       name,
 		resources:     res,
-		metricsCycler: NewMetricsCycler(int64(host), GetDeviceProfile("")),
+		metricsCycler: NewMetricsCycler(seed, GetDeviceProfile("")),
 	}
 	d.cachedSysName.Store(name)
-	d.metricsCycler.InitIfCountersWithScenario(res, int64(host), IfErrorClean)
+	d.metricsCycler.InitIfCountersWithScenario(res, seed, IfErrorClean)
 	d.snmpServer = &SNMPServer{device: d}
 
 	f.mgr.mu.Lock()
 	f.mgr.devices[d.ID] = d
-	f.mgr.deviceIPs[ip.String()] = struct{}{}
+	f.mgr.deviceIPs[d.IP.String()] = struct{}{}
 	f.mgr.mu.Unlock()
-	f.devs[ip.String()] = d
+	f.devs[d.IP.String()] = d
 	return d
 }
 
@@ -453,6 +458,85 @@ func TestLLDP_NumericSysNameEncodesAsOctetString(t *testing.T) {
 	// Subtype stays INTEGER.
 	if sub := encodeTypedValue(oidLldpLocChassisIdSubtype, "4"); sub[0] != ASN1_INTEGER {
 		t.Errorf("subtype tag = %#x, want INTEGER", sub[0])
+	}
+}
+
+// countNeighbors returns how many of ports 1..maxPort have a live lldpRem row.
+func countNeighbors(d *DeviceSimulator, maxPort int) int {
+	n := 0
+	for p := 1; p <= maxPort; p++ {
+		if d.snmpServer.findResponse(remOID(colLldpRemSysName, p)) != "OID not supported" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestLLDP_ClosFabricExample verifies the docs' 5-stage Clos example: the
+// link/neighbor structure (spine=4 neighbors, leaf=3), the 18-link total, and
+// the down-link behavior (neighbor drops on both sides, ifAlias persists).
+func TestLLDP_ClosFabricExample(t *testing.T) {
+	f := newLLDPFixture(t)
+	seed := int64(1)
+	add := func(ip string, maxIf int, name string) *DeviceSimulator {
+		seed++
+		return f.addDeviceAt(t, ip, maxIf, name, seed)
+	}
+	// superspines, spines, leaves, clients
+	add("10.0.0.1", 4, "SUPERSPINE-1")
+	add("10.0.0.2", 4, "SUPERSPINE-2")
+	spine1 := add("10.0.1.1", 4, "SPINE-1")
+	add("10.0.1.2", 4, "SPINE-2")
+	add("10.0.1.3", 4, "SPINE-3")
+	add("10.0.1.4", 4, "SPINE-4")
+	leaf1 := add("10.0.2.1", 4, "LEAF-1")
+	add("10.0.2.2", 4, "LEAF-2")
+	add("10.0.2.3", 4, "LEAF-3")
+	add("10.0.2.4", 4, "LEAF-4")
+	add("10.0.3.1", 1, "CLIENT-1")
+	add("10.0.3.2", 1, "CLIENT-2")
+
+	links := [][4]any{
+		{"10.0.0.1", 1, "10.0.1.1", 1}, {"10.0.0.1", 2, "10.0.1.2", 1},
+		{"10.0.0.1", 3, "10.0.1.3", 1}, {"10.0.0.1", 4, "10.0.1.4", 1},
+		{"10.0.0.2", 1, "10.0.1.1", 2}, {"10.0.0.2", 2, "10.0.1.2", 2},
+		{"10.0.0.2", 3, "10.0.1.3", 2}, {"10.0.0.2", 4, "10.0.1.4", 2},
+		{"10.0.1.1", 3, "10.0.2.1", 1}, {"10.0.1.1", 4, "10.0.2.2", 1},
+		{"10.0.1.2", 3, "10.0.2.1", 2}, {"10.0.1.2", 4, "10.0.2.2", 2},
+		{"10.0.1.3", 3, "10.0.2.3", 1}, {"10.0.1.3", 4, "10.0.2.4", 1},
+		{"10.0.1.4", 3, "10.0.2.3", 2}, {"10.0.1.4", 4, "10.0.2.4", 2},
+		{"10.0.2.1", 3, "10.0.3.1", 1}, {"10.0.2.3", 3, "10.0.3.2", 1},
+	}
+	for _, l := range links {
+		must(t, f.mgr.topology.AddLink(ep(l[0].(string), l[1].(int)), ep(l[2].(string), l[3].(int))))
+	}
+
+	if f.mgr.topology.Count() != 18 {
+		t.Fatalf("configured links = %d, want 18", f.mgr.topology.Count())
+	}
+	if got := countNeighbors(spine1, 4); got != 4 {
+		t.Errorf("spine1 neighbors = %d, want 4", got)
+	}
+	if got := countNeighbors(leaf1, 4); got != 3 {
+		t.Errorf("leaf1 neighbors = %d, want 3", got)
+	}
+
+	// Stitch: leaf1 port1 ↔ spine1 port3.
+	if got := leaf1.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != "SPINE-1" {
+		t.Errorf("leaf1 port1 neighbor = %q, want SPINE-1", got)
+	}
+
+	// Down the leaf1↔spine1 link: leaf1 port1 down.
+	setOper(leaf1, 1, false)
+	if got := countNeighbors(leaf1, 4); got != 2 {
+		t.Errorf("leaf1 neighbors after down = %d, want 2", got)
+	}
+	if got := countNeighbors(spine1, 4); got != 3 {
+		t.Errorf("spine1 neighbors after peer down = %d, want 3", got)
+	}
+	// ifAlias persists (configured intent).
+	if got := leaf1.snmpServer.findResponse(ifAliasPrefix + "1"); got != "to_SPINE-1_GigabitEthernet0/3" {
+		t.Errorf("leaf1 ifAlias.1 after down = %q, want to_SPINE-1_GigabitEthernet0/3", got)
 	}
 }
 

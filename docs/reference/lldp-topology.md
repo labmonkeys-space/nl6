@@ -39,55 +39,106 @@ snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1  # ifAlias = to_<peer
 curl -s http://localhost:8080/api/v1/topology/status | jq # {subsystem_active:true, configured_links:2, active_links:2}
 ```
 
-### A richer ring: 4 multi-port switches over REST
+### A 5-stage Clos fabric over REST
 
-For a ring (each device needs ≥2 ports) use a multi-interface type such as
-`cisco_ios` (4 ports). Boot the server, create the fleet, then wire the ring —
-each device uses `ifIndex 1` and `2`:
+A realistic example: the minimal 5-stage Clos from
+[containerlab's `min-5clos`](https://containerlab.dev/lab-examples/min-5clos/)
+— two superspines, two pods of two spines + two leaves each, and a client on a
+leaf in each pod. Twelve devices, eighteen links, with a sensible device type
+per tier:
+
+| Tier | Device type | Nodes | IPs | Ports used |
+|------|-------------|-------|-----|------------|
+| Superspine | `cisco_crs_x` (144-port core) | 2 | `10.0.0.1–2` | 1–4 (to the 4 spines) |
+| Spine | `arista_7280r3` | 4 | `10.0.1.1–4` | 1–2 up (superspines), 3–4 down (leaves) |
+| Leaf | `cisco_catalyst_9500` | 4 | `10.0.2.1–4` | 1–2 up (spines), 3 down (client) |
+| Client | `linux_server` | 2 | `10.0.3.1–2` | 1 (to its leaf) |
+
+```
+          superspine1 (10.0.0.1)        superspine2 (10.0.0.2)
+            /     |       |    \           /    |      |     \
+       spine1  spine2  spine3  spine4  ...full mesh superspine↔spine...
+        (10.0.1.1) (.2)   (.3)   (.4)
+        /  \      /  \     |  \     |  \
+     leaf1 leaf2 ...      leaf3 leaf4
+    (10.0.2.1)(.2)      (10.0.2.3)(.4)
+       |                    |
+     client1 (10.0.3.1)   client2 (10.0.3.2)
+```
+
+Boot the server and create the four tiers:
 
 ```bash
 sudo ./nl6        # subsystems are always-on; no topology flag needed
 
-# 4 cisco_ios devices at 10.0.0.1–10.0.0.4
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{"start_ip":"10.0.0.1","device_count":4,"netmask":"24","resource_file":"cisco_ios.json"}'
-
-# Ring: .1/1—.2/2, .2/1—.3/2, .3/1—.4/2, .4/1—.1/2
-curl -X POST http://localhost:8080/api/v1/topology \
-  -H 'Content-Type: application/json' \
-  -d '{"links":[
-    {"a":{"ip":"10.0.0.1","ifindex":1},"b":{"ip":"10.0.0.2","ifindex":2}},
-    {"a":{"ip":"10.0.0.2","ifindex":1},"b":{"ip":"10.0.0.3","ifindex":2}},
-    {"a":{"ip":"10.0.0.3","ifindex":1},"b":{"ip":"10.0.0.4","ifindex":2}},
-    {"a":{"ip":"10.0.0.4","ifindex":1},"b":{"ip":"10.0.0.1","ifindex":2}}
-  ]}'
+curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
+  -d '{"start_ip":"10.0.0.1","device_count":2,"netmask":"24","resource_file":"cisco_crs_x.json"}'        # superspines
+curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
+  -d '{"start_ip":"10.0.1.1","device_count":4,"netmask":"24","resource_file":"arista_7280r3.json"}'      # spines
+curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
+  -d '{"start_ip":"10.0.2.1","device_count":4,"netmask":"24","resource_file":"cisco_catalyst_9500.json"}' # leaves
+curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
+  -d '{"start_ip":"10.0.3.1","device_count":2,"netmask":"24","resource_file":"linux_server.json"}'        # clients
 ```
 
-`10.0.0.1` now has two neighbors — one on each of `ifIndex 1` (peer `10.0.0.2`)
-and `ifIndex 2` (peer `10.0.0.4`):
+Wire the fabric — save as `clos.json` and POST it:
+
+```json
+{ "links": [
+  { "a": {"ip":"10.0.0.1","ifindex":1}, "b": {"ip":"10.0.1.1","ifindex":1} },
+  { "a": {"ip":"10.0.0.1","ifindex":2}, "b": {"ip":"10.0.1.2","ifindex":1} },
+  { "a": {"ip":"10.0.0.1","ifindex":3}, "b": {"ip":"10.0.1.3","ifindex":1} },
+  { "a": {"ip":"10.0.0.1","ifindex":4}, "b": {"ip":"10.0.1.4","ifindex":1} },
+  { "a": {"ip":"10.0.0.2","ifindex":1}, "b": {"ip":"10.0.1.1","ifindex":2} },
+  { "a": {"ip":"10.0.0.2","ifindex":2}, "b": {"ip":"10.0.1.2","ifindex":2} },
+  { "a": {"ip":"10.0.0.2","ifindex":3}, "b": {"ip":"10.0.1.3","ifindex":2} },
+  { "a": {"ip":"10.0.0.2","ifindex":4}, "b": {"ip":"10.0.1.4","ifindex":2} },
+  { "a": {"ip":"10.0.1.1","ifindex":3}, "b": {"ip":"10.0.2.1","ifindex":1} },
+  { "a": {"ip":"10.0.1.1","ifindex":4}, "b": {"ip":"10.0.2.2","ifindex":1} },
+  { "a": {"ip":"10.0.1.2","ifindex":3}, "b": {"ip":"10.0.2.1","ifindex":2} },
+  { "a": {"ip":"10.0.1.2","ifindex":4}, "b": {"ip":"10.0.2.2","ifindex":2} },
+  { "a": {"ip":"10.0.1.3","ifindex":3}, "b": {"ip":"10.0.2.3","ifindex":1} },
+  { "a": {"ip":"10.0.1.3","ifindex":4}, "b": {"ip":"10.0.2.4","ifindex":1} },
+  { "a": {"ip":"10.0.1.4","ifindex":3}, "b": {"ip":"10.0.2.3","ifindex":2} },
+  { "a": {"ip":"10.0.1.4","ifindex":4}, "b": {"ip":"10.0.2.4","ifindex":2} },
+  { "a": {"ip":"10.0.2.1","ifindex":3}, "b": {"ip":"10.0.3.1","ifindex":1} },
+  { "a": {"ip":"10.0.2.3","ifindex":3}, "b": {"ip":"10.0.3.2","ifindex":1} }
+] }
+```
 
 ```bash
-snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2.1.4      # lldpRemTable: 2 neighbor rows
-curl -s http://localhost:8080/api/v1/topology/status | jq # configured_links:4, active_links:4
+curl -X POST http://localhost:8080/api/v1/topology \
+  -H 'Content-Type: application/json' --data @clos.json
 ```
 
-Each device's `sysName` is randomly generated at creation (e.g. `CORE-AB12`),
-so the `ifAlias` labels (`to_<peer-sysName>_GigabitEthernet0/…`) and
-`lldpRemSysName` values uniquely identify the far end. Read a device's own name
-with `snmpget … 1.3.6.1.2.1.1.5.0`.
+Now each tier shows its fabric neighbors. A spine (`10.0.1.1`) has **4**
+neighbors — two superspines (ports 1–2) and two leaves (ports 3–4); a leaf
+(`10.0.2.1`) has **3** — two spines and its client:
+
+```bash
+snmpwalk -v2c -c public 10.0.1.1 1.0.8802.1.1.2.1.4      # spine: 4 lldpRem rows
+snmpwalk -v2c -c public 10.0.2.1 1.0.8802.1.1.2.1.4      # leaf:  3 lldpRem rows
+curl -s http://localhost:8080/api/v1/topology/status | jq # configured_links:18, active_links:18
+```
+
+Each device's `sysName` is randomly generated at creation (e.g. `SPINE-AB12`),
+so the `ifAlias` labels (`to_<peer-sysName>_<peer-port>`) and `lldpRemSysName`
+values uniquely identify the far end of every fabric link. Read a device's own
+name with `snmpget … 1.3.6.1.2.1.1.5.0`.
 
 ### Watch a link go down
 
-Take one end down and the neighbor rows for that link disappear on **both**
-sides, while the `ifAlias` (configured intent) stays:
+Take one end of the spine1↔leaf1 link down and its neighbor rows disappear on
+**both** sides, while the `ifAlias` (configured intent) stays:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/devices/10.0.0.1/interfaces/1/oper-status \
+# leaf1 (10.0.2.1) port 1 faces spine1 (10.0.1.1) port 3
+curl -X POST http://localhost:8080/api/v1/devices/10.0.2.1/interfaces/1/oper-status \
   -H 'Content-Type: application/json' -d '{"status":"DOWN"}'
 
-curl -s http://localhost:8080/api/v1/topology/status | jq '.active_links'   # now 3
-snmpget -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1                    # ifAlias unchanged
+curl -s http://localhost:8080/api/v1/topology/status | jq '.active_links'   # now 17
+snmpwalk -v2c -c public 10.0.1.1 1.0.8802.1.1.2.1.4 | wc -l                  # spine1: one fewer neighbor
+snmpget  -v2c -c public 10.0.2.1 1.3.6.1.2.1.31.1.1.1.18.1                   # leaf1 ifAlias unchanged
 ```
 
 > **Walk anchor.** LLDP lives at `1.0.8802.*`, which sorts *before* the mib-2
