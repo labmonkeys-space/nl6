@@ -9,6 +9,91 @@ builds a topology map of the fleet.
 This is the capability reference. For the design rationale see
 [`openspec/specs/lldp-topology/spec.md`](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/lldp-topology/spec.md).
 
+## Quick example — a fleet with a topology
+
+### One command: 4 devices, 2 point-to-point links
+
+The default auto-start device type has a single interface (`ifIndex 1`), so it
+can form point-to-point **pairs**. Create `pairs.json`:
+
+```json
+{
+  "links": [
+    { "a": {"ip": "10.0.0.1", "ifindex": 1}, "b": {"ip": "10.0.0.2", "ifindex": 1} },
+    { "a": {"ip": "10.0.0.3", "ifindex": 1}, "b": {"ip": "10.0.0.4", "ifindex": 1} }
+  ]
+}
+```
+
+```bash
+sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 4 -topology-config pairs.json
+```
+
+The graph loads at startup; the four devices come up in the background and the
+links resolve lazily. Verify:
+
+```bash
+snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2          # local + neighbor (10.0.0.2)
+snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.1.5.0       # this device's (random) sysName
+snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1  # ifAlias = to_<peer-sysName>_<peer-port>
+curl -s http://localhost:8080/api/v1/topology/status | jq # {subsystem_active:true, configured_links:2, active_links:2}
+```
+
+### A richer ring: 4 multi-port switches over REST
+
+For a ring (each device needs ≥2 ports) use a multi-interface type such as
+`cisco_ios` (4 ports). Boot the server, create the fleet, then wire the ring —
+each device uses `ifIndex 1` and `2`:
+
+```bash
+sudo ./nl6        # subsystems are always-on; no topology flag needed
+
+# 4 cisco_ios devices at 10.0.0.1–10.0.0.4
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H 'Content-Type: application/json' \
+  -d '{"start_ip":"10.0.0.1","device_count":4,"netmask":"24","resource_file":"cisco_ios.json"}'
+
+# Ring: .1/1—.2/2, .2/1—.3/2, .3/1—.4/2, .4/1—.1/2
+curl -X POST http://localhost:8080/api/v1/topology \
+  -H 'Content-Type: application/json' \
+  -d '{"links":[
+    {"a":{"ip":"10.0.0.1","ifindex":1},"b":{"ip":"10.0.0.2","ifindex":2}},
+    {"a":{"ip":"10.0.0.2","ifindex":1},"b":{"ip":"10.0.0.3","ifindex":2}},
+    {"a":{"ip":"10.0.0.3","ifindex":1},"b":{"ip":"10.0.0.4","ifindex":2}},
+    {"a":{"ip":"10.0.0.4","ifindex":1},"b":{"ip":"10.0.0.1","ifindex":2}}
+  ]}'
+```
+
+`10.0.0.1` now has two neighbors — one on each of `ifIndex 1` (peer `10.0.0.2`)
+and `ifIndex 2` (peer `10.0.0.4`):
+
+```bash
+snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2.1.4      # lldpRemTable: 2 neighbor rows
+curl -s http://localhost:8080/api/v1/topology/status | jq # configured_links:4, active_links:4
+```
+
+Each device's `sysName` is randomly generated at creation (e.g. `CORE-AB12`),
+so the `ifAlias` labels (`to_<peer-sysName>_GigabitEthernet0/…`) and
+`lldpRemSysName` values uniquely identify the far end. Read a device's own name
+with `snmpget … 1.3.6.1.2.1.1.5.0`.
+
+### Watch a link go down
+
+Take one end down and the neighbor rows for that link disappear on **both**
+sides, while the `ifAlias` (configured intent) stays:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices/10.0.0.1/interfaces/1/oper-status \
+  -H 'Content-Type: application/json' -d '{"status":"DOWN"}'
+
+curl -s http://localhost:8080/api/v1/topology/status | jq '.active_links'   # now 3
+snmpget -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1                    # ifAlias unchanged
+```
+
+> **Walk anchor.** LLDP lives at `1.0.8802.*`, which sorts *before* the mib-2
+> tree — a walk rooted at `1.3.6.1` never reaches it. Anchor at `1.0.8802`
+> (and point OpenNMS Enlinkd at the LLDP root).
+
 ## Model
 
 A link is a single **undirected** edge between two endpoints, each an
