@@ -115,14 +115,14 @@ func TestTopology_LoadFromFile(t *testing.T) {
 
 	// Self-loop → fatal-worthy error.
 	bad := filepath.Join(dir, "bad.json")
-	os.WriteFile(bad, []byte(`{"links":[{"a":{"ip":"10.0.0.1","ifindex":5},"b":{"ip":"10.0.0.1","ifindex":5}}]}`), 0o644)
+	must(t, os.WriteFile(bad, []byte(`{"links":[{"a":{"ip":"10.0.0.1","ifindex":5},"b":{"ip":"10.0.0.1","ifindex":5}}]}`), 0o644))
 	if err := NewTopology().LoadFromFile(bad); err == nil {
 		t.Fatal("expected self-loop load error")
 	}
 
 	// Unknown field → rejected.
 	unk := filepath.Join(dir, "unk.json")
-	os.WriteFile(unk, []byte(`{"links":[{"a":{"ip":"10.0.0.1","ifindex":5},"b":{"ip":"10.0.0.2","ifindex":12}}],"bogus":1}`), 0o644)
+	must(t, os.WriteFile(unk, []byte(`{"links":[{"a":{"ip":"10.0.0.1","ifindex":5},"b":{"ip":"10.0.0.2","ifindex":12}}],"bogus":1}`), 0o644))
 	if err := NewTopology().LoadFromFile(unk); err == nil {
 		t.Fatal("expected unknown-field load error")
 	}
