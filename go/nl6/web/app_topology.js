@@ -32,8 +32,12 @@
     structureKey: null,
     scaleOverride: false,
     inFlight: false,
-    started: false
+    started: false,
+    hoveredEdge: null   // fattened for an easy click target
   };
+
+  var EDGE_SIZE = 3;        // base thickness (thin lines are hard to click)
+  var EDGE_SIZE_HOVER = 9;  // fatten on hover → big hit area + clear affordance
 
   function el(id) { return document.getElementById(id); }
   function section() { return el('topologySection'); }
@@ -112,7 +116,7 @@
     model.edges.forEach(function (e) {
       if (!graph.hasNode(e.a.ip) || !graph.hasNode(e.b.ip)) return;
       if (graph.hasEdge(e.key)) return;
-      graph.addEdgeWithKey(e.key, e.a.ip, e.b.ip, { size: 2, color: edgeColor(e.active) });
+      graph.addEdgeWithKey(e.key, e.a.ip, e.b.ip, { size: EDGE_SIZE, color: edgeColor(e.active) });
     });
 
     state.graph = graph;
@@ -128,10 +132,28 @@
       labelFont: 'Inter, system-ui, sans-serif',
       labelDensity: 0.7,
       labelGridCellSize: 140,
-      labelRenderedSizeThreshold: 0
+      labelRenderedSizeThreshold: 0,
+      // Fatten the hovered edge so the thin line becomes an easy click target.
+      edgeReducer: function (edgeKey, attrs) {
+        if (edgeKey === state.hoveredEdge) {
+          return Object.assign({}, attrs, { size: EDGE_SIZE_HOVER });
+        }
+        return attrs;
+      }
     });
     state.renderer.on('clickEdge', function (e) { onEdgeClick(e.edge); });
     state.renderer.on('clickNode', function (e) { onNodeClick(e.node); });
+    // Hover affordance: fatten the edge + show a pointer cursor.
+    state.renderer.on('enterEdge', function (e) {
+      state.hoveredEdge = e.edge;
+      container.style.cursor = 'pointer';
+      state.renderer.refresh();
+    });
+    state.renderer.on('leaveEdge', function () {
+      state.hoveredEdge = null;
+      container.style.cursor = 'default';
+      state.renderer.refresh();
+    });
   }
 
   function recolor(model) {
