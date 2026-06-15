@@ -113,6 +113,20 @@ curl http://localhost:8080/api/v1/traps/status   | jq '.collectors'
 curl http://localhost:8080/api/v1/syslog/status  | jq '.collectors'
 ```
 
+Inter-device topology (LLDP). Link two devices and the neighbor table plus a
+`to_<peer>_<port>` `ifAlias` appear on both ends — point OpenNMS Enlinkd at the
+LLDP root (`1.0.8802.1.1.2`) to discover the topology:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/topology \
+  -H 'Content-Type: application/json' \
+  -d '{"links":[{"a":{"ip":"10.0.0.1","ifindex":1},"b":{"ip":"10.0.0.2","ifindex":2}}]}'
+
+snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2        # LLDP local + neighbor tables
+snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1   # ifAlias = to_<peer>_<port>
+curl http://localhost:8080/api/v1/topology/status | jq   # {subsystem_active, configured_links, active_links}
+```
+
 Full walkthrough: [Getting started → Quick start](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/).
 Container deployment: [Getting started → Docker](https://labmonkeys-space.github.io/nl6/getting-started/docker/).
 

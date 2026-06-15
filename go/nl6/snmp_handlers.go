@@ -58,6 +58,16 @@ func (s *SNMPServer) findResponse(oid string) string {
 		return override
 	}
 
+	// LLDP-MIB neighbor / local-system tables and the ifAlias link label
+	// are served by the topology-driven dynamic provider. Checked before
+	// the static oidIndex so the dynamic ifAlias wins over any static .18
+	// entry shipped in the device resources.
+	if isLLDPOID(oid) || isIfAliasOID(oid) {
+		if val := s.lldpGet(oid); val != "" {
+			return val
+		}
+	}
+
 	// Fast O(1) lookup using lock-free sync.Map
 	if s.device.resources.oidIndex != nil {
 		if response, exists := s.device.resources.oidIndex.Load(oid); exists {
@@ -131,6 +141,14 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 	}
 	ifCyclerHasRows := ifCycler != nil && len(ifCycler.sortedIfIndexes) > 0
 
+	// Resolve the next LLDP / ifAlias OID up front. The LLDP provider owns
+	// two disjoint ranges (the 1.0.8802 subtree, which sorts BEFORE every
+	// static OID, and ifXTable .18, which sorts mid-ifXTable), so a single
+	// first/last bracket cannot describe it — lldpNextOID does the work and
+	// the fast-path clearance below is derived from its result.
+	lldpNextLLDP, lldpNextVal := s.lldpNextOID(currentOID)
+	lldpHas := lldpNextLLDP != ""
+
 	// Fast path: precomputedNextOID is safe to return immediately iff no
 	// dynamic source can emit a candidate in (currentOID, precomputedNextOID].
 	// For each source that condition is: source is empty, OR its first
@@ -143,8 +161,13 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 		ifCyclerClear := !ifCyclerHasRows ||
 			compareOIDs(precomputedNextOID, ifCycler.firstDynOID) <= 0 ||
 			compareOIDs(currentOID, ifCycler.lastDynOID) >= 0
-		if metricsClear && ifCyclerClear {
-			return precomputedNextOID, s.overrideIfHC(ifCycler, precomputedNextOID, precomputedNextResp)
+		// LLDP is clear iff it has no candidate at or before precomputedNextOID.
+		// Without this term the static next is returned and the 1.0.8802
+		// subtree (which sorts before all statics) is silently skipped.
+		lldpClear := !lldpHas || compareOIDs(lldpNextLLDP, precomputedNextOID) > 0
+		if metricsClear && ifCyclerClear && lldpClear {
+			val := s.overrideIfHC(ifCycler, precomputedNextOID, precomputedNextResp)
+			return precomputedNextOID, s.overrideLLDP(precomputedNextOID, val)
 		}
 	}
 
@@ -172,14 +195,22 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 	// Use binary search on pre-sorted OIDs for O(log n) performance
 	sortedOIDs := s.device.resources.sortedOIDs
 	if len(sortedOIDs) == 0 {
-		// Fallback to checking only dynamic OIDs
-		if compareOIDs(sysNameOID, currentOID) > 0 {
-			return sysNameOID, cachedSysName
+		// Fallback to checking only dynamic OIDs (sysName/sysLocation + LLDP).
+		best, bestVal := "", ""
+		consider := func(o, v string) {
+			if compareOIDs(o, currentOID) > 0 && (best == "" || compareOIDs(o, best) < 0) {
+				best, bestVal = o, v
+			}
 		}
-		if compareOIDs(sysLocationOID, currentOID) > 0 {
-			return sysLocationOID, cachedSysLocation
+		consider(sysNameOID, cachedSysName)
+		consider(sysLocationOID, cachedSysLocation)
+		if lldpHas {
+			consider(lldpNextLLDP, lldpNextVal)
 		}
-		return "", "endOfMibView"
+		if best == "" {
+			return "", "endOfMibView"
+		}
+		return best, s.overrideLLDP(best, bestVal)
 	}
 
 	// Find first OID greater than currentOID using binary search
@@ -260,6 +291,16 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 		}
 	}
 
+	// Add the next LLDP / ifAlias OID as a candidate. The 1.0.8802 rows
+	// have no static-JSON instance, and a linked port's ifAlias may be
+	// dynamic-only, so without this a walk would skip them.
+	if lldpHas {
+		candidates = append(candidates, struct{ oid, resp string }{
+			oid:  lldpNextLLDP,
+			resp: lldpNextVal,
+		})
+	}
+
 	if len(candidates) == 0 {
 		return "", "endOfMibView"
 	}
@@ -274,7 +315,12 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 		}
 	}
 
-	return nextOID, s.overrideIfHC(ifCycler, nextOID, response)
+	// overrideLLDP after overrideIfHC so the dynamic LLDP/ifAlias value wins
+	// even when the chosen candidate originated from the static oidIndex
+	// (e.g. a statically-shipped ifAlias .18.N on a linked port).
+	response = s.overrideIfHC(ifCycler, nextOID, response)
+	response = s.overrideLLDP(nextOID, response)
+	return nextOID, response
 }
 
 // handleGetBulk processes SNMP GetBulk requests

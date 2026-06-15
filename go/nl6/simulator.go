@@ -129,6 +129,13 @@ func main() {
 		// gNMI flags. See CLAUDE.md "gNMI target" for detail.
 		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
 		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on)")
+
+		// Topology flag. Loads an inter-device LLDP link graph at startup.
+		// Validation is syntactic only; device existence / ifIndex
+		// ownership resolve lazily at SNMP-serve time, so the file may
+		// reference auto-start devices not yet created. See CLAUDE.md
+		// "LLDP topology".
+		topologyConfig = flag.String("topology-config", "", "Path to a JSON inter-device link graph ({\"links\":[{\"a\":{\"ip\",\"ifindex\"},\"b\":{\"ip\",\"ifindex\"}}]}); enables LLDP topology when set")
 	)
 
 	flag.Parse()
@@ -188,6 +195,16 @@ func main() {
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
 	manager = NewSimulatorManagerWithOptions(useNamespace)
+
+	// Load the inter-device LLDP topology graph if configured. Syntactic
+	// validation failures are fatal; missing devices are NOT (lazy
+	// resolution at serve time covers the auto-start goroutine race).
+	if *topologyConfig != "" {
+		if err := manager.topology.LoadFromFile(*topologyConfig); err != nil {
+			log.Fatalf("topology: %v", err)
+		}
+		log.Printf("topology: loaded %d link(s) from %s", manager.topology.Count(), *topologyConfig)
+	}
 
 	// Setup signal handler for graceful shutdown
 	setupSignalHandler()
