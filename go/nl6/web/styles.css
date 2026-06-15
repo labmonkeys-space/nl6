@@ -1438,3 +1438,16 @@ code.mono {
   border-color: color-mix(in oklch, var(--warn), transparent 70%);
   background: color-mix(in oklch, var(--warn), transparent 88%);
 }
+
+/* Topology visualization (app_topology.js). */
+.topology-canvas {
+    border: 1px solid var(--border, #2a2f3a);
+    border-radius: 8px;
+    background: var(--surface, #0f1218);
+    overflow: hidden;
+}
+.topology-summary {
+    padding: 1rem;
+    color: var(--text-muted, #9aa0a6);
+}
+.topology-summary .topology-note { margin: .5rem 0; }
