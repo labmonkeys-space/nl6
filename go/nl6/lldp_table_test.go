@@ -475,6 +475,14 @@ func countNeighbors(d *DeviceSimulator, maxPort int) int {
 // TestLLDP_ClosFabricExample verifies the docs' 5-stage Clos example: the
 // link/neighbor structure (spine=4 neighbors, leaf=3), the 18-link total, and
 // the down-link behavior (neighbor drops on both sides, ifAlias persists).
+//
+// NOTE: this uses synthetic fixtures with every wired port forced UP, so it
+// validates the topology/liveness LOGIC — not that the doc's specific device
+// types (cisco_crs_x / arista_7280r3 / cisco_catalyst_9500 / linux_server)
+// boot those ifIndexes UP in their real resource JSON. That property is a
+// separate resource-file concern (verified out-of-band when the example was
+// authored); if a future resource edit downs one of those ports, this test
+// won't catch it.
 func TestLLDP_ClosFabricExample(t *testing.T) {
 	f := newLLDPFixture(t)
 	seed := int64(1)

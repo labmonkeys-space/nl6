@@ -13,8 +13,10 @@ This is the capability reference. For the design rationale see
 
 ### One command: 4 devices, 2 point-to-point links
 
-The default auto-start device type has a single interface (`ifIndex 1`), so it
-can form point-to-point **pairs**. Create `pairs.json`:
+The simplest fleet: four auto-start devices wired into two point-to-point
+pairs on `ifIndex 1`. (Auto-start devices use the default `asr9k` profile;
+`ifIndex 1` is its management port, which is fine for a link.) Create
+`pairs.json`:
 
 ```json
 {
@@ -51,7 +53,7 @@ per tier:
 |------|-------------|-------|-----|------------|
 | Superspine | `cisco_crs_x` (144-port core) | 2 | `10.0.0.1–2` | 1–4 (to the 4 spines) |
 | Spine | `arista_7280r3` | 4 | `10.0.1.1–4` | 1–2 up (superspines), 3–4 down (leaves) |
-| Leaf | `cisco_catalyst_9500` | 4 | `10.0.2.1–4` | 1–2 up (spines), 3 down (client) |
+| Leaf | `cisco_catalyst_9500` | 4 | `10.0.2.1–4` | 1–2 up (spines); 3 to a client on leaf1 / leaf3 |
 | Client | `linux_server` | 2 | `10.0.3.1–2` | 1 (to its leaf) |
 
 ```
