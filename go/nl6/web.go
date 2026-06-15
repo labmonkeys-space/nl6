@@ -509,6 +509,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/topology", listTopologyHandler).Methods("GET")
 	api.HandleFunc("/topology", deleteTopologyHandler).Methods("DELETE")
 	api.HandleFunc("/topology/status", topologyStatusHandler).Methods("GET")
+	api.HandleFunc("/topology/graph", topologyGraphHandler).Methods("GET")
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 
