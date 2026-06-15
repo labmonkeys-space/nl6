@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -106,6 +107,35 @@ func TestTopologyGraph_ActiveAndDownEnd(t *testing.T) {
 	}
 	if e.DownEnd != want {
 		t.Errorf("downEnd = %q, want %q (alpha side)", e.DownEnd, want)
+	}
+}
+
+func TestTopologyGraph_BothEndsDown(t *testing.T) {
+	f := newLLDPFixture(t)
+	a := f.addDevice(t, 1, 4, "alpha")
+	b := f.addDevice(t, 2, 4, "bravo")
+	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep(b.IP.String(), 2)))
+	setOper(a, 1, false)
+	setOper(b, 2, false)
+
+	g := getGraph(t, setupRoutes())
+	e, _ := edgeFor(g, a.IP.String(), 1)
+	if e.Active || e.DownEnd != "both" {
+		t.Errorf("both-ends-down edge = %+v, want active=false downEnd=both", e)
+	}
+}
+
+func TestTopologyGraph_ActiveEdgeOmitsDownEndInJSON(t *testing.T) {
+	f := newLLDPFixture(t)
+	a := f.addDevice(t, 1, 4, "alpha")
+	b := f.addDevice(t, 2, 4, "bravo")
+	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep(b.IP.String(), 2)))
+
+	// All links active → the downEnd key must be absent from the wire JSON
+	// (omitempty), not present as "" or null. Guards against dropping omitempty.
+	w := doReq(t, setupRoutes(), http.MethodGet, "/api/v1/topology/graph", "")
+	if body := w.Body.String(); strings.Contains(body, "downEnd") {
+		t.Errorf("active-only graph JSON should omit downEnd, got: %s", body)
 	}
 }
 

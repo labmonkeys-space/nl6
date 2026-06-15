@@ -48,19 +48,36 @@ type topologyGraph struct {
 }
 
 // endpointUp reports whether an endpoint is resolvable and operationally up.
-// A missing device (no live device at the IP) is down; otherwise liveness is
-// the interface-state oper-status (no-engine treated up, per operUp).
-func (sm *SimulatorManager) endpointUp(ip string, ifIndex int) bool {
-	d := sm.FindDeviceByIP(ip)
-	if d == nil {
-		return false
+// snapshotDevicesByIP returns an `ip → device` map and an `ip → type-label`
+// map built under a single RLock. The graph handler resolves every node and
+// edge against these snapshots so it never calls the O(N) FindDeviceByIP per
+// endpoint — one lock acquisition per request instead of ~4·edges + nodes —
+// and so the whole response sees one consistent device set (no active-edge /
+// missing-node skew from a delete mid-build).
+func (sm *SimulatorManager) snapshotDevicesByIP() (map[string]*DeviceSimulator, map[string]string) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	byIP := make(map[string]*DeviceSimulator, len(sm.devices))
+	for _, d := range sm.devices {
+		byIP[d.IP.String()] = d
 	}
-	return operUp(d, ifIndex)
+	typeByIP := make(map[string]string, len(sm.deviceTypesByIP))
+	for ip, slug := range sm.deviceTypesByIP {
+		typeByIP[ip] = modelLabelForSlug(slug)
+	}
+	return byIP, typeByIP
 }
 
 // topologyGraphHandler implements GET /api/v1/topology/graph — the
 // viz-ready join of the topology graph with device identity and live
 // per-link state. Returns {"nodes":[],"edges":[]} when no topology exists.
+//
+// Notes on the graph's shape: it is edge-driven — nodes are exactly the
+// distinct endpoints of configured links, so a device with no links does not
+// appear. Edges are returned in configured (insertion) order, not sorted;
+// nodes are sorted by IP for stable output. A link endpoint with no live
+// device is emitted as a node with `missing:true` (and makes its edge
+// inactive), which surfaces dangling references for topology reconciliation.
 func topologyGraphHandler(w http.ResponseWriter, r *http.Request) {
 	out := topologyGraph{Nodes: []graphNode{}, Edges: []graphEdge{}}
 	if manager == nil || manager.topology == nil {
@@ -69,17 +86,30 @@ func topologyGraphHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	links := manager.topology.ListLinks()
-	degree := map[string]int{}
+	byIP, typeByIP := manager.snapshotDevicesByIP()
 
+	// Resolve liveness and ifName against the single snapshot.
+	up := func(ip string, ifIndex int) bool {
+		d := byIP[ip]
+		return d != nil && operUp(d, ifIndex)
+	}
+	ifName := func(ip string, ifIndex int) string {
+		if d := byIP[ip]; d != nil {
+			return devIfDescr(d, ifIndex)
+		}
+		return ""
+	}
+
+	degree := map[string]int{}
 	for _, l := range links {
 		degree[l.A.IP]++
 		degree[l.B.IP]++
 
-		aUp := manager.endpointUp(l.A.IP, l.A.IfIndex)
-		bUp := manager.endpointUp(l.B.IP, l.B.IfIndex)
+		aUp := up(l.A.IP, l.A.IfIndex)
+		bUp := up(l.B.IP, l.B.IfIndex)
 		edge := graphEdge{
-			A:      graphEndpoint{IP: l.A.IP, IfIndex: l.A.IfIndex, IfName: ifNameFor(manager, l.A.IP, l.A.IfIndex)},
-			B:      graphEndpoint{IP: l.B.IP, IfIndex: l.B.IfIndex, IfName: ifNameFor(manager, l.B.IP, l.B.IfIndex)},
+			A:      graphEndpoint{IP: l.A.IP, IfIndex: l.A.IfIndex, IfName: ifName(l.A.IP, l.A.IfIndex)},
+			B:      graphEndpoint{IP: l.B.IP, IfIndex: l.B.IfIndex, IfName: ifName(l.B.IP, l.B.IfIndex)},
 			Active: aUp && bUp,
 		}
 		if !edge.Active {
@@ -110,9 +140,9 @@ func topologyGraphHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	for _, ip := range ips {
 		n := graphNode{IP: ip, Degree: degree[ip]}
-		if d := manager.FindDeviceByIP(ip); d != nil {
-			n.SysName = d.sysName
-			n.Type = manager.Model(ip)
+		if _, ok := byIP[ip]; ok {
+			n.SysName = byIP[ip].sysName
+			n.Type = typeByIP[ip]
 		} else {
 			n.Missing = true
 		}
@@ -120,15 +150,6 @@ func topologyGraphHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, out)
-}
-
-// ifNameFor resolves an endpoint's ifDescr (falling back to a synthesized
-// name) for display, or "" when the device is unresolvable.
-func ifNameFor(sm *SimulatorManager, ip string, ifIndex int) string {
-	if d := sm.FindDeviceByIP(ip); d != nil {
-		return devIfDescr(d, ifIndex)
-	}
-	return ""
 }
 
 // writeJSON writes v as a JSON response with the correct content type.
