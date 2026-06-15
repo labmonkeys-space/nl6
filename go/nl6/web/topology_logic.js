@@ -31,9 +31,13 @@
   // model the renderer consumes. Returns {nodes, edges, nodeIndex}.
   function buildModel(graph) {
     var nodes = (graph && graph.nodes ? graph.nodes : []).map(function (n) {
+      // The sysName already encodes the device type (e.g.
+      // "lion-29-cisco-crs-x"), so the label is just sysName (or IP for a
+      // missing/dangling node) — appending "(type)" only doubles the text
+      // and worsens overlap. `type` is kept for tooltips/legend.
       return {
         id: n.ip,
-        label: (n.sysName || n.ip) + (n.type ? ' (' + n.type + ')' : ''),
+        label: n.sysName || n.ip,
         type: n.type || '',
         degree: n.degree || 0,
         missing: !!n.missing
@@ -80,8 +84,11 @@
     opts = opts || {};
     var width = opts.width || 1000;
     var height = opts.height || 700;
-    var iterations = opts.iterations || 120;
+    var iterations = opts.iterations || 200;
     var rand = mulberry32(opts.seed || 1);
+    // Keep nodes off the frame edge so labels (which extend to the right of
+    // a node) stay on-canvas.
+    var mx = width * 0.06, my = height * 0.06;
 
     var nodes = model.nodes;
     var n = nodes.length;
@@ -133,8 +140,8 @@
         var lim = Math.min(d, temp);
         P[p].x += (disp[p].x / d) * lim;
         P[p].y += (disp[p].y / d) * lim;
-        P[p].x = Math.min(width, Math.max(0, P[p].x));
-        P[p].y = Math.min(height, Math.max(0, P[p].y));
+        P[p].x = Math.min(width - mx, Math.max(mx, P[p].x));
+        P[p].y = Math.min(height - my, Math.max(my, P[p].y));
       }
       temp -= cool;
     }

@@ -102,7 +102,12 @@
     });
     model.nodes.forEach(function (n) {
       var p = pos[n.id] || { x: 0, y: 0 };
-      graph.addNode(n.id, { x: p.x, y: p.y, size: nodeSize(n), label: n.label, color: nodeColor(n) });
+      graph.addNode(n.id, {
+        x: p.x, y: p.y, size: nodeSize(n),
+        label: n.label, color: nodeColor(n),
+        // `title` shows the type + degree on hover without crowding the label.
+        title: n.type ? (n.type + ' · degree ' + n.degree) : ('degree ' + n.degree)
+      });
     });
     model.edges.forEach(function (e) {
       if (!graph.hasNode(e.a.ip) || !graph.hasNode(e.b.ip)) return;
@@ -113,7 +118,17 @@
     state.graph = graph;
     state.renderer = new Sigma(graph, container, {
       enableEdgeEvents: true,
-      renderEdgeLabels: false
+      renderEdgeLabels: false,
+      // Labels were dark-on-dark by default — set a light color + readable
+      // size, and let sigma's label grid thin overlapping labels when the
+      // graph is crowded (hover/zoom still reveals hidden ones).
+      labelColor: { color: '#c8ccd4' },
+      labelSize: 12,
+      labelWeight: '500',
+      labelFont: 'Inter, system-ui, sans-serif',
+      labelDensity: 0.7,
+      labelGridCellSize: 140,
+      labelRenderedSizeThreshold: 0
     });
     state.renderer.on('clickEdge', function (e) { onEdgeClick(e.edge); });
     state.renderer.on('clickNode', function (e) { onNodeClick(e.node); });

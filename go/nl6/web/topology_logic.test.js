@@ -32,9 +32,11 @@ ok('buildModel maps nodes/edges and flags missing', () => {
   assert.strictEqual(m.nodes.length, 3);
   assert.strictEqual(m.edges.length, 2);
   assert.strictEqual(m.nodeIndex['10.0.0.3'].missing, true);
-  assert.match(m.nodes[0].label, /core1.*Cisco CRS-X/);
+  // Label is the sysName only (type kept as a field, not appended).
+  assert.strictEqual(m.nodes[0].label, 'core1');
+  assert.strictEqual(m.nodes[0].type, 'Cisco CRS-X');
   // Missing node falls back to ip-as-label.
-  assert.match(m.nodeIndex['10.0.0.3'].label, /10\.0\.0\.3/);
+  assert.strictEqual(m.nodeIndex['10.0.0.3'].label, '10.0.0.3');
 });
 
 ok('edgeKey / structureKey are stable and order-independent', () => {
