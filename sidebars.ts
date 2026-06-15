@@ -49,6 +49,7 @@ const sidebars: SidebarsConfig = {
         'reference/flow-export',
         'reference/gnmi',
         'reference/interface-state',
+        'reference/lldp-topology',
         'reference/resource-files',
         {
           type: 'category',
