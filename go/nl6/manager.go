@@ -54,6 +54,7 @@ func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
 		devices:          make(map[string]*DeviceSimulator),
 		deviceIPs:        make(map[string]struct{}),
 		deviceTypesByIP:  make(map[string]string),
+		topology:         NewTopology(),
 		nextTunIndex:     0,
 		resourcesCache:   make(map[string]*DeviceResources),
 		tunInterfacePool: make(map[string]*TunInterface),
@@ -331,6 +332,13 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	delete(sm.deviceIPs, device.IP.String())
 	delete(sm.deviceTypesByIP, device.IP.String())
 
+	// Prune any topology edges referencing this device so a deleted
+	// device leaves no dangling links (which would otherwise surface a
+	// stale neighbor row or a malformed `to__` ifAlias on the peer).
+	if sm.topology != nil {
+		sm.topology.PruneDevice(device.IP.String())
+	}
+
 	if tunErr != nil {
 		return fmt.Errorf("delete TUN interface %s: %w", interfaceName, tunErr)
 	}
@@ -379,6 +387,12 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 	sm.tunPoolMutex.Lock()
 	sm.tunInterfacePool = make(map[string]*TunInterface)
 	sm.tunPoolMutex.Unlock()
+
+	// Every device is gone, so every topology edge is now dangling —
+	// drop them all (matches the per-device prune in DeleteDevice).
+	if sm.topology != nil {
+		sm.topology.Clear()
+	}
 
 	if len(errors) > 0 {
 		return fmt.Errorf("errors deleting devices: %s", strings.Join(errors, ", "))

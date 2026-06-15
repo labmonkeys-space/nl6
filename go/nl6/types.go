@@ -194,6 +194,12 @@ type SimulatorManager struct {
 	// hot paths can resolve device type in O(1). Kept in sync with `devices`
 	// and `deviceIPs`; entries are removed on device deletion.
 	deviceTypesByIP map[string]string
+	// topology is the simulator-wide inter-device link graph (LLDP
+	// topology). Owns its own mutex; safe to call under or outside sm.mu.
+	// Populated from -topology-config at startup and the
+	// POST/DELETE /api/v1/topology endpoints at runtime; pruned on
+	// DeleteDevice. nil only in tests that construct the manager directly.
+	topology        *Topology
 	currentIP       net.IP
 	nextTunIndex    int
 	deviceResources *DeviceResources

@@ -336,6 +336,25 @@ var oidTypeTable = []oidTypeEntry{
 
 	// ipNetToMediaTable
 	{".1.3.6.1.2.1.4.22.1.3", ASN1_IPADDRESS}, // ipNetToMediaNetAddress
+
+	// ifAlias (ifXTable .18) — DisplayString. Forced so a numeric link
+	// label or static alias is never emitted as INTEGER.
+	{".1.3.6.1.2.1.31.1.1.1.18", ASN1_OCTET_STRING}, // ifAlias
+
+	// LLDP-MIB (IEEE 802.1AB) string-typed columns. The chassis-id is a
+	// binary OCTET STRING (macAddress subtype); the sys/port name and
+	// description leaves are SnmpAdminString. Subtype columns (.3.1, .3.7.1.2,
+	// .4.1.1.4, .4.1.1.6) are intentionally absent — they are INTEGER enums.
+	{".1.0.8802.1.1.2.1.3.2", ASN1_OCTET_STRING},      // lldpLocChassisId
+	{".1.0.8802.1.1.2.1.3.3", ASN1_OCTET_STRING},      // lldpLocSysName
+	{".1.0.8802.1.1.2.1.3.4", ASN1_OCTET_STRING},      // lldpLocSysDesc
+	{".1.0.8802.1.1.2.1.3.7.1.3", ASN1_OCTET_STRING},  // lldpLocPortId
+	{".1.0.8802.1.1.2.1.3.7.1.4", ASN1_OCTET_STRING},  // lldpLocPortDesc
+	{".1.0.8802.1.1.2.1.4.1.1.5", ASN1_OCTET_STRING},  // lldpRemChassisId
+	{".1.0.8802.1.1.2.1.4.1.1.7", ASN1_OCTET_STRING},  // lldpRemPortId
+	{".1.0.8802.1.1.2.1.4.1.1.8", ASN1_OCTET_STRING},  // lldpRemPortDesc
+	{".1.0.8802.1.1.2.1.4.1.1.9", ASN1_OCTET_STRING},  // lldpRemSysName
+	{".1.0.8802.1.1.2.1.4.1.1.10", ASN1_OCTET_STRING}, // lldpRemSysDesc
 }
 
 // snmpTypeTag returns the SNMP application type tag for the given OID, or 0
@@ -365,6 +384,12 @@ func encodeTypedValue(oid, value string) []byte {
 
 	tag := snmpTypeTag(oid)
 	switch tag {
+	case ASN1_OCTET_STRING:
+		// Force OCTET STRING even when the value parses as an integer
+		// (e.g. a purely-numeric lldp*SysName). Without this the default
+		// branch would emit INTEGER, violating the MIB's string type.
+		return encodeOctetString(value)
+
 	case ASN1_OBJECT_ID:
 		return encodeOID(value)
 
