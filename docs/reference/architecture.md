@@ -56,8 +56,7 @@ the project rename so existing rescue tooling (e.g., scripts that grep
 | `go/nl6/` | Core simulator — all device simulation logic and tests. |
 | `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 28 device-type directories, plus the `worldcities/` datasets used for `sysLocation`. |
 
-Top-level helper scripts: `diagnose_system.sh`, `ubuntu_setup.sh`,
-`increase_file_limits.sh`. The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile)
+The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile)
 is the canonical build entry point.
 
 ## Core simulator components (`go/nl6/`)

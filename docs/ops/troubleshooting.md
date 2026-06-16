@@ -39,11 +39,13 @@ If `modprobe` fails the host kernel may be missing TUN support entirely
 (some minimal cloud images). Switch kernels or use a container host.
 
 ### High resource usage / file descriptors
-Large fleets burn through the default `nofile` limit fast. Raise it before
-bring-up:
+Large fleets burn through the default `nofile` limit fast. Raise it well
+above your device count before bring-up (each device opens several sockets):
 
 ```bash
-sudo ./increase_file_limits.sh
+ulimit -n 1048576          # current shell
+# persistent: raise LimitNOFILE on the systemd unit, or nofile in
+# /etc/security/limits.conf
 ```
 
 Keep the `opensim` namespace enabled (default); running in the root
@@ -66,9 +68,6 @@ ss -tulpn | grep -E "(161|1161|22)"
 
 # Monitor system resources
 htop
-
-# Simulator's own readiness check
-sudo ./diagnose_system.sh
 ```
 
 ## Log files

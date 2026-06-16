@@ -35,24 +35,21 @@ See [Architecture](../reference/architecture.md) for the component map.
 
 Run these before a large deployment:
 
-- **Raise file-descriptor limits:**
+- **Raise file-descriptor limits** well above the device count (each device
+  opens several sockets — 30k devices needs a high `nofile`):
   ```bash
-  sudo ./increase_file_limits.sh
+  ulimit -n 1048576          # current shell
   ```
-  Sets `nofile` to a level that comfortably handles 30k devices — review the
-  script before running it if you have existing PAM limits to preserve.
+  For a persistent limit, raise `LimitNOFILE` on the systemd unit or `nofile`
+  in `/etc/security/limits.conf`, preserving any existing PAM limits.
 - **Keep network namespaces enabled** (default). Only pass
   [`-no-namespace`](../reference/cli-flags.md#core-flags) for debugging —
   running in the root namespace pulls systemd-networkd into every interface
   change and kills throughput.
-- **Verify system readiness:**
-  ```bash
-  sudo ./diagnose_system.sh
-  ```
-- **Ubuntu one-shot** for fresh hosts:
-  ```bash
-  sudo ./ubuntu_setup.sh
-  ```
+- **Prefer the container path** for repeatable setup — the
+  [Docker](../getting-started/docker.md) image and
+  [Kubernetes](kubernetes.md) deployment bundle the dependencies and the
+  tuning above.
 
 ## What to watch
 
