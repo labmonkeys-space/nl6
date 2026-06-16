@@ -522,9 +522,11 @@ func TestHandleRegularGetMultiOID(t *testing.T) {
 }
 
 // TestHandleRegularGetSingleOID confirms the single-OID GET path still works.
+// Uses sysDescr (.1.1.0) — a plain static OID; sysName/sysLocation are
+// special-cased dynamic OIDs in findResponse and would bypass the static map.
 func TestHandleRegularGetSingleOID(t *testing.T) {
-	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.5.0": "router1"})
-	oids, vals, err := parseGetBulkResponse(s.handleSNMPv2cRequest(buildGetPDU([]string{".1.3.6.1.2.1.1.5.0"})))
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "router1"})
+	oids, vals, err := parseGetBulkResponse(s.handleSNMPv2cRequest(buildGetPDU([]string{".1.3.6.1.2.1.1.1.0"})))
 	if err != nil {
 		t.Fatalf("parse response: %v", err)
 	}
