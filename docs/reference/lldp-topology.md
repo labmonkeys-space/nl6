@@ -192,11 +192,41 @@ rejected.
 | `GET /api/v1/topology` | — | `200` `{"links":[…]}` |
 | `DELETE /api/v1/topology` | `{"a":{...},"b":{...}}` | `204`, or `404` if the link is absent |
 | `GET /api/v1/topology/status` | — | `200` `{"subsystem_active", "configured_links", "active_links"}` |
+| `GET /api/v1/topology/graph` | — | `200` `{"nodes":[…], "edges":[…]}` — viz-ready, with live per-link state |
 
 `active_links` counts links whose both endpoints are resolvable and
 operationally up — i.e. those currently producing a neighbor row. The
 difference between `configured_links` and `active_links` is your down-link
 count.
+
+### Graph endpoint
+
+`GET /api/v1/topology/graph` returns the topology as a single viz-ready
+object — the join of the link graph with device identity and live per-link
+state, so a client renders from one fetch:
+
+```jsonc
+{
+  "nodes": [
+    { "ip": "10.0.0.1", "sysName": "core1", "type": "Cisco CRS-X", "degree": 4 },
+    { "ip": "10.0.0.9", "degree": 1, "missing": true }   // dangling endpoint, no live device
+  ],
+  "edges": [
+    { "a": {"ip":"10.0.0.1","ifindex":1,"ifName":"Hu0/1"},
+      "b": {"ip":"10.0.0.2","ifindex":2,"ifName":"Eth1"},
+      "active": true },
+    { "a": {…}, "b": {…}, "active": false, "downEnd": "b" }   // downEnd: "a" | "b" | "both"
+  ]
+}
+```
+
+The graph is **edge-driven** — nodes are the distinct endpoints of configured
+links (a link-less device does not appear); a link endpoint with no live
+device is flagged `missing: true`. `active` uses the same liveness rule as
+`/topology/status`; `downEnd` is omitted when the edge is active. This is the
+data source for the web-console visualization, and is handy on its own for
+reconciling a deployed topology against intent (`missing` nodes + inactive
+edges surface dangling links automatically).
 
 ## What is served
 
@@ -247,8 +277,32 @@ snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2
 snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1   # ifAlias link label
 ```
 
+## Visualization (web console)
+
+When a topology is deployed, the web console (`http://<host>:8080/`) shows an
+**Inter-device topology** panel. It is gated on `configured_links > 0` — no
+topology, no panel — and renders `GET /api/v1/topology/graph` with a
+locally-vendored sigma.js + graphology stack (no CDN; works in the `opensim`
+namespace / airgapped).
+
+- **Live liveness.** Edges are **green** when up, **red** when down; nodes are
+  labeled by `sysName` (type + degree on hover), and dangling endpoints render
+  grey. The view refreshes on the console's poll cadence — it **recolors in
+  place** on a state change and only re-runs the (deterministic, seeded) force
+  layout when the graph *structure* changes, so nodes don't jump every tick.
+- **Click-to-flap.** Click an edge to toggle the link (down one end; click
+  again to restore) — the edge thickens on hover so it's an easy target.
+  Click a node to **fail the device** (downs all its links) after a confirm
+  dialog. Both reuse `POST .../oper-status`; the canvas refreshes immediately
+  after.
+- **Scale guard.** Above 500 nodes / 2000 links the panel shows a summary
+  (device/link/active counts) with a *render anyway* control instead of
+  drawing the graph.
+
 ## Out of scope
 
 Capability bitmaps (`lldpRemSysCapSupported`/`Enabled`),
 `lldpStatistics` / `lldpConfiguration`, gNMI/openconfig-lldp, multi-neighbor
-(shared-segment) ports, and operator-supplied custom alias text.
+(shared-segment) ports, and operator-supplied custom alias text. The
+visualization is poll-driven (no SSE push), uses a general force layout (no
+tier-aware placement), and does not persist layout positions.
