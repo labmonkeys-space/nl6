@@ -61,6 +61,21 @@ ok('structureKey changes on add/remove, NOT on state flip', () => {
   assert.notStrictEqual(T.structureKey(T.buildModel(grown)), base);
 });
 
+ok('needsRelayout: relayout on first render + structure change, recolor on state-only', () => {
+  const base = T.structureKey(T.buildModel(sample));
+  assert.strictEqual(T.needsRelayout(null, base), true, 'first render relayouts');
+  assert.strictEqual(T.needsRelayout(base, base), false, 'unchanged structure → recolor');
+  // State flip keeps the same structureKey → recolor (no relayout).
+  const flipped = JSON.parse(JSON.stringify(sample));
+  flipped.edges[0].active = false; flipped.edges[0].downEnd = 'a';
+  assert.strictEqual(T.needsRelayout(base, T.structureKey(T.buildModel(flipped))), false);
+  // Adding a node changes the key → relayout.
+  const grown = JSON.parse(JSON.stringify(sample));
+  grown.nodes.push({ ip: '10.0.0.4', sysName: 'leaf1', degree: 1 });
+  grown.edges.push({ a: { ip: '10.0.0.2', ifindex: 4 }, b: { ip: '10.0.0.4', ifindex: 1 }, active: true });
+  assert.strictEqual(T.needsRelayout(base, T.structureKey(T.buildModel(grown))), true);
+});
+
 ok('forceLayout is deterministic and produces finite, in-bounds coords', () => {
   const m = T.buildModel(sample);
   const a = T.forceLayout(m, { width: 800, height: 600, seed: 42, iterations: 60 });

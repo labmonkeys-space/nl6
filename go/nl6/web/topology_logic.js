@@ -66,6 +66,13 @@
     return ns.join(',') + '|' + es.join(',');
   }
 
+  // needsRelayout decides whether a poll requires a full relayout (structure
+  // changed) vs an in-place recolor (state-only change). True when there is no
+  // prior render (prevKey null) or the structure fingerprint changed.
+  function needsRelayout(prevKey, nextKey) {
+    return prevKey == null || prevKey !== nextKey;
+  }
+
   // mulberry32 is a tiny deterministic PRNG so a given (graph, seed) always
   // lays out identically — no node teleporting across cold renders.
   function mulberry32(seed) {
@@ -84,7 +91,6 @@
     opts = opts || {};
     var width = opts.width || 1000;
     var height = opts.height || 700;
-    var iterations = opts.iterations || 200;
     var rand = mulberry32(opts.seed || 1);
     // Keep nodes off the frame edge so labels (which extend to the right of
     // a node) stay on-canvas.
@@ -92,6 +98,9 @@
 
     var nodes = model.nodes;
     var n = nodes.length;
+    // This is a synchronous O(n^2) all-pairs pass; scale iterations down as the
+    // graph grows so a near-cap (500-node) layout doesn't freeze the tab.
+    var iterations = opts.iterations || (n <= 60 ? 200 : n <= 200 ? 110 : 60);
     var pos = {};
     if (n === 0) return pos;
     if (n === 1) { pos[nodes[0].id] = { x: width / 2, y: height / 2 }; return pos; }
@@ -191,6 +200,7 @@
     edgeKey: edgeKey,
     buildModel: buildModel,
     structureKey: structureKey,
+    needsRelayout: needsRelayout,
     forceLayout: forceLayout,
     edgeToggleOps: edgeToggleOps,
     nodeFailOps: nodeFailOps,

@@ -32,6 +32,7 @@
     structureKey: null,
     scaleOverride: false,
     inFlight: false,
+    refetchQueued: false, // a refetch requested while a poll was in flight
     started: false,
     hoveredEdge: null   // fattened for an easy click target
   };
@@ -101,7 +102,7 @@
     var graph = new graphology.Graph({ type: 'undirected', multi: true });
     var pos = TopologyLogic.forceLayout(model, {
       width: container.clientWidth || 1000,
-      height: container.clientHeight || 480,
+      height: container.clientHeight || 600, // matches the canvas's inline height
       seed: 1
     });
     model.nodes.forEach(function (n) {
@@ -202,7 +203,7 @@
     }
     showCanvas(true);
     var sk = TopologyLogic.structureKey(model);
-    if (!state.renderer || sk !== state.structureKey) {
+    if (!state.renderer || TopologyLogic.needsRelayout(state.structureKey, sk)) {
       rebuild(model);            // structure changed → (re)layout
       state.structureKey = sk;
     } else {
@@ -213,7 +214,10 @@
   // ---- poll loop ------------------------------------------------------------
 
   async function pollTopology() {
-    if (state.inFlight) return;
+    // Coalesce: a refetch requested mid-poll (e.g. the immediate refresh after
+    // a click-to-flap) is queued and run when the in-flight poll finishes, so
+    // the post-mutation state always lands without waiting a full poll tick.
+    if (state.inFlight) { state.refetchQueued = true; return; }
     state.inFlight = true;
     try {
       var status = await apiCall('/topology/status');
@@ -230,6 +234,7 @@
       console.error('topology poll failed:', err);
     } finally {
       state.inFlight = false;
+      if (state.refetchQueued) { state.refetchQueued = false; pollTopology(); }
     }
   }
 
