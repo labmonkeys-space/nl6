@@ -47,7 +47,6 @@ func loadWorldCities() error {
 			"Singapore, Singapore",
 			"Mumbai, India",
 			"São Paulo, Brazil",
-			"Moscow, Russia",
 		}
 		return nil
 	}
