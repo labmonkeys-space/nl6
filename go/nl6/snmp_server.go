@@ -148,13 +148,27 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// log.Printf("SNMP %s: Processing GetBulk request for OID: %s", s.device.ID, oid)
 		return s.handleGetBulk(oid, requestData)
 	} else {
-		// Handle regular Get request
-		responseOID = oid
-		response = s.findResponse(oid)
-		// log.Printf("SNMP %s: Get %s -> %s", s.device.ID, oid, response)
+		// Handle regular Get request — answer EVERY requested varbind, not
+		// just the first (RFC 3416 §4.2.1). A single-varbind response breaks
+		// multi-OID getters: OpenNMS Enlinkd's LldpLocPortGetter bundles
+		// lldpLocPortIdSubtype/Id/Desc in one GET; with only the first binding
+		// returned, lldpLocPortId is absent → snmp4j yields a null value →
+		// LldpSnmpUtils "cannot convert Null to a HexString", lldpPortId is
+		// stored empty, and the discovered topology has no edges (issue #176).
+		// Reuse the multi-varbind parser + GetResponse encoder (as GETBULK);
+		// responses are returned per OID, in request order.
+		oids := s.parseAllOIDsFromRequest(requestData)
+		if len(oids) == 0 {
+			oids = []string{oid} // fallback for an unparseable varbind list
+		}
+		responses := make([]string, len(oids))
+		for i, o := range oids {
+			responses[i] = s.findResponse(o)
+		}
+		return s.createGetBulkResponse(oids, responses, requestData)
 	}
 
-	// Create proper SNMP response (pass the request data)
+	// GETNEXT: single next-OID per request.
 	responseBytes := s.createSNMPResponse(responseOID, response, requestData)
 	// log.Printf("SNMP %s: Created response for %s, length: %d bytes", s.device.ID, responseOID, len(responseBytes))
 	return responseBytes
