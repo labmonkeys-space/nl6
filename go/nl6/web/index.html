@@ -125,6 +125,18 @@
             </div>
         </section>
 
+        <!-- Topology visualization — hidden until a topology is deployed
+             (configured_links > 0). Driven by app_topology.js. -->
+        <section id="topologySection" class="panel topology" aria-label="Topology" hidden>
+            <div class="section-heading">
+                <p class="section-kicker">Topology</p>
+                <h2>Inter-device topology</h2>
+                <p class="section-summary">Live LLDP fabric. Edges are green when up, red when down. Click an edge to toggle the link; click a node to fail the device.</p>
+            </div>
+            <div id="topologyCanvas" class="topology-canvas" style="width:100%;height:600px;"></div>
+            <div id="topologySummary" class="topology-summary" style="display:none;"></div>
+        </section>
+
         <div id="progressBanner"></div>
         <div id="alerts" class="alerts" aria-live="polite"></div>
         <div id="copyStatus" role="status" aria-live="polite" class="sr-only"></div>
@@ -236,5 +248,10 @@
     </div>
     <script src="/web/app_api.js"></script>
     <script src="/web/app_ui.js"></script>
+    <!-- Topology visualization: vendored graph libs + pure logic + DOM glue. -->
+    <script src="/web/libs/graphology.umd.min.js"></script>
+    <script src="/web/libs/sigma.min.js"></script>
+    <script src="/web/topology_logic.js"></script>
+    <script src="/web/app_topology.js"></script>
 </body>
 </html>
