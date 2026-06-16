@@ -37,7 +37,7 @@
   };
 
   var EDGE_SIZE = 3;        // base thickness (thin lines are hard to click)
-  var EDGE_SIZE_HOVER = 9;  // fatten on hover → big hit area + clear affordance
+  var EDGE_SIZE_HOVER = 6;  // fatten on hover → bigger hit area + clear affordance
 
   function el(id) { return document.getElementById(id); }
   function section() { return el('topologySection'); }
