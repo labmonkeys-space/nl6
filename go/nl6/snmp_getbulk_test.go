@@ -462,3 +462,73 @@ func TestHandleGetBulkFallback(t *testing.T) {
 		t.Errorf("fallback value: got %q, want %q", gotVals[0], wantVal)
 	}
 }
+
+// buildGetPDU constructs a minimal SNMPv2c GetRequest packet for the given
+// OIDs (PDU type 0xA0: request-id, error-status, error-index, var-binds).
+func buildGetPDU(oids []string) []byte {
+	var varBindList []byte
+	for _, oid := range oids {
+		vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
+		varBindList = append(varBindList, vb...)
+	}
+
+	pduContents := encodeInteger(99)                       // request-id
+	pduContents = append(pduContents, encodeInteger(0)...) // error-status
+	pduContents = append(pduContents, encodeInteger(0)...) // error-index
+	pduContents = append(pduContents, encodeSequence(varBindList)...)
+
+	pdu := []byte{ASN1_GET_REQUEST}
+	pdu = append(pdu, encodeLength(len(pduContents))...)
+	pdu = append(pdu, pduContents...)
+
+	msgContents := encodeInteger(1) // SNMPv2c
+	msgContents = append(msgContents, encodeOctetString("public")...)
+	msgContents = append(msgContents, pdu...)
+	return encodeSequence(msgContents)
+}
+
+// TestHandleRegularGetMultiOID is the regression test for issue #176: a
+// multi-OID GET must return a varbind PER requested OID, in request order —
+// not just the first. (Enlinkd's LldpLocPortGetter reads val.get(1).)
+func TestHandleRegularGetMultiOID(t *testing.T) {
+	s := newTestServer(map[string]string{
+		".1.0.8802.1.1.2.1.3.7.1.2.5": "5",                  // lldpLocPortIdSubtype
+		".1.0.8802.1.1.2.1.3.7.1.3.5": "GigabitEthernet0/5", // lldpLocPortId
+		".1.0.8802.1.1.2.1.3.7.1.4.5": "GigabitEthernet0/5", // lldpLocPortDesc
+	})
+	reqOIDs := []string{
+		".1.0.8802.1.1.2.1.3.7.1.2.5",
+		".1.0.8802.1.1.2.1.3.7.1.3.5",
+		".1.0.8802.1.1.2.1.3.7.1.4.5",
+	}
+	resp := s.handleSNMPv2cRequest(buildGetPDU(reqOIDs))
+
+	oids, vals, err := parseGetBulkResponse(resp)
+	if err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if len(oids) != 3 {
+		t.Fatalf("got %d varbinds, want 3 (issue #176: multi-OID GET truncated to first)", len(oids))
+	}
+	// Order must match the request so a manager's val.get(1) is lldpLocPortId.
+	for i, want := range reqOIDs {
+		if oids[i] != want {
+			t.Errorf("varbind %d OID = %s, want %s (order must match request)", i, oids[i], want)
+		}
+	}
+	if vals[1] != "GigabitEthernet0/5" {
+		t.Errorf("val.get(1) = %q, want lldpLocPortId GigabitEthernet0/5", vals[1])
+	}
+}
+
+// TestHandleRegularGetSingleOID confirms the single-OID GET path still works.
+func TestHandleRegularGetSingleOID(t *testing.T) {
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.5.0": "router1"})
+	oids, vals, err := parseGetBulkResponse(s.handleSNMPv2cRequest(buildGetPDU([]string{".1.3.6.1.2.1.1.5.0"})))
+	if err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if len(oids) != 1 || vals[0] != "router1" {
+		t.Fatalf("single GET = %v / %v, want 1 varbind 'router1'", oids, vals)
+	}
+}
