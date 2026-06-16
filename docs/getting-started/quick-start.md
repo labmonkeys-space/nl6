@@ -12,11 +12,11 @@ container workflows see [Docker](docker.md).
   [`go/go.mod`](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod).
 - Basic networking tools: `ip`, `iptables`.
 
-:::tip[Ubuntu one-shot]
-On fresh Ubuntu hosts run
-[`sudo ./ubuntu_setup.sh`](https://github.com/labmonkeys-space/nl6/blob/main/ubuntu_setup.sh)
-to install dependencies, raise system limits, and enable TUN/TAP support
-in one step. For scale tuning see [Scaling](../ops/scaling.md).
+:::tip[Skip host setup]
+For a zero-prerequisite path, run the published container image — see
+[Docker](./docker.md), which bundles the dependencies and TUN/TAP support.
+On bare metal, install the prerequisites above; for large fleets see the
+host tuning in [Scaling](../ops/scaling.md).
 :::
 
 ## Build
