@@ -469,14 +469,14 @@ func (r *pathResolver) resolveLeaf(ic *IfCounterCycler, ifIndex int, leaf string
 		// Read from the interface state engine (post add-interface-state).
 		// nil-state defensive path returns the OpenConfig UP default —
 		// matches behavior pre-state-engine for backward-compat.
-		v := uint8(OperUp)
+		v := OperUp
 		if state := ic.State(); state != nil {
 			v = state.OperStatus(ifIndex)
 		}
 		value = operStatusOpenConfig(v)
 	case "admin-status":
 		path = buildStateLeafPath(ifName, "admin-status")
-		v := uint8(AdminUp)
+		v := AdminUp
 		if state := ic.State(); state != nil {
 			v = state.AdminStatus(ifIndex)
 		}

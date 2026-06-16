@@ -40,11 +40,6 @@ var deleteDeviceTunInterfacesInNamespace = func(sm *SimulatorManager, interfaceN
 	return sm.bulkDeleteTunInterfacesInNamespace(interfaceNames)
 }
 
-// SimulatorManager implementation
-func NewSimulatorManager() *SimulatorManager {
-	return NewSimulatorManagerWithOptions(true) // Default: use namespace isolation
-}
-
 // NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
 func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
 	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call
@@ -566,17 +561,4 @@ func (sm *SimulatorManager) ensureAllSubnetRoutes(startIP net.IP, netmask string
 	}
 	log.Printf("ensureAllSubnetRoutes: added routes for %d.%d.%d.0 - %d.%d.%d.0",
 		start[0], start[1], start[2], endCopy[0], endCopy[1], endCopy[2])
-}
-
-// IsUsingNamespace returns whether namespace isolation is active
-func (sm *SimulatorManager) IsUsingNamespace() bool {
-	return sm.useNamespace && sm.netNamespace != nil
-}
-
-// GetNamespaceName returns the namespace name if active
-func (sm *SimulatorManager) GetNamespaceName() string {
-	if sm.netNamespace != nil {
-		return sm.netNamespace.Name
-	}
-	return ""
 }
