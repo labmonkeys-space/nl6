@@ -133,7 +133,20 @@
                 <h2>Inter-device topology</h2>
                 <p class="section-summary">Live LLDP fabric. Edges are green when up, red when down. Click an edge to toggle the link; click a node to fail the device.</p>
             </div>
-            <div id="topologyCanvas" class="topology-canvas" style="width:100%;height:600px;"></div>
+            <div class="topology-toolbar" role="group" aria-label="Layout">
+                <span class="topology-toolbar-label">Layout</span>
+                <button id="topologyLayoutTiered" class="btn btn-small btn-toggle is-active" type="button" aria-pressed="true">Tiered</button>
+                <button id="topologyLayoutForce" class="btn btn-small btn-toggle" type="button" aria-pressed="false">Force</button>
+            </div>
+            <div id="topologyStage" class="topology-stage">
+                <div id="topologyCanvas" class="topology-canvas" style="width:100%;height:600px;"></div>
+                <div class="topology-zoom" role="group" aria-label="Zoom">
+                    <button id="topologyFit" class="btn btn-small" type="button" title="Fit to view">Fit</button>
+                    <button id="topologyZoomIn" class="btn btn-small btn-zoom" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+                    <button id="topologyZoomOut" class="btn btn-small btn-zoom" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                </div>
+                <div id="topologyTip" class="topology-tip" hidden></div>
+            </div>
             <div id="topologySummary" class="topology-summary" style="display:none;"></div>
         </section>
 

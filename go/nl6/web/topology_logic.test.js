@@ -90,6 +90,23 @@ ok('forceLayout is deterministic and produces finite, in-bounds coords', () => {
   assert.notDeepStrictEqual(a, c);
 });
 
+ok('forceLayout fits the frame (binding dimension fills the usable area)', () => {
+  const m = T.buildModel(sample);
+  const w = 800, h = 600, mx = w * 0.08, my = h * 0.08;
+  const p = T.forceLayout(m, { width: w, height: h, seed: 3 });
+  const xs = Object.values(p).map(q => q.x), ys = Object.values(p).map(q => q.y);
+  const xRange = Math.max(...xs) - Math.min(...xs);
+  const yRange = Math.max(...ys) - Math.min(...ys);
+  // Uniform scale → the tighter-fitting axis fills its usable span (~1.0).
+  const fill = Math.max(xRange / (w - 2 * mx), yRange / (h - 2 * my));
+  assert.ok(fill > 0.9, `layout fills the frame (got ${fill.toFixed(2)})`);
+  // And every node stays within the margins.
+  for (const id of Object.keys(p)) {
+    assert.ok(p[id].x >= mx - 1 && p[id].x <= w - mx + 1, 'x within margins');
+    assert.ok(p[id].y >= my - 1 && p[id].y <= h - my + 1, 'y within margins');
+  }
+});
+
 ok('forceLayout handles 0 and 1 node', () => {
   assert.deepStrictEqual(T.forceLayout(T.buildModel({ nodes: [], edges: [] }), {}), {});
   const one = T.forceLayout(T.buildModel({ nodes: [{ ip: '10.0.0.9', degree: 0 }], edges: [] }), { width: 100, height: 100 });
@@ -117,11 +134,132 @@ ok('nodeFailOps downs every incident local interface of the device', () => {
   assert.deepStrictEqual(ifs, [2, 3]);
 });
 
+ok('nodeIsDown / nodeRestoreOps reflect incident link state', () => {
+  const m = T.buildModel(sample);
+  // sample: edge0 (.1↔.2) active; edge1 (.2↔.3) inactive.
+  assert.strictEqual(T.nodeIsDown(m, '10.0.0.2'), false, 'has an active incident link → up');
+  assert.strictEqual(T.nodeIsDown(m, '10.0.0.3'), true, 'only incident link inactive → down');
+  assert.strictEqual(T.nodeIsDown(m, '10.0.0.99'), false, 'no incident links → not down');
+  const up = T.nodeRestoreOps(m, '10.0.0.2');
+  assert.strictEqual(up.length, 2);
+  assert.ok(up.every(o => o.ip === '10.0.0.2' && o.status === 'UP'));
+  assert.deepStrictEqual(up.map(o => o.ifindex).sort(), [2, 3]);
+});
+
 ok('scaleDecision respects 500/2000 caps', () => {
   assert.strictEqual(T.scaleDecision(12, 18).render, true);
   assert.strictEqual(T.scaleDecision(500, 2000).render, true);
   assert.strictEqual(T.scaleDecision(501, 100).render, false);
   assert.strictEqual(T.scaleDecision(100, 2001).render, false);
+});
+
+// --- tieredLayout ----------------------------------------------------------
+
+// Helper: count distinct y-bands and return the y for a given node id.
+function tieredOf(graph, opts) {
+  return T.tieredLayout(T.buildModel(graph), Object.assign({ width: 800, height: 600 }, opts || {}));
+}
+
+ok('tieredLayout: 5-stage-clos mix compacts to 4 ordered bands', () => {
+  // Core router → DC switch → campus switch → server (the clos category mix).
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'super1', type: 'Cisco CRS-X', degree: 1 },
+      { ip: '10.0.0.2', sysName: 'spine1', type: 'Arista 7280R3', degree: 2 },
+      { ip: '10.0.0.3', sysName: 'leaf1', type: 'Cisco Catalyst 9500', degree: 2 },
+      { ip: '10.0.0.4', sysName: 'host1', type: 'Linux Server', degree: 1 }
+    ],
+    edges: [
+      { a: { ip: '10.0.0.1', ifindex: 1 }, b: { ip: '10.0.0.2', ifindex: 1 }, active: true },
+      { a: { ip: '10.0.0.2', ifindex: 2 }, b: { ip: '10.0.0.3', ifindex: 1 }, active: true },
+      { a: { ip: '10.0.0.3', ifindex: 2 }, b: { ip: '10.0.0.4', ifindex: 1 }, active: true }
+    ]
+  };
+  const pos = tieredOf(g);
+  const ys = ['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4'].map(id => pos[id].y);
+  const bands = [...new Set(ys)].sort((a, b) => a - b);
+  assert.strictEqual(bands.length, 4, 'four distinct bands');
+  // sigma is y-up: top tier = LARGEST y. Superspine highest → host lowest.
+  assert.ok(ys[0] > ys[1] && ys[1] > ys[2] && ys[2] > ys[3], 'tiers ordered top→bottom');
+});
+
+ok('tieredLayout: a missing middle category leaves no empty band', () => {
+  // Only ranks 0 (core) and 3 (campus) present → must compact to 2 bands.
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'core1', type: 'Cisco CRS-X', degree: 1 },
+      { ip: '10.0.0.2', sysName: 'acc1', type: 'Cisco Catalyst 9500', degree: 1 }
+    ],
+    edges: [{ a: { ip: '10.0.0.1', ifindex: 1 }, b: { ip: '10.0.0.2', ifindex: 1 }, active: true }]
+  };
+  const pos = tieredOf(g);
+  const bands = [...new Set([pos['10.0.0.1'].y, pos['10.0.0.2'].y])];
+  assert.strictEqual(bands.length, 2, 'two bands, no empty row between');
+  // Mid-band of a 2-band layout sits at 1/4 and 3/4 of usable height — verify
+  // the core band is the top one (y-up: larger y) and no third empty band.
+  assert.ok(pos['10.0.0.1'].y > pos['10.0.0.2'].y, 'core above campus');
+});
+
+ok('tieredLayout: untyped node lands below its highest-tier neighbour', () => {
+  // A typed core (rank 0) with an untyped neighbour → neighbour one band below.
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'core1', type: 'Cisco CRS-X', degree: 1 },
+      { ip: '10.0.0.2', degree: 1, missing: true } // no type
+    ],
+    edges: [{ a: { ip: '10.0.0.1', ifindex: 1 }, b: { ip: '10.0.0.2', ifindex: 1 }, active: true }]
+  };
+  const pos = tieredOf(g);
+  // y-up: "below" the core means a smaller y than the core.
+  assert.ok(pos['10.0.0.2'].y < pos['10.0.0.1'].y, 'untyped sits below the core, not at the top');
+});
+
+ok('tieredLayout is deterministic', () => {
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'super1', type: 'Cisco CRS-X', degree: 1 },
+      { ip: '10.0.0.2', sysName: 'spine1', type: 'Arista 7280R3', degree: 2 },
+      { ip: '10.0.0.3', sysName: 'leaf1', type: 'Cisco Catalyst 9500', degree: 1 }
+    ],
+    edges: [
+      { a: { ip: '10.0.0.1', ifindex: 1 }, b: { ip: '10.0.0.2', ifindex: 1 }, active: true },
+      { a: { ip: '10.0.0.2', ifindex: 2 }, b: { ip: '10.0.0.3', ifindex: 1 }, active: true }
+    ]
+  };
+  const a = tieredOf(g);
+  const b = tieredOf(g);
+  assert.deepStrictEqual(a, b, 'same model → identical layout');
+  for (const id of Object.keys(a)) {
+    assert.ok(Number.isFinite(a[id].x) && Number.isFinite(a[id].y), 'finite');
+    assert.ok(a[id].x >= 0 && a[id].x <= 800 && a[id].y >= 0 && a[id].y <= 600, 'in bounds');
+  }
+});
+
+ok('tieredLayout: barycenter ordering avoids the obvious crossing', () => {
+  // Two same-band cores over two same-band servers, cross-wired (a–d, b–c).
+  // Naive (sysName) order would cross; barycenter must align endpoints so
+  // (x[a]-x[b]) and (x[d]-x[c]) share a sign (no crossing).
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'a', type: 'Cisco CRS-X', degree: 1 },
+      { ip: '10.0.0.2', sysName: 'b', type: 'Cisco ASR 9000', degree: 1 },
+      { ip: '10.0.0.3', sysName: 'c', type: 'Linux Server', degree: 1 },
+      { ip: '10.0.0.4', sysName: 'd', type: 'Dell PowerEdge R750', degree: 1 }
+    ],
+    edges: [
+      { a: { ip: '10.0.0.1', ifindex: 1 }, b: { ip: '10.0.0.4', ifindex: 1 }, active: true },
+      { a: { ip: '10.0.0.2', ifindex: 1 }, b: { ip: '10.0.0.3', ifindex: 1 }, active: true }
+    ]
+  };
+  const pos = tieredOf(g);
+  const crossMetric = (pos['10.0.0.1'].x - pos['10.0.0.2'].x) * (pos['10.0.0.4'].x - pos['10.0.0.3'].x);
+  assert.ok(crossMetric > 0, 'edges a–d and b–c do not cross after barycenter');
+});
+
+ok('tieredLayout handles 0 and 1 node', () => {
+  assert.deepStrictEqual(T.tieredLayout(T.buildModel({ nodes: [], edges: [] }), {}), {});
+  const one = T.tieredLayout(T.buildModel({ nodes: [{ ip: '10.0.0.9', degree: 0 }], edges: [] }), { width: 100, height: 100 });
+  assert.deepStrictEqual(one['10.0.0.9'], { x: 50, y: 50 });
 });
 
 console.log(`\n${pass} checks passed.`);

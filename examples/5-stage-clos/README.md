@@ -30,6 +30,8 @@ endpoints, not stages.
 
 12 fabric devices + 2 hosts, 18 inter-device LLDP links (`clos.json`).
 
+> **Note:** Linux hosts link via `eth0` (ifIndex 2), not `lo` (ifIndex 1) — ifIndex 1 is the loopback on Linux, so linking there would render an unrealistic `lo` endpoint.
+
 ## Files
 
 | File | Purpose |
