@@ -34,10 +34,9 @@ endpoints, not stages.
 
 | File | Purpose |
 |------|---------|
-| `provision.sh` | Create the devices + load the topology in nl6 |
+| `nl6-provision.sh` | Create the devices + load the topology in nl6 |
 | `clos.json` | The 18-link inter-device LLDP graph |
-| `import.sh` | Import the nl6 devices into OpenNMS as a requisition |
-| `nl6-requisition.sh` | Vendored requisition generator (see caveat below) |
+| `onms-provision.sh` | Generate + import the nl6 devices into OpenNMS as a requisition |
 
 ## Prerequisites
 
@@ -51,27 +50,24 @@ endpoints, not stages.
 
 ```bash
 # 1. Provision the fabric in nl6
-NL6_URL=http://my-nl6:8080 ./provision.sh
+NL6_URL=http://my-nl6:8080 ./nl6-provision.sh
 
 # 2. Import the nodes into OpenNMS
 NL6_URL=http://my-nl6:8080 \
 OPENNMS_HOST=onms OPENNMS_PORT=8980 OPENNMS_USER=admin OPENNMS_PASS=admin \
-  ./import.sh --import
+  ./onms-provision.sh --import
 
 # Preview the requisition XML without uploading:
-./import.sh --import --dry-run
+./onms-provision.sh --import --dry-run
 ```
 
-Run `./import.sh --help` for the full list of OpenNMS / gNMI environment knobs.
+Run `./onms-provision.sh --help` for the full list of OpenNMS / gNMI environment knobs.
 
 ## Caveats
 
-- **`import.sh` imports the *whole* nl6 instance**, not just this fabric — the
-  requisition is built from `GET /api/v1/devices`. Point `NL6_URL` at an nl6
-  dedicated to the Clos example, or expect extra nodes in the requisition.
-- **`nl6-requisition.sh` is a vendored copy** of the script in the
-  `opennms-benchmark` repo, captured so this example is self-contained. It can
-  drift from the upstream original.
+- **`onms-provision.sh` imports the *whole* nl6 instance**, not just this fabric
+  — the requisition is built from `GET /api/v1/devices`. Point `NL6_URL` at an
+  nl6 dedicated to the Clos example, or expect extra nodes in the requisition.
 - **Node geolocation:** the requisition emits `latitude` / `longitude` / `city`
   asset fields from each device's nl6-assigned location, so nodes appear on the
   OpenNMS geomap. Locations are assigned **randomly per device**, so the fabric

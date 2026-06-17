@@ -2,15 +2,15 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 #
-# provision.sh — stand up the 5-stage Clos fabric in a running nl6 instance.
+# nl6-provision.sh — stand up the 5-stage Clos fabric in a running nl6 instance.
 #
 # Creates the 12 fabric devices + 2 hosts, then loads the inter-device LLDP
 # link graph from clos.json. Idempotency is nl6's concern: re-running re-POSTs
 # the same IPs (nl6 rejects duplicates) and replaces the topology.
 #
 # Usage:
-#   ./provision.sh                       # provision against $NL6_URL
-#   NL6_URL=http://my-nl6:8080 ./provision.sh
+#   ./nl6-provision.sh                   # provision against $NL6_URL
+#   NL6_URL=http://my-nl6:8080 ./nl6-provision.sh
 #
 # Topology (5-stage folded Clos / 3-tier fat-tree, two pods):
 #   Tier 1  superspine  .100-.101  cisco_crs_x          (full mesh to all spines)
