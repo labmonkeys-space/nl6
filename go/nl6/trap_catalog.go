@@ -44,6 +44,28 @@ const (
 	oidSnmpTrapEnterprise0 = "1.3.6.1.6.3.1.1.4.3.0"
 )
 
+// Catalog entry roles (correlate-state-notifications). A role-tagged entry is
+// fired by an oper-status transition for the matching direction and is excluded
+// from the scheduler's weighted-random Pick. Empty role = untagged (today's
+// behavior: scheduler-driven, never state-driven). Shared by trap + syslog.
+const (
+	roleLinkDown = "link-down"
+	roleLinkUp   = "link-up"
+)
+
+// validRole reports whether a catalog `role` value is recognized. Empty is
+// valid (untagged). Used by both trap and syslog catalog loaders.
+func validRole(role string) bool {
+	return role == "" || role == roleLinkDown || role == roleLinkUp
+}
+
+// linkTrapOIDs are the well-known linkDown/linkUp snmpTrapOIDs, used only to
+// warn when an entry looks link-related but was not given a `role`.
+var linkTrapOIDs = map[string]struct{}{
+	"1.3.6.1.6.3.1.1.5.3": {}, // linkDown
+	"1.3.6.1.6.3.1.1.5.4": {}, // linkUp
+}
+
 // allowedTemplateFields enumerates the nine-field unified template
 // vocabulary shared between trap and syslog catalogs. Any other
 // {{.Name}} reference in OID or value strings is rejected at catalog
@@ -96,6 +118,7 @@ type catalogEntryJSON struct {
 	SnmpTrapOID        string            `json:"snmpTrapOID"`
 	SnmpTrapEnterprise string            `json:"snmpTrapEnterprise,omitempty"`
 	Weight             int               `json:"weight"`
+	Role               string            `json:"role,omitempty"`
 	Varbinds           []trapVarbindJSON `json:"varbinds"`
 }
 
@@ -136,7 +159,14 @@ type CatalogEntry struct {
 	SnmpTrapOID        string
 	SnmpTrapEnterprise string
 	Weight             int
+	Role               string // "" | link-down | link-up (correlate-state-notifications)
 	Varbinds           []VarbindTemplate
+
+	// fromOverlay marks an entry that came from a per-type overlay (set in
+	// MergeOverlay). EntriesByRole uses it for vendor-wins selection: when a
+	// device's catalog has overlay entries for a role, the universal (base)
+	// entries for that role are suppressed.
+	fromOverlay bool
 }
 
 // Catalog is the whole parsed trap catalog plus cached weight metadata for Pick.
@@ -150,8 +180,16 @@ type Catalog struct {
 	Entries     []*CatalogEntry
 	ByName      map[string]*CatalogEntry
 	Extends     bool
-	cumulativeW []int // cumulativeW[i] = sum(Weight[0..i]); used by Pick
+	cumulativeW []int // cumulativeW[i] = sum(Weight[0..i]) over ALL entries; load-validation
 	totalWeight int
+
+	// Schedulable subset: untagged entries only. Role-tagged entries fire from
+	// state transitions, never the Poisson scheduler, so Pick draws from these.
+	// schedTotalWeight MAY be zero (an all-role-tagged catalog) without making
+	// the catalog invalid — Pick simply returns nil (a no-op tick).
+	schedEntries     []*CatalogEntry
+	schedCumulativeW []int
+	schedTotalWeight int
 }
 
 // TemplateCtx is the data handed to text/template when Resolve evaluates
@@ -330,7 +368,48 @@ func (c *Catalog) recomputeWeights() error {
 	if c.totalWeight <= 0 {
 		return fmt.Errorf("total weight must be > 0")
 	}
+	// Build the schedulable subset (untagged entries). A zero schedulable total
+	// is allowed — an all-role-tagged catalog still loads; its link entries fire
+	// from state transitions and Pick is a no-op.
+	c.schedEntries = c.schedEntries[:0]
+	c.schedCumulativeW = c.schedCumulativeW[:0]
+	sched := 0
+	for _, e := range c.Entries {
+		if e.Role != "" {
+			continue
+		}
+		sched += e.Weight
+		c.schedEntries = append(c.schedEntries, e)
+		c.schedCumulativeW = append(c.schedCumulativeW, sched)
+	}
+	c.schedTotalWeight = sched
 	return nil
+}
+
+// EntriesByRole returns the entries a state transition of the given role SHALL
+// fire, applying vendor-wins-per-role: if the catalog has any per-type overlay
+// entries for the role, only those are returned (the universal entries for that
+// role are suppressed); otherwise the base (universal) entries are returned.
+// Returns nil for an empty role or no match.
+func (c *Catalog) EntriesByRole(role string) []*CatalogEntry {
+	if c == nil || role == "" {
+		return nil
+	}
+	var overlay, base []*CatalogEntry
+	for _, e := range c.Entries {
+		if e.Role != role {
+			continue
+		}
+		if e.fromOverlay {
+			overlay = append(overlay, e)
+		} else {
+			base = append(base, e)
+		}
+	}
+	if len(overlay) > 0 {
+		return overlay
+	}
+	return base
 }
 
 // MergeOverlay returns a new Catalog that is the name-based overlay of `overlay`
@@ -376,6 +455,7 @@ func (c *Catalog) MergeOverlay(overlay *Catalog) *Catalog {
 	// overrides; then append overlay-only entries.
 	for _, e := range c.Entries {
 		if override, replaced := overlay.ByName[e.Name]; replaced {
+			override.fromOverlay = true
 			merged.Entries = append(merged.Entries, override)
 			merged.ByName[override.Name] = override
 		} else {
@@ -387,6 +467,7 @@ func (c *Catalog) MergeOverlay(overlay *Catalog) *Catalog {
 		if _, already := merged.ByName[e.Name]; already {
 			continue
 		}
+		e.fromOverlay = true
 		merged.Entries = append(merged.Entries, e)
 		merged.ByName[e.Name] = e
 	}
@@ -420,11 +501,26 @@ func compileEntry(raw catalogEntryJSON, source string, idx int) (*CatalogEntry, 
 		return nil, fmt.Errorf("trap catalog: %s entry %q: weight must be non-negative", source, raw.Name)
 	}
 
+	if !validRole(raw.Role) {
+		return nil, fmt.Errorf("trap catalog: %s entry %q: unknown role %q (allowed: link-down, link-up)",
+			source, raw.Name, raw.Role)
+	}
 	entry := &CatalogEntry{
 		Name:        raw.Name,
 		SnmpTrapOID: strings.TrimPrefix(raw.SnmpTrapOID, "."),
 		Weight:      weight,
+		Role:        raw.Role,
 		Varbinds:    make([]VarbindTemplate, 0, len(raw.Varbinds)),
+	}
+	// Warn (non-fatal) when an entry looks link-related but carries no role —
+	// such an entry keeps firing from the scheduler AND won't be state-driven,
+	// which is the double-emit hazard the role tag exists to prevent.
+	if raw.Role == "" {
+		if _, isLink := linkTrapOIDs[entry.SnmpTrapOID]; isLink {
+			log.Printf("trap catalog: %s entry %q has a linkDown/linkUp snmpTrapOID but no \"role\" — "+
+				"it will fire from the scheduler and NOT be state-driven; add \"role\":\"link-down\"/\"link-up\" to correlate it",
+				source, raw.Name)
+		}
 	}
 	// The optional snmpTrapEnterprise.0 value must be a well-formed dotted-
 	// decimal OID and must not collide with OIDs the encoder auto-prepends.
@@ -596,21 +692,18 @@ func validateTemplateFields(s, entryName string, vbIdx int, which string) error 
 
 // Pick selects a catalog entry via weighted-random draw. rnd must be non-nil.
 func (c *Catalog) Pick(rnd *rand.Rand) *CatalogEntry {
-	if c == nil || len(c.Entries) == 0 {
-		return nil
+	if c == nil || c.schedTotalWeight <= 0 {
+		return nil // empty or all-role-tagged → no scheduler-driven trap
 	}
-	if c.totalWeight <= 0 {
-		return nil
-	}
-	// Linear scan: catalog sizes are small (≤ tens), so log-N binary search
-	// isn't worth the cache miss. If catalogs grow, revisit.
-	r := rnd.Intn(c.totalWeight)
-	for i, cum := range c.cumulativeW {
+	// Linear scan over the schedulable (untagged) subset: role-tagged entries
+	// fire from state transitions, not the scheduler. Catalog sizes are small.
+	r := rnd.Intn(c.schedTotalWeight)
+	for i, cum := range c.schedCumulativeW {
 		if r < cum {
-			return c.Entries[i]
+			return c.schedEntries[i]
 		}
 	}
-	return c.Entries[len(c.Entries)-1]
+	return c.schedEntries[len(c.schedEntries)-1]
 }
 
 // Resolve evaluates the entry's templates against ctx and overrides, producing

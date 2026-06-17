@@ -289,9 +289,24 @@ func (e *TrapExporter) Fire(entry *CatalogEntry, overrides map[string]string) ui
 	if e == nil || entry == nil || e.closing.Load() {
 		return 0
 	}
+	return e.fireWithCtx(entry, e.buildCtx(e.ifIndexFn()), overrides)
+}
 
-	ifIndex := e.ifIndexFn()
-	ctx := TemplateCtx{
+// FireForInterface emits a trap for `entry` pinned to a SPECIFIC ifIndex (and
+// its ifName) — used by the state-change notify hook so a correlated linkDown/
+// linkUp names the interface that actually transitioned, not a random one.
+// Like Fire it is safe on a closing exporter and does not consume a global-cap
+// token (state-driven link traps bypass the Poisson cap on initial transmit).
+func (e *TrapExporter) FireForInterface(entry *CatalogEntry, ifIndex int) uint32 {
+	if e == nil || entry == nil || e.closing.Load() {
+		return 0
+	}
+	return e.fireWithCtx(entry, e.buildCtx(ifIndex), nil)
+}
+
+// buildCtx assembles the per-fire template context for a given ifIndex.
+func (e *TrapExporter) buildCtx(ifIndex int) TemplateCtx {
+	return TemplateCtx{
 		IfIndex:   ifIndex,
 		IfName:    e.ifNameFn(ifIndex),
 		Uptime:    e.uptimeHundredths(),
@@ -302,6 +317,12 @@ func (e *TrapExporter) Fire(entry *CatalogEntry, overrides map[string]string) ui
 		Serial:    e.serial,
 		ChassisID: e.chassisID,
 	}
+}
+
+// fireWithCtx is the shared encode/transmit body of Fire and FireForInterface,
+// including the INFORM register-pending-before-write ordering and write-failure
+// undo. Returns the request-id (0 on early return).
+func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrides map[string]string) uint32 {
 	varbinds, err := entry.Resolve(ctx, overrides)
 	if err != nil {
 		log.Printf("trap: resolve %s for %s: %v", entry.Name, e.deviceIP, err)

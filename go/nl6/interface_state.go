@@ -104,6 +104,15 @@ type InterfaceState struct {
 	// concurrent SetCounters cannot race a Broadcast-side load.
 	eventsEmitted atomic.Pointer[uint64]
 	eventsDropped atomic.Pointer[uint64]
+
+	// notify is the correlate-state-notifications (Tier C) hook: invoked
+	// synchronously on every successful OPER-status transition (after the slot
+	// store commits, alongside Broadcast) to fire correlated link traps/syslog
+	// for the transitioned ifIndex. Stored as an atomic.Pointer because the
+	// flap scheduler is registered BEFORE the trap/syslog exporters attach, so
+	// the manager sets this after the engine is already live and mutating; a
+	// transition before attach reads nil and is a safe no-op.
+	notify atomic.Pointer[func(StateChange)]
 }
 
 // NewInterfaceState builds an engine for `maxIfIndex` interfaces. Slot
@@ -383,6 +392,19 @@ func (s *InterfaceState) SetCounters(emitted, dropped *uint64) {
 	s.eventsDropped.Store(dropped)
 }
 
+// SetNotify wires (fn != nil) or clears (fn == nil) the Tier C state-change
+// hook invoked on oper transitions by Broadcast. Stored atomically: the manager
+// sets it at trap/syslog attach time (after the flap scheduler is already
+// registered) and clears it on teardown before the exporters close. Safe to
+// call while the engine is live and mutating.
+func (s *InterfaceState) SetNotify(fn func(StateChange)) {
+	if fn == nil {
+		s.notify.Store(nil)
+		return
+	}
+	s.notify.Store(&fn)
+}
+
 // Broadcast fans evt out to every registered listener with non-blocking
 // drop-oldest semantics. Increments eventsEmitted per successful send,
 // eventsDropped per drop.
@@ -437,6 +459,16 @@ func (s *InterfaceState) Broadcast(evt StateChange) {
 		}
 		return true
 	})
+
+	// Tier C (correlate-state-notifications): after the gNMI listener fan-out,
+	// fire correlated link telemetry for OPER transitions. Gated on
+	// LeafOperStatus so admin-only changes never fire link traps/syslog. The
+	// hook is nil until the manager wires it at exporter-attach time.
+	if evt.Changed&LeafOperStatus != 0 {
+		if fn := s.notify.Load(); fn != nil {
+			(*fn)(evt)
+		}
+	}
 }
 
 func (s *InterfaceState) incEmitted() {
