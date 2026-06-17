@@ -16,7 +16,7 @@ OPENNMS_HOST="${OPENNMS_HOST:-localhost}"
 OPENNMS_PORT="${OPENNMS_PORT:-8980}"
 OPENNMS_USER="${OPENNMS_USER:-admin}"
 OPENNMS_PASS="${OPENNMS_PASS:-admin}"
-FOREIGN_SOURCE="${FOREIGN_SOURCE:-opensim-inventory}"
+FOREIGN_SOURCE="${FOREIGN_SOURCE:-nl6-inventory}"
 MINION_LOCATION="${MINION_LOCATION:-Default}"
 GNMI_SERVICE="${GNMI_SERVICE:-gNMI-Telemetry}"
 OC_PORT="${OC_PORT:-9339}"
@@ -124,7 +124,7 @@ for device in devices:
     lines.append(f'            <monitored-service service-name={quoteattr(gnmi_service)}/>')
     lines.append( '        </interface>')
     # Geolocation asset fields (from the nl6 device API). Exact coordinates win
-    # when present; `city` is emitted as an OpenNMS geocoder fallback and for
+    # when present; the city name is emitted as an OpenNMS geocoder fallback and for
     # readability. Asset elements precede meta-data per the requisition schema.
     lat = device.get("latitude")
     lng = device.get("longitude")
