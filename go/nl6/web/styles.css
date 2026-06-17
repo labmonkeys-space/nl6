@@ -1440,6 +1440,68 @@ code.mono {
 }
 
 /* Topology visualization (app_topology.js). */
+.topology-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: .5rem;
+}
+.topology-toolbar-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-2, #9aa0a6);
+    margin-right: 4px;
+}
+.topology-stage { position: relative; }
+.topology-zoom {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 5;
+    display: flex;
+    gap: 6px;
+}
+.btn-zoom {
+    min-width: 30px;
+    justify-content: center;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+}
+.topology-tip {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--fg, #e6e8ec);
+    background: var(--panel-2, #161a20);
+    border: 1px solid var(--border, #2a2f3a);
+    border-radius: 6px;
+    white-space: nowrap;
+    transform: translate(-50%, calc(-100% - 12px));
+}
+.topology-tip[hidden] { display: none; }
+
+/* Small confirm dialog — reuses .modal-scrim + .modal-body/.modal-foot. */
+.confirm-dialog {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.18s ease-out;
+}
+.confirm-dialog .modal-foot { justify-content: flex-end; }
+.confirm-dialog .confirm-title { margin: 0 0 6px; font-weight: 600; }
+.confirm-dialog .confirm-msg { margin: 0; color: var(--fg-2, #9aa0a6); white-space: pre-line; }
+.btn-toggle.is-active {
+    background: var(--accent);
+    color: #00140a;
+    border-color: color-mix(in oklch, var(--accent), black 15%);
+}
+[data-theme="light"] .btn-toggle.is-active { color: #fff; }
 .topology-canvas {
     border: 1px solid var(--border, #2a2f3a);
     border-radius: 8px;
