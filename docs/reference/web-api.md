@@ -269,6 +269,22 @@ The field is omitted (JSON `omitempty`) for devices whose underlying
 
 POSTs that name a `resource_file` or use `round_robin: true` always carry it.
 
+Each record also carries the device's geolocation: `location` (the world-city
+string also served as SNMP `sysLocation.0`), and `latitude` / `longitude`
+(decimal degrees, drawn from the same world-cities dataset). The coordinates
+are emitted as a **pair** — both present or both omitted. They are `omitempty`
+on a nullable type so that an *unresolved* location omits them entirely rather
+than reporting a misleading `0`; a device whose true coordinates are `0.0,0.0`
+still reports them as present. `location` is omitted when empty.
+
+```json
+{ "id": "...", "ip": "10.42.0.100", "resource_file": "cisco_crs_x.json",
+  "location": "Amsterdam, Netherlands", "latitude": 52.3676, "longitude": 4.9041 }
+```
+
+Note: locations are assigned **randomly per device**, so a deployed fabric is
+geographically scattered rather than clustered by site.
+
 ## Export to CSV
 
 ```bash

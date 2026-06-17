@@ -107,3 +107,8 @@ directory.
 Device `sysLocation` values are drawn from a bundled 98-city dataset so large
 fleets have plausible geographic spread. The dataset ships under
 `go/nl6/resources/worldcities/`.
+
+Each entry's **latitude/longitude** are retained from the dataset and exposed
+per device via `GET /api/v1/devices` (`location` / `latitude` / `longitude`) —
+see the [web API reference](web-api.md). The `sysLocation` string itself is
+unchanged; coordinates are an additive surface on the control-plane API.

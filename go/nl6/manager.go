@@ -236,6 +236,20 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		if device.IfFlapScenario != "" && device.IfFlapScenario != string(IfFlapClean) {
 			info.IfFlapScenario = device.IfFlapScenario
 		}
+		// Geolocation: the assigned world-city string plus coordinates.
+		// Coordinates are emitted only when a location resolved (Name
+		// non-empty) so an unset location omits the pair rather than
+		// reporting 0,0.
+		if loc, ok := device.cachedLocation.Load().(WorldCity); ok && loc.Name != "" {
+			info.Location = loc.Name
+			// The unknown sentinel has no real coordinates; emit the pair
+			// only for a genuinely resolved location.
+			if loc.Name != unknownLocationName {
+				lat, lng := loc.Latitude, loc.Longitude
+				info.Latitude = &lat
+				info.Longitude = &lng
+			}
+		}
 		devices = append(devices, info)
 	}
 
