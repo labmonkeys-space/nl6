@@ -166,9 +166,3 @@ func getRandomLocation() WorldCity {
 
 	return worldCities[mathrand.Intn(len(worldCities))]
 }
-
-// getRandomCity returns just the display string of a random world city,
-// preserving the original string-only call sites and the sysLocation contract.
-func getRandomCity() string {
-	return getRandomLocation().Name
-}

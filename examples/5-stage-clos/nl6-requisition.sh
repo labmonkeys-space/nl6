@@ -8,7 +8,7 @@
 #
 set -euo pipefail
 
-OPENSIM_URL="${OPENSIM_URL:-http://192.168.11.73:8080}"
+NL6_URL="${NL6_URL:-http://localhost:8080}"
 OPENNMS_HOST="${OPENNMS_HOST:-localhost}"
 OPENNMS_PORT="${OPENNMS_PORT:-8980}"
 OPENNMS_USER="${OPENNMS_USER:-admin}"
@@ -35,7 +35,7 @@ Options:
   -h|--help     Show this message
 
 Environment variables (all optional):
-  OPENSIM_URL       nl6 base URL       (default: https://bench-lab/opensim)
+  NL6_URL           nl6 base URL       (default: http://localhost:8080)
   OPENNMS_HOST      OpenNMS host             (default: bench-lab)
   OPENNMS_PORT      OpenNMS port             (default: 443)
   OPENNMS_USER      OpenNMS username         (default: admin)
@@ -79,7 +79,7 @@ import urllib.request
 from datetime import datetime, timezone
 from xml.sax.saxutils import quoteattr
 
-url          = "${OPENSIM_URL}/api/v1/devices"
+url          = "${NL6_URL}/api/v1/devices"
 foreign_source = "${FOREIGN_SOURCE}"
 location     = "${MINION_LOCATION}"
 gnmi_service = "${GNMI_SERVICE}"

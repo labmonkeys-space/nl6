@@ -4,11 +4,10 @@
 #
 # import.sh — import the nl6 devices into OpenNMS as a requisition.
 #
-# Thin wrapper around the vendored nl6-requisition.sh: it maps this example's
-# single NL6_URL onto the requisition script's OPENSIM_URL and forwards every
-# argument through. All other knobs (OPENNMS_HOST/PORT/USER/PASS, FOREIGN_SOURCE,
-# gNMI/OpenConfig metadata) are read straight from the environment by the
-# wrapped script — see ./nl6-requisition.sh --help.
+# Thin wrapper around the vendored nl6-requisition.sh: it forwards NL6_URL and
+# every argument through. All other knobs (OPENNMS_HOST/PORT/USER/PASS,
+# FOREIGN_SOURCE, gNMI/OpenConfig metadata) are read straight from the
+# environment by the wrapped script — see ./nl6-requisition.sh --help.
 #
 # NOTE: the requisition pulls EVERY device from the nl6 instance, not just this
 # fabric. Point NL6_URL at an nl6 dedicated to the Clos example.
@@ -23,4 +22,4 @@ set -euo pipefail
 NL6_URL="${NL6_URL:-http://localhost:8080}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-OPENSIM_URL="${NL6_URL}" exec "${SCRIPT_DIR}/nl6-requisition.sh" "$@"
+NL6_URL="${NL6_URL}" exec "${SCRIPT_DIR}/nl6-requisition.sh" "$@"
