@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# opensim-requisition.sh — generate and import an OpenNMS requisition from nl6 devices
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# onms-provision.sh — generate and import an OpenNMS requisition from nl6 devices
 #
 # Usage:
-#   ./opensim-requisition.sh                  # generate XML to stdout
-#   ./opensim-requisition.sh --import         # generate and import into OpenNMS
-#   ./opensim-requisition.sh --import --dry-run  # print what would be imported
+#   ./onms-provision.sh                  # generate XML to stdout
+#   ./onms-provision.sh --import         # generate and import into OpenNMS
+#   ./onms-provision.sh --import --dry-run  # print what would be imported
 #
 set -euo pipefail
 
@@ -167,7 +170,7 @@ fi
 opennms_base="http://${OPENNMS_HOST}:${OPENNMS_PORT}/opennms"
 curl_opts=(-sk -u "${OPENNMS_USER}:${OPENNMS_PASS}" -H "Content-Type: application/xml" -H "Accept: application/xml")
 
-tmp=$(mktemp /tmp/opensim-requisition.XXXXXX.xml)
+tmp=$(mktemp /tmp/onms-provision.XXXXXX.xml)
 chmod 600 "$tmp"
 trap 'rm -f "$tmp"' EXIT
 printf '%s' "$requisition" > "$tmp"
