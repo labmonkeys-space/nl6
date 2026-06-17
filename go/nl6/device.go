@@ -239,7 +239,8 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			deviceIP := make(net.IP, len(currentIP))
 			copy(deviceIP, currentIP)
 
-			sysLocationValue := getRandomCity()
+			locationValue := getRandomLocation()
+			sysLocationValue := locationValue.Name
 			sysNameValue := getRandomDeviceName(typeSlug)
 
 			device := &DeviceSimulator{
@@ -347,6 +348,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			// Cache the dynamic values using atomic for lock-free access
 			device.cachedSysName.Store(sysNameValue)
 			device.cachedSysLocation.Store(sysLocationValue)
+			device.cachedLocation.Store(locationValue)
 
 			// Create servers with SNMPv3 configuration
 			device.snmpServer = &SNMPServer{
@@ -544,7 +546,8 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		}
 	}
 
-	sysLocationValue := getRandomCity()
+	locationValue := getRandomLocation()
+	sysLocationValue := locationValue.Name
 	sysNameValue := getRandomDeviceName(slugifyDeviceType(resourceFile))
 
 	device := &DeviceSimulator{
@@ -637,6 +640,7 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	// Cache the dynamic values using atomic for lock-free access
 	device.cachedSysName.Store(sysNameValue)
 	device.cachedSysLocation.Store(sysLocationValue)
+	device.cachedLocation.Store(locationValue)
 
 	// Create servers with SNMPv3 configuration
 	device.snmpServer = &SNMPServer{

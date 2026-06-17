@@ -83,6 +83,7 @@ type DeviceSimulator struct {
 	// Cached frequently accessed values (lock-free)
 	cachedSysName     atomic.Value    // Stores string
 	cachedSysLocation atomic.Value    // Stores string
+	cachedLocation    atomic.Value    // Stores WorldCity (name + coordinates)
 	metricsCycler     *MetricsCycler  // Per-device cycling CPU/memory metrics
 	flowExporter      *FlowExporter   // NetFlow/IPFIX exporter (nil if flow export disabled)
 	trapExporter      *TrapExporter   // SNMP trap/inform exporter (nil if trap export disabled)
@@ -453,6 +454,16 @@ type DeviceInfo struct {
 	// IfFlapScenario surfaces the per-device link-flap scenario set at
 	// creation time. Omitted when clean-default for the same reason.
 	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
+	// Location is the device's assigned world-city string (the same value
+	// served as sysLocation.0), previously reachable only via SNMP. Omitted
+	// when empty.
+	Location string `json:"location,omitempty"`
+	// Latitude / Longitude are the coordinates of the assigned location.
+	// Pointers so an unresolved location omits them entirely rather than
+	// reporting a misleading 0.0 (a legitimate point); always emitted as a
+	// pair (both nil or both set).
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
 }
 
 type APIResponse struct {

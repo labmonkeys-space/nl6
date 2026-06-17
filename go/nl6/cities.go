@@ -23,10 +23,23 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 )
 
+// WorldCity is a loaded location: the display string served as sysLocation
+// plus the coordinates retained from the source dataset.
+type WorldCity struct {
+	Name      string  // display string, e.g. "Amsterdam, Netherlands"
+	Latitude  float64 // decimal degrees
+	Longitude float64 // decimal degrees
+}
+
+// unknownLocationName is the sentinel display string used when no dataset is
+// available. It carries no coordinates, so consumers omit lat/lng for it.
+const unknownLocationName = "Unknown Location"
+
 // Global list of world cities loaded from CSV file
-var worldCities []string
+var worldCities []WorldCity
 
 // loadWorldCities loads cities from worldcities directory (split CSV files)
 func loadWorldCities() error {
@@ -37,16 +50,16 @@ func loadWorldCities() error {
 	if err != nil || !info.IsDir() {
 		log.Printf("Failed to open worldcities directory, using fallback cities: %v", err)
 		// Fallback to a smaller set of cities if directory is not available
-		worldCities = []string{
-			"Tokyo, Japan",
-			"New York, NY, USA",
-			"London, England, UK",
-			"Paris, France",
-			"Sydney, Australia",
-			"Berlin, Germany",
-			"Singapore, Singapore",
-			"Mumbai, India",
-			"São Paulo, Brazil",
+		worldCities = []WorldCity{
+			{"Tokyo, Japan", 35.6870, 139.7495},
+			{"New York, NY, USA", 40.6943, -73.9249},
+			{"London, England, UK", 51.5072, -0.1275},
+			{"Paris, France", 48.8566, 2.3522},
+			{"Sydney, Australia", -33.8678, 151.2100},
+			{"Berlin, Germany", 52.5167, 13.3833},
+			{"Singapore, Singapore", 1.3000, 103.8000},
+			{"Mumbai, India", 19.0758, 72.8775},
+			{"São Paulo, Brazil", -23.5500, -46.6333},
 		}
 		return nil
 	}
@@ -61,7 +74,7 @@ func loadWorldCities() error {
 	sort.Strings(files)
 
 	// Use a map to ensure uniqueness and avoid duplicate city-country combinations
-	uniqueLocations := make(map[string]bool)
+	uniqueLocations := make(map[string]WorldCity)
 
 	// Process each CSV file
 	for _, filePath := range files {
@@ -71,10 +84,10 @@ func loadWorldCities() error {
 		}
 	}
 
-	// Convert map keys to slice
-	worldCities = make([]string, 0, len(uniqueLocations))
-	for location := range uniqueLocations {
-		worldCities = append(worldCities, location)
+	// Convert map values to slice
+	worldCities = make([]WorldCity, 0, len(uniqueLocations))
+	for _, city := range uniqueLocations {
+		worldCities = append(worldCities, city)
 	}
 
 	log.Printf("Loaded %d cities from worldcities directory (%d files)", len(worldCities), len(files))
@@ -82,7 +95,7 @@ func loadWorldCities() error {
 }
 
 // processCSVFile reads a single CSV file and adds cities to the uniqueLocations map
-func processCSVFile(filePath string, uniqueLocations map[string]bool) error {
+func processCSVFile(filePath string, uniqueLocations map[string]WorldCity) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -98,6 +111,14 @@ func processCSVFile(filePath string, uniqueLocations map[string]bool) error {
 	for _, record := range records {
 		if len(record) < 5 {
 			continue // Skip malformed rows
+		}
+
+		// Coordinates live in cols 2 (lat) / 3 (lng); skip rows whose
+		// coordinates don't parse, mirroring the malformed-row skip above.
+		lat, latErr := strconv.ParseFloat(record[2], 64)
+		lng, lngErr := strconv.ParseFloat(record[3], 64)
+		if latErr != nil || lngErr != nil {
+			continue
 		}
 
 		city := record[0]    // city name
@@ -118,16 +139,18 @@ func processCSVFile(filePath string, uniqueLocations map[string]bool) error {
 		}
 
 		// Only add if we haven't seen this exact location before
-		if !uniqueLocations[location] {
-			uniqueLocations[location] = true
+		if _, seen := uniqueLocations[location]; !seen {
+			uniqueLocations[location] = WorldCity{Name: location, Latitude: lat, Longitude: lng}
 		}
 	}
 
 	return nil
 }
 
-// getRandomCity returns a random city from the world cities list
-func getRandomCity() string {
+// getRandomLocation returns a random world city (name + coordinates) from the
+// loaded list. When the dataset is empty it returns a coordinate-less
+// "Unknown Location" sentinel so callers always get a usable display string.
+func getRandomLocation() WorldCity {
 	// Ensure cities are loaded
 	if len(worldCities) == 0 {
 		log.Printf("Warning: worldCities not loaded, loading fallback cities")
@@ -138,8 +161,14 @@ func getRandomCity() string {
 	}
 
 	if len(worldCities) == 0 {
-		return "Unknown Location"
+		return WorldCity{Name: unknownLocationName}
 	}
 
 	return worldCities[mathrand.Intn(len(worldCities))]
+}
+
+// getRandomCity returns just the display string of a random world city,
+// preserving the original string-only call sites and the sysLocation contract.
+func getRandomCity() string {
+	return getRandomLocation().Name
 }
