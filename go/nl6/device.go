@@ -845,6 +845,16 @@ func (d *DeviceSimulator) Stop() error {
 		d.syslogExporter = nil
 	}
 
+	// Clear the Tier C state-change hook before the engine outlives the
+	// exporters. A mid-flight notify on the flap goroutine is already safe via
+	// the exporter `closing` guard; this just stops future transitions from
+	// resolving now-nil exporters. SetNotify is an atomic store (no device.mu).
+	if d.metricsCycler != nil {
+		if ic := d.metricsCycler.ifCounters.Load(); ic != nil && ic.State() != nil {
+			ic.State().SetNotify(nil)
+		}
+	}
+
 	// Deregister from the flap scheduler if the device opted in to a
 	// non-clean scenario. No per-device exporter to close — the
 	// scheduler holds its state directly. Idempotent for clean devices

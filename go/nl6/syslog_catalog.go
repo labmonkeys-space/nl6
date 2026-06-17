@@ -183,6 +183,7 @@ func (s *syslogSeverityJSON) UnmarshalJSON(data []byte) error {
 type syslogCatalogEntryJSON struct {
 	Name           string             `json:"name"`
 	Weight         int                `json:"weight"`
+	Role           string             `json:"role,omitempty"`
 	Facility       syslogFacilityJSON `json:"facility"`
 	Severity       syslogSeverityJSON `json:"severity"`
 	AppName        string             `json:"appName"`
@@ -220,6 +221,7 @@ type syslogSDEntry struct {
 type SyslogCatalogEntry struct {
 	Name           string
 	Weight         int
+	Role           string // "" | link-down | link-up (correlate-state-notifications)
 	Facility       SyslogFacility
 	Severity       SyslogSeverity
 	AppName        string
@@ -229,6 +231,10 @@ type SyslogCatalogEntry struct {
 	HostnameTmpl   *template.Template
 	Template       string // raw source — may be empty
 	TemplateTmpl   *template.Template
+
+	// fromOverlay marks an entry sourced from a per-type overlay (set in
+	// MergeOverlay); EntriesByRole uses it for vendor-wins-per-role selection.
+	fromOverlay bool
 }
 
 // SyslogCatalog is the whole parsed catalog plus cached weight metadata for
@@ -244,6 +250,12 @@ type SyslogCatalog struct {
 	Extends     bool
 	cumulativeW []int
 	totalWeight int
+
+	// Schedulable subset: untagged entries only (role-tagged fire from state
+	// transitions). schedTotalWeight may be zero without invalidating the catalog.
+	schedEntries     []*SyslogCatalogEntry
+	schedCumulativeW []int
+	schedTotalWeight int
 }
 
 // SyslogTemplateCtx is the data passed to text/template at fire time.
@@ -347,7 +359,44 @@ func (c *SyslogCatalog) recomputeWeights() error {
 	if c.totalWeight <= 0 {
 		return fmt.Errorf("total weight must be > 0")
 	}
+	// Schedulable subset: untagged entries only. A zero schedulable total is
+	// allowed (an all-role-tagged catalog still loads; Pick is then a no-op).
+	c.schedEntries = c.schedEntries[:0]
+	c.schedCumulativeW = c.schedCumulativeW[:0]
+	sched := 0
+	for _, e := range c.Entries {
+		if e.Role != "" {
+			continue
+		}
+		sched += e.Weight
+		c.schedEntries = append(c.schedEntries, e)
+		c.schedCumulativeW = append(c.schedCumulativeW, sched)
+	}
+	c.schedTotalWeight = sched
 	return nil
+}
+
+// EntriesByRole returns the entries a state transition of the given role SHALL
+// fire, with vendor-wins-per-role: overlay entries suppress universal ones.
+func (c *SyslogCatalog) EntriesByRole(role string) []*SyslogCatalogEntry {
+	if c == nil || role == "" {
+		return nil
+	}
+	var overlay, base []*SyslogCatalogEntry
+	for _, e := range c.Entries {
+		if e.Role != role {
+			continue
+		}
+		if e.fromOverlay {
+			overlay = append(overlay, e)
+		} else {
+			base = append(base, e)
+		}
+	}
+	if len(overlay) > 0 {
+		return overlay
+	}
+	return base
 }
 
 // MergeOverlay returns a new SyslogCatalog that overlays `overlay` on `c`
@@ -379,6 +428,7 @@ func (c *SyslogCatalog) MergeOverlay(overlay *SyslogCatalog) *SyslogCatalog {
 	}
 	for _, e := range c.Entries {
 		if override, replaced := overlay.ByName[e.Name]; replaced {
+			override.fromOverlay = true
 			merged.Entries = append(merged.Entries, override)
 			merged.ByName[override.Name] = override
 		} else {
@@ -390,6 +440,7 @@ func (c *SyslogCatalog) MergeOverlay(overlay *SyslogCatalog) *SyslogCatalog {
 		if _, already := merged.ByName[e.Name]; already {
 			continue
 		}
+		e.fromOverlay = true
 		merged.Entries = append(merged.Entries, e)
 		merged.ByName[e.Name] = e
 	}
@@ -482,9 +533,24 @@ func compileSyslogEntry(raw syslogCatalogEntryJSON, source string, idx int) (*Sy
 		return nil, fmt.Errorf("syslog catalog: %s entry %q: weight must be non-negative", source, raw.Name)
 	}
 
+	if !validRole(raw.Role) {
+		return nil, fmt.Errorf("syslog catalog: %s entry %q: unknown role %q (allowed: link-down, link-up)",
+			source, raw.Name, raw.Role)
+	}
+	// Warn (non-fatal) when an entry looks link-related (name or msgId mentions
+	// "link") but carries no role — such an entry keeps firing from the
+	// scheduler and won't be state-driven (the double-emit hazard). Syslog has
+	// no snmpTrapOID to key on, so this is a best-effort name/msgId heuristic.
+	if raw.Role == "" && (strings.Contains(strings.ToLower(raw.Name), "link") ||
+		strings.Contains(strings.ToLower(raw.MsgID), "link")) {
+		log.Printf("syslog catalog: %s entry %q looks link-related but has no \"role\" — "+
+			"it will fire from the scheduler and NOT be state-driven; add \"role\":\"link-down\"/\"link-up\" to correlate it",
+			source, raw.Name)
+	}
 	entry := &SyslogCatalogEntry{
 		Name:     raw.Name,
 		Weight:   weight,
+		Role:     raw.Role,
 		Facility: raw.Facility.value,
 		Severity: raw.Severity.value,
 		AppName:  raw.AppName,
@@ -671,18 +737,20 @@ func validateSyslogEntrySize(entry *SyslogCatalogEntry, source string) error {
 	return nil
 }
 
-// Pick selects a catalog entry via weighted-random draw. rnd must be non-nil.
+// Pick selects a catalog entry via weighted-random draw over the schedulable
+// (untagged) subset. rnd must be non-nil. Role-tagged entries fire from state
+// transitions, not the scheduler, so an all-role-tagged catalog yields nil.
 func (c *SyslogCatalog) Pick(rnd *rand.Rand) *SyslogCatalogEntry {
-	if c == nil || len(c.Entries) == 0 || c.totalWeight <= 0 {
+	if c == nil || c.schedTotalWeight <= 0 {
 		return nil
 	}
-	r := rnd.Intn(c.totalWeight)
-	for i, cum := range c.cumulativeW {
+	r := rnd.Intn(c.schedTotalWeight)
+	for i, cum := range c.schedCumulativeW {
 		if r < cum {
-			return c.Entries[i]
+			return c.schedEntries[i]
 		}
 	}
-	return c.Entries[len(c.Entries)-1]
+	return c.schedEntries[len(c.schedEntries)-1]
 }
 
 // Resolve evaluates the entry's templates against ctx and overrides, producing

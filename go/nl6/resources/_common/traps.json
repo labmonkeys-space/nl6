@@ -3,6 +3,7 @@
   "traps": [
     {
       "name": "linkDown",
+      "role": "link-down",
       "snmpTrapOID": "1.3.6.1.6.3.1.1.5.3",
       "weight": 40,
       "varbinds": [
@@ -13,6 +14,7 @@
     },
     {
       "name": "linkUp",
+      "role": "link-up",
       "snmpTrapOID": "1.3.6.1.6.3.1.1.5.4",
       "weight": 40,
       "varbinds": [

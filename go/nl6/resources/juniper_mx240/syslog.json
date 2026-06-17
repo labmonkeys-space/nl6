@@ -3,6 +3,7 @@
   "entries": [
     {
       "name": "juniper-snmp-link-up",
+      "role": "link-up",
       "weight": 20,
       "facility": "daemon",
       "severity": "info",
@@ -17,6 +18,7 @@
     },
     {
       "name": "juniper-snmp-link-down",
+      "role": "link-down",
       "weight": 20,
       "facility": "daemon",
       "severity": "warning",

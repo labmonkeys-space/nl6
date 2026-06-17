@@ -306,7 +306,17 @@ func TestCatalog_Pick_WeightDistribution(t *testing.T) {
 		counts[e.Name]++
 	}
 	for _, e := range cat.Entries {
-		want := float64(e.Weight) / float64(cat.totalWeight)
+		// Role-tagged (link-down/link-up) entries are state-driven and excluded
+		// from the scheduler's Pick — they must never be drawn.
+		if e.Role != "" {
+			if counts[e.Name] != 0 {
+				t.Errorf("%s: role-tagged entry picked %d times, want 0 (excluded from scheduler)",
+					e.Name, counts[e.Name])
+			}
+			continue
+		}
+		// Untagged entries split the schedulable weight total.
+		want := float64(e.Weight) / float64(cat.schedTotalWeight)
 		got := float64(counts[e.Name]) / float64(draws)
 		if math.Abs(got-want) > absTol {
 			t.Errorf("%s: pick fraction = %.3f, want %.3f ± %.2f",

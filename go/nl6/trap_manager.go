@@ -492,7 +492,65 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 		log.Printf("trap export: active; first device %s → %s (mode=%s)",
 			device.IP, canonicalCollector, cfg.Mode)
 	}
+
+	sm.wireStateNotify(device)
 	return nil
+}
+
+// wireStateNotify installs the Tier C (correlate-state-notifications) hook on
+// the device's interface-state engine. Called at trap AND syslog attach time;
+// idempotent — the single closure handles both subsystems and snapshots the
+// exporters live under the device RWMutex, so attach order is irrelevant and a
+// trap-only / syslog-only device fires only the side it has. On an oper
+// transition it fires every role-matched link trap + syslog entry for the
+// transitioned ifIndex (vendor-wins-per-role via EntriesByRole), bypassing the
+// Poisson cap (FireForInterface does not consume a global-cap token).
+func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
+	if device == nil || device.metricsCycler == nil {
+		return
+	}
+	ic := device.metricsCycler.ifCounters.Load()
+	if ic == nil || ic.State() == nil {
+		return
+	}
+	ip := device.IP.String()
+	ic.State().SetNotify(func(evt StateChange) {
+		// Only a clean up/down transition is a link event. TESTING (a valid
+		// REST oper-status value) and any other non-binary IF-MIB oper state
+		// must NOT fire a spurious linkDown/linkUp.
+		var role string
+		switch evt.Oper {
+		case OperUp:
+			role = roleLinkUp
+		case OperDown:
+			role = roleLinkDown
+		default:
+			return
+		}
+		// Snapshot the exporters under the device lock (race-free vs.
+		// attach/Stop), then fire OUTSIDE the lock so a UDP send never holds
+		// it. A concurrently-closing exporter's FireForInterface is a no-op
+		// (the exporter's `closing` guard), so the snapshot-then-fire window
+		// is safe even if Stop closes the exporter in between.
+		device.mu.RLock()
+		tx := device.trapExporter
+		sx := device.syslogExporter
+		device.mu.RUnlock()
+		if tx != nil {
+			if cat := sm.CatalogFor(ip); cat != nil {
+				for _, entry := range cat.EntriesByRole(role) {
+					tx.FireForInterface(entry, evt.IfIndex)
+				}
+			}
+		}
+		if sx != nil {
+			if cat := sm.SyslogCatalogFor(ip); cat != nil {
+				for _, entry := range cat.EntriesByRole(role) {
+					sx.FireForInterface(entry, evt.IfIndex)
+				}
+			}
+		}
+	})
 }
 
 // deviceIfIndexFn builds a template-field callback returning a random ifIndex

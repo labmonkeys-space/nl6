@@ -216,9 +216,23 @@ func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]st
 	if e == nil || entry == nil || e.closing.Load() {
 		return nil
 	}
+	return e.fireWithCtx(entry, e.buildCtx(e.ifIndexFn()), overrides)
+}
 
-	ifIndex := e.ifIndexFn()
-	ctx := SyslogTemplateCtx{
+// FireForInterface emits a syslog message for `entry` pinned to a SPECIFIC
+// ifIndex — used by the state-change notify hook so a correlated link message
+// names the interface that transitioned. Safe on a closing exporter; bypasses
+// the global cap (state-driven link syslog).
+func (e *SyslogExporter) FireForInterface(entry *SyslogCatalogEntry, ifIndex int) error {
+	if e == nil || entry == nil || e.closing.Load() {
+		return nil
+	}
+	return e.fireWithCtx(entry, e.buildCtx(ifIndex), nil)
+}
+
+// buildCtx assembles the per-fire template context for a given ifIndex.
+func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
+	return SyslogTemplateCtx{
 		DeviceIP:  e.deviceIP.String(),
 		SysName:   e.sysName,
 		IfIndex:   ifIndex,
@@ -229,6 +243,11 @@ func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]st
 		Serial:    e.serial,
 		ChassisID: e.chassisID,
 	}
+}
+
+// fireWithCtx is the shared resolve/encode/transmit body of Fire and
+// FireForInterface.
+func (e *SyslogExporter) fireWithCtx(entry *SyslogCatalogEntry, ctx SyslogTemplateCtx, overrides map[string]string) error {
 	resolved, err := entry.Resolve(ctx, overrides)
 	if err != nil {
 		e.stats.SendFailures.Add(1)

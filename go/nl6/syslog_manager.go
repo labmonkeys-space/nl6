@@ -537,6 +537,8 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		log.Printf("syslog export: active; first device %s → %s (format=%s)",
 			device.IP, canonicalCollector, format)
 	}
+
+	sm.wireStateNotify(device)
 	return nil
 }
 

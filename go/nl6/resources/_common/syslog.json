@@ -3,6 +3,7 @@
   "entries": [
     {
       "name": "interface-up",
+      "role": "link-up",
       "weight": 40,
       "facility": "local7",
       "severity": "notice",
@@ -16,6 +17,7 @@
     },
     {
       "name": "interface-down",
+      "role": "link-down",
       "weight": 40,
       "facility": "local7",
       "severity": "error",
