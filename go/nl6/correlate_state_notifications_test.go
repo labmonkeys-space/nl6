@@ -243,7 +243,7 @@ func TestWireStateNotify_EndToEnd(t *testing.T) {
 	}
 
 	sm := &SimulatorManager{}
-	sm.trapCatalog, _ = LoadEmbeddedCatalog()        // linkDown/linkUp role-tagged
+	sm.trapCatalog, _ = LoadEmbeddedCatalog()         // linkDown/linkUp role-tagged
 	sm.syslogCatalog, _ = LoadEmbeddedSyslogCatalog() // interface-down/up role-tagged
 
 	sm.wireStateNotify(device)
