@@ -546,7 +546,9 @@ func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
 		if sx != nil {
 			if cat := sm.SyslogCatalogFor(ip); cat != nil {
 				for _, entry := range cat.EntriesByRole(role) {
-					sx.FireForInterface(entry, evt.IfIndex)
+					// Fire-and-forget: the exporter logs and counts send
+					// failures (SendFailures) internally.
+					_ = sx.FireForInterface(entry, evt.IfIndex)
 				}
 			}
 		}
