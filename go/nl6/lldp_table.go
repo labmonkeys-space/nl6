@@ -270,11 +270,50 @@ func (s *SNMPServer) lldpGet(oid string) string {
 // Remote-table rows are included only when the link is live (both ends up)
 // and the peer is resolvable; ifAlias rows are included for every
 // resolvable linked port regardless of oper-status (configured intent).
+// invalidateLLDPServedCache bumps the topology generation so every device's
+// cached LLDP served-OID set rebuilds on next access. Called on the two
+// mutation sources outside the link graph itself: oper-status transitions
+// (which add/remove live lldpRemTable rows) and device creation (which
+// resolves a previously-absent peer). Guarded — a no-op when no topology
+// exists, so it is safe to call from low-level paths (e.g. InterfaceState)
+// that have no manager reference.
+func invalidateLLDPServedCache() {
+	if manager != nil && manager.topology != nil {
+		manager.topology.bumpGen()
+	}
+}
+
+// lldpServedOIDs returns this device's sorted LLDP served-OID set, memoised
+// per topology generation. The set only changes on a topology mutation, an
+// oper-status transition, or device creation (all of which bump the
+// generation), so a steady-state Enlinkd walk reuses one snapshot across every
+// GETBULK request instead of rebuilding and re-sorting it each time — the
+// remaining hot spot after compareOIDs was made allocation-free.
+//
+// Note: the generation is global, so any oper-status flap anywhere invalidates
+// every device's snapshot. This is correct (a peer's oper change alters this
+// device's live remote rows) and never worse than the previous
+// rebuild-every-request behaviour; under heavy flapping it degrades toward it,
+// and under a steady fabric (the common Enlinkd case) it is a near-100 % hit.
 func (s *SNMPServer) lldpServedOIDs() []kvOID {
 	mgr := lldpManager()
 	if mgr == nil {
 		return nil
 	}
+	gen := mgr.topology.Gen()
+	if snap := s.lldpServedCache.Load(); snap != nil && snap.gen == gen {
+		return snap.served
+	}
+	served := s.buildLLDPServedOIDs(mgr)
+	s.lldpServedCache.Store(&lldpServedSnapshot{gen: gen, served: served})
+	return served
+}
+
+// buildLLDPServedOIDs constructs the device's full LLDP/ifAlias served-OID set
+// from current topology and oper-status. Always returns a freshly-allocated,
+// compareOIDs-ascending slice (or nil when the device serves no LLDP) so the
+// result is safe to cache and share read-only across goroutines.
+func (s *SNMPServer) buildLLDPServedOIDs(mgr *SimulatorManager) []kvOID {
 	links := s.deviceLinks()
 	if len(links) == 0 {
 		return nil
@@ -337,10 +376,20 @@ func (s *SNMPServer) lldpServedOIDs() []kvOID {
 // the served set once (per GET lookup, or once per GETBULK request) and pass
 // it here, so the device's LLDP/ifAlias view is not recomputed per walk step.
 func lldpNextFromServed(served []kvOID, currentOID string) (string, string) {
-	for _, e := range served {
-		if compareOIDs(e.oid, currentOID) > 0 {
-			return e.oid, e.val
+	// served is ascending by compareOIDs (built by buildLLDPServedOIDs), so
+	// binary-search for the first entry strictly greater than currentOID
+	// instead of scanning — the walk calls this once per GETBULK repetition.
+	lo, hi := 0, len(served)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if compareOIDs(served[mid].oid, currentOID) <= 0 {
+			lo = mid + 1
+		} else {
+			hi = mid
 		}
+	}
+	if lo < len(served) {
+		return served[lo].oid, served[lo].val
 	}
 	return "", ""
 }

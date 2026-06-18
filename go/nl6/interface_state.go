@@ -302,6 +302,11 @@ func (s *InterfaceState) SetOperStatus(ifIndex int, newVal uint8) (bool, StateCh
 		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
 		next := packState(newVal, curAdmin, relNs)
 		if s.slots[slot].CompareAndSwap(cur, next) {
+			// An oper transition changes which lldpRemTable rows are live on
+			// both ends of the link, so invalidate cached LLDP served-OID
+			// sets. Funnelled here (not in Broadcast) so REST, the flap
+			// scheduler, and direct test mutations are all covered.
+			invalidateLLDPServedCache()
 			return true, StateChange{
 				IfIndex:      ifIndex,
 				Oper:         newVal,

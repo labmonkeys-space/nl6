@@ -378,6 +378,11 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			sm.incrementIP()
 			sm.mu.Unlock()
 
+			// A new device may resolve a peer that an existing device's
+			// topology link referenced before it existed, changing that
+			// device's LLDP view. (Mirror in createSingleDevice.)
+			invalidateLLDPServedCache()
+
 			successCount++
 
 			// Update progress counter
@@ -665,6 +670,11 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	sm.deviceIPs[deviceIP.String()] = struct{}{}
 	sm.indexDeviceByIP(device)
 	sm.mu.Unlock()
+
+	// A new device may resolve a peer that an existing device's topology link
+	// referenced before it existed, changing that device's LLDP view.
+	// (Mirror in CreateDevicesWithOptions.)
+	invalidateLLDPServedCache()
 
 	return true
 }
