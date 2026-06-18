@@ -1,0 +1,32 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenNMS Minion confd configuration for the nl6 lab stack — the telemetry,
+# syslog, and SNMP-trap LISTENERS only. Minion identity (id/location) and the
+# Kafka IPC connection are supplied as environment variables in compose.yml;
+# OpenNMS applies confd settings AFTER (and overwriting) env-derived ones, so we
+# deliberately keep identity/Kafka out of this file to leave them .env-driven.
+#
+# Ports are non-privileged so the non-root Minion process needs no extra
+# capability; the nl6 provisioner points every device's exporter at these:
+#   IPFIX  10.254.0.1:4739    syslog 10.254.0.1:1514    trap 10.254.0.1:1162
+# (10.254.0.1 is nl6's veth host end, inside the namespace this Minion shares.)
+
+telemetry:
+  flows:
+    listeners:
+      IPFIX:
+        class-name: org.opennms.netmgt.telemetry.listeners.UdpListener
+        parameters:
+          port: 4739
+        parsers:
+          IPFIX:
+            class-name: org.opennms.netmgt.telemetry.protocols.netflow.parser.IpfixUdpParser
+
+netmgt:
+  syslog:
+    syslog.listen.interface: "0.0.0.0"
+    syslog.listen.port: 1514
+  traps:
+    trapd.listen.interface: "0.0.0.0"
+    trapd.listen.port: 1162
