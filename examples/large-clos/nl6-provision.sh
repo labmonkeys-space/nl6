@@ -30,11 +30,19 @@ create_tier() {
     -o /dev/null
 }
 
-echo "Provisioning ${NL6_URL} — $(python3 "${GEN}" summary)"
+# Run the generator up front and capture its output. A bare assignment from a
+# failing command substitution trips `set -e`, so an invalid CLOS_K (or any
+# generator error) aborts here — unlike a `< <(...)` process substitution, whose
+# exit code the `while` loop would silently swallow, reporting "Done" with no
+# devices created.
+summary="$(python3 "${GEN}" summary)"
+tiers="$(python3 "${GEN}" tiers)"
+
+echo "Provisioning ${NL6_URL} — ${summary}"
 echo "Creating device tiers (this can take a minute at 2500 devices) ..."
 while IFS=$'\t' read -r start count resource label; do
   create_tier "${start}" "${count}" "${resource}" "${label}"
-done < <(python3 "${GEN}" tiers)
+done <<< "${tiers}"
 
 echo "Loading topology (POST /api/v1/topology) ..."
 python3 "${GEN}" topology | curl -fsS -X POST "${NL6_URL}/api/v1/topology" \

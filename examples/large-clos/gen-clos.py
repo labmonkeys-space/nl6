@@ -19,17 +19,28 @@
 #   tiers      print one TAB-separated `start_ip count resource label` per tier
 #   summary    print a one-line device/link count (default)
 #
-# All ifIndexes stay within 1..k, well under each switch type's interface table
-# (crs_x 144, arista 32, catalyst 48), so links resolve to real ifDescr values.
+# Every switch uses ports 1..k, so k must not exceed the smallest interface
+# table among the switch resources — the Arista 7280R3 (agg tier) with 32 ports
+# (crs_x has 144, catalyst 48). k <= 32 keeps every link resolvable to a real
+# ifDescr; a larger k would reference non-existent ports on the agg switches.
 
 import ipaddress
 import json
 import os
 import sys
 
-K = int(os.environ.get("CLOS_K", "20"))
+MAX_K = 32  # Arista 7280R3 port count — the tightest switch interface table.
+
+_raw_k = os.environ.get("CLOS_K", "20")
+try:
+    K = int(_raw_k)
+except ValueError:
+    sys.exit("CLOS_K must be a positive even integer (got %r)" % _raw_k)
 if K < 2 or K % 2 != 0:
     sys.exit("CLOS_K must be a positive even integer (got %d)" % K)
+if K > MAX_K:
+    sys.exit("CLOS_K must be <= %d (Arista 7280R3 has %d ports; got %d)"
+             % (MAX_K, MAX_K, K))
 HALF = K // 2
 
 N_CORE = HALF * HALF       # (k/2)^2
