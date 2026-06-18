@@ -30,7 +30,6 @@
     graph: null,
     model: null,
     structureKey: null,
-    scaleOverride: false,
     inFlight: false,
     refetchQueued: false, // a refetch requested while a poll was in flight
     started: false,
@@ -370,17 +369,14 @@
     s.innerHTML =
       '<p>' + model.nodes.length + ' devices · ' + model.edges.length + ' links · ' +
       active + ' active' + (missing ? ' · ' + missing + ' unresolved' : '') + '</p>' +
-      (msg ? '<p class="topology-note">' + msg + '</p>' +
-        '<button id="topologyRenderAnyway" class="btn btn-secondary btn-small">Render anyway</button>' : '');
+      (msg ? '<p class="topology-note">' + msg + '</p>' : '');
     showCanvas(false);
-    var btn = el('topologyRenderAnyway');
-    if (btn) btn.addEventListener('click', function () { state.scaleOverride = true; pollTopology(); });
   }
 
   function render(model) {
     state.model = model;
     var decision = TopologyLogic.scaleDecision(model.nodes.length, model.edges.length);
-    if (!decision.render && !state.scaleOverride) {
+    if (!decision.render) {
       renderSummary(model, decision.reason);
       return;
     }
