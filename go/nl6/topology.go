@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // linkEndpoint identifies one end of an inter-device link: a device by
@@ -61,7 +62,23 @@ type Topology struct {
 	// AddLinks and rebuilt wholesale on the rare Remove/Prune/Clear paths.
 	// Entries are NOT pre-sorted; LinksFor sorts its O(degree) copy on read.
 	adj map[string][]localLink
+
+	// gen is bumped on every mutation so per-device LLDP served-OID caches
+	// (SNMPServer.lldpServedCache) can detect staleness with a lock-free
+	// atomic read instead of rebuilding the set on every GETBULK request.
+	// It is also bumped from outside this type on oper-status transitions and
+	// device creation (see invalidateLLDPServedCache), both of which change a
+	// device's LLDP view without touching the link graph.
+	gen atomic.Uint64
 }
+
+// Gen returns the current topology generation. A change since a cached value
+// means any LLDP served-OID snapshot taken at the old generation is stale.
+func (t *Topology) Gen() uint64 { return t.gen.Load() }
+
+// bumpGen invalidates every LLDP served-OID cache. Cheap (one atomic add);
+// safe to call under t.mu.
+func (t *Topology) bumpGen() { t.gen.Add(1) }
 
 // NewTopology returns an empty graph.
 func NewTopology() *Topology {
@@ -168,6 +185,7 @@ func (t *Topology) AddLinks(links []LinkJSON) error {
 	for _, nl := range pending {
 		t.indexLink(nl)
 	}
+	t.bumpGen()
 	return nil
 }
 
@@ -195,6 +213,7 @@ func (t *Topology) Clear() {
 	defer t.mu.Unlock()
 	t.links = nil
 	t.adj = make(map[string][]localLink)
+	t.bumpGen()
 }
 
 // RemoveLink removes the undirected link identified by its two endpoints.
@@ -214,6 +233,7 @@ func (t *Topology) RemoveLink(a, b LinkEndpointJSON) bool {
 		if (l.A == ae && l.B == be) || (l.A == be && l.B == ae) {
 			t.links = append(t.links[:i], t.links[i+1:]...)
 			t.rebuildAdj()
+			t.bumpGen()
 			return true
 		}
 	}
@@ -239,6 +259,7 @@ func (t *Topology) PruneDevice(ip string) {
 	}
 	t.links = kept
 	t.rebuildAdj()
+	t.bumpGen()
 }
 
 // LinksFor returns the device-centric links touching the given IP, in

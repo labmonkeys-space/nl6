@@ -163,6 +163,21 @@ type SNMPServer struct {
 	v3Config     *SNMPv3Config
 	cachedDESKey []byte // cached result of generateDESKey()
 	cachedAESKey []byte // cached result of generateAESKey()
+
+	// lldpServedCache memoises this device's sorted LLDP served-OID set
+	// (see lldpServedOIDs). The set is rebuilt only when the topology
+	// generation changes — i.e. on a topology mutation, an oper-status
+	// transition, or device creation — so the steady-state GETBULK walk hot
+	// path skips the per-request build + sort entirely.
+	lldpServedCache atomic.Pointer[lldpServedSnapshot]
+}
+
+// lldpServedSnapshot is an immutable (gen, served) pair stored under
+// SNMPServer.lldpServedCache. served is sorted ascending by compareOIDs and
+// must never be mutated after store — it is shared across SNMP goroutines.
+type lldpServedSnapshot struct {
+	gen    uint64
+	served []kvOID
 }
 
 type SSHServer struct {

@@ -16,7 +16,6 @@
 package main
 
 import (
-	"strconv"
 	"strings"
 )
 
@@ -78,44 +77,93 @@ func (s *SNMPServer) findResponse(oid string) string {
 }
 
 // Compare two OIDs lexicographically
+// compareOIDs compares two dotted OIDs numerically, segment by segment,
+// without allocating. It is on the GETBULK walk hot path (binary search, the
+// LLDP sort comparator, and the lldpNextFromServed scan), so the previous
+// strings.Split + strconv.Atoi implementation dominated CPU during fabric-wide
+// Enlinkd walks. Semantics are identical to that implementation: a single
+// leading "." is ignored; a missing segment counts as 0 for value comparison
+// but a longer OID with an otherwise-equal prefix sorts after a shorter one; a
+// non-numeric or empty segment parses as 0. Equivalence is pinned by a
+// differential fuzz test against the reference in compareoids_test.go.
+//
+// Equivalence holds for every value SNMP can emit: sub-identifiers are 32-bit,
+// so each segment fits well within int. A pathological segment of >18 digits
+// would wrap in the accumulator below (the old strconv.Atoi clamped to MaxInt),
+// but such an OID is malformed and never produced by a real agent or walk; the
+// only consequence would be cosmetic mis-ordering, never a panic.
 func compareOIDs(oid1, oid2 string) int {
-	var parts1, parts2 []string
-	if s := strings.TrimPrefix(oid1, "."); s != "" {
-		parts1 = strings.Split(s, ".")
-	}
-	if s := strings.TrimPrefix(oid2, "."); s != "" {
-		parts2 = strings.Split(s, ".")
-	}
-
-	maxLen := len(parts1)
-	if len(parts2) > maxLen {
-		maxLen = len(parts2)
-	}
-
-	for i := 0; i < maxLen; i++ {
-		var val1, val2 int
-
-		if i < len(parts1) {
-			val1, _ = strconv.Atoi(parts1[i])
+	c1 := newOIDCursor(oid1)
+	c2 := newOIDCursor(oid2)
+	for {
+		v1, ok1 := c1.next()
+		v2, ok2 := c2.next()
+		if !ok1 && !ok2 {
+			return 0
 		}
-		if i < len(parts2) {
-			val2, _ = strconv.Atoi(parts2[i])
+		if v1 != v2 {
+			if v1 < v2 {
+				return -1
+			}
+			return 1
 		}
-
-		if val1 < val2 {
-			return -1
-		} else if val1 > val2 {
+		// Values equal (a missing segment yields 0); if one OID has run out
+		// the shorter one sorts first. Any later non-zero segment on the
+		// longer side would point the same direction, so deciding here is safe.
+		if ok1 != ok2 {
+			if !ok1 {
+				return -1
+			}
 			return 1
 		}
 	}
+}
 
-	if len(parts1) < len(parts2) {
-		return -1
-	} else if len(parts1) > len(parts2) {
-		return 1
+// oidCursor yields the numeric value of successive OID segments without
+// allocating. It mirrors strings.Split semantics exactly, including trailing
+// empty segments (e.g. "1." yields {1, 0}).
+type oidCursor struct {
+	s    string
+	i    int
+	done bool
+}
+
+func newOIDCursor(oid string) oidCursor {
+	// Drop a single leading dot (matches strings.TrimPrefix(oid, ".")).
+	if len(oid) > 0 && oid[0] == '.' {
+		oid = oid[1:]
 	}
+	// An empty (trimmed) OID has zero segments.
+	return oidCursor{s: oid, done: oid == ""}
+}
 
-	return 0
+// next returns the value of the next segment and whether a segment was present.
+// Exhausted cursors return (0, false), so missing segments compare as 0.
+func (c *oidCursor) next() (int, bool) {
+	if c.done {
+		return 0, false
+	}
+	val := 0
+	numeric := true
+	start := c.i
+	for c.i < len(c.s) && c.s[c.i] != '.' {
+		ch := c.s[c.i]
+		if ch >= '0' && ch <= '9' {
+			val = val*10 + int(ch-'0')
+		} else {
+			numeric = false
+		}
+		c.i++
+	}
+	if !numeric || c.i == start {
+		val = 0 // strconv.Atoi failure (non-digit) or empty segment → 0
+	}
+	if c.i < len(c.s) {
+		c.i++ // consume the '.'; another segment follows (possibly empty)
+	} else {
+		c.done = true
+	}
+	return val, true
 }
 
 // Find the next OID in lexicographic order for SNMP GetNext requests.

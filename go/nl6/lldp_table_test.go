@@ -657,3 +657,40 @@ func TestTopologyAPI_StatusConfiguredVsActive(t *testing.T) {
 		t.Errorf("status = %+v, want active=true configured=2 active=1", st)
 	}
 }
+
+// TestLLDP_ServedCacheReusedAndInvalidated verifies the per-device served-OID
+// cache: a stable topology generation returns the identical snapshot (no
+// rebuild), while a topology mutation and an oper-status transition each bump
+// the generation and force a rebuild that reflects the new state.
+func TestLLDP_ServedCacheReusedAndInvalidated(t *testing.T) {
+	f, a, b, _ := lineTopology(t)
+
+	first := a.snmpServer.lldpServedOIDs()
+	if len(first) == 0 {
+		t.Fatal("expected a non-empty served set for a linked device")
+	}
+	// Same generation → identical cached slice (proves no rebuild).
+	second := a.snmpServer.lldpServedOIDs()
+	if &first[0] != &second[0] {
+		t.Error("served set rebuilt despite an unchanged topology generation")
+	}
+
+	// Topology mutation bumps the generation → rebuild with more OIDs.
+	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 4), ep(b.IP.String(), 4)))
+	afterAdd := a.snmpServer.lldpServedOIDs()
+	if len(afterAdd) <= len(first) {
+		t.Errorf("expected more served OIDs after adding a link: was %d, now %d", len(first), len(afterAdd))
+	}
+	if &afterAdd[0] == &first[0] {
+		t.Error("served set not rebuilt after topology mutation")
+	}
+
+	// Oper-status transition bumps the generation → rebuild that drops the
+	// downed port's live remote rows (ifAlias persists, so it is not empty).
+	beforeDown := len(a.snmpServer.lldpServedOIDs())
+	setOper(a, 1, false)
+	afterDown := a.snmpServer.lldpServedOIDs()
+	if len(afterDown) >= beforeDown {
+		t.Errorf("expected fewer served OIDs after downing a port: was %d, now %d", beforeDown, len(afterDown))
+	}
+}
