@@ -154,6 +154,7 @@ func startTrapForTest(t *testing.T, mode TrapMode) (*SimulatorManager, *mockColl
 
 	sm.devices[device.ID] = device
 	sm.deviceIPs[device.IP.String()] = struct{}{}
+	sm.indexDeviceByIP(device)
 
 	t.Cleanup(func() {
 		sm.StopTrapExport()

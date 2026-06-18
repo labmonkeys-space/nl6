@@ -331,10 +331,12 @@ func (s *SNMPServer) lldpServedOIDs() []kvOID {
 	return out
 }
 
-// lldpNextOID returns the smallest served LLDP/ifAlias OID strictly greater
-// than currentOID, with its value. Returns ("","") at end of the served set.
-func (s *SNMPServer) lldpNextOID(currentOID string) (string, string) {
-	served := s.lldpServedOIDs()
+// lldpNextFromServed returns the smallest entry in a sorted served-OID set
+// strictly greater than currentOID. served must be ascending by compareOIDs
+// (as produced by lldpServedOIDs). Returns ("","") past the end. Callers build
+// the served set once (per GET lookup, or once per GETBULK request) and pass
+// it here, so the device's LLDP/ifAlias view is not recomputed per walk step.
+func lldpNextFromServed(served []kvOID, currentOID string) (string, string) {
 	for _, e := range served {
 		if compareOIDs(e.oid, currentOID) > 0 {
 			return e.oid, e.val

@@ -195,6 +195,13 @@ type SimulatorManager struct {
 	// hot paths can resolve device type in O(1). Kept in sync with `devices`
 	// and `deviceIPs`; entries are removed on device deletion.
 	deviceTypesByIP map[string]string
+	// devicesByIP maps device IP → *DeviceSimulator so FindDeviceByIP is an
+	// O(1) map read instead of an O(N) linear scan over `devices`. The LLDP
+	// walk hot path resolves a peer device per link per walk step, so the
+	// linear scan turned a single GETBULK walk into O(steps × N) work. Kept
+	// in sync with `devices` / `deviceIPs` / `deviceTypesByIP`: written when a
+	// device is added to `devices`, removed on deletion. Guarded by sm.mu.
+	devicesByIP map[string]*DeviceSimulator
 	// topology is the simulator-wide inter-device link graph (LLDP
 	// topology). Owns its own mutex; safe to call under or outside sm.mu.
 	// Populated from -topology-config at startup and the

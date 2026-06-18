@@ -428,6 +428,7 @@ func startSyslogForTest(t *testing.T, format SyslogFormat) (*SimulatorManager, *
 	device.syslogExporter = exp
 	sm.devices[device.ID] = device
 	sm.deviceIPs[device.IP.String()] = struct{}{}
+	sm.indexDeviceByIP(device)
 	sm.syslogScheduler.Load().Register(device.IP, exp)
 
 	t.Cleanup(func() {
