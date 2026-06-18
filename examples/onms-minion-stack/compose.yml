@@ -1,0 +1,83 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# onms-minion-stack — nl6 + an OpenNMS Minion, wired so a 5-stage Clos fabric's
+# IPFIX / syslog / SNMP-trap telemetry flows into an EXISTING OpenNMS core over
+# Kafka, and the core polls those devices through the Minion.
+#
+# Two required inputs (set in .env, copy from .env.example):
+#   KAFKA_BOOTSTRAP   — your core's Kafka brokers (Minion <-> core IPC)
+#   OPENNMS_BASE_URL  — your core's REST endpoint (node import at location nl6-Lab)
+#
+# The Minion runs in nl6's network namespace (network_mode: service:nl6) so it
+# inherits nl6's already-correct device routing, rp_filter, IP-forwarding, and
+# FORWARD rule — device->Minion telemetry and Minion->device SNMP/ICMP polling
+# both work with zero extra network config. Consequence: the Minion has no own
+# network stack, so any Minion port you want to reach (Karaf SSH 8201, HTTP 8181)
+# must be published on the `nl6` service below.
+name: nl6-onms-minion-stack
+
+services:
+  nl6:
+    image: ${NL6_IMAGE:-ghcr.io/labmonkeys-space/nl6:latest}
+    # TUN interfaces + network namespaces require these.
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    devices:
+      - /dev/net/tun
+    ports:
+      - "8080:8080"        # nl6 web console + REST
+      - "9339:9339"        # gNMI
+      # The Minion shares this netns; uncomment to expose its Karaf shell / HTTP:
+      # - "8201:8201"      # Minion Karaf SSH
+      # - "8181:8181"      # Minion HTTP
+    # No auto-start flags: the provisioner owns device creation (heterogeneous fabric).
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  minion:
+    # Pin to the SAME major version as your OpenNMS core (see .env.example).
+    image: ${MINION_IMAGE:-opennms/minion:latest}
+    # Share nl6's network namespace — the heart of this stack (see header).
+    network_mode: "service:nl6"
+    depends_on:
+      nl6:
+        condition: service_healthy
+    command: ["-c"]
+    environment:
+      MINION_ID: ${MINION_ID:-nl6-Minion-01}
+      MINION_LOCATION: ${MINION_LOCATION:-nl6-Lab}
+      # KAFKA_IPC_<KEY> -> org.opennms.core.ipc.kafka.cfg (key = lowercased, _ -> .)
+      KAFKA_IPC_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP:?set KAFKA_BOOTSTRAP in .env}
+      # Optional secured Kafka — uncomment here AND set in .env (default is PLAINTEXT):
+      # KAFKA_IPC_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL}
+      # KAFKA_IPC_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM}
+      # KAFKA_IPC_SASL_JAAS_CONFIG: ${KAFKA_SASL_JAAS_CONFIG}
+    volumes:
+      # Listener config (IPFIX 4739 / syslog 1514 / trap 1162). confd overwrites
+      # env-derived settings, so identity + Kafka stay in the environment above.
+      - ./minion-config.yaml:/opt/minion/minion-config.yaml:ro
+
+  provisioner:
+    # Small base with python3 (onms-provision.sh) + bash/curl installed at start.
+    image: ${PROVISIONER_IMAGE:-python:3.12-alpine}
+    depends_on:
+      nl6:
+        condition: service_healthy
+    environment:
+      NL6_URL: http://nl6:8080
+      MINION_LOCATION: ${MINION_LOCATION:-nl6-Lab}
+      # Required: import the fabric nodes into your existing core at location nl6-Lab.
+      OPENNMS_BASE_URL: ${OPENNMS_BASE_URL:?set OPENNMS_BASE_URL in .env}
+      OPENNMS_USER: ${OPENNMS_USER:-admin}
+      OPENNMS_PASS: ${OPENNMS_PASS:-admin}
+    volumes:
+      # Mount the whole examples/ tree so provision.sh can reach ../onms-provision.sh
+      # and ../5-stage-clos/clos.json without duplicating them.
+      - ../:/examples:ro
+    command: ["sh", "-c", "apk add --no-cache bash curl >/dev/null && /examples/onms-minion-stack/provision.sh"]
+    restart: "no"
