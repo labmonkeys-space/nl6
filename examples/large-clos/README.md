@@ -82,6 +82,11 @@ OPENNMS_BASE_URL=https://onms:443/opennms ../onms-provision.sh --import
   `10.42.4.1+`, edge `10.42.8.1+`, hosts `10.42.16.1+` (2000 hosts span several
   /24s). Bases are sized for the default `k=20`; a much larger `k` may need them
   rebased.
+- **`k` ceiling (`CLOS_K` ≤ 32):** every switch uses ports `1..k`, so `k` is
+  bounded by the smallest switch interface table — the Arista 7280R3 aggregation
+  switch with 32 ports (core `cisco_crs_x` has 144, edge `cisco_catalyst_9500`
+  48). `gen-clos.py` rejects `CLOS_K > 32`; a larger fabric would need a wider
+  agg-tier resource.
 - **Topology visualization:** 2500 nodes / 6000 links is far above the web
   console's render cap (500 / 2000), so the topology panel shows the summary, not
   the graph. This example targets SNMP/scale and LLDP, not the visual canvas —

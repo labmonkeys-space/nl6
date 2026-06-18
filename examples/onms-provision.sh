@@ -84,19 +84,30 @@ done
 # Python handles both the HTTP fetch (urllib) and XML generation to avoid
 # any shell-level HTTP client interception.
 
-requisition=$(python3 - <<PYEOF
-import json, ssl, sys
+# Values reach Python via the environment, not by interpolating into the heredoc
+# (note the quoted 'PYEOF'): the shell never expands inside the Python source, so
+# a quote or backtick in any of these vars can't break out into code injection.
+requisition=$(
+  NL6_URL="${NL6_URL}" \
+  FOREIGN_SOURCE="${FOREIGN_SOURCE}" \
+  MINION_LOCATION="${MINION_LOCATION}" \
+  GNMI_SERVICE="${GNMI_SERVICE}" \
+  OC_PORT="${OC_PORT}" \
+  OC_MODE="${OC_MODE}" \
+  OC_PATHS="${OC_PATHS}" \
+  python3 - <<'PYEOF'
+import json, os, ssl, sys
 import urllib.request
 from datetime import datetime, timezone
 from xml.sax.saxutils import quoteattr
 
-url          = "${NL6_URL}/api/v1/devices"
-foreign_source = "${FOREIGN_SOURCE}"
-location     = "${MINION_LOCATION}"
-gnmi_service = "${GNMI_SERVICE}"
-oc_port      = "${OC_PORT}"
-oc_mode      = "${OC_MODE}"
-oc_paths     = "${OC_PATHS}"
+url          = os.environ["NL6_URL"] + "/api/v1/devices"
+foreign_source = os.environ["FOREIGN_SOURCE"]
+location     = os.environ["MINION_LOCATION"]
+gnmi_service = os.environ["GNMI_SERVICE"]
+oc_port      = os.environ["OC_PORT"]
+oc_mode      = os.environ["OC_MODE"]
+oc_paths     = os.environ["OC_PATHS"]
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
@@ -176,7 +187,10 @@ if $DRY_RUN; then
 fi
 
 opennms_base="${OPENNMS_BASE_URL}"
-curl_opts=(-sk -u "${OPENNMS_USER}:${OPENNMS_PASS}" -H "Content-Type: application/xml" -H "Accept: application/xml")
+# --fail-with-body: exit non-zero on an HTTP >= 400 (auth failure, bad XML,
+# duplicate foreign-source, …) while still printing the response body, so a
+# rejected upload/import reports the error instead of a misleading "done".
+curl_opts=(-sk --fail-with-body -u "${OPENNMS_USER}:${OPENNMS_PASS}" -H "Content-Type: application/xml" -H "Accept: application/xml")
 
 tmp=$(mktemp /tmp/onms-provision.XXXXXX.xml)
 chmod 600 "$tmp"
@@ -184,11 +198,17 @@ trap 'rm -f "$tmp"' EXIT
 printf '%s' "$requisition" > "$tmp"
 
 echo -n "Uploading requisition  ... "
-curl "${curl_opts[@]}" -X POST -d "@${tmp}" \
-  "${opennms_base}/rest/requisitions"
+if ! curl "${curl_opts[@]}" -X POST -d "@${tmp}" \
+     "${opennms_base}/rest/requisitions"; then
+  echo "FAILED (see response above)" >&2
+  exit 1
+fi
 echo "done"
 
 echo -n "Triggering import      ... "
-curl "${curl_opts[@]}" -X PUT \
-  "${opennms_base}/rest/requisitions/${FOREIGN_SOURCE}/import?rescanExisting=false"
+if ! curl "${curl_opts[@]}" -X PUT \
+     "${opennms_base}/rest/requisitions/${FOREIGN_SOURCE}/import?rescanExisting=false"; then
+  echo "FAILED (see response above)" >&2
+  exit 1
+fi
 echo "done"
