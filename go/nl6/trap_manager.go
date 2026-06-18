@@ -696,12 +696,25 @@ func trapModeString(m TrapMode) string {
 func (sm *SimulatorManager) FindDeviceByIP(ip string) *DeviceSimulator {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	for _, d := range sm.devices {
-		if d.IP.String() == ip {
-			return d
-		}
+	return sm.devicesByIP[ip]
+}
+
+// indexDeviceByIP records device in the O(1) FindDeviceByIP index, keyed by
+// its IPv4 string. Caller must hold sm.mu. The map is lazily created so
+// hand-constructed managers (tests) that don't initialise it still stay
+// consistent — this is the single registration point that keeps devicesByIP
+// in lockstep with the devices map.
+//
+// Invariant: at most one live device per IP. The create paths enforce this by
+// rejecting an IP already in deviceIPs (see device.go), so the IP-keyed index
+// never collides. If that invariant were ever broken, two devices sharing an
+// IP would clobber one slot here and DeleteDevice on either would orphan the
+// survivor from FindDeviceByIP.
+func (sm *SimulatorManager) indexDeviceByIP(device *DeviceSimulator) {
+	if sm.devicesByIP == nil {
+		sm.devicesByIP = make(map[string]*DeviceSimulator)
 	}
-	return nil
+	sm.devicesByIP[device.IP.String()] = device
 }
 
 // CatalogFor returns the trap catalog to use for the device with the given

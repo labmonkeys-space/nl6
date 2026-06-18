@@ -64,6 +64,7 @@ func (f *lldpFixture) addDeviceAt(t *testing.T, ipStr string, maxIf int, name st
 	f.mgr.mu.Lock()
 	f.mgr.devices[d.ID] = d
 	f.mgr.deviceIPs[d.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(d)
 	f.mgr.mu.Unlock()
 	f.devs[d.IP.String()] = d
 	return d
@@ -214,6 +215,7 @@ func TestLLDP_NoEnginePeerTreatedUp(t *testing.T) {
 	f.mgr.mu.Lock()
 	f.mgr.devices[peer.ID] = peer
 	f.mgr.deviceIPs[peer.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(peer)
 	f.mgr.mu.Unlock()
 	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep(peer.IP.String(), 2)))
 

@@ -52,11 +52,41 @@ type localLink struct {
 type Topology struct {
 	mu    sync.RWMutex
 	links []topoLink
+	// adj is the device-centric adjacency index: device IP → its local
+	// links. It mirrors `links` (each undirected link contributes an entry
+	// to BOTH endpoints) and exists so LinksFor is O(degree) instead of
+	// O(total links). The LLDP walk hot path calls LinksFor once per walk
+	// step, so an O(N) scan over a large fabric (thousands of links) turned
+	// a single GETBULK walk into O(steps × N). Maintained incrementally on
+	// AddLinks and rebuilt wholesale on the rare Remove/Prune/Clear paths.
+	// Entries are NOT pre-sorted; LinksFor sorts its O(degree) copy on read.
+	adj map[string][]localLink
 }
 
 // NewTopology returns an empty graph.
 func NewTopology() *Topology {
-	return &Topology{}
+	return &Topology{adj: make(map[string][]localLink)}
+}
+
+// indexLink adds both device-centric views of an undirected link to the
+// adjacency index. Caller holds t.mu.
+func (t *Topology) indexLink(l topoLink) {
+	if t.adj == nil {
+		t.adj = make(map[string][]localLink)
+	}
+	t.adj[l.A.IP] = append(t.adj[l.A.IP], localLink{LocalIfIndex: l.A.IfIndex, PeerIP: l.B.IP, PeerIfIndex: l.B.IfIndex})
+	t.adj[l.B.IP] = append(t.adj[l.B.IP], localLink{LocalIfIndex: l.B.IfIndex, PeerIP: l.A.IP, PeerIfIndex: l.A.IfIndex})
+}
+
+// rebuildAdj reconstructs the adjacency index from t.links. Caller holds
+// t.mu. Used by the remove/prune paths where incremental deletion across
+// both endpoints' slices would be more error-prone than a clean rebuild
+// (these paths are rare relative to LinksFor reads).
+func (t *Topology) rebuildAdj() {
+	t.adj = make(map[string][]localLink, len(t.adj))
+	for _, l := range t.links {
+		t.indexLink(l)
+	}
 }
 
 // LinkEndpointJSON is the wire shape of one endpoint.
@@ -133,6 +163,11 @@ func (t *Topology) AddLinks(links []LinkJSON) error {
 		}
 		t.links = append(t.links, nl)
 	}
+	// Commit succeeded for the whole batch — only now touch the adjacency
+	// index so a mid-batch rollback never leaves it half-populated.
+	for _, nl := range pending {
+		t.indexLink(nl)
+	}
 	return nil
 }
 
@@ -159,6 +194,7 @@ func (t *Topology) Clear() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.links = nil
+	t.adj = make(map[string][]localLink)
 }
 
 // RemoveLink removes the undirected link identified by its two endpoints.
@@ -177,6 +213,7 @@ func (t *Topology) RemoveLink(a, b LinkEndpointJSON) bool {
 	for i, l := range t.links {
 		if (l.A == ae && l.B == be) || (l.A == be && l.B == ae) {
 			t.links = append(t.links[:i], t.links[i+1:]...)
+			t.rebuildAdj()
 			return true
 		}
 	}
@@ -201,6 +238,7 @@ func (t *Topology) PruneDevice(ip string) {
 		kept = append(kept, l)
 	}
 	t.links = kept
+	t.rebuildAdj()
 }
 
 // LinksFor returns the device-centric links touching the given IP, in
@@ -213,15 +251,15 @@ func (t *Topology) LinksFor(ip string) []localLink {
 	norm := parsed.To4().String()
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	var out []localLink
-	for _, l := range t.links {
-		switch norm {
-		case l.A.IP:
-			out = append(out, localLink{LocalIfIndex: l.A.IfIndex, PeerIP: l.B.IP, PeerIfIndex: l.B.IfIndex})
-		case l.B.IP:
-			out = append(out, localLink{LocalIfIndex: l.B.IfIndex, PeerIP: l.A.IP, PeerIfIndex: l.A.IfIndex})
-		}
+	entries := t.adj[norm]
+	if len(entries) == 0 {
+		return nil
 	}
+	// Copy so the caller can't mutate (or observe a later mutation of) the
+	// index slice, then sort the O(degree) copy by local ifIndex for
+	// deterministic LLDP walk enumeration.
+	out := make([]localLink, len(entries))
+	copy(out, entries)
 	sort.Slice(out, func(i, j int) bool { return out[i].LocalIfIndex < out[j].LocalIfIndex })
 	return out
 }

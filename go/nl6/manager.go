@@ -49,6 +49,7 @@ func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
 		devices:          make(map[string]*DeviceSimulator),
 		deviceIPs:        make(map[string]struct{}),
 		deviceTypesByIP:  make(map[string]string),
+		devicesByIP:      make(map[string]*DeviceSimulator),
 		topology:         NewTopology(),
 		nextTunIndex:     0,
 		resourcesCache:   make(map[string]*DeviceResources),
@@ -340,6 +341,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	delete(sm.devices, deviceID)
 	delete(sm.deviceIPs, device.IP.String())
 	delete(sm.deviceTypesByIP, device.IP.String())
+	delete(sm.devicesByIP, device.IP.String())
 
 	// Prune any topology edges referencing this device so a deleted
 	// device leaves no dangling links (which would otherwise surface a
@@ -393,6 +395,7 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 	sm.devices = make(map[string]*DeviceSimulator)
 	sm.deviceIPs = make(map[string]struct{})
 	sm.deviceTypesByIP = make(map[string]string)
+	sm.devicesByIP = make(map[string]*DeviceSimulator)
 	sm.tunPoolMutex.Lock()
 	sm.tunInterfacePool = make(map[string]*TunInterface)
 	sm.tunPoolMutex.Unlock()
@@ -496,6 +499,7 @@ func (sm *SimulatorManager) shutdownFast() {
 	sm.devices = make(map[string]*DeviceSimulator)
 	sm.deviceIPs = make(map[string]struct{})
 	sm.deviceTypesByIP = make(map[string]string)
+	sm.devicesByIP = make(map[string]*DeviceSimulator)
 	sm.tunPoolMutex.Lock()
 	// Close pre-allocated TUN FDs
 	for _, tunIface := range sm.tunInterfacePool {

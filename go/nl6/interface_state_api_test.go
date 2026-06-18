@@ -58,6 +58,7 @@ func newStateAPIFixture(t *testing.T) *stateAPIFixture {
 		resourcesCache:   map[string]*DeviceResources{},
 		tunInterfacePool: map[string]*TunInterface{},
 	}
+	mgr.indexDeviceByIP(device)
 
 	// Swap the package-level manager so the HTTP handler can reach the
 	// fixture. Restored on cleanup so other tests aren't perturbed.
@@ -355,6 +356,7 @@ func TestSetOperStatus_NoMetricsCycler503(t *testing.T) {
 		resourcesCache:   map[string]*DeviceResources{},
 		tunInterfacePool: map[string]*TunInterface{},
 	}
+	mgr.indexDeviceByIP(device)
 	t.Cleanup(swapGlobalManager(mgr))
 	router := setupRoutes()
 

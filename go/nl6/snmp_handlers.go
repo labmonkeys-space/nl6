@@ -118,8 +118,21 @@ func compareOIDs(oid1, oid2 string) int {
 	return 0
 }
 
-// Find the next OID in lexicographic order for SNMP GetNext requests
+// Find the next OID in lexicographic order for SNMP GetNext requests.
+// Builds the LLDP served-OID set for this single lookup. GETBULK callers
+// that issue many lookups per request should instead build the set once and
+// call findNextOIDWithServed to avoid rebuilding it per repetition.
 func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
+	return s.findNextOIDWithServed(currentOID, s.lldpServedOIDs())
+}
+
+// findNextOIDWithServed is findNextOID with the LLDP served-OID set supplied
+// by the caller. The set is a sorted (oid,value) snapshot; passing it lets a
+// multi-repetition GETBULK reuse one snapshot across every repetition instead
+// of recomputing the device's entire LLDP/ifAlias view on each walk step —
+// the original hot path that turned a fabric-wide Enlinkd walk into O(steps ×
+// links). nil/empty is valid (device serves no LLDP).
+func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID) (string, string) {
 	// Try pre-computed next OID map first (O(1) lookup)
 	var precomputedNextOID string
 	var precomputedNextResp string
@@ -146,7 +159,7 @@ func (s *SNMPServer) findNextOID(currentOID string) (string, string) {
 	// static OID, and ifXTable .18, which sorts mid-ifXTable), so a single
 	// first/last bracket cannot describe it — lldpNextOID does the work and
 	// the fast-path clearance below is derived from its result.
-	lldpNextLLDP, lldpNextVal := s.lldpNextOID(currentOID)
+	lldpNextLLDP, lldpNextVal := lldpNextFromServed(lldpServed, currentOID)
 	lldpHas := lldpNextLLDP != ""
 
 	// Fast path: precomputedNextOID is safe to return immediately iff no
@@ -347,13 +360,20 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	var responseOIDs []string
 	var responseValues []string
 
+	// Build the LLDP served-OID snapshot ONCE for the whole request. A
+	// GETBULK issues nonRepeaters + repeaterCols × maxRepetitions GETNEXT
+	// lookups; rebuilding the device's entire LLDP/ifAlias view on each was
+	// the dominant cost of an Enlinkd fabric walk. One snapshot per request
+	// is also more consistent (a single view of link/oper state).
+	lldpServed := s.lldpServedOIDs()
+
 	// ── Non-repeater section (GETNEXT semantics) ──────────────────────────
 	cap := nonRepeaters
 	if cap > len(allOIDs) {
 		cap = len(allOIDs)
 	}
 	for i := 0; i < cap; i++ {
-		nextOID, nextVal := s.findNextOID(allOIDs[i])
+		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed)
 		if nextOID == "" {
 			nextOID = allOIDs[i]
 			nextVal = "endOfMibView"
@@ -383,7 +403,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 				responseValues = append(responseValues, "endOfMibView")
 				continue
 			}
-			nextOID, nextVal := s.findNextOID(currentOIDs[col])
+			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed)
 			if nextOID == "" || nextVal == "endOfMibView" {
 				endOfMib[col] = true
 				responseOIDs = append(responseOIDs, startCol)
