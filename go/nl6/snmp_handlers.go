@@ -157,8 +157,8 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	// Resolve the next LLDP / ifAlias OID up front. The LLDP provider owns
 	// two disjoint ranges (the 1.0.8802 subtree, which sorts BEFORE every
 	// static OID, and ifXTable .18, which sorts mid-ifXTable), so a single
-	// first/last bracket cannot describe it — lldpNextOID does the work and
-	// the fast-path clearance below is derived from its result.
+	// first/last bracket cannot describe it — lldpNextFromServed does the work
+	// and the fast-path clearance below is derived from its result.
 	lldpNextLLDP, lldpNextVal := lldpNextFromServed(lldpServed, currentOID)
 	lldpHas := lldpNextLLDP != ""
 
