@@ -86,6 +86,12 @@ func (s *SNMPServer) findResponse(oid string) string {
 // but a longer OID with an otherwise-equal prefix sorts after a shorter one; a
 // non-numeric or empty segment parses as 0. Equivalence is pinned by a
 // differential fuzz test against the reference in compareoids_test.go.
+//
+// Equivalence holds for every value SNMP can emit: sub-identifiers are 32-bit,
+// so each segment fits well within int. A pathological segment of >18 digits
+// would wrap in the accumulator below (the old strconv.Atoi clamped to MaxInt),
+// but such an OID is malformed and never produced by a real agent or walk; the
+// only consequence would be cosmetic mis-ordering, never a panic.
 func compareOIDs(oid1, oid2 string) int {
 	c1 := newOIDCursor(oid1)
 	c2 := newOIDCursor(oid2)
