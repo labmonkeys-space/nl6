@@ -4,6 +4,11 @@
 #
 # onms-provision.sh — generate and import an OpenNMS requisition from nl6 devices
 #
+# Generic across every example: it reads whatever devices the running nl6
+# instance currently exposes (NL6_URL/api/v1/devices), so the same script
+# provisions any fabric (5-stage-clos, large-clos, …). Run it after the
+# example's own nl6-provision.sh has created the devices.
+#
 # Usage:
 #   ./onms-provision.sh                  # generate XML to stdout
 #   ./onms-provision.sh --import         # generate and import into OpenNMS
@@ -12,8 +17,10 @@
 set -euo pipefail
 
 NL6_URL="${NL6_URL:-http://localhost:8080}"
-OPENNMS_HOST="${OPENNMS_HOST:-localhost}"
-OPENNMS_PORT="${OPENNMS_PORT:-8980}"
+# One knob for scheme + host + port + context path. Switch http/https or point
+# at a remote OpenNMS by setting just this — e.g. OPENNMS_BASE_URL=https://onms:443/opennms
+OPENNMS_BASE_URL="${OPENNMS_BASE_URL:-http://localhost:8980/opennms}"
+OPENNMS_BASE_URL="${OPENNMS_BASE_URL%/}"   # tolerate a trailing slash
 OPENNMS_USER="${OPENNMS_USER:-admin}"
 OPENNMS_PASS="${OPENNMS_PASS:-admin}"
 FOREIGN_SOURCE="${FOREIGN_SOURCE:-nl6-inventory}"
@@ -38,13 +45,13 @@ Options:
   -h|--help     Show this message
 
 Environment variables (all optional):
-  NL6_URL           nl6 base URL       (default: http://localhost:8080)
-  OPENNMS_HOST      OpenNMS host             (default: bench-lab)
-  OPENNMS_PORT      OpenNMS port             (default: 443)
+  NL6_URL           nl6 base URL             (default: http://localhost:8080)
+  OPENNMS_BASE_URL  OpenNMS base URL incl. scheme, host, port, context path
+                    (default: http://localhost:8980/opennms)
   OPENNMS_USER      OpenNMS username         (default: admin)
   OPENNMS_PASS      OpenNMS password         (default: admin)
-  FOREIGN_SOURCE    Requisition foreign-source name (default: opensim-inventory)
-  MINION_LOCATION   Minion location label    (default: lab-location-01)
+  FOREIGN_SOURCE    Requisition foreign-source name (default: nl6-inventory)
+  MINION_LOCATION   Minion location label    (default: Default)
 
 gNMI / OpenConfig telemetry (per-node requisition metadata, consumed by the
 OpenConfigConnector in telemetryd-configuration.xml):
@@ -55,8 +62,9 @@ OpenConfigConnector in telemetryd-configuration.xml):
                     (default: /interfaces/interface/state/counters,/components/component/state)
 
 Examples:
-  $0 --import                 # upload and trigger import in OpenNMS
-  $0 --import --dry-run       # preview XML without importing
+  $0 --import                                        # upload and trigger import
+  $0 --import --dry-run                              # preview XML without importing
+  OPENNMS_BASE_URL=https://onms:443/opennms $0 --import
   MINION_LOCATION=site-a $0 --import
 EOF
 }
@@ -167,7 +175,7 @@ if $DRY_RUN; then
   exit 0
 fi
 
-opennms_base="http://${OPENNMS_HOST}:${OPENNMS_PORT}/opennms"
+opennms_base="${OPENNMS_BASE_URL}"
 curl_opts=(-sk -u "${OPENNMS_USER}:${OPENNMS_PASS}" -H "Content-Type: application/xml" -H "Accept: application/xml")
 
 tmp=$(mktemp /tmp/onms-provision.XXXXXX.xml)
