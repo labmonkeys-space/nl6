@@ -38,7 +38,7 @@ endpoints, not stages.
 |------|---------|
 | `nl6-provision.sh` | Create the devices + load the topology in nl6 |
 | `clos.json` | The 18-link inter-device LLDP graph |
-| `onms-provision.sh` | Generate + import the nl6 devices into OpenNMS as a requisition |
+| [`../onms-provision.sh`](../onms-provision.sh) | Generate + import the nl6 devices into OpenNMS as a requisition (shared by all examples) |
 
 ## Prerequisites
 
@@ -54,16 +54,19 @@ endpoints, not stages.
 # 1. Provision the fabric in nl6
 NL6_URL=http://my-nl6:8080 ./nl6-provision.sh
 
-# 2. Import the nodes into OpenNMS
+# 2. Import the nodes into OpenNMS (onms-provision.sh is shared at examples/)
 NL6_URL=http://my-nl6:8080 \
-OPENNMS_HOST=onms OPENNMS_PORT=8980 OPENNMS_USER=admin OPENNMS_PASS=admin \
-  ./onms-provision.sh --import
+OPENNMS_BASE_URL=http://onms:8980/opennms OPENNMS_USER=admin OPENNMS_PASS=admin \
+  ../onms-provision.sh --import
 
 # Preview the requisition XML without uploading:
-./onms-provision.sh --import --dry-run
+../onms-provision.sh --import --dry-run
 ```
 
-Run `./onms-provision.sh --help` for the full list of OpenNMS / gNMI environment knobs.
+`OPENNMS_BASE_URL` is the single knob for scheme + host + port + context path —
+switch http/https or point at a remote OpenNMS by setting just that (e.g.
+`OPENNMS_BASE_URL=https://onms:443/opennms`). Run `../onms-provision.sh --help`
+for the full list of OpenNMS / gNMI environment knobs.
 
 ## Caveats
 
