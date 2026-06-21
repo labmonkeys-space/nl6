@@ -95,6 +95,12 @@ function updateStatusDisplay(status) {
             ? 'Provisioning in progress…'
             : 'Create new device set';
     }
+    if (elements && elements.createClosBtn) {
+        elements.createClosBtn.disabled = busy;
+        elements.createClosBtn.title = busy
+            ? 'Provisioning in progress…'
+            : 'Build a Clos fabric (folded 3-tier fat-tree)';
+    }
 }
 
 // renderProgressBanner mounts a persistent progress bar above the
@@ -212,6 +218,47 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, catego
         showAlert('Failed to create devices: ' + error.message, 'error');
         throw error;
     }
+}
+
+// createClosFabric provisions a k-ary fat-tree built by
+// TopologyLogic.buildClosFabric, using existing endpoints only: one
+// POST /devices per tier (core/agg/edge/hosts) carrying the shared export
+// snapshot, then the LLDP link graph via POST /topology in chunks small enough
+// to stay under the endpoint's 1 MiB body cap (the endpoint is additive and
+// atomic-per-request, so chunks compose). onProgress(msg) reports each stage.
+// Throws on the first failed request (caller keeps the modal open).
+async function createClosFabric(fabric, exportSnapshot, onProgress) {
+    const tiers = fabric.tiers;
+    for (let i = 0; i < tiers.length; i++) {
+        const t = tiers[i];
+        if (onProgress) onProgress('Creating ' + t.label + ' (' + (i + 1) + '/' + tiers.length + ')…');
+        const body = {
+            start_ip: t.start_ip,
+            device_count: t.count,
+            netmask: fabric.netmask,
+            resource_file: t.resource_file
+        };
+        if (exportSnapshot) {
+            if (exportSnapshot.flow) body.flow = exportSnapshot.flow;
+            if (exportSnapshot.traps) body.traps = exportSnapshot.traps;
+            if (exportSnapshot.syslog) body.syslog = exportSnapshot.syslog;
+        }
+        await apiCall('/devices', { method: 'POST', body: JSON.stringify(body) });
+    }
+
+    // Chunk the link graph. ~4000 links/request keeps the body well under the
+    // 1 MiB server cap even at k=32 (~24.6k links would otherwise be ~1.7 MB).
+    const links = fabric.links;
+    const CHUNK = 4000;
+    const total = links.length;
+    let loaded = 0;
+    for (let off = 0; off < total; off += CHUNK) {
+        const chunk = links.slice(off, off + CHUNK);
+        if (onProgress) onProgress('Loading topology links ' + (loaded + chunk.length) + '/' + total + '…');
+        await apiCall('/topology', { method: 'POST', body: JSON.stringify({ links: chunk }) });
+        loaded += chunk.length;
+    }
+    if (onProgress) onProgress('Done.');
 }
 
 // --- Per-device export block readers -------------------------------------

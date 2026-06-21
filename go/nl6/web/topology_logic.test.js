@@ -262,4 +262,120 @@ ok('tieredLayout handles 0 and 1 node', () => {
   assert.deepStrictEqual(one['10.0.0.9'], { x: 50, y: 50 });
 });
 
+// --- Clos fabric generator -------------------------------------------------
+
+ok('buildClosFabric: k=20 parity with gen-clos.py (2500 devices, 6000 links)', () => {
+  const f = T.buildClosFabric(20, '10.42.0.0/16');
+  const byKey = Object.fromEntries(f.tiers.map(t => [t.key, t]));
+  assert.strictEqual(byKey.core.count, 100, 'core (k/2)^2');
+  assert.strictEqual(byKey.agg.count, 200, 'agg k*k/2');
+  assert.strictEqual(byKey.edge.count, 200, 'edge k*k/2');
+  assert.strictEqual(byKey.host.count, 2000, 'hosts k^3/4');
+  const devices = f.tiers.reduce((s, t) => s + t.count, 0);
+  assert.strictEqual(devices, 2500, 'total devices');
+  assert.strictEqual(f.links.length, 6000, 'total links');
+  // closCounts agrees with the built fabric.
+  const c = T.closCounts(20);
+  assert.strictEqual(c.devices, 2500);
+  assert.strictEqual(c.links, 6000);
+});
+
+ok('buildClosFabric: per-relationship link counts each equal k*(k/2)^2', () => {
+  const k = 8, half = k / 2, expect = k * half * half; // 8*16 = 128 each
+  const f = T.buildClosFabric(k, '10.42.0.0/16');
+  // Bucket links by which tier-pair they connect, via the fixed tier bases.
+  const base = ip => {
+    const o = T.ipToInt(ip) - T.ipToInt('10.42.0.0');
+    if (o >= 4097) return 'host'; if (o >= 2049) return 'edge';
+    if (o >= 1025) return 'agg'; return 'core';
+  };
+  const tally = {};
+  f.links.forEach(l => {
+    const pair = [base(l.a.ip), base(l.b.ip)].sort().join('-');
+    tally[pair] = (tally[pair] || 0) + 1;
+  });
+  assert.strictEqual(tally['agg-edge'], expect, 'edge↔agg');
+  assert.strictEqual(tally['agg-core'], expect, 'agg↔core');
+  assert.strictEqual(tally['edge-host'], expect, 'edge↔host');
+  assert.strictEqual(f.links.length, 3 * expect, 'three relationships');
+});
+
+ok('closKError: even 2..32 accepted; odd / <2 / >32 / non-int rejected', () => {
+  assert.strictEqual(T.closKError(2), null);
+  assert.strictEqual(T.closKError(20), null);
+  assert.strictEqual(T.closKError(32), null);
+  assert.ok(T.closKError(0), 'k=0 rejected');
+  assert.ok(T.closKError(1), 'k<2 rejected');
+  assert.ok(T.closKError(21), 'odd rejected');
+  assert.ok(T.closKError(34), 'k>32 rejected');
+  assert.ok(T.closKError(4.5), 'non-integer rejected');
+  // buildClosFabric throws on an invalid k.
+  assert.throws(() => T.buildClosFabric(21, '10.42.0.0/16'), /even/);
+  assert.throws(() => T.buildClosFabric(34, '10.42.0.0/16'), /<= 32/);
+});
+
+ok('buildClosFabric is deterministic (same k+subnet → identical output)', () => {
+  const a = T.buildClosFabric(8, '10.42.0.0/16');
+  const b = T.buildClosFabric(8, '10.42.0.0/16');
+  assert.deepStrictEqual(a, b, 'byte-identical tiers + links');
+});
+
+ok('buildClosFabric: tier start IPs + a sample link match the gen-clos formula', () => {
+  const f = T.buildClosFabric(20, '10.42.0.0/16');
+  const byKey = Object.fromEntries(f.tiers.map(t => [t.key, t]));
+  assert.strictEqual(byKey.core.start_ip, '10.42.0.1');
+  assert.strictEqual(byKey.agg.start_ip, '10.42.4.1');
+  assert.strictEqual(byKey.edge.start_ip, '10.42.8.1');
+  assert.strictEqual(byKey.host.start_ip, '10.42.16.1');
+  assert.strictEqual(f.netmask, '16');
+  // First edge↔agg link: pod 0, edge 0 (ifIndex 1) ↔ agg 0 (ifIndex 1).
+  // edge base 10.42.8.1 + edge_id(0,0)=0 → 10.42.8.1; agg base 10.42.4.1 → 10.42.4.1.
+  const first = f.links[0];
+  assert.deepStrictEqual(first.a, { ip: '10.42.8.1', ifindex: 1 });
+  assert.deepStrictEqual(first.b, { ip: '10.42.4.1', ifindex: 1 });
+  // A custom base subnet shifts the whole plan.
+  const g = T.buildClosFabric(8, '10.50.0.0/16');
+  assert.strictEqual(Object.fromEntries(g.tiers.map(t => [t.key, t.start_ip])).core, '10.50.0.1');
+});
+
+ok('buildClosFabric: agg↔core / edge↔host port assignments match gen-clos', () => {
+  // Counts alone can't catch a port-math regression. Link order is fixed:
+  // edge↔agg block first (k·(k/2)² = 128 for k=8), then agg↔core (128 more),
+  // then edge↔host. Pin specific endpoints in each later block.
+  const k = 8, half = k / 2; // 4
+  const edgeAgg = k * half * half; // 128
+  const f = T.buildClosFabric(k, '10.42.0.0/16');
+
+  // First agg↔core link (pod 0, agg 0, core-member 0): agg uplink port half+1=5,
+  // core port = pod+1 = 1.
+  const ac0 = f.links[edgeAgg];
+  assert.deepStrictEqual(ac0.a, { ip: '10.42.4.1', ifindex: half + 1 }, 'agg uplink port half+1');
+  assert.deepStrictEqual(ac0.b, { ip: '10.42.0.1', ifindex: 1 }, 'core port = pod+1');
+
+  // agg↔core for pod 3 (a=0,i=0) → index edgeAgg + 3·half²: core port must be 4.
+  const acPod3 = f.links[edgeAgg + 3 * half * half];
+  assert.strictEqual(acPod3.b.ifindex, 4, 'core port reflects pod index (pod+1)');
+
+  // First edge↔host link (pod 0, edge 0, host 0): edge downlink port half+1=5,
+  // host uses eth0 = ifIndex 2.
+  const eh0 = f.links[2 * edgeAgg];
+  assert.deepStrictEqual(eh0.a, { ip: '10.42.8.1', ifindex: half + 1 }, 'edge downlink port half+1');
+  assert.deepStrictEqual(eh0.b, { ip: '10.42.16.1', ifindex: 2 }, 'host eth0 = ifIndex 2');
+});
+
+ok('closSubnetError: requires dotted IPv4 and a /16 (or no) prefix', () => {
+  assert.strictEqual(T.closSubnetError('10.42.0.0/16'), null);
+  assert.strictEqual(T.closSubnetError('10.42.0.0'), null, 'bare IP defaults to /16');
+  assert.ok(T.closSubnetError(''), 'empty rejected');
+  assert.ok(T.closSubnetError('999.1.1.1/16'), 'octet > 255 rejected');
+  assert.ok(T.closSubnetError('10.42.0.0/24'), 'non-/16 prefix rejected');
+  assert.ok(T.closSubnetError('10.42.0.0/99'), 'out-of-range prefix rejected');
+  assert.ok(T.closSubnetError('10.42.0/16'), 'three octets rejected');
+  // buildClosFabric rejects a bad subnet and normalizes host bits to the /16 network.
+  assert.throws(() => T.buildClosFabric(8, '10.42.0.0/24'), /\/16/);
+  const f = T.buildClosFabric(8, '10.42.5.7/16');
+  assert.strictEqual(Object.fromEntries(f.tiers.map(t => [t.key, t.start_ip])).core, '10.42.0.1',
+    'host bits normalized to the /16 network');
+});
+
 console.log(`\n${pass} checks passed.`);

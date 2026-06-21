@@ -2,6 +2,7 @@
 
 const elements = {
     createDevicesBtn: document.getElementById('createDevicesBtn'),
+    createClosBtn: document.getElementById('createClosBtn'),
     deviceList: document.getElementById('deviceList'),
     alerts: document.getElementById('alerts'),
     exportBtn: document.getElementById('exportBtn'),
@@ -237,7 +238,7 @@ function renderDevices() {
             : 'Provision a device set to populate the simulator inventory.';
         const cta = hasAnyDevices
             ? ''
-            : '<button class="btn btn-primary" data-action="open-provision" style="margin-top:10px">+ Create your first device set</button>';
+            : '<button class="btn btn-primary" data-action="open-provision" style="margin-top:10px">Create your first device set</button>';
         const icon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
             '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
         elements.deviceTable.innerHTML =
@@ -444,14 +445,25 @@ function updateSystemStatsDisplay(stats) {
 // === Provision modal (PR6) ============================================
 
 const PROVISION_DRAFT_KEY = 'fleet.provision.draft';
+const FABRIC_DRAFT_KEY = 'fleet.fabric.draft';
 
-const EMPTY_DRAFT = {
-    startIp: '192.168.100.1', count: 5, netmask: '24',
-    category: '', resourceFile: '',
+// Shared telemetry-export fields — identical across both wizards (steps 2–4).
+const EMPTY_EXPORT_FIELDS = {
     flowCollector: '', flowProtocol: 'netflow9', flowActiveTimeout: '', flowInactiveTimeout: '',
     trapCollector: '', trapMode: 'trap', trapCommunity: 'public', trapInterval: '', trapInformTimeout: '', trapInformRetries: '',
     syslogCollector: '', syslogFormat: '5424', syslogInterval: ''
 };
+
+const EMPTY_DRAFT = Object.assign({
+    startIp: '192.168.100.1', count: 5, netmask: '24',
+    category: '', resourceFile: ''
+}, EMPTY_EXPORT_FIELDS);
+
+// Fabric draft: step 1 configures a k-ary fat-tree (k + base subnet); steps
+// 2–4 reuse the shared export fields.
+const EMPTY_FABRIC_DRAFT = Object.assign({
+    k: 20, baseSubnet: '10.42.0.0/16'
+}, EMPTY_EXPORT_FIELDS);
 
 const PROVISION_STEPS = [
     { id: 'basics', label: 'Basics', optional: false },
@@ -460,8 +472,17 @@ const PROVISION_STEPS = [
     { id: 'flow', label: 'Flow', optional: true }
 ];
 
+// Fabric wizard: only step 1 differs from the device-set wizard.
+const FABRIC_STEPS = [
+    { id: 'fabric', label: 'Fabric', optional: false },
+    { id: 'traps', label: 'SNMP traps', optional: true },
+    { id: 'syslog', label: 'Syslog', optional: true },
+    { id: 'flow', label: 'Flow', optional: true }
+];
+
 const STEP_FIELDS = {
     basics: ['startIp', 'count', 'netmask', 'category', 'resourceFile'],
+    fabric: ['k', 'baseSubnet'],
     traps: ['trapCollector', 'trapMode', 'trapCommunity', 'trapInterval', 'trapInformTimeout', 'trapInformRetries'],
     syslog: ['syslogCollector', 'syslogFormat', 'syslogInterval'],
     flow: ['flowCollector', 'flowProtocol', 'flowActiveTimeout', 'flowInactiveTimeout']
@@ -469,22 +490,33 @@ const STEP_FIELDS = {
 
 const PROVISION_IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 const PROVISION_HOSTPORT_RE = /^(\[[0-9a-fA-F:]+\]|[\w.-]+):\d{1,5}$/;
+const FABRIC_SUBNET_RE = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
 
-let provisionDraft = Object.assign({}, EMPTY_DRAFT, loadProvisionDraft() || {});
+// wizardKind selects which flow the modal is driving: 'devices' (the original
+// device-set wizard) or 'fabric' (the Clos topology builder). It governs the
+// step list, the active draft + its localStorage key, the title, step 1, and
+// the submit path.
+let wizardKind = 'devices';
+let provisionDraft = Object.assign({}, EMPTY_DRAFT, loadDraftFor(PROVISION_DRAFT_KEY) || {});
 let provisionStep = 0;
 let provisionDirty = false;
 let provisionBusy = false;
 
-function loadProvisionDraft() {
-    try { return JSON.parse(localStorage.getItem(PROVISION_DRAFT_KEY) || 'null') || null; }
+function provisionSteps() { return wizardKind === 'fabric' ? FABRIC_STEPS : PROVISION_STEPS; }
+function emptyDraftForKind() { return wizardKind === 'fabric' ? EMPTY_FABRIC_DRAFT : EMPTY_DRAFT; }
+function provisionDraftKey() { return wizardKind === 'fabric' ? FABRIC_DRAFT_KEY : PROVISION_DRAFT_KEY; }
+
+function loadDraftFor(key) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null') || null; }
     catch (_) { return null; }
 }
+function loadProvisionDraft() { return loadDraftFor(provisionDraftKey()); }
 function saveProvisionDraft() {
-    try { localStorage.setItem(PROVISION_DRAFT_KEY, JSON.stringify(provisionDraft)); }
+    try { localStorage.setItem(provisionDraftKey(), JSON.stringify(provisionDraft)); }
     catch (_) { /* quota / private-mode */ }
 }
 function clearProvisionDraft() {
-    try { localStorage.removeItem(PROVISION_DRAFT_KEY); }
+    try { localStorage.removeItem(provisionDraftKey()); }
     catch (_) {}
 }
 
@@ -494,8 +526,12 @@ function clearProvisionDraft() {
 // tab position is lost.
 let _provisionPriorFocus = null;
 
-function openProvisionModal() {
+function openProvisionModal(kind) {
     if (provisionBusy) return;
+    wizardKind = (kind === 'fabric') ? 'fabric' : 'devices';
+    // Load the draft for the selected wizard (each kind has its own key) so the
+    // two flows never clobber each other's saved values.
+    provisionDraft = Object.assign({}, emptyDraftForKind(), loadProvisionDraft() || {});
     provisionStep = 0;
     provisionDirty = false;
     _provisionPriorFocus = (document.activeElement && document.activeElement !== document.body)
@@ -539,7 +575,8 @@ function closeProvisionModal(force) {
 
 function resetProvisionStep(stepId) {
     const fields = STEP_FIELDS[stepId] || [];
-    fields.forEach(f => { provisionDraft[f] = EMPTY_DRAFT[f]; });
+    const empty = emptyDraftForKind();
+    fields.forEach(f => { provisionDraft[f] = empty[f]; });
     provisionDirty = true;
     saveProvisionDraft();
     renderProvisionModal();
@@ -553,6 +590,17 @@ function isProvisionStepValid(stepId) {
         const count = Number(provisionDraft.count);
         const validCount = Number.isFinite(count) && Number.isInteger(count) && count >= 1;
         return PROVISION_IP_RE.test(String(provisionDraft.startIp || '').trim()) && validCount;
+    }
+    if (stepId === 'fabric') {
+        // Gate on exactly what the generator accepts so "valid" never disagrees
+        // with submit. TopologyLogic is loaded by the time the modal opens; the
+        // regex/inline checks are a defensive fallback only.
+        const k = Number(provisionDraft.k);
+        const L = window.TopologyLogic;
+        const kOK = L ? !L.closKError(k) : (Number.isInteger(k) && k >= 2 && k <= 32 && k % 2 === 0);
+        const subnetOK = L ? !L.closSubnetError(provisionDraft.baseSubnet)
+            : FABRIC_SUBNET_RE.test(String(provisionDraft.baseSubnet || '').trim());
+        return kOK && subnetOK;
     }
     const collectorField = stepId === 'traps' ? 'trapCollector'
                          : stepId === 'syslog' ? 'syslogCollector'
@@ -570,18 +618,22 @@ function isProvisionStepConfigured(stepId) {
 }
 
 function renderProvisionModal() {
-    const step = PROVISION_STEPS[provisionStep];
+    const steps = provisionSteps();
+    const step = steps[provisionStep];
+    document.getElementById('provisionModalTitle').textContent =
+        wizardKind === 'fabric' ? 'Build a Clos fabric' : 'Provision a new device set';
     document.getElementById('provisionStepIndicator').textContent =
-        'Create · Step ' + (provisionStep + 1) + ' of ' + PROVISION_STEPS.length;
+        'Create · Step ' + (provisionStep + 1) + ' of ' + steps.length;
     renderProvisionStepper();
     renderProvisionBody(step);
     renderProvisionFooter(step);
 }
 
 function renderProvisionStepper() {
+    const steps = provisionSteps();
     const ol = document.getElementById('provisionStepper');
     const checkIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>';
-    ol.innerHTML = PROVISION_STEPS.map((s, i) => {
+    ol.innerHTML = steps.map((s, i) => {
         const isCurrent = i === provisionStep;
         const isDone = i < provisionStep;
         const cls = ['modal-step', isCurrent ? 'is-current' : '', isDone ? 'is-done' : ''].filter(Boolean).join(' ');
@@ -596,7 +648,7 @@ function renderProvisionStepper() {
                     (configured ? '<span class="modal-step-dot" title="Configured"></span>' : '') +
                 '</span>' +
             '</button>' +
-            (i < PROVISION_STEPS.length - 1 ? '<span class="modal-step-sep" aria-hidden="true"></span>' : '') +
+            (i < steps.length - 1 ? '<span class="modal-step-sep" aria-hidden="true"></span>' : '') +
         '</li>';
     }).join('');
 }
@@ -605,11 +657,51 @@ function renderProvisionBody(step) {
     const body = document.getElementById('provisionBody');
     let html;
     if (step.id === 'basics') html = renderProvisionBasicsStep();
+    else if (step.id === 'fabric') html = renderFabricStep();
     else if (step.id === 'traps') html = renderProvisionTrapsStep();
     else if (step.id === 'syslog') html = renderProvisionSyslogStep();
     else if (step.id === 'flow') html = renderProvisionFlowStep();
     body.innerHTML = html;
     wireProvisionFieldListeners(step.id);
+}
+
+// fabricPreviewHtml renders the live summary box for the current k. Pure
+// formatting over TopologyLogic.closCounts / closKError — no side effects.
+function fabricPreviewHtml() {
+    const k = Number(provisionDraft.k);
+    const L = window.TopologyLogic;
+    const err = L ? L.closKError(k) : (Number.isInteger(k) ? null : 'k must be an integer');
+    if (err) {
+        return '<div class="fabric-preview is-invalid" data-fabric-preview>' +
+            escapeHtml('Enter an even k between 2 and 32 — ' + err + '.') + '</div>';
+    }
+    const c = L.closCounts(k);
+    return '<div class="fabric-preview" data-fabric-preview>' +
+        '<div class="fabric-preview-row"><span class="fabric-preview-tiers mono">' +
+            c.core + ' core <span class="muted">+</span> ' + c.agg + ' aggregation <span class="muted">+</span> ' +
+            c.edge + ' edge <span class="muted">+</span> ' + c.host + ' hosts' +
+        '</span></div>' +
+        '<div class="fabric-preview-row mono"><strong>' + c.devices + '</strong> devices <span class="muted">·</span> <strong>' +
+            c.links + '</strong> LLDP links</div>' +
+    '</div>';
+}
+
+function renderFabricStep() {
+    return '<div class="modal-form">' +
+        '<p class="tab-summary">A folded 3-tier Clos (k-ary fat-tree): k pods of k/2 edge + k/2 aggregation switches, (k/2)² core switches, and k³/4 hosts, fully wired with LLDP links. Required to provision.</p>' +
+        '<div class="form-group"><label>Fabric size k (even, 2–32)</label>' +
+            '<input type="number" min="2" max="32" step="2" data-field="k" value="' + escapeHtml(provisionDraft.k) + '" required></div>' +
+        '<div class="form-group"><label>Base subnet (/16)</label>' +
+            '<input type="text" class="mono" data-field="baseSubnet" value="' + escapeHtml(provisionDraft.baseSubnet) + '" placeholder="10.42.0.0/16" required></div>' +
+        '<div class="form-group form-group-wide"><label>Preview</label>' + fabricPreviewHtml() + '</div>' +
+    '</div>';
+}
+
+// updateFabricPreview swaps just the preview box (and not the whole step body)
+// so editing k/baseSubnet doesn't steal focus or reset the caret.
+function updateFabricPreview() {
+    const box = document.querySelector('#provisionBody [data-fabric-preview]');
+    if (box) box.outerHTML = fabricPreviewHtml();
 }
 
 function renderProvisionBasicsStep() {
@@ -701,14 +793,30 @@ function renderProvisionFlowStep() {
     '</div>';
 }
 
+// fabricDeviceCount returns the total device count for the current k, or 0
+// when k is invalid / TopologyLogic isn't loaded yet.
+function fabricDeviceCount() {
+    const k = Number(provisionDraft.k);
+    const c = (window.TopologyLogic && window.TopologyLogic.closCounts) ? window.TopologyLogic.closCounts(k) : null;
+    return c ? c.devices : 0;
+}
+
+// setProvisionProgress overwrites the footer hint with a live fan-out progress
+// line; an empty message restores the default "Draft saved automatically." text.
+function setProvisionProgress(msg) {
+    const el = document.querySelector('#provisionModal .modal-foot-hint');
+    if (el) el.textContent = msg || 'Draft saved automatically.';
+}
+
 function renderProvisionFooter(step) {
-    const isLast = provisionStep === PROVISION_STEPS.length - 1;
+    const steps = provisionSteps();
+    const isLast = provisionStep === steps.length - 1;
     const isFirst = provisionStep === 0;
     const valid = isProvisionStepValid(step.id);
     document.getElementById('modalBackBtn').disabled = isFirst;
     const nextBtn = document.getElementById('modalNextBtn');
     if (isLast) {
-        const count = Number(provisionDraft.count) || 0;
+        const count = wizardKind === 'fabric' ? fabricDeviceCount() : (Number(provisionDraft.count) || 0);
         nextBtn.innerHTML = '+ Create ' + count + ' device' + (count === 1 ? '' : 's');
         nextBtn.disabled = !valid || provisionBusy;
         nextBtn.setAttribute('data-action', 'modal-submit');
@@ -740,7 +848,7 @@ function onProvisionFieldChange(e) {
     // resourceFile select; for resourceFile (round-robin label).
     // Stepper also re-renders so the "configured" dot updates.
     renderProvisionStepper();
-    renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    renderProvisionFooter(provisionSteps()[provisionStep]);
     // When a telemetry collector field changes, the "this step will be
     // skipped" hint visibility flips. Toggle directly on the DOM
     // (preserves focus / caret in the input the user is editing).
@@ -748,19 +856,22 @@ function onProvisionFieldChange(e) {
         const hint = document.querySelector('#provisionBody [data-skip-hint]');
         if (hint) hint.style.display = el.value ? 'none' : '';
     }
+    // Fabric step: k / base subnet drives the live preview. Update just the
+    // preview box (not the whole body) to keep focus in the field.
+    if (key === 'k' || key === 'baseSubnet') {
+        updateFabricPreview();
+    }
     if (key === 'category') {
         // Category change must repopulate the resourceFile select with
         // the filtered set. Easiest is to re-render the basics body.
-        renderProvisionBody(PROVISION_STEPS[provisionStep]);
+        renderProvisionBody(provisionSteps()[provisionStep]);
     }
 }
 
-async function submitProvision() {
-    if (provisionBusy) return;
-    // Build the export snapshot from the draft, then run the strict
-    // validator that the inline form's submit used. Cheap insurance:
-    // catches duration / inform_retries shape issues the per-step
-    // host:port regex doesn't cover.
+// buildExportSnapshot reads the shared telemetry-export fields off the current
+// draft into the per-device export block shape the API expects, dropping
+// undefined keys so omitempty fires server-side. Shared by both wizards.
+function buildExportSnapshot() {
     const snapshot = {
         flow: provisionDraft.flowCollector ? {
             collector: provisionDraft.flowCollector.trim(),
@@ -787,7 +898,6 @@ async function submitProvision() {
             interval: provisionDraft.syslogInterval || undefined
         } : null
     };
-    // Strip undefined keys so omitempty fires server-side.
     for (const k of ['flow', 'traps', 'syslog']) {
         if (snapshot[k]) {
             for (const f of Object.keys(snapshot[k])) {
@@ -795,13 +905,23 @@ async function submitProvision() {
             }
         }
     }
+    return snapshot;
+}
+
+async function submitProvision() {
+    if (provisionBusy) return;
+    // Build the export snapshot from the draft, then run the strict
+    // validator that the inline form's submit used. Cheap insurance:
+    // catches duration / inform_retries shape issues the per-step
+    // host:port regex doesn't cover.
+    const snapshot = buildExportSnapshot();
     const err = validateExportBlocksSnapshot(snapshot);
     if (err) {
         showAlert(err, 'error');
         return;
     }
     provisionBusy = true;
-    renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+    renderProvisionFooter(provisionSteps()[provisionStep]);
     try {
         await createDevices(
             provisionDraft.startIp,
@@ -820,7 +940,52 @@ async function submitProvision() {
         // the operator can correct and retry.
     } finally {
         provisionBusy = false;
-        renderProvisionFooter(PROVISION_STEPS[provisionStep]);
+        renderProvisionFooter(provisionSteps()[provisionStep]);
+    }
+}
+
+// submitFabric builds the k-ary fat-tree client-side and fans it out: per-tier
+// device creation then a chunked topology load (see createClosFabric). On any
+// failed request the modal stays open with a toast naming the failed stage.
+async function submitFabric() {
+    if (provisionBusy) return;
+    if (!window.TopologyLogic) {
+        showAlert('Topology module not loaded — reload the page and try again.', 'error');
+        return;
+    }
+    const snapshot = buildExportSnapshot();
+    const verr = validateExportBlocksSnapshot(snapshot);
+    if (verr) { showAlert(verr, 'error'); return; }
+
+    let fabric;
+    try {
+        fabric = window.TopologyLogic.buildClosFabric(Number(provisionDraft.k), provisionDraft.baseSubnet);
+    } catch (e) {
+        showAlert('Invalid fabric: ' + e.message, 'error');
+        return;
+    }
+
+    provisionBusy = true;
+    renderProvisionFooter(provisionSteps()[provisionStep]);
+    let lastStage = '';
+    try {
+        await createClosFabric(fabric, snapshot, (msg) => { lastStage = msg; setProvisionProgress(msg); });
+        showAlert('Clos fabric created: ' + fabric.tiers.reduce((s, t) => s + t.count, 0) +
+            ' devices, ' + fabric.links.length + ' links.', 'success');
+        startStatusPolling();
+        await loadDevices();
+        clearProvisionDraft();
+        provisionDraft = Object.assign({}, EMPTY_FABRIC_DRAFT);
+        provisionDirty = false;
+        closeProvisionModal(true);
+    } catch (e) {
+        // Keep the modal open so the operator can retry; name the stage that
+        // failed (the progress callback recorded the last one in flight).
+        showAlert('Failed during "' + (lastStage || 'fan-out') + '": ' + e.message, 'error');
+    } finally {
+        provisionBusy = false;
+        setProvisionProgress('');
+        renderProvisionFooter(provisionSteps()[provisionStep]);
     }
 }
 
@@ -840,16 +1005,16 @@ document.getElementById('provisionModal').addEventListener('click', (e) => {
             closeProvisionModal();
             break;
         case 'modal-reset':
-            resetProvisionStep(PROVISION_STEPS[provisionStep].id);
+            resetProvisionStep(provisionSteps()[provisionStep].id);
             break;
         case 'modal-back':
             if (provisionStep > 0) { provisionStep--; renderProvisionModal(); }
             break;
         case 'modal-next':
-            if (provisionStep < PROVISION_STEPS.length - 1) { provisionStep++; renderProvisionModal(); }
+            if (provisionStep < provisionSteps().length - 1) { provisionStep++; renderProvisionModal(); }
             break;
         case 'modal-submit':
-            submitProvision();
+            if (wizardKind === 'fabric') submitFabric(); else submitProvision();
             break;
         case 'modal-jump-step': {
             const idx = parseInt(trigger.getAttribute('data-step'), 10);
@@ -893,8 +1058,10 @@ window.addEventListener('keydown', (e) => {
     }
 });
 
-// Toolbar [+ Create devices] button opens the modal.
-elements.createDevicesBtn.addEventListener('click', openProvisionModal);
+// Toolbar [+ Create devices] / [+ Create Clos topology] buttons open the modal
+// in the matching wizard mode.
+elements.createDevicesBtn.addEventListener('click', () => openProvisionModal('devices'));
+if (elements.createClosBtn) elements.createClosBtn.addEventListener('click', () => openProvisionModal('fabric'));
 
 elements.exportBtn.addEventListener('click', exportDevicesCSV);
 elements.routeScriptBtn.addEventListener('click', downloadRouteScript);
