@@ -1345,6 +1345,27 @@ code.mono {
 }
 .step-skip-hint svg { flex-shrink: 0; }
 
+/* Clos fabric wizard — live preview box (step 1). */
+.fabric-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: color-mix(in oklch, var(--accent), transparent 92%);
+  border: 1px solid color-mix(in oklch, var(--accent), transparent 65%);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.fabric-preview.is-invalid {
+  background: color-mix(in oklch, var(--info), transparent 92%);
+  border-color: color-mix(in oklch, var(--info), transparent 65%);
+  color: var(--info);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.fabric-preview-tiers { color: var(--fg-2); }
+.fabric-preview-row strong { color: var(--accent-2); }
+
 .modal-body {
   padding: 18px 22px;
   overflow-y: auto;

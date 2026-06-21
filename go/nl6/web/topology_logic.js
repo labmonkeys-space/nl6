@@ -396,7 +396,176 @@
     return { render: true, reason: '' };
   }
 
+  // --- Clos fabric generator -----------------------------------------------
+  //
+  // A browser twin of examples/large-clos/gen-clos.py: builds a classic
+  // Al-Fares folded 3-tier fat-tree from a single even parameter k. Kept
+  // pure/DOM-free so the wizard's live preview and its submit fan-out call the
+  // same code (they can never disagree) and it is node-testable. See gen-clos.py
+  // for the canonical formulae and the rationale behind MAX_K.
+
+  // MAX_K mirrors gen-clos.py: the aggregation-tier resource (Arista 7280R3)
+  // has 32 ports — the tightest interface table — so k > 32 would reference
+  // ports that don't exist on the agg switches.
+  var CLOS_MAX_K = 32;
+
+  // Per-tier base IP offset (from the base-subnet network address) and resource
+  // file, fixed to gen-clos.py's BASE / RES. Default base 10.42.0.0/16 →
+  // core 10.42.0.1, agg 10.42.4.1, edge 10.42.8.1, host 10.42.16.1.
+  var CLOS_TIERS = [
+    { key: 'core', offset: 1,    resource: 'cisco_crs_x.json',         label: 'core (Tier 1)' },
+    { key: 'agg',  offset: 1025, resource: 'arista_7280r3.json',       label: 'aggregation (Tier 2)' },
+    { key: 'edge', offset: 2049, resource: 'cisco_catalyst_9500.json', label: 'edge (Tier 3)' },
+    { key: 'host', offset: 4097, resource: 'linux_server.json',        label: 'hosts' }
+  ];
+
+  function ipToInt(ip) {
+    var p = String(ip).split('.');
+    return (((+p[0]) << 24) >>> 0) + ((+p[1]) << 16) + ((+p[2]) << 8) + (+p[3]);
+  }
+  function intToIp(n) {
+    n = n >>> 0;
+    return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+  }
+
+  // closKError returns a human-readable error string when k is not a valid
+  // fabric size (even integer in 2..MAX_K), or null when k is valid.
+  function closKError(k) {
+    if (!Number.isInteger(k)) return 'k must be an integer';
+    if (k < 2) return 'k must be at least 2';
+    if (k % 2 !== 0) return 'k must be even';
+    if (k > CLOS_MAX_K) return 'k must be <= ' + CLOS_MAX_K + ' (Arista 7280R3 has ' + CLOS_MAX_K + ' ports)';
+    return null;
+  }
+
+  // closSubnetError validates a fabric base subnet string. It must be a dotted
+  // IPv4 address with an optional prefix that, if present, must be /16: the
+  // fixed tier offsets span up to ~12k addresses (a /16), so any smaller prefix
+  // would put device IPs outside the declared subnet (design.md D5 fixes the
+  // per-tier netmask at /16). Returns an error string, or null when valid.
+  function closSubnetError(baseSubnet) {
+    baseSubnet = String(baseSubnet || '').trim();
+    if (!baseSubnet) return 'base subnet is required';
+    var slash = baseSubnet.indexOf('/');
+    var ipPart = slash >= 0 ? baseSubnet.slice(0, slash) : baseSubnet;
+    var prefix = slash >= 0 ? baseSubnet.slice(slash + 1) : '16';
+    var quad = ipPart.split('.');
+    if (quad.length !== 4 || quad.some(function (o) { return !/^\d{1,3}$/.test(o) || +o > 255; })) {
+      return 'base subnet must be a dotted IPv4 address';
+    }
+    if (!/^\d{1,2}$/.test(prefix) || +prefix !== 16) {
+      return 'fabric base subnet must be a /16';
+    }
+    return null;
+  }
+
+  // closCounts returns the per-tier device counts plus totals for a valid k,
+  // computed analytically (no link build) — feeds the wizard's live preview.
+  // Returns null when k is invalid.
+  function closCounts(k) {
+    if (closKError(k)) return null;
+    var half = k / 2;
+    var core = half * half;          // (k/2)^2
+    var agg = k * half;              // k pods * k/2
+    var edge = k * half;            // k pods * k/2
+    var host = k * half * half;      // k^3 / 4
+    return {
+      k: k, core: core, agg: agg, edge: edge, host: host,
+      devices: core + agg + edge + host,
+      links: 3 * k * half * half     // edge↔agg + agg↔core + edge↔host
+    };
+  }
+
+  // buildClosFabric builds the full fabric: per-tier device batches and the
+  // undirected inter-device LLDP link graph. Throws on an invalid k or an
+  // unparsable base subnet. baseSubnet is "A.B.C.D" or "A.B.C.D/NN" (the prefix
+  // becomes the netmask for every tier's device-creation request; default 16).
+  function buildClosFabric(k, baseSubnet) {
+    var kerr = closKError(k);
+    if (kerr) throw new Error(kerr);
+    var serr = closSubnetError(baseSubnet);
+    if (serr) throw new Error(serr);
+    var half = k / 2;
+
+    baseSubnet = String(baseSubnet || '10.42.0.0/16').trim();
+    var slash = baseSubnet.indexOf('/');
+    var ipPart = slash >= 0 ? baseSubnet.slice(0, slash) : baseSubnet;
+    // Netmask is fixed at /16 (design.md D5): the fabric's tier offsets span a
+    // /16, so every tier's device-creation request uses /16 regardless of the
+    // operator's input. Normalize the base to its /16 network address so host
+    // bits in the typed address don't shift the whole plan.
+    var netmask = '16';
+    var baseInt = (ipToInt(ipPart) & 0xFFFF0000) >>> 0;
+
+    // Per-tier base int + a closure to resolve a tier-relative index to an IP.
+    var counts = closCounts(k);
+    var baseOf = {};
+    var tiers = CLOS_TIERS.map(function (t) {
+      baseOf[t.key] = baseInt + t.offset;
+      return {
+        key: t.key,
+        label: t.label,
+        resource_file: t.resource,
+        start_ip: intToIp(baseInt + t.offset),
+        count: counts[t.key]
+      };
+    });
+    function ip(tier, idx) { return intToIp(baseOf[tier] + idx); }
+
+    function coreId(j, i) { return j * half + i; }   // core group j, member i
+    function aggId(p, a) { return p * half + a; }     // pod p, agg switch a
+    function edgeId(p, e) { return p * half + e; }    // pod p, edge switch e
+    function hostId(p, e, h) { return (p * half + e) * half + h; }
+
+    var links = [];
+    // Edge <-> aggregation: full mesh inside each pod. Edge uplink ports
+    // 1..k/2, aggregation downlink ports 1..k/2.
+    for (var p = 0; p < k; p++) {
+      for (var e = 0; e < half; e++) {
+        for (var a = 0; a < half; a++) {
+          links.push({
+            a: { ip: ip('edge', edgeId(p, e)), ifindex: 1 + a },
+            b: { ip: ip('agg', aggId(p, a)), ifindex: 1 + e }
+          });
+        }
+      }
+    }
+    // Aggregation <-> core: agg switch a connects to core group a; agg uplink
+    // ports k/2+1..k; each core uses port (pod+1), one per pod.
+    for (var p2 = 0; p2 < k; p2++) {
+      for (var a2 = 0; a2 < half; a2++) {
+        for (var i2 = 0; i2 < half; i2++) {
+          links.push({
+            a: { ip: ip('agg', aggId(p2, a2)), ifindex: half + 1 + i2 },
+            b: { ip: ip('core', coreId(a2, i2)), ifindex: 1 + p2 }
+          });
+        }
+      }
+    }
+    // Edge <-> host: each edge switch fans out to k/2 hosts on downlink ports
+    // k/2+1..k; the host uses eth0 (ifIndex 2).
+    for (var p3 = 0; p3 < k; p3++) {
+      for (var e3 = 0; e3 < half; e3++) {
+        for (var h3 = 0; h3 < half; h3++) {
+          links.push({
+            a: { ip: ip('edge', edgeId(p3, e3)), ifindex: half + 1 + h3 },
+            b: { ip: ip('host', hostId(p3, e3, h3)), ifindex: 2 }
+          });
+        }
+      }
+    }
+
+    return { tiers: tiers, links: links, netmask: netmask };
+  }
+
   return {
+    CLOS_MAX_K: CLOS_MAX_K,
+    closKError: closKError,
+    closSubnetError: closSubnetError,
+    closCounts: closCounts,
+    buildClosFabric: buildClosFabric,
+    ipToInt: ipToInt,
+    intToIp: intToIp,
     SCALE_CAP: SCALE_CAP,
     edgeKey: edgeKey,
     buildModel: buildModel,
