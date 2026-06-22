@@ -357,16 +357,42 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 }
 
 func (sm *SimulatorManager) DeleteAllDevices() error {
+	// Snapshot the device set and clear all registries under the lock, then
+	// release it BEFORE the slow per-device teardown. Holding sm.mu across
+	// Stop() for every device (each tears down 4 protocol servers + 3
+	// exporters + TUN) blocked every reader — /status, /devices, /system-stats
+	// — for the whole teardown, so the console froze ("nothing happens") at
+	// fabric scale. Clearing the maps up front also makes a concurrent second
+	// call idempotent: it snapshots an empty map and tears down nothing, so a
+	// double-click can't double-free.
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	devices := make([]*DeviceSimulator, 0, len(sm.devices))
+	deviceIDs := make([]string, 0, len(sm.devices))
+	for deviceID, device := range sm.devices {
+		devices = append(devices, device)
+		deviceIDs = append(deviceIDs, deviceID)
+	}
+	sm.devices = make(map[string]*DeviceSimulator)
+	sm.deviceIPs = make(map[string]struct{})
+	sm.deviceTypesByIP = make(map[string]string)
+	sm.devicesByIP = make(map[string]*DeviceSimulator)
+	sm.tunPoolMutex.Lock()
+	sm.tunInterfacePool = make(map[string]*TunInterface)
+	sm.tunPoolMutex.Unlock()
+	// Every device is gone, so every topology edge is now dangling —
+	// drop them all (matches the per-device prune in DeleteDevice).
+	if sm.topology != nil {
+		sm.topology.Clear()
+	}
+	sm.mu.Unlock()
 
+	// Tear down outside the lock. The snapshot is private to this call, so the
+	// API stays responsive throughout.
 	var errors []string
 	var tunInterfaces []string
-
-	// Collect all TUN interface names for bulk deletion
-	for deviceID, device := range sm.devices {
+	for i, device := range devices {
 		if err := device.Stop(); err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", deviceID, err))
+			errors = append(errors, fmt.Sprintf("%s: %v", deviceIDs[i], err))
 		}
 		if device.tunIface != nil {
 			// Always close FD on deletion regardless of PreAllocated status
@@ -389,21 +415,6 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 				errors = append(errors, fmt.Sprintf("bulk TUN deletion: %v", err))
 			}
 		}
-	}
-
-	// Clear the devices map, IP set, and pre-allocated pool
-	sm.devices = make(map[string]*DeviceSimulator)
-	sm.deviceIPs = make(map[string]struct{})
-	sm.deviceTypesByIP = make(map[string]string)
-	sm.devicesByIP = make(map[string]*DeviceSimulator)
-	sm.tunPoolMutex.Lock()
-	sm.tunInterfacePool = make(map[string]*TunInterface)
-	sm.tunPoolMutex.Unlock()
-
-	// Every device is gone, so every topology edge is now dangling —
-	// drop them all (matches the per-device prune in DeleteDevice).
-	if sm.topology != nil {
-		sm.topology.Clear()
 	}
 
 	if len(errors) > 0 {
@@ -523,6 +534,17 @@ func (sm *SimulatorManager) SetupRoutesForDevices(startIP string, count int, net
 	return sm.netNamespace.AddRouteForDevices(startIP, count, netmask)
 }
 
+// subnet24CIDR formats a /24 host-route CIDR for the given first three octets.
+// Host routes are /24-granular (one per device subnet) regardless of a device's
+// configured netmask: the network address is /24-aligned (".0" host octet), so
+// emitting a shorter mask here (e.g. /16) yields a non-canonical prefix like
+// "10.42.4.0/16" that `ip route` rejects with "Invalid prefix for given prefix
+// length". A Clos fabric spreads devices across many /24s inside one /16, so
+// /24 routes cover every device subnet without that pitfall.
+func subnet24CIDR(o0, o1, o2 byte) string {
+	return fmt.Sprintf("%d.%d.%d.0/24", o0, o1, o2)
+}
+
 // SetupRoutesFromDevices adds host routes based on actual device IPs rather than
 // calculating from startIP + count, ensuring no subnets are missed.
 func (sm *SimulatorManager) SetupRoutesFromDevices(netmask string) error {
@@ -538,7 +560,7 @@ func (sm *SimulatorManager) SetupRoutesFromDevices(netmask string) error {
 		if ip == nil {
 			continue
 		}
-		subnet := fmt.Sprintf("%d.%d.%d.0/%s", ip[0], ip[1], ip[2], netmask)
+		subnet := subnet24CIDR(ip[0], ip[1], ip[2])
 		subnets[subnet] = true
 	}
 	sm.mu.RUnlock()
@@ -573,9 +595,11 @@ func (sm *SimulatorManager) ensureAllSubnetRoutes(startIP net.IP, netmask string
 	copy(endCopy, end)
 	sm.mu.RUnlock()
 
+	// Per-/24 host routes: the loop already walks the third octet, so each
+	// route is a /24. /24 routes via the namespace veth reach every device IP
+	// in each /24 the fabric spans.
 	for o3 := int(start[2]); o3 <= int(endCopy[2]); o3++ {
-		cidr := fmt.Sprintf("%d.%d.%d.0/%s", start[0], start[1], o3, netmask)
-		sm.netNamespace.addHostRoute(cidr)
+		sm.netNamespace.addHostRoute(subnet24CIDR(start[0], start[1], byte(o3)))
 	}
 	log.Printf("ensureAllSubnetRoutes: added routes for %d.%d.%d.0 - %d.%d.%d.0",
 		start[0], start[1], start[2], endCopy[0], endCopy[1], endCopy[2])
