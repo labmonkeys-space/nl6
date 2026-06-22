@@ -39,10 +39,14 @@ LDFLAGS     := -X main.Version=$(APP_VERSION)
 # ./node_modules via `npm ci`; Node version is pinned in .nvmrc.
 NPM ?= npm
 
+# Node runtime for the framework-free web unit tests (go/nl6/web/*.test.js).
+NODE    ?= node
+WEB_DIR := go/nl6/web
+
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test tidy check-tidy dist clean docker-build docker-push docker-up docker-down help version \
-        check-go check-docker check-buildx check-linux check-node \
+.PHONY: all build run test test-web tidy check-tidy dist clean docker-build docker-push docker-up docker-down help version \
+        check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
 
@@ -74,15 +78,21 @@ dist: check-go
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./nl6
 
-## test: Run tests (nl6 package requires Linux)
-test: check-go
+## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
+test: check-go test-web
 ifneq ($(UNAME_S),Linux)
-	@echo "Note: no tests to run on $(UNAME_S) — the simulator package uses"
+	@echo "Note: no Go tests to run on $(UNAME_S) — the simulator package uses"
 	@echo "      Linux-only syscalls (TUN, network namespaces). Use a Linux"
-	@echo "      host or container for test coverage."
+	@echo "      host or container for Go test coverage. (Web tests ran above.)"
 else
 	cd $(GO_DIR) && go test ./...
 endif
+
+## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
+test-web: check-node-runtime
+	cd $(WEB_DIR) && for t in *.test.js; do \
+	  echo "node $$t"; $(NODE) "$$t" || exit 1; \
+	done
 
 ## run: Build and run the simulator (Linux only — requires root for TUN interfaces)
 run: check-linux build
@@ -271,6 +281,14 @@ check-linux:
 check-node:
 	@command -v $(NPM) >/dev/null 2>&1 || { \
 	  echo "Error: '$(NPM)' not found."; \
+	  echo "       Install Node 20 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
+	  echo "       or 'brew install node@20' / the installer at https://nodejs.org/."; \
+	  exit 1; \
+	}
+
+check-node-runtime:
+	@command -v $(NODE) >/dev/null 2>&1 || { \
+	  echo "Error: '$(NODE)' not found."; \
 	  echo "       Install Node 20 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
 	  echo "       or 'brew install node@20' / the installer at https://nodejs.org/."; \
 	  exit 1; \

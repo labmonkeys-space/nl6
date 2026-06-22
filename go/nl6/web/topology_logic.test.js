@@ -387,14 +387,21 @@ ok('closDeviceBatches: splits a tier into contiguous batches covering every IP',
   // Counts sum to the tier total; last batch is the remainder.
   assert.strictEqual(batches.reduce((s, b) => s + b.count, 0), 8192);
   assert.strictEqual(batches[batches.length - 1].count, 8192 - 81 * 100); // 92
-  // Batches are contiguous: each start_ip = previous start + previous count,
-  // so the union is exactly the IPs one {start_ip, count} request would create.
+  // Batches are contiguous in the .0/.255-skipping host space: each start_ip is
+  // the host that continues the previous batch's walk, so the union is exactly
+  // the IPs one {start_ip, count} request would create (and exactly the IPs the
+  // server's incrementIP assigns).
   for (let i = 1; i < batches.length; i++) {
-    const expected = T.intToIp(T.ipToInt(batches[i - 1].start_ip) + batches[i - 1].count);
+    const expected = T.intToIp(T.hostIpInt(T.ipToInt(batches[i - 1].start_ip), batches[i - 1].count));
     assert.strictEqual(batches[i].start_ip, expected, `batch ${i} contiguous`);
   }
-  // Spot-check the carry across the third octet: batch[2] starts at .16.1 + 200.
-  assert.strictEqual(batches[2].start_ip, T.intToIp(T.ipToInt('10.42.16.1') + 200));
+  // batch[2] is 200 hosts past .16.1 — still inside the first /24 (no skip yet).
+  assert.strictEqual(batches[2].start_ip, '10.42.16.201');
+  // No batch start ever lands on a .0/.255 host address.
+  for (const b of batches) {
+    const o = +b.start_ip.split('.')[3];
+    assert.ok(o !== 0 && o !== 255, `batch start on .0/.255: ${b.start_ip}`);
+  }
 });
 
 ok('closDeviceBatches: small tier stays a single batch; exact multiple has no remainder', () => {
@@ -403,6 +410,50 @@ ok('closDeviceBatches: small tier stays a single batch; exact multiple has no re
   const exact = T.closDeviceBatches({ start_ip: '10.42.4.1', count: 200 }, 100);
   assert.strictEqual(exact.length, 2);
   assert.deepStrictEqual(exact.map(b => b.count), [100, 100]);
+});
+
+ok('hostIpInt matches device.go incrementIP walk and never emits .0/.255', () => {
+  // Naive byte-for-byte twin of SimulatorManager.incrementIP (device.go): the
+  // O(1) hostIpInt must agree with it at every step across many /24 boundaries.
+  const o = [10, 42, 16, 1]; // start on a .1 like every Clos tier base
+  const base = T.ipToInt('10.42.16.1');
+  for (let i = 0; i < 3000; i++) {
+    const want = o.join('.');
+    assert.strictEqual(T.intToIp(T.hostIpInt(base, i)), want, `step ${i}`);
+    assert.ok(o[3] !== 0 && o[3] !== 255, `network/broadcast host at step ${i}`);
+    // advance the twin (mirrors incrementIP's octet-4 wrap + carry, octet-4=1)
+    o[3]++;
+    if (o[3] === 256 || o[3] === 255) {
+      o[3] = 1; o[2]++;
+      if (o[2] === 256) { o[2] = 0; o[1]++; if (o[1] === 256) { o[1] = 0; o[0]++; } }
+    }
+  }
+});
+
+ok('buildClosFabric: link endpoints skip .0/.255 and match the device walk (k=32)', () => {
+  // k=32 host tier spans ~32 /24s, so the old linear base+idx mapping named ~74
+  // .0/.255 addresses the creator skips → dangling "unresolved" topology nodes.
+  const f = T.buildClosFabric(32, '10.42.0.0/16');
+  const bad = ip => { const o = +ip.split('.')[3]; return o === 0 || o === 255; };
+  for (const l of f.links) {
+    assert.ok(!bad(l.a.ip), `endpoint on .0/.255: ${l.a.ip}`);
+    assert.ok(!bad(l.b.ip), `endpoint on .0/.255: ${l.b.ip}`);
+  }
+  // The exact device-IP set the wizard creates (every tier, chunked the way the
+  // submit path does) must cover every link endpoint — the consistency the
+  // dangling-node bug broke. Walk each batch the way the server's incrementIP
+  // does, via the shared hostIpInt.
+  const created = new Set();
+  for (const t of f.tiers) {
+    for (const b of T.closDeviceBatches(t, 500)) {
+      const start = T.ipToInt(b.start_ip);
+      for (let i = 0; i < b.count; i++) created.add(T.intToIp(T.hostIpInt(start, i)));
+    }
+  }
+  assert.strictEqual(created.size, f.tiers.reduce((s, t) => s + t.count, 0), 'no IP collisions across tiers');
+  const endpoints = new Set();
+  f.links.forEach(l => { endpoints.add(l.a.ip); endpoints.add(l.b.ip); });
+  for (const ip of endpoints) assert.ok(created.has(ip), `endpoint ${ip} not created`);
 });
 
 console.log(`\n${pass} checks passed.`);
