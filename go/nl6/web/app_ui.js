@@ -1003,11 +1003,14 @@ document.getElementById('provisionModal').addEventListener('mousedown', (e) => {
 
 // Event delegation for all modal interactions.
 document.getElementById('provisionModal').addEventListener('click', (e) => {
+    // Consume the press-origin flag on every click so its lifetime is exactly
+    // one press→click pair: a backdrop press that releases *inside* the modal
+    // can't leave it set for a later click to misread.
+    const pressedBackdrop = _scrimPressOnBackdrop;
+    _scrimPressOnBackdrop = false;
     if (e.target.id === 'provisionModal') {
         // Backdrop click — only when the press began on the backdrop, so a
         // text-selection drag that merely ends here doesn't close the modal.
-        const pressedBackdrop = _scrimPressOnBackdrop;
-        _scrimPressOnBackdrop = false;
         if (pressedBackdrop) closeProvisionModal();
         return;
     }
