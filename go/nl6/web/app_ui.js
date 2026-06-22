@@ -817,7 +817,7 @@ function renderProvisionFooter(step) {
     const nextBtn = document.getElementById('modalNextBtn');
     if (isLast) {
         const count = wizardKind === 'fabric' ? fabricDeviceCount() : (Number(provisionDraft.count) || 0);
-        nextBtn.innerHTML = '+ Create ' + count + ' device' + (count === 1 ? '' : 's');
+        nextBtn.innerHTML = 'Create ' + count + ' device' + (count === 1 ? '' : 's');
         nextBtn.disabled = !valid || provisionBusy;
         nextBtn.setAttribute('data-action', 'modal-submit');
         nextBtn.title = valid ? '' : 'Fill required fields to continue';
