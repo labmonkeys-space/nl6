@@ -37,14 +37,20 @@ func makeDeviceID(ip net.IP, typeSlug string) string {
 }
 
 func (sm *SimulatorManager) CreateDevices(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, roundRobin bool, category string, snmpPort int, seed *ExportSeed) error {
-	return sm.CreateDevicesWithOptions(startIP, count, netmask, resourceFile, v3Config, true, 0, roundRobin, category, snmpPort, seed)
+	_, err := sm.CreateDevicesWithOptions(startIP, count, netmask, resourceFile, v3Config, true, 0, roundRobin, category, snmpPort, seed)
+	return err
 }
 
 // CreateDevicesWithOptions creates devices with optional pre-allocation control.
 // `seed`, when non-nil, populates every created device's `flowConfig` /
 // `trapConfig` / `syslogConfig` pointer fields with a copy of the seed's
 // non-nil blocks (per-device-export-config phase 3).
-func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) error {
+// Returns the number of devices that were actually created (successCount),
+// which can be less than `count` when some devices fail to start (e.g. a
+// listener bind error under resource pressure at scale). Callers that care
+// about partial failure — notably the REST handler — should compare the
+// returned count against the requested `count`.
+func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) (int, error) {
 	if snmpPort == 0 {
 		snmpPort = DEFAULT_SNMP_PORT
 	}
@@ -97,12 +103,12 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 
 	// Check for root privileges for TUN interface creation
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("root privileges required to create TUN interfaces")
+		return 0, fmt.Errorf("root privileges required to create TUN interfaces")
 	}
 
 	ip := net.ParseIP(startIP)
 	if ip == nil {
-		return fmt.Errorf("invalid start IP address: %s", startIP)
+		return 0, fmt.Errorf("invalid start IP address: %s", startIP)
 	}
 
 	// Initialize with a write lock, then release it for the loop
@@ -143,7 +149,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			roundRobinResourceFiles = append(roundRobinResourceFiles, rrFile)
 		}
 		if len(roundRobinResources) == 0 {
-			return fmt.Errorf("failed to load any round robin resource files")
+			return 0, fmt.Errorf("failed to load any round robin resource files")
 		}
 		log.Printf("Loaded %d round robin device types", len(roundRobinResources))
 	}
@@ -155,7 +161,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			var err error
 			resources, err = sm.LoadSpecificResources(resourceFile)
 			if err != nil {
-				return fmt.Errorf("failed to load resource file %s: %v", resourceFile, err)
+				return 0, fmt.Errorf("failed to load resource file %s: %v", resourceFile, err)
 			}
 		} else {
 			// Use default resources
@@ -430,7 +436,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		sm.ensureAllSubnetRoutes(ip, netmask)
 	}
 
-	return nil
+	return successCount, nil
 }
 
 // createDevicesParallel creates devices in parallel when pre-allocation was done.

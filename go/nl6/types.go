@@ -494,6 +494,17 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+// CreateDevicesResult is the `data` payload of a successful POST /api/v1/devices.
+// `Created` is the number of devices that actually started; `Requested` is the
+// batch size; `Failed` = Requested - Created. Created can be less than Requested
+// when devices fail to start under resource pressure at scale — clients should
+// reconcile against Requested rather than assume the whole batch came up.
+type CreateDevicesResult struct {
+	Created   int `json:"created"`
+	Requested int `json:"requested"`
+	Failed    int `json:"failed"`
+}
+
 type ManagerStatus struct {
 	IsPreAllocating      bool `json:"is_pre_allocating"`
 	PreAllocProgress     int  `json:"pre_alloc_progress"`
