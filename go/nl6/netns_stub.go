@@ -58,5 +58,3 @@ func (ns *NetNamespace) ListenTCPInNamespace(network, address string) (net.Liste
 }
 
 func setSocketBufferSize(network, address string, c syscall.RawConn) error { return nil }
-
-func incrementIP(_ net.IP) {}

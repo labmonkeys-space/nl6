@@ -428,30 +428,6 @@
     return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
   }
 
-  // hostIpInt returns the integer IP `idx` host-slots above baseInt, walking the
-  // address space exactly the way the server's SimulatorManager.incrementIP
-  // (device.go) does when it creates a device batch: octet-4 runs 1..254 within
-  // each /24 and skips .0 (network) and .255 (broadcast), carrying into octet-3
-  // (and up) on each /24 boundary. This is the single source of truth shared by
-  // the Clos link builder and closDeviceBatches so a link endpoint always
-  // resolves to an IP the device creator actually assigns — without it, a linear
-  // base+idx mapping references the .0/.255 addresses the creator skips, leaving
-  // dangling "unresolved" topology nodes at every /24 boundary. O(1).
-  //
-  // baseInt's octet-4 must be a valid host (1..254); every Clos tier base and
-  // batch start is a .1, so that always holds.
-  function hostIpInt(baseInt, idx) {
-    baseInt = baseInt >>> 0;
-    var b4 = baseInt & 255;
-    var prefix = (baseInt - b4) >>> 0;   // octets 1..3, octet-4 zeroed
-    var firstRun = 255 - b4;             // slots with octet-4 b4..254 (no carry)
-    if (idx < firstRun) return (prefix + b4 + idx) >>> 0;
-    var rest = idx - firstRun;
-    var subnets = 1 + Math.floor(rest / 254);  // /24s advanced past the first
-    var o4 = 1 + (rest % 254);                  // octet-4 within that /24 (1..254)
-    return (prefix + subnets * 0x100 + o4) >>> 0;
-  }
-
   // closKError returns a human-readable error string when k is not a valid
   // fabric size (even integer in 2..MAX_K), or null when k is valid.
   function closKError(k) {
@@ -522,9 +498,10 @@
     var baseInt = (ipToInt(ipPart) & 0xFFFF0000) >>> 0;
 
     // Per-tier base int + a closure to resolve a tier-relative index to an IP.
-    // The resolver walks the same .0/.255-skipping host space as the device
-    // creator (see hostIpInt), so every link endpoint lands on an IP a device
-    // actually gets — no dangling endpoints at /24 boundaries.
+    // The fleet is a flat /16 management plane (the server skips only the /16
+    // network/broadcast), so within a /16 the device walk is +1 and the index→IP
+    // map is plain linear base+idx — it lands on exactly the IPs the device
+    // creator assigns, including .x.0/.x.255 hosts. See ipalloc.go nextHost.
     var counts = closCounts(k);
     var baseOf = {};
     var tiers = CLOS_TIERS.map(function (t) {
@@ -537,7 +514,7 @@
         count: counts[t.key]
       };
     });
-    function ip(tier, idx) { return intToIp(hostIpInt(baseOf[tier], idx)); }
+    function ip(tier, idx) { return intToIp(baseOf[tier] + idx); }
 
     function coreId(j, i) { return j * half + i; }   // core group j, member i
     function aggId(p, a) { return p * half + a; }     // pod p, agg switch a
@@ -587,11 +564,10 @@
 
   // closDeviceBatches splits one fabric tier into contiguous device-creation
   // batches of at most chunkSize each ({start_ip, count}), preserving the exact
-  // IP set a single {tier.start_ip, tier.count} request would create. Batch
-  // starts walk the same .0/.255-skipping host space as the server's
-  // incrementIP (see hostIpInt), so they line up byte-for-byte with the link
-  // endpoints buildClosFabric emits — a linear base+off start would drift past
-  // the device walk at every /24 boundary. Device creation is synchronous
+  // IP set a single {tier.start_ip, tier.count} request would create. The fleet
+  // is a flat /16 management plane, so batch starts are plain linear base+off —
+  // they line up byte-for-byte with the link endpoints buildClosFabric emits and
+  // with what the server's nextHost assigns. Device creation is synchronous
   // server-side, and the HTTP server enforces a 30s WriteTimeout — a single huge
   // tier (e.g. 8192 hosts, ~5 min) blocks one request far past that deadline, so
   // the server drops the response and the wizard mis-reads a fully-successful
@@ -602,7 +578,7 @@
     var baseInt = ipToInt(tier.start_ip);
     for (var off = 0; off < tier.count; off += chunkSize) {
       batches.push({
-        start_ip: intToIp(hostIpInt(baseInt, off)),
+        start_ip: intToIp(baseInt + off),
         count: Math.min(chunkSize, tier.count - off)
       });
     }
@@ -618,7 +594,6 @@
     closDeviceBatches: closDeviceBatches,
     ipToInt: ipToInt,
     intToIp: intToIp,
-    hostIpInt: hostIpInt,
     SCALE_CAP: SCALE_CAP,
     edgeKey: edgeKey,
     buildModel: buildModel,

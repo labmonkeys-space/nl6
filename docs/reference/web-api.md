@@ -31,6 +31,12 @@ management web UI at `/`.
 Bulk creation supports round-robin across all device types, category-based
 filtering, per-request SNMP port selection, and an optional SNMPv3 block.
 
+> **Addressing.** Device IPs are *management* addresses on a flat `/16` plane.
+> `netmask` is optional and **defaults to `/16`** — only the `/16` network and
+> broadcast are reserved, so `.x.0` and `.x.255` are assigned as ordinary hosts.
+> An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic
+> per-`/24` semantics (which skip `.0`/`.255`).
+
 ```bash
 # Round-robin across all device types
 curl -X POST http://localhost:8080/api/v1/devices \
@@ -38,7 +44,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 10,
-    "netmask": "24",
+    "netmask": "16",
     "round_robin": true
   }'
 
@@ -48,7 +54,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 5,
-    "netmask": "24",
+    "netmask": "16",
     "snmp_port": 1161
   }'
 
@@ -58,7 +64,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 3,
-    "netmask": "24",
+    "netmask": "16",
     "round_robin": true,
     "category": "GPU Servers"
   }'
@@ -69,7 +75,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 5,
-    "netmask": "24",
+    "netmask": "16",
     "snmpv3": {
       "enabled": true,
       "engine_id": "0x80001234",
@@ -86,7 +92,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 3,
-    "netmask": "24",
+    "netmask": "16",
     "if_error_scenario": "degraded"
   }'
 ```
@@ -110,7 +116,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "192.168.100.1",
     "device_count": 1,
-    "netmask": "24",
+    "netmask": "16",
     "resource_file": "pure_storage_flasharray.json"
   }'
 ```
@@ -187,7 +193,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "10.0.0.1",
     "device_count": 100,
-    "netmask": "24",
+    "netmask": "16",
     "flow": {
       "collector": "192.168.1.10:4739",
       "protocol":  "ipfix"

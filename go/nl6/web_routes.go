@@ -31,14 +31,16 @@ exit 1
 `
 	}
 
-	// Collect unique subnets from devices
+	// Collect unique /16 management-plane networks from the device IPs. The
+	// fleet is a flat /16 (see ipalloc.go), and the runtime installs a single
+	// /16 host route per plane; a /16 route reaches every device in that /16,
+	// including an explicit-/24 batch's devices. Grouping here keeps the
+	// generated script consistent with the live routes instead of emitting up
+	// to 256 per-/24 stanzas.
 	subnets := make(map[string]bool)
 	for _, device := range devices {
-		ip := net.ParseIP(device.IP)
-		if ip != nil {
-			// Assume /24 subnet for route calculation
-			subnet := fmt.Sprintf("%d.%d.%d.0/24", ip[12], ip[13], ip[14])
-			subnets[subnet] = true
+		if cidr := networkCIDR(net.ParseIP(device.IP), defaultPrefixLen); cidr != "" {
+			subnets[cidr] = true
 		}
 	}
 

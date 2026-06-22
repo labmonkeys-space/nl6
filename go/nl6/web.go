@@ -50,6 +50,22 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The fleet defaults to a flat /16 management plane: an omitted netmask
+	// opts into it. Explicit "24" / "8" are still honored by the shared
+	// allocation rule (see ipalloc.go nextHost / parsePrefix). Reject any other
+	// value rather than silently coercing it — the netmask is passed verbatim to
+	// `ip addr add` for the TUN, so an unsupported prefix would otherwise leave
+	// the device's on-link mask disagreeing with the allocation/route prefix.
+	if req.Netmask == "" {
+		req.Netmask = "16"
+	}
+	switch req.Netmask {
+	case "8", "16", "24":
+	default:
+		sendErrorResponse(w, "netmask must be 8, 16, or 24", http.StatusBadRequest)
+		return
+	}
+
 	snmpPort := req.SNMPPort
 	if snmpPort == 0 {
 		snmpPort = DEFAULT_SNMP_PORT
