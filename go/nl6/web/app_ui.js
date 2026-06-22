@@ -989,11 +989,29 @@ async function submitFabric() {
     }
 }
 
+// Track whether a press started on the scrim itself. A `click` fires on the
+// nearest common ancestor of its mousedown/mouseup targets, so selecting a
+// field value by dragging past the input bounds (mousedown in the input,
+// mouseup on the backdrop) produces a click whose target is the scrim — which
+// would otherwise read as a backdrop click and (with a dirty draft) pop the
+// "Discard your provision draft?" confirm. Only treat it as a backdrop click
+// when the press also began on the backdrop.
+let _scrimPressOnBackdrop = false;
+document.getElementById('provisionModal').addEventListener('mousedown', (e) => {
+    _scrimPressOnBackdrop = (e.target.id === 'provisionModal');
+});
+
 // Event delegation for all modal interactions.
 document.getElementById('provisionModal').addEventListener('click', (e) => {
+    // Consume the press-origin flag on every click so its lifetime is exactly
+    // one press→click pair: a backdrop press that releases *inside* the modal
+    // can't leave it set for a later click to misread.
+    const pressedBackdrop = _scrimPressOnBackdrop;
+    _scrimPressOnBackdrop = false;
     if (e.target.id === 'provisionModal') {
-        // Scrim click
-        closeProvisionModal();
+        // Backdrop click — only when the press began on the backdrop, so a
+        // text-selection drag that merely ends here doesn't close the modal.
+        if (pressedBackdrop) closeProvisionModal();
         return;
     }
     const trigger = e.target.closest('[data-action]');
