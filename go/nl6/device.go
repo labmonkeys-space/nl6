@@ -197,7 +197,13 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			sm.mu.RUnlock()
 
 			if exists {
-				// log.Printf("Device %s already exists, skipping", deviceID)
+				// An already-present IP counts as a success: the device exists
+				// as requested, so it must not inflate the "failed" count the
+				// REST handler derives (requested - created). Without this, a
+				// re-submit of an existing range (e.g. re-running the Clos
+				// wizard on the same subnet) would report false start-failures.
+				successCount++
+				sm.deviceCreateProgress.Store(successCount)
 				sm.mu.Lock()
 				sm.incrementIP()
 				sm.mu.Unlock()
@@ -490,6 +496,14 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 		sm.mu.RUnlock()
 
 		if exists {
+			// Already-present IPs count as successes (see the sequential path):
+			// the device exists as requested, so it must not be tallied as a
+			// start-failure by the handler's requested-created arithmetic.
+			mu.Lock()
+			(*successCount)++
+			progress := *successCount
+			mu.Unlock()
+			sm.deviceCreateProgress.Store(progress)
 			continue
 		}
 
