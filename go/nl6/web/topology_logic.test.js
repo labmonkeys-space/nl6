@@ -378,4 +378,31 @@ ok('closSubnetError: requires dotted IPv4 and a /16 (or no) prefix', () => {
     'host bits normalized to the /16 network');
 });
 
+ok('closDeviceBatches: splits a tier into contiguous batches covering every IP', () => {
+  // Host tier of a k=32 fabric: 8192 devices from 10.42.16.1.
+  const tier = { start_ip: '10.42.16.1', count: 8192, resource_file: 'linux_server.json' };
+  const batches = T.closDeviceBatches(tier, 100);
+  assert.strictEqual(batches.length, 82, 'ceil(8192/100) batches');
+  assert.deepStrictEqual(batches[0], { start_ip: '10.42.16.1', count: 100 });
+  // Counts sum to the tier total; last batch is the remainder.
+  assert.strictEqual(batches.reduce((s, b) => s + b.count, 0), 8192);
+  assert.strictEqual(batches[batches.length - 1].count, 8192 - 81 * 100); // 92
+  // Batches are contiguous: each start_ip = previous start + previous count,
+  // so the union is exactly the IPs one {start_ip, count} request would create.
+  for (let i = 1; i < batches.length; i++) {
+    const expected = T.intToIp(T.ipToInt(batches[i - 1].start_ip) + batches[i - 1].count);
+    assert.strictEqual(batches[i].start_ip, expected, `batch ${i} contiguous`);
+  }
+  // Spot-check the carry across the third octet: batch[2] starts at .16.1 + 200.
+  assert.strictEqual(batches[2].start_ip, T.intToIp(T.ipToInt('10.42.16.1') + 200));
+});
+
+ok('closDeviceBatches: small tier stays a single batch; exact multiple has no remainder', () => {
+  assert.deepStrictEqual(T.closDeviceBatches({ start_ip: '10.42.0.1', count: 16 }, 100),
+    [{ start_ip: '10.42.0.1', count: 16 }]);
+  const exact = T.closDeviceBatches({ start_ip: '10.42.4.1', count: 200 }, 100);
+  assert.strictEqual(exact.length, 2);
+  assert.deepStrictEqual(exact.map(b => b.count), [100, 100]);
+});
+
 console.log(`\n${pass} checks passed.`);

@@ -558,12 +558,33 @@
     return { tiers: tiers, links: links, netmask: netmask };
   }
 
+  // closDeviceBatches splits one fabric tier into contiguous device-creation
+  // batches of at most chunkSize each ({start_ip, count}), preserving the exact
+  // IP set a single {tier.start_ip, tier.count} request would create. Device
+  // creation is synchronous server-side, and the HTTP server enforces a 30s
+  // WriteTimeout — a single huge tier (e.g. 8192 hosts, ~5 min) blocks one
+  // request far past that deadline, so the server drops the response and the
+  // wizard mis-reads a fully-successful create as a failure. Small batches keep
+  // every POST /devices well under the deadline. Pure/testable.
+  function closDeviceBatches(tier, chunkSize) {
+    var batches = [];
+    var baseInt = ipToInt(tier.start_ip);
+    for (var off = 0; off < tier.count; off += chunkSize) {
+      batches.push({
+        start_ip: intToIp(baseInt + off),
+        count: Math.min(chunkSize, tier.count - off)
+      });
+    }
+    return batches;
+  }
+
   return {
     CLOS_MAX_K: CLOS_MAX_K,
     closKError: closKError,
     closSubnetError: closSubnetError,
     closCounts: closCounts,
     buildClosFabric: buildClosFabric,
+    closDeviceBatches: closDeviceBatches,
     ipToInt: ipToInt,
     intToIp: intToIp,
     SCALE_CAP: SCALE_CAP,

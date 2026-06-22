@@ -220,30 +220,45 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, catego
     }
 }
 
+// DEVICE_CHUNK caps how many devices each POST /devices creates. Device
+// creation is synchronous server-side and the HTTP server enforces a 30s
+// WriteTimeout, so a single large tier (e.g. 8192 hosts ~ 5 min) blocks one
+// request far past the deadline: the server drops the response and the wizard
+// mis-reads a fully-successful create as a failure (modal stays open → operator
+// re-submits → duplicate fleet). Small batches keep every request well under
+// the deadline and let progress advance smoothly. 100 stays under 30s even at
+// the observed cold-start ~8.5 devices/sec; the total creation time is
+// unchanged, just split across short, reliable requests.
+const DEVICE_CHUNK = 100;
+
 // createClosFabric provisions a k-ary fat-tree built by
-// TopologyLogic.buildClosFabric, using existing endpoints only: one
-// POST /devices per tier (core/agg/edge/hosts) carrying the shared export
-// snapshot, then the LLDP link graph via POST /topology in chunks small enough
-// to stay under the endpoint's 1 MiB body cap (the endpoint is additive and
-// atomic-per-request, so chunks compose). onProgress(msg) reports each stage.
-// Throws on the first failed request (caller keeps the modal open).
+// TopologyLogic.buildClosFabric, using existing endpoints only: per-tier device
+// creation in DEVICE_CHUNK-sized POST /devices batches (each carrying the shared
+// export snapshot), then the LLDP link graph via POST /topology in chunks small
+// enough to stay under the endpoint's 1 MiB body cap (the endpoint is additive
+// and atomic-per-request, so chunks compose). onProgress(msg) reports each
+// stage. Throws on the first failed request (caller keeps the modal open).
 async function createClosFabric(fabric, exportSnapshot, onProgress) {
     const tiers = fabric.tiers;
-    for (let i = 0; i < tiers.length; i++) {
-        const t = tiers[i];
-        if (onProgress) onProgress('Creating ' + t.label + ' (' + (i + 1) + '/' + tiers.length + ')…');
-        const body = {
-            start_ip: t.start_ip,
-            device_count: t.count,
-            netmask: fabric.netmask,
-            resource_file: t.resource_file
-        };
-        if (exportSnapshot) {
-            if (exportSnapshot.flow) body.flow = exportSnapshot.flow;
-            if (exportSnapshot.traps) body.traps = exportSnapshot.traps;
-            if (exportSnapshot.syslog) body.syslog = exportSnapshot.syslog;
+    const totalDevices = tiers.reduce((s, t) => s + t.count, 0);
+    let created = 0;
+    for (const t of tiers) {
+        for (const batch of TopologyLogic.closDeviceBatches(t, DEVICE_CHUNK)) {
+            const body = {
+                start_ip: batch.start_ip,
+                device_count: batch.count,
+                netmask: fabric.netmask,
+                resource_file: t.resource_file
+            };
+            if (exportSnapshot) {
+                if (exportSnapshot.flow) body.flow = exportSnapshot.flow;
+                if (exportSnapshot.traps) body.traps = exportSnapshot.traps;
+                if (exportSnapshot.syslog) body.syslog = exportSnapshot.syslog;
+            }
+            await apiCall('/devices', { method: 'POST', body: JSON.stringify(body) });
+            created += batch.count;
+            if (onProgress) onProgress('Creating ' + t.label + ' — ' + created + '/' + totalDevices + ' devices…');
         }
-        await apiCall('/devices', { method: 'POST', body: JSON.stringify(body) });
     }
 
     // Chunk the link graph. ~4000 links/request keeps the body well under the
