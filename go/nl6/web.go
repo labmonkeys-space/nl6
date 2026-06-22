@@ -126,21 +126,31 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		seed = nil
 	}
 
-	// Use CreateDevicesWithOptions if pre-allocation parameters are specified
-	if req.PreAllocate || req.MaxWorkers > 0 {
-		// If PreAllocate is not explicitly set but MaxWorkers is provided, enable pre-allocation
-		preAllocate := req.PreAllocate || req.MaxWorkers > 0
-		err = manager.CreateDevicesWithOptions(req.StartIP, req.DeviceCount, req.Netmask, req.ResourceFile, req.SNMPv3, preAllocate, req.MaxWorkers, req.RoundRobin, req.Category, snmpPort, seed)
-	} else {
-		// Use default behavior (auto pre-allocates for 10+ devices)
-		err = manager.CreateDevices(req.StartIP, req.DeviceCount, req.Netmask, req.ResourceFile, req.SNMPv3, req.RoundRobin, req.Category, snmpPort, seed)
-	}
+	// Always route through CreateDevicesWithOptions with pre-allocation on:
+	// the former CreateDevices fallback was exactly CreateDevicesWithOptions
+	// with preAllocate=true, maxWorkers=0, so this preserves behaviour while
+	// giving us the actual created count (req.MaxWorkers is 0 when unset).
+	created, err := manager.CreateDevicesWithOptions(req.StartIP, req.DeviceCount, req.Netmask, req.ResourceFile, req.SNMPv3, true, req.MaxWorkers, req.RoundRobin, req.Category, snmpPort, seed)
 	if err != nil {
 		sendErrorResponse(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	sendSuccessResponse(w, fmt.Sprintf("Created %d devices starting from %s", req.DeviceCount, req.StartIP))
+	// Report the ACTUAL created count, not the requested count — some devices
+	// can fail to start under resource pressure at scale, and silently echoing
+	// the request made partial failures invisible (a Clos fabric would then
+	// reference never-created devices as "unresolved" topology links).
+	failed := req.DeviceCount - created
+	msg := fmt.Sprintf("Created %d devices starting from %s", created, req.StartIP)
+	if failed > 0 {
+		msg = fmt.Sprintf("Created %d of %d devices (%d failed to start) starting from %s", created, req.DeviceCount, failed, req.StartIP)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Message: msg,
+		Data:    CreateDevicesResult{Created: created, Requested: req.DeviceCount, Failed: failed},
+	})
 }
 
 func listDevicesHandler(w http.ResponseWriter, r *http.Request) {

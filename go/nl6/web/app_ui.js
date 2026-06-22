@@ -969,9 +969,19 @@ async function submitFabric() {
     renderProvisionFooter(provisionSteps()[provisionStep]);
     let lastStage = '';
     try {
-        await createClosFabric(fabric, snapshot, (msg) => { lastStage = msg; setProvisionProgress(msg); });
-        showAlert('Clos fabric created: ' + fabric.tiers.reduce((s, t) => s + t.count, 0) +
-            ' devices, ' + fabric.links.length + ' links.', 'success');
+        const result = await createClosFabric(fabric, snapshot, (msg) => { lastStage = msg; setProvisionProgress(msg); });
+        // Reconcile what the server actually created against the intended fabric:
+        // a shortfall means some devices failed to start, so the links to them
+        // will show as "unresolved" in the topology. Surface it rather than
+        // claiming the full count.
+        const failed = result.requested - result.created;
+        if (failed > 0) {
+            showAlert('Clos fabric created with issues: ' + result.created + ' of ' + result.requested +
+                ' devices started (' + failed + ' failed). ' + fabric.links.length +
+                ' links posted — links to the ' + failed + ' missing device(s) will show as unresolved.', 'error');
+        } else {
+            showAlert('Clos fabric created: ' + result.created + ' devices, ' + fabric.links.length + ' links.', 'success');
+        }
         startStatusPolling();
         await loadDevices();
         clearProvisionDraft();

@@ -208,7 +208,11 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, catego
             method: 'POST',
             body: JSON.stringify(requestData)
         });
-        showAlert(response.message, 'success');
+        // The server message already reads "Created X of Y (Z failed)" on a
+        // shortfall; flag it as an error toast so a partial batch isn't shown
+        // as a plain success.
+        const failed = response.data && typeof response.data.failed === 'number' ? response.data.failed : 0;
+        showAlert(response.message, failed > 0 ? 'error' : 'success');
 
         // Start status polling to track progress
         startStatusPolling();
@@ -238,9 +242,13 @@ const DEVICE_CHUNK = 100;
 // enough to stay under the endpoint's 1 MiB body cap (the endpoint is additive
 // and atomic-per-request, so chunks compose). onProgress(msg) reports each
 // stage. Throws on the first failed request (caller keeps the modal open).
+// Returns {requested, created}: `created` sums the ACTUAL per-batch created
+// counts the server reports, which can be less than `requested` when devices
+// fail to start at scale — submitFabric warns on the shortfall.
 async function createClosFabric(fabric, exportSnapshot, onProgress) {
     const tiers = fabric.tiers;
     const totalDevices = tiers.reduce((s, t) => s + t.count, 0);
+    let requested = 0;
     let created = 0;
     for (const t of tiers) {
         for (const batch of TopologyLogic.closDeviceBatches(t, DEVICE_CHUNK)) {
@@ -255,9 +263,12 @@ async function createClosFabric(fabric, exportSnapshot, onProgress) {
                 if (exportSnapshot.traps) body.traps = exportSnapshot.traps;
                 if (exportSnapshot.syslog) body.syslog = exportSnapshot.syslog;
             }
-            await apiCall('/devices', { method: 'POST', body: JSON.stringify(body) });
-            created += batch.count;
-            if (onProgress) onProgress('Creating ' + t.label + ' — ' + created + '/' + totalDevices + ' devices…');
+            const resp = await apiCall('/devices', { method: 'POST', body: JSON.stringify(body) });
+            requested += batch.count;
+            // Prefer the server's actual created count; fall back to the batch
+            // size for older servers that don't report it.
+            created += (resp && resp.data && typeof resp.data.created === 'number') ? resp.data.created : batch.count;
+            if (onProgress) onProgress('Creating ' + t.label + ' — ' + requested + '/' + totalDevices + ' devices…');
         }
     }
 
@@ -274,6 +285,7 @@ async function createClosFabric(fabric, exportSnapshot, onProgress) {
         loaded += chunk.length;
     }
     if (onProgress) onProgress('Done.');
+    return { requested: requested, created: created };
 }
 
 // --- Per-device export block readers -------------------------------------
