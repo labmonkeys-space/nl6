@@ -174,6 +174,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		sm.createDevicesParallel(count, netmask, resourceFile, resources, v3Config, &successCount, roundRobin, roundRobinResources, roundRobinResourceFiles, snmpPort, seed)
 	} else {
 		// No pre-allocation - create devices sequentially (original logic)
+		prefix := parsePrefix(netmask)
 		for i := 0; i < count; i++ {
 			// Select resources first so the device-type slug is available for the device ID
 			deviceResources := resources
@@ -205,7 +206,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 				successCount++
 				sm.deviceCreateProgress.Store(successCount)
 				sm.mu.Lock()
-				sm.incrementIP()
+				sm.incrementIP(prefix)
 				sm.mu.Unlock()
 				continue
 			}
@@ -241,7 +242,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 				if err != nil {
 					log.Printf("Failed to create TUN interface %s for %s: %v", tunName, deviceID, err)
 					sm.mu.Lock()
-					sm.incrementIP()
+					sm.incrementIP(prefix)
 					sm.mu.Unlock()
 					continue
 				}
@@ -375,7 +376,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 				log.Printf("Failed to start device %s: %v", deviceID, err)
 				device.Stop() // Clean up
 				sm.mu.Lock()
-				sm.incrementIP()
+				sm.incrementIP(prefix)
 				sm.mu.Unlock()
 				continue
 			}
@@ -387,7 +388,7 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			sm.devices[deviceID] = device
 			sm.deviceIPs[currentIP.String()] = struct{}{}
 			sm.indexDeviceByIP(device)
-			sm.incrementIP()
+			sm.incrementIP(prefix)
 			sm.mu.Unlock()
 
 			// A new device may resolve a peer that an existing device's
@@ -465,6 +466,7 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 	sm.mu.RUnlock()
 
 	// Pre-compute all device IPs in O(n) instead of O(n²)
+	prefix := parsePrefix(netmask)
 	deviceIPs := make([]net.IP, count)
 	currentDevIP := make(net.IP, len(startingIP))
 	copy(currentDevIP, startingIP)
@@ -472,7 +474,7 @@ func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, res
 		deviceIPs[i] = make(net.IP, len(currentDevIP))
 		copy(deviceIPs[i], currentDevIP)
 		if i < count-1 {
-			sm.incrementIPAddress(currentDevIP)
+			currentDevIP = nextHost(currentDevIP, prefix)
 		}
 	}
 
@@ -699,34 +701,11 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	return true
 }
 
-func (sm *SimulatorManager) incrementIP() {
-	ip := sm.currentIP.To4()
-	if ip == nil {
-		return // Only support IPv4 for now
-	}
-
-	// Create a copy to avoid modifying the original IP
-	newIP := make(net.IP, len(ip))
-	copy(newIP, ip)
-
-	// Increment the last octet
-	newIP[3]++
-
-	// Handle overflow or reaching 255 (move to next subnet)
-	if newIP[3] == 0 || newIP[3] == 255 {
-		newIP[2]++
-		newIP[3] = 1 // Start from .1 in the new subnet
-		if newIP[2] == 0 {
-			newIP[1]++
-			newIP[3] = 1 // Start from .1 in the new subnet
-			if newIP[1] == 0 {
-				newIP[0]++
-				newIP[3] = 1 // Start from .1 in the new subnet
-			}
-		}
-	}
-
-	sm.currentIP = newIP
+// incrementIP advances sm.currentIP to the next assignable host of the given
+// prefix via the shared nextHost rule (skips only the subnet's network and
+// broadcast). Callers hold sm.mu. See ipalloc.go.
+func (sm *SimulatorManager) incrementIP(prefix int) {
+	sm.currentIP = nextHost(sm.currentIP, prefix)
 }
 
 // DeviceSimulator implementation

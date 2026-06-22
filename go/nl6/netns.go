@@ -389,31 +389,17 @@ func calculateNetworkRanges(startIP string, count int, netmask string) []string 
 		return nil
 	}
 
-	// Track unique /24 networks (or use provided netmask for smaller ranges)
+	// Track unique networks at the batch's prefix (a single /16 for the flat
+	// management plane). Walk the device IPs with the shared nextHost rule so the
+	// span matches what the device creator actually assigns. See ipalloc.go.
+	prefix := parsePrefix(netmask)
 	networks := make(map[string]bool)
-
-	// For each device, determine its network
 	currentIP := make(net.IP, 4)
 	copy(currentIP, ip)
 
 	for i := 0; i < count; i++ {
-		// Get network address for this IP based on netmask
-		var networkAddr string
-		switch netmask {
-		case "8":
-			networkAddr = fmt.Sprintf("%d.0.0.0/8", currentIP[0])
-		case "16":
-			networkAddr = fmt.Sprintf("%d.%d.0.0/16", currentIP[0], currentIP[1])
-		case "24":
-			networkAddr = fmt.Sprintf("%d.%d.%d.0/24", currentIP[0], currentIP[1], currentIP[2])
-		default:
-			// Default to /24 for routing efficiency
-			networkAddr = fmt.Sprintf("%d.%d.%d.0/24", currentIP[0], currentIP[1], currentIP[2])
-		}
-		networks[networkAddr] = true
-
-		// Increment IP
-		incrementIP(currentIP)
+		networks[networkCIDR(currentIP, prefix)] = true
+		currentIP = nextHost(currentIP, prefix)
 	}
 
 	// Convert map to slice
@@ -423,21 +409,6 @@ func calculateNetworkRanges(startIP string, count int, netmask string) []string 
 	}
 
 	return result
-}
-
-// incrementIP increments an IPv4 address in place
-func incrementIP(ip net.IP) {
-	ip[3]++
-	if ip[3] == 0 || ip[3] == 255 {
-		ip[2]++
-		ip[3] = 1
-		if ip[2] == 0 {
-			ip[1]++
-			if ip[1] == 0 {
-				ip[0]++
-			}
-		}
-	}
 }
 
 // enableIPForwarding enables IPv4 forwarding and configures the host

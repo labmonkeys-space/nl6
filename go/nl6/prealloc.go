@@ -65,6 +65,7 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 	var errors []error
 
 	// Current IP for allocation (make a copy to avoid modifying the manager's IP)
+	prefix := parsePrefix(netmask)
 	currentIP := make(net.IP, len(startIP))
 	copy(currentIP, startIP)
 
@@ -123,7 +124,7 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 		}(i, interfaceIP)
 
 		// Increment IP for next interface
-		sm.incrementIPAddress(currentIP)
+		currentIP = nextHost(currentIP, prefix)
 	}
 
 	// Wait for all workers to complete with timeout
@@ -179,31 +180,6 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 	copy(sm.currentIP, currentIP)
 
 	return nil
-}
-
-// incrementIPAddress increments an IP address in-place with same logic as incrementIP()
-func (sm *SimulatorManager) incrementIPAddress(ip net.IP) {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return // Only support IPv4
-	}
-
-	// Increment the last octet
-	ip4[3]++
-
-	// Handle overflow or reaching 255 (move to next subnet)
-	if ip4[3] == 0 || ip4[3] == 255 {
-		ip4[2]++
-		ip4[3] = 1 // Start from .1 in the new subnet
-		if ip4[2] == 0 {
-			ip4[1]++
-			ip4[3] = 1 // Start from .1 in the new subnet
-			if ip4[1] == 0 {
-				ip4[0]++
-				ip4[3] = 1 // Start from .1 in the new subnet
-			}
-		}
-	}
 }
 
 // bulkDeleteTunInterfaces deletes multiple TUN interfaces efficiently using batch commands

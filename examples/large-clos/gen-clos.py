@@ -60,23 +60,10 @@ RES = {
 
 
 def ip(tier, idx):
-    # Resolve the idx-th host of a tier the same way nl6's device creator
-    # (SimulatorManager.incrementIP) does: octet-4 runs 1..254 within each /24,
-    # skipping .0 (network) and .255 (broadcast) and carrying into octet-3 on
-    # each boundary. A naive base+idx would name the .0/.255 addresses the
-    # creator never assigns, leaving the topology graph with dangling endpoints
-    # at every /24 boundary. Every tier BASE ends in .1, so octet-4 is a valid
-    # host here. O(1).
-    base = int(ipaddress.IPv4Address(BASE[tier]))
-    b4 = base & 255
-    prefix = base - b4
-    first_run = 255 - b4
-    if idx < first_run:
-        return str(ipaddress.IPv4Address(prefix + b4 + idx))
-    rest = idx - first_run
-    subnets = 1 + rest // 254
-    o4 = 1 + rest % 254
-    return str(ipaddress.IPv4Address(prefix + subnets * 256 + o4))
+    # The fleet is a flat /16 management plane (nl6 skips only the /16
+    # network/broadcast), so the index->IP map is plain linear base+idx: it lands
+    # on exactly the hosts the device creator assigns, including .x.0/.x.255.
+    return str(ipaddress.IPv4Address(int(ipaddress.IPv4Address(BASE[tier])) + idx))
 
 
 def core_id(j, i):    # core group j (0..HALF-1), member i (0..HALF-1)

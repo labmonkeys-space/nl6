@@ -534,17 +534,6 @@ func (sm *SimulatorManager) SetupRoutesForDevices(startIP string, count int, net
 	return sm.netNamespace.AddRouteForDevices(startIP, count, netmask)
 }
 
-// subnet24CIDR formats a /24 host-route CIDR for the given first three octets.
-// Host routes are /24-granular (one per device subnet) regardless of a device's
-// configured netmask: the network address is /24-aligned (".0" host octet), so
-// emitting a shorter mask here (e.g. /16) yields a non-canonical prefix like
-// "10.42.4.0/16" that `ip route` rejects with "Invalid prefix for given prefix
-// length". A Clos fabric spreads devices across many /24s inside one /16, so
-// /24 routes cover every device subnet without that pitfall.
-func subnet24CIDR(o0, o1, o2 byte) string {
-	return fmt.Sprintf("%d.%d.%d.0/24", o0, o1, o2)
-}
-
 // SetupRoutesFromDevices adds host routes based on actual device IPs rather than
 // calculating from startIP + count, ensuring no subnets are missed.
 func (sm *SimulatorManager) SetupRoutesFromDevices(netmask string) error {
@@ -552,16 +541,15 @@ func (sm *SimulatorManager) SetupRoutesFromDevices(netmask string) error {
 		return nil
 	}
 
+	// Collect unique networks at the batch prefix — one /16 for the flat
+	// management plane, per-/24 for an explicit /24 batch (see ipalloc.go).
+	prefix := parsePrefix(netmask)
 	sm.mu.RLock()
-	// Collect unique /24 subnets from all devices
 	subnets := make(map[string]bool)
 	for _, device := range sm.devices {
-		ip := device.IP.To4()
-		if ip == nil {
-			continue
+		if cidr := networkCIDR(device.IP, prefix); cidr != "" {
+			subnets[cidr] = true
 		}
-		subnet := subnet24CIDR(ip[0], ip[1], ip[2])
-		subnets[subnet] = true
 	}
 	sm.mu.RUnlock()
 
@@ -574,7 +562,9 @@ func (sm *SimulatorManager) SetupRoutesFromDevices(netmask string) error {
 	return nil
 }
 
-// ensureAllSubnetRoutes adds host routes for every /24 subnet between startIP and currentIP.
+// ensureAllSubnetRoutes adds host routes covering every subnet between startIP
+// and currentIP at the batch prefix — a single /16 for the flat management
+// plane, or per-/24 for an explicit /24 batch (see ipalloc.go).
 func (sm *SimulatorManager) ensureAllSubnetRoutes(startIP net.IP, netmask string) {
 	if sm.netNamespace == nil {
 		return
@@ -595,12 +585,10 @@ func (sm *SimulatorManager) ensureAllSubnetRoutes(startIP net.IP, netmask string
 	copy(endCopy, end)
 	sm.mu.RUnlock()
 
-	// Per-/24 host routes: the loop already walks the third octet, so each
-	// route is a /24. /24 routes via the namespace veth reach every device IP
-	// in each /24 the fabric spans.
-	for o3 := int(start[2]); o3 <= int(endCopy[2]); o3++ {
-		sm.netNamespace.addHostRoute(subnet24CIDR(start[0], start[1], byte(o3)))
+	routes := networkRoutesBetween(start, endCopy, parsePrefix(netmask))
+	for _, cidr := range routes {
+		sm.netNamespace.addHostRoute(cidr)
 	}
-	log.Printf("ensureAllSubnetRoutes: added routes for %d.%d.%d.0 - %d.%d.%d.0",
-		start[0], start[1], start[2], endCopy[0], endCopy[1], endCopy[2])
+	log.Printf("ensureAllSubnetRoutes: added %d route(s) covering %s - %s",
+		len(routes), start.String(), endCopy.String())
 }
