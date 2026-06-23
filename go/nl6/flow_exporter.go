@@ -350,7 +350,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 }
 
 // SetFlowSourcePerDevice toggles per-device UDP source IP binding. When true,
-// each device opens its own UDP socket inside the opensim namespace bound to
+// each device opens its own UDP socket inside the nl6sim namespace bound to
 // the device's IP, so collectors see per-device exporter IPs rather than the
 // container host IP. Read at per-device attach time; call before the
 // first call to `CreateDevices` that carries a flow seed.
@@ -387,7 +387,7 @@ func (sm *SimulatorManager) registerSFlowCounterSources(device *DeviceSimulator)
 // Silently falls through to the shared-pool socket when:
 //   - per-device mode is disabled,
 //   - namespace isolation is off (device.netNamespace == nil),
-//   - or the bind fails (typically because the opensim ns has no route to
+//   - or the bind fails (typically because the nl6sim ns has no route to
 //     the collector — see issue #36).
 //
 // Best-effort: a failed per-device bind logs once and the exporter keeps

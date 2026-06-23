@@ -1,30 +1,31 @@
 # Network namespace
 
 By default, nl6 runs every simulated device inside a dedicated Linux
-network namespace named `opensim`. This page covers what that namespace
+network namespace named `nl6sim`. This page covers what that namespace
 contains, why the simulator prefers it over the root namespace, and the
 `rp_filter` / `FORWARD` knobs you may need to tune.
 
-> **Note on the namespace name.** The literal `opensim` is intentionally
-> stable across the project rename from `l8opensim` to `nl6`. Renaming the
-> namespace would break operator scripts and rescue tooling that grep
-> `ip netns list` for `opensim`, and would force every running deployment
-> to migrate at upgrade time. Treat `opensim` as an operational identifier
-> divorced from project branding.
+> **Note on the namespace name.** The namespace was historically `opensim`
+> (inherited from the `l8opensim` fork origin) and is now `nl6sim`, to match the
+> project. The simulator only creates and cleans up its own `nl6sim` namespace —
+> after upgrading a deployment that previously ran under `opensim`, remove the
+> orphaned namespace once with `sudo ip netns delete opensim` (and
+> `sudo ip link delete veth-sim-host` if it lingers). Update any operator
+> scripts or rescue tooling that grep `ip netns list` for `opensim`.
 
 ## Why the namespace?
 
 Running TUN interfaces directly in the host namespace leaks every simulated
 device into `systemd-networkd`, `NetworkManager`, and any firewalld / UFW /
 nftables policy that's installed. At 30k interfaces the overhead is not
-subtle. The `opensim` namespace gives the simulator a clean room with a
+subtle. The `nl6sim` namespace gives the simulator a clean room with a
 single controlled bridge back to the host.
 
 ## Anatomy
 
-- **Namespace:** `opensim` (created and torn down by the simulator).
+- **Namespace:** `nl6sim` (created and torn down by the simulator).
 - **Bridge:** a veth pair — `veth-sim-host` in the host namespace,
-  `veth-sim-ns` inside `opensim`.
+  `veth-sim-ns` inside `nl6sim`.
 - **Host end:** `veth-sim-host` carries `10.254.0.1/30`.
 - **Namespace end:** `veth-sim-ns` carries `10.254.0.2/30` and the
   namespace's default route points at `10.254.0.1`.
@@ -67,16 +68,16 @@ this at scale — `systemd-networkd` interference will destroy throughput.
 ip netns list
 
 # Interface inventory inside the namespace
-sudo ip netns exec opensim ip addr
+sudo ip netns exec nl6sim ip addr
 
 # Routing table inside the namespace
-sudo ip netns exec opensim ip route
+sudo ip netns exec nl6sim ip route
 
 # Verify reachability to a collector from inside the namespace
-sudo ip netns exec opensim ip route get 192.168.1.10
+sudo ip netns exec nl6sim ip route get 192.168.1.10
 
 # ICMP reachability (useful while debugging flow export)
-sudo ip netns exec opensim ping -c 1 192.168.1.10
+sudo ip netns exec nl6sim ping -c 1 192.168.1.10
 ```
 
 ## `rp_filter`

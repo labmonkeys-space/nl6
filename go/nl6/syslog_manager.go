@@ -151,7 +151,7 @@ func sortedSyslogEntryNames(cat *SyslogCatalog) []string {
 type SyslogSubsystemConfig struct {
 	CatalogPath     string
 	GlobalCap       int  // 0 = unlimited
-	SourcePerDevice bool // bind per-device UDP socket in opensim ns
+	SourcePerDevice bool // bind per-device UDP socket in nl6sim ns
 	// MeanSchedulerInterval seeds the scheduler's Poisson draw when no
 	// device-specific intervals are known. Individual devices still
 	// register with their own per-device interval on the heap.

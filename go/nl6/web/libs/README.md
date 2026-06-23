@@ -1,7 +1,7 @@
 # Bundled graph-visualization libraries
 
 Self-hosted (no CDN) so the web console renders the topology view offline /
-inside the `opensim` network namespace.
+inside the `nl6sim` network namespace.
 
 | File | Package | Version | License |
 |------|---------|---------|---------|

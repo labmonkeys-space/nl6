@@ -605,7 +605,7 @@ func (e *TrapExporter) Close() error {
 }
 
 // openTrapConnForDevice opens a per-device UDP socket bound to the device's
-// IP inside the opensim netns. Modeled on openFlowConnForDevice (see
+// IP inside the nl6sim netns. Modeled on openFlowConnForDevice (see
 // flow_exporter.go). Returns nil + logs on failure; the caller decides
 // whether that's fatal (INFORM mode) or recoverable (TRAP mode falls back
 // to the shared socket).

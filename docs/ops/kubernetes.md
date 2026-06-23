@@ -24,7 +24,7 @@ Out of the box the simulator needs:
 
 - `CAP_NET_ADMIN` — TUN device creation, link configuration, route
   installation.
-- `CAP_SYS_ADMIN` — `setns(CLONE_NEWNET)` to enter the `opensim`
+- `CAP_SYS_ADMIN` — `setns(CLONE_NEWNET)` to enter the `nl6sim`
   namespace, plus the `ip netns` operations that depend on it.
 - `CAP_NET_BIND_SERVICE` (or root) — bind UDP/161, UDP/162, UDP/514,
   TCP/22 on every device IP.
@@ -41,7 +41,7 @@ shared clusters), the simulator simply cannot run.
 The simulator does not just live inside a pod sandbox — it reaches out and
 edits the host's network stack:
 
-- Creates and removes the `opensim` network namespace.
+- Creates and removes the `nl6sim` network namespace.
 - Installs a veth pair (`veth-sim-host` / `veth-sim-ns`) with a hardcoded
   CIDR (`10.254.0.0/30`).
 - Inserts an iptables rule: `iptables -I FORWARD 1 -i veth-sim-host -j
@@ -60,7 +60,7 @@ break per-device flow / trap / syslog egress without surfacing an error.
 
 Several names and addresses are hardcoded:
 
-- Network namespace name: `opensim`
+- Network namespace name: `nl6sim`
   (`go/nl6/netns.go` → `NETNS_NAME`).
 - veth pair names: `veth-sim-host`, `veth-sim-ns`.
 - veth bridge CIDR: `10.254.0.0/30`.
@@ -77,7 +77,7 @@ density, reschedulability, replicas).
 ### 4. Device CIDR is not cluster-routable
 
 Each simulated device gets its own IP — by default in `10.42.0.0/16` — on
-a TUN interface inside the `opensim` namespace on one node. From the
+a TUN interface inside the `nl6sim` namespace on one node. From the
 **host** of that node, traffic to those IPs routes via veth into the
 namespace and reaches the device. From **any other pod or node** on the
 cluster, `10.42.0.0/16` is unknown and unreachable.

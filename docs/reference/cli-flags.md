@@ -10,7 +10,7 @@ sudo ./nl6 [options]
 ```
 
 Root is required because the simulator creates TUN interfaces and manages the
-`opensim` network namespace. See [Network namespace](../ops/network-namespace.md)
+`nl6sim` network namespace. See [Network namespace](../ops/network-namespace.md)
 for the namespace details and [Quick start](../getting-started/quick-start.md)
 for a minimal invocation.
 

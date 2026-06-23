@@ -20,7 +20,7 @@ import (
 var errNotLinux = errors.New("network namespaces require Linux")
 
 const (
-	NETNS_NAME   = "opensim"
+	NETNS_NAME   = "nl6sim"
 	VETH_HOST    = "veth-sim-host"
 	VETH_NS      = "veth-sim-ns"
 	VETH_HOST_IP = "10.254.0.1"

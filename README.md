@@ -59,7 +59,7 @@ network namespaces.
 ## Status & scale
 
 **Stable** — SNMP v2c/v3, SSH, HTTPS REST (storage APIs), NetFlow v5/v9 and
-IPFIX, TUN-per-device scaling with `opensim` network-namespace isolation,
+IPFIX, TUN-per-device scaling with `nl6sim` network-namespace isolation,
 web UI, REST control plane.
 
 **Experimental** — sFlow v5 (synthesised from `FlowCache` records with a

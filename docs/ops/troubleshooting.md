@@ -9,7 +9,7 @@ territory.
 ## Common issues
 
 ### Permission denied
-The simulator creates TUN interfaces and manages the `opensim` network
+The simulator creates TUN interfaces and manages the `nl6sim` network
 namespace; both require privileges. Run with `sudo` or use a container that
 grants `CAP_NET_ADMIN` plus access to `/dev/net/tun` — see
 [Docker](../getting-started/docker.md).
@@ -48,7 +48,7 @@ ulimit -n 1048576          # current shell
 # /etc/security/limits.conf
 ```
 
-Keep the `opensim` namespace enabled (default); running in the root
+Keep the `nl6sim` namespace enabled (default); running in the root
 namespace with `-no-namespace` at scale drags `systemd-networkd` into
 every interface change. See [Scaling](scaling.md).
 
@@ -61,7 +61,7 @@ negative integer values on a tagged release, upgrade to a newer build.
 ```bash
 # Check TUN interfaces
 ip addr show | grep sim
-sudo ip netns exec opensim ip addr | grep sim
+sudo ip netns exec nl6sim ip addr | grep sim
 
 # Verify device processes (adjust port if using -snmp-port)
 ss -tulpn | grep -E "(161|1161|22)"
@@ -80,12 +80,12 @@ htop
 
 ## When the namespace is stuck
 
-If the simulator dies without cleaning up (e.g. `kill -9`), the `opensim`
+If the simulator dies without cleaning up (e.g. `kill -9`), the `nl6sim`
 namespace and `veth-sim-host` / `veth-sim-ns` may linger. Tear them down
 by hand:
 
 ```bash
-sudo ip netns delete opensim
+sudo ip netns delete nl6sim
 sudo ip link delete veth-sim-host
 # iptables rule, if still present
 sudo iptables -D FORWARD -i veth-sim-host -j ACCEPT 2>/dev/null
