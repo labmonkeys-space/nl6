@@ -59,6 +59,17 @@ func parsePrivProtocol(proto string) int {
 
 // setupSignalHandler sets up graceful shutdown on SIGINT/SIGTERM
 func setupSignalHandler() {
+	// Survive a dropped controlling terminal. A long device-creation run
+	// (e.g. a k=32 Clos build) saturates the host enough that an interactive
+	// SSH session can drop; the resulting SIGHUP would otherwise terminate a
+	// foreground `make run`, killing the simulator mid-build and freezing the
+	// wizard. Ignoring SIGHUP keeps it running (reparented to init) so creation
+	// completes and the fleet is intact on reconnect. SIGPIPE is ignored too so
+	// log writes to the now-closed terminal's stdout/stderr (fd 1/2) don't kill
+	// it either — Go already ignores SIGPIPE for network fds, this extends that
+	// to the terminal. Ctrl-C (SIGINT) and SIGTERM still shut down gracefully.
+	signal.Ignore(syscall.SIGHUP, syscall.SIGPIPE)
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
