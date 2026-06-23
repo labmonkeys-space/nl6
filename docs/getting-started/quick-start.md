@@ -35,7 +35,7 @@ go build -o nl6 .
 # Server only — create devices later via the REST API.
 sudo ./nl6
 
-# Auto-create 5 devices starting from 192.168.100.1 on a /24.
+# Auto-create 5 devices starting from 192.168.100.1 on a flat /16 (the default).
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5
 ```
 

@@ -39,11 +39,13 @@ If `modprobe` fails the host kernel may be missing TUN support entirely
 (some minimal cloud images). Switch kernels or use a container host.
 
 ### High resource usage / file descriptors
-Large fleets burn through the default `nofile` limit fast. Raise it well
-above your device count before bring-up (each device opens several sockets):
+Each device opens several sockets, so large fleets need a high `nofile`. The Go
+runtime nl6 is built on raises the soft limit to the **hard** limit at startup,
+so this is usually handled automatically. If you still hit `too many open files`, the *hard* limit
+is capped (restrictive container or systemd `LimitNOFILE=…:1024`) — raise it:
 
 ```bash
-ulimit -n 1048576          # current shell
+ulimit -Hn 1048576          # current shell; nl6 then lifts the soft limit to it
 # persistent: raise LimitNOFILE on the systemd unit, or nofile in
 # /etc/security/limits.conf
 ```

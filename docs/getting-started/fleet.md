@@ -38,13 +38,21 @@ directory is used.
 Replay an inventory file against another simulator:
 
 ```bash
-scripts/fleet.sh import http://sim-b:8080 nl6-inventory.json --netmask 255.255.0.0
+scripts/fleet.sh import http://sim-b:8080 nl6-inventory.json --netmask 16
 ```
 
-`--netmask` defaults to `255.255.0.0` (matches the `10.42.0.0/16`
-subnet most lab setups use). The flag is needed because `POST
-/api/v1/devices` requires a netmask while the `GET` response does
-not return one.
+`--netmask` is a **prefix length** and defaults to `16` — the flat
+`10.42.0.0/16` management plane the fleet now uses. `POST /api/v1/devices`
+accepts only `8`, `16`, or `24` (a dotted mask like `255.255.0.0` is
+rejected with `400`), and the `GET` response does not echo a netmask, so
+import supplies one.
+
+:::warning[Dotted netmask in an inventory file]
+A batch-manifest file (`[{start_ip,...}]`) is posted verbatim, so `--netmask`
+does **not** apply to it — an entry carrying its own dotted `netmask` field
+(e.g. from an older export) is rejected with `400`. Regenerate the export, or
+rewrite the field to a prefix length (`16`).
+:::
 
 Import auto-detects the file shape:
 

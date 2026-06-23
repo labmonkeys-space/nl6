@@ -20,7 +20,7 @@ for a minimal invocation.
 |------|------|---------|---------|
 | `-auto-start-ip` | string | — | Auto-create devices starting from this IP (e.g. `192.168.100.1`). |
 | `-auto-count` | int | 0 | Number of devices to auto-create. Requires `-auto-start-ip`. |
-| `-auto-netmask` | string | `24` | Netmask for auto-created devices. |
+| `-auto-netmask` | string | `16` | Netmask (prefix length) for auto-created devices. The fleet is a flat `/16` management plane — only the `/16` network and broadcast are reserved, so `.x.0`/`.x.255` are ordinary device hosts. Accepts `8` / `16` / `24`; an explicit `24` keeps classic per-`/24` semantics (skips `.0`/`.255`). |
 | `-port` | string | `8080` | HTTP API server port. |
 | `-snmp-port` | int | `161` | UDP port for the SNMP listener on each device. Use `1161` to avoid requiring `CAP_NET_BIND_SERVICE`. |
 | `-no-namespace` | bool | `false` | Disable network namespace isolation (run in the root namespace). |
@@ -196,6 +196,16 @@ prerequisites and `netcat` smoke-test, and
 | `-syslog-global-cap` | int (rate) | `0` | **global** | Simulator-wide rate ceiling across scheduled fires. On-demand HTTP fires bypass the cap. `0` is unlimited. |
 | `-syslog-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-syslog-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. Per-device bind failures are non-fatal (unlike INFORM mode on the trap side) — the exporter falls back to the shared socket with a warning. |
+
+## LLDP topology flag
+
+Pre-load an inter-device LLDP link graph at startup. The graph is also mutable
+at runtime via `POST` / `DELETE /api/v1/topology`. See
+[LLDP topology reference](lldp-topology.md).
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-topology-config` | string | — | **global** | Path to a JSON inter-device LLDP link graph (`{"links":[{"a":{"ip","ifindex"},"b":{"ip","ifindex"}}]}`). Loaded at startup; validation is syntactic only (device / ifIndex are resolved lazily at serve time). |
 
 ## Examples
 
