@@ -129,6 +129,7 @@ curl http://localhost:8080/api/v1/topology/status | jq   # {subsystem_active, co
 
 Full walkthrough: [Getting started → Quick start](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/).
 Container deployment: [Getting started → Docker](https://labmonkeys-space.github.io/nl6/getting-started/docker/).
+Deployment recipes & worked examples: [`examples/`](examples/) — Clos fabrics and a ready-to-run OpenNMS Minion (`docker compose`) stack.
 
 ## Documentation map
 
