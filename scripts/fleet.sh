@@ -13,14 +13,14 @@ usage() {
     cat >&2 <<EOF
 Usage:
   $0 export <url> [file]
-  $0 import <url> [file] [--netmask MASK]
+  $0 import <url> [file] [--netmask PREFIX]
 
 Commands:
   export   Capture the device inventory from a running nl6 simulator.
            Default file: nl6-inventory.json
   import   Replay an inventory file into another nl6 simulator.
            Default file:    nl6-inventory.json
-           Default netmask: 255.255.0.0
+           Default netmask: 16  (prefix length; the API accepts 8, 16, or 24)
 
 import auto-detects the file shape:
   {data:[{ip,...},...]}  GET-response shape, one POST per device
@@ -57,7 +57,10 @@ case "$cmd" in
     import)
         URL=""
         FILE=""
-        NETMASK="255.255.0.0"
+        # Prefix length, not a dotted mask: POST /api/v1/devices takes a prefix
+        # and rejects anything other than 8/16/24 with 400. The fleet is a flat
+        # /16 management plane, so 16 is the default.
+        NETMASK="16"
         while [ $# -gt 0 ]; do
             case "$1" in
                 --netmask)
@@ -80,6 +83,10 @@ case "$cmd" in
             esac
         done
         [ -n "$URL" ] || usage
+        case "$NETMASK" in
+            8|16|24) ;;
+            *) echo "--netmask must be 8, 16, or 24 (prefix length, not a dotted mask)" >&2; usage ;;
+        esac
         FILE="${FILE:-nl6-inventory.json}"
         URL="${URL%/}"
 

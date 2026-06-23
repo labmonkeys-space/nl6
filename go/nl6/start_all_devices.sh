@@ -206,7 +206,7 @@ create_device() {
 {
     "start_ip": "$ip_address",
     "device_count": $device_count,
-    "netmask": "24",
+    "netmask": "16",
     "resource_file": "$resource_file"
 }
 EOF

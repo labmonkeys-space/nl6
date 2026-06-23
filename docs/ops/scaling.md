@@ -35,10 +35,14 @@ See [Architecture](../reference/architecture.md) for the component map.
 
 Run these before a large deployment:
 
-- **Raise file-descriptor limits** well above the device count (each device
-  opens several sockets — 30k devices needs a high `nofile`):
+- **File-descriptor limits.** Each device opens several sockets, so a large
+  fleet needs a high `nofile`. The Go runtime nl6 is built on raises the
+  process's soft limit to the **hard** limit at startup, so on a typical host no
+  action is needed. You only have to intervene when the *hard* limit is
+  capped low — e.g. a restrictive container or a systemd unit with
+  `LimitNOFILE=…:1024`. In that case raise the hard ceiling:
   ```bash
-  ulimit -n 1048576          # current shell
+  ulimit -Hn 1048576         # current shell (then nl6 lifts the soft limit to it)
   ```
   For a persistent limit, raise `LimitNOFILE` on the systemd unit or `nofile`
   in `/etc/security/limits.conf`, preserving any existing PAM limits.

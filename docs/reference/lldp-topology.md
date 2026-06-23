@@ -74,13 +74,13 @@ Boot the server and create the four tiers:
 sudo ./nl6        # subsystems are always-on; no topology flag needed
 
 curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
-  -d '{"start_ip":"10.0.0.1","device_count":2,"netmask":"24","resource_file":"cisco_crs_x.json"}'        # superspines
+  -d '{"start_ip":"10.0.0.1","device_count":2,"netmask":"16","resource_file":"cisco_crs_x.json"}'        # superspines
 curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
-  -d '{"start_ip":"10.0.1.1","device_count":4,"netmask":"24","resource_file":"arista_7280r3.json"}'      # spines
+  -d '{"start_ip":"10.0.1.1","device_count":4,"netmask":"16","resource_file":"arista_7280r3.json"}'      # spines
 curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
-  -d '{"start_ip":"10.0.2.1","device_count":4,"netmask":"24","resource_file":"cisco_catalyst_9500.json"}' # leaves
+  -d '{"start_ip":"10.0.2.1","device_count":4,"netmask":"16","resource_file":"cisco_catalyst_9500.json"}' # leaves
 curl -X POST http://localhost:8080/api/v1/devices -H 'Content-Type: application/json' \
-  -d '{"start_ip":"10.0.3.1","device_count":2,"netmask":"24","resource_file":"linux_server.json"}'        # clients
+  -d '{"start_ip":"10.0.3.1","device_count":2,"netmask":"16","resource_file":"linux_server.json"}'        # clients
 ```
 
 Wire the fabric — save as `clos.json` and POST it:
