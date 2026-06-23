@@ -27,7 +27,7 @@ flowchart LR
     end
 
     subgraph kernel ["Linux kernel (host)"]
-        netns["<b>opensim netns</b><br/><small>network namespace</small><br/>Isolated routing,<br/>iptables FORWARD rule"]
+        netns["<b>nl6sim netns</b><br/><small>network namespace</small><br/>Isolated routing,<br/>iptables FORWARD rule"]
         tun["<b>TUN interfaces</b><br/><small>Linux TUN</small><br/>Per-device IP,<br/>pre-allocated in parallel"]
     end
 
@@ -44,10 +44,10 @@ flowchart LR
     class simulator,resources,netns,tun default
 ```
 
-The `opensim` namespace name is an operational identifier kept stable across
-the project rename so existing rescue tooling (e.g., scripts that grep
-`ip netns list` for `opensim`) continues to work — see
-[Network namespace](../ops/network-namespace.md).
+The namespace was historically `opensim` (from the `l8opensim` fork origin) and
+is now `nl6sim`. A build only cleans up its own `nl6sim` namespace, so after
+upgrading remove a leftover `opensim` once with `sudo ip netns delete opensim` —
+see [Network namespace](../ops/network-namespace.md).
 
 ## Package layout
 
@@ -82,7 +82,7 @@ baselines.
 
 ### Network infrastructure
 
-`tun.go` creates TUN interfaces, `netns.go` manages the `opensim` network
+`tun.go` creates TUN interfaces, `netns.go` manages the `nl6sim` network
 namespace, `prealloc.go` does parallel pre-allocation of TUN interfaces
 (configurable worker count 100–200) for fast scaling. See
 [Network namespace](../ops/network-namespace.md) for the namespace operator
@@ -131,7 +131,7 @@ are merged at load time. See [Resource files](resource-files.md).
   and `ifXTable` computed on demand from a single per-direction octet
   sine wave, instead of maintained by a polling loop; see
   [SNMP reference](snmp.md#dynamic-if-mib-counters).
-- **Network namespace isolation** — the `opensim` namespace prevents
+- **Network namespace isolation** — the `nl6sim` namespace prevents
   systemd-networkd interference on many Linux distros.
 - **Per-device flow egress** — a `FORWARD -i veth-sim-host -j ACCEPT`
   iptables rule lets per-device flow exporters send UDP out of the

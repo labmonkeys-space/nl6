@@ -282,7 +282,7 @@ snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1   # ifAlias link labe
 When a topology is deployed, the web console (`http://<host>:8080/`) shows an
 **Inter-device topology** panel. It is gated on `configured_links > 0` — no
 topology, no panel — and renders `GET /api/v1/topology/graph` with a
-locally-vendored sigma.js + graphology stack (no CDN; works in the `opensim`
+locally-vendored sigma.js + graphology stack (no CDN; works in the `nl6sim`
 namespace / airgapped).
 
 - **Live liveness.** Edges are **green** when up, **red** when down; nodes are

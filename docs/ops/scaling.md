@@ -12,7 +12,7 @@ runtime's goroutine / heap footprint rather than raw CPU.
 | **Memory** | ~50 MB base + ~1 KB per device. |
 | **CPU** | Minimal during steady state; bursts during device bring-up. |
 | **File descriptors** | Dominated by per-device sockets — raise `ulimit -n` well above the device count. |
-| **Network** | `opensim` namespace isolation prevents systemd-networkd overhead. |
+| **Network** | `nl6sim` namespace isolation prevents systemd-networkd overhead. |
 
 ## Optimisations already in place
 
@@ -57,7 +57,7 @@ Run these before a large deployment:
   comfortable margin (each device opens several sockets).
 - **`htop`** during bring-up — a short CPU spike is normal as TUN interfaces
   come up in parallel. Steady-state load should be near-idle.
-- **`ip netns exec opensim ip addr`** — confirm TUN interfaces exist inside
+- **`ip netns exec nl6sim ip addr`** — confirm TUN interfaces exist inside
   the namespace. Unexpected entries in the host namespace usually mean
   `-no-namespace` was used.
 - **`/api/v1/system-stats`** — returns the current file-descriptor count,

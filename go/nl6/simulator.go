@@ -105,7 +105,7 @@ func main() {
 		flowInactiveSecs         = flag.Int("flow-inactive-timeout", 15, "Inactive flow timeout in seconds (default: 15)")
 		flowTemplateIntervalSecs = flag.Int("flow-template-interval", 60, "Template retransmission interval in seconds (default: 60)")
 		flowTickSecs             = flag.Int("flow-tick-interval", 5, "Flow ticker interval in seconds (default: 5)")
-		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the opensim namespace so flow packets use the device's IP as the source address (default: true). Requires the opensim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
+		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
 		trapCollector       = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
@@ -114,7 +114,7 @@ func main() {
 		trapGlobalCap       = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
 		trapCatalog         = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
 		trapCommunity       = flag.String("trap-community", "public", "SNMPv2c community string for trap/INFORM PDUs")
-		trapSourcePerDevice = flag.Bool("trap-source-per-device", true, "Bind a per-device UDP socket in the opensim ns so trap packets use the device IP as source (required in -trap-mode inform)")
+		trapSourcePerDevice = flag.Bool("trap-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so trap packets use the device IP as source (required in -trap-mode inform)")
 		trapInformTimeout   = flag.Duration("trap-inform-timeout", 5*time.Second, "Per-retry timeout in INFORM mode (default 5s)")
 		trapInformRetries   = flag.Int("trap-inform-retries", 2, "Maximum retransmissions per INFORM before declaring it failed (default 2)")
 
@@ -124,7 +124,7 @@ func main() {
 		syslogInterval        = flag.Duration("syslog-interval", 10*time.Second, "Per-device mean firing interval (Poisson-distributed); default 10s")
 		syslogGlobalCap       = flag.Int("syslog-global-cap", 0, "Simulator-wide rate ceiling for syslog fires (0 = unlimited)")
 		syslogCatalog         = flag.String("syslog-catalog", "", "Path to a JSON syslog catalog; overrides the embedded universal 6-entry catalog when set")
-		syslogSourcePerDevice = flag.Bool("syslog-source-per-device", true, "Bind a per-device UDP socket in the opensim ns so syslog packets use the device IP as source (default true). Bind failures fall back to shared socket with a warning (never fatal for syslog)")
+		syslogSourcePerDevice = flag.Bool("syslog-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so syslog packets use the device IP as source (default true). Bind failures fall back to shared socket with a warning (never fatal for syslog)")
 
 		// gNMI flags. See CLAUDE.md "gNMI target" for detail.
 		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
@@ -166,7 +166,7 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Println()
 		fmt.Println("Network Namespace Isolation:")
-		fmt.Println("  By default, devices are created in a dedicated network namespace ('opensim')")
+		fmt.Println("  By default, devices are created in a dedicated network namespace ('nl6sim')")
 		fmt.Println("  to prevent systemd-networkd from consuming excessive CPU/memory with many devices.")
 		fmt.Println("  External machines can still access devices via static routes to this host.")
 		fmt.Println("  Use -no-namespace to disable this (not recommended for 1000+ devices).")

@@ -34,7 +34,7 @@ import (
 
 const (
 	// Network namespace name for all simulated devices
-	NETNS_NAME = "opensim"
+	NETNS_NAME = "nl6sim"
 	// Veth pair names for host-namespace connectivity
 	VETH_HOST = "veth-sim-host"
 	VETH_NS   = "veth-sim-ns"
@@ -55,7 +55,7 @@ type NetNamespace struct {
 	VethSetup bool // Whether veth pair is configured
 }
 
-// CreateNetNamespace creates and configures the opensim network namespace
+// CreateNetNamespace creates and configures the nl6sim network namespace
 func CreateNetNamespace() (*NetNamespace, error) {
 	ns := &NetNamespace{
 		Name:     NETNS_NAME,

@@ -369,7 +369,7 @@ func (e *syslogErr) Error() string { return e.msg }
 func newSyslogErr(m string) error  { return &syslogErr{msg: m} }
 
 // openSyslogConnForDevice opens a per-device UDP socket bound to the
-// device's IP inside the opensim netns. Mirrors openTrapConnForDevice:
+// device's IP inside the nl6sim netns. Mirrors openTrapConnForDevice:
 // per design.md §D1 each subsystem owns its own socket lifecycle — sharing
 // a helper would require subsystem-kind parameters and would still result
 // in two sockets at runtime.

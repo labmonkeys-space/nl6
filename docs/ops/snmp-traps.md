@@ -86,7 +86,7 @@ guidance:
 
 ## Prerequisites inherited from flow export
 
-Per-device source IP binding reuses the same `opensim` network namespace
+Per-device source IP binding reuses the same `nl6sim` network namespace
 plumbing as flow export — no new `iptables` rules and no new netns setup.
 In TRAP mode, a per-device bind failure for any device is survivable: the
 simulator logs a warning and that device falls back to the shared UDP
@@ -100,7 +100,7 @@ no ack demux without a per-device socket. The same three conditions apply:
   [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
 - **Route to the collector from inside the namespace.** Same default route
   via `veth-sim-host` (`10.254.0.1`); if you've customised host routing,
-  verify with `sudo ip netns exec opensim ip route get <collector-ip>`.
+  verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
 - **Collector-side `rp_filter`.** Reverse-path filtering on the collector
   host may drop UDP/162 packets whose source IP (`10.0.0.x`, `10.42.0.x`,
   whatever subnet your devices live in) isn't reachable back through the
@@ -168,5 +168,5 @@ conflicts) see [Troubleshooting](troubleshooting.md).
 - [SNMP trap reference](../reference/snmp-traps.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
 - [CLI flags → SNMP trap / INFORM export flags](../reference/cli-flags.md#snmp-trap--inform-export-flags)
 - [UDP syslog export (operator guide)](syslog-export.md) — sibling feature; shares overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md) — shared `opensim` namespace plumbing
+- [Flow export (operator guide)](flow-export.md) — shared `nl6sim` namespace plumbing
 - [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)

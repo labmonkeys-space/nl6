@@ -12,7 +12,7 @@ protocol-level details and the sFlow caveat see
 
 ## Per-device source IPs
 
-By default, each device binds its **own** UDP socket inside the `opensim`
+By default, each device binds its **own** UDP socket inside the `nl6sim`
 namespace, so the collector sees flow packets arriving from the device's IP
 rather than the simulator host's. This is what makes per-device attribution
 work on collectors that key on the exporter source IP (OpenNMS, Elastiflow,
@@ -115,7 +115,7 @@ per `(collector, protocol)` tuple:
 
 - The same device IP can belong to only one flow config (one `flow` block
   per device). If you need the same device to appear on multiple
-  collectors, run multiple simulator processes — the `opensim` netns +
+  collectors, run multiple simulator processes — the `nl6sim` netns +
   per-device-source-IP scheme isn't designed to multicast.
 - The global `-flow-tick-interval` and `-flow-template-interval` are
   simulator-wide — every exporter ticks at the same cadence regardless
@@ -129,7 +129,7 @@ per `(collector, protocol)` tuple:
 ## Prerequisites for per-device source IP
 
 When `-flow-source-per-device` is enabled (the default), flow packets
-originate from inside the `opensim` namespace and must traverse the
+originate from inside the `nl6sim` namespace and must traverse the
 `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector. Three things
 have to be in place:
 
@@ -144,7 +144,7 @@ have to be in place:
   the host via its normal routing table is reachable from the namespace. If
   you've customised host routing verify with:
   ```bash
-  sudo ip netns exec opensim ip route get <collector-ip>
+  sudo ip netns exec nl6sim ip route get <collector-ip>
   ```
 - **Collector-side `rp_filter`.** Reverse-path filtering on the collector
   machine may drop flow packets whose source IP (e.g. `10.0.0.x`) isn't

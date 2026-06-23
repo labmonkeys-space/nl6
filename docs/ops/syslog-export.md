@@ -62,7 +62,7 @@ when the message sink auto-detects format from the leading characters.
 ## Per-device source IP binding
 
 `-syslog-source-per-device=true` (the default) binds a UDP socket per
-device inside the `opensim` network namespace so the UDP source address
+device inside the `nl6sim` network namespace so the UDP source address
 on the wire matches the simulated device's IP. Per-device bind failures
 are **non-fatal** — unlike trap export's INFORM mode, syslog has no ack
 path that depends on symmetric source IPs. When a bind fails:
@@ -98,7 +98,7 @@ Sizing guidance:
 
 ## Prerequisites inherited from flow / trap export
 
-Per-device source IP binding reuses the same `opensim` network namespace
+Per-device source IP binding reuses the same `nl6sim` network namespace
 plumbing as flow and trap export — no new `iptables` rules and no new
 netns setup. Three conditions apply:
 
@@ -109,7 +109,7 @@ netns setup. Three conditions apply:
 - **Route to the collector from inside the namespace.** Same default
   route via `veth-sim-host` (`10.254.0.1`); if you've customised host
   routing, verify with
-  `sudo ip netns exec opensim ip route get <collector-ip>`.
+  `sudo ip netns exec nl6sim ip route get <collector-ip>`.
 - **Collector-side `rp_filter`.** Reverse-path filtering on the
   collector host may drop UDP/514 packets whose source IP
   (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in)
@@ -177,5 +177,5 @@ port conflicts) see [Troubleshooting](troubleshooting.md).
 - [UDP syslog reference](../reference/syslog-export.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
 - [SNMP trap export (operator guide)](snmp-traps.md) — sibling feature; shared overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md) — shared `opensim` namespace plumbing
+- [Flow export (operator guide)](flow-export.md) — shared `nl6sim` namespace plumbing
 - [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)

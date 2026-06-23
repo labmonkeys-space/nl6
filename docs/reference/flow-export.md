@@ -55,7 +55,7 @@ for each interface's `if_counters`, a processor sample, and a memory sample.
 ## Per-device source IP
 
 By default (`-flow-source-per-device=true`), each device binds its own UDP
-socket inside the `opensim` namespace so the collector observes flow packets
+socket inside the `nl6sim` namespace so the collector observes flow packets
 with the **device's IP as the source address**, not the simulator host's.
 This makes per-device attribution work out of the box on collectors that key
 on the exporter source IP (OpenNMS, Elastiflow, nfcapd, …).
