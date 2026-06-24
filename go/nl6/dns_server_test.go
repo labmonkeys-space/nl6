@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -290,7 +291,7 @@ func TestDNSServer_SendNotify(t *testing.T) {
 	defer func() { _ = sec.Shutdown() }()
 
 	s := testServer(t, pc.LocalAddr().String())
-	results := s.sendNotify("nl6.local")
+	results := s.sendNotify(context.Background(), "nl6.local")
 	if len(results) != 1 || results[0].Err != nil {
 		t.Fatalf("notify results=%+v", results)
 	}

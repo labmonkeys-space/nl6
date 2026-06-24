@@ -350,6 +350,9 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 		sm.topology.PruneDevice(device.IP.String())
 	}
 
+	// Republish DNS zones now the device is gone (debounced; no-op if DNS off).
+	sm.markDNSDirty()
+
 	if tunErr != nil {
 		return fmt.Errorf("delete TUN interface %s: %w", interfaceName, tunErr)
 	}
@@ -417,6 +420,9 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 		}
 	}
 
+	// Republish DNS zones now the fleet is empty (debounced; no-op if DNS off).
+	sm.markDNSDirty()
+
 	if len(errors) > 0 {
 		return fmt.Errorf("errors deleting devices: %s", strings.Join(errors, ", "))
 	}
@@ -451,6 +457,10 @@ func (sm *SimulatorManager) Shutdown() error {
 	// Stop the gNMI subsystem. Walks every device and gracefully stops
 	// its per-device gRPC server. Safe to call when never started.
 	sm.StopGnmiSubsystem()
+
+	// Stop the DNS service-discovery subsystem (debounce worker + listeners).
+	// Safe to call when never started.
+	sm.StopDnsSubsystem()
 
 	// Stop the flap scheduler (state-engine mutator goroutine). Safe to
 	// call when never started. Cancels the Run context so the goroutine
