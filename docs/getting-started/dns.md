@@ -1,4 +1,4 @@
-# Resolve devices by name
+# Resolve devices with DNS
 
 Out of the box you address simulated devices by their `10.42.x.x` management
 IPs. With the **CoreDNS sidecar** you can resolve them by name instead — forward
