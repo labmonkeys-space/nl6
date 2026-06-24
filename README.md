@@ -1,7 +1,7 @@
 <img src="./assets/nl6-logo-with-text.svg" width="200" />
 
 [![CI](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml/badge.svg)](https://github.com/labmonkeys-space/nl6/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-labmonkeys--space.github.io-blue?logo=readthedocs)](https://labmonkeys-space.github.io/nl6/)
+[![Docs](https://img.shields.io/badge/docs-labmonkeys--space.github.io-blue?logo=docusaurus)](https://labmonkeys-space.github.io/nl6/)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/labmonkeys-space/nl6?filename=go%2Fgo.mod)](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod)
 [![License](https://img.shields.io/github/license/labmonkeys-space/nl6)](https://github.com/labmonkeys-space/nl6/blob/main/LICENSE)
 [![Container Image](https://img.shields.io/badge/ghcr.io-nl6-blue?logo=docker)](https://github.com/labmonkeys-space/nl6/pkgs/container/nl6)

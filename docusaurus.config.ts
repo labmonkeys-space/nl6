@@ -53,7 +53,7 @@ const config: Config = {
   projectName: 'nl6',
   trailingSlash: false,
 
-  // Strict-mode: matches the MkDocs `--strict` posture the project previously had.
+  // Strict mode: fail the build on any broken link or anchor.
   onBrokenLinks: 'throw',
   onBrokenAnchors: 'throw',
 
