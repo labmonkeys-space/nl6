@@ -333,6 +333,26 @@ type SimulatorManager struct {
 	gnmiStateEventsEmitted   uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
 	gnmiStateEventsDropped   uint64 // atomic; per-channel oldest-drop overflow
 
+	// DNS service-discovery subsystem. The server (dns_server.go) reads the
+	// live device map through the manager's zoneDataProvider implementation, so
+	// there is no per-device DNS state — only the shared SOA serial, a dirty
+	// flag, and the debounce worker plumbing. Off by default; Stop is
+	// shutdown-only, matching the trap/syslog/gNMI Stop semantics.
+	dnsServer          *dnsServer
+	dnsSubsystemActive atomic.Bool
+	dnsDirty           atomic.Bool
+	dnsWake            chan struct{} // buffered(1) debounce signal
+	dnsStopCh          chan struct{}
+	dnsWg              sync.WaitGroup
+	dnsDebounce        time.Duration
+	dnsCtx             context.Context // cancelled by Stop to abort in-flight NOTIFY
+	dnsCancel          context.CancelFunc
+	dnsSerial          atomic.Uint32 // shared SOA serial (all zones advance in lockstep)
+	dnsSerialMu        sync.Mutex    // serialises the serial read-modify-write
+	dnsZoneBumps       uint64        // atomic; serial-bump events (one per coalesced burst)
+	dnsNotifiesSent    uint64        // atomic; NOTIFY messages sent (per zone × secondary)
+	dnsNotifyErrors    uint64        // atomic; NOTIFY send failures
+
 	// Flap subsystem state (interface state engine driver). Shared
 	// scheduler, same lock-free atomic.Pointer pattern as trap/syslog
 	// so the per-device DeleteDevice path can Deregister without

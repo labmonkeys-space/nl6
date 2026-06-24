@@ -6,12 +6,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/miekg/dns"
@@ -297,29 +297,39 @@ func (s *dnsServer) handleTransfer(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // sendNotify sends a DNS NOTIFY for origin to every configured secondary and
-// returns one result per secondary. Used by the manager's debounce worker.
+// returns one result per secondary that responded before ctx was cancelled.
 // Sends run concurrently so one slow/unreachable secondary cannot serialise a
-// per-retry timeout onto all the others (and onto the debounce worker).
-func (s *dnsServer) sendNotify(origin string) []notifyResult {
+// per-retry timeout onto the others. The collector returns as soon as ctx is
+// cancelled (shutdown) even if some Exchanges are still in flight — those
+// stragglers drain into the buffered result channel and exit within their own
+// timeout, so neither the caller (the debounce worker, hence Stop) blocks nor a
+// goroutine leaks.
+func (s *dnsServer) sendNotify(ctx context.Context, origin string) []notifyResult {
 	origin = fqdn(origin)
 	soa := s.soaFor(origin)
-	results := make([]notifyResult, len(s.cfg.Secondaries))
-	var wg sync.WaitGroup
-	for i, sec := range s.cfg.Secondaries {
-		wg.Add(1)
-		go func(i int, sec string) {
-			defer wg.Done()
+	resCh := make(chan notifyResult, len(s.cfg.Secondaries))
+	for _, sec := range s.cfg.Secondaries {
+		go func(sec string) {
 			client := &dns.Client{Timeout: 3 * time.Second}
 			m := new(dns.Msg)
 			m.SetNotify(origin)
 			if soa != nil {
 				m.Answer = []dns.RR{soa}
 			}
-			_, _, err := client.Exchange(m, sec)
-			results[i] = notifyResult{Secondary: sec, Err: err}
-		}(i, sec)
+			_, _, err := client.ExchangeContext(ctx, m, sec)
+			resCh <- notifyResult{Secondary: sec, Err: err}
+		}(sec)
 	}
-	wg.Wait()
+
+	results := make([]notifyResult, 0, len(s.cfg.Secondaries))
+	for range s.cfg.Secondaries {
+		select {
+		case r := <-resCh:
+			results = append(results, r)
+		case <-ctx.Done():
+			return results
+		}
+	}
 	return results
 }
 
