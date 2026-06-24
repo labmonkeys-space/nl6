@@ -13,7 +13,7 @@ dig @localhost -x 10.42.0.5 +short            # -> ip4.mgmt.<name>.nl6.local.
 curl -s localhost:8080/api/v1/dns/status | jq
 ```
 
-📖 **Full walkthrough:** [Getting Started → Resolve devices by name](https://nl6.eu/getting-started/dns)
+📖 **Full walkthrough:** [Getting Started → Resolve devices with DNS](https://nl6.eu/getting-started/dns)
 — bring up the stack, verify forward/reverse resolution, and watch zones update
 live. For the naming scheme, flags, and zone semantics see the
 [DNS service-discovery reference](https://nl6.eu/reference/dns-service-discovery).
