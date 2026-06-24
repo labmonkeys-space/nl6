@@ -141,6 +141,16 @@ func main() {
 		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
 		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on)")
 
+		// DNS service-discovery flags. nl6 acts as a hidden DNS primary; a
+		// CoreDNS secondary transfers the zones. Off by default. See CLAUDE.md
+		// "DNS service discovery".
+		dnsEnable      = flag.Bool("dns-enable", false, "Enable the DNS service-discovery server (hidden primary for a CoreDNS secondary). Default: false")
+		dnsDomain      = flag.String("dns-domain", "nl6.local", "Forward DNS zone apex for device names (<device-name>.<domain>)")
+		dnsListen      = flag.String("dns-listen", ":5353", "Bind address (host:port) for the DNS server, in the container's default netns (default: :5353)")
+		dnsReverseZone = flag.String("dns-reverse-zone", "42.10.in-addr.arpa", "Comma-separated in-addr.arpa reverse zone(s) served authoritatively (default matches the flat 10.42.0.0/16 plane)")
+		dnsNotify      = flag.String("dns-notify", "", "Comma-separated secondary NOTIFY targets (host:port, e.g. coredns:53); empty disables NOTIFY")
+		dnsDebounce    = flag.Duration("dns-debounce", time.Second, "Quiescence window to coalesce a burst of device changes into one zone update + NOTIFY (default: 1s)")
+
 		// Topology flag. Loads an inter-device LLDP link graph at startup.
 		// Validation is syntactic only; device existence / ifIndex
 		// ownership resolve lazily at SNMP-serve time, so the file may
@@ -346,6 +356,32 @@ func main() {
 		Disabled: *gnmiDisable,
 	}); err != nil {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
+	}
+
+	// Start the DNS service-discovery subsystem (hidden primary). Off unless
+	// -dns-enable is set. Validate the domain and reverse zones up front so a
+	// misconfiguration fails fast with a clear message rather than silently
+	// serving a broken zone.
+	if *dnsEnable {
+		if err := validateDNSDomain(*dnsDomain); err != nil {
+			log.Fatalf("Invalid -dns-domain: %v", err)
+		}
+		reverseZones := splitCommaList(*dnsReverseZone)
+		for _, z := range reverseZones {
+			if _, ok := parseReverseZone(z); !ok {
+				log.Fatalf("Invalid -dns-reverse-zone %q (expected an in-addr.arpa zone, e.g. 42.10.in-addr.arpa)", z)
+			}
+		}
+		if err := manager.StartDnsSubsystem(DnsSubsystemConfig{
+			Enabled:      true,
+			Domain:       *dnsDomain,
+			ReverseZones: reverseZones,
+			Listen:       *dnsListen,
+			Secondaries:  splitCommaList(*dnsNotify),
+			Debounce:     *dnsDebounce,
+		}); err != nil {
+			log.Fatalf("Failed to start DNS subsystem: %v", err)
+		}
 	}
 
 	// Build the CLI-seed syslog config for the auto-start batch. Mirrors
