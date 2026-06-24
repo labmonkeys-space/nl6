@@ -287,7 +287,7 @@ func TestDNSServer_SendNotify(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})}
 	go func() { _ = sec.ActivateAndServe() }()
-	defer sec.Shutdown()
+	defer func() { _ = sec.Shutdown() }()
 
 	s := testServer(t, pc.LocalAddr().String())
 	results := s.sendNotify("nl6.local")
