@@ -529,6 +529,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/syslog/status", syslogStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
+	api.HandleFunc("/dns/status", dnsStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
 	api.HandleFunc("/topology", createTopologyHandler).Methods("POST")
