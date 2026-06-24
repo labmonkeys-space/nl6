@@ -1,0 +1,23 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# CoreDNS as a secondary for the nl6-served zones. Each `secondary` block does
+# an initial AXFR from the nl6 primary (nl6:5353) and refreshes on NOTIFY /
+# SOA expiry. Add one block per zone you configured on nl6 with
+# -dns-domain / -dns-reverse-zone.
+
+nl6.local:53 {
+    secondary {
+        transfer from nl6:5353
+    }
+    log
+    errors
+}
+
+42.10.in-addr.arpa:53 {
+    secondary {
+        transfer from nl6:5353
+    }
+    log
+    errors
+}

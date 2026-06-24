@@ -207,6 +207,20 @@ at runtime via `POST` / `DELETE /api/v1/topology`. See
 |------|------|---------|-------|---------|
 | `-topology-config` | string | — | **global** | Path to a JSON inter-device LLDP link graph (`{"links":[{"a":{"ip","ifindex"},"b":{"ip","ifindex"}}]}`). Loaded at startup; validation is syntactic only (device / ifIndex are resolved lazily at serve time). |
 
+## DNS service-discovery flags
+
+nl6 acts as a hidden DNS primary; a CoreDNS secondary transfers the zones. Off
+by default. See [DNS service-discovery reference](dns-service-discovery.md).
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-dns-enable` | bool | `false` | **global** | Enable the DNS service-discovery server. |
+| `-dns-domain` | string | `nl6.local` | **global** | Forward zone apex (`<device-name>.<domain>`). |
+| `-dns-listen` | string | `:5353` | **global** | Bind address (host:port) in the container's default netns. |
+| `-dns-reverse-zone` | string | `42.10.in-addr.arpa` | **global** | Comma-separated `in-addr.arpa` reverse zone(s). IPs outside get an `A` but no `PTR`. |
+| `-dns-notify` | string | — | **global** | Comma-separated secondary NOTIFY targets (`host:port`); empty disables NOTIFY. |
+| `-dns-debounce` | duration | `1s` | **global** | Quiescence window coalescing a burst of device changes into one serial bump + NOTIFY. |
+
 ## Examples
 
 ```bash
