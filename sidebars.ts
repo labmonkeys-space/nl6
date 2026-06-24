@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'getting-started/quick-start',
         'getting-started/docker',
         'getting-started/fleet',
+        'getting-started/dns',
       ],
     },
   ],
@@ -50,6 +51,7 @@ const sidebars: SidebarsConfig = {
         'reference/gnmi',
         'reference/interface-state',
         'reference/lldp-topology',
+        'reference/dns-service-discovery',
         'reference/resource-files',
         {
           type: 'category',
