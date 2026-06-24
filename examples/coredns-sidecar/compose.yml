@@ -1,0 +1,55 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# coredns-sidecar — nl6 + a CoreDNS secondary, wired so the simulated fleet is
+# resolvable by name. nl6 runs an authoritative DNS server as a hidden primary
+# (-dns-enable, on :5353 in its default netns); CoreDNS runs as a stock
+# `secondary`, transferring the zones via AXFR and refreshing on NOTIFY.
+#
+# Forward:  <device-name>.nl6.local        -> device management IP
+# Reverse:  <ip> (PTR)                      -> ip4.mgmt.<device-name>.nl6.local
+#
+# Quick check once up:
+#   dig @localhost core-rtr-01.nl6.local +short          # device name -> IP
+#   dig @localhost -x 10.42.0.5 +short                   # IP -> ip4.mgmt.<name>
+#   curl -s localhost:8080/api/v1/dns/status | jq        # publish/NOTIFY counters
+# (substitute a real device name from `curl -s localhost:8080/api/v1/devices`).
+name: nl6-coredns-sidecar
+
+services:
+  nl6:
+    image: ${NL6_IMAGE:-ghcr.io/labmonkeys-space/nl6:latest}
+    # TUN interfaces + network namespaces require these.
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    devices:
+      - /dev/net/tun
+    command:
+      - -dns-enable
+      - -dns-domain=nl6.local
+      - -dns-listen=:5353
+      - -dns-reverse-zone=42.10.in-addr.arpa
+      - -dns-notify=coredns:53          # NOTIFY the secondary on every change
+      - -auto-start-ip=10.42.0.1        # a small demo fleet
+      - -auto-count=10
+    ports:
+      - "8080:8080"        # nl6 web console + REST (incl. /api/v1/dns/status)
+      - "5353:5353/tcp"    # optional: dig AXFR directly against the primary
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  coredns:
+    image: ${COREDNS_IMAGE:-coredns/coredns:1.11.3}
+    depends_on:
+      nl6:
+        condition: service_healthy
+    command: ["-conf", "/etc/coredns/Corefile"]
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "53:53/udp"        # query CoreDNS from the host: dig @localhost ...
+      - "53:53/tcp"

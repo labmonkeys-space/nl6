@@ -24,6 +24,7 @@ management web UI at `/`.
 | `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. |
 | `/api/v1/syslog/status` | GET | UDP syslog export status, counters, and per-type catalog map. |
 | `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. |
+| `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/health` | GET | Health check endpoint. |
 
 ## Create devices
