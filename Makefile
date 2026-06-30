@@ -101,8 +101,8 @@ packages: dist
 	rm -f dist/nl6-pkgstage
 
 # Distro images exercised by `make smoke`. Override to trim/extend the matrix.
-SMOKE_DEB_IMAGES ?= debian:12 ubuntu:24.04
-SMOKE_RPM_IMAGES ?= rockylinux:9 almalinux:9 quay.io/centos/centos:stream9
+SMOKE_DEB_IMAGES ?= debian:13 ubuntu:26.04
+SMOKE_RPM_IMAGES ?= quay.io/rockylinux/rockylinux:10 almalinux:10 quay.io/centos/centos:stream10
 
 ## smoke: Install the built packages in clean distro containers and assert (requires docker)
 smoke: packages check-docker

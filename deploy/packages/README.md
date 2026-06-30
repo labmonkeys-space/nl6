@@ -63,8 +63,9 @@ make smoke
 make smoke SMOKE_DEB_IMAGES="debian:12" SMOKE_RPM_IMAGES="rockylinux:9"
 ```
 
-Default matrix: `debian:12`, `ubuntu:24.04` (deb) and `rockylinux:9`,
-`almalinux:9`, `quay.io/centos/centos:stream9` (rpm). The
+Default matrix: `debian:13`, `ubuntu:26.04` (deb) and
+`quay.io/rockylinux/rockylinux:10`, `almalinux:10`,
+`quay.io/centos/centos:stream10` (rpm). The
 [`smoke-test.sh`](smoke-test.sh) helper can also be run against a single
 package + image directly. CI runs `make smoke` (amd64) via
 `.github/workflows/packages.yml` on packaging changes.
