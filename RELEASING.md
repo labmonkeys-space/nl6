@@ -29,6 +29,8 @@ Values that used to drift between releases are now derived at build time:
 | Release notes on GitHub             | `softprops/action-gh-release` auto      | maintainer may edit post-hoc|
 | Docker `:latest` tag on GHCR        | pushed by `release.yml` on stable tag   | **automatic**               |
 | Docker `:rc` tag on GHCR            | pushed by `ci.yml` on every main push   | **automatic**               |
+| `.deb` / `.rpm` package version     | `APP_VERSION` (= tag) → `make packages` | **automatic**               |
+| Nix package version                 | hardcoded in `deploy/packages/nix/package.nix` | **manual bump before tagging** (asserted in `release.yml`) |
 
 The checklist below covers only what a human still has to decide or verify.
 
@@ -46,7 +48,16 @@ The checklist below covers only what a human still has to decide or verify.
    - `MINOR` — new device types, new protocols, new flags that default off
    - `PATCH` — bug fixes, doc-only changes, no behavioural surprises
    Check the last tag with `git describe --tags --abbrev=0` and increment.
-4. **Optional: skim the auto-generated release notes.** On GitHub, draft a
+4. **Bump the Nix package version.** Set `version ? "X.Y.Z"` in
+   [`deploy/packages/nix/package.nix`](deploy/packages/nix/package.nix) to the
+   version you picked (no leading `v`) and merge it to `main` **before** tagging.
+   This is the *only* package whose version isn't derived from the tag — a flake
+   can't read the git tag, so the string is hardcoded. `release.yml` asserts it
+   equals the tag and fails the release if you forget. The `.deb`/`.rpm` and
+   Docker versions need no edit (they come from the tag automatically). Note:
+   `vendorHash` in the same file is **not** a release step — only touch it when
+   `go.mod`/`go.sum` changes.
+5. **Optional: skim the auto-generated release notes.** On GitHub, draft a
    release against `main` without publishing to preview what
    `generate_release_notes: true` will produce. If the output is noisy (lots
    of `chore:` / `docs:` commits drowning out user-visible changes), plan to
@@ -142,7 +153,10 @@ If you find yourself editing any of the following during a release, stop and
 fix the automation instead — drift here is exactly what this document exists
 to prevent:
 
-- A version string hardcoded in `src/**` or `docs/**`.
+- A version string hardcoded in `src/**` or `docs/**`. (The one sanctioned
+  exception is `deploy/packages/nix/package.nix` — a flake genuinely cannot
+  read the git tag, so its version is bumped by hand per step 4 above and
+  guarded by a `release.yml` assertion.)
 - A Go version hardcoded in any docs page (parse from `go/go.mod`).
 - A `:latest` or `:rc` Docker tag pushed from a workstation.
 - A pre-release Git tag (`-rc`, `-beta`, etc.). The `:rc` image is fed by

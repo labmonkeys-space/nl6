@@ -22,12 +22,12 @@
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system};
         in {
-          # Surface the real source revision so `nl6 -version` is honest rather
-          # than a stale hardcoded tag. Falls back to package.nix's default when
-          # built from a non-git source (e.g. a plain tarball).
-          nl6 = pkgs.callPackage ./package.nix {
-            version = self.shortRev or self.dirtyShortRev or "0.13.0-dev";
-          };
+          # The version lives in package.nix and is bumped per release (see
+          # RELEASING.md), so the Nix build reports the same X.Y.Z as the
+          # deb/rpm/Docker artifacts at a tagged release. A flake cannot derive
+          # the git tag itself (no `self.tag`), so this is a hardcoded string;
+          # release.yml asserts it matches the tag.
+          nl6 = pkgs.callPackage ./package.nix { };
           default = self.packages.${system}.nl6;
         });
 

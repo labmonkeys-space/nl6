@@ -49,6 +49,24 @@ jobs:
           fi
           echo "version OK: $baked"
 
+      - name: Assert Nix package version matches tag
+        # A flake cannot read the git tag, so deploy/packages/nix/package.nix
+        # carries a hardcoded version bumped per release. Fail loudly if that
+        # bump was forgotten, rather than shipping a stale Nix version.
+        run: |
+          nixver=$(sed -nE 's/.*version \? "([^"]+)".*/\1/p' deploy/packages/nix/package.nix | head -1)
+          tag=${GITHUB_REF_NAME#v}
+          if [ -z "$nixver" ]; then
+            echo "could not parse version from deploy/packages/nix/package.nix"
+            exit 1
+          fi
+          if [ "$nixver" != "$tag" ]; then
+            echo "Nix version drift: package.nix is '$nixver', tag is '$tag'."
+            echo "Bump 'version ? \"...\"' in deploy/packages/nix/package.nix (see RELEASING.md) and re-tag."
+            exit 1
+          fi
+          echo "Nix version OK: $nixver"
+
       - name: Test
         run: make test
 

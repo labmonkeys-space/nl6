@@ -6,7 +6,8 @@
 , iproute2
 , iptables
 , procps
-  # Bump on each release so `nl6 -version` and the store path track the tag.
+  # Single source of truth for the Nix package version. Bump on each release
+  # (see RELEASING.md "Before you tag"); release.yml asserts it equals the tag.
 , version ? "0.13.0"
 }:
 
