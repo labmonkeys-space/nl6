@@ -100,6 +100,9 @@ export default function Landing(): JSX.Element {
   const quickStart = useBaseUrl('/getting-started/quick-start');
   const {siteConfig} = useDocusaurusContext();
   const {appVersion, license, goVersion} = siteConfig.customFields as HeroMeta;
+  // Bare version (no leading "v") for package filenames; the release tag keeps
+  // the "v". appVersion is resolved at build time, so these stay current.
+  const ver = appVersion.replace(/^v/, '');
 
   return (
     <main className="nl6-page">
@@ -162,10 +165,10 @@ export default function Landing(): JSX.Element {
           <div className="nl6-sec__or"><span>or install a package</span></div>
           <div className="nl6-grid-2">
             <Panel title="01 · download & install" meta=".deb / .rpm · from releases">
-              <Copyable text="curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v<version>/nl6_<version>_amd64.deb" />
-              <Copyable text="sudo apt install ./nl6_<version>_amd64.deb" />
-              <Copyable text="curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v<version>/nl6-<version>-1.x86_64.rpm" />
-              <Copyable text="sudo dnf install ./nl6-<version>-1.x86_64.rpm" />
+              <Copyable text={`curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v${ver}/nl6_${ver}_amd64.deb`} />
+              <Copyable text={`sudo apt install ./nl6_${ver}_amd64.deb`} />
+              <Copyable text={`curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v${ver}/nl6-${ver}-1.x86_64.rpm`} />
+              <Copyable text={`sudo dnf install ./nl6-${ver}-1.x86_64.rpm`} />
             </Panel>
             <Panel title="02 · configure & start" meta="systemd · needs root">
               <Copyable text="sudoedit /etc/nl6/nl6.conf" />
