@@ -12,3 +12,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+
+  # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Collapse the ~29 @docusaurus/* packages into a single PR per bump.
+      docusaurus:
+        patterns:
+          - "@docusaurus/*"
