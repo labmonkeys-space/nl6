@@ -45,7 +45,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test test-web tidy check-tidy dist packages smoke clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
@@ -113,6 +113,25 @@ smoke: packages check-docker
 	esac; \
 	for img in $(SMOKE_DEB_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$deb" "$$img" || exit 1; done; \
 	for img in $(SMOKE_RPM_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$rpm" "$$img" || exit 1; done
+
+## set-nix-version: Write the release version (from APP_VERSION) into the Nix package
+#
+# Release helper so the Nix `version` is never hand-edited: it tracks the same
+# APP_VERSION the deb/rpm/Docker artifacts use. Run before tagging, e.g.
+#   make set-nix-version APP_VERSION=vX.Y.Z
+# then commit the change. The `git describe` dev form (vX.Y.Z-N-gSHA) is
+# rejected — pass an explicit release tag.
+set-nix-version:
+	@case '$(PKG_VERSION)' in \
+	  *-[0-9]*-g[0-9a-f]*) \
+	    echo "set-nix-version: APP_VERSION '$(APP_VERSION)' is a dev version ($(PKG_VERSION))."; \
+	    echo "                 Pass an explicit release tag: make set-nix-version APP_VERSION=vX.Y.Z"; \
+	    exit 1 ;; \
+	esac
+	@sed -E 's/(version [?] )"[^"]*"/\1"$(PKG_VERSION)"/' $(PKG_DIR)/nix/package.nix > $(PKG_DIR)/nix/package.nix.tmp \
+	  && mv $(PKG_DIR)/nix/package.nix.tmp $(PKG_DIR)/nix/package.nix
+	@echo "set-nix-version: deploy/packages/nix/package.nix -> $(PKG_VERSION)"
+	@grep -nE 'version [?] "' $(PKG_DIR)/nix/package.nix
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web
