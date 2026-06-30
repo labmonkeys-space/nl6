@@ -5,11 +5,10 @@
 
   # Binary cache (Cachix) — see deploy/packages/README.md "Binary cache".
   # `nix build` substitutes prebuilt paths from here instead of compiling.
-  # Consumers opt in with `--accept-flake-config` or
-  # `cachix use labmonkeys-space`.
+  # Consumers opt in with `--accept-flake-config` or `cachix use nl6`.
   nixConfig = {
-    extra-substituters = [ "https://labmonkeys-space.cachix.org" ];
-    extra-trusted-public-keys = [ "labmonkeys-space.cachix.org-1:lNsQMO96AHaSDl0WC5r+bbhFqPzUFNrmgsA8QEf5saA=" ];
+    extra-substituters = [ "https://nl6.cachix.org" ];
+    extra-trusted-public-keys = [ "nl6.cachix.org-1:nfaq8JEbMcARjzc/oPyNIrcQrXKe13phUtMg0RucnLA=" ];
   };
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

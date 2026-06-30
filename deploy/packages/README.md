@@ -146,7 +146,7 @@ and `aarch64-linux` on every push to `main`/tags and pushes it to the cache.
 **Consumer** — once the cache is live, opt in either way:
 
 ```sh
-cachix use labmonkeys-space       # writes substituter + public key to nix.conf
+cachix use nl6                    # writes substituter + public key to nix.conf
 # ...then the normal build is now cache-accelerated:
 nix build github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6
 ```
@@ -156,15 +156,15 @@ Or, with the `nixConfig` block in `flake.nix` uncommented, pass
 
 **Maintainer one-time setup** (the CI job skips with a notice until this is done):
 
-1. Create a cache at [app.cachix.org](https://app.cachix.org) (e.g. `labmonkeys-space`).
+1. Create a cache at [app.cachix.org](https://app.cachix.org) (e.g. `nl6`).
 2. `cachix authtoken` → add the value as the repo secret **`CACHIX_AUTH_TOKEN`**
    (Settings → Secrets and variables → Actions). The workflow pushes only on
    `main`/tags, never on fork PRs, so the write token is never exposed.
 3. Copy the cache's **public key** from the Cachix UI, then:
    - uncomment the `nixConfig` block in [`nix/flake.nix`](nix/flake.nix) and
      paste the cache name + public key, and
-   - if you named the cache something other than `labmonkeys-space`, update
-     `CACHIX_NAME` in `nix-cache.yml`.
+   - if you named the cache something other than `nl6`, update `CACHIX_NAME`
+     in `nix-cache.yml`.
 
 Cachix's free open-source tier (5 GB) is ample — only nl6's own built paths are
 stored; everything else comes from `cache.nixos.org`.

@@ -32,7 +32,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       # Set this to your Cachix cache name (also update flake.nix nixConfig).
-      CACHIX_NAME: labmonkeys-space
+      CACHIX_NAME: nl6
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
