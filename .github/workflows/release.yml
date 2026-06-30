@@ -49,6 +49,24 @@ jobs:
           fi
           echo "version OK: $baked"
 
+      - name: Assert Nix package version matches tag
+        # A flake cannot read the git tag, so deploy/packages/nix/package.nix
+        # carries a hardcoded version bumped per release. Fail loudly if that
+        # bump was forgotten, rather than shipping a stale Nix version.
+        run: |
+          nixver=$(sed -nE 's/.*version \? "([^"]+)".*/\1/p' deploy/packages/nix/package.nix | head -1)
+          tag=${GITHUB_REF_NAME#v}
+          if [ -z "$nixver" ]; then
+            echo "could not parse version from deploy/packages/nix/package.nix"
+            exit 1
+          fi
+          if [ "$nixver" != "$tag" ]; then
+            echo "Nix version drift: package.nix is '$nixver', tag is '$tag'."
+            echo "Bump 'version ? \"...\"' in deploy/packages/nix/package.nix (see RELEASING.md) and re-tag."
+            exit 1
+          fi
+          echo "Nix version OK: $nixver"
+
       - name: Test
         run: make test
 
@@ -69,8 +87,10 @@ jobs:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
 
-      - name: Build release binaries
-        run: make dist
+      - name: Build release binaries and packages
+        # `packages` depends on `dist`, so this builds the linux amd64/arm64
+        # binaries and then the .deb / .rpm packages for both arches.
+        run: make packages
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -86,6 +106,8 @@ jobs:
           files: |
             dist/nl6-linux-amd64
             dist/nl6-linux-arm64
+            dist/*.deb
+            dist/*.rpm
 
   docker:
     name: Publish Docker image

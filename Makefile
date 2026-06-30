@@ -45,7 +45,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test test-web tidy check-tidy dist clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
@@ -77,6 +77,61 @@ dist: check-go
 	mkdir -p dist
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./nl6
+
+# Native OS packages (.deb + .rpm) are built with nfpm from a single spec at
+# deploy/packages/nfpm.yaml. Pinned so local and CI builds match; not tracked
+# by Dependabot's `go install` blind spot.
+NFPM_VERSION ?= v2.43.0
+PKG_DIR      := deploy/packages
+# nfpm/rpm versions must not carry a leading `v`. APP_VERSION is already
+# validated against [A-Za-z0-9._+-]+ above.
+PKG_VERSION  := $(patsubst v%,%,$(APP_VERSION))
+
+## packages: Build .deb and .rpm packages (amd64 + arm64) into dist/ via nfpm
+packages: dist
+	GOBIN=$(GOBIN_DIR) go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION)
+	@for arch in amd64 arm64; do \
+	  cp dist/$(BINARY)-linux-$$arch dist/nl6-pkgstage; \
+	  for fmt in deb rpm; do \
+	    echo "nfpm: nl6 $(PKG_VERSION) $$arch ($$fmt)"; \
+	    VERSION=$(PKG_VERSION) ARCH=$$arch $(GOBIN_DIR)/nfpm package \
+	      -f $(PKG_DIR)/nfpm.yaml -p $$fmt -t dist/ || exit 1; \
+	  done; \
+	done; \
+	rm -f dist/nl6-pkgstage
+
+# Distro images exercised by `make smoke`. Override to trim/extend the matrix.
+SMOKE_DEB_IMAGES ?= debian:13 ubuntu:26.04
+SMOKE_RPM_IMAGES ?= quay.io/rockylinux/rockylinux:10 almalinux:10 quay.io/centos/centos:stream10
+
+## smoke: Install the built packages in clean distro containers and assert (requires docker)
+smoke: packages check-docker
+	@case $$(uname -m) in \
+	  aarch64|arm64) deb=$$(ls -t dist/*_arm64.deb | head -1); rpm=$$(ls -t dist/*.aarch64.rpm | head -1) ;; \
+	  x86_64|amd64)  deb=$$(ls -t dist/*_amd64.deb | head -1); rpm=$$(ls -t dist/*.x86_64.rpm  | head -1) ;; \
+	  *) echo "smoke: unsupported host arch $$(uname -m)"; exit 1 ;; \
+	esac; \
+	for img in $(SMOKE_DEB_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$deb" "$$img" || exit 1; done; \
+	for img in $(SMOKE_RPM_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$rpm" "$$img" || exit 1; done
+
+## set-nix-version: Write the release version (from APP_VERSION) into the Nix package
+#
+# Release helper so the Nix `version` is never hand-edited: it tracks the same
+# APP_VERSION the deb/rpm/Docker artifacts use. Run before tagging, e.g.
+#   make set-nix-version APP_VERSION=vX.Y.Z
+# then commit the change. The `git describe` dev form (vX.Y.Z-N-gSHA) is
+# rejected — pass an explicit release tag.
+set-nix-version:
+	@case '$(PKG_VERSION)' in \
+	  *-[0-9]*-g[0-9a-f]*) \
+	    echo "set-nix-version: APP_VERSION '$(APP_VERSION)' is a dev version ($(PKG_VERSION))."; \
+	    echo "                 Pass an explicit release tag: make set-nix-version APP_VERSION=vX.Y.Z"; \
+	    exit 1 ;; \
+	esac
+	@sed -E 's/(version [?] )"[^"]*"/\1"$(PKG_VERSION)"/' $(PKG_DIR)/nix/package.nix > $(PKG_DIR)/nix/package.nix.tmp \
+	  && mv $(PKG_DIR)/nix/package.nix.tmp $(PKG_DIR)/nix/package.nix
+	@echo "set-nix-version: deploy/packages/nix/package.nix -> $(PKG_VERSION)"
+	@grep -nE 'version [?] "' $(PKG_DIR)/nix/package.nix
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web

@@ -1,0 +1,41 @@
+name: Packages
+
+# Build the .deb / .rpm packages and smoke-test that they install cleanly in
+# fresh distro containers. Scoped to packaging-affecting paths so it does not
+# run on every code change (ci.yml already covers the Go build).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/packages/**'
+      - 'Makefile'
+      - '.github/workflows/packages.yml'
+  pull_request:
+    paths:
+      - 'deploy/packages/**'
+      - 'Makefile'
+      - '.github/workflows/packages.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Build & smoke-test packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          # Full history + tags so `git describe` bakes a real version into the
+          # binary and the package filenames.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      # ubuntu-latest runners ship Docker, which `make smoke` uses to install
+      # the amd64 packages in debian/ubuntu/rocky/alma/centos-stream containers.
+      - name: Build packages and smoke-test installation
+        run: make smoke

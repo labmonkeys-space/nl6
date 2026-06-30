@@ -1,0 +1,29 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+[Unit]
+Description=nl6 network device simulator
+Documentation=https://github.com/labmonkeys-space/nl6
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Flags are supplied via $NL6_OPTS in /etc/nl6/nl6.conf. systemd performs
+# word-splitting on the unquoted $NL6_OPTS, so each flag becomes a separate
+# argument. The leading `-` makes a missing file non-fatal: nl6 then starts
+# on its built-in defaults instead of refusing to launch.
+EnvironmentFile=-/etc/nl6/nl6.conf
+# resources/ and web/ are resolved relative to the working directory.
+WorkingDirectory=/usr/share/nl6
+ExecStart=/usr/bin/nl6 $NL6_OPTS
+Restart=on-failure
+RestartSec=5
+
+# The simulator requires root: it creates TUN interfaces, manages the
+# nl6sim network namespace, and installs iptables FORWARD rules. Most
+# systemd sandboxing directives are therefore intentionally omitted —
+# they are incompatible with namespace and TUN management.
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

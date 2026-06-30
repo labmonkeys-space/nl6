@@ -1,0 +1,74 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm config — builds both .deb (Debian/Ubuntu) and .rpm (CentOS/Rocky/Alma)
+# from a single spec. https://nfpm.goreleaser.com/
+#
+# Driven by `make packages`, which runs nfpm once per (arch, format) with the
+# ARCH and VERSION environment variables set. The dist/ binaries must already
+# exist (`make dist`) — `make packages` depends on the `dist` target.
+name: nl6
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: net
+priority: optional
+maintainer: Ronny Trommer <ronny@no42.org>
+vendor: no42.org
+homepage: https://github.com/labmonkeys-space/nl6
+license: Apache-2.0
+description: |
+  Network device simulator (SNMP / SSH / HTTPS / gNMI / NetFlow / syslog).
+  nl6 simulates 30,000+ concurrent network devices, each with its own IP
+  address via Linux TUN interfaces and network namespaces. Useful for load
+  testing and validating network management systems.
+
+# Runtime dependencies. The simulator shells out to `ip` (iproute2),
+# `iptables`, and `sysctl` (procps) and requires root for TUN / netns.
+# Package names differ between Debian and RHEL families, so the rpm set is
+# overridden below.
+depends:
+  - iproute2
+  - iptables
+  - procps
+
+overrides:
+  rpm:
+    depends:
+      - iproute
+      - iptables
+      - procps-ng
+
+contents:
+  # Binary. nfpm does NOT env-expand contents paths (only metadata fields
+  # like `arch`/`version`), so `make packages` stages the correct
+  # per-arch binary at this fixed path before each invocation.
+  - src: ./dist/nl6-pkgstage
+    dst: /usr/bin/nl6
+    file_info:
+      mode: 0755
+
+  # Runtime data. The binary loads `resources/` and `web/` via paths relative
+  # to its working directory, so the systemd unit sets
+  # WorkingDirectory=/usr/share/nl6.
+  - src: ./go/nl6/resources
+    dst: /usr/share/nl6/resources
+  - src: ./go/nl6/web
+    dst: /usr/share/nl6/web
+
+  # systemd unit. /usr/lib/systemd/system is the usr-merged location honoured
+  # by both modern Debian/Ubuntu and the RHEL family.
+  - src: ./deploy/packages/systemd/nl6.service
+    dst: /usr/lib/systemd/system/nl6.service
+
+  # Flag/environment file. Marked config|noreplace so operator edits survive
+  # package upgrades.
+  - src: ./deploy/packages/config/nl6.conf
+    dst: /etc/nl6/nl6.conf
+    type: config|noreplace
+
+scripts:
+  postinstall: ./deploy/packages/scripts/postinstall.sh
+  preremove: ./deploy/packages/scripts/preremove.sh
+  postremove: ./deploy/packages/scripts/postremove.sh
