@@ -10,6 +10,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'getting-started/quick-start',
+        'getting-started/install-packages',
         'getting-started/docker',
         'getting-started/fleet',
         'getting-started/dns',

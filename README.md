@@ -128,6 +128,7 @@ curl http://localhost:8080/api/v1/topology/status | jq   # {subsystem_active, co
 ```
 
 Full walkthrough: [Getting started → Quick start](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/).
+Prebuilt packages (`.deb` / `.rpm` / NixOS): [Getting started → Install packages](https://labmonkeys-space.github.io/nl6/getting-started/install-packages/) — packaging reference in [`deploy/packages/`](deploy/packages/README.md).
 Container deployment: [Getting started → Docker](https://labmonkeys-space.github.io/nl6/getting-started/docker/).
 Deployment recipes & worked examples: [`examples/`](examples/) — Clos fabrics and a ready-to-run OpenNMS Minion (`docker compose`) stack.
 
@@ -135,7 +136,7 @@ Deployment recipes & worked examples: [`examples/`](examples/) — Clos fabrics 
 
 The docs site has four top-level sections:
 
-- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/) — build, first run, Docker.
+- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/) — build, first run, package install, Docker.
 - [Operations](https://labmonkeys-space.github.io/nl6/ops/scaling/) — scaling, network namespace, flow export, troubleshooting.
 - [Reference](https://labmonkeys-space.github.io/nl6/reference/architecture/) — architecture, CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
 - [GPU simulation](https://labmonkeys-space.github.io/nl6/reference/gpu/) — NVIDIA DCGM OID layout, per-GPU metrics, and the pollaris / parser integration notes (formerly `plans/`).
