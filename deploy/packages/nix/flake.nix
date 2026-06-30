@@ -3,6 +3,15 @@
 {
   description = "nl6 — network device simulator (SNMP/SSH/HTTPS/gNMI/NetFlow/syslog)";
 
+  # Binary cache (Cachix). Once the cache exists (see deploy/packages/README.md
+  # "Binary cache"), uncomment and set your cache name + public key so
+  # `nix build` substitutes prebuilt paths instead of compiling. Consumers opt
+  # in with `--accept-flake-config` or `cachix use <name>`.
+  # nixConfig = {
+  #   extra-substituters = [ "https://nl6.cachix.org" ];
+  #   extra-trusted-public-keys = [ "nl6.cachix.org-1:REPLACE_WITH_PUBLIC_KEY" ];
+  # };
+
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs = { self, nixpkgs }:

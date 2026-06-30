@@ -1,0 +1,70 @@
+name: Nix Cache
+
+# Build the nl6 Nix package and push it (plus its built dependencies) to
+# Cachix, so `nix build github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6`
+# substitutes prebuilt paths instead of compiling.
+#
+# Security: pushes ONLY on push to main / tags — never on pull_request, so the
+# CACHIX_AUTH_TOKEN write credential is never exposed to fork PRs. The job is a
+# no-op (skips with a notice) until the CACHIX_AUTH_TOKEN secret is configured,
+# so it is safe to merge before the cache exists. See deploy/packages/README.md.
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+    paths:
+      - 'deploy/packages/nix/**'
+      - 'go/**'
+      - '.github/workflows/nix-cache.yml'
+  workflow_dispatch:
+
+jobs:
+  cache:
+    name: Build & push (${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest      # x86_64-linux
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm   # aarch64-linux (free for public repos)
+            system: aarch64-linux
+    runs-on: ${{ matrix.runner }}
+    env:
+      # Set this to your Cachix cache name (also update flake.nix nixConfig).
+      CACHIX_NAME: nl6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Gate on Cachix being configured
+        id: cfg
+        run: |
+          if [ -n "${{ secrets.CACHIX_AUTH_TOKEN }}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CACHIX_AUTH_TOKEN secret not set — skipping cache build/push."
+          fi
+
+      - name: Install Nix
+        if: steps.cfg.outputs.ready == 'true'
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3  # v31.10.6
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set up Cachix
+        if: steps.cfg.outputs.ready == 'true'
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71  # v17
+        with:
+          name: ${{ env.CACHIX_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # cachix-action pushes every path built after it runs, so this build both
+      # produces and uploads the nl6 closure. git+file://?dir= is the local
+      # analogue of the github:?dir= ref consumers use (the flake lives in a
+      # subdirectory but its source is the whole repo).
+      - name: Build and push nl6
+        if: steps.cfg.outputs.ready == 'true'
+        run: nix build "git+file://$PWD?dir=deploy/packages/nix#nl6" --no-link --print-out-paths
