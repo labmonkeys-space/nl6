@@ -45,7 +45,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test test-web tidy check-tidy dist clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build run test test-web tidy check-tidy dist packages clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
@@ -77,6 +77,28 @@ dist: check-go
 	mkdir -p dist
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./nl6
+
+# Native OS packages (.deb + .rpm) are built with nfpm from a single spec at
+# deploy/packages/nfpm.yaml. Pinned so local and CI builds match; not tracked
+# by Dependabot's `go install` blind spot.
+NFPM_VERSION ?= v2.43.0
+PKG_DIR      := deploy/packages
+# nfpm/rpm versions must not carry a leading `v`. APP_VERSION is already
+# validated against [A-Za-z0-9._+-]+ above.
+PKG_VERSION  := $(patsubst v%,%,$(APP_VERSION))
+
+## packages: Build .deb and .rpm packages (amd64 + arm64) into dist/ via nfpm
+packages: dist
+	GOBIN=$(GOBIN_DIR) go install github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION)
+	@for arch in amd64 arm64; do \
+	  cp dist/$(BINARY)-linux-$$arch dist/nl6-pkgstage; \
+	  for fmt in deb rpm; do \
+	    echo "nfpm: nl6 $(PKG_VERSION) $$arch ($$fmt)"; \
+	    VERSION=$(PKG_VERSION) ARCH=$$arch $(GOBIN_DIR)/nfpm package \
+	      -f $(PKG_DIR)/nfpm.yaml -p $$fmt -t dist/ || exit 1; \
+	  done; \
+	done; \
+	rm -f dist/nl6-pkgstage
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web

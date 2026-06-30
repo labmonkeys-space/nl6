@@ -69,8 +69,10 @@ jobs:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
 
-      - name: Build release binaries
-        run: make dist
+      - name: Build release binaries and packages
+        # `packages` depends on `dist`, so this builds the linux amd64/arm64
+        # binaries and then the .deb / .rpm packages for both arches.
+        run: make packages
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -86,6 +88,8 @@ jobs:
           files: |
             dist/nl6-linux-amd64
             dist/nl6-linux-arm64
+            dist/*.deb
+            dist/*.rpm
 
   docker:
     name: Publish Docker image
