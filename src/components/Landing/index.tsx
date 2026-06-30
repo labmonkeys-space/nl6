@@ -175,14 +175,14 @@ export default function Landing(): JSX.Element {
               <Copyable text="sudo systemctl enable --now nl6" />
             </Panel>
           </div>
-          <div className="nl6-sec__or"><span>or on nixos · cachix-cached flake</span></div>
+          <div className="nl6-sec__or"><span>or on nixos · declarative flake</span></div>
           <div className="nl6-grid-2">
-            <Panel title="01 · trust the cache" meta="cachix · prebuilt">
-              <Copyable text="nix profile install nixpkgs#cachix" />
-              <Copyable text="cachix use nl6" />
-            </Panel>
-            <Panel title="02 · enable the module" meta="services.nl6 · declarative">
+            <Panel title="01 · enable the module" meta="services.nl6">
               <Copyable text="services.nl6.enable = true;" prompt="#" />
+            </Panel>
+            <Panel title="02 · prebuilt cache" meta="nix.settings · no cli">
+              <Copyable text={'substituters = [ "https://nl6.cachix.org" ];'} prompt="#" />
+              <Copyable text={'trusted-public-keys = [ "nl6.cachix.org-1:nfaq8JEbMcARjzc/oPyNIrcQrXKe13phUtMg0RucnLA=" ];'} prompt="#" />
             </Panel>
           </div>
           <div className="nl6-sec__or"><span>or with docker</span></div>
