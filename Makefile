@@ -45,7 +45,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test test-web tidy check-tidy dist packages clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build run test test-web tidy check-tidy dist packages smoke clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
@@ -99,6 +99,20 @@ packages: dist
 	  done; \
 	done; \
 	rm -f dist/nl6-pkgstage
+
+# Distro images exercised by `make smoke`. Override to trim/extend the matrix.
+SMOKE_DEB_IMAGES ?= debian:12 ubuntu:24.04
+SMOKE_RPM_IMAGES ?= rockylinux:9 almalinux:9 quay.io/centos/centos:stream9
+
+## smoke: Install the built packages in clean distro containers and assert (requires docker)
+smoke: packages check-docker
+	@case $$(uname -m) in \
+	  aarch64|arm64) deb=$$(ls -t dist/*_arm64.deb | head -1); rpm=$$(ls -t dist/*.aarch64.rpm | head -1) ;; \
+	  x86_64|amd64)  deb=$$(ls -t dist/*_amd64.deb | head -1); rpm=$$(ls -t dist/*.x86_64.rpm  | head -1) ;; \
+	  *) echo "smoke: unsupported host arch $$(uname -m)"; exit 1 ;; \
+	esac; \
+	for img in $(SMOKE_DEB_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$deb" "$$img" || exit 1; done; \
+	for img in $(SMOKE_RPM_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$rpm" "$$img" || exit 1; done
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web

@@ -50,6 +50,29 @@ pinned nfpm, then runs it once per (arch, format) against
 In CI, `.github/workflows/release.yml` runs `make packages` on every
 `vX.Y.Z` tag and attaches the `.deb` / `.rpm` files to the GitHub Release.
 
+## Smoke-testing the packages
+
+`make smoke` builds the packages, then installs the host-arch `.deb` / `.rpm`
+in clean distro containers and asserts the result — dependencies resolve, the
+binary runs (`nl6 -version`), `resources/` + `web/` + the unit + config land in
+the right paths, and the systemd unit parses. Requires Docker.
+
+```sh
+make smoke
+# Override the matrix if needed:
+make smoke SMOKE_DEB_IMAGES="debian:12" SMOKE_RPM_IMAGES="rockylinux:9"
+```
+
+Default matrix: `debian:12`, `ubuntu:24.04` (deb) and `rockylinux:9`,
+`almalinux:9`, `quay.io/centos/centos:stream9` (rpm). The
+[`smoke-test.sh`](smoke-test.sh) helper can also be run against a single
+package + image directly. CI runs `make smoke` (amd64) via
+`.github/workflows/packages.yml` on packaging changes.
+
+> The smoke test covers **installation**, not a full simulator run — nl6 needs
+> root + TUN + network namespaces, which a throwaway container does not provide.
+> `nl6 -version` exits before any of that, so it is the right liveness probe.
+
 ## Installing
 
 ```sh
