@@ -144,7 +144,7 @@ export default function Landing(): JSX.Element {
           <div className="nl6-sec__hd">
             <span className="nl6-sec__num">01</span>
             <h2 className="nl6-sec__title">quick start</h2>
-            <span className="nl6-sec__sub">build from source · or pull with docker</span>
+            <span className="nl6-sec__sub">build from source · install a package · or pull with docker</span>
           </div>
           <div className="nl6-grid-3">
             <Panel title="01 · clone" meta="git">
@@ -157,6 +157,17 @@ export default function Landing(): JSX.Element {
             </Panel>
             <Panel title="03 · run" meta="needs root">
               <Copyable text="sudo ./go/nl6/nl6 -auto-start-ip 10.0.0.1 -auto-count 100" />
+            </Panel>
+          </div>
+          <div className="nl6-sec__or"><span>or install a package</span></div>
+          <div className="nl6-grid-2">
+            <Panel title="01 · install" meta=".deb / .rpm · from releases">
+              <Copyable text="sudo apt install ./nl6_<version>_amd64.deb" />
+              <Copyable text="sudo dnf install ./nl6-<version>-1.x86_64.rpm" />
+            </Panel>
+            <Panel title="02 · configure & start" meta="systemd · needs root">
+              <Copyable text="sudoedit /etc/nl6/nl6.conf" />
+              <Copyable text="sudo systemctl enable --now nl6" />
             </Panel>
           </div>
           <div className="nl6-sec__or"><span>or with docker</span></div>
