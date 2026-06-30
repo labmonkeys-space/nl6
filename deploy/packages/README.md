@@ -146,13 +146,22 @@ and `aarch64-linux` on every push to `main`/tags and pushes it to the cache.
 **Consumer** — once the cache is live, opt in either way:
 
 ```sh
+# With the Cachix CLI (install it first if `cachix: command not found`):
+nix profile install nixpkgs#cachix
 cachix use nl6                    # writes substituter + public key to nix.conf
-# ...then the normal build is now cache-accelerated:
 nix build github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6
 ```
 
-Or, with the `nixConfig` block in `flake.nix` uncommented, pass
-`--accept-flake-config` and Nix uses the cache automatically.
+Or **without the Cachix CLI** — the `nixConfig` block in `flake.nix` advertises
+the cache, so a trusted user can pass `--accept-flake-config`:
+
+```sh
+nix build github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6 --accept-flake-config
+```
+
+Flake-supplied substituters apply only to **trusted** users; on a multi-user
+install where you are not trusted, add the cache to `nix.settings`
+(`substituters` + `trusted-public-keys`) in your NixOS config instead.
 
 **Maintainer one-time setup** (the CI job skips with a notice until this is done):
 

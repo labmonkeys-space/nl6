@@ -154,14 +154,38 @@ working directory and runtime tools.
 2. Rebuild: `sudo nixos-rebuild switch`. The service is now managed by systemd
    (`systemctl status nl6`).
 
-To build just the binary (for example to test it), enable the prebuilt
-[binary cache](https://app.cachix.org/cache/nl6) first so Nix substitutes
-instead of compiling:
+To build just the binary (for example to test it), use the prebuilt
+[binary cache](https://app.cachix.org/cache/nl6) so Nix substitutes instead of
+compiling.
+
+With the [Cachix CLI](https://docs.cachix.org/installation) — install it first
+if you don't have it:
 
 ```bash
+nix profile install nixpkgs#cachix    # if `cachix` is not already installed
 cachix use nl6
 nix build "github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6"
 ```
+
+Or **without the Cachix CLI** — the flake already advertises the cache in its
+`nixConfig`, so a trusted user can pass `--accept-flake-config`:
+
+```bash
+nix build "github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6" --accept-flake-config
+```
+
+:::note
+Flake-supplied substituters are only honoured for **trusted** Nix users (root,
+or users listed in `trusted-users`). On a multi-user install where you are not
+trusted, add the cache to your system config instead:
+
+```nix
+nix.settings = {
+  substituters = [ "https://nl6.cachix.org" ];
+  trusted-public-keys = [ "nl6.cachix.org-1:nfaq8JEbMcARjzc/oPyNIrcQrXKe13phUtMg0RucnLA=" ];
+};
+```
+:::
 
 ## Building the packages yourself
 

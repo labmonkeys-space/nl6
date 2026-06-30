@@ -178,6 +178,7 @@ export default function Landing(): JSX.Element {
           <div className="nl6-sec__or"><span>or on nixos · cachix-cached flake</span></div>
           <div className="nl6-grid-2">
             <Panel title="01 · trust the cache" meta="cachix · prebuilt">
+              <Copyable text="nix profile install nixpkgs#cachix" />
               <Copyable text="cachix use nl6" />
             </Panel>
             <Panel title="02 · enable the module" meta="services.nl6 · declarative">
