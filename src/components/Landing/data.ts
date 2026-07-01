@@ -32,9 +32,10 @@ export const CATEGORIES: Category[] = [
 
 // Paths match sidebars.ts / docs folder exactly.
 export const DOCS: DocGroup[] = [
-  { group: 'Getting Started', body: 'Build, bring up a small fleet, run in Docker.', links: [
-    { t: 'Quick start', h: '/getting-started/quick-start' },
-    { t: 'Docker',      h: '/getting-started/docker' },
+  { group: 'Getting Started', body: 'Build, install a package, bring up a small fleet, run in Docker.', links: [
+    { t: 'Quick start',      h: '/getting-started/quick-start' },
+    { t: 'Install packages', h: '/getting-started/install-packages' },
+    { t: 'Docker',           h: '/getting-started/docker' },
   ]},
   { group: 'Operations', body: 'Scale to 30k, tune the opensim namespace, flow export and SNMP traps.', links: [
     { t: 'Scaling',           h: '/ops/scaling' },

@@ -125,10 +125,13 @@ sudo dnf remove nl6                                 # RHEL family
 ## NixOS (flake)
 
 nl6 ships a flake exposing a package and a NixOS module. The recommended way to
-run it on NixOS is the **module**, which wires up the service with the correct
-working directory and runtime tools.
+run it on NixOS is the **module** — it's fully declarative, needs no `cachix`
+CLI, and (with the cache below) installs the prebuilt binary instead of
+compiling.
 
-1. Add the flake input and enable the service in your system flake:
+1. Add the flake input, the binary cache, and the service to your system flake.
+   Because your system is already flake-based, no experimental-feature flags or
+   extra tools are needed:
 
    ```nix
    {
@@ -140,6 +143,12 @@ working directory and runtime tools.
          modules = [
            nl6.nixosModules.nl6
            {
+             # Prebuilt binary cache — substitutes instead of compiling.
+             # System-level settings are trusted, so no `cachix use` needed.
+             nix.settings = {
+               substituters = [ "https://nl6.cachix.org" ];
+               trusted-public-keys = [ "nl6.cachix.org-1:nfaq8JEbMcARjzc/oPyNIrcQrXKe13phUtMg0RucnLA=" ];
+             };
              services.nl6 = {
                enable = true;
                extraFlags = [ "-port" "8080" "-auto-start-ip" "10.42.0.1" "-auto-count" "100" ];
@@ -154,14 +163,27 @@ working directory and runtime tools.
 2. Rebuild: `sudo nixos-rebuild switch`. The service is now managed by systemd
    (`systemctl status nl6`).
 
-To build just the binary (for example to test it), enable the prebuilt
-[binary cache](https://app.cachix.org/cache/nl6) first so Nix substitutes
-instead of compiling:
+### Building the binary imperatively (optional)
+
+To build or run the package directly with the `nix` CLI, that CLI needs the
+`nix-command` and `flakes` experimental features. If you see
+`experimental Nix feature 'nix-command' is disabled`, enable them — in
+`configuration.nix`:
+
+```nix
+nix.settings.experimental-features = [ "nix-command" "flakes" ];
+```
+
+then `sudo nixos-rebuild switch` (or, for a one-off, prepend
+`nix --extra-experimental-features 'nix-command flakes' …`). After that:
 
 ```bash
-cachix use nl6
-nix build "github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6"
+nix build "github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6" --accept-flake-config
 ```
+
+`--accept-flake-config` lets Nix use the cache the flake advertises — but only
+for **trusted** users (root or `trusted-users`). If you are not trusted, use the
+declarative `nix.settings` cache from step 1 instead.
 
 ## Building the packages yourself
 

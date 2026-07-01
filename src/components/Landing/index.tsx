@@ -100,6 +100,9 @@ export default function Landing(): JSX.Element {
   const quickStart = useBaseUrl('/getting-started/quick-start');
   const {siteConfig} = useDocusaurusContext();
   const {appVersion, license, goVersion} = siteConfig.customFields as HeroMeta;
+  // Bare version (no leading "v") for package filenames; the release tag keeps
+  // the "v". appVersion is resolved at build time, so these stay current.
+  const ver = appVersion.replace(/^v/, '');
 
   return (
     <main className="nl6-page">
@@ -144,7 +147,7 @@ export default function Landing(): JSX.Element {
           <div className="nl6-sec__hd">
             <span className="nl6-sec__num">01</span>
             <h2 className="nl6-sec__title">quick start</h2>
-            <span className="nl6-sec__sub">build from source · or pull with docker</span>
+            <span className="nl6-sec__sub">build from source · install a package · or pull with docker</span>
           </div>
           <div className="nl6-grid-3">
             <Panel title="01 · clone" meta="git">
@@ -157,6 +160,29 @@ export default function Landing(): JSX.Element {
             </Panel>
             <Panel title="03 · run" meta="needs root">
               <Copyable text="sudo ./go/nl6/nl6 -auto-start-ip 10.0.0.1 -auto-count 100" />
+            </Panel>
+          </div>
+          <div className="nl6-sec__or"><span>or install a package</span></div>
+          <div className="nl6-grid-2">
+            <Panel title="01 · download & install" meta=".deb / .rpm · from releases">
+              <Copyable text={`curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v${ver}/nl6_${ver}_amd64.deb`} />
+              <Copyable text={`sudo apt install ./nl6_${ver}_amd64.deb`} />
+              <Copyable text={`curl -LO https://github.com/labmonkeys-space/nl6/releases/download/v${ver}/nl6-${ver}-1.x86_64.rpm`} />
+              <Copyable text={`sudo dnf install ./nl6-${ver}-1.x86_64.rpm`} />
+            </Panel>
+            <Panel title="02 · configure & start" meta="systemd · needs root">
+              <Copyable text="sudoedit /etc/nl6/nl6.conf" />
+              <Copyable text="sudo systemctl enable --now nl6" />
+            </Panel>
+          </div>
+          <div className="nl6-sec__or"><span>or on nixos · declarative flake</span></div>
+          <div className="nl6-grid-2">
+            <Panel title="01 · enable the module" meta="services.nl6">
+              <Copyable text="services.nl6.enable = true;" prompt="#" />
+            </Panel>
+            <Panel title="02 · prebuilt cache" meta="nix.settings · no cli">
+              <Copyable text={'substituters = [ "https://nl6.cachix.org" ];'} prompt="#" />
+              <Copyable text={'trusted-public-keys = [ "nl6.cachix.org-1:nfaq8JEbMcARjzc/oPyNIrcQrXKe13phUtMg0RucnLA=" ];'} prompt="#" />
             </Panel>
           </div>
           <div className="nl6-sec__or"><span>or with docker</span></div>
