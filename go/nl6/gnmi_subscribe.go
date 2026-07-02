@@ -52,15 +52,7 @@ func runOnceSubscribe(
 		}
 		combined = append(combined, gnmiUpdates...)
 	}
-	resp := &gnmipb.SubscribeResponse{
-		Response: &gnmipb.SubscribeResponse_Update{
-			Update: &gnmipb.Notification{
-				Timestamp: now.UnixNano(),
-				Update:    combined,
-			},
-		},
-	}
-	if err := stream.Send(resp); err != nil {
+	if err := stream.Send(notificationResponse(now, combined)); err != nil {
 		return err
 	}
 	atomic.AddUint64(updatesSent, uint64(len(combined)))
@@ -206,15 +198,7 @@ func pushSubUpdate(
 		log.Printf("gNMI: subscribe encode error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
 		return
 	}
-	resp := &gnmipb.SubscribeResponse{
-		Response: &gnmipb.SubscribeResponse_Update{
-			Update: &gnmipb.Notification{
-				Timestamp: now.UnixNano(),
-				Update:    gnmiUpdates,
-			},
-		},
-	}
-	pushOrDrop(ctx, ch, resp, updatesDropped)
+	pushOrDrop(ctx, ch, notificationResponse(now, gnmiUpdates), updatesDropped)
 }
 
 // clampSampleInterval applies the §D7 floor: any interval below

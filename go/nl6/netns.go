@@ -530,6 +530,71 @@ func (ns *NetNamespace) ListenTCPInNamespace(network, address string) (net.Liste
 	return listener, listenErr
 }
 
+// DialContextInNamespace dials a TCP connection from inside the network
+// namespace, so the outbound connection's source IP is chosen from the
+// namespace's routing table. When localAddr is non-nil it pins the source
+// address (used by gNMI dial-out to make src IP = device IP). The returned
+// net.Conn remains valid in the host namespace because the socket fd
+// survives the namespace switch — same principle as ListenUDPInNamespace.
+//
+// Used as the transport dialer for the per-device gNMI dial-out gRPC
+// client; gRPC invokes it on its own goroutine, so LockOSThread here is
+// self-contained and safe.
+func (ns *NetNamespace) DialContextInNamespace(ctx context.Context, network, address string, localAddr net.Addr) (net.Conn, error) {
+	// Resolve the collector in the HOST netns BEFORE entering the sim netns:
+	// the sim netns has no resolver / no return path for DNS, so an in-ns
+	// lookup would hang. Resolving per-dial (not pinned at attach) also means
+	// DNS failover is picked up on every reconnect. The gRPC target stays the
+	// hostname (only the socket connects to the resolved IP), so TLS
+	// ServerName verification still uses the hostname. The lookup is
+	// ctx-bounded so a slow resolver can't hold a dial slot indefinitely; an
+	// IP literal short-circuits without a DNS query.
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("split %q: %w", address, err)
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("resolve %q: no addresses", host)
+	}
+	dialAddr := net.JoinHostPort(ips[0].IP.String(), port)
+
+	runtime.LockOSThread()
+
+	origFd, err := syscall.Open("/proc/self/ns/net", syscall.O_RDONLY, 0)
+	if err != nil {
+		runtime.UnlockOSThread()
+		return nil, fmt.Errorf("failed to save original namespace: %v", err)
+	}
+	defer syscall.Close(origFd)
+
+	if err := unix.Setns(ns.NsFd, syscall.CLONE_NEWNET); err != nil {
+		runtime.UnlockOSThread()
+		return nil, fmt.Errorf("failed to enter namespace: %v", err)
+	}
+
+	d := net.Dialer{LocalAddr: localAddr}
+	conn, dialErr := d.DialContext(ctx, network, dialAddr)
+
+	// Return to the original namespace. If the restore fails, the thread is
+	// still bound to the sim netns — do NOT UnlockOSThread (that would return
+	// a tainted thread to the scheduler, where it would run unrelated
+	// goroutines in the wrong namespace). Leaving it locked lets the runtime
+	// retire the thread when this (transient dialer) goroutine exits.
+	if err := unix.Setns(origFd, syscall.CLONE_NEWNET); err != nil {
+		if conn != nil {
+			conn.Close()
+		}
+		return nil, fmt.Errorf("failed to return to original namespace: %v", err)
+	}
+
+	runtime.UnlockOSThread()
+	return conn, dialErr
+}
+
 // setSocketBufferSize is a Control function for net.ListenConfig that reduces
 // kernel send/receive buffers on TCP listener sockets before they start listening.
 func setSocketBufferSize(network, address string, c syscall.RawConn) error {

@@ -30,7 +30,12 @@ buildGo126Module {
   # Hash of the vendored Go module set. Recompute after any go.mod/go.sum
   # change: set this to lib.fakeHash, run `nix build`, copy the printed
   # "got:" value back here.
-  vendorHash = "sha256-OqP7IeUiIg3vGJuGyvdykBWiHQBtOP41VTw8IhHOuZI=";
+  #
+  # STALE after the add-gnmi-dialout change bumped go.mod
+  # (github.com/aristanetworks/goarista). Set to fakeHash to force a
+  # recompute on the next `nix build` — replace with the printed "got:"
+  # value on a host with Nix available.
+  vendorHash = lib.fakeHash;
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 

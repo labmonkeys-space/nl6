@@ -98,6 +98,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		Flow:            req.Flow,
 		Traps:           req.Traps,
 		Syslog:          req.Syslog,
+		GnmiDialout:     req.GnmiDialout,
 		IfErrorScenario: ifErrScenario,
 		IfFlapScenario:  ifFlapScenario,
 	}
@@ -132,12 +133,19 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if seed.GnmiDialout != nil {
+		seed.GnmiDialout.ApplyDefaults()
+		if err := seed.GnmiDialout.Validate(); err != nil {
+			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Collapse the seed to nil when no block was supplied so CreateDevices
 	// receives the exact "no export" signal rather than an empty shell.
 	// Scenario fields set to anything other than their clean defaults are
 	// also signals to keep the seed — they need to reach applyExportSeed
 	// for the per-device cycler and flap scheduler to pick them up.
-	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil &&
+	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil &&
 		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean {
 		seed = nil
 	}
@@ -529,6 +537,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/syslog/status", syslogStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
+	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
 	api.HandleFunc("/dns/status", dnsStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")

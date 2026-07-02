@@ -95,6 +95,13 @@ type DeviceSimulator struct {
 	flowConfig   *DeviceFlowConfig
 	trapConfig   *DeviceTrapConfig
 	syslogConfig *DeviceSyslogConfig
+	// gnmiDialoutConfig is the per-device gNMI dial-out (telemetry push)
+	// configuration (nil = dial-out disabled; the device serves dial-in
+	// only). Set at device creation from the CLI seed (auto-start batch)
+	// or the `gnmi_dialout` block in POST /api/v1/devices. Independent of
+	// the dial-in gNMI listener, so the fleet can run mixed.
+	gnmiDialoutConfig   *DeviceGnmiDialoutConfig
+	gnmiDialoutExporter *GnmiDialoutExporter // nil if dial-out disabled
 	// IfErrorScenario controls the ppm bands the per-device counter
 	// cycler draws errors and discards from. One of "clean" | "typical"
 	// | "degraded" | "failing"; empty defaults to "clean". Set at device
@@ -333,6 +340,15 @@ type SimulatorManager struct {
 	gnmiStateEventsEmitted   uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
 	gnmiStateEventsDropped   uint64 // atomic; per-channel oldest-drop overflow
 
+	// gNMI dial-out subsystem state. Each dial-out device owns its own
+	// grpc.ClientConn + Publish stream on its gnmiDialoutExporter (no
+	// shared connection pool — a single ClientConn caps at ~100 concurrent
+	// HTTP/2 streams). The manager retains only an active flag and the
+	// per-(collector,flavor) monotonic aggregates that survive device
+	// deletion, mirroring the flow/trap/syslog status pattern.
+	gnmiDialoutSubsystemActive atomic.Bool
+	gnmiDialoutAggregates      sync.Map // key: gnmiDialoutKey, value: *gnmiDialoutAggregate
+
 	// DNS service-discovery subsystem. The server (dns_server.go) reads the
 	// live device map through the manager's zoneDataProvider implementation, so
 	// there is no per-device DNS state — only the shared SOA serial, a dirty
@@ -414,9 +430,10 @@ type CreateDevicesRequest struct {
 	// Per-device export configuration. A nil block disables that export
 	// type for the batch. Wiring lands in phases 3–5 of
 	// `per-device-export-config`; phase 2 only parses and validates.
-	Flow   *DeviceFlowConfig   `json:"flow,omitempty"`
-	Traps  *DeviceTrapConfig   `json:"traps,omitempty"`
-	Syslog *DeviceSyslogConfig `json:"syslog,omitempty"`
+	Flow        *DeviceFlowConfig        `json:"flow,omitempty"`
+	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
+	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
+	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
 
 	// IfErrorScenario selects the per-device error / discard counter
 	// scenario: "clean" | "typical" | "degraded" | "failing". Empty
@@ -566,9 +583,10 @@ type FlowCollectorStatus struct {
 // every device in the batch with a copy of the referenced config.
 // nil fields mean "no export of this type for this batch".
 type ExportSeed struct {
-	Flow   *DeviceFlowConfig
-	Traps  *DeviceTrapConfig
-	Syslog *DeviceSyslogConfig
+	Flow        *DeviceFlowConfig
+	Traps       *DeviceTrapConfig
+	Syslog      *DeviceSyslogConfig
+	GnmiDialout *DeviceGnmiDialoutConfig
 	// IfErrorScenario is the per-device counter scenario for every
 	// device created from this seed. Empty string = "clean" default.
 	// Despite its home in ExportSeed, this is not an export concept —

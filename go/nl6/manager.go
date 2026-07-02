@@ -458,6 +458,10 @@ func (sm *SimulatorManager) Shutdown() error {
 	// its per-device gRPC server. Safe to call when never started.
 	sm.StopGnmiSubsystem()
 
+	// Stop the gNMI dial-out subsystem (per-device push exporters: cancel
+	// each run loop and close its ClientConn). Safe to call when never started.
+	sm.StopGnmiDialout()
+
 	// Stop the DNS service-discovery subsystem (debounce worker + listeners).
 	// Safe to call when never started.
 	sm.StopDnsSubsystem()

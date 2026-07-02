@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net"
 	"syscall"
@@ -54,6 +55,10 @@ func (ns *NetNamespace) ListenUDPInNamespace(addr *net.UDPAddr) (*net.UDPConn, e
 }
 
 func (ns *NetNamespace) ListenTCPInNamespace(network, address string) (net.Listener, error) {
+	return nil, errNotLinux
+}
+
+func (ns *NetNamespace) DialContextInNamespace(_ context.Context, _, _ string, _ net.Addr) (net.Conn, error) {
 	return nil, errNotLinux
 }
 

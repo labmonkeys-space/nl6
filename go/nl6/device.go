@@ -358,6 +358,18 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 				}
 			}
 
+			// Initialize gNMI dial-out exporter if this device opted in
+			// (set by applyExportSeed). On failure, nil the config so
+			// ListDevices doesn't show a ghost. Mirror in createSingleDevice.
+			if device.gnmiDialoutConfig != nil {
+				if err := sm.startDeviceGnmiDialoutExporter(device); err != nil {
+					log.Printf("gnmi dial-out: skipping device %s: %v", device.IP, err)
+					device.mu.Lock()
+					device.gnmiDialoutConfig = nil
+					device.mu.Unlock()
+				}
+			}
+
 			// Cache the dynamic values using atomic for lock-free access
 			device.cachedSysName.Store(sysNameValue)
 			device.cachedSysLocation.Store(sysLocationValue)
@@ -666,6 +678,17 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 		}
 	}
 
+	// Initialize gNMI dial-out exporter if this device opted in (mirrors the
+	// sequential-path wiring in CreateDevicesWithOptions).
+	if device.gnmiDialoutConfig != nil {
+		if err := sm.startDeviceGnmiDialoutExporter(device); err != nil {
+			log.Printf("gnmi dial-out: skipping device %s: %v", device.IP, err)
+			device.mu.Lock()
+			device.gnmiDialoutConfig = nil
+			device.mu.Unlock()
+		}
+	}
+
 	// Cache the dynamic values using atomic for lock-free access
 	device.cachedSysName.Store(sysNameValue)
 	device.cachedSysLocation.Store(sysLocationValue)
@@ -778,6 +801,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.flowExporter == nil &&
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&
+		d.gnmiDialoutExporter == nil &&
 		d.tunIface == nil {
 		return nil
 	}
@@ -856,6 +880,20 @@ func (d *DeviceSimulator) Stop() error {
 			sched.Deregister(d.IP)
 		}
 		d.syslogExporter = nil
+	}
+
+	// gNMI dial-out: persist cumulative counters into the simulator-wide
+	// per-(collector, flavor) aggregate BEFORE closing so
+	// /gnmi/dialout/status reports monotonic totals across device churn.
+	// countersPersisted is sync.Once-gated (single-shot even if
+	// StopGnmiDialout also persists). Close cancels the run loop and closes
+	// the ClientConn.
+	if d.gnmiDialoutExporter != nil {
+		if wasRunning && manager != nil {
+			manager.persistGnmiDialoutCounters(d.gnmiDialoutExporter)
+		}
+		_ = d.gnmiDialoutExporter.Close()
+		d.gnmiDialoutExporter = nil
 	}
 
 	// Clear the Tier C state-change hook before the engine outlives the
@@ -954,6 +992,14 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		}
 		_ = d.syslogExporter.Close()
 		d.syslogExporter = nil
+	}
+	if d.gnmiDialoutExporter != nil {
+		// Persist counters before Close (sync.Once-gated).
+		if manager != nil {
+			manager.persistGnmiDialoutCounters(d.gnmiDialoutExporter)
+		}
+		_ = d.gnmiDialoutExporter.Close()
+		d.gnmiDialoutExporter = nil
 	}
 	if d.tunIface != nil {
 		d.tunIface.destroy() // Close FD only, no ip link delete
