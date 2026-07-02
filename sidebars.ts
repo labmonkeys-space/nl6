@@ -50,6 +50,7 @@ const sidebars: SidebarsConfig = {
         'reference/syslog-export',
         'reference/flow-export',
         'reference/gnmi',
+        'reference/gnmi-dial-out',
         'reference/interface-state',
         'reference/lldp-topology',
         'reference/dns-service-discovery',

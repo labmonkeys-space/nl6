@@ -182,6 +182,27 @@ interfaces subset over gRPC + TLS on every device. See
 | `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI listener on each device. |
 | `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
 
+## gNMI dial-out flags
+
+Dial-out reverses the connection direction: the device dials a collector
+and pushes telemetry over a `gNMIReverse.Publish` stream. Per-device and
+opt-in — the fleet can mix dial-in and dial-out devices. See
+[gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes,
+TLS, and the per-device `gnmi_dialout` REST block.
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-gnmi-mode` | `dial-in` \| `dial-out` | `dial-in` | **seed** | gNMI mode for the auto-start batch. `dial-out` additionally pushes telemetry to `-gnmi-dialout-collector`; the dial-in listener keeps serving either way. |
+| `-gnmi-dialout-collector` | string | — | **seed** | Dial-out collector address (`host:port`). Required when `-gnmi-mode=dial-out`. |
+| `-gnmi-dialout-flavor` | string | `gnmireverse` | **seed** | Dial-out wire flavor (Arista `gNMIReverse` is the only shipped flavor). |
+| `-gnmi-dialout-encoding` | `json_ietf` \| `proto` | `json_ietf` | **seed** | Value encoding for pushed updates. |
+| `-gnmi-dialout-sub-mode` | `sample` \| `on-change` | `sample` | **seed** | Subscription mode: fixed-interval snapshots or interface-state transitions. |
+| `-gnmi-dialout-interval` | duration | `10s` | **seed** | SAMPLE cadence (clamped to a 1s floor). |
+| `-gnmi-dialout-tls` | bool | `true` | **seed** | Use TLS to the collector (`false` = plaintext, Arista `-collector_tls=false` parity). |
+| `-gnmi-dialout-tls-insecure` | bool | `false` | **seed** | Skip collector certificate verification (dev only). |
+| `-gnmi-dialout-tls-ca` | string | — | **seed** | PEM CA bundle to verify the collector against (empty = system roots). |
+| `-gnmi-dialout-mtls` | bool | `false` | **seed** | Present the shared TLS certificate as a client cert (mutual TLS). |
+
 ## UDP syslog export flags
 
 See [UDP syslog export (operator guide)](../ops/syslog-export.md) for

@@ -54,6 +54,15 @@ client dials from inside the device's netns with the source IP pinned to the
 device IP, reusing the existing veth + `FORWARD` egress rule (no new netns /
 iptables surface).
 
+Hostname collectors are resolved **per-dial in the host namespace** (the sim
+netns has no resolver), so DNS failover is picked up on every reconnect and
+the gRPC authority stays the hostname — TLS `ServerName` verification works
+against the collector's certificate. Only **IPv4** records are used (the sim
+netns is IPv4-only); a hostname resolving exclusively to AAAA records fails
+the dial with a clear error. In-namespace dial concurrency is bounded
+(64 concurrent dials, 10s per-dial timeout) so an unreachable collector
+cannot exhaust OS threads at fleet scale.
+
 ## Resilience
 
 - **Own reconnect loop.** A broken `Publish` stream ends the RPC, so the exporter
