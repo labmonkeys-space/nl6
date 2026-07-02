@@ -503,9 +503,10 @@ type DeviceInfo struct {
 	// Per-device export configuration echoed for GET /api/v1/devices
 	// consumers. Fields are omitted from JSON when nil. Populated from
 	// the device's runtime state in phases 3–5.
-	Flow   *DeviceFlowConfig   `json:"flow,omitempty"`
-	Traps  *DeviceTrapConfig   `json:"traps,omitempty"`
-	Syslog *DeviceSyslogConfig `json:"syslog,omitempty"`
+	Flow        *DeviceFlowConfig        `json:"flow,omitempty"`
+	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
+	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
+	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
 	// IfErrorScenario surfaces the per-device counter scenario set at
 	// creation time. Omitted from JSON when "" so clean-default devices
 	// don't clutter GET responses.

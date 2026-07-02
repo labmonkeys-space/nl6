@@ -6,7 +6,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -59,10 +58,19 @@ func (c *testDialoutCollector) snapshot() []*gnmipb.SubscribeResponse {
 
 // startTestDialoutCollector starts a gNMIReverse server on 127.0.0.1:0 (or
 // a caller-supplied address for reconnect tests) and returns it plus its
-// listen address and a stop func.
+// listen address and a stop func. Rebinding a just-freed explicit port can
+// transiently fail under parallel test runs, so retry briefly.
 func startTestDialoutCollector(t *testing.T, addr string) (*testDialoutCollector, string, func()) {
 	t.Helper()
-	lis, err := net.Listen("tcp", addr)
+	var lis net.Listener
+	var err error
+	for i := 0; i < 20; i++ {
+		lis, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -71,29 +79,6 @@ func startTestDialoutCollector(t *testing.T, addr string) (*testDialoutCollector
 	gnmireverse.RegisterGNMIReverseServer(srv, col)
 	go func() { _ = srv.Serve(lis) }()
 	return col, lis.Addr().String(), func() { srv.Stop() }
-}
-
-// --- device harness -----------------------------------------------------
-
-func newTestDialoutDevice(t *testing.T, ifCount int) *DeviceSimulator {
-	t.Helper()
-	speeds := make([]uint64, ifCount)
-	for i := range speeds {
-		speeds[i] = 1_000_000_000
-	}
-	res := buildTestResources(t, speeds)
-	for i := 0; i < ifCount; i++ {
-		ifIndex := i + 1
-		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", ifIndex), fmt.Sprintf("TestIf%d", ifIndex))
-	}
-	mc := &MetricsCycler{}
-	mc.InitIfCounters(res, 1)
-	return &DeviceSimulator{
-		ID:            "test",
-		IP:            net.IPv4(10, 42, 0, 1),
-		resources:     res,
-		metricsCycler: mc,
-	}
 }
 
 func newTestDialoutExporter(t *testing.T, device *DeviceSimulator, collector, mode string, pathStrs []string) *GnmiDialoutExporter {
@@ -212,7 +197,7 @@ func TestGnmiDialoutSampleStream(t *testing.T) {
 	col, addr, stop := startTestDialoutCollector(t, "127.0.0.1:0")
 	defer stop()
 
-	device := newTestDialoutDevice(t, 2)
+	device := newTestGnmiDevice(t, 2)
 	e := newTestDialoutExporter(t, device, addr, "sample",
 		[]string{"/interfaces/interface[name=*]/state/counters/in-octets"})
 	e.Start()
@@ -236,9 +221,18 @@ func TestGnmiDialoutSampleMatchesDialIn(t *testing.T) {
 	col, addr, stop := startTestDialoutCollector(t, "127.0.0.1:0")
 	defer stop()
 
-	device := newTestDialoutDevice(t, 3)
-	path := "/interfaces/interface[name=*]/state/ifindex"
-	e := newTestDialoutExporter(t, device, addr, "sample", []string{path})
+	device := newTestGnmiDevice(t, 3)
+	// Every deterministic state leaf: name/ifindex are static; oper-status/
+	// admin-status are state-engine-backed and stable absent mutation.
+	// Counters can't be compared this way — dial-out stamps its own
+	// time.Now(), so counter values legitimately differ between reads.
+	paths := []string{
+		"/interfaces/interface[name=*]/state/name",
+		"/interfaces/interface[name=*]/state/ifindex",
+		"/interfaces/interface[name=*]/state/oper-status",
+		"/interfaces/interface[name=*]/state/admin-status",
+	}
+	e := newTestDialoutExporter(t, device, addr, "sample", paths)
 	e.Start()
 	defer e.Close()
 
@@ -248,30 +242,40 @@ func TestGnmiDialoutSampleMatchesDialIn(t *testing.T) {
 		got[pathToString(u.GetPath())] = string(u.GetVal().GetJsonIetfVal())
 	}
 
-	// Dial-in reference: resolve the same path directly via a fresh resolver.
+	// Dial-in reference: resolve the same paths directly via a fresh resolver.
 	resolver := newPathResolver(device)
-	p, _ := parseGnmiPath(path)
-	updates, err := resolver.Resolve(p, time.Now())
-	if err != nil {
-		t.Fatalf("dial-in resolve: %v", err)
-	}
-	gnmiUpdates, _ := encodeUpdates(updates, gnmipb.Encoding_JSON_IETF)
-	if len(gnmiUpdates) == 0 {
-		t.Fatal("dial-in produced no updates")
-	}
-	for _, u := range gnmiUpdates {
-		key := pathToString(u.GetPath())
-		want := string(u.GetVal().GetJsonIetfVal())
-		if got[key] != want {
-			t.Errorf("ifindex value mismatch for %s: dial-out=%q dial-in=%q", key, got[key], want)
+	compared := 0
+	for _, ps := range paths {
+		p, err := parseGnmiPath(ps)
+		if err != nil {
+			t.Fatalf("parse %q: %v", ps, err)
 		}
+		updates, err := resolver.Resolve(p, time.Now())
+		if err != nil {
+			t.Fatalf("dial-in resolve %q: %v", ps, err)
+		}
+		gnmiUpdates, err := encodeUpdates(updates, gnmipb.Encoding_JSON_IETF)
+		if err != nil {
+			t.Fatalf("dial-in encode %q: %v", ps, err)
+		}
+		for _, u := range gnmiUpdates {
+			key := pathToString(u.GetPath())
+			want := string(u.GetVal().GetJsonIetfVal())
+			if got[key] != want {
+				t.Errorf("value mismatch for %s: dial-out=%q dial-in=%q", key, got[key], want)
+			}
+			compared++
+		}
+	}
+	if compared == 0 {
+		t.Fatal("dial-in produced no updates to compare")
 	}
 }
 
 func TestGnmiDialoutReconnect(t *testing.T) {
 	col, addr, stop := startTestDialoutCollector(t, "127.0.0.1:0")
 
-	device := newTestDialoutDevice(t, 1)
+	device := newTestGnmiDevice(t, 1)
 	e := newTestDialoutExporter(t, device, addr, "sample",
 		[]string{"/interfaces/interface[name=*]/state/oper-status"})
 	e.Start()
@@ -285,17 +289,22 @@ func TestGnmiDialoutReconnect(t *testing.T) {
 	col2, _, stop2 := startTestDialoutCollector(t, addr)
 	defer stop2()
 
-	// After reconnect the exporter should resume streaming.
+	// After reconnect the exporter should resume streaming, and the reconnect
+	// counter (feeds /gnmi/dialout/status and the persisted aggregate) must
+	// reflect the re-establishment: the increment happens when the first
+	// established stream breaks, strictly before the redial that reached the
+	// fresh server. Atomic read — the run loop may still be writing it.
 	waitForResponses(t, col2, 1, 10*time.Second)
-	// Read the counter atomically — the run loop may still be writing it.
-	t.Logf("reconnects counter: %d", atomic.LoadUint64(&e.statReconnects))
+	if got := atomic.LoadUint64(&e.statReconnects); got == 0 {
+		t.Error("statReconnects = 0 after an observed reconnection; want >= 1")
+	}
 }
 
 func TestGnmiDialoutOnChange(t *testing.T) {
 	col, addr, stop := startTestDialoutCollector(t, "127.0.0.1:0")
 	defer stop()
 
-	device := newTestDialoutDevice(t, 2)
+	device := newTestGnmiDevice(t, 2)
 	e := newTestDialoutExporter(t, device, addr, "on-change",
 		[]string{"/interfaces/interface[name=*]/state/oper-status"})
 	e.Start()
@@ -306,12 +315,14 @@ func TestGnmiDialoutOnChange(t *testing.T) {
 	baseline := len(col.snapshot())
 
 	// Flip oper-status on ifIndex 1 → should push an ON_CHANGE update.
+	// No settling sleep: produceOnChange registers the listener BEFORE the
+	// initial snapshot, so once the snapshot has been received the listener
+	// is guaranteed registered — a sleep here would mask an ordering
+	// regression (the exact bug the register-first fix addressed).
 	ic := device.metricsCycler.ifCounters.Load()
 	if ic == nil || ic.State() == nil {
 		t.Fatal("device has no state engine")
 	}
-	// Give the listener a moment to register after the initial snapshot.
-	time.Sleep(300 * time.Millisecond)
 	// Mutate then broadcast — mirrors the REST/flap caller contract
 	// (SetOperStatus records the change; the caller fans it out).
 	if changed, evt := ic.State().SetOperStatus(1, OperDown); changed {
@@ -355,7 +366,7 @@ func TestGnmiDialoutOnChangeSubtreePath(t *testing.T) {
 	col, addr, stop := startTestDialoutCollector(t, "127.0.0.1:0")
 	defer stop()
 
-	device := newTestDialoutDevice(t, 2)
+	device := newTestGnmiDevice(t, 2)
 
 	// The gate the manager applies: a subtree path must cover at least one
 	// state leaf (so it is NOT rejected for on-change).
@@ -383,8 +394,12 @@ func TestGnmiDialoutOnChangeSubtreePath(t *testing.T) {
 	waitForResponses(t, col, 1, 5*time.Second)
 	baseline := len(col.snapshot())
 
+	// Listener registration precedes the snapshot, so no settling sleep
+	// (see TestGnmiDialoutOnChange).
 	ic := device.metricsCycler.ifCounters.Load()
-	time.Sleep(300 * time.Millisecond)
+	if ic == nil || ic.State() == nil {
+		t.Fatal("device has no state engine")
+	}
 	if changed, evt := ic.State().SetOperStatus(1, OperDown); changed {
 		ic.State().Broadcast(evt)
 	} else {

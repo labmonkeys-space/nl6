@@ -18,10 +18,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// newTestPathResolver builds a DeviceSimulator with N synthetic
-// interfaces (ifIndex 1..N). Each interface gets its ifDescr stored as
-// "TestIf<ifIndex>".
-func newTestPathResolver(t *testing.T, ifCount int) *pathResolver {
+// newTestGnmiDevice builds a DeviceSimulator with N synthetic interfaces
+// (ifIndex 1..N), each with ifDescr "TestIf<ifIndex>" and an initialized
+// counter cycler + state engine. Shared fixture for the path-resolver and
+// dial-out test suites — keep ONE copy so the two suites can't drift.
+func newTestGnmiDevice(t *testing.T, ifCount int) *DeviceSimulator {
 	t.Helper()
 	speeds := make([]uint64, ifCount)
 	for i := range speeds {
@@ -34,13 +35,18 @@ func newTestPathResolver(t *testing.T, ifCount int) *pathResolver {
 	}
 	mc := &MetricsCycler{}
 	mc.InitIfCounters(res, 1)
-	device := &DeviceSimulator{
+	return &DeviceSimulator{
 		ID:            "test",
 		IP:            net.IPv4(10, 42, 0, 1),
 		resources:     res,
 		metricsCycler: mc,
 	}
-	return newPathResolver(device)
+}
+
+// newTestPathResolver wraps newTestGnmiDevice for the resolver tests.
+func newTestPathResolver(t *testing.T, ifCount int) *pathResolver {
+	t.Helper()
+	return newPathResolver(newTestGnmiDevice(t, ifCount))
 }
 
 // pathFromString turns "/interfaces/interface[name=*]/state/counters/in-octets"

@@ -215,7 +215,13 @@ func (sm *SimulatorManager) startDeviceGnmiDialoutExporter(device *DeviceSimulat
 
 	exporter := NewGnmiDialoutExporter(device, cfg.Collector, canonical, transport, enc,
 		cfg.Mode, paths, time.Duration(cfg.SampleInterval), dialOpts)
+	// Publish under device.mu (matching the trap/syslog attach discipline) so
+	// the write is safe even for a future post-registration attach path —
+	// GetGnmiDialoutStatus and StopGnmiDialout read/clear this field under
+	// the same lock.
+	device.mu.Lock()
 	device.gnmiDialoutExporter = exporter
+	device.mu.Unlock()
 	exporter.Start()
 	return nil
 }

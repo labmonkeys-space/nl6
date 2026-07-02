@@ -557,10 +557,21 @@ func (ns *NetNamespace) DialContextInNamespace(ctx context.Context, network, add
 	if err != nil {
 		return nil, fmt.Errorf("resolve %q: %w", host, err)
 	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("resolve %q: no addresses", host)
+	// Pick the first IPv4 address — NOT ips[0]. RFC 6724 ordering puts AAAA
+	// records first on dual-stack hosts, but the sim netns is IPv4-only and
+	// the caller pins an IPv4 LocalAddr, so a v6 pick would fail every dial
+	// ("mismatched local address type" / no v6 route) forever.
+	var v4 net.IP
+	for _, ia := range ips {
+		if ip4 := ia.IP.To4(); ip4 != nil {
+			v4 = ip4
+			break
+		}
 	}
-	dialAddr := net.JoinHostPort(ips[0].IP.String(), port)
+	if v4 == nil {
+		return nil, fmt.Errorf("resolve %q: no IPv4 address among %d records (sim netns is IPv4-only)", host, len(ips))
+	}
+	dialAddr := net.JoinHostPort(v4.String(), port)
 
 	runtime.LockOSThread()
 

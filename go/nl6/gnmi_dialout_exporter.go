@@ -59,6 +59,12 @@ type GnmiDialoutExporter struct {
 	stopOnce sync.Once
 	wg       sync.WaitGroup
 
+	// everConnected is touched only by the run goroutine (streamOnce is
+	// called from run): true once any stream has been established. Gates
+	// statReconnects so the counter ticks at the moment a stream is
+	// RE-established — not one stream-lifetime later when it ends.
+	everConnected bool
+
 	// countersPersisted guards the single fold of this exporter's counters
 	// into the manager-level aggregate (double-count hazard otherwise).
 	countersPersisted sync.Once
@@ -141,7 +147,6 @@ func (e *GnmiDialoutExporter) Close() error {
 func (e *GnmiDialoutExporter) run() {
 	defer e.wg.Done()
 	backoff := dialoutInitialBackoff
-	connectedOnce := false
 	for {
 		if e.closing.Load() || e.ctx.Err() != nil {
 			return
@@ -157,25 +162,21 @@ func (e *GnmiDialoutExporter) run() {
 		}
 		e.conn.Store(cc)
 
-		streamStart := time.Now()
-		opened, streamErr := e.streamOnce(cc)
+		openedAt, streamErr := e.streamOnce(cc)
 		e.conn.Store(nil)
 		_ = cc.Close()
 
 		if e.closing.Load() || e.ctx.Err() != nil {
 			return
 		}
-		if opened {
-			// Count a reconnect only for genuine re-establishments (not the
-			// first stream, and not failed dial/open attempts).
-			if connectedOnce {
-				atomic.AddUint64(&e.statReconnects, 1)
-			}
-			connectedOnce = true
+		if !openedAt.IsZero() {
 			// Reset backoff only if the stream stayed up long enough to be
-			// considered established — otherwise an accept-then-drop collector
-			// would pin us at the 1s floor.
-			if time.Since(streamStart) >= dialoutBackoffResetDwell {
+			// considered established. openedAt is stamped AFTER OpenStream
+			// succeeds, so dial time and dial-semaphore queueing do not count
+			// toward the dwell — otherwise an accept-then-drop collector plus
+			// slow dials could keep resetting to the 1s floor.
+			// (statReconnects is counted inside streamOnce at stream-open.)
+			if time.Since(openedAt) >= dialoutBackoffResetDwell {
 				backoff = dialoutInitialBackoff
 			}
 			e.logDialErr("stream ended, reconnecting", streamErr)
@@ -189,18 +190,27 @@ func (e *GnmiDialoutExporter) run() {
 }
 
 // streamOnce opens the flavor's Publish stream and pumps responses until
-// the stream breaks or the context is cancelled. Returns opened=true once
-// the stream was successfully established (so the caller can count a
-// reconnect on the next loop). A bounded send channel + drop-oldest ensures
-// a slow collector never blocks the producer.
-func (e *GnmiDialoutExporter) streamOnce(cc *grpc.ClientConn) (opened bool, err error) {
+// the stream breaks or the context is cancelled. Returns the non-zero time
+// the stream was established (so the caller can count a reconnect and
+// measure the backoff-reset dwell from stream-open, not dial-start); a zero
+// time means the stream never opened. A bounded send channel + drop-oldest
+// ensures a slow collector never blocks the producer.
+func (e *GnmiDialoutExporter) streamOnce(cc *grpc.ClientConn) (openedAt time.Time, err error) {
 	streamCtx, cancel := context.WithCancel(e.ctx)
 	defer cancel()
 
 	stream, err := e.transport.OpenStream(streamCtx, cc)
 	if err != nil {
-		return false, err
+		return time.Time{}, err
 	}
+	openedAt = time.Now()
+	// Count a reconnect at the moment a stream is RE-established (not the
+	// first stream, not failed opens) so status reflects the reconnection
+	// when it happens rather than when the new stream later ends.
+	if e.everConnected {
+		atomic.AddUint64(&e.statReconnects, 1)
+	}
+	e.everConnected = true
 	atomic.AddInt64(&e.statStreamsActive, 1)
 	defer atomic.AddInt64(&e.statStreamsActive, -1)
 
@@ -244,7 +254,7 @@ func (e *GnmiDialoutExporter) streamOnce(cc *grpc.ClientConn) (opened bool, err 
 	close(ch)
 	sender.Wait()
 	_ = stream.CloseSend()
-	return true, sendErr
+	return openedAt, sendErr
 }
 
 // produceSample pushes an initial snapshot then re-resolves every path on a
@@ -328,13 +338,22 @@ func (e *GnmiDialoutExporter) pushSnapshot(ctx context.Context, ch chan *gnmipb.
 	pushOrDrop(ctx, ch, notificationResponse(now, gu), &e.statUpdatesDropped)
 }
 
-// logResolveErr logs a snapshot resolve/encode failure at most once per
-// exporter. A persistently-failing path (typo'd name, uninitialized
-// counters) would otherwise log at the SAMPLE tick cadence × device count.
+// deviceLabel returns the device's IP for log lines — the discriminating
+// datum on a 30k-device fleet (every sibling exporter logs device.IP).
+func (e *GnmiDialoutExporter) deviceLabel() string {
+	if e.device != nil && e.device.IP != nil {
+		return e.device.IP.String()
+	}
+	return "?"
+}
+
+// logResolveErr logs a resolve/encode failure at most once per exporter.
+// A persistently-failing path (typo'd name, uninitialized counters) would
+// otherwise log at the SAMPLE tick cadence × device count.
 func (e *GnmiDialoutExporter) logResolveErr(kind string, p *gnmipb.Path, err error) {
 	e.firstResolveLog.Do(func() {
-		log.Printf("gnmi dial-out: device %s %s %s failed: %v (skipping; further errors suppressed for this exporter)",
-			e.collectorStr, kind, pathToString(p), err)
+		log.Printf("gnmi dial-out: device %s → %s: %s %q failed: %v (skipping; further errors suppressed for this exporter)",
+			e.deviceLabel(), e.collectorStr, kind, pathToString(p), err)
 	})
 }
 
@@ -354,6 +373,10 @@ func (e *GnmiDialoutExporter) pushChange(ctx context.Context, ch chan *gnmipb.Su
 	for _, p := range e.paths {
 		ups, err := changedUpdatesForPath(e.resolver, ic, p, evt, tSec)
 		if err != nil {
+			// Skip this path but surface the failure once — a silently
+			// erroring path would otherwise stop contributing ON_CHANGE
+			// updates for the exporter's lifetime with zero observability.
+			e.logResolveErr("on-change resolve", p, err)
 			continue
 		}
 		combined = append(combined, ups...)
@@ -363,6 +386,7 @@ func (e *GnmiDialoutExporter) pushChange(ctx context.Context, ch chan *gnmipb.Su
 	}
 	gu, err := encodeUpdates(combined, e.enc)
 	if err != nil {
+		e.logResolveErr("on-change encode", nil, err)
 		return
 	}
 	pushOrDrop(ctx, ch, notificationResponse(now, gu), &e.statUpdatesDropped)
@@ -407,6 +431,7 @@ func (e *GnmiDialoutExporter) logDialErr(what string, err error) {
 		return
 	}
 	e.firstDialLog.Do(func() {
-		log.Printf("gnmi dial-out: device %s %s: %v (further dial errors suppressed for this exporter)", e.collectorStr, what, err)
+		log.Printf("gnmi dial-out: device %s → %s: %s: %v (further dial errors suppressed for this exporter)",
+			e.deviceLabel(), e.collectorStr, what, err)
 	})
 }

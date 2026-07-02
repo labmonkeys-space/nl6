@@ -31,7 +31,7 @@ implemented today.
 | Mode | Behaviour |
 |------|-----------|
 | `sample` (default) | Re-resolve every configured path on a fixed interval (`sample_interval`, clamped to a 1s floor) and push a `SubscribeResponse`. |
-| `on-change` | Push on interface-state transitions via the same `InterfaceState` fan-out dial-in ON_CHANGE uses. Only **state leaves** (`oper-status`, `admin-status`, `last-change`, `name`, `ifindex`) fire; any counter leaves a path covers are ignored. A subtree path like the default `/interfaces/interface[name=*]/state` works (counters are filtered at emit). A path that covers *only* counters (e.g. `.../state/counters/in-octets`) is rejected at attach, since it could never fire on-change. |
+| `on-change` | Push on interface-state transitions via the same `InterfaceState` fan-out dial-in ON_CHANGE uses. Only `oper-status`, `admin-status`, and `last-change` fire on a change; `name` and `ifindex` are static and appear in the initial snapshot only. Any counter leaves a path covers are ignored, so a subtree path like the default `/interfaces/interface[name=*]/state` works (counters are filtered at emit). A path that covers *only* counters (e.g. `.../state/counters/in-octets`) is rejected at attach, since it could never fire on-change. |
 
 Paths are gNMI paths under `/interfaces/interface[name=*]/state/...`. The default
 path is the full state subtree (`/interfaces/interface[name=*]/state`).
