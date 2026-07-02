@@ -46,6 +46,13 @@ type GnmiDialoutExporter struct {
 	collectorStr string
 	flavor       string
 	target       string // "passthrough:///<collector>" handed to the dialer
+	// prefixTarget is stamped into Notification.Prefix.Target on every
+	// pushed message (the device IP). Source-IP attribution works today
+	// because each device dials from its own address, but in-band identity
+	// makes dial-out usable by collectors that don't key on source address
+	// and is the prerequisite for any future shared-transport mode. Same
+	// job as the Arista gNMIReverse client's -target_value flag.
+	prefixTarget string
 	enc          gnmipb.Encoding
 	mode         string // "sample" | "on-change"
 	paths        []*gnmipb.Path
@@ -95,12 +102,17 @@ type GnmiDialoutExporter struct {
 func NewGnmiDialoutExporter(device *DeviceSimulator, collectorStr, flavor string,
 	transport DialoutTransport, enc gnmipb.Encoding, mode string,
 	paths []*gnmipb.Path, sampleEvery time.Duration, dialOpts []grpc.DialOption) *GnmiDialoutExporter {
+	prefixTarget := ""
+	if device != nil && device.IP != nil {
+		prefixTarget = device.IP.String()
+	}
 	return &GnmiDialoutExporter{
 		device:       device,
 		resolver:     newPathResolver(device),
 		transport:    transport,
 		collectorStr: collectorStr,
 		flavor:       flavor,
+		prefixTarget: prefixTarget,
 		// passthrough:/// hands the literal host:port to our dialer as the
 		// target, keeping the hostname as the gRPC authority (so TLS
 		// ServerName verifies against it); the namespace dialer resolves the
@@ -335,7 +347,20 @@ func (e *GnmiDialoutExporter) pushSnapshot(ctx context.Context, ch chan *gnmipb.
 		e.logResolveErr("encode", nil, err)
 		return
 	}
-	pushOrDrop(ctx, ch, notificationResponse(now, gu), &e.statUpdatesDropped)
+	pushOrDrop(ctx, ch, e.notification(now, gu), &e.statUpdatesDropped)
+}
+
+// notification wraps notificationResponse and stamps the device identity
+// into Notification.Prefix.Target. Dial-out only — the dial-in Subscribe
+// paths keep the shared prefix-less notificationResponse so their wire
+// output is unchanged (servers echo a client-set target, they don't
+// invent one).
+func (e *GnmiDialoutExporter) notification(now time.Time, updates []*gnmipb.Update) *gnmipb.SubscribeResponse {
+	resp := notificationResponse(now, updates)
+	if e.prefixTarget != "" {
+		resp.GetUpdate().Prefix = &gnmipb.Path{Target: e.prefixTarget}
+	}
+	return resp
 }
 
 // deviceLabel returns the device's IP for log lines — the discriminating
@@ -389,7 +414,7 @@ func (e *GnmiDialoutExporter) pushChange(ctx context.Context, ch chan *gnmipb.Su
 		e.logResolveErr("on-change encode", nil, err)
 		return
 	}
-	pushOrDrop(ctx, ch, notificationResponse(now, gu), &e.statUpdatesDropped)
+	pushOrDrop(ctx, ch, e.notification(now, gu), &e.statUpdatesDropped)
 }
 
 // notificationResponse wraps updates into a SubscribeResponse{update}.

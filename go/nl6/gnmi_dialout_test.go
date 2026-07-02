@@ -215,6 +215,15 @@ func TestGnmiDialoutSampleStream(t *testing.T) {
 			t.Fatalf("unexpected update path: %s", pathToString(u.GetPath()))
 		}
 	}
+	// Every notification carries the device identity in Prefix.Target so
+	// collectors can attribute messages without keying on source IP.
+	for _, r := range resps {
+		if n := r.GetUpdate(); n != nil {
+			if got := n.GetPrefix().GetTarget(); got != "10.42.0.1" {
+				t.Fatalf("prefix target = %q; want device IP 10.42.0.1", got)
+			}
+		}
+	}
 }
 
 func TestGnmiDialoutSampleMatchesDialIn(t *testing.T) {
@@ -342,14 +351,24 @@ func TestGnmiDialoutOnChange(t *testing.T) {
 			t.Fatal("no ON_CHANGE update after oper-status flip")
 		}
 	}
-	// The latest update should carry oper-status DOWN.
-	ups := updatesOf(col.snapshot())
+	// The latest update should carry oper-status DOWN, and every
+	// notification (snapshot + change) should carry the device identity
+	// in Prefix.Target.
 	foundDown := false
-	for _, u := range ups {
-		elems := u.GetPath().GetElem()
-		if len(elems) > 0 && elems[len(elems)-1].GetName() == "oper-status" {
-			if string(u.GetVal().GetJsonIetfVal()) == `"openconfig-interfaces:DOWN"` {
-				foundDown = true
+	for _, r := range col.snapshot() {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		if got := n.GetPrefix().GetTarget(); got != "10.42.0.1" {
+			t.Fatalf("prefix target = %q; want device IP 10.42.0.1", got)
+		}
+		for _, u := range n.GetUpdate() {
+			elems := u.GetPath().GetElem()
+			if len(elems) > 0 && elems[len(elems)-1].GetName() == "oper-status" {
+				if string(u.GetVal().GetJsonIetfVal()) == `"openconfig-interfaces:DOWN"` {
+					foundDown = true
+				}
 			}
 		}
 	}

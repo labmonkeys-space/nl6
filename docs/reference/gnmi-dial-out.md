@@ -26,6 +26,13 @@ values agree byte-for-byte at the same instant**. The `DialoutTransport` seam
 leaves room to add the SONiC `gNMIDialOut` flavor later; only `gnmireverse` is
 implemented today.
 
+Every pushed notification carries the device identity **in-band**:
+`Notification.Prefix.Target` is set to the device's management IP (the same
+job the Arista client's `-target_value` flag does). Collectors can attribute
+messages by target instead of source IP — useful behind NAT/proxies and a
+prerequisite for any future shared-transport mode. Dial-in responses are
+unaffected (servers echo a client-set target; they don't invent one).
+
 ## Subscription modes
 
 | Mode | Behaviour |
