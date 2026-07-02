@@ -1,4 +1,4 @@
-# gNMI dial-out (telemetry push)
+# gNMI dial-out
 
 By default every nl6 device is a gNMI **dial-in** target: a collector opens the
 connection and calls `Subscribe`. With **dial-out** the roles reverse — the
