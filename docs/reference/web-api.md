@@ -24,6 +24,8 @@ management web UI at `/`.
 | `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. |
 | `/api/v1/syslog/status` | GET | UDP syslog export status, counters, and per-type catalog map. |
 | `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. |
+| `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
+| `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/health` | GET | Health check endpoint. |
 
@@ -124,15 +126,16 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 ### Per-device export blocks
 
-`POST /api/v1/devices` accepts three optional top-level blocks —
-`flow`, `traps`, `syslog` — that attach export configuration to every
-device created by the request. Any block can be omitted; omitted blocks
-mean "this batch does not participate in that export subsystem."
+`POST /api/v1/devices` accepts four optional top-level blocks —
+`flow`, `traps`, `syslog`, `gnmi_dialout` — that attach export
+configuration to every device created by the request. Any block can be
+omitted; omitted blocks mean "this batch does not participate in that
+export subsystem."
 
-The subsystems are always-on after `main()` — flow / trap / syslog
-scheduler goroutines and catalog loaders run regardless of whether any
-CLI seed was supplied, so REST-created devices can opt in to any
-combination.
+The subsystems are always-on after `main()` — flow / trap / syslog /
+gNMI dial-out scheduler goroutines and catalog loaders run regardless
+of whether any CLI seed was supplied, so REST-created devices can opt
+in to any combination.
 
 **`flow` block:**
 
@@ -180,6 +183,26 @@ without per-device binding is a runtime attach failure, not a 400.
   "collector": "192.168.1.10:514",              // required; host:port
   "format":    "5424",                           // optional; "5424" | "3164"; default "5424"
   "interval":  "10s"                             // optional; per-device mean Poisson firing interval; default 10s
+}
+```
+
+**`gnmi_dialout` block** (see the
+[gNMI dial-out reference](gnmi-dial-out.md) for full semantics):
+
+```json
+"gnmi_dialout": {
+  "collector":       "10.0.0.5:6030",                              // required; host:port
+  "flavor":          "gnmireverse",                                 // optional; only shipped flavor; default "gnmireverse"
+  "encoding":        "json_ietf",                                   // optional; "json_ietf" | "proto"; default "json_ietf"
+  "mode":            "sample",                                      // optional; "sample" | "on-change"; default "sample"
+  "paths":           ["/interfaces/interface[name=*]/state"],       // optional; default: full state subtree
+  "sample_interval": "10s",                                         // optional; SAMPLE cadence, 1s floor; default 10s
+  "tls": {                                                          // optional; default {"enabled": true}
+    "enabled": true,
+    "insecure_skip_verify": false,                                  // dev only
+    "ca_file": "",                                                  // PEM CA bundle; empty = system roots
+    "mtls": false                                                   // present the shared cert as a client cert
+  }
 }
 ```
 
@@ -275,6 +298,12 @@ The field is omitted (JSON `omitempty`) for devices whose underlying
   falling back to the simulator's default resource set.
 
 POSTs that name a `resource_file` or use `round_robin: true` always carry it.
+
+Each record also echoes the per-device export blocks that were configured at
+creation — `flow`, `traps`, `syslog`, `gnmi_dialout` — so a GET response can
+be replayed against `POST /api/v1/devices` without reconstructing the export
+config. Blocks are omitted (`omitempty`) for devices that don't participate
+in that subsystem.
 
 Each record also carries the device's geolocation: `location` (the world-city
 string also served as SNMP `sysLocation.0`), and `latitude` / `longitude`

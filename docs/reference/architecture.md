@@ -112,6 +112,20 @@ same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow,
 so all three protocols agree byte-for-byte at the same instant. Read-only;
 `Set` returns `Unimplemented`. See [gNMI target reference](gnmi.md).
 
+### gNMI dial-out
+
+`gnmi_dialout_transport.go` (`DialoutTransport` seam + Arista `gNMIReverse`
+flavor), `gnmi_dialout_exporter.go` (per-device gRPC client: one
+`ClientConn` + one `Publish` stream per device, reconnect loop with
+dwell-gated backoff, SAMPLE / ON_CHANGE pacing), `gnmi_dialout_manager.go`
+(lifecycle, TLS credentials, per-(collector, flavor) status aggregates).
+Reverses the gRPC role, not the data direction: the device dials the
+collector and streams the same `SubscribeResponse` payload the dial-in
+target serves, with `Prefix.Target` = device IP for in-band attribution.
+Opt-in per device via the `-gnmi-dialout-*` seed flags or the
+`gnmi_dialout` REST block — the fleet can mix dial-in and dial-out. See
+[gNMI dial-out reference](gnmi-dial-out.md).
+
 ### Resource loading
 
 `resources.go` loads and caches the 379 JSON files at startup. Each device

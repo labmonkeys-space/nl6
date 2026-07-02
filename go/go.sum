@@ -1,3 +1,5 @@
+github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9 h1:sUmkQn9Eg+C0sRvW5jtAYUcfT1OWJf747YIh9MIvpWY=
+github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9/go.mod h1:FP0assX+asxaJNbxWW6ZnYu/RtL6xtSlcJ7zqAmoRgI=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=

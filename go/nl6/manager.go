@@ -228,6 +228,7 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		info.Flow = device.flowConfig
 		info.Traps = device.trapConfig
 		info.Syslog = device.syslogConfig
+		info.GnmiDialout = device.gnmiDialoutConfig
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches
 		// the omitempty pattern used by the export blocks.
@@ -457,6 +458,10 @@ func (sm *SimulatorManager) Shutdown() error {
 	// Stop the gNMI subsystem. Walks every device and gracefully stops
 	// its per-device gRPC server. Safe to call when never started.
 	sm.StopGnmiSubsystem()
+
+	// Stop the gNMI dial-out subsystem (per-device push exporters: cancel
+	// each run loop and close its ClientConn). Safe to call when never started.
+	sm.StopGnmiDialout()
 
 	// Stop the DNS service-discovery subsystem (debounce worker + listeners).
 	// Safe to call when never started.

@@ -151,15 +151,7 @@ func runOnChangeSubscribe(
 		if len(gnmiUpdates) == 0 {
 			continue
 		}
-		resp := &gnmipb.SubscribeResponse{
-			Response: &gnmipb.SubscribeResponse_Update{
-				Update: &gnmipb.Notification{
-					Timestamp: now.UnixNano(),
-					Update:    gnmiUpdates,
-				},
-			},
-		}
-		if err := stream.Send(resp); err != nil {
+		if err := stream.Send(notificationResponse(now, gnmiUpdates)); err != nil {
 			return err
 		}
 		atomic.AddUint64(updatesSent, uint64(len(gnmiUpdates)))
@@ -324,30 +316,14 @@ func emitMatchingForChange(
 	tSec := now.Sub(ic.startTime).Seconds()
 
 	for _, sub := range subs {
-		// Fast path: specific-name subs that don't cover evt.IfIndex
-		// skip outright (no Resolve, no leaf walk).
-		if !pathCoversIfIndex(sub.GetPath(), evt.IfIndex, resolver) {
-			continue
-		}
-		// Classify the sub's path shape (no counter reads, no wildcard
-		// expansion). Filter to leaves that match the changed bits.
-		leaves, err := resolver.ClassifyLeaves(sub.GetPath())
+		// Filter the sub's path to the leaves affected by this change
+		// (shared with the dial-out ON_CHANGE exporter).
+		filtered, err := changedUpdatesForPath(resolver, ic, sub.GetPath(), evt, tSec)
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
 				continue
 			}
 			return err
-		}
-		filtered := make([]resolvedUpdate, 0, len(leaves))
-		for _, leaf := range leaves {
-			if !subChangeMatch(leaf, evt.Changed) {
-				continue
-			}
-			upd, ok := resolver.resolveLeaf(ic, evt.IfIndex, leaf, tSec)
-			if !ok {
-				continue
-			}
-			filtered = append(filtered, upd)
 		}
 		if len(filtered) == 0 {
 			continue
@@ -356,20 +332,38 @@ func emitMatchingForChange(
 		if err != nil {
 			return err
 		}
-		resp := &gnmipb.SubscribeResponse{
-			Response: &gnmipb.SubscribeResponse_Update{
-				Update: &gnmipb.Notification{
-					Timestamp: now.UnixNano(),
-					Update:    gnmiUpdates,
-				},
-			},
-		}
-		if err := stream.Send(resp); err != nil {
+		if err := stream.Send(notificationResponse(now, gnmiUpdates)); err != nil {
 			return err
 		}
 		atomic.AddUint64(updatesSent, uint64(len(gnmiUpdates)))
 	}
 	return nil
+}
+
+// changedUpdatesForPath filters one path against a StateChange and returns
+// the resolved updates for the leaves the path covers that actually changed.
+// Shared by the dial-in ON_CHANGE fan-out (emitMatchingForChange, per-sub)
+// and the dial-out ON_CHANGE exporter (pushChange, combined). Returns
+// (nil, nil) when the path doesn't cover evt.IfIndex; propagates
+// ClassifyLeaves errors (callers treat codes.NotFound as skip).
+func changedUpdatesForPath(resolver *pathResolver, ic *IfCounterCycler, p *gnmipb.Path, evt StateChange, tSec float64) ([]resolvedUpdate, error) {
+	if !pathCoversIfIndex(p, evt.IfIndex, resolver) {
+		return nil, nil
+	}
+	leaves, err := resolver.ClassifyLeaves(p)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]resolvedUpdate, 0, len(leaves))
+	for _, leaf := range leaves {
+		if !subChangeMatch(leaf, evt.Changed) {
+			continue
+		}
+		if upd, ok := resolver.resolveLeaf(ic, evt.IfIndex, leaf, tSec); ok {
+			out = append(out, upd)
+		}
+	}
+	return out, nil
 }
 
 // pathCoversIfIndex returns true when sub's path either uses a wildcard

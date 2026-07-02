@@ -141,6 +141,21 @@ func main() {
 		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
 		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on)")
 
+		// gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the
+		// auto-start batch; REST-created devices opt in via a per-device
+		// `gnmi_dialout` block. Dial-out is independent of dial-in; a device
+		// can do either or both. See CLAUDE.md "gNMI dial-out".
+		gnmiMode            = flag.String("gnmi-mode", "dial-in", "[seed] gNMI mode for the auto-start batch: dial-in (default; serve gNMI) | dial-out (also push telemetry to -gnmi-dialout-collector)")
+		gnmiDialoutColl     = flag.String("gnmi-dialout-collector", "", "[seed] gNMI dial-out collector address (host:port); required when -gnmi-mode=dial-out")
+		gnmiDialoutFlavor   = flag.String("gnmi-dialout-flavor", "gnmireverse", "[seed] gNMI dial-out wire flavor: gnmireverse (Arista)")
+		gnmiDialoutEncoding = flag.String("gnmi-dialout-encoding", "json_ietf", "[seed] gNMI dial-out value encoding: json_ietf (default) | proto")
+		gnmiDialoutMode     = flag.String("gnmi-dialout-sub-mode", "sample", "[seed] gNMI dial-out subscription mode: sample (default) | on-change")
+		gnmiDialoutInterval = flag.Duration("gnmi-dialout-interval", 10*time.Second, "[seed] gNMI dial-out SAMPLE cadence (clamped to a 1s floor)")
+		gnmiDialoutTLS      = flag.Bool("gnmi-dialout-tls", true, "[seed] Use TLS to the dial-out collector (default true; false = plaintext, Arista -collector_tls=false parity)")
+		gnmiDialoutTLSSkip  = flag.Bool("gnmi-dialout-tls-insecure", false, "[seed] Skip dial-out collector certificate verification (dev only)")
+		gnmiDialoutTLSCA    = flag.String("gnmi-dialout-tls-ca", "", "[seed] PEM CA bundle file to verify the dial-out collector against (empty = system roots)")
+		gnmiDialoutMTLS     = flag.Bool("gnmi-dialout-mtls", false, "[seed] Present the shared TLS certificate as a client cert for mutual TLS to the dial-out collector")
+
 		// DNS service-discovery flags. nl6 acts as a hidden DNS primary; a
 		// CoreDNS secondary transfers the zones. Off by default. See CLAUDE.md
 		// "DNS service discovery".
@@ -358,6 +373,46 @@ func main() {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}
 
+	// Start the gNMI dial-out subsystem unconditionally so REST-created
+	// devices can opt in even without a CLI seed. Per-device exporters push
+	// telemetry to a collector; independent of the dial-in listener.
+	if err := manager.StartGnmiDialoutSubsystem(); err != nil {
+		log.Fatalf("Failed to initialize gNMI dial-out subsystem: %v", err)
+	}
+
+	// Build the CLI-seed dial-out config for the auto-start batch. Mirrors
+	// the flow/trap/syslog seed pattern: flags seed auto-start devices only;
+	// REST-created devices opt in via POST /api/v1/devices. Enabled only when
+	// -gnmi-mode=dial-out.
+	var gnmiDialoutSeed *DeviceGnmiDialoutConfig
+	switch strings.ToLower(strings.TrimSpace(*gnmiMode)) {
+	case "", "dial-in":
+		// dial-in only; no seed.
+	case "dial-out":
+		if *gnmiDialoutColl == "" {
+			log.Fatalf("gnmi dial-out: -gnmi-mode=dial-out requires -gnmi-dialout-collector")
+		}
+		gnmiDialoutSeed = &DeviceGnmiDialoutConfig{
+			Collector:      *gnmiDialoutColl,
+			Flavor:         *gnmiDialoutFlavor,
+			Encoding:       *gnmiDialoutEncoding,
+			Mode:           *gnmiDialoutMode,
+			SampleInterval: jsonDuration(*gnmiDialoutInterval),
+			TLS: &DialoutTLSConfig{
+				Enabled:            *gnmiDialoutTLS,
+				InsecureSkipVerify: *gnmiDialoutTLSSkip,
+				CAFile:             *gnmiDialoutTLSCA,
+				MTLS:               *gnmiDialoutMTLS,
+			},
+		}
+		gnmiDialoutSeed.ApplyDefaults()
+		if err := gnmiDialoutSeed.Validate(); err != nil {
+			log.Fatalf("gnmi dial-out: invalid -gnmi-dialout-* CLI seed: %v", err)
+		}
+	default:
+		log.Fatalf("gnmi dial-out: invalid -gnmi-mode %q (valid: dial-in, dial-out)", *gnmiMode)
+	}
+
 	// Start the DNS service-discovery subsystem (hidden primary). Off unless
 	// -dns-enable is set. Validate the domain and reverse zones up front so a
 	// misconfiguration fails fast with a clear message rather than silently
@@ -477,7 +532,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

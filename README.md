@@ -55,6 +55,14 @@ network namespaces.
   testing — configure with `-syslog-collector <host:port>`; full flag
   list and catalog schema in [CLAUDE.md](CLAUDE.md) →
   "UDP syslog export".
+- **gNMI streaming telemetry** — every device serves a read-only
+  OpenConfig dial-in target (gRPC + TLS on `:9339`, SAMPLE / ON_CHANGE /
+  ONCE), and can additionally **push** telemetry to a collector via
+  gNMI dial-out (Arista `gNMIReverse`, per-device opt-in, mixed fleets
+  supported) — see
+  [gNMI target](https://labmonkeys-space.github.io/nl6/reference/gnmi/)
+  and
+  [gNMI dial-out](https://labmonkeys-space.github.io/nl6/reference/gnmi-dial-out/).
 
 ## Status & scale
 

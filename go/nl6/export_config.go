@@ -106,6 +106,47 @@ type DeviceSyslogConfig struct {
 	Interval  jsonDuration `json:"interval,omitempty"`
 }
 
+// DialoutTLSConfig is the TLS/transport-security block of a dial-out
+// config. `Enabled=false` selects a plaintext gRPC connection (matching
+// the Arista `-collector_tls=false` default and the goarista reference
+// collector's plaintext mode). When enabled, `InsecureSkipVerify` skips
+// collector-certificate verification (dev only), `CAFile` supplies a
+// PEM CA bundle to verify the collector against (empty → system roots),
+// and `MTLS` presents the simulator's shared certificate as a client
+// cert for mutual TLS.
+//
+// This block lives as a pointer on DeviceGnmiDialoutConfig so that an
+// omitted `tls` object is distinguishable from an explicit
+// `{"enabled": false}` — ApplyDefaults installs the secure default only
+// when the whole block is absent.
+type DialoutTLSConfig struct {
+	Enabled            bool   `json:"enabled"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
+	CAFile             string `json:"ca_file,omitempty"`
+	MTLS               bool   `json:"mtls,omitempty"`
+}
+
+// DeviceGnmiDialoutConfig is the per-device gNMI dial-out (telemetry
+// push) configuration. A nil pointer on the device means dial-out is
+// disabled — the device serves dial-in only. Dial-out and dial-in are
+// independent per device, so the fleet may run mixed.
+//
+// Collector is the gRPC target (host:port). Flavor selects the dial-out
+// wire protocol (only "gnmireverse" is shipped). Encoding is "json_ietf"
+// (default) or "proto". Mode is "sample" (fixed-interval push) or
+// "on-change" (push on interface-state transitions). Paths are the gNMI
+// subscription paths under /interfaces/interface[name=*]/state/... .
+// SampleInterval is the SAMPLE-mode cadence (clamped to a 1s floor).
+type DeviceGnmiDialoutConfig struct {
+	Collector      string            `json:"collector"`
+	Flavor         string            `json:"flavor,omitempty"`
+	Encoding       string            `json:"encoding,omitempty"`
+	Mode           string            `json:"mode,omitempty"`
+	Paths          []string          `json:"paths,omitempty"`
+	SampleInterval jsonDuration      `json:"sample_interval,omitempty"`
+	TLS            *DialoutTLSConfig `json:"tls,omitempty"`
+}
+
 // Defaults applied by ApplyDefaults. Sourced from `simulator.go` flag
 // defaults (review decision D1.a — simulator.go is authoritative over
 // CLAUDE.md documentation drift).
@@ -123,7 +164,18 @@ const (
 
 	defaultSyslogFormat   = "5424"
 	defaultSyslogInterval = 10 * time.Second
+
+	defaultDialoutFlavor         = "gnmireverse"
+	defaultDialoutEncoding       = "json_ietf"
+	defaultDialoutMode           = "sample"
+	defaultDialoutSampleInterval = 10 * time.Second
 )
+
+// Default subscription path used when a dial-out config supplies no
+// explicit paths: the full interface-state subtree (state leaves +
+// counters) for every interface — the dial-out equivalent of a
+// dial-in wildcard subtree subscribe.
+var defaultDialoutPaths = []string{"/interfaces/interface[name=*]/state"}
 
 // ApplyDefaults fills in zero-valued fields with the simulator-wide
 // defaults. Safe to call on a nil receiver (no-op). Callers MUST invoke
@@ -283,6 +335,86 @@ func (c *DeviceSyslogConfig) Validate() error {
 	return nil
 }
 
+// ApplyDefaults fills zero-valued fields with the dial-out defaults. Safe
+// on nil. When the whole TLS block is omitted it installs the secure
+// default (TLS on, collector verified against system roots).
+func (c *DeviceGnmiDialoutConfig) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	if c.Flavor == "" {
+		c.Flavor = defaultDialoutFlavor
+	}
+	if c.Encoding == "" {
+		c.Encoding = defaultDialoutEncoding
+	}
+	if c.Mode == "" {
+		c.Mode = defaultDialoutMode
+	}
+	if time.Duration(c.SampleInterval) == 0 {
+		c.SampleInterval = jsonDuration(defaultDialoutSampleInterval)
+	}
+	if len(c.Paths) == 0 {
+		c.Paths = append([]string(nil), defaultDialoutPaths...)
+	}
+	if c.TLS == nil {
+		c.TLS = &DialoutTLSConfig{Enabled: true}
+	}
+}
+
+// Validate checks the dial-out config and canonicalises Flavor / Encoding
+// / Mode. Rejects empty enums with a hint to call ApplyDefaults first.
+// Path strings are parsed for syntax so malformed paths are rejected at
+// request time; per-path leaf-scope (state-only for ON_CHANGE) is checked
+// at exporter-attach time against the device's resolver. Safe on nil.
+func (c *DeviceGnmiDialoutConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if time.Duration(c.SampleInterval) < 0 {
+		return fmt.Errorf("gnmi_dialout: sample_interval must be >= 0, got %s", time.Duration(c.SampleInterval))
+	}
+	if err := validateCollector("gnmi_dialout", c.Collector); err != nil {
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Flavor)) {
+	case "", "gnmireverse":
+		c.Flavor = "gnmireverse"
+	default:
+		return fmt.Errorf("gnmi_dialout: invalid flavor %q (valid: gnmireverse)", c.Flavor)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Encoding)) {
+	case "", "json_ietf", "json-ietf":
+		c.Encoding = "json_ietf"
+	case "proto":
+		c.Encoding = "proto"
+	default:
+		return fmt.Errorf("gnmi_dialout: invalid encoding %q (valid: json_ietf, proto)", c.Encoding)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case "":
+		return fmt.Errorf("gnmi_dialout: mode is required (caller must call ApplyDefaults() first)")
+	case "sample":
+		c.Mode = "sample"
+	case "on-change", "on_change", "onchange":
+		c.Mode = "on-change"
+	default:
+		return fmt.Errorf("gnmi_dialout: invalid mode %q (valid: sample, on-change)", c.Mode)
+	}
+	if len(c.Paths) == 0 {
+		return fmt.Errorf("gnmi_dialout: at least one path is required (caller must call ApplyDefaults() first)")
+	}
+	for _, p := range c.Paths {
+		if _, err := parseGnmiPath(p); err != nil {
+			return fmt.Errorf("gnmi_dialout: invalid path %q: %w", p, err)
+		}
+	}
+	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAFile != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
+		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_file/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
+	}
+	return nil
+}
+
 // validateCollector is the shared host:port validation used by all three
 // export configs. Rejects empty / whitespace-only inputs, requires a
 // port in the 1–65535 range, and resolves the host over both IPv4 and
@@ -347,6 +479,17 @@ func applyExportSeed(device *DeviceSimulator, seed *ExportSeed) {
 	if seed.Syslog != nil {
 		s := *seed.Syslog
 		device.syslogConfig = &s
+	}
+	if seed.GnmiDialout != nil {
+		g := *seed.GnmiDialout
+		// Deep-copy the slices/pointer so per-device mutations don't leak
+		// across the fleet.
+		g.Paths = append([]string(nil), seed.GnmiDialout.Paths...)
+		if seed.GnmiDialout.TLS != nil {
+			t := *seed.GnmiDialout.TLS
+			g.TLS = &t
+		}
+		device.gnmiDialoutConfig = &g
 	}
 	// IfErrorScenario has value semantics; copy directly. Empty string
 	// on the seed maps to "" on the device, which InitIfCounters later

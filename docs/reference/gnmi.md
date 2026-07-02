@@ -2,6 +2,10 @@
 
 Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. The target serves OpenConfig interface state and counter telemetry, scoped to `/interfaces/interface[name=*]/state/*`. Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
 
+This page covers **dial-in** (the collector connects to the device — the
+default). Devices can additionally **push** telemetry to a collector over an
+outbound gRPC stream; see [gNMI dial-out](gnmi-dial-out.md).
+
 ## Enablement
 
 The gNMI subsystem is **always-on by default**. Every device gets a listener; no per-device opt-in. To turn the subsystem off simulator-wide, pass `-gnmi-disable`.
