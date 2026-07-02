@@ -4,7 +4,7 @@ By default every nl6 device is a gNMI **dial-in** target: a collector opens the
 connection and calls `Subscribe`. With **dial-out** the roles reverse — the
 device opens a gRPC connection *to a collector* and streams telemetry to it.
 Dial-out is firewall/NAT-friendly (outbound only, no inbound service) and is the
-mechanism behind [Arista EOS gNMIReverse](https://aristanetworks.github.io/openmgmt/telemetry/adapters/gnmireverse/).
+mechanism behind [Arista EOS gNMIReverse](https://aristanetworks.github.io/openmgmt/telemetry/adapters/gnmi-dial-out/).
 
 Dial-out is **opt-in and per-device**, so the fleet can run mixed: some devices
 serve dial-in on `:9339` while others push dial-out to a collector.
