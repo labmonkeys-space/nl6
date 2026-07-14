@@ -62,6 +62,7 @@ sudo ./nl6 [flags]
 -flow-active-timeout <duration>   # [seed]   Active flow expiry timeout (default: 30s)
 -flow-inactive-timeout <duration> # [seed]   Inactive flow expiry timeout (default: 15s)
 -flow-template-interval <dur>     # [global] Re-send template every N seconds (default: 60s; ignored under netflow5/sflow)
+-flow-sub-agent-id <uint>         # [seed]   sFlow sub_agent_id for the auto-start batch (default: 0; one value for the whole batch — use per-device REST flow.sub_agent_id for per-group values; ignored by non-sflow protocols)
 -flow-source-per-device           # [global] Bind per-device UDP socket so src IP = device IP (default: true)
 
 # SNMP trap / INFORM export flags (SNMPv2c only)

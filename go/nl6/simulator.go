@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -116,6 +117,7 @@ func main() {
 		flowInactiveSecs         = flag.Int("flow-inactive-timeout", 15, "Inactive flow timeout in seconds (default: 15)")
 		flowTemplateIntervalSecs = flag.Int("flow-template-interval", 60, "Template retransmission interval in seconds (default: 60)")
 		flowTickSecs             = flag.Int("flow-tick-interval", 5, "Flow ticker interval in seconds (default: 5)")
+		flowSubAgentID           = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
 		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
@@ -275,12 +277,18 @@ func main() {
 	// REST-created devices must opt in via POST /api/v1/devices.
 	var flowSeed *DeviceFlowConfig
 	if *flowCollector != "" {
+		// flag.Uint is platform-width; reject values that would silently
+		// truncate in the uint32 narrowing below.
+		if *flowSubAgentID > math.MaxUint32 {
+			log.Fatalf("flow export: -flow-sub-agent-id must fit in uint32 (max %d), got %d", uint32(math.MaxUint32), *flowSubAgentID)
+		}
 		flowSeed = &DeviceFlowConfig{
 			Collector:       *flowCollector,
 			Protocol:        *flowProtocol,
 			TickInterval:    jsonDuration(time.Duration(*flowTickSecs) * time.Second),
 			ActiveTimeout:   jsonDuration(time.Duration(*flowActiveSecs) * time.Second),
 			InactiveTimeout: jsonDuration(time.Duration(*flowInactiveSecs) * time.Second),
+			SubAgentID:      uint32(*flowSubAgentID),
 		}
 		flowSeed.ApplyDefaults()
 		if err := flowSeed.Validate(); err != nil {

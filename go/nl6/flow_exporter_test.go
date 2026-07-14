@@ -26,7 +26,7 @@ func newTestFlowExporter(device *DeviceSimulator, profile *FlowProfile,
 	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	return NewFlowExporter(device, profile,
 		activeTimeout, inactiveTimeout, templateInterval,
-		"127.0.0.1:0", addr, "netflow9", NetFlow9Encoder{})
+		"127.0.0.1:0", addr, "netflow9", NetFlow9Encoder{}, 0)
 }
 
 // tickWithEncoder emulates the pre-phase-3 Tick signature for existing
@@ -573,7 +573,7 @@ func TestGetFlowStatus_AggregatesAcrossDevices(t *testing.T) {
 		addr, _ := net.ResolveUDPAddr("udp", collector)
 		fe := NewFlowExporter(d, flowProfileEdgeRouter,
 			30*time.Second, 15*time.Second, 60*time.Second,
-			collector, addr, protocol, encoder)
+			collector, addr, protocol, encoder, 0)
 		fe.statPackets.Store(packets)
 		fe.statBytes.Store(bytesSent)
 		fe.statRecords.Store(records)
