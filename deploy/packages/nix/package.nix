@@ -30,7 +30,7 @@ buildGo126Module {
   # Hash of the vendored Go module set. Recompute after any go.mod/go.sum
   # change: set this to lib.fakeHash, run `nix build`, copy the printed
   # "got:" value back here.
-  vendorHash = "sha256-wITi/duMKXh3HP3OF6P/yKZq3D7tLLRYOgzZ60IhgaE=";
+  vendorHash = "sha256-an+rPvG3lUOWE+fZ2JdkWUBs/PJTersmD6gjq7uJ8yA=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
