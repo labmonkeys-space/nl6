@@ -63,6 +63,7 @@ sudo ./nl6 [flags]
 -flow-inactive-timeout <duration> # [seed]   Inactive flow expiry timeout (default: 15s)
 -flow-template-interval <dur>     # [global] Re-send template every N seconds (default: 60s; ignored under netflow5/sflow)
 -flow-sub-agent-id <uint>         # [seed]   sFlow sub_agent_id for the auto-start batch (default: 0; one value for the whole batch — use per-device REST flow.sub_agent_id for per-group values; ignored by non-sflow protocols)
+-flow-option-interface-table <s>  # [seed]   v9/IPFIX interface option records: if-scoped (ifIndex in scope, fields 82+83) | system-scoped (ifIndex as option field, field 83 only; IOS-XR shape). Empty = off (default). Requires netflow9/ipfix; per-group shapes via REST flow.options_interface_table
 -flow-source-per-device           # [global] Bind per-device UDP socket so src IP = device IP (default: true)
 
 # SNMP trap / INFORM export flags (SNMPv2c only)

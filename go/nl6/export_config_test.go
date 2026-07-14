@@ -104,6 +104,78 @@ func TestDeviceFlowConfig_ApplyDefaults_NilSafe(t *testing.T) {
 	c.ApplyDefaults() // must not panic
 }
 
+func TestDeviceFlowConfig_OptionsInterfaceTable_Validate(t *testing.T) {
+	// Canonicalisation is case-insensitive, like Protocol.
+	c := &DeviceFlowConfig{Collector: "127.0.0.1:2055", Protocol: "netflow9", OptionsInterfaceTable: "IF-Scoped"}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if c.OptionsInterfaceTable != "if-scoped" {
+		t.Errorf("OptionsInterfaceTable = %q, want canonical %q", c.OptionsInterfaceTable, "if-scoped")
+	}
+
+	// Unknown values rejected — including vendor names (no asr9k alias).
+	for _, bad := range []string{"asr9k", "interface", "junk"} {
+		c := &DeviceFlowConfig{Collector: "127.0.0.1:2055", Protocol: "ipfix", OptionsInterfaceTable: bad}
+		err := c.Validate()
+		if err == nil {
+			t.Errorf("Validate(%q) = nil, want error", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "if-scoped") || !strings.Contains(err.Error(), "system-scoped") {
+			t.Errorf("error for %q should name valid values, got: %v", bad, err)
+		}
+	}
+
+	// Incompatible protocols rejected with an error naming the supported set.
+	for _, proto := range []string{"netflow5", "sflow"} {
+		c := &DeviceFlowConfig{Collector: "127.0.0.1:2055", Protocol: proto, OptionsInterfaceTable: "system-scoped"}
+		err := c.Validate()
+		if err == nil {
+			t.Errorf("Validate(protocol=%s) = nil, want error", proto)
+			continue
+		}
+		if !strings.Contains(err.Error(), "netflow9") || !strings.Contains(err.Error(), "ipfix") {
+			t.Errorf("error for protocol %s should name supported protocols, got: %v", proto, err)
+		}
+	}
+
+	// Empty = off, valid under any protocol.
+	for _, proto := range []string{"netflow9", "ipfix", "netflow5", "sflow"} {
+		c := &DeviceFlowConfig{Collector: "127.0.0.1:2055", Protocol: proto}
+		if err := c.Validate(); err != nil {
+			t.Errorf("Validate(protocol=%s, no shape): %v", proto, err)
+		}
+	}
+}
+
+func TestDeviceFlowConfig_OptionsInterfaceTable_JSONRoundTrip(t *testing.T) {
+	in := DeviceFlowConfig{Collector: "x:2055", Protocol: "netflow9", OptionsInterfaceTable: "system-scoped"}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"options_interface_table":"system-scoped"`) {
+		t.Errorf("marshalled JSON missing options_interface_table: %s", b)
+	}
+	var out DeviceFlowConfig
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.OptionsInterfaceTable != "system-scoped" {
+		t.Errorf("round-tripped OptionsInterfaceTable = %q, want %q", out.OptionsInterfaceTable, "system-scoped")
+	}
+
+	// Omitted when empty.
+	zero, err := json.Marshal(DeviceFlowConfig{Collector: "x:2055", Protocol: "netflow9"})
+	if err != nil {
+		t.Fatalf("marshal zero: %v", err)
+	}
+	if strings.Contains(string(zero), "options_interface_table") {
+		t.Errorf("options_interface_table should be omitted when empty: %s", zero)
+	}
+}
+
 func TestDeviceFlowConfig_SubAgentID_JSONRoundTrip(t *testing.T) {
 	// Present when set.
 	in := DeviceFlowConfig{Collector: "x:6343", Protocol: "sflow", SubAgentID: 7}

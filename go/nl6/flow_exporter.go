@@ -11,6 +11,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -107,6 +108,10 @@ type FlowExporter struct {
 	// exporter; silent swallowing of WriteTo errors was an observability
 	// hole flagged in the phase 3 review (P6).
 	firstWriteErr sync.Once
+	// firstOptionsErr mirrors firstWriteErr for the option-datagram encode
+	// path: an encoder error there would otherwise stop option emission
+	// silently (review finding — unreachable today, but defensive).
+	firstOptionsErr sync.Once
 
 	// conn is the per-device UDP socket (nil = use shared pool). atomic.Pointer
 	// so Tick (ticker goroutine) and Close (device-shutdown paths) can read and
@@ -118,6 +123,104 @@ type FlowExporter struct {
 	// thereafter, so no locking is required for the read path in Tick.
 	// Under NetFlow/IPFIX exporters the slice is non-nil but ignored.
 	counterSources []CounterSource
+
+	// Interface option-table state ("option interface-table"). optionShape is
+	// the canonical shape ("" = off); optionIfaces is the device's interface
+	// universe with resolved names, captured once at attach time by
+	// registerFlowOptionInterfaces and read-only thereafter (same discipline
+	// as counterSources). Only ever set for netflow9/ipfix exporters —
+	// Validate enforces the protocol compatibility.
+	optionShape  string
+	optionIfaces []flowOptionIface
+}
+
+// flowOptionIface is one interface's option-record identity: its ifIndex and
+// resolved name (used for both interfaceName(82) and interfaceDescription(83)
+// — the same ifDescr-backed source the trap/syslog IfName path resolves).
+type flowOptionIface struct {
+	ifIndex uint32
+	name    string
+}
+
+// Canonical option-table shape names (see DeviceFlowConfig.Validate). The
+// names describe where the ifIndex lives on the wire, not a vendor:
+// "system-scoped" matches the shape real Cisco IOS-XR exporters emit.
+const (
+	flowOptionShapeIfScoped     = "if-scoped"
+	flowOptionShapeSystemScoped = "system-scoped"
+	// flowOptionStringLen is the fixed on-wire size of option-record string
+	// fields (82/83) in both protocols: NUL-padded, truncated at 32 bytes —
+	// the fixed-width form collectors' v9 string handling expects.
+	flowOptionStringLen = 32
+)
+
+// putPaddedString writes s into buf at pos as a fixed flowOptionStringLen-byte
+// field: NUL-padded on the right, truncated at the field size. Returns the
+// new position. Shared by the NF9 and IPFIX option-record encoders.
+//
+// Caller contract: pos+flowOptionStringLen must not exceed len(buf) — bounds
+// are guaranteed one level up by encodeOptionRecords' defensive record cap,
+// so record encoders never need per-field checks.
+func putPaddedString(buf []byte, pos int, s string) int {
+	n := copy(buf[pos:pos+flowOptionStringLen], s)
+	for i := pos + n; i < pos+flowOptionStringLen; i++ {
+		buf[i] = 0
+	}
+	return pos + flowOptionStringLen
+}
+
+// flowOptionShapeDesc bundles everything one option-table shape needs —
+// pre-encoded options template, record size, and the record encoder — so a
+// shape cannot be half-registered: template and record layout live in the
+// same table entry and cannot drift apart (a review finding: shape knowledge
+// spread across uncoupled switch sites risks template/data mismatch when a
+// shape is added to some sites but not others). Each protocol owns a
+// map[shape]flowOptionShapeDesc built in its init().
+type flowOptionShapeDesc struct {
+	templ   []byte // pre-encoded options template FlowSet/Set
+	recSize int    // on-wire bytes of one option data record
+	// encodeRecord writes one option data record at pos and returns the new
+	// position. domainID feeds shapes whose scope value is the exporter
+	// identity (IPFIX system-scoped); interface-scoped shapes ignore it.
+	encodeRecord func(buf []byte, pos int, domainID uint32, ifc flowOptionIface) int
+}
+
+// encodeOptionRecords writes the option data FlowSet/Set: 4-byte set header
+// (setID + length) followed by one record per interface, capped to what fits
+// in buf. Returns (newPos, consumed). Shared by the NF9 and IPFIX option
+// encoders so the pagination/set-length math exists exactly once.
+//
+// The record cap is re-derived here from len(buf) rather than trusted from
+// the caller's overhead arithmetic — defense in depth so a drift in a
+// caller's size constants degrades to fewer records per datagram instead of
+// a slice-bounds panic in the shared ticker goroutine.
+func encodeOptionRecords(buf []byte, pos int, setID uint16, desc flowOptionShapeDesc, domainID uint32, ifaces []flowOptionIface) (int, int) {
+	maxFit := (len(buf) - pos - 4) / desc.recSize
+	consumed := len(ifaces)
+	if consumed > maxFit {
+		consumed = maxFit
+	}
+	if consumed <= 0 {
+		return pos, 0
+	}
+	binary.BigEndian.PutUint16(buf[pos:], setID)
+	binary.BigEndian.PutUint16(buf[pos+2:], uint16(4+consumed*desc.recSize)) // records are 4B-aligned, no padding
+	pos += 4
+	for _, ifc := range ifaces[:consumed] {
+		pos = desc.encodeRecord(buf, pos, domainID, ifc)
+	}
+	return pos, consumed
+}
+
+// flowOptionsEncoder is the seam for encoders that emit interface
+// option-table datagrams (NetFlow v9 and IPFIX). Deliberately NOT part of
+// FlowEncoder — netflow5/sflow cannot implement it, and Validate guarantees
+// optionShape is only ever set for protocols whose encoder satisfies this.
+// A future options-capable encoder satisfies it implicitly; nothing in
+// Tick needs to enumerate concrete types.
+type flowOptionsEncoder interface {
+	EncodeOptionsDatagram(domainID, seqNo, uptimeMs uint32, shape string,
+		ifaces []flowOptionIface, buf []byte) (n int, consumed int, err error)
 }
 
 // NewFlowExporter creates a FlowExporter for device, using profile to drive
@@ -182,6 +285,19 @@ func (fe *FlowExporter) logFirstWriteErr(err error) {
 	})
 }
 
+// logFirstOptionsErr emits at most one log line per exporter when an
+// option-datagram encode fails; option emission stops for the refresh tick
+// but must not stop silently.
+func (fe *FlowExporter) logFirstOptionsErr(err error) {
+	if fe == nil {
+		return
+	}
+	fe.firstOptionsErr.Do(func() {
+		log.Printf("flow export: device %s option-datagram encode (shape %s) failed: %v (further errors suppressed for this exporter)",
+			domainIDtoIP(fe.domainID), fe.optionShape, err)
+	})
+}
+
 // Tick is called by the shared SimulatorManager ticker goroutine on every
 // flowTickInterval. It replenishes the flow cache to ConcurrentFlows, expires
 // aged records, and emits one or more UDP datagrams to `fe.collectorAddr`
@@ -225,6 +341,9 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	if len(expired) == 0 && !sendTemplate {
 		return FlowTickStats{}
 	}
+	// Options datagrams ride the template-refresh cadence; capture the
+	// condition now because the flow loop below consumes sendTemplate.
+	emitOptions := sendTemplate && fe.optionShape != "" && len(fe.optionIfaces) > 0
 
 	// `sync.Pool` stores `*[]byte` (SA6002). Deref once into a local
 	// slice header — the backing array is shared, so writes via `buf`
@@ -350,6 +469,43 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		}
 	}
 
+	// Interface option-table datagrams ride the template-refresh cadence
+	// (emitOptions captured before the flow loop consumed sendTemplate).
+	// Each datagram is self-contained (options template + data records), so
+	// pagination just re-invokes with the remainder. The datagram advances
+	// fe.seqNo by 1 under both protocols (v9 counts export packets; IPFIX
+	// keeps this simulator's message-counting interpretation — design D7).
+	// Option data records are metadata, not flows: counted in packet/byte
+	// stats but excluded from RecordsSent.
+	//
+	// optionShape is only ever set for netflow9/ipfix (Validate), whose
+	// encoders satisfy flowOptionsEncoder — the assertion failing means a
+	// wiring bug, not a config error, hence the log.
+	if emitOptions {
+		optEnc, ok := encoder.(flowOptionsEncoder)
+		if !ok {
+			fe.logFirstOptionsErr(fmt.Errorf("encoder %T does not implement EncodeOptionsDatagram", encoder))
+		}
+		remaining := fe.optionIfaces
+		for ok && len(remaining) > 0 {
+			n, consumed, err := optEnc.EncodeOptionsDatagram(fe.domainID, fe.seqNo, uptimeMs, fe.optionShape, remaining, buf)
+			if err != nil {
+				fe.logFirstOptionsErr(err)
+				break
+			}
+			if n == 0 || consumed == 0 {
+				break
+			}
+			if _, err := writeConn.WriteTo(buf[:n], collectorAddr); err != nil {
+				fe.logFirstWriteErr(err)
+			}
+			stats.PacketsSent++
+			stats.BytesSent += uint64(n)
+			fe.seqNo++
+			remaining = remaining[consumed:]
+		}
+	}
+
 	return stats
 }
 
@@ -360,6 +516,40 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 // first call to `CreateDevices` that carries a flow seed.
 func (sm *SimulatorManager) SetFlowSourcePerDevice(enabled bool) {
 	sm.flowSourcePerDevice = enabled
+}
+
+// registerFlowOptionInterfaces captures the device's interface option-table
+// state onto the FlowExporter when `options_interface_table` is enabled:
+// the canonical shape plus the interface universe with names resolved once
+// through the same ifDescr-backed path trap/syslog use (deviceIfNameFn).
+// Both the universe (IfCounterCycler.knownIfIndexes) and ifDescr values are
+// static after device init, so a one-time snapshot is exact. Indices are
+// sorted ascending for deterministic wire output. ifIndex 0 (or negative)
+// is never emitted — collectors treat a zero ifIndex as absent. A device
+// with no interfaces gets an empty slice, which suppresses emission
+// entirely (an options set with zero records is an invalid packet).
+func (sm *SimulatorManager) registerFlowOptionInterfaces(device *DeviceSimulator) {
+	fe := device.flowExporter
+	cfg := device.flowConfig
+	if fe == nil || cfg == nil || cfg.OptionsInterfaceTable == "" {
+		return
+	}
+	var ifaces []flowOptionIface
+	if device.metricsCycler != nil {
+		if ic := device.metricsCycler.ifCounters.Load(); ic != nil {
+			idxs := append([]int(nil), ic.IfIndices()...)
+			sort.Ints(idxs)
+			nameFn := deviceIfNameFn(device)
+			for _, idx := range idxs {
+				if idx <= 0 {
+					continue
+				}
+				ifaces = append(ifaces, flowOptionIface{ifIndex: uint32(idx), name: nameFn(idx)})
+			}
+		}
+	}
+	fe.optionShape = cfg.OptionsInterfaceTable
+	fe.optionIfaces = ifaces
 }
 
 // registerSFlowCounterSources wires per-device CounterSource instances onto
@@ -545,6 +735,7 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 		canonicalCollector, collectorAddr, canonical, encoder, cfg.SubAgentID)
 	sm.openFlowConnForDevice(device)
 	sm.registerSFlowCounterSources(device)
+	sm.registerFlowOptionInterfaces(device)
 	sm.flowFirstAttachLog.Do(func() {
 		log.Printf("flow export: active; first device %s → %s (protocol=%s)",
 			device.IP, canonicalCollector, canonical)

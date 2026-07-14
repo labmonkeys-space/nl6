@@ -85,6 +85,14 @@ type DeviceFlowConfig struct {
 	// header (both FLOW_SAMPLE and COUNTERS_SAMPLE). Default 0 preserves the
 	// historical single-agent wire output. Ignored by non-sFlow protocols.
 	SubAgentID uint32 `json:"sub_agent_id,omitempty"`
+	// OptionsInterfaceTable enables periodic v9/IPFIX interface option-record
+	// emission ("option interface-table"): "" = off (default), or a shape
+	// naming where the ifIndex lives — "if-scoped" (ifIndex in the scope,
+	// fields interfaceName(82) + interfaceDescription(83)) or "system-scoped"
+	// (system scope, ifIndex as option field INPUT_SNMP(10), field 83 only;
+	// matches the shape real Cisco IOS-XR exporters emit). Valid only under
+	// netflow9/ipfix — Validate rejects other protocols.
+	OptionsInterfaceTable string `json:"options_interface_table,omitempty"`
 }
 
 // DeviceTrapConfig is the per-device SNMP trap/INFORM configuration.
@@ -241,6 +249,19 @@ func (c *DeviceFlowConfig) Validate() error {
 		c.Protocol = "sflow"
 	default:
 		return fmt.Errorf("flow: invalid protocol %q (valid: netflow9, ipfix, netflow5, sflow)", lowered)
+	}
+	// Options-interface-table shape: canonicalise after Protocol so the
+	// compatibility check below sees the canonical protocol name. No
+	// vendor-named aliases — shape names describe where the ifIndex lives.
+	shape := strings.ToLower(strings.TrimSpace(c.OptionsInterfaceTable))
+	switch shape {
+	case "", "if-scoped", "system-scoped":
+		c.OptionsInterfaceTable = shape
+	default:
+		return fmt.Errorf("flow: invalid options_interface_table %q (valid: if-scoped, system-scoped)", c.OptionsInterfaceTable)
+	}
+	if shape != "" && c.Protocol != "netflow9" && c.Protocol != "ipfix" {
+		return fmt.Errorf("flow: options_interface_table requires protocol netflow9 or ipfix, got %q", c.Protocol)
 	}
 	return nil
 }
