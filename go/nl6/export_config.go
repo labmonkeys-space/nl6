@@ -81,6 +81,10 @@ type DeviceFlowConfig struct {
 	TickInterval    jsonDuration `json:"tick_interval,omitempty"`
 	ActiveTimeout   jsonDuration `json:"active_timeout,omitempty"`
 	InactiveTimeout jsonDuration `json:"inactive_timeout,omitempty"`
+	// SubAgentID is the sFlow v5 sub_agent_id emitted in every datagram
+	// header (both FLOW_SAMPLE and COUNTERS_SAMPLE). Default 0 preserves the
+	// historical single-agent wire output. Ignored by non-sFlow protocols.
+	SubAgentID uint32 `json:"sub_agent_id,omitempty"`
 }
 
 // DeviceTrapConfig is the per-device SNMP trap/INFORM configuration.
@@ -197,6 +201,8 @@ func (c *DeviceFlowConfig) ApplyDefaults() {
 	if time.Duration(c.InactiveTimeout) == 0 {
 		c.InactiveTimeout = jsonDuration(defaultFlowInactiveTimeout)
 	}
+	// SubAgentID intentionally has no default: 0 is the valid single-agent
+	// value, and every uint32 is a legal sFlow sub_agent_id (no Validate check).
 }
 
 // Validate checks the config and canonicalises Protocol to its stable

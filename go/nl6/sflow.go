@@ -99,22 +99,17 @@ func (SFlowEncoder) MaxRecordSize() int { return sflowMaxFlowSampleSize }
 func (SFlowEncoder) SeqIncrement(_ int) int { return 1 }
 
 // EncodePacket serialises an sFlow v5 UDP datagram into buf and returns the
-// number of bytes written. It emits flow samples only; counter samples are
-// handled by the Phase 2 code path through a dedicated EncodeCounterSamples
-// entry point (see flow_exporter.go).
+// number of bytes written. It is the FlowEncoder-interface entry point, whose
+// fixed signature carries no per-device config: it delegates to
+// EncodeFlowDatagram with sub_agent_id 0 and a conservative sampling_rate of
+// 1, so there is a single encode path that cannot drift. In-tree sFlow ticks
+// go through EncodeFlowDatagram directly with the device's configured
+// SubAgentID and profile-aware rate (see flow_exporter.go).
 //
-// Parameters:
-//
-//	domainID        — device IPv4 as uint32 (agent_address on the wire).
-//	seqNo           — per-(agent,sub-agent) datagram sequence number.
-//	uptimeMs        — device uptime in milliseconds at export time.
-//	records         — flow records to wrap as sampled_header FLOW_SAMPLEs.
-//	includeTemplate — ignored under sFlow (records are self-describing).
-//	buf             — caller-supplied output buffer; must be >= 1500 bytes.
-//
-// Returns (0, nil) when records is empty. Returns an error if buf is too small
-// to hold the datagram header plus a single flow sample.
-func (SFlowEncoder) EncodePacket(
+// The includeTemplate parameter is ignored under sFlow (records are
+// self-describing). Returns (0, nil) when records is empty. Returns an error
+// if buf is too small to hold the datagram header plus a single flow sample.
+func (e SFlowEncoder) EncodePacket(
 	domainID uint32,
 	seqNo uint32,
 	uptimeMs uint32,
@@ -122,37 +117,7 @@ func (SFlowEncoder) EncodePacket(
 	_ bool,
 	buf []byte,
 ) (int, error) {
-	if len(records) == 0 {
-		return 0, nil
-	}
-	if len(buf) < sflowDatagramHeaderSize+sflowMaxFlowSampleSize {
-		return 0, fmt.Errorf("sflow: buffer too small (%d bytes), need at least %d", len(buf), sflowDatagramHeaderSize+sflowMaxFlowSampleSize)
-	}
-
-	// Cap records to what fits in the buffer using the worst-case per-record
-	// bound. The caller (FlowExporter.Tick) already paginates with MaxRecordSize,
-	// so this is defence in depth against a misconfigured buf.
-	maxRecs := (len(buf) - sflowDatagramHeaderSize) / sflowMaxFlowSampleSize
-	if maxRecs < 1 {
-		return 0, fmt.Errorf("sflow: buffer %d too small for a single flow sample", len(buf))
-	}
-	if len(records) > maxRecs {
-		records = records[:maxRecs]
-	}
-
-	pos := encodeDatagramHeader(buf, domainID, seqNo, uptimeMs, uint32(len(records)))
-
-	// Sampling rate is synthetic (see SyntheticSamplingRateMultiplier comment).
-	// FlowExporter knows the device profile; pass it through via the per-device
-	// exporter's own encoder call site (see EncodeFlowSample below). Here we
-	// derive it from profile indirection — but because EncodePacket's signature
-	// is fixed by FlowEncoder, we emit a conservative default rate of 1 when no
-	// profile is available. The device-driven code path in flow_exporter.go
-	// sFlow mode uses EncodeFlowDatagram with a profile-aware rate.
-	for _, r := range records {
-		pos = encodeFlowSample(buf, pos, r, 0, 1)
-	}
-	return pos, nil
+	return e.EncodeFlowDatagram(domainID, 0, seqNo, uptimeMs, records, 1, buf)
 }
 
 // EncodeFlowDatagram is the sFlow-specific, profile-aware equivalent of
@@ -165,6 +130,7 @@ func (SFlowEncoder) EncodePacket(
 // the sampling_rate matches the spec's synthetic-rate contract.
 func (SFlowEncoder) EncodeFlowDatagram(
 	domainID uint32,
+	subAgentID uint32,
 	seqNo uint32,
 	uptimeMs uint32,
 	records []FlowRecord,
@@ -185,7 +151,7 @@ func (SFlowEncoder) EncodeFlowDatagram(
 		records = records[:maxRecs]
 	}
 
-	pos := encodeDatagramHeader(buf, domainID, seqNo, uptimeMs, uint32(len(records)))
+	pos := encodeDatagramHeader(buf, domainID, subAgentID, seqNo, uptimeMs, uint32(len(records)))
 	samplePool := uint32(0)
 	for _, r := range records {
 		pos = encodeFlowSample(buf, pos, r, samplePool, samplingRate)
@@ -202,15 +168,15 @@ func (SFlowEncoder) EncodeFlowDatagram(
 //	uint32 version            = 5
 //	uint32 agent_address_type = 1 (IPv4)
 //	4-byte agent_address      = device IPv4 (big-endian)
-//	uint32 sub_agent_id       = 0 (simulator always emits single-agent)
+//	uint32 sub_agent_id       = per-device flowConfig.SubAgentID (default 0)
 //	uint32 sequence_number
 //	uint32 uptime             (milliseconds since agent start)
 //	uint32 num_samples
-func encodeDatagramHeader(buf []byte, agentIPv4 uint32, seqNo, uptimeMs, numSamples uint32) int {
+func encodeDatagramHeader(buf []byte, agentIPv4 uint32, subAgentID, seqNo, uptimeMs, numSamples uint32) int {
 	binary.BigEndian.PutUint32(buf[0:], sflowVersion)
 	binary.BigEndian.PutUint32(buf[4:], sflowAddrTypeIP4)
 	binary.BigEndian.PutUint32(buf[8:], agentIPv4)
-	binary.BigEndian.PutUint32(buf[12:], 0) // sub_agent_id
+	binary.BigEndian.PutUint32(buf[12:], subAgentID) // sub_agent_id
 	binary.BigEndian.PutUint32(buf[16:], seqNo)
 	binary.BigEndian.PutUint32(buf[20:], uptimeMs)
 	binary.BigEndian.PutUint32(buf[24:], numSamples)
@@ -437,6 +403,7 @@ func encodeIPv4Header(buf []byte, pos int, r FlowRecord) int {
 // Returns (0, nil) on empty input.
 func (SFlowEncoder) EncodeCounterDatagram(
 	domainID uint32,
+	subAgentID uint32,
 	seqNo uint32,
 	uptimeMs uint32,
 	records []CounterRecord,
@@ -548,7 +515,7 @@ func (SFlowEncoder) EncodeCounterDatagram(
 
 	// Backfill the datagram header — encodeDatagramHeader writes 7 u32 fields
 	// including num_samples at offset 24.
-	encodeDatagramHeader(buf, domainID, seqNo, uptimeMs, samplesEmitted)
+	encodeDatagramHeader(buf, domainID, subAgentID, seqNo, uptimeMs, samplesEmitted)
 
 	if dropped > 0 {
 		log.Printf("sflow: dropping %d counter records that don't fit in datagram", dropped)

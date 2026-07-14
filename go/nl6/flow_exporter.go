@@ -81,6 +81,7 @@ type FlowExporter struct {
 	rng              *rand.Rand
 	seqNo            uint32
 	domainID         uint32    // device IPv4 as uint32 (RFC 7011 §3.1)
+	subAgentID       uint32    // sFlow sub_agent_id (0 = single-agent default)
 	startTime        time.Time // reference point for SysUptime
 	lastTempl        time.Time // last template transmission time
 	templateInterval time.Duration
@@ -126,12 +127,14 @@ type FlowExporter struct {
 // collectorStr is the "host:port" the device exports to; collectorAddr is the
 // resolved form (the caller must pre-resolve so construction is cheap);
 // protocol is the canonical protocol name; encoder is the matching encoder
-// instance. Callers typically use `SimulatorManager.attachFlowExporter`
-// rather than calling this constructor directly.
+// instance; subAgentID is the sFlow sub_agent_id (0 for non-sFlow or the
+// single-agent default). Callers typically use
+// `SimulatorManager.attachFlowExporter` rather than calling this constructor
+// directly.
 func NewFlowExporter(device *DeviceSimulator, profile *FlowProfile,
 	activeTimeout, inactiveTimeout, templateInterval time.Duration,
 	collectorStr string, collectorAddr *net.UDPAddr,
-	protocol string, encoder FlowEncoder) *FlowExporter {
+	protocol string, encoder FlowEncoder, subAgentID uint32) *FlowExporter {
 	var domainID uint32
 	if ip4 := device.IP.To4(); ip4 != nil {
 		domainID = binary.BigEndian.Uint32(ip4)
@@ -141,6 +144,7 @@ func NewFlowExporter(device *DeviceSimulator, profile *FlowProfile,
 		profile:          profile,
 		rng:              rand.New(rand.NewSource(int64(domainID))),
 		domainID:         domainID,
+		subAgentID:       subAgentID,
 		startTime:        time.Now(),
 		templateInterval: templateInterval,
 		collectorStr:     collectorStr,
@@ -277,7 +281,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			if rate == 0 {
 				rate = 1
 			}
-			n, err = sfe.EncodeFlowDatagram(fe.domainID, fe.seqNo, uptimeMs, batch, rate, buf)
+			n, err = sfe.EncodeFlowDatagram(fe.domainID, fe.subAgentID, fe.seqNo, uptimeMs, batch, rate, buf)
 		} else {
 			n, err = encoder.EncodePacket(fe.domainID, fe.seqNo, uptimeMs, batch, sendTemplate, buf)
 		}
@@ -333,7 +337,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			} else {
 				allRecords = nil
 			}
-			n, err := sfe.EncodeCounterDatagram(fe.domainID, fe.seqNo, uptimeMs, batch, buf)
+			n, err := sfe.EncodeCounterDatagram(fe.domainID, fe.subAgentID, fe.seqNo, uptimeMs, batch, buf)
 			if err != nil || n == 0 {
 				break
 			}
@@ -538,7 +542,7 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 		time.Duration(cfg.ActiveTimeout),
 		time.Duration(cfg.InactiveTimeout),
 		sm.flowTemplateInterval,
-		canonicalCollector, collectorAddr, canonical, encoder)
+		canonicalCollector, collectorAddr, canonical, encoder, cfg.SubAgentID)
 	sm.openFlowConnForDevice(device)
 	sm.registerSFlowCounterSources(device)
 	sm.flowFirstAttachLog.Do(func() {

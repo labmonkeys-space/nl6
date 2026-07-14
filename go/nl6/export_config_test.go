@@ -104,6 +104,42 @@ func TestDeviceFlowConfig_ApplyDefaults_NilSafe(t *testing.T) {
 	c.ApplyDefaults() // must not panic
 }
 
+func TestDeviceFlowConfig_SubAgentID_JSONRoundTrip(t *testing.T) {
+	// Present when set.
+	in := DeviceFlowConfig{Collector: "x:6343", Protocol: "sflow", SubAgentID: 7}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"sub_agent_id":7`) {
+		t.Errorf("marshalled JSON missing sub_agent_id: %s", b)
+	}
+	var out DeviceFlowConfig
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.SubAgentID != 7 {
+		t.Errorf("round-tripped SubAgentID = %d, want 7", out.SubAgentID)
+	}
+
+	// Omitted (0) when unset — omitempty keeps the wire clean, and the default
+	// is the single-agent value.
+	zero, err := json.Marshal(DeviceFlowConfig{Collector: "x:6343", Protocol: "sflow"})
+	if err != nil {
+		t.Fatalf("marshal zero: %v", err)
+	}
+	if strings.Contains(string(zero), "sub_agent_id") {
+		t.Errorf("sub_agent_id should be omitted when 0: %s", zero)
+	}
+	var zc DeviceFlowConfig
+	if err := json.Unmarshal([]byte(`{"collector":"x:6343","protocol":"sflow"}`), &zc); err != nil {
+		t.Fatalf("unmarshal absent: %v", err)
+	}
+	if zc.SubAgentID != 0 {
+		t.Errorf("absent sub_agent_id = %d, want 0", zc.SubAgentID)
+	}
+}
+
 func TestDeviceFlowConfig_Validate_CanonicalisesProtocol(t *testing.T) {
 	cases := []struct {
 		in, want string

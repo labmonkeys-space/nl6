@@ -241,7 +241,7 @@ func TestSFlowDatagramHeader(t *testing.T) {
 	buf := make([]byte, 1500)
 	r := makeRecord("10.0.1.1", "10.0.2.2", 50000, 443, 6)
 
-	n, err := enc.EncodeFlowDatagram(0xC0A80101, 42, 5000, []FlowRecord{r}, 1280, buf)
+	n, err := enc.EncodeFlowDatagram(0xC0A80101, 0, 42, 5000, []FlowRecord{r}, 1280, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -274,6 +274,38 @@ func TestSFlowDatagramHeader(t *testing.T) {
 	}
 }
 
+// TestSFlowDatagramSubAgentID proves a configured sub_agent_id reaches the
+// datagram header on both the FLOW_SAMPLE and COUNTERS_SAMPLE paths, and that
+// the two agree — the spec scenarios "Sub-agent id reflects configured value"
+// and "Flow and counter datagrams agree on sub-agent id".
+func TestSFlowDatagramSubAgentID(t *testing.T) {
+	enc := SFlowEncoder{}
+	const wantSub = uint32(7)
+
+	flowBuf := make([]byte, 1500)
+	r := makeRecord("10.0.1.1", "10.0.2.2", 50000, 443, 6)
+	nf, err := enc.EncodeFlowDatagram(0xC0A80101, wantSub, 42, 5000, []FlowRecord{r}, 1280, flowBuf)
+	if err != nil {
+		t.Fatalf("EncodeFlowDatagram error: %v", err)
+	}
+	flowDG := decodeSFlow(t, flowBuf[:nf])
+	if flowDG.Header.SubAgentID != wantSub {
+		t.Errorf("flow datagram sub_agent_id = %d, want %d", flowDG.Header.SubAgentID, wantSub)
+	}
+
+	ctrBuf := make([]byte, 1500)
+	recs := []CounterRecord{{Format: sflowCtrFmtGeneric, Body: encodeIfCountersBody(
+		3, 1_000_000_000, 12345678, 100, 10, 5, 0, 0, 23456789, 200, 20, 10, 0, 0)}}
+	nc, err := enc.EncodeCounterDatagram(0xC0A80101, wantSub, 42, 5000, recs, ctrBuf)
+	if err != nil {
+		t.Fatalf("EncodeCounterDatagram error: %v", err)
+	}
+	ctrDG := decodeSFlow(t, ctrBuf[:nc])
+	if ctrDG.Header.SubAgentID != wantSub {
+		t.Errorf("counter datagram sub_agent_id = %d, want %d", ctrDG.Header.SubAgentID, wantSub)
+	}
+}
+
 func TestSFlowFlowSampleTuple(t *testing.T) {
 	enc := SFlowEncoder{}
 	buf := make([]byte, 1500)
@@ -296,7 +328,7 @@ func TestSFlowFlowSampleTuple(t *testing.T) {
 		OutIface: 4,
 	}
 
-	n, err := enc.EncodeFlowDatagram(0xC0A8010A, 1, 1000, []FlowRecord{r}, 2000, buf)
+	n, err := enc.EncodeFlowDatagram(0xC0A8010A, 0, 1, 1000, []FlowRecord{r}, 2000, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -366,7 +398,7 @@ func TestSFlowFlowSampleUDP(t *testing.T) {
 	r := makeRecord("10.0.0.1", "10.0.0.2", 55000, 53, 17) // UDP DNS
 	r.Bytes = 128
 
-	n, err := enc.EncodeFlowDatagram(0x0A000001, 2, 2000, []FlowRecord{r}, 100, buf)
+	n, err := enc.EncodeFlowDatagram(0x0A000001, 0, 2, 2000, []FlowRecord{r}, 100, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -392,11 +424,11 @@ func TestSFlowSequenceIncrements(t *testing.T) {
 	buf2 := make([]byte, 1500)
 	records := []FlowRecord{makeRecord("10.0.0.1", "10.0.0.2", 1000, 443, 6)}
 
-	n1, err := enc.EncodeFlowDatagram(0x0A000001, 100, 1000, records, 1, buf1)
+	n1, err := enc.EncodeFlowDatagram(0x0A000001, 0, 100, 1000, records, 1, buf1)
 	if err != nil {
 		t.Fatalf("pkt 1 error: %v", err)
 	}
-	n2, err := enc.EncodeFlowDatagram(0x0A000001, 101, 1100, records, 1, buf2)
+	n2, err := enc.EncodeFlowDatagram(0x0A000001, 0, 101, 1100, records, 1, buf2)
 	if err != nil {
 		t.Fatalf("pkt 2 error: %v", err)
 	}
@@ -415,7 +447,7 @@ func TestSFlowMultipleRecords(t *testing.T) {
 		makeRecord("10.0.0.3", "10.0.0.4", 1002, 80, 6),
 		makeRecord("10.0.0.5", "10.0.0.6", 1003, 53, 17),
 	}
-	n, err := enc.EncodeFlowDatagram(1, 5, 1000, records, 42, buf)
+	n, err := enc.EncodeFlowDatagram(1, 0, 5, 1000, records, 42, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -445,7 +477,7 @@ func TestSFlowMTUBound(t *testing.T) {
 	for i := range records {
 		records[i] = makeRecord("10.0.0.1", "10.0.0.2", uint16(2000+i), 443, 6)
 	}
-	n, err := enc.EncodeFlowDatagram(1, 1, 1000, records, 100, buf)
+	n, err := enc.EncodeFlowDatagram(1, 0, 1, 1000, records, 100, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -522,7 +554,7 @@ func TestSFlowIPv4ProtocolTagAndICMP(t *testing.T) {
 	r := makeRecord("10.0.0.1", "10.0.0.2", 0, 0, 1)
 	r.Bytes = 64
 
-	n, err := enc.EncodeFlowDatagram(0x0A000001, 1, 1000, []FlowRecord{r}, 1, buf)
+	n, err := enc.EncodeFlowDatagram(0x0A000001, 0, 1, 1000, []FlowRecord{r}, 1, buf)
 	if err != nil {
 		t.Fatalf("EncodeFlowDatagram error: %v", err)
 	}
@@ -551,7 +583,7 @@ func TestSFlowCounterDatagramInterfaceCounters(t *testing.T) {
 	)
 	recs := []CounterRecord{{Format: sflowCtrFmtGeneric, Body: body}}
 
-	n, err := enc.EncodeCounterDatagram(0xC0A80102, 7, 500, recs, buf)
+	n, err := enc.EncodeCounterDatagram(0xC0A80102, 0, 7, 500, recs, buf)
 	if err != nil {
 		t.Fatalf("EncodeCounterDatagram error: %v", err)
 	}
@@ -599,13 +631,42 @@ func TestSFlowCounterDatagramInterfaceCounters(t *testing.T) {
 func TestSFlowCounterDatagramEmpty(t *testing.T) {
 	enc := SFlowEncoder{}
 	buf := make([]byte, 1500)
-	n, err := enc.EncodeCounterDatagram(1, 1, 0, nil, buf)
+	n, err := enc.EncodeCounterDatagram(1, 0, 1, 0, nil, buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if n != 0 {
 		t.Errorf("empty records call returned %d bytes, want 0", n)
 	}
+}
+
+// sflowTickTestProfile returns the small deterministic FlowProfile shared by
+// the Tick-level sFlow tests: ConcurrentFlows 5 so the synthetic
+// sampling_rate is 5 × 10 = 50.
+func sflowTickTestProfile() *FlowProfile {
+	return &FlowProfile{
+		TCPWeight:       1.0,
+		DstPorts:        []PortWeight{{Port: 443, Weight: 1.0}},
+		SrcPortMin:      1024,
+		SrcPortMax:      65535,
+		BytesMin:        512,
+		BytesMax:        1024,
+		PktsMin:         1,
+		PktsMax:         10,
+		DurationMinMs:   100,
+		DurationMaxMs:   500,
+		ConcurrentFlows: 5,
+		MaxFlows:        256,
+	}
+}
+
+// driveTwoSFlowTicks runs fe through two Ticks 15ms apart so the 1ms
+// inactive timeout (set by the Tick-level tests) expires at least one flow
+// between them, producing FLOW_SAMPLE datagrams on the second Tick.
+func driveTwoSFlowTicks(fe *FlowExporter, conn *net.UDPConn, addr *net.UDPAddr) {
+	tickWithEncoder(fe, time.Now(), SFlowEncoder{}, conn, addr, testPool())
+	time.Sleep(15 * time.Millisecond)
+	tickWithEncoder(fe, time.Now(), SFlowEncoder{}, conn, addr, testPool())
 }
 
 // TestSFlowTickSyntheticRate end-to-ends through FlowExporter.Tick to prove
@@ -619,31 +680,11 @@ func TestSFlowTickSyntheticRate(t *testing.T) {
 	defer conn.Close()
 	collectorAddr := ln.LocalAddr().(*net.UDPAddr)
 
-	// Use a short inactive timeout so at least one flow expires inside the
-	// single Tick we run. Active timeout is much longer so Expire is driven
-	// by inactivity, not age.
-	profile := &FlowProfile{
-		TCPWeight:       1.0,
-		DstPorts:        []PortWeight{{Port: 443, Weight: 1.0}},
-		SrcPortMin:      1024,
-		SrcPortMax:      65535,
-		BytesMin:        512,
-		BytesMax:        1024,
-		PktsMin:         1,
-		PktsMax:         10,
-		DurationMinMs:   100,
-		DurationMaxMs:   500,
-		ConcurrentFlows: 5, // rate should end up 5 × 10 = 50
-		MaxFlows:        256,
-	}
-
+	profile := sflowTickTestProfile()
 	fe := newTestFlowExporter(testDevice("10.9.8.7"), profile,
 		1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
 
-	// Run two ticks 10ms apart so the inactive timeout fires.
-	tickWithEncoder(fe, time.Now(), SFlowEncoder{}, conn, collectorAddr, testPool())
-	time.Sleep(15 * time.Millisecond)
-	tickWithEncoder(fe, time.Now(), SFlowEncoder{}, conn, collectorAddr, testPool())
+	driveTwoSFlowTicks(fe, conn, collectorAddr)
 
 	// Drain any datagrams produced. Look for the first one that actually
 	// carries a flow_sample (as opposed to a counter-only tick).
@@ -662,6 +703,54 @@ func TestSFlowTickSyntheticRate(t *testing.T) {
 	want := uint32(profile.ConcurrentFlows * SyntheticSamplingRateMultiplier)
 	if samplingRate != want {
 		t.Errorf("sFlow flow_sample sampling_rate = %d, want %d (10 × ConcurrentFlows)", samplingRate, want)
+	}
+}
+
+// TestSFlowTickSubAgentID end-to-ends through FlowExporter.Tick to prove the
+// exporter threads its configured sub_agent_id onto BOTH datagram types it
+// emits in one tick — spec scenario "Flow and counter datagrams agree on
+// sub-agent id".
+func TestSFlowTickSubAgentID(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	collectorAddr := ln.LocalAddr().(*net.UDPAddr)
+
+	const wantSub = uint32(9)
+	fe := newTestFlowExporter(testDevice("10.9.8.7"), sflowTickTestProfile(),
+		1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
+	fe.subAgentID = wantSub
+	// CPUCounterSource emits one synthetic processor record with no device
+	// wiring — enough to force a COUNTERS_SAMPLE datagram out of Tick.
+	fe.counterSources = []CounterSource{NewCPUCounterSource(nil)}
+
+	driveTwoSFlowTicks(fe, conn, collectorAddr)
+
+	var sawFlow, sawCounter bool
+	for {
+		pkt := receivePacket(ch)
+		if pkt == nil {
+			break
+		}
+		dg := decodeSFlow(t, pkt)
+		if dg.Header.SubAgentID != wantSub {
+			t.Errorf("datagram sub_agent_id = %d, want %d", dg.Header.SubAgentID, wantSub)
+		}
+		for _, s := range dg.Samples {
+			switch s.Type {
+			case sflowSampleTypeFlow:
+				sawFlow = true
+			case sflowSampleTypeCounters:
+				sawCounter = true
+			}
+		}
+	}
+	if !sawFlow {
+		t.Error("no FLOW_SAMPLE datagram observed")
+	}
+	if !sawCounter {
+		t.Error("no COUNTERS_SAMPLE datagram observed")
 	}
 }
 
@@ -685,7 +774,7 @@ func TestSFlowCounterDatagramMTU(t *testing.T) {
 		}
 	}
 
-	n, err := enc.EncodeCounterDatagram(1, 1, 100, recs, buf)
+	n, err := enc.EncodeCounterDatagram(1, 0, 1, 100, recs, buf)
 	if err != nil {
 		t.Fatalf("EncodeCounterDatagram error: %v", err)
 	}
@@ -737,7 +826,7 @@ func TestSFlowCounterDatagramGroupsBySourceID(t *testing.T) {
 		},
 	}
 
-	n, err := enc.EncodeCounterDatagram(0x0A000001, 7, 1000, recs, buf)
+	n, err := enc.EncodeCounterDatagram(0x0A000001, 0, 7, 1000, recs, buf)
 	if err != nil {
 		t.Fatalf("EncodeCounterDatagram error: %v", err)
 	}
@@ -804,7 +893,7 @@ func TestSFlowInterfaceCounterSource_OneSamplePerIfIndex(t *testing.T) {
 
 	enc := SFlowEncoder{}
 	buf := make([]byte, 1500)
-	n, err := enc.EncodeCounterDatagram(0x0A000001, 1, 1000, recs, buf)
+	n, err := enc.EncodeCounterDatagram(0x0A000001, 0, 1, 1000, recs, buf)
 	if err != nil {
 		t.Fatalf("EncodeCounterDatagram error: %v", err)
 	}
