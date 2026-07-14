@@ -783,9 +783,11 @@ func (e *SyslogCatalogEntry) Resolve(ctx SyslogTemplateCtx, overrides map[string
 			ctx.Now = int64(n)
 		}
 		if v, ok := overrides["Uptime"]; ok {
-			n, err := parseIntFieldSyslog(v, "Uptime")
+			// Uptime is a uint32 (TimeTicks) — parse at that width so
+			// negative or oversized overrides error instead of truncating.
+			n, err := strconv.ParseUint(v, 10, 32)
 			if err != nil {
-				return SyslogResolved{}, err
+				return SyslogResolved{}, fmt.Errorf("syslog template override Uptime: expected uint32, got %q", v)
 			}
 			ctx.Uptime = uint32(n)
 		}

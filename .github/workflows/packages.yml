@@ -17,6 +17,9 @@ on:
       - '.github/workflows/packages.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   smoke:
     name: Build & smoke-test packages

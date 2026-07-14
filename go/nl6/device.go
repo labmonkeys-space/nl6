@@ -68,8 +68,10 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 	if shouldPreAllocate {
 		ip := net.ParseIP(startIP)
 		if ip != nil {
-			// Use provided maxWorkers or determine optimal count based on device count
-			if maxWorkers == 0 {
+			// Use provided maxWorkers or determine optimal count based on device
+			// count. <= 0 (not just == 0) selects the defaults so a negative
+			// value can never size a channel (CodeQL go/uncontrolled-allocation-size).
+			if maxWorkers <= 0 {
 				if count >= 1000 {
 					maxWorkers = 200
 				} else if count >= 500 {

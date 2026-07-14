@@ -172,9 +172,12 @@ func encodeVarbindTyped(vb Varbind) ([]byte, error) {
 
 	switch vb.Type {
 	case TrapVTInteger:
-		n, err := strconv.ParseInt(vb.Value, 10, 64)
+		// SNMP INTEGER is Integer32 (RFC 2578 §7.1.1) — parse at 32-bit
+		// width so out-of-range catalog values error out instead of
+		// truncating on the wire.
+		n, err := strconv.ParseInt(vb.Value, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("integer: %q not parseable: %w", vb.Value, err)
+			return nil, fmt.Errorf("integer: %q not parseable as Integer32: %w", vb.Value, err)
 		}
 		body = append(body, encodeInteger(int(n))...)
 

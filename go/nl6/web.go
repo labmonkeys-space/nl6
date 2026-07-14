@@ -49,6 +49,21 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, "Device count must be greater than 0", http.StatusBadRequest)
 		return
 	}
+	// Upper bound: per-count allocations (device IP slices, worker pools)
+	// scale with this request-controlled value, so cap it at the simulator's
+	// design ceiling instead of letting a single request drive an OOM
+	// (CodeQL go/uncontrolled-allocation-size). 100k comfortably covers the
+	// 30k+ target fleet and a flat /16 management plane.
+	if req.DeviceCount > 100000 {
+		sendErrorResponse(w, "Device count must be at most 100000", http.StatusBadRequest)
+		return
+	}
+	// MaxWorkers sizes worker-pool channels: 0 selects the adaptive default;
+	// negative would panic make(chan, n) and huge values defeat the pool.
+	if req.MaxWorkers < 0 || req.MaxWorkers > 1000 {
+		sendErrorResponse(w, "max_workers must be between 0 (auto) and 1000", http.StatusBadRequest)
+		return
+	}
 
 	// The fleet defaults to a flat /16 management plane: an omitted netmask
 	// opts into it. Explicit "24" / "8" are still honored by the shared

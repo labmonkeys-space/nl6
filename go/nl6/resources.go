@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -169,8 +170,19 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 	return nil
 }
 
+// resourceFilenameRe is the allowlist for resource file names reaching the
+// filesystem: a device-type slug plus the ".json" suffix. The name flows in
+// from the REST device_type field, so this is the path-injection choke point
+// — anything with separators, dots, or other metacharacters is rejected
+// before any os.Stat/Open/ReadDir sees it (CodeQL go/path-injection).
+var resourceFilenameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+\.json$`)
+
 // LoadSpecificResources loads resources from a directory in the resources folder
 func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResources, error) {
+	if !resourceFilenameRe.MatchString(filename) {
+		return nil, fmt.Errorf("invalid resource file name %q (expected <device-type>.json)", filename)
+	}
+
 	// Check cache first
 	if cached, exists := sm.resourcesCache[filename]; exists {
 		return cached, nil
