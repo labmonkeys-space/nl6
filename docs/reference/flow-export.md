@@ -52,6 +52,64 @@ flow-record carrying a synthesised IPv4 + UDP/TCP header derived from the
 5-tuple. On every tick it also emits `COUNTERS_SAMPLE` records (Phase 2)
 for each interface's `if_counters`, a processor sample, and a memory sample.
 
+### sFlow sub-agent id
+
+Every sFlow datagram header carries a `sub_agent_id` (default `0`,
+single-agent). Set it per device via the REST `flow.sub_agent_id` field —
+or `-flow-sub-agent-id` for the whole auto-start batch — so collectors
+that attribute flows by `(agent_address, sub_agent_id)` can be exercised
+with distinct sub-agent values. Both datagram types a device emits
+(`FLOW_SAMPLE` and `COUNTERS_SAMPLE`) always carry the same value, and
+sequence numbers are already per-(agent, sub-agent) — each nl6 device is
+its own agent, so per-group values (`POST` one batch per group) yield
+distinct `(agent_address, sub_agent_id)` tuples. Ignored by the NetFlow /
+IPFIX encoders.
+
+## Interface option records (NetFlow v9 / IPFIX)
+
+With `options_interface_table` set on a device (or
+`-flow-option-interface-table` for the auto-start batch), the exporter
+additionally emits a Cisco-style **option interface-table**: on every
+template-refresh tick, one self-contained datagram carrying an options
+template (template ID 257; NF9 Options Template FlowSet ID 1 / IPFIX
+Options Template Set ID 3) plus one option data record per interface —
+`interfaceName(82)` / `interfaceDescription(83)` resolved from the same
+`ifDescr` values the SNMP agent serves. Collectors use these records to
+enrich flows with interface names **without polling SNMP**.
+
+Two wire shapes are available; the names describe where the ifIndex lives:
+
+| | `if-scoped` | `system-scoped` |
+|---|---|---|
+| ifIndex carrier | the scope (NF9 scope type Interface(2) / IPFIX `ingressInterface(10)` scope IE) | option field `INPUT_SNMP(10)`, system scope |
+| String fields | `interfaceName(82)` + `interfaceDescription(83)` | `interfaceDescription(83)` only (matches real IOS-XR exporters) |
+| Record size | 68 B | 40 B |
+| Collector path exercised | scope resolution | field fallback |
+
+Each device emits **one** shape; run two device groups with different
+shapes to cover both collector resolution paths. String fields are fixed
+32-byte NUL-padded values. The options datagram advances the sequence
+counter by 1 (both protocols) and counts toward `sent_packets` /
+`sent_bytes` but not `sent_records` (option records are metadata, not
+flows). Valid only under `netflow9` / `ipfix` — combining it with
+`netflow5` / `sflow` is rejected at validation. Default off; devices
+without the field emit byte-identical output to previous releases.
+
+```bash
+# 20 devices emitting NetFlow v9 + an if-scoped option interface-table
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "start_ip": "10.0.2.1",
+    "device_count": 20,
+    "flow": {
+      "collector": "192.168.1.10:2055",
+      "protocol": "netflow9",
+      "options_interface_table": "if-scoped"
+    }
+  }'
+```
+
 ## Per-device source IP
 
 By default (`-flow-source-per-device=true`), each device binds its own UDP
@@ -108,6 +166,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 # Second batch of 20 emitting sFlow to collector B — same process,
 # /api/v1/flows/status reports both as separate collector records.
+# sub_agent_id tags this group's datagram headers (default 0).
 curl -X POST http://localhost:8080/api/v1/devices \
   -H 'Content-Type: application/json' \
   -d '{
@@ -115,7 +174,8 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "device_count": 20,
     "flow": {
       "collector": "192.168.1.20:6343",
-      "protocol": "sflow"
+      "protocol": "sflow",
+      "sub_agent_id": 2
     }
   }'
 ```
