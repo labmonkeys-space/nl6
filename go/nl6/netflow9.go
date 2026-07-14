@@ -41,7 +41,67 @@ const (
 	nf9HeaderSize       = 20 // bytes — Packet Header (RFC 3954 §5)
 	nf9RecordSize       = 45 // bytes — one data record with the 18-field template below
 	nf9TemplFlowSetSize = 80 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 18×4 fields)
+
+	// Interface option-table wire constants ("option interface-table",
+	// RFC 3954 §6.1). Template ID 257 sits beside the data template's 256 —
+	// a future second data template must pick a different ID.
+	nf9OptionsFlowSetID  = 1   // Options Template FlowSet ID (RFC 3954)
+	nf9OptionsTemplateID = 257 // options template / option data FlowSet ID
+	nf9ScopeSystem       = 1   // scope field type System
+	nf9ScopeInterface    = 2   // scope field type Interface
+	nf9IfName            = 82  // interfaceName field type
+	nf9IfDesc            = 83  // interfaceDescription field type
+
+	// Option data record sizes per shape (both 4-byte aligned — no padding).
+	nf9OptionRecSizeIfScoped     = 4 + 2*flowOptionStringLen   // scope ifIndex + name + description
+	nf9OptionRecSizeSystemScoped = 4 + 4 + flowOptionStringLen // scope system + ifIndex + description
 )
+
+// nf9OptionShapes is the per-shape descriptor table: options template,
+// record size, and record encoder live in ONE entry per shape so they
+// cannot drift apart. Adding a shape = adding one entry here (plus the
+// Validate enum and the IPFIX table). Built at init, read-only after.
+var nf9OptionShapes map[string]flowOptionShapeDesc
+
+// buildNF9OptionsTemplate encodes an Options Template FlowSet (RFC 3954 §6.1):
+//
+//	FlowSet Header:  flowset_id=1 (2B), length (2B)
+//	Template Header: template_id=257 (2B), option_scope_length (2B, bytes),
+//	                 option_length (2B, bytes)
+//	scope field specifiers (type 2B + length 2B)…
+//	option field specifiers (type 2B + length 2B)…
+//	padding to a 4-byte boundary
+func buildNF9OptionsTemplate(scope [2]uint16, options [][2]uint16) []byte {
+	scopeLen := 4              // one scope specifier
+	optLen := len(options) * 4 // option specifiers
+	length := 4 + 6 + scopeLen + optLen
+	if rem := length % 4; rem != 0 {
+		length += 4 - rem
+	}
+	buf := make([]byte, length)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], nf9OptionsFlowSetID)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(length))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], nf9OptionsTemplateID)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(scopeLen))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(optLen))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], scope[0])
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], scope[1])
+	pos += 2
+	for _, f := range options {
+		binary.BigEndian.PutUint16(buf[pos:], f[0])
+		pos += 2
+		binary.BigEndian.PutUint16(buf[pos:], f[1])
+		pos += 2
+	}
+	return buf
+}
 
 // nf9Fields is the ordered list of (fieldType, fieldLength) pairs that define
 // the single template used for all simulated device flow exports.
@@ -73,6 +133,35 @@ var nf9TemplateBytes []byte
 
 func init() {
 	nf9TemplateBytes = buildNF9Template()
+	nf9OptionShapes = map[string]flowOptionShapeDesc{
+		flowOptionShapeIfScoped: {
+			templ: buildNF9OptionsTemplate(
+				[2]uint16{nf9ScopeInterface, 4},
+				[][2]uint16{{nf9IfName, flowOptionStringLen}, {nf9IfDesc, flowOptionStringLen}}),
+			recSize: nf9OptionRecSizeIfScoped,
+			encodeRecord: func(buf []byte, pos int, _ uint32, ifc flowOptionIface) int {
+				binary.BigEndian.PutUint32(buf[pos:], ifc.ifIndex) // scope: ifIndex
+				pos += 4
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceName(82)
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceDescription(83)
+				return pos
+			},
+		},
+		flowOptionShapeSystemScoped: {
+			templ: buildNF9OptionsTemplate(
+				[2]uint16{nf9ScopeSystem, 4},
+				[][2]uint16{{nf9InputSNMP, 4}, {nf9IfDesc, flowOptionStringLen}}),
+			recSize: nf9OptionRecSizeSystemScoped,
+			encodeRecord: func(buf []byte, pos int, _ uint32, ifc flowOptionIface) int {
+				binary.BigEndian.PutUint32(buf[pos:], 0) // scope: system (value ignored by collectors)
+				pos += 4
+				binary.BigEndian.PutUint32(buf[pos:], ifc.ifIndex) // INPUT_SNMP(10): ifIndex as option field
+				pos += 4
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceDescription(83)
+				return pos
+			},
+		},
+	}
 }
 
 // buildNF9Template encodes the Template FlowSet for nf9Fields.
@@ -232,6 +321,71 @@ func (NetFlow9Encoder) EncodePacket(
 
 	return pos, nil
 }
+
+// EncodeOptionsDatagram serialises a self-contained "option interface-table"
+// NetFlow v9 datagram into buf: packet header + Options Template FlowSet
+// (FlowSet ID 1, template ID 257) + one option data record per interface
+// (data FlowSet ID 257). It is NOT part of the FlowEncoder interface — the
+// exporter reaches it via type-assert, like sFlow's datagram methods.
+//
+// Returns (bytesWritten, ifacesConsumed, err). consumed < len(ifaces) means
+// the buffer filled up; the caller re-invokes with the remainder (each
+// datagram re-carries the options template, so every datagram is
+// self-describing). Returns (0, 0, nil) on empty input — an options set with
+// zero records is an invalid packet to collectors, so the caller must skip
+// emission entirely for an empty interface universe.
+func (NetFlow9Encoder) EncodeOptionsDatagram(
+	domainID uint32,
+	seqNo uint32,
+	uptimeMs uint32,
+	shape string,
+	ifaces []flowOptionIface,
+	buf []byte,
+) (int, int, error) {
+	if len(ifaces) == 0 {
+		return 0, 0, nil
+	}
+	desc, ok := nf9OptionShapes[shape]
+	if !ok {
+		return 0, 0, fmt.Errorf("netflow9: unknown options shape %q", shape)
+	}
+	overhead := nf9HeaderSize + len(desc.templ) + 4 // pkt hdr + options template + data flowset hdr
+	if len(buf) < overhead+desc.recSize {
+		return 0, 0, fmt.Errorf("netflow9: buffer too small (%d bytes) for an options datagram, need at least %d", len(buf), overhead+desc.recSize)
+	}
+
+	pos := 0
+	// ── Packet Header — count backfilled once the record count is known ──
+	binary.BigEndian.PutUint16(buf[pos:], nf9Version)
+	pos += 2
+	countOffset := pos
+	pos += 2
+	binary.BigEndian.PutUint32(buf[pos:], uptimeMs)
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], seqNo)
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], domainID)
+	pos += 4
+
+	// ── Options Template FlowSet ──────────────────────────────────────
+	copy(buf[pos:], desc.templ)
+	pos += len(desc.templ)
+
+	// ── Option Data FlowSet (shared pagination + record writer) ───────
+	pos, consumed := encodeOptionRecords(buf, pos, nf9OptionsTemplateID, desc, domainID, ifaces)
+	if consumed == 0 {
+		// Unreachable given the size check above; defensive.
+		return 0, 0, fmt.Errorf("netflow9: buffer too small (%d bytes) for an options record", len(buf))
+	}
+	// count = 1 template record + data records.
+	binary.BigEndian.PutUint16(buf[countOffset:], uint16(1+consumed))
+	return pos, consumed, nil
+}
+
+// Compile-time guard: NetFlow9Encoder emits interface option tables.
+var _ flowOptionsEncoder = NetFlow9Encoder{}
 
 // encodeNF9Record writes a single flow record into buf at pos, following the
 // field order defined in nf9Fields. Returns the new position.

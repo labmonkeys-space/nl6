@@ -118,6 +118,7 @@ func main() {
 		flowTemplateIntervalSecs = flag.Int("flow-template-interval", 60, "Template retransmission interval in seconds (default: 60)")
 		flowTickSecs             = flag.Int("flow-tick-interval", 5, "Flow ticker interval in seconds (default: 5)")
 		flowSubAgentID           = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
+		flowOptionIfaceTable     = flag.String("flow-option-interface-table", "", "[seed] Emit v9/IPFIX interface option records for every auto-start device: if-scoped (ifIndex in the scope, fields 82+83) or system-scoped (system scope, ifIndex as option field, field 83 only). Empty = off (default). Requires -flow-protocol netflow9 or ipfix; use the per-device REST flow.options_interface_table field for per-group shapes")
 		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
@@ -289,6 +290,9 @@ func main() {
 			ActiveTimeout:   jsonDuration(time.Duration(*flowActiveSecs) * time.Second),
 			InactiveTimeout: jsonDuration(time.Duration(*flowInactiveSecs) * time.Second),
 			SubAgentID:      uint32(*flowSubAgentID),
+			// Protocol compatibility (netflow9/ipfix only) is enforced by
+			// the Validate call below — an incompatible seed is a startup fatal.
+			OptionsInterfaceTable: *flowOptionIfaceTable,
 		}
 		flowSeed.ApplyDefaults()
 		if err := flowSeed.Validate(); err != nil {

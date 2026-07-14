@@ -45,6 +45,22 @@ const (
 	ipfixHeaderSize   = 16 // bytes — IPFIX Message Header (RFC 7011 §3.1)
 	ipfixRecordSize   = 53 // bytes — one data record with the 18-field template below
 	ipfixTemplSetSize = 80 // bytes — Template Set (4 set-hdr + 4 tmpl-hdr + 18×4 fields)
+
+	// Interface option-table wire constants (RFC 7011 §3.4.2). Template ID
+	// 257 sits beside the data template's 256.
+	ipfixSetIDOptionsTemplate = 3   // Options Template Set ID
+	ipfixOptionsTemplateID    = 257 // options template / option data Set ID
+	ipfixInterfaceName        = 82  // interfaceName IE
+	ipfixInterfaceDescription = 83  // interfaceDescription IE
+	// observationDomainId is the "system-ish" scope IE for the
+	// system-scoped shape: it names the exporter, not an interface, so
+	// collectors resolving the ifIndex from the scope find nothing and
+	// fall through to the option fields (the shape's whole point).
+	ipfixObservationDomainID = 149
+
+	// Option data record sizes per shape (both 4-byte aligned — no padding).
+	ipfixOptionRecSizeIfScoped     = 4 + 2*flowOptionStringLen   // scope ifIndex + name + description
+	ipfixOptionRecSizeSystemScoped = 4 + 4 + flowOptionStringLen // scope domainID + ifIndex + description
 )
 
 // ipfixFields is the ordered list of (ieID, ieLength) pairs that define the
@@ -75,8 +91,81 @@ var ipfixFields = [][2]uint16{
 // It is read-only after init and safe to reference from any goroutine.
 var ipfixTemplateSetBytes []byte
 
+// ipfixOptionShapes is the per-shape descriptor table (see nf9OptionShapes):
+// options template, record size, and record encoder in one entry per shape
+// so they cannot drift apart. Built at init, read-only after.
+var ipfixOptionShapes map[string]flowOptionShapeDesc
+
 func init() {
 	ipfixTemplateSetBytes = buildIPFIXTemplateSet()
+	ipfixOptionShapes = map[string]flowOptionShapeDesc{
+		flowOptionShapeIfScoped: {
+			templ: buildIPFIXOptionsTemplateSet(
+				[2]uint16{ipfixIngressInterface, 4},
+				[][2]uint16{{ipfixInterfaceName, flowOptionStringLen}, {ipfixInterfaceDescription, flowOptionStringLen}}),
+			recSize: ipfixOptionRecSizeIfScoped,
+			encodeRecord: func(buf []byte, pos int, _ uint32, ifc flowOptionIface) int {
+				binary.BigEndian.PutUint32(buf[pos:], ifc.ifIndex) // scope: ingressInterface
+				pos += 4
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceName(82)
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceDescription(83)
+				return pos
+			},
+		},
+		flowOptionShapeSystemScoped: {
+			templ: buildIPFIXOptionsTemplateSet(
+				[2]uint16{ipfixObservationDomainID, 4},
+				[][2]uint16{{ipfixIngressInterface, 4}, {ipfixInterfaceDescription, flowOptionStringLen}}),
+			recSize: ipfixOptionRecSizeSystemScoped,
+			encodeRecord: func(buf []byte, pos int, domainID uint32, ifc flowOptionIface) int {
+				binary.BigEndian.PutUint32(buf[pos:], domainID) // scope: observationDomainId
+				pos += 4
+				binary.BigEndian.PutUint32(buf[pos:], ifc.ifIndex) // ingressInterface as option field
+				pos += 4
+				pos = putPaddedString(buf, pos, ifc.name) // interfaceDescription(83)
+				return pos
+			},
+		},
+	}
+}
+
+// buildIPFIXOptionsTemplateSet encodes an Options Template Set (RFC 7011
+// §3.4.2):
+//
+//	Set Header:      set_id=3 (2B), length (2B)
+//	Template Header: template_id=257 (2B), field_count (2B, total incl.
+//	                 scope), scope_field_count (2B)
+//	scope field specifier(s) first, then option field specifiers (IE 2B + len 2B)
+//	padding to a 4-byte boundary
+func buildIPFIXOptionsTemplateSet(scope [2]uint16, options [][2]uint16) []byte {
+	fieldCount := 1 + len(options)
+	length := 4 + 6 + fieldCount*4
+	if rem := length % 4; rem != 0 {
+		length += 4 - rem
+	}
+	buf := make([]byte, length)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], ipfixSetIDOptionsTemplate)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(length))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], ipfixOptionsTemplateID)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(fieldCount))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], 1) // scope field count
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], scope[0])
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], scope[1])
+	pos += 2
+	for _, f := range options {
+		binary.BigEndian.PutUint16(buf[pos:], f[0])
+		pos += 2
+		binary.BigEndian.PutUint16(buf[pos:], f[1])
+		pos += 2
+	}
+	return buf
 }
 
 // buildIPFIXTemplateSet encodes the Template Set for ipfixFields.
@@ -253,6 +342,66 @@ func (IPFIXEncoder) EncodePacket(
 
 	return pos, nil
 }
+
+// EncodeOptionsDatagram serialises a self-contained "option interface-table"
+// IPFIX message into buf: message header + Options Template Set (Set ID 3,
+// template ID 257) + one option data record per interface (data Set ID 257).
+// Not part of the FlowEncoder interface — reached via type-assert, like
+// sFlow's datagram methods.
+//
+// Returns (bytesWritten, ifacesConsumed, err); consumed < len(ifaces) means
+// the buffer filled and the caller re-invokes with the remainder. Returns
+// (0, 0, nil) on empty input — the caller must skip emission entirely for an
+// empty interface universe.
+func (IPFIXEncoder) EncodeOptionsDatagram(
+	domainID uint32,
+	seqNo uint32,
+	_ uint32, // uptimeMs — IPFIX header carries export time, not uptime; kept for flowOptionsEncoder
+	shape string,
+	ifaces []flowOptionIface,
+	buf []byte,
+) (int, int, error) {
+	if len(ifaces) == 0 {
+		return 0, 0, nil
+	}
+	desc, ok := ipfixOptionShapes[shape]
+	if !ok {
+		return 0, 0, fmt.Errorf("ipfix: unknown options shape %q", shape)
+	}
+	overhead := ipfixHeaderSize + len(desc.templ) + 4 // msg hdr + options template set + data set hdr
+	if len(buf) < overhead+desc.recSize {
+		return 0, 0, fmt.Errorf("ipfix: buffer too small (%d bytes) for an options datagram, need at least %d", len(buf), overhead+desc.recSize)
+	}
+
+	pos := 0
+	// ── Message Header ────────────────────────────────────────────────
+	binary.BigEndian.PutUint16(buf[pos:], ipfixVersion)
+	pos += 2
+	lengthOffset := pos // total message length, backfilled
+	pos += 2
+	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], seqNo)
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], domainID)
+	pos += 4
+
+	// ── Options Template Set ──────────────────────────────────────────
+	copy(buf[pos:], desc.templ)
+	pos += len(desc.templ)
+
+	// ── Option Data Set (shared pagination + record writer) ───────────
+	pos, consumed := encodeOptionRecords(buf, pos, ipfixOptionsTemplateID, desc, domainID, ifaces)
+	if consumed == 0 {
+		// Unreachable given the size check above; defensive.
+		return 0, 0, fmt.Errorf("ipfix: buffer too small (%d bytes) for an options record", len(buf))
+	}
+	binary.BigEndian.PutUint16(buf[lengthOffset:], uint16(pos))
+	return pos, consumed, nil
+}
+
+// Compile-time guard: IPFIXEncoder emits interface option tables.
+var _ flowOptionsEncoder = IPFIXEncoder{}
 
 // encodeIPFIXRecord writes a single flow record into buf at pos, following
 // the field order defined in ipfixFields. Returns the new position.
