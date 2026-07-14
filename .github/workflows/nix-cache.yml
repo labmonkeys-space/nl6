@@ -18,6 +18,10 @@ on:
       - '.github/workflows/nix-cache.yml'
   workflow_dispatch:
 
+# Cachix auth uses its own token; the GITHUB_TOKEN only needs to read the repo.
+permissions:
+  contents: read
+
 jobs:
   cache:
     name: Build & push (${{ matrix.system }})

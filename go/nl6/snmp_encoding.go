@@ -249,7 +249,7 @@ func encodeUnsigned32(tag byte, value uint32) []byte {
 func encodeCounter64(value uint64) []byte {
 	var b [8]byte
 	for i := 7; i >= 0; i-- {
-		b[i] = byte(value)
+		b[i] = byte(value & 0xff) // explicit low-byte extraction (CodeQL go/incorrect-integer-conversion)
 		value >>= 8
 	}
 	start := 0
@@ -401,9 +401,12 @@ func encodeTypedValue(oid, value string) []byte {
 			return encodeUnsigned32(tag, uint32(u))
 		}
 		// Negative values are theoretically invalid for unsigned types, but
-		// some resource files use -1 as a placeholder. Wrap-cast to uint32.
-		if i, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return encodeUnsigned32(tag, uint32(i))
+		// some resource files use -1 as a placeholder. Parse at 32-bit width
+		// (out-of-range values fall through to the octet-string encoding
+		// instead of silently truncating) and wrap-cast so -1 stays
+		// 0xFFFFFFFF on the wire.
+		if i, err := strconv.ParseInt(value, 10, 32); err == nil {
+			return encodeUnsigned32(tag, uint32(int32(i)))
 		}
 		return encodeOctetString(value)
 

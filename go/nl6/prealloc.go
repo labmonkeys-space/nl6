@@ -32,10 +32,15 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 		return nil // No pre-allocation requested
 	}
 
-	// Limit maximum workers to prevent resource exhaustion
+	// Clamp workers to a sane band: the upper bound prevents resource
+	// exhaustion, the lower bound prevents make(chan, n) panicking on a
+	// negative request-supplied value (CodeQL go/uncontrolled-allocation-size).
 	if maxWorkers > 500 {
 		maxWorkers = 500
 		log.Printf("WARNING: Limiting workers to 500 to prevent resource exhaustion")
+	}
+	if maxWorkers < 1 {
+		maxWorkers = 100
 	}
 
 	// Set pre-allocation status
