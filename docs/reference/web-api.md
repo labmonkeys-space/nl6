@@ -145,7 +145,9 @@ in to any combination.
   "protocol":         "netflow9",               // optional; "netflow9" | "ipfix" | "netflow5" | "sflow" (alias: "sflow5"); default "netflow9"
   "tick_interval":    "5s",                      // optional; global ticker used, per-device value validated and logged if divergent
   "active_timeout":   "30s",                     // optional; default 30s
-  "inactive_timeout": "15s"                      // optional; default 15s
+  "inactive_timeout": "15s",                     // optional; default 15s
+  "sub_agent_id":     0,                         // optional; sFlow datagram sub_agent_id, default 0; ignored by non-sFlow protocols
+  "options_interface_table": ""                  // optional; "" (off, default) | "if-scoped" | "system-scoped"; netflow9/ipfix only — other protocols rejected with 400
 }
 ```
 
