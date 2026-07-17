@@ -1,0 +1,20 @@
+# scenario fire-path benchstat baseline
+# captured: 2026-07-17T21:34:52Z runner: ubuntu-latest (x86_64) run: 29615182452
+# compare with: benchstat go/nl6/testdata/scenario-bench-baseline.txt <new>  (same runner class only)
+cd go && go test ./nl6/ -bench=BenchmarkSyslogExporterFire -benchmem -count=10 -run='^$' -timeout=20m
+goos: linux
+goarch: amd64
+pkg: github.com/labmonkeys-space/nl6/go/nl6
+cpu: INTEL(R) XEON(R) PLATINUM 8573C
+BenchmarkSyslogExporterFire-4   	  135169	      9205 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  129139	      9371 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  124206	      9197 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  124214	      9234 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  125049	      9380 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  128877	      9225 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  126738	      9289 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  124443	      9298 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  131134	      9117 ns/op	    2540 B/op	      21 allocs/op
+BenchmarkSyslogExporterFire-4   	  129550	      9043 ns/op	    2540 B/op	      21 allocs/op
+PASS
+ok  	github.com/labmonkeys-space/nl6/go/nl6	12.804s
