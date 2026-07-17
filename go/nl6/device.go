@@ -55,11 +55,21 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		snmpPort = DEFAULT_SNMP_PORT
 	}
 
-	// Set device creation status
+	// Publish creation-in-progress BEFORE the freeze check (FR35/FR38
+	// interlock): freezeFleet refuses while isCreatingDevices is set, so
+	// whichever of {batch, freeze} commits first wins and the other side
+	// observes it — a freeze can never land mid-batch. On freeze rejection
+	// the deferred Store(false) clears the flag again. Also covers the
+	// auto-start batch — a window's fleet is immutable; late devices
+	// surface via the scenario's arm-time excluded set instead.
 	sm.isCreatingDevices.Store(true)
 	sm.deviceCreateProgress.Store(0)
 	sm.deviceCreateTotal.Store(count)
 	defer sm.isCreatingDevices.Store(false)
+
+	if err := sm.fleetFreezeCheck(); err != nil {
+		return 0, err
+	}
 
 	// Automatically pre-allocate TUN interfaces if creating many devices
 	// Pre-allocate by default for 10+ devices unless explicitly disabled

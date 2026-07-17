@@ -267,15 +267,27 @@ type SimulatorManager struct {
 	// that survive device deletion (review decision D1.b). Per-exporter
 	// counters are added here on device Stop; GetFlowStatus merges these
 	// with live-exporter counters to emit cumulative totals.
-	flowAggregates       sync.Map // key: flowConnKey, value: *flowCollectorAggregate
-	flowBufPool          sync.Pool
-	flowTickInterval     time.Duration
+	flowAggregates   sync.Map // key: flowConnKey, value: *flowCollectorAggregate
+	flowBufPool      sync.Pool
+	flowTickInterval time.Duration
+
 	flowTemplateInterval time.Duration
-	flowSourcePerDevice  bool           // bind per-device UDP socket in nl6sim ns so src IP = device IP
-	flowStopCh           chan struct{}  // closed by Shutdown to stop the ticker goroutine
-	flowStopOnce         sync.Once      // ensures flowStopCh is closed exactly once
-	flowWg               sync.WaitGroup // tracks the ticker goroutine; Wait before tearing down pool
-	flowFirstAttachLog   sync.Once      // emits a single "flow export active" line on first per-device attach (review fix P4)
+	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
+
+	// fleetFrozenBy names the load-test scenario currently freezing fleet
+	// membership (empty = not frozen). While set, device create/delete is
+	// rejected so the scenario's T0→T1 counter deltas can never be
+	// corrupted by mid-window membership changes (FR35/FR38, scenario PR0).
+	// Guarded by sm.mu; set/cleared only via freezeFleet/unfreezeFleet —
+	// the scenario controller (story 1.2) is the sole intended caller.
+	// freezeFleet refuses while isCreatingDevices is set, and creation
+	// batches publish isCreatingDevices BEFORE their freeze check, so a
+	// batch and a freeze can never both proceed (review interlock).
+	fleetFrozenBy      string
+	flowStopCh         chan struct{}  // closed by Shutdown to stop the ticker goroutine
+	flowStopOnce       sync.Once      // ensures flowStopCh is closed exactly once
+	flowWg             sync.WaitGroup // tracks the ticker goroutine; Wait before tearing down pool
+	flowFirstAttachLog sync.Once      // emits a single "flow export active" line on first per-device attach (review fix P4)
 
 	// Simulator-wide "last template send" stamp — aggregated from
 	// per-exporter ticks and surfaced via GetFlowStatus.

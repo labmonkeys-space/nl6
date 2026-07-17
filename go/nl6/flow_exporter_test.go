@@ -993,3 +993,33 @@ func TestFlowExporter_Close_Idempotent(t *testing.T) {
 		t.Error("fe.conn should be nil after Close")
 	}
 }
+
+// TestPersistFlowCounters_DoubleCallDoesNotDoubleCount guards the PR0
+// idempotency fix: the fold is invoked from two device-teardown paths
+// (device.go Stop and delete), so calling it twice for the same exporter
+// must persist exactly one snapshot — not double the aggregates.
+func TestPersistFlowCounters_DoubleCallDoesNotDoubleCount(t *testing.T) {
+	sm := &SimulatorManager{devices: make(map[string]*DeviceSimulator)}
+	fe := &FlowExporter{collectorStr: "10.0.0.9:2055", protocol: "netflow9"}
+	fe.statPackets.Store(7)
+	fe.statBytes.Store(700)
+	fe.statRecords.Store(70)
+
+	sm.persistFlowCounters(fe)
+	sm.persistFlowCounters(fe) // second call must be a no-op
+
+	v, ok := sm.flowAggregates.Load(flowConnKey{collector: "10.0.0.9:2055", protocol: "netflow9"})
+	if !ok {
+		t.Fatal("aggregate not persisted at all")
+	}
+	agg := v.(*flowCollectorAggregate)
+	if got := agg.packets.Load(); got != 7 {
+		t.Errorf("packets = %d, want 7 (double-call doubled the fold)", got)
+	}
+	if got := agg.bytes.Load(); got != 700 {
+		t.Errorf("bytes = %d, want 700 (double-call doubled the fold)", got)
+	}
+	if got := agg.records.Load(); got != 70 {
+		t.Errorf("records = %d, want 70 (double-call doubled the fold)", got)
+	}
+}

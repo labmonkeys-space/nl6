@@ -149,6 +149,13 @@ test-web: check-node-runtime
 	  echo "node $$t"; $(NODE) "$$t" || exit 1; \
 	done
 
+## bench-baseline: Capture the scenario fire-path benchmark (10 runs) for the benchstat baseline
+## Output is committed as go/nl6/testdata/scenario-bench-baseline.txt — capture on the CI
+## runner class (workflow: bench-baseline.yml), never on a laptop; benchstat comparisons
+## must use the same runner class (scenario PR0 / NFR-P1).
+bench-baseline: check-go
+	cd $(GO_DIR) && go test ./nl6/ -bench=BenchmarkSyslogExporterFire -benchmem -count=10 -run='^$$' -timeout=20m
+
 ## run: Build and run the simulator (Linux only — requires root for TUN interfaces)
 run: check-linux build
 	cd $(BUILD_DIR) && sudo ./$(BINARY)
