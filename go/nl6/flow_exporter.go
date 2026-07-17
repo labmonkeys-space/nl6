@@ -112,6 +112,11 @@ type FlowExporter struct {
 	// path: an encoder error there would otherwise stop option emission
 	// silently (review finding — unreachable today, but defensive).
 	firstOptionsErr sync.Once
+	// persistOnce makes persistFlowCounters idempotent per exporter. The
+	// fold is reachable from two device-teardown paths (device.go Stop and
+	// delete), and folding twice would double the persisted per-collector
+	// aggregates (scenario PR0 prerequisite fix).
+	persistOnce sync.Once
 
 	// conn is the per-device UDP socket (nil = use shared pool). atomic.Pointer
 	// so Tick (ticker goroutine) and Close (device-shutdown paths) can read and
@@ -657,18 +662,21 @@ type flowCollectorAggregate struct {
 // reports monotonic totals even as devices come and go (review
 // decision D1.b). Called from the device lifecycle immediately before
 // `FlowExporter.Close()`. Safe to call with nil exporter; idempotent
-// only in the sense that calling it twice will DOUBLE the persisted
-// counters — callers MUST invoke it at most once per exporter.
+// per exporter (`persistOnce`) — repeated calls after the first fold
+// are no-ops, so the two teardown call sites can never double-count
+// (scenario PR0 prerequisite fix).
 func (sm *SimulatorManager) persistFlowCounters(fe *FlowExporter) {
 	if fe == nil || fe.collectorStr == "" {
 		return
 	}
-	key := flowConnKey{collector: fe.collectorStr, protocol: fe.protocol}
-	v, _ := sm.flowAggregates.LoadOrStore(key, &flowCollectorAggregate{})
-	agg := v.(*flowCollectorAggregate)
-	agg.packets.Add(fe.statPackets.Load())
-	agg.bytes.Add(fe.statBytes.Load())
-	agg.records.Add(fe.statRecords.Load())
+	fe.persistOnce.Do(func() {
+		key := flowConnKey{collector: fe.collectorStr, protocol: fe.protocol}
+		v, _ := sm.flowAggregates.LoadOrStore(key, &flowCollectorAggregate{})
+		agg := v.(*flowCollectorAggregate)
+		agg.packets.Add(fe.statPackets.Load())
+		agg.bytes.Add(fe.statBytes.Load())
+		agg.records.Add(fe.statRecords.Load())
+	})
 }
 
 // buildFlowEncoder returns the encoder + canonical protocol name for a

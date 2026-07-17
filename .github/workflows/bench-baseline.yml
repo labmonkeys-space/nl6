@@ -1,0 +1,47 @@
+name: Bench baseline
+
+# Captures the scenario fire-path benchmark baseline on the standard CI
+# runner class (scenario PR0 / NFR-P1). Trigger manually via
+# workflow_dispatch; download the artifact and commit it as
+# go/nl6/testdata/scenario-bench-baseline.txt. Story 1.4's benchstat gate
+# compares against this file on the same runner class.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench-baseline:
+    name: Capture fire-path baseline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Capture baseline
+        # Explicit bash shell = `bash -eo pipefail` — without it the default
+        # run shell has no pipefail and `| tee` would mask a failing
+        # benchmark, going green while uploading a garbage baseline.
+        shell: bash
+        run: |
+          {
+            echo "# scenario fire-path benchstat baseline"
+            echo "# captured: $(date -u +%Y-%m-%dT%H:%M:%SZ) runner: ubuntu-latest ($(uname -m)) run: ${{ github.run_id }}"
+            echo "# compare with: benchstat go/nl6/testdata/scenario-bench-baseline.txt <new>  (same runner class only)"
+            make bench-baseline
+          } | tee scenario-bench-baseline.txt
+
+      - name: Upload baseline artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: scenario-bench-baseline
+          path: scenario-bench-baseline.txt

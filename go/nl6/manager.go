@@ -282,9 +282,59 @@ func (sm *SimulatorManager) GetStatus() ManagerStatus {
 	}
 }
 
+// freezeFleet marks fleet membership immutable on behalf of the named
+// scenario: device create/delete is rejected until unfreezeFleet. Part of
+// the scenario PR0 mechanism (FR35/FR38); inert until the scenario
+// controller (story 1.2) calls it.
+//
+// Refuses while a creation batch is in flight: batches publish
+// isCreatingDevices BEFORE their freeze check, so whichever side commits
+// first wins and the other observes it — a freeze can never land mid-batch
+// and a batch can never start mid-freeze (review interlock).
+func (sm *SimulatorManager) freezeFleet(scenarioID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if creating, ok := sm.isCreatingDevices.Load().(bool); ok && creating {
+		return fmt.Errorf("cannot freeze fleet for scenario %s: a device-creation batch is in progress; retry after it completes", scenarioID)
+	}
+	sm.fleetFrozenBy = scenarioID
+	return nil
+}
+
+// unfreezeFleet clears the fleet-membership freeze.
+func (sm *SimulatorManager) unfreezeFleet() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.fleetFrozenBy = ""
+}
+
+// fleetFreezeCheck returns an error naming the freezing scenario when the
+// fleet is frozen, nil otherwise. The error text carries the scenario ID so
+// the REST layer can map the rejection to 409 with actionable context.
+func (sm *SimulatorManager) fleetFreezeCheck() error {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.fleetFreezeCheckLocked()
+}
+
+// fleetFreezeCheckLocked is fleetFreezeCheck for callers already holding
+// sm.mu (read or write).
+func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
+	if sm.fleetFrozenBy != "" {
+		return fmt.Errorf("fleet membership is frozen by running scenario %s: device create/delete is rejected until the scenario finishes", sm.fleetFrozenBy)
+	}
+	return nil
+}
+
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+
+	// Freeze check precedes the existence lookup: a frozen fleet rejects
+	// the operation categorically (FR35), regardless of the target.
+	if err := sm.fleetFreezeCheckLocked(); err != nil {
+		return err
+	}
 
 	device, exists := sm.devices[deviceID]
 	if !exists {
@@ -370,6 +420,14 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 	// call idempotent: it snapshots an empty map and tears down nothing, so a
 	// double-click can't double-free.
 	sm.mu.Lock()
+	// Freeze check (FR35): delete-all is the biggest membership hammer and
+	// must respect a running scenario like single-device delete does. The
+	// graceful-shutdown path is unaffected in practice: the scenario
+	// controller aborts (and unfreezes) before manager.Shutdown runs (D7).
+	if err := sm.fleetFreezeCheckLocked(); err != nil {
+		sm.mu.Unlock()
+		return err
+	}
 	devices := make([]*DeviceSimulator, 0, len(sm.devices))
 	deviceIDs := make([]string, 0, len(sm.devices))
 	for deviceID, device := range sm.devices {
