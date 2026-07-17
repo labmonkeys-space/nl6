@@ -72,6 +72,20 @@ type SyslogExporter struct {
 	// disabled or failed. Read-only after construction.
 	sharedConn *net.UDPConn
 
+	// scenPart is this device's participation handle in the active
+	// load-test scenario (nil = not participating; every fire path then
+	// behaves exactly as without the scenario subsystem — FR18). Installed
+	// at arm, atomically nil-swapped at teardown; fire paths load it ONCE
+	// per fire and tolerate nil (architecture D3). It lives on the
+	// exporter — the producer site — so the hot path needs no device
+	// backref or map lookup.
+	scenPart atomic.Pointer[scenarioPart]
+
+	// writeOverride, when non-nil, replaces writeDatagram — the in-memory
+	// transport seam for synctest-bubble tests (network I/O is not
+	// virtualized inside bubbles). Test-only; nil in production.
+	writeOverride func(pdu []byte) error
+
 	// sysName is the device's SNMP sysName.0 value, captured once at
 	// construction. Pre-flight 1.2 deferred the catalog-level caching
 	// question to PR3 (device lifecycle wiring); for PR2 the value is
@@ -213,10 +227,7 @@ func (e *SyslogExporter) Stats() *SyslogStats { return e.stats }
 // write failure; nil return implies a datagram reached the socket's
 // send path (UDP transmission beyond that point is fire-and-forget).
 func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]string) error {
-	if e == nil || entry == nil || e.closing.Load() {
-		return nil
-	}
-	return e.fireWithCtx(entry, e.buildCtx(e.ifIndexFn()), overrides)
+	return e.fireWithSource(entry, overrides, sourceOnDemand, -1)
 }
 
 // FireForInterface emits a syslog message for `entry` pinned to a SPECIFIC
@@ -224,10 +235,65 @@ func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]st
 // names the interface that transitioned. Safe on a closing exporter; bypasses
 // the global cap (state-driven link syslog).
 func (e *SyslogExporter) FireForInterface(entry *SyslogCatalogEntry, ifIndex int) error {
+	return e.fireWithSource(entry, nil, sourceStateDriven, ifIndex)
+}
+
+// fireBackground is the background-scheduler entry point (wrapped at
+// registration in syslog_manager.go) so scheduler-driven fires carry the
+// background source flag for the scenario gate.
+func (e *SyslogExporter) fireBackground(entry *SyslogCatalogEntry, overrides map[string]string) error {
+	return e.fireWithSource(entry, overrides, sourceBackground, -1)
+}
+
+// fireScenario is the scenario-scheduler entry point (scenario_scheduler.go).
+func (e *SyslogExporter) fireScenario(entry *SyslogCatalogEntry, overrides map[string]string) error {
+	return e.fireWithSource(entry, overrides, sourceScenario, -1)
+}
+
+// fireWithSource is the single fire funnel carrying the scenario gate-check
+// idiom (architecture Implementation Patterns — verbatim shape): one atomic
+// scenPart load (nil = non-participant, byte-for-byte legacy behavior);
+// pre-generation decide() per the source-flag counting matrix; wg.Add-then-
+// recheck to close the straggler race against the stop drain barrier;
+// bucket classification later uses a FRESH write-return clock read.
+// ifIndex < 0 means "use ifIndexFn()".
+func (e *SyslogExporter) fireWithSource(entry *SyslogCatalogEntry, overrides map[string]string, src fireSource, ifIndex int) error {
 	if e == nil || entry == nil || e.closing.Load() {
 		return nil
 	}
-	return e.fireWithCtx(entry, e.buildCtx(ifIndex), nil)
+	p := e.scenPart.Load() // one load; may be nil; tolerate teardown race
+	if p == nil {
+		if ifIndex < 0 {
+			ifIndex = e.ifIndexFn()
+		}
+		return e.fireWithCtx(entry, e.buildCtx(ifIndex), overrides, nil)
+	}
+	fireTime := p.now()
+	switch p.decide(src, fireTime) {
+	case gateSuppressSilent:
+		return nil
+	case gateSuppressCounted:
+		// Emission-suppressed: generated-by-definition (n=1, no render).
+		p.ledger.emitted.Add(1)
+		p.ledger.suppressedPreWindow.Add(1)
+		return nil
+	}
+	// Admit into the drain barrier. admit() atomically checks the barrier
+	// is still open and registers this fire, so it can never race the
+	// finalize close (no WaitGroup Add-after-Wait) and subsumes the old
+	// post-Add recheck: a fire that arrives after finalize began closing is
+	// a straggler → dropped.
+	if !p.drain.admit() {
+		p.ledger.emitted.Add(1)
+		p.ledger.dropped.Add(1)
+		return nil
+	}
+	defer p.drain.leave()
+	p.ledger.emitted.Add(1)
+	if ifIndex < 0 {
+		ifIndex = e.ifIndexFn()
+	}
+	return e.fireWithCtx(entry, e.buildCtx(ifIndex), overrides, p)
 }
 
 // buildCtx assembles the per-fire template context for a given ifIndex.
@@ -245,12 +311,19 @@ func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
 	}
 }
 
-// fireWithCtx is the shared resolve/encode/transmit body of Fire and
-// FireForInterface.
-func (e *SyslogExporter) fireWithCtx(entry *SyslogCatalogEntry, ctx SyslogTemplateCtx, overrides map[string]string) error {
+// fireWithCtx is the shared resolve/encode/transmit body of every fire
+// path. p is the scenario participation handle (nil = not participating;
+// no ledger accounting). Counter discipline: exactly one ledger bucket per
+// record outcome, incremented adjacent to the outcome (loss-accounting
+// table): write success → in_window/drain by a FRESH write-return clock
+// read; resolve/encode/write error → send_failures; closing-drop → dropped.
+func (e *SyslogExporter) fireWithCtx(entry *SyslogCatalogEntry, ctx SyslogTemplateCtx, overrides map[string]string, p *scenarioPart) error {
 	resolved, err := entry.Resolve(ctx, overrides)
 	if err != nil {
 		e.stats.SendFailures.Add(1)
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		log.Printf("syslog: resolve %s for %s: %v", entry.Name, e.deviceIP, err)
 		return err
 	}
@@ -270,23 +343,49 @@ func (e *SyslogExporter) fireWithCtx(entry *SyslogCatalogEntry, ctx SyslogTempla
 	buf.Grow(e.encoder.MaxMessageSize())
 	if err := e.encoder.Encode(&buf, resolved, time.Now()); err != nil {
 		e.stats.SendFailures.Add(1)
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		log.Printf("syslog: encode %s for %s: %v", entry.Name, e.deviceIP, err)
 		return err
 	}
 
-	if err := e.writeDatagram(buf.Bytes()); err != nil {
+	if err := e.write(buf.Bytes()); err != nil {
 		// Shutdown race: Close may have invalidated the socket we captured
 		// before the write. The message was lost, but not because of an
 		// actual send failure — attributing it to SendFailures confuses
-		// operator dashboards. Silently drop.
+		// operator dashboards. Silently drop (ledger: `dropped` — the
+		// record was generated but never confirmed on the wire, and the
+		// scenario ledger must stay exact).
 		if e.closing.Load() {
+			if p != nil {
+				p.ledger.dropped.Add(1)
+			}
 			return nil
 		}
 		e.stats.SendFailures.Add(1)
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		return err
 	}
 	e.stats.Sent.Add(1)
+	if p != nil {
+		// FRESH write-return read — never the fire-decision timestamp
+		// (scenario_boundary.go decision 2).
+		p.bucketFor(p.now()).Add(1)
+	}
 	return nil
+}
+
+// write sends the encoded PDU, honoring the test-only writeOverride seam
+// (in-memory transport for synctest bubbles); production always takes
+// writeDatagram.
+func (e *SyslogExporter) write(pdu []byte) error {
+	if e.writeOverride != nil {
+		return e.writeOverride(pdu)
+	}
+	return e.writeDatagram(pdu)
 }
 
 // writeDatagram sends pdu to the collector using the per-device socket

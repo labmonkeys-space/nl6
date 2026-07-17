@@ -529,7 +529,12 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		}
 	}
 
-	scheduler.Register(device.IP, exporter)
+	// Register through the background wrapper so scheduler-driven fires
+	// carry the background source flag for the scenario gate (the matrix
+	// suppresses background cadence for participants for the scenario's
+	// whole lifetime; non-participants are untouched). HTTP on-demand and
+	// state-driven paths keep their own entry points and flags.
+	scheduler.Register(device.IP, backgroundSyslogFirer{exporter})
 
 	// CAS-gated first-attach log; race-free vs. StopSyslogExport's
 	// reset to false (phase-5 review P3).

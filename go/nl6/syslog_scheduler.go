@@ -81,10 +81,11 @@ func (s *SyslogScheduler) MeanInterval() time.Duration { return s.meanInterval }
 // goroutine and a global token-bucket rate limiter. All fields are private;
 // callers interact via Register / Deregister / Run / Stop.
 type SyslogScheduler struct {
-	mu      sync.Mutex
-	heap    syslogHeap
-	byIP    map[string]*syslogHeapEntry // lookup for Deregister
-	devices map[string]syslogFirer      // exporter by device IP
+	mu            sync.Mutex
+	fixedInterval bool // exact cadence instead of Poisson draws (scenario stub)
+	heap          syslogHeap
+	byIP          map[string]*syslogHeapEntry // lookup for Deregister
+	devices       map[string]syslogFirer      // exporter by device IP
 
 	catalogFor   func(deviceIP net.IP) *SyslogCatalog
 	meanInterval time.Duration
@@ -115,6 +116,20 @@ type SyslogSchedulerOptions struct {
 	Seed int64
 	// Now, when non-nil, overrides time.Now. Primarily for tests.
 	Now func() time.Time
+	// SharedLimiter, when non-nil, is used verbatim as the global rate
+	// limiter INSTEAD of constructing one from GlobalCapPerSecond. The
+	// scenario-owned scheduler instance (D1b) passes the background
+	// scheduler's limiter here so fleet + scenario share ONE cap budget —
+	// constructing a second limiter would silently double the global cap
+	// (FR36; architecture anti-pattern list).
+	SharedLimiter *rate.Limiter
+	// FixedInterval, when true, replaces the Poisson (exponential)
+	// inter-arrival draw with a fixed cadence: first fire at registration
+	// time (offset 0), then exactly MeanInterval apart — giving precisely
+	// rate × window fires inside a half-open [T0,T1) window (FR4, scenario
+	// constant-rate stub). The seeded-Poisson path remains the default;
+	// Epic 3's λ(t) profiles replace this stub via Λ-inversion.
+	FixedInterval bool
 }
 
 // NewSyslogScheduler constructs a scheduler but does not start it. Call Run
@@ -144,7 +159,12 @@ func NewSyslogScheduler(opts SyslogSchedulerOptions) *SyslogScheduler {
 		wake:         make(chan struct{}, 1),
 		stopCh:       make(chan struct{}),
 	}
-	if opts.GlobalCapPerSecond > 0 {
+	s.fixedInterval = opts.FixedInterval
+	if opts.SharedLimiter != nil {
+		// Cap sharing (scenario D1b): use the caller's limiter instance
+		// verbatim; never construct a second one.
+		s.limiter = opts.SharedLimiter
+	} else if opts.GlobalCapPerSecond > 0 {
 		// Burst = cap so short-term excursions fit within one second of
 		// steady-state tokens. Matches trap_scheduler.go reasoning.
 		s.limiter = rate.NewLimiter(rate.Limit(opts.GlobalCapPerSecond), opts.GlobalCapPerSecond)
@@ -176,9 +196,15 @@ func (s *SyslogScheduler) Register(deviceIP net.IP, firer syslogFirer) {
 	if _, already := s.byIP[key]; already {
 		return
 	}
-	// Initial fire: draw a Poisson offset from now. First-fire jitter
-	// prevents every device firing immediately at startup.
-	offset := time.Duration(s.rnd.ExpFloat64() * float64(s.meanInterval))
+	// Initial fire: draw a Poisson offset from now — first-fire jitter
+	// prevents every device firing immediately at startup. FixedInterval
+	// mode fires at registration time instead (offset 0): the scenario
+	// scheduler registers participants at T0, and first-fire-at-T0 is what
+	// makes the half-open [T0,T1) window hold exactly rate×window fires.
+	var offset time.Duration
+	if !s.fixedInterval {
+		offset = time.Duration(s.rnd.ExpFloat64() * float64(s.meanInterval))
+	}
 	entry := &syslogHeapEntry{
 		nextFire: s.now().Add(offset),
 		deviceIP: append(net.IP(nil), deviceIP...), // defensive copy
@@ -296,8 +322,12 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 			continue
 		}
 
-		// Requeue with an exponential-distributed offset.
-		offset := time.Duration(s.rnd.ExpFloat64() * float64(s.meanInterval))
+		// Requeue: exponential-distributed offset (Poisson default) or the
+		// exact cadence (FixedInterval / scenario constant-rate stub).
+		offset := s.meanInterval
+		if !s.fixedInterval {
+			offset = time.Duration(s.rnd.ExpFloat64() * float64(s.meanInterval))
+		}
 		entry.nextFire = s.now().Add(offset)
 		heap.Push(&s.heap, entry)
 		s.byIP[key] = entry
@@ -338,6 +368,11 @@ func (s *SyslogScheduler) fireWithRecover(firer syslogFirer, deviceIP net.IP, en
 		log.Printf("syslog scheduler: fire %s for %s: %v", entry.Name, deviceIP, err)
 	}
 }
+
+// limiterRef exposes the scheduler's rate limiter so the scenario-owned
+// scheduler instance can SHARE it (SyslogSchedulerOptions.SharedLimiter,
+// D1b cap sharing). nil when the fleet runs uncapped.
+func (s *SyslogScheduler) limiterRef() *rate.Limiter { return s.limiter }
 
 // Stop signals Run to exit. Safe to call multiple times and from any goroutine.
 func (s *SyslogScheduler) Stop() {
