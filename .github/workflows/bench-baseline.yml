@@ -8,6 +8,12 @@ name: Bench baseline
 
 on:
   workflow_dispatch:
+  # TEMPORARY bootstrap trigger: workflow_dispatch only works once the
+  # workflow exists on the default branch, so the very first baseline is
+  # captured via this PR-scoped trigger. Removed before merge.
+  pull_request:
+    paths:
+      - '.github/workflows/bench-baseline.yml'
 
 permissions:
   contents: read
