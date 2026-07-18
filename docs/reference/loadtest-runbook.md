@@ -97,6 +97,12 @@ loss_ratio = (sent − received) / sent
   unreachable* below), not real loss.
 - Always confirm the join tuple matches: a mismatched `collector` column means
   you are diffing against the wrong receiver.
+- **`sent` far below `informational.requested`** → the shared global cap
+  throttled the run: the shortfall is in `informational.deferred` (fires the
+  cap had no token for — **not fired, not lost**). Deferral is *not* loss and
+  is excluded from `sent` (the loss denominator), so `loss_ratio` stays honest.
+  Raise the cap, lower the profile rate, or accept the throttle — but don't
+  read it as pipeline loss.
 
 ## Troubleshooting arm failures
 

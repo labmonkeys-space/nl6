@@ -83,6 +83,7 @@ func (s *SyslogScheduler) MeanInterval() time.Duration { return s.meanInterval }
 type SyslogScheduler struct {
 	mu            sync.Mutex
 	fixedInterval bool // exact cadence instead of Poisson draws (scenario stub)
+	deferOnCap    bool // scenario: count demand + Allow-or-defer (FR22)
 	heap          syslogHeap
 	byIP          map[string]*syslogHeapEntry // lookup for Deregister
 	devices       map[string]syslogFirer      // exporter by device IP
@@ -145,6 +146,11 @@ type SyslogSchedulerOptions struct {
 	// stops when its stream is exhausted. Mutually exclusive with the Poisson /
 	// FixedInterval requeue paths.
 	ArrivalStreamFor func(deviceIP net.IP) []time.Duration
+	// DeferOnCap (scenario mode, FR22): count demand at pop and use a
+	// non-blocking limiter Allow — an over-cap fire is DEFERRED (counted, not
+	// fired) instead of delayed. The fleet leaves this false so its steady-
+	// state cadence is throttled (delayed) rather than dropped.
+	DeferOnCap bool
 }
 
 // NewSyslogScheduler constructs a scheduler but does not start it. Call Run
@@ -175,6 +181,7 @@ func NewSyslogScheduler(opts SyslogSchedulerOptions) *SyslogScheduler {
 		stopCh:       make(chan struct{}),
 	}
 	s.fixedInterval = opts.FixedInterval
+	s.deferOnCap = opts.DeferOnCap
 	if opts.SharedLimiter != nil {
 		// Cap sharing (scenario D1b): use the caller's limiter instance
 		// verbatim; never construct a second one.
@@ -342,7 +349,10 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 			}
 		}
 
-		if s.limiter != nil {
+		// Fleet mode throttles by DELAYING (blocking Wait). Scenario mode
+		// (deferOnCap) instead counts demand at pop and defers over-cap fires
+		// via a non-blocking Allow below — so it must NOT block here.
+		if s.limiter != nil && !s.deferOnCap {
 			if err := s.limiter.Wait(ctx); err != nil {
 				return
 			}
@@ -377,7 +387,7 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 				// Fire this last popped arrival, but don't requeue.
 				deviceIP := entry.deviceIP
 				s.mu.Unlock()
-				s.fireOne(deviceIP, firer)
+				s.fireOrDefer(deviceIP, firer)
 				continue
 			}
 			entry.nextFire = s.epoch.Add(offs[idx])
@@ -386,7 +396,7 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 			s.byIP[key] = entry
 			deviceIP := entry.deviceIP
 			s.mu.Unlock()
-			s.fireOne(deviceIP, firer)
+			s.fireOrDefer(deviceIP, firer)
 			continue
 		}
 
@@ -405,8 +415,34 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 		// scheduler — decouples lock domains).
 		deviceIP := entry.deviceIP
 		s.mu.Unlock()
-		s.fireOne(deviceIP, firer)
+		s.fireOrDefer(deviceIP, firer)
 	}
+}
+
+// scenarioCounters is the optional behaviour the scheduler uses in
+// DeferOnCap mode to record cap-deferral visibility (FR22). The scenario
+// firer implements it; the fleet firer does not.
+type scenarioCounters interface {
+	CountScenarioRequested()
+	CountScenarioDeferred()
+}
+
+// fireOrDefer is the fire entrypoint. In DeferOnCap (scenario) mode it counts
+// the pop as demand (`requested`) and, if the shared cap has no token, records
+// a `deferred` and skips the fire — so a throttle is visible and never
+// masquerades as loss (FR22). Otherwise (fleet, or no cap) it fires directly;
+// the blocking Wait already happened for the fleet path.
+func (s *SyslogScheduler) fireOrDefer(deviceIP net.IP, firer syslogFirer) {
+	if s.deferOnCap {
+		if sc, ok := firer.(scenarioCounters); ok {
+			sc.CountScenarioRequested()
+			if s.limiter != nil && !s.limiter.Allow() {
+				sc.CountScenarioDeferred()
+				return
+			}
+		}
+	}
+	s.fireOne(deviceIP, firer)
 }
 
 // fireOne resolves the device's catalog, picks a weighted-random entry, and

@@ -34,6 +34,21 @@ func (f scenarioSyslogFirer) Fire(entry *SyslogCatalogEntry, overrides map[strin
 	return f.e.fireScenario(entry, overrides)
 }
 
+// CountScenarioRequested / CountScenarioDeferred implement scenarioCounters so
+// the scheduler can record cap-deferral visibility (FR22): requested at pop,
+// deferred when the shared cap has no token. No-ops for a non-participant.
+func (f scenarioSyslogFirer) CountScenarioRequested() {
+	if p := f.e.scenPart.Load(); p != nil {
+		p.ledger.requested.Add(1)
+	}
+}
+
+func (f scenarioSyslogFirer) CountScenarioDeferred() {
+	if p := f.e.scenPart.Load(); p != nil {
+		p.ledger.deferred.Add(1)
+	}
+}
+
 // newScenarioSyslogScheduler builds the scenario-owned scheduler instance
 // (architecture D1b): the SAME min-heap scheduler type as the fleet's, but
 // with its own seed and clock (determinism isolation — NFR-A5), the
@@ -52,6 +67,10 @@ func newScenarioSyslogScheduler(spec *Scenario, catalogFor func(net.IP) *SyslogC
 		Seed:          spec.Seed,
 		Now:           now,
 		SharedLimiter: sharedLimiter,
+		// FR22: the scenario counts demand (requested) at pop and DEFERS
+		// over-cap fires (non-blocking Allow) rather than delaying them, so a
+		// throttle is visible and distinct from loss.
+		DeferOnCap: true,
 	}
 	if _, isConstant := profile.(constantProfile); isConstant {
 		// Constant λ: keep the exact fixed-interval cadence (deterministic
