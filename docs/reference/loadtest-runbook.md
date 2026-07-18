@@ -60,6 +60,18 @@ tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
 sent but the wire lost it". See the
 [report schema](./loadtest-report-schema.md#the-ledger-identity).
 
+## NetFlow v5 run isolation (time-window + source-IP only)
+
+NetFlow v5 is a fixed-format protocol — no templates, no option records, no
+in-band field a scenario could tag. So a v5 fidelity run is isolated purely by
+**the measurement window `[T0,T1)` and the participant source IPs**: the
+collector attributes scenario traffic by `(source_ip, arrival time)`, not by any
+per-flow marker. Keep this in mind when reconciling — filter the collector's v5
+records to the participant IPs **and** the window before diffing against the
+report's `sent`. (The other protocols carry richer identity — v9/IPFIX
+templates, sFlow agent/sub-agent, trap varbinds — but the report's join tuple
+`(protocol, source_ip, collector)` is the same across all of them.)
+
 ## Reconciliation walkthrough
 
 The instrument's one job is to make loss **measurable**. The arithmetic:
