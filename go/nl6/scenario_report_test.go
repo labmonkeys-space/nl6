@@ -34,7 +34,7 @@ func reportFixture(t *testing.T, snaps map[string]ledgerSnapshot) (*SimulatorMan
 	t0 := time.Unix(1_700_000_000, 0)
 	c.result = &ScenarioResult{
 		ID: "s-000001", Phase: phaseStopped, T0Actual: t0, T1Actual: t0.Add(2 * time.Second),
-		PerDevice: snaps,
+		DrainEnd: t0.Add(2*time.Second + 500*time.Millisecond), PerDevice: snaps,
 	}
 	return sm, c
 }

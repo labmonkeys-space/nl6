@@ -205,7 +205,7 @@ func TestScenarioAPI_HappyPathReport(t *testing.T) {
 	if rep.Summary.ID != id || rep.Summary.Phase != "stopped" || rep.Summary.Protocol != "syslog" {
 		t.Fatalf("summary = %+v", rep.Summary)
 	}
-	if rep.Summary.ConfigSHA256 == "" || rep.Summary.Nl6Version == "" {
+	if rep.Summary.Metadata.ConfigSHA256 == "" || rep.Summary.Metadata.Nl6Version == "" {
 		t.Fatalf("summary fingerprint incomplete: %+v", rep.Summary)
 	}
 	if len(rep.Counters) != 1 {
