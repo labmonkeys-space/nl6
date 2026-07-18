@@ -377,8 +377,11 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 				part.ledger.backgroundSuppressed.Add(uint64(len(expired)))
 			}
 			expired = nil
-			if !sendTemplate {
-				return FlowTickStats{} // nothing to send (no data, no template)
+			// Templates (NF9/IPFIX arming) and sFlow counters_sample (keepalive)
+			// still flow while data is suppressed — only bail if there is truly
+			// nothing left to send this tick.
+			if !sendTemplate && len(fe.counterSources) == 0 {
+				return FlowTickStats{}
 			}
 		default: // allow
 			if part.drain.admit() {
@@ -391,7 +394,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 					part.ledger.dropped.Add(uint64(len(expired)))
 				}
 				expired = nil
-				if !sendTemplate {
+				if !sendTemplate && len(fe.counterSources) == 0 {
 					return FlowTickStats{}
 				}
 			}

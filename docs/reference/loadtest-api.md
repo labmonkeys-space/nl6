@@ -65,7 +65,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `participants` | `[]string` | yes | Device management IPs (dotted quad). Non-empty; each must parse as an IP. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
-| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, or `"snmp-trap"` (more protocols land through Epic 4). |
+| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, or `"sflow"` (more protocols land through Epic 4). |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
@@ -191,6 +191,16 @@ unfreezes the fleet. **Idempotent**: a scenario that already auto-closed at
 
 Returns the finalized [report](./loadtest-report-schema.md). `409` while the
 scenario has not reached a terminal phase (`submitted` / `armed` / `running`).
+
+**sFlow** (`sflow`) counts **raw samples** — `flow_sample` flow-records, **never**
+`samples × sampling_rate` — so the synthetic sampling-rate extrapolation can't
+manufacture phantom loss. The `flow_sample` data path is gated (suppressed
+pre-T0/post-window, counted in-window); the periodic **`counters_sample` is a
+keepalive** — it flows continuously (including before T0) to signal agent
+liveness and is **never counted** as scenario `sent`. Consequence: because
+counters_sample keeps advancing the agent's datagram sequence number
+pre-T0, the sequence is **not 0 at T0** (expected; the collector should key on
+sample sequence, not datagram sequence, for the measured window).
 
 **gNMI dial-out** (`gnmi-dialout`) is gated at both producers (SAMPLE +
 ON_CHANGE): arming requires a **live Publish stream** (a device whose stream is
