@@ -44,6 +44,7 @@ type scenarioReportSummary struct {
 	ParticipantsArmed    int                   `json:"participants_armed"`
 	ParticipantsExcluded int                   `json:"participants_excluded"`
 	Emitted              uint64                `json:"emitted"`
+	Sent                 uint64                `json:"sent"` // in_window + drain (loss denominator)
 	InWindow             uint64                `json:"in_window"`
 	Drain                uint64                `json:"drain"`
 	SuppressedPreWindow  uint64                `json:"suppressed_pre_window"`
@@ -73,6 +74,7 @@ type scenarioCounterRow struct {
 	SourceIP            string              `json:"source_ip"`
 	Collector           string              `json:"collector"`
 	Emitted             uint64              `json:"emitted"`
+	Sent                uint64              `json:"sent"` // in_window + drain (loss denominator)
 	InWindow            uint64              `json:"in_window"`
 	Drain               uint64              `json:"drain"`
 	SuppressedPreWindow uint64              `json:"suppressed_pre_window"`
@@ -82,11 +84,15 @@ type scenarioCounterRow struct {
 }
 
 // reportInformational holds disclosure counters that are deliberately OUTSIDE
-// the ledger identity (FR21). background_suppressed counts background-cadence
-// fires the gate suppressed for a participant; it was never generated as a
-// scenario record, so it must not appear as an identity term.
+// the ledger identity (FR21/FR22). background_suppressed counts background-
+// cadence fires the gate suppressed; requested is the scheduler demand (pops,
+// pre-limiter) and deferred the fires the shared global cap had no token for.
+// None was generated as a sent record, so none appears as an identity term or
+// in the loss denominator — a throttle is never mistaken for pipeline loss.
 type reportInformational struct {
 	BackgroundSuppressed uint64 `json:"background_suppressed"`
+	Requested            uint64 `json:"requested"`
+	Deferred             uint64 `json:"deferred"`
 }
 
 // scenarioExcludedRow is the {device, reason, remediation_hint} shape the
@@ -147,21 +153,29 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			SourceIP:            ip,
 			Collector:           sm.syslogCollectorFor(ip),
 			Emitted:             led.Emitted,
+			Sent:                led.InWindow + led.Drain,
 			InWindow:            led.InWindow,
 			Drain:               led.Drain,
 			SuppressedPreWindow: led.SuppressedPreWindow,
 			SendFailures:        led.SendFailures,
 			Dropped:             led.Dropped,
-			Informational:       reportInformational{BackgroundSuppressed: led.BackgroundSuppressed},
+			Informational: reportInformational{
+				BackgroundSuppressed: led.BackgroundSuppressed,
+				Requested:            led.Requested,
+				Deferred:             led.Deferred,
+			},
 		})
 		// Roll into the fleet-wide summary totals.
 		rep.Summary.Emitted += led.Emitted
+		rep.Summary.Sent += led.InWindow + led.Drain
 		rep.Summary.InWindow += led.InWindow
 		rep.Summary.Drain += led.Drain
 		rep.Summary.SuppressedPreWindow += led.SuppressedPreWindow
 		rep.Summary.SendFailures += led.SendFailures
 		rep.Summary.Dropped += led.Dropped
 		rep.Summary.Informational.BackgroundSuppressed += led.BackgroundSuppressed
+		rep.Summary.Informational.Requested += led.Requested
+		rep.Summary.Informational.Deferred += led.Deferred
 	}
 	return rep
 }

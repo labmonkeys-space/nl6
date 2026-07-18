@@ -41,9 +41,9 @@ is built once at stop/abort, immutable thereafter, and served by
   },
   "counters": [
     {"protocol": "syslog", "source_ip": "10.42.0.1", "collector": "10.0.0.9:514",
-     "emitted": 20, "in_window": 20, "drain": 0,
+     "emitted": 20, "sent": 20, "in_window": 20, "drain": 0,
      "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-     "informational": {"background_suppressed": 0}}
+     "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0}}
   ]
 }
 ```
@@ -94,12 +94,15 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `source_ip` | Device management IP (the emitter). |
 | `collector` | Configured collector `host:port` for this device (empty if the device was deleted post-window). |
 | `emitted` | Records **generated**: gate-passed fires + emission-suppressed pre-window fires. |
+| `sent` | `in_window + drain` — the **loss denominator** for reconciliation (convenience; derived). |
 | `in_window` | Records sent (write returned success) with the write-return timestamp in `[T0, T1)`. |
 | `drain` | Records sent during the post-`T1` drain grace. |
 | `suppressed_pre_window` | State-driven / on-demand fires that occurred before `T0` — counted but not emitted on the wire. |
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
 | `dropped` | Records generated but never confirmed on the wire (straggler past the drain barrier, or a shutdown-race socket drop). |
 | `informational.background_suppressed` | **Informational, quarantined in its own sub-object** — background-cadence fires the gate suppressed for this participant during the scenario. Deliberately **not** a flat sibling of the identity buckets and **not** part of the ledger identity. |
+| `informational.requested` | Scheduler **demand** — every fire the scenario scheduler popped (pre-limiter). `requested = sent + deferred + send_failures + dropped`. |
+| `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss (FR22). |
 
 The six identity fields (`emitted` + the five loss buckets) are flat siblings;
 the disclosure counter is the sole member of the nested `informational` object.

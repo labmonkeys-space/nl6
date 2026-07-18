@@ -104,6 +104,13 @@ func TestScenarioController_FixedRateExactCount(t *testing.T) {
 	if a.InWindow != 10 {
 		t.Errorf("in_window = %d, want 10 (rate×window)", a.InWindow)
 	}
+	// The SENT/identity buckets are the determinism contract. The demand
+	// counter `requested` is counted at scheduler pop, so the fire that lands
+	// exactly on the T1 boundary races the auto-stop and may be popped (11) or
+	// not (10) — it is gate-suppressed either way, so it never affects sent.
+	// Exclude the boundary-racy demand counters from strict equality.
+	a.Requested, a.Deferred = 0, 0
+	b.Requested, b.Deferred = 0, 0
 	if a != b {
 		t.Errorf("non-deterministic ledger across runs:\n a=%+v\n b=%+v", a, b)
 	}

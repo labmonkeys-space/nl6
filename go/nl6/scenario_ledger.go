@@ -34,6 +34,14 @@ type ledgerEntry struct {
 	// many background fires the gate skipped for this participant. NOT
 	// part of the ledger identity.
 	backgroundSuppressed atomic.Uint64
+
+	// requested / deferred make a global-cap throttle visible (FR22).
+	// requested counts every scheduler pop for this participant (the demand,
+	// pre-limiter); deferred counts pops the shared cap had no token for (not
+	// fired — throttled, NOT lost). Both sit OUTSIDE the ledger identity and
+	// the loss denominator: deferral is not loss.
+	requested atomic.Uint64
+	deferred  atomic.Uint64
 }
 
 // identityHolds checks the ledger identity exactly. Call only after the
@@ -52,6 +60,8 @@ type ledgerSnapshot struct {
 	SendFailures         uint64
 	Dropped              uint64
 	BackgroundSuppressed uint64
+	Requested            uint64
+	Deferred             uint64
 }
 
 func (l *ledgerEntry) snapshot() ledgerSnapshot {
@@ -63,5 +73,7 @@ func (l *ledgerEntry) snapshot() ledgerSnapshot {
 		SendFailures:         l.sendFailures.Load(),
 		Dropped:              l.dropped.Load(),
 		BackgroundSuppressed: l.backgroundSuppressed.Load(),
+		Requested:            l.requested.Load(),
+		Deferred:             l.deferred.Load(),
 	}
 }
