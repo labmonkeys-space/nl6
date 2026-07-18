@@ -104,13 +104,19 @@ func TestScenarioScheduler_SharesLimiter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newScenarioSyslogScheduler(spec, func(net.IP) *SyslogCatalog { return cat }, shared, time.Now)
+	s, err := newScenarioSyslogScheduler(spec, func(net.IP) *SyslogCatalog { return cat }, shared, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s.limiterRef() != shared {
 		t.Error("scenario scheduler did not reuse the shared limiter instance (would double the global cap)")
 	}
 
 	// nil shared → scenario uncapped too (fleet uncapped case).
-	s2 := newScenarioSyslogScheduler(spec, func(net.IP) *SyslogCatalog { return cat }, nil, time.Now)
+	s2, err := newScenarioSyslogScheduler(spec, func(net.IP) *SyslogCatalog { return cat }, nil, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s2.limiterRef() != nil {
 		t.Error("nil shared limiter must leave the scenario scheduler uncapped")
 	}

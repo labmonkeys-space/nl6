@@ -33,6 +33,10 @@ type Scenario struct {
 	Drain time.Duration
 	// Seed pins every random draw the scenario makes (FR6/FR33).
 	Seed int64
+	// RateProfile is the optional time-varying intensity λ(t) (FR5). Nil or
+	// kind "constant" keeps the flat `Rate` with an exact fixed-interval
+	// cadence; linear/sine/staged emit an NHPP via Λ-inversion.
+	RateProfile *RateProfileSpec
 }
 
 const defaultScenarioDrain = 2 * time.Second
@@ -78,7 +82,20 @@ func (s *Scenario) Validate() error {
 	if s.Drain < 0 {
 		return fmt.Errorf("scenario: drain must be >= 0, got %s", s.Drain)
 	}
+	// Rate profile (FR5): structural validation now so a bad profile is a
+	// submit-time 400, not a Start-time failure. The built profile is
+	// discarded here (rebuilt at Start); validation is the only goal.
+	if _, err := buildRateProfile(s.RateProfile, s.Rate, s.Window); err != nil {
+		return fmt.Errorf("scenario: %w", err)
+	}
 	return nil
+}
+
+// rateProfileOrDefault builds the scenario's rate profile (or the constant
+// default). Callers have already passed Validate, so the error is
+// unexpected — surfaced for defensive handling at Start.
+func (s *Scenario) rateProfile() (rateProfile, error) {
+	return buildRateProfile(s.RateProfile, s.Rate, s.Window)
 }
 
 // drainOrDefault returns the configured drain grace, defaulting when zero.

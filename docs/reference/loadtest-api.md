@@ -70,6 +70,33 @@ Request body:
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
+| `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
+
+#### Rate profiles — `rate_profile`
+
+By default a scenario emits at the flat `rate` with an exact fixed-interval
+cadence. A `rate_profile` instead shapes emission over the window as a
+**non-homogeneous Poisson process** drawn by inversion of the integrated
+intensity Λ(t) — production-shaped load, not a flat trickle. Every profile's
+peak rate is capped at 1000 events/s and must stay strictly positive.
+
+| `kind` | Fields | λ(t) |
+|--------|--------|------|
+| `constant` (default) | — | flat `rate`, exact cadence (deterministic count) |
+| `linear` | `start_rate`, `end_rate` | ramps linearly from `start_rate` at T0 to `end_rate` at T1 |
+| `sine` | `mean_rate` (default `rate`), `amplitude` (`< mean_rate`), `period` (duration) | `mean_rate + amplitude·sin(2π·t/period)` |
+| `staged` | `stages: [{duration, rate}, …]` | piecewise-constant; the last stage extends to T1 |
+
+```json
+{ "participants": ["10.42.0.1"], "protocol": "syslog", "rate": 10, "window": "5m", "seed": 42,
+  "rate_profile": { "kind": "linear", "start_rate": 5, "end_rate": 200 } }
+```
+
+`rate` is still required (it is the fixed-cadence rate and the `sine` mean
+default). A given `(seed, profile)` is fully reproducible: the per-device
+arrival stream is seeded from `(seed, device IP)`, so the fleet is
+deterministic yet devices are not phase-locked. An over-cap profile is still
+governed by the shared global rate limiter.
 
 Response `202`:
 

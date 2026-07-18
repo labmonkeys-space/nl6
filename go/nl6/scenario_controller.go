@@ -247,9 +247,18 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 	if bg := c.sm.syslogScheduler.Load(); bg != nil {
 		sharedLimiter = bg.limiterRef()
 	}
-	c.sched = newScenarioSyslogScheduler(c.spec, func(ip net.IP) *SyslogCatalog {
+	sched, err := newScenarioSyslogScheduler(c.spec, func(ip net.IP) *SyslogCatalog {
 		return c.sm.SyslogCatalogFor(ip.String())
 	}, sharedLimiter, c.now)
+	if err != nil {
+		// The profile was validated at submit, so this is unexpected; unwind
+		// the running transition defensively (unfreeze, roll back to armed).
+		c.sm.unfreezeFleet()
+		c.phase = phaseArmed
+		c.gate.Store(&gateState{phase: phaseArmed})
+		return fmt.Errorf("cannot start scenario %s: %w", c.id, err)
+	}
+	c.sched = sched
 
 	// Register participants that still exist. Devices deleted in the
 	// Arm→Start gap (before the freeze) are dropped from parts/ledgers and
