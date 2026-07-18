@@ -5,7 +5,12 @@
 
 package main
 
-import "sort"
+import (
+	"bytes"
+	"encoding/csv"
+	"sort"
+	"strconv"
+)
 
 // scenario_report.go — serialization of the immutable finalized
 // ScenarioResult into the wire report (D5). The report is a pure projection:
@@ -34,11 +39,7 @@ type scenarioReportSummary struct {
 	ID                   string                `json:"id"`
 	Phase                string                `json:"phase"`
 	Protocol             string                `json:"protocol"`
-	ConfigSHA256         string                `json:"config_sha256"`
-	Seed                 int64                 `json:"seed"`
-	Nl6Version           string                `json:"nl6_version"`
-	T0                   string                `json:"t0"`
-	T1                   string                `json:"t1"`
+	Metadata             reportMetadata        `json:"metadata"`
 	Duration             string                `json:"duration"` // T1Actual-T0Actual (monotonic)
 	ParticipantsArmed    int                   `json:"participants_armed"`
 	ParticipantsExcluded int                   `json:"participants_excluded"`
@@ -50,6 +51,19 @@ type scenarioReportSummary struct {
 	Dropped              uint64                `json:"dropped"`
 	Informational        reportInformational   `json:"informational"`
 	Excluded             []scenarioExcludedRow `json:"excluded"`
+}
+
+// reportMetadata is the reproducibility fingerprint + actual window
+// timestamps (FR25/FR27): the `(config_sha256, seed, nl6_version)` triple
+// that pins a re-run, plus the RFC3339-ms T0/T1/drain-end the run actually
+// observed. Grouping them makes "reproduce this run" a single copy-paste.
+type reportMetadata struct {
+	ConfigSHA256 string `json:"config_sha256"`
+	Seed         int64  `json:"seed"`
+	Nl6Version   string `json:"nl6_version"`
+	T0           string `json:"t0"`
+	T1           string `json:"t1"`
+	DrainEnd     string `json:"drain_end"`
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
@@ -96,14 +110,17 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 
 	rep := &scenarioReport{
 		Summary: scenarioReportSummary{
-			ID:                   res.ID,
-			Phase:                string(res.Phase),
-			Protocol:             c.spec.Protocol,
-			ConfigSHA256:         c.configSHA,
-			Seed:                 c.spec.Seed,
-			Nl6Version:           Version,
-			T0:                   res.T0Actual.Format(rfc3339ms),
-			T1:                   res.T1Actual.Format(rfc3339ms),
+			ID:       res.ID,
+			Phase:    string(res.Phase),
+			Protocol: c.spec.Protocol,
+			Metadata: reportMetadata{
+				ConfigSHA256: c.configSHA,
+				Seed:         c.spec.Seed,
+				Nl6Version:   Version,
+				T0:           res.T0Actual.Format(rfc3339ms),
+				T1:           res.T1Actual.Format(rfc3339ms),
+				DrainEnd:     res.DrainEnd.Format(rfc3339ms),
+			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
 			ParticipantsExcluded: len(res.Excluded),
@@ -147,6 +164,33 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Summary.Informational.BackgroundSuppressed += led.BackgroundSuppressed
 	}
 	return rep
+}
+
+// reportCSVHeader is the flat CSV projection column order — the join keys
+// (protocol, source_ip, collector) first, then the identity buckets and the
+// informational counter, so a monitor's export joins on the first three.
+var reportCSVHeader = []string{
+	"protocol", "source_ip", "collector",
+	"emitted", "in_window", "drain", "suppressed_pre_window",
+	"send_failures", "dropped", "background_suppressed",
+}
+
+// reportCSV projects the report's counters[] as text/csv with a header row
+// (FR27). One row per participant; join-ready on the first three columns.
+func reportCSV(rep *scenarioReport) []byte {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write(reportCSVHeader)
+	u := func(v uint64) string { return strconv.FormatUint(v, 10) }
+	for _, r := range rep.Counters {
+		_ = w.Write([]string{
+			r.Protocol, r.SourceIP, r.Collector,
+			u(r.Emitted), u(r.InWindow), u(r.Drain), u(r.SuppressedPreWindow),
+			u(r.SendFailures), u(r.Dropped), u(r.Informational.BackgroundSuppressed),
+		})
+	}
+	w.Flush()
+	return buf.Bytes()
 }
 
 // syslogCollectorFor resolves a device's configured syslog collector for the

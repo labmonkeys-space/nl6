@@ -130,6 +130,11 @@ unfreezes the fleet. **Idempotent**: a scenario that already auto-closed at
 Returns the finalized [report](./loadtest-report-schema.md). `409` while the
 scenario has not reached a terminal phase (`submitted` / `armed` / `running`).
 
+Add **`?format=csv`** to get a flat `text/csv` projection of `counters[]`
+(header row + one row per participant, join-ready on
+`(protocol, source_ip, collector)`) instead of JSON — see the
+[CSV projection](./loadtest-report-schema.md#csv-projection).
+
 ### `GET /api/v1/scenarios/{id}` — status
 
 ```json

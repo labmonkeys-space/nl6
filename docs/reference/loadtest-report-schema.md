@@ -20,11 +20,14 @@ is built once at stop/abort, immutable thereafter, and served by
     "id": "s-000001",
     "phase": "stopped",
     "protocol": "syslog",
-    "config_sha256": "9b8d8c9c…969314",
-    "seed": 42,
-    "nl6_version": "v0.16.0",
-    "t0": "2026-07-18T09:00:05.000Z",
-    "t1": "2026-07-18T09:00:07.000Z",
+    "metadata": {
+      "config_sha256": "9b8d8c9c…969314",
+      "seed": 42,
+      "nl6_version": "v0.16.0",
+      "t0": "2026-07-18T09:00:05.000Z",
+      "t1": "2026-07-18T09:00:07.000Z",
+      "drain_end": "2026-07-18T09:00:07.500Z"
+    },
     "duration": "2s",
     "participants_armed": 2,
     "participants_excluded": 1,
@@ -55,17 +58,28 @@ streaming consumer sees the aggregate first.
 | `id` | string | Scenario ID (`s-000001`). |
 | `phase` | string | Terminal phase: `stopped` (window elapsed / explicit stop) or `aborted` (graceful shutdown). |
 | `protocol` | string | Participating protocol (MVP `syslog`). |
-| `config_sha256` | string | SHA-256 over the canonicalized submit config. With `seed` + `nl6_version`, the reproducibility fingerprint. |
-| `seed` | number | The seed that pinned every random draw. |
-| `nl6_version` | string | Simulator version that produced the report. |
-| `t0` | RFC3339-ms | Actual window open (emission start). |
-| `t1` | RFC3339-ms | Actual window close — the planned `T1` for a full run, or the abort instant for an early abort (never later than the planned `T1`). |
+| `metadata` | object | The reproducibility fingerprint + actual window timestamps (see below). |
 | `duration` | string | `t1 − t0` as a Go duration, from the monotonic clock — the window that actually ran. |
 | `participants_armed` | number | Devices that armed and ran. |
 | `participants_excluded` | number | Declared participants that did not arm (see `excluded`). |
 | `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
 | `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
 | `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. |
+
+### `summary.metadata`
+
+The reproducibility fingerprint plus the timestamps the run actually observed.
+Copy the `(config_sha256, seed)` back into a resubmit on the same
+`nl6_version` to re-run a scenario exactly (FR34).
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `config_sha256` | string | SHA-256 over the canonicalized submit config. |
+| `seed` | number | The seed that pinned every random draw. |
+| `nl6_version` | string | Simulator version that produced the report — reproduction is guaranteed only on the same version. |
+| `t0` | RFC3339-ms | Actual window open (emission start). |
+| `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
+| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
 
 ## `counters[]` — per participant
 
@@ -123,5 +137,22 @@ The report is a versioned contract. Consumers should tolerate unknown fields.
 - `config_sha256` covers only the **submit config**, not the report shape; the
   report contract is tracked by `nl6_version`.
 
-Future projections (CSV, additional protocols in `counters`, richer
+Future projections (additional protocols in `counters`, richer
 loss-localization blocks) are **additive** under this policy.
+
+## CSV projection
+
+`GET /api/v1/scenarios/{id}/report?format=csv` serves a flat `text/csv`
+projection of `counters[]` — one header row plus one row per participant,
+join-ready on the first three columns:
+
+```csv
+protocol,source_ip,collector,emitted,in_window,drain,suppressed_pre_window,send_failures,dropped,background_suppressed
+syslog,10.42.0.1,10.0.0.9:514,20,20,0,0,0,0,0
+syslog,10.42.0.2,10.0.0.9:514,20,20,0,0,0,0,0
+```
+
+The `informational.background_suppressed` counter flattens to a trailing
+`background_suppressed` column. `summary`-level fields are not in the CSV — it
+is purely the per-device counter projection, so it joins directly against a
+collector's received-counts export on `(protocol, source_ip, collector)`.
