@@ -299,6 +299,14 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 	c.schedStop = cancel
 	go c.sched.Run(schedCtx)
 
+	// Abort predicate (FR7): watch a mid-run ledger metric and self-abort a
+	// runaway run. Shares schedCtx, so finalize (which cancels schedStop)
+	// also stops the watcher. Built at submit (validated), so err is
+	// unexpected here; a nil predicate means the watcher never starts.
+	if pred, err := buildAbortPredicate(c.spec.AbortPredicate); err == nil && pred != nil {
+		go c.watchPredicate(schedCtx, pred)
+	}
+
 	// Self-close at T1 (FR12/FR17): the window is [T0,T1). Without this the
 	// scenario scheduler would keep popping past T1 — burning shared global-
 	// cap tokens on fires the gate silently suppresses, starving the fleet.

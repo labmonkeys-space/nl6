@@ -71,6 +71,28 @@ Request body:
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
+| `abort_predicate` | `object` | no | Self-abort a runaway run when a mid-run ledger metric crosses a threshold (see below). |
+
+#### Abort predicate — `abort_predicate`
+
+An optional guard that aborts the scenario through the standard
+`running → aborted` pipeline when a fleet-wide ledger metric stays over a
+threshold for a grace period — so a bad experiment stops itself before
+drowning the collector (FR7).
+
+```json
+{"metric": "send_failures", "threshold": 100, "grace": "5s"}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `metric` | Ledger counter to watch: `send_failures` \| `dropped` \| `deferred` \| `sent` (= in_window + drain). |
+| `threshold` | Abort when the fleet-wide sum of `metric` exceeds this. `> 0`. |
+| `grace` | The threshold must hold this long before aborting (Go duration; omitted = 0). |
+
+The predicate is evaluated on a 1 s cadence using **approximate mid-run
+reads** of the live atomics (no drain barrier). The resulting report is a
+normal `aborted` artifact (see the [runbook](./loadtest-runbook.md)).
 
 #### Rate profiles — `rate_profile`
 

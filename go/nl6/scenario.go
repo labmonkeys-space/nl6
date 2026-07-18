@@ -37,6 +37,9 @@ type Scenario struct {
 	// kind "constant" keeps the flat `Rate` with an exact fixed-interval
 	// cadence; linear/sine/staged emit an NHPP via Λ-inversion.
 	RateProfile *RateProfileSpec
+	// AbortPredicate optionally self-aborts a runaway run when a mid-run
+	// ledger metric exceeds a threshold for a grace period (FR7).
+	AbortPredicate *AbortPredicateSpec
 }
 
 const defaultScenarioDrain = 2 * time.Second
@@ -86,6 +89,9 @@ func (s *Scenario) Validate() error {
 	// submit-time 400, not a Start-time failure. The built profile is
 	// discarded here (rebuilt at Start); validation is the only goal.
 	if _, err := buildRateProfile(s.RateProfile, s.Rate, s.Window); err != nil {
+		return fmt.Errorf("scenario: %w", err)
+	}
+	if _, err := buildAbortPredicate(s.AbortPredicate); err != nil {
 		return fmt.Errorf("scenario: %w", err)
 	}
 	return nil
