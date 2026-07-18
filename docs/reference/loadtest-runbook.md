@@ -60,6 +60,44 @@ tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
 sent but the wire lost it". See the
 [report schema](./loadtest-report-schema.md#the-ledger-identity).
 
+## Reconciliation walkthrough
+
+The instrument's one job is to make loss **measurable**. The arithmetic:
+
+```
+sent       = in_window + drain          (per counters[] row, or summed)
+received   = your monitor's count for the same (protocol, source_ip, collector)
+loss_ratio = (sent − received) / sent
+```
+
+1. **Join** the report's `counters[]` (or the [CSV
+   projection](./loadtest-report-schema.md#csv-projection)) against your
+   monitor's received-counts export **on `(protocol, source_ip, collector)`** —
+   the report is keyed by exactly that tuple so the join is 1:1.
+2. **Per row**, compute `loss_ratio`. `0` = perfect fidelity. A positive ratio
+   localizes to that `source_ip`; a *negative* ratio (received > sent) means
+   **duplication** in the path (retransmits, a misconfigured fan-out).
+3. **Loss model.** `sent` is the authoritative denominator — it is exact and,
+   with a fixed `seed`, reproducible. Any shortfall is real wire/collector
+   loss, **not** measurement noise. The simulator proves this: an injected X%
+   drop is recovered by this arithmetic within ±1 pp (0 % exactly) — see the
+   `examples/scenario-syslog-fidelity` "injecting known loss" section.
+
+### When the numbers don't add up
+
+- **`received` < `sent` but the network is fine** → the collector host is
+  dropping datagrams before your monitor counts them. Check the kernel UDP
+  drop counters: `nstat -az | grep -i Udp` or
+  `cat /proc/net/snmp | grep Udp:` — a rising **`UdpRcvbufErrors`** /
+  **`InErrors`** means the receive buffer overflowed under burst. Raise the
+  collector's `SO_RCVBUF` (or `net.core.rmem_max`) and re-run; that loss is on
+  the collector, not the wire.
+- **`received` == 0 despite `sent` > 0** → almost always the collector host's
+  **`rp_filter`** dropping `10.42.0.0/16` source IPs (see *Collector
+  unreachable* below), not real loss.
+- Always confirm the join tuple matches: a mismatched `collector` column means
+  you are diffing against the wrong receiver.
+
 ## Troubleshooting arm failures
 
 `arm` never fails wholesale for a bad participant — it reports each one in the
