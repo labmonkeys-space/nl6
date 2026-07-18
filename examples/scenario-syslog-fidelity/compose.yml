@@ -1,0 +1,46 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# scenario-syslog-fidelity — a self-contained telemetry-fidelity check. nl6
+# runs a small syslog-emitting fleet; `collector` is a minimal UDP sink that
+# counts datagrams. The run script (./run.sh) drives one scenario over REST
+# (submit -> arm -> reset collector -> start -> stop -> report) and asserts
+# nl6's reported `sent` equals the collector's `received` — the reproducible
+# known result documented in README.md.
+#
+#   docker compose up -d --build
+#   ./run.sh
+name: nl6-scenario-syslog-fidelity
+
+services:
+  nl6:
+    image: ${NL6_IMAGE:-ghcr.io/labmonkeys-space/nl6:latest}
+    # TUN interfaces + network namespaces require these.
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    devices:
+      - /dev/net/tun
+    command:
+      - -auto-start-ip=10.42.0.1
+      - -auto-count=5                     # a 5-device demo fleet: 10.42.0.1..5
+      - -syslog-collector=collector:514   # every device gets a syslog exporter
+      - -syslog-source-per-device=false   # share nl6's source IP (no rp_filter friction)
+    ports:
+      - "8080:8080"                       # nl6 web console + REST (incl. /api/v1/scenarios)
+    depends_on:
+      collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  collector:
+    image: ${PYTHON_IMAGE:-python:3-alpine}
+    command: ["python3", "/collector.py"]
+    volumes:
+      - ./collector.py:/collector.py:ro
+    ports:
+      - "9000:9000"                       # GET /count, POST /reset from the host
