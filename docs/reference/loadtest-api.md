@@ -65,8 +65,8 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `participants` | `[]string` | yes | Device management IPs (dotted quad). Non-empty; each must parse as an IP. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
-| `protocol` | `string` | yes | Participating push protocol. MVP: `"syslog"` only. |
-| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). The MVP scheduler emits at exactly this constant rate. |
+| `protocol` | `string` | yes | Participating push protocol: `"syslog"` or `"netflow9"` (more protocols land through Epic 4). |
+| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog`; **ignored for flow protocols** (`netflow9` emits at the device's own flow-tick cadence — scenario-rate control over flow arrives in a later story), but still required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |

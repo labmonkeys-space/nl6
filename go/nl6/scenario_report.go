@@ -151,7 +151,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Counters = append(rep.Counters, scenarioCounterRow{
 			Protocol:            c.spec.Protocol,
 			SourceIP:            ip,
-			Collector:           sm.syslogCollectorFor(ip),
+			Collector:           sm.scenarioCollectorFor(ip, c.spec.Protocol),
 			Emitted:             led.Emitted,
 			Sent:                led.InWindow + led.Drain,
 			InWindow:            led.InWindow,
@@ -207,14 +207,26 @@ func reportCSV(rep *scenarioReport) []byte {
 	return buf.Bytes()
 }
 
-// syslogCollectorFor resolves a device's configured syslog collector for the
-// report's join tuple. Empty string when the device is gone or has no syslog
-// config — the report stays serializable regardless of post-window churn.
-func (sm *SimulatorManager) syslogCollectorFor(ip string) string {
+// scenarioCollectorFor resolves a device's configured collector for the
+// report's join tuple, per the scenario protocol. Empty string when the
+// device is gone or lacks that exporter — the report stays serializable
+// regardless of post-window churn.
+func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	if dev := sm.devicesByIP[ip]; dev != nil && dev.syslogConfig != nil {
-		return dev.syslogConfig.Collector
+	dev := sm.devicesByIP[ip]
+	if dev == nil {
+		return ""
+	}
+	switch protocol {
+	case "syslog":
+		if dev.syslogConfig != nil {
+			return dev.syslogConfig.Collector
+		}
+	case "netflow9":
+		if dev.flowExporter != nil {
+			return dev.flowExporter.collectorStr
+		}
 	}
 	return ""
 }
