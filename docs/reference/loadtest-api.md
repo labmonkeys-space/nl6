@@ -144,6 +144,19 @@ at `T0`, and starts the scenario-owned scheduler. **Refused (`409`) when 0/N
 participants armed.** The window self-closes at `T1` (auto-stop). Returns the
 status object.
 
+An optional body schedules the start at an **absolute T0** (FR11) so a run
+aligns to a wall-clock schedule without a warm operator:
+
+```json
+{"at": "2026-07-18T22:00:00Z"}
+```
+
+The scenario stays `armed` and a controller timer fires the start at `at`
+(surfaced as `scheduled_start` in the status). A **past** `at` (or an
+unparseable one) is a `400 {"error","field":"at"}`. A `DELETE` before `T0`
+cancels cleanly — the timer is stopped, transports released, and no report is
+produced. Omit the body to start immediately.
+
 ### `POST /api/v1/scenarios/{id}/stop` — stop
 
 Ends emission, drains in-flight fires, finalizes the immutable report, and
