@@ -65,6 +65,17 @@ func (sm *SimulatorManager) scenarioByID(id string) (*ScenarioController, error)
 	return sm.scenarioController, nil
 }
 
+// listScenarios returns the active scenarios with their phases (MVP: 0 or 1).
+func (sm *SimulatorManager) listScenarios() []scenarioListEntry {
+	sm.scenarioMu.Lock()
+	c := sm.scenarioController
+	sm.scenarioMu.Unlock()
+	if c == nil {
+		return []scenarioListEntry{}
+	}
+	return []scenarioListEntry{{ID: c.id, Phase: string(c.Phase())}}
+}
+
 // deleteScenario releases the identified scenario. An armed scenario is
 // canceled (transports released, no report — FR39); a submitted or terminal
 // scenario is simply dropped so the single-active slot frees. A running

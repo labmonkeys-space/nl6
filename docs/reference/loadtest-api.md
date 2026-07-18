@@ -37,6 +37,7 @@ fidelity check and troubleshoot failures.
 | `POST` | `/api/v1/scenarios/{id}/start` | `200` status | `404`, `409` |
 | `POST` | `/api/v1/scenarios/{id}/stop` | `200` [report](./loadtest-report-schema.md) | `404`, `409` |
 | `GET` | `/api/v1/scenarios/{id}/report` | `200` [report](./loadtest-report-schema.md) | `404`, `409` |
+| `GET` | `/api/v1/scenarios` | `200` `{scenarios:[{id,phase}]}` | — |
 | `GET` | `/api/v1/scenarios/{id}` | `200` status | `404` |
 | `DELETE` | `/api/v1/scenarios/{id}` | `200` `{}` | `404`, `409` |
 
@@ -233,6 +234,34 @@ Add **`?format=csv`** to get a flat `text/csv` projection of `counters[]`
 
 `transitions` is the ordered lifecycle log; it is how a SIGTERM-driven
 `aborted` is observable after the fact.
+
+While a scenario is running (or after it finalizes), status also carries the
+live **window** and a **counts** block for unattended observability (FR30):
+
+```json
+{
+  "id": "s-000001", "phase": "running", "protocol": "syslog", "window": "30s",
+  "t0": "2026-07-18T09:00:05.000Z", "t1": "2026-07-18T09:00:35.000Z",
+  "elapsed": "12.3s", "remaining": "17.7s",
+  "counts": {"participants_armed": 2, "emitted": 1220, "sent": 1220,
+             "in_window": 1220, "drain": 0, "suppressed_pre_window": 0,
+             "send_failures": 0, "dropped": 0}
+}
+```
+
+`counts` uses **approximate mid-run atomic reads** (no drain barrier) — a live
+progress snapshot that may lag an in-flight fire; the finalized
+[report](./loadtest-report-schema.md) is the exact record. `t0`/`t1` are the
+actual window bounds (the running gate's, or the finalized result's).
+
+### `GET /api/v1/scenarios` — list
+
+```json
+{"scenarios": [{"id": "s-000001", "phase": "running"}]}
+```
+
+Lists the active scenarios with their phases (MVP: 0 or 1 — one active at a
+time). Empty `scenarios: []` when none.
 
 ### `DELETE /api/v1/scenarios/{id}` — cancel / release
 

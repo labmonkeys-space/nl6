@@ -580,3 +580,55 @@ func (c *ScenarioController) Phase() scenarioPhase {
 	defer c.mu.Unlock()
 	return c.phase
 }
+
+// LiveCounts sums the participant ledgers with APPROXIMATE mid-run atomic reads
+// (the 3.4 seam — no drain barrier) for live status. Exact only after finalize;
+// a running read is a progress snapshot that may lag an in-flight fire.
+func (c *ScenarioController) LiveCounts() (armed int, sum ledgerSnapshot) {
+	c.mu.Lock()
+	ledgers := make([]*ledgerEntry, 0, len(c.ledgers))
+	for _, l := range c.ledgers {
+		ledgers = append(ledgers, l)
+	}
+	c.mu.Unlock()
+	armed = len(ledgers)
+	for _, l := range ledgers {
+		s := l.snapshot()
+		sum.Emitted += s.Emitted
+		sum.InWindow += s.InWindow
+		sum.Drain += s.Drain
+		sum.SuppressedPreWindow += s.SuppressedPreWindow
+		sum.SendFailures += s.SendFailures
+		sum.Dropped += s.Dropped
+		sum.BackgroundSuppressed += s.BackgroundSuppressed
+		sum.Requested += s.Requested
+		sum.Deferred += s.Deferred
+		sum.InformsOriginated += s.InformsOriginated
+		sum.InformsAcked += s.InformsAcked
+	}
+	return armed, sum
+}
+
+// WindowBounds returns the scenario measurement window [t0,t1) — the finalized
+// actuals if terminal, else the live running gate. ok=false before running.
+func (c *ScenarioController) WindowBounds() (t0, t1 time.Time, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.result != nil {
+		return c.result.T0Actual, c.result.T1Actual, true
+	}
+	if gs := c.gate.Load(); gs != nil && gs.phase == phaseRunning {
+		return gs.t0, gs.t1, true
+	}
+	return time.Time{}, time.Time{}, false
+}
+
+// PlannedWindow returns the configured window length.
+func (c *ScenarioController) PlannedWindow() time.Duration {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.spec == nil {
+		return 0
+	}
+	return c.spec.Window
+}

@@ -564,6 +564,7 @@ func setupRoutes() *mux.Router {
 
 	// Load-test scenario control surface (epic 1).
 	api.HandleFunc("/scenarios", createScenarioHandler).Methods("POST")
+	api.HandleFunc("/scenarios", listScenariosHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}/arm", armScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios/{id}/start", startScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios/{id}/stop", stopScenarioHandler).Methods("POST")

@@ -115,12 +115,42 @@ type readinessResponse struct {
 }
 
 type statusResponse struct {
-	ID             string            `json:"id"`
-	Phase          string            `json:"phase"`
-	ConfigSHA256   string            `json:"config_sha256"`
-	Seed           int64             `json:"seed"`
-	ScheduledStart string            `json:"scheduled_start,omitempty"`
-	Transitions    []transitionEntry `json:"transitions"`
+	ID             string `json:"id"`
+	Phase          string `json:"phase"`
+	Protocol       string `json:"protocol"`
+	ConfigSHA256   string `json:"config_sha256"`
+	Seed           int64  `json:"seed"`
+	Window         string `json:"window"`
+	ScheduledStart string `json:"scheduled_start,omitempty"`
+	// Live window observability (FR30/FR31): actual T0/T1 (running gate or
+	// finalized result), elapsed since T0, remaining until T1. Empty before
+	// the scenario runs.
+	T0        string `json:"t0,omitempty"`
+	T1        string `json:"t1,omitempty"`
+	Elapsed   string `json:"elapsed,omitempty"`
+	Remaining string `json:"remaining,omitempty"`
+	// Counts is a live mid-run counter snapshot (approximate atomic reads);
+	// nil before arm.
+	Counts      *statusCounts     `json:"counts,omitempty"`
+	Transitions []transitionEntry `json:"transitions"`
+}
+
+// statusCounts is a live progress snapshot of the summed participant ledgers.
+type statusCounts struct {
+	ParticipantsArmed   int    `json:"participants_armed"`
+	Emitted             uint64 `json:"emitted"`
+	Sent                uint64 `json:"sent"` // in_window + drain
+	InWindow            uint64 `json:"in_window"`
+	Drain               uint64 `json:"drain"`
+	SuppressedPreWindow uint64 `json:"suppressed_pre_window"`
+	SendFailures        uint64 `json:"send_failures"`
+	Dropped             uint64 `json:"dropped"`
+}
+
+// scenarioListEntry is one row of GET /api/v1/scenarios.
+type scenarioListEntry struct {
+	ID    string `json:"id"`
+	Phase string `json:"phase"`
 }
 
 // transitionEntry is one lifecycle step in the status transition log
@@ -338,12 +368,48 @@ func scenarioStatus(c *ScenarioController) statusResponse {
 		entries = append(entries, transitionEntry{Phase: string(tr.Phase), At: tr.At.Format(rfc3339ms)})
 	}
 	resp := statusResponse{
-		ID: c.id, Phase: string(c.Phase()), ConfigSHA256: c.configSHA, Seed: c.spec.Seed, Transitions: entries,
+		ID: c.id, Phase: string(c.Phase()), Protocol: c.spec.Protocol,
+		ConfigSHA256: c.configSHA, Seed: c.spec.Seed, Window: c.PlannedWindow().String(),
+		Transitions: entries,
 	}
 	if sa := c.ScheduledStart(); !sa.IsZero() {
 		resp.ScheduledStart = sa.Format(rfc3339ms)
 	}
+	// Live window bounds + elapsed/remaining (FR30).
+	if t0, t1, ok := c.WindowBounds(); ok {
+		resp.T0 = t0.Format(rfc3339ms)
+		resp.T1 = t1.Format(rfc3339ms)
+		now := time.Now()
+		if now.After(t0) {
+			resp.Elapsed = now.Sub(t0).Truncate(time.Millisecond).String()
+		}
+		if t1.After(now) {
+			resp.Remaining = t1.Sub(now).Truncate(time.Millisecond).String()
+		} else {
+			resp.Remaining = "0s"
+		}
+	}
+	// Live counts (approximate mid-run reads); present once armed.
+	if armed, sum := c.LiveCounts(); armed > 0 {
+		resp.Counts = &statusCounts{
+			ParticipantsArmed:   armed,
+			Emitted:             sum.Emitted,
+			Sent:                sum.InWindow + sum.Drain,
+			InWindow:            sum.InWindow,
+			Drain:               sum.Drain,
+			SuppressedPreWindow: sum.SuppressedPreWindow,
+			SendFailures:        sum.SendFailures,
+			Dropped:             sum.Dropped,
+		}
+	}
 	return resp
+}
+
+// listScenariosHandler: GET /api/v1/scenarios → the scenarios with their
+// phases (MVP: 0 or 1 — one active scenario at a time).
+func listScenariosHandler(w http.ResponseWriter, r *http.Request) {
+	list := manager.listScenarios()
+	writeScenarioJSON(w, http.StatusOK, map[string]any{"scenarios": list})
 }
 
 // conflictMsg builds the 409 body naming the current phase + scenario ID +
