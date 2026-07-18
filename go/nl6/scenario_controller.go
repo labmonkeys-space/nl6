@@ -38,6 +38,12 @@ type ScenarioController struct {
 	// glue; read for the report/status. Never mutated after Submit.
 	configSHA string
 
+	// startTimer / scheduledAt back an absolute-T0 scheduled start (FR11):
+	// the scenario stays `armed` until the timer fires Start at scheduledAt.
+	// The timer is stopped by Cancel/finish so a DELETE-before-T0 is clean.
+	startTimer  *time.Timer
+	scheduledAt time.Time
+
 	// gate is the published snapshot; participants hold &gate and Load it.
 	gate atomic.Pointer[gateState]
 	// drain is the per-scenario admission + drain barrier: every gate-passed
@@ -301,6 +307,35 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 	return nil
 }
 
+// ScheduleStart arms an absolute-T0 start (FR11): the scenario stays `armed`
+// and a controller timer fires Start(ctx) at `at`. Requires armed with ≥1
+// participant. The caller (REST layer) has already rejected a past `at`.
+func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.phase != phaseArmed {
+		return fmt.Errorf("%w: %s -> scheduled start (arm first)", errInvalidTransition, c.phase)
+	}
+	if len(c.parts) == 0 {
+		return fmt.Errorf("cannot schedule scenario %s: 0/%d participants armed", c.id, len(c.spec.Participants))
+	}
+	if c.startTimer != nil {
+		return fmt.Errorf("scenario %s already has a scheduled start at %s", c.id, c.scheduledAt.Format(time.RFC3339))
+	}
+	c.scheduledAt = at
+	// AfterFunc and c.now share the clock (both real, or both synctest-fake).
+	c.startTimer = time.AfterFunc(at.Sub(c.now()), func() { _ = c.Start(ctx) })
+	log.Printf("[scenario] %s start scheduled for %s", c.id, at.Format(time.RFC3339))
+	return nil
+}
+
+// ScheduledStart returns the pending absolute start time (zero if none).
+func (c *ScenarioController) ScheduledStart() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.scheduledAt
+}
+
 // Stop ends emission at T1, drains in-flight fires, finalizes the ledger,
 // and unfreezes the fleet. Terminal.
 func (c *ScenarioController) Stop() (*ScenarioResult, error) {
@@ -383,6 +418,9 @@ func (c *ScenarioController) Cancel() error {
 	defer c.mu.Unlock()
 	if err := c.transitionLocked(phaseCanceled); err != nil {
 		return err
+	}
+	if c.startTimer != nil {
+		c.startTimer.Stop() // cancel a pending scheduled start (FR11)
 	}
 	c.gate.Store(&gateState{phase: phaseCanceled})
 	c.sm.mu.RLock()

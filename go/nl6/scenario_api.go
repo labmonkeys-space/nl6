@@ -6,12 +6,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -111,11 +113,12 @@ type readinessResponse struct {
 }
 
 type statusResponse struct {
-	ID           string            `json:"id"`
-	Phase        string            `json:"phase"`
-	ConfigSHA256 string            `json:"config_sha256"`
-	Seed         int64             `json:"seed"`
-	Transitions  []transitionEntry `json:"transitions"`
+	ID             string            `json:"id"`
+	Phase          string            `json:"phase"`
+	ConfigSHA256   string            `json:"config_sha256"`
+	Seed           int64             `json:"seed"`
+	ScheduledStart string            `json:"scheduled_start,omitempty"`
+	Transitions    []transitionEntry `json:"transitions"`
 }
 
 // transitionEntry is one lifecycle step in the status transition log
@@ -180,10 +183,58 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// startRequest is the optional start body: an absolute T0 (FR11). An empty
+// body starts immediately.
+type startRequest struct {
+	At string `json:"at"`
+}
+
+// parseStartAt reads the optional {"at": RFC3339} start body. Returns
+// hasAt=false for an empty body or omitted field.
+func parseStartAt(r *http.Request) (at time.Time, hasAt bool, err error) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<10))
+	if len(bytes.TrimSpace(body)) == 0 {
+		return time.Time{}, false, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	var req startRequest
+	if err := dec.Decode(&req); err != nil {
+		return time.Time{}, false, err
+	}
+	if req.At == "" {
+		return time.Time{}, false, nil
+	}
+	at, err = time.Parse(time.RFC3339, req.At)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("invalid 'at' timestamp %q: %v (want RFC3339)", req.At, err)
+	}
+	return at, true, nil
+}
+
 // startScenarioHandler: POST /api/v1/scenarios/{id}/start → 200 status.
+// An optional {"at": RFC3339} body schedules the start at an absolute T0
+// (FR11); a past timestamp is rejected 400.
 func startScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	ctrl, ok := lookupScenario(w, r)
 	if !ok {
+		return
+	}
+	at, hasAt, err := parseStartAt(r)
+	if err != nil {
+		scenario400(w, err.Error(), "at")
+		return
+	}
+	if hasAt {
+		if !at.After(time.Now()) {
+			scenario400(w, fmt.Sprintf("start time %s is in the past", at.Format(time.RFC3339)), "at")
+			return
+		}
+		if err := ctrl.ScheduleStart(context.Background(), at); err != nil {
+			scenarioErr(w, http.StatusConflict, conflictMsg(ctrl, err, "start"))
+			return
+		}
+		writeScenarioJSON(w, http.StatusOK, scenarioStatus(ctrl))
 		return
 	}
 	if err := ctrl.Start(context.Background()); err != nil {
@@ -284,9 +335,13 @@ func scenarioStatus(c *ScenarioController) statusResponse {
 	for _, tr := range trs {
 		entries = append(entries, transitionEntry{Phase: string(tr.Phase), At: tr.At.Format(rfc3339ms)})
 	}
-	return statusResponse{
+	resp := statusResponse{
 		ID: c.id, Phase: string(c.Phase()), ConfigSHA256: c.configSHA, Seed: c.spec.Seed, Transitions: entries,
 	}
+	if sa := c.ScheduledStart(); !sa.IsZero() {
+		resp.ScheduledStart = sa.Format(rfc3339ms)
+	}
+	return resp
 }
 
 // conflictMsg builds the 409 body naming the current phase + scenario ID +
