@@ -99,7 +99,7 @@ If the scenario runs but your monitor receives nothing:
 ⚠️ **A scenario suppresses the fleet's ordinary background telemetry cadence for
 its participants for the entire time it is armed and running.** Before `T0`,
 background fires from armed participants are *generation-suppressed*
-(`background_suppressed` in the report counts them). This is intentional — it
+(`informational.background_suppressed` in the report counts them). This is intentional — it
 keeps the measurement window clean — but it means:
 
 - **Silence-based alerts** (heartbeat monitors, "no syslog in N minutes"
