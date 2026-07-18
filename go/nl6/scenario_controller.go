@@ -32,6 +32,11 @@ type ScenarioController struct {
 	id    string
 	phase scenarioPhase
 
+	// configSHA is the SHA-256 fingerprint over the canonicalized submit
+	// config (D5). Opaque identity string set once at submit by the manager
+	// glue; read for the report/status. Never mutated after Submit.
+	configSHA string
+
 	// gate is the published snapshot; participants hold &gate and Load it.
 	gate atomic.Pointer[gateState]
 	// drain is the per-scenario admission + drain barrier: every gate-passed

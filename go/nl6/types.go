@@ -283,7 +283,17 @@ type SimulatorManager struct {
 	// freezeFleet refuses while isCreatingDevices is set, and creation
 	// batches publish isCreatingDevices BEFORE their freeze check, so a
 	// batch and a freeze can never both proceed (review interlock).
-	fleetFrozenBy      string
+	fleetFrozenBy string
+
+	// scenarioController holds the single active load-test scenario (MVP:
+	// one at a time — FR38). nil until the first POST /api/v1/scenarios.
+	// Guarded by scenarioMu; a terminal scenario is replaceable by the next
+	// submit. scenarioSeq is the monotonic source of the zero-padded
+	// s-%06d scenario ID (D2/D5).
+	scenarioMu         sync.Mutex
+	scenarioController *ScenarioController
+	scenarioSeq        uint64
+
 	flowStopCh         chan struct{}  // closed by Shutdown to stop the ticker goroutine
 	flowStopOnce       sync.Once      // ensures flowStopCh is closed exactly once
 	flowWg             sync.WaitGroup // tracks the ticker goroutine; Wait before tearing down pool

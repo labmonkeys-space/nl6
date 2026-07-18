@@ -561,6 +561,16 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/topology", deleteTopologyHandler).Methods("DELETE")
 	api.HandleFunc("/topology/status", topologyStatusHandler).Methods("GET")
 	api.HandleFunc("/topology/graph", topologyGraphHandler).Methods("GET")
+
+	// Load-test scenario control surface (epic 1).
+	api.HandleFunc("/scenarios", createScenarioHandler).Methods("POST")
+	api.HandleFunc("/scenarios/{id}/arm", armScenarioHandler).Methods("POST")
+	api.HandleFunc("/scenarios/{id}/start", startScenarioHandler).Methods("POST")
+	api.HandleFunc("/scenarios/{id}/stop", stopScenarioHandler).Methods("POST")
+	api.HandleFunc("/scenarios/{id}/report", scenarioReportHandler).Methods("GET")
+	api.HandleFunc("/scenarios/{id}", scenarioStatusHandler).Methods("GET")
+	api.HandleFunc("/scenarios/{id}", deleteScenarioHandler).Methods("DELETE")
+
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 
