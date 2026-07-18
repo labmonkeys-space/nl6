@@ -71,7 +71,7 @@ func TestScenarioSFlow_GatedRawSamplesAndKeepalive(t *testing.T) {
 	gate.Store(&gateState{phase: phaseArmed})
 	injectExpiredFlows(fe, 3, t0.Add(-time.Second))
 	tickWithEncoder(fe, t0.Add(-time.Second), SFlowEncoder{}, conn, addr, testPool())
-	flow, counters, ver := sflowSamples(t, drainAll())
+	flow, counters, _ := sflowSamples(t, drainAll())
 	if flow != 0 {
 		t.Fatalf("pre-T0 flow_sample records = %d, want 0 (data suppressed)", flow)
 	}
@@ -86,7 +86,7 @@ func TestScenarioSFlow_GatedRawSamplesAndKeepalive(t *testing.T) {
 	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
 	injectExpiredFlows(fe, 3, t0.Add(time.Minute))
 	tickWithEncoder(fe, t0.Add(time.Minute), SFlowEncoder{}, conn, addr, testPool())
-	flow, _, ver = sflowSamples(t, drainAll())
+	flow, _, ver := sflowSamples(t, drainAll())
 	if ver == 0 {
 		t.Fatal("no sFlow datagram decoded in-window")
 	}
