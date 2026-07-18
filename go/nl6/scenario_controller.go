@@ -177,6 +177,58 @@ func (c *ScenarioController) Transitions() []scenarioTransition {
 	return out
 }
 
+// usesScheduler reports whether the scenario protocol emits via a scenario-
+// owned scheduler (syslog) or via the device's own gated exporter cadence
+// (flow protocols — the gate lives in FlowExporter.Tick, no scheduler).
+func (c *ScenarioController) usesScheduler() bool { return c.spec.Protocol == "syslog" }
+
+// installScenPart stores the participation handle on the device's exporter for
+// the scenario's protocol. ok=false with a reason/hint when the device lacks
+// that exporter (→ excluded set, FR9).
+func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenarioPart) (ok bool, reason, hint string) {
+	switch c.spec.Protocol {
+	case "syslog":
+		if dev.syslogExporter == nil {
+			return false, "device has no syslog exporter", "enable syslog export on the device (seed flag or per-device block)"
+		}
+		dev.syslogExporter.scenPart.Store(part)
+	case "netflow9":
+		if dev.flowExporter == nil || dev.flowExporter.protocol != "netflow9" {
+			return false, "device has no netflow9 flow exporter", "enable flow export with protocol netflow9 (seed flag or per-device flow block)"
+		}
+		dev.flowExporter.scenPart.Store(part)
+	default:
+		return false, "unsupported scenario protocol", ""
+	}
+	return true, "", ""
+}
+
+// detachScenPart nil-swaps the participation handle on the protocol's exporter.
+func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
+	switch c.spec.Protocol {
+	case "syslog":
+		if dev.syslogExporter != nil {
+			dev.syslogExporter.scenPart.Store(nil)
+		}
+	case "netflow9":
+		if dev.flowExporter != nil {
+			dev.flowExporter.scenPart.Store(nil)
+		}
+	}
+}
+
+// exporterPresent reports whether dev still carries the scenario protocol's
+// exporter (arm→start gap check).
+func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
+	switch c.spec.Protocol {
+	case "syslog":
+		return dev.syslogExporter != nil
+	case "netflow9":
+		return dev.flowExporter != nil && dev.flowExporter.protocol == "netflow9"
+	}
+	return false
+}
+
 // Arm resolves participants against the live fleet, installs participation
 // handles, and publishes the armed gate. Unknown/ineligible devices go to
 // the excluded set (FR9) rather than failing the whole arm. Returns the
@@ -203,17 +255,12 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 			})
 			continue
 		}
-		exp := dev.syslogExporter
-		if exp == nil {
-			c.excluded = append(c.excluded, excludedParticipant{
-				Device: ip, Reason: "device has no syslog exporter",
-				RemediationHint: "enable syslog export on the device (seed flag or per-device block)",
-			})
-			continue
-		}
 		led := &ledgerEntry{}
 		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
-		exp.scenPart.Store(part)
+		if ok, reason, hint := c.installScenPart(dev, part); !ok {
+			c.excluded = append(c.excluded, excludedParticipant{Device: ip, Reason: reason, RemediationHint: hint})
+			continue
+		}
 		c.parts[ip] = part
 		c.ledgers[ip] = led
 		armed++
@@ -246,36 +293,13 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 	drainEnd := t1.Add(c.spec.drainOrDefault())
 	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
 
-	// Scenario-owned scheduler (D1b): shares the background limiter, own
-	// seed/clock, fixed-interval constant-rate stub. Register participants
-	// at T0 so first-fire-at-T0 makes the half-open window exact.
-	var sharedLimiter *rate.Limiter
-	if bg := c.sm.syslogScheduler.Load(); bg != nil {
-		sharedLimiter = bg.limiterRef()
-	}
-	sched, err := newScenarioSyslogScheduler(c.spec, func(ip net.IP) *SyslogCatalog {
-		return c.sm.SyslogCatalogFor(ip.String())
-	}, sharedLimiter, c.now)
-	if err != nil {
-		// The profile was validated at submit, so this is unexpected; unwind
-		// the running transition defensively (unfreeze, roll back to armed).
-		c.sm.unfreezeFleet()
-		c.phase = phaseArmed
-		c.gate.Store(&gateState{phase: phaseArmed})
-		return fmt.Errorf("cannot start scenario %s: %w", c.id, err)
-	}
-	c.sched = sched
-
-	// Register participants that still exist. Devices deleted in the
-	// Arm→Start gap (before the freeze) are dropped from parts/ledgers and
-	// recorded as excluded, so the ledger only reports devices that
-	// actually ran and the 0/N refusal below sees the true count.
+	// Drop participants deleted in the Arm→Start gap (before the freeze) so the
+	// ledger only reports devices that actually ran and the 0/N refusal sees
+	// the true count. Protocol-agnostic: the presence check is per-protocol.
 	c.sm.mu.RLock()
 	registered := 0
 	for ip := range c.parts {
-		dev := c.sm.devicesByIP[ip]
-		if dev != nil && dev.syslogExporter != nil {
-			c.sched.Register(dev.IP, scenarioSyslogFirer{dev.syslogExporter})
+		if dev := c.sm.devicesByIP[ip]; dev != nil && c.exporterPresent(dev) {
 			registered++
 			continue
 		}
@@ -288,7 +312,6 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
-		c.sched.Stop()
 		c.sm.unfreezeFleet()
 		c.phase = phaseArmed // roll back the running transition
 		c.gate.Store(&gateState{phase: phaseArmed})
@@ -297,7 +320,36 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
-	go c.sched.Run(schedCtx)
+
+	// syslog emits via a scenario-owned scheduler (D1b: shared limiter, own
+	// seed/clock). Flow protocols emit via the device's own flow ticker, now
+	// gated by the participation handle installed at arm — no scheduler.
+	if c.usesScheduler() {
+		var sharedLimiter *rate.Limiter
+		if bg := c.sm.syslogScheduler.Load(); bg != nil {
+			sharedLimiter = bg.limiterRef()
+		}
+		sched, err := newScenarioSyslogScheduler(c.spec, func(ip net.IP) *SyslogCatalog {
+			return c.sm.SyslogCatalogFor(ip.String())
+		}, sharedLimiter, c.now)
+		if err != nil {
+			// Validated at submit, so unexpected; unwind defensively.
+			cancel()
+			c.sm.unfreezeFleet()
+			c.phase = phaseArmed
+			c.gate.Store(&gateState{phase: phaseArmed})
+			return fmt.Errorf("cannot start scenario %s: %w", c.id, err)
+		}
+		c.sched = sched
+		c.sm.mu.RLock()
+		for ip := range c.parts {
+			if dev := c.sm.devicesByIP[ip]; dev != nil && dev.syslogExporter != nil {
+				c.sched.Register(dev.IP, scenarioSyslogFirer{dev.syslogExporter})
+			}
+		}
+		c.sm.mu.RUnlock()
+		go c.sched.Run(schedCtx)
+	}
 
 	// Abort predicate (FR7): watch a mid-run ledger metric and self-abort a
 	// runaway run. Shares schedCtx, so finalize (which cancels schedStop)
@@ -392,8 +444,8 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	// Detach participation handles (atomic nil-swap; producers tolerate nil).
 	c.sm.mu.RLock()
 	for ip := range c.parts {
-		if dev := c.sm.devicesByIP[ip]; dev != nil && dev.syslogExporter != nil {
-			dev.syslogExporter.scenPart.Store(nil)
+		if dev := c.sm.devicesByIP[ip]; dev != nil {
+			c.detachScenPart(dev)
 		}
 	}
 	c.sm.mu.RUnlock()
@@ -433,8 +485,8 @@ func (c *ScenarioController) Cancel() error {
 	c.gate.Store(&gateState{phase: phaseCanceled})
 	c.sm.mu.RLock()
 	for ip := range c.parts {
-		if dev := c.sm.devicesByIP[ip]; dev != nil && dev.syslogExporter != nil {
-			dev.syslogExporter.scenPart.Store(nil)
+		if dev := c.sm.devicesByIP[ip]; dev != nil {
+			c.detachScenPart(dev)
 		}
 	}
 	c.sm.mu.RUnlock()

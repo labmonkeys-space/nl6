@@ -137,6 +137,16 @@ type FlowExporter struct {
 	// Validate enforces the protocol compatibility.
 	optionShape  string
 	optionIfaces []flowOptionIface
+
+	// scenPart is the load-test scenario participation handle (nil = not
+	// participating → byte-for-byte legacy behaviour). When set, Tick gates
+	// DATA emission through the scenario gate (FR15/FR17): pre-T0 and post-
+	// window, data records are generation-suppressed (tick skip) while
+	// TEMPLATES still flow so the collector is armed before T0; in-window,
+	// data records count at datagram-write-return (templates excluded from
+	// `sent`; a failed datagram moves its records to send_failures). Gate
+	// decisions and bucketing use the tick's `now`.
+	scenPart atomic.Pointer[scenarioPart]
 }
 
 // flowOptionIface is one interface's option-record identity: its ifIndex and
@@ -346,6 +356,42 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	if len(expired) == 0 && !sendTemplate {
 		return FlowTickStats{}
 	}
+	// Scenario gate (FR15/FR17): pre-T0 and post-window, DATA records are
+	// generation-suppressed (dropped from this tick) while TEMPLATES keep
+	// flowing so the collector is armed before T0; in-window, admit the drain
+	// barrier so Stop can outlast an in-flight tick. `scenCount` records the
+	// per-datagram ledger accounting done at each write-return below.
+	part := fe.scenPart.Load()
+	scenActive := false
+	if part != nil {
+		switch part.decide(sourceScenario, now) {
+		case gateSuppressSilent, gateSuppressCounted:
+			// Suppress data this tick; disclose how many records we skipped.
+			if len(expired) > 0 {
+				part.ledger.backgroundSuppressed.Add(uint64(len(expired)))
+			}
+			expired = nil
+			if !sendTemplate {
+				return FlowTickStats{} // nothing to send (no data, no template)
+			}
+		default: // allow
+			if part.drain.admit() {
+				scenActive = true
+				defer part.drain.leave()
+			} else {
+				// Window is closing: these records are dropped, not sent.
+				if len(expired) > 0 {
+					part.ledger.emitted.Add(uint64(len(expired)))
+					part.ledger.dropped.Add(uint64(len(expired)))
+				}
+				expired = nil
+				if !sendTemplate {
+					return FlowTickStats{}
+				}
+			}
+		}
+	}
+
 	// Options datagrams ride the template-refresh cadence; capture the
 	// condition now because the flow loop below consumes sendTemplate.
 	emitOptions := sendTemplate && fe.optionShape != "" && len(fe.optionIfaces) > 0
@@ -413,8 +459,21 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			break
 		}
 
+		writeErr := false
 		if _, err := writeConn.WriteTo(buf[:n], collectorAddr); err != nil {
 			fe.logFirstWriteErr(err)
+			writeErr = true
+		}
+		// Scenario ledger accounting (FR20/FR23): DATA records count at
+		// datagram-write-return; templates are NOT counted in `sent`. A failed
+		// datagram moves its records to send_failures.
+		if scenActive && len(batch) > 0 {
+			part.ledger.emitted.Add(uint64(len(batch)))
+			if writeErr {
+				part.ledger.sendFailures.Add(uint64(len(batch)))
+			} else {
+				part.bucketFor(now).Add(uint64(len(batch)))
+			}
 		}
 		stats.PacketsSent++
 		stats.BytesSent += uint64(n)

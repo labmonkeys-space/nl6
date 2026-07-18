@@ -42,6 +42,13 @@ type Scenario struct {
 	AbortPredicate *AbortPredicateSpec
 }
 
+// scenarioProtocols is the set of push protocols a scenario may gate. Widened
+// per Epic 4 as each protocol's exporter gains gate wiring.
+var scenarioProtocols = map[string]bool{
+	"syslog":   true,
+	"netflow9": true,
+}
+
 const defaultScenarioDrain = 2 * time.Second
 
 // scenarioMaxWindow bounds runaway configs (mirrors the 24h cap convention
@@ -64,8 +71,8 @@ func (s *Scenario) Validate() error {
 			return fmt.Errorf("scenario: participant %q is not a valid IP", ip)
 		}
 	}
-	if s.Protocol != "syslog" {
-		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog)", s.Protocol)
+	if !scenarioProtocols[s.Protocol] {
+		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9)", s.Protocol)
 	}
 	if s.Rate <= 0 || math.IsNaN(s.Rate) || math.IsInf(s.Rate, 0) {
 		return fmt.Errorf("scenario: rate must be a finite value > 0 events/second, got %g", s.Rate)
