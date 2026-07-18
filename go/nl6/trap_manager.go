@@ -481,7 +481,7 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 		}
 	}
 
-	scheduler.Register(device.IP, exporter)
+	scheduler.Register(device.IP, backgroundTrapFirer{exporter})
 
 	// CAS-gated first-attach log; race-free vs. StopTrapExport's reset
 	// to false (phase-5 review P3). If the per-device Interval diverges

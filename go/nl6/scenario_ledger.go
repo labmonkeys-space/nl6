@@ -42,6 +42,14 @@ type ledgerEntry struct {
 	// the loss denominator: deferral is not loss.
 	requested atomic.Uint64
 	deferred  atomic.Uint64
+
+	// informsOriginated / informsAcked are the best-effort SNMP INFORM ack
+	// settlement (FR: trap/INFORM), both informational (outside the identity).
+	// An origination is counted at first-transmit ONLY in INFORM mode (0 for
+	// fire-and-forget traps and every other protocol); informs_pending =
+	// originated − acked at report time.
+	informsOriginated atomic.Uint64
+	informsAcked      atomic.Uint64
 }
 
 // identityHolds checks the ledger identity exactly. Call only after the
@@ -62,6 +70,8 @@ type ledgerSnapshot struct {
 	BackgroundSuppressed uint64
 	Requested            uint64
 	Deferred             uint64
+	InformsOriginated    uint64
+	InformsAcked         uint64
 }
 
 func (l *ledgerEntry) snapshot() ledgerSnapshot {
@@ -75,5 +85,7 @@ func (l *ledgerEntry) snapshot() ledgerSnapshot {
 		BackgroundSuppressed: l.backgroundSuppressed.Load(),
 		Requested:            l.requested.Load(),
 		Deferred:             l.deferred.Load(),
+		InformsOriginated:    l.informsOriginated.Load(),
+		InformsAcked:         l.informsAcked.Load(),
 	}
 }

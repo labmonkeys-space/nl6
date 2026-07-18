@@ -49,6 +49,7 @@ var scenarioProtocols = map[string]bool{
 	"netflow9":     true,
 	"ipfix":        true,
 	"gnmi-dialout": true,
+	"snmp-trap":    true,
 }
 
 // flowScenarioProtocols are the FlowExporter-backed scenario protocols (gated
@@ -84,7 +85,7 @@ func (s *Scenario) Validate() error {
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
-		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout)", s.Protocol)
+		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap)", s.Protocol)
 	}
 	if s.Rate <= 0 || math.IsNaN(s.Rate) || math.IsInf(s.Rate, 0) {
 		return fmt.Errorf("scenario: rate must be a finite value > 0 events/second, got %g", s.Rate)

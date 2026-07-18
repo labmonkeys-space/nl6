@@ -118,6 +118,13 @@ type TrapExporter struct {
 
 	stats *TrapStats
 
+	// scenPart is the load-test scenario participation handle (nil = not
+	// participating → byte-for-byte legacy behaviour). When set, every fire
+	// funnels through fireWithSource and is gated + counted (FR15/FR17-20/23).
+	// An INFORM origination counts `sent` at first-transmit (not per retry);
+	// ack settlement is bumped onto the scenario ledger in resolveAck.
+	scenPart atomic.Pointer[scenarioPart]
+
 	// Template context sources. Class 1 device-context fields (SysName,
 	// Model, Serial, ChassisID) are captured once at exporter construction
 	// because they're stable for the device's lifetime; IfName varies with
@@ -286,10 +293,55 @@ func (e *TrapExporter) PendingInformsLen() int {
 // that need the request-id (e.g. the HTTP handler) can record it; the
 // scheduler ignores it.
 func (e *TrapExporter) Fire(entry *CatalogEntry, overrides map[string]string) uint32 {
+	return e.fireWithSource(entry, overrides, sourceOnDemand, -1)
+}
+
+// fireBackground / fireScenario are the scheduler entry points: the fleet trap
+// scheduler fires background (suppressed for the scenario's lifetime), the
+// scenario-owned trap ticker fires scenario (allowed + counted in [T0,T1)).
+func (e *TrapExporter) fireBackground(entry *CatalogEntry, overrides map[string]string) uint32 {
+	return e.fireWithSource(entry, overrides, sourceBackground, -1)
+}
+
+func (e *TrapExporter) fireScenario(entry *CatalogEntry, overrides map[string]string) uint32 {
+	return e.fireWithSource(entry, overrides, sourceScenario, -1)
+}
+
+// fireWithSource is the single fire funnel carrying the scenario gate-check
+// idiom (verbatim shape from syslog): one atomic scenPart load (nil =
+// non-participant, byte-for-byte legacy), decide() per the source-flag matrix,
+// drain admit, emitted at produce, and outcome bucketing inside fireWithCtx.
+// ifIndex < 0 means "use ifIndexFn()".
+func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) uint32 {
 	if e == nil || entry == nil || e.closing.Load() {
 		return 0
 	}
-	return e.fireWithCtx(entry, e.buildCtx(e.ifIndexFn()), overrides)
+	resolveIf := func() int {
+		if ifIndex < 0 {
+			return e.ifIndexFn()
+		}
+		return ifIndex
+	}
+	p := e.scenPart.Load()
+	if p == nil {
+		return e.fireWithCtx(entry, e.buildCtx(resolveIf()), overrides, nil)
+	}
+	switch p.decide(src, p.now()) {
+	case gateSuppressSilent:
+		return 0
+	case gateSuppressCounted:
+		p.ledger.emitted.Add(1)
+		p.ledger.suppressedPreWindow.Add(1)
+		return 0
+	}
+	if !p.drain.admit() {
+		p.ledger.emitted.Add(1)
+		p.ledger.dropped.Add(1)
+		return 0
+	}
+	defer p.drain.leave()
+	p.ledger.emitted.Add(1)
+	return e.fireWithCtx(entry, e.buildCtx(resolveIf()), overrides, p)
 }
 
 // FireForInterface emits a trap for `entry` pinned to a SPECIFIC ifIndex (and
@@ -298,10 +350,7 @@ func (e *TrapExporter) Fire(entry *CatalogEntry, overrides map[string]string) ui
 // Like Fire it is safe on a closing exporter and does not consume a global-cap
 // token (state-driven link traps bypass the Poisson cap on initial transmit).
 func (e *TrapExporter) FireForInterface(entry *CatalogEntry, ifIndex int) uint32 {
-	if e == nil || entry == nil || e.closing.Load() {
-		return 0
-	}
-	return e.fireWithCtx(entry, e.buildCtx(ifIndex), nil)
+	return e.fireWithSource(entry, nil, sourceStateDriven, ifIndex)
 }
 
 // buildCtx assembles the per-fire template context for a given ifIndex.
@@ -322,10 +371,13 @@ func (e *TrapExporter) buildCtx(ifIndex int) TemplateCtx {
 // fireWithCtx is the shared encode/transmit body of Fire and FireForInterface,
 // including the INFORM register-pending-before-write ordering and write-failure
 // undo. Returns the request-id (0 on early return).
-func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrides map[string]string) uint32 {
+func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrides map[string]string, p *scenarioPart) uint32 {
 	varbinds, err := entry.Resolve(ctx, overrides)
 	if err != nil {
 		log.Printf("trap: resolve %s for %s: %v", entry.Name, e.deviceIP, err)
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		return 0
 	}
 
@@ -340,6 +392,9 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 	}
 	if err != nil {
 		log.Printf("trap: encode %s for %s: %v", entry.Name, e.deviceIP, err)
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		return 0
 	}
 	pdu := buf[:n]
@@ -366,9 +421,21 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 			}
 			e.pendingMu.Unlock()
 		}
+		if p != nil {
+			p.ledger.sendFailures.Add(1)
+		}
 		return 0
 	}
 	e.stats.Sent.Add(1)
+	// Scenario accounting: count `sent` at write-return. For INFORM this is the
+	// first-transmit origination (retries happen in the reader goroutine and
+	// never re-enter fireWithCtx), so originations count exactly once.
+	if p != nil {
+		p.bucketFor(time.Now()).Add(1)
+		if e.mode == TrapModeInform {
+			p.ledger.informsOriginated.Add(1)
+		}
+	}
 	return reqID
 }
 
@@ -496,6 +563,12 @@ func (e *TrapExporter) resolveAck(reqID uint32) {
 		delete(e.pending, reqID)
 		e.removeFromOrder(reqID)
 		e.stats.InformsAcked.Add(1)
+		// Best-effort scenario ack settlement (FR: INFORM ack bucket). Bumped
+		// only while a scenario owns this exporter; an ack that lands after
+		// detach is simply not attributed (still-pending in the report).
+		if p := e.scenPart.Load(); p != nil {
+			p.ledger.informsAcked.Add(1)
+		}
 	}
 }
 
