@@ -65,7 +65,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `participants` | `[]string` | yes | Device management IPs (dotted quad). Non-empty; each must parse as an IP. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
-| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, or `"ipfix"` (more protocols land through Epic 4). |
+| `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, or `"gnmi-dialout"` (more protocols land through Epic 4). |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
@@ -191,6 +191,14 @@ unfreezes the fleet. **Idempotent**: a scenario that already auto-closed at
 
 Returns the finalized [report](./loadtest-report-schema.md). `409` while the
 scenario has not reached a terminal phase (`submitted` / `armed` / `running`).
+
+**gNMI dial-out** (`gnmi-dialout`) is gated at both producers (SAMPLE +
+ON_CHANGE): arming requires a **live Publish stream** (a device whose stream is
+not established is `excluded` — the collector is unreachable); no updates flow
+before T0 (silent arming); in-window a notification counts `sent` when written
+to a live stream, or `send_failures` when the stream is down (a collector blip
+is visible, never masked). `rate` is not used for dial-out (its SAMPLE cadence
+comes from the device's dial-out config), but is still required + fingerprinted.
 
 Add **`?format=csv`** to get a flat `text/csv` projection of `counters[]`
 (header row + one row per participant, join-ready on

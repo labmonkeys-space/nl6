@@ -92,6 +92,53 @@ type GnmiDialoutExporter struct {
 	statReconnects     uint64
 	statSendFailures   uint64
 	statStreamsActive  int64
+
+	// scenPart is the load-test scenario participation handle (nil = not
+	// participating → byte-for-byte legacy behaviour). When set, both
+	// producers (pushSnapshot / pushChange) are gated (FR15/FR17): pre-T0 and
+	// post-window notifications are suppressed (no update flows); in-window a
+	// notification counts `sent` when the Publish stream is live at produce,
+	// or `send_failures` when it is not (a collector blip is visible, never
+	// masked — dial-out `sent` = written to a live stream, FR20).
+	scenPart atomic.Pointer[scenarioPart]
+}
+
+// streamLive reports whether a Publish stream is currently established — the
+// dial-out analogue of "a socket to write to".
+func (e *GnmiDialoutExporter) streamLive() bool {
+	return e.conn.Load() != nil && atomic.LoadInt64(&e.statStreamsActive) > 0
+}
+
+// scenarioGate applies the scenario gate to one about-to-be-pushed
+// notification (called just before enqueue, once the payload is known so
+// resolve-empty pushes are not counted). It returns whether to enqueue and a
+// leave() the caller must defer. Counting is synchronous: emitted at produce,
+// then sent (stream live) or send_failures (stream down); the brief drain
+// admit/leave lets finalize outlast an in-flight produce without waiting on
+// the async Send.
+func (e *GnmiDialoutExporter) scenarioGate(now time.Time) (enqueue bool, leave func()) {
+	part := e.scenPart.Load()
+	if part == nil {
+		return true, func() {} // non-participant: legacy passthrough
+	}
+	switch part.decide(sourceScenario, now) {
+	case gateSuppressSilent, gateSuppressCounted:
+		part.ledger.backgroundSuppressed.Add(1) // no update flows pre-T0/post-window
+		return false, func() {}
+	}
+	if !part.drain.admit() {
+		part.ledger.emitted.Add(1)
+		part.ledger.dropped.Add(1)
+		return false, func() {}
+	}
+	part.ledger.emitted.Add(1)
+	if !e.streamLive() {
+		part.ledger.sendFailures.Add(1) // collector down/blip — visible as a failure
+		part.drain.leave()
+		return false, func() {}
+	}
+	part.bucketFor(now).Add(1) // written to a live stream
+	return true, part.drain.leave
 }
 
 // NewGnmiDialoutExporter constructs an exporter. collectorStr is the
@@ -347,6 +394,11 @@ func (e *GnmiDialoutExporter) pushSnapshot(ctx context.Context, ch chan *gnmipb.
 		e.logResolveErr("encode", nil, err)
 		return
 	}
+	enqueue, leave := e.scenarioGate(now)
+	defer leave()
+	if !enqueue {
+		return
+	}
 	pushOrDrop(ctx, ch, e.notification(now, gu), &e.statUpdatesDropped)
 }
 
@@ -412,6 +464,11 @@ func (e *GnmiDialoutExporter) pushChange(ctx context.Context, ch chan *gnmipb.Su
 	gu, err := encodeUpdates(combined, e.enc)
 	if err != nil {
 		e.logResolveErr("on-change encode", nil, err)
+		return
+	}
+	enqueue, leave := e.scenarioGate(now)
+	defer leave()
+	if !enqueue {
 		return
 	}
 	pushOrDrop(ctx, ch, e.notification(now, gu), &e.statUpdatesDropped)

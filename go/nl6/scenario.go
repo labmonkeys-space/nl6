@@ -45,9 +45,10 @@ type Scenario struct {
 // scenarioProtocols is the set of push protocols a scenario may gate. Widened
 // per Epic 4 as each protocol's exporter gains gate wiring.
 var scenarioProtocols = map[string]bool{
-	"syslog":   true,
-	"netflow9": true,
-	"ipfix":    true,
+	"syslog":       true,
+	"netflow9":     true,
+	"ipfix":        true,
+	"gnmi-dialout": true,
 }
 
 // flowScenarioProtocols are the FlowExporter-backed scenario protocols (gated
@@ -83,7 +84,7 @@ func (s *Scenario) Validate() error {
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
-		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix)", s.Protocol)
+		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout)", s.Protocol)
 	}
 	if s.Rate <= 0 || math.IsNaN(s.Rate) || math.IsInf(s.Rate, 0) {
 		return fmt.Errorf("scenario: rate must be a finite value > 0 events/second, got %g", s.Rate)
