@@ -224,6 +224,12 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 		}
 		return ""
 	}
+	if protocol == "gnmi-dialout" {
+		if dev.gnmiDialoutExporter != nil {
+			return dev.gnmiDialoutExporter.collectorStr
+		}
+		return ""
+	}
 	if protocol == "syslog" && dev.syslogConfig != nil {
 		return dev.syslogConfig.Collector
 	}

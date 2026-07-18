@@ -194,6 +194,20 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		dev.flowExporter.scenPart.Store(part)
 		return true, "", ""
 	}
+	if c.spec.Protocol == "gnmi-dialout" {
+		if dev.gnmiDialoutExporter == nil {
+			return false, "device has no gnmi dial-out exporter",
+				"enable gNMI dial-out on the device (seed flag or per-device gnmi_dialout block)"
+		}
+		// Stream-arming proof (FR16): a participant must have a live Publish
+		// stream at arm, else the collector is unreachable — surface it.
+		if !dev.gnmiDialoutExporter.streamLive() {
+			return false, "gnmi dial-out stream not established (collector unreachable?)",
+				"ensure the dial-out collector is reachable, then re-arm"
+		}
+		dev.gnmiDialoutExporter.scenPart.Store(part)
+		return true, "", ""
+	}
 	switch c.spec.Protocol {
 	case "syslog":
 		if dev.syslogExporter == nil {
@@ -212,6 +226,12 @@ func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
 		if dev.flowExporter != nil {
 			dev.flowExporter.scenPart.Store(nil)
 			dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+		}
+		return
+	}
+	if c.spec.Protocol == "gnmi-dialout" {
+		if dev.gnmiDialoutExporter != nil {
+			dev.gnmiDialoutExporter.scenPart.Store(nil)
 		}
 		return
 	}
@@ -258,6 +278,9 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 	if isFlowScenarioProtocol(c.spec.Protocol) {
 		return dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol
+	}
+	if c.spec.Protocol == "gnmi-dialout" {
+		return dev.gnmiDialoutExporter != nil
 	}
 	return c.spec.Protocol == "syslog" && dev.syslogExporter != nil
 }
