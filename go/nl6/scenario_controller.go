@@ -146,7 +146,10 @@ func (c *ScenarioController) transitionLocked(to scenarioPhase) error {
 	}
 	c.phase = to
 	c.transitions = append(c.transitions, scenarioTransition{Phase: to, At: c.now()})
-	log.Printf("[scenario] %s %s -> %s", c.id, from, to)
+	// Structured key=value transition log (5.2 / NFR-O2): `scenario=<id>
+	// phase=<to>` is the correlation surface a monitoring stack greps/parses;
+	// prev is retained for at-a-glance context.
+	log.Printf("[scenario] scenario=%s phase=%s prev=%s", c.id, to, from)
 	return nil
 }
 
@@ -607,6 +610,29 @@ func (c *ScenarioController) LiveCounts() (armed int, sum ledgerSnapshot) {
 		sum.InformsAcked += s.InformsAcked
 	}
 	return armed, sum
+}
+
+// LivePerDevice returns per-participant ledger snapshots keyed by source IP —
+// the finalized result if terminal, else approximate mid-run atomic reads (the
+// same seam as LiveCounts). The metrics exposition labels each snapshot on the
+// report tuple, so summing sent over the map reproduces the report totals
+// (NFR-O2). Post-finalize the live ledgers equal the result, so the choice is
+// only about consistency before the scenario stops.
+func (c *ScenarioController) LivePerDevice() map[string]ledgerSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.result != nil {
+		out := make(map[string]ledgerSnapshot, len(c.result.PerDevice))
+		for ip, s := range c.result.PerDevice {
+			out[ip] = s
+		}
+		return out
+	}
+	out := make(map[string]ledgerSnapshot, len(c.ledgers))
+	for ip, l := range c.ledgers {
+		out[ip] = l.snapshot()
+	}
+	return out
 }
 
 // WindowBounds returns the scenario measurement window [t0,t1) — the finalized
