@@ -33,13 +33,14 @@ const scenarioMaxBody = 64 << 10
 // scenarioRequest is the submit DTO. Durations arrive as Go duration
 // strings ("30s", "5m") per the interface-state auto-revert precedent.
 type scenarioRequest struct {
-	Participants []string         `json:"participants"`
-	Protocol     string           `json:"protocol"`
-	Rate         float64          `json:"rate"`
-	Window       string           `json:"window"`
-	Drain        string           `json:"drain,omitempty"`
-	Seed         int64            `json:"seed,omitempty"`
-	RateProfile  *RateProfileSpec `json:"rate_profile,omitempty"`
+	Participants   []string            `json:"participants"`
+	Protocol       string              `json:"protocol"`
+	Rate           float64             `json:"rate"`
+	Window         string              `json:"window"`
+	Drain          string              `json:"drain,omitempty"`
+	Seed           int64               `json:"seed,omitempty"`
+	RateProfile    *RateProfileSpec    `json:"rate_profile,omitempty"`
+	AbortPredicate *AbortPredicateSpec `json:"abort_predicate,omitempty"`
 }
 
 // toScenario maps the wire DTO into the internal Scenario, parsing the
@@ -58,13 +59,14 @@ func (req *scenarioRequest) toScenario() (spec *Scenario, field string, err erro
 		}
 	}
 	return &Scenario{
-		Participants: req.Participants,
-		Protocol:     req.Protocol,
-		Rate:         req.Rate,
-		Window:       window,
-		Drain:        drain,
-		Seed:         req.Seed,
-		RateProfile:  req.RateProfile,
+		Participants:   req.Participants,
+		Protocol:       req.Protocol,
+		Rate:           req.Rate,
+		Window:         window,
+		Drain:          drain,
+		Seed:           req.Seed,
+		RateProfile:    req.RateProfile,
+		AbortPredicate: req.AbortPredicate,
 	}, "", nil
 }
 
