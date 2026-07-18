@@ -25,11 +25,12 @@ is built once at stop/abort, immutable thereafter, and served by
     "nl6_version": "v0.16.0",
     "t0": "2026-07-18T09:00:05.000Z",
     "t1": "2026-07-18T09:00:07.000Z",
+    "duration": "2s",
     "participants_armed": 2,
     "participants_excluded": 1,
     "emitted": 40, "in_window": 40, "drain": 0,
     "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-    "background_suppressed": 0,
+    "informational": {"background_suppressed": 0},
     "excluded": [
       {"device": "10.42.0.9", "reason": "device not found",
        "remediation_hint": "create the device before arming, or remove it from the scenario"}
@@ -39,7 +40,7 @@ is built once at stop/abort, immutable thereafter, and served by
     {"protocol": "syslog", "source_ip": "10.42.0.1", "collector": "10.0.0.9:514",
      "emitted": 20, "in_window": 20, "drain": 0,
      "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-     "background_suppressed": 0}
+     "informational": {"background_suppressed": 0}}
   ]
 }
 ```
@@ -59,9 +60,11 @@ streaming consumer sees the aggregate first.
 | `nl6_version` | string | Simulator version that produced the report. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1` for a full run, or the abort instant for an early abort (never later than the planned `T1`). |
+| `duration` | string | `t1 − t0` as a Go duration, from the monotonic clock — the window that actually ran. |
 | `participants_armed` | number | Devices that armed and ran. |
 | `participants_excluded` | number | Declared participants that did not arm (see `excluded`). |
-| `emitted` … `background_suppressed` | number | Fleet-wide sums of the per-device ledger fields below. |
+| `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
+| `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
 | `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. |
 
 ## `counters[]` — per participant
@@ -82,7 +85,12 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `suppressed_pre_window` | State-driven / on-demand fires that occurred before `T0` — counted but not emitted on the wire. |
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
 | `dropped` | Records generated but never confirmed on the wire (straggler past the drain barrier, or a shutdown-race socket drop). |
-| `background_suppressed` | **Informational** — background-cadence fires the gate suppressed for this participant during the scenario. **Not** part of the ledger identity. |
+| `informational.background_suppressed` | **Informational, quarantined in its own sub-object** — background-cadence fires the gate suppressed for this participant during the scenario. Deliberately **not** a flat sibling of the identity buckets and **not** part of the ledger identity. |
+
+The six identity fields (`emitted` + the five loss buckets) are flat siblings;
+the disclosure counter is the sole member of the nested `informational` object.
+A consumer computing the identity iterates the flat fields and never has to
+know which keys to exclude.
 
 ## The ledger identity
 
@@ -93,10 +101,11 @@ emitted = in_window + drain + send_failures + dropped + suppressed_pre_window
 sent    = in_window + drain
 ```
 
-`background_suppressed` sits **outside** this identity by design — it counts
-generation-suppressed background fires that were never generated as scenario
-records. Use `sent` (`in_window + drain`) as the number to reconcile against a
-collector's received count.
+`informational.background_suppressed` sits **outside** this identity by design
+— it counts generation-suppressed background fires that were never generated as
+scenario records, which is exactly why it lives in its own sub-object rather
+than as a flat sibling. Use `sent` (`in_window + drain`) as the number to
+reconcile against a collector's received count.
 
 ## Field / semver evolution policy
 

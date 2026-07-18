@@ -26,7 +26,10 @@ type scenarioReport struct {
 }
 
 // scenarioReportSummary is the top-level aggregate block: identity,
-// fingerprint, window, and fleet-wide ledger totals.
+// fingerprint, window, and fleet-wide ledger totals. The five loss buckets
+// plus `emitted` are flat (they form the ledger identity, FR23); the
+// disclosure counter lives in a separate `informational` sub-object (FR21)
+// so it can never be mistaken for an identity term.
 type scenarioReportSummary struct {
 	ID                   string                `json:"id"`
 	Phase                string                `json:"phase"`
@@ -36,6 +39,7 @@ type scenarioReportSummary struct {
 	Nl6Version           string                `json:"nl6_version"`
 	T0                   string                `json:"t0"`
 	T1                   string                `json:"t1"`
+	Duration             string                `json:"duration"` // T1Actual-T0Actual (monotonic)
 	ParticipantsArmed    int                   `json:"participants_armed"`
 	ParticipantsExcluded int                   `json:"participants_excluded"`
 	Emitted              uint64                `json:"emitted"`
@@ -44,21 +48,30 @@ type scenarioReportSummary struct {
 	SuppressedPreWindow  uint64                `json:"suppressed_pre_window"`
 	SendFailures         uint64                `json:"send_failures"`
 	Dropped              uint64                `json:"dropped"`
-	BackgroundSuppressed uint64                `json:"background_suppressed"`
+	Informational        reportInformational   `json:"informational"`
 	Excluded             []scenarioExcludedRow `json:"excluded"`
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
+// Same flat-identity + separate-informational split as the summary.
 type scenarioCounterRow struct {
-	Protocol             string `json:"protocol"`
-	SourceIP             string `json:"source_ip"`
-	Collector            string `json:"collector"`
-	Emitted              uint64 `json:"emitted"`
-	InWindow             uint64 `json:"in_window"`
-	Drain                uint64 `json:"drain"`
-	SuppressedPreWindow  uint64 `json:"suppressed_pre_window"`
-	SendFailures         uint64 `json:"send_failures"`
-	Dropped              uint64 `json:"dropped"`
+	Protocol            string              `json:"protocol"`
+	SourceIP            string              `json:"source_ip"`
+	Collector           string              `json:"collector"`
+	Emitted             uint64              `json:"emitted"`
+	InWindow            uint64              `json:"in_window"`
+	Drain               uint64              `json:"drain"`
+	SuppressedPreWindow uint64              `json:"suppressed_pre_window"`
+	SendFailures        uint64              `json:"send_failures"`
+	Dropped             uint64              `json:"dropped"`
+	Informational       reportInformational `json:"informational"`
+}
+
+// reportInformational holds disclosure counters that are deliberately OUTSIDE
+// the ledger identity (FR21). background_suppressed counts background-cadence
+// fires the gate suppressed for a participant; it was never generated as a
+// scenario record, so it must not appear as an identity term.
+type reportInformational struct {
 	BackgroundSuppressed uint64 `json:"background_suppressed"`
 }
 
@@ -91,6 +104,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			Nl6Version:           Version,
 			T0:                   res.T0Actual.Format(rfc3339ms),
 			T1:                   res.T1Actual.Format(rfc3339ms),
+			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
 			ParticipantsExcluded: len(res.Excluded),
 			Excluded:             make([]scenarioExcludedRow, 0, len(res.Excluded)),
@@ -112,16 +126,16 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 	for _, ip := range ips {
 		led := res.PerDevice[ip]
 		rep.Counters = append(rep.Counters, scenarioCounterRow{
-			Protocol:             c.spec.Protocol,
-			SourceIP:             ip,
-			Collector:            sm.syslogCollectorFor(ip),
-			Emitted:              led.Emitted,
-			InWindow:             led.InWindow,
-			Drain:                led.Drain,
-			SuppressedPreWindow:  led.SuppressedPreWindow,
-			SendFailures:         led.SendFailures,
-			Dropped:              led.Dropped,
-			BackgroundSuppressed: led.BackgroundSuppressed,
+			Protocol:            c.spec.Protocol,
+			SourceIP:            ip,
+			Collector:           sm.syslogCollectorFor(ip),
+			Emitted:             led.Emitted,
+			InWindow:            led.InWindow,
+			Drain:               led.Drain,
+			SuppressedPreWindow: led.SuppressedPreWindow,
+			SendFailures:        led.SendFailures,
+			Dropped:             led.Dropped,
+			Informational:       reportInformational{BackgroundSuppressed: led.BackgroundSuppressed},
 		})
 		// Roll into the fleet-wide summary totals.
 		rep.Summary.Emitted += led.Emitted
@@ -130,7 +144,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Summary.SuppressedPreWindow += led.SuppressedPreWindow
 		rep.Summary.SendFailures += led.SendFailures
 		rep.Summary.Dropped += led.Dropped
-		rep.Summary.BackgroundSuppressed += led.BackgroundSuppressed
+		rep.Summary.Informational.BackgroundSuppressed += led.BackgroundSuppressed
 	}
 	return rep
 }
