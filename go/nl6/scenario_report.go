@@ -93,6 +93,11 @@ type reportInformational struct {
 	BackgroundSuppressed uint64 `json:"background_suppressed"`
 	Requested            uint64 `json:"requested"`
 	Deferred             uint64 `json:"deferred"`
+	// SNMP INFORM ack settlement (best-effort, collector-side; outside the
+	// identity). informs_acked ≤ sent; informs_pending = sent − acked at
+	// report time (originations not yet acknowledged). Zero for non-INFORM.
+	InformsAcked   uint64 `json:"informs_acked"`
+	InformsPending uint64 `json:"informs_pending"`
 }
 
 // scenarioExcludedRow is the {device, reason, remediation_hint} shape the
@@ -163,6 +168,8 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				BackgroundSuppressed: led.BackgroundSuppressed,
 				Requested:            led.Requested,
 				Deferred:             led.Deferred,
+				InformsAcked:         led.InformsAcked,
+				InformsPending:       informsPending(led),
 			},
 		})
 		// Roll into the fleet-wide summary totals.
@@ -176,6 +183,8 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Summary.Informational.BackgroundSuppressed += led.BackgroundSuppressed
 		rep.Summary.Informational.Requested += led.Requested
 		rep.Summary.Informational.Deferred += led.Deferred
+		rep.Summary.Informational.InformsAcked += led.InformsAcked
+		rep.Summary.Informational.InformsPending += informsPending(led)
 	}
 	return rep
 }
@@ -207,6 +216,16 @@ func reportCSV(rep *scenarioReport) []byte {
 	return buf.Bytes()
 }
 
+// informsPending is the best-effort still-pending INFORM count: originations
+// (sent = in_window + drain) not yet acknowledged at report time. Clamped at
+// 0 in case a late ack lands after the sent count was snapshotted.
+func informsPending(led ledgerSnapshot) uint64 {
+	if led.InformsAcked >= led.InformsOriginated {
+		return 0
+	}
+	return led.InformsOriginated - led.InformsAcked
+}
+
 // scenarioCollectorFor resolves a device's configured collector for the
 // report's join tuple, per the scenario protocol. Empty string when the
 // device is gone or lacks that exporter — the report stays serializable
@@ -227,6 +246,12 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 	if protocol == "gnmi-dialout" {
 		if dev.gnmiDialoutExporter != nil {
 			return dev.gnmiDialoutExporter.collectorStr
+		}
+		return ""
+	}
+	if protocol == "snmp-trap" {
+		if dev.trapExporter != nil {
+			return dev.trapExporter.collectorStr
 		}
 		return ""
 	}

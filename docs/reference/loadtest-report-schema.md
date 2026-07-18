@@ -101,6 +101,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
 | `dropped` | Records generated but never confirmed on the wire (straggler past the drain barrier, or a shutdown-race socket drop). |
 | `informational.background_suppressed` | **Informational, quarantined in its own sub-object** — background-cadence fires the gate suppressed for this participant during the scenario. Deliberately **not** a flat sibling of the identity buckets and **not** part of the ledger identity. |
+| `informational.informs_acked` / `informs_pending` | SNMP **INFORM** ack settlement (best-effort, collector-side). An origination counts `sent` at first-transmit; `informs_pending = originations − acked` at report time (still-awaiting-ack). Zero for fire-and-forget traps and non-trap protocols. Outside the identity. |
 | `informational.requested` | Scheduler **demand** — every fire the scenario scheduler popped (pre-limiter). `requested = sent + deferred + send_failures + dropped`. |
 | `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss (FR22). |
 

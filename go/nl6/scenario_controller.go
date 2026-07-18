@@ -194,6 +194,14 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		dev.flowExporter.scenPart.Store(part)
 		return true, "", ""
 	}
+	if c.spec.Protocol == "snmp-trap" {
+		if dev.trapExporter == nil {
+			return false, "device has no snmp trap exporter",
+				"enable trap export on the device (seed flag or per-device traps block)"
+		}
+		dev.trapExporter.scenPart.Store(part)
+		return true, "", ""
+	}
 	if c.spec.Protocol == "gnmi-dialout" {
 		if dev.gnmiDialoutExporter == nil {
 			return false, "device has no gnmi dial-out exporter",
@@ -226,6 +234,12 @@ func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
 		if dev.flowExporter != nil {
 			dev.flowExporter.scenPart.Store(nil)
 			dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+		}
+		return
+	}
+	if c.spec.Protocol == "snmp-trap" {
+		if dev.trapExporter != nil {
+			dev.trapExporter.scenPart.Store(nil)
 		}
 		return
 	}
@@ -278,6 +292,9 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 	if isFlowScenarioProtocol(c.spec.Protocol) {
 		return dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol
+	}
+	if c.spec.Protocol == "snmp-trap" {
+		return dev.trapExporter != nil
 	}
 	if c.spec.Protocol == "gnmi-dialout" {
 		return dev.gnmiDialoutExporter != nil
@@ -409,6 +426,10 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 		// Flow protocols: the scenario drives participant emission at its own
 		// cadence during the window (D1 flow-cadence adaptation).
 		c.startScenarioFlowTicker(schedCtx)
+	} else if c.spec.Protocol == "snmp-trap" {
+		// Traps: a scenario-owned ticker fires each participant at the scenario
+		// cadence; the fleet scheduler's fires are gated as background.
+		c.startScenarioTrapTicker(schedCtx)
 	}
 
 	// Abort predicate (FR7): watch a mid-run ledger metric and self-abort a
