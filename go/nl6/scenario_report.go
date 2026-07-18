@@ -1,0 +1,148 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import "sort"
+
+// scenario_report.go — serialization of the immutable finalized
+// ScenarioResult into the wire report (D5). The report is a pure projection:
+// the top-level `summary` block serializes BEFORE the per-device
+// `counters[]` (declaration order → JSON order), counters are keyed by the
+// `(protocol, source_ip, collector)` join tuple, and every ledger field is
+// explicit (no omitempty) so a monitor can diff zero-valued rows.
+
+// rfc3339ms is the timestamp format for all scenario wire fields (ms
+// precision per the RFC3339-ms pattern).
+const rfc3339ms = "2006-01-02T15:04:05.000Z07:00"
+
+// scenarioReport is the immutable report served by GET .../report. Summary
+// first, then per-device counters — the field order IS the JSON order.
+type scenarioReport struct {
+	Summary  scenarioReportSummary `json:"summary"`
+	Counters []scenarioCounterRow  `json:"counters"`
+}
+
+// scenarioReportSummary is the top-level aggregate block: identity,
+// fingerprint, window, and fleet-wide ledger totals.
+type scenarioReportSummary struct {
+	ID                   string                `json:"id"`
+	Phase                string                `json:"phase"`
+	Protocol             string                `json:"protocol"`
+	ConfigSHA256         string                `json:"config_sha256"`
+	Seed                 int64                 `json:"seed"`
+	Nl6Version           string                `json:"nl6_version"`
+	T0                   string                `json:"t0"`
+	T1                   string                `json:"t1"`
+	ParticipantsArmed    int                   `json:"participants_armed"`
+	ParticipantsExcluded int                   `json:"participants_excluded"`
+	Emitted              uint64                `json:"emitted"`
+	InWindow             uint64                `json:"in_window"`
+	Drain                uint64                `json:"drain"`
+	SuppressedPreWindow  uint64                `json:"suppressed_pre_window"`
+	SendFailures         uint64                `json:"send_failures"`
+	Dropped              uint64                `json:"dropped"`
+	BackgroundSuppressed uint64                `json:"background_suppressed"`
+	Excluded             []scenarioExcludedRow `json:"excluded"`
+}
+
+// scenarioCounterRow is one participant's ledger, keyed by the join tuple.
+type scenarioCounterRow struct {
+	Protocol             string `json:"protocol"`
+	SourceIP             string `json:"source_ip"`
+	Collector            string `json:"collector"`
+	Emitted              uint64 `json:"emitted"`
+	InWindow             uint64 `json:"in_window"`
+	Drain                uint64 `json:"drain"`
+	SuppressedPreWindow  uint64 `json:"suppressed_pre_window"`
+	SendFailures         uint64 `json:"send_failures"`
+	Dropped              uint64 `json:"dropped"`
+	BackgroundSuppressed uint64 `json:"background_suppressed"`
+}
+
+// scenarioExcludedRow is the {device, reason, remediation_hint} shape the
+// readiness contract mandates (FR9); reused verbatim in the report.
+type scenarioExcludedRow struct {
+	Device          string `json:"device"`
+	Reason          string `json:"reason"`
+	RemediationHint string `json:"remediation_hint"`
+}
+
+// buildScenarioReport projects a finalized ScenarioResult into the wire
+// report. Returns nil when the scenario has not reached a terminal phase
+// (no result yet → caller maps to 409). Collector is resolved best-effort
+// from the live device's syslog config; a device deleted post-window yields
+// an empty collector rather than failing the report.
+func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioReport {
+	res := c.Result()
+	if res == nil {
+		return nil
+	}
+
+	rep := &scenarioReport{
+		Summary: scenarioReportSummary{
+			ID:                   res.ID,
+			Phase:                string(res.Phase),
+			Protocol:             c.spec.Protocol,
+			ConfigSHA256:         c.configSHA,
+			Seed:                 c.spec.Seed,
+			Nl6Version:           Version,
+			T0:                   res.T0Actual.Format(rfc3339ms),
+			T1:                   res.T1Actual.Format(rfc3339ms),
+			ParticipantsArmed:    len(res.PerDevice),
+			ParticipantsExcluded: len(res.Excluded),
+			Excluded:             make([]scenarioExcludedRow, 0, len(res.Excluded)),
+		},
+	}
+	for _, ex := range res.Excluded {
+		rep.Summary.Excluded = append(rep.Summary.Excluded, scenarioExcludedRow(ex))
+	}
+
+	// Stable output: sort participant rows by source IP so two runs of the
+	// same scenario serialize byte-identically (determinism contract).
+	ips := make([]string, 0, len(res.PerDevice))
+	for ip := range res.PerDevice {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+
+	rep.Counters = make([]scenarioCounterRow, 0, len(ips))
+	for _, ip := range ips {
+		led := res.PerDevice[ip]
+		rep.Counters = append(rep.Counters, scenarioCounterRow{
+			Protocol:             c.spec.Protocol,
+			SourceIP:             ip,
+			Collector:            sm.syslogCollectorFor(ip),
+			Emitted:              led.Emitted,
+			InWindow:             led.InWindow,
+			Drain:                led.Drain,
+			SuppressedPreWindow:  led.SuppressedPreWindow,
+			SendFailures:         led.SendFailures,
+			Dropped:              led.Dropped,
+			BackgroundSuppressed: led.BackgroundSuppressed,
+		})
+		// Roll into the fleet-wide summary totals.
+		rep.Summary.Emitted += led.Emitted
+		rep.Summary.InWindow += led.InWindow
+		rep.Summary.Drain += led.Drain
+		rep.Summary.SuppressedPreWindow += led.SuppressedPreWindow
+		rep.Summary.SendFailures += led.SendFailures
+		rep.Summary.Dropped += led.Dropped
+		rep.Summary.BackgroundSuppressed += led.BackgroundSuppressed
+	}
+	return rep
+}
+
+// syslogCollectorFor resolves a device's configured syslog collector for the
+// report's join tuple. Empty string when the device is gone or has no syslog
+// config — the report stays serializable regardless of post-window churn.
+func (sm *SimulatorManager) syslogCollectorFor(ip string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if dev := sm.devicesByIP[ip]; dev != nil && dev.syslogConfig != nil {
+		return dev.syslogConfig.Collector
+	}
+	return ""
+}
