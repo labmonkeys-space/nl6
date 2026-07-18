@@ -108,6 +108,29 @@ keeps the measurement window clean — but it means:
   window, suppress those alerts for the participants, or keep windows short.
 - Non-participant devices are unaffected — their background cadence continues.
 
+## Graceful abort produces a finalized report (FR14)
+
+A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the
+run. The shutdown path aborts the scenario through the same drain-and-finalize
+pipeline a normal stop uses (bounded by the drain grace), so:
+
+- The report is **finalized and marked `phase: "aborted"`**, with `metadata.t0`
+  and a `metadata.t1` equal to the **abort instant** (the window that actually
+  ran, always earlier than the planned `T1`). `duration` reflects the truncated
+  window.
+- It is **immutable** and served by `GET /api/v1/scenarios/{id}/report`
+  **exactly like a `stopped` report** — same schema, same ledger identity, same
+  `counters[]`. Only the `phase` differs.
+- The fleet freeze is released as part of the abort, so device CRUD works again.
+
+The catch is timing: the report lives in memory (see the non-goal below), so a
+graceful abort finalizes it but the process still exits. **If you need the
+abort report, fetch it before the process is fully gone** — or drive the abort
+by other means and read the report while nl6 is still up.
+
+**SIGKILL** (or a crash / OOM) makes **no promise** beyond the in-memory-loss
+non-goal below: there is no abort pipeline, so no report is produced.
+
 ## Non-goal: scenarios are in-memory (FR42)
 
 **Scenarios do not persist.** The active scenario, its ledger, and its
