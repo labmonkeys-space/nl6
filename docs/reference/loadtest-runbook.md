@@ -1,0 +1,130 @@
+<!--
+Copyright 2026 Ronny Trommer <ronny@no42.org>
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Load-test scenario runbook
+
+This is **the** runbook for the nl6 load-test scenario subsystem — a
+telemetry-fidelity instrument. You arm a bounded experiment over a set of
+simulated devices, run it for a fixed window, and get back an exact
+machine-readable [report](./loadtest-report-schema.md) of what nl6 **sent**.
+Diff that against what your monitor **received** and any delta localizes
+missed or duplicated telemetry.
+
+Later epics extend this runbook in place (more protocols, richer reports); it
+stays the single operator entry point.
+
+- **API reference:** [loadtest-api.md](./loadtest-api.md) — every endpoint,
+  request/response shape, and error code.
+- **Report schema:** [loadtest-report-schema.md](./loadtest-report-schema.md) —
+  every field, the ledger identity, and the semver policy.
+- **Runnable example:** `examples/scenario-syslog-fidelity/` — a compose stack
+  (nl6 + a counting collector) and a `run.sh` that reproduces a documented
+  known result.
+
+MVP scope: **one active scenario at a time**, **syslog** only.
+
+## Run a fidelity check
+
+The lifecycle is `submit → arm → start → (window elapses) → stop → report`.
+
+```bash
+NL6=http://localhost:8080
+
+# 1. Submit — validate + fingerprint. Returns the scenario id.
+ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
+  "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
+  "protocol": "syslog", "rate": 10, "window": "30s", "drain": "2s", "seed": 42
+}' | jq -r .id)
+
+# 2. Arm — resolve participants; check the excluded list before starting.
+curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm | jq
+
+# 3. Start — freezes the fleet, opens the window at T0. Refused at 0/N armed.
+curl -sf -X POST $NL6/api/v1/scenarios/$ID/start | jq
+
+# 4. Wait for the window (it self-closes at T1), then finalize + fetch report.
+sleep 33
+curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq
+
+# 5. Reconcile: report `sent` (in_window + drain) vs your collector's received.
+```
+
+`stop` is idempotent, so it is safe to call after the window has already
+auto-closed — you get the same report back.
+
+To **reconcile**, sum `in_window + drain` per `counters[]` row and compare to
+your monitor's received count for the same `(protocol, source_ip, collector)`
+tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
+sent but the wire lost it". See the
+[report schema](./loadtest-report-schema.md#the-ledger-identity).
+
+## Troubleshooting arm failures
+
+`arm` never fails wholesale for a bad participant — it reports each one in the
+readiness `excluded[]` list as `{device, reason, remediation_hint}`. Check that
+list before `start`.
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `excluded[].reason = "device not found"` | The participant IP is not in the live fleet. | Create the device (`POST /api/v1/devices`) before arming, or remove it from `participants`. |
+| `excluded[].reason = "device has no syslog exporter"` | The device exists but syslog export is not enabled on it. | Enable syslog export on the device — the `-syslog-collector` seed flag (auto-start batch) or a per-device `syslog` block in `POST /api/v1/devices`. |
+| `excluded[].reason = "device deleted between arm and start"` | The device was deleted in the arm→start gap (before the freeze). | Re-arm after the fleet is stable. |
+| `start` → `409 … 0/N participants armed` | Every declared participant was excluded. | Fix the exclusions above; you cannot start a scenario with no armed devices. |
+| `POST /scenarios` → `409 a scenario is already active` | Another scenario is still non-terminal (MVP allows one). | Stop / abort / `DELETE` the active scenario first (`GET /api/v1/scenarios/{id}` to see its phase). |
+| `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](./loadtest-api.md#phase--verb-matrix). |
+| `report` → `409 … available only after stop or abort` | The scenario has not finalized yet. | Stop it (or wait for the window to auto-close at `T1`), then re-request the report. |
+| Device create/delete → `409 fleet … frozen by running scenario` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |
+
+### Collector unreachable
+
+If the scenario runs but your monitor receives nothing:
+
+- **`report.send_failures` is high** → nl6 itself could not send (socket bind
+  failure, no route). Check the device's configured collector `host:port` and
+  that the simulator container can reach it.
+- **`report.sent` is high but the collector received 0** → the datagrams left
+  nl6 but were dropped en route. The usual culprit is the collector host's
+  **reverse-path filter** rejecting UDP with `10.42.0.0/16` source IPs when
+  `-syslog-source-per-device=true` (the default). Relax it
+  (`net.ipv4.conf.*.rp_filter=0` or `2`) or run with
+  `-syslog-source-per-device=false` so datagrams carry the simulator's own
+  source IP.
+- Confirm the device's collector matches where your monitor listens
+  (`counters[].collector` in the report).
+
+## Heartbeat / silence-alert warning
+
+⚠️ **A scenario suppresses the fleet's ordinary background telemetry cadence for
+its participants for the entire time it is armed and running.** Before `T0`,
+background fires from armed participants are *generation-suppressed*
+(`background_suppressed` in the report counts them). This is intentional — it
+keeps the measurement window clean — but it means:
+
+- **Silence-based alerts** (heartbeat monitors, "no syslog in N minutes"
+  detectors) watching a participant **may fire during a scenario** because the
+  device's normal chatter is paused. Schedule fidelity checks in a maintenance
+  window, suppress those alerts for the participants, or keep windows short.
+- Non-participant devices are unaffected — their background cadence continues.
+
+## Non-goal: scenarios are in-memory (FR42)
+
+**Scenarios do not persist.** The active scenario, its ledger, and its
+finalized report live entirely in the simulator process's memory. They do
+**not** survive a restart:
+
+- Restarting nl6 (or the container) **discards** any active scenario and any
+  finalized-but-not-yet-fetched report. **Fetch the report before restarting.**
+- There is no scenario history or store — `GET /api/v1/scenarios/{id}` returns
+  `404` for any ID the current process did not allocate, and IDs
+  (`s-000001`, …) reset on restart.
+- On a graceful shutdown (SIGTERM/SIGINT) a *running* scenario is **aborted**
+  first — it finalizes its report (still in-memory) and releases the fleet
+  freeze — so the shutdown is clean, but the report is still lost once the
+  process exits.
+
+Persistence is a deliberate non-goal for this subsystem: a fidelity check is a
+short, operator-driven experiment whose result is consumed immediately (diffed
+against a monitor), not an audit log. Capture the report JSON yourself if you
+need to keep it.
