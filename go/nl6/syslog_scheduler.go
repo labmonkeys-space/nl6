@@ -87,6 +87,15 @@ type SyslogScheduler struct {
 	byIP          map[string]*syslogHeapEntry // lookup for Deregister
 	devices       map[string]syslogFirer      // exporter by device IP
 
+	// Profile mode (scenario λ(t), FR5): when arrivalFor is non-nil the
+	// scheduler fires each device at precomputed NHPP arrival offsets from
+	// `epoch` (= T0) instead of drawing cadence per requeue. streams holds
+	// each device's ordered offsets, streamIdx the next index to fire.
+	arrivalFor func(net.IP) []time.Duration
+	epoch      time.Time
+	streams    map[string][]time.Duration
+	streamIdx  map[string]int
+
 	catalogFor   func(deviceIP net.IP) *SyslogCatalog
 	meanInterval time.Duration
 	limiter      *rate.Limiter // nil → no global cap
@@ -127,9 +136,15 @@ type SyslogSchedulerOptions struct {
 	// inter-arrival draw with a fixed cadence: first fire at registration
 	// time (offset 0), then exactly MeanInterval apart — giving precisely
 	// rate × window fires inside a half-open [T0,T1) window (FR4, scenario
-	// constant-rate stub). The seeded-Poisson path remains the default;
-	// Epic 3's λ(t) profiles replace this stub via Λ-inversion.
+	// constant-rate stub). The seeded-Poisson path remains the default; a
+	// constant scenario profile keeps this exact cadence.
 	FixedInterval bool
+	// ArrivalStreamFor, when non-nil, puts the scheduler in λ(t) profile mode
+	// (FR5): it returns the device's precomputed, ordered NHPP arrival offsets
+	// (from T0, drawn by Λ-inversion). The device fires at epoch+offset[i] and
+	// stops when its stream is exhausted. Mutually exclusive with the Poisson /
+	// FixedInterval requeue paths.
+	ArrivalStreamFor func(deviceIP net.IP) []time.Duration
 }
 
 // NewSyslogScheduler constructs a scheduler but does not start it. Call Run
@@ -174,6 +189,14 @@ func NewSyslogScheduler(opts SyslogSchedulerOptions) *SyslogScheduler {
 	} else {
 		s.now = time.Now
 	}
+	if opts.ArrivalStreamFor != nil {
+		// λ(t) profile mode: capture T0 as the offset epoch now that the
+		// clock is set. Offsets from ArrivalStreamFor are relative to this.
+		s.arrivalFor = opts.ArrivalStreamFor
+		s.epoch = s.now()
+		s.streams = make(map[string][]time.Duration)
+		s.streamIdx = make(map[string]int)
+	}
 	seed := opts.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano()
@@ -196,6 +219,25 @@ func (s *SyslogScheduler) Register(deviceIP net.IP, firer syslogFirer) {
 	if _, already := s.byIP[key]; already {
 		return
 	}
+	// Profile mode (λ(t)): fire at the device's precomputed NHPP arrival
+	// offsets from T0. A device whose stream is empty never fires.
+	if s.arrivalFor != nil {
+		offsets := s.arrivalFor(deviceIP)
+		if len(offsets) == 0 {
+			return
+		}
+		s.streams[key] = offsets
+		s.streamIdx[key] = 1
+		entry := &syslogHeapEntry{
+			nextFire: s.epoch.Add(offsets[0]),
+			deviceIP: append(net.IP(nil), deviceIP...),
+		}
+		heap.Push(&s.heap, entry)
+		s.byIP[key] = entry
+		s.nudge()
+		return
+	}
+
 	// Initial fire: draw a Poisson offset from now — first-fire jitter
 	// prevents every device firing immediately at startup. FixedInterval
 	// mode fires at registration time instead (offset 0): the scenario
@@ -322,6 +364,32 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 			continue
 		}
 
+		// Requeue. Profile mode (λ(t)): pop the device's next precomputed NHPP
+		// offset; when the stream is exhausted the device fires no more (do NOT
+		// requeue), so the scenario emits exactly its drawn arrivals.
+		if s.arrivalFor != nil {
+			offs := s.streams[key]
+			idx := s.streamIdx[key]
+			if idx >= len(offs) {
+				delete(s.byIP, key)
+				delete(s.streams, key)
+				delete(s.streamIdx, key)
+				// Fire this last popped arrival, but don't requeue.
+				deviceIP := entry.deviceIP
+				s.mu.Unlock()
+				s.fireOne(deviceIP, firer)
+				continue
+			}
+			entry.nextFire = s.epoch.Add(offs[idx])
+			s.streamIdx[key] = idx + 1
+			heap.Push(&s.heap, entry)
+			s.byIP[key] = entry
+			deviceIP := entry.deviceIP
+			s.mu.Unlock()
+			s.fireOne(deviceIP, firer)
+			continue
+		}
+
 		// Requeue: exponential-distributed offset (Poisson default) or the
 		// exact cadence (FixedInterval / scenario constant-rate stub).
 		offset := s.meanInterval
@@ -337,19 +405,23 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 		// scheduler — decouples lock domains).
 		deviceIP := entry.deviceIP
 		s.mu.Unlock()
+		s.fireOne(deviceIP, firer)
+	}
+}
 
-		cat := s.catalogFor(deviceIP)
-
-		s.mu.Lock()
-		var catEntry *SyslogCatalogEntry
-		if cat != nil {
-			catEntry = cat.Pick(s.rnd)
-		}
-		s.mu.Unlock()
-
-		if catEntry != nil {
-			s.fireWithRecover(firer, entry.deviceIP, catEntry)
-		}
+// fireOne resolves the device's catalog, picks a weighted-random entry, and
+// fires it (with panic recovery). Called with s.mu NOT held. Shared by the
+// Poisson / FixedInterval requeue tail and the λ(t) profile-mode branches.
+func (s *SyslogScheduler) fireOne(deviceIP net.IP, firer syslogFirer) {
+	cat := s.catalogFor(deviceIP)
+	s.mu.Lock()
+	var catEntry *SyslogCatalogEntry
+	if cat != nil {
+		catEntry = cat.Pick(s.rnd)
+	}
+	s.mu.Unlock()
+	if catEntry != nil {
+		s.fireWithRecover(firer, deviceIP, catEntry)
 	}
 }
 
