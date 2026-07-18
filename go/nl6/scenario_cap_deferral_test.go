@@ -118,8 +118,14 @@ func TestScenarioCapDeferral_UncappedNoDeferral(t *testing.T) {
 	if s.Informational.Deferred != 0 {
 		t.Fatalf("uncapped run deferred %d, want 0", s.Informational.Deferred)
 	}
-	if s.Informational.Requested != s.Sent {
-		t.Fatalf("uncapped: requested %d != sent %d (all demand should fire)", s.Informational.Requested, s.Sent)
+	// Uncapped: every popped fire is sent, except at most a few that a real-
+	// time straggle pushed past T1 (popped → requested, gate-suppressed →
+	// not sent). So requested >= sent with only a small boundary gap.
+	if s.Informational.Requested < s.Sent {
+		t.Fatalf("uncapped: requested %d < sent %d — demand undercounted", s.Informational.Requested, s.Sent)
+	}
+	if gap := int(s.Informational.Requested) - int(s.Sent); gap > 4 {
+		t.Fatalf("uncapped: requested %d exceeds sent %d by %d (>4) — unexpected non-sent fires with no cap", s.Informational.Requested, s.Sent, gap)
 	}
 	if s.Sent == 0 {
 		t.Fatal("no emission")
