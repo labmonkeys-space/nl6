@@ -26,7 +26,9 @@ is built once at stop/abort, immutable thereafter, and served by
       "nl6_version": "v0.16.0",
       "t0": "2026-07-18T09:00:05.000Z",
       "t1": "2026-07-18T09:00:07.000Z",
-      "drain_end": "2026-07-18T09:00:07.500Z"
+      "drain_end": "2026-07-18T09:00:07.500Z",
+      "sub_window_count": 10,
+      "sub_window_duration": "200ms"
     },
     "duration": "2s",
     "participants_armed": 2,
@@ -34,6 +36,7 @@ is built once at stop/abort, immutable thereafter, and served by
     "emitted": 40, "in_window": 40, "drain": 0,
     "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
     "informational": {"background_suppressed": 0},
+    "sub_windows": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
     "excluded": [
       {"device": "10.42.0.9", "reason": "device not found",
        "remediation_hint": "create the device before arming, or remove it from the scenario"}
@@ -43,7 +46,8 @@ is built once at stop/abort, immutable thereafter, and served by
     {"protocol": "syslog", "source_ip": "10.42.0.1", "collector": "10.0.0.9:514",
      "emitted": 20, "sent": 20, "in_window": 20, "drain": 0,
      "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-     "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0}}
+     "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0},
+     "sub_windows": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]}
   ]
 }
 ```
@@ -64,6 +68,7 @@ streaming consumer sees the aggregate first.
 | `participants_excluded` | number | Declared participants that did not arm (see `excluded`). |
 | `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
 | `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
+| `sub_windows` | array | Fleet-wide **loss localization** (FR28): in-window sends per time bucket — element-wise sum of the `counters[].sub_windows` rows. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
 | `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. |
 
 ### `summary.metadata`
@@ -80,6 +85,8 @@ Copy the `(config_sha256, seed)` back into a resubmit on the same
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
+| `sub_window_count` | number | Loss-localization granularity (FR28): the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
+| `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
 
 ## `counters[]` — per participant
 
@@ -104,6 +111,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `informational.informs_acked` / `informs_pending` | SNMP **INFORM** ack settlement (best-effort, collector-side). An origination counts `sent` at first-transmit; `informs_pending = originations − acked` at report time (still-awaiting-ack). Zero for fire-and-forget traps and non-trap protocols. Outside the identity. |
 | `informational.requested` | Scheduler **demand** — every fire the scenario scheduler popped (pre-limiter). `requested = sent + deferred + send_failures + dropped`. |
 | `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss (FR22). |
+| `sub_windows` | **Loss localization** (FR28): this participant's in-window sends per time bucket. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
 
 The six identity fields (`emitted` + the five loss buckets) are flat siblings;
 the disclosure counter is the sole member of the nested `informational` object.
@@ -143,6 +151,34 @@ The report is a versioned contract. Consumers should tolerate unknown fields.
 
 Future projections (additional protocols in `counters`, richer
 loss-localization blocks) are **additive** under this policy.
+
+## Loss localization
+
+A fleet total answers *how much* was lost; `sub_windows` answers *where* — by
+**device-set** (the per-participant `counters[]` rows, keyed on the join tuple)
+and by **time** (the array within each row). The **planned** window `[T0,T1)`
+is sliced into `metadata.sub_window_count` equal buckets, each
+`metadata.sub_window_duration` wide; `sub_windows[i]` counts the in-window sends
+whose write-return time fell in bucket `i` (`[T0 + i·d, T0 + (i+1)·d)`). An early
+**abort** shortens the run but not the bucket basis — buckets past the abort
+instant are simply empty.
+
+- **Bucketing choice.** A fixed *count* (10), not a fixed duration — the report
+  stays bounded and window-length-independent (a 10 s window → 1 s buckets; a
+  10 min window → 60 s buckets).
+- **Scope.** Localizes **in-window** sends only: `sum(sub_windows) == in_window`
+  for every row and the summary. Drain-tail sends are post-`T1` by definition
+  and carry no sub-window (reconcile them via the `drain` total).
+- **How to use it.** Bucket your collector's *received* records the same way
+  (receive-time relative to `T0`, same bucket width) and diff per bucket:
+  *"1,204 records lost, all from `[T0+30s, T0+45s]`"* points at a time window,
+  not just a fleet total. Combined with the per-row `source_ip`, loss narrows to
+  a device-set **and** a time span.
+- **JSON only.** The flat [CSV projection](#csv-projection) is unchanged, so
+  index-keyed CSV parsers keep working; localization lives in the JSON report.
+
+Additive under the [semver policy](#field--semver-evolution-policy) — the
+policy explicitly anticipates "richer loss-localization blocks."
 
 ## CSV projection
 

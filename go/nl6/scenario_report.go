@@ -10,6 +10,7 @@ import (
 	"encoding/csv"
 	"sort"
 	"strconv"
+	"time"
 )
 
 // scenario_report.go — serialization of the immutable finalized
@@ -36,22 +37,26 @@ type scenarioReport struct {
 // disclosure counter lives in a separate `informational` sub-object (FR21)
 // so it can never be mistaken for an identity term.
 type scenarioReportSummary struct {
-	ID                   string                `json:"id"`
-	Phase                string                `json:"phase"`
-	Protocol             string                `json:"protocol"`
-	Metadata             reportMetadata        `json:"metadata"`
-	Duration             string                `json:"duration"` // T1Actual-T0Actual (monotonic)
-	ParticipantsArmed    int                   `json:"participants_armed"`
-	ParticipantsExcluded int                   `json:"participants_excluded"`
-	Emitted              uint64                `json:"emitted"`
-	Sent                 uint64                `json:"sent"` // in_window + drain (loss denominator)
-	InWindow             uint64                `json:"in_window"`
-	Drain                uint64                `json:"drain"`
-	SuppressedPreWindow  uint64                `json:"suppressed_pre_window"`
-	SendFailures         uint64                `json:"send_failures"`
-	Dropped              uint64                `json:"dropped"`
-	Informational        reportInformational   `json:"informational"`
-	Excluded             []scenarioExcludedRow `json:"excluded"`
+	ID                   string              `json:"id"`
+	Phase                string              `json:"phase"`
+	Protocol             string              `json:"protocol"`
+	Metadata             reportMetadata      `json:"metadata"`
+	Duration             string              `json:"duration"` // T1Actual-T0Actual (monotonic)
+	ParticipantsArmed    int                 `json:"participants_armed"`
+	ParticipantsExcluded int                 `json:"participants_excluded"`
+	Emitted              uint64              `json:"emitted"`
+	Sent                 uint64              `json:"sent"` // in_window + drain (loss denominator)
+	InWindow             uint64              `json:"in_window"`
+	Drain                uint64              `json:"drain"`
+	SuppressedPreWindow  uint64              `json:"suppressed_pre_window"`
+	SendFailures         uint64              `json:"send_failures"`
+	Dropped              uint64              `json:"dropped"`
+	Informational        reportInformational `json:"informational"`
+	// SubWindows localizes fleet-wide in-window sends across the N equal time
+	// buckets of [T0,T1) (FR28); element-wise sum of the per-participant rows,
+	// and sums to `in_window`. See metadata.sub_window_count/_duration.
+	SubWindows [scenarioSubWindowCount]uint64 `json:"sub_windows"`
+	Excluded   []scenarioExcludedRow          `json:"excluded"`
 }
 
 // reportMetadata is the reproducibility fingerprint + actual window
@@ -65,6 +70,13 @@ type reportMetadata struct {
 	T0           string `json:"t0"`
 	T1           string `json:"t1"`
 	DrainEnd     string `json:"drain_end"`
+	// SubWindowCount / SubWindowDuration describe the loss-localization
+	// granularity (FR28): the PLANNED window [T0,T1) is sliced into
+	// SubWindowCount equal buckets, each SubWindowDuration wide (planned
+	// window/N as a Go duration). Bucket i covers [T0+i·d, T0+(i+1)·d); an
+	// early abort leaves the buckets past the abort instant empty.
+	SubWindowCount    int    `json:"sub_window_count"`
+	SubWindowDuration string `json:"sub_window_duration"`
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
@@ -81,6 +93,9 @@ type scenarioCounterRow struct {
 	SendFailures        uint64              `json:"send_failures"`
 	Dropped             uint64              `json:"dropped"`
 	Informational       reportInformational `json:"informational"`
+	// SubWindows localizes this participant's in-window sends across the N
+	// equal time buckets of [T0,T1) (FR28); sums to `in_window`.
+	SubWindows [scenarioSubWindowCount]uint64 `json:"sub_windows"`
 }
 
 // reportInformational holds disclosure counters that are deliberately OUTSIDE
@@ -125,12 +140,19 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			Phase:    string(res.Phase),
 			Protocol: c.spec.Protocol,
 			Metadata: reportMetadata{
-				ConfigSHA256: c.configSHA,
-				Seed:         c.spec.Seed,
-				Nl6Version:   Version,
-				T0:           res.T0Actual.Format(rfc3339ms),
-				T1:           res.T1Actual.Format(rfc3339ms),
-				DrainEnd:     res.DrainEnd.Format(rfc3339ms),
+				ConfigSHA256:   c.configSHA,
+				Seed:           c.spec.Seed,
+				Nl6Version:     Version,
+				T0:             res.T0Actual.Format(rfc3339ms),
+				T1:             res.T1Actual.Format(rfc3339ms),
+				DrainEnd:       res.DrainEnd.Format(rfc3339ms),
+				SubWindowCount: scenarioSubWindowCount,
+				// Bucket width is over the PLANNED window (spec.Window), matching
+				// what recordSubWindow used at fire time (the gate keeps the
+				// planned t1 even after an early abort). Reporting the actual
+				// (shortened) window here would misalign an operator's own
+				// per-bucket received tally for aborted runs.
+				SubWindowDuration: subWindowDuration(c.spec.Window).String(),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
@@ -171,7 +193,12 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				InformsAcked:         led.InformsAcked,
 				InformsPending:       informsPending(led),
 			},
+			SubWindows: led.SubWindows,
 		})
+		// Fleet-wide element-wise sub-window sum.
+		for i := range led.SubWindows {
+			rep.Summary.SubWindows[i] += led.SubWindows[i]
+		}
 		// Roll into the fleet-wide summary totals.
 		rep.Summary.Emitted += led.Emitted
 		rep.Summary.Sent += led.InWindow + led.Drain
@@ -224,6 +251,17 @@ func informsPending(led ledgerSnapshot) uint64 {
 		return 0
 	}
 	return led.InformsOriginated - led.InformsAcked
+}
+
+// subWindowDuration is the width of one localization bucket: the PLANNED
+// window divided by the fixed bucket count (the basis recordSubWindow buckets
+// against). Zero when the window is degenerate (<= 0), matching an all-zero
+// sub-window tally.
+func subWindowDuration(window time.Duration) time.Duration {
+	if window <= 0 {
+		return 0
+	}
+	return window / scenarioSubWindowCount
 }
 
 // scenarioCollectorFor resolves a device's configured collector for the

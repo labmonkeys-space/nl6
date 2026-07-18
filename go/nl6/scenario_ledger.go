@@ -5,7 +5,16 @@
 
 package main
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
+
+// scenarioSubWindowCount is the fixed number of equal time sub-windows the
+// in-window measurement span [T0,T1) is sliced into for loss localization
+// (FR28, story 5.3). A fixed COUNT (not a fixed duration) keeps the report
+// bounded and window-length-independent: bucket width = actual (t1−t0)/N.
+const scenarioSubWindowCount = 10
 
 // ledgerEntry is one participant's exact sent-record accounting for a
 // scenario window. All counters are written by producer sites (atomics,
@@ -50,6 +59,32 @@ type ledgerEntry struct {
 	// originated − acked at report time.
 	informsOriginated atomic.Uint64
 	informsAcked      atomic.Uint64
+
+	// subWindows localizes in-window fires (FR28): N equal time buckets over
+	// [T0,T1), incremented from bucketFor's in-window branch. Purely additive
+	// — sum(subWindows) == inWindow, and it touches no identity counter.
+	subWindows [scenarioSubWindowCount]atomic.Uint64
+}
+
+// recordSubWindow attributes a successful in-window fire at write-return time
+// t to its time bucket. Called only from bucketFor's in-window branch, so
+// t ∈ [t0,t1) is guaranteed; the index is clamped defensively anyway.
+func (l *ledgerEntry) recordSubWindow(gs *gateState, t time.Time) {
+	span := gs.t1.Sub(gs.t0)
+	if span <= 0 {
+		return
+	}
+	off := t.Sub(gs.t0)
+	if off < 0 {
+		off = 0
+	}
+	idx := int(int64(off) * scenarioSubWindowCount / int64(span))
+	if idx < 0 {
+		idx = 0
+	} else if idx >= scenarioSubWindowCount {
+		idx = scenarioSubWindowCount - 1
+	}
+	l.subWindows[idx].Add(1)
 }
 
 // identityHolds checks the ledger identity exactly. Call only after the
@@ -72,9 +107,16 @@ type ledgerSnapshot struct {
 	Deferred             uint64
 	InformsOriginated    uint64
 	InformsAcked         uint64
+	// SubWindows is the per-time-bucket in-window tally (FR28); sums to
+	// InWindow. A fixed array (not a slice) keeps ledgerSnapshot comparable.
+	SubWindows [scenarioSubWindowCount]uint64
 }
 
 func (l *ledgerEntry) snapshot() ledgerSnapshot {
+	var sw [scenarioSubWindowCount]uint64
+	for i := range l.subWindows {
+		sw[i] = l.subWindows[i].Load()
+	}
 	return ledgerSnapshot{
 		Emitted:              l.emitted.Load(),
 		InWindow:             l.inWindow.Load(),
@@ -87,5 +129,6 @@ func (l *ledgerEntry) snapshot() ledgerSnapshot {
 		Deferred:             l.deferred.Load(),
 		InformsOriginated:    l.informsOriginated.Load(),
 		InformsAcked:         l.informsAcked.Load(),
+		SubWindows:           sw,
 	}
 }

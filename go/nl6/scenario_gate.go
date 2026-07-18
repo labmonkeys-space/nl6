@@ -129,6 +129,10 @@ func (p *scenarioPart) decide(src fireSource, t time.Time) gateDecision {
 func (p *scenarioPart) bucketFor(t time.Time) *atomic.Uint64 {
 	gs := p.gate.Load()
 	if gs != nil && t.Before(gs.t1) {
+		// Localize the in-window fire to its time sub-window (FR28) on the
+		// same FRESH write-return time that classifies in_window vs drain,
+		// so localization and the identity split agree by construction.
+		p.ledger.recordSubWindow(gs, t)
 		return &p.ledger.inWindow
 	}
 	return &p.ledger.drain
