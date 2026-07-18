@@ -569,6 +569,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/scenarios/{id}/start", startScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios/{id}/stop", stopScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios/{id}/report", scenarioReportHandler).Methods("GET")
+	api.HandleFunc("/scenarios/{id}/metrics", scenarioMetricsHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}", scenarioStatusHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}", deleteScenarioHandler).Methods("DELETE")
 

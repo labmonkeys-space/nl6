@@ -37,6 +37,7 @@ fidelity check and troubleshoot failures.
 | `POST` | `/api/v1/scenarios/{id}/start` | `200` status | `404`, `409` |
 | `POST` | `/api/v1/scenarios/{id}/stop` | `200` [report](./loadtest-report-schema.md) | `404`, `409` |
 | `GET` | `/api/v1/scenarios/{id}/report` | `200` [report](./loadtest-report-schema.md) | `404`, `409` |
+| `GET` | `/api/v1/scenarios/{id}/metrics` | `200` Prometheus text | `404` |
 | `GET` | `/api/v1/scenarios` | `200` `{scenarios:[{id,phase}]}` | — |
 | `GET` | `/api/v1/scenarios/{id}` | `200` status | `404` |
 | `DELETE` | `/api/v1/scenarios/{id}` | `200` `{}` | `404`, `409` |
@@ -215,6 +216,29 @@ Add **`?format=csv`** to get a flat `text/csv` projection of `counters[]`
 (header row + one row per participant, join-ready on
 `(protocol, source_ip, collector)`) instead of JSON — see the
 [CSV projection](./loadtest-report-schema.md#csv-projection).
+
+### `GET /api/v1/scenarios/{id}/metrics` — live gauges (Prometheus)
+
+Returns the scenario's live state in **Prometheus text-exposition format**
+(`text/plain; version=0.0.4`) — no third-party client dependency, scrape it
+directly. Deterministic ordering (participants sorted by source IP). `404` for
+an unknown id; valid in every phase (a `submitted` scenario has no participant
+rows yet, only the two gauges).
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `nl6_scenario_phase` | gauge | `id`, `phase` | `1` on the active phase label (info-style) |
+| `nl6_scenario_target_rate` | gauge | `id` | configured base rate (events/s); for a `rate_profile` scenario this is the constant base rate, **not** the instantaneous λ(t) |
+| `nl6_scenario_sent_total` | counter | `id`, `protocol`, `source_ip`, `collector` | records sent (`in_window + drain`) per participant |
+| `nl6_scenario_emitted_total` … `nl6_scenario_dropped_total` | counter | (same tuple) | the remaining ledger-identity buckets, per participant |
+
+Every counter is labeled on the report join tuple `(protocol, source_ip,
+collector)`, so **summing a family reproduces the matching report summary
+total** — e.g. `sum(nl6_scenario_sent_total)` equals `summary.sent`. Because
+each counter only advances in-window, a Prometheus range query
+(`increase(nl6_scenario_sent_total[…])` over `[T0,T1]`) reproduces the report
+totals (NFR-O2). Every lifecycle transition is also written to the process log
+as a structured `scenario=<id> phase=<phase>` line for correlation.
 
 ### `GET /api/v1/scenarios/{id}` — status
 
