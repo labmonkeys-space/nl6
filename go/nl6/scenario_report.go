@@ -218,15 +218,14 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 	if dev == nil {
 		return ""
 	}
-	switch protocol {
-	case "syslog":
-		if dev.syslogConfig != nil {
-			return dev.syslogConfig.Collector
-		}
-	case "netflow9":
+	if isFlowScenarioProtocol(protocol) {
 		if dev.flowExporter != nil {
 			return dev.flowExporter.collectorStr
 		}
+		return ""
+	}
+	if protocol == "syslog" && dev.syslogConfig != nil {
+		return dev.syslogConfig.Collector
 	}
 	return ""
 }

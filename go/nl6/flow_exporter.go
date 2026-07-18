@@ -147,6 +147,12 @@ type FlowExporter struct {
 	// `sent`; a failed datagram moves its records to send_failures). Gate
 	// decisions and bucketing use the tick's `now`.
 	scenPart atomic.Pointer[scenarioPart]
+	// scenDriven (FR: D1 flow-cadence adaptation): true while a RUNNING
+	// scenario owns this exporter's emission cadence. The fleet flow ticker
+	// skips it (the scenario's own ticker drives Tick at the scenario cadence
+	// during [T0,T1)); flipped false at finalize. During ARM it stays false so
+	// the fleet ticker still emits arming templates.
+	scenDriven atomic.Bool
 }
 
 // flowOptionIface is one interface's option-record identity: its ifIndex and
@@ -901,16 +907,13 @@ func (sm *SimulatorManager) tickAllFlowExporters(now time.Time) {
 
 	var lastTemplMs int64
 	for _, fe := range exporters {
-		var sharedConn *net.UDPConn
-		if fe.conn.Load() == nil {
-			sharedConn = sm.flowConnFor(flowConnKey{collector: fe.collectorStr, protocol: fe.protocol})
+		// D1 flow-cadence adaptation: skip exporters a running scenario owns —
+		// its own ticker drives their cadence during [T0,T1). Non-participants
+		// and armed-but-not-started participants stay on the fleet cadence.
+		if fe.scenDriven.Load() {
+			continue
 		}
-		s := fe.Tick(now, sharedConn, &sm.flowBufPool)
-		if s.PacketsSent > 0 {
-			fe.statPackets.Add(s.PacketsSent)
-			fe.statBytes.Add(s.BytesSent)
-			fe.statRecords.Add(s.RecordsSent)
-		}
+		s := sm.tickFlowExporter(fe, now)
 		if s.LastTemplateMs > lastTemplMs {
 			lastTemplMs = s.LastTemplateMs
 		}
@@ -918,6 +921,23 @@ func (sm *SimulatorManager) tickAllFlowExporters(now time.Time) {
 	if lastTemplMs > 0 {
 		sm.flowStatLastTmpl.Store(lastTemplMs)
 	}
+}
+
+// tickFlowExporter ticks one exporter with the shared-pool fallback socket and
+// folds its stats. Shared by the fleet ticker and the scenario-owned flow
+// ticker (D1 cadence adaptation) so both take the identical wire path.
+func (sm *SimulatorManager) tickFlowExporter(fe *FlowExporter, now time.Time) FlowTickStats {
+	var sharedConn *net.UDPConn
+	if fe.conn.Load() == nil {
+		sharedConn = sm.flowConnFor(flowConnKey{collector: fe.collectorStr, protocol: fe.protocol})
+	}
+	s := fe.Tick(now, sharedConn, &sm.flowBufPool)
+	if s.PacketsSent > 0 {
+		fe.statPackets.Add(s.PacketsSent)
+		fe.statBytes.Add(s.BytesSent)
+		fe.statRecords.Add(s.RecordsSent)
+	}
+	return s
 }
 
 // GetFlowStatus returns the aggregated flow-export snapshot. Devices
