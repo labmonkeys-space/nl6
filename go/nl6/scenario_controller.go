@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -58,7 +59,19 @@ type ScenarioController struct {
 
 	now func() time.Time // injectable clock (tests); defaults to time.Now
 
+	// transitions is the ordered lifecycle log (D7 abort observability):
+	// one entry per actual phase change, appended under c.mu. Surfaced via
+	// status so an operator can confirm a SIGTERM-driven abort after the
+	// fact. Minimal precursor to the full structured phase log (story 5.2).
+	transitions []scenarioTransition
+
 	result *ScenarioResult // populated at finalize
+}
+
+// scenarioTransition is one recorded lifecycle step.
+type scenarioTransition struct {
+	Phase scenarioPhase
+	At    time.Time
 }
 
 // excludedParticipant records why a declared participant did not arm (FR9;
@@ -126,6 +139,8 @@ func (c *ScenarioController) transitionLocked(to scenarioPhase) error {
 		return fmt.Errorf("%w: %s -> %s", errInvalidTransition, from, to)
 	}
 	c.phase = to
+	c.transitions = append(c.transitions, scenarioTransition{Phase: to, At: c.now()})
+	log.Printf("[scenario] %s %s -> %s", c.id, from, to)
 	return nil
 }
 
@@ -143,7 +158,17 @@ func (c *ScenarioController) Submit(spec *Scenario, id string) error {
 	c.id = id
 	c.parts = make(map[string]*scenarioPart)
 	c.ledgers = make(map[string]*ledgerEntry)
+	c.transitions = append(c.transitions, scenarioTransition{Phase: phaseSubmitted, At: c.now()})
 	return nil
+}
+
+// Transitions returns a copy of the ordered lifecycle log (observability).
+func (c *ScenarioController) Transitions() []scenarioTransition {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]scenarioTransition, len(c.transitions))
+	copy(out, c.transitions)
+	return out
 }
 
 // Arm resolves participants against the live fleet, installs participation

@@ -5,7 +5,10 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+)
 
 // scenario_manager.go — the SimulatorManager-level glue between the REST
 // surface (scenario_api.go) and the transport-agnostic ScenarioController
@@ -84,4 +87,24 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 	}
 	sm.scenarioController = nil
 	return nil
+}
+
+// abortActiveScenario aborts a running load-test scenario as part of
+// graceful shutdown (D7). Abort()'s drain barrier is bounded by the drain
+// grace, so shutdown cannot hang. No-op when no scenario is running; the
+// finalized report stays queryable (via the still-live controller) until
+// the process exits. Called at the top of Shutdown, before the export
+// subsystems tear down, so participant exporters still exist during drain.
+func (sm *SimulatorManager) abortActiveScenario() {
+	sm.scenarioMu.Lock()
+	c := sm.scenarioController
+	sm.scenarioMu.Unlock()
+	if c == nil || c.Phase() != phaseRunning {
+		return
+	}
+	if _, err := c.Abort(); err != nil {
+		log.Printf("[scenario] abort during shutdown failed: %v", err)
+		return
+	}
+	log.Printf("[scenario] %s aborted for shutdown", c.id)
 }

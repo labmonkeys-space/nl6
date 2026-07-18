@@ -493,6 +493,12 @@ func (sm *SimulatorManager) Shutdown() error {
 	log.Println("Shutting down simulator manager...")
 	startTime := time.Now()
 
+	// D7: abort a running load-test scenario FIRST — before the export
+	// subsystems tear down — so the scenario finalizes its report while
+	// participant exporters still exist, and the fleet freeze is released.
+	// Bounded by the drain grace, so shutdown cannot hang.
+	sm.abortActiveScenario()
+
 	// Stop the flow ticker goroutine and close every pooled shared socket.
 	// Per the per-device-export-config refactor the subsystem is always-on
 	// (design §D9); flowStopOnce ensures close(flowStopCh) is idempotent.

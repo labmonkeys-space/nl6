@@ -109,10 +109,19 @@ type readinessResponse struct {
 }
 
 type statusResponse struct {
-	ID           string `json:"id"`
-	Phase        string `json:"phase"`
-	ConfigSHA256 string `json:"config_sha256"`
-	Seed         int64  `json:"seed"`
+	ID           string            `json:"id"`
+	Phase        string            `json:"phase"`
+	ConfigSHA256 string            `json:"config_sha256"`
+	Seed         int64             `json:"seed"`
+	Transitions  []transitionEntry `json:"transitions"`
+}
+
+// transitionEntry is one lifecycle step in the status transition log
+// (RFC3339-ms timestamp), so a SIGTERM-driven abort is observable after
+// the fact (FR33 / D7 abort observability).
+type transitionEntry struct {
+	Phase string `json:"phase"`
+	At    string `json:"at"`
 }
 
 // --- handlers ----------------------------------------------------------
@@ -261,7 +270,14 @@ func lookupScenario(w http.ResponseWriter, r *http.Request) (*ScenarioController
 }
 
 func scenarioStatus(c *ScenarioController) statusResponse {
-	return statusResponse{ID: c.id, Phase: string(c.Phase()), ConfigSHA256: c.configSHA, Seed: c.spec.Seed}
+	trs := c.Transitions()
+	entries := make([]transitionEntry, 0, len(trs))
+	for _, tr := range trs {
+		entries = append(entries, transitionEntry{Phase: string(tr.Phase), At: tr.At.Format(rfc3339ms)})
+	}
+	return statusResponse{
+		ID: c.id, Phase: string(c.Phase()), ConfigSHA256: c.configSHA, Seed: c.spec.Seed, Transitions: entries,
+	}
 }
 
 // conflictMsg builds the 409 body naming the current phase + scenario ID +
