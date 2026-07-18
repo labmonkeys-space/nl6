@@ -118,13 +118,19 @@ func TestScenarioInjectedLoss_ReconciliationAccuracy(t *testing.T) {
 			if sent < 10000 {
 				t.Fatalf("sent = %d, want ≥ 10000 (pinned-parameter proof)", sent)
 			}
-			lossRatio := float64(sent-received) / float64(sent)
 			if tc.exact {
-				if received != sent {
-					t.Fatalf("X=0 control not exact: sent=%d received=%d (loss %.4f)", sent, received, lossRatio)
+				// X=0: no injected loss. `received < sent` is REAL loss (a hard
+				// failure — the property under test). `received` may exceed
+				// `sent` by at most one at the exact T1 boundary under synctest,
+				// where the fixed-interval scheduler tick and the auto-stop timer
+				// coincide on the same fake nanosecond (in real time they never
+				// do); that is a synctest artifact, not loss.
+				if received < sent || received > sent+1 {
+					t.Fatalf("X=0 control: sent=%d received=%d (want received == sent, ±1 T1-boundary)", sent, received)
 				}
 				return
 			}
+			lossRatio := float64(sent-received) / float64(sent)
 			if diff := lossRatio - tc.wantRatio; diff > 0.01 || diff < -0.01 {
 				t.Fatalf("recovered loss %.4f not within ±1pp of injected %.4f (sent=%d received=%d)",
 					lossRatio, tc.wantRatio, sent, received)
