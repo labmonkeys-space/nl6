@@ -186,17 +186,20 @@ func (c *ScenarioController) usesScheduler() bool { return c.spec.Protocol == "s
 // the scenario's protocol. ok=false with a reason/hint when the device lacks
 // that exporter (→ excluded set, FR9).
 func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenarioPart) (ok bool, reason, hint string) {
+	if isFlowScenarioProtocol(c.spec.Protocol) {
+		if dev.flowExporter == nil || dev.flowExporter.protocol != c.spec.Protocol {
+			return false, fmt.Sprintf("device has no %s flow exporter", c.spec.Protocol),
+				fmt.Sprintf("enable flow export with protocol %s (seed flag or per-device flow block)", c.spec.Protocol)
+		}
+		dev.flowExporter.scenPart.Store(part)
+		return true, "", ""
+	}
 	switch c.spec.Protocol {
 	case "syslog":
 		if dev.syslogExporter == nil {
 			return false, "device has no syslog exporter", "enable syslog export on the device (seed flag or per-device block)"
 		}
 		dev.syslogExporter.scenPart.Store(part)
-	case "netflow9":
-		if dev.flowExporter == nil || dev.flowExporter.protocol != "netflow9" {
-			return false, "device has no netflow9 flow exporter", "enable flow export with protocol netflow9 (seed flag or per-device flow block)"
-		}
-		dev.flowExporter.scenPart.Store(part)
 	default:
 		return false, "unsupported scenario protocol", ""
 	}
@@ -205,28 +208,58 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 
 // detachScenPart nil-swaps the participation handle on the protocol's exporter.
 func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
-	switch c.spec.Protocol {
-	case "syslog":
-		if dev.syslogExporter != nil {
-			dev.syslogExporter.scenPart.Store(nil)
-		}
-	case "netflow9":
+	if isFlowScenarioProtocol(c.spec.Protocol) {
 		if dev.flowExporter != nil {
 			dev.flowExporter.scenPart.Store(nil)
+			dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+		}
+		return
+	}
+	if c.spec.Protocol == "syslog" && dev.syslogExporter != nil {
+		dev.syslogExporter.scenPart.Store(nil)
+	}
+}
+
+// startScenarioFlowTicker drives participant flow emission at the scenario
+// cadence during [T0,T1) (D1 flow-cadence adaptation). It marks each
+// participant scenDriven so the fleet ticker yields, then ticks each exporter
+// at spec.interval() until ctx is cancelled at finalize.
+func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
+	c.sm.mu.RLock()
+	feList := make([]*FlowExporter, 0, len(c.parts))
+	for ip := range c.parts {
+		if dev := c.sm.devicesByIP[ip]; dev != nil && dev.flowExporter != nil {
+			dev.flowExporter.scenDriven.Store(true)
+			feList = append(feList, dev.flowExporter)
 		}
 	}
+	c.sm.mu.RUnlock()
+
+	interval := c.spec.interval()
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				now := c.now()
+				for _, fe := range feList {
+					c.sm.tickFlowExporter(fe, now)
+				}
+			}
+		}
+	}()
 }
 
 // exporterPresent reports whether dev still carries the scenario protocol's
 // exporter (arm→start gap check).
 func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
-	switch c.spec.Protocol {
-	case "syslog":
-		return dev.syslogExporter != nil
-	case "netflow9":
-		return dev.flowExporter != nil && dev.flowExporter.protocol == "netflow9"
+	if isFlowScenarioProtocol(c.spec.Protocol) {
+		return dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol
 	}
-	return false
+	return c.spec.Protocol == "syslog" && dev.syslogExporter != nil
 }
 
 // Arm resolves participants against the live fleet, installs participation
@@ -349,6 +382,10 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 		}
 		c.sm.mu.RUnlock()
 		go c.sched.Run(schedCtx)
+	} else if isFlowScenarioProtocol(c.spec.Protocol) {
+		// Flow protocols: the scenario drives participant emission at its own
+		// cadence during the window (D1 flow-cadence adaptation).
+		c.startScenarioFlowTicker(schedCtx)
 	}
 
 	// Abort predicate (FR7): watch a mid-run ledger metric and self-abort a

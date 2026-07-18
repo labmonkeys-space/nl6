@@ -47,7 +47,18 @@ type Scenario struct {
 var scenarioProtocols = map[string]bool{
 	"syslog":   true,
 	"netflow9": true,
+	"ipfix":    true,
 }
+
+// flowScenarioProtocols are the FlowExporter-backed scenario protocols (gated
+// in FlowExporter.Tick, emitted via the flow ticker — no syslog scheduler).
+var flowScenarioProtocols = map[string]bool{
+	"netflow9": true,
+	"ipfix":    true,
+}
+
+// isFlowScenarioProtocol reports whether p is emitted by a FlowExporter.
+func isFlowScenarioProtocol(p string) bool { return flowScenarioProtocols[p] }
 
 const defaultScenarioDrain = 2 * time.Second
 
@@ -72,7 +83,7 @@ func (s *Scenario) Validate() error {
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
-		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9)", s.Protocol)
+		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix)", s.Protocol)
 	}
 	if s.Rate <= 0 || math.IsNaN(s.Rate) || math.IsInf(s.Rate, 0) {
 		return fmt.Errorf("scenario: rate must be a finite value > 0 events/second, got %g", s.Rate)
