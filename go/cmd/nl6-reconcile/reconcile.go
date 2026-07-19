@@ -246,11 +246,12 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64) []result {
 func renderText(results []result, tolerance float64) string {
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROTOCOL\tSOURCE_IP\tCOLLECTOR\tSENT\tRECEIVED\tDELTA\tLOSS%\tSTATUS")
+	// Writes to a strings.Builder-backed tabwriter never error; ignore explicitly.
+	_, _ = fmt.Fprintln(tw, "PROTOCOL\tSOURCE_IP\tCOLLECTOR\tSENT\tRECEIVED\tDELTA\tLOSS%\tSTATUS")
 	var okN, badN int
 	var totSent, totRecv uint64
 	for _, r := range results {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%.2f%%\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%.2f%%\t%s\n",
 			r.Protocol, r.SourceIP, r.Collector, r.Sent, r.Received, r.Delta, r.LossRatio*100, r.Status)
 		totSent += r.Sent
 		totRecv += r.Received
@@ -260,12 +261,12 @@ func renderText(results []result, tolerance float64) string {
 			badN++
 		}
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	fleetLoss := 0.0
 	if totSent > 0 {
 		fleetLoss = float64(int64(totSent)-int64(totRecv)) / float64(totSent) * 100
 	}
-	fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d fleet_loss=%.2f%%\n",
+	_, _ = fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d fleet_loss=%.2f%%\n",
 		len(results), okN, badN, tolerance*100, totSent, totRecv, fleetLoss)
 	return b.String()
 }
