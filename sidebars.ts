@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
         'ops/flow-export',
         'ops/snmp-traps',
         'ops/syslog-export',
+        'ops/migration-per-device-exports',
         'ops/kubernetes',
         'ops/troubleshooting',
       ],
