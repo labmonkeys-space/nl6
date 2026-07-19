@@ -77,6 +77,10 @@ type reportMetadata struct {
 	// early abort leaves the buckets past the abort instant empty.
 	SubWindowCount    int    `json:"sub_window_count"`
 	SubWindowDuration string `json:"sub_window_duration"`
+	// RunTags records how this run's traffic is isolated from background noise
+	// per its protocol's native lever (FR37) — mechanism + value, plus PEN
+	// status so a PEN-degraded fallback is visible.
+	RunTags runTags `json:"run_tags"`
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
@@ -153,6 +157,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// (shortened) window here would misalign an operator's own
 				// per-bucket received tally for aborted runs.
 				SubWindowDuration: subWindowDuration(c.spec.Window).String(),
+				RunTags:           buildRunTags(c.spec.Protocol, sm.scenarioPEN, res.ID),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),

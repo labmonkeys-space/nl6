@@ -28,7 +28,12 @@ is built once at stop/abort, immutable thereafter, and served by
       "t1": "2026-07-18T09:00:07.000Z",
       "drain_end": "2026-07-18T09:00:07.500Z",
       "sub_window_count": 10,
-      "sub_window_duration": "200ms"
+      "sub_window_duration": "200ms",
+      "run_tags": {
+        "protocol": "syslog", "mechanism": "window_source_ip", "value": "",
+        "pen": 0, "pen_required": true, "degraded": true,
+        "note": "no PEN configured (-scenario-pen); SD-PARAM lever unavailable, isolate by source IP + [t0,t1)"
+      }
     },
     "duration": "2s",
     "participants_armed": 2,
@@ -87,6 +92,7 @@ Copy the `(config_sha256, seed)` back into a resubmit on the same
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
 | `sub_window_count` | number | Loss-localization granularity (FR28): the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
+| `run_tags` | object | **Run tagging** (FR37): how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-runbook.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
 ## `counters[]` — per participant
 
