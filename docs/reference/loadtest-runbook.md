@@ -23,7 +23,10 @@ stays the single operator entry point.
   (nl6 + a counting collector) and a `run.sh` that reproduces a documented
   known result.
 
-MVP scope: **one active scenario at a time**, **syslog** only.
+Scope: **one active scenario at a time**, over any one of the seven shipped
+push protocols — **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**,
+**sFlow**, and **gNMI dial-out**. Each protocol opts a device in via its own
+export config; the scenario gates whichever protocol it targets.
 
 ## Run a fidelity check
 
@@ -82,6 +85,44 @@ received   = your monitor's count for the same (protocol, source_ip, collector)
 loss_ratio = (sent − received) / sent
 ```
 
+### `nl6-reconcile` — one command, not a spreadsheet
+
+`nl6-reconcile` does the join for you. It is **read-only**: give it a saved
+report and your collector's received-counts export, and it outer-joins on
+`(protocol, source_ip, collector)` and prints `loss_ratio` per key with an
+in-flight tolerance band. Build it with `make reconcile` (→ `go/nl6-reconcile`).
+
+```bash
+# Report as JSON (or CSV via ?format=csv); received as a collector CSV export.
+curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
+
+nl6-reconcile -report report.json -received collector.csv
+# PROTOCOL  SOURCE_IP   COLLECTOR     SENT  RECEIVED  DELTA  LOSS%   STATUS
+# syslog    10.42.0.1   10.0.0.9:514  1000  1000      0      0.00%   OK
+# syslog    10.42.0.2   10.0.0.9:514  1000  950       50     5.00%   LOSS
+#
+# Summary: 2 keys | 1 OK | 1 flagged | tolerance 0.50% | sent=2000 received=1950 fleet_loss=2.50%
+```
+
+- **Inputs.** `-report` takes the report **JSON** or the flat **CSV** projection
+  (auto-detected). `-received` takes a **CSV** (`protocol,source_ip,collector,received`
+  columns) or a **Prometheus range-query result** (`/api/v1/query_range` JSON —
+  the last sample of each series is the received count, keyed by its
+  `protocol`/`source_ip`/`collector` labels). Either input may be `-` for stdin.
+- **Tolerance.** `-tolerance 0.005` (default 0.5 %) is the in-flight band:
+  `|loss_ratio|` within it is `OK` — records still on the wire at `T1` cause a
+  tiny delta that is not real loss. Widen it for lossy paths, tighten to `0` for
+  an exact check.
+- **Statuses.** `OK` · `LOSS` (received < sent) · `DUP` (received > sent —
+  duplication) · `MISSING` (in the report, no received row — total loss or a
+  join gap) · `PHANTOM` (received but not in the report — background noise leaked
+  into your export; see the run-tagging notes to isolate it).
+- **Exit code.** `0` when every key is `OK`, `1` when any key is flagged — so
+  `nl6-reconcile` drops straight into a CI gate. Use `-format csv|json` for a
+  machine-readable diff.
+
+To reconcile **by hand** instead:
+
 1. **Join** the report's `counters[]` (or the [CSV
    projection](./loadtest-report-schema.md#csv-projection)) against your
    monitor's received-counts export **on `(protocol, source_ip, collector)`** —
@@ -115,6 +156,26 @@ loss_ratio = (sent − received) / sent
   is excluded from `sent` (the loss denominator), so `loss_ratio` stays honest.
   Raise the cap, lower the profile rate, or accept the throttle — but don't
   read it as pipeline loss.
+
+## Clock sync (chrony/NTP) — required for time localization
+
+Reconciliation totals (`sent` vs `received`) need **no** clock agreement — a
+counter is a counter. But **time localization** ([`sub_windows`](./loadtest-report-schema.md#loss-localization))
+does: nl6 buckets each send by its write-return time relative to `T0`, and to
+line your received data up against those buckets you must bucket **your**
+records by receive-time relative to the **same** `T0`. If nl6's host and the
+collector's host disagree on the wall clock, the two bucketings shear and a
+loss that is really in `[T0+30s, T0+45s]` appears smeared across neighbours.
+
+- Run **chrony** (or ntpd) on both the simulator host and every collector host,
+  disciplined to the **same** upstream sources. Confirm with `chronyc tracking`
+  — keep the estimated offset well under one `sub_window_duration` (a 30 s
+  window → 3 s buckets → sub-second sync is ample; tighten for shorter windows).
+- The report's `metadata.t0`/`t1` are the simulator's clock. Bucket your
+  received records against **that** `t0`, not your own start time.
+- Fleet totals and `loss_ratio` are unaffected by skew — only the per-bucket
+  `sub_windows` attribution is. If localization looks smeared but totals
+  reconcile, suspect clock skew before suspecting the pipeline.
 
 ## Troubleshooting arm failures
 

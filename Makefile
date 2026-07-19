@@ -45,7 +45,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-clean \
         tools-quality fmt-check lint vuln sec quality
@@ -55,6 +55,10 @@ all: build
 ## build: Cross-compile the simulator binary for Linux (GOOS=linux GOARCH=amd64)
 build: check-go
 	cd $(BUILD_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+
+## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
+reconcile: check-go
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o nl6-reconcile ./cmd/nl6-reconcile
 
 ## version: Print the resolved version string (useful for CI diagnostics)
 version:
