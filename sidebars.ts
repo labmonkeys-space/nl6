@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
         'ops/flow-export',
         'ops/snmp-traps',
         'ops/syslog-export',
+        'ops/migration-per-device-exports',
         'ops/kubernetes',
         'ops/troubleshooting',
       ],
@@ -54,6 +55,17 @@ const sidebars: SidebarsConfig = {
         'reference/interface-state',
         'reference/lldp-topology',
         'reference/dns-service-discovery',
+        {
+          type: 'category',
+          label: 'Load-test scenarios',
+          // The runbook is the operator entry point; clicking the category
+          // label lands there, with the API + report schema as sub-pages.
+          link: {type: 'doc', id: 'reference/loadtest-runbook'},
+          items: [
+            'reference/loadtest-api',
+            'reference/loadtest-report-schema',
+          ],
+        },
         'reference/resource-files',
         {
           type: 'category',
