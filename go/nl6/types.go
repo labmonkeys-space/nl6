@@ -293,6 +293,11 @@ type SimulatorManager struct {
 	scenarioMu         sync.Mutex
 	scenarioController *ScenarioController
 	scenarioSeq        uint64
+	// scenarioPEN is the IANA Private Enterprise Number used to form
+	// PEN-dependent run tags (syslog SD-PARAM `nl6@<PEN>`, SNMP enterprise
+	// varbind). 0 = unset → those levers degrade to window + source-IP
+	// isolation (FR37). Set once at startup via -scenario-pen; read-only after.
+	scenarioPEN uint32
 
 	flowStopCh         chan struct{}  // closed by Shutdown to stop the ticker goroutine
 	flowStopOnce       sync.Once      // ensures flowStopCh is closed exactly once

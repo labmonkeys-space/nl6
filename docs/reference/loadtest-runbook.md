@@ -75,6 +75,39 @@ report's `sent`. (The other protocols carry richer identity — v9/IPFIX
 templates, sFlow agent/sub-agent, trap varbinds — but the report's join tuple
 `(protocol, source_ip, collector)` is the same across all of them.)
 
+## Run tagging — isolating experiment traffic
+
+On a **shared collector** — one that also receives background/production
+telemetry — you must separate this run's traffic from the noise before
+reconciling. Each protocol is isolated by its **native lever**; the report's
+`metadata.run_tags` records the mechanism + value so you know how to filter.
+This is *tag-what-exists*: the levers below are already carried by the wire
+encoders (or, for PEN-dependent ones, degrade cleanly).
+
+| Protocol | `mechanism` | Lever | PEN? |
+|----------|-------------|-------|------|
+| NetFlow v9 | `netflow9_source_id` | filter received flows by the device's **Source ID** | no |
+| IPFIX | `ipfix_odid` | filter by the **Observation Domain ID** (enterprise IE is a secondary, PEN-only lever) | no |
+| sFlow v5 | `sflow_sub_agent_id` | filter by **`sub_agent_id`** | no |
+| gNMI dial-out | `gnmi_synthetic_path` | dial-out stamps the device IP in `Notification.Prefix.Target`; filter by target | no |
+| Syslog 5424 | `syslog_sd_param` | RFC 5424 SD-PARAM `[nl6@<PEN> runId="<id>"]` | **yes** |
+| SNMP trap/inform | `snmp_enterprise_varbind` | enterprise varbind under the nl6 PEN | **yes** |
+| NetFlow v5 | `window_source_ip` | no taggable field — isolate by participant source IPs + `[T0,T1)` | n/a |
+
+- **In every case** the measurement window `[T0,T1)` plus the participant source
+  IPs already narrow the traffic; the per-protocol lever adds a second, in-band
+  discriminator where one exists.
+- **PEN-dependent levers degrade gracefully.** Syslog SD-PARAM and the SNMP
+  enterprise varbind need an IANA **Private Enterprise Number**. Without one
+  (`-scenario-pen` unset, the default), `run_tags.mechanism` is
+  `window_source_ip` and `run_tags.degraded` is `true` — you fall back to window
+  + source-IP isolation, which is always available. Set `-scenario-pen <n>` once
+  your PEN is registered to activate the clean levers; `run_tags.value` then
+  carries the `runId` a receiver keys on.
+- `nl6-reconcile`'s `PHANTOM` status flags received traffic that is **not** in
+  the report — usually background noise that leaked past your filter. Tighten
+  the filter using the `run_tags` mechanism above.
+
 ## Reconciliation walkthrough
 
 The instrument's one job is to make loss **measurable**. The arithmetic:

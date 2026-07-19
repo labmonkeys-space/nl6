@@ -175,6 +175,11 @@ func main() {
 		// reference auto-start devices not yet created. See CLAUDE.md
 		// "LLDP topology".
 		topologyConfig = flag.String("topology-config", "", "Path to a JSON inter-device link graph ({\"links\":[{\"a\":{\"ip\",\"ifindex\"},\"b\":{\"ip\",\"ifindex\"}}]}); enables LLDP topology when set")
+
+		// scenarioPEN forms PEN-dependent load-test run tags (syslog SD-PARAM,
+		// SNMP enterprise varbind). 0 = unset → those levers degrade to
+		// window + source-IP isolation, recorded in the report's run_tags.
+		scenarioPEN = flag.Uint("scenario-pen", 0, "IANA Private Enterprise Number for PEN-dependent scenario run tags (0 = unset; syslog/SNMP levers degrade to window+source-IP)")
 	)
 
 	flag.Parse()
@@ -234,6 +239,7 @@ func main() {
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
 	manager = NewSimulatorManagerWithOptions(useNamespace)
+	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 
 	// Load the inter-device LLDP topology graph if configured. Syntactic
 	// validation failures are fatal; missing devices are NOT (lazy
