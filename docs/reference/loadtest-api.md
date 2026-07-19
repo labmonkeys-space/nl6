@@ -1,8 +1,3 @@
-<!--
-Copyright 2026 Ronny Trommer <ronny@no42.org>
-SPDX-License-Identifier: Apache-2.0
--->
-
 # Load-test scenario REST API
 
 The load-test scenario subsystem is driven entirely over REST under
