@@ -80,6 +80,25 @@ const config: Config = {
     ],
   ],
 
+  plugins: [
+    // Mermaid pulls in langium → vscode-languageserver-types, whose UMD
+    // bundle does a dynamic `require(...)` webpack cannot statically analyze,
+    // emitting a benign "Critical dependency" warning on every build. Silence
+    // only that one warning (matched by module + message) so genuine warnings
+    // stay visible.
+    () => ({
+      name: 'ignore-langium-umd-warning',
+      configureWebpack: () => ({
+        ignoreWarnings: [
+          {
+            module: /vscode-languageserver-types/,
+            message: /Critical dependency/,
+          },
+        ],
+      }),
+    }),
+  ],
+
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
