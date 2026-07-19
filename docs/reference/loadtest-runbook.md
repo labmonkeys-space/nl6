@@ -1,8 +1,3 @@
-<!--
-Copyright 2026 Ronny Trommer <ronny@no42.org>
-SPDX-License-Identifier: Apache-2.0
--->
-
 # Load-test scenario runbook
 
 This is **the** runbook for the nl6 load-test scenario subsystem — a
