@@ -178,6 +178,78 @@ nl6-reconcile -report report.json -received collector.csv
 # exit 1 (and a LOSS / PHANTOM row) if anything is off — drop it into CI.
 ```
 
+### 7. IPFIX-only fidelity
+
+IPFIX carries the cleanest run-isolation lever — the Observation Domain ID —
+and, unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at
+T0** (templates are counted separately), so a collector sees no pre-window
+sequence advance.
+
+```bash
+sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5 \
+  -flow-collector 10.0.0.9:4739 -flow-protocol ipfix
+
+curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
+  "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
+  "protocol": "ipfix", "rate": 20, "window": "1m", "drain": "5s", "seed": 7
+}'
+```
+
+Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the
+collector's records by each device's Observation Domain ID within `[T0,T1)`.
+
+### 8. Mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
+
+A scenario targets **one protocol** (MVP: one active scenario at a time), so a
+mixed fleet is measured with **one scenario per protocol** over that protocol's
+device subset, run **back-to-back**. The 20 / 20 / 60 split is just how many
+devices you configure for each protocol. Seed flags apply a single protocol to
+the whole auto-start batch, so build the mix with per-device `flow` blocks
+instead.
+
+With nl6 running (no flow seed flags needed), create the three groups — here a
+10-device fleet split 2 / 2 / 6:
+
+```bash
+# start_ip  count  protocol  collector
+for grp in \
+  '10.0.2.1 2 netflow5 10.0.0.9:2055' \
+  '10.0.3.1 2 netflow9 10.0.0.9:2055' \
+  '10.0.4.1 6 ipfix    10.0.0.9:4739'; do
+  set -- $grp
+  curl -sf -X POST $NL6/api/v1/devices -H 'Content-Type: application/json' -d "{
+    \"start_ip\": \"$1\", \"device_count\": $2,
+    \"flow\": { \"collector\": \"$4\", \"protocol\": \"$3\" }
+  }"
+done
+```
+
+Then run one scenario per protocol, in sequence — each finalizes before the
+next submits (a terminal scenario is transparently replaced, so the single
+active slot is free):
+
+```bash
+run() { # $1=protocol  $2=participants-csv
+  ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d "{
+    \"participants\": [$2], \"protocol\": \"$1\", \"rate\": 20, \"window\": \"1m\", \"drain\": \"5s\", \"seed\": 7
+  }" | jq -r .id)
+  curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm   >/dev/null
+  curl -sf -X POST $NL6/api/v1/scenarios/$ID/start >/dev/null
+  sleep 66   # window + drain
+  curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop > "report-$1.json"
+}
+run netflow5 '"10.0.2.1","10.0.2.2"'
+run netflow9 '"10.0.3.1","10.0.3.2"'
+run ipfix    '"10.0.4.1","10.0.4.2","10.0.4.3","10.0.4.4","10.0.4.5","10.0.4.6"'
+```
+
+Each run produces its own report keyed by `(protocol, source_ip, collector)`;
+reconcile the three independently (`nl6-reconcile -report report-ipfix.json …`
+per protocol). The fleet exports all three protocols the whole time — a
+scenario just measures one subset's window at a time. To weight the mix by
+**traffic** rather than device count, keep the device split and give each
+protocol's scenario a proportional `rate`.
+
 ## NetFlow v5 run isolation (time-window + source-IP only)
 
 NetFlow v5 is a fixed-format protocol — no templates, no option records, no
