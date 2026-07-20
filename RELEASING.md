@@ -128,7 +128,7 @@ publish:
 
 - [ ] The draft Release has the correct tag and attaches the binaries
       (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`), `.deb`/`.rpm`,
-      `checksums.txt` + `.sig` + `.pem`, and `nl6.sbom.spdx.json`.
+      `checksums.txt` + `checksums.txt.cosign.bundle`, and `nl6.sbom.spdx.json`.
 - [ ] **Verify the signatures + provenance** (see the next section). Do this on
       the draft assets before publishing.
 - [ ] Curate the release notes — the auto-generated list is a starting point;
@@ -156,9 +156,10 @@ workflow and the GitHub Actions OIDC issuer.
 IDENTITY='^https://github.com/labmonkeys-space/nl6/.github/workflows/release.yml@refs/tags/v.*$'
 ISSUER='https://token.actions.githubusercontent.com'
 
-# 1. Checksums file (cosign sign-blob). Then check the artifacts against it.
+# 1. Checksums file (cosign sign-blob, new bundle format). Then check the
+#    artifacts against it.
 cosign verify-blob checksums.txt \
-  --certificate checksums.txt.pem --signature checksums.txt.sig \
+  --bundle checksums.txt.cosign.bundle \
   --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
 sha256sum -c checksums.txt
 

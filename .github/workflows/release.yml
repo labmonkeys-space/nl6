@@ -67,10 +67,12 @@ jobs:
 
       - name: Sign checksums (cosign keyless)
         working-directory: dist
+        # cosign v3+ defaults to the new Sigstore bundle format: a single
+        # self-contained .cosign.bundle (signature + cert + Rekor entry). The
+        # legacy --output-signature/--output-certificate flags are ignored under
+        # it, so emit the bundle. Verify with `cosign verify-blob --bundle`.
         run: |
-          cosign sign-blob --yes checksums.txt \
-            --output-signature checksums.txt.sig \
-            --output-certificate checksums.txt.pem
+          cosign sign-blob --yes checksums.txt --bundle checksums.txt.cosign.bundle
 
       - name: Generate SBOM (syft)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
@@ -111,8 +113,7 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/checksums.txt
-            dist/checksums.txt.sig
-            dist/checksums.txt.pem
+            dist/checksums.txt.cosign.bundle
             dist/nl6.sbom.spdx.json
 
   docker:
