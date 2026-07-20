@@ -3,11 +3,17 @@
 There are only two things to know:
 
 - **Stable releases are tag-driven.** Pushing a `vMAJOR.MINOR.PATCH` tag
-  (e.g. `v0.3.2`) to `main` runs `.github/workflows/release.yml`: it builds
-  Linux amd64/arm64 binaries, publishes a GitHub Release with
-  auto-generated notes, and pushes a multi-platform Docker image to
-  `ghcr.io/labmonkeys-space/nl6:<tag>` and the floating `:latest`
-  alias. The public landing page advertises this version.
+  (e.g. `v0.3.2`) to `main` runs `.github/workflows/release.yml`: it runs the
+  quality gates, builds the Linux amd64/arm64 simulator binaries + the
+  cross-platform `nl6-reconcile` CLI + `.deb`/`.rpm` packages, **cosign-signs**
+  the checksums file and the container image (keyless, via GitHub OIDC),
+  generates an **SBOM** (syft) and **SLSA build provenance**, creates a
+  **draft** GitHub Release with everything attached, and pushes a
+  multi-platform image to `ghcr.io/labmonkeys-space/nl6:<tag>` and the floating
+  `:latest`. A maintainer then curates the notes, verifies the signatures, and
+  **publishes** the draft. The public landing page advertises this version.
+  **Prerelease tags** (`v…-rc1`, `-beta`, …) are excluded from the trigger —
+  they never release and never move `:latest`.
 - **Release candidates are `main`.** Every push to `main` runs
   `.github/workflows/ci.yml`, which (on success) publishes the floating
   Docker image `ghcr.io/labmonkeys-space/nl6:rc`. There are **no
@@ -26,7 +32,8 @@ Values that used to drift between releases are now derived at build time:
 | App version on landing page         | `git describe --tags --abbrev=0`        | **automatic**               |
 | Go version on landing page          | parsed from `go/go.mod`                 | **automatic**               |
 | License on landing page             | constant in `docusaurus.config.ts`      | only on license change      |
-| Release notes on GitHub             | `softprops/action-gh-release` auto      | maintainer may edit post-hoc|
+| GitHub Release (draft)              | `softprops/action-gh-release` (`draft: true`) | **maintainer publishes** after curating notes + verifying signatures |
+| Cosign signatures + SBOM + provenance | `release.yml` (cosign keyless, syft, attest-build-provenance) | **automatic**       |
 | Docker `:latest` tag on GHCR        | pushed by `release.yml` on stable tag   | **automatic**               |
 | Docker `:rc` tag on GHCR            | pushed by `ci.yml` on every main push   | **automatic**               |
 | `.deb` / `.rpm` package version     | `APP_VERSION` (= tag) → `make packages` | **automatic**               |
@@ -101,7 +108,9 @@ The `:rc` tag is always overwritten in place — it points at whatever `main`
 last built successfully. There are no immutable pre-release tags; rollback
 to a specific pre-release commit is via `@<sha256:...>` digest on the image
 or by rebuilding from the corresponding `main` commit. `:latest` and the
-landing page are never affected by pre-release activity.
+landing page are never affected by pre-release activity. And should a
+prerelease tag (`v…-rc1`, `-beta`, …) ever be pushed by accident, the Release
+trigger's `!v*-*` filter ignores it — no release, no moved `:latest`.
 
 ## After you tag
 
@@ -114,18 +123,53 @@ Watch the two workflows that run in sequence:
    after `Release` succeeds. Rebuilds the Docusaurus site and deploys to
    `gh-pages`. The landing-page hero eyebrow will now read `vX.Y.Z`.
 
-Verify:
+The Release is created as a **draft** — review it, verify the artifacts, then
+publish:
 
-- [ ] GitHub Release exists with the correct tag and attached
-      `nl6-linux-amd64` + `nl6-linux-arm64` binaries.
-- [ ] Release notes are acceptable — edit on GitHub if the auto-generated
-      content bundled in too much noise.
+- [ ] The draft Release has the correct tag and attaches the binaries
+      (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`), `.deb`/`.rpm`,
+      `checksums.txt` + `.sig` + `.pem`, and `nl6.sbom.spdx.json`.
+- [ ] **Verify the signatures + provenance** (see the next section). Do this on
+      the draft assets before publishing.
+- [ ] Curate the release notes — the auto-generated list is a starting point;
+      trim `chore:`/`docs:`/deps noise down to user-visible highlights.
 - [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
+- [ ] **Publish** the draft:
+
+      ```sh
+      gh release edit vX.Y.Z --draft=false --repo labmonkeys-space/nl6
+      ```
+
 - [ ] <https://labmonkeys-space.github.io/nl6/> hero eyebrow shows
       `vX.Y.Z · Apache-2.0 · Go <minor>`. If the site didn't refresh,
       retrigger the docs workflow manually:
       `gh workflow run docs.yml --repo labmonkeys-space/nl6`.
+
+## Verify a release
+
+Signatures are **keyless** (Sigstore + GitHub OIDC); there is no long-lived
+public key. Verification pins the signing identity to this repo's release
+workflow and the GitHub Actions OIDC issuer.
+
+```sh
+IDENTITY='^https://github.com/labmonkeys-space/nl6/.github/workflows/release.yml@refs/tags/v.*$'
+ISSUER='https://token.actions.githubusercontent.com'
+
+# 1. Checksums file (cosign sign-blob). Then check the artifacts against it.
+cosign verify-blob checksums.txt \
+  --certificate checksums.txt.pem --signature checksums.txt.sig \
+  --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
+sha256sum -c checksums.txt
+
+# 2. Container image (cosign sign).
+cosign verify ghcr.io/labmonkeys-space/nl6:vX.Y.Z \
+  --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
+
+# 3. SLSA build provenance (binaries + image), via the GitHub attestation API.
+gh attestation verify nl6-linux-amd64 --repo labmonkeys-space/nl6
+gh attestation verify oci://ghcr.io/labmonkeys-space/nl6:vX.Y.Z --repo labmonkeys-space/nl6
+```
 
 ## Troubleshooting
 
@@ -167,4 +211,5 @@ to prevent:
 - A Go version hardcoded in any docs page (parse from `go/go.mod`).
 - A `:latest` or `:rc` Docker tag pushed from a workstation.
 - A pre-release Git tag (`-rc`, `-beta`, etc.). The `:rc` image is fed by
-  main pushes in `ci.yml`; there is no corresponding tag to cut.
+  main pushes in `ci.yml`; there is no corresponding tag to cut, and
+  `release.yml`'s `!v*-*` trigger filter ignores one if it's pushed anyway.

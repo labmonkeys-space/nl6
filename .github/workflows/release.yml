@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*.*.*'
+      # Prerelease tags (v2.0.0-rc1, -beta, …) are NOT released: RCs are the
+      # floating `:rc` image fed by main pushes (see RELEASING.md). Excluding
+      # them here means `:latest` and the stable Release can never be moved by
+      # a prerelease tag.
+      - '!v*-*'
 
 permissions:
   contents: read
@@ -28,7 +33,9 @@ jobs:
     timeout-minutes: 30
     needs: gates
     permissions:
-      contents: write
+      contents: write      # create the draft Release + upload assets
+      id-token: write      # cosign keyless + build provenance (OIDC)
+      attestations: write  # SLSA build provenance attestations
     env:
       APP_VERSION: ${{ github.ref_name }}
 
@@ -45,9 +52,43 @@ jobs:
           cache-dependency-path: go/go.sum
 
       - name: Build release binaries and packages
-        # `packages` depends on `dist`, so this builds the linux amd64/arm64
-        # binaries and then the .deb / .rpm packages for both arches.
+        # `packages` depends on `dist`, so this builds the simulator (linux
+        # amd64/arm64), the nl6-reconcile CLI (all OS/arch), and the .deb/.rpm.
         run: make packages
+
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          sha256sum -- nl6-linux-amd64 nl6-linux-arm64 nl6-reconcile-* *.deb *.rpm > checksums.txt
+          cat checksums.txt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: Sign checksums (cosign keyless)
+        working-directory: dist
+        run: |
+          cosign sign-blob --yes checksums.txt \
+            --output-signature checksums.txt.sig \
+            --output-certificate checksums.txt.pem
+
+      - name: Generate SBOM (syft)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/nl6.sbom.spdx.json
+          upload-artifact: false
+
+      - name: Attest build provenance (release artifacts)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: |
+            dist/nl6-linux-amd64
+            dist/nl6-linux-arm64
+            dist/nl6-reconcile-*
+            dist/*.deb
+            dist/*.rpm
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
@@ -56,9 +97,12 @@ jobs:
           path: dist/
           retention-days: 7
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
+        # Draft so a maintainer curates the notes and verifies the signatures /
+        # SBOM / provenance before publishing (see RELEASING.md).
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
+          draft: true
           generate_release_notes: true
           files: |
             dist/nl6-linux-amd64
@@ -66,6 +110,10 @@ jobs:
             dist/nl6-reconcile-*
             dist/*.deb
             dist/*.rpm
+            dist/checksums.txt
+            dist/checksums.txt.sig
+            dist/checksums.txt.pem
+            dist/nl6.sbom.spdx.json
 
   docker:
     name: Publish Docker image
@@ -74,7 +122,9 @@ jobs:
     needs: gates
     permissions:
       contents: read
-      packages: write
+      packages: write      # push to GHCR
+      id-token: write      # cosign keyless + provenance (OIDC)
+      attestations: write  # SLSA build provenance
     env:
       APP_VERSION: ${{ github.ref_name }}
       IMAGE: ghcr.io/${{ github.repository }}
@@ -98,9 +148,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Stable tag pushes publish an immutable `:vX.Y.Z` tag plus the floating
-      # `:latest` alias. Release candidates are handled entirely by ci.yml's
-      # `Publish RC image` job (push to main -> `:rc`), so this workflow only
-      # ever sees stable tags.
+      # Stable tags only reach this workflow (prereleases are excluded above), so
+      # a tag push always publishes the immutable `:vX.Y.Z` plus the floating
+      # `:latest`. RC images are `ci.yml`'s `:rc` (push to main).
       - name: Build and push multi-platform image
         run: make docker-push DOCKER_TAGS="$IMAGE:$APP_VERSION $IMAGE:latest"
+
+      - name: Resolve pushed image digest
+        id: digest
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE:$APP_VERSION" --format '{{ .Manifest.Digest }}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "digest: $digest"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: Sign image (cosign keyless)
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+
+      - name: Attest image build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
