@@ -58,6 +58,11 @@ tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
 sent but the wire lost it". See the
 [report schema](./loadtest-report-schema.md#the-ledger-identity).
 
+**Prefer a browser?** Add `?format=html` for a self-contained page (stat cards,
+a loss-localization bar chart, and the participant table) you can eyeball or
+attach to a run report; `?format=csv` gives the flat join-ready projection. JSON
+(no `format`) stays the machine source of truth.
+
 ## Fidelity mode
 
 **`-fidelity` — a silent fleet.** By default every device starts pushing its

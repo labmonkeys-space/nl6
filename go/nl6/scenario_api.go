@@ -311,11 +311,17 @@ func scenarioReportHandler(w http.ResponseWriter, r *http.Request) {
 			"scenario %s is in phase %s; the report is available only after stop or abort", ctrl.id, ctrl.Phase()))
 		return
 	}
-	if r.URL.Query().Get("format") == "csv" {
+	switch r.URL.Query().Get("format") {
+	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.csv", ctrl.id))
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(reportCSV(rep))
+		return
+	case "html":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(reportHTML(rep))
 		return
 	}
 	writeScenarioJSON(w, http.StatusOK, rep)
