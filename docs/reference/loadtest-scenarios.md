@@ -135,7 +135,7 @@ loss_ratio = (sent − received) / sent
 `nl6-reconcile` does the join for you. It is **read-only**: give it a saved
 report and your collector's received-counts export, and it outer-joins on
 `(protocol, source_ip, collector)` and prints `loss_ratio` per key with an
-in-flight tolerance band. Build it with `make reconcile` (→ `go/nl6-reconcile`).
+in-flight tolerance band. See [Getting nl6-reconcile](#getting-nl6-reconcile).
 
 ```bash
 # Report as JSON (or CSV via ?format=csv); received as a collector CSV export.
@@ -165,6 +165,29 @@ nl6-reconcile -report report.json -received collector.csv
 - **Exit code.** `0` when every key is `OK`, `1` when any key is flagged — so
   `nl6-reconcile` drops straight into a CI gate. Use `-format csv|json` for a
   machine-readable diff.
+
+#### Getting nl6-reconcile
+
+`nl6-reconcile` is a small, stateless, **cross-platform** Go CLI — it runs
+wherever you diff (your laptop, a CI runner, the monitoring host), not on the
+Linux-only simulator host. Three ways to get it:
+
+- **Download a release binary** (recommended). Grab `nl6-reconcile-<os>-<arch>`
+  from the [releases](https://github.com/labmonkeys-space/nl6/releases) —
+  `linux` / `darwin` / `windows` × `amd64` / `arm64` — then `chmod +x` and put it
+  on your `PATH`.
+- **`go install`** (any platform with a Go toolchain):
+
+  ```bash
+  go install github.com/labmonkeys-space/nl6/go/cmd/nl6-reconcile@latest
+  ```
+
+- **From source**: `make reconcile` builds `go/nl6-reconcile`; run it as
+  `./go/nl6-reconcile` or copy it onto your `PATH`.
+
+`nl6-reconcile -version` prints the build version (stamped from the same release
+tag as the simulator, so a report's `metadata.nl6_version` and the diff tool's
+version together pin a reconciliation).
 
 To reconcile **by hand** instead:
 

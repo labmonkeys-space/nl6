@@ -106,6 +106,7 @@ jobs:
           files: |
             dist/nl6-linux-amd64
             dist/nl6-linux-arm64
+            dist/nl6-reconcile-*
             dist/*.deb
             dist/*.rpm
 

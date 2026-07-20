@@ -58,7 +58,7 @@ build: check-go
 
 ## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
 reconcile: check-go
-	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o nl6-reconcile ./cmd/nl6-reconcile
+	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o nl6-reconcile ./cmd/nl6-reconcile
 
 ## version: Print the resolved version string (useful for CI diagnostics)
 version:
@@ -76,11 +76,22 @@ check-tidy: check-go
 	  exit 1; \
 	}
 
-## dist: Build release binaries for linux/amd64 and linux/arm64 into dist/
+## dist: Build release binaries into dist/ — the simulator (linux amd64/arm64)
+## and the nl6-reconcile CLI (linux/darwin/windows × amd64/arm64)
 dist: check-go
 	mkdir -p dist
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-amd64 ./nl6
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o ../dist/$(BINARY)-linux-arm64 ./nl6
+	# nl6-reconcile is pure Go (no TUN/netns/root) and runs where the operator
+	# diffs — laptop, CI, monitor host — so ship it for every OS/arch, unlike
+	# the Linux-only simulator.
+	@for os in linux darwin windows; do \
+	  for arch in amd64 arm64; do \
+	    ext=""; [ "$$os" = "windows" ] && ext=".exe"; \
+	    echo "dist: nl6-reconcile-$$os-$$arch$$ext"; \
+	    ( cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -ldflags "$(LDFLAGS)" -o ../dist/nl6-reconcile-$$os-$$arch$$ext ./cmd/nl6-reconcile ) || exit 1; \
+	  done; \
+	done
 
 # Native OS packages (.deb + .rpm) are built with nfpm from a single spec at
 # deploy/packages/nfpm.yaml. Pinned so local and CI builds match; not tracked
