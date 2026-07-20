@@ -165,14 +165,16 @@ const reportHTMLSource = `<!DOCTYPE html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
 .wrap{max-width:880px;margin:0 auto;padding:40px 24px 64px}
-h1{font-family:var(--mono);font-weight:500;font-size:23px;letter-spacing:-.01em;margin:0 0 8px}
+h1{font-family:var(--mono);font-weight:500;font-size:22px;letter-spacing:-.01em;margin:0}
 h2{font-family:var(--mono);font-weight:500;font-size:14px;text-transform:uppercase;letter-spacing:.05em;
   color:var(--fg-dim);margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--hair)}
 section{margin-top:44px}
 .mono{font-family:var(--mono)}
 .muted{color:var(--fg-mute)}
-.brand-logo{display:block;margin-bottom:16px}
-.brand-logo svg{height:30px;width:auto;display:block}
+.brand-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.brand-logo{display:block}
+.brand-logo svg{height:28px;width:auto;display:block}
+.brand-div{width:1px;height:24px;background:var(--hair-strong)}
 .meta-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:2px}
 .id{font-family:var(--mono);font-size:13px;color:var(--fg-dim)}
 .pill{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;
@@ -212,8 +214,11 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
 <body>
 <div class="wrap">
   <header>
-    <span class="brand-logo">{{.Logo}}</span>
-    <h1>Load-test scenario report</h1>
+    <div class="brand-head">
+      <span class="brand-logo">{{.Logo}}</span>
+      <span class="brand-div"></span>
+      <h1>Load-test scenario report</h1>
+    </div>
     <div class="meta-row">
       <span class="pill pill-ver"><span class="gdot">●</span> {{.R.Summary.Metadata.Nl6Version}}</span>
       <span class="id">{{.R.Summary.ID}}</span>
