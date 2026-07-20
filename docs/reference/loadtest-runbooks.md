@@ -157,7 +157,7 @@ collector's records by each device's Observation Domain ID within `[T0,T1)`.
 
 ### 8. Mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
-A scenario targets **one protocol** (MVP: one active scenario at a time), so a
+A scenario targets **one protocol** (one active scenario at a time), so a
 mixed fleet is measured with **one scenario per protocol** over that protocol's
 device subset, run **back-to-back**. The 20 / 20 / 60 split is just how many
 devices you configure for each protocol. Seed flags apply a single protocol to

@@ -257,7 +257,7 @@ list before `start`.
 | `excluded[].reason = "device has no syslog exporter"` | The device exists but syslog export is not enabled on it. | Enable syslog export on the device — the `-syslog-collector` seed flag (auto-start batch) or a per-device `syslog` block in `POST /api/v1/devices`. |
 | `excluded[].reason = "device deleted between arm and start"` | The device was deleted in the arm→start gap (before the freeze). | Re-arm after the fleet is stable. |
 | `start` → `409 … 0/N participants armed` | Every declared participant was excluded. | Fix the exclusions above; you cannot start a scenario with no armed devices. |
-| `POST /scenarios` → `409 a scenario is already active` | Another scenario is still non-terminal (MVP allows one). | Stop / abort / `DELETE` the active scenario first (`GET /api/v1/scenarios/{id}` to see its phase). |
+| `POST /scenarios` → `409 a scenario is already active` | Another scenario is still non-terminal (only one active at a time). | Stop / abort / `DELETE` the active scenario first (`GET /api/v1/scenarios/{id}` to see its phase). |
 | `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](./loadtest-api.md#phase--verb-matrix). |
 | `report` → `409 … available only after stop or abort` | The scenario has not finalized yet. | Stop it (or wait for the window to auto-close at `T1`), then re-request the report. |
 | Device create/delete → `409 fleet … frozen by running scenario` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |
@@ -293,7 +293,7 @@ keeps the measurement window clean — but it means:
   window, suppress those alerts for the participants, or keep windows short.
 - Non-participant devices are unaffected — their background cadence continues.
 
-## Graceful abort produces a finalized report (FR14)
+## Graceful abort produces a finalized report
 
 A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the
 run. The shutdown path aborts the scenario through the same drain-and-finalize
@@ -316,7 +316,7 @@ by other means and read the report while nl6 is still up.
 **SIGKILL** (or a crash / OOM) makes **no promise** beyond the in-memory-loss
 non-goal below: there is no abort pipeline, so no report is produced.
 
-## Non-goal: scenarios are in-memory (FR42)
+## Non-goal: scenarios are in-memory
 
 **Scenarios do not persist.** The active scenario, its ledger, and its
 finalized report live entirely in the simulator process's memory. They do

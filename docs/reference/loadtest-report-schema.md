@@ -61,21 +61,21 @@ streaming consumer sees the aggregate first.
 |-------|------|---------|
 | `id` | string | Scenario ID (`s-000001`). |
 | `phase` | string | Terminal phase: `stopped` (window elapsed / explicit stop) or `aborted` (graceful shutdown). |
-| `protocol` | string | Participating protocol (MVP `syslog`). |
+| `protocol` | string | Participating protocol. |
 | `metadata` | object | The reproducibility fingerprint + actual window timestamps (see below). |
 | `duration` | string | `t1 − t0` as a Go duration, from the monotonic clock — the window that actually ran. |
 | `participants_armed` | number | Devices that armed and ran. |
 | `participants_excluded` | number | Declared participants that did not arm (see `excluded`). |
 | `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
 | `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
-| `sub_windows` | array | Fleet-wide **loss localization** (FR28): in-window sends per time bucket — element-wise sum of the `counters[].sub_windows` rows. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
+| `sub_windows` | array | Fleet-wide **loss localization**: in-window sends per time bucket — element-wise sum of the `counters[].sub_windows` rows. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
 | `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. |
 
 ### `summary.metadata`
 
 The reproducibility fingerprint plus the timestamps the run actually observed.
 Copy the `(config_sha256, seed)` back into a resubmit on the same
-`nl6_version` to re-run a scenario exactly (FR34).
+`nl6_version` to re-run a scenario exactly.
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -85,9 +85,9 @@ Copy the `(config_sha256, seed)` back into a resubmit on the same
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
-| `sub_window_count` | number | Loss-localization granularity (FR28): the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
+| `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
-| `run_tags` | object | **Run tagging** (FR37): how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+| `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
 ## `counters[]` — per participant
 
@@ -111,8 +111,8 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `informational.background_suppressed` | **Informational, quarantined in its own sub-object** — background-cadence fires the gate suppressed for this participant during the scenario. Deliberately **not** a flat sibling of the identity buckets and **not** part of the ledger identity. |
 | `informational.informs_acked` / `informs_pending` | SNMP **INFORM** ack settlement (best-effort, collector-side). An origination counts `sent` at first-transmit; `informs_pending = originations − acked` at report time (still-awaiting-ack). Zero for fire-and-forget traps and non-trap protocols. Outside the identity. |
 | `informational.requested` | Scheduler **demand** — every fire the scenario scheduler popped (pre-limiter). `requested = sent + deferred + send_failures + dropped`. |
-| `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss (FR22). |
-| `sub_windows` | **Loss localization** (FR28): this participant's in-window sends per time bucket. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
+| `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss. |
+| `sub_windows` | **Loss localization**: this participant's in-window sends per time bucket. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
 
 The six identity fields (`emitted` + the five loss buckets) are flat siblings;
 the disclosure counter is the sole member of the nested `informational` object.
