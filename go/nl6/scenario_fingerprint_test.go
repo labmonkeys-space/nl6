@@ -84,6 +84,33 @@ func TestScenarioReport_CSVProjection(t *testing.T) {
 	}
 }
 
+// TestScenarioReport_NoSniff (issue #281 / CodeQL go/reflected-xss): every
+// report representation carries X-Content-Type-Options: nosniff so a browser
+// can't MIME-sniff the CSV/JSON body (which echoes operator-set collector /
+// source_ip strings) as HTML.
+func TestScenarioReport_NoSniff(t *testing.T) {
+	router := scenarioAPIManager(t, 1)
+	id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"40ms","drain":"10ms","seed":1}`)
+	mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
+	mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
+	time.Sleep(120 * time.Millisecond)
+	_ = doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/stop", "")
+
+	for _, path := range []string{
+		"/api/v1/scenarios/" + id + "/report",
+		"/api/v1/scenarios/" + id + "/report?format=csv",
+		"/api/v1/scenarios/" + id + "/report?format=html",
+	} {
+		w := doReq(t, router, http.MethodGet, path, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s = %d", path, w.Code)
+		}
+		if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: X-Content-Type-Options = %q, want nosniff", path, got)
+		}
+	}
+}
+
 // runReportViaAPI drives a full API lifecycle under synctest with the given
 // seed and returns the parsed report — used by the reproduce round-trip.
 func runReportViaAPI(t *testing.T, seed int) scenarioReport {

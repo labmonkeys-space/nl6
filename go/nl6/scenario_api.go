@@ -311,6 +311,12 @@ func scenarioReportHandler(w http.ResponseWriter, r *http.Request) {
 			"scenario %s is in phase %s; the report is available only after stop or abort", ctrl.id, ctrl.Phase()))
 		return
 	}
+	// The report echoes operator-configured strings (collector, source_ip). Send
+	// X-Content-Type-Options: nosniff so a browser can never MIME-sniff the CSV
+	// or JSON body as HTML and execute embedded markup (reflected-XSS barrier,
+	// CodeQL go/reflected-xss). The HTML variant is separately safe: every field
+	// is auto-escaped by html/template.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	switch r.URL.Query().Get("format") {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
