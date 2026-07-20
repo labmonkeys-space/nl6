@@ -34,3 +34,4 @@ disclosure process in [SECURITY.md](SECURITY.md).
 nl6 is maintained on a best-effort basis. There is no SLA — please be patient
 and avoid pinging; a clear, reproducible report is the best way to get a timely
 response.
+
