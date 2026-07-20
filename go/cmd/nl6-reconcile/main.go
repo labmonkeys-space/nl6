@@ -22,12 +22,22 @@ import (
 	"os"
 )
 
+// Version is stamped at build time via -ldflags "-X main.Version=…" (the same
+// LDFLAGS the simulator binary uses); "dev" for a plain `go build`.
+var Version = "dev"
+
 func main() {
 	reportPath := flag.String("report", "", "path to the scenario report (JSON or CSV projection); '-' for stdin")
 	receivedPath := flag.String("received", "", "path to the received-counts input (CSV or Prometheus range JSON); '-' for stdin")
 	tolerance := flag.Float64("tolerance", 0.005, "in-flight tolerance band on loss_ratio (0.005 = 0.5%); |ratio| within it is OK")
 	format := flag.String("format", "text", "output format: text | csv | json")
+	showVersion := flag.Bool("version", false, "print the nl6-reconcile version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(Version)
+		return
+	}
 
 	if *reportPath == "" || *receivedPath == "" {
 		fmt.Fprintln(os.Stderr, "nl6-reconcile: both -report and -received are required")
