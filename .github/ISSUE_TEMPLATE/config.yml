@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/labmonkeys-space/nl6/security/advisories/new
+    about: Report vulnerabilities privately — do not open a public issue. See SECURITY.md.
+  - name: Documentation
+    url: https://labmonkeys-space.github.io/nl6/
+    about: Flags, protocols, load-test scenarios, and runbooks.

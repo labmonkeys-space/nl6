@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in nl6 isn't working as documented
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please fill in the fields below so it can be
+        reproduced. For security vulnerabilities, **stop** and follow
+        [SECURITY.md](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe, and what did you expect instead?
+      placeholder: nl6 returned X, but the docs say it should do Y.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands / API calls, in order.
+      placeholder: |
+        1. sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5
+        2. curl ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: nl6 version
+      description: Output of `nl6 -version`.
+      placeholder: v0.16.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS / kernel / arch (and container runtime, if any).
+      placeholder: Ubuntu 24.04, Linux 6.8, amd64
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error output. This is rendered as code — no backticks needed.
+      render: shell
+    validations:
+      required: false

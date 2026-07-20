@@ -1,0 +1,25 @@
+name: Question
+description: Ask how to do something with nl6
+labels: ["question", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [documentation](https://labmonkeys-space.github.io/nl6/)
+        and [CLAUDE.md](https://github.com/labmonkeys-space/nl6/blob/main/CLAUDE.md)
+        first — your answer may already be there.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: nl6 version
+      description: Output of `nl6 -version` (if relevant).
+      placeholder: v0.16.0
+    validations:
+      required: false
