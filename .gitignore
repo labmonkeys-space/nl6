@@ -47,6 +47,9 @@ build/
 .docusaurus/
 node_modules/
 
+# AI tools — working directories for AI/agent CLIs and spec-driven workflows.
+# Session-private, never committed.
+
 # OpenSpec working directory — spec-driven change proposals, archived
 # changes, and capability specs are managed as a local workflow artifact,
 # not as versioned project documentation.
