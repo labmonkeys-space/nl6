@@ -7,9 +7,8 @@ The load-test scenario subsystem is driven entirely over REST under
 [report](./loadtest-report-schema.md) an operator diffs against a monitor's
 received counts.
 
-MVP scope: **one active scenario at a time**, **syslog** protocol only. See
-the [scenarios guide](./loadtest-scenarios.md) for how to use these endpoints to run a
-fidelity check and troubleshoot failures.
+See the [scenarios guide](./loadtest-scenarios.md) for how to use these
+endpoints to run a fidelity check and troubleshoot failures.
 
 ## Conventions
 
@@ -43,7 +42,7 @@ fidelity check and troubleshoot failures.
 
 Registers a scenario and validates it structurally. Returns the allocated ID
 and the config fingerprint. Refused (`409`) while another scenario is
-non-terminal (MVP allows one active scenario; a terminal scenario is
+non-terminal (only one active scenario at a time; a terminal scenario is
 transparently replaced).
 
 Request body:
@@ -75,7 +74,7 @@ Request body:
 An optional guard that aborts the scenario through the standard
 `running → aborted` pipeline when a fleet-wide ledger metric stays over a
 threshold for a grace period — so a bad experiment stops itself before
-drowning the collector (FR7).
+drowning the collector.
 
 ```json
 {"metric": "send_failures", "threshold": 100, "grace": "5s"}
@@ -163,7 +162,7 @@ at `T0`, and starts the scenario-owned scheduler. **Refused (`409`) when 0/N
 participants armed.** The window self-closes at `T1` (auto-stop). Returns the
 status object.
 
-An optional body schedules the start at an **absolute T0** (FR11) so a run
+An optional body schedules the start at an **absolute T0** so a run
 aligns to a wall-clock schedule without a warm operator:
 
 ```json
@@ -238,7 +237,7 @@ collector)`, so **summing a family reproduces the matching report summary
 total** — e.g. `sum(nl6_scenario_sent_total)` equals `summary.sent`. Because
 each counter only advances in-window, a Prometheus range query
 (`increase(nl6_scenario_sent_total[…])` over `[T0,T1]`) reproduces the report
-totals (NFR-O2). Every lifecycle transition is also written to the process log
+totals. Every lifecycle transition is also written to the process log
 as a structured `scenario=<id> phase=<phase>` line for correlation.
 
 ### `GET /api/v1/scenarios/{id}` — status
@@ -261,7 +260,7 @@ as a structured `scenario=<id> phase=<phase>` line for correlation.
 `aborted` is observable after the fact.
 
 While a scenario is running (or after it finalizes), status also carries the
-live **window** and a **counts** block for unattended observability (FR30):
+live **window** and a **counts** block for unattended observability:
 
 ```json
 {
@@ -285,7 +284,7 @@ actual window bounds (the running gate's, or the finalized result's).
 {"scenarios": [{"id": "s-000001", "phase": "running"}]}
 ```
 
-Lists the active scenarios with their phases (MVP: 0 or 1 — one active at a
+Lists the active scenarios with their phases (0 or 1 — one active at a
 time). Empty `scenarios: []` when none.
 
 ### `DELETE /api/v1/scenarios/{id}` — cancel / release

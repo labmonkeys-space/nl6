@@ -52,7 +52,7 @@ result.
 
 ## Limits
 
-- **One active scenario at a time** (MVP).
+- **One active scenario at a time**.
 - **In-memory only** — a scenario, its ledger, and its report do not survive a
   restart; fetch the report before restarting. See
-  [Scenarios → Non-goal](./loadtest-scenarios.md#non-goal-scenarios-are-in-memory-fr42).
+  [Scenarios → Non-goal](./loadtest-scenarios.md#non-goal-scenarios-are-in-memory).
