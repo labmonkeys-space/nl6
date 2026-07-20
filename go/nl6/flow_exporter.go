@@ -368,6 +368,11 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// barrier so Stop can outlast an in-flight tick. `scenCount` records the
 	// per-datagram ledger accounting done at each write-return below.
 	part := fe.scenPart.Load()
+	// Fidelity mode: a non-participant device emits no autonomous flow at all
+	// (not even templates) — the wire is silent until a scenario drives it.
+	if part == nil && fidelitySilent.Load() {
+		return FlowTickStats{}
+	}
 	scenActive := false
 	if part != nil {
 		switch part.decide(sourceScenario, now) {

@@ -263,6 +263,11 @@ func (e *SyslogExporter) fireWithSource(entry *SyslogCatalogEntry, overrides map
 	}
 	p := e.scenPart.Load() // one load; may be nil; tolerate teardown race
 	if p == nil {
+		// Fidelity mode: a device outside a scenario window stays silent, so
+		// only a running scenario's traffic is ever on the wire.
+		if fidelityMutesBackground(src) {
+			return nil
+		}
 		if ifIndex < 0 {
 			ifIndex = e.ifIndexFn()
 		}

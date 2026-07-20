@@ -23,6 +23,8 @@ sudo ./nl6 [flags]
 -snmpv3-priv <proto>    # none | des | aes128
 -no-namespace           # Disable network namespace isolation
 -version                # Print version string and exit (no startup side effects)
+-fidelity               # [global] Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a running load-test scenario window. Devices still answer polls; on-demand fires still go through. Default: false.
+-scenario-pen <uint>    # [global] IANA PEN for PEN-dependent scenario run tags (syslog SD-PARAM, SNMP enterprise varbind); 0 = unset → those levers degrade to window+source-IP.
 -if-error-scenario <s>  # Auto-start-batch per-device error/discard scenario: clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via if_error_scenario.
 -if-flap-scenario <s>   # [seed]   Auto-start-batch per-device link-flap scenario: clean (default; no flaps) | rare (~6h mean) | typical (~15min) | aggressive (~1min). REST-created devices default to clean; opt in via if_flap_scenario.
 -if-flap-global-cap <r> # [global] Simulator-wide tps ceiling on flap events (0 = unlimited)

@@ -324,6 +324,10 @@ func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]
 	}
 	p := e.scenPart.Load()
 	if p == nil {
+		// Fidelity mode: silent outside a scenario window (see fidelity.go).
+		if fidelityMutesBackground(src) {
+			return 0
+		}
 		return e.fireWithCtx(entry, e.buildCtx(resolveIf()), overrides, nil)
 	}
 	switch p.decide(src, p.now()) {

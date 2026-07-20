@@ -58,6 +58,30 @@ tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
 sent but the wire lost it". See the
 [report schema](./loadtest-report-schema.md#the-ledger-identity).
 
+## Fidelity mode
+
+**`-fidelity` — a silent fleet.** By default every device starts pushing its
+background telemetry — flow, SNMP
+traps, syslog, gNMI dial-out — on its own cadence the moment it comes up. So a
+scenario's window is mixed in with steady background noise, and the fleet keeps
+emitting after the run ends. Start nl6 with **`-fidelity`** to invert that: the
+fleet is **silent** — no autonomous push leaves any device — **except** during a
+running scenario's `[T0,T1)` window, where only that scenario's gated traffic
+flows. Silence before the run, only the scenario during it, silence again after.
+
+- Devices still answer **polls** (SNMP / SSH / HTTPS) normally — fidelity mutes
+  only autonomous *push* telemetry.
+- Explicit **on-demand** fires (`POST /devices/{ip}/{trap,syslog}`) still go
+  through — a deliberate action, not background chatter.
+- Fleet-wide and static: set once at startup, **off by default**.
+- It mutes **autonomous** push. A gNMI **dial-in** subscription is
+  client-initiated (the collector `Subscribe`d), so it keeps streaming — cancel
+  the subscription if you need the gNMI path quiet too.
+
+The payoff is the cleanest possible measurement environment — a report you can
+diff against a collector with zero background contamination on either side. Add
+`-fidelity` to any launch command below.
+
 ## Worked examples
 
 Each recipe below is complete: how to start nl6 so the target protocol is
@@ -65,6 +89,8 @@ exporting, the scenario to submit, and what to read back. They all assume
 `NL6=http://localhost:8080`, the [lifecycle](#run-a-fidelity-check) above
 (`submit → arm → start → stop → report`), and that every `POST` sends
 `Content-Type: application/json`. nl6 runs as root (TUN / network namespace).
+For a clean window with no background noise, add [`-fidelity`](#fidelity-mode)
+to the launch line.
 
 The scenario **gates an export that already exists** — it never configures the
 wire. So each device must have the target protocol's exporter enabled first,
@@ -186,7 +212,9 @@ T0** (templates are counted separately), so a collector sees no pre-window
 sequence advance.
 
 ```bash
-sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5 \
+# -fidelity keeps the 5 devices silent until the scenario window opens, so the
+# collector sees IPFIX only for [T0,T1) — no startup or post-run background.
+sudo ./nl6 -fidelity -auto-start-ip 10.42.0.1 -auto-count 5 \
   -flow-collector 10.0.0.9:4739 -flow-protocol ipfix
 
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{

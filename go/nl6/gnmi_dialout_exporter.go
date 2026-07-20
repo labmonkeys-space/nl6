@@ -119,6 +119,10 @@ func (e *GnmiDialoutExporter) streamLive() bool {
 func (e *GnmiDialoutExporter) scenarioGate(now time.Time) (enqueue bool, leave func()) {
 	part := e.scenPart.Load()
 	if part == nil {
+		// Fidelity mode: no autonomous dial-out outside a scenario window.
+		if fidelitySilent.Load() {
+			return false, func() {}
+		}
 		return true, func() {} // non-participant: legacy passthrough
 	}
 	switch part.decide(sourceScenario, now) {
