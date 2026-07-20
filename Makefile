@@ -25,6 +25,10 @@ GOARCH ?= amd64
 # itself). See openspec/changes/expose-simulator-version/design.md D6.
 VERSION     ?= $(shell git describe --tags 2>/dev/null || echo dev)
 APP_VERSION ?= $(VERSION)
+# A CI caller may pass APP_VERSION as an empty string (an unset reusable-workflow
+# input renders to ""); fall back to the git-describe VERSION so the guard below
+# never sees a blank value.
+APP_VERSION := $(or $(strip $(APP_VERSION)),$(VERSION))
 
 # Guard against shell-metachar / whitespace injection through APP_VERSION
 # into the -ldflags string. Allowed grammar tracks the characters that

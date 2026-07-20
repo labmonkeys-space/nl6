@@ -1,0 +1,121 @@
+name: Gates
+
+# The single definition of the quality gates — build + test and code quality.
+# Called via `workflow_call` by CI (PR + main), the RC/preview build (main
+# push, in ci.yml), and Release (tag). Defining them once means a release can
+# never publish through a gate that PRs enforce, and the two can't drift.
+on:
+  workflow_call:
+    inputs:
+      assert-version-matches-tag:
+        description: >-
+          Assert the built binary's and the Nix package's version equal the
+          pushed tag. Release-only; bakes APP_VERSION from the tag.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Release calls bake the tag (git describe is unreliable in a shallow
+      # clone); PR/push calls leave it empty and the Makefile falls back to
+      # git describe.
+      APP_VERSION: ${{ inputs.assert-version-matches-tag && github.ref_name || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Verify go.mod is tidy
+        run: make check-tidy
+
+      - name: Build
+        run: make build
+
+      - name: Assert baked version matches tag
+        if: ${{ inputs.assert-version-matches-tag }}
+        run: |
+          baked=$(./go/nl6/nl6 -version)
+          if [ -z "$baked" ] || [ -z "${GITHUB_REF_NAME}" ]; then
+            echo "version assertion failed: empty value — baked='$baked', tag='${GITHUB_REF_NAME}'"
+            exit 1
+          fi
+          if [ "$baked" != "${GITHUB_REF_NAME}" ]; then
+            echo "version drift: binary reports '$baked', tag is '${GITHUB_REF_NAME}'"
+            exit 1
+          fi
+          echo "version OK: $baked"
+
+      - name: Assert Nix package version matches tag
+        if: ${{ inputs.assert-version-matches-tag }}
+        # A flake cannot read the git tag, so deploy/packages/nix/package.nix
+        # carries a hardcoded version bumped per release. Fail loudly if that
+        # bump was forgotten, rather than shipping a stale Nix version.
+        run: |
+          nixver=$(sed -nE 's/.*version \? "([^"]+)".*/\1/p' deploy/packages/nix/package.nix | head -1)
+          tag=${GITHUB_REF_NAME#v}
+          if [ -z "$nixver" ]; then
+            echo "could not parse version from deploy/packages/nix/package.nix"
+            exit 1
+          fi
+          if [ "$nixver" != "$tag" ]; then
+            echo "Nix version drift: package.nix is '$nixver', tag is '$tag'."
+            echo "Bump 'version ? \"...\"' in deploy/packages/nix/package.nix (see RELEASING.md) and re-tag."
+            exit 1
+          fi
+          echo "Nix version OK: $nixver"
+
+      - name: Test
+        run: make test
+
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Cache golangci-lint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('.golangci.yml', 'go/go.sum') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-
+
+      - name: Install quality tools
+        run: make tools-quality
+
+      - name: Format check (gofmt + goimports)
+        run: make fmt-check
+
+      - name: Lint (golangci-lint)
+        run: make lint
+
+      - name: Vulnerability scan (govulncheck)
+        run: make vuln
+
+      - name: Security scan (gosec)
+        run: make sec
