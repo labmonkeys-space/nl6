@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
 
 # ----
 
-FROM alpine:3.21
+FROM alpine:3.24
 
 RUN apk add --no-cache iproute2 iptables
 
