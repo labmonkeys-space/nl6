@@ -13,6 +13,13 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # Base image in the repo-root Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
   - package-ecosystem: npm
     directory: /
