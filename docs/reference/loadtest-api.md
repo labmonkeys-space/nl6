@@ -207,10 +207,16 @@ to a live stream, or `send_failures` when the stream is down (a collector blip
 is visible, never masked). `rate` is not used for dial-out (its SAMPLE cadence
 comes from the device's dial-out config), but is still required + fingerprinted.
 
-Add **`?format=csv`** to get a flat `text/csv` projection of `counters[]`
-(header row + one row per participant, join-ready on
-`(protocol, source_ip, collector)`) instead of JSON — see the
-[CSV projection](./loadtest-report-schema.md#csv-projection).
+The `format` query parameter selects the representation (default JSON):
+
+- **`?format=csv`** — a flat `text/csv` projection of `counters[]` (header row +
+  one row per participant, join-ready on `(protocol, source_ip, collector)`);
+  see the [CSV projection](./loadtest-report-schema.md#csv-projection).
+- **`?format=html`** — a **self-contained** `text/html` page (embedded CSS, no
+  external fonts / JS / frameworks): stat cards, the per-time-bucket loss-
+  localization bar chart, run-tag panel, identity totals, and the participant
+  table with per-row status. The human-readable view of the same data — open it
+  in a browser or attach it to a run; JSON stays the machine source of truth.
 
 ### `GET /api/v1/scenarios/{id}/metrics` — live gauges (Prometheus)
 
