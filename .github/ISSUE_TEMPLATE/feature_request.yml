@@ -1,0 +1,31 @@
+name: Enhancement request
+description: Suggest a new capability, device type, protocol, or flag
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Describe the use case first — the problem you're
+        trying to solve — so the solution can be scoped well.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to do that nl6 can't (easily) do today?
+      placeholder: I need to validate my collector against ... but nl6 only ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like nl6 to do? A new flag, device type, protocol, endpoint?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you've tried or thought about.
+    validations:
+      required: false
