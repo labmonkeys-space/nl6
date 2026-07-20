@@ -20,10 +20,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     name: Build & smoke-test packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -31,6 +36,7 @@ jobs:
           # Full history + tags so `git describe` bakes a real version into the
           # binary and the package filenames.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
@@ -38,7 +44,7 @@ jobs:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
 
-      # ubuntu-latest runners ship Docker, which `make smoke` uses to install
+      # ubuntu-24.04 runners ship Docker, which `make smoke` uses to install
       # the amd64 packages in debian/ubuntu/rocky/alma/centos-stream containers.
       - name: Build packages and smoke-test installation
         run: make smoke

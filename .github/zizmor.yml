@@ -1,0 +1,26 @@
+# zizmor configuration — https://docs.zizmor.sh/configuration/
+#
+# Accepted-risk / low-confidence findings, suppressed with rationale so the
+# `Actions lint` gate stays actionable (a red gate must mean a real regression).
+rules:
+  cache-poisoning:
+    # Low-confidence: setup-go's module cache in the release job. The cache key
+    # is derived from go.sum (content-addressed), the release also asserts the
+    # baked version matches the tag, and images/binaries are rebuilt from source
+    # each run — a poisoned cache cannot substitute a different artifact.
+    ignore:
+      - release.yml
+
+  dangerous-triggers:
+    # docs.yml uses `workflow_run: [Release]` to rebuild the site after a
+    # release. It checks out the default ref (main/tag), never PR-head code, and
+    # is guarded by `github.event.workflow_run.conclusion == 'success'`.
+    ignore:
+      - docs.yml
+
+  superfluous-actions:
+    # softprops/action-gh-release is used deliberately to create the release and
+    # attach the built artifacts in one step; a hand-rolled `gh release` script
+    # would be more code for no benefit.
+    ignore:
+      - release.yml

@@ -6,13 +6,20 @@ on:
       - 'v*.*.*'
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  # Never cancel an in-flight release — a cancelled run publishes half of itself.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   ci:
     name: Build & Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
     env:
       # Tag-event workflow: bake the pushed tag into the binary as the
       # ground-truth version. Overrides the Makefile's `git describe`
@@ -23,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
@@ -72,14 +81,19 @@ jobs:
 
   release:
     name: Build & Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     needs: ci
+    permissions:
+      contents: write
     env:
       APP_VERSION: ${{ github.ref_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
@@ -100,7 +114,7 @@ jobs:
           retention-days: 7
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
           generate_release_notes: true
           files: |
@@ -112,14 +126,21 @@ jobs:
 
   docker:
     name: Publish Docker image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     needs: ci
+    permissions:
+      contents: read
+      packages: write
     env:
       APP_VERSION: ${{ github.ref_name }}
+      IMAGE: ghcr.io/${{ github.repository }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
@@ -139,4 +160,4 @@ jobs:
       # `Publish RC image` job (push to main -> `:rc`), so this workflow only
       # ever sees stable tags.
       - name: Build and push multi-platform image
-        run: make docker-push DOCKER_TAGS="ghcr.io/${{ github.repository }}:${{ github.ref_name }} ghcr.io/${{ github.repository }}:latest"
+        run: make docker-push DOCKER_TAGS="$IMAGE:$APP_VERSION $IMAGE:latest"
