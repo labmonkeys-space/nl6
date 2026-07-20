@@ -180,6 +180,11 @@ func main() {
 		// SNMP enterprise varbind). 0 = unset → those levers degrade to
 		// window + source-IP isolation, recorded in the report's run_tags.
 		scenarioPEN = flag.Uint("scenario-pen", 0, "IANA Private Enterprise Number for PEN-dependent scenario run tags (0 = unset; syslog/SNMP levers degrade to window+source-IP)")
+
+		// fidelity keeps the fleet silent (no autonomous flow/trap/syslog/gNMI
+		// dial-out push) except during a running load-test scenario window, so
+		// the measurement window is clean. Devices still answer polls.
+		fidelity = flag.Bool("fidelity", false, "Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a load-test scenario window")
 	)
 
 	flag.Parse()
@@ -240,6 +245,10 @@ func main() {
 	useNamespace := !*noNamespace
 	manager = NewSimulatorManagerWithOptions(useNamespace)
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
+	fidelitySilent.Store(*fidelity)
+	if *fidelity {
+		log.Printf("[fidelity] fleet silent — no autonomous push telemetry until a scenario runs (-fidelity)")
+	}
 
 	// Load the inter-device LLDP topology graph if configured. Syntactic
 	// validation failures are fatal; missing devices are NOT (lazy

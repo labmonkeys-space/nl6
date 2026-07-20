@@ -220,6 +220,17 @@ prerequisites and `netcat` smoke-test, and
 | `-syslog-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-syslog-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. Per-device bind failures are non-fatal (unlike INFORM mode on the trap side) — the exporter falls back to the shared socket with a warning. |
 
+## Load-test scenario flags
+
+Global switches for the [load-test scenario subsystem](loadtest-runbook.md).
+The scenarios themselves are driven over REST (`/api/v1/scenarios`); these
+flags shape the whole fleet at startup.
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-fidelity` | bool | `false` | **global** | Keep the fleet **silent** — no autonomous flow / SNMP-trap / syslog / gNMI-dial-out push — except during a running scenario's `[T0,T1)` window, for a clean measurement window. Devices still answer polls; explicit on-demand fires still go through. See [Fidelity mode](loadtest-runbook.md#fidelity-mode). |
+| `-scenario-pen` | uint | `0` | **global** | IANA Private Enterprise Number for PEN-dependent scenario [run tags](loadtest-runbook.md#run-tagging--isolating-experiment-traffic) (syslog SD-PARAM, SNMP enterprise varbind). `0` = unset → those levers degrade to window + source-IP isolation. |
+
 ## LLDP topology flag
 
 Pre-load an inter-device LLDP link graph at startup. The graph is also mutable
