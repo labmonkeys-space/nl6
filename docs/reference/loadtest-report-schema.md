@@ -5,7 +5,7 @@ authoritative record of what nl6 **sent**, which an operator diffs against a
 monitor's **received** counts to localize missed or duplicated telemetry. It
 is built once at stop/abort, immutable thereafter, and served by
 `GET /api/v1/scenarios/{id}/report` (also returned by `stop`). See the
-[API reference](./loadtest-api.md) and the [runbook](./loadtest-runbook.md).
+[API reference](./loadtest-api.md) and the [scenarios guide](./loadtest-scenarios.md).
 
 ## Shape
 
@@ -87,7 +87,7 @@ Copy the `(config_sha256, seed)` back into a resubmit on the same
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
 | `sub_window_count` | number | Loss-localization granularity (FR28): the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
-| `run_tags` | object | **Run tagging** (FR37): how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-runbook.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+| `run_tags` | object | **Run tagging** (FR37): how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
 ## `counters[]` — per participant
 

@@ -12,10 +12,11 @@ export type TerminalLine =
 
 export const FEATURES: Feature[] = [
   { icon: 'scale', title: '30,000 devices', body: 'Tested scale on a single host. Parallel TUN pre-allocation, lock-free sync.Map for O(1) OID lookups, pre-computed next-OID mappings.' },
-  { icon: 'proto', title: 'Protocols', body: 'SNMP v2c/v3 (MD5/SHA1 · DES/AES128), SSH with VT100, HTTPS REST, NetFlow v5 / v9 / IPFIX, gNMI (OpenConfig interfaces). sFlow v5 (experimental).' },
+  { icon: 'proto', title: 'Protocols', body: 'SNMP v2c/v3 (MD5/SHA1 · DES/AES128), SSH with VT100, HTTPS REST, NetFlow v5 / v9 / IPFIX, gNMI (OpenConfig interfaces). sFlow v5 (experimental). Push exporters: SNMP traps/informs, syslog, gNMI dial-out.' },
+  { icon: 'metric', title: 'Load-test fidelity', body: 'Arm → run a bounded push experiment over 7 protocols → get an exact sent-ledger. Diff it against your monitor to localize missed or duplicated telemetry. Fidelity mode, loss localization, run tagging, nl6-reconcile CLI, HTML report.' },
   { icon: 'devices', title: '28 device types', body: 'Routers, switches, firewalls, servers, GPU servers (DGX/HGX), storage systems, Linux servers — across 8 categories.' },
   { icon: 'gpu', title: 'GPU simulation', body: 'NVIDIA DGX-A100 / H100 / HGX-H200 with per-GPU DCGM OIDs — utilization, VRAM, temp, power, fan, SM/memory clocks.' },
-  { icon: 'isol', title: 'Namespace isolation', body: 'Each device runs in the dedicated opensim network namespace with its own TUN interface and IP.' },
+  { icon: 'isol', title: 'Namespace isolation', body: 'Each device runs in the dedicated nl6sim network namespace with its own TUN interface and IP.' },
   { icon: 'metric', title: 'Dynamic metrics', body: '100-point sine-wave cycling for CPU, memory, temperature; full IF-MIB counter set (octets, ucast / mcast / bcast packets, errors, discards) with per-device error scenarios; per-GPU DCGM OIDs.' },
 ];
 
@@ -37,7 +38,7 @@ export const DOCS: DocGroup[] = [
     { t: 'Install packages', h: '/getting-started/install-packages' },
     { t: 'Docker',           h: '/getting-started/docker' },
   ]},
-  { group: 'Operations', body: 'Scale to 30k, tune the opensim namespace, flow export and SNMP traps.', links: [
+  { group: 'Operations', body: 'Scale to 30k, tune the nl6sim namespace, flow export and SNMP traps.', links: [
     { t: 'Scaling',           h: '/ops/scaling' },
     { t: 'Network namespace', h: '/ops/network-namespace' },
     { t: 'Flow export',       h: '/ops/flow-export' },
@@ -46,6 +47,7 @@ export const DOCS: DocGroup[] = [
   ]},
   { group: 'Reference', body: 'Architecture, CLI flags, REST API, device-type tables, protocol details.', links: [
     { t: 'Architecture',     h: '/reference/architecture' },
+    { t: 'Load-test scenarios', h: '/reference/loadtest-overview' },
     { t: 'CLI flags',        h: '/reference/cli-flags' },
     { t: 'Web API',          h: '/reference/web-api' },
     { t: 'Device types',     h: '/reference/device-types' },
@@ -65,7 +67,7 @@ export const DOCS: DocGroup[] = [
 ];
 
 export const STATUS: StatusGroup[] = [
-  { k: 'Stable',        items: ['SNMP v2c/v3', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX', 'gNMI (OpenConfig)', 'TUN + netns isolation', 'Web UI + REST API'] },
+  { k: 'Stable',        items: ['SNMP v2c/v3', 'SSH (VT100)', 'HTTPS REST (storage)', 'NetFlow v5/v9/IPFIX', 'gNMI (dial-in + dial-out)', 'SNMP trap + syslog export', 'Load-test scenarios', 'TUN + netns isolation', 'Web UI + REST API'] },
   { k: 'Experimental',  items: ['sFlow v5 (synthetic)'] },
   { k: 'Tested scale',  items: ['30,000 concurrent devices / host', '~50 MB base + ~1 KB / device', 'CPU: minimal in steady state'] },
 ];
