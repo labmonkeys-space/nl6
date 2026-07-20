@@ -8,7 +8,7 @@ The load-test scenario subsystem is driven entirely over REST under
 received counts.
 
 MVP scope: **one active scenario at a time**, **syslog** protocol only. See
-the [runbook](./loadtest-runbook.md) for how to use these endpoints to run a
+the [scenarios guide](./loadtest-scenarios.md) for how to use these endpoints to run a
 fidelity check and troubleshoot failures.
 
 ## Conventions
@@ -89,7 +89,7 @@ drowning the collector (FR7).
 
 The predicate is evaluated on a 1 s cadence using **approximate mid-run
 reads** of the live atomics (no drain barrier). The resulting report is a
-normal `aborted` artifact (see the [runbook](./loadtest-runbook.md)).
+normal `aborted` artifact (see the [scenarios guide](./loadtest-scenarios.md)).
 
 #### Rate profiles — `rate_profile`
 

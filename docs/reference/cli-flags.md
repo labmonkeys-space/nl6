@@ -222,14 +222,14 @@ prerequisites and `netcat` smoke-test, and
 
 ## Load-test scenario flags
 
-Global switches for the [load-test scenario subsystem](loadtest-runbook.md).
+Global switches for the [load-test scenario subsystem](loadtest-overview.md).
 The scenarios themselves are driven over REST (`/api/v1/scenarios`); these
 flags shape the whole fleet at startup.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-fidelity` | bool | `false` | **global** | Keep the fleet **silent** — no autonomous flow / SNMP-trap / syslog / gNMI-dial-out push — except during a running scenario's `[T0,T1)` window, for a clean measurement window. Devices still answer polls; explicit on-demand fires still go through. See [Fidelity mode](loadtest-runbook.md#fidelity-mode). |
-| `-scenario-pen` | uint | `0` | **global** | IANA Private Enterprise Number for PEN-dependent scenario [run tags](loadtest-runbook.md#run-tagging--isolating-experiment-traffic) (syslog SD-PARAM, SNMP enterprise varbind). `0` = unset → those levers degrade to window + source-IP isolation. |
+| `-fidelity` | bool | `false` | **global** | Keep the fleet **silent** — no autonomous flow / SNMP-trap / syslog / gNMI-dial-out push — except during a running scenario's `[T0,T1)` window, for a clean measurement window. Devices still answer polls; explicit on-demand fires still go through. See [Fidelity mode](loadtest-scenarios.md#fidelity-mode). |
+| `-scenario-pen` | uint | `0` | **global** | IANA Private Enterprise Number for PEN-dependent scenario [run tags](loadtest-scenarios.md#run-tagging--isolating-experiment-traffic) (syslog SD-PARAM, SNMP enterprise varbind). `0` = unset → those levers degrade to window + source-IP isolation. |
 
 ## LLDP topology flag
 

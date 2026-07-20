@@ -58,11 +58,13 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Load-test scenarios',
-          // The runbook is the operator entry point; clicking the category
-          // label lands there, with the API + report schema as sub-pages.
-          link: {type: 'doc', id: 'reference/loadtest-runbook'},
+          // Landing = the feature overview; the operating guide is "Scenarios"
+          // (loadtest-scenarios.md), the worked recipes are "Runbooks".
+          link: {type: 'doc', id: 'reference/loadtest-overview'},
           items: [
             'reference/loadtest-api',
+            'reference/loadtest-scenarios',
+            'reference/loadtest-runbooks',
             'reference/loadtest-report-schema',
           ],
         },
