@@ -60,14 +60,17 @@ func TestReportHTML_Structure(t *testing.T) {
 		"10.0.0.9:4739", // collector
 		"Excluded",      // excluded section rendered
 		"device not found",
+		"<svg", "viewBox", // the embedded nl6 logo
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered HTML missing %q", want)
 		}
 	}
 
-	// No external dependencies: no <script>, no remote fonts/stylesheets.
-	for _, bad := range []string{"<script", "http://", "https://", "<link"} {
+	// Self-contained: no external resource loads (scripts, remote fonts/links,
+	// @import, url() fetches). The logo's xmlns namespace URIs are identifiers,
+	// not fetches, so match the real load vectors rather than a bare "http".
+	for _, bad := range []string{"<script", `src="http`, `href="http`, "<link ", "@import", "url(http"} {
 		if strings.Contains(html, bad) {
 			t.Errorf("HTML must be self-contained; found %q", bad)
 		}

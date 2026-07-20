@@ -7,23 +7,46 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"strconv"
+	"strings"
 )
 
 // scenario_report_html.go — a self-contained, human-readable HTML rendering of
 // the finalized scenario report (GET .../report?format=html). Same data as the
-// JSON/CSV projections, laid out as a static page (embedded CSS, no external
-// fonts/JS/frameworks) with stat cards, a per-time-bucket loss-localization bar
-// chart, run-tag panel, identity totals, and the per-participant table. The
-// machine-readable JSON/CSV remain the source of truth; this is the operator's
-// at-a-glance view.
+// JSON/CSV projections, laid out as a static page (embedded CSS + inline logo,
+// no external fonts/JS/frameworks) with stat cards, a per-time-bucket loss-
+// localization bar chart, run-tag panel, identity totals, and the participant
+// table. Styled to match the nl6 website's light mode (monospace headings,
+// green accent, warm background). The machine-readable JSON/CSV remain the
+// source of truth; this is the operator's at-a-glance view.
+
+// nl6LogoSVG is a committed copy of assets/nl6-logo.svg, embedded so the report
+// is fully self-contained. Update it if the canonical logo changes.
+//
+//go:embed nl6-logo.svg
+var nl6LogoSVG string
+
+// nl6LogoInline strips the XML declaration + DOCTYPE (invalid inside HTML) and
+// returns the bare <svg> element as trusted markup. The SVG is a static asset,
+// not report data, so marking it template.HTML is safe.
+func nl6LogoInline() template.HTML {
+	s := nl6LogoSVG
+	if i := strings.Index(s, "<svg"); i >= 0 {
+		s = s[i:]
+	}
+	// #nosec G203 -- s is a static embedded asset (assets/nl6-logo.svg), never
+	// report or user data; every report field is auto-escaped by html/template.
+	return template.HTML(s)
+}
 
 // reportHTMLData is the view model: the report plus values precomputed in Go so
 // the template stays arithmetic-free.
 type reportHTMLData struct {
 	R          *scenarioReport
+	Logo       template.HTML
 	PhaseClass string // ok | warn | neutral — drives the phase pill colour
 	Cards      []htmlStatCard
 	Bars       []htmlBar     // sub-window localization chart
@@ -35,7 +58,7 @@ type htmlStatCard struct {
 	Label string
 	Value string
 	Sub   string
-	Warn  bool // clay left-border accent when a loss bucket is non-zero
+	Warn  bool // red left-border accent when a loss bucket is non-zero
 }
 
 type htmlBar struct {
@@ -53,7 +76,7 @@ type htmlPartRow struct {
 // buildReportHTMLData projects the wire report into the view model.
 func buildReportHTMLData(rep *scenarioReport) reportHTMLData {
 	s := rep.Summary
-	d := reportHTMLData{R: rep}
+	d := reportHTMLData{R: rep, Logo: nl6LogoInline()}
 
 	switch s.Phase {
 	case "stopped":
@@ -128,67 +151,78 @@ const reportHTMLSource = `<!DOCTYPE html>
 <title>nl6 scenario report — {{.R.Summary.ID}}</title>
 <style>
 :root{
-  --bg:#FAF9F5; --surface:#FFFFFF; --oat:#E3DACC;
-  --ink:#141413; --gray700:#3D3D3A; --gray500:#87867F;
-  --clay:#D97757; --olive:#788C5D; --rust:#B04A3F;
-  --gray100:#F0EEE6; --gray300:#D1CFC5;
-  --serif:Georgia,"Times New Roman",serif;
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --bg:oklch(0.985 0.004 90); --bg1:oklch(0.97 0.005 90); --bg2:oklch(0.94 0.006 90);
+  --surface:#ffffff;
+  --fg:oklch(0.22 0.01 250); --fg-dim:oklch(0.42 0.01 250); --fg-mute:oklch(0.62 0.01 250);
+  --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.22);
+  --green:#319c46; --green-dark:#258035; --green-soft:rgba(49,156,70,.12);
+  --red:#b0413a; --red-soft:rgba(176,65,58,.12);
+  --mono:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --radius:2px;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
-.wrap{max-width:860px;margin:0 auto;padding:40px 24px 64px}
-h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:0 0 10px}
-h2{font-family:var(--serif);font-weight:600;font-size:20px;margin:0 0 14px;padding-bottom:8px;border-bottom:1.5px solid var(--gray300)}
-section{margin-top:52px}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
+.wrap{max-width:880px;margin:0 auto;padding:40px 24px 64px}
+h1{font-family:var(--mono);font-weight:500;font-size:23px;letter-spacing:-.01em;margin:0 0 8px}
+h2{font-family:var(--mono);font-weight:500;font-size:14px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--fg-dim);margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--hair)}
+section{margin-top:44px}
 .mono{font-family:var(--mono)}
-.muted{color:var(--gray500)}
-.meta-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-.id{font-family:var(--mono);font-size:14px;color:var(--gray700)}
-.pill{display:inline-block;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;
-  padding:3px 9px;border-radius:999px;border:1.5px solid var(--gray300);background:var(--gray100);color:var(--gray700)}
-.pill-ok{background:rgba(120,140,93,.14);border-color:var(--olive);color:var(--olive)}
-.pill-warn{background:rgba(176,74,63,.12);border-color:var(--rust);color:var(--rust)}
-.pill-neutral{background:var(--gray100)}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.card{background:var(--surface);border:1.5px solid var(--gray300);border-radius:10px;padding:16px}
-.card.warn{border-left:4px solid var(--clay)}
-.card .label{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gray500)}
-.card .value{font-family:var(--serif);font-size:40px;line-height:1.1;margin:6px 0 4px}
-.card .sub{font-size:12px;color:var(--gray500)}
-.kv{display:grid;grid-template-columns:180px 1fr;gap:6px 18px;background:var(--surface);
-  border:1.5px solid var(--gray300);border-radius:10px;padding:16px 18px}
-.kv dt{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gray500);margin:0}
-.kv dd{margin:0;font-family:var(--mono);font-size:13px;color:var(--gray700);word-break:break-all}
-table{width:100%;border-collapse:collapse;background:var(--surface);border:1.5px solid var(--gray300);border-radius:10px;overflow:hidden}
-th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--gray100);font-size:13px}
-th{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--gray500);background:var(--gray100)}
+.muted{color:var(--fg-mute)}
+.brand{display:flex;gap:16px;align-items:flex-start}
+.brand-logo svg{width:46px;height:46px;display:block}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:2px}
+.id{font-family:var(--mono);font-size:13px;color:var(--fg-dim)}
+.pill{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 8px;border:1px solid var(--hair-strong);border-radius:var(--radius);color:var(--fg-dim)}
+.pill-ver{text-transform:none}
+.gdot{color:var(--green)}
+.pill-ok{border-color:var(--green);color:var(--green-dark);background:var(--green-soft)}
+.pill-warn{border-color:var(--red);color:var(--red);background:var(--red-soft)}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:14px 16px}
+.card.warn{border-left:3px solid var(--red)}
+.card .label{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-mute)}
+.card .value{font-family:var(--mono);font-weight:500;font-size:34px;line-height:1.1;margin:6px 0 3px}
+.card .sub{font-size:11px;color:var(--fg-mute)}
+.kv{display:grid;grid-template-columns:190px 1fr;gap:5px 18px;background:var(--surface);
+  border:1px solid var(--hair);border-radius:var(--radius);padding:16px 18px}
+.kv dt{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-mute);margin:0}
+.kv dd{margin:0;font-family:var(--mono);font-size:12.5px;color:var(--fg-dim);word-break:break-all}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);overflow:hidden}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--hair);font-size:12.5px}
+th{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-mute);background:var(--bg1)}
 tbody tr:last-child td{border-bottom:none}
-tbody tr:hover{background:var(--gray100)}
+tbody tr:hover{background:var(--bg1)}
 td.num{font-family:var(--mono);text-align:right}
-.tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px}
-.tag.ok{background:rgba(120,140,93,.14);color:var(--olive)}
-.tag.bad{background:rgba(176,74,63,.12);color:var(--rust)}
-.chart{background:var(--surface);border:1.5px solid var(--gray300);border-radius:10px;padding:18px}
-.bars{display:flex;align-items:flex-end;gap:8px;height:140px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:var(--radius)}
+.tag.ok{background:var(--green-soft);color:var(--green-dark)}
+.tag.bad{background:var(--red-soft);color:var(--red)}
+.chart{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:18px}
+.bars{display:flex;align-items:flex-end;gap:8px;height:130px}
 .bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%}
-.bar .col{width:100%;background:var(--clay);border-radius:4px 4px 0 0;min-height:2px}
-.bar .n{font-family:var(--mono);font-size:11px;color:var(--gray500)}
-.bar .ix{font-family:var(--mono);font-size:10px;color:var(--gray500)}
-footer{margin-top:56px;padding-top:16px;border-top:1.5px solid var(--gray300);font-size:12px;color:var(--gray500)}
+.bar .col{width:100%;background:var(--green);border-radius:var(--radius) var(--radius) 0 0;min-height:2px}
+.bar .n,.bar .ix{font-family:var(--mono);font-size:10px;color:var(--fg-mute)}
+footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-size:11px;color:var(--fg-mute);font-family:var(--mono)}
 @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}.kv{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Load-test scenario report</h1>
-    <div class="meta-row">
-      <span class="id">{{.R.Summary.ID}}</span>
-      <span class="pill pill-{{.PhaseClass}}">{{.R.Summary.Phase}}</span>
-      <span class="pill">{{.R.Summary.Protocol}}</span>
-      <span class="muted">duration {{.R.Summary.Duration}}</span>
+    <div class="brand">
+      <span class="brand-logo">{{.Logo}}</span>
+      <div>
+        <h1>Load-test scenario report</h1>
+        <div class="meta-row">
+          <span class="pill pill-ver"><span class="gdot">●</span> {{.R.Summary.Metadata.Nl6Version}}</span>
+          <span class="id">{{.R.Summary.ID}}</span>
+          <span class="pill pill-{{.PhaseClass}}">{{.R.Summary.Phase}}</span>
+          <span class="pill">{{.R.Summary.Protocol}}</span>
+          <span class="muted">· duration {{.R.Summary.Duration}}</span>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -227,7 +261,7 @@ footer{margin-top:56px;padding-top:16px;border-top:1.5px solid var(--gray300);fo
         </div>
         {{end}}
       </div>
-      <p class="muted" style="margin:12px 0 0;font-size:12px">
+      <p class="muted" style="margin:12px 0 0;font-size:11px">
         In-window sends per bucket — {{.R.Summary.Metadata.SubWindowCount}} equal buckets
         of {{.R.Summary.Metadata.SubWindowDuration}} over the planned window (sums to in_window).
       </p>
@@ -298,9 +332,9 @@ footer{margin-top:56px;padding-top:16px;border-top:1.5px solid var(--gray300);fo
   {{end}}
 
   <footer>
-    Generated by nl6 {{.R.Summary.Metadata.Nl6Version}} · This is the human-readable view;
-    the same data is served as JSON (drop <span class="mono">?format=html</span>) and CSV
-    (<span class="mono">?format=csv</span>). <span class="mono">sent</span> is the reconciliation denominator.
+    Generated by nl6 {{.R.Summary.Metadata.Nl6Version}} · human-readable view;
+    the same data is served as JSON (no ?format) and CSV (?format=csv).
+    sent is the reconciliation denominator.
   </footer>
 </div>
 </body>
