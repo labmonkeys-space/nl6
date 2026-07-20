@@ -8,7 +8,7 @@
 , procps
   # Single source of truth for the Nix package version. Bump on each release
   # (see RELEASING.md "Before you tag"); release.yml asserts it equals the tag.
-, version ? "0.16.0"
+, version ? "0.17.0"
 }:
 
 buildGo126Module {
@@ -30,7 +30,7 @@ buildGo126Module {
   # Hash of the vendored Go module set. Recompute after any go.mod/go.sum
   # change: set this to lib.fakeHash, run `nix build`, copy the printed
   # "got:" value back here.
-  vendorHash = "sha256-an+rPvG3lUOWE+fZ2JdkWUBs/PJTersmD6gjq7uJ8yA=";
+  vendorHash = "sha256-2zDR4nbVrmocuzzUbmTxLhLSNDUnDZ+ugL4WqGNbIS0=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
