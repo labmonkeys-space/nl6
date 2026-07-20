@@ -14,76 +14,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ci:
-    name: Build & Test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    env:
-      # Tag-event workflow: bake the pushed tag into the binary as the
-      # ground-truth version. Overrides the Makefile's `git describe`
-      # fallback, which is unreliable inside actions/checkout's shallow
-      # clone.
-      APP_VERSION: ${{ github.ref_name }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
-        with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
-
-      - name: Verify go.mod is tidy
-        run: make check-tidy
-
-      - name: Build
-        run: make build
-
-      - name: Assert baked version matches tag
-        run: |
-          baked=$(./go/nl6/nl6 -version)
-          if [ -z "$baked" ] || [ -z "${GITHUB_REF_NAME}" ]; then
-            echo "version assertion failed: empty value — baked='$baked', tag='${GITHUB_REF_NAME}'"
-            exit 1
-          fi
-          if [ "$baked" != "${GITHUB_REF_NAME}" ]; then
-            echo "version drift: binary reports '$baked', tag is '${GITHUB_REF_NAME}'"
-            exit 1
-          fi
-          echo "version OK: $baked"
-
-      - name: Assert Nix package version matches tag
-        # A flake cannot read the git tag, so deploy/packages/nix/package.nix
-        # carries a hardcoded version bumped per release. Fail loudly if that
-        # bump was forgotten, rather than shipping a stale Nix version.
-        run: |
-          nixver=$(sed -nE 's/.*version \? "([^"]+)".*/\1/p' deploy/packages/nix/package.nix | head -1)
-          tag=${GITHUB_REF_NAME#v}
-          if [ -z "$nixver" ]; then
-            echo "could not parse version from deploy/packages/nix/package.nix"
-            exit 1
-          fi
-          if [ "$nixver" != "$tag" ]; then
-            echo "Nix version drift: package.nix is '$nixver', tag is '$tag'."
-            echo "Bump 'version ? \"...\"' in deploy/packages/nix/package.nix (see RELEASING.md) and re-tag."
-            exit 1
-          fi
-          echo "Nix version OK: $nixver"
-
-      - name: Test
-        run: make test
+  # Same gates PRs enforce (build + test + code quality), plus the release-only
+  # version/tag assertions — so a release can never publish through a gate that
+  # main is held to.
+  gates:
+    uses: ./.github/workflows/gates.yml
+    with:
+      assert-version-matches-tag: true
 
   release:
     name: Build & Release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    needs: ci
+    needs: gates
     permissions:
       contents: write
     env:
@@ -128,7 +71,7 @@ jobs:
     name: Publish Docker image
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    needs: ci
+    needs: gates
     permissions:
       contents: read
       packages: write
