@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nix-cache-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cache:
     name: Build & push (${{ matrix.system }})
@@ -29,22 +33,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest      # x86_64-linux
+          - runner: ubuntu-24.04       # x86_64-linux
             system: x86_64-linux
           - runner: ubuntu-24.04-arm   # aarch64-linux (free for public repos)
             system: aarch64-linux
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     env:
       # Set this to your Cachix cache name (also update flake.nix nixConfig).
       CACHIX_NAME: nl6
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Gate on Cachix being configured
         id: cfg
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
-          if [ -n "${{ secrets.CACHIX_AUTH_TOKEN }}" ]; then
+          if [ -n "$CACHIX_AUTH_TOKEN" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
@@ -60,6 +69,8 @@ jobs:
 
       - name: Set up Cachix
         if: steps.cfg.outputs.ready == 'true'
+        # cachix ships major-only release tags (v10..v17, no v17.x.x), so the
+        # comment tracks the major it publishes — the SHA is the immutable pin.
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71  # v17
         with:
           name: ${{ env.CACHIX_NAME }}

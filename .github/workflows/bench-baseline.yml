@@ -12,14 +12,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Manual, long-running benchmark — never cancel a run mid-flight.
+  group: bench-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   bench-baseline:
     name: Capture fire-path baseline
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
@@ -32,10 +40,12 @@ jobs:
         # run shell has no pipefail and `| tee` would mask a failing
         # benchmark, going green while uploading a garbage baseline.
         shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
           {
             echo "# scenario fire-path benchstat baseline"
-            echo "# captured: $(date -u +%Y-%m-%dT%H:%M:%SZ) runner: ubuntu-latest ($(uname -m)) run: ${{ github.run_id }}"
+            echo "# captured: $(date -u +%Y-%m-%dT%H:%M:%SZ) runner: ubuntu-24.04 ($(uname -m)) run: $RUN_ID"
             echo "# compare with: benchstat go/nl6/testdata/scenario-bench-baseline.txt <new>  (same runner class only)"
             make bench-baseline
           } | tee scenario-bench-baseline.txt

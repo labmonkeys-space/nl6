@@ -36,7 +36,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -45,7 +45,11 @@ concurrency:
 jobs:
   build-and-deploy:
     name: Build & deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Deploy job pushes the built site to the gh-pages branch.
+    permissions:
+      contents: write
     # When triggered by the Release workflow, only proceed if that run
     # succeeded. On direct pushes and manual dispatches this is trivially true.
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
@@ -55,6 +59,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           fetch-depth: 0  # deploy action needs history to push to gh-pages
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0

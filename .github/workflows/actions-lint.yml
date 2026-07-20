@@ -1,0 +1,39 @@
+name: Actions lint
+
+# Lints the workflows themselves — actionlint (syntax, expressions, shellcheck
+# on run-blocks) + zizmor (security auditor: injection, permissions, pinning).
+# So the Actions-hygiene rules are enforced mechanically on every change to
+# .github/workflows/, not by review.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/**', '.github/zizmor.yml', 'Makefile']
+  pull_request:
+    paths: ['.github/workflows/**', '.github/zizmor.yml', 'Makefile']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actions-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: actionlint + zizmor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
+        with:
+          go-version-file: go/go.mod
+          cache: false
+
+      - name: Lint workflows
+        run: make lint-actions

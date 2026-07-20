@@ -48,7 +48,7 @@ UNAME_S := $(shell uname -s)
 .PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-clean \
-        tools-quality fmt-check lint vuln sec quality
+        tools-quality fmt-check lint vuln sec lint-actions quality
 
 all: build
 
@@ -248,6 +248,18 @@ sec: check-go
 	cd $(GO_DIR) && $(GOBIN_DIR)/gosec \
 	  -exclude=G104,G115,G404,G204,G304,G401,G405,G501,G502,G505,G103,G706 \
 	  ./...
+
+# GitHub Actions linters. actionlint (static + shellcheck on run-blocks) via
+# `go install`; zizmor (security auditor) via `pipx run` — both preinstalled on
+# GitHub's ubuntu runners.
+ACTIONLINT_VERSION ?= v1.7.12
+ZIZMOR_VERSION     ?= 1.27.0
+
+## lint-actions: Lint the GitHub Actions workflows (actionlint + zizmor)
+lint-actions: check-go
+	GOBIN=$(GOBIN_DIR) go install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
+	$(GOBIN_DIR)/actionlint
+	pipx run zizmor==$(ZIZMOR_VERSION) --persona=regular --config .github/zizmor.yml .github/workflows/
 
 ## quality: Run all code-quality checks (fmt-check, lint, vuln, sec)
 quality: fmt-check lint vuln sec
