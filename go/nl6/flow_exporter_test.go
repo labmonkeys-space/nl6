@@ -332,8 +332,8 @@ func TestFlowExporter_Tick_IPFIXTemplateOnFirstCall(t *testing.T) {
 
 // TestFlowExporter_Tick_IPFIXPagination verifies that 80 expired records are
 // fully delivered across multiple IPFIX datagrams with no silent record loss.
-// This specifically exercises the pagination logic with ipfixRecordSize=53
-// (which is larger than nf9RecordSize=45 and was previously causing 5 records
+// This specifically exercises the pagination logic with ipfixRecordSize=54
+// (which is larger than nf9RecordSize=46 and was previously causing 5 records
 // to be silently discarded per datagram).
 func TestFlowExporter_Tick_IPFIXPagination(t *testing.T) {
 	ln, ch := testUDPListener(t)
@@ -844,7 +844,7 @@ func TestByteIdentity_NetFlow9(t *testing.T) {
 	// Mask unix_secs at offset 8 (4 bytes).
 	zeroBytes(out, 8, 4)
 
-	const wantHash = "db530ac552b2a47f7a27d4ef673e1598"
+	const wantHash = "2f53001b05512be179462ca98f7a5963"
 	got := md5.Sum(out)
 	gotHex := hex.EncodeToString(got[:])
 	if gotHex != wantHash {
@@ -879,20 +879,21 @@ func TestByteIdentity_IPFIX(t *testing.T) {
 	zeroBytes(out, 4, 4)
 
 	// IPFIX records contain absolute epoch-ms timestamps (flowStartMilliseconds
-	// and flowEndMilliseconds). These are 8-byte fields positioned at the end
-	// of each 53-byte data record. With templates + header, the data record
-	// section starts at:
-	//   header(16) + templateSet(80) + dataSetHeader(4) = 100.
-	// Each record is 53 bytes; the last 16 bytes are the two 8-byte timestamps.
-	const ipfixRecStart = 100
-	const ipfixRecLen = 53
+	// and flowEndMilliseconds). These are 8-byte fields near the end of each
+	// data record, followed by the 1-byte flowDirection. With templates +
+	// header, the data record section starts at
+	// header + templateSet + dataSetHeader(4); bytes [recLen-17, recLen-1)
+	// of each record are the two 8-byte timestamps.
+	const ipfixRecStart = ipfixHeaderSize + ipfixTemplSetSize + 4
+	const ipfixRecLen = ipfixRecordSize
 	const tsTailBytes = 16
+	const dirTailBytes = 1
 	for i := 0; i < len(canonicalFlowRecords()); i++ {
 		recStart := ipfixRecStart + i*ipfixRecLen
-		zeroBytes(out, recStart+ipfixRecLen-tsTailBytes, tsTailBytes)
+		zeroBytes(out, recStart+ipfixRecLen-dirTailBytes-tsTailBytes, tsTailBytes)
 	}
 
-	const wantHash = "3307363c55a2bd3d40ddca19cd4e9598"
+	const wantHash = "1fb6e0ba5bb27eb17f303d95c82e1d37"
 	got := md5.Sum(out)
 	gotHex := hex.EncodeToString(got[:])
 	if gotHex != wantHash {

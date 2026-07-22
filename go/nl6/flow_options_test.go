@@ -17,7 +17,7 @@ import (
 // ── Options-datagram test oracle ─────────────────────────────────────────────
 //
 // The nf9/ipfix flow-packet decoders in netflow9_test.go / ipfix_test.go
-// assume data FlowSets carry 18-field flow records, so options datagrams get
+// assume data FlowSets carry 19-field flow records, so options datagrams get
 // their own minimal decoder mirroring how a collector parses them: options
 // template (scope + option field specifiers) first, then fixed-size option
 // data records interpreted through that template.

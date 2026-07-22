@@ -37,24 +37,25 @@ type ipfixDecodedTemplate struct {
 }
 
 type ipfixDecodedRecord struct {
-	Bytes    uint32
-	Packets  uint32
-	Protocol uint8
-	ToS      uint8
-	TCPFlags uint8
-	SrcPort  uint16
-	SrcIP    net.IP
-	SrcMask  uint8
-	InIface  uint16
-	DstPort  uint16
-	DstIP    net.IP
-	DstMask  uint8
-	OutIface uint16
-	NextHop  net.IP
-	SrcAS    uint16
-	DstAS    uint16
-	StartMs  uint64 // absolute epoch ms
-	EndMs    uint64 // absolute epoch ms
+	Bytes     uint32
+	Packets   uint32
+	Protocol  uint8
+	ToS       uint8
+	TCPFlags  uint8
+	SrcPort   uint16
+	SrcIP     net.IP
+	SrcMask   uint8
+	InIface   uint16
+	DstPort   uint16
+	DstIP     net.IP
+	DstMask   uint8
+	OutIface  uint16
+	NextHop   net.IP
+	SrcAS     uint16
+	DstAS     uint16
+	StartMs   uint64 // absolute epoch ms
+	EndMs     uint64 // absolute epoch ms
+	Direction uint8
 }
 
 type ipfixPacket struct {
@@ -64,7 +65,7 @@ type ipfixPacket struct {
 }
 
 // decodeIPFIXPacket parses the given bytes into an ipfixPacket using only the
-// single 18-field template defined in ipfixFields.
+// single 19-field template defined in ipfixFields.
 func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 	t.Helper()
 	if len(data) < ipfixHeaderSize {
@@ -130,6 +131,7 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 				r.DstAS = binary.BigEndian.Uint16(setData[recPos+35:])
 				r.StartMs = binary.BigEndian.Uint64(setData[recPos+37:])
 				r.EndMs = binary.BigEndian.Uint64(setData[recPos+45:])
+				r.Direction = setData[recPos+ipfixRecordSize-1]
 				pkt.Records = append(pkt.Records, r)
 				recPos += ipfixRecordSize
 			}
@@ -147,8 +149,8 @@ func TestIPFIXTemplate_BuildSize(t *testing.T) {
 }
 
 func TestIPFIXTemplate_FieldCount(t *testing.T) {
-	if len(ipfixFields) != 18 {
-		t.Errorf("expected 18 fields, got %d", len(ipfixFields))
+	if len(ipfixFields) != 19 {
+		t.Errorf("expected 19 fields, got %d", len(ipfixFields))
 	}
 	// Sum of field lengths must equal ipfixRecordSize.
 	total := 0
@@ -214,15 +216,26 @@ func TestIPFIXEncodePacket_WithTemplate(t *testing.T) {
 	if tmpl.TemplateID != ipfixTemplateID {
 		t.Errorf("template ID = %d, want %d", tmpl.TemplateID, ipfixTemplateID)
 	}
-	if len(tmpl.Fields) != 18 {
-		t.Errorf("template field count = %d, want 18", len(tmpl.Fields))
+	if len(tmpl.Fields) != 19 {
+		t.Errorf("template field count = %d, want 19", len(tmpl.Fields))
 	}
-	// Verify first and last IE IDs.
+	// Verify every declared (IE, length) pair matches the ipfixFields table —
+	// the first 18 elements must stay unchanged, with flowDirection(61) last.
+	for i, f := range tmpl.Fields {
+		if f.IEID != ipfixFields[i][0] || f.IELength != ipfixFields[i][1] {
+			t.Errorf("IE %d = (%d,%d), want (%d,%d)", i, f.IEID, f.IELength, ipfixFields[i][0], ipfixFields[i][1])
+		}
+	}
+	// Anchor key positions to named constants — independent of the table, so
+	// a reordering of ipfixFields itself cannot slip through the loop above.
 	if tmpl.Fields[0].IEID != ipfixOctetDeltaCount {
-		t.Errorf("first IE ID = %d, want %d (octetDeltaCount)", tmpl.Fields[0].IEID, ipfixOctetDeltaCount)
+		t.Errorf("first IE = %d, want %d (octetDeltaCount)", tmpl.Fields[0].IEID, ipfixOctetDeltaCount)
 	}
 	if tmpl.Fields[17].IEID != ipfixFlowEndMilliseconds {
-		t.Errorf("last IE ID = %d, want %d (flowEndMilliseconds)", tmpl.Fields[17].IEID, ipfixFlowEndMilliseconds)
+		t.Errorf("IE 17 = %d, want %d (flowEndMilliseconds)", tmpl.Fields[17].IEID, ipfixFlowEndMilliseconds)
+	}
+	if last := tmpl.Fields[18]; last.IEID != ipfixFlowDirection || last.IELength != 1 {
+		t.Errorf("last IE = (%d,%d), want (%d,1) (flowDirection)", last.IEID, last.IELength, ipfixFlowDirection)
 	}
 }
 
@@ -302,6 +315,7 @@ func TestIPFIXEncodePacket_RecordValues(t *testing.T) {
 	check("DstAS", got.DstAS, uint16(65002))
 	check("SrcMask", got.SrcMask, uint8(24))
 	check("DstMask", got.DstMask, uint8(16))
+	check("Direction", got.Direction, uint8(0x00)) // constant ingress
 
 	if !got.SrcIP.Equal(src) {
 		t.Errorf("SrcIP: got %v, want %v", got.SrcIP, src)
@@ -393,7 +407,7 @@ func TestIPFIXEncodePacket_MultipleRecords(t *testing.T) {
 func TestIPFIXEncodePacket_Alignment(t *testing.T) {
 	enc := IPFIXEncoder{}
 	buf := make([]byte, 1500)
-	// A single 53-byte record: data Set body = 4+53 = 57 bytes, must pad to 60.
+	// A single 54-byte record: data Set body = 4+54 = 58 bytes, must pad to 60.
 	records := []FlowRecord{makeRecord("10.0.0.1", "10.0.0.2", 4001, 443, 6)}
 	n, err := enc.EncodePacket(1, 1, 1000, records, false, buf)
 	if err != nil {

@@ -26,15 +26,22 @@ deployment, collector setup, and `rp_filter` tuning see
 | Protocol    | Version field | Template ID              | Record size                      | Timestamps                                    |
 |-------------|---------------|--------------------------|----------------------------------|-----------------------------------------------|
 | NetFlow v5  | `5`           | n/a (no template)        | 48 B / record (30 max per PDU)   | `SysUptime`-relative ms (First / Last)        |
-| NetFlow v9  | `9`           | FlowSet ID 0             | 45 B / record                    | `SysUptime`-relative ms (FIRST / LAST_SWITCHED) |
-| IPFIX       | `10`          | Set ID 2                 | 53 B / record                    | Absolute epoch ms (IE 152 / 153)              |
+| NetFlow v9  | `9`           | FlowSet ID 0             | 46 B / record                    | `SysUptime`-relative ms (FIRST / LAST_SWITCHED) |
+| IPFIX       | `10`          | Set ID 2                 | 54 B / record                    | Absolute epoch ms (IE 152 / 153)              |
 | sFlow v5    | `5` (XDR)     | n/a (self-describing)    | ~100 B / record typical (variable) | uptime (ms) + `sampling_rate` per sample    |
 
-NetFlow v5, v9, and IPFIX all use the same 18-field template (bytes, packets,
+NetFlow v5, v9, and IPFIX all use the same core field set (bytes, packets,
 protocol, ToS, TCP flags, src/dst ports, src/dst IPv4, src/dst mask,
-ingress/egress interface, next-hop, src/dst AS, timestamps). NetFlow v5 bakes
-this into a fixed 48-byte on-wire record and has no template mechanism at all,
-so `-flow-template-interval` is a silent no-op under both v5 and sFlow.
+ingress/egress interface, next-hop, src/dst AS, timestamps). The v9 / IPFIX
+template carries a 19th field, `DIRECTION` / `flowDirection` (field type /
+IE 61), emitted as a constant `0x00` (**ingress**) on every record — the
+shape of a real exporter running `ip flow ingress` on all interfaces.
+Collectors that classify flows by direction (e.g. OpenNMS, which drops
+direction-less flows from every flow query) ingest nl6 flows as
+`direction: ingress`. NetFlow v5 bakes the core fields into a fixed 48-byte
+on-wire record (no direction field exists in v5) and has no template
+mechanism at all, so `-flow-template-interval` is a silent no-op under both
+v5 and sFlow.
 
 ## sFlow caveat
 

@@ -36,11 +36,12 @@ const (
 	nf9DstAS         = 17
 	nf9LastSwitched  = 21
 	nf9FirstSwitched = 22
+	nf9Direction     = 61 // DIRECTION: 0x00 = ingress, 0x01 = egress
 
 	// Derived sizes.
 	nf9HeaderSize       = 20 // bytes — Packet Header (RFC 3954 §5)
-	nf9RecordSize       = 45 // bytes — one data record with the 18-field template below
-	nf9TemplFlowSetSize = 80 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 18×4 fields)
+	nf9RecordSize       = 46 // bytes — one data record with the 19-field template below
+	nf9TemplFlowSetSize = 84 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 19×4 fields)
 
 	// Interface option-table wire constants ("option interface-table",
 	// RFC 3954 §6.1). Template ID 257 sits beside the data template's 256 —
@@ -125,6 +126,7 @@ var nf9Fields = [][2]uint16{
 	{nf9DstAS, 2},
 	{nf9LastSwitched, 4},
 	{nf9FirstSwitched, 4},
+	{nf9Direction, 1},
 }
 
 // nf9TemplatBytes is the pre-encoded Template FlowSet, built once at init.
@@ -165,11 +167,11 @@ func init() {
 }
 
 // buildNF9Template encodes the Template FlowSet for nf9Fields.
-// Layout (80 bytes):
+// Layout (84 bytes):
 //
-//	FlowSet Header: flowset_id=0 (2B), length=80 (2B)
-//	Template Header: template_id=256 (2B), field_count=18 (2B)
-//	18 × (field_type 2B + field_length 2B)
+//	FlowSet Header: flowset_id=0 (2B), length=84 (2B)
+//	Template Header: template_id=256 (2B), field_count=19 (2B)
+//	19 × (field_type 2B + field_length 2B)
 func buildNF9Template() []byte {
 	fieldCount := len(nf9Fields)
 	length := 4 + 4 + fieldCount*4 // flowset hdr + tmpl hdr + fields
@@ -285,7 +287,7 @@ func (NetFlow9Encoder) EncodePacket(
 	binary.BigEndian.PutUint32(buf[pos:], domainID) // SourceId
 	pos += 4
 
-	// ── Template FlowSet (optional, 80 bytes) ────────────────────────
+	// ── Template FlowSet (optional, 84 bytes) ────────────────────────
 	if includeTemplate {
 		copy(buf[pos:], nf9TemplateBytes)
 		pos += len(nf9TemplateBytes)
@@ -461,5 +463,8 @@ func encodeNF9Record(buf []byte, pos int, r FlowRecord) int {
 	// FIRST_SWITCHED (4)
 	binary.BigEndian.PutUint32(buf[pos:], r.StartMs)
 	pos += 4
+	// DIRECTION (1) — constant ingress; matches an `ip flow ingress` exporter
+	buf[pos] = 0x00
+	pos++
 	return pos
 }
