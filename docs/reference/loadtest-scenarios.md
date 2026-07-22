@@ -231,8 +231,8 @@ For flow scenarios (`netflow5` / `netflow9` / `ipfix`) the report's
 [`applications[]`](./loadtest-report-schema.md#applications--fleet-wide-flow-traffic-ground-truth)
 block is the trusted-sender ground truth for per-application traffic: total
 `bytes` / `packets` / `records` and `avg_bytes_per_second` per
-`(l4_proto, dst_port)`. To validate a collector (e.g. OpenNMS Top
-Applications) against it:
+`(l4_proto, dst_port)`. To validate a collector's per-application view
+(a "Top Applications" dashboard or equivalent) against it:
 
 1. **Reconcile on totals, not time buckets.** nl6 attributes a flow's bytes
    at the moment its record hits the wire; collectors **interpolate** each
