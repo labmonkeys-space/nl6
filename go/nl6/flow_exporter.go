@@ -420,8 +420,8 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	var stats FlowTickStats
 
 	// Paginate: send as many records as fit in each 1500-byte UDP datagram.
-	// Capacity depends on the active encoder's protocol (NF9: 45B/record,
-	// IPFIX: 53B/record), so we ask the encoder for its sizes rather than
+	// Capacity depends on the active encoder's protocol (NF9: 46B/record,
+	// IPFIX: 54B/record), so we ask the encoder for its sizes rather than
 	// hard-coding NF9 constants here.
 	//
 	// Variable-length encoders (sFlow) return a non-zero MaxRecordSize and we

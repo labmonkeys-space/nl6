@@ -38,13 +38,14 @@ const (
 	ipfixIPNextHopIPv4Address     = 15  // ipNextHopIPv4Address  (≈ NF9 IPV4_NEXT_HOP)
 	ipfixBGPSourceAsNumber        = 16  // bgpSourceAsNumber     (≈ NF9 SRC_AS)
 	ipfixBGPDestinationAsNumber   = 17  // bgpDestinationAsNumber(≈ NF9 DST_AS)
+	ipfixFlowDirection            = 61  // flowDirection         (0x00 = ingress, 0x01 = egress)
 	ipfixFlowStartMilliseconds    = 152 // flowStartMilliseconds (absolute epoch ms, 8B)
 	ipfixFlowEndMilliseconds      = 153 // flowEndMilliseconds   (absolute epoch ms, 8B)
 
 	// Derived sizes.
 	ipfixHeaderSize   = 16 // bytes — IPFIX Message Header (RFC 7011 §3.1)
-	ipfixRecordSize   = 53 // bytes — one data record with the 18-field template below
-	ipfixTemplSetSize = 80 // bytes — Template Set (4 set-hdr + 4 tmpl-hdr + 18×4 fields)
+	ipfixRecordSize   = 54 // bytes — one data record with the 19-field template below
+	ipfixTemplSetSize = 84 // bytes — Template Set (4 set-hdr + 4 tmpl-hdr + 19×4 fields)
 
 	// Interface option-table wire constants (RFC 7011 §3.4.2). Template ID
 	// 257 sits beside the data template's 256.
@@ -85,6 +86,7 @@ var ipfixFields = [][2]uint16{
 	{ipfixBGPDestinationAsNumber, 2},
 	{ipfixFlowStartMilliseconds, 8},
 	{ipfixFlowEndMilliseconds, 8},
+	{ipfixFlowDirection, 1},
 }
 
 // ipfixTemplateSetBytes is the pre-encoded Template Set, built once at init.
@@ -169,11 +171,11 @@ func buildIPFIXOptionsTemplateSet(scope [2]uint16, options [][2]uint16) []byte {
 }
 
 // buildIPFIXTemplateSet encodes the Template Set for ipfixFields.
-// Layout (80 bytes):
+// Layout (84 bytes):
 //
-//	Set Header:      set_id=2 (2B), length=80 (2B)
-//	Template Header: template_id=256 (2B), field_count=18 (2B)
-//	18 × (IE_id 2B + IE_length 2B)
+//	Set Header:      set_id=2 (2B), length=84 (2B)
+//	Template Header: template_id=256 (2B), field_count=19 (2B)
+//	19 × (IE_id 2B + IE_length 2B)
 func buildIPFIXTemplateSet() []byte {
 	fieldCount := len(ipfixFields)
 	length := 4 + 4 + fieldCount*4 // set hdr + tmpl hdr + fields
@@ -224,7 +226,7 @@ func (IPFIXEncoder) SeqIncrement(_ int) int {
 }
 
 // MaxRecordSize returns 0 because IPFIX records are fixed-size under this
-// simulator's single 18-field template; Tick paginates by PacketSizes()'s
+// simulator's single 19-field template; Tick paginates by PacketSizes()'s
 // recordSize in that case.
 func (IPFIXEncoder) MaxRecordSize() int { return 0 }
 
@@ -302,7 +304,7 @@ func (IPFIXEncoder) EncodePacket(
 	binary.BigEndian.PutUint32(buf[pos:], domainID) // Observation Domain ID
 	pos += 4
 
-	// ── Template Set (optional, 80 bytes) ─────────────────────────────────────
+	// ── Template Set (optional, 84 bytes) ─────────────────────────────────────
 	if includeTemplate {
 		copy(buf[pos:], ipfixTemplateSetBytes)
 		pos += len(ipfixTemplateSetBytes)
@@ -476,5 +478,8 @@ func encodeIPFIXRecord(buf []byte, pos int, r FlowRecord, deviceStartMs int64) i
 	// flowEndMilliseconds (8) — absolute epoch ms
 	binary.BigEndian.PutUint64(buf[pos:], uint64(deviceStartMs+int64(r.EndMs)))
 	pos += 8
+	// flowDirection (1) — constant ingress; matches an `ip flow ingress` exporter
+	buf[pos] = 0x00
+	pos++
 	return pos
 }

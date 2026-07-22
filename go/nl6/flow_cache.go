@@ -24,8 +24,9 @@ type FlowKey struct {
 }
 
 // FlowRecord is the canonical in-memory representation of a single flow.
-// It maps 1:1 to the 18 fields in the NetFlow v9 / IPFIX template used by
-// this simulator. All byte/packet counts are cumulative for the flow lifetime.
+// It maps 1:1 to the NetFlow v9 / IPFIX template fields used by this
+// simulator, except flowDirection(61), which the encoders emit as a constant
+// (ingress). All byte/packet counts are cumulative for the flow lifetime.
 type FlowRecord struct {
 	SrcIP    net.IP
 	DstIP    net.IP

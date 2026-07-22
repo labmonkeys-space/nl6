@@ -129,8 +129,8 @@ go test ./nl6/ -run TestSomething
 | Protocol   | Header | Record size    | Template? | Timestamps         | IPv6 records | Notes |
 |------------|--------|----------------|-----------|--------------------|--------------|-------|
 | `netflow5` | 24B    | 48B fixed      | none      | SysUptime-relative | filtered     | 30-record datagram cap; 32-bit ASNs clamp to `23456` (AS_TRANS, RFC 6793 §2); `-flow-template-interval` is a silent no-op |
-| `netflow9` | 20B    | 45B fixed      | yes       | SysUptime-relative | filtered     | Single 18-field template, ID 256 |
-| `ipfix`    | 16B    | 53B fixed      | yes       | absolute epoch ms  | filtered     | Template Set ID 2, IE-based fields |
+| `netflow9` | 20B    | 46B fixed      | yes       | SysUptime-relative | filtered     | Single 19-field template, ID 256; last field DIRECTION(61) = constant ingress (0x00) |
+| `ipfix`    | 16B    | 54B fixed      | yes       | absolute epoch ms  | filtered     | Template Set ID 2, IE-based fields; last IE flowDirection(61) = constant ingress (0x00) |
 | `sflow`    | 28B    | variable (~100B typical) | none (self-describing) | uptime + flow_sample sampling_rate | filtered (IPv4 agent only) | Synthetic sampling_rate = `10 × FlowProfile.ConcurrentFlows` (see `SyntheticSamplingRateMultiplier`); emits flow_sample (type 1) + Phase-2 counters_sample (type 2) per tick. **sFlow output is synthetic — the simulator does not observe real packet streams.** Agent identity = device IPv4; `-flow-source-per-device` makes the UDP source IP match `agent_address`. |
 
 The `FlowEncoder` interface has a `MaxRecordSize() int` extension point: fixed-size encoders return 0 (NetFlow5/9, IPFIX), variable-length encoders (sFlow) return a worst-case per-record byte bound that `FlowExporter.Tick` uses for MTU-safe pagination.

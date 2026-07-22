@@ -36,24 +36,25 @@ type nf9DecodedTemplate struct {
 }
 
 type nf9DecodedRecord struct {
-	Bytes    uint32
-	Packets  uint32
-	Protocol uint8
-	ToS      uint8
-	TCPFlags uint8
-	SrcPort  uint16
-	SrcIP    net.IP
-	SrcMask  uint8
-	InIface  uint16
-	DstPort  uint16
-	DstIP    net.IP
-	DstMask  uint8
-	OutIface uint16
-	NextHop  net.IP
-	SrcAS    uint16
-	DstAS    uint16
-	LastSw   uint32
-	FirstSw  uint32
+	Bytes     uint32
+	Packets   uint32
+	Protocol  uint8
+	ToS       uint8
+	TCPFlags  uint8
+	SrcPort   uint16
+	SrcIP     net.IP
+	SrcMask   uint8
+	InIface   uint16
+	DstPort   uint16
+	DstIP     net.IP
+	DstMask   uint8
+	OutIface  uint16
+	NextHop   net.IP
+	SrcAS     uint16
+	DstAS     uint16
+	LastSw    uint32
+	FirstSw   uint32
+	Direction uint8
 }
 
 type nf9Packet struct {
@@ -130,6 +131,7 @@ func decodeNF9Packet(t *testing.T, data []byte) *nf9Packet {
 				r.DstAS = binary.BigEndian.Uint16(fsData[recPos+35:])
 				r.LastSw = binary.BigEndian.Uint32(fsData[recPos+37:])
 				r.FirstSw = binary.BigEndian.Uint32(fsData[recPos+41:])
+				r.Direction = fsData[recPos+nf9RecordSize-1]
 				pkt.Records = append(pkt.Records, r)
 				recPos += nf9RecordSize
 			}
@@ -147,8 +149,8 @@ func TestNF9Template_BuildSize(t *testing.T) {
 }
 
 func TestNF9Template_FieldCount(t *testing.T) {
-	if len(nf9Fields) != 18 {
-		t.Errorf("expected 18 fields, got %d", len(nf9Fields))
+	if len(nf9Fields) != 19 {
+		t.Errorf("expected 19 fields, got %d", len(nf9Fields))
 	}
 	// Sum of field lengths must equal nf9RecordSize.
 	total := 0
@@ -208,15 +210,26 @@ func TestNF9EncodePacket_WithTemplate(t *testing.T) {
 	if tmpl.TemplateID != nf9TemplateID {
 		t.Errorf("template ID = %d, want %d", tmpl.TemplateID, nf9TemplateID)
 	}
-	if len(tmpl.Fields) != 18 {
-		t.Errorf("template field count = %d, want 18", len(tmpl.Fields))
+	if len(tmpl.Fields) != 19 {
+		t.Errorf("template field count = %d, want 19", len(tmpl.Fields))
 	}
-	// Verify first and last field IDs match the nf9Fields table.
+	// Verify every declared (type, length) pair matches the nf9Fields table —
+	// the first 18 fields must stay unchanged, with DIRECTION(61) last.
+	for i, f := range tmpl.Fields {
+		if f.FieldType != nf9Fields[i][0] || f.FieldLength != nf9Fields[i][1] {
+			t.Errorf("field %d = (%d,%d), want (%d,%d)", i, f.FieldType, f.FieldLength, nf9Fields[i][0], nf9Fields[i][1])
+		}
+	}
+	// Anchor key positions to named constants — independent of the table, so
+	// a reordering of nf9Fields itself cannot slip through the loop above.
 	if tmpl.Fields[0].FieldType != nf9InBytes {
 		t.Errorf("first field type = %d, want %d (IN_BYTES)", tmpl.Fields[0].FieldType, nf9InBytes)
 	}
 	if tmpl.Fields[17].FieldType != nf9FirstSwitched {
-		t.Errorf("last field type = %d, want %d (FIRST_SWITCHED)", tmpl.Fields[17].FieldType, nf9FirstSwitched)
+		t.Errorf("field 17 type = %d, want %d (FIRST_SWITCHED)", tmpl.Fields[17].FieldType, nf9FirstSwitched)
+	}
+	if last := tmpl.Fields[18]; last.FieldType != nf9Direction || last.FieldLength != 1 {
+		t.Errorf("last field = (%d,%d), want (%d,1) (DIRECTION)", last.FieldType, last.FieldLength, nf9Direction)
 	}
 }
 
@@ -280,6 +293,7 @@ func TestNF9EncodePacket_RecordValues(t *testing.T) {
 	check("DstMask", got.DstMask, uint8(16))
 	check("FirstSw", got.FirstSw, uint32(1000))
 	check("LastSw", got.LastSw, uint32(2500))
+	check("Direction", got.Direction, uint8(0x00)) // constant ingress
 
 	if !got.SrcIP.Equal(src) {
 		t.Errorf("SrcIP: got %v, want %v", got.SrcIP, src)
@@ -355,7 +369,7 @@ func TestNF9EncodePacket_Count(t *testing.T) {
 func TestNF9EncodePacket_Alignment(t *testing.T) {
 	enc := NetFlow9Encoder{}
 	buf := make([]byte, 1500)
-	// A single 45-byte record: data FlowSet body = 4+45 = 49 bytes, must pad to 52.
+	// A single 46-byte record: data FlowSet body = 4+46 = 50 bytes, must pad to 52.
 	records := []FlowRecord{makeRecord("10.0.0.1", "10.0.0.2", 4001, 443, 6)}
 	n, err := enc.EncodePacket(1, 1, 1000, records, false, buf)
 	if err != nil {
