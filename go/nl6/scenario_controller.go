@@ -99,6 +99,11 @@ type ScenarioResult struct {
 	DrainEnd  time.Time
 	Excluded  []excludedParticipant
 	PerDevice map[string]ledgerSnapshot
+	// Apps is the fleet-wide per-application flow-traffic fold
+	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
+	// port), folded across participants at finalize. Empty for non-flow
+	// and sflow scenarios.
+	Apps map[appKey]appCounters
 }
 
 // newScenarioController is used by the manager and tests. clock may be nil
@@ -194,6 +199,10 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 			return false, fmt.Sprintf("device has no %s flow exporter", c.spec.Protocol),
 				fmt.Sprintf("enable flow export with protocol %s (seed flag or per-device flow block)", c.spec.Protocol)
 		}
+		// Per-application ledger participation (scenario-app-traffic):
+		// template protocols only — sflow byte totals are sampling
+		// extrapolation at the collector and would not reconcile.
+		part.countApps = c.spec.Protocol != "sflow"
 		dev.flowExporter.scenPart.Store(part)
 		return true, "", ""
 	}
@@ -537,12 +546,26 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	c.sm.unfreezeFleet()
 
 	perDevice := make(map[string]ledgerSnapshot, len(c.ledgers))
+	apps := make(map[appKey]appCounters)
 	for ip, led := range c.ledgers {
 		perDevice[ip] = led.snapshot()
+		// Fleet-wide application fold (scenario-app-traffic). Element-wise
+		// sum, same read-after-drain-barrier discipline as snapshot().
+		for k, v := range led.appSnapshot() {
+			agg := apps[k]
+			agg.records += v.records
+			agg.bytes += v.bytes
+			agg.packets += v.packets
+			agg.inWindowBytes += v.inWindowBytes
+			for i := range v.subWindowBytes {
+				agg.subWindowBytes[i] += v.subWindowBytes[i]
+			}
+			apps[k] = agg
+		}
 	}
 	c.result = &ScenarioResult{
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
-		Excluded: c.excluded, PerDevice: perDevice,
+		Excluded: c.excluded, PerDevice: perDevice, Apps: apps,
 	}
 	return c.result, nil
 }

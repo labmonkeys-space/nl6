@@ -30,15 +30,10 @@ func zeroGenFlowProfile() *FlowProfile {
 
 // injectExpiredFlows adds n flows timestamped an hour before `ref` (the tick's
 // `now`) so the tick at `ref` expires and emits them as data records.
+// Delegates to injectExpiredFlowsTo (scenario_app_traffic_test.go) so the
+// injected FlowRecord shape lives in exactly one place.
 func injectExpiredFlows(fe *FlowExporter, n int, ref time.Time) {
-	past := ref.Add(-1 * time.Hour)
-	for i := 0; i < n; i++ {
-		fe.cache.Add(FlowRecord{
-			SrcIP: net.ParseIP("10.0.0.1").To4(), DstIP: net.ParseIP("10.0.0.2").To4(),
-			NextHop: net.IPv4(0, 0, 0, 0).To4(), SrcPort: uint16(1000 + i), DstPort: 443,
-			Protocol: 6, Bytes: 1024, Packets: 10,
-		}, past)
-	}
+	injectExpiredFlowsTo(fe, n, ref, 6, 443, 1024, 10)
 }
 
 func TestScenarioFlowV9_GatedArmingAndCounting(t *testing.T) {

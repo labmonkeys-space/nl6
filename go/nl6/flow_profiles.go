@@ -19,7 +19,10 @@ type FlowProfile struct {
 	// Destination port distribution (TCP/UDP). Weights must sum to 1.0.
 	DstPorts []PortWeight
 
-	// Ephemeral source port range (inclusive).
+	// Ephemeral source port range (inclusive). Shipped profiles floor this
+	// at 49152 (IANA dynamic/private range) so a random source port can
+	// never match a registered-port application-classification rule on a
+	// downstream collector (scenario-app-traffic ground-truth contract).
 	SrcPortMin uint16
 	SrcPortMax uint16
 
@@ -109,7 +112,7 @@ var flowProfileCoreRouter = &FlowProfile{
 	DstPorts: []PortWeight{
 		{443, 0.35}, {80, 0.15}, {179, 0.15}, {53, 0.15}, {22, 0.10}, {8080, 0.10},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        512,
 	BytesMax:        1_500_000,
@@ -126,7 +129,7 @@ var flowProfileEdgeRouter = &FlowProfile{
 	DstPorts: []PortWeight{
 		{443, 0.50}, {80, 0.20}, {53, 0.15}, {22, 0.10}, {25, 0.05},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        256,
 	BytesMax:        500_000,
@@ -143,7 +146,7 @@ var flowProfileDCSwitch = &FlowProfile{
 	DstPorts: []PortWeight{
 		{3260, 0.30}, {2049, 0.25}, {443, 0.20}, {4789, 0.15}, {445, 0.10},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        4_096,
 	BytesMax:        10_000_000,
@@ -160,7 +163,7 @@ var flowProfileCampusSwitch = &FlowProfile{
 	DstPorts: []PortWeight{
 		{443, 0.40}, {80, 0.20}, {53, 0.20}, {67, 0.10}, {389, 0.10},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        64,
 	BytesMax:        300_000,
@@ -177,7 +180,7 @@ var flowProfileFirewall = &FlowProfile{
 	DstPorts: []PortWeight{
 		{443, 0.35}, {80, 0.20}, {53, 0.20}, {22, 0.15}, {3389, 0.10},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        0, // blocked flows carry 0 bytes
 	BytesMax:        200_000,
@@ -194,7 +197,7 @@ var flowProfileServer = &FlowProfile{
 	DstPorts: []PortWeight{
 		{443, 0.40}, {22, 0.25}, {161, 0.20}, {80, 0.15},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        512,
 	BytesMax:        100_000,
@@ -211,7 +214,7 @@ var flowProfileGPUServer = &FlowProfile{
 	DstPorts: []PortWeight{
 		{4791, 0.60}, {443, 0.20}, {22, 0.10}, {8080, 0.10},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        1_000_000,
 	BytesMax:        10_000_000_000, // 10 GB — large RDMA/NCCL transfers
@@ -228,7 +231,7 @@ var flowProfileStorage = &FlowProfile{
 	DstPorts: []PortWeight{
 		{2049, 0.30}, {3260, 0.30}, {443, 0.25}, {445, 0.15},
 	},
-	SrcPortMin:      1024,
+	SrcPortMin:      49152,
 	SrcPortMax:      65535,
 	BytesMin:        65_536,
 	BytesMax:        5_000_000_000, // 5 GB

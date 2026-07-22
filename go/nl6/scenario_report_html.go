@@ -53,6 +53,7 @@ type reportHTMLData struct {
 	Bars       []htmlBar     // sub-window localization chart
 	BarMax     uint64        // 0 → no in-window sends (chart shows an empty note)
 	Rows       []htmlPartRow // per-participant rows with a status class
+	Apps       []htmlAppRow  // fleet-wide application rows (flow scenarios)
 }
 
 type htmlStatCard struct {
@@ -72,6 +73,13 @@ type htmlPartRow struct {
 	Row         scenarioCounterRow
 	StatusClass string // ok | bad
 	StatusLabel string
+}
+
+// htmlAppRow pairs an application row with its pre-formatted rate so the
+// template stays arithmetic/format-free.
+type htmlAppRow struct {
+	Row scenarioAppRow
+	Avg string // avg_bytes_per_second, 1-decimal
 }
 
 // buildReportHTMLData projects the wire report into the view model.
@@ -117,6 +125,11 @@ func buildReportHTMLData(rep *scenarioReport) reportHTMLData {
 			row.StatusClass, row.StatusLabel = "bad", "issues"
 		}
 		d.Rows = append(d.Rows, row)
+	}
+
+	d.Apps = make([]htmlAppRow, 0, len(rep.Applications))
+	for _, a := range rep.Applications {
+		d.Apps = append(d.Apps, htmlAppRow{Row: a, Avg: strconv.FormatFloat(a.AvgBytesPerSecond, 'f', 1, 64)})
 	}
 	return d
 }
@@ -318,6 +331,36 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
       </tbody>
     </table>
   </section>
+
+  {{if .Apps}}
+  <section>
+    <h2>Application traffic (trusted-sender ground truth)</h2>
+    <table>
+      <thead><tr>
+        <th>proto</th><th class="num">dst&nbsp;port</th><th>hint</th>
+        <th class="num">records</th><th class="num">bytes</th><th class="num">packets</th>
+        <th class="num">avg&nbsp;B/s</th>
+      </tr></thead>
+      <tbody>
+      {{range .Apps}}
+        <tr>
+          <td class="mono">{{.Row.L4Proto}}</td>
+          <td class="num">{{.Row.DstPort}}</td>
+          <td>{{if .Row.AppHint}}{{.Row.AppHint}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">{{.Row.Records}}</td>
+          <td class="num">{{.Row.Bytes}}</td>
+          <td class="num">{{.Row.Packets}}</td>
+          <td class="num">{{.Avg}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="muted" style="margin:12px 0 0;font-size:11px">
+      Sent-basis totals per (l4_proto, dst_port); avg&nbsp;B/s = in-window bytes / window.
+      Reconcile a collector on totals over a padded query window — not per-bucket.
+    </p>
+  </section>
+  {{end}}
 
   {{if .R.Summary.Excluded}}
   <section>

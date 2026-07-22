@@ -191,6 +191,14 @@ func syntheticFlow(profile *FlowProfile, deviceIP net.IP, rng *rand.Rand, startU
 	} else {
 		srcPort = profile.SrcPortMin
 	}
+	// ICMP has no transport ports; real exporters carry 0 (or type/code)
+	// in the port fields, never a sampled service port. Zeroing both keeps
+	// the wire honest and the per-application ground truth free of
+	// fabricated (icmp, 443)-style rows. rng draws above are kept so the
+	// per-protocol rng stream stays aligned across protocols for a seed.
+	if proto == 1 {
+		srcPort, dstPort = 0, 0
+	}
 
 	// Random destination in 10.0.0.1–10.255.255.254 (exclude network/broadcast).
 	var dstRaw [4]byte

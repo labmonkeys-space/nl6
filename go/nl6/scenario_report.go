@@ -25,10 +25,37 @@ import (
 const rfc3339ms = "2006-01-02T15:04:05.000Z07:00"
 
 // scenarioReport is the immutable report served by GET .../report. Summary
-// first, then per-device counters — the field order IS the JSON order.
+// first, then per-device counters, then the fleet-wide application traffic
+// block — the field order IS the JSON order. `applications` is an additive
+// top-level block per the schema evolution policy (always present; [] for
+// non-flow and sflow scenarios).
 type scenarioReport struct {
-	Summary  scenarioReportSummary `json:"summary"`
-	Counters []scenarioCounterRow  `json:"counters"`
+	Summary      scenarioReportSummary `json:"summary"`
+	Counters     []scenarioCounterRow  `json:"counters"`
+	Applications []scenarioAppRow      `json:"applications"`
+}
+
+// scenarioAppRow is one fleet-wide application's sent-basis traffic ground
+// truth (scenario-app-traffic). The (l4_proto, dst_port) tuple is the
+// authoritative join key against a collector's classification; app_hint is
+// informational (collector rules are user-configurable). bytes/packets/
+// records follow the `sent` (in_window + drain) convention; sub_window_bytes
+// buckets in-window bytes only and is informational — collectors interpolate
+// flow bytes across [start, end], so totals, not buckets, are the
+// reconciliation target.
+type scenarioAppRow struct {
+	L4Proto string `json:"l4_proto"`
+	DstPort uint16 `json:"dst_port"`
+	AppHint string `json:"app_hint"`
+	Records uint64 `json:"records"`
+	Bytes   uint64 `json:"bytes"`
+	Packets uint64 `json:"packets"`
+	// AvgBytesPerSecond = in-window bytes / actual window duration
+	// (T1Actual−T0Actual) — drain bytes stay in Bytes (reconciliation
+	// total) but are excluded here, since the denominator excludes drain
+	// time. Named to avoid the bits-per-second ambiguity of "bps".
+	AvgBytesPerSecond float64                        `json:"avg_bytes_per_second"`
+	SubWindowBytes    [scenarioSubWindowCount]uint64 `json:"sub_window_bytes"`
 }
 
 // scenarioReportSummary is the top-level aggregate block: identity,
@@ -218,7 +245,90 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Summary.Informational.InformsAcked += led.InformsAcked
 		rep.Summary.Informational.InformsPending += informsPending(led)
 	}
+	rep.Applications = buildAppRows(res)
 	return rep
+}
+
+// buildAppRows projects the finalized fleet-wide application fold into
+// report rows: sorted ascending by the numeric (proto, dst_port) key — not
+// the rendered name, so an unmapped protocol number can never sort
+// lexicographically — with the average byte rate computed on the IN-WINDOW
+// byte basis over the actual window (drain bytes stay in `bytes` for
+// reconciliation but never inflate a rate whose denominator excludes drain
+// time). Always returns a non-nil slice so the block serializes as [] rather
+// than null for non-flow and sflow scenarios.
+func buildAppRows(res *ScenarioResult) []scenarioAppRow {
+	keys := make([]appKey, 0, len(res.Apps))
+	for k := range res.Apps {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].proto != keys[j].proto {
+			return keys[i].proto < keys[j].proto
+		}
+		return keys[i].dstPort < keys[j].dstPort
+	})
+	rows := make([]scenarioAppRow, 0, len(keys))
+	seconds := res.T1Actual.Sub(res.T0Actual).Seconds()
+	for _, k := range keys {
+		v := res.Apps[k]
+		row := scenarioAppRow{
+			L4Proto:        l4ProtoName(k.proto),
+			DstPort:        k.dstPort,
+			AppHint:        appHintForPort(k.dstPort),
+			Records:        v.records,
+			Bytes:          v.bytes,
+			Packets:        v.packets,
+			SubWindowBytes: v.subWindowBytes,
+		}
+		if seconds > 0 {
+			row.AvgBytesPerSecond = float64(v.inWindowBytes) / seconds
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// l4ProtoName renders a transport protocol number the way operators write
+// collector-side queries; numeric fallback for anything unmapped.
+func l4ProtoName(proto uint8) string {
+	switch proto {
+	case 1:
+		return "icmp"
+	case 6:
+		return "tcp"
+	case 17:
+		return "udp"
+	default:
+		return strconv.FormatUint(uint64(proto), 10)
+	}
+}
+
+// appHints maps the well-known destination ports the shipped flow profiles
+// use to conventional service names. Informational only — the authoritative
+// join key is (l4_proto, dst_port); collector classification is
+// user-configurable and may disagree.
+var appHints = map[uint16]string{
+	22:   "ssh",
+	25:   "smtp",
+	53:   "domain",
+	67:   "bootps",
+	80:   "http",
+	161:  "snmp",
+	179:  "bgp",
+	389:  "ldap",
+	443:  "https",
+	445:  "microsoft-ds",
+	2049: "nfs",
+	3260: "iscsi",
+	3389: "ms-wbt-server",
+	4789: "vxlan",
+	4791: "roce",
+	8080: "http-alt",
+}
+
+func appHintForPort(port uint16) string {
+	return appHints[port]
 }
 
 // reportCSVHeader is the flat CSV projection column order — the join keys

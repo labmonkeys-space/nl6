@@ -48,12 +48,18 @@ is built once at stop/abort, immutable thereafter, and served by
      "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
      "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0},
      "sub_windows": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]}
-  ]
+  ],
+  "applications": []
 }
 ```
 
-The top-level `summary` block always serializes **before** `counters` so a
-streaming consumer sees the aggregate first.
+(The example is a **syslog** run, so `applications` is empty — see
+[`applications[]`](#applications--fleet-wide-flow-traffic-ground-truth) for a
+populated flow-scenario example.)
+
+The top-level blocks always serialize in the order `summary`, `counters`,
+`applications`, so a streaming consumer sees the aggregate first and can rely
+on the trailer position of the applications block.
 
 ## `summary`
 
@@ -118,6 +124,42 @@ The six identity fields (`emitted` + the five loss buckets) are flat siblings;
 the disclosure counter is the sole member of the nested `informational` object.
 A consumer computing the identity iterates the flat fields and never has to
 know which keys to exclude.
+
+## `applications[]` — fleet-wide flow traffic ground truth
+
+For scenarios on a flow protocol (`netflow5` / `netflow9` / `ipfix`), one row
+per distinct `(l4_proto, dst_port)` across all **sent** flow records — the
+trusted-sender reference for validating a collector's per-application
+aggregation. Rows are sorted ascending by the numeric `(protocol, dst_port)`
+key; the block is always present (`[]` for non-flow and `sflow` scenarios).
+Additive block per the evolution policy below.
+
+```json
+"applications": [
+  {"l4_proto": "tcp", "dst_port": 443, "app_hint": "https",
+   "records": 3, "bytes": 3000, "packets": 30,
+   "avg_bytes_per_second": 500.0,
+   "sub_window_bytes": [300, 300, 300, 300, 300, 300, 300, 300, 300, 300]}
+]
+```
+
+(A 6-second window carrying 3000 in-window bytes → `3000 / 6 = 500.0` B/s.)
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `l4_proto` | string | Transport protocol name (`tcp` / `udp` / `icmp`; numeric fallback). Join key, part 1. |
+| `dst_port` | number | Flow destination port. Join key, part 2. ICMP records carry zero source and destination ports (ICMP has no transport ports), so ICMP traffic aggregates under a single `(icmp, 0)` row. |
+| `app_hint` | string | Convenience label from a built-in well-known-port map (`443` → `https`, `53` → `domain`, …); `""` for unmapped ports. **Informational** — collector classification is user-configurable, so join on `(l4_proto, dst_port)`, never on the hint. |
+| `records` | number | Sent flow records for this application (`sent` basis: in-window + drain). For a pure flow scenario, `Σ applications[].records == summary.sent`. |
+| `bytes` | number | Sum of the records' flow byte counters — exactly what a conforming collector sums for the same window. |
+| `packets` | number | Sum of the records' flow packet counters. |
+| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here — the denominator excludes drain time, so including them would inflate the rate. In-window bytes = `Σ sub_window_bytes`. |
+| `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded — same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
+
+`sflow` scenarios are excluded by design: an sFlow collector derives byte
+volumes by sampling extrapolation (`frame_length × sampling_rate`), not by
+summing record byte counters, so these totals are not the numbers a correct
+sFlow collector would report.
 
 ## The ledger identity
 
