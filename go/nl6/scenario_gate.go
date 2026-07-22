@@ -87,6 +87,24 @@ type scenarioPart struct {
 	// close), and finalize closeAndWait()s to outlast every in-flight fire.
 	drain *drainGate
 	now   func() time.Time
+	// countApps marks this participant's flow batches for the per-application
+	// ledger (scenario-app-traffic). Set once at installScenPart for
+	// netflow5/netflow9/ipfix participants; false for sflow (collector byte
+	// math is sampling extrapolation) and every non-flow protocol. Owned here,
+	// not passed per call, so a second batch call site cannot disagree.
+	countApps bool
+}
+
+// classify maps a FRESH write-return time to the (in-window, sub-window)
+// decision against the half-open window [T0,T1): the single source of truth
+// shared by the single-fire (bucketFor) and batch (bucketFlowBatch) paths.
+// subIdx is -1 when not in-window or the window span is degenerate.
+func (p *scenarioPart) classify(t time.Time) (inWindow bool, subIdx int) {
+	gs := p.gate.Load()
+	if gs == nil || !t.Before(gs.t1) {
+		return false, -1
+	}
+	return true, subWindowIndex(gs, t)
 }
 
 // decide implements the source-flag counting matrix for the pre-generation
@@ -124,16 +142,41 @@ func (p *scenarioPart) decide(src fireSource, t time.Time) gateDecision {
 	}
 }
 
-// bucketFor classifies a successful write by its FRESH write-return time
-// against the half-open window: t < T1 → in_window, else drain.
+// bucketFor classifies a SINGLE successful fire by its FRESH write-return
+// time: t < T1 → in_window (localized to its sub-window), else drain. The
+// caller Add(1)s the returned counter — multi-record batches must use
+// bucketFlowBatch instead, or sub_windows undercounts against in_window.
 func (p *scenarioPart) bucketFor(t time.Time) *atomic.Uint64 {
-	gs := p.gate.Load()
-	if gs != nil && t.Before(gs.t1) {
-		// Localize the in-window fire to its time sub-window (FR28) on the
-		// same FRESH write-return time that classifies in_window vs drain,
-		// so localization and the identity split agree by construction.
-		p.ledger.recordSubWindow(gs, t)
+	inWindow, subIdx := p.classify(t)
+	if inWindow {
+		if subIdx >= 0 {
+			p.ledger.subWindows[subIdx].Add(1)
+		}
 		return &p.ledger.inWindow
 	}
 	return &p.ledger.drain
+}
+
+// bucketFlowBatch classifies a successfully-written multi-record flow batch
+// by its FRESH write-return time, attributing ALL len(batch) records to the
+// identity and sub-window counters (bucketFor's Add(1) would undercount the
+// documented sum(sub_windows)==in_window invariant). When the participant is
+// marked countApps (installScenPart: netflow5/9/ipfix, never sflow), the
+// batch also folds into the per-application ledger. One classify() drives
+// every counter, so the record and application ledgers cannot classify the
+// same batch differently even across a teardown nil-swap.
+func (p *scenarioPart) bucketFlowBatch(t time.Time, batch []FlowRecord) {
+	n := uint64(len(batch))
+	inWindow, subIdx := p.classify(t)
+	if inWindow {
+		if subIdx >= 0 {
+			p.ledger.subWindows[subIdx].Add(n)
+		}
+		p.ledger.inWindow.Add(n)
+	} else {
+		p.ledger.drain.Add(n)
+	}
+	if p.countApps {
+		p.ledger.addAppBatch(batch, inWindow, subIdx)
+	}
 }

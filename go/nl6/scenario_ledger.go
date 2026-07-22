@@ -6,6 +6,7 @@
 package main
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -64,15 +65,93 @@ type ledgerEntry struct {
 	// [T0,T1), incremented from bucketFor's in-window branch. Purely additive
 	// — sum(subWindows) == inWindow, and it touches no identity counter.
 	subWindows [scenarioSubWindowCount]atomic.Uint64
+
+	// apps is the per-application flow-traffic aggregation (scenario-app-traffic):
+	// sent-basis byte/packet/record totals keyed by (l4 proto, dst port).
+	// Only written for netflow5/netflow9/ipfix participants, from the same
+	// write-return branch that counts records, under appMu (one Tick goroutine
+	// per device — the mutex is for the report reader's benefit only; reads
+	// happen after the drain barrier like every other ledger field). Lazily
+	// allocated so non-flow scenarios pay nothing.
+	appMu sync.Mutex
+	apps  map[appKey]*appCounters
 }
 
-// recordSubWindow attributes a successful in-window fire at write-return time
-// t to its time bucket. Called only from bucketFor's in-window branch, so
-// t ∈ [t0,t1) is guaranteed; the index is clamped defensively anyway.
-func (l *ledgerEntry) recordSubWindow(gs *gateState, t time.Time) {
+// appKey identifies one application row: transport protocol number + flow
+// destination port — the authoritative join key against a collector's
+// classification (names are informational only).
+type appKey struct {
+	proto   uint8
+	dstPort uint16
+}
+
+// appCounters is one application's sent-basis traffic tally. bytes/packets/
+// records follow the ledger `sent` convention (in_window + drain);
+// inWindowBytes and subWindowBytes cover in-window bytes only, mirroring the
+// records sub-window convention (drain excluded) — inWindowBytes is the
+// basis for avg_bytes_per_second so the rate never divides drain bytes by a
+// drain-exclusive window.
+type appCounters struct {
+	records        uint64
+	bytes          uint64
+	packets        uint64
+	inWindowBytes  uint64
+	subWindowBytes [scenarioSubWindowCount]uint64
+}
+
+// addAppBatch folds a successfully-written flow batch into the application
+// tally. inWindow/subIdx are the SAME classification the record ledger used
+// for this batch (single gate read in bucketFlowBatch), so the two ledgers
+// cannot disagree about which sends counted. subIdx is -1 exactly when the
+// batch is not in-window or the window span is degenerate — already
+// validated by subWindowIndex, hence the single guard.
+func (l *ledgerEntry) addAppBatch(batch []FlowRecord, inWindow bool, subIdx int) {
+	l.appMu.Lock()
+	defer l.appMu.Unlock()
+	if l.apps == nil {
+		l.apps = make(map[appKey]*appCounters)
+	}
+	for i := range batch {
+		r := &batch[i]
+		k := appKey{proto: r.Protocol, dstPort: r.DstPort}
+		c := l.apps[k]
+		if c == nil {
+			c = &appCounters{}
+			l.apps[k] = c
+		}
+		c.records++
+		c.bytes += r.Bytes
+		c.packets += uint64(r.Packets)
+		if inWindow {
+			c.inWindowBytes += r.Bytes
+		}
+		if subIdx >= 0 {
+			c.subWindowBytes[subIdx] += r.Bytes
+		}
+	}
+}
+
+// appSnapshot copies the application tally for finalize. Kept separate from
+// ledgerSnapshot so that struct stays comparable (fixed arrays, no maps).
+func (l *ledgerEntry) appSnapshot() map[appKey]appCounters {
+	l.appMu.Lock()
+	defer l.appMu.Unlock()
+	if len(l.apps) == 0 {
+		return nil
+	}
+	out := make(map[appKey]appCounters, len(l.apps))
+	for k, v := range l.apps {
+		out[k] = *v
+	}
+	return out
+}
+
+// subWindowIndex maps an in-window write-return time t to its time bucket,
+// or -1 for a degenerate window span. Clamped defensively at both ends.
+func subWindowIndex(gs *gateState, t time.Time) int {
 	span := gs.t1.Sub(gs.t0)
 	if span <= 0 {
-		return
+		return -1
 	}
 	off := t.Sub(gs.t0)
 	if off < 0 {
@@ -84,7 +163,7 @@ func (l *ledgerEntry) recordSubWindow(gs *gateState, t time.Time) {
 	} else if idx >= scenarioSubWindowCount {
 		idx = scenarioSubWindowCount - 1
 	}
-	l.subWindows[idx].Add(1)
+	return idx
 }
 
 // identityHolds checks the ledger identity exactly. Call only after the

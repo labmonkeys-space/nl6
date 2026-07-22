@@ -225,6 +225,38 @@ To reconcile **by hand** instead:
   Raise the cap, lower the profile rate, or accept the throttle — but don't
   read it as pipeline loss.
 
+## Validating a collector against the report
+
+For flow scenarios (`netflow5` / `netflow9` / `ipfix`) the report's
+[`applications[]`](./loadtest-report-schema.md#applications--fleet-wide-flow-traffic-ground-truth)
+block is the trusted-sender ground truth for per-application traffic: total
+`bytes` / `packets` / `records` and `avg_bytes_per_second` per
+`(l4_proto, dst_port)`. To validate a collector (e.g. OpenNMS Top
+Applications) against it:
+
+1. **Reconcile on totals, not time buckets.** nl6 attributes a flow's bytes
+   at the moment its record hits the wire; collectors **interpolate** each
+   flow's bytes across its `[flowStart, flowEnd]` interval (shipped-profile
+   flow durations run up to 300 s). Per-bucket series will never line up —
+   `sub_window_bytes` is a sanity curve, not a reconciliation target.
+2. **Pad the collector-side query window** to
+   `[t0 − max profile flow duration, t1 + drain]` so interpolated bytes that
+   the collector attributes before `t0` are captured. Filter by the
+   scenario's exporter IPs (the `counters[].source_ip` set).
+3. **Join on `(l4_proto, dst_port)`, not on names.** Collector classification
+   is user-configurable; `app_hint` is a convenience label only. Generated
+   source ports sit in the IANA dynamic range (≥ 49152), so a collector rule
+   matching registered ports on either side of the flow cannot reclassify
+   nl6 traffic away from its destination-port application.
+4. In **fidelity mode** the fleet is silent outside the window, so the block
+   is the *complete* record of what the trusted sender emitted — any
+   collector-side surplus is foreign traffic, any deficit is loss or
+   misclassification.
+
+`sflow` scenarios have no `applications` rows: sFlow byte volumes are derived
+by sampling extrapolation at the collector, which is not comparable to
+record-byte totals.
+
 ## Clock sync (chrony/NTP) — required for time localization
 
 Reconciliation totals (`sent` vs `received`) need **no** clock agreement — a

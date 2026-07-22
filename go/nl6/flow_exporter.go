@@ -480,13 +480,16 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		}
 		// Scenario ledger accounting (FR20/FR23): DATA records count at
 		// datagram-write-return; templates are NOT counted in `sent`. A failed
-		// datagram moves its records to send_failures.
+		// datagram moves its records to send_failures. Whether the batch also
+		// feeds the per-application ledger is the participant's countApps
+		// flag, set at installScenPart (sflow excluded there — a conforming
+		// sFlow collector derives bytes by sampling extrapolation).
 		if scenActive && len(batch) > 0 {
 			part.ledger.emitted.Add(uint64(len(batch)))
 			if writeErr {
 				part.ledger.sendFailures.Add(uint64(len(batch)))
 			} else {
-				part.bucketFor(now).Add(uint64(len(batch)))
+				part.bucketFlowBatch(now, batch)
 			}
 		}
 		stats.PacketsSent++
