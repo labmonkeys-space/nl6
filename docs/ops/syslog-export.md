@@ -3,8 +3,8 @@
 nl6 can emit UDP syslog messages in either **RFC 5424** (the modern
 structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy
 BSD format most network gear still defaults to) from every simulated
-device to a single collector such as `rsyslog`, `syslog-ng`, or
-OpenNMS `syslogd`. Each device uses its own IP as the UDP source by
+device to a single collector such as `rsyslog`, `syslog-ng`, or an
+NMS syslog daemon. Each device uses its own IP as the UDP source by
 default, so collectors that key on source-IP → node mapping attribute
 messages correctly without extra work.
 

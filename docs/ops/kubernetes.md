@@ -82,7 +82,7 @@ a TUN interface inside the `nl6sim` namespace on one node. From the
 namespace and reaches the device. From **any other pod or node** on the
 cluster, `10.42.0.0/16` is unknown and unreachable.
 
-The pollers and collectors that talk to simulated devices (OpenNMS,
+The pollers and collectors that talk to simulated devices (your NMS,
 Prometheus, flow / trap / syslog receivers) usually live elsewhere on the
 cluster network. To make device IPs reachable from them you need one of:
 

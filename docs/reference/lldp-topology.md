@@ -3,8 +3,8 @@
 nl6 can model **inter-device links** and expose them as a standards-compliant
 LLDP-MIB (IEEE 802.1AB, OID root `1.0.8802.1.1.2`) neighbor table on every
 participating device, plus a transparent `ifAlias` link label. The intended
-consumer is OpenNMS Enlinkd LLDP discovery: point it at the simulator and it
-builds a topology map of the fleet.
+consumer is an NMS's LLDP link-discovery daemon: point it at the simulator
+and it builds a topology map of the fleet.
 
 This is the capability reference. For the design rationale see
 [`openspec/specs/lldp-topology/spec.md`](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/lldp-topology/spec.md).
@@ -145,7 +145,7 @@ snmpget  -v2c -c public 10.0.2.1 1.3.6.1.2.1.31.1.1.1.18.1                   # l
 
 > **Walk anchor.** LLDP lives at `1.0.8802.*`, which sorts *before* the mib-2
 > tree — a walk rooted at `1.3.6.1` never reaches it. Anchor at `1.0.8802`
-> (and point OpenNMS Enlinkd at the LLDP root).
+> (and point your NMS's LLDP discovery at the LLDP root).
 
 ## Model
 

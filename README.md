@@ -43,7 +43,7 @@ network namespaces.
   [Flow export](https://labmonkeys-space.github.io/nl6/ops/flow-export/).
 - **Per-device SNMPv2c trap / INFORM export** — central Poisson scheduler
   with a global rate cap, a user-overridable JSON catalog, and per-device
-  UDP source IPs. Suited to OpenNMS `trapd` scale testing. Configure with
+  UDP source IPs. Suited to trap-daemon scale testing. Configure with
   `-trap-collector <host:port>`; full flag list and catalog schema in
   [CLAUDE.md](CLAUDE.md) → "SNMP trap export".
 - **Per-device UDP syslog export** (RFC 5424 / RFC 3164) — central
@@ -51,7 +51,7 @@ network namespaces.
   catalog, and per-device UDP source IPs. Ships six generic entries
   (interface up/down, auth success/failure, config change, system
   restart) spanning `local7` and `authpriv`; select format with
-  `-syslog-format 5424|3164`. Suited to OpenNMS `syslogd` scale
+  `-syslog-format 5424|3164`. Suited to syslog-collector scale
   testing — configure with `-syslog-collector <host:port>`; full flag
   list and catalog schema in [CLAUDE.md](CLAUDE.md) →
   "UDP syslog export".
@@ -122,8 +122,8 @@ curl http://localhost:8080/api/v1/syslog/status  | jq '.collectors'
 ```
 
 Inter-device topology (LLDP). Link two devices and the neighbor table plus a
-`to_<peer>_<port>` `ifAlias` appear on both ends — point OpenNMS Enlinkd at the
-LLDP root (`1.0.8802.1.1.2`) to discover the topology:
+`to_<peer>_<port>` `ifAlias` appear on both ends — point your NMS's LLDP
+discovery at the LLDP root (`1.0.8802.1.1.2`) to discover the topology:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/topology \

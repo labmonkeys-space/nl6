@@ -269,7 +269,7 @@ default is `"extends": true`.
 | `juniper_mx240` | 7 Junos-format entries (merged total 13) | `juniper-snmp-link-up/down` (`SNMP_TRAP_LINK_*`), `juniper-mib2d-encaps-mismatch` (`MIB2D_IFD_IFL_ENCAPS_MISMATCH`), `juniper-chassisd-temp-critical` (`CHASSISD_FRU_TEMP_CRITICAL`), `juniper-chassisd-eeprom-fail` (uses `{{.ChassisID}}` / `{{.Serial}}`), `juniper-license-expired`, `juniper-ui-commit-complete` |
 
 Message bodies match the vendor's canonical shape verbatim so
-OpenNMS `syslogd` UEI matchers tuned for Cisco / Juniper strings
+collector-side pattern matchers tuned for Cisco / Juniper strings
 fire correctly. Other cisco_* slugs (`cisco_catalyst_9500`,
 `cisco_crs_x`, etc.), `juniper_mx960`, Arista, Linux, and Palo Alto
 fall back to the universal catalog in this epic — their realistic

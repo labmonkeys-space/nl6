@@ -82,7 +82,7 @@ Paths outside the table above — including `/interfaces/interface/config/*`, `/
 
 **Heartbeat.** Per gNMI §3.5.1.5.2, `heartbeat_interval` lets a client request periodic re-emission of the current value even when nothing has changed. Set the field on an ON_CHANGE subscription to enable; sub-second values are clamped to 1 second. `heartbeat_interval=0` (unset) means no heartbeat — emit only on actual state transitions.
 
-**Mixed-mode rejection.** A single `SubscribeRequest` that mixes ON_CHANGE and SAMPLE subscriptions is rejected with `InvalidArgument`. The two paths have different emission models (event-driven vs ticker-driven); weaving them in one stream would inflate complexity for negligible value. Standard collectors (`gnmic`, OpenNMS Telemetryd) naturally issue two separate requests.
+**Mixed-mode rejection.** A single `SubscribeRequest` that mixes ON_CHANGE and SAMPLE subscriptions is rejected with `InvalidArgument`. The two paths have different emission models (event-driven vs ticker-driven); weaving them in one stream would inflate complexity for negligible value. Standard collectors (e.g. `gnmic`) naturally issue two separate requests.
 
 ## gnmic invocation examples
 

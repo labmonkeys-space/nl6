@@ -2,7 +2,7 @@
 
 nl6 can emit SNMPv2c notifications — both fire-and-forget **TRAP**s (PDU
 `0xA7`) and acknowledged **INFORM**s (PDU `0xA6`) — from every simulated device
-to a single collector such as OpenNMS `trapd` or `snmptrapd`. Each device
+to a single collector such as `snmptrapd` or an NMS trap daemon. Each device
 generates its own notifications with its own IP as the UDP source, so
 collectors that key on the agent source IP attribute correctly without extra
 work.
@@ -15,7 +15,7 @@ for wire format, catalog JSON, and HTTP endpoints see
 ## Enabling trap export
 
 The feature is off by default. Pass `-trap-collector <host:port>` to enable
-it; the other eight flags have sensible defaults for OpenNMS and `snmptrapd`.
+it; the other eight flags have sensible defaults for common trap collectors.
 
 ```bash
 # 100 devices firing a random catalog trap every ~30s (Poisson-distributed)

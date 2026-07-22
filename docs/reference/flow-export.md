@@ -36,8 +36,8 @@ ingress/egress interface, next-hop, src/dst AS, timestamps). The v9 / IPFIX
 template carries a 19th field, `DIRECTION` / `flowDirection` (field type /
 IE 61), emitted as a constant `0x00` (**ingress**) on every record — the
 shape of a real exporter running `ip flow ingress` on all interfaces.
-Collectors that classify flows by direction (e.g. OpenNMS, which drops
-direction-less flows from every flow query) ingest nl6 flows as
+Collectors that classify flows by direction (some drop direction-less
+flows from every flow query) ingest nl6 flows as
 `direction: ingress`. NetFlow v5 bakes the core fields into a fixed 48-byte
 on-wire record (no direction field exists in v5) and has no template
 mechanism at all, so `-flow-template-interval` is a silent no-op under both

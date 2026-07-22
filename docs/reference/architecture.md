@@ -19,7 +19,7 @@ and how operators and monitoring systems interact with it.
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
     operator(["Operator<br/><small>human</small>"]):::person
-    nms(["NMS / Monitoring<br/><small>OpenNMS, Prometheus,<br/>flow collectors</small>"]):::ext
+    nms(["NMS / Monitoring<br/><small>Prometheus, flow / trap /<br/>syslog collectors</small>"]):::ext
 
     subgraph nl6 ["nl6 (Go process)"]
         simulator["<b>Simulator</b><br/><small>Go binary</small><br/>Device lifecycle,<br/>SNMP v2c/v3 + SSH + HTTPS REST,<br/>metrics engine, flow exporter"]
