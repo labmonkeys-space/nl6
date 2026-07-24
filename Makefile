@@ -257,7 +257,7 @@ sec: check-go
 # `go install`; zizmor (security auditor) via `pipx run` — both preinstalled on
 # GitHub's ubuntu runners.
 ACTIONLINT_VERSION ?= v1.7.12
-ZIZMOR_VERSION     ?= 1.27.0
+ZIZMOR_VERSION     ?= 1.28.0
 
 ## lint-actions: Lint the GitHub Actions workflows (actionlint + zizmor)
 lint-actions: check-go
