@@ -7,7 +7,8 @@ There are only two things to know:
   quality gates, builds the Linux amd64/arm64 simulator binaries + the
   cross-platform `nl6-reconcile` CLI + `.deb`/`.rpm` packages, **cosign-signs**
   the checksums file and the container image (keyless, via GitHub OIDC),
-  generates an **SBOM** (syft) and **SLSA build provenance**, creates a
+  generates an **SBOM** (syft — SPDX JSON plus a self-contained HTML report)
+  and **SLSA build provenance**, creates a
   **draft** GitHub Release with everything attached, and pushes a
   multi-platform image to `ghcr.io/labmonkeys-space/nl6:<tag>` and the floating
   `:latest`. A maintainer then curates the notes, verifies the signatures, and
@@ -33,7 +34,7 @@ Values that used to drift between releases are now derived at build time:
 | Go version on landing page          | parsed from `go/go.mod`                 | **automatic**               |
 | License on landing page             | constant in `docusaurus.config.ts`      | only on license change      |
 | GitHub Release (draft)              | `softprops/action-gh-release` (`draft: true`) | **maintainer publishes** after curating notes + verifying signatures |
-| Cosign signatures + SBOM + provenance | `release.yml` (cosign keyless, syft, attest-build-provenance) | **automatic**       |
+| Cosign signatures + SBOM + provenance | `release.yml` (cosign keyless, syft + blitsbom HTML report, attest-build-provenance) | **automatic**       |
 | Docker `:latest` tag on GHCR        | pushed by `release.yml` on stable tag   | **automatic**               |
 | Docker `:rc` tag on GHCR            | pushed by `ci.yml` on every main push   | **automatic**               |
 | `.deb` / `.rpm` package version     | `APP_VERSION` (= tag) → `make packages` | **automatic**               |
@@ -128,7 +129,9 @@ publish:
 
 - [ ] The draft Release has the correct tag and attaches the binaries
       (`nl6-linux-amd64/arm64`, `nl6-reconcile-<os>-<arch>`), `.deb`/`.rpm`,
-      `checksums.txt` + `checksums.txt.cosign.bundle`, and `nl6.sbom.spdx.json`.
+      `checksums.txt` + `checksums.txt.cosign.bundle`, `nl6.sbom.spdx.json`, and
+      `nl6.sbom.report.html` (open it — it is the readable view of the SPDX JSON
+      and needs no tooling).
 - [ ] **Verify the signatures + provenance** (see the next section). Do this on
       the draft assets before publishing.
 - [ ] Curate the release notes — the auto-generated list is a starting point;
