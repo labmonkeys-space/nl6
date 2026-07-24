@@ -3,7 +3,9 @@
 nl6 is free and open source (Apache-2.0). It stays maintained thanks to people who
 chip in toward the upkeep — thank you. ❤️
 
-Want to help? See the **Sponsor** button on the repository ([GitHub Sponsors](https://github.com/sponsors/indigo423)).
+Want to help? Either works — [GitHub Sponsors](https://github.com/sponsors/indigo423)
+or [Ko-fi](https://ko-fi.com/indigo423) (PayPal, no GitHub account needed). Both are
+also behind the **Sponsor** button on the repository.
 
 ## Thanks to
 
