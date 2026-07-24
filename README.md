@@ -189,6 +189,7 @@ one-time donation helps keep it maintained: releases, new device types, and
 protocol upkeep.
 
 - **GitHub Sponsors:** https://github.com/sponsors/indigo423
+- **Ko-fi:** https://ko-fi.com/indigo423
 
 No tiers, no gated features — the simulator stays free for everyone. A ⭐ or a
 good issue helps just as much, and there's a spot on [SPONSORS.md](SPONSORS.md)
