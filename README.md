@@ -180,6 +180,20 @@ trailer.
 **Cutting a release.** Maintainers: see [`RELEASING.md`](RELEASING.md) for the
 tag-driven release workflow and the short post-tag verification checklist.
 
+## Support
+
+nl6 is free and open source under the **Apache-2.0** license — an open network
+simulator that stands in for a lab full of hardware (30,000+ devices, real
+SNMP / NetFlow / IPFIX / sFlow / Syslog / gNMI). If it saved you a test rig, a
+one-time donation helps keep it maintained: releases, new device types, and
+protocol upkeep.
+
+- **GitHub Sponsors:** https://github.com/sponsors/indigo423
+
+No tiers, no gated features — the simulator stays free for everyone. A ⭐ or a
+good issue helps just as much, and there's a spot on [SPONSORS.md](SPONSORS.md)
+if you'd like one. 🙏
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for
