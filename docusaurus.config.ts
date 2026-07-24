@@ -108,6 +108,11 @@ const config: Config = {
     appVersion: resolveAppVersion(),
     license: 'Apache-2.0',
     goVersion: resolveGoVersion(),
+    // Literals on purpose. GitHub normalises the `github:` key in
+    // .github/FUNDING.yml to the *profile* URL (github.com/indigo423), not the
+    // sponsors checkout — so these must not be derived from that file.
+    sponsorUrl: 'https://github.com/sponsors/indigo423',
+    koFiUrl: 'https://ko-fi.com/indigo423',
   },
 
   presets: [
