@@ -82,6 +82,26 @@ jobs:
           output-file: dist/nl6.sbom.spdx.json
           upload-artifact: false
 
+      - name: Render SBOM as HTML (blitsbom)
+        # Human-readable companion to the SPDX JSON — a single self-contained
+        # offline page a reviewer can open without any tooling. Written into
+        # dist/ so it rides along in the nl6-binaries artifact and is attached
+        # to the Release next to the JSON.
+        #
+        # `image` is set explicitly: the action defaults to the floating
+        # `:report-rc` tag, which must never decide the content of a release
+        # artifact. Keep the tag in step with the action version above.
+        #
+        # Runs `docker run` on a public GHCR image; no registry login is needed
+        # (verified anonymously pullable), so this job keeps `packages: none`.
+        uses: no42-org/blitsbom/report@38567e05bf41bd3348d928b657eca0efeeaa7db6  # v0.4.0
+        with:
+          sbom: dist/nl6.sbom.spdx.json
+          output: dist/nl6.sbom.report.html
+          image: ghcr.io/no42-org/blitsbom:report-0.4.0
+          # project defaults to the repo name; version/commit/build-url are
+          # derived from the tag ref and run context.
+
       - name: Attest build provenance (release artifacts)
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
         with:
@@ -115,6 +135,7 @@ jobs:
             dist/checksums.txt
             dist/checksums.txt.cosign.bundle
             dist/nl6.sbom.spdx.json
+            dist/nl6.sbom.report.html
 
   docker:
     name: Publish Docker image
