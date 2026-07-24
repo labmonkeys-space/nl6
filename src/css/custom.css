@@ -120,6 +120,31 @@ article h1, article h2, article h3, article h4 {
 }
 .nl6-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--nl6-accent); box-shadow: 0 0 8px var(--nl6-accent); animation: nl6-pulse 2s ease-in-out infinite; }
 @keyframes nl6-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Positioning context for the absolutely-placed panel. */
+.nl6-hero__sponsor-wrap { position: relative; display: inline-flex; }
+/* Accent-coloured so it reads as interactive: nothing else in the pill is.
+   Native button chrome is stripped so it reads as pill text, not a control. */
+.nl6-hero__sponsor {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: var(--nl6-accent) !important; text-decoration: none !important;
+}
+.nl6-hero__sponsor:hover { text-decoration: underline !important; }
+.nl6-hero__sponsor:focus-visible { outline: 1px solid var(--nl6-accent); outline-offset: 2px; }
+/* line-height pins the pill height; 12px un-muddies the glyph at an 11px base. */
+.nl6-hero__sponsor-emoji { font-size: 12px; line-height: 1; }
+.nl6-hero__sponsor-caret { font-size: 8px; line-height: 1; }
+/* Raised surface matching .nl6-panel so the dropdown looks native. */
+.nl6-hero__sponsor-menu {
+  position: absolute; top: calc(100% + 7px); left: -6px; z-index: 20;
+  display: flex; flex-direction: column; min-width: 132px; padding: 4px;
+  background: var(--nl6-bg-1); border: 1px solid var(--nl6-hair-strong); border-radius: 2px;
+}
+.nl6-hero__sponsor-menu a {
+  padding: 6px 8px; border-radius: 2px; white-space: nowrap;
+  color: var(--nl6-fg) !important; text-decoration: none !important;
+}
+.nl6-hero__sponsor-menu a:hover { background: var(--nl6-bg-2); color: var(--nl6-accent) !important; }
 .nl6-hero__title { font-family: var(--ifm-font-family-monospace); font-size: clamp(32px, 4vw, 52px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 500; margin: 0 0 24px 0; }
 .nl6-hi { color: var(--nl6-accent); }
 .nl6-hero__body { color: var(--nl6-fg-dim); font-size: 15px; line-height: 1.7; max-width: 54ch; margin: 0 0 28px 0; }

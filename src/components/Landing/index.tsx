@@ -1,10 +1,82 @@
-import React, {useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Terminal from './Terminal';
 import {FEATURES, CATEGORIES, DOCS, STATUS} from './data';
 
-type HeroMeta = {appVersion: string; license: string; goVersion: string};
+type HeroMeta = {
+  appVersion: string;
+  license: string;
+  goVersion: string;
+  sponsorUrl: string;
+  koFiUrl: string;
+};
+
+/**
+ * Disclosure offering the two funding platforms. Deliberately NOT an ARIA menu:
+ * role="menu" obliges arrow-key roving focus, which two links do not need and
+ * this does not implement — announcing a menu whose arrow keys are dead is worse
+ * than a plain disclosure. Tab order reaches both links.
+ */
+function SponsorMenu({sponsorUrl, koFiUrl}: {sponsorUrl: string; koFiUrl: string}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Stable identity: the effect below lists this in its dep array, so an inline
+  // closure would tear down and reinstall both document listeners on every
+  // render while the panel is open (same reasoning as Mermaid/index.tsx:67-69).
+  const close = useCallback((restoreFocus: boolean) => {
+    setOpen(false);
+    if (restoreFocus) {
+      triggerRef.current?.focus({preventScroll: true});
+    }
+  }, []);
+
+  // Listeners live in an effect so the server-side render never touches
+  // `document` — Docusaurus prerenders this page at build time.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        close(true);
+      }
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        close(false); // Clicking elsewhere shouldn't yank focus back.
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open, close]);
+
+  return (
+    <span className="nl6-hero__sponsor-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="nl6-hero__sponsor"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}>
+        <span className="nl6-hero__sponsor-emoji" aria-hidden="true">🍻</span> Sponsor
+        <span className="nl6-hero__sponsor-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <span className="nl6-hero__sponsor-menu">
+          <a href={sponsorUrl}>GitHub Sponsors</a>
+          <a href={koFiUrl}>Ko-fi</a>
+        </span>
+      )}
+    </span>
+  );
+}
 
 function Panel({title, meta, children}: {title?: string; meta?: string; children: React.ReactNode}) {
   return (
@@ -99,7 +171,7 @@ function DocLink({to, t, h}: {to: string; t: string; h: string}) {
 export default function Landing(): JSX.Element {
   const quickStart = useBaseUrl('/getting-started/quick-start');
   const {siteConfig} = useDocusaurusContext();
-  const {appVersion, license, goVersion} = siteConfig.customFields as HeroMeta;
+  const {appVersion, license, goVersion, sponsorUrl, koFiUrl} = siteConfig.customFields as HeroMeta;
   // Bare version (no leading "v") for package filenames; the release tag keeps
   // the "v". appVersion is resolved at build time, so these stay current.
   const ver = appVersion.replace(/^v/, '');
@@ -111,8 +183,12 @@ export default function Landing(): JSX.Element {
         <section className="nl6-hero">
           <div className="nl6-hero__grid">
             <div>
+              {/* Three flex children so the container gap spaces every segment
+                  alike — the metadata text is wrapped rather than left bare. */}
               <div className="nl6-hero__eyebrow">
-                <span className="nl6-dot" /> {appVersion} · {license} · {goVersion}
+                <span className="nl6-dot" />
+                <span>{appVersion} · {license} · {goVersion} ·</span>
+                <SponsorMenu sponsorUrl={sponsorUrl} koFiUrl={koFiUrl} />
               </div>
               <h1 className="nl6-hero__title">
                 A network load target<br />
