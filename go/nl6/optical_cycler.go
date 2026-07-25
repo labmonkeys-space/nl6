@@ -1,0 +1,695 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import (
+	"math"
+	"math/rand"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Optical leaf names, as defined by the pinned OpenConfig revision
+// (openconfig-terminal-device@2026-01-14 plus the
+// openconfig-platform-transceiver@2026-03-25 groupings it reuses). Every
+// one of these is reachable under
+// `/components/component[name=$och]/optical-channel/`.
+//
+// Names are NOT invented: serving a path the published model does not
+// define would fail collector-side schema validation, which is the exact
+// failure this device type exists to avoid.
+const (
+	// Receive-side spine — these degrade together.
+	OpticalLeafInputPower  = "input-power"
+	OpticalLeafOSNR        = "osnr"
+	OpticalLeafESNR        = "esnr"
+	OpticalLeafQValue      = "q-value"
+	OpticalLeafPreFECBER   = "pre-fec-ber"
+	OpticalLeafUncorrBlock = "fec-uncorrectable-blocks"
+
+	// Off-spine — these must stay flat under a receive-side fault, which
+	// is what makes the fibre-vs-transponder diagnosis possible.
+	OpticalLeafOutputPower       = "output-power"
+	OpticalLeafTargetOutputPower = "target-output-power"
+	OpticalLeafLaserBias         = "laser-bias-current"
+	OpticalLeafChromaticDisp     = "chromatic-dispersion"
+	OpticalLeafPMD               = "polarization-mode-dispersion"
+	OpticalLeafPDL               = "polarization-dependent-loss"
+	OpticalLeafFrequency         = "frequency"
+	OpticalLeafOperationalMode   = "operational-mode"
+	OpticalLeafLinePort          = "line-port"
+)
+
+// Statistic selectors on a measured quantity's statistics container.
+const (
+	OpticalStatInstant = "instant"
+	OpticalStatAvg     = "avg"
+	OpticalStatMin     = "min"
+	OpticalStatMax     = "max"
+)
+
+// Precision mandated by the pinned model. These come from the YANG
+// `fraction-digits` of the reused statistics groupings, NOT from Ciena's
+// native model — Ciena's `decimal-3-dig` / `string-sci` describe the
+// NETCONF surface nl6 does not serve, and emitting them here would fail
+// schema validation.
+const (
+	opticalStatFractionDigits = 2  // avg-min-max-instant-stats-precision2-*
+	opticalBERFractionDigits  = 18 // avg-min-max-instant-stats-precision18-ber
+)
+
+const (
+	// opticalDialPeriodSec is the fundamental period of both master
+	// dials. They deliberately share it: with a common period the
+	// difference of the two sinusoids collapses to a single sinusoid
+	// (see initOsnrPhasor), which makes the above-threshold integral
+	// behind fec-uncorrectable-blocks exactly solvable and O(1) instead
+	// of requiring numeric integration over elapsed time. Independence
+	// between the dials is preserved where it matters — amplitude,
+	// phase, and (via bands and future degradation episodes) their means.
+	opticalDialPeriodSec = 3600.0
+
+	// opticalThermalPeriodSec is the slow chassis/modem thermal cycle.
+	// It only drives off-spine leaves, so it need not share the dial
+	// period.
+	opticalThermalPeriodSec = 21600.0
+
+	// opticalStatWindowSec is the trailing window the statistics
+	// container summarises.
+	opticalStatWindowSec = 900.0
+
+	// opticalStatSamples is how many points the window is sampled at.
+	// Sampling (rather than a closed form over the sinusoid) is
+	// deliberate: it keeps `min <= instant <= max` true by construction
+	// even once degradation episodes perturb the dials into a shape with
+	// no analytic extremum, and it costs a handful of flops.
+	opticalStatSamples = 33
+
+	// opticalQOffsetDB converts OSNR to Q-factor: q_dB = osnr_dB -
+	// offset, the linear approximation within an operating band. The
+	// value places a 18.3 dB OSNR at 11.42 dB Q (pre-FEC BER ~1e-4),
+	// matching a healthy 400G 16QAM line.
+	opticalQOffsetDB = 6.88
+
+	// opticalSDFECThresholdBER is the soft-decision FEC threshold. Above
+	// it the FEC can no longer correct and uncorrectable blocks accrue.
+	//
+	// Worth knowing: at this operating point the erfc tail is SHALLOW —
+	// Q 5.2 -> 7.2 dB moves pre-FEC BER only ~3x (3.4e-2 -> 1.1e-2), not
+	// an order of magnitude. Decade-scale behaviour lives ~6 dB higher.
+	// So tests should assert monotonicity here, and reserve step-change
+	// assertions for the uncorrectable-block counter.
+	opticalSDFECThresholdBER = 2e-2
+
+	// opticalESNRPenaltyDB is how far electrical SNR sits below optical
+	// SNR — the modem's implementation penalty.
+	opticalESNRPenaltyDB = 0.9
+
+	// opticalQFloorDB / opticalQCeilDB clamp the Q derivation so an
+	// extreme band or degradation cannot produce a nonsensical value.
+	opticalQFloorDB = 0.5
+	opticalQCeilDB  = 20.0
+)
+
+// opticalBand is the steady-state operating band for a channel. It sets
+// the means of both master dials, which is what makes all four
+// diagnostic quadrants reachable: depressing pInMeanDBm alone models
+// attenuation (power falls, OSNR holds, because signal and accumulated
+// noise attenuate together); raising nAseMeanDBm alone models noise
+// accumulation or a sick amplifier (OSNR falls, power holds).
+//
+// The per-tier bands and the clean|typical|degraded|failing enum that
+// selects them arrive with the health-band work; this type and its clean
+// default are what the engine needs to exist.
+type opticalBand struct {
+	// pInMeanDBm is the mean received signal power.
+	pInMeanDBm float64
+	// nAseMeanDBm is the mean accumulated noise power. OSNR is the
+	// difference of the two in the dB domain.
+	nAseMeanDBm float64
+	// pInAmpDB / nAseAmpDB are the sine amplitudes. Both are jittered
+	// per channel around these values.
+	pInAmpDB  float64
+	nAseAmpDB float64
+}
+
+// defaultOpticalBand is the `clean` band: OSNR ~18.3 dB, Q ~11.4 dB,
+// pre-FEC BER ~1e-4, comfortably clear of the SD-FEC threshold (which
+// sits at OSNR 13.13 dB) so a healthy channel accrues no uncorrectable
+// blocks. The amplitude is anchored on measured testbed behaviour, where
+// a span under normal conditions wanders roughly 2 dB peak-to-peak.
+var defaultOpticalBand = opticalBand{
+	pInMeanDBm:  -8.5,
+	nAseMeanDBm: -26.8,
+	pInAmpDB:    0.60,
+	nAseAmpDB:   0.25,
+}
+
+// OpticalCycler generates coherent optical telemetry analytically.
+//
+// It is the optical peer of IfCounterCycler and shares its contract: a
+// pure function of (component, leaf, elapsed time), no per-channel
+// goroutine, and immutable after publication. Every field is written
+// once by InitOpticalCycler before the cycler is published, and only
+// read thereafter.
+//
+// Determinism is guaranteed at equal ELAPSED OFFSETS from startTime, not
+// at equal absolute timestamps: like the interface cycler, the engine is
+// start-time-relative, so two engines constructed at different wall-clock
+// instants necessarily differ at the same absolute instant. Within one
+// process every protocol surface reads one engine with one startTime, so
+// cross-protocol agreement at an instant is unaffected.
+type OpticalCycler struct {
+	startTime time.Time
+
+	// names is the channel set in sorted order. Sorted rather than map
+	// order because per-channel jitter is assigned positionally, and Go
+	// map iteration order is randomised per process — ranging a map here
+	// would make the engine irreproducible across restarts.
+	names []string
+	slot  map[string]int
+
+	// Static per-channel inventory, straight from the resource file.
+	linePort     []string
+	freqMHz      []uint64
+	opMode       []uint16
+	targetOutDBm []float64
+
+	// Master dial parameters (per channel, jittered at init).
+	pInMean   []float64
+	pInAmp    []float64
+	pInPhase  []float64
+	nAseMean  []float64
+	nAseAmp   []float64
+	nAsePhase []float64
+
+	// Collapsed OSNR sinusoid: osnr(t) = osnrMean + osnrAmp*sin(wt+osnrPhase).
+	// Precomputed from the two dials at init — see initOsnrPhasor.
+	osnrMean  []float64
+	osnrAmp   []float64
+	osnrPhase []float64
+
+	// Off-spine values (per channel). Flat with respect to the receive
+	// dials by construction: nothing here reads pInAt or nAseAt.
+	outPowerDBm []float64
+	biasMA      []float64
+	biasAmpMA   []float64
+	biasPhase   []float64
+	cdPsNm      []float64
+	pmdPs       []float64
+	pdlDB       []float64
+
+	// Uncorrectable-block accrual.
+	uncorrBase []uint64  // pre-seed so a fresh device is not suspiciously at 0
+	uncorrRate []float64 // blocks per second while above the FEC threshold
+}
+
+// initOsnrPhasor collapses the two master dials into a single sinusoid.
+//
+// Both dials share a period, so
+//
+//	pIn(t) - nAse(t) = (pInMean - nAseMean)
+//	                 + pInAmp*sin(wt+pInPhase) - nAseAmp*sin(wt+nAsePhase)
+//
+// and the bracketed term is itself a sinusoid at the same frequency:
+// summing A*sin(θ+φ) terms gives (Σ A cos φ)·sin θ + (Σ A sin φ)·cos θ,
+// i.e. R*sin(θ+ψ) with R = hypot and ψ = atan2. Precomputing R and ψ
+// makes osnrAt O(1) and — more importantly — makes the time spent above
+// the FEC threshold solvable in closed form.
+func (oc *OpticalCycler) initOsnrPhasor(slot int) {
+	x := oc.pInAmp[slot]*math.Cos(oc.pInPhase[slot]) - oc.nAseAmp[slot]*math.Cos(oc.nAsePhase[slot])
+	y := oc.pInAmp[slot]*math.Sin(oc.pInPhase[slot]) - oc.nAseAmp[slot]*math.Sin(oc.nAsePhase[slot])
+	oc.osnrMean[slot] = oc.pInMean[slot] - oc.nAseMean[slot]
+	oc.osnrAmp[slot] = math.Hypot(x, y)
+	oc.osnrPhase[slot] = math.Atan2(y, x)
+}
+
+// ---- master dials -------------------------------------------------
+
+func opticalOmega(periodSec float64) float64 { return 2 * math.Pi / periodSec }
+
+// pInAt is the received signal power in dBm — the first master dial.
+func (oc *OpticalCycler) pInAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalDialPeriodSec)
+	return oc.pInMean[slot] + oc.pInAmp[slot]*math.Sin(w*t+oc.pInPhase[slot])
+}
+
+// nAseAt is the accumulated noise power in dBm — the second, independent
+// master dial. Deriving OSNR from received power alone would make the
+// "normal power, low OSNR" quadrant unreachable and so could never
+// exercise a collector rule that keys on it.
+func (oc *OpticalCycler) nAseAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalDialPeriodSec)
+	return oc.nAseMean[slot] + oc.nAseAmp[slot]*math.Sin(w*t+oc.nAsePhase[slot])
+}
+
+// ---- derived receive-side cascade ---------------------------------
+
+// osnrAt is the optical signal-to-noise ratio in dB: the difference of
+// the two master dials, evaluated through the precomputed phasor.
+func (oc *OpticalCycler) osnrAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalDialPeriodSec)
+	return oc.osnrMean[slot] + oc.osnrAmp[slot]*math.Sin(w*t+oc.osnrPhase[slot])
+}
+
+// esnrAt is electrical SNR. A real WaveLogic modem reports electrical
+// rather than optical SNR, so it is served alongside OSNR; it tracks
+// OSNR with a small implementation penalty.
+func (oc *OpticalCycler) esnrAt(slot int, t float64) float64 {
+	return oc.osnrAt(slot, t) - opticalESNRPenaltyDB
+}
+
+// qDbAt is the Q-factor in dB, linear in OSNR within an operating band.
+func (oc *OpticalCycler) qDbAt(slot int, t float64) float64 {
+	q := oc.osnrAt(slot, t) - opticalQOffsetDB
+	return clampFloat(q, opticalQFloorDB, opticalQCeilDB)
+}
+
+// preFecBerAt is the pre-FEC bit error rate, from Q through the Gaussian
+// tail: BER = 0.5*erfc(q_lin/sqrt(2)).
+func (oc *OpticalCycler) preFecBerAt(slot int, t float64) float64 {
+	return berFromQDB(oc.qDbAt(slot, t))
+}
+
+func berFromQDB(qDB float64) float64 {
+	qLin := math.Pow(10, qDB/20)
+	return 0.5 * math.Erfc(qLin/math.Sqrt2)
+}
+
+// osnrThresholdDB is the OSNR at which pre-FEC BER reaches the SD-FEC
+// threshold. Derived from the same constants as the cascade so the two
+// can never drift apart — rather than hard-coded, which would let them.
+//
+// Memoised because it is a constant of constants but costs ~16us to
+// derive (100 bisection steps, each an Erfc and a Pow), and it sits on
+// the uncorrectable-block read path that every subscribe tick hits.
+var osnrThresholdDB = sync.OnceValue(func() float64 {
+	// BER is monotonically decreasing in Q, so bisect.
+	lo, hi := opticalQFloorDB, opticalQCeilDB
+	for i := 0; i < 100; i++ {
+		mid := (lo + hi) / 2
+		if berFromQDB(mid) > opticalSDFECThresholdBER {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return lo + opticalQOffsetDB
+})
+
+// uncorrBlocksAt is the FEC uncorrectable block count: monotonically
+// non-decreasing, accruing only while pre-FEC BER exceeds the SD-FEC
+// threshold.
+//
+// It is the time integral of an indicator, computed in closed form. BER
+// exceeds the threshold exactly when OSNR falls below
+// osnrThresholdDB(), and OSNR is a single sinusoid, so the elapsed
+// above-threshold time is an exact arcsine expression rather than a
+// numeric integration over however long the device has been running.
+// That keeps the read O(1) and the result exactly monotonic.
+func (oc *OpticalCycler) uncorrBlocksAt(slot int, t float64) uint64 {
+	if t <= 0 {
+		return oc.uncorrBase[slot]
+	}
+	above := oc.aboveThresholdSeconds(slot, t)
+	blocks := above * oc.uncorrRate[slot]
+	// Converting a NaN or Inf to uint64 is undefined in Go, and a negative
+	// value would wrap to a huge count and break monotonicity. Neither is
+	// reachable from the current dials, but the counter's monotonicity is
+	// a contract downstream collectors rely on, so it is guarded rather
+	// than argued about.
+	if math.IsNaN(blocks) || math.IsInf(blocks, 0) || blocks < 0 {
+		return oc.uncorrBase[slot]
+	}
+	return oc.uncorrBase[slot] + uint64(math.Floor(blocks))
+}
+
+// aboveThresholdSeconds returns how much of [0, t] the channel spent
+// with pre-FEC BER above the SD-FEC threshold.
+func (oc *OpticalCycler) aboveThresholdSeconds(slot int, t float64) float64 {
+	amp := oc.osnrAmp[slot]
+	// u is the threshold expressed in units of the sinusoid: BER is above
+	// threshold when sin(theta) < u.
+	target := osnrThresholdDB() - oc.osnrMean[slot]
+	if amp <= 0 {
+		// Degenerate dial: either always above or always below.
+		if target > 0 {
+			return t
+		}
+		return 0
+	}
+	u := target / amp
+	if u >= 1 {
+		return t // never clears the threshold
+	}
+	if u <= -1 {
+		return 0 // never reaches it
+	}
+	w := opticalOmega(opticalDialPeriodSec)
+	theta0 := oc.osnrPhase[slot]
+	theta1 := w*t + oc.osnrPhase[slot]
+	return (sinBelowMeasure(theta1, u) - sinBelowMeasure(theta0, u)) / w
+}
+
+// sinBelowMeasure returns the measure (in radians) of
+// {x in [0, theta] : sin(x) < u}, for u in (-1, 1). Negative theta is
+// handled by antisymmetry so callers can pass a phase offset directly.
+//
+// Within one turn, sin(x) < u on the arc (pi-a, 2pi+a) where
+// a = asin(u); reduced modulo 2pi that is [0, a) plus (pi-a, 2pi) when a
+// is positive, and the single interval (pi-a, 2pi+a) when it is not.
+func sinBelowMeasure(theta, u float64) float64 {
+	if theta < 0 {
+		// measure over [theta, 0] mirrored: sin is odd, so
+		// |{x in [-T,0] : sin x < u}| = T - |{x in [0,T] : sin x < -u}|.
+		return -(-theta - sinBelowMeasure(-theta, -u))
+	}
+	a := math.Asin(u)
+	arcLen := math.Pi + 2*a // measure per full turn
+	turns := math.Floor(theta / (2 * math.Pi))
+	rem := theta - turns*2*math.Pi
+	total := turns * arcLen
+	if a >= 0 {
+		total += overlapLen(0, rem, 0, a)
+		total += overlapLen(0, rem, math.Pi-a, 2*math.Pi)
+	} else {
+		total += overlapLen(0, rem, math.Pi-a, 2*math.Pi+a)
+	}
+	return total
+}
+
+// overlapLen returns the length of the intersection of [a0,a1] and [b0,b1].
+func overlapLen(a0, a1, b0, b1 float64) float64 {
+	lo := math.Max(a0, b0)
+	hi := math.Min(a1, b1)
+	if hi <= lo {
+		return 0
+	}
+	return hi - lo
+}
+
+// ---- off-spine leaves ---------------------------------------------
+//
+// None of these read pInAt / nAseAt / osnrAt. That is the whole point:
+// an operator distinguishes a span problem from a transponder problem by
+// seeing the receive spine degrade while the transmit side holds, so a
+// simulator whose every needle moves together teaches a collector
+// nothing.
+
+func (oc *OpticalCycler) outPowerAt(slot int, t float64) float64 {
+	// Transmit power is actively levelled; only a slow thermal ripple.
+	w := opticalOmega(opticalThermalPeriodSec)
+	return oc.outPowerDBm[slot] + 0.05*math.Sin(w*t)
+}
+
+func (oc *OpticalCycler) laserBiasAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalThermalPeriodSec)
+	return oc.biasMA[slot] + oc.biasAmpMA[slot]*math.Sin(w*t+oc.biasPhase[slot])
+}
+
+func (oc *OpticalCycler) chromaticDispAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalThermalPeriodSec)
+	return oc.cdPsNm[slot] + 1.5*math.Sin(w*t+oc.biasPhase[slot])
+}
+
+func (oc *OpticalCycler) pmdAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalThermalPeriodSec)
+	return oc.pmdPs[slot] + 0.4*math.Sin(w*t+oc.nAsePhase[slot])
+}
+
+func (oc *OpticalCycler) pdlAt(slot int, t float64) float64 {
+	w := opticalOmega(opticalThermalPeriodSec)
+	return oc.pdlDB[slot] + 0.08*math.Sin(w*t+oc.pInPhase[slot])
+}
+
+// ---- statistics ---------------------------------------------------
+
+// statsFor summarises a leaf over the trailing window, returning
+// (instant, avg, min, max).
+//
+// The window is sampled rather than solved analytically so that
+// `min <= instant <= max` holds BY CONSTRUCTION: instant is the final
+// sample, so it is necessarily within the min/max of the sample set.
+// That invariant then survives any later perturbation of the dials
+// (a degradation episode need not leave an analytically tractable
+// shape), which a closed form over the sinusoid would not.
+func (oc *OpticalCycler) statsFor(slot int, t float64, f func(int, float64) float64) (instant, avg, min, max float64) {
+	start := t - opticalStatWindowSec
+	if start < 0 {
+		start = 0
+	}
+	step := (t - start) / float64(opticalStatSamples-1)
+	sum := 0.0
+	min = math.Inf(1)
+	max = math.Inf(-1)
+	var last float64
+	for i := 0; i < opticalStatSamples; i++ {
+		ti := start + float64(i)*step
+		if i == opticalStatSamples-1 {
+			ti = t // exact, so instant is a genuine member of the sample set
+		}
+		v := f(slot, ti)
+		sum += v
+		min = math.Min(min, v)
+		max = math.Max(max, v)
+		last = v
+	}
+	// Clamp the mean into [min,max] rather than trusting floating-point
+	// summation to respect it. Summing n samples and dividing can land an
+	// ULP outside their own range — most visibly at t=0, where the window
+	// collapses to a single point and every sample is identical. The
+	// invariant is part of the contract, so it is enforced, not assumed.
+	avg = clampFloat(sum/float64(opticalStatSamples), min, max)
+	return last, avg, min, max
+}
+
+// ---- dispatcher ---------------------------------------------------
+
+// opticalLeafFn maps a spine/off-spine leaf name to its generator, or
+// nil when the leaf is not a statistics-bearing measurement.
+func (oc *OpticalCycler) opticalLeafFn(leaf string) func(int, float64) float64 {
+	switch leaf {
+	case OpticalLeafInputPower:
+		return oc.pInAt
+	case OpticalLeafOSNR:
+		return oc.osnrAt
+	case OpticalLeafESNR:
+		return oc.esnrAt
+	case OpticalLeafQValue:
+		return oc.qDbAt
+	case OpticalLeafPreFECBER:
+		return oc.preFecBerAt
+	case OpticalLeafOutputPower:
+		return oc.outPowerAt
+	case OpticalLeafLaserBias:
+		return oc.laserBiasAt
+	case OpticalLeafChromaticDisp:
+		return oc.chromaticDispAt
+	case OpticalLeafPMD:
+		return oc.pmdAt
+	case OpticalLeafPDL:
+		return oc.pdlAt
+	}
+	return nil
+}
+
+// GetDynamicAt is the single dispatcher every protocol surface reads
+// through — the optical peer of IfCounterCycler.GetDynamicAt. Because
+// there is exactly one dispatcher, any two surfaces evaluating the same
+// (component, leaf, t) necessarily agree.
+//
+// leaf is either a scalar name ("frequency") or a statistics path
+// ("input-power/instant"), mirroring the "counters/in-octets" shape the
+// interface resolver already uses. The returned value is typed for the
+// gNMI encoder: gnmiDecimal for analog leaves, uint64 for counters,
+// uint32/string for scalars. ok is false for an unknown component or
+// leaf, which callers surface as NotFound.
+func (oc *OpticalCycler) GetDynamicAt(component, leaf string, t float64) (value any, ok bool) {
+	if oc == nil {
+		return nil, false
+	}
+	slot, found := oc.slot[component]
+	if !found {
+		return nil, false
+	}
+
+	// Scalars first — no statistics container.
+	switch leaf {
+	case OpticalLeafFrequency:
+		return oc.freqMHz[slot], true
+	case OpticalLeafOperationalMode:
+		return uint32(oc.opMode[slot]), true
+	case OpticalLeafLinePort:
+		return oc.linePort[slot], true
+	case OpticalLeafTargetOutputPower:
+		return gnmiDecimal{val: oc.targetOutDBm[slot], digits: opticalStatFractionDigits}, true
+	case OpticalLeafUncorrBlock:
+		// A bare counter leaf in the pinned model: no instant/avg/min/max.
+		return oc.uncorrBlocksAt(slot, t), true
+	}
+
+	name, stat, hasStat := strings.Cut(leaf, "/")
+	if !hasStat {
+		return nil, false
+	}
+	fn := oc.opticalLeafFn(name)
+	if fn == nil {
+		return nil, false
+	}
+	instant, avg, min, max := oc.statsFor(slot, t, fn)
+	var v float64
+	switch stat {
+	case OpticalStatInstant:
+		v = instant
+	case OpticalStatAvg:
+		v = avg
+	case OpticalStatMin:
+		v = min
+	case OpticalStatMax:
+		v = max
+	default:
+		return nil, false
+	}
+	digits := opticalStatFractionDigits
+	if name == OpticalLeafPreFECBER {
+		digits = opticalBERFractionDigits
+	}
+	return gnmiDecimal{val: v, digits: digits}, true
+}
+
+// Components returns the channel names in sorted order. Sorted so that a
+// wildcard gNMI subscription expands deterministically.
+func (oc *OpticalCycler) Components() []string {
+	if oc == nil {
+		return nil
+	}
+	return oc.names
+}
+
+// StartTime is the epoch every elapsed offset is measured from.
+func (oc *OpticalCycler) StartTime() time.Time {
+	if oc == nil {
+		return time.Time{}
+	}
+	return oc.startTime
+}
+
+// ---- init ---------------------------------------------------------
+
+// opticalSeedSalt is XOR-ed into the per-device seed so the optical
+// engine's jitter is independent of the interface counter engine's.
+// ("OC" in ASCII; verified not to collide with the interface cycler's
+// salt.)
+const opticalSeedSalt = 0x4F43_0000
+
+// InitOpticalCycler builds and publishes the optical value engine from a
+// device's OCH inventory.
+//
+// Single-init only. A second call panics rather than replacing a
+// published engine, mirroring InitIfCountersWithScenario: a swap would
+// silently orphan anything already reading the old engine. A device's
+// type is fixed at creation, so exactly one call per device is both
+// sufficient and correct — and it must happen in the creation window,
+// before the device starts serving.
+func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64, band opticalBand) {
+	if resources == nil || len(resources.Optical) == 0 {
+		return
+	}
+	if existing := c.optical.Load(); existing != nil {
+		panic("InitOpticalCycler: re-init unsafe — an optical engine is already published; " +
+			"a swap would orphan readers mid-flight")
+	}
+
+	// Sort the inventory by component name before assigning any jitter.
+	// Jitter is positional, so ranging the inventory in its file order
+	// would make values depend on file layout, and ranging a map would
+	// make them differ per process.
+	chans := make([]OpticalChannel, len(resources.Optical))
+	copy(chans, resources.Optical)
+	sort.Slice(chans, func(i, j int) bool { return chans[i].Name < chans[j].Name })
+
+	n := len(chans)
+	oc := &OpticalCycler{
+		startTime:    time.Now(),
+		names:        make([]string, n),
+		slot:         make(map[string]int, n),
+		linePort:     make([]string, n),
+		freqMHz:      make([]uint64, n),
+		opMode:       make([]uint16, n),
+		targetOutDBm: make([]float64, n),
+		pInMean:      make([]float64, n),
+		pInAmp:       make([]float64, n),
+		pInPhase:     make([]float64, n),
+		nAseMean:     make([]float64, n),
+		nAseAmp:      make([]float64, n),
+		nAsePhase:    make([]float64, n),
+		osnrMean:     make([]float64, n),
+		osnrAmp:      make([]float64, n),
+		osnrPhase:    make([]float64, n),
+		outPowerDBm:  make([]float64, n),
+		biasMA:       make([]float64, n),
+		biasAmpMA:    make([]float64, n),
+		biasPhase:    make([]float64, n),
+		cdPsNm:       make([]float64, n),
+		pmdPs:        make([]float64, n),
+		pdlDB:        make([]float64, n),
+		uncorrBase:   make([]uint64, n),
+		uncorrRate:   make([]float64, n),
+	}
+
+	rng := rand.New(rand.NewSource(seed ^ opticalSeedSalt))
+	for i, ch := range chans {
+		oc.names[i] = ch.Name
+		oc.slot[ch.Name] = i
+		oc.linePort[i] = ch.LinePort
+		oc.freqMHz[i] = ch.FrequencyMHz
+		oc.opMode[i] = ch.OperationalMode
+		oc.targetOutDBm[i] = ch.TargetOutputPowerDBm
+
+		// Receive dials, jittered +-10% on amplitude and +-0.4 dB on mean.
+		oc.pInMean[i] = band.pInMeanDBm + (rng.Float64()-0.5)*0.8
+		oc.pInAmp[i] = band.pInAmpDB * (0.9 + rng.Float64()*0.2)
+		oc.pInPhase[i] = rng.Float64() * 2 * math.Pi
+		oc.nAseMean[i] = band.nAseMeanDBm + (rng.Float64()-0.5)*0.8
+		oc.nAseAmp[i] = band.nAseAmpDB * (0.9 + rng.Float64()*0.2)
+		oc.nAsePhase[i] = rng.Float64() * 2 * math.Pi
+		oc.initOsnrPhasor(i)
+
+		// Off-spine. Transmit power tracks the configured target.
+		oc.outPowerDBm[i] = ch.TargetOutputPowerDBm + (rng.Float64()-0.5)*0.1
+		oc.biasMA[i] = 85 + (rng.Float64()-0.5)*6
+		oc.biasAmpMA[i] = 0.6 + rng.Float64()*0.4
+		oc.biasPhase[i] = rng.Float64() * 2 * math.Pi
+		oc.cdPsNm[i] = -140 + (rng.Float64()-0.5)*20
+		oc.pmdPs[i] = 4 + rng.Float64()*2
+		oc.pdlDB[i] = 0.4 + rng.Float64()*0.3
+
+		oc.uncorrBase[i] = uint64(rng.Int63n(64))
+		oc.uncorrRate[i] = 900 + rng.Float64()*600
+	}
+
+	c.optical.Store(oc)
+}
+
+// OpticalCyclerOf returns the published optical engine, or nil.
+func (c *MetricsCycler) OpticalCyclerOf() *OpticalCycler {
+	if c == nil {
+		return nil
+	}
+	return c.optical.Load()
+}
+
+func clampFloat(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}

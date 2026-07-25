@@ -300,6 +300,13 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			device.IfErrorScenario = string(scenario) // canonicalise for GET /api/v1/devices
 			device.metricsCycler.InitIfCountersWithScenario(deviceResources, int64(i)^0x4843_0000, scenario)
 
+			// Optical value engine, for optical transport types only. A
+			// no-op when the device has no OCH inventory, so packet types
+			// are unaffected. Single-init, and it must happen here in the
+			// creation window: the engine is immutable after publication
+			// and a device's type is fixed at creation.
+			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), defaultOpticalBand)
+
 			// Wire the state engine's per-event counters to the
 			// simulator-wide aggregates so ON_CHANGE fan-out shows up
 			// in /api/v1/gnmi/status (state_events_emitted / dropped).
@@ -647,6 +654,11 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	scenario, _ := ParseIfErrorScenario(device.IfErrorScenario)
 	device.IfErrorScenario = string(scenario)
 	device.metricsCycler.InitIfCountersWithScenario(resources, int64(deviceIndex)^0x4843_0000, scenario)
+
+	// Optical value engine — mirrors the sequential path in
+	// CreateDevicesWithOptions. These two paths have diverged before, so
+	// any change here belongs in both.
+	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), defaultOpticalBand)
 
 	// Wire the state engine's per-event counters to the simulator-wide
 	// aggregates so ON_CHANGE fan-out shows up in /api/v1/gnmi/status.

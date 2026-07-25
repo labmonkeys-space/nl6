@@ -195,9 +195,35 @@ func isStateOnlyLeaf(leaf string) bool {
 // the value into a TypedValue per the requested encoding.
 type resolvedUpdate struct {
 	Path *gnmipb.Path
-	// Value is one of: string, uint32, uint64. The gNMI encoder branches
-	// on the dynamic type.
+	// Value is one of: string, uint32, uint64, gnmiDecimal. The gNMI
+	// encoder branches on the dynamic type.
 	Value interface{}
+}
+
+// gnmiDecimal is a fixed-precision decimal, carrying the value together
+// with the `fraction-digits` its YANG type declares.
+//
+// It exists as a distinct type rather than a pre-formatted string
+// because the two advertised encodings need different renderings of the
+// same value: RFC 7951 §6.1 requires decimal64 be a JSON *string* under
+// JSON_IETF, while PROTO needs `double_val`. Handing the encoder a Go
+// string would silently take the `string_val` branch and quietly
+// corrupt an advertised encoding — the value would look right in
+// JSON_IETF and be wrong in PROTO.
+//
+// Precision caveat: optical bit error rates carry 18 fraction digits,
+// which exceeds a float64 significand, so `double_val` is lossy for
+// them. That is inherent to representing decimal64 in gNMI's PROTO
+// scalar set; JSON_IETF preserves the digits.
+type gnmiDecimal struct {
+	val    float64
+	digits int
+}
+
+// String renders the value with exactly `digits` fraction digits, which
+// is the RFC 7951 decimal64 lexical form.
+func (d gnmiDecimal) String() string {
+	return strconv.FormatFloat(d.val, 'f', d.digits, 64)
 }
 
 // ClassifyLeaves returns the leaf-name list a path covers, without
