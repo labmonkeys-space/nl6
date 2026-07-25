@@ -13,10 +13,24 @@
  * normal workflow prompts anyone to remove one — seven of nine entries had gone
  * inert before this script existed.
  *
- * Method: resolve the tree twice — once as-is, once with the `overrides` block
- * stripped — and diff the resolved version *set* per overridden name. Sets, not
- * single versions, because dropping a global override can split one hoisted
- * copy into several.
+ * Method: resolve the tree twice from the *same* manifest — once with the
+ * `overrides` block, once without — and diff the resolved install paths for
+ * each overridden package.
+ *
+ * Two details that a naive implementation gets wrong:
+ *
+ *   - Both sides must be resolved fresh, in the same run. Reading the "with"
+ *     side from the committed package-lock.json compares a lock resolved at
+ *     some past date (possibly under a different overrides block) against a
+ *     resolution done today, so ordinary registry drift reads as
+ *     "load-bearing".
+ *
+ *   - The diff must be per install *path*, not per package name. A scoped
+ *     override (`"sockjs": {"uuid": …}`) only changes where a copy is placed:
+ *     if another consumer independently resolves the same version the override
+ *     forces, the set of versions is identical with and without it, and the
+ *     entry looks inert while genuinely holding an advisory fix in place.
+ *     Comparing paths catches the nested copy appearing or disappearing.
  *
  * REPORT-ONLY, and deliberately not a CI gate. Its result depends on the state
  * of the npm registry rather than on the commit under test, so the same commit
@@ -34,12 +48,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+const NM = 'node_modules/';
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const overrides = pkg.overrides ?? {};
 
-// Flatten to the leaf package whose version an entry actually forces:
-//   "uuid": "^11"                  -> uuid            (global)
-//   "sockjs": { "uuid": "^11" }    -> sockjs>uuid     (scoped)
+// Flatten to the leaf package whose version an entry forces:
+//   "uuid": "^11"                  -> { label: 'uuid',        name: 'uuid' }
+//   "sockjs": { "uuid": "^11" }    -> { label: 'sockjs>uuid', name: 'uuid' }
 const entries = [];
 for (const [key, value] of Object.entries(overrides)) {
   if (typeof value === 'string') {
@@ -58,66 +73,110 @@ if (entries.length === 0) {
   process.exit(0);
 }
 
-/** Resolved version set per package name, from a lockfile on disk. */
-function resolvedVersions(lockPath) {
+/**
+ * Map of install path -> version for every package in a lockfile.
+ * Skips workspace/link entries (bare directory paths with no `node_modules/`
+ * segment) and anything without a concrete version, so a future workspace
+ * cannot produce nonsense keys.
+ */
+function resolvedPaths(lockPath) {
   const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
   const out = new Map();
   for (const [path, meta] of Object.entries(lock.packages ?? {})) {
-    if (!path) continue;
-    const name = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
-    if (!out.has(name)) out.set(name, new Set());
-    out.get(name).add(meta.version);
+    if (!path || !path.includes(NM) || !meta?.version) continue;
+    out.set(path, meta.version);
   }
   return out;
 }
 
-const withOverrides = resolvedVersions('package-lock.json');
+/** Install paths for one package name, as a sorted "path@version" list. */
+function pathsFor(all, name) {
+  const suffix = NM + name;
+  return [...all.entries()]
+    .filter(([path]) => path === suffix || path.endsWith('/' + suffix))
+    .map(([path, version]) => `${path}@${version}`)
+    .sort();
+}
 
-// Resolve a copy of the manifest with `overrides` stripped. --package-lock-only
-// runs npm's resolver against the registry without downloading ~1400 tarballs.
-const tmp = mkdtempSync(join(tmpdir(), 'nl6-override-audit-'));
-let without;
+/** Render for humans: hoisted copies as a bare version, nested as `parent:version`. */
+function fmt(list) {
+  if (list.length === 0) return '—';
+  return list
+    .map((entry) => {
+      const at = entry.lastIndexOf('@');
+      const [path, version] = [entry.slice(0, at), entry.slice(at + 1)];
+      const inner = path.lastIndexOf(NM);
+      const parent = inner > 0 ? path.slice(0, inner - 1).split(NM).pop() : null;
+      return parent ? `${parent}:${version}` : version;
+    })
+    .sort()
+    .join(', ');
+}
+
+/**
+ * Resolve the manifest in a temp dir, optionally with the overrides block
+ * stripped, and return its install-path map. `--package-lock-only` runs npm's
+ * resolver against the registry without downloading ~1400 tarballs.
+ */
+function resolve(withOverrides) {
+  const dir = mkdtempSync(join(tmpdir(), 'nl6-override-audit-'));
+  try {
+    const manifest = { ...pkg };
+    if (!withOverrides) delete manifest.overrides;
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, null, 2));
+    execFileSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
+      cwd: dir,
+      // Capture stderr so a malformed manifest, an auth failure or a missing
+      // npm is reported as itself rather than misattributed to "no network".
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    return resolvedPaths(join(dir, 'package-lock.json'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('resolving twice (with and without overrides; network, no install)…\n');
+
+let withOv;
+let withoutOv;
 try {
-  const stripped = { ...pkg };
-  delete stripped.overrides;
-  writeFileSync(join(tmp, 'package.json'), JSON.stringify(stripped, null, 2));
-  console.log('resolving without overrides (network, no install)…\n');
-  execFileSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
-    cwd: tmp,
-    stdio: 'ignore',
-  });
-  without = resolvedVersions(join(tmp, 'package-lock.json'));
+  withOv = resolve(true);
+  withoutOv = resolve(false);
 } catch (err) {
-  console.error(`could not resolve without overrides: ${err.message}`);
-  console.error('(needs network access — skipping audit)');
-  process.exit(0);
-} finally {
-  rmSync(tmp, { recursive: true, force: true });
+  // No process.exit() inside the try: it terminates synchronously without
+  // unwinding, so resolve()'s finally would never remove the temp dir.
+  console.error(`could not resolve: ${err.message}`);
+  const stderr = err.stderr?.toString().trim();
+  if (stderr) console.error(stderr);
+  console.error('\naudit skipped (report-only, not a failure)');
+  withOv = null;
 }
 
-const fmt = (set) => (set ? [...set].sort().join(', ') : '—');
-const inert = [];
-const pad = Math.max(...entries.map((e) => e.label.length + e.range.length + 1));
+if (withOv) {
+  const inert = [];
+  const pad = Math.max(...entries.map((e) => e.label.length + e.range.length + 1));
 
-for (const entry of entries) {
-  const a = withOverrides.get(entry.name);
-  const b = without.get(entry.name);
-  const same = fmt(a) === fmt(b);
-  if (same) inert.push(entry);
-  const head = `${entry.label} ${entry.range}`.padEnd(pad);
-  console.log(
-    `  ${same ? 'INERT       ' : 'load-bearing'}  ${head}  with: ${fmt(a)}  without: ${fmt(b)}`
-  );
-}
+  for (const entry of entries) {
+    const a = pathsFor(withOv, entry.name);
+    const b = pathsFor(withoutOv, entry.name);
+    const same = a.join('|') === b.join('|');
+    if (same) inert.push(entry);
+    const head = `${entry.label} ${entry.range}`.padEnd(pad);
+    console.log(
+      `  ${same ? 'INERT       ' : 'load-bearing'}  ${head}  with: ${fmt(a)}  without: ${fmt(b)}`
+    );
+  }
 
-console.log();
-if (inert.length === 0) {
-  console.log(`✓ all ${entries.length} override(s) are load-bearing`);
-} else {
-  console.log(`${inert.length} of ${entries.length} override(s) are inert and can be removed:`);
-  for (const e of inert) console.log(`    - ${e.label}`);
-  console.log(
-    '\nRemoving an inert entry must not move the lockfile — regenerate and ' +
-      'confirm zero version changes. Report-only: this never fails the build.'
-  );
+  console.log();
+  if (inert.length === 0) {
+    console.log(`✓ all ${entries.length} override(s) are load-bearing`);
+  } else {
+    console.log(`${inert.length} of ${entries.length} override(s) are inert and can be removed:`);
+    for (const e of inert) console.log(`    - ${e.label}`);
+    console.log(
+      '\nAfter removing one, regenerate the lockfile and confirm the resolved\n' +
+        'versions did not move. Report-only: this never fails the build.'
+    );
+  }
 }
