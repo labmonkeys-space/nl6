@@ -47,17 +47,16 @@
     "node": ">=20.0"
   },
   "comments": {
-    "overrides": "Force patched versions of transitive Docusaurus/webpack deps flagged by Dependabot. These are docs-site build/dev dependencies (not shipped in the nl6 binary or image). Pinned to each advisory's first patched version, staying in the installed major where possible. Revisit when Docusaurus updates upstream."
+    "overrides": "Force patched versions of transitive Docusaurus/webpack deps flagged by Dependabot. These are docs-site build/dev dependencies (not shipped in the nl6 binary or image). Every entry MUST be load-bearing (change resolution) and MUST have a removal condition in overrides-entries below; an inert entry is a version ceiling that blocks upgrades while delivering nothing. Run `make docs-audit-overrides` to find inert entries. Prefer a nested (per-consumer) override over a global one when only some consumers need the forced version.",
+    "overrides-entries": {
+      "serialize-javascript": "Advisory fix. Forces 7.x on copy-webpack-plugin@11 and css-minimizer-webpack-plugin@5, both of which declare ^6.x -- a deliberate major-boundary crossing. Without it the tree drops to 6.0.2. REMOVE WHEN both plugins accept ^7.",
+      "sockjs>uuid": "Advisory fix for uuid 8.3.2, reached only via sockjs under webpack-dev-server (npm run start) -- never in the production build or the shipped site. Scoped to sockjs so it does not cap mermaid, which accepts ^11 || ^12 || ^13 || ^14. Forces 11.1.1 on sockjs, whose declared range is ^8.3.2. REMOVE WHEN sockjs accepts a patched uuid."
+    }
   },
   "overrides": {
     "serialize-javascript": "^7.0.5",
-    "fast-uri": "^3.1.2",
-    "js-yaml": "^4.3.0",
-    "brace-expansion": "^1.1.16",
-    "uuid": "^11.1.1",
-    "joi": "^17.13.4",
-    "http-proxy-middleware": "^2.0.10",
-    "@babel/core": "^7.29.6",
-    "@babel/plugin-transform-modules-systemjs": "^7.29.4"
+    "sockjs": {
+      "uuid": "^11.1.1"
+    }
   }
 }
