@@ -102,6 +102,7 @@ var deviceTypeLabels = map[string]string{
 	"asr9k":                   "Cisco ASR 9000",
 	"aws_s3_storage":          "AWS S3",
 	"check_point_15600":       "Check Point 15600",
+	"ciena_waveserver5":       "Ciena Waveserver 5",
 	"cisco_catalyst_9500":     "Cisco Catalyst 9500",
 	"cisco_crs_x":             "Cisco CRS-X",
 	"cisco_ios":               "Cisco IOS",

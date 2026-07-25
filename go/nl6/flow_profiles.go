@@ -5,7 +5,10 @@
 
 package main
 
-import "math/rand"
+import (
+	"math/rand"
+	"strings"
+)
 
 // FlowProfile defines synthetic traffic characteristics for a device category.
 // It drives 5-tuple generation (src/dst IP, src/dst port, protocol) and the
@@ -291,8 +294,90 @@ var flowProfileMap = map[string]*FlowProfile{
 	"aws_s3_storage.json":          flowProfileStorage,
 }
 
+// flowIncapableTypes lists device types that natively export no flow
+// records at all, so nl6 must not either.
+//
+// This exists because absence has to be *implemented*, not merely
+// omitted: GetFlowProfile falls back to flowProfileEdgeRouter for any
+// unmapped type, so simply leaving a device out of flowProfileMap would
+// hand it edge-router flow ground truth. For a layer-1 optical transport
+// platform — which performs no layer-3/4 inspection and cannot observe
+// flows — that would emit plausible but entirely fictional NetFlow, and
+// a monitoring team could build on data that never appears in
+// production.
+//
+// Callers MUST consult SupportsFlowExport before attaching a flow
+// exporter; GetFlowProfile deliberately keeps its non-nil contract so
+// existing call sites cannot nil-panic.
+var flowIncapableTypes = map[string]struct{}{
+	"ciena_waveserver5.json": {},
+}
+
+// SupportsFlowExport reports whether a device type natively exports flow
+// records. False for layer-1 transport platforms.
+func SupportsFlowExport(resourceFile string) bool {
+	_, incapable := flowIncapableTypes[resourceFile]
+	return !incapable
+}
+
+// roundRobinTypesForCategory resolves the device types a round-robin
+// batch will actually draw from, mirroring the filter in
+// CreateDevicesWithOptions — including its "empty filter means no filter"
+// fallback. Kept next to SupportsFlowExport because the flow-capability
+// check is its only caller today; if the filter logic in device.go
+// changes, this must change with it.
+func roundRobinTypesForCategory(category string) []string {
+	if category == "" {
+		return RoundRobinDeviceTypes
+	}
+	var filtered []string
+	for _, rrFile := range RoundRobinDeviceTypes {
+		if getDeviceCategoryFromName(strings.TrimSuffix(rrFile, ".json")) == category {
+			filtered = append(filtered, rrFile)
+		}
+	}
+	if len(filtered) == 0 {
+		// device.go falls back to the unfiltered list in this case.
+		return RoundRobinDeviceTypes
+	}
+	return filtered
+}
+
+// flowIncapableRequest reports whether a device-creation request asks for
+// flow export on a set of device types that can never provide it. It
+// returns the offending resource file so the caller can name it.
+//
+// Only a request whose *entire* resolved type set is flow-incapable is
+// rejected: a mixed round-robin batch is legitimate, since the capable
+// devices export and the rest are skipped.
+func flowIncapableRequest(req CreateDevicesRequest) (string, bool) {
+	if req.ResourceFile != "" {
+		if !SupportsFlowExport(req.ResourceFile) {
+			return req.ResourceFile, true
+		}
+		return "", false
+	}
+	if !req.RoundRobin {
+		return "", false
+	}
+	types := roundRobinTypesForCategory(req.Category)
+	for _, rf := range types {
+		if SupportsFlowExport(rf) {
+			return "", false // at least one type can export — allow the batch
+		}
+	}
+	if len(types) == 0 {
+		return "", false
+	}
+	return types[0], true
+}
+
 // GetFlowProfile returns the FlowProfile for the given resource file name.
 // Falls back to flowProfileEdgeRouter if the file is not in the map.
+//
+// A non-nil result does NOT mean the device type should export flow —
+// check SupportsFlowExport first. The fallback is a convenience for
+// mapped-but-unlisted packet types, not a capability assertion.
 func GetFlowProfile(resourceFile string) *FlowProfile {
 	if p, ok := flowProfileMap[resourceFile]; ok {
 		return p

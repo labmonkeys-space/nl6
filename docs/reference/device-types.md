@@ -1,6 +1,6 @@
 # Device types
 
-nl6 ships resource files for **28 device types across 8 categories**.
+nl6 ships resource files for **29 device types across 9 categories**.
 Each device type has its own directory under `go/nl6/resources/`
 containing JSON responses for SNMP OIDs, SSH commands, and (for storage
 devices) REST API endpoints. See [Resource files](resource-files.md) for the
@@ -82,6 +82,22 @@ set of shared TLS certificates generated at startup. See [Web API](web-api.md)
 for the simulator's own control-plane endpoints; the storage APIs themselves
 are defined entirely by the JSON resource files in each storage device's
 directory.
+
+## Optical transport
+
+| Device | Channels | Protocols |
+|--------|----------|-----------|
+| Ciena Waveserver 5 | 2 × WaveLogic 5 Extreme | SNMP, SSH |
+
+A coherent DWDM transport platform rather than a packet device. Its
+per-channel discovery key is the optical-channel (OCH) **component name**
+(`OCH-1-1`), carried in an `optical` resource part — not an `ifIndex`, since
+an optical channel is not an interface.
+
+Being a layer-1 transport platform it performs no layer-3/4 inspection, so it
+**exports no flow records** (NetFlow / IPFIX / sFlow). A batch-level flow seed
+skips it with a log line; an explicit per-device `flow` block naming this type
+is rejected with HTTP 400.
 
 ## Enhanced features (all network devices)
 

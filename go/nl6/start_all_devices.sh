@@ -342,6 +342,9 @@ create_device "STR-EMC-01" "${BASE_IP}.$(($START_IP_LAST_OCTET + 26))" "dell_emc
 # Device 28: STR-AWS-01 (AWS S3 Storage)
 create_device "STR-AWS-01" "${BASE_IP}.$(($START_IP_LAST_OCTET + 27))" "aws_s3_storage.json" 1
 
+# Device 29: OPT-WS5-01 (Ciena Waveserver 5 — optical transport)
+create_device "OPT-WS5-01" "${BASE_IP}.$(($START_IP_LAST_OCTET + 28))" "ciena_waveserver5.json" 1
+
 echo ""
 echo "=================================================="
 echo -e "${GREEN}🎉 All devices created successfully!${NC}"

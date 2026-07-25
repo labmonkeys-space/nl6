@@ -323,12 +323,25 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 
 			// Initialize flow exporter if this device has flow config.
 			if device.flowConfig != nil {
-				flowProfile := GetFlowProfile(deviceResourceFile)
-				if err := sm.attachFlowExporter(device, flowProfile); err != nil {
-					log.Printf("flow export: skipping device %s: %v", device.IP, err)
-					// Nil out flowConfig so ListDevices doesn't show
-					// config that has no live exporter (review fix P5).
+				if !SupportsFlowExport(deviceResourceFile) {
+					// A batch-level flow seed applies to every device in
+					// the batch, so a mixed/round-robin batch can hand
+					// flow config to a device type that natively exports
+					// none. Skip it rather than failing the batch, which
+					// would make -flow-collector unusable with
+					// -round-robin. Nil the config so ListDevices does
+					// not advertise an exporter that does not exist.
+					log.Printf("flow export: device type %s exports no flow records; skipping device %s",
+						deviceResourceFile, device.IP)
 					device.flowConfig = nil
+				} else {
+					flowProfile := GetFlowProfile(deviceResourceFile)
+					if err := sm.attachFlowExporter(device, flowProfile); err != nil {
+						log.Printf("flow export: skipping device %s: %v", device.IP, err)
+						// Nil out flowConfig so ListDevices doesn't show
+						// config that has no live exporter (review fix P5).
+						device.flowConfig = nil
+					}
 				}
 			}
 
@@ -654,13 +667,21 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	}
 
 	// Initialize flow exporter if this device has flow config.
+	// Mirrors the sequential path in CreateDevicesWithOptions — these two
+	// paths have diverged before, so any change here belongs in both.
 	if device.flowConfig != nil {
-		flowProfile := GetFlowProfile(resourceFile)
-		if err := sm.attachFlowExporter(device, flowProfile); err != nil {
-			log.Printf("flow export: skipping device %s: %v", device.IP, err)
-			// Nil out flowConfig so ListDevices doesn't show config
-			// that has no live exporter (review fix P5).
+		if !SupportsFlowExport(resourceFile) {
+			log.Printf("flow export: device type %s exports no flow records; skipping device %s",
+				resourceFile, device.IP)
 			device.flowConfig = nil
+		} else {
+			flowProfile := GetFlowProfile(resourceFile)
+			if err := sm.attachFlowExporter(device, flowProfile); err != nil {
+				log.Printf("flow export: skipping device %s: %v", device.IP, err)
+				// Nil out flowConfig so ListDevices doesn't show config
+				// that has no live exporter (review fix P5).
+				device.flowConfig = nil
+			}
 		}
 	}
 
