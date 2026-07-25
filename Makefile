@@ -51,7 +51,7 @@ UNAME_S := $(shell uname -s)
 
 .PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
-        docs-install docs-serve docs-build docs-check-orphans docs-clean \
+        docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
 
 all: build
@@ -317,6 +317,12 @@ docs-check-orphans: check-node
 ## docs-build: Build the docs site (onBrokenLinks=throw; fails on broken links / warnings / orphaned pages)
 docs-build: node_modules/.package-lock.json docs-check-orphans
 	$(NPM) run build
+
+## docs-audit-overrides: Report which package.json overrides still change resolution (report-only, needs network)
+# Deliberately NOT part of the CI gates: the result depends on the npm registry
+# rather than on the commit, so it can change without anyone touching the repo.
+docs-audit-overrides: check-node
+	node scripts/check-npm-overrides.mjs
 
 ## docs-clean: Remove built docs artefacts and installed Node dependencies
 docs-clean:
