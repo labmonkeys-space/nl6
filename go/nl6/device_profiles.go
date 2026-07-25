@@ -17,17 +17,32 @@ package main
 
 // DeviceProfile defines CPU/memory/temperature metric parameters for a device category.
 type DeviceProfile struct {
-	CPUBaseMin  int         // Minimum base CPU% (e.g., 10)
-	CPUBaseMax  int         // Maximum base CPU% (e.g., 40)
-	CPUSpike    int         // Max amplitude of sine wave spikes
-	MemTotalKB  int64       // Total memory in KB
-	MemBaseMin  int         // Minimum base memory utilization %
-	MemBaseMax  int         // Maximum base memory utilization %
-	MemVariance int         // Memory fluctuation range %
-	TempBaseMin int         // Minimum base temperature in Celsius
-	TempBaseMax int         // Maximum base temperature in Celsius
-	TempSpike   int         // Max amplitude of temperature spikes
-	GPU         *GPUProfile // Non-nil for GPU server devices
+	CPUBaseMin  int             // Minimum base CPU% (e.g., 10)
+	CPUBaseMax  int             // Maximum base CPU% (e.g., 40)
+	CPUSpike    int             // Max amplitude of sine wave spikes
+	MemTotalKB  int64           // Total memory in KB
+	MemBaseMin  int             // Minimum base memory utilization %
+	MemBaseMax  int             // Maximum base memory utilization %
+	MemVariance int             // Memory fluctuation range %
+	TempBaseMin int             // Minimum base temperature in Celsius
+	TempBaseMax int             // Maximum base temperature in Celsius
+	TempSpike   int             // Max amplitude of temperature spikes
+	GPU         *GPUProfile     // Non-nil for GPU server devices
+	Optical     *OpticalProfile // Non-nil for coherent optical transport devices
+}
+
+// OpticalProfile marks a device type as coherent optical transport and
+// carries its per-channel value-engine parameters. Non-nil is the
+// canonical "this is an optical device" test, mirroring how GPUProfile
+// marks a DCGM device.
+//
+// Deliberately minimal here: this PR establishes the device type only.
+// The analytic value engine and its health bands land with the optical
+// cycler.
+type OpticalProfile struct {
+	// ChannelCount is the number of coherent modems (optical channels)
+	// the platform ships. Used to sanity-check the loaded OCH inventory.
+	ChannelCount int
 }
 
 // GPUProfile defines per-GPU metric generation parameters for NVIDIA DCGM devices.
@@ -87,6 +102,32 @@ var profileServer = DeviceProfile{
 	MemTotalKB: 32 * 1024 * 1024, // 32 GB
 	MemBaseMin: 50, MemBaseMax: 80, MemVariance: 10,
 	TempBaseMin: 30, TempBaseMax: 55, TempSpike: 8,
+}
+
+// profileOpticalTransport describes a 1RU coherent optical transport
+// platform (Ciena Waveserver 5 class): a small embedded control-plane
+// CPU, modest RAM, and a warm chassis driven by the DSP/modem rather
+// than by packet forwarding load.
+//
+// NOTE: the CPU / memory / temperature bands below are NOT currently
+// served over SNMP, and that is deliberate rather than an oversight.
+// Ciena's published Waveserver MIB set (CIENA-WS-{MIB,SYSTEM,PM,PORT,
+// ALARM,NOTIFICATION}) defines no CPU, memory or temperature objects at
+// all — the only utilization objects are per-port LinkUtilization
+// counters — so there is no vendor OID to map without inventing one, and
+// an invented OID is exactly the kind of value a monitoring team would
+// build on and then not find on real hardware. This type is therefore
+// the one device that answers no host-metric OID; the bands are retained
+// because DeviceProfile requires them and they will drive non-SNMP
+// surfaces. Recorded as a documented divergence.
+var profileOpticalTransport = DeviceProfile{
+	CPUBaseMin: 8, CPUBaseMax: 28, CPUSpike: 12,
+	MemTotalKB: 8 * 1024 * 1024, // 8 GB
+	MemBaseMin: 40, MemBaseMax: 65, MemVariance: 8,
+	TempBaseMin: 40, TempBaseMax: 58, TempSpike: 6,
+	Optical: &OpticalProfile{
+		ChannelCount: 2, // two WaveLogic 5 Extreme modems
+	},
 }
 
 // GPU server profiles
@@ -170,6 +211,27 @@ var deviceProfileMap = map[string]DeviceProfile{
 	"nvidia_dgx_a100.json": profileGPUServerA100,
 	"nvidia_dgx_h100.json": profileGPUServerH100,
 	"nvidia_hgx_h200.json": profileGPUServerH200,
+
+	// Optical Transport
+	"ciena_waveserver5.json": profileOpticalTransport,
+}
+
+// IsOpticalDeviceType reports whether a resource file names a coherent
+// optical transport device type. Backed by the device profile so the
+// profile map stays the single source of truth.
+func IsOpticalDeviceType(resourceFile string) bool {
+	p, ok := deviceProfileMap[resourceFile]
+	return ok && p.Optical != nil
+}
+
+// OpticalProfileFor returns the optical profile for a resource file, or
+// nil when the type is not optical.
+func OpticalProfileFor(resourceFile string) *OpticalProfile {
+	p, ok := deviceProfileMap[resourceFile]
+	if !ok {
+		return nil
+	}
+	return p.Optical
 }
 
 // GetDeviceProfile returns the metric profile for a given resource file.

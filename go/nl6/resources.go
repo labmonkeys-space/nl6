@@ -66,9 +66,10 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 	}
 
 	sm.deviceResources = &DeviceResources{
-		SNMP: make([]SNMPResource, 0),
-		SSH:  make([]SSHResource, 0),
-		API:  make([]APIResource, 0),
+		SNMP:    make([]SNMPResource, 0),
+		SSH:     make([]SSHResource, 0),
+		API:     make([]APIResource, 0),
+		Optical: make([]OpticalChannel, 0),
 	}
 
 	for _, entry := range entries {
@@ -92,6 +93,11 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 		sm.deviceResources.SNMP = append(sm.deviceResources.SNMP, partResources.SNMP...)
 		sm.deviceResources.SSH = append(sm.deviceResources.SSH, partResources.SSH...)
 		sm.deviceResources.API = append(sm.deviceResources.API, partResources.API...)
+		sm.deviceResources.Optical = append(sm.deviceResources.Optical, partResources.Optical...)
+	}
+
+	if err := validateOpticalInventory(resourceFileForDir(dirPath), sm.deviceResources); err != nil {
+		return err
 	}
 
 	// Build indexes for loaded default resources
@@ -99,6 +105,60 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 
 	log.Printf("Loaded %d SNMP and %d SSH resources from directory %s",
 		len(sm.deviceResources.SNMP), len(sm.deviceResources.SSH), dirPath)
+	return nil
+}
+
+// resourceFileForDir maps a resource directory to its canonical resource
+// file name (".../resources/ciena_waveserver5" -> "ciena_waveserver5.json").
+func resourceFileForDir(dirPath string) string {
+	slug := strings.TrimSuffix(dirPath, "/")
+	if i := strings.LastIndex(slug, "/"); i >= 0 {
+		slug = slug[i+1:]
+	}
+	return slug + ".json"
+}
+
+// validateOpticalInventory fails loudly when an optical device type
+// loaded no usable OCH inventory.
+//
+// This guard exists because the resource decoder is NOT strict: a JSON
+// part whose shape the loader does not recognise decodes into a
+// zero-valued DeviceResources and is discarded without any error. So a
+// typo'd key or a wrong structure in the optical part would otherwise
+// yield a silently channel-less optical device, and the failure would
+// only surface much later as empty telemetry.
+//
+// No-op for every non-optical device type.
+func validateOpticalInventory(resourceFile string, resources *DeviceResources) error {
+	prof := OpticalProfileFor(resourceFile)
+	if prof == nil {
+		return nil
+	}
+	if resources == nil || len(resources.Optical) == 0 {
+		return fmt.Errorf("optical device type %s loaded no optical channels: expected an inventory part "+
+			"with an %q array of %d channel(s); note the resource decoder is not strict, so a part whose "+
+			"key or shape is wrong is discarded silently — check the JSON structure",
+			resourceFile, "optical", prof.ChannelCount)
+	}
+	seen := make(map[string]struct{}, len(resources.Optical))
+	for i, ch := range resources.Optical {
+		if ch.Name == "" {
+			return fmt.Errorf("optical device type %s: channel at index %d has an empty name; "+
+				"the OCH component name is the per-channel discovery key and is required", resourceFile, i)
+		}
+		if _, dup := seen[ch.Name]; dup {
+			return fmt.Errorf("optical device type %s: duplicate optical channel name %q; "+
+				"component names must be unique", resourceFile, ch.Name)
+		}
+		seen[ch.Name] = struct{}{}
+	}
+	// Checked last: a malformed channel is a more precise diagnosis than a
+	// count mismatch, and both would otherwise be true at once.
+	if prof.ChannelCount > 0 && len(resources.Optical) != prof.ChannelCount {
+		return fmt.Errorf("optical device type %s declares %d optical channel(s) in its device profile "+
+			"but its inventory loaded %d; profile and inventory must agree, or one of them is stale",
+			resourceFile, prof.ChannelCount, len(resources.Optical))
+	}
 	return nil
 }
 
@@ -231,9 +291,10 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 	}
 
 	resources := &DeviceResources{
-		SNMP: make([]SNMPResource, 0),
-		SSH:  make([]SSHResource, 0),
-		API:  make([]APIResource, 0),
+		SNMP:    make([]SNMPResource, 0),
+		SSH:     make([]SSHResource, 0),
+		API:     make([]APIResource, 0),
+		Optical: make([]OpticalChannel, 0),
 	}
 
 	for _, entry := range entries {
@@ -257,6 +318,11 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 		resources.SNMP = append(resources.SNMP, partResources.SNMP...)
 		resources.SSH = append(resources.SSH, partResources.SSH...)
 		resources.API = append(resources.API, partResources.API...)
+		resources.Optical = append(resources.Optical, partResources.Optical...)
+	}
+
+	if err := validateOpticalInventory(resourceFileForDir(dirPath), resources); err != nil {
+		return nil, err
 	}
 
 	// Build performance indexes for fast lookups (also sorts by OID after normalizing)
@@ -415,6 +481,8 @@ func getDeviceTypeFromName(name string) string {
 		return "Linux Server"
 	} else if strings.Contains(nameLower, "nvidia") || strings.Contains(nameLower, "dgx") || strings.Contains(nameLower, "hgx") {
 		return "NVIDIA GPU Server"
+	} else if strings.Contains(nameLower, "ciena") || strings.Contains(nameLower, "waveserver") {
+		return "Ciena Waveserver 5"
 	}
 
 	// Capitalize first letter of name as fallback
@@ -427,6 +495,13 @@ func getDeviceTypeFromName(name string) string {
 // getDeviceCategoryFromName determines the device category from a resource name.
 func getDeviceCategoryFromName(name string) string {
 	nameLower := strings.ToLower(name)
+
+	// Optical Transport (coherent DWDM transponders / muxponders).
+	// Checked before Network Devices: an optical transport platform is not
+	// a router or switch, and its telemetry model is entirely different.
+	if strings.Contains(nameLower, "ciena") || strings.Contains(nameLower, "waveserver") {
+		return "Optical Transport"
+	}
 
 	// Network Devices (routers, switches, firewalls)
 	if strings.Contains(nameLower, "asr9k") || strings.Contains(nameLower, "crs") ||

@@ -1,0 +1,28 @@
+{
+  "ssh": [
+    {
+      "command": "show version",
+      "response": "Waveserver 5\n\n  Chassis Type          : Waveserver 5\n  Serial Number         : M1234567890\n  Software Version      : waveserver-2.4.1\n  Software Build        : 2.4.1-0142\n  Modem Type            : WaveLogic 5 Extreme\n  Uptime                : 48 days, 10:05:27"
+    },
+    {
+      "command": "show chassis",
+      "response": "Chassis\n\n  Type                  : Waveserver 5\n  State                 : enabled\n  Serial Number         : M1234567890\n  Height                : 1 RU\n  Power Consumption     : 412 W\n  Temperature           : 47 C\n\nPower Supplies\n  PSU-1                 : enabled   ok\n  PSU-2                 : enabled   ok\n\nFans\n  FAN-1                 : enabled   ok    9600 rpm\n  FAN-2                 : enabled   ok    9550 rpm"
+    },
+    {
+      "command": "show interface ptp",
+      "response": "PTP        Admin    Oper     Type        Rate       Alarms\n---------  -------  -------  ----------  ---------  ------\n1-1        enabled  up       modem       400G       none\n1-2        enabled  up       modem       400G       none\n1-3        enabled  up       400GbE      400G       none\n1-4        enabled  up       400GbE      400G       none\n1-5        enabled  up       100GbE      100G       none\n1-6        enabled  up       100GbE      100G       none"
+    },
+    {
+      "command": "show interface modem",
+      "response": "Modem 1-1\n\n  Admin State           : enabled\n  Operational State     : up\n  Line Rate             : 400G\n  Modulation            : 16QAM\n  Frequency             : 193.1000 THz\n  Tx Power              : 1.00 dBm\n  Rx Power              : -8.42 dBm\n  OSNR                  : 18.30 dB\n  Q-Factor              : 11.42 dB\n  Pre-FEC BER           : 4.1e-04\n  Uncorrected Blocks    : 0\n  Chromatic Dispersion  : -142 ps/nm\n  DGD                   : 4 ps\n\nModem 1-2\n\n  Admin State           : enabled\n  Operational State     : up\n  Line Rate             : 400G\n  Modulation            : 16QAM\n  Frequency             : 193.1500 THz\n  Tx Power              : 1.00 dBm\n  Rx Power              : -8.61 dBm\n  OSNR                  : 18.10 dB\n  Q-Factor              : 11.28 dB\n  Pre-FEC BER           : 5.3e-04\n  Uncorrected Blocks    : 0\n  Chromatic Dispersion  : -138 ps/nm\n  DGD                   : 5 ps"
+    },
+    {
+      "command": "show port",
+      "response": "Port       Admin    Oper     Speed   MTU    Alarms\n---------  -------  -------  ------  -----  ------\n1-3        enabled  up       400G    9216   none\n1-4        enabled  up       400G    9216   none\n1-5        enabled  up       100G    9216   none\n1-6        enabled  up       100G    9216   none"
+    },
+    {
+      "command": "show software",
+      "response": "Software\n\n  Running Version       : waveserver-2.4.1\n  Committed Version     : waveserver-2.4.1\n  Protect Version       : waveserver-2.3.3\n  Upgrade State         : idle"
+    }
+  ]
+}

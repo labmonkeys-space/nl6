@@ -196,6 +196,9 @@
   // a structural band (see tieredLayout); a renamed/new model degrades to the
   // fallback rather than crashing.
   var TIER_RANK = {
+    // Optical transport — sits at the top of the hierarchy with the core
+    // routers it hands off to on its client ports.
+    'Ciena Waveserver 5': 0,
     // Core routers
     'Cisco CRS-X': 0, 'Cisco ASR 9000': 0, 'Huawei NE8000': 0,
     'Nokia 7750 SR-12': 0, 'Juniper MX960': 0,

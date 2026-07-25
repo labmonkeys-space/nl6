@@ -183,6 +183,28 @@ ok('tieredLayout: 5-stage-clos mix compacts to 4 ordered bands', () => {
   assert.ok(ys[0] > ys[1] && ys[1] > ys[2] && ys[2] > ys[3], 'tiers ordered top→bottom');
 });
 
+ok('tieredLayout: optical transport shares the top band with core routers', () => {
+  // A Waveserver hands off to a core router on its client ports, so it must
+  // resolve to a known tier rank rather than degrading to the structural
+  // fallback band — that fallback is what a missing TIER_RANK entry causes.
+  const g = {
+    nodes: [
+      { ip: '10.0.0.1', sysName: 'ws5-1', type: 'Ciena Waveserver 5', degree: 1 },
+      { ip: '10.0.0.2', sysName: 'core1', type: 'Cisco CRS-X', degree: 2 },
+      { ip: '10.0.0.3', sysName: 'leaf1', type: 'Cisco Catalyst 9500', degree: 1 }
+    ],
+    edges: [
+      { a: { ip: '10.0.0.1', ifindex: 3 }, b: { ip: '10.0.0.2', ifindex: 1 }, active: true },
+      { a: { ip: '10.0.0.2', ifindex: 2 }, b: { ip: '10.0.0.3', ifindex: 1 }, active: true }
+    ]
+  };
+  const pos = tieredOf(g);
+  assert.strictEqual(pos['10.0.0.1'].y, pos['10.0.0.2'].y,
+    'optical transport and core router occupy the same band');
+  assert.ok(pos['10.0.0.1'].y > pos['10.0.0.3'].y,
+    'optical transport sits above the campus switch');
+});
+
 ok('tieredLayout: a missing middle category leaves no empty band', () => {
   // Only ranks 0 (core) and 3 (campus) present → must compact to 2 bands.
   const g = {

@@ -74,7 +74,7 @@ scripts/fleet.sh import http://sim-b:8080 my-fleet.json
 A 56-device sample lives at
 [`inventory/nl6-inventory.json`](https://github.com/labmonkeys-space/nl6/blob/main/inventory/nl6-inventory.json)
 — drop it into any empty simulator to populate a heterogeneous fleet
-spanning many of the 28 device types nl6 ships with.
+spanning many of the 29 device types nl6 ships with.
 
 ## Behavior and limits
 

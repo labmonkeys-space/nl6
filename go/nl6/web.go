@@ -123,6 +123,28 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// An explicit flow block on a request whose every device is a type
+		// that natively exports no flow records is a contradiction the
+		// caller stated on purpose, so reject it rather than silently
+		// dropping the config.
+		//
+		// This has to consider the resolved type set, not just
+		// req.ResourceFile: a category-filtered round-robin batch
+		// (`{"round_robin":true,"category":"Optical Transport"}`) names no
+		// resource file yet resolves to flow-incapable types only, and
+		// would otherwise return 201 while every device silently lost its
+		// flow config.
+		//
+		// A *mixed* round-robin batch is deliberately still accepted — the
+		// flow-capable devices export and the incapable ones are skipped
+		// with a log line, because failing the batch would make a
+		// batch-wide flow seed unusable with -round-robin.
+		if rf, ok := flowIncapableRequest(req); ok {
+			sendErrorResponse(w, fmt.Sprintf(
+				"device type %q does not support flow export: it is a layer-1 transport platform and performs no layer-3/4 inspection; remove the \"flow\" block",
+				rf), http.StatusBadRequest)
+			return
+		}
 	}
 	if seed.Traps != nil {
 		seed.Traps.ApplyDefaults()

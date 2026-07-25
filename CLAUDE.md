@@ -104,7 +104,7 @@ go test ./nl6/ -run TestSomething
 | Path | Purpose |
 |------|---------|
 | `go/nl6/` | Core simulator — all device simulation logic and tests |
-| `go/nl6/resources/` | 379 JSON files (28 device types) with SNMP/SSH/REST response data |
+| `go/nl6/resources/` | 389 JSON files (29 device types) with SNMP/SSH/REST response data |
 
 ### Core simulator components (`go/nl6/`)
 
@@ -261,7 +261,7 @@ In every branch the result is run through `sanitiseHostname`: spaces become hyph
 
 **Topology visualization (web console):** `web/topology_logic.js` (pure, DOM-free, node-tested in `topology_logic.test.js`: model building, layouts, structure/state diffing, click-to-flap target resolution, scale guard) + `web/app_topology.js` (sigma.js/graphology glue, poll loop, interaction). Polls `GET /api/v1/topology/graph`, relayouts only on structure change (recolors on state-only). Two layouts: `tieredLayout` (**default** — horizontal fabric bands; tier rank from the device model label via the `TIER_RANK` table mirroring `deviceProfileMap` categories, compacted to dense bands, untyped/missing nodes fall one band below their highest typed neighbour, within-band barycenter sweeps cut crossings) and `forceLayout` (organic Fruchterman-Reingold). A Force/Tiered toggle in the topology panel switches layouts (a structural-render trigger). Device labels render over a theme-coloured background box (custom `defaultDrawNodeLabel`/`defaultDrawNodeHover`, bg from `--surface`/`--bg` at 0.88 alpha) so text stays legible over edges/nodes.
 
-**Resource loading:** `resources.go` loads and caches the 379 JSON files at startup. Each device type directory has split JSON files for SNMP, SSH, and REST responses that are merged at load time.
+**Resource loading:** `resources.go` loads and caches the 389 JSON files at startup. Each device type directory has split JSON files for SNMP, SSH, and REST responses that are merged at load time.
 
 ### Key design decisions
 
@@ -274,7 +274,9 @@ In every branch the result is run through `sanitiseHostname`: spaces become hyph
 
 ### Device types
 
-28 device types across 8 categories: Core Routers, Edge Routers, Data Center Switches, Campus Switches, Firewalls, Servers, GPU Servers (NVIDIA DGX-A100/H100/HGX-H200), Storage Systems (AWS S3, Pure Storage, NetApp ONTAP, Dell EMC Unity).
+29 device types across 9 categories: Core Routers, Edge Routers, Data Center Switches, Campus Switches, Firewalls, Servers, GPU Servers (NVIDIA DGX-A100/H100/HGX-H200), Storage Systems (AWS S3, Pure Storage, NetApp ONTAP, Dell EMC Unity), Optical Transport (Ciena Waveserver 5).
+
+**Per-device-type protocol capability.** Device types are not uniformly capable. `ciena_waveserver5` is a layer-1 coherent optical transport platform: it performs no L3/L4 inspection and therefore **exports no flow records**. Absence has to be *implemented*, not omitted — `GetFlowProfile` (`flow_profiles.go`) falls back to `flowProfileEdgeRouter` for any type absent from `flowProfileMap`, so leaving a type out would silently give it edge-router flow ground truth. The explicit marker is `flowIncapableTypes` + `SupportsFlowExport`, consulted at both device-creation paths; a batch-wide flow seed **skips** incapable devices with a log line (so `-flow-collector` stays usable with `-round-robin`), while a request whose entire resolved type set is incapable is rejected with **400** (`flowIncapableRequest`). Its optical inventory is keyed by OCH **component name** (`OCH-1-1`) in an `optical` resource part, never by `ifIndex`; `validateOpticalInventory` fails the load loudly if that part is missing, malformed, or disagrees with `OpticalProfile.ChannelCount`, because the resource decoder is not strict and would otherwise discard it silently.
 
 Each device type has resource files under `resources/<device-type>/` containing JSON for SNMP OID responses, SSH command responses, and REST API responses.
 

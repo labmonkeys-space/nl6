@@ -54,10 +54,39 @@ type APIResource struct {
 	Response interface{} `json:"response"`          // Response body
 }
 
+// OpticalChannel describes one coherent optical channel (OCH) from a
+// device's optical inventory, loaded from the `optical` part of an
+// optical device type's resource directory.
+//
+// The channel is keyed by Name — its OpenConfig component name, e.g.
+// "OCH-1-1" — and deliberately NOT by ifIndex. An optical channel is not
+// an interface: overloading ifIndex would collide with IF-MIB, trip the
+// if_counters.go maxResourceIfIndex guards, and misrepresent the model,
+// where optical-channel hangs off /components/component rather than
+// /interfaces/interface.
+type OpticalChannel struct {
+	// Name is the OpenConfig component name and the discovery key.
+	Name string `json:"name"`
+	// LinePort is the chassis line port the channel terminates on,
+	// in Ciena's <slot>-<port> form.
+	LinePort string `json:"line_port"`
+	// FrequencyMHz is the carrier frequency (openconfig frequency is
+	// uint64 MHz).
+	FrequencyMHz uint64 `json:"frequency_mhz"`
+	// OperationalMode is the vendor-defined mode index selecting
+	// modulation, baud rate and FEC.
+	OperationalMode uint16 `json:"operational_mode"`
+	// TargetOutputPowerDBm is the configured launch power.
+	TargetOutputPowerDBm float64 `json:"target_output_power_dbm"`
+}
+
 type DeviceResources struct {
 	SNMP []SNMPResource `json:"snmp"`
 	SSH  []SSHResource  `json:"ssh"`
 	API  []APIResource  `json:"api,omitempty"` // Optional API endpoints for storage devices
+	// Optical is the OCH inventory for optical transport device types.
+	// Empty for every packet device type.
+	Optical []OpticalChannel `json:"optical,omitempty"`
 
 	// Performance optimization indexes (not serialized)
 	oidIndex   *sync.Map `json:"-"` // Lock-free OID -> Response mapping for O(1) lookups
@@ -477,7 +506,16 @@ type CreateDevicesRequest struct {
 	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
 }
 
-// RoundRobinDeviceTypes defines all 28 device flavors for round robin creation
+// RoundRobinDeviceTypes defines all 29 device flavors for round robin creation.
+//
+// Assignment is `deviceIndex % len(list)` (see CreateDevicesWithOptions),
+// so the list is ORDER- AND LENGTH-SENSITIVE. New entries are appended
+// rather than inserted, which preserves the type of every device position
+// below the old length — but be clear about the limit: growing the list
+// necessarily changes the mapping for positions at or above the old
+// length (with 28 entries device #29 drew index 0; with 29 it draws index
+// 28). Re-provisioning a fleet captured before a type was added will not
+// reproduce the same type per IP beyond that point.
 var RoundRobinDeviceTypes = []string{
 	// Network Devices
 	"cisco_catalyst_9500.json",
@@ -511,6 +549,8 @@ var RoundRobinDeviceTypes = []string{
 	"pure_storage_flasharray.json",
 	"dell_emc_unity.json",
 	"aws_s3_storage.json",
+	// Optical Transport (appended — see the index note above)
+	"ciena_waveserver5.json",
 }
 
 type DeviceInfo struct {
