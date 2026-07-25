@@ -63,6 +63,12 @@ echo "    nl6 -version => $ver"
 [ -f /usr/lib/systemd/system/nl6.service ] || fail "systemd unit not installed"
 [ -f /etc/nl6/nl6.conf ]                   || fail "/etc/nl6/nl6.conf not installed"
 [ -d /usr/share/nl6/web ]                  || fail "web/ data not installed"
+# Debian Policy 12.5 — deb packages must ship a copyright file.
+case "$pkg" in
+  *.deb)
+    [ -f /usr/share/doc/nl6/copyright ] || fail "Debian copyright file missing"
+    ;;
+esac
 json="$(find /usr/share/nl6/resources -name "*.json" 2>/dev/null | wc -l)"
 [ "$json" -gt 0 ] || fail "no resource JSON under /usr/share/nl6/resources"
 echo "    resources: $json JSON files, web/ present"

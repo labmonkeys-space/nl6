@@ -68,6 +68,12 @@ contents:
     dst: /etc/nl6/nl6.conf
     type: config|noreplace
 
+  # Debian Policy 12.5 requires /usr/share/doc/<pkg>/copyright. Syft also
+  # derives the deb license from this path (the non-standard control
+  # License: field is ignored for dpkg cataloging).
+  - src: ./LICENSE
+    dst: /usr/share/doc/nl6/copyright
+
 scripts:
   postinstall: ./deploy/packages/scripts/postinstall.sh
   preremove: ./deploy/packages/scripts/preremove.sh
