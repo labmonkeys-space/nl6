@@ -308,6 +308,14 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: uint64(x)}}, nil
 		case uint64:
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: x}}, nil
+		case gnmiDecimal:
+			// double_val, not string_val: a decimal encoded as a string
+			// would be a type error for the client. Not decimal_val
+			// either — that field is deprecated in gNMI.
+			//
+			// Lossy for high-precision values (an 18-fraction-digit BER
+			// exceeds a float64 significand); JSON_IETF preserves them.
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)
 		}
@@ -325,6 +333,11 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 	case uint64:
 		// RFC 7951: uint64 / int64 are JSON strings.
 		b, err = json.Marshal(strconv.FormatUint(x, 10))
+	case gnmiDecimal:
+		// RFC 7951 §6.1: decimal64 is a JSON string, so the full
+		// declared precision survives (unlike a JSON number, which a
+		// client would parse back through a float64).
+		b, err = json.Marshal(x.String())
 	default:
 		return nil, status.Errorf(codes.Internal, "unsupported value type %T for JSON_IETF encoding", v)
 	}

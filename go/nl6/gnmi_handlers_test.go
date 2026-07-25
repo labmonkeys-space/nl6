@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -592,5 +593,94 @@ func TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Subscribe goroutine did not exit on cancel")
+	}
+}
+
+// TestGnmiEncodeTypedValueAllTypes covers every value type the resolver
+// can produce against both advertised encodings. The decimal case is the
+// reason this is exhaustive: handing the encoder a pre-formatted Go
+// string would silently take the string_val branch under PROTO and
+// quietly corrupt an advertised encoding, so each type is checked in both.
+func TestGnmiEncodeTypedValueAllTypes(t *testing.T) {
+	cases := []struct {
+		name     string
+		val      interface{}
+		wantJSON string // the json_ietf_val bytes
+		checkPB  func(*testing.T, *gnmipb.TypedValue)
+	}{{
+		name:     "string",
+		val:      "GigabitEthernet0/1",
+		wantJSON: `"GigabitEthernet0/1"`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			if tv.GetStringVal() != "GigabitEthernet0/1" {
+				t.Errorf("PROTO string_val = %q", tv.GetStringVal())
+			}
+		},
+	}, {
+		name:     "uint32 is a JSON number",
+		val:      uint32(7),
+		wantJSON: `7`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			if tv.GetUintVal() != 7 {
+				t.Errorf("PROTO uint_val = %d", tv.GetUintVal())
+			}
+		},
+	}, {
+		name:     "uint64 is an RFC 7951 string",
+		val:      uint64(18446744073709551615),
+		wantJSON: `"18446744073709551615"`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			if tv.GetUintVal() != 18446744073709551615 {
+				t.Errorf("PROTO uint_val = %d", tv.GetUintVal())
+			}
+		},
+	}, {
+		name:     "decimal is an RFC 7951 string, not a number",
+		val:      gnmiDecimal{val: -8.5, digits: 2},
+		wantJSON: `"-8.50"`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			if tv.GetDoubleVal() != -8.5 {
+				t.Errorf("PROTO double_val = %v, want -8.5", tv.GetDoubleVal())
+			}
+			if tv.GetStringVal() != "" {
+				t.Error("decimal took the string_val branch under PROTO; that is a type error for clients")
+			}
+		},
+	}, {
+		name:     "high-precision decimal keeps its digits under JSON_IETF",
+		val:      gnmiDecimal{val: 0.0000980812, digits: 18},
+		wantJSON: `"0.000098081200000000"`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			// double_val is inherently lossy at 18 fraction digits; assert it
+			// is at least the right magnitude so a mis-wired branch is caught.
+			if got := tv.GetDoubleVal(); math.Abs(got-0.0000980812) > 1e-12 {
+				t.Errorf("PROTO double_val = %v", got)
+			}
+		},
+	}}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tv, err := gnmiEncodeTypedValue(tc.val, gnmipb.Encoding_JSON_IETF)
+			if err != nil {
+				t.Fatalf("JSON_IETF: %v", err)
+			}
+			if got := string(tv.GetJsonIetfVal()); got != tc.wantJSON {
+				t.Errorf("JSON_IETF = %s, want %s", got, tc.wantJSON)
+			}
+			tv, err = gnmiEncodeTypedValue(tc.val, gnmipb.Encoding_PROTO)
+			if err != nil {
+				t.Fatalf("PROTO: %v", err)
+			}
+			tc.checkPB(t, tv)
+		})
+	}
+
+	// An unsupported type must surface as Internal in both encodings
+	// rather than silently encoding as something plausible.
+	for _, enc := range []gnmipb.Encoding{gnmipb.Encoding_JSON_IETF, gnmipb.Encoding_PROTO} {
+		if _, err := gnmiEncodeTypedValue(struct{}{}, enc); err == nil {
+			t.Errorf("encoding %v: unsupported type did not error", enc)
+		}
 	}
 }

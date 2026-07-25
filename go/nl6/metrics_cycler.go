@@ -44,6 +44,12 @@ type MetricsCycler struct {
 	// captured local. This makes a future runtime reset / rescenario
 	// control plane safe to drop in without racing the SNMP hot path.
 	ifCounters atomic.Pointer[IfCounterCycler]
+	// optical holds the per-channel coherent optical value engine (nil
+	// for every packet device type). Same discipline as ifCounters: the
+	// pointer is stored atomically and the pointed-to OpticalCycler is
+	// immutable after Store, so readers capture it once with Load() and
+	// operate on the local.
+	optical atomic.Pointer[OpticalCycler]
 }
 
 // NewMetricsCycler creates a cycler with 100 data points generated from the
