@@ -114,6 +114,16 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// A non-clean optical band on a request whose every device type carries
+	// no OCH inventory is the same stated contradiction as an explicit flow
+	// block on a layer-1 platform, so it gets the same 400 rather than a 201
+	// that echoes a band back for a device where it does nothing.
+	if rf, ok := opticalIncapableRequest(req, opticalScenario); ok {
+		sendErrorResponse(w, fmt.Sprintf(
+			"device type %q has no optical channels: optical_scenario applies only to coherent optical transport types; remove the \"optical_scenario\" field",
+			rf), http.StatusBadRequest)
+		return
+	}
 
 	seed := &ExportSeed{
 		Flow:            req.Flow,

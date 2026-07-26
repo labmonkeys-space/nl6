@@ -306,7 +306,9 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			// creation window: the engine is immutable after publication
 			// and a device's type is fixed at creation.
 			opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
-			device.OpticalScenario = string(opticalScenario) // canonicalise for GET /api/v1/devices
+			// Canonicalise for GET /api/v1/devices, and only for types that
+			// actually have channels — see opticalScenarioFieldFor.
+			device.OpticalScenario = opticalScenarioFieldFor(deviceResourceFile, opticalScenario)
 			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), opticalBandFor(opticalScenario))
 
 			// Wire the state engine's per-event counters to the
@@ -661,7 +663,7 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	// CreateDevicesWithOptions. These two paths have diverged before, so
 	// any change here belongs in both.
 	opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
-	device.OpticalScenario = string(opticalScenario)
+	device.OpticalScenario = opticalScenarioFieldFor(resourceFile, opticalScenario)
 	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), opticalBandFor(opticalScenario))
 
 	// Wire the state engine's per-event counters to the simulator-wide

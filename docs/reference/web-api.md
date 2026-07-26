@@ -124,6 +124,44 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+### Optical health band
+
+`optical_scenario` sets the steady-state health of every coherent optical
+channel on an optical transport device:
+
+```bash
+# Two Waveserver 5 devices with a service-affecting optical span
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_ip": "192.168.100.1",
+    "device_count": 2,
+    "netmask": "16",
+    "resource_file": "ciena_waveserver5.json",
+    "optical_scenario": "failing"
+  }'
+```
+
+Accepted values: `clean` (default), `typical`, `degraded`, `failing`.
+Unknown values reject the batch atomically with 400. As with
+`if_error_scenario`, REST-created devices default to `clean` independently
+of the `-optical-scenario` CLI flag — you must opt in explicitly.
+
+The field applies **only to device types that have optical channels**
+(today `ciena_waveserver5`). Two consequences:
+
+- A non-`clean` band on any other type is rejected with **400**, rather
+  than accepted and silently ignored. A mixed `round_robin` batch is still
+  accepted — the optical devices take the band and the rest ignore it.
+- `GET /api/v1/devices` omits `optical_scenario` entirely for non-optical
+  types, so the API never advertises a knob that does nothing there.
+
+Only `failing` crosses the SD-FEC threshold, so
+`fec-uncorrectable-blocks > 0` is a reliable service-affecting signal;
+`degraded` shows an elevated `pre-fec-ber` that FEC still corrects. See
+[CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
+BER table.
+
 ### Per-device export blocks
 
 `POST /api/v1/devices` accepts four optional top-level blocks —

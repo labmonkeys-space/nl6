@@ -6,6 +6,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,82 @@ func TestOpticalFailingIsServiceAffecting(t *testing.T) {
 	if stalled > 3 {
 		t.Errorf("failing tier stalled at %d of the sampled points; it should be persistently "+
 			"past the FEC threshold, not intermittent", stalled)
+	}
+}
+
+// TestOpticalBandContractsHoldAcrossSeeds sweeps seeds because the tier
+// contracts are broken by the TAILS of the per-channel jitter, not by the
+// nominal operating point — a single-seed test (as the two above are) sees
+// only one draw and passes while a fleet-sized share of channels violates
+// the contract. Both dial means are jittered independently, so the OSNR
+// mean spreads over +-2*opticalMeanJitterDB on top of the sine amplitude.
+//
+// Asserted per channel, against the engine's own threshold:
+//
+//	clean/typical/degraded: NEVER above the FEC threshold (no blocks ever)
+//	failing:                ALWAYS above it, for the entire dial period
+//
+// Both directions have been observed to fail: at +-0.4 dB per dial, 98 of
+// 6000 degraded channels crossed the threshold, and 877 of 6000 failing
+// channels cleared it for part of each hour.
+func TestOpticalBandContractsHoldAcrossSeeds(t *testing.T) {
+	const seeds = 3000
+	threshold := osnrThresholdDB()
+
+	for _, tier := range []OpticalScenario{OpticalClean, OpticalTypical, OpticalDegraded, OpticalFailing} {
+		band := opticalBandFor(tier)
+		wantAbove := tier == OpticalFailing
+		for seed := int64(0); seed < seeds; seed++ {
+			oc := newOpticalCycler(t, seed, band)
+			for slot, name := range oc.names {
+				// A full dial period covers every phase, so the extremes of
+				// this channel's excursion are necessarily inside it.
+				above := oc.aboveThresholdSeconds(slot, opticalDialPeriodSec)
+				lo := oc.osnrMean[slot] - oc.osnrAmp[slot]
+				hi := oc.osnrMean[slot] + oc.osnrAmp[slot]
+				if wantAbove && above < opticalDialPeriodSec {
+					t.Fatalf("failing seed=%d %s: cleared the FEC threshold for %.0fs of the period "+
+						"(OSNR peaks at %.2f, threshold %.2f) — the tier must be persistently service-affecting",
+						seed, name, opticalDialPeriodSec-above, hi, threshold)
+				}
+				if !wantAbove && above > 0 {
+					t.Fatalf("%s seed=%d %s: spent %.0fs above the FEC threshold "+
+						"(OSNR dips to %.2f, threshold %.2f) — only failing may accrue blocks",
+						tier, seed, name, above, lo, threshold)
+				}
+			}
+		}
+	}
+}
+
+// TestOpticalTierMeansDoNotOverlap pins the other half of the jitter
+// budget: the per-channel spread must stay narrower than the gaps between
+// tiers, so a `degraded` channel can never report a better OSNR mean than
+// a `typical` one elsewhere in the same fleet. (Instantaneous values may
+// still interleave — that is the sine amplitude doing its job.)
+func TestOpticalTierMeansDoNotOverlap(t *testing.T) {
+	const seeds = 500
+	tiers := []OpticalScenario{OpticalClean, OpticalTypical, OpticalDegraded, OpticalFailing}
+
+	type span struct{ lo, hi float64 }
+	spans := make([]span, len(tiers))
+	for i, tier := range tiers {
+		s := span{lo: math.Inf(1), hi: math.Inf(-1)}
+		for seed := int64(0); seed < seeds; seed++ {
+			oc := newOpticalCycler(t, seed, opticalBandFor(tier))
+			for slot := range oc.names {
+				s.lo = math.Min(s.lo, oc.osnrMean[slot])
+				s.hi = math.Max(s.hi, oc.osnrMean[slot])
+			}
+		}
+		spans[i] = s
+	}
+	for i := 1; i < len(tiers); i++ {
+		if spans[i].hi >= spans[i-1].lo {
+			t.Errorf("%s OSNR means reach %.2f, overlapping %s which dips to %.2f — "+
+				"tier gaps must exceed the +-%.1f dB mean jitter envelope",
+				tiers[i], spans[i].hi, tiers[i-1], spans[i-1].lo, 2*opticalMeanJitterDB)
+		}
 	}
 }
 
