@@ -152,6 +152,28 @@ func TestScenarioGate_WriteFailureBucket(t *testing.T) {
 	}
 }
 
+// Teardown straggler (wire==report exactness, NFR-R1): the scenario scheduler's
+// Stop only SIGNALS its Run goroutine, so a scenario-source fire can still be in
+// flight when finalize nil-swaps the participation handle. Such a fire must be
+// dropped: the legacy passthrough would put a datagram on the wire that no
+// ledger counted, so the report's `sent` would undercount the collector by
+// exactly one per straggler.
+func TestScenarioGate_ScenarioStragglerAfterDetach(t *testing.T) {
+	entry := mustEntry(t)
+	h := newGateHarness(t)
+	h.exp.scenPart.Store(nil) // finalize detached while this fire was in flight
+
+	if err := h.exp.fireScenario(entry, nil); err != nil {
+		t.Fatalf("straggler fireScenario: %v", err)
+	}
+	if got := h.writes.Load(); got != 0 {
+		t.Errorf("straggler wire writes = %d, want 0 (uncounted record on the wire)", got)
+	}
+	if got := h.exp.Stats().Sent.Load(); got != 0 {
+		t.Errorf("straggler Sent stat = %d, want 0", got)
+	}
+}
+
 // AC1 (non-participant): with nil scenPart every fire path behaves exactly
 // as the legacy exporter — no ledger, straight to the wire (FR18).
 func TestScenarioGate_NonParticipantUntouched(t *testing.T) {
