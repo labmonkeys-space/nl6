@@ -113,6 +113,44 @@ See [interface state engine reference](interface-state.md) for the REST
 control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`),
 auto-revert semantics, and the cross-protocol consistency contract.
 
+### Optical health band
+
+`-optical-scenario` sets the steady-state health of each coherent optical
+channel on **optical transport device types only** (today
+`ciena_waveserver5`). It is keyed by OCH component name, never by
+`ifIndex`, and it drives the whole receive-side cascade: received power
+and accumulated noise are two independent dials, `osnr = pIn - nAse`, and
+`osnr` feeds `q-value` → `pre-fec-ber` →
+`fec-uncorrectable-blocks`.
+
+| Flag | Values | Default | Scope | Purpose |
+|------|--------|---------|-------|---------|
+| `-optical-scenario` | `clean` \| `typical` \| `degraded` \| `failing` | `clean` | **seed** | Auto-start-batch per-device optical health band. REST devices default to `clean`; opt in via `optical_scenario` in the POST body. |
+
+| Scenario | OSNR (dB) | Q (dB) | pre-FEC BER | Uncorrectable blocks | Use case |
+|----------|-----------|--------|-------------|----------------------|----------|
+| `clean` *(default)* | 18.30 | 11.42 | 9.8e-05 | never | Healthy 400G line; baseline regression testing |
+| `typical` | 16.68 | 9.80 | 1.0e-03 | never | Good production span with normal margin |
+| `degraded` | 15.60 | 8.72 | 3.2e-03 | never | Visibly elevated BER that FEC still corrects — the window where a proactive alarm has value |
+| `failing` | 10.10 | 3.22 | 7.4e-02 | always | Past the 2e-2 SD-FEC threshold; genuinely service-affecting |
+
+Only `failing` crosses the FEC threshold, and it does so for every channel
+across the entire dial period — so `fec-uncorrectable-blocks > 0` is a
+reliable "service-affecting" signal for a collector rule. `degraded` stays
+clear of the threshold for every channel, which is what makes the
+distinction useful.
+
+Setting a non-`clean` band on a device type that has no optical channels
+is rejected with **400**: the value would silently do nothing, so the
+contradiction is surfaced rather than accepted. For the same reason
+`optical_scenario` is absent from `GET /api/v1/devices` for
+non-optical types. A mixed `round_robin` batch is still accepted — the
+optical devices take the band and the rest ignore it.
+
+Values are deterministic per `(device, channel)` and analytic — no
+per-channel goroutine — so SNMP and gNMI agree byte-for-byte at the same
+instant. See [gNMI reference](gnmi.md) for the served leaf set.
+
 ## Export flag scope
 
 Export flags (flow / trap / syslog) fall into two categories:

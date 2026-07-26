@@ -132,6 +132,63 @@ func TestFlowIncapableRequest(t *testing.T) {
 	}
 }
 
+// TestOpticalIncapableRequest is the inverse-capability mirror of
+// TestFlowIncapableRequest: asking for an optical health band on types
+// with no OCH inventory is the same stated contradiction as asking for
+// flow on a layer-1 platform, so it gets the same 400. `clean` is always
+// allowed — it is the default every device already carries.
+func TestOpticalIncapableRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		req      CreateDevicesRequest
+		scenario OpticalScenario
+		reject   bool
+	}{
+		{"packet type with a non-clean band",
+			CreateDevicesRequest{ResourceFile: "cisco_ios.json"}, OpticalFailing, true},
+		{"packet type with clean is always fine",
+			CreateDevicesRequest{ResourceFile: "cisco_ios.json"}, OpticalClean, false},
+		{"optical type with a non-clean band",
+			CreateDevicesRequest{ResourceFile: opticalResourceFile}, OpticalDegraded, false},
+		{"category-filtered round robin, packet category",
+			CreateDevicesRequest{RoundRobin: true, Category: "Network Devices"}, OpticalFailing, true},
+		{"category-filtered round robin, optical only",
+			CreateDevicesRequest{RoundRobin: true, Category: "Optical Transport"}, OpticalFailing, false},
+		{"mixed round robin is allowed — the optical devices take the band",
+			CreateDevicesRequest{RoundRobin: true}, OpticalFailing, false},
+		{"neither round robin nor a resource file",
+			CreateDevicesRequest{}, OpticalFailing, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rf, got := opticalIncapableRequest(tc.req, tc.scenario)
+			if got != tc.reject {
+				t.Fatalf("opticalIncapableRequest = %v (%q), want %v", got, rf, tc.reject)
+			}
+			if got && rf == "" {
+				t.Error("rejection must name the offending resource file")
+			}
+		})
+	}
+}
+
+// TestOpticalScenarioFieldFor pins what GET /api/v1/devices reports: a
+// band only on types that have channels, absent (omitempty) everywhere
+// else, so the API never advertises a knob that does nothing.
+func TestOpticalScenarioFieldFor(t *testing.T) {
+	if got := opticalScenarioFieldFor(opticalResourceFile, OpticalDegraded); got != "degraded" {
+		t.Errorf("optical type = %q, want %q", got, "degraded")
+	}
+	if got := opticalScenarioFieldFor(opticalResourceFile, OpticalClean); got != "clean" {
+		t.Errorf("optical type at clean = %q, want %q (the field is meaningful here)", got, "clean")
+	}
+	for _, rf := range []string{"cisco_ios.json", "asr9k.json", "nvidia_dgx_h100.json", "no_such_type.json"} {
+		if got := opticalScenarioFieldFor(rf, OpticalClean); got != "" {
+			t.Errorf("%s = %q, want empty so the field is omitted entirely", rf, got)
+		}
+	}
+}
+
 // TestRoundRobinTypesForCategory pins the resolution used by the flow
 // guard to the filter in CreateDevicesWithOptions, including its
 // fallback-to-unfiltered behaviour on an empty match.

@@ -106,6 +106,7 @@ func main() {
 		showVersion     = flag.Bool("version", false, "Print the simulator version string and exit")
 		ifScenario      = flag.Int("if-scenario", 2, "Interface state scenario: 1=all-shutdown, 2=all-normal (default), 3=all-failure, 4=pct-failure")
 		ifFailurePct    = flag.Int("if-failure-pct", 10, "Percentage of interfaces with oper-down (used with -if-scenario 4, 0–100)")
+		opticalScenario = flag.String("optical-scenario", "clean", "Per-device optical health band for the auto-start batch (optical transport device types only): clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via optical_scenario in the POST body.")
 		ifErrorScenario = flag.String("if-error-scenario", "clean", "Per-device IF-MIB error/discard counter scenario for the auto-start batch: clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via if_error_scenario in the POST body.")
 		ifFlapScenario  = flag.String("if-flap-scenario", "clean", "Per-device link-flap scenario for the auto-start batch: clean (default, no flaps) | rare (~6h mean) | typical (~15min) | aggressive (~1min). REST-created devices default to clean; opt in via if_flap_scenario in the POST body.")
 		ifFlapGlobalCap = flag.Int("if-flap-global-cap", 0, "Simulator-wide tps ceiling for flap events (0 = unlimited)")
@@ -491,6 +492,12 @@ func main() {
 		log.Fatalf("if_error_scenario: %v", err)
 	}
 
+	// Same fail-fast treatment for the optical health band.
+	autoStartOpticalScenario, err := ParseOpticalScenario(*opticalScenario)
+	if err != nil {
+		log.Fatalf("optical_scenario: %v", err)
+	}
+
 	// Reuse the already-canonicalised flap scenario from StartFlapSubsystem
 	// above so we don't double-validate / disagree across two call sites.
 	autoStartFlapScenario := flapScenarioCanon
@@ -559,7 +566,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

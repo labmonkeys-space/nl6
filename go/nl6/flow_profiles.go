@@ -372,6 +372,68 @@ func flowIncapableRequest(req CreateDevicesRequest) (string, bool) {
 	return types[0], true
 }
 
+// opticalIncapableRequest is the inverse-capability mirror of
+// flowIncapableRequest, for `optical_scenario`. It reports whether a
+// device-creation request asks for an optical health band on a set of
+// device types that carry no coherent-optical inventory, returning the
+// offending resource file so the caller can name it.
+//
+// The asymmetry it removes: InitOpticalCycler no-ops without OCH
+// inventory, so without this check a request pairing `cisco_ios` with
+// `optical_scenario: failing` returns 201 and then echoes `failing` back
+// on GET /api/v1/devices for a device where the band does nothing —
+// exactly the "plausible but fictional telemetry" failure the flow
+// capability check exists to prevent, in the opposite direction.
+//
+// Same shape as the flow rule for the same reasons: only a request whose
+// ENTIRE resolved type set is optically incapable is rejected, so a mixed
+// round-robin batch stays usable (the optical devices get the band, the
+// rest ignore it), and clean is always allowed since it is the default
+// every device already has.
+func opticalIncapableRequest(req CreateDevicesRequest, scenario OpticalScenario) (string, bool) {
+	if scenario == OpticalClean {
+		return "", false
+	}
+	if req.ResourceFile != "" {
+		if !IsOpticalDeviceType(req.ResourceFile) {
+			return req.ResourceFile, true
+		}
+		return "", false
+	}
+	if !req.RoundRobin {
+		return "", false
+	}
+	types := roundRobinTypesForCategory(req.Category)
+	for _, rf := range types {
+		if IsOpticalDeviceType(rf) {
+			return "", false // at least one type carries OCH inventory
+		}
+	}
+	if len(types) == 0 {
+		return "", false
+	}
+	return types[0], true
+}
+
+// opticalScenarioFieldFor returns the value to store in
+// DeviceSimulator.OpticalScenario — the canonicalised scenario for a type
+// with optical channels, and the empty string for every other type.
+//
+// Empty rather than "clean" because the field is `omitempty`: surfacing
+// `optical_scenario: clean` on the 28 device types that have no OCH
+// inventory would advertise a knob that does nothing there. A packet
+// switch does not have a coherent-optical health band, and saying it has
+// a clean one is a claim about hardware that does not exist.
+//
+// Both device-creation paths call this, so they cannot disagree about what
+// GET /api/v1/devices reports.
+func opticalScenarioFieldFor(resourceFile string, scenario OpticalScenario) string {
+	if !IsOpticalDeviceType(resourceFile) {
+		return ""
+	}
+	return string(scenario)
+}
+
 // GetFlowProfile returns the FlowProfile for the given resource file name.
 // Falls back to flowProfileEdgeRouter if the file is not in the map.
 //

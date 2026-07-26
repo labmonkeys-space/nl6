@@ -305,7 +305,11 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			// are unaffected. Single-init, and it must happen here in the
 			// creation window: the engine is immutable after publication
 			// and a device's type is fixed at creation.
-			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), defaultOpticalBand)
+			opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
+			// Canonicalise for GET /api/v1/devices, and only for types that
+			// actually have channels — see opticalScenarioFieldFor.
+			device.OpticalScenario = opticalScenarioFieldFor(deviceResourceFile, opticalScenario)
+			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), opticalBandFor(opticalScenario))
 
 			// Wire the state engine's per-event counters to the
 			// simulator-wide aggregates so ON_CHANGE fan-out shows up
@@ -658,7 +662,9 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	// Optical value engine — mirrors the sequential path in
 	// CreateDevicesWithOptions. These two paths have diverged before, so
 	// any change here belongs in both.
-	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), defaultOpticalBand)
+	opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
+	device.OpticalScenario = opticalScenarioFieldFor(resourceFile, opticalScenario)
+	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), opticalBandFor(opticalScenario))
 
 	// Wire the state engine's per-event counters to the simulator-wide
 	// aggregates so ON_CHANGE fan-out shows up in /api/v1/gnmi/status.

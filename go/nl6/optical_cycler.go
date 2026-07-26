@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -123,9 +124,8 @@ const (
 // noise attenuate together); raising nAseMeanDBm alone models noise
 // accumulation or a sick amplifier (OSNR falls, power holds).
 //
-// The per-tier bands and the clean|typical|degraded|failing enum that
-// selects them arrive with the health-band work; this type and its clean
-// default are what the engine needs to exist.
+// opticalBandFor maps the clean|typical|degraded|failing scenario onto
+// concrete instances of this type.
 type opticalBand struct {
 	// pInMeanDBm is the mean received signal power.
 	pInMeanDBm float64
@@ -137,6 +137,100 @@ type opticalBand struct {
 	pInAmpDB  float64
 	nAseAmpDB float64
 }
+
+// OpticalScenario selects a channel's steady-state optical health band.
+// It is the optical peer of IfErrorScenario and follows the same
+// contract: a per-device value, settable by a seed flag for the
+// auto-start batch and by a per-device REST field, where a REST request
+// that omits it gets `clean` regardless of the seed.
+type OpticalScenario string
+
+const (
+	OpticalClean    OpticalScenario = "clean"
+	OpticalTypical  OpticalScenario = "typical"
+	OpticalDegraded OpticalScenario = "degraded"
+	OpticalFailing  OpticalScenario = "failing"
+)
+
+// ParseOpticalScenario canonicalises s (case-insensitive) to one of the
+// four known scenarios. Empty input maps to OpticalClean. Unknown values
+// return an error naming the accepted scenarios so the message is
+// self-service on both the CLI and the REST surface.
+func ParseOpticalScenario(s string) (OpticalScenario, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", string(OpticalClean):
+		return OpticalClean, nil
+	case string(OpticalTypical):
+		return OpticalTypical, nil
+	case string(OpticalDegraded):
+		return OpticalDegraded, nil
+	case string(OpticalFailing):
+		return OpticalFailing, nil
+	default:
+		return "", fmt.Errorf("invalid optical_scenario %q (accepted: clean, typical, degraded, failing)", s)
+	}
+}
+
+// opticalBandFor returns the steady-state band for a scenario.
+//
+// Each tier moves BOTH dial means, not just one: a worse span carries
+// more accumulated ASE *and* delivers less power, and moving only one
+// would collapse the two-dial model back into the single-dial one the
+// engine deliberately avoids. Amplitude also grows with degradation,
+// because a marginal span wanders more than a healthy one.
+//
+// The resulting operating points (derived, not guessed — the OSNR-to-BER
+// chain is the cascade's own, and the values below are measured off it):
+//
+//	tier      OSNR     Q     pre-FEC BER   uncorrectable blocks
+//	clean    18.30  11.42       9.8e-05    never
+//	typical  16.68   9.80       1.0e-03    never
+//	degraded 15.60   8.72       3.2e-03    never (FEC still coping)
+//	failing  10.10   3.22       7.4e-02    always — every channel sits
+//	                                       above the 2e-2 SD-FEC threshold
+//	                                       for the whole dial period, so it
+//	                                       is genuinely service-affecting
+//
+// `degraded` deliberately sits above the FEC threshold: the interesting
+// case for a collector is a channel with a visibly elevated BER that is
+// nonetheless still error-free at the service layer, because that is the
+// window in which a proactive alarm has any value.
+//
+// Those two contracts are sized to hold for EVERY channel of EVERY seed,
+// not merely at the nominal operating point. The binding constraint is the
+// worst-case excursion envelope: the OSNR mean spreads over
+// +-2*opticalMeanJitterDB (0.4 dB) because it is the difference of two
+// independently jittered dials, and the OSNR sine amplitude reaches at
+// most 1.1*(pInAmpDB+nAseAmpDB) when the two dials land in antiphase.
+// Against the 13.13 dB threshold:
+//
+//	degraded worst-case minimum = 15.60 - 0.4 - 1.60 = 13.60  (clear by 0.47)
+//	failing  best-case maximum  = 10.10 + 0.4 + 2.20 = 12.70  (under by 0.43)
+//
+// Changing any mean, any amplitude, or opticalMeanJitterDB invalidates
+// that arithmetic. TestOpticalBandContractsHoldAcrossSeeds sweeps seeds to
+// catch it — a single-seed test cannot, because the envelope's tails are
+// what break.
+func opticalBandFor(s OpticalScenario) opticalBand {
+	switch s {
+	case OpticalTypical:
+		return opticalBand{pInMeanDBm: -9.5, nAseMeanDBm: -26.18, pInAmpDB: 0.75, nAseAmpDB: 0.35}
+	case OpticalDegraded:
+		return opticalBand{pInMeanDBm: -10.35, nAseMeanDBm: -25.95, pInAmpDB: 0.95, nAseAmpDB: 0.50}
+	case OpticalFailing:
+		return opticalBand{pInMeanDBm: -13.0, nAseMeanDBm: -23.10, pInAmpDB: 1.30, nAseAmpDB: 0.70}
+	default: // OpticalClean, and any unknown value (defensive)
+		return defaultOpticalBand
+	}
+}
+
+// opticalMeanJitterDB is the per-channel jitter applied to EACH dial mean
+// (uniform over +-this value). The two dial draws are independent, so the
+// OSNR mean — their difference — spreads over +-2x this figure, and that
+// spread stacks on top of the OSNR sine amplitude. Every tier gap in
+// opticalBandFor is sized against the doubled envelope; see the
+// arithmetic there before widening it.
+const opticalMeanJitterDB = 0.2
 
 // defaultOpticalBand is the `clean` band: OSNR ~18.3 dB, Q ~11.4 dB,
 // pre-FEC BER ~1e-4, comfortably clear of the SD-FEC threshold (which
@@ -651,11 +745,23 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 		oc.opMode[i] = ch.OperationalMode
 		oc.targetOutDBm[i] = ch.TargetOutputPowerDBm
 
-		// Receive dials, jittered +-10% on amplitude and +-0.4 dB on mean.
-		oc.pInMean[i] = band.pInMeanDBm + (rng.Float64()-0.5)*0.8
+		// Receive dials, jittered +-10% on amplitude and +-0.2 dB on mean.
+		//
+		// The mean jitter is deliberately HALF the per-dial spread it looks
+		// like it could afford. OSNR is the difference of the two dials, so
+		// independent draws on each widen the OSNR mean by twice the
+		// per-dial figure (opticalMeanJitterDB) — and that spread stacks on
+		// top of the OSNR sine amplitude. At +-0.4 dB per dial the resulting
+		// +-0.8 dB envelope pushed the low tail of `degraded` across the FEC
+		// threshold for ~1.6% of channels, breaking the tier's documented
+		// "never accrues uncorrectable blocks" contract, and it overlapped
+		// the tier means so a `degraded` channel could report better OSNR
+		// than a `typical` one. opticalBandFor's tier gaps are sized against
+		// this constant; see the envelope arithmetic there.
+		oc.pInMean[i] = band.pInMeanDBm + (rng.Float64()-0.5)*2*opticalMeanJitterDB
 		oc.pInAmp[i] = band.pInAmpDB * (0.9 + rng.Float64()*0.2)
 		oc.pInPhase[i] = rng.Float64() * 2 * math.Pi
-		oc.nAseMean[i] = band.nAseMeanDBm + (rng.Float64()-0.5)*0.8
+		oc.nAseMean[i] = band.nAseMeanDBm + (rng.Float64()-0.5)*2*opticalMeanJitterDB
 		oc.nAseAmp[i] = band.nAseAmpDB * (0.9 + rng.Float64()*0.2)
 		oc.nAsePhase[i] = rng.Float64() * 2 * math.Pi
 		oc.initOsnrPhasor(i)

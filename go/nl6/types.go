@@ -146,7 +146,12 @@ type DeviceSimulator struct {
 	// the lifetime of the device. When non-clean the flap scheduler
 	// registers the device's ifIndexes at the end of CreateDevicesWithOptions.
 	IfFlapScenario string
-	netNamespace   *NetNamespace // Network namespace (nil if using root namespace)
+	// OpticalScenario controls the steady-state optical health band the
+	// per-device optical value engine draws its dial means from:
+	// "clean" | "typical" | "degraded" | "failing". Empty is treated as
+	// clean. Only meaningful for optical transport device types.
+	OpticalScenario string
+	netNamespace    *NetNamespace // Network namespace (nil if using root namespace)
 	// gNMI per-device gRPC server. Created in startGnmiServer when the
 	// gNMI subsystem is enabled (the default). nil means "no listener
 	// for this device" — either because the subsystem was disabled at
@@ -504,6 +509,12 @@ type CreateDevicesRequest struct {
 	// Empty maps to "clean". Same opt-in-explicit semantics as
 	// if_error_scenario: REST bodies do NOT inherit the CLI seed.
 	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
+	// OpticalScenario selects the per-device optical health band for
+	// optical transport device types: clean (default) | typical |
+	// degraded | failing. Omitting the field yields clean even when the
+	// auto-start seed flag says otherwise — the established REST opt-in
+	// contract.
+	OpticalScenario string `json:"optical_scenario,omitempty"`
 }
 
 // RoundRobinDeviceTypes defines all 29 device flavors for round robin creation.
@@ -581,6 +592,10 @@ type DeviceInfo struct {
 	// IfFlapScenario surfaces the per-device link-flap scenario set at
 	// creation time. Omitted when clean-default for the same reason.
 	IfFlapScenario string `json:"if_flap_scenario,omitempty"`
+	// OpticalScenario surfaces the per-device optical health band set at
+	// creation time. Omitted when clean-default, matching the two
+	// interface scenarios above.
+	OpticalScenario string `json:"optical_scenario,omitempty"`
 	// Location is the device's assigned world-city string (the same value
 	// served as sysLocation.0), previously reachable only via SNMP. Omitted
 	// when empty.
@@ -666,6 +681,11 @@ type ExportSeed struct {
 	// device created from this seed. Same semantics as IfErrorScenario:
 	// non-empty value seeds the device; empty = "clean" no-flap default.
 	IfFlapScenario IfFlapScenario
+	// OpticalScenario is the per-device optical health band for every
+	// device created from this seed. Same semantics as IfErrorScenario:
+	// it applies to the auto-start batch only, and a REST request that
+	// omits the field gets clean.
+	OpticalScenario OpticalScenario
 }
 
 // flowConnKey identifies a shared-socket pool entry. One pooled
