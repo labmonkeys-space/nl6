@@ -168,13 +168,24 @@ func (sm *SimulatorManager) startDeviceGnmiDialoutExporter(device *DeviceSimulat
 				return fmt.Errorf("gnmi dial-out: on-change path %q: %w", pathToString(p), err)
 			}
 			hasState := false
+			optical := false
 			for _, leaf := range leaves {
 				if isStateOnlyLeaf(leaf) {
 					hasState = true
 					break
 				}
+				if isOpticalLeafSelector(leaf) {
+					optical = true
+				}
 			}
 			if !hasState {
+				// Same class split as the dial-in validator: ClassifyLeaves now
+				// answers for `/components` too, so without this branch an optical
+				// path would be reported as "only counters" and pointed at a
+				// remedy — subscribing a state leaf — that does not exist for it.
+				if optical {
+					return fmt.Errorf("gnmi dial-out: on-change path %q is optical telemetry; optical values are analog measurements that change continuously and cannot be delivered on-change — use mode: sample", pathToString(p))
+				}
 				return fmt.Errorf("gnmi dial-out: on-change path %q covers no state leaves (only counters); counters cannot be delivered on-change — subscribe a state leaf or the state subtree", pathToString(p))
 			}
 		}

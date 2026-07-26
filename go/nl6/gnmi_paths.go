@@ -190,6 +190,91 @@ func isStateOnlyLeaf(leaf string) bool {
 	return false
 }
 
+// opticalLeafKind classifies a served optical leaf by its container shape
+// in the pinned model, which is what decides how a path expands.
+type opticalLeafKind uint8
+
+const (
+	// opticalLeafScalar lives in BOTH `config/` and `state/` and has no
+	// statistics container (frequency, operational-mode, line-port,
+	// target-output-power).
+	opticalLeafScalar opticalLeafKind = iota
+	// opticalLeafStats lives under `state/<leaf>/` with an
+	// {instant,avg,min,max} container.
+	opticalLeafStats
+	// opticalLeafCounter lives directly under `state/` as a bare counter
+	// leaf — fec-uncorrectable-blocks is the only one, and it explicitly
+	// has NO statistics container in the pinned revision.
+	opticalLeafCounter
+)
+
+// gnmiOpticalLeaves is the served optical surface, taken verbatim from the
+// pinned OpenConfig revisions (openconfig-terminal-device 2026-01-14 +
+// openconfig-platform-transceiver 2026-03-25, whose `optical-power-state`
+// grouping supplies input/output power and laser bias). Every entry is
+// reachable under the single prefix
+// `/components/component[name=$och]/optical-channel/`, because
+// `optical-channel` augments `/components/component`.
+//
+// This table IS the served contract: gnmiOpticalPathManifest derives the
+// full path list from it, and TestOpticalPathManifest pins that list, so a
+// leaf invented here fails CI rather than a collector's schema validation.
+// Leaf names must never be invented — the epic's fidelity rule is that a
+// path whose existence cannot be confirmed is omitted, not guessed.
+//
+// `post-fec-ber` is deliberately ABSENT despite existing in OpenConfig:
+// Ciena removed it from their model, so a collector rule keyed on it would
+// never fire against real hardware. That is a faithfulness choice, not an
+// omission — see design.md.
+var gnmiOpticalLeaves = []struct {
+	leaf string
+	kind opticalLeafKind
+}{
+	// config/ + state/ scalars.
+	{OpticalLeafFrequency, opticalLeafScalar},
+	{OpticalLeafTargetOutputPower, opticalLeafScalar},
+	{OpticalLeafOperationalMode, opticalLeafScalar},
+	{OpticalLeafLinePort, opticalLeafScalar},
+	// state/<leaf>/{instant,avg,min,max}. Receive-side spine first, then
+	// the off-spine leaves that stay flat under a receive fault.
+	{OpticalLeafInputPower, opticalLeafStats},
+	{OpticalLeafOSNR, opticalLeafStats},
+	{OpticalLeafESNR, opticalLeafStats},
+	{OpticalLeafQValue, opticalLeafStats},
+	{OpticalLeafPreFECBER, opticalLeafStats},
+	{OpticalLeafOutputPower, opticalLeafStats},
+	{OpticalLeafLaserBias, opticalLeafStats},
+	{OpticalLeafChromaticDisp, opticalLeafStats},
+	{OpticalLeafPMD, opticalLeafStats},
+	{OpticalLeafPDL, opticalLeafStats},
+	// Bare counter, no statistics container.
+	{OpticalLeafUncorrBlock, opticalLeafCounter},
+}
+
+// opticalStats is the statistics-container selector set, in emission order.
+var opticalStats = []string{OpticalStatInstant, OpticalStatAvg, OpticalStatMin, OpticalStatMax}
+
+// opticalLeafKindOf returns the leaf's container shape, and whether it is
+// served at all. An unserved name (including `post-fec-ber`) returns false
+// so callers can surface NotFound.
+func opticalLeafKindOf(leaf string) (opticalLeafKind, bool) {
+	for _, l := range gnmiOpticalLeaves {
+		if l.leaf == leaf {
+			return l.kind, true
+		}
+	}
+	return 0, false
+}
+
+// isOpticalLeafSelector reports whether a ClassifyLeaves result came from
+// the optical branch. Selectors carry their container prefix (`state/…` or
+// `config/…`), which the interface branch never produces, so the ON_CHANGE
+// validator can branch its rejection message on leaf CLASS instead of
+// calling every rejected leaf a counter.
+func isOpticalLeafSelector(sel string) bool {
+	return strings.HasPrefix(sel, "state/") || strings.HasPrefix(sel, "config/")
+}
+
 // resolvedUpdate is the resolver's intermediate value type. It carries
 // a fully-formed gNMI Path plus a typed Go value. The handler converts
 // the value into a TypedValue per the requested encoding.
@@ -250,8 +335,24 @@ func (r *pathResolver) ClassifyLeaves(p *gnmipb.Path) ([]string, error) {
 		return nil, status.Errorf(codes.NotFound, "origin %q not supported (only openconfig)", origin)
 	}
 	elems := p.GetElem()
+	if len(elems) == 0 {
+		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
+	}
+	// Optical branch: shape-only, so it deliberately does NOT consult the
+	// value engine — not even to check whether one exists. A device without
+	// optical channels still gets a shape answer here, and the ON_CHANGE
+	// validator rejects the path on leaf class; the NotFound for "no optical
+	// channels" belongs to Resolve, which is where a value is actually asked
+	// for. Keeping the split means ON_CHANGE validation can never return
+	// Unavailable, which is its whole reason for existing.
+	if elems[0].GetName() == "components" {
+		if len(elems) >= 2 && elems[1].GetName() != "component" {
+			return nil, status.Errorf(codes.NotFound, "only /components/component is supported, got %q", elems[1].GetName())
+		}
+		return expandOpticalLeafSelector(componentRest(elems))
+	}
 	if len(elems) < 2 || elems[0].GetName() != "interfaces" || elems[1].GetName() != "interface" {
-		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface", pathToString(p))
+		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
 	}
 	leafSelector, err := r.expandLeafSelector(elems[2:])
 	if err != nil {
@@ -289,22 +390,38 @@ func (r *pathResolver) Resolve(p *gnmipb.Path, t time.Time) ([]resolvedUpdate, e
 	if origin := p.GetOrigin(); origin != "" && origin != "openconfig" {
 		return nil, status.Errorf(codes.NotFound, "origin %q not supported (only openconfig)", origin)
 	}
-	// P5: capture the IfCounterCycler once per Resolve so every value
-	// in the response is read from the same cycler instance. This
-	// preserves the SNMP/sFlow byte-identity invariant (a swap of the
-	// underlying cycler mid-call would otherwise interleave samples).
+
+	elems := p.GetElem()
+	if len(elems) == 0 {
+		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
+	}
+	// Two served branches, dispatched on the first element. `/components`
+	// carries the optical surface; `/interfaces` the packet surface.
+	if elems[0].GetName() == "components" {
+		return r.resolveComponents(p, elems, t)
+	}
+
+	// Path must start `/interfaces/interface[...]`.
+	if len(elems) < 2 || elems[0].GetName() != "interfaces" || elems[1].GetName() != "interface" {
+		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
+	}
+
+	// P5: capture the IfCounterCycler once per Resolve so every value in the
+	// response is read from the same cycler instance. This preserves the
+	// SNMP/sFlow byte-identity invariant (a swap of the underlying cycler
+	// mid-call would otherwise interleave samples).
+	//
+	// The capture lives HERE, inside the interfaces branch, not at the top of
+	// Resolve: hoisted, it asserted the *interface* engine for every path, so
+	// an optical Get against a device with no HC counters failed with
+	// `Unavailable: interface counters not initialized` — a misleading code on
+	// a path that never touches that engine.
 	if r.device == nil || r.device.metricsCycler == nil {
 		return nil, status.Error(codes.Unavailable, "interface counters not initialized")
 	}
 	ic := r.device.metricsCycler.ifCounters.Load()
 	if ic == nil {
 		return nil, status.Error(codes.Unavailable, "interface counters not initialized")
-	}
-
-	elems := p.GetElem()
-	// Path must start `/interfaces/interface[...]`.
-	if len(elems) < 2 || elems[0].GetName() != "interfaces" || elems[1].GetName() != "interface" {
-		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface", pathToString(p))
 	}
 
 	// Resolve ifIndex set. The `name` key is required to be present; an
@@ -363,17 +480,341 @@ func (r *pathResolver) Resolve(p *gnmipb.Path, t time.Time) ([]resolvedUpdate, e
 	return out, nil
 }
 
+// opticalCycler returns the device's optical engine, distinguishing the two
+// reasons it can be missing — a distinction the gRPC code must preserve:
+//
+//   - a PACKET device has no optical channels and never will, so an optical
+//     path is permanently absent → NotFound. Returning Unavailable there
+//     would be retryable, wrongly inviting a client to poll forever for a
+//     surface the device cannot have.
+//   - an OPTICAL device mid-initialisation has channels but no published
+//     engine yet → Unavailable, which correctly says "try again".
+func (r *pathResolver) opticalCycler() (*OpticalCycler, error) {
+	if r.device == nil {
+		return nil, status.Error(codes.NotFound, "device serves no optical channels")
+	}
+	if r.device.metricsCycler != nil {
+		if oc := r.device.metricsCycler.OpticalCyclerOf(); oc != nil {
+			return oc, nil
+		}
+	}
+	// The device-type check comes BEFORE the nil-metricsCycler case, so a
+	// missing cycler on an optical type reports the retryable code. Both
+	// creation paths assign metricsCycler before the gNMI server starts, so
+	// this ordering is unobservable today — but getting it backwards would
+	// make a future lazy-init report a permanent absence for a device that is
+	// merely still starting.
+	if r.opticalCapable() {
+		return nil, status.Error(codes.Unavailable, "optical engine not initialized yet")
+	}
+	return nil, status.Error(codes.NotFound, "device serves no optical channels")
+}
+
+// opticalCapable reports whether this device's TYPE has optical channels,
+// independent of whether the engine is published yet.
+func (r *pathResolver) opticalCapable() bool {
+	return r.device != nil && IsOpticalDeviceType(r.device.resourceFile)
+}
+
+// resolveComponents handles `/components/component[name=…]/optical-channel/…`.
+// Shapes, mirroring the interface branch:
+//
+//	/components                                              -> every channel, every leaf
+//	/components/component[name=*]                            -> every channel, every leaf
+//	/components/component[name=OCH-1-1]                      -> one channel, every leaf
+//	…/optical-channel                                        -> every leaf
+//	…/optical-channel/config                                 -> the 4 config scalars
+//	…/optical-channel/config/frequency                       -> one scalar
+//	…/optical-channel/state                                  -> every state leaf
+//	…/optical-channel/state/osnr                             -> that stats container (4)
+//	…/optical-channel/state/osnr/avg                          -> one statistic
+//	…/optical-channel/state/fec-uncorrectable-blocks         -> the bare counter
+func (r *pathResolver) resolveComponents(p *gnmipb.Path, elems []*gnmipb.PathElem, t time.Time) ([]resolvedUpdate, error) {
+	oc, err := r.opticalCycler()
+	if err != nil {
+		return nil, err
+	}
+	names, err := r.expandComponentKey(oc, elems)
+	if err != nil {
+		return nil, err
+	}
+	selectors, err := expandOpticalLeafSelector(componentRest(elems))
+	if err != nil {
+		return nil, err
+	}
+
+	// One elapsed offset for the whole response, from the optical engine's
+	// own startTime — the same contract the interface branch has, so every
+	// value in a response is coherent and gNMI agrees with the cycler (and
+	// therefore with any other surface) at the same instant.
+	tSec := t.Sub(oc.StartTime()).Seconds()
+	out := make([]resolvedUpdate, 0, len(names)*len(selectors))
+	for _, name := range names {
+		for _, sel := range selectors {
+			container, leafPath, _ := strings.Cut(sel, "/")
+			value, ok := oc.GetDynamicAt(name, opticalEngineLeaf(sel), tSec)
+			if !ok {
+				continue
+			}
+			out = append(out, resolvedUpdate{
+				Path:  buildOpticalPath(name, container, leafPath),
+				Value: value,
+			})
+		}
+	}
+	return out, nil
+}
+
+// opticalEngineLeaf maps a served selector onto the leaf name the value
+// engine expects. The engine is container-agnostic — `config/frequency` and
+// `state/frequency` are the same quantity, because a simulator's configured
+// intent and operational state cannot diverge — so the container prefix is
+// stripped and statistics selectors keep their `<leaf>/<stat>` shape.
+func opticalEngineLeaf(selector string) string {
+	_, rest, found := strings.Cut(selector, "/")
+	if !found {
+		return selector
+	}
+	return rest
+}
+
+// expandComponentKey resolves the `component[name=…]` key to a channel set.
+// `*`, a missing key map, and a bare `/components` all wildcard over the
+// engine's sorted channel list, so expansion is deterministic.
+func (r *pathResolver) expandComponentKey(oc *OpticalCycler, elems []*gnmipb.PathElem) ([]string, error) {
+	all := oc.Components()
+	if len(elems) < 2 {
+		// Bare `/components` — every channel.
+		dst := make([]string, len(all))
+		copy(dst, all)
+		return dst, nil
+	}
+	if elems[1].GetName() != "component" {
+		return nil, status.Errorf(codes.NotFound, "only /components/component is supported, got %q", elems[1].GetName())
+	}
+	keys := elems[1].GetKey()
+	name := "*"
+	if keys != nil {
+		v, ok := keys["name"]
+		switch {
+		case !ok:
+			name = "*"
+		case v == "":
+			// Same contract as the interface branch: wildcard intent must be
+			// explicit, so an empty key is a client bug rather than "all".
+			return nil, status.Error(codes.InvalidArgument, "component name key must not be empty (use name=* for wildcard)")
+		default:
+			name = v
+		}
+	}
+	if name == "*" {
+		dst := make([]string, len(all))
+		copy(dst, all)
+		return dst, nil
+	}
+	for _, n := range all {
+		if n == name {
+			return []string{name}, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "unknown component name %q", name)
+}
+
+// componentRest returns the path segments after `component[name=…]`.
+func componentRest(elems []*gnmipb.PathElem) []*gnmipb.PathElem {
+	if len(elems) < 2 {
+		return nil
+	}
+	return elems[2:]
+}
+
+// expandOpticalLeafSelector translates the segments after
+// `component[name=…]` into fully-qualified selectors of the form
+// `config/<leaf>`, `state/<leaf>` or `state/<leaf>/<stat>`.
+//
+// It reads no values, so ClassifyLeaves can share it and keep its
+// shape-only contract (which is what keeps ON_CHANGE rejection cheap and
+// unable to return Unavailable).
+func expandOpticalLeafSelector(rest []*gnmipb.PathElem) ([]string, error) {
+	// `/components/component[name=…]` with nothing further, or an explicit
+	// `optical-channel` with nothing further → the whole subtree.
+	if len(rest) == 0 {
+		return allOpticalSelectors(), nil
+	}
+	if rest[0].GetName() != "optical-channel" {
+		return nil, status.Errorf(codes.NotFound,
+			"only /components/component[]/optical-channel is supported, got %q", rest[0].GetName())
+	}
+	rest = rest[1:]
+	if len(rest) == 0 {
+		return allOpticalSelectors(), nil
+	}
+
+	container := rest[0].GetName()
+	if container != "config" && container != "state" {
+		return nil, status.Errorf(codes.NotFound,
+			"only optical-channel/config and optical-channel/state are supported, got %q", container)
+	}
+	rest = rest[1:]
+	// A whole container.
+	if len(rest) == 0 {
+		return opticalSelectorsFor(container), nil
+	}
+
+	leaf := rest[0].GetName()
+	kind, served := opticalLeafKindOf(leaf)
+	if !served {
+		return nil, status.Errorf(codes.NotFound, "unknown or unserved optical leaf %q", leaf)
+	}
+	// `config/` holds only the scalars; the measured leaves are state-only.
+	if container == "config" && kind != opticalLeafScalar {
+		return nil, status.Errorf(codes.NotFound, "optical leaf %q exists only under state/", leaf)
+	}
+	rest = rest[1:]
+
+	switch kind {
+	case opticalLeafScalar, opticalLeafCounter:
+		if len(rest) > 0 {
+			// fec-uncorrectable-blocks is a BARE counter in the pinned model.
+			// Asking for `/instant` on it is exactly the mistake a collector
+			// author makes by analogy with the other leaves, so the error says
+			// why rather than just "not found".
+			if kind == opticalLeafCounter {
+				return nil, status.Errorf(codes.NotFound,
+					"optical leaf %q is a bare counter with no statistics container; drop the %q selector",
+					leaf, rest[0].GetName())
+			}
+			return nil, status.Errorf(codes.NotFound, "unexpected path depth under %s/%s", container, leaf)
+		}
+		return []string{container + "/" + leaf}, nil
+	default: // opticalLeafStats
+		if len(rest) == 0 {
+			out := make([]string, 0, len(opticalStats))
+			for _, s := range opticalStats {
+				out = append(out, container+"/"+leaf+"/"+s)
+			}
+			return out, nil
+		}
+		if len(rest) > 1 {
+			return nil, status.Errorf(codes.NotFound, "unexpected path depth under %s/%s", container, leaf)
+		}
+		stat := rest[0].GetName()
+		for _, s := range opticalStats {
+			if s == stat {
+				return []string{container + "/" + leaf + "/" + stat}, nil
+			}
+		}
+		return nil, status.Errorf(codes.NotFound, "unknown statistic %q on optical leaf %q", stat, leaf)
+	}
+}
+
+// opticalSelectorsFor returns every selector in one container.
+func opticalSelectorsFor(container string) []string {
+	out := make([]string, 0, len(gnmiOpticalLeaves)*len(opticalStats))
+	for _, l := range gnmiOpticalLeaves {
+		switch l.kind {
+		case opticalLeafScalar:
+			out = append(out, container+"/"+l.leaf)
+		case opticalLeafCounter:
+			if container == "state" {
+				out = append(out, container+"/"+l.leaf)
+			}
+		default:
+			if container == "state" {
+				for _, s := range opticalStats {
+					out = append(out, container+"/"+l.leaf+"/"+s)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// allOpticalSelectors returns every served selector, config before state.
+func allOpticalSelectors() []string {
+	return append(opticalSelectorsFor("config"), opticalSelectorsFor("state")...)
+}
+
+// buildOpticalPath constructs a fully-keyed path
+// `/components/component[name=<och>]/optical-channel/<container>/<leaf>[/<stat>]`.
+func buildOpticalPath(component, container, leafPath string) *gnmipb.Path {
+	elems := []*gnmipb.PathElem{
+		{Name: "components"},
+		{Name: "component", Key: map[string]string{"name": component}},
+		{Name: "optical-channel"},
+		{Name: container},
+	}
+	for _, seg := range strings.Split(leafPath, "/") {
+		if seg != "" {
+			elems = append(elems, &gnmipb.PathElem{Name: seg})
+		}
+	}
+	return &gnmipb.Path{Elem: elems}
+}
+
+// gnmiOpticalPathManifest returns every path this resolver serves for one
+// component, in canonical string form. Derived from gnmiOpticalLeaves so it
+// cannot drift from what Resolve emits; pinned by TestOpticalPathManifest
+// against the table traced from the pinned OpenConfig revisions, so an
+// invented or dropped path fails in CI rather than at a collector.
+func gnmiOpticalPathManifest(component string) []string {
+	sels := allOpticalSelectors()
+	out := make([]string, 0, len(sels))
+	for _, sel := range sels {
+		container, leafPath, _ := strings.Cut(sel, "/")
+		out = append(out, pathToString(buildOpticalPath(component, container, leafPath)))
+	}
+	return out
+}
+
 // Capabilities returns the static CapabilityResponse advertised by the
-// gNMI server. Encodings: JSON_IETF + PROTO. Models: openconfig-interfaces.
+// gNMI server. Encodings: JSON_IETF + PROTO.
+//
+// Models: openconfig-interfaces for the packet surface, plus the three the
+// optical surface is drawn from. `openconfig-platform-transceiver` is not
+// optional decoration — `optical-channel/state` reuses its
+// `optical-power-state` grouping for input-power, output-power and
+// laser-bias-current, so a client validating against the advertised model
+// set would fail to find those leaves if it were omitted.
+//
+// Versions are the pinned revisions the served paths were traced against
+// (design.md); they and gnmiOpticalLeaves move together.
+//
+// The optical models are advertised ONLY by optically-capable devices. A
+// collector that generates subscriptions from Capabilities would otherwise
+// subscribe optical paths against a packet device and get a stream that
+// sends sync_response and then nothing forever — every tick resolves
+// NotFound, which the SAMPLE path logs and skips, so the client sees no
+// error at all. Advertising a model is a claim the device can serve it.
 func (r *pathResolver) Capabilities() *gnmipb.CapabilityResponse {
-	return &gnmipb.CapabilityResponse{
-		SupportedModels: []*gnmipb.ModelData{
-			{
-				Name:         "openconfig-interfaces",
-				Organization: "OpenConfig working group",
-				Version:      "3.0.0",
-			},
+	models := []*gnmipb.ModelData{
+		{
+			Name:         "openconfig-interfaces",
+			Organization: "OpenConfig working group",
+			Version:      "3.0.0",
 		},
+	}
+	if r.opticalCapable() {
+		models = append(models,
+			&gnmipb.ModelData{
+				Name:         "openconfig-terminal-device",
+				Organization: "OpenConfig working group",
+				Version:      "2026-01-14",
+			},
+			&gnmipb.ModelData{
+				Name:         "openconfig-platform",
+				Organization: "OpenConfig working group",
+				Version:      "2025-07-15",
+			},
+			&gnmipb.ModelData{
+				Name:         "openconfig-platform-transceiver",
+				Organization: "OpenConfig working group",
+				Version:      "2026-03-25",
+			},
+		)
+	}
+	return &gnmipb.CapabilityResponse{
+		SupportedModels: models,
 		SupportedEncodings: []gnmipb.Encoding{
 			gnmipb.Encoding_JSON_IETF,
 			gnmipb.Encoding_PROTO,

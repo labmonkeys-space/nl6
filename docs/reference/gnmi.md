@@ -47,13 +47,51 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 
 Wildcards (`name=*`) enumerate every ifIndex known to the device. Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick. Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
 
-Paths outside the table above — including `/interfaces/interface/config/*`, `/interfaces/interface/subinterfaces`, and anything outside `/interfaces/` — return `codes.NotFound`.
+Paths outside the tables on this page — including `/interfaces/interface/config/*`, `/interfaces/interface/subinterfaces`, and anything outside `/interfaces/` and `/components/` — return `codes.NotFound`.
+
+## Optical channel paths (optical transport types)
+
+Devices whose type carries coherent optical channels (today `ciena_waveserver5`) additionally serve the OpenConfig optical surface, keyed by **OCH component name** — never `ifIndex`:
+
+```
+/components/component[name=OCH-1-1]/optical-channel/{config,state}/…
+```
+
+| Path | Type | Notes |
+|---|---|---|
+| `…/optical-channel/{config,state}/frequency` | uint64 | MHz |
+| `…/optical-channel/{config,state}/target-output-power` | decimal64 (2 fd) | dBm |
+| `…/optical-channel/{config,state}/operational-mode` | uint16 | |
+| `…/optical-channel/{config,state}/line-port` | string | leafref |
+| `…/optical-channel/state/input-power/{instant,avg,min,max}` | decimal64 (2 fd) | dBm |
+| `…/optical-channel/state/output-power/{instant,avg,min,max}` | decimal64 (2 fd) | dBm |
+| `…/optical-channel/state/laser-bias-current/{instant,avg,min,max}` | decimal64 (2 fd) | mA |
+| `…/optical-channel/state/osnr/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
+| `…/optical-channel/state/esnr/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
+| `…/optical-channel/state/q-value/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
+| `…/optical-channel/state/pre-fec-ber/{instant,avg,min,max}` | decimal64 (**18** fd) | |
+| `…/optical-channel/state/chromatic-dispersion/{instant,avg,min,max}` | decimal64 (2 fd) | ps-nm |
+| `…/optical-channel/state/polarization-mode-dispersion/{instant,avg,min,max}` | decimal64 (2 fd) | ps |
+| `…/optical-channel/state/polarization-dependent-loss/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
+| `…/optical-channel/state/fec-uncorrectable-blocks` | uint64 | **bare counter — no statistics container** |
+
+Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes flatten as on the interface side. Asking for a statistic on `fec-uncorrectable-blocks` (e.g. `/instant`) returns `codes.NotFound` — the pinned model defines it as a bare leaf.
+
+**`post-fec-ber` is deliberately not served.** OpenConfig defines it, but Ciena removed it from their model, so a collector rule keyed on it would never fire against real hardware. Serving it would produce exactly the false pass this device type exists to prevent.
+
+**Not an optical device?** Optical paths return `codes.NotFound` on device types with no channels — permanent, not retryable — and those devices do not advertise the optical models in `Capabilities`. `codes.Unavailable` is reserved for an optical device still initialising.
+
+**ON_CHANGE is rejected for optical paths** (`InvalidArgument`): these are analog measurements that change continuously, so use SAMPLE with `sample_interval`.
+
+**Precision caveat:** `pre-fec-ber` carries 18 fraction digits, which exceeds a float64 significand — `PROTO`'s `double_val` is lossy for it. Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a string).
+
+**`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything. The interface surface is state-only, so it is unaffected.
 
 ## Subscribe semantics
 
 | RPC | Status |
 |---|---|
-| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces` |
+| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces` — plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types |
 | `Get` | implemented for any supported path |
 | `Subscribe` (STREAM/SAMPLE) | implemented |
 | `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths; rejected for counter paths |
@@ -157,11 +195,18 @@ Expected output:
 ```
 gNMI version: 0.10.0
 supported models:
-  - openconfig-interfaces, OpenConfig working group, 4.0.0
+  - openconfig-interfaces, OpenConfig working group, 3.0.0
 supported encodings:
   - JSON_IETF
   - PROTO
 ```
+
+On an optical transport device the model list carries three more entries —
+`openconfig-terminal-device` (2026-01-14), `openconfig-platform`
+(2025-07-15) and `openconfig-platform-transceiver` (2026-03-25). Packet
+device types advertise only `openconfig-interfaces`, so a collector that
+generates subscriptions from `Capabilities` never subscribes optical paths
+against a device that cannot serve them.
 
 `--skip-verify` is required because every device presents the simulator's
 shared self-signed cert (see [TLS](#tls) above).
