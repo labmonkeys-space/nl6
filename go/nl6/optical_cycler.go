@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"sort"
@@ -123,9 +124,8 @@ const (
 // noise attenuate together); raising nAseMeanDBm alone models noise
 // accumulation or a sick amplifier (OSNR falls, power holds).
 //
-// The per-tier bands and the clean|typical|degraded|failing enum that
-// selects them arrive with the health-band work; this type and its clean
-// default are what the engine needs to exist.
+// opticalBandFor maps the clean|typical|degraded|failing scenario onto
+// concrete instances of this type.
 type opticalBand struct {
 	// pInMeanDBm is the mean received signal power.
 	pInMeanDBm float64
@@ -136,6 +136,76 @@ type opticalBand struct {
 	// per channel around these values.
 	pInAmpDB  float64
 	nAseAmpDB float64
+}
+
+// OpticalScenario selects a channel's steady-state optical health band.
+// It is the optical peer of IfErrorScenario and follows the same
+// contract: a per-device value, settable by a seed flag for the
+// auto-start batch and by a per-device REST field, where a REST request
+// that omits it gets `clean` regardless of the seed.
+type OpticalScenario string
+
+const (
+	OpticalClean    OpticalScenario = "clean"
+	OpticalTypical  OpticalScenario = "typical"
+	OpticalDegraded OpticalScenario = "degraded"
+	OpticalFailing  OpticalScenario = "failing"
+)
+
+// ParseOpticalScenario canonicalises s (case-insensitive) to one of the
+// four known scenarios. Empty input maps to OpticalClean. Unknown values
+// return an error naming the accepted scenarios so the message is
+// self-service on both the CLI and the REST surface.
+func ParseOpticalScenario(s string) (OpticalScenario, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", string(OpticalClean):
+		return OpticalClean, nil
+	case string(OpticalTypical):
+		return OpticalTypical, nil
+	case string(OpticalDegraded):
+		return OpticalDegraded, nil
+	case string(OpticalFailing):
+		return OpticalFailing, nil
+	default:
+		return "", fmt.Errorf("invalid optical_scenario %q (accepted: clean, typical, degraded, failing)", s)
+	}
+}
+
+// opticalBandFor returns the steady-state band for a scenario.
+//
+// Each tier moves BOTH dial means, not just one: a worse span carries
+// more accumulated ASE *and* delivers less power, and moving only one
+// would collapse the two-dial model back into the single-dial one the
+// engine deliberately avoids. Amplitude also grows with degradation,
+// because a marginal span wanders more than a healthy one.
+//
+// The resulting operating points (derived, not guessed — the OSNR-to-BER
+// chain is the cascade's own):
+//
+//	tier      OSNR     Q     pre-FEC BER   uncorrectable blocks
+//	clean    18.30  11.42       9.8e-05    never
+//	typical  16.68   9.80       1.0e-03    never
+//	degraded 15.10   8.22       5.0e-03    never (FEC still coping)
+//	failing  11.10   4.22       5.2e-02    always — past the 2e-2 SD-FEC
+//	                                       threshold even at its best
+//	                                       moment, so it is genuinely
+//	                                       service-affecting
+//
+// `degraded` deliberately sits above the FEC threshold: the interesting
+// case for a collector is a channel with a visibly elevated BER that is
+// nonetheless still error-free at the service layer, because that is the
+// window in which a proactive alarm has any value.
+func opticalBandFor(s OpticalScenario) opticalBand {
+	switch s {
+	case OpticalTypical:
+		return opticalBand{pInMeanDBm: -9.5, nAseMeanDBm: -26.18, pInAmpDB: 0.75, nAseAmpDB: 0.35}
+	case OpticalDegraded:
+		return opticalBand{pInMeanDBm: -10.5, nAseMeanDBm: -25.60, pInAmpDB: 0.95, nAseAmpDB: 0.50}
+	case OpticalFailing:
+		return opticalBand{pInMeanDBm: -12.5, nAseMeanDBm: -23.60, pInAmpDB: 1.30, nAseAmpDB: 0.70}
+	default: // OpticalClean, and any unknown value (defensive)
+		return defaultOpticalBand
+	}
 }
 
 // defaultOpticalBand is the `clean` band: OSNR ~18.3 dB, Q ~11.4 dB,

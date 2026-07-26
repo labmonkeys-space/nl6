@@ -527,6 +527,9 @@ func applyExportSeed(device *DeviceSimulator, seed *ExportSeed) {
 	if seed.IfFlapScenario != "" {
 		device.IfFlapScenario = string(seed.IfFlapScenario)
 	}
+	if seed.OpticalScenario != "" {
+		device.OpticalScenario = string(seed.OpticalScenario)
+	}
 }
 
 // Compile-time safety: ensure jsonDuration satisfies the json

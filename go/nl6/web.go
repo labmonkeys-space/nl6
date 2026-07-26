@@ -109,6 +109,12 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	opticalScenario, err := ParseOpticalScenario(req.OpticalScenario)
+	if err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	seed := &ExportSeed{
 		Flow:            req.Flow,
 		Traps:           req.Traps,
@@ -116,6 +122,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		GnmiDialout:     req.GnmiDialout,
 		IfErrorScenario: ifErrScenario,
 		IfFlapScenario:  ifFlapScenario,
+		OpticalScenario: opticalScenario,
 	}
 	if seed.Flow != nil {
 		seed.Flow.ApplyDefaults()
@@ -183,7 +190,8 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	// also signals to keep the seed — they need to reach applyExportSeed
 	// for the per-device cycler and flap scheduler to pick them up.
 	if seed.Flow == nil && seed.Traps == nil && seed.Syslog == nil && seed.GnmiDialout == nil &&
-		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean {
+		seed.IfErrorScenario == IfErrorClean && seed.IfFlapScenario == IfFlapClean &&
+		seed.OpticalScenario == OpticalClean {
 		seed = nil
 	}
 

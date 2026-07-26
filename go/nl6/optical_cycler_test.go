@@ -13,6 +13,18 @@ import (
 	"testing"
 )
 
+// readSourceFile loads a source file for the parity checks that assert
+// both device-creation paths were updated. Source inspection because
+// exercising the real paths needs root and a network namespace.
+func readSourceFile(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("reading %s: %v", name, err)
+	}
+	return string(b)
+}
+
 // twoChannelInventory is the shipped Waveserver shape: two WL5e modems.
 func twoChannelInventory() *DeviceResources {
 	return &DeviceResources{Optical: []OpticalChannel{
@@ -513,17 +525,14 @@ func TestOpticalChannelsIndependent(t *testing.T) {
 // paths must both initialise the engine. Asserted by source inspection
 // because exercising the real paths needs root and a network namespace.
 func TestBothCreatePathsInitOpticalCycler(t *testing.T) {
-	src, err := os.ReadFile("device.go")
-	if err != nil {
-		t.Fatalf("reading device.go: %v", err)
-	}
-	if n := strings.Count(string(src), "InitOpticalCycler("); n != 2 {
+	src := readSourceFile(t, "device.go")
+	if n := strings.Count(src, "InitOpticalCycler("); n != 2 {
 		t.Errorf("device.go calls InitOpticalCycler %d time(s), want 2 — the sequential "+
 			"(CreateDevicesWithOptions) and parallel (createSingleDevice) paths must both "+
 			"initialise the engine, or optical devices silently vary by batch size", n)
 	}
 	// The interface cycler is the reference: both paths init it too.
-	if n := strings.Count(string(src), "InitIfCountersWithScenario("); n != 2 {
+	if n := strings.Count(src, "InitIfCountersWithScenario("); n != 2 {
 		t.Errorf("InitIfCountersWithScenario appears %d time(s); this test's premise assumed 2", n)
 	}
 }

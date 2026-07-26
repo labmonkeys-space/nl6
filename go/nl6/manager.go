@@ -232,6 +232,9 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches
 		// the omitempty pattern used by the export blocks.
+		if device.OpticalScenario != "" && device.OpticalScenario != string(OpticalClean) {
+			info.OpticalScenario = device.OpticalScenario
+		}
 		if device.IfErrorScenario != "" && device.IfErrorScenario != string(IfErrorClean) {
 			info.IfErrorScenario = device.IfErrorScenario
 		}
