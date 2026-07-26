@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -301,7 +302,20 @@ type OpticalCycler struct {
 	// Uncorrectable-block accrual.
 	uncorrBase []uint64  // pre-seed so a fresh device is not suspiciously at 0
 	uncorrRate []float64 // blocks per second while above the FEC threshold
+
+	// episodes holds the per-channel append-only degradation list
+	// (optical_degrade.go) — the ONE mutable part of an otherwise
+	// publish-once engine. The immutability contract above is preserved
+	// rather than weakened: a published episode's window is frozen, its t0 is
+	// never in the past, and readers take a lock-free snapshot, so no value a
+	// reader could already have observed can change. One slice pointer per
+	// channel, in the same slot order as every other field.
+	episodes []atomic.Pointer[[]opticalEpisode]
 }
+
+// positiveInf is the open-ended episode end. Named because `math.Inf(1)`
+// sprinkled through window arithmetic reads like an accident.
+var positiveInf = math.Inf(1)
 
 // initOsnrPhasor collapses the two master dials into a single sinusoid.
 //
@@ -327,10 +341,15 @@ func (oc *OpticalCycler) initOsnrPhasor(slot int) {
 
 func opticalOmega(periodSec float64) float64 { return 2 * math.Pi / periodSec }
 
-// pInAt is the received signal power in dBm — the first master dial.
+// pInAt is the received signal power in dBm — the first master dial. Any
+// active degradation episode (optical_degrade.go) sags it, and because the
+// whole receive cascade reads through the dials, the sag propagates to OSNR,
+// Q, pre-FEC BER and the uncorrectable-block counter without any of them
+// knowing degradation exists.
 func (oc *OpticalCycler) pInAt(slot int, t float64) float64 {
 	w := opticalOmega(opticalDialPeriodSec)
-	return oc.pInMean[slot] + oc.pInAmp[slot]*math.Sin(w*t+oc.pInPhase[slot])
+	base := oc.pInMean[slot] + oc.pInAmp[slot]*math.Sin(w*t+oc.pInPhase[slot])
+	return base - oc.offsetsAt(slot, t).pInSagDB
 }
 
 // nAseAt is the accumulated noise power in dBm — the second, independent
@@ -339,16 +358,25 @@ func (oc *OpticalCycler) pInAt(slot int, t float64) float64 {
 // exercise a collector rule that keys on it.
 func (oc *OpticalCycler) nAseAt(slot int, t float64) float64 {
 	w := opticalOmega(opticalDialPeriodSec)
-	return oc.nAseMean[slot] + oc.nAseAmp[slot]*math.Sin(w*t+oc.nAsePhase[slot])
+	base := oc.nAseMean[slot] + oc.nAseAmp[slot]*math.Sin(w*t+oc.nAsePhase[slot])
+	return base + oc.offsetsAt(slot, t).nAseRiseDB
 }
 
 // ---- derived receive-side cascade ---------------------------------
 
 // osnrAt is the optical signal-to-noise ratio in dB: the difference of
 // the two master dials, evaluated through the precomputed phasor.
+//
+// The degradation offset is subtracted HERE as well as in the two dials, not
+// only in pInAt: the phasor is a precomputed collapse of pIn − nAse, so a sag
+// applied to pInAt alone would move the input-power leaf while leaving OSNR
+// (and therefore the entire cascade) untouched — a silently half-degraded
+// channel. Subtracting the summed drop keeps the identity osnr = pIn − nAse
+// exact under degradation.
 func (oc *OpticalCycler) osnrAt(slot int, t float64) float64 {
 	w := opticalOmega(opticalDialPeriodSec)
-	return oc.osnrMean[slot] + oc.osnrAmp[slot]*math.Sin(w*t+oc.osnrPhase[slot])
+	base := oc.osnrMean[slot] + oc.osnrAmp[slot]*math.Sin(w*t+oc.osnrPhase[slot])
+	return base - oc.offsetsAt(slot, t).osnrDropDB()
 }
 
 // esnrAt is electrical SNR. A real WaveLogic modem reports electrical
@@ -423,31 +451,68 @@ func (oc *OpticalCycler) uncorrBlocksAt(slot int, t float64) uint64 {
 	return oc.uncorrBase[slot] + uint64(math.Floor(blocks))
 }
 
-// aboveThresholdSeconds returns how much of [0, t] the channel spent
-// with pre-FEC BER above the SD-FEC threshold.
+// aboveThresholdSeconds returns how much of [0, t] the channel spent with
+// pre-FEC BER above the SD-FEC threshold.
+//
+// Without degradation this is one closed-form arcsine expression over the
+// whole interval. With degradation the OSNR mean is piecewise-constant — it
+// steps at each episode boundary — so the interval is split at those
+// boundaries and the same closed form is applied per segment. Segments are
+// disjoint and an episode's window is frozen once published, so a segment's
+// contribution can never change after the fact: the sum is monotonic in t by
+// construction, which is what keeps `fec-uncorrectable-blocks` from ever
+// walking backwards across a degrade→revert cycle.
+//
+// Cost is O(number of episode boundaries before t), not O(t) — still no
+// numeric integration over uptime, and an undegraded channel takes exactly
+// the single-segment path it always did.
 func (oc *OpticalCycler) aboveThresholdSeconds(slot int, t float64) float64 {
+	bounds := oc.episodeBreakpoints(slot, t)
+	if len(bounds) == 0 {
+		return oc.aboveThresholdSegment(slot, 0, t)
+	}
+	total := 0.0
+	prev := 0.0
+	for _, b := range bounds {
+		total += oc.aboveThresholdSegment(slot, prev, b)
+		prev = b
+	}
+	return total + oc.aboveThresholdSegment(slot, prev, t)
+}
+
+// aboveThresholdSegment is the closed form over one segment [ta, tb) on which
+// the degradation offset — and therefore the effective OSNR mean — is
+// constant. The offset is sampled at the segment's midpoint: episode
+// boundaries are exactly the instants it can change, so any interior point
+// reports the value that holds across the whole segment, and the midpoint
+// avoids landing on a half-open boundary.
+func (oc *OpticalCycler) aboveThresholdSegment(slot int, ta, tb float64) float64 {
+	if tb <= ta {
+		return 0
+	}
+	drop := oc.offsetsAt(slot, ta+(tb-ta)/2).osnrDropDB()
 	amp := oc.osnrAmp[slot]
 	// u is the threshold expressed in units of the sinusoid: BER is above
 	// threshold when sin(theta) < u.
-	target := osnrThresholdDB() - oc.osnrMean[slot]
+	target := osnrThresholdDB() - (oc.osnrMean[slot] - drop)
 	if amp <= 0 {
 		// Degenerate dial: either always above or always below.
 		if target > 0 {
-			return t
+			return tb - ta
 		}
 		return 0
 	}
 	u := target / amp
 	if u >= 1 {
-		return t // never clears the threshold
+		return tb - ta // never clears the threshold
 	}
 	if u <= -1 {
 		return 0 // never reaches it
 	}
 	w := opticalOmega(opticalDialPeriodSec)
-	theta0 := oc.osnrPhase[slot]
-	theta1 := w*t + oc.osnrPhase[slot]
-	return (sinBelowMeasure(theta1, u) - sinBelowMeasure(theta0, u)) / w
+	thetaA := w*ta + oc.osnrPhase[slot]
+	thetaB := w*tb + oc.osnrPhase[slot]
+	return (sinBelowMeasure(thetaB, u) - sinBelowMeasure(thetaA, u)) / w
 }
 
 // sinBelowMeasure returns the measure (in radians) of
@@ -734,6 +799,7 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 		pdlDB:        make([]float64, n),
 		uncorrBase:   make([]uint64, n),
 		uncorrRate:   make([]float64, n),
+		episodes:     make([]atomic.Pointer[[]opticalEpisode], n),
 	}
 
 	rng := rand.New(rand.NewSource(seed ^ opticalSeedSalt))

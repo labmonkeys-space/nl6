@@ -124,6 +124,54 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+### On-demand optical degradation
+
+`POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named
+optical channel across the SD-FEC threshold on demand — the tool for
+validating threshold and alarm logic without waiting for a health band to
+wander there.
+
+```bash
+# 8 dB power sag on OCH-1-1 for 30 seconds, then back to band automatically
+curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degrade \
+  -H "Content-Type: application/json" \
+  -d '{"input_power_drop_db": 8, "duration": "30s"}'
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `input_power_drop_db` | number | Attenuates received power. Signal and accumulated noise fall together, so power drops while OSNR roughly holds — a fibre or connector fault. |
+| `noise_rise_db` | number | Raises accumulated ASE only. Power holds while OSNR falls — a sick amplifier. |
+| `duration` | Go duration string | Optional. Omitted means open-ended; capped at 24 h. |
+
+Two knobs rather than one severity dial because they select which diagnostic
+quadrant the fault lands in, and collector correlation rules key on exactly
+that difference. Both are optional; **a request with neither (or an empty
+body) clears** active degradation on that channel.
+
+The whole receive cascade follows — `input-power`, `osnr`, `esnr`, `q-value`,
+`pre-fec-ber` and `fec-uncorrectable-blocks` — while the off-spine leaves
+(`output-power`, `laser-bias-current`, `chromatic-dispersion`,
+`polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
+That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that
+moved every needle together would teach a collector nothing.
+
+**Revert needs no timer.** A degradation window is frozen at publish, and the
+value engine is a pure function of elapsed time, so the channel returns to
+its band by arithmetic when the window ends — there is no scheduled mutation
+to cancel. A second POST on the same channel supersedes the first.
+
+**`fec-uncorrectable-blocks` never decreases** across a degrade → revert
+cycle. The counter is the time integral of an above-threshold indicator, and
+degradation is stored as append-only immutable episodes precisely so that
+reverting cannot remove already-elapsed degradation from that integral. A
+counter that walked backwards would be read as a device reboot.
+
+Responses: `200` with the episode echoed back; `404` for an unknown device,
+an unknown component (the body lists `availableComponents`), or a device type
+with no optical channels; `400` for a malformed body, an unknown field, a
+non-positive or over-cap `duration`, or an out-of-range offset.
+
 ### Optical health band
 
 `optical_scenario` sets the steady-state health of every coherent optical
