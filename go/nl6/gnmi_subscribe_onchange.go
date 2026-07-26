@@ -93,11 +93,23 @@ func runOnChangeSubscribe(
 			return err
 		}
 		for _, leaf := range leaves {
-			if !isStateOnlyLeaf(leaf) {
+			if isStateOnlyLeaf(leaf) {
+				continue
+			}
+			// Branch on leaf CLASS. Both classes are rejected for the same
+			// underlying reason — the value varies continuously, so ON_CHANGE
+			// would degenerate into an unbounded update storm — but calling an
+			// analog optical measurement a "counter" is simply wrong, and an
+			// operator debugging a rejected `osnr` subscription would go looking
+			// for a counter that does not exist.
+			if isOpticalLeafSelector(leaf) {
 				return status.Errorf(codes.InvalidArgument,
-					"ON_CHANGE rejected for counter leaf %q; counters are continuously varying — use SAMPLE with sample_interval instead",
+					"ON_CHANGE rejected for optical leaf %q; optical telemetry is an analog measurement that changes continuously — use SAMPLE with sample_interval instead",
 					leaf)
 			}
+			return status.Errorf(codes.InvalidArgument,
+				"ON_CHANGE rejected for counter leaf %q; counters are continuously varying — use SAMPLE with sample_interval instead",
+				leaf)
 		}
 	}
 
