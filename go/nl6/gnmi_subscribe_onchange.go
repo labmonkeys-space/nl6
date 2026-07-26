@@ -103,6 +103,14 @@ func runOnChangeSubscribe(
 			// operator debugging a rejected `osnr` subscription would go looking
 			// for a counter that does not exist.
 			if isOpticalLeafSelector(leaf) {
+				// Recommending SAMPLE is only useful if SAMPLE could deliver
+				// something. On a device with no optical channels it never can, so
+				// the served-surface answer (NotFound, from Resolve) is the honest
+				// one — otherwise the operator is sent to switch modes and gets an
+				// eternally silent stream instead of an error.
+				if _, err := resolver.opticalCycler(); err != nil {
+					return err
+				}
 				return status.Errorf(codes.InvalidArgument,
 					"ON_CHANGE rejected for optical leaf %q; optical telemetry is an analog measurement that changes continuously — use SAMPLE with sample_interval instead",
 					leaf)

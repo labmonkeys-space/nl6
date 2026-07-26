@@ -113,8 +113,13 @@ func TestGnmiServer_Get_KnownPath(t *testing.T) {
 	}
 }
 
-// DF2: GetRequest.Type=CONFIG returns an empty response — the
-// simulator exposes only the state subtree, no config tree.
+// DF2: GetRequest.Type=CONFIG returns an empty response for an INTERFACE
+// path — that surface is state-only, so the type filter removes everything
+// and no notification is emitted.
+//
+// Note the premise is now per-surface, not global: the optical surface does
+// have a real `config/` subtree (see TestOpticalGetTypeFilter), so CONFIG is
+// no longer unconditionally empty for every path.
 func TestGnmiServer_Get_TypeConfigReturnsEmpty(t *testing.T) {
 	srv, _, _, _ := newTestGnmiServer(t, 1)
 	resp, err := srv.Get(context.Background(), &gnmipb.GetRequest{

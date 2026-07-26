@@ -70,14 +70,16 @@ func (s *gnmiServer) Get(_ context.Context, req *gnmipb.GetRequest) (*gnmipb.Get
 	if !encodingSupported(enc) {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported encoding %v", enc)
 	}
-	// DF2: honour `GetRequest.type`. The simulator exposes only the
-	// `state/` subtree — there is no config tree. Per gNMI §3.3.1, a
-	// CONFIG request must therefore return an empty response. STATE,
-	// OPERATIONAL, and ALL all map to our state subtree (the simulator
-	// does not distinguish operational from state internally).
-	if req.GetType() == gnmipb.GetRequest_CONFIG {
-		return &gnmipb.GetResponse{}, nil
-	}
+	// DF2: honour `GetRequest.type`. The interface surface is state-only, but
+	// the optical surface has a real `config/` subtree (the four optical-channel
+	// scalars: frequency, target-output-power, operational-mode, line-port), so
+	// the filter cannot be a blanket "CONFIG → empty" any more — that would
+	// return nothing for a config path the resolver serves, and would leak the
+	// config leaves into a STATE request.
+	//
+	// STATE and OPERATIONAL keep only state leaves; CONFIG keeps only config
+	// leaves; ALL (the default) keeps everything. The simulator does not
+	// distinguish operational from state internally.
 	prefixElems := req.GetPrefix().GetElem()
 	now := time.Now()
 	notifs := make([]*gnmipb.Notification, 0, len(req.GetPath()))
@@ -87,7 +89,16 @@ func (s *gnmiServer) Get(_ context.Context, req *gnmipb.GetRequest) (*gnmipb.Get
 		if err != nil {
 			return nil, err
 		}
-		gnmiUpdates, err := encodeUpdates(updates, enc)
+		filtered := filterByGetType(updates, req.GetType())
+		if len(filtered) == 0 && len(updates) > 0 {
+			// The type filter removed everything this path had — e.g. CONFIG
+			// against the state-only interface surface. Emit no notification at
+			// all rather than an empty one: it carries no information, and it
+			// keeps the pre-optical behaviour ("CONFIG returns an empty
+			// response") byte-identical for paths with no config leaves.
+			continue
+		}
+		gnmiUpdates, err := encodeUpdates(filtered, enc)
 		if err != nil {
 			return nil, err
 		}
@@ -97,6 +108,40 @@ func (s *gnmiServer) Get(_ context.Context, req *gnmipb.GetRequest) (*gnmipb.Get
 		})
 	}
 	return &gnmipb.GetResponse{Notification: notifs}, nil
+}
+
+// filterByGetType applies `GetRequest.type` (gNMI §3.3.1) to a resolved
+// update set. It keys off the `config`/`state` element present in every
+// served path — the interface branch always emits `state`, the optical
+// branch emits both — so the filter needs no per-leaf table and cannot
+// drift from what the resolver serves.
+//
+// ALL (the proto default, value 0) returns everything, so the common
+// unfiltered request stays allocation-free.
+func filterByGetType(updates []resolvedUpdate, typ gnmipb.GetRequest_DataType) []resolvedUpdate {
+	var want string
+	switch typ {
+	case gnmipb.GetRequest_CONFIG:
+		want = "config"
+	case gnmipb.GetRequest_STATE, gnmipb.GetRequest_OPERATIONAL:
+		want = "state"
+	default: // ALL
+		return updates
+	}
+	out := make([]resolvedUpdate, 0, len(updates))
+	for _, u := range updates {
+		for _, e := range u.Path.GetElem() {
+			name := e.GetName()
+			if name != "config" && name != "state" {
+				continue
+			}
+			if name == want {
+				out = append(out, u)
+			}
+			break
+		}
+	}
+	return out
 }
 
 // joinPathPrefix returns a Path whose Elem slice is `prefix || p.Elem`.

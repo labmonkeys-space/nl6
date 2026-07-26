@@ -490,16 +490,30 @@ func (r *pathResolver) Resolve(p *gnmipb.Path, t time.Time) ([]resolvedUpdate, e
 //   - an OPTICAL device mid-initialisation has channels but no published
 //     engine yet → Unavailable, which correctly says "try again".
 func (r *pathResolver) opticalCycler() (*OpticalCycler, error) {
-	if r.device == nil || r.device.metricsCycler == nil {
+	if r.device == nil {
 		return nil, status.Error(codes.NotFound, "device serves no optical channels")
 	}
-	if oc := r.device.metricsCycler.OpticalCyclerOf(); oc != nil {
-		return oc, nil
+	if r.device.metricsCycler != nil {
+		if oc := r.device.metricsCycler.OpticalCyclerOf(); oc != nil {
+			return oc, nil
+		}
 	}
-	if IsOpticalDeviceType(r.device.resourceFile) {
+	// The device-type check comes BEFORE the nil-metricsCycler case, so a
+	// missing cycler on an optical type reports the retryable code. Both
+	// creation paths assign metricsCycler before the gNMI server starts, so
+	// this ordering is unobservable today — but getting it backwards would
+	// make a future lazy-init report a permanent absence for a device that is
+	// merely still starting.
+	if r.opticalCapable() {
 		return nil, status.Error(codes.Unavailable, "optical engine not initialized yet")
 	}
 	return nil, status.Error(codes.NotFound, "device serves no optical channels")
+}
+
+// opticalCapable reports whether this device's TYPE has optical channels,
+// independent of whether the engine is published yet.
+func (r *pathResolver) opticalCapable() bool {
+	return r.device != nil && IsOpticalDeviceType(r.device.resourceFile)
 }
 
 // resolveComponents handles `/components/component[name=…]/optical-channel/…`.
@@ -765,30 +779,42 @@ func gnmiOpticalPathManifest(component string) []string {
 //
 // Versions are the pinned revisions the served paths were traced against
 // (design.md); they and gnmiOpticalLeaves move together.
+//
+// The optical models are advertised ONLY by optically-capable devices. A
+// collector that generates subscriptions from Capabilities would otherwise
+// subscribe optical paths against a packet device and get a stream that
+// sends sync_response and then nothing forever — every tick resolves
+// NotFound, which the SAMPLE path logs and skips, so the client sees no
+// error at all. Advertising a model is a claim the device can serve it.
 func (r *pathResolver) Capabilities() *gnmipb.CapabilityResponse {
-	return &gnmipb.CapabilityResponse{
-		SupportedModels: []*gnmipb.ModelData{
-			{
-				Name:         "openconfig-interfaces",
-				Organization: "OpenConfig working group",
-				Version:      "3.0.0",
-			},
-			{
+	models := []*gnmipb.ModelData{
+		{
+			Name:         "openconfig-interfaces",
+			Organization: "OpenConfig working group",
+			Version:      "3.0.0",
+		},
+	}
+	if r.opticalCapable() {
+		models = append(models,
+			&gnmipb.ModelData{
 				Name:         "openconfig-terminal-device",
 				Organization: "OpenConfig working group",
 				Version:      "2026-01-14",
 			},
-			{
+			&gnmipb.ModelData{
 				Name:         "openconfig-platform",
 				Organization: "OpenConfig working group",
 				Version:      "2025-07-15",
 			},
-			{
+			&gnmipb.ModelData{
 				Name:         "openconfig-platform-transceiver",
 				Organization: "OpenConfig working group",
 				Version:      "2026-03-25",
 			},
-		},
+		)
+	}
+	return &gnmipb.CapabilityResponse{
+		SupportedModels: models,
 		SupportedEncodings: []gnmipb.Encoding{
 			gnmipb.Encoding_JSON_IETF,
 			gnmipb.Encoding_PROTO,

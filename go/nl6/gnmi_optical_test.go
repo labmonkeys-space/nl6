@@ -379,6 +379,142 @@ func TestOpticalCapabilitiesAdvertisesPinnedModels(t *testing.T) {
 	}
 }
 
+// TestOpticalGetTypeFilter — the optical surface is the first with a real
+// `config/` subtree, so `GetRequest.type` can no longer be "CONFIG → empty".
+// CONFIG must return the four scalars and STATE must exclude them.
+func TestOpticalGetTypeFilter(t *testing.T) {
+	dev := newTestOpticalDevice(t, true)
+	var active int64
+	var sent, dropped uint64
+	srv := newGnmiServer(dev, &active, &sent, &dropped)
+	srv.resolver = newPathResolver(dev)
+
+	get := func(typ gnmipb.GetRequest_DataType, path string) []*gnmipb.Update {
+		t.Helper()
+		resp, err := srv.Get(context.Background(), &gnmipb.GetRequest{
+			Path:     []*gnmipb.Path{pathFromString(t, path)},
+			Type:     typ,
+			Encoding: gnmipb.Encoding_JSON_IETF,
+		})
+		if err != nil {
+			t.Fatalf("Get(%v, %s): %v", typ, path, err)
+		}
+		var ups []*gnmipb.Update
+		for _, n := range resp.GetNotification() {
+			ups = append(ups, n.GetUpdate()...)
+		}
+		return ups
+	}
+
+	// A config path under CONFIG must resolve, not return empty.
+	if ups := get(gnmipb.GetRequest_CONFIG,
+		"/components/component[name=OCH-1-1]/optical-channel/config/frequency"); len(ups) != 1 {
+		t.Errorf("CONFIG get on a served config path returned %d updates, want 1", len(ups))
+	}
+	// A whole-channel CONFIG get returns only config leaves.
+	cfg := get(gnmipb.GetRequest_CONFIG, "/components/component[name=OCH-1-1]")
+	if len(cfg) != len(opticalSelectorsFor("config")) {
+		t.Errorf("CONFIG subtree returned %d updates, want %d", len(cfg), len(opticalSelectorsFor("config")))
+	}
+	for _, u := range cfg {
+		if p := pathToString(u.GetPath()); !strings.Contains(p, "/config/") {
+			t.Errorf("CONFIG get leaked a non-config path: %s", p)
+		}
+	}
+	// And a STATE get excludes them.
+	st := get(gnmipb.GetRequest_STATE, "/components/component[name=OCH-1-1]")
+	if len(st) != len(opticalSelectorsFor("state")) {
+		t.Errorf("STATE subtree returned %d updates, want %d", len(st), len(opticalSelectorsFor("state")))
+	}
+	for _, u := range st {
+		if p := pathToString(u.GetPath()); strings.Contains(p, "/config/") {
+			t.Errorf("STATE get leaked a config path: %s", p)
+		}
+	}
+	// ALL (the default) keeps everything.
+	if all := get(gnmipb.GetRequest_ALL, "/components/component[name=OCH-1-1]"); len(all) != len(allOpticalSelectors()) {
+		t.Errorf("ALL subtree returned %d updates, want %d", len(all), len(allOpticalSelectors()))
+	}
+	// The interface surface is state-only, so CONFIG stays empty there.
+	pdev := newTestGnmiDevice(t, 1)
+	psrv := newGnmiServer(pdev, &active, &sent, &dropped)
+	psrv.resolver = newPathResolver(pdev)
+	resp, err := psrv.Get(context.Background(), &gnmipb.GetRequest{
+		Path:     []*gnmipb.Path{pathFromString(t, "/interfaces/interface[name=*]/state")},
+		Type:     gnmipb.GetRequest_CONFIG,
+		Encoding: gnmipb.Encoding_JSON_IETF,
+	})
+	if err != nil {
+		t.Fatalf("interface CONFIG get: %v", err)
+	}
+	for _, n := range resp.GetNotification() {
+		if len(n.GetUpdate()) != 0 {
+			t.Errorf("interface CONFIG get returned %d updates, want 0 (state-only surface)", len(n.GetUpdate()))
+		}
+	}
+}
+
+// TestCapabilitiesOpticalModelsOnlyOnOpticalDevices: advertising a model is
+// a claim the device can serve it. A collector that generates subscriptions
+// from Capabilities would otherwise subscribe optical paths against a packet
+// device and get a stream that syncs and then stays silent forever, because
+// every tick resolves NotFound and the SAMPLE path logs and skips.
+func TestCapabilitiesOpticalModelsOnlyOnOpticalDevices(t *testing.T) {
+	opticalModels := []string{"openconfig-terminal-device", "openconfig-platform", "openconfig-platform-transceiver"}
+
+	packet := map[string]bool{}
+	for _, m := range newTestPathResolver(t, 1).Capabilities().GetSupportedModels() {
+		packet[m.GetName()] = true
+	}
+	if !packet["openconfig-interfaces"] {
+		t.Error("packet device must still advertise openconfig-interfaces")
+	}
+	for _, m := range opticalModels {
+		if packet[m] {
+			t.Errorf("packet device must not advertise %q — it serves no optical paths", m)
+		}
+	}
+
+	optical := map[string]bool{}
+	for _, m := range newPathResolver(newTestOpticalDevice(t, true)).Capabilities().GetSupportedModels() {
+		optical[m.GetName()] = true
+	}
+	for _, m := range opticalModels {
+		if !optical[m] {
+			t.Errorf("optical device must advertise %q", m)
+		}
+	}
+}
+
+// TestOpticalOnChangeOnPacketDeviceSaysNotFound: recommending SAMPLE is only
+// useful if SAMPLE could ever deliver something. On a device with no optical
+// channels it cannot, so the served-surface answer wins — otherwise the
+// operator switches modes and gets an eternally silent stream.
+func TestOpticalOnChangeOnPacketDeviceSaysNotFound(t *testing.T) {
+	srv, _, _, _ := newTestGnmiServer(t, 1) // packet device
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := newFakeSubscribeStream(ctx)
+	stream.recvQueue <- &gnmipb.SubscribeRequest{
+		Request: &gnmipb.SubscribeRequest_Subscribe{
+			Subscribe: &gnmipb.SubscriptionList{
+				Mode: gnmipb.SubscriptionList_STREAM,
+				Subscription: []*gnmipb.Subscription{{
+					Path: pathFromString(t, "/components/component[name=*]/optical-channel/state/osnr/avg"),
+					Mode: gnmipb.SubscriptionMode_ON_CHANGE,
+				}},
+			},
+		},
+	}
+	err := srv.Subscribe(stream)
+	if got := status.Code(err); got != codes.NotFound {
+		t.Errorf("code = %v, want NotFound on a device with no optical channels; err: %v", got, err)
+	}
+	if err != nil && strings.Contains(err.Error(), "SAMPLE") {
+		t.Errorf("must not recommend SAMPLE where SAMPLE can never deliver; got %q", err.Error())
+	}
+}
+
 // TestOpticalPathManifest is task 4.9's guard, in the manifest form chosen
 // over vendoring YANG: the exact served path set is pinned here, so adding,
 // renaming or dropping a path fails in CI rather than at a customer's
