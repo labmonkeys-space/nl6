@@ -88,6 +88,40 @@ func TestScenarioTrap_GateCountingAllSources(t *testing.T) {
 	}
 }
 
+// TestScenarioTrap_ScenarioStragglerAfterDetach mirrors the syslog invariant
+// (see TestScenarioGate_ScenarioStragglerAfterDetach): the scenario-owned trap
+// ticker is cancelled without waiting for an in-flight fire, so a scenario-source
+// trap whose participation handle is already nil-swapped must stay off the wire.
+func TestScenarioTrap_ScenarioStragglerAfterDetach(t *testing.T) {
+	cat, _ := LoadEmbeddedCatalog()
+	mc := newMockCollector(t, false)
+	defer mc.Close()
+	e := newScenarioTrapExporter(t, TrapModeTrap, mc.addr)
+	defer e.Close()
+
+	// Arm the participant for a live window first, so the drop is proven across
+	// the actual attach→detach transition (a fire that only ever saw a nil
+	// handle would not cover a change in finalize's detach ordering).
+	now := time.Now()
+	gate := &atomic.Pointer[gateState]{}
+	led := &ledgerEntry{}
+	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour), drainEnd: now.Add(time.Hour + time.Second)})
+	e.scenPart.Store(&scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now})
+	e.scenPart.Store(nil) // finalize nil-swapped it while this fire was in flight
+
+	e.fireScenario(cat.ByName["linkDown"], nil)
+	time.Sleep(80 * time.Millisecond)
+	if got := mc.received.Load(); got != 0 {
+		t.Fatalf("straggler trap reached the collector: received = %d, want 0", got)
+	}
+	if got := e.Stats().Sent.Load(); got != 0 {
+		t.Errorf("straggler Sent stat = %d, want 0", got)
+	}
+	if s := led.snapshot(); s != (ledgerSnapshot{}) {
+		t.Errorf("straggler touched the ledger: %+v, want zero", s)
+	}
+}
+
 // TestScenarioTrap_InformOriginationAndAck: INFORM originations count `sent`
 // at first-transmit; auto-acks settle the informational informs_acked bucket,
 // and informs_pending drains toward 0.

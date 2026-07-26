@@ -263,6 +263,16 @@ func (e *SyslogExporter) fireWithSource(entry *SyslogCatalogEntry, overrides map
 	}
 	p := e.scenPart.Load() // one load; may be nil; tolerate teardown race
 	if p == nil {
+		// Teardown straggler: a scenario-source fire can ONLY come from the
+		// scenario-owned scheduler, which is registered for participants only,
+		// so a nil handle means finalize already nil-swapped it while this fire
+		// was in flight (sched.Stop() signals but does not wait for Run to
+		// leave a fire). Falling through to the legacy path would put a
+		// datagram on the wire that no ledger counted, breaking wire==report
+		// exactness (NFR-R1) by exactly the number of stragglers.
+		if src == sourceScenario {
+			return nil
+		}
 		// Fidelity mode: a device outside a scenario window stays silent, so
 		// only a running scenario's traffic is ever on the wire.
 		if fidelityMutesBackground(src) {

@@ -324,6 +324,12 @@ func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]
 	}
 	p := e.scenPart.Load()
 	if p == nil {
+		// Teardown straggler: same reasoning as SyslogExporter.fireWithSource —
+		// a scenario-source fire whose handle is already nil-swapped must not
+		// reach the wire uncounted.
+		if src == sourceScenario {
+			return 0
+		}
 		// Fidelity mode: silent outside a scenario window (see fidelity.go).
 		if fidelityMutesBackground(src) {
 			return 0
