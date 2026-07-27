@@ -60,12 +60,41 @@ use it to characterise what shapes real hardware produces.
 |---|---|
 | `post-fec-ber` | Defined by OpenConfig, but **Ciena removed it** from their model. Serving it would let a rule pass here that could never fire against real hardware. Deliberate; a test asserts its absence. |
 | Per-counter `supported` / `invalid-data-flag` | Present on every counter in `ciena-waveserver-pm`, but OpenConfig defines no equivalent leaf. Expressing them would mean inventing a path. Tracked in [#334](https://github.com/labmonkeys-space/nl6/issues/334). |
-| SD/SF alarm notifications | The FEC threshold crossing is observable through values and the block counter, but no trap or syslog fires on it yet. Tracked in [#347](https://github.com/labmonkeys-space/nl6/issues/347). |
 | NETCONF, and the native `ciena-waveserver-*` models | nl6 serves the OpenConfig surface over gNMI only. A team that talks to real Waveservers over NETCONF with Ciena's own models is exercising a different interface entirely. |
 | Flow export (NetFlow / IPFIX / sFlow) | Correct, not missing. A layer-1 transport platform performs no layer-3/4 inspection and exports no flow records, so nl6 must not either. A batch flow seed skips this type; an explicit `flow` block naming it is rejected with 400. |
 | gNMI dial-out | The shipped dial-out flavor is `gnmireverse`, which is Arista-specific. This device serves dial-in only. |
 | OTLP | **No Ciena source claims OTLP support.** If you want optical telemetry in an OTel pipeline, bridge it: `nl6 -> gNMI -> gnmic -> OTLP -> collector`. Emitting OTLP device-side would be a false pass. |
 | `cwsAlarmActiveTable` / `cwsAlarmHistoryTable` | A real Waveserver exposes active alarms as SNMP tables for polling. Not simulated. |
+| Alarm conditions other than pre-FEC SD/SF | `wsLinkStateAlarmNotification` carries ~30 condition flags (LOS, LOL, LOF, LOM, BDI, TTI mismatch, ODU and Ethernet-layer defects). nl6 drives only `OtuPreFecSd` and `OtuPreFecSf`; every other flag is emitted as a literal `inactive(0)` and never becomes active. |
+
+## A clear names its condition only in text
+
+This one is a property of Ciena's model that nl6 reproduces faithfully, and it
+will shape how you write correlation rules.
+
+Ciena publishes an optical alarm as **one** notification type,
+`wsLinkStateAlarmNotification`, whose varbinds carry the *current state of
+every condition flag*. It is not a raise/clear pair of distinct traps the way
+`linkDown` and `linkUp` are. So a raise is identifiable from its varbinds
+(`OtuPreFecSd` = `active(1)`, or `OtuPreFecSf` = `active(1)`), but a **clear
+sets every flag back to `inactive(0)`**, with `Severity` = `cleared(1)`.
+
+The consequence: an SD clear and an SF clear are byte-identical on the wire
+apart from the `Description` (`.9`) and `Instance` (`.8`) strings. A collector
+cannot machine-correlate a clear back to the specific raise it resolves
+without parsing that text.
+
+nl6 does **not** paper over this. Setting the condition flag on a clear would
+make the varbinds contradict each other, asserting the condition is
+simultaneously `active(1)` and `cleared(1)`, and a rule built against that
+invention would misfire against real hardware. That is the false pass this
+device type exists to prevent, so the faithful shape is kept and the awkwardness
+is documented here instead.
+
+If you need machine-correlatable clears, the syslog surface is the better
+target: those messages carry structured data naming the condition
+(`condition=OtuPreFecSd`, `state=inactive`), because syslog has no wire format
+to be faithful to.
 
 ## Divergences you can observe on the wire
 
@@ -82,7 +111,7 @@ use it to characterise what shapes real hardware produces.
 |---|---|
 | OpenConfig schema | Pinned: terminal-device 2026-01-14, platform-transceiver 2026-03-25, platform 2025-07-15. Served paths were traced against these. |
 | Waveserver native schema | Verified leaf by leaf against the ONOS mirror of `ciena-waveserver-{pm,xcvr-modem}` — **Waveserver Ai vintage, 2017 to 2018**. Newer firmware may differ. |
-| Waveserver SNMP MIBs | Publicly mirrored (`kcsinclair/mibs`). The mirror is **unversioned**, so it cannot be tied to a firmware release. |
+| Waveserver SNMP MIBs | Publicly mirrored (`kcsinclair/mibs`), traced module by module for the notification content. The mirror is unversioned, but the modules are dated: `CIENA-WS-NOTIFICATION-MIB` `LAST-UPDATED "201611140000Z"` and `CIENA-WS-MIB` `201612140000Z`, "Release 1.3" — Waveserver Ai 1.x, matching the YANG vintage above. |
 | Waveserver values | Not public. The Command Reference with real operating values is portal-gated, so no shipped value is derived from documented hardware output. |
 
 Path validation is by an in-repo manifest, not by compiling the YANG. The test
