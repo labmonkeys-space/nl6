@@ -171,8 +171,22 @@ cosign verify ghcr.io/labmonkeys-space/nl6:vX.Y.Z \
   --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
 
 # 3. SLSA build provenance (binaries + image), via the GitHub attestation API.
-gh attestation verify nl6-linux-amd64 --repo labmonkeys-space/nl6
-gh attestation verify oci://ghcr.io/labmonkeys-space/nl6:vX.Y.Z --repo labmonkeys-space/nl6
+#
+# CAVEAT (gh 2.96.0, #343): `gh attestation verify` prints its human summary
+# ONLY on a terminal. Redirect it, pipe it, or run it from a script and it
+# exits 0 with zero bytes on both streams — indistinguishable from a broken
+# command. Verification still ran; only the report is suppressed. So do not
+# judge success by output: use --format json and extract the result, which
+# prints in every context.
+gh attestation verify nl6-linux-amd64 --repo labmonkeys-space/nl6 \
+  --format json --jq '.[].verificationResult.statement.predicateType'
+# -> https://slsa.dev/provenance/v1   (anything else, or a non-zero exit, is a failure)
+
+gh attestation verify oci://ghcr.io/labmonkeys-space/nl6:vX.Y.Z --repo labmonkeys-space/nl6 \
+  --format json --jq '.[].verificationResult.statement.predicateType'
+
+# The full verification detail (verified identity, timestamps, all subjects)
+# is in the JSON if you drop the --jq filter.
 ```
 
 ## Troubleshooting

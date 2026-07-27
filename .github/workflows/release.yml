@@ -147,6 +147,17 @@ jobs:
       packages: write      # push to GHCR
       id-token: write      # cosign keyless + provenance (OIDC)
       attestations: write  # SLSA build provenance
+      # Required by actions/attest v4+ to create the Artifact Metadata
+      # Storage Record it emits when `push-to-registry: true` (per its
+      # README: "necessary to create the artifact storage record").
+      # Without it, v0.19.1's run warned "check that the
+      # artifact-metadata:write permission has been included" and the
+      # storage record was skipped (the attestation itself still worked).
+      # The `release` job above deliberately does NOT carry this scope:
+      # it attests subject-path files without push-to-registry, so no
+      # storage record is attempted there — that is why only this job
+      # warned. (#344)
+      artifact-metadata: write
     env:
       APP_VERSION: ${{ github.ref_name }}
       IMAGE: ghcr.io/${{ github.repository }}
