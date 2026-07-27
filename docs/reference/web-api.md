@@ -175,6 +175,13 @@ Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes
 `noise_rise_db`** — a pure power sag models a lossy span, not a failing one.
 Use both together for the fourth quadrant (power down *and* OSNR down).
 
+Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly*
+constant, which is loss **downstream of the amplifier chain** (a dirty
+receive connector, a patch-panel fault). Loss *upstream* of an amplifier is
+different in reality — the amplifier then adds ASE against a weaker signal,
+so OSNR degrades too. Model that case with both knobs rather than expecting
+`input_power_drop_db` alone to produce it.
+
 Query what is in force with `GET /api/v1/devices/{ip}/optical`:
 
 ```json

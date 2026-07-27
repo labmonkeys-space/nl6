@@ -504,6 +504,24 @@ func TestOsnrPhasorCollapseIsExact(t *testing.T) {
 			}
 		}
 	}
+
+	// The same identity must survive DEGRADATION, where all three functions
+	// apply offsets independently and could drift apart.
+	//
+	// Note what this does and does not prove. It is necessary but NOT
+	// sufficient: the pre-fix implementation (nAse not attenuating, osnrAt
+	// subtracting the sag) satisfied it too, because both sides were wrong the
+	// same way. What discriminates a correct model from that one is
+	// TestDegradeQuadrants asserting OSNR is UNCHANGED under pure attenuation.
+	deg := newOpticalCycler(t, 31, defaultOpticalBand)
+	degradeAt(deg, deg.names[0], 600, 600, 6, 3) // both knobs, bounded window
+	for _, at := range []float64{0, 599, 600, 900, 1199, 1200, 1800} {
+		direct := deg.pInAt(0, at) - deg.nAseAt(0, at)
+		collapsed := deg.osnrAt(0, at)
+		if math.Abs(direct-collapsed) > 1e-9 {
+			t.Fatalf("degraded at %v: pIn-nAse = %v but osnrAt = %v", at, direct, collapsed)
+		}
+	}
 }
 
 // TestOpticalChannelsIndependent guards against a slot-indexing bug
