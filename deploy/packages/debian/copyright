@@ -1,0 +1,15 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: nl6
+Source: https://github.com/labmonkeys-space/nl6
+
+Files: *
+Copyright: 2026 Ronny Trommer <ronny@no42.org>
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+ .
+     http://www.apache.org/licenses/LICENSE-2.0
+ .
+ On Debian systems, the full text of the Apache License version 2.0 can be
+ found in the file /usr/share/common-licenses/Apache-2.0
