@@ -6,8 +6,10 @@
 package main
 
 import (
+	"log"
 	"math/rand"
 	"strings"
+	"sync"
 )
 
 // FlowProfile defines synthetic traffic characteristics for a device category.
@@ -444,5 +446,18 @@ func GetFlowProfile(resourceFile string) *FlowProfile {
 	if p, ok := flowProfileMap[resourceFile]; ok {
 		return p
 	}
+	// Reachable only for OPERATOR-SUPPLIED resource files dropped into the
+	// resources directory at runtime — for repo types the completeness test
+	// (TestFlowCapabilityCompleteness) guarantees a map hit or an explicit
+	// incapable listing. The maps are compiled in, so a custom type cannot
+	// declare its flow story; edge-router ground truth is the least-wrong
+	// default, but the choice must be visible rather than silent (#364).
+	if _, seen := flowFallbackLogged.LoadOrStore(resourceFile, struct{}{}); !seen {
+		log.Printf("flow: device type %q is not in flowProfileMap; using the edge-router "+
+			"flow profile as ground truth (custom type? see issue #364)", resourceFile)
+	}
 	return flowProfileEdgeRouter
 }
+
+// flowFallbackLogged gates the fallback warning to once per type per process.
+var flowFallbackLogged sync.Map
