@@ -68,6 +68,18 @@ contents:
     dst: /etc/nl6/nl6.conf
     type: config|noreplace
 
+  # Debian Policy 12.5 requires /usr/share/doc/<pkg>/copyright.
+  #
+  # This is a machine-readable DEP-5 file, NOT a verbatim copy of ./LICENSE.
+  # The distinction is load-bearing for the SBOM: syft reads the `License:`
+  # field out of this path and does not classify full licence text, so a
+  # verbatim LICENSE yields `licenseDeclared = NOASSERTION` while DEP-5
+  # yields `Apache-2.0` (measured with syft 1.46.0, the version the release
+  # workflow pins). It also clears lintian's
+  # `copyright-without-copyright-notice`.
+  - src: ./deploy/packages/debian/copyright
+    dst: /usr/share/doc/nl6/copyright
+
 scripts:
   postinstall: ./deploy/packages/scripts/postinstall.sh
   preremove: ./deploy/packages/scripts/preremove.sh
