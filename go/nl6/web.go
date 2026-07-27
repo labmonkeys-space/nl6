@@ -598,6 +598,7 @@ func setupRoutes() *mux.Router {
 	// On-demand optical degradation (#334): drive one channel across the FEC
 	// threshold, optionally for a bounded window.
 	api.HandleFunc("/devices/{ip}/optical/{component}/degrade", degradeOpticalHandler).Methods("POST")
+	api.HandleFunc("/devices/{ip}/optical", opticalStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
 	api.HandleFunc("/topology", createTopologyHandler).Methods("POST")
 	api.HandleFunc("/topology", listTopologyHandler).Methods("GET")

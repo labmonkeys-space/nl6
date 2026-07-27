@@ -125,6 +125,13 @@ func degradeOpticalHandler(w http.ResponseWriter, r *http.Request) {
 
 	oc, err := manager.opticalCyclerFor(ip)
 	if err != nil {
+		// "Still initialising" is transient, so it gets 503 like every other
+		// subsystem's not-ready path — a 404 tells a client to stop retrying
+		// something that is about to work.
+		if errors.Is(err, errOpticalNotReady) {
+			sendErrorResponse(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
 		sendErrorResponse(w, err.Error(), http.StatusNotFound)
 		return
 	}
@@ -145,22 +152,71 @@ func degradeOpticalHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cleared := req.InputPowerDropDB == 0 && req.NoiseRiseDB == 0
 	resp := degradeResponse{
 		Device:           ip,
 		Component:        component,
 		InputPowerDropDB: req.InputPowerDropDB,
 		NoiseRiseDB:      req.NoiseRiseDB,
-		Duration:         req.Duration,
-		Cleared:          req.InputPowerDropDB == 0 && req.NoiseRiseDB == 0,
+		Cleared:          cleared,
+	}
+	// A duration on a clear is meaningless — the clear is immediate — and
+	// echoing `{"duration":"10m","cleared":true}` reads as "cleared in 10
+	// minutes". Drop it rather than confirm something that will not happen.
+	if !cleared {
+		resp.Duration = req.Duration
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// opticalStatusHandler implements GET /api/v1/devices/{ip}/optical — what is
+// in force right now on every channel of a device.
+//
+// The POST is otherwise write-only, which is out of step with the rest of the
+// API (every subsystem POST has a status GET) and leaves a second operator,
+// or a caller that lost its response, unable to discover current state.
+func opticalStatusHandler(w http.ResponseWriter, r *http.Request) {
+	ip := mux.Vars(r)["ip"]
+	oc, err := manager.opticalCyclerFor(ip)
+	if err != nil {
+		if errors.Is(err, errOpticalNotReady) {
+			sendErrorResponse(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		sendErrorResponse(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	channels := make([]opticalChannelStatus, 0, len(oc.Components()))
+	for _, name := range oc.Components() {
+		sag, rise, _ := oc.ActiveDegradation(name)
+		channels = append(channels, opticalChannelStatus{
+			Component:        name,
+			InputPowerDropDB: sag,
+			NoiseRiseDB:      rise,
+			Degraded:         sag > 0 || rise > 0,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"device": ip, "channels": channels})
+}
+
+// opticalChannelStatus is one channel's current degradation state.
+type opticalChannelStatus struct {
+	Component        string  `json:"component"`
+	InputPowerDropDB float64 `json:"input_power_drop_db"`
+	NoiseRiseDB      float64 `json:"noise_rise_db"`
+	Degraded         bool    `json:"degraded"`
 }
 
 // opticalCyclerFor resolves a device IP to its published optical engine.
 // Mirrors the gNMI resolver's NotFound/Unavailable split in HTTP terms: a
 // device that cannot have optical channels and one still initialising are
 // both 404 here, but the messages differ so an operator can tell which.
+// errOpticalNotReady marks the transient case so the handler can map it to
+// 503 while permanent absence stays 404.
+var errOpticalNotReady = errors.New("optical engine not ready")
+
 func (sm *SimulatorManager) opticalCyclerFor(ip string) (*OpticalCycler, error) {
 	sm.mu.RLock()
 	dev := sm.devicesByIP[ip]
@@ -169,12 +225,12 @@ func (sm *SimulatorManager) opticalCyclerFor(ip string) (*OpticalCycler, error) 
 		return nil, fmt.Errorf("device %s not found", ip)
 	}
 	if dev.metricsCycler == nil {
-		return nil, fmt.Errorf("device %s has no metrics engine yet", ip)
+		return nil, fmt.Errorf("%w: device %s has no metrics engine yet", errOpticalNotReady, ip)
 	}
 	oc := dev.metricsCycler.OpticalCyclerOf()
 	if oc == nil {
 		if IsOpticalDeviceType(dev.resourceFile) {
-			return nil, fmt.Errorf("device %s is still initialising its optical engine", ip)
+			return nil, fmt.Errorf("%w: device %s is still initialising its optical engine", errOpticalNotReady, ip)
 		}
 		return nil, fmt.Errorf("device %s serves no optical channels (type %s)", ip, strings.TrimSuffix(dev.resourceFile, ".json"))
 	}

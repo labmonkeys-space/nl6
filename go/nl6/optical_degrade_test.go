@@ -7,6 +7,7 @@ package main
 
 import (
 	"math"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,12 +24,12 @@ func degradeAt(oc *OpticalCycler, component string, t0, dur, pInSag, nAseRise fl
 	if dur > 0 {
 		t1 = t0 + dur
 	}
-	cur := oc.episodes[slot].Load()
-	var next []opticalEpisode
-	if cur != nil {
-		next = append(next, *cur...)
+	next := opticalEpisodeLog{}
+	if cur := oc.episodes[slot].Load(); cur != nil {
+		next = *cur
+		next.episodes = append([]opticalEpisode(nil), cur.episodes...)
 	}
-	next = append(next, opticalEpisode{t0: t0, t1: t1, pInSagDB: pInSag, nAseRiseDB: nAseRise})
+	next.episodes = append(next.episodes, opticalEpisode{t0: t0, t1: t1, pInSagDB: pInSag, nAseRiseDB: nAseRise})
 	oc.episodes[slot].Store(&next)
 }
 
@@ -43,9 +44,11 @@ func TestDegradeCrossesFECThreshold(t *testing.T) {
 		t.Fatal("clean channel accrued uncorrectable blocks before any degradation")
 	}
 
-	// Clean sits ~18.3 dB OSNR against a 13.13 dB threshold, so 8 dB of sag
-	// is comfortably past it.
-	degradeAt(oc, och, 600, 300, 8, 0)
+	// Crossing the threshold is an OSNR phenomenon, so it takes a NOISE rise:
+	// clean sits ~18.3 dB OSNR against a 13.13 dB threshold, and attenuation
+	// alone would not move OSNR at all (see TestDegradeQuadrants). A small
+	// power sag rides along to prove the two compose.
+	degradeAt(oc, och, 600, 300, 2, 8)
 
 	base := mustU64(t, oc, och, 600)
 	during := mustU64(t, oc, och, 900)
@@ -65,7 +68,7 @@ func TestDegradeCrossesFECThreshold(t *testing.T) {
 func TestDegradeCounterNeverDecreases(t *testing.T) {
 	oc := newOpticalCycler(t, 12, opticalBandFor(OpticalClean))
 	const och = "OCH-1-1"
-	degradeAt(oc, och, 1000, 500, 9, 0) // one closed window: degrade then revert
+	degradeAt(oc, och, 1000, 500, 0, 9) // one closed window: degrade then revert
 
 	prev := uint64(0)
 	for at := 0.0; at <= 4000; at += 25 {
@@ -172,7 +175,7 @@ func TestDegradeLeavesOffSpineFlat(t *testing.T) {
 func TestDegradeOnlyAffectsNamedChannel(t *testing.T) {
 	oc := newOpticalCycler(t, 16, opticalBandFor(OpticalClean))
 	clean := newOpticalCycler(t, 16, opticalBandFor(OpticalClean))
-	degradeAt(oc, "OCH-1-1", 0, 3600, 9, 0)
+	degradeAt(oc, "OCH-1-1", 0, 3600, 0, 9)
 
 	if decOf(t, oc, "OCH-1-2", OpticalLeafOSNR+"/instant", 600) != decOf(t, clean, "OCH-1-2", OpticalLeafOSNR+"/instant", 600) {
 		t.Error("degrading OCH-1-1 moved OCH-1-2")
@@ -199,14 +202,42 @@ func TestDegradeQuadrants(t *testing.T) {
 	basePwr := decOf(t, base, och, OpticalLeafInputPower+"/instant", at)
 	baseOsnr := decOf(t, base, och, OpticalLeafOSNR+"/instant", at)
 
+	// Attenuation: power falls...
 	if got := decOf(t, atten, och, OpticalLeafInputPower+"/instant", at); math.Abs(got-(basePwr-5)) > 0.02 {
 		t.Errorf("attenuation: input power %v, want ~%v", got, basePwr-5)
 	}
+	// ...and OSNR HOLDS. This is the assertion whose absence let a bug ship in
+	// review: signal and accumulated ASE attenuate together through the same
+	// fibre, so the loss cancels out of their difference. Without it, a pure
+	// power sag drops OSNR 1:1 and the attenuation quadrant silently becomes
+	// the ASE quadrant — so a collector rule for "dirty connector: low power,
+	// normal OSNR, no FEC errors" could never be exercised.
+	if got := decOf(t, atten, och, OpticalLeafOSNR+"/instant", at); got != baseOsnr {
+		t.Errorf("attenuation must leave OSNR intact: %v != %v (signal and ASE attenuate together)", got, baseOsnr)
+	}
+	// And it must stay clear of the FEC threshold: attenuation alone is not
+	// service-affecting, which is exactly what makes it diagnostically
+	// distinct from an ASE fault of the same magnitude.
+	if got := mustU64(t, atten, och, 1800); got != mustU64(t, base, och, 1800) {
+		t.Errorf("attenuation alone accrued uncorrectable blocks; power loss does not degrade OSNR")
+	}
+
+	// ASE: power intact, OSNR down.
 	if got := decOf(t, ase, och, OpticalLeafInputPower+"/instant", at); got != basePwr {
 		t.Errorf("ASE quadrant must leave received power intact: %v != %v", got, basePwr)
 	}
 	if got := decOf(t, ase, och, OpticalLeafOSNR+"/instant", at); math.Abs(got-(baseOsnr-5)) > 0.02 {
 		t.Errorf("ASE quadrant: OSNR %v, want ~%v", got, baseOsnr-5)
+	}
+
+	// Both together: power down AND OSNR down — the fourth quadrant.
+	both := newOpticalCycler(t, 17, band)
+	degradeAt(both, och, 0, 3600, 5, 5)
+	if got := decOf(t, both, och, OpticalLeafInputPower+"/instant", at); math.Abs(got-(basePwr-5)) > 0.02 {
+		t.Errorf("combined: input power %v, want ~%v", got, basePwr-5)
+	}
+	if got := decOf(t, both, och, OpticalLeafOSNR+"/instant", at); math.Abs(got-(baseOsnr-5)) > 0.02 {
+		t.Errorf("combined: OSNR %v, want ~%v", got, baseOsnr-5)
 	}
 }
 
@@ -266,16 +297,90 @@ func TestDegradeT0NeverInThePast(t *testing.T) {
 	if err := oc.Degrade(och, time.Now().Add(-time.Hour), time.Hour, 8, 0); err != nil {
 		t.Fatalf("Degrade: %v", err)
 	}
-	eps := oc.episodes[oc.slot[och]].Load()
-	if eps == nil || len(*eps) != 1 {
-		t.Fatalf("expected 1 episode, got %v", eps)
+	log := oc.episodes[oc.slot[och]].Load()
+	if log == nil || len(log.episodes) != 1 {
+		t.Fatalf("expected 1 episode, got %v", log)
 	}
-	if (*eps)[0].t0 < 0 {
-		t.Errorf("episode t0 = %v; a backdated request must clamp to now, never to a negative elapsed time", (*eps)[0].t0)
+	if log.episodes[0].t0 < 0 {
+		t.Errorf("episode t0 = %v; a backdated request must clamp to now, never to a negative elapsed time", log.episodes[0].t0)
 	}
 	// The counter at t=0 must still be the pristine base — the backdated
 	// request must not have retroactively degraded the start of time.
 	if got, want := mustU64(t, oc, och, 0), oc.uncorrBase[oc.slot[och]]; got != want {
 		t.Errorf("counter at t=0 = %d, want the untouched base %d", got, want)
+	}
+}
+
+// TestDegradeConcurrentSupersede is the race the review caught: with t0
+// computed once outside the CAS retry, two concurrent POSTs could each win a
+// round and leave OVERLAPPING episodes that sum instead of superseding — and
+// the loser's t0 would predate the winner's commit, retroactively changing
+// already-observable values. Recomputing inside the loop closes it.
+//
+// Run under -race. The assertion is on the outcome, not the timing: whatever
+// order they land in, exactly one episode may be active afterwards.
+func TestDegradeConcurrentSupersede(t *testing.T) {
+	oc := newOpticalCycler(t, 21, opticalBandFor(OpticalClean))
+	const och = "OCH-1-1"
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = oc.Degrade(och, time.Now(), 0, 4, 0) // open-ended, identical
+		}()
+	}
+	wg.Wait()
+
+	sag, _, _ := oc.ActiveDegradation(och)
+	if sag != 4 {
+		t.Errorf("active sag = %v after 8 concurrent identical requests, want 4 — overlapping episodes summed instead of superseding", sag)
+	}
+	// No episode may start before the last commit: an overlap would show up as
+	// two simultaneously-active windows.
+	log := oc.episodes[oc.slot[och]].Load()
+	now := time.Since(oc.startTime).Seconds()
+	active := 0
+	for _, e := range log.episodes {
+		if e.active(now) {
+			active++
+		}
+	}
+	if active != 1 {
+		t.Errorf("%d episodes active at once, want exactly 1", active)
+	}
+}
+
+// TestDegradeEpisodeListStaysBounded: a harness looping degrade/clear must not
+// grow memory without limit, and the collapse that bounds it must not disturb
+// the counter — folding elapsed episodes into a running total is only safe if
+// the total is preserved.
+func TestDegradeEpisodeListStaysBounded(t *testing.T) {
+	oc := newOpticalCycler(t, 22, opticalBandFor(OpticalClean))
+	const och = "OCH-1-1"
+	slot := oc.slot[och]
+
+	prev := uint64(0)
+	for i := 0; i < opticalEpisodeCap*3; i++ {
+		if err := oc.Degrade(och, time.Now(), time.Millisecond, 0, 9); err != nil {
+			t.Fatalf("Degrade %d: %v", i, err)
+		}
+		// The counter must never walk backwards across a collapse.
+		now := time.Since(oc.startTime).Seconds()
+		got := oc.uncorrBlocksAt(slot, now)
+		if got < prev {
+			t.Fatalf("counter decreased across collapse at iteration %d: %d -> %d", i, prev, got)
+		}
+		prev = got
+	}
+
+	log := oc.episodes[slot].Load()
+	if len(log.episodes) > opticalEpisodeCap+1 {
+		t.Errorf("retained %d episodes after %d requests; the list must stay bounded",
+			len(log.episodes), opticalEpisodeCap*3)
+	}
+	if log.settledUntil == 0 {
+		t.Error("no collapse happened, so this test did not exercise the bound")
 	}
 }

@@ -310,7 +310,7 @@ type OpticalCycler struct {
 	// never in the past, and readers take a lock-free snapshot, so no value a
 	// reader could already have observed can change. One slice pointer per
 	// channel, in the same slot order as every other field.
-	episodes []atomic.Pointer[[]opticalEpisode]
+	episodes []atomic.Pointer[opticalEpisodeLog]
 }
 
 // positiveInf is the open-ended episode end. Named because `math.Inf(1)`
@@ -359,7 +359,15 @@ func (oc *OpticalCycler) pInAt(slot int, t float64) float64 {
 func (oc *OpticalCycler) nAseAt(slot int, t float64) float64 {
 	w := opticalOmega(opticalDialPeriodSec)
 	base := oc.nAseMean[slot] + oc.nAseAmp[slot]*math.Sin(w*t+oc.nAsePhase[slot])
-	return base + oc.offsetsAt(slot, t).nAseRiseDB
+	off := oc.offsetsAt(slot, t)
+	// Accumulated ASE is attenuated by a span loss just as the signal is —
+	// they travel the same fibre — so pInSagDB is subtracted here too. That
+	// cancellation is the whole point of modelling two dials: it makes the
+	// ATTENUATION quadrant (power down, OSNR held) reachable, and a collector
+	// rule that tells a dirty connector from a sick amplifier depends on it.
+	// Omitting it would drop OSNR 1:1 with power and collapse the two
+	// quadrants into one.
+	return base + off.nAseRiseDB - off.pInSagDB
 }
 
 // ---- derived receive-side cascade ---------------------------------
@@ -467,17 +475,42 @@ func (oc *OpticalCycler) uncorrBlocksAt(slot int, t float64) uint64 {
 // numeric integration over uptime, and an undegraded channel takes exactly
 // the single-segment path it always did.
 func (oc *OpticalCycler) aboveThresholdSeconds(slot int, t float64) float64 {
-	bounds := oc.episodeBreakpoints(slot, t)
+	var log *opticalEpisodeLog
+	if slot >= 0 && slot < len(oc.episodes) {
+		log = oc.episodes[slot].Load()
+	}
+	var settled, from float64
+	if log != nil {
+		settled, from = log.settledAbove, log.settledUntil
+	}
+	if t <= from {
+		// Before the collapse point the discarded episodes are no longer
+		// available to integrate, so the settled total is the answer. Every
+		// production read is at ~now, which is at or after `from`; only a
+		// backdated query lands here. See collapseSettled.
+		return settled
+	}
+	return settled + oc.aboveThresholdOver(slot, log, from, t)
+}
+
+// aboveThresholdOver integrates [from, to] against an EXPLICIT log, splitting
+// at that log's episode boundaries. Taking the log as a parameter is what lets
+// collapseSettled fold a not-yet-published log.
+func (oc *OpticalCycler) aboveThresholdOver(slot int, log *opticalEpisodeLog, from, to float64) float64 {
+	if to <= from {
+		return 0
+	}
+	bounds := breakpointsIn(log, from, to)
 	if len(bounds) == 0 {
-		return oc.aboveThresholdSegment(slot, 0, t)
+		return oc.aboveThresholdSegment(slot, log, from, to)
 	}
 	total := 0.0
-	prev := 0.0
+	prev := from
 	for _, b := range bounds {
-		total += oc.aboveThresholdSegment(slot, prev, b)
+		total += oc.aboveThresholdSegment(slot, log, prev, b)
 		prev = b
 	}
-	return total + oc.aboveThresholdSegment(slot, prev, t)
+	return total + oc.aboveThresholdSegment(slot, log, prev, to)
 }
 
 // aboveThresholdSegment is the closed form over one segment [ta, tb) on which
@@ -486,11 +519,11 @@ func (oc *OpticalCycler) aboveThresholdSeconds(slot int, t float64) float64 {
 // boundaries are exactly the instants it can change, so any interior point
 // reports the value that holds across the whole segment, and the midpoint
 // avoids landing on a half-open boundary.
-func (oc *OpticalCycler) aboveThresholdSegment(slot int, ta, tb float64) float64 {
+func (oc *OpticalCycler) aboveThresholdSegment(slot int, log *opticalEpisodeLog, ta, tb float64) float64 {
 	if tb <= ta {
 		return 0
 	}
-	drop := oc.offsetsAt(slot, ta+(tb-ta)/2).osnrDropDB()
+	drop := offsetsIn(log, ta+(tb-ta)/2).osnrDropDB()
 	amp := oc.osnrAmp[slot]
 	// u is the threshold expressed in units of the sinusoid: BER is above
 	// threshold when sin(theta) < u.
@@ -799,7 +832,7 @@ func (c *MetricsCycler) InitOpticalCycler(resources *DeviceResources, seed int64
 		pdlDB:        make([]float64, n),
 		uncorrBase:   make([]uint64, n),
 		uncorrRate:   make([]float64, n),
-		episodes:     make([]atomic.Pointer[[]opticalEpisode], n),
+		episodes:     make([]atomic.Pointer[opticalEpisodeLog], n),
 	}
 
 	rng := rand.New(rand.NewSource(seed ^ opticalSeedSalt))

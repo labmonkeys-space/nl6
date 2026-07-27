@@ -181,3 +181,91 @@ func TestDegradeAPI_PacketDeviceMessageNamesTheType(t *testing.T) {
 		t.Errorf("message should explain the type has no channels and name it; got %s", body)
 	}
 }
+
+// TestDegradeAPI_StatusGet pairs the POST with a readable status, so a second
+// operator (or a caller that lost its response) can discover what is in force.
+func TestDegradeAPI_StatusGet(t *testing.T) {
+	f := newDegradeFixture(t)
+	f.post(t, "/api/v1/devices/10.42.0.1/optical/OCH-1-2/degrade", `{"input_power_drop_db":4,"noise_rise_db":1}`)
+
+	req := httptest.NewRequest("GET", "/api/v1/devices/10.42.0.1/optical", nil)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Device   string `json:"device"`
+		Channels []struct {
+			Component        string  `json:"component"`
+			InputPowerDropDB float64 `json:"input_power_drop_db"`
+			NoiseRiseDB      float64 `json:"noise_rise_db"`
+			Degraded         bool    `json:"degraded"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Channels) != 2 {
+		t.Fatalf("got %d channels, want 2", len(body.Channels))
+	}
+	for _, c := range body.Channels {
+		switch c.Component {
+		case "OCH-1-2":
+			if !c.Degraded || c.InputPowerDropDB != 4 || c.NoiseRiseDB != 1 {
+				t.Errorf("OCH-1-2 status = %+v, want the degradation just applied", c)
+			}
+		case "OCH-1-1":
+			if c.Degraded {
+				t.Errorf("OCH-1-1 reported degraded; only OCH-1-2 was")
+			}
+		default:
+			t.Errorf("unexpected component %q", c.Component)
+		}
+	}
+}
+
+// TestDegradeAPI_NotReadyIs503: "still initialising" is transient. A 404 there
+// tells a client to stop retrying something that is about to work, so it gets
+// 503 like every other subsystem's not-ready path.
+func TestDegradeAPI_NotReadyIs503(t *testing.T) {
+	f := newDegradeFixture(t)
+	// An optical device TYPE whose engine has not been published yet.
+	initialising := &DeviceSimulator{
+		ID: "optical-initialising", IP: net.IPv4(10, 42, 0, 3),
+		resourceFile: opticalResourceFile, metricsCycler: &MetricsCycler{},
+	}
+	f.mgr.devices[initialising.ID] = initialising
+	f.mgr.deviceIPs[initialising.IP.String()] = struct{}{}
+	f.mgr.indexDeviceByIP(initialising)
+
+	rr := f.post(t, "/api/v1/devices/10.42.0.3/optical/OCH-1-1/degrade", `{"noise_rise_db":1}`)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("status %d, want 503 for an optical device mid-initialisation; body=%s", rr.Code, rr.Body.String())
+	}
+	// The permanent case stays 404.
+	if rr := f.post(t, "/api/v1/devices/10.42.0.2/optical/OCH-1-1/degrade", `{"noise_rise_db":1}`); rr.Code != http.StatusNotFound {
+		t.Errorf("packet device: status %d, want 404 (permanent)", rr.Code)
+	}
+}
+
+// TestDegradeAPI_ClearDropsDurationEcho: `{"duration":"10m"}` with no offsets
+// is an immediate clear, so echoing the duration back would read as "cleared
+// in 10 minutes".
+func TestDegradeAPI_ClearDropsDurationEcho(t *testing.T) {
+	f := newDegradeFixture(t)
+	rr := f.post(t, "/api/v1/devices/10.42.0.1/optical/OCH-1-1/degrade", `{"duration":"10m"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rr.Code)
+	}
+	var resp degradeResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Cleared {
+		t.Error("a body with no offsets must report cleared")
+	}
+	if resp.Duration != "" {
+		t.Errorf("cleared response echoed duration %q; that reads as \"cleared in 10 minutes\"", resp.Duration)
+	}
+}
