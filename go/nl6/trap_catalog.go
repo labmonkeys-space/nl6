@@ -51,12 +51,48 @@ const (
 const (
 	roleLinkDown = "link-down"
 	roleLinkUp   = "link-up"
+
+	// Optical threshold roles (#347). Four rather than two, because a raise
+	// and its clear are SEPARATE catalog entries here.
+	//
+	// The link roles above pair one OID with another: linkDown and linkUp are
+	// distinct notifications. Ciena models an optical alarm the other way
+	// round — ONE notification type (wsLinkStateAlarmNotification) whose
+	// varbinds carry the condition state — so raise and clear share a trap OID
+	// and differ only in the severity and condition-flag values. Reusing a
+	// two-role pairing would have forced either a fabricated second OID or a
+	// clear that a collector could not distinguish from a raise.
+	roleOpticalSDRaise = "optical-sd-raise"
+	roleOpticalSDClear = "optical-sd-clear"
+	roleOpticalSFRaise = "optical-sf-raise"
+	roleOpticalSFClear = "optical-sf-clear"
 )
+
+// opticalRoleFor maps an evaluator transition onto the catalog role that
+// publishes it. Keeping the mapping here, next to the constants, means the
+// detection side never has to know catalog vocabulary.
+func opticalRoleFor(cond opticalCondition, raised bool) string {
+	switch {
+	case cond == opticalCondSD && raised:
+		return roleOpticalSDRaise
+	case cond == opticalCondSD:
+		return roleOpticalSDClear
+	case raised:
+		return roleOpticalSFRaise
+	default:
+		return roleOpticalSFClear
+	}
+}
 
 // validRole reports whether a catalog `role` value is recognized. Empty is
 // valid (untagged). Used by both trap and syslog catalog loaders.
 func validRole(role string) bool {
-	return role == "" || role == roleLinkDown || role == roleLinkUp
+	switch role {
+	case "", roleLinkDown, roleLinkUp,
+		roleOpticalSDRaise, roleOpticalSDClear, roleOpticalSFRaise, roleOpticalSFClear:
+		return true
+	}
+	return false
 }
 
 // linkTrapOIDs are the well-known linkDown/linkUp snmpTrapOIDs, used only to

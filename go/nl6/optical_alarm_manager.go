@@ -1,0 +1,144 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import (
+	"context"
+	"log"
+	"net"
+)
+
+// optical_alarm_manager.go — turns an SD/SF threshold crossing into a Ciena
+// notification (#347, tasks 6.7-6.8). The detection half is optical_alarm.go;
+// this is the publication half.
+//
+// It mirrors wireStateNotify's discipline exactly, because the hazards are the
+// same: snapshot the exporters under the device read lock, then fire OUTSIDE
+// it so a UDP send never holds a device lock, and rely on each exporter's
+// `closing` guard to make the snapshot-then-fire window safe against a
+// concurrent teardown.
+//
+// The one structural difference from the link-state wiring is the role model.
+// A link transition picks one of two roles because linkDown and linkUp are
+// distinct notifications. An optical transition picks one of FOUR, because
+// Ciena publishes raise and clear as the same notification type with different
+// varbind values — see the role constants in trap_catalog.go.
+
+// StartOpticalAlarmSubsystem builds the shared evaluator, wires its notify hook
+// to the trap and syslog exporters, and starts the single evaluator goroutine.
+// Returns nil when the fleet has no optical devices, so a packet-only
+// simulator pays nothing.
+//
+// Shutdown-only Stop, matching every other subsystem here: the evaluator holds
+// no per-device resources beyond heap entries, and a runtime restart would
+// need attach-path lock discipline that does not exist yet.
+func (sm *SimulatorManager) StartOpticalAlarmSubsystem(ctx context.Context) *OpticalAlarmEvaluator {
+	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{
+		Notify: sm.publishOpticalAlarm,
+	})
+
+	enrolled := 0
+	sm.mu.RLock()
+	for _, dev := range sm.devicesByIP {
+		if dev == nil || dev.metricsCycler == nil {
+			continue
+		}
+		if oc := dev.metricsCycler.OpticalCyclerOf(); oc != nil {
+			ev.Register(dev.IP, oc)
+			enrolled++
+		}
+	}
+	sm.mu.RUnlock()
+
+	if enrolled == 0 {
+		return nil
+	}
+	sm.opticalAlarms = ev
+	go ev.Run(ctx)
+	log.Printf("Optical alarm subsystem: ready (%d optical device(s); SD at %.2f dB, SF at %.2f dB, "+
+		"hysteresis %.1f dB, soak %s)", enrolled,
+		opticalSDThresholdDB(), opticalSFThresholdDB(), opticalAlarmHysteresisDB, opticalAlarmSoak)
+	return ev
+}
+
+// publishOpticalAlarm is the evaluator's notify hook: one transition in, a
+// trap and a syslog line out.
+func (sm *SimulatorManager) publishOpticalAlarm(evt OpticalAlarmEvent) {
+	role := opticalRoleFor(evt.Condition, evt.Raised)
+	ip := evt.DeviceIP.String()
+
+	sm.mu.RLock()
+	dev := sm.devicesByIP[ip]
+	sm.mu.RUnlock()
+	if dev == nil {
+		return
+	}
+
+	// Snapshot under the device lock, fire outside it. Same reasoning as
+	// wireStateNotify: a UDP send must never hold a device lock, and a
+	// concurrently-closing exporter's fire is a no-op via its closing guard.
+	dev.mu.RLock()
+	tx := dev.trapExporter
+	sx := dev.syslogExporter
+	dev.mu.RUnlock()
+
+	// ifIndex -1 means "resolve from the exporter's own ifIndexFn". Optical
+	// channels are keyed by component name, not ifIndex, so there is no
+	// meaningful index to pin here; the component travels in the varbinds and
+	// the message body instead.
+	const noIfIndex = -1
+
+	if tx != nil {
+		if cat := sm.CatalogFor(ip); cat != nil {
+			for _, entry := range cat.EntriesByRole(role) {
+				// State-driven fires bypass the Poisson global cap on initial
+				// transmit (task 6.8, existing Tier C convention): an alarm is
+				// an event, not steady-state chatter, and dropping it to a
+				// rate limiter would lose the very transition a collector is
+				// waiting for.
+				tx.fireWithSource(entry, opticalOverrides(evt), sourceStateDriven, noIfIndex)
+			}
+		}
+	}
+	if sx != nil {
+		if cat := sm.SyslogCatalogFor(ip); cat != nil {
+			for _, entry := range cat.EntriesByRole(role) {
+				_ = sx.fireWithSource(entry, opticalOverrides(evt), sourceStateDriven, noIfIndex)
+			}
+		}
+	}
+}
+
+// opticalOverrides supplies the per-fire template values an optical alarm
+// carries. `IfName` is reused as the component slot because it is the
+// vocabulary's existing "which port is this about" field, and a collector
+// reading the Instance varbind wants the channel name there — inventing a
+// tenth template field for the same idea would fragment the vocabulary.
+func opticalOverrides(evt OpticalAlarmEvent) map[string]string {
+	return map[string]string{
+		"IfName": evt.Component,
+	}
+}
+
+// RegisterOpticalDevice enrolls a newly created device's channels, so a device
+// created after startup still raises alarms. No-op when the subsystem is not
+// running or the device has no optical engine.
+func (sm *SimulatorManager) RegisterOpticalDevice(dev *DeviceSimulator) {
+	if sm.opticalAlarms == nil || dev == nil || dev.metricsCycler == nil {
+		return
+	}
+	if oc := dev.metricsCycler.OpticalCyclerOf(); oc != nil {
+		sm.opticalAlarms.Register(dev.IP, oc)
+	}
+}
+
+// DeregisterOpticalDevice drops a deleted device's channels from the evaluator.
+func (sm *SimulatorManager) DeregisterOpticalDevice(ip net.IP) {
+	if sm.opticalAlarms == nil {
+		return
+	}
+	sm.opticalAlarms.Deregister(ip)
+}

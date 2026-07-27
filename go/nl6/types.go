@@ -457,6 +457,11 @@ type SimulatorManager struct {
 	// convention — test-harness use case, no rate-limit competition).
 	revertTimers sync.Map // revertKey → *revertTimer
 
+	// opticalAlarms is the shared SD/SF threshold evaluator (#347). Nil when
+	// the fleet has no optical devices, so a packet-only simulator starts no
+	// evaluator goroutine at all.
+	opticalAlarms *OpticalAlarmEvaluator
+
 	// revertTimerCounts is the per-device atomic counter of in-flight
 	// auto-revert goroutines (string IP → *atomic.Int64). Schedule
 	// rejects when the counter would exceed `maxRevertTimersPerDevice`;
