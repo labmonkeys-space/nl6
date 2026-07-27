@@ -595,6 +595,10 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
 	api.HandleFunc("/dns/status", dnsStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
+	// On-demand optical degradation (#334): drive one channel across the FEC
+	// threshold, optionally for a bounded window.
+	api.HandleFunc("/devices/{ip}/optical/{component}/degrade", degradeOpticalHandler).Methods("POST")
+	api.HandleFunc("/devices/{ip}/optical", opticalStatusHandler).Methods("GET")
 	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
 	api.HandleFunc("/topology", createTopologyHandler).Methods("POST")
 	api.HandleFunc("/topology", listTopologyHandler).Methods("GET")

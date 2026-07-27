@@ -24,6 +24,8 @@ management web UI at `/`.
 | `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. |
 | `/api/v1/syslog/status` | GET | UDP syslog export status, counters, and per-type catalog map. |
 | `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. |
+| `/api/v1/devices/{ip}/optical/{component}/degrade` | POST | Degrade one optical channel on demand (optional auto-expiring window). |
+| `/api/v1/devices/{ip}/optical` | GET | Current degradation state of every optical channel on a device. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
@@ -123,6 +125,77 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "resource_file": "pure_storage_flasharray.json"
   }'
 ```
+
+### On-demand optical degradation
+
+`POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named
+optical channel across the SD-FEC threshold on demand — the tool for
+validating threshold and alarm logic without waiting for a health band to
+wander there.
+
+```bash
+# Drive OCH-1-1 past the FEC threshold for 30 seconds, then back automatically.
+# Crossing the threshold is an OSNR phenomenon, so it takes a noise rise:
+# attenuation alone drops power without moving OSNR (see the quadrant table).
+curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degrade \
+  -H "Content-Type: application/json" \
+  -d '{"noise_rise_db": 8, "duration": "30s"}'
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `input_power_drop_db` | number | Attenuates received power. Signal and accumulated ASE fall together, so power drops while **OSNR is unchanged** and no FEC errors accrue — a fibre or connector fault. |
+| `noise_rise_db` | number | Raises accumulated ASE only. Power holds while OSNR falls — a sick amplifier. |
+| `duration` | Go duration string | Optional. Omitted means open-ended; capped at 24 h. |
+
+Two knobs rather than one severity dial because they select which diagnostic
+quadrant the fault lands in, and collector correlation rules key on exactly
+that difference. Both are optional; **a request with neither (or an empty
+body) clears** active degradation on that channel.
+
+The whole receive cascade follows — `input-power`, `osnr`, `esnr`, `q-value`,
+`pre-fec-ber` and `fec-uncorrectable-blocks` — while the off-spine leaves
+(`output-power`, `laser-bias-current`, `chromatic-dispersion`,
+`polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
+That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that
+moved every needle together would teach a collector nothing.
+
+**Revert needs no timer.** A degradation window is frozen at publish, and the
+value engine is a pure function of elapsed time, so the channel returns to
+its band by arithmetic when the window ends — there is no scheduled mutation
+to cancel. A second POST on the same channel supersedes the first.
+
+**`fec-uncorrectable-blocks` never decreases** across a degrade → revert
+cycle. The counter is the time integral of an above-threshold indicator, and
+degradation is stored as append-only immutable episodes precisely so that
+reverting cannot remove already-elapsed degradation from that integral. A
+counter that walked backwards would be read as a device reboot.
+
+Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes
+`noise_rise_db`** — a pure power sag models a lossy span, not a failing one.
+Use both together for the fourth quadrant (power down *and* OSNR down).
+
+Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly*
+constant, which is loss **downstream of the amplifier chain** (a dirty
+receive connector, a patch-panel fault). Loss *upstream* of an amplifier is
+different in reality — the amplifier then adds ASE against a weaker signal,
+so OSNR degrades too. Model that case with both knobs rather than expecting
+`input_power_drop_db` alone to produce it.
+
+Query what is in force with `GET /api/v1/devices/{ip}/optical`:
+
+```json
+{"device":"10.42.0.1","channels":[
+  {"component":"OCH-1-1","input_power_drop_db":0,"noise_rise_db":0,"degraded":false},
+  {"component":"OCH-1-2","input_power_drop_db":4,"noise_rise_db":1,"degraded":true}
+]}
+```
+
+Responses: `200` with the episode echoed back; `404` for an unknown device,
+an unknown component (the body lists `availableComponents`), or a device type
+with no optical channels; `503` for an optical device still initialising its
+engine (transient — retry); `400` for a malformed body, an unknown field, a
+non-positive or over-cap `duration`, or an out-of-range offset.
 
 ### Optical health band
 
