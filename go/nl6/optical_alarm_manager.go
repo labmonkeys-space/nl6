@@ -35,33 +35,43 @@ import (
 // Shutdown-only Stop, matching every other subsystem here: the evaluator holds
 // no per-device resources beyond heap entries, and a runtime restart would
 // need attach-path lock discipline that does not exist yet.
-func (sm *SimulatorManager) StartOpticalAlarmSubsystem(ctx context.Context) *OpticalAlarmEvaluator {
+func (sm *SimulatorManager) StartOpticalAlarmSubsystem(ctx context.Context) {
 	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{
 		Notify: sm.publishOpticalAlarm,
 	})
 
-	enrolled := 0
+	// Published BEFORE any device is enrolled, and unconditionally, matching
+	// every other subsystem here.
+	//
+	// The first cut enrolled from a snapshot of devicesByIP and returned
+	// without publishing when that was empty. At the point subsystems start,
+	// it always is -- the auto-start batch is created afterwards, partly from
+	// a background goroutine -- so the evaluator was never published, and
+	// RegisterOpticalDevice then no-oped forever. An all-optical fleet raised
+	// nothing at all.
+	//
+	// Stored under sm.mu because device-creation goroutines read it via
+	// RegisterOpticalDevice.
+	sm.mu.Lock()
+	sm.opticalAlarms = ev
+	sm.mu.Unlock()
+
+	go ev.Run(ctx)
+	log.Printf("Optical alarm subsystem: ready (SD at %.2f dB, SF at %.2f dB, hysteresis %.1f dB, "+
+		"soak %s) — awaiting optical devices",
+		opticalSDThresholdDB(), opticalSFThresholdDB(), opticalAlarmHysteresisDB, opticalAlarmSoak)
+
+	// Enrol anything that already exists (a restart path, or a caller that
+	// starts subsystems late). Normally a no-op.
 	sm.mu.RLock()
+	devs := make([]*DeviceSimulator, 0, len(sm.devicesByIP))
 	for _, dev := range sm.devicesByIP {
-		if dev == nil || dev.metricsCycler == nil {
-			continue
-		}
-		if oc := dev.metricsCycler.OpticalCyclerOf(); oc != nil {
-			ev.Register(dev.IP, oc)
-			enrolled++
-		}
+		devs = append(devs, dev)
 	}
 	sm.mu.RUnlock()
-
-	if enrolled == 0 {
-		return nil
+	for _, dev := range devs {
+		sm.RegisterOpticalDevice(dev)
 	}
-	sm.opticalAlarms = ev
-	go ev.Run(ctx)
-	log.Printf("Optical alarm subsystem: ready (%d optical device(s); SD at %.2f dB, SF at %.2f dB, "+
-		"hysteresis %.1f dB, soak %s)", enrolled,
-		opticalSDThresholdDB(), opticalSFThresholdDB(), opticalAlarmHysteresisDB, opticalAlarmSoak)
-	return ev
 }
 
 // publishOpticalAlarm is the evaluator's notify hook: one transition in, a
@@ -127,18 +137,27 @@ func opticalOverrides(evt OpticalAlarmEvent) map[string]string {
 // created after startup still raises alarms. No-op when the subsystem is not
 // running or the device has no optical engine.
 func (sm *SimulatorManager) RegisterOpticalDevice(dev *DeviceSimulator) {
-	if sm.opticalAlarms == nil || dev == nil || dev.metricsCycler == nil {
+	if dev == nil || dev.metricsCycler == nil {
+		return
+	}
+	sm.mu.RLock()
+	ev := sm.opticalAlarms
+	sm.mu.RUnlock()
+	if ev == nil {
 		return
 	}
 	if oc := dev.metricsCycler.OpticalCyclerOf(); oc != nil {
-		sm.opticalAlarms.Register(dev.IP, oc)
+		ev.Register(dev.IP, oc)
 	}
 }
 
 // DeregisterOpticalDevice drops a deleted device's channels from the evaluator.
 func (sm *SimulatorManager) DeregisterOpticalDevice(ip net.IP) {
-	if sm.opticalAlarms == nil {
+	sm.mu.RLock()
+	ev := sm.opticalAlarms
+	sm.mu.RUnlock()
+	if ev == nil {
 		return
 	}
-	sm.opticalAlarms.Deregister(ip)
+	ev.Deregister(ip)
 }

@@ -330,6 +330,20 @@ func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
 }
 
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
+	// Drop the device's optical channels from the shared SD/SF evaluator
+	// before teardown, so a deleted device cannot keep raising alarms.
+	//
+	// Done under its own short RLock and BEFORE the write lock below:
+	// DeregisterOpticalDevice takes sm.mu itself, and Go's RWMutex is not
+	// reentrant, so calling it from inside the locked section would deadlock.
+	// Deregistering a device that a racing delete already removed is
+	// harmless (the evaluator's map lookup simply misses).
+	sm.mu.RLock()
+	victim := sm.devices[deviceID]
+	sm.mu.RUnlock()
+	if victim != nil {
+		sm.DeregisterOpticalDevice(victim.IP)
+	}
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 

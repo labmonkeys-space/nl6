@@ -33,28 +33,63 @@ func TestOpticalAlarmThresholdsMatchTheCascade(t *testing.T) {
 	}
 }
 
-// TestOpticalAlarmTierMapping: the shipped health bands must land where the
-// tier names promise. `degraded` is the interesting one — visibly elevated
-// BER that FEC still corrects is exactly what a predictive alarm is for, so
-// it must raise SD and NOT SF.
-func TestOpticalAlarmTierMapping(t *testing.T) {
-	tests := []struct {
-		tier   OpticalScenario
-		sd, sf bool
+// TestOpticalAlarmTierEnvelopes replaces a nominal-mean check that could not
+// see the bug it was meant to catch.
+//
+// The first version compared `pInMeanDBm - nAseMeanDBm` per tier: no
+// per-channel jitter, no sine amplitude, one point per tier. It passed while
+// 70% of `typical` channels crossed the SD line every dial period, because
+// what breaks is the envelope's tails -- exactly what optical_cycler.go warns
+// a single-point test cannot see. So this sweeps seeds AND samples across a
+// full dial period, the shape TestOpticalBandContractsHoldAcrossSeeds uses.
+//
+// Asserted, deliberately narrower than "tier X means alarm Y":
+//
+//	clean, typical : never raise SD (healthy tiers stay silent)
+//	degraded       : never reaches SF (it is elevated, not service-affecting)
+//	failing        : always past SF
+//
+// `degraded` is NOT asserted to hold SD. Its envelope straddles the SD line by
+// construction, so it raises and clears as it wanders; see the sizing note on
+// opticalSDThresholdRaiseDB.
+func TestOpticalAlarmTierEnvelopes(t *testing.T) {
+	const seeds = 200
+	steps := []float64{0, 300, 600, 900, 1200, 1500, 1800, 2100, 2400, 2700, 3000, 3300, 3599}
+
+	for _, tc := range []struct {
+		tier             OpticalScenario
+		mayRaiseSD       bool
+		mustAlwaysBeSF   bool
+		mustNeverReachSF bool
 	}{
-		{OpticalClean, false, false},
-		{OpticalTypical, false, false},
-		{OpticalDegraded, true, false},
-		{OpticalFailing, true, true},
-	}
-	for _, tc := range tests {
-		b := opticalBandFor(tc.tier)
-		osnr := b.pInMeanDBm - b.nAseMeanDBm
-		if got := osnr < opticalSDThresholdDB(); got != tc.sd {
-			t.Errorf("%s (osnr %.2f): SD=%v, want %v", tc.tier, osnr, got, tc.sd)
-		}
-		if got := osnr < opticalSFThresholdDB(); got != tc.sf {
-			t.Errorf("%s (osnr %.2f): SF=%v, want %v", tc.tier, osnr, got, tc.sf)
+		{OpticalClean, false, false, true},
+		{OpticalTypical, false, false, true},
+		{OpticalDegraded, true, false, true},
+		{OpticalFailing, true, true, false},
+	} {
+		band := opticalBandFor(tc.tier)
+		for seed := int64(0); seed < seeds; seed++ {
+			oc := newOpticalCycler(t, seed, band)
+			for slot, name := range oc.names {
+				for _, at := range steps {
+					osnr := oc.osnrAt(slot, at)
+					if !tc.mayRaiseSD && osnr < opticalSDThresholdDB() {
+						t.Fatalf("%s seed=%d %s t=%v: OSNR %.2f is below the SD line %.2f; "+
+							"a healthy tier must never raise a predictive alarm",
+							tc.tier, seed, name, at, osnr, opticalSDThresholdDB())
+					}
+					if tc.mustNeverReachSF && osnr < opticalSFThresholdDB() {
+						t.Fatalf("%s seed=%d %s t=%v: OSNR %.2f reached the SF line %.2f; "+
+							"only failing may be service-affecting",
+							tc.tier, seed, name, at, osnr, opticalSFThresholdDB())
+					}
+					if tc.mustAlwaysBeSF && osnr >= opticalSFThresholdDB() {
+						t.Fatalf("%s seed=%d %s t=%v: OSNR %.2f cleared the SF line %.2f; "+
+							"failing must be persistently service-affecting",
+							tc.tier, seed, name, at, osnr, opticalSFThresholdDB())
+					}
+				}
+			}
 		}
 	}
 }

@@ -62,12 +62,38 @@ const (
 	// as the block counter's, by construction.
 	opticalSFThresholdBER = opticalSDFECThresholdBER
 
-	// opticalSDThresholdBER is the predictive threshold. Chosen to sit between
-	// the shipped `typical` and `degraded` bands (1.0e-03 and 3.2e-03), so a
-	// `degraded` device raises SD and stays clear of SF — which is exactly the
-	// window the degraded tier exists to represent — while a `typical` device
-	// stays quiet.
-	opticalSDThresholdBER = 2e-3
+	// opticalSDThresholdRaiseDB is the predictive threshold, in dB rather than
+	// BER, because dB is the axis the envelope arithmetic and the hysteresis
+	// both live on.
+	//
+	// It is sized against the JITTER ENVELOPE, not the nominal band means. The
+	// first cut here used 2e-3 BER (16.06 dB), picked from the nominal means,
+	// and 70% of `typical` channels dipped below it once per dial period --
+	// the same mistake #352 fixed in the bands themselves, repeated one layer
+	// up. Measured envelopes over 300 seeds:
+	//
+	//	tier       min     max
+	//	clean    17.05   19.51
+	//	typical  15.18   18.14
+	//	degraded 13.74   17.41
+	//
+	// Note what those numbers rule out. For `typical` never to raise, SD must
+	// sit below 15.18; for `degraded` never to CLEAR, SD+hysteresis must sit
+	// above 17.41, i.e. SD above 16.91. Both cannot hold, because the tier
+	// envelopes overlap: #352 separated the tier MEANS and said plainly that
+	// instantaneous values may still interleave, which is the sine amplitude
+	// doing its job.
+	//
+	// So SD is deliberately NOT a tier-membership signal. It is placed below
+	// every healthy tier's envelope, so `clean` and `typical` are silent, and
+	// `degraded` -- whose envelope straddles it -- raises and clears SD as it
+	// wanders. That is the intended reading of a predictive alarm on a
+	// degrading span, not a defect. `degraded` still never reaches SF, which
+	// is the guarantee that actually matters and is asserted by test.
+	//
+	// 14.3 leaves 0.88 dB below typical's worst case, and 0.38 dB below it
+	// even after the clear margin is added.
+	opticalSDThresholdRaiseDB = 14.3
 
 	// opticalAlarmHysteresisDB is how far OSNR must recover ABOVE a raise
 	// threshold before the corresponding clear is published. Without it a
@@ -97,25 +123,14 @@ const (
 //
 // Derived from the same cascade as the thresholds themselves, by bisection,
 // so the two can never drift apart. Memoised: each costs ~100 erfc+pow pairs.
-var (
-	opticalSDThresholdDB = sync.OnceValue(func() float64 { return osnrForBER(opticalSDThresholdBER) })
-	opticalSFThresholdDB = sync.OnceValue(func() float64 { return osnrForBER(opticalSFThresholdBER) })
-)
+// opticalSDThresholdDB is the SD raise line. A function rather than a bare
+// constant so both thresholds are reached the same way at call sites.
+func opticalSDThresholdDB() float64 { return opticalSDThresholdRaiseDB }
 
-// osnrForBER inverts the OSNR -> Q -> BER cascade by bisection. BER is
-// monotonically decreasing in OSNR, so the bisection is well-posed.
-func osnrForBER(targetBER float64) float64 {
-	lo, hi := opticalQFloorDB, opticalQCeilDB
-	for i := 0; i < 100; i++ {
-		mid := (lo + hi) / 2
-		if berFromQDB(mid) > targetBER {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	return lo + opticalQOffsetDB
-}
+// opticalSFThresholdDB is the service-affecting line. It reuses the block
+// counter's own derivation rather than re-deriving it, so the alarm and the
+// counter cannot drift apart -- they are the same number by construction.
+func opticalSFThresholdDB() float64 { return osnrThresholdDB() }
 
 // opticalCondition identifies which threshold an event concerns.
 type opticalCondition uint8
