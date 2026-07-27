@@ -99,6 +99,14 @@ Being a layer-1 transport platform it performs no layer-3/4 inspection, so it
 skips it with a log line; an explicit per-device `flow` block naming this type
 is rejected with HTTP 400.
 
+Optical state is served over gNMI under
+`/components/component[name=$och]/optical-channel/`. See
+[Optical telemetry](optical-telemetry.md) for the served paths, the health
+bands, the on-demand degradation endpoint and a per-use-case validation
+walkthrough, and the
+[limitations doc](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md)
+for where the simulation stops.
+
 ## Enhanced features (all network devices)
 
 - **Entity MIB alignment** — ifTable and Entity MIB rows are consistent across
