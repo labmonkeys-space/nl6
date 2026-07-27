@@ -1,0 +1,49 @@
+services:
+  simulator:
+    build: .
+    image: ghcr.io/labmonkeys-space/nl6:latest
+    # TUN interfaces and network namespaces require these capabilities.
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    # /dev/net/tun must be accessible inside the container.
+    devices:
+      - /dev/net/tun
+    ports:
+      - "8080:8080"
+      - "161:161/udp"
+    # Pass flags as CMD overrides, e.g.:
+    #   docker compose run simulator -auto-start-ip 192.168.100.1 -auto-count 5
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/api/v1/status"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  # Replays ./inventory/devices.json against the simulator's REST API once
+  # it's healthy, then exits. Re-runs on every fresh `compose up`, so
+  # `compose down && compose up` restores whatever's in the manifest.
+  # The simulator itself has no on-disk persistence — the manifest is the
+  # source of truth for which devices exist. No manifest = clean no-op:
+  # copy inventory/devices.example.json to inventory/devices.json to opt in
+  # (devices.json is gitignored; it is your local fleet, not the repo's).
+  bootstrapper:
+    image: alpine:3.24
+    depends_on:
+      simulator:
+        condition: service_healthy
+    volumes:
+      - ./inventory:/inventory:ro
+      - ./scripts/inventory-bootstrap.sh:/usr/local/bin/inventory-bootstrap.sh:ro
+      - ./scripts/fleet.sh:/usr/local/bin/fleet.sh:ro
+    environment:
+      MANIFEST: /inventory/devices.json
+      # Base URL only — fleet.sh appends /api/v1 itself.
+      API: http://simulator:8080
+    # fleet.sh needs curl + jq; alpine ships neither, so they are fetched at
+    # start. One network pull per `compose up` — acceptable for a dev
+    # convenience service, never part of a production path.
+    command: >
+      sh -c "apk add --no-cache curl jq >/dev/null && inventory-bootstrap.sh"
+    restart: "no"

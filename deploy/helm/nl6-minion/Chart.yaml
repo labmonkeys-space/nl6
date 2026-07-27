@@ -1,0 +1,24 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: nl6-minion
+description: |
+  nl6 network-device simulator with an OpenNMS Minion sidecar (Kafka transport).
+  Single-node lab convenience deployment — Kubernetes is NOT an officially
+  supported target for nl6 (see docs/ops/kubernetes.md). The Minion shares the
+  pod's hostNetwork so it inherits the host routes nl6 installs into the
+  nl6sim namespace and can poll the simulated devices directly.
+type: application
+version: 0.1.0
+# appVersion tracks the nl6 simulator image tag this chart defaults to.
+appVersion: "latest"
+keywords:
+  - nl6
+  - opennms
+  - minion
+  - snmp
+  - simulator
+home: https://github.com/labmonkeys-space/nl6
+maintainers:
+  - name: Ronny Trommer
+    email: ronny@no42.org

@@ -71,9 +71,6 @@ _bmad/
 .gemini/
 
 
-# Stale Python virtualenv from the pre-Docusaurus MkDocs docs toolchain.
-# The docs site is Docusaurus (Node) now; this can be removed: rm -rf .venv
-.venv/
 
 
 # Scenario report captured from the running simulator. The loadtest runbooks
@@ -82,3 +79,7 @@ _bmad/
 # otherwise shows up in `git status` after every load test.
 /report.json
 /collector.csv
+
+# Local compose-bootstrap fleet manifest (see the docker getting-started doc);
+# per-machine state, never committed. Start from inventory/devices.example.json.
+inventory/devices.json

@@ -1,0 +1,144 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Default values for nl6-minion.
+# This chart deploys ONE pod containing two containers:
+#   1. nl6      — the network-device simulator (owns host network mutation)
+#   2. minion   — an OpenNMS Minion sidecar that polls the simulated devices
+#
+# The pod runs with hostNetwork: true so the Minion shares the node's network
+# stack and inherits the /24 host routes nl6 installs into the nl6sim namespace.
+# Because of the singleton host resources nl6 owns (netns name, veth pair,
+# bridge CIDR), this is a single-replica, single-node deployment by design.
+
+# -- Pin the pod to one node. nl6 mutates that node's network stack, so the
+#    placement must be stable. Set this to a real node; leave empty to let the
+#    scheduler choose (NOT recommended — host state can move between nodes).
+nodeSelector: {}
+  # kubernetes.io/hostname: lab-node-01
+
+tolerations: []
+affinity: {}
+
+# -- Extra pod-level labels/annotations.
+podLabels: {}
+podAnnotations: {}
+
+imagePullSecrets: []
+
+serviceAccount:
+  # -- Create a dedicated ServiceAccount for the pod.
+  create: true
+  # -- Name override; defaults to the fullname when empty.
+  name: ""
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# nl6 simulator container
+# ---------------------------------------------------------------------------
+nl6:
+  image:
+    repository: ghcr.io/labmonkeys-space/nl6
+    tag: ""            # defaults to .Chart.AppVersion when empty
+    pullPolicy: IfNotPresent
+
+  # -- CLI flags passed to the nl6 binary. These auto-create a batch of devices
+  #    and install the host routes the Minion relies on. Tune the IP/count to
+  #    your lab; keep the subnet inside a /16 you can route.
+  args:
+    - "-auto-start-ip"
+    - "10.42.0.1"
+    - "-auto-count"
+    - "50"
+    - "-port"
+    - "8080"
+
+  # -- nl6 needs to mutate the node's network stack: create the nl6sim netns,
+  #    a veth pair, iptables FORWARD rule, sysctls, and a TUN device per device.
+  #    privileged:true is the simplest way to grant /dev/net/tun + the caps.
+  #    Set privileged:false to use the explicit capability list instead (your
+  #    PodSecurity policy and kernel must allow /dev/net/tun access that way).
+  securityContext:
+    privileged: true
+    capabilities:
+      add:
+        - NET_ADMIN       # TUN creation, link/route config
+        - SYS_ADMIN       # setns(CLONE_NEWNET) into nl6sim
+        - NET_BIND_SERVICE # bind UDP/161,162,514 + TCP/22 per device IP
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+  # -- Liveness/readiness against the HTTP control plane (-port above).
+  probes:
+    enabled: true
+    port: 8080
+
+# ---------------------------------------------------------------------------
+# OpenNMS Minion sidecar
+# ---------------------------------------------------------------------------
+minion:
+  image:
+    repository: opennms/minion
+    tag: "33.1.6"        # pin to your OpenNMS Horizon/Meridian Minion version
+    pullPolicy: IfNotPresent
+
+  # -- Minion identity. id must be unique per Minion; location must match a
+  #    Monitoring Location configured in the OpenNMS core.
+  id: "nl6-minion-01"
+  location: "nl6-lab"
+
+  # -- OpenNMS core HTTP(S) URL. The Minion uses this for REST + provisioning.
+  #    Works whether the core is external or an in-cluster Service — just point
+  #    at whichever is reachable from the node's host network:
+  #      external:   "http://opennms.example.com:8980/opennms"
+  #      in-cluster: "http://opennms-core.opennms.svc.cluster.local:8980/opennms"
+  #    NOTE: with hostNetwork:true, in-cluster Service DNS resolves via the
+  #    node's resolv.conf (dnsPolicy ClusterFirstWithHostNet is set for you).
+  httpUrl: "http://opennms-core.opennms.svc.cluster.local:8980/opennms"
+
+  # -- Credentials the Minion uses against the OpenNMS REST API. Stored in a
+  #    chart-managed Secret and exposed to the container as env vars. If you
+  #    manage credentials with an existing Secret, set existingSecret and the
+  #    userKey/passKey instead.
+  credentials:
+    username: "minion"
+    password: "minion"
+    existingSecret: ""     # if set, username/password above are ignored
+    userKey: "username"
+    passKey: "password"
+
+  # -- Kafka transport. The Minion talks to the OpenNMS core over Kafka topics
+  #    (sink + RPC + twin). bootstrapServers must be reachable from the node's
+  #    host network — external broker or in-cluster Service both work:
+  #      external:   "kafka.example.com:9092"
+  #      in-cluster: "kafka.kafka.svc.cluster.local:9092"
+  kafka:
+    bootstrapServers: "kafka.kafka.svc.cluster.local:9092"
+    # -- Extra org.opennms.core.ipc.* / Kafka client properties merged verbatim
+    #    into minion-config.yaml under ipc.kafka (e.g. SASL/TLS settings).
+    extraProperties: {}
+      # security.protocol: "SASL_PLAINTEXT"
+      # sasl.mechanism: "PLAIN"
+
+  # -- Free-form extra keys merged into minion-config.yaml at the top level
+  #    (e.g. system properties, dominion/grpc tuning). Advanced use.
+  extraConfig: {}
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # -- Minion exposes Karaf health on :8181/minion/rest/health once up.
+  probes:
+    enabled: true
+    port: 8181

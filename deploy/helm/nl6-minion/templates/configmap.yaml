@@ -1,0 +1,30 @@
+{{/*
+Copyright 2026 Ronny Trommer <ronny@no42.org>
+SPDX-License-Identifier: Apache-2.0
+
+Renders the confd-driven minion-config.yaml consumed by the opennms/minion
+image at /opt/minion/minion-config.yaml. The presence of the ipc.kafka block
+selects the Kafka IPC strategy (sink + RPC + twin) for Minion <-> core.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nl6-minion.fullname" . }}-config
+  labels:
+    {{- include "nl6-minion.labels" . | nindent 4 }}
+data:
+  minion-config.yaml: |
+    id: {{ .Values.minion.id | quote }}
+    location: {{ .Values.minion.location | quote }}
+    http-url: {{ .Values.minion.httpUrl | quote }}
+    # broker-url is intentionally empty: Kafka transport is selected via ipc.kafka.
+    broker-url: ""
+    ipc:
+      kafka:
+        bootstrap.servers: {{ .Values.minion.kafka.bootstrapServers | quote }}
+        {{- range $k, $v := .Values.minion.kafka.extraProperties }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    {{- with .Values.minion.extraConfig }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}

@@ -41,7 +41,7 @@ make docker-push
 The `docker-push` target pushes `linux/amd64` + `linux/arm64` — override the
 tag list with `DOCKER_TAGS="..."`.
 
-## docker-compose
+## Compose
 
 ```bash
 make docker-up     # docker compose up --build
