@@ -59,7 +59,7 @@ use it to characterise what shapes real hardware produces.
 | Absent | Why |
 |---|---|
 | `post-fec-ber` | Defined by OpenConfig, but **Ciena removed it** from their model. Serving it would let a rule pass here that could never fire against real hardware. Deliberate; a test asserts its absence. |
-| Per-counter `supported` / `invalid-data-flag` | Present on every counter in `ciena-waveserver-pm`, but OpenConfig defines no equivalent leaf. Expressing them would mean inventing a path. Tracked in [#334](https://github.com/labmonkeys-space/nl6/issues/334). |
+| Per-counter `supported` / `invalid-data-flag` | Present on every counter in `ciena-waveserver-pm`; decided in [#334](https://github.com/labmonkeys-space/nl6/issues/334). The `supported` equivalent on the OpenConfig surface **is leaf absence** (the `post-fec-ber` precedent above — absent, tested, distinguishable from zero). `invalid-data-flag` **will not be implemented**: no faithful expression exists on this surface, and every candidate is a guess about portal-gated hardware behaviour — the `post-fec-ber` reasoning applied symmetrically. |
 | NETCONF, and the native `ciena-waveserver-*` models | nl6 serves the OpenConfig surface over gNMI only. A team that talks to real Waveservers over NETCONF with Ciena's own models is exercising a different interface entirely. |
 | Flow export (NetFlow / IPFIX / sFlow) | Correct, not missing. A layer-1 transport platform performs no layer-3/4 inspection and exports no flow records, so nl6 must not either. A batch flow seed skips this type; an explicit `flow` block naming it is rejected with 400. |
 | gNMI dial-out | The shipped dial-out flavor is `gnmireverse`, which is Arista-specific. This device serves dial-in only. |

@@ -323,11 +323,12 @@ gnmic -a 10.42.0.2:9339 --skip-verify get \
 device still initialising, and is retryable. A client that conflates the two
 will either retry forever or give up too early.
 
-Per-counter `supported` and `invalid-data-flag` equivalents are **not
-implemented**, tracked in
-[#334](https://github.com/labmonkeys-space/nl6/issues/334). OpenConfig defines
-no such leaf, so expressing them would mean inventing a path, which is the
-false pass this device type exists to prevent.
+Per-counter `supported` and `invalid-data-flag` have no leaves here, by
+decision ([#334](https://github.com/labmonkeys-space/nl6/issues/334)): on the
+OpenConfig surface the `supported` equivalent **is leaf absence** — exactly
+what the three checks above exercise — and `invalid-data-flag` is
+inexpressible without inventing behaviour, so it is deliberately not
+simulated. See the limitations doc for the full rationale.
 
 ## Example configuration
 
