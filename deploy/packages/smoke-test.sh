@@ -63,10 +63,22 @@ echo "    nl6 -version => $ver"
 [ -f /usr/lib/systemd/system/nl6.service ] || fail "systemd unit not installed"
 [ -f /etc/nl6/nl6.conf ]                   || fail "/etc/nl6/nl6.conf not installed"
 [ -d /usr/share/nl6/web ]                  || fail "web/ data not installed"
-# Debian Policy 12.5 — deb packages must ship a copyright file.
+# Debian Policy 12.5 — deb packages must ship a copyright file, and it must be
+# machine-readable DEP-5. Presence alone is NOT enough to assert: a verbatim
+# LICENSE sits at the same path and satisfies Policy, but syft reads the
+# `License:` field rather than classifying full text, so the SBOM falls back to
+# NOASSERTION. Both lines below are therefore checked — they are exactly what
+# distinguishes the shipped file from the plain licence text.
 case "$pkg" in
   *.deb)
-    [ -f /usr/share/doc/nl6/copyright ] || fail "Debian copyright file missing"
+    copyright=/usr/share/doc/nl6/copyright
+    [ -f "$copyright" ] || fail "Debian copyright file missing"
+    if ! grep -q "^Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/" "$copyright"; then
+      fail "copyright file is not machine-readable DEP-5 (missing Format: header)"
+    fi
+    if ! grep -q "^License: Apache-2.0" "$copyright"; then
+      fail "copyright file has no License: Apache-2.0 field; the SBOM would report NOASSERTION"
+    fi
     ;;
 esac
 json="$(find /usr/share/nl6/resources -name "*.json" 2>/dev/null | wc -l)"
