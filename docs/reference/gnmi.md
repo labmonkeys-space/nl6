@@ -75,6 +75,9 @@ Devices whose type carries coherent optical channels (today `ciena_waveserver5`)
 | `…/optical-channel/state/polarization-dependent-loss/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
 | `…/optical-channel/state/fec-uncorrectable-blocks` | uint64 | **bare counter — no statistics container** |
 
+See [Optical telemetry](optical-telemetry.md) for the value model, health
+bands, the degradation endpoint and a validation walkthrough.
+
 Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes flatten as on the interface side. Asking for a statistic on `fec-uncorrectable-blocks` (e.g. `/instant`) returns `codes.NotFound` — the pinned model defines it as a bare leaf.
 
 **`post-fec-ber` is deliberately not served.** OpenConfig defines it, but Ciena removed it from their model, so a collector rule keyed on it would never fire against real hardware. Serving it would produce exactly the false pass this device type exists to prevent.

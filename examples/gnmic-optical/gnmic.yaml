@@ -1,0 +1,71 @@
+# gnmic configuration for nl6 optical telemetry.
+#
+#   gnmic --config gnmic.yaml subscribe
+#
+# Every device presents nl6's shared self-signed certificate, hence
+# skip-verify. Adjust `targets` to your fleet's management IPs.
+
+skip-verify: true
+encoding: json_ietf
+
+targets:
+  10.42.0.1:9339:
+    subscriptions:
+      - optical-spine
+      - optical-fec
+  # Add further Waveserver management IPs here. Packet device types serve no
+  # /components paths and would return NotFound for every one of them.
+
+subscriptions:
+  # Receive-side spine. These degrade together, and their RATIO is the
+  # diagnostic: power down with OSNR flat is a fibre or connector fault, OSNR
+  # down with power flat is amplifier ASE.
+  optical-spine:
+    mode: stream
+    stream-mode: sample
+    sample-interval: 10s
+    paths:
+      - /components/component[name=*]/optical-channel/state/input-power/instant
+      - /components/component[name=*]/optical-channel/state/output-power/instant
+      - /components/component[name=*]/optical-channel/state/osnr/instant
+      - /components/component[name=*]/optical-channel/state/esnr/instant
+      - /components/component[name=*]/optical-channel/state/q-value/instant
+      - /components/component[name=*]/optical-channel/state/pre-fec-ber/instant
+
+  # The service-affecting signal, sampled on its own so it can carry a
+  # different retention or alerting policy. It is a BARE counter: there is no
+  # /instant below it, and asking for one returns NotFound.
+  optical-fec:
+    mode: stream
+    stream-mode: sample
+    sample-interval: 30s
+    paths:
+      - /components/component[name=*]/optical-channel/state/fec-uncorrectable-blocks
+
+  # Off-spine leaves. Subscribe these to PROVE they stay flat during a
+  # receive-side fault; that invariant is what separates a fibre problem from
+  # a transponder problem.
+  optical-offspine:
+    mode: stream
+    stream-mode: sample
+    sample-interval: 60s
+    paths:
+      - /components/component[name=*]/optical-channel/state/laser-bias-current/instant
+      - /components/component[name=*]/optical-channel/state/chromatic-dispersion/instant
+      - /components/component[name=*]/optical-channel/state/polarization-mode-dispersion/instant
+      - /components/component[name=*]/optical-channel/state/polarization-dependent-loss/instant
+
+outputs:
+  stdout:
+    type: file
+    filename: /dev/stdout
+    format: event
+
+  # OTLP bridge. Note where it sits: nl6 -> gNMI -> gnmic -> OTLP -> collector.
+  # The device does NOT speak OTLP, and no Ciena source claims a Waveserver
+  # does. Uncomment and point at your collector to use it.
+  #
+  # otlp:
+  #   type: prometheus
+  #   listen: :9273
+  #   path: /metrics
