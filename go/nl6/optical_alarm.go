@@ -59,10 +59,6 @@ import (
 // can never disagree. Deriving them from two independent constants would let
 // them drift into contradicting each other.
 const (
-	// opticalSFThresholdBER is the service-affecting threshold. Same constant
-	// as the block counter's, by construction.
-	opticalSFThresholdBER = opticalSDFECThresholdBER
-
 	// opticalSDThresholdRaiseDB is the predictive threshold, in dB rather than
 	// BER, because dB is the axis the envelope arithmetic and the hysteresis
 	// both live on.
