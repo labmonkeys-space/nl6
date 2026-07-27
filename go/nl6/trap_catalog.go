@@ -51,12 +51,48 @@ const (
 const (
 	roleLinkDown = "link-down"
 	roleLinkUp   = "link-up"
+
+	// Optical threshold roles (#347). Four rather than two, because a raise
+	// and its clear are SEPARATE catalog entries here.
+	//
+	// The link roles above pair one OID with another: linkDown and linkUp are
+	// distinct notifications. Ciena models an optical alarm the other way
+	// round — ONE notification type (wsLinkStateAlarmNotification) whose
+	// varbinds carry the condition state — so raise and clear share a trap OID
+	// and differ only in the severity and condition-flag values. Reusing a
+	// two-role pairing would have forced either a fabricated second OID or a
+	// clear that a collector could not distinguish from a raise.
+	roleOpticalSDRaise = "optical-sd-raise"
+	roleOpticalSDClear = "optical-sd-clear"
+	roleOpticalSFRaise = "optical-sf-raise"
+	roleOpticalSFClear = "optical-sf-clear"
 )
+
+// opticalRoleFor maps an evaluator transition onto the catalog role that
+// publishes it. Keeping the mapping here, next to the constants, means the
+// detection side never has to know catalog vocabulary.
+func opticalRoleFor(cond opticalCondition, raised bool) string {
+	switch {
+	case cond == opticalCondSD && raised:
+		return roleOpticalSDRaise
+	case cond == opticalCondSD:
+		return roleOpticalSDClear
+	case raised:
+		return roleOpticalSFRaise
+	default:
+		return roleOpticalSFClear
+	}
+}
 
 // validRole reports whether a catalog `role` value is recognized. Empty is
 // valid (untagged). Used by both trap and syslog catalog loaders.
 func validRole(role string) bool {
-	return role == "" || role == roleLinkDown || role == roleLinkUp
+	switch role {
+	case "", roleLinkDown, roleLinkUp,
+		roleOpticalSDRaise, roleOpticalSDClear, roleOpticalSFRaise, roleOpticalSFClear:
+		return true
+	}
+	return false
 }
 
 // linkTrapOIDs are the well-known linkDown/linkUp snmpTrapOIDs, used only to
@@ -66,7 +102,7 @@ var linkTrapOIDs = map[string]struct{}{
 	"1.3.6.1.6.3.1.1.5.4": {}, // linkUp
 }
 
-// allowedTemplateFields enumerates the nine-field unified template
+// allowedTemplateFields enumerates the eleven-field unified template
 // vocabulary shared between trap and syslog catalogs. Any other
 // {{.Name}} reference in OID or value strings is rejected at catalog
 // load time.
@@ -87,6 +123,20 @@ var allowedTemplateFields = map[string]struct{}{
 	"Model":     {},
 	"Serial":    {},
 	"ChassisID": {},
+	// NowLocal is the fire time as a human-readable local timestamp
+	// ("2006-01-02 15:04:05"). Added for CIENA-WS DateAndTime varbinds,
+	// whose MIB type is a DisplayString date — {{.Now}} (epoch seconds)
+	// there would hand collectors an opaque integer where real hardware
+	// puts a date.
+	"NowLocal": {},
+	// Detail is a per-fire free-form measurement SUFFIX (e.g. " (OSNR 11.20
+	// dB)"), empty unless the firing site supplies it via overrides — so
+	// templates use a bare {{.Detail}} and render cleanly when absent. The
+	// override value carries its own leading separator because the catalog
+	// validator (rightly) forbids {{if}} conditionals; a state-driven alarm
+	// can thus carry the measurement that triggered it without a
+	// per-quantity field explosion.
+	"Detail": {},
 }
 
 // TrapVarbindType identifies the ASN.1 application type used when encoding
@@ -193,7 +243,7 @@ type Catalog struct {
 }
 
 // TemplateCtx is the data handed to text/template when Resolve evaluates
-// per-fire. Matches the nine-field vocabulary in allowedTemplateFields.
+// per-fire. Matches the eleven-field vocabulary in allowedTemplateFields.
 // Shared field set with SyslogTemplateCtx (design.md §D3 — unified vocab).
 type TemplateCtx struct {
 	IfIndex   int
@@ -205,6 +255,8 @@ type TemplateCtx struct {
 	Model     string // human-readable model from slug → label
 	Serial    string // `SN<hex>` synthesised from device IP
 	ChassisID string // MAC-style chassis ID synthesised from device IP
+	NowLocal  string // fire time, local "2006-01-02 15:04:05"
+	Detail    string // per-fire self-delimiting measurement suffix; empty unless overridden
 }
 
 // Varbind is one resolved (templates evaluated) varbind ready for the encoder.
@@ -750,6 +802,12 @@ func (e *CatalogEntry) Resolve(ctx TemplateCtx, overrides map[string]string) ([]
 		}
 		if v, ok := overrides["ChassisID"]; ok {
 			ctx.ChassisID = v
+		}
+		if v, ok := overrides["NowLocal"]; ok {
+			ctx.NowLocal = v
+		}
+		if v, ok := overrides["Detail"]; ok {
+			ctx.Detail = v
 		}
 		for k := range overrides {
 			if _, ok := allowedTemplateFields[k]; !ok {

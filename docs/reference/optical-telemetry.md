@@ -249,14 +249,18 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degr
 `pre-fec-ber` climbs past 2e-2 and the block counter starts advancing, then
 stops when the window closes.
 
-:::note
-Trap and syslog notifications on SD/SF threshold crossing are **not yet
-implemented** (tracked in
-[#347](https://github.com/labmonkeys-space/nl6/issues/347)). Today the
-crossing is observable through gNMI values and the block counter. Rules that
-consume the *values* can be validated now; rules that consume a *notification*
-cannot.
-:::
+The crossing also raises a **real Ciena notification**: a trap
+(`wsLinkStateAlarmNotification`, `1.3.6.1.4.1.1271.3.2.12`, with
+`OtuPreFecSd`/`OtuPreFecSf` condition flags and the MIB's non-contiguous
+severity enum) and a matching syslog line, with a distinct clear on recovery.
+Detection runs in a shared evaluator with 0.5 dB hysteresis and a 30 s soak,
+so a channel resting near a threshold does not flap. SD is predictive (below
+~14.3 dB OSNR, below every healthy tier's excursion envelope); SF is
+service-affecting and is by construction the same threshold that starts the
+`fec-uncorrectable-blocks` counter. Note the clear-correlation caveat in the
+[limitations doc](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md):
+a clear names its condition only in the Description text — that is Ciena's
+model, reproduced faithfully.
 
 ### 4. Correlation and root cause
 

@@ -330,6 +330,22 @@ func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
 }
 
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
+	// Drop the device's optical channels from the shared SD/SF evaluator —
+	// but only once the delete has actually COMMITTED. The first cut
+	// deregistered up front, so a freeze-rejected delete (scenario running,
+	// FR35) permanently silenced a device that stayed alive and serving.
+	//
+	// Mechanics: deregisterOpticalIP is set at the commit point below, and
+	// this deferred hook runs AFTER the write lock is released (defers are
+	// LIFO; the Unlock defer is registered later, so it fires first) —
+	// required because DeregisterOpticalDevice takes sm.mu itself and Go's
+	// RWMutex is not reentrant.
+	var deregisterOpticalIP net.IP
+	defer func() {
+		if deregisterOpticalIP != nil {
+			sm.DeregisterOpticalDevice(deregisterOpticalIP)
+		}
+	}()
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -393,6 +409,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	// Matches DeleteAllDevices's log-and-continue behaviour. The tun
 	// delete error is still surfaced to the caller below.
 	delete(sm.devices, deviceID)
+	deregisterOpticalIP = device.IP // committed: safe to drop alarm enrolment
 	delete(sm.deviceIPs, device.IP.String())
 	delete(sm.deviceTypesByIP, device.IP.String())
 	delete(sm.devicesByIP, device.IP.String())
@@ -450,6 +467,15 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 		sm.topology.Clear()
 	}
 	sm.mu.Unlock()
+
+	// The fleet reset must also empty the alarm evaluator: DeleteAllDevices
+	// bypasses DeleteDevice, and without this every optical channel stayed
+	// enrolled forever — evaluated each cycle against a dead cycler, and
+	// (via Register's keyed idempotency) shadowing any re-created device on
+	// the same IP with the old device's band and start time.
+	for _, device := range devices {
+		sm.DeregisterOpticalDevice(device.IP)
+	}
 
 	// Tear down outside the lock. The snapshot is private to this call, so the
 	// API stays responsive throughout.
@@ -529,6 +555,16 @@ func (sm *SimulatorManager) Shutdown() error {
 	// Stop the gNMI dial-out subsystem (per-device push exporters: cancel
 	// each run loop and close its ClientConn). Safe to call when never started.
 	sm.StopGnmiDialout()
+
+	// Stop the shared optical SD/SF alarm evaluator alongside its peer
+	// subsystems. Without this it is the one goroutine Shutdown leaves
+	// running, firing state-driven traps into torn-down exporters.
+	sm.mu.RLock()
+	oa := sm.opticalAlarms
+	sm.mu.RUnlock()
+	if oa != nil {
+		oa.Stop()
+	}
 
 	// Stop the DNS service-discovery subsystem (debounce worker + listeners).
 	// Safe to call when never started.

@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -400,6 +401,12 @@ func main() {
 	}); err != nil {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}
+
+	// Start the optical SD/SF alarm evaluator unconditionally, before any
+	// device exists, so optical devices created later (auto-start batch or
+	// REST) are enrolled as they come up. Enrolment happens in the device
+	// creation path, not here.
+	manager.StartOpticalAlarmSubsystem(context.Background())
 
 	// Start the gNMI dial-out subsystem unconditionally so REST-created
 	// devices can opt in even without a CLI seed. Per-device exporters push

@@ -1,0 +1,66 @@
+{
+  "comment": "Ciena Waveserver 5 optical threshold messages, the syslog peer of traps.json. Roles match one-for-one so a crossing produces a trap AND a syslog line naming the same condition. Severity words follow the MIB's alarm severities (minor for the predictive SD, critical for the service-affecting SF, cleared for both clears); the syslog PRI severity is set to match. Unlike the trap side there is no wire OID to be faithful to, so the message bodies carry the condition name and the OSNR that triggered it, which is what an operator greps for.",
+  "extends": true,
+  "entries": [
+    {
+      "name": "optical-prefec-sd-raise",
+      "role": "optical-sd-raise",
+      "facility": "local0",
+      "severity": "warning",
+      "appName": "modemd",
+      "msgId": "OTU_PRE_FEC_SD",
+      "structuredData": {
+        "condition": "OtuPreFecSd",
+        "state": "active",
+        "severity": "minor",
+        "instance": "{{.IfName}}"
+      },
+      "template": "OTU_PRE_FEC_SD: pre-FEC signal degrade raised on {{.IfName}}; FEC still correcting{{.Detail}}"
+    },
+    {
+      "name": "optical-prefec-sd-clear",
+      "role": "optical-sd-clear",
+      "facility": "local0",
+      "severity": "notice",
+      "appName": "modemd",
+      "msgId": "OTU_PRE_FEC_SD_CLEAR",
+      "structuredData": {
+        "condition": "OtuPreFecSd",
+        "state": "inactive",
+        "severity": "cleared",
+        "instance": "{{.IfName}}"
+      },
+      "template": "OTU_PRE_FEC_SD_CLEAR: pre-FEC signal degrade cleared on {{.IfName}}{{.Detail}}"
+    },
+    {
+      "name": "optical-prefec-sf-raise",
+      "role": "optical-sf-raise",
+      "facility": "local0",
+      "severity": "crit",
+      "appName": "modemd",
+      "msgId": "OTU_PRE_FEC_SF",
+      "structuredData": {
+        "condition": "OtuPreFecSf",
+        "state": "active",
+        "severity": "critical",
+        "instance": "{{.IfName}}"
+      },
+      "template": "OTU_PRE_FEC_SF: pre-FEC signal fail raised on {{.IfName}}; uncorrectable blocks accruing{{.Detail}}"
+    },
+    {
+      "name": "optical-prefec-sf-clear",
+      "role": "optical-sf-clear",
+      "facility": "local0",
+      "severity": "notice",
+      "appName": "modemd",
+      "msgId": "OTU_PRE_FEC_SF_CLEAR",
+      "structuredData": {
+        "condition": "OtuPreFecSf",
+        "state": "inactive",
+        "severity": "cleared",
+        "instance": "{{.IfName}}"
+      },
+      "template": "OTU_PRE_FEC_SF_CLEAR: pre-FEC signal fail cleared on {{.IfName}}{{.Detail}}"
+    }
+  ]
+}

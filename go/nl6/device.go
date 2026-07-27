@@ -310,6 +310,9 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 			// actually have channels — see opticalScenarioFieldFor.
 			device.OpticalScenario = opticalScenarioFieldFor(deviceResourceFile, opticalScenario)
 			device.metricsCycler.InitOpticalCycler(deviceResources, int64(i), opticalBandFor(opticalScenario))
+			// Enrol with the shared SD/SF evaluator. No-op for packet types
+			// (no engine published) and before the subsystem starts.
+			sm.RegisterOpticalDevice(device)
 
 			// Wire the state engine's per-event counters to the
 			// simulator-wide aggregates so ON_CHANGE fan-out shows up
@@ -665,6 +668,8 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	opticalScenario, _ := ParseOpticalScenario(device.OpticalScenario)
 	device.OpticalScenario = opticalScenarioFieldFor(resourceFile, opticalScenario)
 	device.metricsCycler.InitOpticalCycler(resources, int64(deviceIndex), opticalBandFor(opticalScenario))
+	// Mirrors the sequential path: enrol with the shared SD/SF evaluator.
+	sm.RegisterOpticalDevice(device)
 
 	// Wire the state engine's per-event counters to the simulator-wide
 	// aggregates so ON_CHANGE fan-out shows up in /api/v1/gnmi/status.
