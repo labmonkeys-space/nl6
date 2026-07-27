@@ -125,7 +125,16 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/labmonkeys-space/nl6/edit/main/',
         },
-        blog: false,
+        blog: {
+          path: 'blog',
+          routeBasePath: 'blog',
+          blogTitle: 'nl6 blog',
+          showReadingTime: true,
+          // Posts are short-form; no explicit truncate markers (an HTML
+          // comment would trip MDX -- see docs conventions).
+          onUntruncatedBlogPosts: 'ignore',
+          editUrl: 'https://github.com/labmonkeys-space/nl6/edit/main/',
+        },
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -149,6 +158,7 @@ const config: Config = {
           position: 'left',
           label: 'Getting Started',
         },
+        {to: '/blog', label: 'Blog', position: 'left'},
         {
           type: 'docSidebar',
           sidebarId: 'ops',

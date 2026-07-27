@@ -1,0 +1,27 @@
+nl6-minion {{ .Chart.Version }} deployed as release "{{ .Release.Name }}".
+
+Pod: one nl6 simulator + one OpenNMS Minion sidecar (hostNetwork, Kafka transport).
+
+1. Watch it come up:
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "nl6-minion.fullname" . }}
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "nl6-minion.fullname" . }} -c nl6
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "nl6-minion.fullname" . }} -c minion
+
+2. nl6 control plane (on the node's host network, port {{ .Values.nl6.probes.port }}):
+     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "nl6-minion.fullname" . }} -c nl6 -- \
+       wget -qO- http://127.0.0.1:{{ .Values.nl6.probes.port }}/api/v1/version
+
+3. Confirm the Minion registered with the core ({{ .Values.minion.location }} / {{ .Values.minion.id }}):
+     - In OpenNMS:  Admin > Manage Minions
+     - From core:   curl -u <user>:<pass> {{ .Values.minion.httpUrl }}/rest/minions
+
+CHECKLIST (things this chart can NOT verify for you):
+  - Node is pinned via nodeSelector and grants privileged pods (PodSecurity
+    'privileged' enforce label on namespace {{ .Release.Namespace }}).
+  - Kafka bootstrap "{{ .Values.minion.kafka.bootstrapServers }}" is reachable
+    from the node's host network.
+  - A Monitoring Location named "{{ .Values.minion.location }}" exists in OpenNMS.
+  - Provision a device (e.g. 10.42.0.1) against location "{{ .Values.minion.location }}"
+    so the Minion actually polls the simulated fleet.
+
+Kubernetes is NOT an officially supported nl6 target — see docs/ops/kubernetes.md.

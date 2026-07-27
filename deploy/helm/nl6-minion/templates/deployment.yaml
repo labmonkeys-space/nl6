@@ -1,0 +1,143 @@
+{{/*
+Copyright 2026 Ronny Trommer <ronny@no42.org>
+SPDX-License-Identifier: Apache-2.0
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nl6-minion.fullname" . }}
+  labels:
+    {{- include "nl6-minion.labels" . | nindent 4 }}
+spec:
+  # Singleton by design: nl6 owns host-global names (nl6sim netns, veth pair,
+  # 10.254.0.0/30 bridge). Two replicas on one node collide; see
+  # docs/ops/kubernetes.md. Recreate avoids a rollout running two at once.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nl6-minion.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nl6-minion.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.minion.credentials.existingSecret }}
+        {{/* Credentials come from env-var secretKeyRefs, which are not live-
+             updated in a running pod; without this, rotating the password via
+             helm upgrade leaves the Minion authenticating with the old one. */}}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nl6-minion.serviceAccountName" . }}
+      # Share the node's network stack so the Minion inherits the /24 host
+      # routes nl6 installs into the nl6sim namespace (AddRouteForDevices).
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        # -------------------------------------------------------------------
+        # nl6 simulator — owns host network mutation, creates the devices.
+        # -------------------------------------------------------------------
+        - name: nl6
+          image: "{{ .Values.nl6.image.repository }}:{{ .Values.nl6.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.nl6.image.pullPolicy }}
+          args:
+            {{- toYaml .Values.nl6.args | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.nl6.securityContext | nindent 12 }}
+          ports:
+            - name: http-api
+              containerPort: {{ .Values.nl6.probes.port }}
+              protocol: TCP
+          {{- if .Values.nl6.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/version
+              port: {{ .Values.nl6.probes.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/version
+              port: {{ .Values.nl6.probes.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          {{- end }}
+          resources:
+            {{- toYaml .Values.nl6.resources | nindent 12 }}
+          volumeMounts:
+            - name: dev-net-tun
+              mountPath: /dev/net/tun
+        # -------------------------------------------------------------------
+        # OpenNMS Minion sidecar — polls the simulated devices over the shared
+        # host network, talks back to the OpenNMS core over Kafka.
+        # -------------------------------------------------------------------
+        - name: minion
+          image: "{{ .Values.minion.image.repository }}:{{ .Values.minion.image.tag }}"
+          imagePullPolicy: {{ .Values.minion.image.pullPolicy }}
+          env:
+            - name: OPENNMS_HTTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nl6-minion.credentialsSecret" . }}
+                  key: {{ .Values.minion.credentials.userKey }}
+            - name: OPENNMS_HTTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nl6-minion.credentialsSecret" . }}
+                  key: {{ .Values.minion.credentials.passKey }}
+          {{- if .Values.minion.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /minion/rest/health
+              port: {{ .Values.minion.probes.port }}
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /minion/rest/health
+              port: {{ .Values.minion.probes.port }}
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 6
+          {{- end }}
+          resources:
+            {{- toYaml .Values.minion.resources | nindent 12 }}
+          volumeMounts:
+            - name: minion-config
+              mountPath: /opt/minion/minion-config.yaml
+              subPath: minion-config.yaml
+              readOnly: true
+      volumes:
+        - name: dev-net-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        - name: minion-config
+          configMap:
+            name: {{ include "nl6-minion.fullname" . }}-config
