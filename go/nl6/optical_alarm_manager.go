@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 )
@@ -29,12 +30,14 @@ import (
 
 // StartOpticalAlarmSubsystem builds the shared evaluator, wires its notify hook
 // to the trap and syslog exporters, and starts the single evaluator goroutine.
-// Returns nil when the fleet has no optical devices, so a packet-only
-// simulator pays nothing.
+// Started UNCONDITIONALLY, before any device exists — like every other
+// subsystem — so devices created later (auto-start batch, REST) enrol as they
+// come up. A packet-only fleet costs one idle goroutine parked on an empty
+// heap.
 //
-// Shutdown-only Stop, matching every other subsystem here: the evaluator holds
-// no per-device resources beyond heap entries, and a runtime restart would
-// need attach-path lock discipline that does not exist yet.
+// Stop happens in manager.Shutdown alongside the peer subsystems; there is no
+// runtime restart path (it would need attach-path lock discipline that does
+// not exist yet).
 func (sm *SimulatorManager) StartOpticalAlarmSubsystem(ctx context.Context) {
 	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{
 		Notify: sm.publishOpticalAlarm,
@@ -130,6 +133,15 @@ func (sm *SimulatorManager) publishOpticalAlarm(evt OpticalAlarmEvent) {
 func opticalOverrides(evt OpticalAlarmEvent) map[string]string {
 	return map[string]string{
 		"IfName": evt.Component,
+		// There is no meaningful ifIndex for an OCH channel; without this
+		// override the exporter's ifIndexFn picks a random interface, so any
+		// future catalog entry using {{.IfIndex}} would emit a plausible but
+		// wrong index instead of an obviously-absent 0.
+		"IfIndex": "0",
+		// The measurement that triggered the transition, for the Description
+		// varbind / message body. Self-delimiting (leading " ("): {{.Detail}}
+		// must render cleanly when an on-demand fire supplies no override.
+		"Detail": fmt.Sprintf(" (OSNR %.2f dB)", evt.OSNRdB),
 	}
 }
 

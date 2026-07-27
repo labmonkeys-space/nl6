@@ -45,7 +45,7 @@ const embeddedSyslogCatalogPath = "resources/_common/syslog.json"
 // Ethernet MTU for IP + UDP headers and any small collector-side framing.
 const maxSyslogMessageBytes = 1400
 
-// allowedSyslogTemplateFields enumerates the nine-field unified template
+// allowedSyslogTemplateFields enumerates the eleven-field unified template
 // vocabulary shared with the trap subsystem (design.md §D3 unified vocab
 // decision). Any other {{.Name}} reference in `template` / `hostname` /
 // `structuredData` value strings is rejected at catalog load time.
@@ -63,6 +63,8 @@ var allowedSyslogTemplateFields = map[string]struct{}{
 	"Model":     {},
 	"Serial":    {},
 	"ChassisID": {},
+	"NowLocal":  {}, // fire time as local "2006-01-02 15:04:05"
+	"Detail":    {}, // per-fire self-delimiting measurement suffix (see trap side)
 }
 
 // SyslogFacility is an RFC 5424 facility value (0..23). We store the numeric
@@ -271,6 +273,8 @@ type SyslogTemplateCtx struct {
 	Model     string // human-readable model from slug → label
 	Serial    string // `SN<hex>` synthesised from device IP
 	ChassisID string // MAC-style chassis ID synthesised from device IP
+	NowLocal  string // fire time, local "2006-01-02 15:04:05"
+	Detail    string // per-fire self-delimiting measurement suffix; empty unless overridden
 }
 
 // SyslogResolved is a catalog entry rendered against a concrete context. It
@@ -799,6 +803,12 @@ func (e *SyslogCatalogEntry) Resolve(ctx SyslogTemplateCtx, overrides map[string
 		}
 		if v, ok := overrides["ChassisID"]; ok {
 			ctx.ChassisID = v
+		}
+		if v, ok := overrides["NowLocal"]; ok {
+			ctx.NowLocal = v
+		}
+		if v, ok := overrides["Detail"]; ok {
+			ctx.Detail = v
 		}
 		for k := range overrides {
 			if _, ok := allowedSyslogTemplateFields[k]; !ok {

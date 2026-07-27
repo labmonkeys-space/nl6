@@ -15,7 +15,7 @@
         "severity": "minor",
         "instance": "{{.IfName}}"
       },
-      "template": "OTU_PRE_FEC_SD: pre-FEC signal degrade raised on {{.IfName}}; FEC still correcting"
+      "template": "OTU_PRE_FEC_SD: pre-FEC signal degrade raised on {{.IfName}}; FEC still correcting{{.Detail}}"
     },
     {
       "name": "optical-prefec-sd-clear",
@@ -30,7 +30,7 @@
         "severity": "cleared",
         "instance": "{{.IfName}}"
       },
-      "template": "OTU_PRE_FEC_SD_CLEAR: pre-FEC signal degrade cleared on {{.IfName}}"
+      "template": "OTU_PRE_FEC_SD_CLEAR: pre-FEC signal degrade cleared on {{.IfName}}{{.Detail}}"
     },
     {
       "name": "optical-prefec-sf-raise",
@@ -45,7 +45,7 @@
         "severity": "critical",
         "instance": "{{.IfName}}"
       },
-      "template": "OTU_PRE_FEC_SF: pre-FEC signal fail raised on {{.IfName}}; uncorrectable blocks accruing"
+      "template": "OTU_PRE_FEC_SF: pre-FEC signal fail raised on {{.IfName}}; uncorrectable blocks accruing{{.Detail}}"
     },
     {
       "name": "optical-prefec-sf-clear",
@@ -60,7 +60,7 @@
         "severity": "cleared",
         "instance": "{{.IfName}}"
       },
-      "template": "OTU_PRE_FEC_SF_CLEAR: pre-FEC signal fail cleared on {{.IfName}}"
+      "template": "OTU_PRE_FEC_SF_CLEAR: pre-FEC signal fail cleared on {{.IfName}}{{.Detail}}"
     }
   ]
 }

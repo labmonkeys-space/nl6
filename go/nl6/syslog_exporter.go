@@ -323,6 +323,7 @@ func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
 		Model:     e.model,
 		Serial:    e.serial,
 		ChassisID: e.chassisID,
+		NowLocal:  time.Now().Format("2006-01-02 15:04:05"),
 	}
 }
 

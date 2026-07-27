@@ -46,11 +46,16 @@ func TestOpticalTrapOverlayMatchesTheMIB(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Varbind OIDs are the INSTANCES (object.0) an SMIv2 agent emits, not
+	// the bare object OIDs — a collector matching the exact instance OID a
+	// real Waveserver sends would never match the bare form.
 	const (
 		notifOID = "1.3.6.1.4.1.1271.3.2.12" // wsLinkStateAlarmNotification
-		sevOID   = notifOID + ".7"           // ...Severity
-		sfOID    = notifOID + ".12.4"        // ...OtuDefects.OtuPreFecSf
-		sdOID    = notifOID + ".12.5"        // ...OtuDefects.OtuPreFecSd
+		sevOID   = notifOID + ".7.0"         // ...Severity instance
+		sfOID    = notifOID + ".12.4.0"      // ...OtuDefects.OtuPreFecSf instance
+		sdOID    = notifOID + ".12.5.0"      // ...OtuDefects.OtuPreFecSd instance
+		entOID   = notifOID + ".14.0"        // ...EntityType instance
+		dateOID  = notifOID + ".5.0"         // ...DateAndTime instance
 	)
 	want := map[string]struct {
 		role     string
@@ -100,12 +105,31 @@ func TestOpticalTrapOverlayMatchesTheMIB(t *testing.T) {
 		// Condition flags are inactive(0)/active(1) throughout. A summary
 		// claiming active(2)/inactive(1) was wrong; this is where that returns.
 		for oid, val := range vb {
-			if !strings.HasPrefix(oid, notifOID+".1") || len(strings.Split(oid, ".")) != 12 {
+			bare := strings.TrimSuffix(oid, ".0")
+			if !strings.HasPrefix(bare, notifOID+".1") || len(strings.Split(bare, ".")) != 12 {
 				continue
+			}
+			if bare == strings.TrimSuffix(entOID, ".0") {
+				continue // EntityType is an enum, not a condition flag
 			}
 			if val != "0" && val != "1" {
 				t.Errorf("%s: condition flag %s = %q; the MIB enum is inactive(0)/active(1)", e.Name, oid, val)
 			}
+			if !strings.HasSuffix(oid, ".0") {
+				t.Errorf("%s: varbind %s lacks the .0 instance sub-identifier", e.Name, oid)
+			}
+		}
+		// EntityType: line-side alarm => linePort(3), and LAST per the
+		// OBJECTS clause so positional parsers see the flags unshifted.
+		if got := vb[entOID]; got != "3" {
+			t.Errorf("%s: EntityType %q, want linePort(3)", e.Name, got)
+		}
+		if last := e.Varbinds[len(e.Varbinds)-1].OID; last != entOID {
+			t.Errorf("%s: last varbind is %s, want EntityType %s", e.Name, last, entOID)
+		}
+		// DateAndTime is a DisplayString date, not epoch seconds.
+		if got := vb[dateOID]; got != "{{.NowLocal}}" {
+			t.Errorf("%s: DateAndTime template %q, want {{.NowLocal}}", e.Name, got)
 		}
 	}
 
@@ -239,5 +263,114 @@ func TestOpticalOverlayIsValidJSON(t *testing.T) {
 		if _, ok := v["extends"]; !ok {
 			t.Errorf("%s: missing \"extends\"; a per-type overlay defaults to merge and should say so", p)
 		}
+	}
+}
+
+// TestOpticalAlarmRegisterReplacesStaleCycler pins the fix for the
+// delete/re-create family of findings: a re-register on the same
+// (ip, component) with the SAME engine keeps the latch (no alarm replay),
+// but a DIFFERENT engine — a re-created device — must replace the entry,
+// with fresh latches, or the evaluator stays pinned to the dead device's
+// band and start time forever.
+func TestOpticalAlarmRegisterReplacesStaleCycler(t *testing.T) {
+	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{})
+	ip := net.IPv4(10, 42, 0, 1)
+	oc1 := newOpticalCycler(t, 61, opticalBandFor(OpticalClean))
+	oc2 := newOpticalCycler(t, 62, opticalBandFor(OpticalFailing))
+
+	ev.Register(ip, oc1)
+	ev.mu.Lock()
+	key := opticalAlarmKey{ip: "10.42.0.1", component: "OCH-1-1"}
+	ev.byKey[key].sd.raised = true // simulate a published alarm on the old device
+	ev.mu.Unlock()
+
+	// Same engine: keep the latch.
+	ev.Register(ip, oc1)
+	ev.mu.Lock()
+	if !ev.byKey[key].sd.raised {
+		t.Error("re-registering the SAME engine reset the latch; a re-enrol may not replay alarms")
+	}
+	ev.mu.Unlock()
+
+	// Different engine: replace, fresh latches, heap size unchanged.
+	ev.Register(ip, oc2)
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	if got := ev.byKey[key].oc; got != oc2 {
+		t.Fatal("entry still points at the old device's cycler after re-create")
+	}
+	if ev.byKey[key].sd.raised {
+		t.Error("replacement kept the dead device's alarm state; a new device starts clean")
+	}
+	if ev.heap.Len() != 2 {
+		t.Errorf("heap has %d entries after replacement, want 2 (no leak, no loss)", ev.heap.Len())
+	}
+}
+
+// TestOpticalAlarmFirstEvalIsStaggered: without phase spreading every channel
+// of every device comes due at the same instant and the evaluator processes
+// the fleet as one back-to-back burst per cycle.
+func TestOpticalAlarmFirstEvalIsStaggered(t *testing.T) {
+	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{})
+	oc := newOpticalCycler(t, 63, opticalBandFor(OpticalClean))
+	ev.Register(net.IPv4(10, 42, 0, 1), oc)
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	if ev.heap.Len() != 2 {
+		t.Fatalf("expected both channels enrolled, got %d", ev.heap.Len())
+	}
+	if ev.heap[0].nextEval.Equal(ev.heap[1].nextEval) {
+		t.Error("both channels share the same first nextEval; first evaluations must be phase-spread")
+	}
+}
+
+// TestOpticalAlarmDeleteLifecycle covers the two deregistration findings at
+// manager level: a freeze-REJECTED delete must NOT silence a live device's
+// alarms (the first cut deregistered before the freeze check), and a
+// successful delete-all must empty the evaluator.
+func TestOpticalAlarmDeleteLifecycle(t *testing.T) {
+	omc := &MetricsCycler{}
+	omc.InitOpticalCycler(twoChannelInventory(), 64, opticalBandFor(OpticalClean))
+	dev := &DeviceSimulator{
+		ID: "optical", IP: net.IPv4(10, 42, 0, 1),
+		resourceFile: opticalResourceFile, metricsCycler: omc,
+	}
+	mgr := &SimulatorManager{
+		devices:          map[string]*DeviceSimulator{dev.ID: dev},
+		deviceIPs:        map[string]struct{}{dev.IP.String(): {}},
+		deviceTypesByIP:  map[string]string{},
+		resourcesCache:   map[string]*DeviceResources{},
+		tunInterfacePool: map[string]*TunInterface{},
+	}
+	mgr.indexDeviceByIP(dev)
+	t.Cleanup(swapGlobalManager(mgr))
+
+	ev := NewOpticalAlarmEvaluator(OpticalAlarmEvaluatorOptions{})
+	mgr.mu.Lock()
+	mgr.opticalAlarms = ev
+	mgr.mu.Unlock()
+	mgr.RegisterOpticalDevice(dev)
+	if _, _, ok := ev.ActiveAlarms("10.42.0.1", "OCH-1-1"); !ok {
+		t.Fatal("device did not enrol")
+	}
+
+	// Freeze-rejected delete: device stays alive, and MUST stay enrolled.
+	if err := mgr.freezeFleet("s-test"); err != nil {
+		t.Fatalf("freeze: %v", err)
+	}
+	if err := mgr.DeleteDevice(dev.ID); err == nil {
+		t.Fatal("delete succeeded under freeze; expected rejection")
+	}
+	if _, _, ok := ev.ActiveAlarms("10.42.0.1", "OCH-1-1"); !ok {
+		t.Fatal("freeze-rejected delete silenced a live device's alarms")
+	}
+	mgr.unfreezeFleet()
+
+	// Successful delete-all: enrolment must be gone.
+	if err := mgr.DeleteAllDevices(); err != nil {
+		t.Fatalf("delete-all: %v", err)
+	}
+	if _, _, ok := ev.ActiveAlarms("10.42.0.1", "OCH-1-1"); ok {
+		t.Fatal("delete-all left the device enrolled; stale cycler pinned")
 	}
 }

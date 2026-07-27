@@ -8,6 +8,7 @@ package main
 import (
 	"container/heap"
 	"context"
+	"hash/fnv"
 	"math"
 	"net"
 	"sync"
@@ -315,11 +316,25 @@ func (e *OpticalAlarmEvaluator) Register(deviceIP net.IP, oc *OpticalCycler) {
 	defer e.mu.Unlock()
 	for _, name := range oc.Components() {
 		key := opticalAlarmKey{ip: ip, component: name}
-		if _, exists := e.byKey[key]; exists {
-			continue
+		if existing, exists := e.byKey[key]; exists {
+			if existing.oc == oc {
+				// Same engine re-registered: keep the latch, so a re-enrol
+				// cannot replay alarms a collector already saw.
+				continue
+			}
+			// DIFFERENT engine on the same key: the device was deleted and
+			// re-created (delete-all, or a failed Start retried). Keeping the
+			// old entry would pin the evaluator to the dead device's cycler —
+			// its band, its start time — and silently mis-alarm the new one.
+			// Replace, with fresh latches: this is a new device, and its alarm
+			// history starts empty.
+			if existing.index >= 0 && existing.index < e.heap.Len() {
+				heap.Remove(&e.heap, existing.index)
+			}
+			delete(e.byKey, key)
 		}
 		entry := &opticalAlarmEntry{
-			nextEval:  e.now().Add(e.interval),
+			nextEval:  e.now().Add(e.staggeredInterval(key)),
 			deviceIP:  append(net.IP(nil), deviceIP...),
 			component: name,
 			oc:        oc,
@@ -332,6 +347,20 @@ func (e *OpticalAlarmEvaluator) Register(deviceIP net.IP, oc *OpticalCycler) {
 
 // Deregister drops every channel of a device. Called on device deletion so a
 // removed device's channels stop being evaluated.
+// staggeredInterval spreads first evaluations across one interval,
+// deterministically per (device, channel). Without it every channel of every
+// device comes due at the same instant and the evaluator processes the whole
+// fleet as one back-to-back burst each cycle — the same reason the flap and
+// trap schedulers jitter their first fire. Hash-based rather than rand so
+// registration order and restarts do not change the phase.
+func (e *OpticalAlarmEvaluator) staggeredInterval(key opticalAlarmKey) time.Duration {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key.ip))
+	_, _ = h.Write([]byte(key.component))
+	frac := time.Duration(h.Sum32() % 1000)
+	return e.interval + e.interval*frac/1000
+}
+
 func (e *OpticalAlarmEvaluator) Deregister(deviceIP net.IP) {
 	ip := deviceIP.String()
 	e.mu.Lock()
