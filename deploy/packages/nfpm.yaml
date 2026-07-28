@@ -14,8 +14,12 @@ version: ${VERSION}
 version_schema: semver
 section: net
 priority: optional
-maintainer: Ronny Trommer <ronny@no42.org>
-vendor: no42.org
+# Maintainer and vendor deliberately carry the same organisation name so the
+# deb Maintainer field and the rpm Vendor field — which SBOM tools surface as
+# the package originator — agree. Debian Policy requires `Name <email>` form
+# for Maintainer; dpkg has no separate vendor field.
+maintainer: No42.org <ronny@no42.org>
+vendor: No42.org
 homepage: https://github.com/labmonkeys-space/nl6
 license: Apache-2.0
 description: |
