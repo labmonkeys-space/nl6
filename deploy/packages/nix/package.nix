@@ -55,7 +55,7 @@ buildGo126Module {
 
   meta = with lib; {
     description = "Network device simulator (SNMP/SSH/HTTPS/gNMI/NetFlow/syslog)";
-    homepage = "https://github.com/labmonkeys-space/nl6";
+    homepage = "https://nl6.eu";
     license = licenses.asl20;
     platforms = [ "x86_64-linux" "aarch64-linux" ];
     mainProgram = "nl6";
