@@ -1,0 +1,34 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+
+# Syft configuration for the release SBOM (anchore/sbom-action picks this up
+# from the scan root). Goal: no "Undeclared" licenses for anything we ship.
+
+golang:
+  # go.mod alone carries no license metadata; let syft read the module cache
+  # (populated by the release build in the same job) and fall back to the
+  # module proxy so every Go dependency resolves its actual license.
+  search-local-mod-cache-licenses: true
+  search-remote-licenses: true
+
+# CI actions are build tooling, not shipped product — their provenance is
+# covered by the build attestation, and the catalogers can never resolve a
+# license for them (always NOASSERTION).
+select-catalogers:
+  - "-github-actions-usage-cataloger"
+  - "-github-action-workflow-usage-cataloger"
+
+exclude:
+  # The scan runs after the build in release.yml, so dist/ holds the artifacts
+  # this SBOM describes; cataloging them would self-reference the binaries and
+  # duplicate every Go module via the binary cataloger.
+  - ./dist/**
+  # Gitignored local dev artifacts — absent in CI; excluded so a local
+  # `syft scan dir:.` produces the same result as the release job.
+  - ./.venv/**
+  - ./go/nl6/nl6
+  - ./go/nl6-reconcile
+  # Ruby build fixture shipped inside an npm dependency of the docs site
+  # (a Gemfile.lock for its stopwords generator) — not part of anything nl6
+  # builds or ships, and gem lockfiles carry no license metadata.
+  - ./node_modules/lunr-languages/build/**
