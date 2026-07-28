@@ -23,6 +23,10 @@ exclude:
   # this SBOM describes; cataloging them would self-reference the binaries and
   # duplicate every Go module via the binary cataloger.
   - ./dist/**
+  # CI/CD pipeline files are not part of the shipped product. The cataloger
+  # deselection above already covers today's syft; the path exclude guarantees
+  # no future cataloger resurfaces them.
+  - ./.github/**
   # Gitignored local dev artifacts — absent in CI; excluded so a local
   # `syft scan dir:.` produces the same result as the release job.
   - ./.venv/**
