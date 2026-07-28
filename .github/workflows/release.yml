@@ -81,6 +81,12 @@ jobs:
           format: spdx-json
           output-file: dist/nl6.sbom.spdx.json
           upload-artifact: false
+          # Pin syft itself, not just the action: the action's bundled default
+          # (1.42.3) predates two behaviors the SBOM quality depends on —
+          # reading npm licenses from node_modules license files and dropping
+          # the versionless main-module go.mod entry. Verified with 1.46.0
+          # against this tree; bump deliberately, Dependabot won't touch it.
+          syft-version: v1.46.0
 
       - name: Render SBOM as HTML (blitsbom)
         # Human-readable companion to the SPDX JSON — a single self-contained
