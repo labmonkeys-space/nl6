@@ -318,6 +318,12 @@ func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 // handles, and publishes the armed gate. Unknown/ineligible devices go to
 // the excluded set (FR9) rather than failing the whole arm. Returns the
 // count armed and the excluded list.
+//
+// Arm is REBUILDING, not accumulating. `transitionLocked` permits armed→armed
+// as legal idempotent re-entry (a re-arm intent), so every derived view must be
+// reset here rather than added to — otherwise a second arm doubles the excluded
+// set and leaves stale entries in the parts map for devices deleted between the
+// two calls, both of which corrupt the counts an operator reconciles against.
 func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -325,13 +331,31 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 		return 0, nil, err
 	}
 
+	// Reset the whole arm-derived view (see the re-arm note above). Nothing has
+	// emitted yet — the gate is armed, not running — so discarding the previous
+	// ledgers loses no counted traffic.
+	c.excluded = nil
+	c.parts = make(map[string]*scenarioPart)
+	c.ledgers = make(map[string]*ledgerEntry)
+
 	// Membership snapshot under the manager lock keeps arm TOCTOU-safe
 	// against concurrent device CRUD (architecture D6). We only READ the
 	// device set here; freeze happens at Start.
 	c.sm.mu.RLock()
 	gs := &gateState{phase: phaseArmed}
 	c.gate.Store(gs)
+	// `participants` is a SET: the same device named twice is one participant,
+	// not two. Skipping repeats keeps both the armed count and the excluded set
+	// per-distinct-device — without this, N copies of one IP reported N armed
+	// (or N identical exclusion rows) while the run only ever had one source.
+	// Since the ledger reconciles on (protocol, source_ip, collector), an
+	// inflated count is a directly misleading number.
+	seen := make(map[string]struct{})
 	for _, ip := range c.spec.Participants {
+		if _, dup := seen[ip]; dup {
+			continue
+		}
+		seen[ip] = struct{}{}
 		dev := c.sm.devicesByIP[ip]
 		if dev == nil {
 			c.excluded = append(c.excluded, excludedParticipant{
@@ -348,10 +372,13 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 		}
 		c.parts[ip] = part
 		c.ledgers[ip] = led
-		armed++
 	}
 	c.sm.mu.RUnlock()
-	return armed, c.excluded, nil
+	// Derive the count from the map rather than incrementing per iteration, so
+	// it cannot drift from the map the rest of the lifecycle uses: Start's 0/N
+	// refusal already tests len(c.parts), and the report publishes
+	// len(PerDevice). One source of truth, not three.
+	return len(c.parts), c.excluded, nil
 }
 
 // Start freezes the fleet, publishes the running gate at T0, and starts the
