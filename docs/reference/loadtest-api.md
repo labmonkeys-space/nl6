@@ -171,9 +171,20 @@ Each arm returns the *current* answer, not an accumulation of previous attempts:
   `suppressed_pre_window`, `background_suppressed`) are **carried forward**,
   so they stay monotonic for a metrics scraper.
 
-One caveat: re-arming does not touch a start scheduled with an absolute `T0`. If
-a re-arm drops the participant set to 0/N, that pending start will fail when it
-fires — `DELETE` the scenario and resubmit.
+**Re-arming cancels a pending absolute-`T0` start.** That start was authorised
+against the membership the previous arm resolved; re-resolving membership
+withdraws the authorisation rather than letting `T0` fire against a set you did
+not approve. The response carries `"scheduled_start_cancelled": true` (present
+only when there was something to cancel) and `scheduled_start` disappears from
+the status — reschedule with another `POST .../start {"at": …}` once you are
+happy with the readiness.
+
+A scheduled start can also fail on its own, without a re-arm — most obviously if
+every armed participant is deleted before `T0` (the fire is refused `0/N`), but
+also if the fleet is busy with a device-creation batch at that instant. Whatever
+the cause, the scenario stays `armed`, the failure is logged, and the schedule is
+**released** rather than left pinned, so you can fix the condition, re-arm and
+reschedule. A released schedule is not retried automatically.
 
 Response `200` (readiness):
 
@@ -185,7 +196,8 @@ Response `200` (readiness):
   "excluded": [
     {"device": "10.42.0.9", "reason": "device not found",
      "remediation_hint": "create the device before arming, or remove it from the scenario"}
-  ]
+  ],
+  "scheduled_start_cancelled": true
 }
 ```
 

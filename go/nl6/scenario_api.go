@@ -142,6 +142,11 @@ type readinessResponse struct {
 	Phase             string                `json:"phase"`
 	ParticipantsArmed int                   `json:"participants_armed"`
 	Excluded          []scenarioExcludedRow `json:"excluded"`
+	// ScheduledStartCancelled reports that this arm withdrew a pending
+	// absolute-T0 start (the membership it was authorised against has been
+	// re-resolved). Omitted when there was nothing to cancel, so the field only
+	// appears when the client needs to act on it — by rescheduling.
+	ScheduledStartCancelled bool `json:"scheduled_start_cancelled,omitempty"`
 }
 
 type statusResponse struct {
@@ -249,6 +254,10 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Observed before/after because Arm cancels a pending scheduled start (the
+	// membership it was authorised against is being re-resolved). Reported rather
+	// than left to a log line, so an API client learns it has to reschedule.
+	hadSchedule := !ctrl.ScheduledStart().IsZero()
 	armed, excluded, err := ctrl.Arm()
 	if err != nil {
 		scenarioErr(w, http.StatusConflict, conflictMsg(ctrl, err, "arm"))
@@ -260,6 +269,7 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	writeScenarioJSON(w, http.StatusOK, readinessResponse{
 		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: armed, Excluded: rows,
+		ScheduledStartCancelled: hadSchedule && ctrl.ScheduledStart().IsZero(),
 	})
 }
 
