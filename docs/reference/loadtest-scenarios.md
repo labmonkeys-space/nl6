@@ -335,21 +335,40 @@ interesting one is usually cardinality:
   `(protocol, source_ip, collector)`, and the failure modes a fidelity check
   exists to expose are all per-source: `rp_filter` drops, neighbour-table
   pressure, collector per-agent state, and node cardinality in the monitoring
-  system. **Rate cannot substitute for distinct source IPs** — 4,400 devices at
-  7/s loads a collector's throughput exactly like 30,000 at 1/s, but tells you
+  system. **Rate cannot substitute for distinct source IPs** — 4,300 devices at
+  7/s loads a collector's throughput about like 30,000 at 1/s, but tells you
   nothing about whether the pipeline survives 30,000 agents.
 - **Aggregate rate has its own, lower ceiling.** `syslog` and `snmp-trap` fire
-  inline on a single scheduler goroutine (one datagram per event), which tops
-  out in the low hundreds of thousands of events/second on one core regardless
-  of how the per-device rate and participant count are divided. Flow protocols
-  are far cheaper per record because v9/IPFIX pack many records per datagram.
+  inline on a single scheduler goroutine (one datagram per event), so their
+  aggregate throughput is bounded by one core's per-event cost regardless of how
+  the per-device rate and participant count are divided. Flow protocols are far
+  cheaper per record because v9/IPFIX pack many records per datagram.
+
+  ⚠️ **That ceiling has not been measured.** A per-event cost estimate of
+  ~3–5 µs puts it somewhere around 200–350k events/s per subsystem, but this is
+  an *estimate from code inspection*, not a benchmark. Treat it as an order of
+  magnitude, and measure on your own hardware before designing a run that
+  depends on the exact number.
 
 So high-cardinality runs are best driven at **low per-device rates**: 30,000
 participants at `rate: 0.5` is a comfortable 15k events/s, while the same fleet
-at `rate: 10` asks for 300k/s and will be scheduler-bound rather than
-collector-bound — measuring nl6 instead of the system under test. If a run's
-`sent` total falls short of `participants × rate × window`, suspect that ceiling
-before suspecting the collector.
+at `rate: 10` asks for 300k/s and will likely be scheduler-bound rather than
+collector-bound — measuring nl6 instead of the system under test.
+
+If a `syslog` or `snmp-trap` run's `sent` total comes in low, check these in
+order before suspecting the collector:
+
+1. **The arm-time `excluded` set.** Participants are not existence-checked at
+   submit, so the expected total is `(participants − excluded) × rate × window`,
+   not `participants × rate × window`. Long participant lists make this the most
+   common cause by far.
+2. **The scheduler ceiling above**, if the remaining participants × rate is in
+   the hundreds of thousands per second.
+
+Note this arithmetic does **not** apply to flow protocols: there `rate` is the
+flow-*tick* cadence and the ledger counts flow **records**, so `sent` is a
+multiple of the tick count (`Σ applications[].records == summary.sent`) and can
+never "fall short" of `participants × rate × window`.
 
 ## Graceful abort produces a finalized report
 

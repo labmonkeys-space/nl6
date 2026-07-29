@@ -27,26 +27,37 @@ import (
 // (no APIResponse envelope), {"error","field"} for 400 validation and
 // {"error"} for 404/409, RFC3339-ms timestamps, two-stage validation.
 
-// scenarioParticipantWireBytes is the worst-case JSON cost of one participant
-// entry, `"255.255.255.255",` — 15 address bytes plus two quotes and a comma.
-// Validate rejects non-IPv4 participants, so this is a true bound.
+// scenarioParticipantWireBytes is the worst-case COMPACT-JSON cost of one
+// participant entry, `"255.255.255.255",` — 15 address bytes plus two quotes
+// and a comma. Validate accepts only IPv4 dotted quads (via netip Is4, which
+// excludes the longer IPv4-mapped IPv6 spellings), so no accepted entry costs
+// more than this once encoded compactly.
+//
+// "Compact" is load-bearing and is the honest limit of what this constant can
+// promise: JSON permits unbounded insignificant whitespace, so NO per-entry
+// byte constant can bound a raw request body from a semantic entry count. A
+// pretty-printed ceiling-sized list (~21 bytes/entry at 4-space indent) exceeds
+// scenarioMaxBody and is rejected on size. The byte cap is therefore an
+// independent limit, not a guarantee that every ceiling-sized list fits.
 const scenarioParticipantWireBytes = 18
 
 // scenarioMaxBody bounds the submit body. It is DERIVED from the participant
 // ceiling rather than chosen alongside it: the cap must admit a ceiling-sized
-// participant list, or scenarioMaxParticipants is unreachable and a
-// fleet-scale submit fails on body size instead of reporting a count. Writing
-// it as arithmetic makes that a structural property — raise the ceiling and
-// the cap follows — instead of a comment that can rot.
+// participant list in compact JSON, or scenarioMaxParticipants is unreachable
+// and a fleet-scale submit fails on body size instead of reporting a count.
+// Writing it as arithmetic makes that a structural property — raise the ceiling
+// and the cap follows — instead of a comment that can rot.
 //
 // The 64 KiB addend is the envelope budget for every non-participant field
 // (protocol, rate, window, drain, seed, rate_profile, abort_predicate): the
 // entire allowance of the previous cap, which was copied from createDevices
-// where the body size does not scale with the fleet.
+// where the body size does not scale with the fleet. It is a SHARED budget —
+// a ceiling-sized list plus a 70 KiB abort_predicate still exceeds the cap.
 //
-// Note the two bounds are complementary, not redundant. MaxBytesReader fires
-// BEFORE decode (the allocation guard); the participant count can only be
-// checked AFTER decode (the semantic guard).
+// Note the two bounds are complementary, not redundant. MaxBytesReader trips
+// DURING the decoder's read, capping how many bytes one request can make the
+// server consume (the allocation guard); the participant count can only be
+// checked once the slice is fully decoded (the semantic guard).
 const scenarioMaxBody = scenarioMaxParticipants*scenarioParticipantWireBytes + 64<<10
 
 // scenarioRequest is the submit DTO. Durations arrive as Go duration
@@ -190,15 +201,21 @@ func createScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	var req scenarioRequest
 	if err := dec.Decode(&req); err != nil {
 		// Name the limit rather than passing Go's bare "http: request body
-		// too large" through: on this endpoint an over-limit body is almost
-		// always an oversized participant list, and the operator needs the
-		// two numbers to size the next attempt. Same MaxBytesError discipline
-		// as the interface-state and optical handlers.
+		// too large" through: the operator needs both numbers to size the next
+		// attempt. Same MaxBytesError discipline as the interface-state and
+		// optical handlers.
+		//
+		// Deliberately NO "field" attribution. *http.MaxBytesError carries no
+		// information about which field made the body oversized, so naming
+		// `participants` would be a guess presented as a diagnosis — and it
+		// misdirects outright when the cause is a 2 MB `window` string on a
+		// one-participant request. The message states the participant ceiling
+		// as the likely cause without asserting it.
 		var mbErr *http.MaxBytesError
 		if errors.As(err, &mbErr) {
 			scenario400(w, fmt.Sprintf(
-				"payload too large (max %d bytes); a participant list may hold at most %d entries",
-				scenarioMaxBody, scenarioMaxParticipants), "participants")
+				"request body exceeds the %d-byte cap (compact JSON); the participant list, capped at %d entries, is the usual cause",
+				scenarioMaxBody, scenarioMaxParticipants), "")
 			return
 		}
 		scenario400(w, err.Error(), "")

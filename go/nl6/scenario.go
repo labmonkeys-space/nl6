@@ -8,7 +8,7 @@ package main
 import (
 	"fmt"
 	"math"
-	"net"
+	"net/netip"
 	"time"
 )
 
@@ -79,9 +79,14 @@ const scenarioMaxRate = 1000
 // scenarioMaxParticipants bounds the participant list. 100k mirrors the
 // createDevices device-count ceiling ("comfortably covers the 30k+ target
 // fleet and a flat /16 management plane") so the codebase carries one scale
-// constant instead of two differently-justified ones. It is an allocation
-// bound, not a capability claim: a participant that resolves to no live
-// device becomes an arm-time exclusion, not a submit-time failure.
+// constant instead of two differently-justified ones.
+//
+// It is a semantic bound, not a capability claim and not an allocation guard.
+// Not a capability claim: a participant that resolves to no live device becomes
+// an arm-time exclusion, not a submit-time failure. Not an allocation guard:
+// this check can only run once the whole slice is decoded, so the byte cap
+// (scenarioMaxBody) is what actually bounds how much a single request can make
+// the server allocate.
 //
 // Before this bound existed, the REST submit body cap was the only thing
 // limiting the slice — which made the *accidental* limit (~4,400 participants
@@ -103,17 +108,28 @@ func (s *Scenario) Validate() error {
 			len(s.Participants), scenarioMaxParticipants)
 	}
 	for _, ip := range s.Participants {
-		parsed := net.ParseIP(ip)
-		if parsed == nil {
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
 			return fmt.Errorf("scenario: participant %q is not a valid IP", ip)
 		}
-		// IPv4 only: the simulated fleet is v4 throughout (TUN interfaces, the
-		// management plane, To4()-based route generation), so an IPv6
-		// participant could only ever resolve to a "device not found"
+		// IPv4 dotted quad only: the simulated fleet is v4 throughout (TUN
+		// interfaces, the management plane, To4()-based route generation), so a
+		// v6 participant could only ever resolve to a "device not found"
 		// exclusion at arm. Rejecting it here reports a guaranteed-useless
 		// request at submit and keeps the worst-case wire cost of an entry at
 		// scenarioParticipantWireBytes.
-		if parsed.To4() == nil {
+		//
+		// Is4() — NOT net.IP.To4() — is the predicate that means "dotted quad".
+		// To4() is non-nil for IPv4-MAPPED IPv6 as well ("::ffff:10.42.0.1",
+		// and its expanded 45-character spelling), which would sail through
+		// here, canonicalise to 10.42.0.1, and then MISS Arm's devicesByIP
+		// lookup, because that map is keyed by the canonical dotted quad while
+		// Arm looks up the raw request string. That is precisely the useless
+		// exclusion this check exists to prevent — and at 48 wire bytes for the
+		// expanded form it would also falsify scenarioParticipantWireBytes.
+		// netip.Addr.Is4 reports false for Is4In6 addresses, which is what
+		// makes it the right question.
+		if !addr.Is4() {
 			return fmt.Errorf("scenario: participant %q must be an IPv4 dotted quad", ip)
 		}
 	}

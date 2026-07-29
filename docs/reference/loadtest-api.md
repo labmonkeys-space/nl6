@@ -20,13 +20,26 @@ endpoints to run a fidelity check and troubleshoot failures.
 - Timestamps are **RFC 3339 with millisecond precision**
   (`2006-01-02T15:04:05.000Z07:00`).
 - Request bodies are decoded with `DisallowUnknownFields` (a typo'd or unknown
-  key is a `400`) and capped at **1,865,536 bytes** (≈1.78 MiB) on submit. That
-  cap is derived, not chosen: it holds a maximum-size participant list
-  (100,000 entries at the worst-case IPv4 wire cost of 18 bytes each) plus a
-  64 KiB allowance for every other field. A client can therefore validate
-  against the **100,000-participant ceiling** and never hit the byte cap. An
-  over-cap body returns a `400` naming both numbers with
-  `"field": "participants"`.
+  key is a `400`). `POST /api/v1/scenarios` caps its body at **1,865,536 bytes**
+  (≈1.78 MiB); `POST /api/v1/scenarios/{id}/start` reads at most 1 KiB.
+- The submit cap is derived, not chosen: it holds a ceiling-sized participant
+  list (100,000 entries × 18 bytes, the worst-case cost of `"255.255.255.255",`)
+  plus a **shared** 64 KiB allowance for all other fields.
+
+  Two caveats, because the byte cap and the participant ceiling are independent
+  limits and neither implies the other:
+
+    - **The 18-byte figure assumes compact JSON.** Pretty-printed bodies cost
+      more per entry (~21 bytes at 4-space indent), so a ceiling-sized list can
+      exceed the byte cap purely through whitespace. Send participant lists
+      compact. No per-entry constant can prevent this in general — JSON allows
+      unbounded insignificant whitespace.
+    - **The 64 KiB allowance is shared.** A ceiling-sized list plus a large
+      `rate_profile` or `abort_predicate` can exceed the cap.
+
+  An over-cap body returns a `400` naming the cap and the participant ceiling.
+  It carries **no** `"field"` key: the limit trips during transport decoding,
+  which cannot attribute the excess to a particular field.
 
 ## Endpoints
 

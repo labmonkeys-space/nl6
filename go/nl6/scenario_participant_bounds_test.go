@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scenario_participant_bounds_test.go — the wire-level participant bounds
@@ -25,8 +26,10 @@ import (
 // a 30k-participant submit against a one-device manager is the honest test of
 // the body cap and the count bound.
 
-// participantIP maps i to a unique IPv4 in 10/8, valid past 16M so that
-// ceiling-sized and over-cap lists carry no aliased entries.
+// participantIP maps i to a distinct IPv4 in 10/8. Three masked octets give
+// exactly 2^24 = 16,777,216 distinct values, so entries are unique for
+// i < 16,777,216 and alias beyond that — well past any list this file builds,
+// but the bound is real and matters to whoever next raises the ceiling.
 func participantIP(i int) string {
 	return fmt.Sprintf("10.%d.%d.%d", (i>>16)&0xff, (i>>8)&0xff, i&0xff)
 }
@@ -82,20 +85,11 @@ func TestScenarioAPI_SubmitFleetScaleParticipants(t *testing.T) {
 // (not by body size — the list is ~1.5 MB, under the derived cap), and the
 // refusal costs no scenario ID.
 func TestScenarioAPI_ParticipantCeiling(t *testing.T) {
-	// The derived-cap invariant (design D1): the body cap must admit a
-	// ceiling-sized participant list, or the count bound is unreachable and
-	// operators get a body-size error instead of a count error. Fails if
-	// someone re-hardcodes scenarioMaxBody to a literal.
-	if scenarioMaxBody < scenarioMaxParticipants*scenarioParticipantWireBytes {
-		t.Fatalf("scenarioMaxBody = %d cannot hold %d worst-case participants (%d bytes)",
-			scenarioMaxBody, scenarioMaxParticipants, scenarioMaxParticipants*scenarioParticipantWireBytes)
-	}
-
 	t.Run("at_ceiling_accepted", func(t *testing.T) {
 		router := scenarioAPIManager(t, 1)
 		w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", participantBody(scenarioMaxParticipants))
 		if w.Code != http.StatusAccepted {
-			t.Fatalf("ceiling-sized submit status = %d, want 202 (body %s)", w.Code, truncate(w.Body.String()))
+			t.Fatalf("ceiling-sized submit status = %d, want 202 (body %s)", w.Code, truncateBody(w.Body.String()))
 		}
 	})
 
@@ -108,14 +102,24 @@ func TestScenarioAPI_ParticipantCeiling(t *testing.T) {
 		}
 		w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body)
 		if w.Code != http.StatusBadRequest {
-			t.Fatalf("over-ceiling submit status = %d, want 400 (body %s)", w.Code, truncate(w.Body.String()))
+			t.Fatalf("over-ceiling submit status = %d, want 400 (body %s)", w.Code, truncateBody(w.Body.String()))
 		}
 		var errBody map[string]string
 		if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
 			t.Fatalf("error body: %v", err)
 		}
+		// Assert the message names the ceiling AND the field in prose. Both
+		// error paths contain "100000", so matching the number alone would be
+		// satisfied by the body-cap message too — and prose is the only channel
+		// this 400 has, since Validate errors carry no "field" key (design D3).
 		if !strings.Contains(errBody["error"], fmt.Sprint(scenarioMaxParticipants)) {
 			t.Fatalf("error %q does not name the %d ceiling", errBody["error"], scenarioMaxParticipants)
+		}
+		if !strings.Contains(errBody["error"], "participants") {
+			t.Fatalf("error %q does not name the participants field", errBody["error"])
+		}
+		if !strings.Contains(errBody["error"], "exceeding") {
+			t.Fatalf("error %q is not the count-bound message (refusal came from the wrong path)", errBody["error"])
 		}
 
 		// No ID was allocated: the next valid submit gets the FIRST id, which
@@ -135,9 +139,10 @@ func TestScenarioAPI_ParticipantCeiling(t *testing.T) {
 }
 
 // TestScenarioAPI_OverCapBodyNamesTheCap asserts the over-limit 400 is
-// actionable: Go's bare "http: request body too large" named neither the
-// limit, the ceiling, nor the field, which is what made #382 require reading
-// the source to diagnose.
+// actionable: Go's bare "http: request body too large" named neither the limit
+// nor the ceiling, which is what made #382 require reading the source to
+// diagnose. It also asserts the response does NOT attribute a field, because
+// *http.MaxBytesError cannot know which one was oversized.
 func TestScenarioAPI_OverCapBodyNamesTheCap(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
 	// Grow the list until the RENDERED body exceeds the cap, rather than
@@ -154,14 +159,17 @@ func TestScenarioAPI_OverCapBodyNamesTheCap(t *testing.T) {
 
 	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body)
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("over-cap submit status = %d, want 400 (body %s)", w.Code, truncate(w.Body.String()))
+		t.Fatalf("over-cap submit status = %d, want 400 (body %s)", w.Code, truncateBody(w.Body.String()))
 	}
 	var errBody map[string]string
 	if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
 		t.Fatalf("error body: %v", err)
 	}
-	if got := errBody["field"]; got != "participants" {
-		t.Fatalf("field = %q, want participants", got)
+	// No field attribution: *http.MaxBytesError cannot say which field made the
+	// body oversized, so claiming one would misdirect an operator whose 2 MB
+	// `window` string tripped the cap on a one-participant request.
+	if got, ok := errBody["field"]; ok {
+		t.Fatalf("over-cap 400 carries field = %q; MaxBytesError cannot attribute a field", got)
 	}
 	if strings.Contains(errBody["error"], "http: request body too large") {
 		t.Fatalf("error is still Go's transport message: %q", errBody["error"])
@@ -184,6 +192,15 @@ func TestScenarioAPI_ParticipantAddressGrammar(t *testing.T) {
 	}{
 		{"ipv6_full", "2001:db8::1", "IPv4 dotted quad"},
 		{"ipv6_loopback", "::1", "IPv4 dotted quad"},
+		// The IPv4-mapped family is the case net.IP.To4() ACCEPTS: it is
+		// non-nil for all three spellings below, so a To4()-based check admits
+		// them, they canonicalise to a dotted quad, and then miss Arm's
+		// devicesByIP lookup (keyed by the canonical form, looked up by the raw
+		// request string) — the exact useless exclusion this check prevents.
+		// The expanded form also costs 48 wire bytes against an 18-byte premise.
+		{"ipv4_mapped_short", "::ffff:10.42.0.1", "IPv4 dotted quad"},
+		{"ipv4_mapped_max", "::ffff:255.255.255.255", "IPv4 dotted quad"},
+		{"ipv4_mapped_expanded", "0000:0000:0000:0000:0000:ffff:255.255.255.255", "IPv4 dotted quad"},
 		{"malformed", "not-an-ip", "not a valid IP"},
 	}
 	for _, tc := range cases {
@@ -235,8 +252,57 @@ func TestScenarioValidate_BoundsGuardInProcessPath(t *testing.T) {
 	}
 }
 
-// truncate keeps a failure message readable when the body echoes a huge list.
-func truncate(s string) string {
+// TestScenarioBodyCapAdmitsCeilingSizedList is the BEHAVIOURAL form of the
+// derived-cap invariant (design D1). The arithmetic form —
+// `scenarioMaxBody >= scenarioMaxParticipants*scenarioParticipantWireBytes` —
+// compares two compile-time constants where the left is defined as the right
+// plus a positive addend, so it is unfalsifiable by any input and cannot catch
+// the failure that actually matters: widening the accepted address grammar
+// silently falsifies the 18-byte premise while the arithmetic still checks out.
+// (That is not hypothetical — a To4()-based grammar admitted 48-byte entries.)
+//
+// So assert the premise and the consequence instead: nothing longer than
+// scenarioParticipantWireBytes is accepted, and a ceiling-sized list of the
+// longest accepted address fits under the cap with the envelope budget intact.
+func TestScenarioBodyCapAdmitsCeilingSizedList(t *testing.T) {
+	const worst = "255.255.255.255" // longest accepted participant
+	validate := func(p string) error {
+		return (&Scenario{Participants: []string{p}, Protocol: "syslog", Rate: 1, Window: time.Second}).Validate()
+	}
+
+	if err := validate(worst); err != nil {
+		t.Fatalf("Validate rejected %q, which the wire-cost premise assumes is accepted: %v", worst, err)
+	}
+	if got := len(worst) + 3; got != scenarioParticipantWireBytes {
+		t.Fatalf("%q costs %d compact-JSON bytes but scenarioParticipantWireBytes = %d", worst, got, scenarioParticipantWireBytes)
+	}
+	// Anything longer must be rejected, or the premise is false.
+	for _, longer := range []string{
+		"::ffff:255.255.255.255",                        // 25 bytes
+		"0:0:0:0:0:ffff:255.255.255.255",                // 33 bytes
+		"0000:0000:0000:0000:0000:ffff:255.255.255.255", // 48 bytes
+	} {
+		if err := validate(longer); err == nil {
+			t.Fatalf("Validate accepted %q (%d compact-JSON bytes), breaking the %d-byte premise behind scenarioMaxBody",
+				longer, len(longer)+3, scenarioParticipantWireBytes)
+		}
+	}
+
+	// The consequence: a ceiling-sized worst-case list fits, and what remains
+	// is the documented envelope budget for the non-participant fields.
+	body := strings.Repeat(`"`+worst+`",`, scenarioMaxParticipants)
+	if len(body) > scenarioMaxBody {
+		t.Fatalf("ceiling-sized worst-case list is %d bytes, over the %d cap", len(body), scenarioMaxBody)
+	}
+	if envelope := scenarioMaxBody - len(body); envelope < 64<<10-64 {
+		t.Fatalf("only %d bytes left for non-participant fields, expected ~%d", envelope, 64<<10)
+	}
+}
+
+// truncateBody keeps a failure message readable when the body echoes a huge
+// list. Named for its use, not `truncate`: package main here spans dozens of
+// files and a bare generic helper is a redeclaration hazard.
+func truncateBody(s string) string {
 	if len(s) <= 200 {
 		return s
 	}
