@@ -319,22 +319,47 @@ func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 // the excluded set (FR9) rather than failing the whole arm. Returns the
 // count armed and the excluded list.
 //
-// Arm is REBUILDING, not accumulating. `transitionLocked` permits armed→armed
-// as legal idempotent re-entry (a re-arm intent), so every derived view must be
-// reset here rather than added to — otherwise a second arm doubles the excluded
-// set and leaves stale entries in the parts map for devices deleted between the
-// two calls, both of which corrupt the counts an operator reconciles against.
-func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, err error) {
+// Arm is REBUILDING, not accumulating. `transitionLocked` permits armed→armed as
+// legal idempotent re-entry (a re-arm intent — the "device not found" hint tells
+// operators to re-arm once the fleet is stable), so the derived view is rebuilt
+// here rather than added to. Without that, a second arm doubled the excluded set
+// and left stale parts entries for devices dropped between the two calls.
+//
+// Rebuilding has two obligations that a naive reset gets wrong:
+//
+//  1. HANDLES MUST BE DETACHED BEFORE THEY ARE FORGOTTEN. installScenPart stores
+//     the part on the *device's exporter*; c.parts is only our reference to it,
+//     and every detach path (finish, Cancel) iterates c.parts. So dropping an IP
+//     from the map without detaching leaks the handle onto a live exporter, and
+//     once the gate reaches a terminal phase that exporter is silently muted for
+//     the process lifetime (decide → gateSuppressSilent). The accumulating map
+//     this rebuild replaced was, accidentally, what kept such devices reachable.
+//     Reachable for real: a gnmi-dialout participant whose streamLive() blips
+//     fails install on the re-arm the exclusion hint just asked for.
+//
+//  2. LEDGERS MUST SURVIVE for participants that stay armed. "Nothing has
+//     emitted yet" is false while armed: background fires increment
+//     backgroundSuppressed at any phase, and exogenous pre-T0 fires are
+//     gateSuppressCounted (emitted + suppressedPreWindow). Those are reported
+//     disclosure (FR15/FR21) and are exported as Prometheus counters under
+//     labels a re-arm does not change, so replacing the ledger would look like a
+//     counter reset to rate()/increase(). Carrying it forward keeps it monotonic.
+//
+// Participant uniqueness is guaranteed upstream: Scenario.Validate rejects a
+// duplicated list, so there is no dedup here (and none inside the manager lock).
+func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.transitionLocked(phaseArmed); err != nil {
 		return 0, nil, err
 	}
 
-	// Reset the whole arm-derived view (see the re-arm note above). Nothing has
-	// emitted yet — the gate is armed, not running — so discarding the previous
-	// ledgers loses no counted traffic.
+	// Keep the previous arm's view to carry ledgers forward (obligation 2) and to
+	// detach whatever does not survive this pass (obligation 1).
+	prevParts, prevLedgers := c.parts, c.ledgers
 	c.excluded = nil
+	// Fresh slice/maps, never truncate-in-place: a previously returned excluded
+	// slice must not be mutated under a caller still serving it.
 	c.parts = make(map[string]*scenarioPart)
 	c.ledgers = make(map[string]*ledgerEntry)
 
@@ -344,18 +369,7 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 	c.sm.mu.RLock()
 	gs := &gateState{phase: phaseArmed}
 	c.gate.Store(gs)
-	// `participants` is a SET: the same device named twice is one participant,
-	// not two. Skipping repeats keeps both the armed count and the excluded set
-	// per-distinct-device — without this, N copies of one IP reported N armed
-	// (or N identical exclusion rows) while the run only ever had one source.
-	// Since the ledger reconciles on (protocol, source_ip, collector), an
-	// inflated count is a directly misleading number.
-	seen := make(map[string]struct{})
 	for _, ip := range c.spec.Participants {
-		if _, dup := seen[ip]; dup {
-			continue
-		}
-		seen[ip] = struct{}{}
 		dev := c.sm.devicesByIP[ip]
 		if dev == nil {
 			c.excluded = append(c.excluded, excludedParticipant{
@@ -364,7 +378,10 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 			})
 			continue
 		}
-		led := &ledgerEntry{}
+		led := prevLedgers[ip] // nil on a first arm
+		if led == nil {
+			led = &ledgerEntry{}
+		}
 		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
 			c.excluded = append(c.excluded, excludedParticipant{Device: ip, Reason: reason, RemediationHint: hint})
@@ -373,11 +390,21 @@ func (c *ScenarioController) Arm() (armed int, excluded []excludedParticipant, e
 		c.parts[ip] = part
 		c.ledgers[ip] = led
 	}
+	// Obligation 1: release handles from the previous arm that this pass did not
+	// reinstall. A participant still armed had its handle overwritten in place by
+	// installScenPart above, so only the dropped ones need the nil-swap.
+	for ip := range prevParts {
+		if _, stillArmed := c.parts[ip]; stillArmed {
+			continue
+		}
+		if dev := c.sm.devicesByIP[ip]; dev != nil {
+			c.detachScenPart(dev)
+		}
+	}
 	c.sm.mu.RUnlock()
-	// Derive the count from the map rather than incrementing per iteration, so
-	// it cannot drift from the map the rest of the lifecycle uses: Start's 0/N
-	// refusal already tests len(c.parts), and the report publishes
-	// len(PerDevice). One source of truth, not three.
+	// Derive the count from the map rather than counting loop iterations, so it
+	// cannot drift from the map the rest of the lifecycle uses: Start's 0/N
+	// refusal tests len(c.parts) and the report publishes len(PerDevice).
 	return len(c.parts), c.excluded, nil
 }
 
