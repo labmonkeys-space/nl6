@@ -354,6 +354,19 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 		return 0, nil, err
 	}
 
+	// A pending scheduled start was authorised against the membership the PREVIOUS
+	// arm resolved. Re-resolving membership withdraws that authorisation: the set
+	// may now differ, or be empty, and either silently starting at T0 against a
+	// set the operator never approved or firing a Start that cannot succeed is
+	// worse than requiring the schedule to be re-issued. Cancelling here is also
+	// what keeps `scheduled_start` in the status truthful.
+	if c.startTimer != nil {
+		c.startTimer.Stop()
+		c.startTimer = nil
+		c.scheduledAt = time.Time{}
+		log.Printf("[scenario] scenario=%s re-armed; pending scheduled start cancelled (reschedule after checking readiness)", c.id)
+	}
+
 	// Keep the previous arm's view to carry ledgers forward (obligation 2) and to
 	// detach whatever does not survive this pass (obligation 1).
 	prevParts, prevLedgers := c.parts, c.ledgers
@@ -531,9 +544,32 @@ func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) er
 	}
 	c.scheduledAt = at
 	// AfterFunc and c.now share the clock (both real, or both synctest-fake).
-	c.startTimer = time.AfterFunc(at.Sub(c.now()), func() { _ = c.Start(ctx) })
+	c.startTimer = time.AfterFunc(at.Sub(c.now()), func() { c.startScheduled(ctx) })
 	log.Printf("[scenario] %s start scheduled for %s", c.id, at.Format(time.RFC3339))
 	return nil
+}
+
+// startScheduled is the timer-driven Start. A scheduled start can legitimately
+// fail — every armed participant may have been deleted before T0, in which case
+// Start rolls back to `armed` and returns an error — and that error used to be
+// discarded, which left the scenario in a state no operator could get out of:
+// phase `armed`, a `scheduled_start` in the past, and ScheduleStart refusing a
+// replacement because startTimer was still non-nil. So log the failure and
+// RELEASE the schedule, which both tells the operator what happened and restores
+// the ability to reschedule.
+func (c *ScenarioController) startScheduled(ctx context.Context) {
+	err := c.Start(ctx) // takes c.mu; must not be called under it
+	if err == nil {
+		return
+	}
+	c.mu.Lock()
+	// Nobody can have installed a new timer in the meantime: ScheduleStart
+	// refuses while startTimer is non-nil, and only this path clears it after a
+	// fire. Clearing on a Cancel/Stop race is harmless — the schedule is moot.
+	c.startTimer = nil
+	c.scheduledAt = time.Time{}
+	c.mu.Unlock()
+	log.Printf("[scenario] scenario=%s scheduled start failed: %v; schedule released — re-arm and reschedule", c.id, err)
 }
 
 // ScheduledStart returns the pending absolute start time (zero if none).
