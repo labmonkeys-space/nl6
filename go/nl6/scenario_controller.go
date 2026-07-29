@@ -43,6 +43,13 @@ type ScenarioController struct {
 	// The timer is stopped by Cancel/finish so a DELETE-before-T0 is clean.
 	startTimer  *time.Timer
 	scheduledAt time.Time
+	// scheduleGen identifies the current schedule. Every ScheduleStart takes the
+	// next value and its timer closure captures it; anything that withdraws a
+	// schedule (Arm, finish, Cancel) bumps it. A fire whose captured generation
+	// is stale is a fire whose authorisation was withdrawn while it was in
+	// flight — timer.Stop() cannot express that, because it reports nothing
+	// useful once the timer has already fired and is merely blocked on c.mu.
+	scheduleGen uint64
 
 	// gate is the published snapshot; participants hold &gate and Load it.
 	gate atomic.Pointer[gateState]
@@ -360,10 +367,16 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	// set the operator never approved or firing a Start that cannot succeed is
 	// worse than requiring the schedule to be re-issued. Cancelling here is also
 	// what keeps `scheduled_start` in the status truthful.
+	// Bumping the generation is what actually withdraws the authorisation:
+	// Stop() cannot help if the timer already fired and is blocked on c.mu, and
+	// this runs under that same lock, so a fire is either fully before us (phase
+	// is running → our transitionLocked above already failed) or fully after us
+	// (its generation is stale → it no-ops).
 	if c.startTimer != nil {
 		c.startTimer.Stop()
 		c.startTimer = nil
 		c.scheduledAt = time.Time{}
+		c.scheduleGen++
 		log.Printf("[scenario] scenario=%s re-armed; pending scheduled start cancelled (reschedule after checking readiness)", c.id)
 	}
 
@@ -426,6 +439,15 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 func (c *ScenarioController) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.startLocked(ctx)
+}
+
+// startLocked is Start's body, callable with c.mu already held. The scheduled-
+// start path needs that: it has to check whether its fire is still authorised
+// AND run the start under a SINGLE lock acquisition, because a concurrent Arm
+// can otherwise interleave between the two and change the membership the start
+// then runs against (see startScheduled).
+func (c *ScenarioController) startLocked(ctx context.Context) error {
 	if c.phase != phaseArmed {
 		return fmt.Errorf("%w: %s -> running (arm first)", errInvalidTransition, c.phase)
 	}
@@ -543,33 +565,51 @@ func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) er
 		return fmt.Errorf("scenario %s already has a scheduled start at %s", c.id, c.scheduledAt.Format(time.RFC3339))
 	}
 	c.scheduledAt = at
+	c.scheduleGen++
+	gen := c.scheduleGen
 	// AfterFunc and c.now share the clock (both real, or both synctest-fake).
-	c.startTimer = time.AfterFunc(at.Sub(c.now()), func() { c.startScheduled(ctx) })
+	c.startTimer = time.AfterFunc(at.Sub(c.now()), func() { c.startScheduled(ctx, gen) })
 	log.Printf("[scenario] %s start scheduled for %s", c.id, at.Format(time.RFC3339))
 	return nil
 }
 
-// startScheduled is the timer-driven Start. A scheduled start can legitimately
-// fail — every armed participant may have been deleted before T0, in which case
-// Start rolls back to `armed` and returns an error — and that error used to be
-// discarded, which left the scenario in a state no operator could get out of:
-// phase `armed`, a `scheduled_start` in the past, and ScheduleStart refusing a
-// replacement because startTimer was still non-nil. So log the failure and
-// RELEASE the schedule, which both tells the operator what happened and restores
-// the ability to reschedule.
-func (c *ScenarioController) startScheduled(ctx context.Context) {
-	err := c.Start(ctx) // takes c.mu; must not be called under it
-	if err == nil {
+// startScheduled is the timer-driven Start, for the schedule identified by gen.
+//
+// Everything here happens under ONE acquisition of c.mu, which is the point. A
+// timer that has already fired may sit blocked on the mutex for an unbounded
+// time, so "decide, then start" across two acquisitions lets a concurrent Arm
+// slip in between and leaves two ways to be wrong: the start runs against a
+// membership the operator never approved (Arm believes it cancelled and says so),
+// or the failure path blanks a schedule that a *newer* ScheduleStart has since
+// installed — leaving a live timer with no `scheduled_start` in the status and
+// room for a second one. The generation check is what makes a withdrawn
+// authorisation stick, since timer.Stop() cannot report it once the timer fired.
+//
+// A scheduled start can also legitimately fail (every armed participant deleted
+// before T0 → Start rolls back to `armed`). That error used to be discarded,
+// which stranded the scenario: phase `armed`, a past `scheduled_start`, and
+// ScheduleStart refusing a replacement forever. So log it and RELEASE the
+// schedule, restoring the ability to reschedule.
+func (c *ScenarioController) startScheduled(ctx context.Context, gen uint64) {
+	c.mu.Lock()
+	if gen != c.scheduleGen {
+		// Superseded while this fire was in flight (a re-arm, a replacement
+		// schedule, or teardown). Do nothing: not even the release, because the
+		// state now belongs to whatever superseded us.
+		c.mu.Unlock()
+		log.Printf("[scenario] scenario=%s scheduled start superseded before it fired; ignoring", c.id)
 		return
 	}
-	c.mu.Lock()
-	// Nobody can have installed a new timer in the meantime: ScheduleStart
-	// refuses while startTimer is non-nil, and only this path clears it after a
-	// fire. Clearing on a Cancel/Stop race is harmless — the schedule is moot.
-	c.startTimer = nil
-	c.scheduledAt = time.Time{}
+	err := c.startLocked(ctx)
+	if err != nil && gen == c.scheduleGen {
+		c.startTimer = nil
+		c.scheduledAt = time.Time{}
+		c.scheduleGen++ // this schedule is spent
+	}
 	c.mu.Unlock()
-	log.Printf("[scenario] scenario=%s scheduled start failed: %v; schedule released — re-arm and reschedule", c.id, err)
+	if err != nil {
+		log.Printf("[scenario] scenario=%s scheduled start failed: %v; schedule released — re-arm and reschedule", c.id, err)
+	}
 }
 
 // ScheduledStart returns the pending absolute start time (zero if none).
@@ -599,6 +639,16 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	if c.autoStop != nil {
 		c.autoStop.Stop() // cancel the self-close timer (no-op if it already fired)
+	}
+	// Withdraw any pending scheduled start. Reachable on a healthy run: an
+	// operator can schedule an absolute T0 and then start manually, and without
+	// this the stale timer wakes up after the run has finished and logs a
+	// spurious "scheduled start failed: invalid transition".
+	if c.startTimer != nil {
+		c.startTimer.Stop()
+		c.startTimer = nil
+		c.scheduledAt = time.Time{}
+		c.scheduleGen++
 	}
 
 	// Actual T1 = the instant emission stops. For an on-time auto-stop this
@@ -678,6 +728,9 @@ func (c *ScenarioController) Cancel() error {
 	}
 	if c.startTimer != nil {
 		c.startTimer.Stop() // cancel a pending scheduled start (FR11)
+		c.startTimer = nil
+		c.scheduledAt = time.Time{}
+		c.scheduleGen++ // neutralise a fire that already got past Stop()
 	}
 	c.gate.Store(&gateState{phase: phaseCanceled})
 	c.sm.mu.RLock()

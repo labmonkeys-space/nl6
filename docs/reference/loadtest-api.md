@@ -179,10 +179,12 @@ only when there was something to cancel) and `scheduled_start` disappears from
 the status — reschedule with another `POST .../start {"at": …}` once you are
 happy with the readiness.
 
-A scheduled start can also fail on its own, without a re-arm: if every armed
-participant is deleted before `T0`, the fire is refused (`0/N`). The scenario
-stays `armed`, the failure is logged, and the schedule is **released** so you can
-fix the fleet, re-arm and reschedule.
+A scheduled start can also fail on its own, without a re-arm — most obviously if
+every armed participant is deleted before `T0` (the fire is refused `0/N`), but
+also if the fleet is busy with a device-creation batch at that instant. Whatever
+the cause, the scenario stays `armed`, the failure is logged, and the schedule is
+**released** rather than left pinned, so you can fix the condition, re-arm and
+reschedule. A released schedule is not retried automatically.
 
 Response `200` (readiness):
 
