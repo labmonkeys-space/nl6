@@ -8,7 +8,7 @@ package main
 import (
 	"fmt"
 	"math"
-	"net"
+	"net/netip"
 	"time"
 )
 
@@ -76,6 +76,23 @@ const scenarioMaxWindow = 24 * time.Hour
 // >= the scheduler's 1ms floor (1s / 1000 = 1ms).
 const scenarioMaxRate = 1000
 
+// scenarioMaxParticipants bounds the participant list. 100k mirrors the
+// createDevices device-count ceiling ("comfortably covers the 30k+ target
+// fleet and a flat /16 management plane") so the codebase carries one scale
+// constant instead of two differently-justified ones.
+//
+// It is a semantic bound, not a capability claim and not an allocation guard.
+// Not a capability claim: a participant that resolves to no live device becomes
+// an arm-time exclusion, not a submit-time failure. Not an allocation guard:
+// this check can only run once the whole slice is decoded, so the byte cap
+// (scenarioMaxBody) is what actually bounds how much a single request can make
+// the server allocate.
+//
+// Before this bound existed, the REST submit body cap was the only thing
+// limiting the slice — which made the *accidental* limit (~4,400 participants
+// at 64 KiB) the binding one, well under the 30k fleet the subsystem targets.
+const scenarioMaxParticipants = 100_000
+
 // Validate performs structural validation (bounds, enums). It deliberately
 // does NOT check device existence — that is arm-time semantics surfaced via
 // the excluded set (FR9), mirroring the -topology-config lazy pattern.
@@ -83,10 +100,54 @@ func (s *Scenario) Validate() error {
 	if len(s.Participants) == 0 {
 		return fmt.Errorf("scenario: participants must not be empty")
 	}
+	// Bound the list before parsing it, so an over-ceiling request is rejected
+	// without running 100k+ address parses. (It cannot save the *allocation* —
+	// the decoder has already materialised every string by the time Validate
+	// runs; scenarioMaxBody is the guard for that.) Checked here rather than in
+	// the HTTP handler so the in-process construction path is bounded too.
+	if len(s.Participants) > scenarioMaxParticipants {
+		return fmt.Errorf("scenario: participants has %d entries, exceeding the %d cap",
+			len(s.Participants), scenarioMaxParticipants)
+	}
+	// `participants` is a SET, and a repeat is rejected rather than collapsed.
+	// A duplicate has no meaningful semantics — the ledger reconciles on
+	// (protocol, source_ip, collector), so a device named twice is one source —
+	// and silently collapsing leaves seams: config_sha256 would still fingerprint
+	// the raw list, so two distinguishable submits would produce identical runs,
+	// and the collapse would be invisible in the readiness response. Rejecting is
+	// also consistent with how the other guaranteed-useless input (a non-IPv4
+	// participant) is handled, and keeps the check outside the manager lock that
+	// Arm holds while resolving.
+	seen := make(map[string]struct{}, len(s.Participants))
 	for _, ip := range s.Participants {
-		if net.ParseIP(ip) == nil {
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
 			return fmt.Errorf("scenario: participant %q is not a valid IP", ip)
 		}
+		// IPv4 dotted quad only: the simulated fleet is v4 throughout (TUN
+		// interfaces, the management plane, To4()-based route generation), so a
+		// v6 participant could only ever resolve to a "device not found"
+		// exclusion at arm. Rejecting it here reports a guaranteed-useless
+		// request at submit and keeps the worst-case wire cost of an entry at
+		// scenarioParticipantWireBytes.
+		//
+		// Is4() — NOT net.IP.To4() — is the predicate that means "dotted quad".
+		// To4() is non-nil for IPv4-MAPPED IPv6 as well ("::ffff:10.42.0.1",
+		// and its expanded 45-character spelling), which would sail through
+		// here, canonicalise to 10.42.0.1, and then MISS Arm's devicesByIP
+		// lookup, because that map is keyed by the canonical dotted quad while
+		// Arm looks up the raw request string. That is precisely the useless
+		// exclusion this check exists to prevent — and at 48 wire bytes for the
+		// expanded form it would also falsify scenarioParticipantWireBytes.
+		// netip.Addr.Is4 reports false for Is4In6 addresses, which is what
+		// makes it the right question.
+		if !addr.Is4() {
+			return fmt.Errorf("scenario: participant %q must be an IPv4 dotted quad", ip)
+		}
+		if _, dup := seen[ip]; dup {
+			return fmt.Errorf("scenario: participant %q appears more than once; participants is a set", ip)
+		}
+		seen[ip] = struct{}{}
 	}
 	if !scenarioProtocols[s.Protocol] {
 		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)", s.Protocol)
