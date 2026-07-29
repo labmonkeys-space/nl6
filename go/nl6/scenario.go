@@ -100,13 +100,25 @@ func (s *Scenario) Validate() error {
 	if len(s.Participants) == 0 {
 		return fmt.Errorf("scenario: participants must not be empty")
 	}
-	// Bound the list before parsing it, so an over-ceiling request fails fast
-	// instead of validating 100k+ strings first. Checked here rather than in
+	// Bound the list before parsing it, so an over-ceiling request is rejected
+	// without running 100k+ address parses. (It cannot save the *allocation* —
+	// the decoder has already materialised every string by the time Validate
+	// runs; scenarioMaxBody is the guard for that.) Checked here rather than in
 	// the HTTP handler so the in-process construction path is bounded too.
 	if len(s.Participants) > scenarioMaxParticipants {
 		return fmt.Errorf("scenario: participants has %d entries, exceeding the %d cap",
 			len(s.Participants), scenarioMaxParticipants)
 	}
+	// `participants` is a SET, and a repeat is rejected rather than collapsed.
+	// A duplicate has no meaningful semantics — the ledger reconciles on
+	// (protocol, source_ip, collector), so a device named twice is one source —
+	// and silently collapsing leaves seams: config_sha256 would still fingerprint
+	// the raw list, so two distinguishable submits would produce identical runs,
+	// and the collapse would be invisible in the readiness response. Rejecting is
+	// also consistent with how the other guaranteed-useless input (a non-IPv4
+	// participant) is handled, and keeps the check outside the manager lock that
+	// Arm holds while resolving.
+	seen := make(map[string]struct{}, len(s.Participants))
 	for _, ip := range s.Participants {
 		addr, err := netip.ParseAddr(ip)
 		if err != nil {
@@ -132,6 +144,10 @@ func (s *Scenario) Validate() error {
 		if !addr.Is4() {
 			return fmt.Errorf("scenario: participant %q must be an IPv4 dotted quad", ip)
 		}
+		if _, dup := seen[ip]; dup {
+			return fmt.Errorf("scenario: participant %q appears more than once; participants is a set", ip)
+		}
+		seen[ip] = struct{}{}
 	}
 	if !scenarioProtocols[s.Protocol] {
 		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)", s.Protocol)

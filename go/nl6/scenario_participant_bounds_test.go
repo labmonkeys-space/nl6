@@ -203,6 +203,27 @@ func TestScenarioAPI_ParticipantAddressGrammar(t *testing.T) {
 		{"ipv4_mapped_expanded", "0000:0000:0000:0000:0000:ffff:255.255.255.255", "IPv4 dotted quad"},
 		{"malformed", "not-an-ip", "not a valid IP"},
 	}
+	t.Run("duplicate_rejected", func(t *testing.T) {
+		// A repeat is refused, not collapsed: the ledger reconciles per source
+		// IP, so a device named twice is one source and the second entry has no
+		// meaning. Rejecting also keeps config_sha256 honest — otherwise two
+		// distinguishable submits would produce identical runs.
+		router := scenarioAPIManager(t, 1)
+		body := `{"participants":["10.42.0.1","10.42.0.2","10.42.0.1"],"protocol":"syslog","rate":5,"window":"1s"}`
+		w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
+		}
+		var errBody map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
+			t.Fatalf("error body: %v", err)
+		}
+		for _, want := range []string{"10.42.0.1", "more than once"} {
+			if !strings.Contains(errBody["error"], want) {
+				t.Fatalf("error %q does not contain %q", errBody["error"], want)
+			}
+		}
+	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			router := scenarioAPIManager(t, 1)
@@ -243,6 +264,10 @@ func TestScenarioValidate_BoundsGuardInProcessPath(t *testing.T) {
 
 	if err := base([]string{"2001:db8::1"}).Validate(); err == nil {
 		t.Fatal("Validate accepted an IPv6 participant")
+	}
+
+	if err := base([]string{"10.42.0.1", "10.42.0.1"}).Validate(); err == nil {
+		t.Fatal("Validate accepted a duplicated participant")
 	}
 
 	// The ceiling itself stays valid — the bound is a ceiling, not an off-by-one.
@@ -288,15 +313,75 @@ func TestScenarioBodyCapAdmitsCeilingSizedList(t *testing.T) {
 		}
 	}
 
-	// The consequence: a ceiling-sized worst-case list fits, and what remains
-	// is the documented envelope budget for the non-participant fields.
-	body := strings.Repeat(`"`+worst+`",`, scenarioMaxParticipants)
+	// The consequence, asserted END TO END rather than arithmetically: a real
+	// ceiling-sized worst-case submit is accepted by the handler. Given the
+	// premise above, comparing len(body) to the cap would only restate the
+	// constants' definition; putting the body through MaxBytesReader and the
+	// decoder is what actually proves the derivation admits it.
+	router := scenarioAPIManager(t, 1)
+	var b strings.Builder
+	b.WriteString(`{"participants":[`)
+	for i := 0; i < scenarioMaxParticipants; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		// Distinct addresses (duplicates are rejected) that are all exactly
+		// worst-case length: three variable octets held in 100..255 keep every
+		// octet at 3 digits, and 156^3 distinct values covers the ceiling.
+		fmt.Fprintf(&b, `"255.%d.%d.%d"`, 100+i/(156*156), 100+(i/156)%156, 100+i%156)
+	}
+	b.WriteString(`],"protocol":"syslog","rate":1,"window":"1s","seed":42}`)
+	body := b.String()
 	if len(body) > scenarioMaxBody {
-		t.Fatalf("ceiling-sized worst-case list is %d bytes, over the %d cap", len(body), scenarioMaxBody)
+		t.Fatalf("ceiling-sized worst-case body is %d bytes, over the %d cap", len(body), scenarioMaxBody)
 	}
-	if envelope := scenarioMaxBody - len(body); envelope < 64<<10-64 {
-		t.Fatalf("only %d bytes left for non-participant fields, expected ~%d", envelope, 64<<10)
+	if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body); w.Code != http.StatusAccepted {
+		t.Fatalf("ceiling-sized worst-case submit (%d bytes) status = %d, want 202 (body %s)",
+			len(body), w.Code, truncateBody(w.Body.String()))
 	}
+}
+
+// TestScenarioAPI_BodyCapBoundary pins the exact edge. MaxBytesReader admits n
+// and fails at n+1, and n is the one size the whole derivation exists to admit —
+// every other test here probes strictly over the cap, so an off-by-one that
+// rejected a body of exactly scenarioMaxBody would have gone unnoticed.
+func TestScenarioAPI_BodyCapBoundary(t *testing.T) {
+	// Pad with insignificant whitespace (legal JSON) to hit an exact byte count.
+	build := func(total int) string {
+		const head = `{"participants":["10.42.0.1"],"protocol":"syslog","rate":1,"window":"1s"`
+		const tail = `}`
+		pad := total - len(head) - len(tail)
+		if pad < 0 {
+			t.Fatalf("cannot build a %d-byte body; the minimum is %d", total, len(head)+len(tail))
+		}
+		return head + strings.Repeat(" ", pad) + tail
+	}
+
+	t.Run("exactly_at_cap_accepted", func(t *testing.T) {
+		router := scenarioAPIManager(t, 1)
+		body := build(scenarioMaxBody)
+		if len(body) != scenarioMaxBody {
+			t.Fatalf("body is %d bytes, want exactly %d", len(body), scenarioMaxBody)
+		}
+		if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body); w.Code != http.StatusAccepted {
+			t.Fatalf("body of exactly %d bytes: status = %d, want 202 (body %s)",
+				scenarioMaxBody, w.Code, truncateBody(w.Body.String()))
+		}
+	})
+
+	t.Run("one_over_cap_refused", func(t *testing.T) {
+		router := scenarioAPIManager(t, 1)
+		body := build(scenarioMaxBody + 1)
+		w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("body of %d bytes: status = %d, want 400", len(body), w.Code)
+		}
+		var errBody map[string]string
+		_ = json.Unmarshal(w.Body.Bytes(), &errBody)
+		if !strings.Contains(errBody["error"], fmt.Sprint(scenarioMaxBody)) {
+			t.Fatalf("error %q does not name the cap", errBody["error"])
+		}
+	})
 }
 
 // truncateBody keeps a failure message readable when the body echoes a huge

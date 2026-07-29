@@ -337,7 +337,9 @@ interesting one is usually cardinality:
   pressure, collector per-agent state, and node cardinality in the monitoring
   system. **Rate cannot substitute for distinct source IPs** — 4,300 devices at
   7/s loads a collector's throughput about like 30,000 at 1/s, but tells you
-  nothing about whether the pipeline survives 30,000 agents.
+  nothing about whether the pipeline survives 30,000 agents. (Participants are a
+  **set**: a repeated IP is rejected at submit, so cardinality is always the
+  number of entries you sent.)
 - **Aggregate rate has its own, lower ceiling.** `syslog` and `snmp-trap` fire
   inline on a single scheduler goroutine (one datagram per event), so their
   aggregate throughput is bounded by one core's per-event cost regardless of how
@@ -365,10 +367,14 @@ order before suspecting the collector:
 2. **The scheduler ceiling above**, if the remaining participants × rate is in
    the hundreds of thousands per second.
 
-Note this arithmetic does **not** apply to flow protocols: there `rate` is the
-flow-*tick* cadence and the ledger counts flow **records**, so `sent` is a
-multiple of the tick count (`Σ applications[].records == summary.sent`) and can
-never "fall short" of `participants × rate × window`.
+This arithmetic applies to **`syslog` and `snmp-trap` only** — protocols where
+one scheduled fire is one event. Do not apply it to flow protocols: there `rate`
+is the flow-*tick* cadence, not an event rate, and the ledger counts flow
+**records**. A tick emits however many records expired under the active/inactive
+timeouts, which is frequently **zero** at a fast tick cadence, so `sent` bears no
+fixed relationship to `participants × rate × window` in either direction. For a
+flow run, reconcile the report's `sent` against the collector directly rather
+than against a predicted total.
 
 ## Graceful abort produces a finalized report
 

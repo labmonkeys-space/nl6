@@ -30,7 +30,8 @@ endpoints to run a fidelity check and troubleshoot failures.
   limits and neither implies the other:
 
     - **The 18-byte figure assumes compact JSON.** Pretty-printed bodies cost
-      more per entry (~21 bytes at 4-space indent), so a ceiling-sized list can
+      more per entry (27 bytes for a `jq`-default body, where a participant sits two
+      levels deep at 8 spaces of indent), so a ceiling-sized list can
       exceed the byte cap purely through whitespace. Send participant lists
       compact. No per-entry constant can prevent this in general — JSON allows
       unbounded insignificant whitespace.
@@ -79,7 +80,7 @@ Request body:
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `participants` | `[]string` | yes | Device management IPs. Non-empty, at most **100,000** entries; each must be an **IPv4 dotted quad** (enforced — the simulated fleet is IPv4 throughout, so an IPv6 entry could only ever become a `device not found` exclusion and is rejected at submit instead). Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
+| `participants` | `[]string` | yes | Device management IPs, as a **set**. Non-empty, at most **100,000** entries, and **no repeats** (a duplicate is a `400` — a device named twice is still one source on the report's join tuple, so the second entry has no meaning). Each must be an **IPv4 dotted quad**: IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are rejected at submit, because the fleet is IPv4 throughout and such an entry could only ever become a `device not found` exclusion. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
@@ -158,6 +159,21 @@ Resolves participants against the live fleet, installs the per-device
 participation handles, and publishes the armed gate (which suppresses the
 fleet's ordinary background cadence for participants). Unknown or ineligible
 devices are reported in `excluded` rather than failing the arm.
+
+**Re-arming is supported and re-resolves membership from scratch** — that is what
+the `device not found` remediation hint asks you to do once the fleet is stable.
+Each arm returns the *current* answer, not an accumulation of previous attempts:
+
+- the `excluded` set is rebuilt, so it never grows across repeated arms;
+- a participant that resolved before and does not now is dropped and its
+  participation handle released, so the armed count can go **down**;
+- counters already accrued for a participant that stays armed (pre-`T0`
+  `suppressed_pre_window`, `background_suppressed`) are **carried forward**,
+  so they stay monotonic for a metrics scraper.
+
+One caveat: re-arming does not touch a start scheduled with an absolute `T0`. If
+a re-arm drops the participant set to 0/N, that pending start will fail when it
+fires — `DELETE` the scenario and resubmit.
 
 Response `200` (readiness):
 
