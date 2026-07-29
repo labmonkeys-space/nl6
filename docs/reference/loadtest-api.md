@@ -20,7 +20,13 @@ endpoints to run a fidelity check and troubleshoot failures.
 - Timestamps are **RFC 3339 with millisecond precision**
   (`2006-01-02T15:04:05.000Z07:00`).
 - Request bodies are decoded with `DisallowUnknownFields` (a typo'd or unknown
-  key is a `400`) and capped at 64 KiB.
+  key is a `400`) and capped at **1,865,536 bytes** (≈1.78 MiB) on submit. That
+  cap is derived, not chosen: it holds a maximum-size participant list
+  (100,000 entries at the worst-case IPv4 wire cost of 18 bytes each) plus a
+  64 KiB allowance for every other field. A client can therefore validate
+  against the **100,000-participant ceiling** and never hit the byte cap. An
+  over-cap body returns a `400` naming both numbers with
+  `"field": "participants"`.
 
 ## Endpoints
 
@@ -60,7 +66,7 @@ Request body:
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `participants` | `[]string` | yes | Device management IPs (dotted quad). Non-empty; each must parse as an IP. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
+| `participants` | `[]string` | yes | Device management IPs. Non-empty, at most **100,000** entries; each must be an **IPv4 dotted quad** (enforced — the simulated fleet is IPv4 throughout, so an IPv6 entry could only ever become a `device not found` exclusion and is rejected at submit instead). Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |

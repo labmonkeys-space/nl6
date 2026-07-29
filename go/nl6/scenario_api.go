@@ -27,8 +27,27 @@ import (
 // (no APIResponse envelope), {"error","field"} for 400 validation and
 // {"error"} for 404/409, RFC3339-ms timestamps, two-stage validation.
 
-// scenarioMaxBody bounds the submit body (matches the createDevices limit).
-const scenarioMaxBody = 64 << 10
+// scenarioParticipantWireBytes is the worst-case JSON cost of one participant
+// entry, `"255.255.255.255",` — 15 address bytes plus two quotes and a comma.
+// Validate rejects non-IPv4 participants, so this is a true bound.
+const scenarioParticipantWireBytes = 18
+
+// scenarioMaxBody bounds the submit body. It is DERIVED from the participant
+// ceiling rather than chosen alongside it: the cap must admit a ceiling-sized
+// participant list, or scenarioMaxParticipants is unreachable and a
+// fleet-scale submit fails on body size instead of reporting a count. Writing
+// it as arithmetic makes that a structural property — raise the ceiling and
+// the cap follows — instead of a comment that can rot.
+//
+// The 64 KiB addend is the envelope budget for every non-participant field
+// (protocol, rate, window, drain, seed, rate_profile, abort_predicate): the
+// entire allowance of the previous cap, which was copied from createDevices
+// where the body size does not scale with the fleet.
+//
+// Note the two bounds are complementary, not redundant. MaxBytesReader fires
+// BEFORE decode (the allocation guard); the participant count can only be
+// checked AFTER decode (the semantic guard).
+const scenarioMaxBody = scenarioMaxParticipants*scenarioParticipantWireBytes + 64<<10
 
 // scenarioRequest is the submit DTO. Durations arrive as Go duration
 // strings ("30s", "5m") per the interface-state auto-revert precedent.
@@ -170,6 +189,18 @@ func createScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	var req scenarioRequest
 	if err := dec.Decode(&req); err != nil {
+		// Name the limit rather than passing Go's bare "http: request body
+		// too large" through: on this endpoint an over-limit body is almost
+		// always an oversized participant list, and the operator needs the
+		// two numbers to size the next attempt. Same MaxBytesError discipline
+		// as the interface-state and optical handlers.
+		var mbErr *http.MaxBytesError
+		if errors.As(err, &mbErr) {
+			scenario400(w, fmt.Sprintf(
+				"payload too large (max %d bytes); a participant list may hold at most %d entries",
+				scenarioMaxBody, scenarioMaxParticipants), "participants")
+			return
+		}
 		scenario400(w, err.Error(), "")
 		return
 	}

@@ -325,6 +325,32 @@ keeps the measurement window clean — but it means:
   window, suppress those alerts for the participants, or keep windows short.
 - Non-participant devices are unaffected — their background cadence continues.
 
+## Participant cardinality vs. rate
+
+A scenario may name up to **100,000 participants**, which is a *bounds* limit,
+not a throughput promise. The two dimensions have separate ceilings and the
+interesting one is usually cardinality:
+
+- **Cardinality is what the instrument measures.** The ledger reconciles on
+  `(protocol, source_ip, collector)`, and the failure modes a fidelity check
+  exists to expose are all per-source: `rp_filter` drops, neighbour-table
+  pressure, collector per-agent state, and node cardinality in the monitoring
+  system. **Rate cannot substitute for distinct source IPs** — 4,400 devices at
+  7/s loads a collector's throughput exactly like 30,000 at 1/s, but tells you
+  nothing about whether the pipeline survives 30,000 agents.
+- **Aggregate rate has its own, lower ceiling.** `syslog` and `snmp-trap` fire
+  inline on a single scheduler goroutine (one datagram per event), which tops
+  out in the low hundreds of thousands of events/second on one core regardless
+  of how the per-device rate and participant count are divided. Flow protocols
+  are far cheaper per record because v9/IPFIX pack many records per datagram.
+
+So high-cardinality runs are best driven at **low per-device rates**: 30,000
+participants at `rate: 0.5` is a comfortable 15k events/s, while the same fleet
+at `rate: 10` asks for 300k/s and will be scheduler-bound rather than
+collector-bound — measuring nl6 instead of the system under test. If a run's
+`sent` total falls short of `participants × rate × window`, suspect that ceiling
+before suspecting the collector.
+
 ## Graceful abort produces a finalized report
 
 A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the

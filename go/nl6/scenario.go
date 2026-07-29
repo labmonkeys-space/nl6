@@ -76,6 +76,18 @@ const scenarioMaxWindow = 24 * time.Hour
 // >= the scheduler's 1ms floor (1s / 1000 = 1ms).
 const scenarioMaxRate = 1000
 
+// scenarioMaxParticipants bounds the participant list. 100k mirrors the
+// createDevices device-count ceiling ("comfortably covers the 30k+ target
+// fleet and a flat /16 management plane") so the codebase carries one scale
+// constant instead of two differently-justified ones. It is an allocation
+// bound, not a capability claim: a participant that resolves to no live
+// device becomes an arm-time exclusion, not a submit-time failure.
+//
+// Before this bound existed, the REST submit body cap was the only thing
+// limiting the slice — which made the *accidental* limit (~4,400 participants
+// at 64 KiB) the binding one, well under the 30k fleet the subsystem targets.
+const scenarioMaxParticipants = 100_000
+
 // Validate performs structural validation (bounds, enums). It deliberately
 // does NOT check device existence — that is arm-time semantics surfaced via
 // the excluded set (FR9), mirroring the -topology-config lazy pattern.
@@ -83,9 +95,26 @@ func (s *Scenario) Validate() error {
 	if len(s.Participants) == 0 {
 		return fmt.Errorf("scenario: participants must not be empty")
 	}
+	// Bound the list before parsing it, so an over-ceiling request fails fast
+	// instead of validating 100k+ strings first. Checked here rather than in
+	// the HTTP handler so the in-process construction path is bounded too.
+	if len(s.Participants) > scenarioMaxParticipants {
+		return fmt.Errorf("scenario: participants has %d entries, exceeding the %d cap",
+			len(s.Participants), scenarioMaxParticipants)
+	}
 	for _, ip := range s.Participants {
-		if net.ParseIP(ip) == nil {
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
 			return fmt.Errorf("scenario: participant %q is not a valid IP", ip)
+		}
+		// IPv4 only: the simulated fleet is v4 throughout (TUN interfaces, the
+		// management plane, To4()-based route generation), so an IPv6
+		// participant could only ever resolve to a "device not found"
+		// exclusion at arm. Rejecting it here reports a guaranteed-useless
+		// request at submit and keeps the worst-case wire cost of an entry at
+		// scenarioParticipantWireBytes.
+		if parsed.To4() == nil {
+			return fmt.Errorf("scenario: participant %q must be an IPv4 dotted quad", ip)
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
