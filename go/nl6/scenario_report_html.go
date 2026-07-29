@@ -362,11 +362,12 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
   </section>
   {{end}}
 
-  {{if .R.Summary.Excluded}}
+  {{if or .R.Summary.Excluded .R.Summary.ExcludedByReason}}
   <section>
     <h2>Excluded participants</h2>
     {{if .R.Summary.ExcludedByReason}}
     <table>
+      <caption>All {{.R.Summary.ParticipantsExcluded}} exclusions, by reason</caption>
       <thead><tr><th>reason</th><th>participants</th></tr></thead>
       <tbody>
       {{range $reason, $n := .R.Summary.ExcludedByReason}}
@@ -375,12 +376,13 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
       </tbody>
     </table>
     {{end}}
-    {{if .R.Summary.ExcludedTruncated}}
-    <p class="muted">Showing the first {{len .R.Summary.Excluded}} of
-      {{.R.Summary.ParticipantsExcluded}} exclusions. Fix what these show, re-arm,
-      and the next batch surfaces; the counts above cover all of them.</p>
-    {{end}}
     <table>
+      {{if .R.Summary.ExcludedTruncated}}
+      <caption>First {{len .R.Summary.Excluded}} of {{.R.Summary.ParticipantsExcluded}}
+        individually — fix what these show, re-arm, and the next batch surfaces</caption>
+      {{else}}
+      <caption>Each exclusion individually</caption>
+      {{end}}
       <thead><tr><th>device</th><th>reason</th><th>remediation hint</th></tr></thead>
       <tbody>
       {{range .R.Summary.Excluded}}

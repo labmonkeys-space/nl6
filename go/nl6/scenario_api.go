@@ -262,27 +262,25 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Observed before/after because Arm cancels a pending scheduled start (the
-	// membership it was authorised against is being re-resolved). Reported rather
-	// than left to a log line, so an API client learns it has to reschedule.
-	hadSchedule := !ctrl.ScheduledStart().IsZero()
-	armed, excluded, err := ctrl.Arm()
+	// ArmReadiness, not Arm() plus follow-up accessors: every field below is reset
+	// and rebuilt by a concurrent arm (armed→armed is legal re-entry), so reading
+	// them across separate lock acquisitions can splice two arms into one response
+	// — rows from the first with a total from the second.
+	rd, err := ctrl.ArmReadiness()
 	if err != nil {
 		scenarioErr(w, http.StatusConflict, conflictMsg(ctrl, err, "arm"))
 		return
 	}
-	rows := make([]scenarioExcludedRow, 0, len(excluded))
-	for _, ex := range excluded {
+	rows := make([]scenarioExcludedRow, 0, len(rd.Excluded))
+	for _, ex := range rd.Excluded {
 		rows = append(rows, scenarioExcludedRow(ex))
 	}
-	excludedTotal, byReason := ctrl.ExcludedSummary()
 	writeScenarioJSON(w, http.StatusOK, readinessResponse{
-		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: armed, Excluded: rows,
-		ExcludedTotal:     excludedTotal,
-		ExcludedTruncated: excludedTotal > len(rows),
-		ExcludedByReason:  byReason,
-		// Reported because Arm withdraws a pending absolute-T0 start.
-		ScheduledStartCancelled: hadSchedule && ctrl.ScheduledStart().IsZero(),
+		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: rd.Armed, Excluded: rows,
+		ExcludedTotal:           rd.ExcludedTotal,
+		ExcludedTruncated:       excludedTruncated(rd.ExcludedTotal, len(rows)),
+		ExcludedByReason:        rd.ExcludedByReason,
+		ScheduledStartCancelled: rd.ScheduleCancelled,
 	})
 }
 

@@ -8,6 +8,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -15,7 +16,8 @@ import (
 )
 
 // scenario_excluded_bound_test.go — exclusion disclosure is bounded in ROWS but
-// complete in the AGGREGATE, and the ceiling is exercised rather than assumed.
+// complete in the AGGREGATE, and the participant ceiling is exercised by a test
+// (not only by a benchmark, which `go test ./...` never runs).
 //
 // Raising the participant ceiling to 100,000 made an unbounded exclusion list a
 // ~14 MB control-plane response (one ~145-byte row per unresolved participant,
@@ -62,8 +64,9 @@ func TestScenarioExcluded_RowsBoundedTotalsComplete(t *testing.T) {
 	if rd.ParticipantsArmed != 0 {
 		t.Errorf("participants_armed = %d, want 0 (no participant exists)", rd.ParticipantsArmed)
 	}
-	if len(rd.Excluded) != scenarioMaxExcludedRows {
-		t.Errorf("excluded rows = %d, want the %d cap", len(rd.Excluded), scenarioMaxExcludedRows)
+	if len(rd.Excluded) != scenarioExcludedArmRows {
+		t.Errorf("excluded rows = %d, want the %d arm-phase share of the %d-row cap",
+			len(rd.Excluded), scenarioExcludedArmRows, scenarioMaxExcludedRows)
 	}
 	if rd.ExcludedTotal != n {
 		t.Errorf("excluded_total = %d, want %d — the total must count every exclusion, capped or not", rd.ExcludedTotal, n)
@@ -83,8 +86,12 @@ func TestScenarioExcluded_RowsBoundedTotalsComplete(t *testing.T) {
 
 	// The point of the cap: the control-plane response stays small. Unbounded,
 	// this body would be ~2.9 MB at n=20k and ~14 MB at the ceiling.
-	if size := w.Body.Len(); size > 512<<10 {
-		t.Errorf("readiness body is %d bytes; the row cap is supposed to bound it", size)
+	// Scaled to the constant it guards, generously but not vacuously: at ~145
+	// bytes a row, 300/row leaves envelope headroom while still failing if the cap
+	// is raised or removed. A flat 512 KiB passed with the cap at 3000.
+	if budget := scenarioMaxExcludedRows * 300; w.Body.Len() > budget {
+		t.Errorf("readiness body is %d bytes, over the %d-byte budget implied by the %d-row cap",
+			w.Body.Len(), budget, scenarioMaxExcludedRows)
 	}
 	t.Logf("%d participants, 0 armed → %d-byte readiness body (%d rows, total %d)",
 		n, w.Body.Len(), len(rd.Excluded), rd.ExcludedTotal)
@@ -94,7 +101,7 @@ func TestScenarioExcluded_RowsBoundedTotalsComplete(t *testing.T) {
 // trap this change could have introduced: participants_excluded used to be
 // len(res.Excluded), so capping the rows would have silently understated it.
 func TestScenarioExcluded_ReportCountIsTheTrueTotal(t *testing.T) {
-	const n = scenarioMaxExcludedRows * 3
+	const n = scenarioExcludedArmRows * 3
 	sm, _ := scenarioTestManager(t, 1)
 	c := newScenarioController(sm, nil)
 
@@ -115,8 +122,8 @@ func TestScenarioExcluded_ReportCountIsTheTrueTotal(t *testing.T) {
 	if armed != 1 {
 		t.Fatalf("armed = %d, want 1", armed)
 	}
-	if len(excluded) != scenarioMaxExcludedRows {
-		t.Fatalf("excluded rows = %d, want the %d cap", len(excluded), scenarioMaxExcludedRows)
+	if len(excluded) != scenarioExcludedArmRows {
+		t.Fatalf("excluded rows = %d, want the %d arm-phase share", len(excluded), scenarioExcludedArmRows)
 	}
 
 	if err := c.Start(t.Context()); err != nil {
@@ -144,8 +151,8 @@ func TestScenarioExcluded_ReportCountIsTheTrueTotal(t *testing.T) {
 	if got := rep.Summary.ExcludedByReason["device not found"]; got != n {
 		t.Errorf("report excluded_by_reason = %d, want %d", got, n)
 	}
-	if len(rep.Summary.Excluded) != scenarioMaxExcludedRows {
-		t.Errorf("report carries %d rows, want the %d cap", len(rep.Summary.Excluded), scenarioMaxExcludedRows)
+	if len(rep.Summary.Excluded) != scenarioExcludedArmRows {
+		t.Errorf("report carries %d rows, want the %d arm-phase share", len(rep.Summary.Excluded), scenarioExcludedArmRows)
 	}
 }
 
@@ -156,6 +163,11 @@ func TestScenarioExcluded_NotTruncatedBelowTheCap(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
 	id := submitOK(t, router, `{"participants":["10.42.0.1","10.100.0.1","10.100.0.2"],"protocol":"syslog","rate":1,"window":"1s","seed":1}`)
 	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", "")
+	if w.Code != http.StatusOK {
+		// Without this, an error body unmarshals into a zero readinessResponse and
+		// the truncation assertion below passes vacuously.
+		t.Fatalf("arm = %d (body %s)", w.Code, w.Body.String())
+	}
 	var rd readinessResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &rd); err != nil {
 		t.Fatal(err)
@@ -168,10 +180,199 @@ func TestScenarioExcluded_NotTruncatedBelowTheCap(t *testing.T) {
 	}
 }
 
-// BenchmarkScenarioArmAtCeiling is the missing evidence at the raised ceiling:
-// arm resolves 100,000 participants against a fleet that holds one of them, the
-// worst case for the exclusion path. Reported as ns/op so a regression in the
-// arm loop (or a reintroduced unbounded row list) is visible in benchstat.
+// TestScenarioExcluded_ReArmResetsTheAccounting is the guard the first version of
+// this change lacked: every other test here arms once, so deleting either reset
+// line left the suite green while a real operator loop — arm against an empty
+// fleet, provision the devices, re-arm — reported thousands of exclusions for a
+// run in which every participant armed.
+func TestScenarioExcluded_ReArmResetsTheAccounting(t *testing.T) {
+	const n = scenarioExcludedArmRows * 2
+	router := scenarioAPIManager(t, 1)
+	id := submitOK(t, router, ceilingBody(n))
+
+	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", "")
+	var first readinessResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.ExcludedTotal != n || !first.ExcludedTruncated {
+		t.Fatalf("first arm: total=%d truncated=%v, want %d and true", first.ExcludedTotal, first.ExcludedTruncated, n)
+	}
+
+	// Provision every participant, then re-arm. The exclusion accounting must be
+	// rebuilt, not carried.
+	manager.mu.Lock()
+	for i := 0; i < n; i++ {
+		ip := fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff)
+		dev := &DeviceSimulator{ID: "device-" + ip, IP: net.ParseIP(ip).To4(),
+			syslogExporter: newSinkExporter(t, net.ParseIP(ip).To4(), func([]byte) error { return nil })}
+		manager.devicesByIP[ip] = dev
+		manager.devices[dev.ID] = dev
+		manager.deviceIPs[ip] = struct{}{}
+	}
+	manager.mu.Unlock()
+
+	w = doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("re-arm = %d (body %s)", w.Code, truncateBody(w.Body.String()))
+	}
+	var second readinessResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.ExcludedTotal != 0 {
+		t.Errorf("excluded_total = %d after a re-arm that resolved everything, want 0 (accounting carried across arms)", second.ExcludedTotal)
+	}
+	if len(second.Excluded) != 0 {
+		t.Errorf("excluded rows = %d after a clean re-arm, want 0", len(second.Excluded))
+	}
+	if second.ExcludedTruncated {
+		t.Error("excluded_truncated still set after a clean re-arm")
+	}
+	if len(second.ExcludedByReason) != 0 {
+		t.Errorf("excluded_by_reason = %v after a clean re-arm, want empty", second.ExcludedByReason)
+	}
+	if second.ParticipantsArmed != n {
+		t.Errorf("participants_armed = %d, want %d", second.ParticipantsArmed, n)
+	}
+}
+
+// TestScenarioExcluded_ExactlyAtTheArmShare pins the boundary the other tests
+// straddle: at exactly the arm-phase share every exclusion still gets a row and
+// the truncation flag must stay absent.
+func TestScenarioExcluded_ExactlyAtTheArmShare(t *testing.T) {
+	router := scenarioAPIManager(t, 1)
+	id := submitOK(t, router, ceilingBody(scenarioExcludedArmRows))
+	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("arm = %d", w.Code)
+	}
+	var rd readinessResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &rd); err != nil {
+		t.Fatal(err)
+	}
+	if rd.ExcludedTotal != scenarioExcludedArmRows || len(rd.Excluded) != scenarioExcludedArmRows {
+		t.Errorf("total=%d rows=%d, want %d and %d", rd.ExcludedTotal, len(rd.Excluded),
+			scenarioExcludedArmRows, scenarioExcludedArmRows)
+	}
+	if rd.ExcludedTruncated {
+		t.Error("excluded_truncated set when nothing was dropped")
+	}
+}
+
+// TestScenarioExcluded_StartPhaseRowsSurviveAFullArmBudget is why the budget is
+// split. Arm's loop runs to completion before Start's arm→start gap check, so a
+// single first-come cap dropped EVERY "device deleted between arm and start"
+// row — the only exclusions whose device identity an operator cannot recover
+// from (participants − fleet).
+func TestScenarioExcluded_StartPhaseRowsSurviveAFullArmBudget(t *testing.T) {
+	const missing = scenarioExcludedArmRows * 2 // enough to exhaust the arm share
+	sm, _ := scenarioTestManager(t, 2)
+
+	participants := make([]string, 0, missing+2)
+	for i := 0; i < missing; i++ {
+		participants = append(participants, fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff))
+	}
+	participants = append(participants, "10.42.0.1", "10.42.0.2")
+
+	c := newScenarioController(sm, nil)
+	spec := &Scenario{Participants: participants, Protocol: "syslog",
+		Rate: 1, Window: 50 * time.Millisecond, Drain: 10 * time.Millisecond, Seed: 5}
+	if err := c.Submit(spec, "s-000500"); err != nil {
+		t.Fatal(err)
+	}
+	if armed, _, err := c.Arm(); err != nil || armed != 2 {
+		t.Fatalf("arm: armed=%d err=%v, want 2", armed, err)
+	}
+
+	// Retire one armed device in the arm→start gap.
+	dev := sm.devicesByIP["10.42.0.2"]
+	dev.syslogExporter = nil
+	delete(sm.devicesByIP, "10.42.0.2")
+	delete(sm.devices, dev.ID)
+	delete(sm.deviceIPs, "10.42.0.2")
+
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	res, err := c.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := res.ExcludedByReason["device deleted between arm and start"]; got != 1 {
+		t.Errorf("by-reason count for the gap exclusion = %d, want 1", got)
+	}
+	var found bool
+	for _, ex := range res.Excluded {
+		if ex.Device == "10.42.0.2" && ex.Reason == "device deleted between arm and start" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("the arm→start gap exclusion has no ROW among %d retained; the arm phase consumed the whole budget",
+			len(res.Excluded))
+	}
+}
+
+// TestScenarioExcluded_AtParticipantCeiling exercises the ceiling itself rather
+// than leaving it to a benchmark `go test ./...` never runs. Cheap enough for the
+// default lane: the arm loop is ~1 ms at 100k.
+func TestScenarioExcluded_AtParticipantCeiling(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 1)
+	participants := make([]string, 0, scenarioMaxParticipants)
+	for i := 0; i < scenarioMaxParticipants; i++ {
+		participants = append(participants, fmt.Sprintf("10.%d.%d.%d",
+			100+i/(156*156), 100+(i/156)%156, 100+i%156))
+	}
+	c := newScenarioController(sm, nil)
+	spec := &Scenario{Participants: participants, Protocol: "syslog",
+		Rate: 1, Window: time.Minute, Seed: 9}
+	if err := c.Submit(spec, "s-000600"); err != nil {
+		t.Fatal(err)
+	}
+
+	rd, err := c.ArmReadiness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rd.Armed != 0 {
+		t.Errorf("armed = %d, want 0", rd.Armed)
+	}
+	if rd.ExcludedTotal != scenarioMaxParticipants {
+		t.Errorf("excluded_total = %d, want %d", rd.ExcludedTotal, scenarioMaxParticipants)
+	}
+	if len(rd.Excluded) != scenarioExcludedArmRows {
+		t.Errorf("rows = %d, want %d", len(rd.Excluded), scenarioExcludedArmRows)
+	}
+	if len(rd.ExcludedByReason) != 1 {
+		t.Errorf("by-reason has %d keys, want 1: the map must not scale with participants", len(rd.ExcludedByReason))
+	}
+	// The claim the cap exists to make true, checked at the ceiling.
+	rows := make([]scenarioExcludedRow, 0, len(rd.Excluded))
+	for _, ex := range rd.Excluded {
+		rows = append(rows, scenarioExcludedRow(ex))
+	}
+	body, err := json.Marshal(readinessResponse{Excluded: rows, ExcludedTotal: rd.ExcludedTotal,
+		ExcludedTruncated: true, ExcludedByReason: rd.ExcludedByReason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if budget := scenarioMaxExcludedRows * 300; len(body) > budget {
+		t.Errorf("readiness body at the ceiling is %d bytes, over the %d-byte budget", len(body), budget)
+	}
+	t.Logf("ceiling: %d participants → %d-byte readiness payload (%d rows, total %d)",
+		scenarioMaxParticipants, len(body), len(rows), rd.ExcludedTotal)
+}
+
+// BenchmarkScenarioArmAtCeiling times arm resolving 100,000 participants against
+// an EMPTY fleet. Be precise about what that measures: every participant
+// short-circuits on `dev == nil`, so this covers the exclusion path end to end
+// (lookup, accounting, capped append) and does NOT cover installScenPart or
+// ledger construction, which no participant here reaches. Right shape for this
+// change — the exclusion path is what got a cap — but not a general "arm at the
+// ceiling" number.
 func BenchmarkScenarioArmAtCeiling(b *testing.B) {
 	sm := &SimulatorManager{
 		devices:         map[string]*DeviceSimulator{},
@@ -190,21 +391,32 @@ func BenchmarkScenarioArmAtCeiling(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	// Controllers built up front: StopTimer/StartTimer inside the loop makes
+	// -benchtime behave unintuitively, and assertions belong outside the timed
+	// region.
+	ctrls := make([]*ScenarioController, b.N)
+	for i := range ctrls {
+		ctrls[i] = newScenarioController(sm, nil)
+		if err := ctrls[i].Submit(spec, fmt.Sprintf("s-%06d", i+1)); err != nil {
+			b.Fatal(err)
+		}
+	}
+	results := make([]armReadiness, b.N)
+
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		b.StopTimer()
-		c := newScenarioController(sm, nil)
-		if err := c.Submit(spec, "s-000400"); err != nil {
-			b.Fatal(err)
-		}
-		b.StartTimer()
-		armed, excluded, err := c.Arm()
+		rd, err := ctrls[i].ArmReadiness()
 		if err != nil {
 			b.Fatal(err)
 		}
-		if armed != 0 || len(excluded) != scenarioMaxExcludedRows {
-			b.Fatalf("armed=%d rows=%d", armed, len(excluded))
+		results[i] = rd
+	}
+	b.StopTimer()
+
+	for i, rd := range results {
+		if rd.Armed != 0 || len(rd.Excluded) != scenarioExcludedArmRows || rd.ExcludedTotal != scenarioMaxParticipants {
+			b.Fatalf("iteration %d: armed=%d rows=%d total=%d", i, rd.Armed, len(rd.Excluded), rd.ExcludedTotal)
 		}
 	}
 }

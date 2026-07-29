@@ -114,18 +114,34 @@ type excludedParticipant struct {
 // thousand concrete examples, which is more actionable than 99,999 rows nobody
 // scrolls. Remediation stays iterative — fix what the sample shows, re-arm, and
 // the next batch surfaces.
+// The by-reason breakdown is the safe replacement for the dropped rows only
+// because the reason strings are a small FIXED set — the exporter-shape reasons
+// interpolate the scenario's protocol, not the device — so the map's cardinality
+// does not grow with the participant count. A reason that ever interpolated
+// per-device detail would rebuild the very blowup this cap exists to prevent,
+// inside the field advertised as bounded.
 const scenarioMaxExcludedRows = 1000
 
-// recordExcluded records one exclusion. Rows stop at scenarioMaxExcludedRows;
-// the totals never do, which is what keeps participants_excluded truthful when
-// the row list is a sample. Callers hold c.mu.
-func (c *ScenarioController) recordExcluded(device, reason, hint string) {
+// scenarioExcludedArmRows is the share of the row budget the ARM phase may use.
+// The rest is reserved for exclusions recorded later, during Start's arm→start
+// gap check. Without a reserve the cap is first-come across a heterogeneous
+// population: arm's loop runs to completion first, so at ≥1000 arm exclusions
+// every "device deleted between arm and start" row is dropped — and those are
+// the only ones whose device identity an operator cannot reconstruct from
+// (participants − fleet). Sampling that drops exactly the unpredictable class is
+// the one sampling strategy that defeats the cap's own justification.
+const scenarioExcludedArmRows = 900
+
+// recordExcluded records one exclusion, retaining a row while the caller's share
+// of the budget has room. The totals are unconditional, which is what keeps
+// participants_excluded truthful when the row list is a sample. Callers hold c.mu.
+func (c *ScenarioController) recordExcluded(device, reason, hint string, rowBudget int) {
 	c.excludedTotal++
 	if c.excludedByReason == nil {
 		c.excludedByReason = make(map[string]int)
 	}
 	c.excludedByReason[reason]++
-	if len(c.excluded) < scenarioMaxExcludedRows {
+	if len(c.excluded) < rowBudget {
 		c.excluded = append(c.excluded, excludedParticipant{
 			Device: device, Reason: reason, RemediationHint: hint,
 		})
@@ -397,10 +413,38 @@ func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 // Participant uniqueness is guaranteed upstream: Scenario.Validate rejects a
 // duplicated list, so there is no dedup here (and none inside the manager lock).
 func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
+	rd, err := c.ArmReadiness()
+	return rd.Armed, rd.Excluded, err
+}
+
+// armReadiness is everything a caller needs to describe one arm, captured under
+// a SINGLE hold of c.mu.
+//
+// That single hold is the whole point. armed→armed is legal re-entry, so a
+// concurrent arm can complete between any two lock acquisitions — and every
+// field here is reset and rebuilt by it. Reading the rows in one acquisition and
+// the totals in another spliced two arms together: 1000 rows with a total of 0,
+// or a truncation flag that contradicts the row count. Both violate the contract
+// the report schema tells consumers to rely on, and the same
+// two-acquisition shape is what stranded a scheduled start two changes ago.
+type armReadiness struct {
+	Armed             int
+	Excluded          []excludedParticipant
+	ExcludedTotal     int
+	ExcludedByReason  map[string]int
+	ScheduleCancelled bool
+}
+
+// ArmReadiness arms and returns a self-consistent snapshot. Prefer it over Arm()
+// whenever more than the armed count is needed — notably in the REST handler,
+// which would otherwise have to make three separate reads (rows, totals, and the
+// schedule state before/after).
+func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	hadSchedule := !c.scheduledAt.IsZero()
 	if err := c.transitionLocked(phaseArmed); err != nil {
-		return 0, nil, err
+		return armReadiness{}, err
 	}
 
 	// A pending scheduled start was authorised against the membership the PREVIOUS
@@ -443,7 +487,8 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 		dev := c.sm.devicesByIP[ip]
 		if dev == nil {
 			c.recordExcluded(ip, "device not found",
-				"create the device before arming, or remove it from the scenario")
+				"create the device before arming, or remove it from the scenario",
+				scenarioExcludedArmRows)
 			continue
 		}
 		led := prevLedgers[ip] // nil on a first arm
@@ -452,7 +497,7 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 		}
 		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
-			c.recordExcluded(ip, reason, hint)
+			c.recordExcluded(ip, reason, hint, scenarioExcludedArmRows)
 			continue
 		}
 		c.parts[ip] = part
@@ -473,7 +518,29 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	// Derive the count from the map rather than counting loop iterations, so it
 	// cannot drift from the map the rest of the lifecycle uses: Start's 0/N
 	// refusal tests len(c.parts) and the report publishes len(PerDevice).
-	return len(c.parts), c.excluded, nil
+	return armReadiness{
+		Armed:            len(c.parts),
+		Excluded:         c.excluded,
+		ExcludedTotal:    c.excludedTotal,
+		ExcludedByReason: copyReasonCounts(c.excludedByReason),
+		// A pending schedule that is gone after the withdrawal above.
+		ScheduleCancelled: hadSchedule && c.scheduledAt.IsZero(),
+	}, nil
+}
+
+// copyReasonCounts snapshots a reason→count map. Handing the controller's own
+// map to a caller would let a later arm mutate it mid-response; both publication
+// paths (this and finish) copy, so neither depends on the accident that no
+// current phase transition lets recordExcluded run after the handover.
+func copyReasonCounts(src map[string]int) map[string]int {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(src))
+	for reason, n := range src {
+		out[reason] = n
+	}
+	return out
 }
 
 // Start freezes the fleet, publishes the running gate at T0, and starts the
@@ -522,7 +589,8 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 		delete(c.parts, ip)
 		delete(c.ledgers, ip)
 		c.recordExcluded(ip, "device deleted between arm and start",
-			"re-arm the scenario after the fleet is stable")
+			"re-arm the scenario after the fleet is stable",
+			scenarioMaxExcludedRows)
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
@@ -652,23 +720,6 @@ func (c *ScenarioController) startScheduled(ctx context.Context, gen uint64) {
 	}
 }
 
-// ExcludedSummary returns the full exclusion accounting: the total, which may
-// exceed len(excluded) because rows are capped at scenarioMaxExcludedRows, and
-// the per-reason breakdown. The map is copied — a later arm rebuilds the
-// controller's own, and a handler must not see it mutate mid-response.
-func (c *ScenarioController) ExcludedSummary() (total int, byReason map[string]int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.excludedByReason) == 0 {
-		return c.excludedTotal, nil
-	}
-	byReason = make(map[string]int, len(c.excludedByReason))
-	for reason, n := range c.excludedByReason {
-		byReason[reason] = n
-	}
-	return c.excludedTotal, byReason
-}
-
 // ScheduledStart returns the pending absolute start time (zero if none).
 func (c *ScenarioController) ScheduledStart() time.Time {
 	c.mu.Lock()
@@ -763,7 +814,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	c.result = &ScenarioResult{
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
 		Excluded: c.excluded, ExcludedTotal: c.excludedTotal,
-		ExcludedByReason: c.excludedByReason,
+		ExcludedByReason: copyReasonCounts(c.excludedByReason),
 		PerDevice:        perDevice, Apps: apps,
 	}
 	return c.result, nil

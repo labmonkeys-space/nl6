@@ -279,9 +279,15 @@ loss that is really in `[T0+30s, T0+45s]` appears smeared across neighbours.
 
 ## Troubleshooting arm failures
 
-`arm` never fails wholesale for a bad participant — it reports each one in the
-readiness `excluded[]` list as `{device, reason, remediation_hint}`. Check that
-list before `start`.
+`arm` never fails wholesale for a bad participant — it accounts for every one of
+them in the readiness response and reports up to 1,000 individually in the
+`excluded[]` list as `{device, reason, remediation_hint}`. Check that list before
+`start`.
+
+Above 1,000 exclusions the list is a **sample**: `excluded_truncated` is set,
+`excluded_total` holds the true count, and `excluded_by_reason` gives the full
+`reason → count` breakdown. Read the counts from those, never from
+`len(excluded)`. Fix what the sample shows, re-arm, and the next batch surfaces.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -360,10 +366,12 @@ collector-bound — measuring nl6 instead of the system under test.
 If a `syslog` or `snmp-trap` run's `sent` total comes in low, check these in
 order before suspecting the collector:
 
-1. **The arm-time `excluded` set.** Participants are not existence-checked at
-   submit, so the expected total is `(participants − excluded) × rate × window`,
-   not `participants × rate × window`. Long participant lists make this the most
-   common cause by far.
+1. **The arm-time exclusions.** Participants are not existence-checked at submit,
+   so the expected total is `participants_armed × rate × window`, not
+   `participants × rate × window`. Use `participants_armed` (or
+   `excluded_total`) — **not** `len(excluded)`, which is capped at 1,000 and
+   understates the exclusions on a large run. Long participant lists make this
+   the most common cause by far.
 2. **The scheduler ceiling above**, if the remaining participants × rate is in
    the hundreds of thousands per second.
 

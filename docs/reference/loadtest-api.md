@@ -204,9 +204,21 @@ Response `200` (readiness):
 
 **The `excluded` rows are capped at 1,000; the counts are not.** One row costs
 ~145 bytes and there is one per unresolved participant, so at the participant
-ceiling an uncapped list would be a ~14 MB control-plane response. When the cap
-bites you get `"excluded_truncated": true` plus `excluded_by_reason`, which
-accounts for **every** exclusion:
+ceiling an uncapped list would be a ~14 MB control-plane response.
+
+`excluded_total` is always present. `excluded_by_reason` appears whenever there
+is at least one exclusion — **truncated or not** — and always accounts for every
+exclusion; `excluded_truncated` appears only when rows were actually dropped, and
+it is the sole signal for that. Do not treat the presence of `excluded_by_reason`
+as meaning the list was sampled.
+
+Of the 1,000-row budget, 900 are available to arm-time exclusions and 100 are
+reserved for exclusions found later, when `start` re-checks the fleet — otherwise
+a large arm-time set would crowd out the `device deleted between arm and start`
+rows, the only ones whose device identity you cannot recover from
+(participants − fleet).
+
+When the cap bites:
 
 ```json
 {
@@ -221,6 +233,10 @@ accounts for **every** exclusion:
 `excluded_total` is the authoritative count (and `participants_excluded` in the
 report is derived from it, never from the row count). Remediation stays
 iterative: fix what the sample shows, re-arm, and the next batch surfaces.
+
+Compatibility: these three fields are additive, but `excluded_total` is present
+on **every** readiness response including the clean case (`0`). A consumer
+validating against a closed schema needs to allow it.
 
 ### `POST /api/v1/scenarios/{id}/start` — start
 
