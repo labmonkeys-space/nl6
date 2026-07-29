@@ -84,6 +84,11 @@ type scenarioReportSummary struct {
 	// and sums to `in_window`. See metadata.sub_window_count/_duration.
 	SubWindows [scenarioSubWindowCount]uint64 `json:"sub_windows"`
 	Excluded   []scenarioExcludedRow          `json:"excluded"`
+	// ExcludedTruncated reports that `excluded` is a sample: it holds at most
+	// scenarioMaxExcludedRows rows while participants_excluded counts them all.
+	// ExcludedByReason accounts for the full total regardless.
+	ExcludedTruncated bool           `json:"excluded_truncated,omitempty"`
+	ExcludedByReason  map[string]int `json:"excluded_by_reason,omitempty"`
 }
 
 // reportMetadata is the reproducibility fingerprint + actual window
@@ -188,13 +193,15 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
-			ParticipantsExcluded: len(res.Excluded),
+			ParticipantsExcluded: res.ExcludedTotal,
 			Excluded:             make([]scenarioExcludedRow, 0, len(res.Excluded)),
 		},
 	}
 	for _, ex := range res.Excluded {
 		rep.Summary.Excluded = append(rep.Summary.Excluded, scenarioExcludedRow(ex))
 	}
+	rep.Summary.ExcludedByReason = res.ExcludedByReason
+	rep.Summary.ExcludedTruncated = res.ExcludedTotal > len(res.Excluded)
 
 	// Stable output: sort participant rows by source IP so two runs of the
 	// same scenario serialize byte-identically (determinism contract).

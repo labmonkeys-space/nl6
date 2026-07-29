@@ -71,11 +71,13 @@ on the trailer position of the applications block.
 | `metadata` | object | The reproducibility fingerprint + actual window timestamps (see below). |
 | `duration` | string | `t1 − t0` as a Go duration, from the monotonic clock — the window that actually ran. |
 | `participants_armed` | number | Devices that armed and ran. |
-| `participants_excluded` | number | Declared participants that did not arm (see `excluded`). |
+| `participants_excluded` | number | Declared participants that did not arm — the **true total**, derived from the exclusion counter rather than from `len(excluded)`, which is capped (see `excluded_truncated`). |
 | `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
 | `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
 | `sub_windows` | array | Fleet-wide **loss localization**: in-window sends per time bucket — element-wise sum of the `counters[].sub_windows` rows. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
-| `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. |
+| `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. **Capped at 1,000 rows** — one row per unresolved participant would be ~14 MB at the participant ceiling. |
+| `excluded_truncated` | bool | Present (`true`) only when the row cap dropped rows, i.e. `participants_excluded > len(excluded)`. Absent otherwise, so the common case is unchanged. |
+| `excluded_by_reason` | object | `reason → count` over **every** exclusion, capped or not. This is where the complete disclosure lives when `excluded` is a sample. Absent when there are no exclusions. |
 
 ### `summary.metadata`
 
@@ -194,6 +196,14 @@ The report is a versioned contract. Consumers should tolerate unknown fields.
 
 Future projections (additional protocols in `counters`, richer
 loss-localization blocks) are **additive** under this policy.
+
+One assumption a consumer may have held is now false, and is called out rather
+than left to be discovered: **`participants_excluded == len(excluded)` no longer
+holds** once the 1,000-row exclusion cap bites. `excluded_truncated` marks
+exactly that case and `excluded_by_reason` carries the complete breakdown. The
+field names, types and order are unchanged, so this is minor under the policy
+above — but read the count from `participants_excluded`, never from the array
+length.
 
 ## Loss localization
 

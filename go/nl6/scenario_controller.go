@@ -64,8 +64,13 @@ type ScenarioController struct {
 	parts map[string]*scenarioPart
 	// ledgers maps participant IP → its ledger entry (for finalize).
 	ledgers map[string]*ledgerEntry
-	// excluded lists participants that failed arm-time resolution (FR9).
-	excluded []excludedParticipant
+	// excluded lists participants that failed arm-time resolution (FR9), capped
+	// at scenarioMaxExcludedRows. excludedTotal and excludedByReason account for
+	// every exclusion, capped or not, so the disclosure stays complete in the
+	// aggregate even when the row list is a sample. See recordExcluded.
+	excluded         []excludedParticipant
+	excludedTotal    int
+	excludedByReason map[string]int
 
 	sched     *SyslogScheduler
 	schedStop context.CancelFunc
@@ -96,16 +101,53 @@ type excludedParticipant struct {
 	RemediationHint string
 }
 
+// scenarioMaxExcludedRows bounds the per-participant exclusion rows a scenario
+// retains. One row costs ~145 JSON bytes and there is one per unresolved
+// participant, so at the 100,000-participant ceiling an unbounded list is ~14 MB
+// — held for the scenario's lifetime, copied into the readiness response, copied
+// again into the report, and rendered one <tr> each into the HTML view, which is
+// materialised whole under a 30 s server WriteTimeout.
+//
+// Capping the ROWS is not the same as dropping the disclosure FR9 requires:
+// excludedTotal and excludedByReason still account for every exclusion, so an
+// operator facing 99,999 of them reads "device not found: 99,999" plus a
+// thousand concrete examples, which is more actionable than 99,999 rows nobody
+// scrolls. Remediation stays iterative — fix what the sample shows, re-arm, and
+// the next batch surfaces.
+const scenarioMaxExcludedRows = 1000
+
+// recordExcluded records one exclusion. Rows stop at scenarioMaxExcludedRows;
+// the totals never do, which is what keeps participants_excluded truthful when
+// the row list is a sample. Callers hold c.mu.
+func (c *ScenarioController) recordExcluded(device, reason, hint string) {
+	c.excludedTotal++
+	if c.excludedByReason == nil {
+		c.excludedByReason = make(map[string]int)
+	}
+	c.excludedByReason[reason]++
+	if len(c.excluded) < scenarioMaxExcludedRows {
+		c.excluded = append(c.excluded, excludedParticipant{
+			Device: device, Reason: reason, RemediationHint: hint,
+		})
+	}
+}
+
 // ScenarioResult is the internal finalized outcome the controller holds
 // after stop/abort; 1.3 serializes it into the report. Immutable once set.
 type ScenarioResult struct {
-	ID        string
-	Phase     scenarioPhase
-	T0Actual  time.Time
-	T1Actual  time.Time
-	DrainEnd  time.Time
-	Excluded  []excludedParticipant
-	PerDevice map[string]ledgerSnapshot
+	ID       string
+	Phase    scenarioPhase
+	T0Actual time.Time
+	T1Actual time.Time
+	DrainEnd time.Time
+	Excluded []excludedParticipant
+	// ExcludedTotal counts every exclusion, including those beyond the
+	// scenarioMaxExcludedRows row cap; ExcludedByReason breaks the same total
+	// down. participants_excluded is derived from ExcludedTotal, NOT from
+	// len(Excluded), or capping the rows would understate the count.
+	ExcludedTotal    int
+	ExcludedByReason map[string]int
+	PerDevice        map[string]ledgerSnapshot
 	// Apps is the fleet-wide per-application flow-traffic fold
 	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
 	// port), folded across participants at finalize. Empty for non-flow
@@ -384,6 +426,8 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	// detach whatever does not survive this pass (obligation 1).
 	prevParts, prevLedgers := c.parts, c.ledgers
 	c.excluded = nil
+	c.excludedTotal = 0
+	c.excludedByReason = nil
 	// Fresh slice/maps, never truncate-in-place: a previously returned excluded
 	// slice must not be mutated under a caller still serving it.
 	c.parts = make(map[string]*scenarioPart)
@@ -398,10 +442,8 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	for _, ip := range c.spec.Participants {
 		dev := c.sm.devicesByIP[ip]
 		if dev == nil {
-			c.excluded = append(c.excluded, excludedParticipant{
-				Device: ip, Reason: "device not found",
-				RemediationHint: "create the device before arming, or remove it from the scenario",
-			})
+			c.recordExcluded(ip, "device not found",
+				"create the device before arming, or remove it from the scenario")
 			continue
 		}
 		led := prevLedgers[ip] // nil on a first arm
@@ -410,7 +452,7 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 		}
 		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
-			c.excluded = append(c.excluded, excludedParticipant{Device: ip, Reason: reason, RemediationHint: hint})
+			c.recordExcluded(ip, reason, hint)
 			continue
 		}
 		c.parts[ip] = part
@@ -479,10 +521,8 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 		}
 		delete(c.parts, ip)
 		delete(c.ledgers, ip)
-		c.excluded = append(c.excluded, excludedParticipant{
-			Device: ip, Reason: "device deleted between arm and start",
-			RemediationHint: "re-arm the scenario after the fleet is stable",
-		})
+		c.recordExcluded(ip, "device deleted between arm and start",
+			"re-arm the scenario after the fleet is stable")
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
@@ -612,6 +652,23 @@ func (c *ScenarioController) startScheduled(ctx context.Context, gen uint64) {
 	}
 }
 
+// ExcludedSummary returns the full exclusion accounting: the total, which may
+// exceed len(excluded) because rows are capped at scenarioMaxExcludedRows, and
+// the per-reason breakdown. The map is copied — a later arm rebuilds the
+// controller's own, and a handler must not see it mutate mid-response.
+func (c *ScenarioController) ExcludedSummary() (total int, byReason map[string]int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.excludedByReason) == 0 {
+		return c.excludedTotal, nil
+	}
+	byReason = make(map[string]int, len(c.excludedByReason))
+	for reason, n := range c.excludedByReason {
+		byReason[reason] = n
+	}
+	return c.excludedTotal, byReason
+}
+
 // ScheduledStart returns the pending absolute start time (zero if none).
 func (c *ScenarioController) ScheduledStart() time.Time {
 	c.mu.Lock()
@@ -705,7 +762,9 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	c.result = &ScenarioResult{
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
-		Excluded: c.excluded, PerDevice: perDevice, Apps: apps,
+		Excluded: c.excluded, ExcludedTotal: c.excludedTotal,
+		ExcludedByReason: c.excludedByReason,
+		PerDevice:        perDevice, Apps: apps,
 	}
 	return c.result, nil
 }

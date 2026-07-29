@@ -142,6 +142,14 @@ type readinessResponse struct {
 	Phase             string                `json:"phase"`
 	ParticipantsArmed int                   `json:"participants_armed"`
 	Excluded          []scenarioExcludedRow `json:"excluded"`
+	// ExcludedTotal is the authoritative count. `excluded` is capped at
+	// scenarioMaxExcludedRows rows so a ceiling-sized submit against a sparse
+	// fleet cannot produce a multi-megabyte control-plane response; when the cap
+	// bites, ExcludedTruncated is set and ExcludedByReason still accounts for
+	// every exclusion.
+	ExcludedTotal     int            `json:"excluded_total"`
+	ExcludedTruncated bool           `json:"excluded_truncated,omitempty"`
+	ExcludedByReason  map[string]int `json:"excluded_by_reason,omitempty"`
 	// ScheduledStartCancelled reports that this arm withdrew a pending
 	// absolute-T0 start (the membership it was authorised against has been
 	// re-resolved). Omitted when there was nothing to cancel, so the field only
@@ -267,8 +275,13 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	for _, ex := range excluded {
 		rows = append(rows, scenarioExcludedRow(ex))
 	}
+	excludedTotal, byReason := ctrl.ExcludedSummary()
 	writeScenarioJSON(w, http.StatusOK, readinessResponse{
 		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: armed, Excluded: rows,
+		ExcludedTotal:     excludedTotal,
+		ExcludedTruncated: excludedTotal > len(rows),
+		ExcludedByReason:  byReason,
+		// Reported because Arm withdraws a pending absolute-T0 start.
 		ScheduledStartCancelled: hadSchedule && ctrl.ScheduledStart().IsZero(),
 	})
 }

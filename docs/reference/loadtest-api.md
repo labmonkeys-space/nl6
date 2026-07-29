@@ -197,9 +197,30 @@ Response `200` (readiness):
     {"device": "10.42.0.9", "reason": "device not found",
      "remediation_hint": "create the device before arming, or remove it from the scenario"}
   ],
+  "excluded_total": 1,
   "scheduled_start_cancelled": true
 }
 ```
+
+**The `excluded` rows are capped at 1,000; the counts are not.** One row costs
+~145 bytes and there is one per unresolved participant, so at the participant
+ceiling an uncapped list would be a ~14 MB control-plane response. When the cap
+bites you get `"excluded_truncated": true` plus `excluded_by_reason`, which
+accounts for **every** exclusion:
+
+```json
+{
+  "participants_armed": 0,
+  "excluded": [ "…1000 rows…" ],
+  "excluded_total": 20000,
+  "excluded_truncated": true,
+  "excluded_by_reason": {"device not found": 20000}
+}
+```
+
+`excluded_total` is the authoritative count (and `participants_excluded` in the
+report is derived from it, never from the row count). Remediation stays
+iterative: fix what the sample shows, re-arm, and the next batch surfaces.
 
 ### `POST /api/v1/scenarios/{id}/start` — start
 

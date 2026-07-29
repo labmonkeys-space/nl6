@@ -365,6 +365,21 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
   {{if .R.Summary.Excluded}}
   <section>
     <h2>Excluded participants</h2>
+    {{if .R.Summary.ExcludedByReason}}
+    <table>
+      <thead><tr><th>reason</th><th>participants</th></tr></thead>
+      <tbody>
+      {{range $reason, $n := .R.Summary.ExcludedByReason}}
+        <tr><td>{{$reason}}</td><td class="mono">{{$n}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    {{if .R.Summary.ExcludedTruncated}}
+    <p class="muted">Showing the first {{len .R.Summary.Excluded}} of
+      {{.R.Summary.ParticipantsExcluded}} exclusions. Fix what these show, re-arm,
+      and the next batch surfaces; the counts above cover all of them.</p>
+    {{end}}
     <table>
       <thead><tr><th>device</th><th>reason</th><th>remediation hint</th></tr></thead>
       <tbody>
