@@ -1,8 +1,16 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 
-# Syft configuration for the release SBOM (anchore/sbom-action picks this up
-# from the scan root). Goal: no "Undeclared" licenses for anything we ship.
+# Syft configuration shared by BOTH SBOM pipelines (anchore/sbom-action picks
+# this up from the workspace root). Goal: no "Undeclared" licenses for
+# anything we ship.
+#
+# - release.yml scans the shipped binary (file:dist/nl6-linux-amd64): it uses
+#   the golang/cataloger settings below; the path excludes do not apply to
+#   file: sources (verified with syft 1.46.0).
+# - docs.yml scans the repo directory for the website SBOM: the path excludes
+#   below are what scope that scan. Keep them here — a SYFT_EXCLUDE env on the
+#   workflow step REPLACES this list instead of merging with it.
 
 golang:
   # go.mod alone carries no license metadata; let syft read the module cache
@@ -19,10 +27,17 @@ select-catalogers:
   - "-github-action-workflow-usage-cataloger"
 
 exclude:
-  # The scan runs after the build in release.yml, so dist/ holds the artifacts
-  # this SBOM describes; cataloging them would self-reference the binaries and
-  # duplicate every Go module via the binary cataloger.
+  # dist/ holds release artifacts; a directory scan cataloging them would
+  # self-reference the binaries and duplicate every Go module via the binary
+  # cataloger. (The release SBOM scans one of these binaries explicitly, as a
+  # file: source, which this exclude does not affect.)
   - ./dist/**
+  # The simulator module is the release's product, covered by the
+  # binary-derived SBOM attached to the GitHub Release; the website SBOM must
+  # not re-inventory it.
+  - ./go/**
+  # Docusaurus build output — the generated site, not a dependency tree.
+  - ./build/**
   # CI/CD pipeline files are not part of the shipped product. The cataloger
   # deselection above already covers today's syft; the path exclude guarantees
   # no future cataloger resurfaces them.

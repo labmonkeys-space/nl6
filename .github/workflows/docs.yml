@@ -74,19 +74,21 @@ jobs:
         run: make docs-build
 
       - name: Generate website SBOM (syft)
-        # The website is the repo's second product: the built site's JS
-        # (Docusaurus runtime, mermaid) executes in visitors' browsers. Its
-        # SBOM is generated HERE because this job has node_modules installed
-        # (docs-install/docs-build ran npm ci), so syft reads the installed
-        # manifests — including legacy `licenses` arrays that the lockfile
-        # lacks — instead of being license-blind like a bare-checkout scan.
+        # The website is the repo's second product. This SBOM covers its full
+        # npm BUILD TREE (devDependencies included) — the browser-delivered
+        # subset is not separable at manifest level, so do not read every row
+        # as visitor-executing code. It is generated HERE because this job has
+        # node_modules installed (docs-install ran npm ci), so syft reads the
+        # installed manifests — including legacy `licenses` arrays the
+        # lockfile lacks — instead of being license-blind like a bare-checkout
+        # scan.
         #
-        # SYFT_EXCLUDE scopes out the simulator (its SBOM ships with the
-        # release, derived from the binary) and build outputs. Manifests
-        # vendored inside npm packages stay: truthful website-tree contents.
+        # Scoping (simulator module, build outputs, vendored gem fixtures)
+        # lives in .syft.yaml, the single exclude source. Do NOT reintroduce a
+        # SYFT_EXCLUDE env here: env values REPLACE the config list rather
+        # than merging, which silently dropped .syft.yaml's excludes in an
+        # earlier draft of this step.
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        env:
-          SYFT_EXCLUDE: "./go/**,./dist/**,./build/**"
         with:
           path: .
           format: spdx-json
