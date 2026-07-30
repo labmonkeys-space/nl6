@@ -74,19 +74,48 @@ jobs:
         run: |
           cosign sign-blob --yes checksums.txt --bundle checksums.txt.cosign.bundle
 
-      - name: Generate SBOM (syft)
+      - name: Check SBOM coverage (reconcile subset)
+        # The product SBOM below is derived from the nl6 binary alone. The six
+        # nl6-reconcile binaries ship in the same release, so their third-party
+        # module set must stay a subset of nl6's — otherwise the SBOM silently
+        # under-reports what ships, and a consumer checking a CVE against it
+        # gets a false "not affected".
+        run: make check-sbom-coverage
+
+      - name: Generate product SBOM (syft)
+        # The shipped binary, not the repo directory: buildinfo yields the true
+        # product inventory. The main module carries the release version (read
+        # from the -X main.Version ldflag), only linked modules appear (no
+        # test-only deps), and none of the website's npm toolchain — that is a
+        # separate product with its own SBOM, published with the docs site.
+        # amd64/arm64 buildinfo module sets are identical (verified against
+        # v0.21.0), so one representative binary suffices.
+        # License resolution and cataloger settings come from .syft.yaml at the
+        # workspace root (module-cache + module-proxy lookup). Its path
+        # excludes do NOT apply to file: sources (verified with the pinned
+        # syft 1.46.0) — and if a future syft ever applies them, the curation
+        # step below fails the release loudly rather than shipping an empty
+        # SBOM.
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
-          path: .
+          file: dist/nl6-linux-amd64
           format: spdx-json
           output-file: dist/nl6.sbom.spdx.json
           upload-artifact: false
-          # Pin syft itself, not just the action: the action's bundled default
-          # (1.42.3) predates two behaviors the SBOM quality depends on —
-          # reading npm licenses from node_modules license files and dropping
-          # the versionless main-module go.mod entry. Verified with 1.46.0
-          # against this tree; bump deliberately, Dependabot won't touch it.
+          # Pin syft itself, not just the action's bundled default: the SBOM
+          # contract (file: buildinfo scans, module-cache license resolution)
+          # was verified against v1.46.0 specifically. Bump deliberately;
+          # Dependabot won't touch it.
           syft-version: v1.46.0
+
+      - name: Curate structurally unresolvable licenses
+        # Exactly three entries no module cache can resolve: the main module
+        # and the scanned binary's file-root package (both this repo, whose
+        # license the repo itself declares) and the Go stdlib. The target
+        # fails if any is missing, so a syft naming change cannot silently
+        # re-introduce Undeclared rows. Runs before the blitsbom render so the
+        # HTML reflects the curated SBOM.
+        run: make sbom-curate SBOM=dist/nl6.sbom.spdx.json
 
       - name: Render SBOM as HTML (blitsbom)
         # Human-readable companion to the SPDX JSON — a single self-contained

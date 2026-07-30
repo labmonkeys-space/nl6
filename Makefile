@@ -49,7 +49,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
@@ -134,7 +134,6 @@ smoke: packages check-docker
 	for img in $(SMOKE_RPM_IMAGES); do $(PKG_DIR)/smoke-test.sh "$$rpm" "$$img" || exit 1; done
 
 ## set-nix-version: Write the release version (from APP_VERSION) into the Nix package
-#
 # Release helper so the Nix `version` is never hand-edited: it tracks the same
 # APP_VERSION the deb/rpm/Docker artifacts use. Run before tagging, e.g.
 #   make set-nix-version APP_VERSION=vX.Y.Z
@@ -151,6 +150,37 @@ set-nix-version:
 	  && mv $(PKG_DIR)/nix/package.nix.tmp $(PKG_DIR)/nix/package.nix
 	@echo "set-nix-version: deploy/packages/nix/package.nix -> $(PKG_VERSION)"
 	@grep -nE 'version [?] "' $(PKG_DIR)/nix/package.nix
+
+## sbom-curate: Fill the product-SBOM licenses no module cache can resolve (SBOM=<path>)
+# The main module, stdlib, and the scanned binary's file-root package are not
+# downloadable modules, so syft can never resolve them; the script fills their
+# declared/concluded licenses and fails if any target is absent. Runs in
+# release.yml between SBOM generation and the blitsbom render, so the HTML
+# reflects the curated document.
+sbom-curate: check-node-runtime
+	$(NODE) scripts/curate-product-sbom.mjs $(SBOM)
+
+## check-sbom-coverage: Assert nl6-reconcile links no module the nl6 binary doesn't
+# The release SBOM is derived from the nl6 binary alone (amd64/arm64 sets are
+# identical). reconcile ships in the same release, so its third-party module
+# set must stay a subset of nl6's or the SBOM under-reports what ships. Runs
+# in release.yml before the SBOM step.
+check-sbom-coverage: check-go
+	@set -e; cd $(GO_DIR); \
+	tmp_nl6=$$(mktemp); tmp_rec=$$(mktemp); \
+	trap 'rm -f "$$tmp_nl6" "$$tmp_rec"' EXIT; \
+	go list -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}}{{end}}' ./nl6 | sort -u > "$$tmp_nl6"; \
+	go list -deps -f '{{if and .Module (not .Module.Main)}}{{.Module.Path}}{{end}}' ./cmd/nl6-reconcile | sort -u > "$$tmp_rec"; \
+	[ -s "$$tmp_nl6" ] || { echo "check-sbom-coverage: go list produced no modules for ./nl6 - the check cannot have run"; exit 1; }; \
+	extra=$$(comm -13 "$$tmp_nl6" "$$tmp_rec"); \
+	if [ -n "$$extra" ]; then \
+	  echo "check-sbom-coverage: nl6-reconcile links modules absent from the nl6 binary,"; \
+	  echo "so the binary-derived release SBOM would under-report what ships:"; \
+	  echo "$$extra"; \
+	  echo "Extend the SBOM strategy (per-binary SBOMs) before adding such a dependency."; \
+	  exit 1; \
+	fi; \
+	echo "check-sbom-coverage: reconcile module set is a subset of the nl6 binary set"
 
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web

@@ -134,8 +134,13 @@ publish:
       and needs no tooling).
 - [ ] **Verify the signatures + provenance** (see the next section). Do this on
       the draft assets before publishing.
+- [ ] **Product-SBOM sanity** — `nl6.sbom.spdx.json` describes the shipped binary, not the repo.
+      Check: the main module `github.com/labmonkeys-space/nl6/go` carries the tag's version, no package has version `UNKNOWN`, there are zero npm packages, and no package has `licenseConcluded: NOASSERTION` (syft concludes cache-resolved modules; the main module, stdlib, and the file-root package are filled by `make sbom-curate`, which fails the release if they go missing).
+      Note `licenseDeclared` stays `NOASSERTION` on most Go modules by design — buildinfo carries no declarations — so grep the concluded field, not the whole file.
+      The website has its own SBOM, published with the site at `/sbom/nl6-website.sbom.spdx.json` (+ `.report.html`) — it is not a release asset.
 - [ ] Curate the release notes — the auto-generated list is a starting point;
       trim `chore:`/`docs:`/deps noise down to user-visible highlights.
+      One-time, first release after 2026-07-30: call out that `nl6.sbom.spdx.json` narrowed from a whole-repo scan (~1,400 packages, mostly the docs toolchain) to the shipped binary's modules; anyone consuming the npm inventory moves to the website SBOM. Delete this line once shipped.
 - [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
 - [ ] **Publish** the draft:
