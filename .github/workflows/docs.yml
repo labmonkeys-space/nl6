@@ -109,12 +109,20 @@ jobs:
           output: nl6-website.sbom.report.html
           project: nl6-website
 
-      - name: Publish SBOM with the site
-        # Stable URLs, documented in RELEASING.md:
-        #   /sbom/nl6-website.sbom.spdx.json and /sbom/nl6-website.sbom.report.html
-        run: |
-          mkdir -p build/sbom
-          cp nl6-website.sbom.spdx.json nl6-website.sbom.report.html build/sbom/
+      - name: Retain SBOM as a workflow artifact
+        # Deliberately NOT published on the site: a complete build-tree
+        # inventory at a stable public URL is more disclosure than value. The
+        # SBOM and report are retained on the run instead (Actions -> Docs),
+        # available to maintainers on demand. The force_orphan deploy below
+        # rebuilds gh-pages from build/ alone, which is what removed the
+        # previously published /sbom/ path.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: nl6-website-sbom
+          path: |
+            nl6-website.sbom.spdx.json
+            nl6-website.sbom.report.html
+          retention-days: 30
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453  # v4.1.0
