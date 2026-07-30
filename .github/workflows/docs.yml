@@ -73,6 +73,47 @@ jobs:
       - name: Verify strict build
         run: make docs-build
 
+      - name: Generate website SBOM (syft)
+        # The website is the repo's second product: the built site's JS
+        # (Docusaurus runtime, mermaid) executes in visitors' browsers. Its
+        # SBOM is generated HERE because this job has node_modules installed
+        # (docs-install/docs-build ran npm ci), so syft reads the installed
+        # manifests — including legacy `licenses` arrays that the lockfile
+        # lacks — instead of being license-blind like a bare-checkout scan.
+        #
+        # SYFT_EXCLUDE scopes out the simulator (its SBOM ships with the
+        # release, derived from the binary) and build outputs. Manifests
+        # vendored inside npm packages stay: truthful website-tree contents.
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        env:
+          SYFT_EXCLUDE: "./go/**,./dist/**,./build/**"
+        with:
+          path: .
+          format: spdx-json
+          output-file: nl6-website.sbom.spdx.json
+          upload-artifact: false
+          # Same pinned syft as release.yml: the SBOM contract was verified
+          # against v1.46.0 specifically.
+          syft-version: v1.46.0
+
+      - name: Render website SBOM report (blitsbom)
+        # Same pin discipline as release.yml: the action lives at the repo
+        # root since v0.6.0, and v0.6.1 derives the generator image from the
+        # pinned commit, so no explicit `image:` is needed. Public GHCR image,
+        # no registry login.
+        uses: no42-org/blitsbom@3f2e7abc338c05d40a15058eafc318fee310e05f  # v0.6.1
+        with:
+          sbom: nl6-website.sbom.spdx.json
+          output: nl6-website.sbom.report.html
+          project: nl6-website
+
+      - name: Publish SBOM with the site
+        # Stable URLs, documented in RELEASING.md:
+        #   /sbom/nl6-website.sbom.spdx.json and /sbom/nl6-website.sbom.report.html
+        run: |
+          mkdir -p build/sbom
+          cp nl6-website.sbom.spdx.json nl6-website.sbom.report.html build/sbom/
+
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453  # v4.1.0
         with:

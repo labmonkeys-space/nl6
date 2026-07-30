@@ -74,19 +74,38 @@ jobs:
         run: |
           cosign sign-blob --yes checksums.txt --bundle checksums.txt.cosign.bundle
 
-      - name: Generate SBOM (syft)
+      - name: Generate product SBOM (syft)
+        # The shipped binary, not the repo directory: buildinfo yields the true
+        # product inventory. The main module carries the release version (read
+        # from the -X main.Version ldflag), only linked modules appear (no
+        # test-only deps), and none of the website's npm toolchain — that is a
+        # separate product with its own SBOM, published with the docs site.
+        # amd64/arm64 buildinfo module sets are identical (verified against
+        # v0.21.0), so one representative binary suffices.
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        env:
+          # Buildinfo has module paths and versions but no licenses; syft
+          # resolves them from the Go module cache, which is warm here (this
+          # step runs after `make packages` in the same job).
+          SYFT_GOLANG_SEARCH_LOCAL_MOD_CACHE_LICENSES: "true"
         with:
-          path: .
+          file: dist/nl6-linux-amd64
           format: spdx-json
           output-file: dist/nl6.sbom.spdx.json
           upload-artifact: false
-          # Pin syft itself, not just the action: the action's bundled default
-          # (1.42.3) predates two behaviors the SBOM quality depends on —
-          # reading npm licenses from node_modules license files and dropping
-          # the versionless main-module go.mod entry. Verified with 1.46.0
-          # against this tree; bump deliberately, Dependabot won't touch it.
+          # Pin syft itself, not just the action's bundled default: the SBOM
+          # contract (file: buildinfo scans, module-cache license resolution)
+          # was verified against v1.46.0 specifically. Bump deliberately;
+          # Dependabot won't touch it.
           syft-version: v1.46.0
+
+      - name: Curate structurally unresolvable licenses
+        # Exactly two entries no module cache can resolve: the main module
+        # (this repo, whose license the repo itself declares) and the Go
+        # stdlib. The target fails if either is missing, so a syft naming
+        # change cannot silently re-introduce Undeclared rows. Runs before the
+        # blitsbom render so the HTML reflects the curated SBOM.
+        run: make sbom-curate SBOM=dist/nl6.sbom.spdx.json
 
       - name: Render SBOM as HTML (blitsbom)
         # Human-readable companion to the SPDX JSON — a single self-contained

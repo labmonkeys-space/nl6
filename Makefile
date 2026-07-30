@@ -49,7 +49,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version sbom-curate clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
@@ -135,6 +135,12 @@ smoke: packages check-docker
 
 ## set-nix-version: Write the release version (from APP_VERSION) into the Nix package
 #
+# Fill the two product-SBOM licenses no module cache can resolve (the main
+# module and stdlib); fails if either package is absent. Runs in release.yml
+# between SBOM generation and the blitsbom render, so the HTML reflects it.
+sbom-curate:
+	node scripts/curate-product-sbom.mjs $(SBOM)
+
 # Release helper so the Nix `version` is never hand-edited: it tracks the same
 # APP_VERSION the deb/rpm/Docker artifacts use. Run before tagging, e.g.
 #   make set-nix-version APP_VERSION=vX.Y.Z
