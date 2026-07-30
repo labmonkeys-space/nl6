@@ -27,6 +27,14 @@ import (
 // been worse than the blowup: `participants_excluded` is a number operators
 // reconcile against.
 
+// excludedIP maps i to a distinct IPv4 in 10.100/16 — disjoint from
+// scenarioTestManager's 10.42.0.x fleet, so every participant it names is an
+// arm-time exclusion. One definition; this arithmetic was previously
+// copy-pasted at four sites that had to agree.
+func excludedIP(i int) string {
+	return fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff)
+}
+
 // ceilingBody renders a submit naming n distinct participants, none of which
 // exist in a small test fleet.
 func ceilingBody(n int) string {
@@ -37,8 +45,9 @@ func ceilingBody(n int) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		// 10.100.x.y — disjoint from scenarioTestManager's 10.42.0.x fleet.
-		fmt.Fprintf(&b, `"10.100.%d.%d"`, (i>>8)&0xff, i&0xff)
+		b.WriteByte('"')
+		b.WriteString(excludedIP(i))
+		b.WriteByte('"')
 	}
 	b.WriteString(`],"protocol":"syslog","rate":1,"window":"1s","seed":42}`)
 	return b.String()
@@ -61,6 +70,9 @@ func TestScenarioExcluded_RowsBoundedTotalsComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if rd.Phase != "armed" {
+		t.Errorf("phase = %q, want armed (must come from the arm snapshot, not a later read)", rd.Phase)
+	}
 	if rd.ParticipantsArmed != 0 {
 		t.Errorf("participants_armed = %d, want 0 (no participant exists)", rd.ParticipantsArmed)
 	}
@@ -108,7 +120,7 @@ func TestScenarioExcluded_ReportCountIsTheTrueTotal(t *testing.T) {
 	participants := make([]string, 0, n+1)
 	participants = append(participants, "10.42.0.1") // the one that resolves
 	for i := 0; i < n; i++ {
-		participants = append(participants, fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff))
+		participants = append(participants, excludedIP(i))
 	}
 	spec := &Scenario{Participants: participants, Protocol: "syslog",
 		Rate: 1, Window: 50 * time.Millisecond, Drain: 10 * time.Millisecond, Seed: 3}
@@ -191,6 +203,11 @@ func TestScenarioExcluded_ReArmResetsTheAccounting(t *testing.T) {
 	id := submitOK(t, router, ceilingBody(n))
 
 	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", "")
+	if w.Code != http.StatusOK {
+		// An error body unmarshals into a zero readinessResponse, turning the
+		// assertions below into misleading "total=0" failures.
+		t.Fatalf("first arm = %d (body %s)", w.Code, truncateBody(w.Body.String()))
+	}
 	var first readinessResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
@@ -203,7 +220,7 @@ func TestScenarioExcluded_ReArmResetsTheAccounting(t *testing.T) {
 	// rebuilt, not carried.
 	manager.mu.Lock()
 	for i := 0; i < n; i++ {
-		ip := fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff)
+		ip := excludedIP(i)
 		dev := &DeviceSimulator{ID: "device-" + ip, IP: net.ParseIP(ip).To4(),
 			syslogExporter: newSinkExporter(t, net.ParseIP(ip).To4(), func([]byte) error { return nil })}
 		manager.devicesByIP[ip] = dev
@@ -271,7 +288,7 @@ func TestScenarioExcluded_StartPhaseRowsSurviveAFullArmBudget(t *testing.T) {
 
 	participants := make([]string, 0, missing+2)
 	for i := 0; i < missing; i++ {
-		participants = append(participants, fmt.Sprintf("10.100.%d.%d", (i>>8)&0xff, i&0xff))
+		participants = append(participants, excludedIP(i))
 	}
 	participants = append(participants, "10.42.0.1", "10.42.0.2")
 
@@ -391,32 +408,30 @@ func BenchmarkScenarioArmAtCeiling(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	// Controllers built up front: StopTimer/StartTimer inside the loop makes
-	// -benchtime behave unintuitively, and assertions belong outside the timed
-	// region.
-	ctrls := make([]*ScenarioController, b.N)
-	for i := range ctrls {
-		ctrls[i] = newScenarioController(sm, nil)
-		if err := ctrls[i].Submit(spec, fmt.Sprintf("s-%06d", i+1)); err != nil {
-			b.Fatal(err)
-		}
+	// ONE controller, re-armed every iteration. armed→armed is legal re-entry
+	// and each re-arm resets and rebuilds the whole exclusion view, so this
+	// measures the same path as a first arm — without pre-building b.N
+	// controllers, which performed b.N full 100k-participant Validate passes in
+	// setup and pinned O(b.N × rows) memory for the whole run, skewing
+	// ReportAllocs with setup garbage.
+	c := newScenarioController(sm, nil)
+	if err := c.Submit(spec, "s-000400"); err != nil {
+		b.Fatal(err)
 	}
-	results := make([]armReadiness, b.N)
+	var sink armReadiness // keep the result live so the call cannot be elided
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		rd, err := ctrls[i].ArmReadiness()
+		rd, err := c.ArmReadiness()
 		if err != nil {
 			b.Fatal(err)
 		}
-		results[i] = rd
+		sink = rd
 	}
 	b.StopTimer()
 
-	for i, rd := range results {
-		if rd.Armed != 0 || len(rd.Excluded) != scenarioExcludedArmRows || rd.ExcludedTotal != scenarioMaxParticipants {
-			b.Fatalf("iteration %d: armed=%d rows=%d total=%d", i, rd.Armed, len(rd.Excluded), rd.ExcludedTotal)
-		}
+	if sink.Armed != 0 || len(sink.Excluded) != scenarioExcludedArmRows || sink.ExcludedTotal != scenarioMaxParticipants {
+		b.Fatalf("armed=%d rows=%d total=%d", sink.Armed, len(sink.Excluded), sink.ExcludedTotal)
 	}
 }

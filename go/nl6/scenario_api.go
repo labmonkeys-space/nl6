@@ -276,7 +276,10 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, scenarioExcludedRow(ex))
 	}
 	writeScenarioJSON(w, http.StatusOK, readinessResponse{
-		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: rd.Armed, Excluded: rows,
+		// rd.Phase, NOT ctrl.Phase(): the latter is a second lock acquisition, and
+		// a start landing between the two would splice "running" onto this arm's
+		// numbers — the same cross-acquisition shape ArmReadiness exists to close.
+		ID: ctrl.id, Phase: string(rd.Phase), ParticipantsArmed: rd.Armed, Excluded: rows,
 		ExcludedTotal:           rd.ExcludedTotal,
 		ExcludedTruncated:       excludedTruncated(rd.ExcludedTotal, len(rows)),
 		ExcludedByReason:        rd.ExcludedByReason,

@@ -216,14 +216,17 @@ Of the 1,000-row budget, 900 are available to arm-time exclusions and 100 are
 reserved for exclusions found later, when `start` re-checks the fleet — otherwise
 a large arm-time set would crowd out the `device deleted between arm and start`
 rows, the only ones whose device identity you cannot recover from
-(participants − fleet).
+(participants − fleet). So a **readiness** response carries at most **900** rows;
+the **report** can carry up to 1,000 (900 arm-time + 100 start-time). The reserve
+is itself finite: more than 100 gap deletions retain only the first 100 rows,
+with the rest visible in the counts only.
 
 When the cap bites:
 
 ```json
 {
   "participants_armed": 0,
-  "excluded": [ "…1000 rows…" ],
+  "excluded": [ "…900 rows (the arm-time share)…" ],
   "excluded_total": 20000,
   "excluded_truncated": true,
   "excluded_by_reason": {"device not found": 20000}
