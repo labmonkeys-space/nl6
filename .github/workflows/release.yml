@@ -94,17 +94,23 @@ jobs:
         # dist/ so it rides along in the nl6-binaries artifact and is attached
         # to the Release next to the JSON.
         #
-        # `image` is set explicitly: the action defaults to the floating
-        # `:report-rc` tag, which must never decide the content of a release
-        # artifact. Keep the tag in step with the action version above.
+        # The action moved to the repo root in v0.6.0 (was
+        # no42-org/blitsbom/report) — a Dependabot bump that keeps the old
+        # `/report` path fails at job setup, so path and SHA move together.
+        #
+        # No explicit `image:` since v0.6.1: the action derives the generator
+        # image from its own pinned commit (package.json at the SHA →
+        # `:report-0.6.1`), so the two cannot disagree. v0.6.1 specifically —
+        # v0.6.0's SHA-pin path still fell back to the floating `:report-rc`,
+        # which must never decide the content of a release artifact.
         #
         # Runs `docker run` on a public GHCR image; no registry login is needed
-        # (verified anonymously pullable), so this job keeps `packages: none`.
-        uses: no42-org/blitsbom/report@38567e05bf41bd3348d928b657eca0efeeaa7db6  # v0.4.0
+        # (report-0.6.1 verified anonymously pullable), so this job keeps
+        # `packages: none`.
+        uses: no42-org/blitsbom@3f2e7abc338c05d40a15058eafc318fee310e05f  # v0.6.1
         with:
           sbom: dist/nl6.sbom.spdx.json
           output: dist/nl6.sbom.report.html
-          image: ghcr.io/no42-org/blitsbom:report-0.4.0
           # project defaults to the repo name; version/commit/build-url are
           # derived from the tag ref and run context.
 
