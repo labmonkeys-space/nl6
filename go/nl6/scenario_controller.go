@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -64,8 +65,15 @@ type ScenarioController struct {
 	parts map[string]*scenarioPart
 	// ledgers maps participant IP → its ledger entry (for finalize).
 	ledgers map[string]*ledgerEntry
-	// excluded lists participants that failed arm-time resolution (FR9).
-	excluded []excludedParticipant
+	// excluded lists participants that failed arm-time resolution (FR9), capped
+	// at scenarioMaxExcludedRows. excludedByReason accounts for every exclusion,
+	// capped or not, so the disclosure stays complete in the aggregate even when
+	// the row list is a sample. The published total is DERIVED from this map
+	// (sumReasonCounts) rather than kept as a second counter, so the contract
+	// "participants_excluded == Σ excluded_by_reason" is true by construction
+	// instead of by every write site remembering to touch both. See recordExcluded.
+	excluded         []excludedParticipant
+	excludedByReason map[string]int
 
 	sched     *SyslogScheduler
 	schedStop context.CancelFunc
@@ -96,16 +104,86 @@ type excludedParticipant struct {
 	RemediationHint string
 }
 
+// scenarioMaxExcludedRows bounds the per-participant exclusion rows a scenario
+// retains. One row costs ~145 JSON bytes and there is one per unresolved
+// participant, so at the 100,000-participant ceiling an unbounded list is ~14 MB
+// — held for the scenario's lifetime, copied into the readiness response, copied
+// again into the report, and rendered one <tr> each into the HTML view, which is
+// materialised whole under a 30 s server WriteTimeout.
+//
+// Capping the ROWS is not the same as dropping the disclosure FR9 requires:
+// excludedByReason still accounts for every exclusion, so an
+// operator facing 99,999 of them reads "device not found: 99,999" plus a
+// thousand concrete examples, which is more actionable than 99,999 rows nobody
+// scrolls. Remediation stays iterative — fix what the sample shows, re-arm, and
+// the next batch surfaces.
+// The by-reason breakdown is the safe replacement for the dropped rows only
+// because the reason strings are a small FIXED set — the exporter-shape reasons
+// interpolate the scenario's protocol, not the device — so the map's cardinality
+// does not grow with the participant count. A reason that ever interpolated
+// per-device detail would rebuild the very blowup this cap exists to prevent,
+// inside the field advertised as bounded.
+const scenarioMaxExcludedRows = 1000
+
+// scenarioExcludedArmRows is the share of the row budget the ARM phase may use.
+// The rest is reserved for exclusions recorded later, during Start's arm→start
+// gap check. Without a reserve the cap is first-come across a heterogeneous
+// population: arm's loop runs to completion first, so at ≥1000 arm exclusions
+// every "device deleted between arm and start" row is dropped — and those are
+// the only ones whose device identity an operator cannot reconstruct from
+// (participants − fleet). Sampling that drops exactly the unpredictable class is
+// the one sampling strategy that defeats the cap's own justification.
+const scenarioExcludedArmRows = 900
+
+// Compile-time guard: the arm share must leave a non-empty reserve for the
+// start phase, or the split silently stops doing its job. The two constants are
+// threaded to recordExcluded by its callers, so nothing at the call sites would
+// notice a retune that inverted them — this array bound goes negative and fails
+// the build instead.
+var _ [scenarioMaxExcludedRows - scenarioExcludedArmRows - 1]struct{}
+
+// recordExcluded records one exclusion, retaining a row while the caller's share
+// of the budget has room. The by-reason count is unconditional, which is what
+// keeps participants_excluded truthful when the row list is a sample. Callers
+// hold c.mu.
+func (c *ScenarioController) recordExcluded(device, reason, hint string, rowBudget int) {
+	if c.excludedByReason == nil {
+		c.excludedByReason = make(map[string]int)
+	}
+	c.excludedByReason[reason]++
+	if len(c.excluded) < rowBudget {
+		c.excluded = append(c.excluded, excludedParticipant{
+			Device: device, Reason: reason, RemediationHint: hint,
+		})
+	}
+}
+
+// sumReasonCounts derives the exclusion total at the publication points, so it
+// cannot drift from the breakdown consumers cross-check it against.
+func sumReasonCounts(m map[string]int) int {
+	total := 0
+	for _, n := range m {
+		total += n
+	}
+	return total
+}
+
 // ScenarioResult is the internal finalized outcome the controller holds
 // after stop/abort; 1.3 serializes it into the report. Immutable once set.
 type ScenarioResult struct {
-	ID        string
-	Phase     scenarioPhase
-	T0Actual  time.Time
-	T1Actual  time.Time
-	DrainEnd  time.Time
-	Excluded  []excludedParticipant
-	PerDevice map[string]ledgerSnapshot
+	ID       string
+	Phase    scenarioPhase
+	T0Actual time.Time
+	T1Actual time.Time
+	DrainEnd time.Time
+	Excluded []excludedParticipant
+	// ExcludedTotal counts every exclusion, including those beyond the
+	// scenarioMaxExcludedRows row cap; ExcludedByReason breaks the same total
+	// down. participants_excluded is derived from ExcludedTotal, NOT from
+	// len(Excluded), or capping the rows would understate the count.
+	ExcludedTotal    int
+	ExcludedByReason map[string]int
+	PerDevice        map[string]ledgerSnapshot
 	// Apps is the fleet-wide per-application flow-traffic fold
 	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
 	// port), folded across participants at finalize. Empty for non-flow
@@ -355,10 +433,43 @@ func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 // Participant uniqueness is guaranteed upstream: Scenario.Validate rejects a
 // duplicated list, so there is no dedup here (and none inside the manager lock).
 func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
+	rd, err := c.ArmReadiness()
+	return rd.Armed, rd.Excluded, err
+}
+
+// armReadiness is everything a caller needs to describe one arm, captured under
+// a SINGLE hold of c.mu.
+//
+// That single hold is the whole point. armed→armed is legal re-entry, so a
+// concurrent arm can complete between any two lock acquisitions — and every
+// field here is reset and rebuilt by it. Reading the rows in one acquisition and
+// the totals in another spliced two arms together: 1000 rows with a total of 0,
+// or a truncation flag that contradicts the row count. Both violate the contract
+// the report schema tells consumers to rely on, and the same
+// two-acquisition shape is what stranded a scheduled start two changes ago.
+type armReadiness struct {
+	// Phase is the lifecycle phase AT THE SNAPSHOT — definitionally armed after a
+	// successful arm. The handler must not re-read ctrl.Phase() afterwards: that
+	// is a second lock acquisition, and a start (scheduled or concurrent) landing
+	// between the two would splice "phase: running" onto this arm's numbers.
+	Phase             scenarioPhase
+	Armed             int
+	Excluded          []excludedParticipant
+	ExcludedTotal     int
+	ExcludedByReason  map[string]int
+	ScheduleCancelled bool
+}
+
+// ArmReadiness arms and returns a self-consistent snapshot. Prefer it over Arm()
+// whenever more than the armed count is needed — notably in the REST handler,
+// which would otherwise have to make three separate reads (rows, totals, and the
+// schedule state before/after).
+func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	hadSchedule := !c.scheduledAt.IsZero()
 	if err := c.transitionLocked(phaseArmed); err != nil {
-		return 0, nil, err
+		return armReadiness{}, err
 	}
 
 	// A pending scheduled start was authorised against the membership the PREVIOUS
@@ -384,6 +495,7 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	// detach whatever does not survive this pass (obligation 1).
 	prevParts, prevLedgers := c.parts, c.ledgers
 	c.excluded = nil
+	c.excludedByReason = nil
 	// Fresh slice/maps, never truncate-in-place: a previously returned excluded
 	// slice must not be mutated under a caller still serving it.
 	c.parts = make(map[string]*scenarioPart)
@@ -398,10 +510,9 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	for _, ip := range c.spec.Participants {
 		dev := c.sm.devicesByIP[ip]
 		if dev == nil {
-			c.excluded = append(c.excluded, excludedParticipant{
-				Device: ip, Reason: "device not found",
-				RemediationHint: "create the device before arming, or remove it from the scenario",
-			})
+			c.recordExcluded(ip, "device not found",
+				"create the device before arming, or remove it from the scenario",
+				scenarioExcludedArmRows)
 			continue
 		}
 		led := prevLedgers[ip] // nil on a first arm
@@ -410,7 +521,7 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 		}
 		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
-			c.excluded = append(c.excluded, excludedParticipant{Device: ip, Reason: reason, RemediationHint: hint})
+			c.recordExcluded(ip, reason, hint, scenarioExcludedArmRows)
 			continue
 		}
 		c.parts[ip] = part
@@ -431,7 +542,19 @@ func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	// Derive the count from the map rather than counting loop iterations, so it
 	// cannot drift from the map the rest of the lifecycle uses: Start's 0/N
 	// refusal tests len(c.parts) and the report publishes len(PerDevice).
-	return len(c.parts), c.excluded, nil
+	return armReadiness{
+		Phase:         c.phase,
+		Armed:         len(c.parts),
+		Excluded:      c.excluded,
+		ExcludedTotal: sumReasonCounts(c.excludedByReason),
+		// Cloned: handing the controller's own map to a caller would let a later
+		// arm mutate it mid-response. Both publication paths (this and finish)
+		// clone, so neither depends on the accident that no current phase
+		// transition lets recordExcluded run after the handover.
+		ExcludedByReason: maps.Clone(c.excludedByReason),
+		// A pending schedule that is gone after the withdrawal above.
+		ScheduleCancelled: hadSchedule && c.scheduledAt.IsZero(),
+	}, nil
 }
 
 // Start freezes the fleet, publishes the running gate at T0, and starts the
@@ -479,10 +602,9 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 		}
 		delete(c.parts, ip)
 		delete(c.ledgers, ip)
-		c.excluded = append(c.excluded, excludedParticipant{
-			Device: ip, Reason: "device deleted between arm and start",
-			RemediationHint: "re-arm the scenario after the fleet is stable",
-		})
+		c.recordExcluded(ip, "device deleted between arm and start",
+			"re-arm the scenario after the fleet is stable",
+			scenarioMaxExcludedRows)
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
@@ -705,7 +827,9 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	c.result = &ScenarioResult{
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
-		Excluded: c.excluded, PerDevice: perDevice, Apps: apps,
+		Excluded: c.excluded, ExcludedTotal: sumReasonCounts(c.excludedByReason),
+		ExcludedByReason: maps.Clone(c.excludedByReason),
+		PerDevice:        perDevice, Apps: apps,
 	}
 	return c.result, nil
 }

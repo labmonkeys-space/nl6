@@ -197,9 +197,49 @@ Response `200` (readiness):
     {"device": "10.42.0.9", "reason": "device not found",
      "remediation_hint": "create the device before arming, or remove it from the scenario"}
   ],
+  "excluded_total": 1,
   "scheduled_start_cancelled": true
 }
 ```
+
+**The `excluded` rows are capped at 1,000; the counts are not.** One row costs
+~145 bytes and there is one per unresolved participant, so at the participant
+ceiling an uncapped list would be a ~14 MB control-plane response.
+
+`excluded_total` is always present. `excluded_by_reason` appears whenever there
+is at least one exclusion — **truncated or not** — and always accounts for every
+exclusion; `excluded_truncated` appears only when rows were actually dropped, and
+it is the sole signal for that. Do not treat the presence of `excluded_by_reason`
+as meaning the list was sampled.
+
+Of the 1,000-row budget, 900 are available to arm-time exclusions and 100 are
+reserved for exclusions found later, when `start` re-checks the fleet — otherwise
+a large arm-time set would crowd out the `device deleted between arm and start`
+rows, the only ones whose device identity you cannot recover from
+(participants − fleet). So a **readiness** response carries at most **900** rows;
+the **report** can carry up to 1,000 (900 arm-time + 100 start-time). The reserve
+is itself finite: more than 100 gap deletions retain only the first 100 rows,
+with the rest visible in the counts only.
+
+When the cap bites:
+
+```json
+{
+  "participants_armed": 0,
+  "excluded": [ "…900 rows (the arm-time share)…" ],
+  "excluded_total": 20000,
+  "excluded_truncated": true,
+  "excluded_by_reason": {"device not found": 20000}
+}
+```
+
+`excluded_total` is the authoritative count (and `participants_excluded` in the
+report is derived from it, never from the row count). Remediation stays
+iterative: fix what the sample shows, re-arm, and the next batch surfaces.
+
+Compatibility: these three fields are additive, but `excluded_total` is present
+on **every** readiness response including the clean case (`0`). A consumer
+validating against a closed schema needs to allow it.
 
 ### `POST /api/v1/scenarios/{id}/start` — start
 

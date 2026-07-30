@@ -142,6 +142,14 @@ type readinessResponse struct {
 	Phase             string                `json:"phase"`
 	ParticipantsArmed int                   `json:"participants_armed"`
 	Excluded          []scenarioExcludedRow `json:"excluded"`
+	// ExcludedTotal is the authoritative count. `excluded` is capped at
+	// scenarioMaxExcludedRows rows so a ceiling-sized submit against a sparse
+	// fleet cannot produce a multi-megabyte control-plane response; when the cap
+	// bites, ExcludedTruncated is set and ExcludedByReason still accounts for
+	// every exclusion.
+	ExcludedTotal     int            `json:"excluded_total"`
+	ExcludedTruncated bool           `json:"excluded_truncated,omitempty"`
+	ExcludedByReason  map[string]int `json:"excluded_by_reason,omitempty"`
 	// ScheduledStartCancelled reports that this arm withdrew a pending
 	// absolute-T0 start (the membership it was authorised against has been
 	// re-resolved). Omitted when there was nothing to cancel, so the field only
@@ -254,22 +262,28 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Observed before/after because Arm cancels a pending scheduled start (the
-	// membership it was authorised against is being re-resolved). Reported rather
-	// than left to a log line, so an API client learns it has to reschedule.
-	hadSchedule := !ctrl.ScheduledStart().IsZero()
-	armed, excluded, err := ctrl.Arm()
+	// ArmReadiness, not Arm() plus follow-up accessors: every field below is reset
+	// and rebuilt by a concurrent arm (armed→armed is legal re-entry), so reading
+	// them across separate lock acquisitions can splice two arms into one response
+	// — rows from the first with a total from the second.
+	rd, err := ctrl.ArmReadiness()
 	if err != nil {
 		scenarioErr(w, http.StatusConflict, conflictMsg(ctrl, err, "arm"))
 		return
 	}
-	rows := make([]scenarioExcludedRow, 0, len(excluded))
-	for _, ex := range excluded {
+	rows := make([]scenarioExcludedRow, 0, len(rd.Excluded))
+	for _, ex := range rd.Excluded {
 		rows = append(rows, scenarioExcludedRow(ex))
 	}
 	writeScenarioJSON(w, http.StatusOK, readinessResponse{
-		ID: ctrl.id, Phase: string(ctrl.Phase()), ParticipantsArmed: armed, Excluded: rows,
-		ScheduledStartCancelled: hadSchedule && ctrl.ScheduledStart().IsZero(),
+		// rd.Phase, NOT ctrl.Phase(): the latter is a second lock acquisition, and
+		// a start landing between the two would splice "running" onto this arm's
+		// numbers — the same cross-acquisition shape ArmReadiness exists to close.
+		ID: ctrl.id, Phase: string(rd.Phase), ParticipantsArmed: rd.Armed, Excluded: rows,
+		ExcludedTotal:           rd.ExcludedTotal,
+		ExcludedTruncated:       excludedTruncated(rd.ExcludedTotal, len(rows)),
+		ExcludedByReason:        rd.ExcludedByReason,
+		ScheduledStartCancelled: rd.ScheduleCancelled,
 	})
 }
 

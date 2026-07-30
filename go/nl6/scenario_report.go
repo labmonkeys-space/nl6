@@ -84,6 +84,11 @@ type scenarioReportSummary struct {
 	// and sums to `in_window`. See metadata.sub_window_count/_duration.
 	SubWindows [scenarioSubWindowCount]uint64 `json:"sub_windows"`
 	Excluded   []scenarioExcludedRow          `json:"excluded"`
+	// ExcludedTruncated reports that `excluded` is a sample: it holds at most
+	// scenarioMaxExcludedRows rows while participants_excluded counts them all.
+	// ExcludedByReason accounts for the full total regardless.
+	ExcludedTruncated bool           `json:"excluded_truncated,omitempty"`
+	ExcludedByReason  map[string]int `json:"excluded_by_reason,omitempty"`
 }
 
 // reportMetadata is the reproducibility fingerprint + actual window
@@ -146,6 +151,12 @@ type reportInformational struct {
 	InformsPending uint64 `json:"informs_pending"`
 }
 
+// excludedTruncated reports whether the retained rows are a sample of the total.
+// One definition, used by both the readiness response and the report: derived
+// twice it was two implementations of one invariant over two different row
+// sources, free to disagree about the same run.
+func excludedTruncated(total, retainedRows int) bool { return total > retainedRows }
+
 // scenarioExcludedRow is the {device, reason, remediation_hint} shape the
 // readiness contract mandates (FR9); reused verbatim in the report.
 type scenarioExcludedRow struct {
@@ -188,13 +199,15 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
-			ParticipantsExcluded: len(res.Excluded),
+			ParticipantsExcluded: res.ExcludedTotal,
 			Excluded:             make([]scenarioExcludedRow, 0, len(res.Excluded)),
 		},
 	}
 	for _, ex := range res.Excluded {
 		rep.Summary.Excluded = append(rep.Summary.Excluded, scenarioExcludedRow(ex))
 	}
+	rep.Summary.ExcludedByReason = res.ExcludedByReason
+	rep.Summary.ExcludedTruncated = excludedTruncated(res.ExcludedTotal, len(res.Excluded))
 
 	// Stable output: sort participant rows by source IP so two runs of the
 	// same scenario serialize byte-identically (determinism contract).
