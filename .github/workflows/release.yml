@@ -129,14 +129,14 @@ jobs:
         #
         # No explicit `image:` since v0.6.1: the action derives the generator
         # image from its own pinned commit (package.json at the SHA →
-        # `:report-0.6.1`), so the two cannot disagree. v0.6.1 specifically —
-        # v0.6.0's SHA-pin path still fell back to the floating `:report-rc`,
-        # which must never decide the content of a release artifact.
+        # `:report-0.7.0`), so the two cannot disagree. Never fall back to a
+        # floating tag such as `:report-rc`, which must not decide the content
+        # of a release artifact.
         #
         # Runs `docker run` on a public GHCR image; no registry login is needed
-        # (report-0.6.1 verified anonymously pullable), so this job keeps
+        # (report-0.7.0 verified anonymously pullable), so this job keeps
         # `packages: none`.
-        uses: no42-org/blitsbom@3f2e7abc338c05d40a15058eafc318fee310e05f  # v0.6.1
+        uses: no42-org/blitsbom@fe66bcc08b9cdf2ac3fbb5b00b9d761a3eec1e84  # v0.7.0
         with:
           sbom: dist/nl6.sbom.spdx.json
           output: dist/nl6.sbom.report.html
