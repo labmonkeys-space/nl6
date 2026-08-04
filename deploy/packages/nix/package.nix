@@ -27,10 +27,15 @@ buildGo126Module {
   modRoot = "go";
   subPackages = [ "nl6" ];
 
-  # Hash of the vendored Go module set. Recompute after any go.mod/go.sum
-  # change: set this to lib.fakeHash, run `nix build`, copy the printed
-  # "got:" value back here.
-  vendorHash = "sha256-2zDR4nbVrmocuzzUbmTxLhLSNDUnDZ+ugL4WqGNbIS0=";
+  # Hash of the vendored Go module set. MUST be recomputed after any
+  # go.mod/go.sum change — a stale hash makes Nix substitute the previous
+  # cached vendor tree, which then fails the build with "inconsistent
+  # vendoring" (this is what a Dependabot go.mod bump breaks). Refresh with
+  # `make nix-vendor-hash` (works via Docker, no local Nix needed), or set
+  # this to lib.fakeHash, run `nix build`, and copy the printed "got:" value.
+  # The Nix Cache workflow also prints the expected hash when its PR build
+  # fails for this reason.
+  vendorHash = "sha256-0BF72ItUiNY/6w1mcseoR18wucgoQyfcz8R0jwK6vz4=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
