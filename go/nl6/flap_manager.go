@@ -79,9 +79,9 @@ func (sm *SimulatorManager) StartFlapSubsystem(cfg FlapSubsystemConfig) error {
 // pointers. Shutdown-only — not safe to call concurrently with device
 // AddDevice; the existing trap/syslog convention applies.
 //
-// Cancels the Run context BEFORE calling Stop so any inflight
-// `limiter.Wait` returns immediately. Stop's close-on-stopCh then
-// covers the non-limiter rendezvous points.
+// Cancels the Run context BEFORE calling Stop for promptness; Stop is
+// self-sufficient since #414 (it awaits Run's exit and Run derives its
+// limiter context from stopCh), so on return no flap fire is in flight.
 func (sm *SimulatorManager) StopFlapSubsystem() {
 	scheduler := sm.flapScheduler.Swap(nil)
 	if scheduler == nil {

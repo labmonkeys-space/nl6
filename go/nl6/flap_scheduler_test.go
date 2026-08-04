@@ -377,9 +377,10 @@ func TestFlapScheduler_StopUnblocksLimiterWait(t *testing.T) {
 	// Burn the burst — let cap=1/s actually be exhausted.
 	time.Sleep(1100 * time.Millisecond)
 
-	// Now Run should be blocked in limiter.Wait. Stop alone would not
-	// unblock it; we must also cancel the context (mirroring what
-	// StopFlapSubsystem does in production).
+	// Now Run should be blocked in limiter.Wait. Cancel the context before
+	// Stop, mirroring the StopFlapSubsystem choreography. Since #414 Stop
+	// alone also suffices (stop-derived limiter context) — that path is
+	// pinned by TestFlapSchedulerStop_BoundedUnderGlobalCap.
 	cancel()
 	s.Stop()
 	select {

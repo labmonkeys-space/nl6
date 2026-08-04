@@ -14,6 +14,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -152,6 +153,15 @@ type FlapScheduler struct {
 	wake     chan struct{}
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	// started records that Run was entered; runDone is closed by Run's defer.
+	// Fires are INLINE in Run (no worker pool), so Run's return already means
+	// "no scheduler-driven fire in flight" — runDone is that signal made
+	// awaitable. Stop waits on runDone only when started is set, so a
+	// constructed-but-never-run scheduler (tests build these) cannot hang its
+	// caller. Same shape as SyslogScheduler (#410) and TrapScheduler (#408).
+	started atomic.Bool
+	runDone chan struct{}
 }
 
 // FlapSchedulerOptions configures a new scheduler. Pass GlobalCapPerSecond=0
@@ -165,9 +175,10 @@ type FlapSchedulerOptions struct {
 // NewFlapScheduler constructs a scheduler. Call Run to start the loop.
 func NewFlapScheduler(opts FlapSchedulerOptions) *FlapScheduler {
 	s := &FlapScheduler{
-		byKey:  make(map[flapKey]*flapHeapEntry),
-		wake:   make(chan struct{}, 1),
-		stopCh: make(chan struct{}),
+		byKey:   make(map[flapKey]*flapHeapEntry),
+		wake:    make(chan struct{}, 1),
+		stopCh:  make(chan struct{}),
+		runDone: make(chan struct{}),
 	}
 	if opts.GlobalCapPerSecond > 0 {
 		// Burst = cap so a one-second steady-state budget is the
@@ -262,16 +273,52 @@ func (s *FlapScheduler) Deregister(deviceIP net.IP) {
 	}
 }
 
-// Stop is shutdown-only (per §D2 / trap+syslog convention). Idempotent.
+// Stop signals Run to exit and, when Run was started, BLOCKS until it has —
+// fires are inline in Run, so Stop's return means no scheduler-driven fire is
+// in flight (#414). Shutdown-only (per §D2 / trap+syslog convention), and
+// self-sufficient: Run derives a limiter context from stopCh, so Stop does
+// not depend on the caller cancelling Run's context first (StopFlapSubsystem
+// still does, for promptness).
+//
+// Safe to call multiple times and from any goroutine (waiting on the closed
+// runDone is free). A scheduler that was never Run returns immediately; Stop
+// racing Run entry collapses safely — either started is still false (no
+// wait; Run sees the closed stopCh at its first iteration and exits, closing
+// runDone anyway) or started is true and every Run exit path closes runDone.
 func (s *FlapScheduler) Stop() {
 	s.stopOnce.Do(func() { close(s.stopCh) })
+	if s.started.Load() {
+		<-s.runDone
+	}
 }
 
 // Run blocks until ctx is cancelled or Stop is called. The loop: peek
 // earliest, wait until its nextFire, acquire a limiter token, pop, fire
 // outside the lock, reschedule the counterpart action.
 func (s *FlapScheduler) Run(ctx context.Context) {
+	s.started.Store(true)
+
+	// Derive a context that also cancels when Stop closes stopCh. Without
+	// this, `limiter.Wait(ctx)` cannot observe Stop — a Stop without a
+	// prior context cancel would block for up to 1/rate seconds when a
+	// global cap is configured.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-s.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	// runDone must close on EVERY exit path (including a panic and the
+	// "stopCh already closed at first iteration" case), or a Stop that
+	// observed started=true would hang. Fires are inline in this loop, so
+	// closing runDone here IS the "no fire in flight" barrier Stop relies
+	// on.
 	defer func() {
+		close(s.runDone)
 		if r := recover(); r != nil {
 			log.Printf("flap scheduler: Run panicked: %v", r)
 		}
