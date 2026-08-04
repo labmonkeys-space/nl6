@@ -41,6 +41,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -112,24 +113,26 @@ func appendLength(dst []byte, length int) []byte {
 // appendInteger appends a BER INTEGER. Mirrors encodeInteger, including its
 // two's-complement handling of negative values.
 func appendInteger(dst []byte, value int) []byte {
-	var tmp [8]byte
+	var tmp [9]byte
 	var body []byte
 	switch {
 	case value == 0:
 		body = []byte{0x00}
 	case value > 0:
-		i := len(tmp)
-		v := value
-		for v > 0 {
-			i--
-			tmp[i] = byte(v & 0xff)
-			v >>= 8
+		// Fixed-offset form: tmp[0] is a permanent 0x00 sign pad and the value
+		// fills tmp[1:9] big-endian, so every index below is provably in
+		// [0,8] — the previous reverse-fill loop was flagged by gosec (G602)
+		// because its in-boundedness rested on int64's value range rather
+		// than on anything a static analyser can see.
+		binary.BigEndian.PutUint64(tmp[1:9], uint64(value))
+		start := 1
+		for start < 8 && tmp[start] == 0 {
+			start++ // strip leading zeros; value > 0 guarantees a nonzero byte
 		}
-		if tmp[i]&0x80 != 0 {
-			i--
-			tmp[i] = 0x00
+		if tmp[start]&0x80 != 0 {
+			start-- // pull in the pad byte so the value stays positive
 		}
-		body = tmp[i:]
+		body = tmp[start:]
 	default:
 		u := uint64(value)
 		switch {
