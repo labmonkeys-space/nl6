@@ -386,10 +386,20 @@ func (sm *SimulatorManager) StopSyslogExport() {
 	}
 	sm.mu.RUnlock()
 
+	// Stop BLOCKS until Run has exited (#410) — fires are inline in Run, so
+	// after this returns no scheduler-driven fire is in flight and the
+	// persistence loop below cannot lose an increment to one.
 	scheduler.Stop()
 	for _, ce := range captured {
-		sm.persistSyslogCounters(ce.exp)
+		// Close BEFORE persisting: Close sets the exporter's closing flag,
+		// cutting off new fires ahead of the counter snapshot. Accepted
+		// residual: an on-demand HTTP fire that passed the closing check
+		// before Close — at most one in-flight fire per concurrent caller
+		// (those bypass the scheduler, so Stop's barrier cannot cover them).
+		// Closing that window would need a fires-in-flight counter on the
+		// fire hot path; not worth it for counter exactness at process exit.
 		_ = ce.exp.Close()
+		sm.persistSyslogCounters(ce.exp)
 	}
 	sm.closeSyslogConnPool()
 
