@@ -6,7 +6,6 @@
 package main
 
 import (
-	"container/heap"
 	"context"
 	"net"
 	"sync"
@@ -92,17 +91,8 @@ func TestFlapScheduler_AggressiveScenarioFiresDownThenUp(t *testing.T) {
 	// down event into the heap to short-circuit the wait.
 	s.Register(net.IPv4(10, 0, 0, 1), []int{1}, IfFlapAggressive, state)
 
-	// Forcibly accelerate: re-seed the entry's nextFire to now.
-	s.mu.Lock()
-	for _, e := range s.byKey {
-		e.nextFire = s.now()
-	}
-	// Re-establish heap invariant after bulk mutation. heap.Init
-	// O(n) re-heapifies the underlying slice; the prior Swap-loop did
-	// not actually restore the invariant — it only worked by accident
-	// because all nextFire values were equal.
-	heap.Init(&s.heap)
-	s.mu.Unlock()
+	// Forcibly accelerate: re-seed every entry's nextFire to now.
+	accelerateFlapEntries(s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -152,14 +142,8 @@ func TestFlapScheduler_GlobalCapHonored(t *testing.T) {
 			[]int{1, 2, 3, 4, 5}, IfFlapAggressive, states[d])
 	}
 
-	// Accelerate every entry to fire immediately. heap.Init restores
-	// the invariant after the bulk mutation.
-	s.mu.Lock()
-	for _, e := range s.byKey {
-		e.nextFire = s.now()
-	}
-	heap.Init(&s.heap)
-	s.mu.Unlock()
+	// Accelerate every entry to fire immediately.
+	accelerateFlapEntries(s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -363,12 +347,7 @@ func TestFlapScheduler_StopUnblocksLimiterWait(t *testing.T) {
 
 	// Accelerate all entries to fire immediately so Run pops them
 	// rapidly, exhausting the 1-token-burst limiter.
-	s.mu.Lock()
-	for _, e := range s.byKey {
-		e.nextFire = s.now()
-	}
-	heap.Init(&s.heap)
-	s.mu.Unlock()
+	accelerateFlapEntries(s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -377,9 +356,10 @@ func TestFlapScheduler_StopUnblocksLimiterWait(t *testing.T) {
 	// Burn the burst — let cap=1/s actually be exhausted.
 	time.Sleep(1100 * time.Millisecond)
 
-	// Now Run should be blocked in limiter.Wait. Stop alone would not
-	// unblock it; we must also cancel the context (mirroring what
-	// StopFlapSubsystem does in production).
+	// Now Run should be blocked in limiter.Wait. Cancel the context before
+	// Stop, mirroring the StopFlapSubsystem choreography. Since #414 Stop
+	// alone also suffices (stop-derived limiter context) — that path is
+	// pinned by TestFlapSchedulerStop_BoundedUnderGlobalCap.
 	cancel()
 	s.Stop()
 	select {
