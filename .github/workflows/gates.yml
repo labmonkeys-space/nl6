@@ -81,6 +81,13 @@ jobs:
       - name: Test
         run: make test
 
+      # Race-detector pass (ci-quality-gates spec): a step, not a job, so no
+      # new required-check name (branch protection + ruleset stay untouched).
+      # If job wall time becomes a problem, the plain Go run above can be
+      # dropped — this run supersets it.
+      - name: Test (race detector)
+        run: make test-race
+
   quality:
     name: Code Quality
     runs-on: ubuntu-24.04

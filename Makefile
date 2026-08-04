@@ -49,7 +49,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-race test-web tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
@@ -206,6 +206,15 @@ ifneq ($(UNAME_S),Linux)
 	@echo "      host or container for Go test coverage. (Web tests ran above.)"
 else
 	cd $(GO_DIR) && go test ./...
+endif
+
+## test-race: Run the Go tests under the race detector (Linux; CI gate — see gates.yml)
+test-race: check-go
+ifneq ($(UNAME_S),Linux)
+	@echo "Note: no Go tests to run on $(UNAME_S) — see 'make test'. On macOS,"
+	@echo "      run 'cd $(GO_DIR) && go test -race ./...' directly."
+else
+	cd $(GO_DIR) && go test -race ./...
 endif
 
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
