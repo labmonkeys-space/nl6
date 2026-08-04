@@ -23,7 +23,8 @@ import (
 )
 
 // accelerateFlapEntries rewrites every scheduled entry to be due now so Run
-// pops them immediately. Same idiom as TestFlapScheduler_StopUnblocksLimiterWait.
+// pops them immediately. heap.Init restores the invariant after the bulk
+// mutation.
 func accelerateFlapEntries(s *FlapScheduler) {
 	s.mu.Lock()
 	for _, e := range s.byKey {
