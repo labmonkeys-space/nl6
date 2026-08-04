@@ -63,6 +63,11 @@ func newStateAPIFixture(t *testing.T) *stateAPIFixture {
 	// Swap the package-level manager so the HTTP handler can reach the
 	// fixture. Restored on cleanup so other tests aren't perturbed.
 	t.Cleanup(swapGlobalManager(mgr))
+	// Registered AFTER the swap cleanup so LIFO ordering drains pending
+	// auto-revert goroutines BEFORE `manager` is restored — a fired
+	// revert reads that global (invalidateLLDPServedCache), and sleeps
+	// in tests give no happens-before edge against the restore (#417).
+	t.Cleanup(func() { mgr.awaitAutoRevertsForDevice(device.IP.String()) })
 
 	// Wire the state engine counters to the manager aggregates so the
 	// /api/v1/gnmi/status integration test in this file can observe
@@ -488,5 +493,205 @@ func TestCancelAutoRevertsForDevice(t *testing.T) {
 	f.mgr.revertTimers.Range(func(_, _ any) bool { count++; return true })
 	if count != 0 {
 		t.Errorf("revertTimers entries after cancel: got %d, want 0", count)
+	}
+}
+
+// TestAwaitAutoReverts_BlocksUntilFireCompletes pins the #417 drain
+// contract: awaitAutoRevertsForDevice must not return while a fired
+// revert goroutine is still executing (blocked in the notify hook),
+// and must return once it exits. Channel-synchronised, no ordering
+// sleeps.
+func TestAwaitAutoReverts_BlocksUntilFireCompletes(t *testing.T) {
+	f := newStateAPIFixture(t)
+	ic := f.device.metricsCycler.ifCounters.Load()
+	state := ic.State()
+
+	// The hook fires for the initial POST mutation (call 1) and the
+	// revert (call 2); only the revert must block.
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	state.SetNotify(func(StateChange) {
+		if calls.Add(1) == 2 {
+			close(entered)
+			<-release
+		}
+	})
+
+	body := strings.NewReader(`{"status":"DOWN","duration":"20ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST: %d %s", rr.Code, rr.Body.String())
+	}
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revert never reached the notify hook")
+	}
+
+	drained := make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.1")
+		close(drained)
+	}()
+
+	// Positive-hold: with the revert goroutine blocked in the hook, the
+	// drain must not have returned.
+	select {
+	case <-drained:
+		t.Fatal("drain returned while the revert goroutine was still executing")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not return after the revert goroutine exited")
+	}
+}
+
+// TestAwaitAutoReverts_EmptyReturnsImmediately covers the no-pending
+// case, including a pending timer for a DIFFERENT device (key mismatch
+// must not be claimed or awaited).
+func TestAwaitAutoReverts_EmptyReturnsImmediately(t *testing.T) {
+	f := newStateAPIFixture(t)
+
+	// Nothing pending at all.
+	done := make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.1")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain blocked with no pending timers")
+	}
+
+	// A pending 1h timer for the fixture device must not block a drain
+	// for a different IP.
+	body := strings.NewReader(`{"status":"DOWN","duration":"1h"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST: %d", rr.Code)
+	}
+	done = make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.99")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drain for a different device blocked on the fixture device's timer")
+	}
+	// The fixture cleanup drains the real pending timer.
+}
+
+// TestAwaitAutoReverts_SupersededFireIsAwaited pins the review finding
+// on the supersede path: a revert goroutine already past its CAS when a
+// second POST Swaps its map entry away is claimable by neither the sweep
+// nor its own CompareAndDelete — only the per-device counter barrier
+// covers it. Sequence: POST1's revert fires and blocks in the notify
+// hook (past CAS, mid-Broadcast); POST2 supersedes on the same leaf;
+// the drain must not return until the blocked fire completes.
+func TestAwaitAutoReverts_SupersededFireIsAwaited(t *testing.T) {
+	f := newStateAPIFixture(t)
+	ic := f.device.metricsCycler.ifCounters.Load()
+	state := ic.State()
+
+	// Block ONLY the revert-to-UP fire; DOWN transitions pass so the
+	// POST handlers are never blocked by their own initial mutation.
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	state.SetNotify(func(evt StateChange) {
+		if evt.Oper == OperUp {
+			once.Do(func() { close(entered) })
+			<-release
+		}
+	})
+
+	body := strings.NewReader(`{"status":"DOWN","duration":"20ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST1: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Revert fired: goroutine is past its CAS, blocked in the hook.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revert never reached the notify hook")
+	}
+
+	// POST2 supersedes on the same (ip, ifIndex, leaf): Swap replaces
+	// the map entry, so the blocked goroutine is invisible to the sweep.
+	body = strings.NewReader(`{"status":"DOWN","duration":"1h"}`)
+	req = httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr = httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST2: %d %s", rr.Code, rr.Body.String())
+	}
+
+	drained := make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.1")
+		close(drained)
+	}()
+
+	// Positive-hold: the superseded fire is still executing; the drain
+	// (which claimed only POST2's timer) must not have returned.
+	select {
+	case <-drained:
+		t.Fatal("drain returned while the superseded revert goroutine was still executing")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not return after the superseded goroutine exited")
+	}
+}
+
+// TestAwaitAutoReverts_CancelledPathSignalsExit pins that the cancelled
+// branch (no mutation, no broadcast) also closes `finished`: draining a
+// long-duration pending revert returns promptly instead of waiting out
+// the timer.
+func TestAwaitAutoReverts_CancelledPathSignalsExit(t *testing.T) {
+	f := newStateAPIFixture(t)
+	body := strings.NewReader(`{"status":"DOWN","duration":"1h"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST: %d", rr.Code)
+	}
+	done := make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.1")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not return promptly on the cancelled path")
+	}
+	// Claimed entry was removed by the drain.
+	count := 0
+	f.mgr.revertTimers.Range(func(_, _ any) bool { count++; return true })
+	if count != 0 {
+		t.Errorf("revertTimers entries after drain: got %d, want 0", count)
 	}
 }
