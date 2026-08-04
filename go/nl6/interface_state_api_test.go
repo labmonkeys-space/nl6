@@ -214,6 +214,26 @@ func TestSetOperStatus_MalformedBody400(t *testing.T) {
 	}
 }
 
+// waitRevertsDone blocks until every auto-revert goroutine for ip has
+// exited, WITHOUT cancelling pending timers (unlike
+// awaitAutoRevertsForDevice): tests use it to let a scheduled revert
+// fire naturally and then assert on its complete effects — including
+// ones with no observable event (a snapshot revert that no-ops) and
+// counter increments that Broadcast performs AFTER the listener send.
+// The atomic counter load is the happens-before edge; the sleep is
+// only backoff, not synchronisation.
+func waitRevertsDone(t *testing.T, mgr *SimulatorManager, ip string) {
+	t.Helper()
+	counter := mgr.revertCounterFor(ip)
+	deadline := time.Now().Add(5 * time.Second)
+	for counter.Load() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("auto-revert goroutines did not exit within 5s")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestSetOperStatus_DurationAutoReverts(t *testing.T) {
 	f := newStateAPIFixture(t)
 	// Listener so Broadcast counts; otherwise state_events_emitted is
@@ -236,29 +256,26 @@ func TestSetOperStatus_DurationAutoReverts(t *testing.T) {
 	if got := ic.State().OperStatus(1); got != OperDown {
 		t.Errorf("immediate post-POST: got %d, want OperDown", got)
 	}
-	// After the duration elapses: back to UP.
-	deadline := time.Now().Add(2 * time.Second)
-	reverted := false
-	for time.Now().Before(deadline) {
-		if ic.State().OperStatus(1) == OperUp {
-			reverted = true
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !reverted {
-		t.Fatalf("auto-revert never fired: OperStatus(1) = %d after 2s", ic.State().OperStatus(1))
-	}
-	// Two transitions (DOWN, then auto-revert UP), each with a registered
-	// listener, MUST bump state_events_emitted by exactly 2 per spec
-	// "Duration field triggers auto-revert". Drain the listener so the
-	// goroutine's Broadcast retries don't keep firing.
-	for drain := 0; drain < 2; drain++ {
+	// Await both broadcasts — the immediate DOWN, then the auto-revert
+	// UP. A channel receive is a real happens-before edge with the
+	// revert goroutine; the previous poll-with-sleep was not.
+	for _, want := range []uint8{OperDown, OperUp} {
 		select {
-		case <-ch:
-		case <-time.After(100 * time.Millisecond):
+		case ev := <-ch:
+			if ev.Oper != want {
+				t.Fatalf("listener event Oper = %d, want %d", ev.Oper, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for Oper=%d event", want)
 		}
 	}
+	if got := ic.State().OperStatus(1); got != OperUp {
+		t.Fatalf("after revert event: OperStatus(1) = %d, want OperUp", got)
+	}
+	// Broadcast bumps state_events_emitted AFTER the listener send, so
+	// receiving the event does not yet order the counter — wait for the
+	// revert goroutine's exit before asserting the delta of exactly 2.
+	waitRevertsDone(t, f.mgr, "10.42.0.1")
 	afterEmitted := f.mgr.GetGnmiStatus().StateEventsEmitted
 	if afterEmitted-beforeEmitted != 2 {
 		t.Errorf("state_events_emitted: got delta %d, want 2 (one for DOWN, one for auto-revert UP)", afterEmitted-beforeEmitted)
@@ -324,7 +341,10 @@ func TestSetOperStatus_TESTINGStatusAccepted(t *testing.T) {
 func TestSetAdminStatus_SNMPCrossProtocol(t *testing.T) {
 	f := newStateAPIFixture(t)
 	// Sleep past 1 TimeTick so ifLastChange will register a non-zero
-	// value after the mutation.
+	// value after the mutation. This is a WALL-CLOCK requirement
+	// (TimeTicks tick at 10ms granularity — there is no event to wait
+	// on), not a goroutine await; -race slowdown only widens the margin.
+	// Kept per the race-testing spec's commented-sleep rule.
 	time.Sleep(25 * time.Millisecond)
 	body := strings.NewReader(`{"status":"DOWN"}`)
 	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/2/admin-status", body)
@@ -411,7 +431,11 @@ func TestSetOperStatus_DurationSnapshotsPreState(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("POST: %d %s", rr.Code, rr.Body.String())
 	}
-	time.Sleep(200 * time.Millisecond)
+	// The snapshot revert is a DOWN→DOWN no-op: no Broadcast, so there
+	// is no event to wait on. Await the revert goroutine's natural exit
+	// instead (must not use awaitAutoRevertsForDevice here — that would
+	// CANCEL the pending revert and pass this test vacuously).
+	waitRevertsDone(t, f.mgr, "10.42.0.1")
 	if got := state.OperStatus(1); got != OperDown {
 		t.Errorf("snapshot revert: got %d, want OperDown (pre-state was DOWN; revert must NOT flip to UP)", got)
 	}
@@ -421,6 +445,11 @@ func TestSetOperStatus_DurationSnapshotsPreState(t *testing.T) {
 // duplicate-POST-cancels-prior contract.
 func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
 	f := newStateAPIFixture(t)
+	ic := f.device.metricsCycler.ifCounters.Load()
+	ch := make(chan StateChange, 16)
+	ic.State().AddListener(ch)
+	defer ic.State().RemoveListener(ch)
+
 	// First POST: DOWN with 200ms duration (will revert to UP).
 	body := strings.NewReader(`{"status":"DOWN","duration":"200ms"}`)
 	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
@@ -432,6 +461,11 @@ func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
 	// Second POST 50ms later: TESTING with 200ms duration. Should
 	// cancel the first revert AND register a new one whose revert
 	// target is "snapshot at time of second POST" = OperDown.
+	//
+	// This sleep is a SCHEDULING GAP, not an await: POST #2 must land
+	// inside POST #1's 200ms revert window (a relative-ordering margin;
+	// there is no event to wait on). Kept per the race-testing spec's
+	// commented-sleep rule.
 	time.Sleep(50 * time.Millisecond)
 	body = strings.NewReader(`{"status":"TESTING","duration":"200ms"}`)
 	req = httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
@@ -440,14 +474,22 @@ func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("second POST: %d", rr.Code)
 	}
-	// After ~300ms total, the second revert should have fired —
-	// snapshot at second POST was OperDown → revert back to OperDown.
-	// The first revert (would have flipped to UP) MUST have been
-	// cancelled.
-	time.Sleep(300 * time.Millisecond)
-	ic := f.device.metricsCycler.ifCounters.Load()
-	state := ic.State()
-	if got := state.OperStatus(1); got != OperDown {
+	// Await the deterministic event sequence: DOWN (POST #1), TESTING
+	// (POST #2), then the second revert's DOWN (snapshot at POST #2).
+	// The cancelled first revert (would have been UP) produces no event;
+	// receiving the final DOWN is the happens-before edge with the
+	// surviving revert goroutine.
+	for _, want := range []uint8{OperDown, OperTesting, OperDown} {
+		select {
+		case ev := <-ch:
+			if ev.Oper != want {
+				t.Fatalf("listener event Oper = %d, want %d (a stale first-revert UP here means cancellation failed)", ev.Oper, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for Oper=%d event", want)
+		}
+	}
+	if got := ic.State().OperStatus(1); got != OperDown {
 		t.Errorf("after second-POST revert: got %d, want OperDown (snapshot before second POST)", got)
 	}
 }
