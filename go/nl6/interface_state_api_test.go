@@ -594,6 +594,77 @@ func TestAwaitAutoReverts_EmptyReturnsImmediately(t *testing.T) {
 	// The fixture cleanup drains the real pending timer.
 }
 
+// TestAwaitAutoReverts_SupersededFireIsAwaited pins the review finding
+// on the supersede path: a revert goroutine already past its CAS when a
+// second POST Swaps its map entry away is claimable by neither the sweep
+// nor its own CompareAndDelete — only the per-device counter barrier
+// covers it. Sequence: POST1's revert fires and blocks in the notify
+// hook (past CAS, mid-Broadcast); POST2 supersedes on the same leaf;
+// the drain must not return until the blocked fire completes.
+func TestAwaitAutoReverts_SupersededFireIsAwaited(t *testing.T) {
+	f := newStateAPIFixture(t)
+	ic := f.device.metricsCycler.ifCounters.Load()
+	state := ic.State()
+
+	// Block ONLY the revert-to-UP fire; DOWN transitions pass so the
+	// POST handlers are never blocked by their own initial mutation.
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	state.SetNotify(func(evt StateChange) {
+		if evt.Oper == OperUp {
+			once.Do(func() { close(entered) })
+			<-release
+		}
+	})
+
+	body := strings.NewReader(`{"status":"DOWN","duration":"20ms"}`)
+	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr := httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST1: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Revert fired: goroutine is past its CAS, blocked in the hook.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revert never reached the notify hook")
+	}
+
+	// POST2 supersedes on the same (ip, ifIndex, leaf): Swap replaces
+	// the map entry, so the blocked goroutine is invisible to the sweep.
+	body = strings.NewReader(`{"status":"DOWN","duration":"1h"}`)
+	req = httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
+	rr = httptest.NewRecorder()
+	f.router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("POST2: %d %s", rr.Code, rr.Body.String())
+	}
+
+	drained := make(chan struct{})
+	go func() {
+		f.mgr.awaitAutoRevertsForDevice("10.42.0.1")
+		close(drained)
+	}()
+
+	// Positive-hold: the superseded fire is still executing; the drain
+	// (which claimed only POST2's timer) must not have returned.
+	select {
+	case <-drained:
+		t.Fatal("drain returned while the superseded revert goroutine was still executing")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-drained:
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not return after the superseded goroutine exited")
+	}
+}
+
 // TestAwaitAutoReverts_CancelledPathSignalsExit pins that the cancelled
 // branch (no mutation, no broadcast) also closes `finished`: draining a
 // long-duration pending revert returns promptly instead of waiting out

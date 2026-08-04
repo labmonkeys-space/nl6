@@ -313,6 +313,11 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 	if prev, loaded := sm.revertTimers.Swap(key, rt); loaded {
 		if old, ok := prev.(*revertTimer); ok {
 			old.timer.Stop()
+			// Pre-empt a goroutine already past its select (timer fired,
+			// CAS not yet run) — same store the device-teardown canceller
+			// makes. Without it the superseded goroutine wins its CAS and
+			// stomps the state this POST just set with a stale revert.
+			old.done.Store(true)
 			old.closeStop()
 		}
 	}
@@ -408,8 +413,10 @@ func (sm *SimulatorManager) cancelAutoRevertsForDevice(ip string) {
 // itself the ordering proof: the goroutine's last shared read precedes
 // its CompareAndDelete in program order, and sync.Map operations on the
 // same entry give the drain's failed load a happens-before edge to it.
-// Either way, everything the goroutine read is ordered before this
-// function returns.
+// A goroutine whose entry was REPLACED by a superseding POST's Swap is
+// reachable through neither route — the per-device counter barrier at
+// the end covers it. Either way, everything every goroutine read is
+// ordered before this function returns.
 func (sm *SimulatorManager) awaitAutoRevertsForDevice(ip string) {
 	var claimed []*revertTimer
 	sm.revertTimers.Range(func(k, v any) bool {
@@ -432,6 +439,18 @@ func (sm *SimulatorManager) awaitAutoRevertsForDevice(ip string) {
 	})
 	for _, rt := range claimed {
 		<-rt.finished
+	}
+	// The map cannot cover a goroutine whose entry was replaced by a
+	// superseding POST's Swap — its revertTimer is unreachable from the
+	// sweep. The per-device counter can: every goroutine decrements it
+	// in its defer, after its last shared read, and an atomic Load
+	// observing zero is ordered after those decrements. Under the
+	// quiescent contract the counter only drains, so this terminates as
+	// soon as the last in-flight fire (already past its CAS, thus
+	// unstoppable) completes.
+	counter := sm.revertCounterFor(ip)
+	for counter.Load() > 0 {
+		time.Sleep(200 * time.Microsecond)
 	}
 }
 
