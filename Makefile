@@ -49,7 +49,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-web tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
@@ -150,6 +150,22 @@ set-nix-version:
 	  && mv $(PKG_DIR)/nix/package.nix.tmp $(PKG_DIR)/nix/package.nix
 	@echo "set-nix-version: deploy/packages/nix/package.nix -> $(PKG_VERSION)"
 	@grep -nE 'version [?] "' $(PKG_DIR)/nix/package.nix
+
+## nix-vendor-hash: Print the correct buildGoModule vendorHash for package.nix
+# Required after ANY go.mod/go.sum change (Dependabot bumps included) — a
+# stale vendorHash makes the Nix build substitute the previous cached vendor
+# tree and fail with "inconsistent vendoring". Runs Nix inside Docker, so no
+# local Nix install is needed; the tree is copied into the container, so the
+# real work tree is never modified. Copy the printed "got:" value into
+# `vendorHash` in deploy/packages/nix/package.nix.
+nix-vendor-hash: check-docker
+	@echo "nix-vendor-hash: probing (builds the Go vendor set once; a few minutes)..."
+	@docker run --rm -v "$(CURDIR)":/repo:ro nixos/nix:latest sh -c "\
+	  cp -r /repo /src && cd /src && \
+	  sed -i 's|vendorHash = \".*\"|vendorHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"|' deploy/packages/nix/package.nix && \
+	  nix --extra-experimental-features 'nix-command flakes' build 'path:/src?dir=deploy/packages/nix#nl6' --no-link 2>&1 | grep -E 'specified:|got:'" \
+	  || true
+	@echo "nix-vendor-hash: copy the 'got:' value into vendorHash in $(PKG_DIR)/nix/package.nix"
 
 ## sbom-curate: Fill the product-SBOM licenses no module cache can resolve (SBOM=<path>)
 # The main module, stdlib, and the scanned binary's file-root package are not
