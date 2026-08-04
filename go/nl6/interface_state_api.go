@@ -158,11 +158,17 @@ type revertKey struct {
 // that cancellers arriving in the cancel-after-fire window can detect
 // the race and skip their own close, while the goroutine — if its CAS
 // loses — bails before mutating a dead state.
+// `finished` is closed as the LAST statement of the goroutine's defer
+// (after the counter decrement and map self-removal), so awaiting it
+// means the goroutine has fully exited on every path — cancelled,
+// fired, CAS-loss bail, or panic-recovered (#417). Consumed by
+// awaitAutoRevertsForDevice.
 type revertTimer struct {
 	timer     *time.Timer
 	stop      chan struct{}
 	closeOnce sync.Once
 	done      atomic.Bool
+	finished  chan struct{}
 	deviceIP  string // for per-device cap decrement on goroutine exit
 }
 
@@ -297,6 +303,7 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 	rt := &revertTimer{
 		stop:     make(chan struct{}),
 		timer:    time.NewTimer(delay),
+		finished: make(chan struct{}),
 		deviceIP: ip,
 	}
 
@@ -317,6 +324,12 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 			}
 			counter.Add(-1)
 			sm.revertTimers.CompareAndDelete(key, rt)
+			// LAST: any state read this goroutine performed (notably the
+			// global `manager` inside invalidateLLDPServedCache) precedes
+			// this close in program order, so a waiter on `finished` — or
+			// on the failed LoadAndDelete that the CompareAndDelete above
+			// implies — is ordered after it (#417).
+			close(rt.finished)
 		}()
 		select {
 		case <-rt.stop:
@@ -354,6 +367,11 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 // loss and bails without mutating, or (b) ran to completion before
 // cancel reached it and has already self-cleared from the map. The
 // per-device counter is decremented by the goroutine on exit.
+//
+// Deliberately NON-BLOCKING: the fired path takes device.mu.RLock via
+// the Broadcast notify hook, so awaiting exit here would be a deadlock
+// shape for device teardown. A caller that needs "cancelled AND
+// exited" (test teardown) uses awaitAutoRevertsForDevice instead.
 func (sm *SimulatorManager) cancelAutoRevertsForDevice(ip string) {
 	sm.revertTimers.Range(func(k, v any) bool {
 		key, ok := k.(revertKey)
@@ -373,6 +391,48 @@ func (sm *SimulatorManager) cancelAutoRevertsForDevice(ip string) {
 		}
 		return true
 	})
+}
+
+// awaitAutoRevertsForDevice cancels every pending auto-revert timer for
+// the given device IP and BLOCKS until every goroutine it claimed has
+// exited — "cancel means exited" (#417). For quiescent callers only
+// (test teardown before restoring swapped process-global state): no
+// concurrent scheduleAutoRevert for the same device may race the sweep.
+// NOT for device.Stop() — see cancelAutoRevertsForDevice.
+//
+// The sweep CLAIMS entries with LoadAndDelete rather than reading them
+// via Range: exactly one party — this drain or the goroutine's deferred
+// CompareAndDelete — wins removal of each entry. If the drain wins it
+// awaits that timer's `finished` (closed last in the goroutine's defer,
+// so the wait means fully exited). If the goroutine won, the miss is
+// itself the ordering proof: the goroutine's last shared read precedes
+// its CompareAndDelete in program order, and sync.Map operations on the
+// same entry give the drain's failed load a happens-before edge to it.
+// Either way, everything the goroutine read is ordered before this
+// function returns.
+func (sm *SimulatorManager) awaitAutoRevertsForDevice(ip string) {
+	var claimed []*revertTimer
+	sm.revertTimers.Range(func(k, v any) bool {
+		key, ok := k.(revertKey)
+		if !ok || key.ip != ip {
+			return true
+		}
+		prev, loaded := sm.revertTimers.LoadAndDelete(k)
+		if !loaded {
+			return true // goroutine self-removed; ordered by the miss
+		}
+		if rt, ok := prev.(*revertTimer); ok {
+			rt.timer.Stop()
+			// Pre-empt a not-yet-fired mutation, same as the cancel path.
+			rt.done.Store(true)
+			rt.closeStop()
+			claimed = append(claimed, rt)
+		}
+		return true
+	})
+	for _, rt := range claimed {
+		<-rt.finished
+	}
 }
 
 // cancelAllAutoReverts cancels every pending timer. Called from
