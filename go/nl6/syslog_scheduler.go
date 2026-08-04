@@ -27,6 +27,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -109,6 +110,16 @@ type SyslogScheduler struct {
 	wake     chan struct{} // signalled by Register/Deregister/Stop to nudge Run
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	// started records that Run was entered; runDone is closed by Run's defer.
+	// Fires are INLINE in Run (no worker pool), so Run's return already means
+	// "no scheduler-driven fire in flight" — runDone is that signal made
+	// awaitable. Stop waits on runDone only when started is set, so a
+	// constructed-but-never-run scheduler (tests build these) cannot hang its
+	// caller. Same shape as TrapScheduler (await-trap-emission-drain D1),
+	// minus the pool teardown.
+	started atomic.Bool
+	runDone chan struct{}
 }
 
 // SyslogSchedulerOptions groups the tunables NewSyslogScheduler accepts. The
@@ -179,6 +190,7 @@ func NewSyslogScheduler(opts SyslogSchedulerOptions) *SyslogScheduler {
 		meanInterval: opts.MeanInterval,
 		wake:         make(chan struct{}, 1),
 		stopCh:       make(chan struct{}),
+		runDone:      make(chan struct{}),
 	}
 	s.fixedInterval = opts.FixedInterval
 	s.deferOnCap = opts.DeferOnCap
@@ -286,6 +298,8 @@ func (s *SyslogScheduler) Deregister(deviceIP net.IP) {
 // wait until its nextFire, Wait() for a limiter token, pop, requeue, fire
 // outside the lock.
 func (s *SyslogScheduler) Run(ctx context.Context) {
+	s.started.Store(true)
+
 	// Derive a context that also cancels when Stop closes stopCh. Without
 	// this, `limiter.Wait(ctx)` cannot observe Stop — callers would see
 	// Run stay blocked for up to 1/rate seconds after Stop when a global
@@ -300,7 +314,14 @@ func (s *SyslogScheduler) Run(ctx context.Context) {
 		}
 	}()
 
+	// runDone must close on EVERY exit path (including a panic and the
+	// "stopCh already closed at first iteration" case), or a Stop that
+	// observed started=true would hang. Fires are inline in this loop, so
+	// closing runDone here IS the "no fire in flight" barrier that Stop —
+	// and via Stop, StopSyslogExport's counter persistence and scenario
+	// finalize's ledger snapshot — relies on.
 	defer func() {
+		close(s.runDone)
 		if r := recover(); r != nil {
 			log.Printf("syslog scheduler: Run panicked: %v", r)
 		}
@@ -482,11 +503,25 @@ func (s *SyslogScheduler) fireWithRecover(firer syslogFirer, deviceIP net.IP, en
 // D1b cap sharing). nil when the fleet runs uncapped.
 func (s *SyslogScheduler) limiterRef() *rate.Limiter { return s.limiter }
 
-// Stop signals Run to exit. Safe to call multiple times and from any goroutine.
+// Stop signals Run to exit and, when Run was started, BLOCKS until it has —
+// fires are inline in Run, so Stop's return means no scheduler-driven fire is
+// in flight (#410). Both snapshot sites lean on this: StopSyslogExport
+// persists counters after Stop, and scenario finalize snapshots ledgers after
+// c.sched.Stop(). Bounded-time under a global cap via the stop-derived
+// limiter context in Run.
+//
+// Safe to call multiple times and from any goroutine (waiting on the closed
+// runDone is free). A scheduler that was never Run returns immediately; Stop
+// racing Run entry collapses safely — either started is still false (no
+// wait; Run sees the closed stopCh at its first iteration and exits, closing
+// runDone anyway) or started is true and every Run exit path closes runDone.
 func (s *SyslogScheduler) Stop() {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
 	})
+	if s.started.Load() {
+		<-s.runDone
+	}
 }
 
 // nudge signals the Run goroutine that the heap has changed. Non-blocking:
