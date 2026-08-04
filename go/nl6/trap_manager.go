@@ -325,6 +325,10 @@ func (sm *SimulatorManager) StopTrapExport() {
 		}
 	}
 	sm.mu.RUnlock()
+	// Stop BLOCKS until the scheduler's emission pool has fully drained
+	// (#408): the queued tail is transmitted against still-open sockets and
+	// counted before we touch any exporter below. After Stop returns, no
+	// scheduler-driven fire is in flight.
 	scheduler.Stop()
 	for _, d := range devices {
 		// Take d.mu to synchronise with a concurrent device.Stop path.
@@ -336,8 +340,17 @@ func (sm *SimulatorManager) StopTrapExport() {
 		d.trapExporter = nil
 		d.mu.Unlock()
 		if te != nil {
-			sm.persistTrapCounters(te)
+			// Close BEFORE persisting: Close sets the closing flag (cutting
+			// off new fires) and joins the INFORM reader/retry loops, so a
+			// final retry's Sent increment lands before the snapshot.
+			// Accepted residual: an on-demand HTTP or state-driven fire that
+			// passed the closing check before Close — at most one in-flight
+			// fire per concurrent caller (these bypass the scheduler, so the
+			// drain above cannot cover them). Closing that window would need
+			// a fires-in-flight counter on the fire hot path; not worth it
+			// for counter exactness at process exit.
 			_ = te.Close()
+			sm.persistTrapCounters(te)
 		}
 	}
 	sm.closeTrapConnPool()

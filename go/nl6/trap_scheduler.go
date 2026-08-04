@@ -25,6 +25,12 @@
 // emission scales across cores. Traps are unordered by definition (RFC 3416
 // imposes no ordering on notifications from one agent), so concurrent emission
 // changes nothing observable at the collector beyond arrival interleaving.
+//
+// Drain semantics (#408): Stop blocks until the pool has fully drained — Run
+// closes runDone only after close(jobs) + workerWG.Wait(), and StopTrapExport
+// closes exporters/sockets only after Stop returns, so the queued tail is
+// transmitted and counted rather than dropped, and counter persistence can
+// never race a scheduler-driven fire.
 
 package main
 
@@ -36,6 +42,7 @@ import (
 	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -116,6 +123,14 @@ type TrapScheduler struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 
+	// started records that Run was entered; runDone is closed by Run's defer
+	// AFTER the emission pool has fully drained (close(jobs) + workerWG.Wait),
+	// so it is the "no fire in flight" signal. Stop waits on runDone only when
+	// started is set — a scheduler that was constructed but never run must not
+	// hang its caller (tests build schedulers without running them).
+	started atomic.Bool
+	runDone chan struct{}
+
 	// workers is the emission-pool size. Run owns the pool's lifecycle: it
 	// starts the goroutines on entry and closes jobs on exit, so a scheduler
 	// that is never Run never spawns anything.
@@ -195,7 +210,8 @@ func NewTrapScheduler(opts SchedulerOptions) *TrapScheduler {
 		// if the pool cannot keep up, the blocking dispatch below is what makes
 		// the min-heap fall behind honestly rather than accumulating a backlog
 		// of traps whose sysUpTime was stamped seconds ago.
-		jobs: make(chan trapJob, workers*8),
+		jobs:    make(chan trapJob, workers*8),
+		runDone: make(chan struct{}),
 	}
 	if opts.GlobalCapPerSecond > 0 {
 		// Burst = cap so short-term excursions fit within one second of
@@ -265,10 +281,28 @@ func (s *TrapScheduler) Deregister(deviceIP net.IP) {
 // earliest, wait until its nextFire, Wait() for a limiter token, pop, requeue,
 // fire outside the lock.
 func (s *TrapScheduler) Run(ctx context.Context) {
+	s.started.Store(true)
+
+	// Derive a stop-cancelled context for limiter.Wait: with the raw ctx
+	// (Background in production) a Stop during a token wait would not wake
+	// Run until a token arrived, making a blocking Stop inherit up to a full
+	// token interval of latency under a low global cap. Same fix the syslog
+	// scheduler carries (design D3).
+	limCtx, limCancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-s.stopCh:
+			limCancel()
+		case <-limCtx.Done():
+		}
+	}()
+
 	// Start the emission pool and tear it down on the way out. Closing jobs
-	// lets workers drain whatever is queued and exit; the WaitGroup makes Run's
-	// return mean "no fire is still in flight", which is what StopTrapExport
-	// and the tests rely on.
+	// lets workers drain whatever is queued and exit; the WaitGroup + runDone
+	// make Run's return mean "no fire is still in flight, queue empty" — the
+	// contract Stop and StopTrapExport rely on. runDone must close on EVERY
+	// exit path, including "stopCh already closed at first iteration", or a
+	// Stop that observed started=true would hang.
 	for i := 0; i < s.workers; i++ {
 		s.workerWG.Add(1)
 		go s.emitLoop()
@@ -276,6 +310,8 @@ func (s *TrapScheduler) Run(ctx context.Context) {
 	defer func() {
 		close(s.jobs)
 		s.workerWG.Wait()
+		limCancel()
+		close(s.runDone)
 		if r := recover(); r != nil {
 			log.Printf("trap scheduler: Run panicked: %v", r)
 		}
@@ -325,7 +361,7 @@ func (s *TrapScheduler) Run(ctx context.Context) {
 		}
 
 		if s.limiter != nil {
-			if err := s.limiter.Wait(ctx); err != nil {
+			if err := s.limiter.Wait(limCtx); err != nil {
 				return
 			}
 		}
@@ -408,11 +444,26 @@ func (s *TrapScheduler) fireWithRecover(firer trapFirer, deviceIP net.IP, entry 
 	firer.Fire(entry, nil)
 }
 
-// Stop signals Run to exit. Safe to call multiple times and from any goroutine.
+// Stop signals Run to exit and, when Run was started, BLOCKS until the
+// emission pool has fully drained — after Stop returns, no dispatched fire is
+// in flight and the job queue is empty. Queued fires are transmitted during
+// the drain (StopTrapExport closes exporters/sockets only after Stop returns),
+// so a shutdown mid-load delivers the scheduled tail rather than dropping it.
+// Bounded-time under a global cap via Run's stop-cancelled limiter context.
+//
+// Safe to call multiple times and from any goroutine (waiting on the closed
+// runDone is free for repeat callers). A scheduler that was never Run returns
+// immediately. Stop racing Run entry collapses safely: either started is
+// still false (no wait; Run sees the closed stopCh at its first iteration and
+// exits, closing runDone anyway) or started is true and Run's every exit path
+// closes runDone.
 func (s *TrapScheduler) Stop() {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
 	})
+	if s.started.Load() {
+		<-s.runDone
+	}
 }
 
 // nudge signals the Run goroutine that the heap has changed. Non-blocking:
