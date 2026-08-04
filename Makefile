@@ -201,9 +201,10 @@ check-sbom-coverage: check-go
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
 test: check-go test-web
 ifneq ($(UNAME_S),Linux)
-	@echo "Note: no Go tests to run on $(UNAME_S) — the simulator package uses"
-	@echo "      Linux-only syscalls (TUN, network namespaces). Use a Linux"
-	@echo "      host or container for Go test coverage. (Web tests ran above.)"
+	@echo "Note: 'make test' runs Go tests on Linux only (CI parity). The suite"
+	@echo "      itself passes on $(UNAME_S) — run 'cd $(GO_DIR) && go test ./...'"
+	@echo "      directly; only the TUN/netns runtime paths are Linux-only."
+	@echo "      (Web tests ran above.)"
 else
 	cd $(GO_DIR) && go test ./...
 endif
@@ -211,8 +212,9 @@ endif
 ## test-race: Run the Go tests under the race detector (Linux; CI gate — see gates.yml)
 test-race: check-go
 ifneq ($(UNAME_S),Linux)
-	@echo "Note: no Go tests to run on $(UNAME_S) — see 'make test'. On macOS,"
-	@echo "      run 'cd $(GO_DIR) && go test -race ./...' directly."
+	@echo "Note: 'make test-race' runs on Linux only (CI parity). The suite"
+	@echo "      itself passes on $(UNAME_S) — run 'cd $(GO_DIR) && go test -race ./...'"
+	@echo "      directly."
 else
 	cd $(GO_DIR) && go test -race ./...
 endif
