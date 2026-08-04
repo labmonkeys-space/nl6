@@ -450,8 +450,12 @@ func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
 	ic.State().AddListener(ch)
 	defer ic.State().RemoveListener(ch)
 
-	// First POST: DOWN with 200ms duration (will revert to UP).
-	body := strings.NewReader(`{"status":"DOWN","duration":"200ms"}`)
+	// First POST: DOWN with 1s duration (would revert to UP — but is
+	// always cancelled by POST #2 and never awaited, so the width is
+	// free). The wide window keeps the 50ms scheduling gap below safe
+	// even under race-detector/CI-runner stalls; at 200ms a >150ms
+	// stall let the first revert fire UP and break the event sequence.
+	body := strings.NewReader(`{"status":"DOWN","duration":"1s"}`)
 	req := httptest.NewRequest("POST", "/api/v1/devices/10.42.0.1/interfaces/1/oper-status", body)
 	rr := httptest.NewRecorder()
 	f.router.ServeHTTP(rr, req)
@@ -463,7 +467,7 @@ func TestSetOperStatus_DurationCancelsPriorTimer(t *testing.T) {
 	// target is "snapshot at time of second POST" = OperDown.
 	//
 	// This sleep is a SCHEDULING GAP, not an await: POST #2 must land
-	// inside POST #1's 200ms revert window (a relative-ordering margin;
+	// inside POST #1's 1s revert window (a relative-ordering margin;
 	// there is no event to wait on). Kept per the race-testing spec's
 	// commented-sleep rule.
 	time.Sleep(50 * time.Millisecond)
