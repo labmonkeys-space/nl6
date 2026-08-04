@@ -8,6 +8,8 @@ package main
 import (
 	"context"
 	"math/rand"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -46,7 +48,45 @@ func (c *ScenarioController) startScenarioTrapTicker(ctx context.Context) {
 
 	rng := rand.New(rand.NewSource(c.spec.Seed))
 	interval := c.spec.interval()
+
+	// Emission runs on a worker pool for the same reason the fleet scheduler's
+	// does: firing every participant inline on the ticker goroutine serialised
+	// the whole scenario behind one core, so a run's achievable rate was
+	// 1/(per-fire cost) no matter how many participants or cores there were.
+	// The tick still draws the catalog entry (rng is not concurrency-safe and
+	// the per-scenario seed is the determinism contract — see FR6/FR33), so
+	// only the encode-and-send half is parallel.
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(targets) {
+		workers = len(targets)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	type fire struct {
+		e     *TrapExporter
+		entry *CatalogEntry
+	}
+	// Blocking sends on a shallow queue: when the pool cannot keep up the tick
+	// falls behind honestly instead of queueing fires whose scenario-window
+	// attribution would then be wrong.
+	jobs := make(chan fire, workers*8)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				j.e.fireScenario(j.entry, nil)
+			}
+		}()
+	}
+
 	go func() {
+		defer func() {
+			close(jobs)
+			wg.Wait()
+		}()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -59,8 +99,14 @@ func (c *ScenarioController) startScenarioTrapTicker(ctx context.Context) {
 					if cat == nil {
 						continue
 					}
-					if entry := cat.Pick(rng); entry != nil {
-						t.e.fireScenario(entry, nil)
+					entry := cat.Pick(rng)
+					if entry == nil {
+						continue
+					}
+					select {
+					case jobs <- fire{t.e, entry}:
+					case <-ctx.Done():
+						return
 					}
 				}
 			}
