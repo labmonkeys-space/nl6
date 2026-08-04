@@ -104,6 +104,16 @@ type TrapExporter struct {
 	// after construction.
 	sharedConn *net.UDPConn
 
+	// fastEnc is encoder type-asserted to the allocation-free path, or nil
+	// when the injected encoder does not implement it. Resolved once at
+	// construction so the fire path does not repeat the assertion.
+	fastEnc fastTrapEncoder
+
+	// deviceIPStr is deviceIP.String() memoised at construction. The IP is
+	// immutable for the exporter's lifetime, but buildCtx called String() on
+	// every fire, which allocated.
+	deviceIPStr string
+
 	startTime time.Time
 	nextReqID atomic.Uint32
 
@@ -202,8 +212,11 @@ func NewTrapExporter(opts TrapExporterOptions) *TrapExporter {
 	if opts.IfNameFn == nil {
 		opts.IfNameFn = synthIfName
 	}
+	fast, _ := opts.Encoder.(fastTrapEncoder)
 	return &TrapExporter{
 		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
+		deviceIPStr:   opts.DeviceIP.String(),
+		fastEnc:       fast,
 		community:     opts.Community,
 		encoder:       opts.Encoder,
 		mode:          opts.Mode,
@@ -334,7 +347,7 @@ func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]
 		if fidelityMutesBackground(src) {
 			return 0
 		}
-		return e.fireWithCtx(entry, e.buildCtx(resolveIf()), overrides, nil)
+		return e.fireWithCtx(entry, e.buildCtx(resolveIf(), entry.pre), overrides, nil)
 	}
 	switch p.decide(src, p.now()) {
 	case gateSuppressSilent:
@@ -351,7 +364,7 @@ func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]
 	}
 	defer p.drain.leave()
 	p.ledger.emitted.Add(1)
-	return e.fireWithCtx(entry, e.buildCtx(resolveIf()), overrides, p)
+	return e.fireWithCtx(entry, e.buildCtx(resolveIf(), entry.pre), overrides, p)
 }
 
 // FireForInterface emits a trap for `entry` pinned to a SPECIFIC ifIndex (and
@@ -364,19 +377,46 @@ func (e *TrapExporter) FireForInterface(entry *CatalogEntry, ifIndex int) uint32
 }
 
 // buildCtx assembles the per-fire template context for a given ifIndex.
-func (e *TrapExporter) buildCtx(ifIndex int) TemplateCtx {
-	return TemplateCtx{
+//
+// pre, when non-nil, tells us which optional fields the entry's templates
+// actually reference. NowLocal is the only one worth gating: it is a
+// time.Time.Format, and almost no catalog entry uses it (CIENA-WS DateAndTime
+// varbinds are the motivating case), so formatting it unconditionally spent
+// real CPU and allocation on a string that was discarded. Every other field is
+// either already memoised or a trivially cheap read.
+func (e *TrapExporter) buildCtx(ifIndex int, pre *preEncodedEntry) TemplateCtx {
+	now := time.Now()
+	ctx := TemplateCtx{
 		IfIndex:   ifIndex,
 		IfName:    e.ifNameFn(ifIndex),
 		Uptime:    e.uptimeHundredths(),
-		Now:       time.Now().Unix(),
-		DeviceIP:  e.deviceIP.String(),
+		Now:       now.Unix(),
+		DeviceIP:  e.deviceIPStr,
 		SysName:   e.sysName,
 		Model:     e.model,
 		Serial:    e.serial,
 		ChassisID: e.chassisID,
-		NowLocal:  time.Now().Format("2006-01-02 15:04:05"),
 	}
+	// nil pre means "unknown" (on-demand fires with a hand-built entry, tests):
+	// keep the old unconditional behaviour so a template can never see an empty
+	// NowLocal it used to see populated.
+	if pre == nil || pre.usesNowLocal {
+		ctx.NowLocal = now.Format("2006-01-02 15:04:05")
+	}
+	return ctx
+}
+
+// trapBuf is one pooled PDU assembly buffer. Held behind a pointer so putting
+// it back does not allocate the interface value on every fire.
+type trapBuf struct{ b []byte }
+
+// trapBufPool recycles PDU assembly buffers. The legacy path did
+// `make([]byte, 1500)` per fire, which was 52 % of all trap-path allocation and
+// the bulk of the GC time observed at saturation. Buffers are handed out to the
+// emission workers, so a fire must not retain the slice past writePDU —
+// registerPending already takes its own copy for retransmission.
+var trapBufPool = sync.Pool{
+	New: func() any { return &trapBuf{b: make([]byte, 0, maxTrapPDU)} },
 }
 
 // fireWithCtx is the shared encode/transmit body of Fire and FireForInterface,
@@ -393,13 +433,39 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 	}
 
 	reqID := e.nextRequestID()
-	buf := make([]byte, 1500)
 
-	var n int
-	if e.mode == TrapModeInform {
-		n, err = e.encoder.EncodeInform(e.community, reqID, entry.SnmpTrapOID, entry.SnmpTrapEnterprise, ctx.Uptime, varbinds, buf)
+	// The buffer is pooled and the PDU slice aliases it, so it must be returned
+	// only after the last read of pdu (writePDU, and registerPending's copy).
+	buf := trapBufPool.Get().(*trapBuf)
+	defer trapBufPool.Put(buf)
+
+	var pdu []byte
+	if e.fastEnc != nil {
+		pdu, err = e.fastEnc.EncodeNotificationFast(buf.b, e.mode, e.community, reqID,
+			entry.pre, entry.SnmpTrapOID, entry.SnmpTrapEnterprise, ctx.Uptime, varbinds)
+		if err == nil {
+			buf.b = pdu[:0] // retain the grown capacity for the next fire
+		}
 	} else {
-		n, err = e.encoder.EncodeTrap(e.community, reqID, entry.SnmpTrapOID, entry.SnmpTrapEnterprise, ctx.Uptime, varbinds, buf)
+		// Injected encoder without the fast path: assemble via the reference
+		// encoder into the same pooled storage.
+		scratch := buf.b[:cap(buf.b)]
+		if len(scratch) < maxTrapPDU {
+			scratch = make([]byte, maxTrapPDU)
+			buf.b = scratch[:0]
+		}
+		// Clamp to maxTrapPDU: the pool is shared with the fast path, whose
+		// transient growth can park a larger-capacity buffer here. Without the
+		// clamp the reference encoder's "fits in buf" check would accept PDUs
+		// past the documented 1500-byte limit, non-deterministically.
+		scratch = scratch[:maxTrapPDU]
+		var n int
+		if e.mode == TrapModeInform {
+			n, err = e.encoder.EncodeInform(e.community, reqID, entry.SnmpTrapOID, entry.SnmpTrapEnterprise, ctx.Uptime, varbinds, scratch)
+		} else {
+			n, err = e.encoder.EncodeTrap(e.community, reqID, entry.SnmpTrapOID, entry.SnmpTrapEnterprise, ctx.Uptime, varbinds, scratch)
+		}
+		pdu = scratch[:n]
 	}
 	if err != nil {
 		log.Printf("trap: encode %s for %s: %v", entry.Name, e.deviceIP, err)
@@ -408,7 +474,6 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 		}
 		return 0
 	}
-	pdu := buf[:n]
 
 	// INFORM: register pending state BEFORE transmit so an ack that races
 	// in between write and insert isn't lost.

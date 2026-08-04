@@ -70,9 +70,37 @@ type TrapEncoder interface {
 	ParseAck(pkt []byte) (reqID uint32, ok bool, err error)
 }
 
+// fastTrapEncoder is the optional allocation-free companion to TrapEncoder.
+// It is a SEPARATE interface rather than extra TrapEncoder methods so that
+// test doubles and any future encoder can implement the readable surface
+// alone; TrapExporter type-asserts for it once at construction and falls back
+// to EncodeTrap/EncodeInform when it is absent.
+//
+// EncodeNotificationFast appends into dst (truncating it first) and returns the
+// extended slice, so a pooled buffer keeps its grown capacity across fires. The
+// returned slice aliases dst and is only valid until the next call.
+type fastTrapEncoder interface {
+	EncodeNotificationFast(dst []byte, mode TrapMode, community string, reqID uint32,
+		pre *preEncodedEntry, trapOID, enterpriseOID string,
+		uptimeHundredths uint32, varbinds []Varbind) ([]byte, error)
+}
+
 // SNMPv2cEncoder is the community-string-authenticated SNMPv2c trap/inform
 // encoder. Stateless and safe for concurrent use.
 type SNMPv2cEncoder struct{}
+
+// EncodeNotificationFast — see fastTrapEncoder. Produces output byte-for-byte
+// identical to EncodeTrap / EncodeInform; TestFastEncoderMatchesLegacy pins it.
+func (SNMPv2cEncoder) EncodeNotificationFast(dst []byte, mode TrapMode, community string, reqID uint32,
+	pre *preEncodedEntry, trapOID, enterpriseOID string,
+	uptimeHundredths uint32, varbinds []Varbind) ([]byte, error) {
+	tag := byte(ASN1_TRAP_V2C)
+	if mode == TrapModeInform {
+		tag = ASN1_INFORM_REQUEST
+	}
+	return encodeV2cNotificationFast(dst, tag, community, reqID, pre, trapOID, enterpriseOID,
+		uptimeHundredths, varbinds)
+}
 
 // EncodeTrap — see TrapEncoder.
 func (SNMPv2cEncoder) EncodeTrap(community string, reqID uint32, trapOID, enterpriseOID string,

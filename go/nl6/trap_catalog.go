@@ -217,6 +217,12 @@ type CatalogEntry struct {
 	// device's catalog has overlay entries for a role, the universal (base)
 	// entries for that role are suppressed.
 	fromOverlay bool
+
+	// pre holds the entry's constant BER fragments, folded once by
+	// precomputeEntry at compile time (see trap_precompute.go). Read-only
+	// after construction, so the trap worker pool shares it without locking.
+	// Nil is legal — the fast encoder falls back to encoding every OID inline.
+	pre *preEncodedEntry
 }
 
 // Catalog is the whole parsed trap catalog plus cached weight metadata for Pick.
@@ -634,6 +640,9 @@ func compileEntry(raw catalogEntryJSON, source string, idx int) (*CatalogEntry, 
 			rawValue: vb.Value,
 		})
 	}
+	// Fold the entry's constant BER now that its varbinds are final. Must stay
+	// last in compileEntry — precomputeEntry reads Varbinds.
+	entry.pre = precomputeEntry(entry)
 	return entry, nil
 }
 

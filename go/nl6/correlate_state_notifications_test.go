@@ -107,7 +107,7 @@ func TestFireForInterface_PinsCtx(t *testing.T) {
 		IfIndexFn: func() int { return 999 }, // the "random picker" — must be ignored
 		IfNameFn:  func(i int) string { return fmt.Sprintf("Gi0/%d", i) },
 	})
-	ctx := e.buildCtx(7)
+	ctx := e.buildCtx(7, nil)
 	if ctx.IfIndex != 7 {
 		t.Errorf("buildCtx ifIndex = %d, want 7 (pinned, not the picker's 999)", ctx.IfIndex)
 	}

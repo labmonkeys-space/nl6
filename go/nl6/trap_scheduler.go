@@ -14,6 +14,17 @@
 // Scale note: a `time.Ticker` per device would mean 30,000 goroutines and
 // 30,000 timers in the runtime's timer heap. A single scheduler goroutine with
 // an explicit min-heap keeps both counts at O(1) regardless of device count.
+//
+// Emission note: scheduling is O(1) in one goroutine, but EMITTING is not free
+// — template resolution, ASN.1 encoding and the sendto(2) syscall cost ~12 µs
+// per trap. While Run called Fire inline, that cost serialised on the scheduler
+// goroutine, which profiling found pinned at 99 % of one core while the rest of
+// the machine idled; fleet throughput was exactly 1/(per-fire cost) regardless
+// of device count or how many cores the host had. Run now pops and dispatches
+// to a small worker pool, so the min-heap keeps its O(1) property while
+// emission scales across cores. Traps are unordered by definition (RFC 3416
+// imposes no ordering on notifications from one agent), so concurrent emission
+// changes nothing observable at the collector beyond arrival interleaving.
 
 package main
 
@@ -23,6 +34,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 
@@ -103,6 +115,23 @@ type TrapScheduler struct {
 	wake     chan struct{} // signalled by Register/Deregister/Stop to nudge Run
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	// workers is the emission-pool size. Run owns the pool's lifecycle: it
+	// starts the goroutines on entry and closes jobs on exit, so a scheduler
+	// that is never Run never spawns anything.
+	workers  int
+	jobs     chan trapJob
+	workerWG sync.WaitGroup
+}
+
+// trapJob is one dispatched emission. Everything it carries is either
+// immutable (deviceIP is defensively copied at Register and never mutated;
+// entry is a catalog entry, read-only after load) or itself concurrency-safe
+// (firer), so a job needs no synchronisation once handed to a worker.
+type trapJob struct {
+	firer    trapFirer
+	deviceIP net.IP
+	entry    *CatalogEntry
 }
 
 // SchedulerOptions groups the tunables that NewTrapScheduler accepts. The
@@ -126,6 +155,10 @@ type SchedulerOptions struct {
 	Seed int64
 	// Now, when non-nil, overrides time.Now. Primarily for tests.
 	Now func() time.Time
+	// Workers sizes the emission pool. Zero selects GOMAXPROCS. One restores
+	// the pre-pool behaviour of emitting on a single goroutine — useful for
+	// tests that assert strict fire ordering, and as an escape hatch.
+	Workers int
 }
 
 // NewTrapScheduler constructs a scheduler but does not start it. Call Run to
@@ -145,6 +178,10 @@ func NewTrapScheduler(opts SchedulerOptions) *TrapScheduler {
 		fixed := opts.Catalog
 		catalogFor = func(net.IP) *Catalog { return fixed }
 	}
+	workers := opts.Workers
+	if workers <= 0 {
+		workers = runtime.GOMAXPROCS(0)
+	}
 	s := &TrapScheduler{
 		byIP:         make(map[string]*trapHeapEntry),
 		devices:      make(map[string]trapFirer),
@@ -152,6 +189,13 @@ func NewTrapScheduler(opts SchedulerOptions) *TrapScheduler {
 		meanInterval: opts.MeanInterval,
 		wake:         make(chan struct{}, 1),
 		stopCh:       make(chan struct{}),
+		workers:      workers,
+		// A shallow queue is deliberate. It absorbs the jitter of individual
+		// fires without letting the scheduler run far ahead of the emitters:
+		// if the pool cannot keep up, the blocking dispatch below is what makes
+		// the min-heap fall behind honestly rather than accumulating a backlog
+		// of traps whose sysUpTime was stamped seconds ago.
+		jobs: make(chan trapJob, workers*8),
 	}
 	if opts.GlobalCapPerSecond > 0 {
 		// Burst = cap so short-term excursions fit within one second of
@@ -221,7 +265,17 @@ func (s *TrapScheduler) Deregister(deviceIP net.IP) {
 // earliest, wait until its nextFire, Wait() for a limiter token, pop, requeue,
 // fire outside the lock.
 func (s *TrapScheduler) Run(ctx context.Context) {
+	// Start the emission pool and tear it down on the way out. Closing jobs
+	// lets workers drain whatever is queued and exit; the WaitGroup makes Run's
+	// return mean "no fire is still in flight", which is what StopTrapExport
+	// and the tests rely on.
+	for i := 0; i < s.workers; i++ {
+		s.workerWG.Add(1)
+		go s.emitLoop()
+	}
 	defer func() {
+		close(s.jobs)
+		s.workerWG.Wait()
 		if r := recover(); r != nil {
 			log.Printf("trap scheduler: Run panicked: %v", r)
 		}
@@ -316,9 +370,29 @@ func (s *TrapScheduler) Run(ctx context.Context) {
 		}
 		s.mu.Unlock()
 
-		if trapEntry != nil {
-			s.fireWithRecover(firer, entry.deviceIP, trapEntry)
+		if trapEntry == nil {
+			continue
 		}
+		// Hand off to the pool. The send blocks when every worker is busy and
+		// the queue is full, which is the intended backpressure — see the
+		// jobs-channel comment in NewTrapScheduler. Selecting on shutdown
+		// alongside the send keeps Stop bounded-time even under saturation.
+		select {
+		case s.jobs <- trapJob{firer: firer, deviceIP: entry.deviceIP, entry: trapEntry}:
+		case <-ctx.Done():
+			return
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+// emitLoop is one emission worker. It exits when Run closes the jobs channel,
+// after draining whatever is still queued.
+func (s *TrapScheduler) emitLoop() {
+	defer s.workerWG.Done()
+	for job := range s.jobs {
+		s.fireWithRecover(job.firer, job.deviceIP, job.entry)
 	}
 }
 
