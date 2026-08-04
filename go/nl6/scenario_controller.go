@@ -78,6 +78,13 @@ type ScenarioController struct {
 	sched     *SyslogScheduler
 	schedStop context.CancelFunc
 
+	// trapTickerDone is non-nil only for snmp-trap scenarios: closed by the
+	// scenario trap ticker goroutine AFTER its emission pool has fully drained
+	// (close(jobs) + wg.Wait()), so finalize can wait for the queued tail
+	// before snapshotting ledgers (#409). Guarded by c.mu (set in Start,
+	// read in finalize — both hold the lock).
+	trapTickerDone chan struct{}
+
 	now func() time.Time // injectable clock (tests); defaults to time.Now
 
 	// transitions is the ordered lifecycle log (D7 abort observability):
@@ -793,6 +800,14 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	if c.sched != nil {
 		c.sched.Stop()
+	}
+	// snmp-trap scenarios: wait for the emission pool to drain its queued
+	// tail (#409). Queued fires mutate ledger counters (suppressed/emitted)
+	// even post-terminal-gate, so snapshotting before this join races them.
+	// Bounded: the ticker exits on the schedCtx cancel above, its dispatch
+	// select carries ctx.Done, and worker fires never block indefinitely.
+	if c.trapTickerDone != nil {
+		<-c.trapTickerDone
 	}
 	c.drain.closeAndWait() // admission closes; outlasts every in-flight fire
 

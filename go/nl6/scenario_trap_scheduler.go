@@ -82,10 +82,17 @@ func (c *ScenarioController) startScenarioTrapTicker(ctx context.Context) {
 		}()
 	}
 
+	// done is the "pool fully drained" signal finalize waits on before
+	// snapshotting ledgers (#409): closed only after every worker has joined,
+	// so no queued fire can mutate counters concurrently with the snapshot.
+	done := make(chan struct{})
+	c.trapTickerDone = done
+
 	go func() {
 		defer func() {
 			close(jobs)
 			wg.Wait()
+			close(done)
 		}()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
