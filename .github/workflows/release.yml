@@ -144,7 +144,7 @@ jobs:
           # derived from the tag ref and run context.
 
       - name: Attest build provenance (release artifacts)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-path: |
             dist/nl6-linux-amd64
@@ -244,7 +244,7 @@ jobs:
         run: cosign sign --yes "$IMAGE@$DIGEST"
 
       - name: Attest image build provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.digest.outputs.digest }}
