@@ -103,7 +103,7 @@ jobs:
         # root since v0.6.0, and it derives the generator image from the
         # pinned commit, so no explicit `image:` is needed. Public GHCR image,
         # no registry login.
-        uses: no42-org/blitsbom@fe66bcc08b9cdf2ac3fbb5b00b9d761a3eec1e84  # v0.7.0
+        uses: no42-org/blitsbom@b3cb2b1bdd5664193478acf04812251fdc8eb124  # v0.7.1
         with:
           sbom: nl6-website.sbom.spdx.json
           output: nl6-website.sbom.report.html
