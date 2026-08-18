@@ -22,21 +22,21 @@
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          # TEMPORARY toolchain override: go.mod requires Go >= 1.26.5
-          # (GO-2026-5856 crypto/tls fix), but nixpkgs — even master as of
-          # 2026-07-14 — still ships 1.26.4. Build the toolchain from the
-          # official source tarball (checksum from go.dev/dl) until nixpkgs
-          # catches up, then DELETE this override and pass plain
-          # pkgs.buildGo126Module to package.nix again. The first build
-          # compiles Go itself (~10 min); Cachix caches it afterwards.
-          go_1_26_5 = pkgs.go_1_26.overrideAttrs (old: {
-            version = "1.26.5";
+          # TEMPORARY toolchain override: go.mod requires Go >= 1.26.6
+          # (GO-2026-6089/6090 net/http + crypto/tls fixes), but nixpkgs still
+          # lags behind. Build the toolchain from the official source tarball
+          # (checksum from go.dev/dl) until nixpkgs catches up, then DELETE
+          # this override and pass plain pkgs.buildGo126Module to package.nix
+          # again. The first build compiles Go itself (~10 min); Cachix caches
+          # it afterwards.
+          go_1_26_6 = pkgs.go_1_26.overrideAttrs (old: {
+            version = "1.26.6";
             src = pkgs.fetchurl {
-              url = "https://go.dev/dl/go1.26.5.src.tar.gz";
-              hash = "sha256-SVvkvIcXasVnOS5bQRar2YRm0z17SdQedkzMaXay3EI=";
+              url = "https://go.dev/dl/go1.26.6.src.tar.gz";
+              hash = "sha256-oHIcVMaIkBRI13rZs+x+p8R0cwdV/4kTgukuy5P/LLE=";
             };
           });
-          buildGo126Module = pkgs.buildGo126Module.override { go = go_1_26_5; };
+          buildGo126Module = pkgs.buildGo126Module.override { go = go_1_26_6; };
         in {
           # The version lives in package.nix and is bumped per release (see
           # RELEASING.md), so the Nix build reports the same X.Y.Z as the
