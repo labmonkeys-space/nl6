@@ -481,36 +481,48 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	hadSchedule := !c.scheduledAt.IsZero()
-	if err := c.transitionLocked(phaseArmed); err != nil {
-		return armReadiness{}, err
-	}
 
 	// Membership snapshot under the manager lock keeps arm TOCTOU-safe
 	// against concurrent device CRUD (architecture D6). We only READ the
-	// device set here; freeze happens at Start. Taken before the first
-	// arm-state mutation because the ceiling check below must be able to
-	// refuse while the previous arm is still fully intact.
+	// device set here; freeze happens at Start.
 	c.sm.mu.RLock()
 
-	// Resolved-union ceiling — a COUNT-ONLY pass, deliberately ordered before
-	// the timer withdrawal and the prevParts/prevLedgers swap (design D5): a
-	// refusal that fired after either would leave the previous arm's schedule
-	// cancelled or its ledgers detached, corrupting the carry-forward and
-	// detach obligations below. A refused arm leaves the previous arm exactly
-	// as it was. The count and the later install run under the same RLock, so
-	// they cannot disagree.
+	// Resolved-union ceiling — a COUNT-ONLY pass that must precede EVERY
+	// mutation this method makes, transitionLocked INCLUDED (design D5). That
+	// call is itself a state change: it sets c.phase and appends to the
+	// transition log the status endpoint publishes, so refusing after it would
+	// park a first arm in `armed` with zero parts — the next start would then
+	// report "0/N armed" instead of "arm first", and the 409 body would read
+	// "cannot arm ... in phase armed". Re-arm hides this (armed→armed returns
+	// early without mutating), which is why the order, not the re-arm test, is
+	// what carries the guarantee. Ordering here also protects the re-arm
+	// obligations below: the schedule withdrawal and the prevParts/prevLedgers
+	// swap. A refused arm leaves the scenario exactly as it was. The count and
+	// the install below share one RLock hold, so they cannot disagree.
+	//
+	// Skipped when no prefix matched: Validate already bounds len(Participants)
+	// by this same constant, so an explicit-only union can never exceed it, and
+	// counting explicit hits costs a map lookup per participant (up to the 100k
+	// ceiling) while the manager lock is held.
 	prefixMatches := c.prefixMatchesLocked()
-	explicitHits := 0
-	for _, ip := range c.spec.Participants {
-		if c.sm.devicesByIP[ip] != nil {
-			explicitHits++
+	if len(prefixMatches) > 0 {
+		explicitHits := 0
+		for _, ip := range c.spec.Participants {
+			if c.sm.devicesByIP[ip] != nil {
+				explicitHits++
+			}
+		}
+		if resolved := explicitHits + len(prefixMatches); resolved > scenarioMaxParticipants {
+			c.sm.mu.RUnlock()
+			return armReadiness{}, fmt.Errorf(
+				"selectors resolve to %d live devices, exceeding the %d participant cap; shrink the selector or the fleet and re-arm",
+				resolved, scenarioMaxParticipants)
 		}
 	}
-	if resolved := explicitHits + len(prefixMatches); resolved > scenarioMaxParticipants {
+
+	if err := c.transitionLocked(phaseArmed); err != nil {
 		c.sm.mu.RUnlock()
-		return armReadiness{}, fmt.Errorf(
-			"selectors resolve to %d live devices, exceeding the %d participant cap; shrink the selector or the fleet and re-arm",
-			resolved, scenarioMaxParticipants)
+		return armReadiness{}, err
 	}
 
 	// A pending scheduled start was authorised against the membership the PREVIOUS

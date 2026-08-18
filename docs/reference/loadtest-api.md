@@ -259,9 +259,11 @@ truncated `excluded[]` sample.
 matches) is bounded by the same 100,000 cap as the explicit list, checked at arm
 time because a compact prefix can select an arbitrarily large fleet. This is
 arm's only participant-related wholesale refusal, and it is decided **before**
-any state changes: a refused re-arm leaves the previous arm — its armed set,
-ledgers, and any pending schedule — exactly as it was. Shrink the selector or
-the fleet and re-arm.
+any state changes, the phase transition included: a refused re-arm leaves the
+previous arm — its armed set, ledgers, and any pending schedule — exactly as it
+was, and a refused *first* arm leaves the scenario `submitted`, so a following
+`start` is refused with "arm first" rather than "0/N armed". Shrink the selector
+or the fleet and re-arm.
 
 ### `POST /api/v1/scenarios/{id}/start` — start
 

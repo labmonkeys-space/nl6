@@ -6,7 +6,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -243,19 +245,74 @@ func TestScenarioAPI_CIDRArmDeterministic(t *testing.T) {
 	}
 }
 
+// growFleetPastCeiling adds enough bare devices to push any 10.0.0.0/8 match
+// over scenarioMaxParticipants. The count-only pass reads devicesByIP
+// membership, so exporter fitness is irrelevant to the ceiling.
+func growFleetPastCeiling(sm *SimulatorManager) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	for i := 0; i < scenarioMaxParticipants; i++ {
+		ip := net.IPv4(10, byte(50+i/65536), byte(i/256%256), byte(i%256)).String()
+		sm.devicesByIP[ip] = &DeviceSimulator{ID: "bare-" + ip, IP: net.ParseIP(ip)}
+	}
+}
+
+// ceilingScenario is the over-ceiling-capable spec shared by the two refusal
+// tests: one prefix wide enough to sweep the grown fleet.
+func ceilingScenario() *Scenario {
+	return &Scenario{
+		ParticipantsCIDR: []string{"10.0.0.0/8"},
+		Protocol:         "syslog",
+		Rate:             5,
+		Window:           time.Second,
+	}
+}
+
+// TestScenarioController_CIDRCeilingRefusalPrecedesTransition: an over-ceiling
+// FIRST arm must not move the scenario out of `submitted`. transitionLocked is
+// itself a mutation (phase + the transition log the status endpoint publishes),
+// so a refusal ordered after it would park the scenario in `armed` with zero
+// parts — and the next start would report "0/N armed" instead of "arm first"
+// (design D5: the decision precedes EVERY mutation, transition included). The
+// re-arm test below cannot catch this: armed→armed returns early without
+// mutating, so only the first-arm path exercises the ordering.
+func TestScenarioController_CIDRCeilingRefusalPrecedesTransition(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 2)
+	c := newScenarioController(sm, time.Now)
+	if err := c.Submit(ceilingScenario(), "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	growFleetPastCeiling(sm)
+
+	if _, _, err := c.Arm(); err == nil {
+		t.Fatal("over-ceiling first arm succeeded, want wholesale refusal")
+	}
+	if got := c.Phase(); got != phaseSubmitted {
+		t.Fatalf("phase = %s after a refused first arm, want submitted", got)
+	}
+	c.mu.Lock()
+	for _, tr := range c.transitions {
+		if tr.Phase == phaseArmed {
+			t.Errorf("refused arm published an %s transition: %+v", phaseArmed, c.transitions)
+		}
+	}
+	c.mu.Unlock()
+
+	// The scenario never armed, so start must fail as an illegal transition
+	// ("arm first") — not as the 0/N refusal a phantom `armed` phase produces.
+	err := c.Start(context.Background())
+	if !errors.Is(err, errInvalidTransition) {
+		t.Fatalf("start after a refused first arm = %v, want an invalid-transition error", err)
+	}
+}
+
 // TestScenarioController_CIDRResolvedCeiling: a re-arm whose selector resolves
 // over scenarioMaxParticipants is refused wholesale AND leaves the previous
 // arm fully intact — parts, ledger identity, and the armed phase (design D5).
 func TestScenarioController_CIDRResolvedCeiling(t *testing.T) {
 	sm, _ := scenarioTestManager(t, 2)
 	c := newScenarioController(sm, time.Now)
-	spec := &Scenario{
-		ParticipantsCIDR: []string{"10.0.0.0/8"},
-		Protocol:         "syslog",
-		Rate:             5,
-		Window:           time.Second,
-	}
-	if err := c.Submit(spec, "s-000001"); err != nil {
+	if err := c.Submit(ceilingScenario(), "s-000001"); err != nil {
 		t.Fatal(err)
 	}
 	armed, _, err := c.Arm()
@@ -264,14 +321,7 @@ func TestScenarioController_CIDRResolvedCeiling(t *testing.T) {
 	}
 	prevLedger := c.ledgers["10.42.0.1"]
 
-	// Grow the fleet past the ceiling with bare devices (the count-only pass
-	// reads devicesByIP membership; fitness is irrelevant to the ceiling).
-	sm.mu.Lock()
-	for i := 0; i < scenarioMaxParticipants; i++ {
-		ip := net.IPv4(10, byte(50+i/65536), byte(i/256%256), byte(i%256)).String()
-		sm.devicesByIP[ip] = &DeviceSimulator{ID: "bare-" + ip, IP: net.ParseIP(ip)}
-	}
-	sm.mu.Unlock()
+	growFleetPastCeiling(sm)
 
 	_, _, err = c.Arm()
 	if err == nil {
