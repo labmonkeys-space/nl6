@@ -11,6 +11,8 @@ import (
 	"log"
 	"maps"
 	"net"
+	"net/netip"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -437,8 +439,12 @@ func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
 //     labels a re-arm does not change, so replacing the ledger would look like a
 //     counter reset to rate()/increase(). Carrying it forward keeps it monotonic.
 //
-// Participant uniqueness is guaranteed upstream: Scenario.Validate rejects a
-// duplicated list, so there is no dedup here (and none inside the manager lock).
+// Participant uniqueness within each selector is guaranteed upstream:
+// Scenario.Validate rejects a duplicated list and redundant prefixes. The one
+// cross-selector overlap Validate permits — an explicit entry covered by a
+// prefix (the D3 assertion) — is deduplicated where the prefix matches are
+// collected (prefixMatchesLocked skips explicit strings), so the install loops
+// still never see the same IP twice.
 func (c *ScenarioController) Arm() (int, []excludedParticipant, error) {
 	rd, err := c.ArmReadiness()
 	return rd.Armed, rd.Excluded, err
@@ -479,6 +485,34 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 		return armReadiness{}, err
 	}
 
+	// Membership snapshot under the manager lock keeps arm TOCTOU-safe
+	// against concurrent device CRUD (architecture D6). We only READ the
+	// device set here; freeze happens at Start. Taken before the first
+	// arm-state mutation because the ceiling check below must be able to
+	// refuse while the previous arm is still fully intact.
+	c.sm.mu.RLock()
+
+	// Resolved-union ceiling — a COUNT-ONLY pass, deliberately ordered before
+	// the timer withdrawal and the prevParts/prevLedgers swap (design D5): a
+	// refusal that fired after either would leave the previous arm's schedule
+	// cancelled or its ledgers detached, corrupting the carry-forward and
+	// detach obligations below. A refused arm leaves the previous arm exactly
+	// as it was. The count and the later install run under the same RLock, so
+	// they cannot disagree.
+	prefixMatches := c.prefixMatchesLocked()
+	explicitHits := 0
+	for _, ip := range c.spec.Participants {
+		if c.sm.devicesByIP[ip] != nil {
+			explicitHits++
+		}
+	}
+	if resolved := explicitHits + len(prefixMatches); resolved > scenarioMaxParticipants {
+		c.sm.mu.RUnlock()
+		return armReadiness{}, fmt.Errorf(
+			"selectors resolve to %d live devices, exceeding the %d participant cap; shrink the selector or the fleet and re-arm",
+			resolved, scenarioMaxParticipants)
+	}
+
 	// A pending scheduled start was authorised against the membership the PREVIOUS
 	// arm resolved. Re-resolving membership withdraws that authorisation: the set
 	// may now differ, or be empty, and either silently starting at T0 against a
@@ -508,10 +542,6 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	c.parts = make(map[string]*scenarioPart)
 	c.ledgers = make(map[string]*ledgerEntry)
 
-	// Membership snapshot under the manager lock keeps arm TOCTOU-safe
-	// against concurrent device CRUD (architecture D6). We only READ the
-	// device set here; freeze happens at Start.
-	c.sm.mu.RLock()
 	gs := &gateState{phase: phaseArmed}
 	c.gate.Store(gs)
 	for _, ip := range c.spec.Participants {
@@ -523,6 +553,30 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 			continue
 		}
 		led := prevLedgers[ip] // nil on a first arm
+		if led == nil {
+			led = &ledgerEntry{}
+		}
+		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
+		if ok, reason, hint := c.installScenPart(dev, part); !ok {
+			c.recordExcluded(ip, reason, hint, scenarioExcludedArmRows)
+			continue
+		}
+		c.parts[ip] = part
+		c.ledgers[ip] = led
+	}
+	// Prefix-matched devices install through the same path. The slice is
+	// IP-sorted (D4) so the install order — and with it the composition of the
+	// row-capped excluded[] sample — is identical across arms against an
+	// identical fleet; map iteration order must not leak into the readiness
+	// response. Matches exclude explicit entries by construction (a covered
+	// explicit entry resolved via the explicit loop above — the loud-miss side
+	// of the cross-world assertion semantics), so nothing installs twice.
+	for _, ip := range prefixMatches {
+		dev := c.sm.devicesByIP[ip]
+		if dev == nil {
+			continue // unreachable: collected under this same RLock
+		}
+		led := prevLedgers[ip]
 		if led == nil {
 			led = &ledgerEntry{}
 		}
@@ -564,6 +618,62 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	}, nil
 }
 
+// prefixMatchesLocked resolves participants_cidr against the live fleet:
+// every devicesByIP key inside any prefix that is not also an explicit
+// participant (a covered explicit entry resolves via the explicit path — the
+// loud-miss side of the D3 assertion semantics). Caller holds c.sm.mu (read).
+// The result is sorted in address order so callers install deterministically.
+func (c *ScenarioController) prefixMatchesLocked() []string {
+	if len(c.spec.ParticipantsCIDR) == 0 {
+		return nil
+	}
+	prefixes := make([]netip.Prefix, 0, len(c.spec.ParticipantsCIDR))
+	for _, raw := range c.spec.ParticipantsCIDR {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			continue // unreachable: Validate guarantees parseability
+		}
+		prefixes = append(prefixes, p)
+	}
+	slices.SortFunc(prefixes, func(a, b netip.Prefix) int { return a.Addr().Compare(b.Addr()) })
+	explicit := make(map[string]struct{}, len(c.spec.Participants))
+	for _, ip := range c.spec.Participants {
+		explicit[ip] = struct{}{}
+	}
+	var matches []string
+	for ip := range c.sm.devicesByIP {
+		if _, isExplicit := explicit[ip]; isExplicit {
+			continue
+		}
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue // fleet keys are canonical dotted quads
+		}
+		// Validate rejected nested prefixes, so the set is pairwise disjoint
+		// and sorted by base address: the rightmost base <= addr is the ONLY
+		// prefix that can contain addr (a second candidate's base would fall
+		// inside the first — a nesting). One binary search per device keeps
+		// the pass at O(fleet × log prefixes).
+		i, found := slices.BinarySearchFunc(prefixes, addr, func(p netip.Prefix, a netip.Addr) int {
+			return p.Addr().Compare(a)
+		})
+		switch {
+		case found: // addr IS a prefix base — that prefix contains it
+			matches = append(matches, ip)
+		case i > 0 && prefixes[i-1].Contains(addr):
+			matches = append(matches, ip)
+		}
+	}
+	// Address order, not lexical string order ("10.42.0.10" sorts before
+	// "10.42.0.2" lexically) — the excluded[] rows are operator-facing.
+	slices.SortFunc(matches, func(a, b string) int {
+		aa, _ := netip.ParseAddr(a)
+		bb, _ := netip.ParseAddr(b)
+		return aa.Compare(bb)
+	})
+	return matches
+}
+
 // Start freezes the fleet, publishes the running gate at T0, and starts the
 // scenario-owned scheduler. Refused at 0/N armed (FR40).
 func (c *ScenarioController) Start(ctx context.Context) error {
@@ -582,7 +692,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 		return fmt.Errorf("%w: %s -> running (arm first)", errInvalidTransition, c.phase)
 	}
 	if len(c.parts) == 0 {
-		return fmt.Errorf("cannot start scenario %s: 0/%d participants armed", c.id, len(c.spec.Participants))
+		return fmt.Errorf("cannot start scenario %s: 0/%s participants armed", c.id, c.spec.selectorSummary())
 	}
 	if err := c.sm.freezeFleet(c.id); err != nil {
 		return err // e.g. a creation batch is in flight
@@ -688,7 +798,7 @@ func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) er
 		return fmt.Errorf("%w: %s -> scheduled start (arm first)", errInvalidTransition, c.phase)
 	}
 	if len(c.parts) == 0 {
-		return fmt.Errorf("cannot schedule scenario %s: 0/%d participants armed", c.id, len(c.spec.Participants))
+		return fmt.Errorf("cannot schedule scenario %s: 0/%s participants armed", c.id, c.spec.selectorSummary())
 	}
 	if c.startTimer != nil {
 		return fmt.Errorf("scenario %s already has a scheduled start at %s", c.id, c.scheduledAt.Format(time.RFC3339))

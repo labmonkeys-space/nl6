@@ -80,7 +80,8 @@ Request body:
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `participants` | `[]string` | yes | Device management IPs, as a **set**. Non-empty, at most **100,000** entries, and **no repeats** (a duplicate is a `400` — a device named twice is still one source on the report's join tuple, so the second entry has no meaning). Each must be an **IPv4 dotted quad**: IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are rejected at submit, because the fleet is IPv4 throughout and such an entry could only ever become a `device not found` exclusion. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
+| `participants` | `[]string` | yes¹ | Device management IPs, as a **set**. At most **100,000** entries, **no repeats** (a duplicate is a `400` — a device named twice is still one source on the report's join tuple, so the second entry has no meaning). Each must be an **IPv4 dotted quad**: IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are rejected at submit, because the fleet is IPv4 throughout and such an entry could only ever become a `device not found` exclusion. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
+| `participants_cidr` | `[]string` | yes¹ | Compact prefix selector: IPv4 CIDR prefixes in **canonical (masked) form**, at most **1,024** entries. The participant set is the **union** of `participants` and every live device whose IP falls inside any prefix, resolved at arm time. `400` at submit for: a non-canonical prefix (`10.42.1.5/16` — the error names the canonical form), an IPv6 or IPv4-mapped prefix, a duplicate prefix, or a prefix nested inside another (it adds nothing to the union). An **explicit `participants` entry covered by a prefix is allowed** — it upgrades that address from the prefix's silent miss to the list's loud `excluded` row, a per-device existence assertion. `["0.0.0.0/0"]` spells whole-fleet. |
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
@@ -88,6 +89,8 @@ Request body:
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
 | `abort_predicate` | `object` | no | Self-abort a runaway run when a mid-run ledger metric crosses a threshold (see below). |
+
+¹ At least one of `participants` / `participants_cidr` must be non-empty; both empty is a `400`.
 
 #### Abort predicate — `abort_predicate`
 
@@ -240,6 +243,25 @@ iterative: fix what the sample shows, re-arm, and the next batch surfaces.
 Compatibility: these three fields are additive, but `excluded_total` is present
 on **every** readiness response including the clean case (`0`). A consumer
 validating against a closed schema needs to allow it.
+
+**Prefix selectors silence only "not found", never "found but unfit".** A
+`participants_cidr` prefix is an open-world predicate over the live fleet: an
+address inside it that matches no device produces **no** `excluded` row (a `/16`
+has 65,534 candidates — non-matches are not enumerable), while a matched device
+that exists but cannot participate (no exporter for the protocol) still gets its
+loud row. To make one specific address loud, list it in `participants` as well —
+a covered explicit entry is an assertion, not a duplicate. Prefix-matched
+devices resolve in address order, so re-arming against an unchanged fleet
+returns a byte-identical readiness response, including which rows appear in a
+truncated `excluded[]` sample.
+
+**Resolved-set ceiling (`409`).** The resolved union (explicit hits + prefix
+matches) is bounded by the same 100,000 cap as the explicit list, checked at arm
+time because a compact prefix can select an arbitrarily large fleet. This is
+arm's only participant-related wholesale refusal, and it is decided **before**
+any state changes: a refused re-arm leaves the previous arm — its armed set,
+ledgers, and any pending schedule — exactly as it was. Shrink the selector or
+the fleet and re-arm.
 
 ### `POST /api/v1/scenarios/{id}/start` — start
 

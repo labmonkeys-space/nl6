@@ -67,6 +67,13 @@ func TestScenarioAPI_SubmitValidation(t *testing.T) {
 		{"empty_participants", `{"participants":[],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
 		{"bad_ip", `{"participants":["not-an-ip"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
 		{"malformed_json", `{`, ""},
+		{"both_selectors_empty", `{"participants":[],"participants_cidr":[],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_not_a_prefix", `{"participants_cidr":["10.42.0.0"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_non_canonical", `{"participants_cidr":["10.42.1.5/16"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_v6", `{"participants_cidr":["2001:db8::/64"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_v4_mapped_v6", `{"participants_cidr":["::ffff:10.42.0.0/120"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_duplicate", `{"participants_cidr":["10.42.1.0/24","10.42.1.0/24"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
+		{"cidr_nested", `{"participants_cidr":["10.42.0.0/16","10.42.1.0/24"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

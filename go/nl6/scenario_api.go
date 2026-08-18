@@ -63,14 +63,20 @@ const scenarioMaxBody = scenarioMaxParticipants*scenarioParticipantWireBytes + 6
 // scenarioRequest is the submit DTO. Durations arrive as Go duration
 // strings ("30s", "5m") per the interface-state auto-revert precedent.
 type scenarioRequest struct {
-	Participants   []string            `json:"participants"`
-	Protocol       string              `json:"protocol"`
-	Rate           float64             `json:"rate"`
-	Window         string              `json:"window"`
-	Drain          string              `json:"drain,omitempty"`
-	Seed           int64               `json:"seed,omitempty"`
-	RateProfile    *RateProfileSpec    `json:"rate_profile,omitempty"`
-	AbortPredicate *AbortPredicateSpec `json:"abort_predicate,omitempty"`
+	// Both selector fields carry omitempty so the canonical fingerprint form
+	// collapses absent, null, and [] to the same spelling: configSHA256
+	// re-marshals this struct, and without omitempty a nil Participants would
+	// hash as "participants":null while [] hashes as [] — two spellings of the
+	// same semantics with different config_sha256 (design D6).
+	Participants     []string            `json:"participants,omitempty"`
+	ParticipantsCIDR []string            `json:"participants_cidr,omitempty"`
+	Protocol         string              `json:"protocol"`
+	Rate             float64             `json:"rate"`
+	Window           string              `json:"window"`
+	Drain            string              `json:"drain,omitempty"`
+	Seed             int64               `json:"seed,omitempty"`
+	RateProfile      *RateProfileSpec    `json:"rate_profile,omitempty"`
+	AbortPredicate   *AbortPredicateSpec `json:"abort_predicate,omitempty"`
 }
 
 // toScenario maps the wire DTO into the internal Scenario, parsing the
@@ -89,14 +95,15 @@ func (req *scenarioRequest) toScenario() (spec *Scenario, field string, err erro
 		}
 	}
 	return &Scenario{
-		Participants:   req.Participants,
-		Protocol:       req.Protocol,
-		Rate:           req.Rate,
-		Window:         window,
-		Drain:          drain,
-		Seed:           req.Seed,
-		RateProfile:    req.RateProfile,
-		AbortPredicate: req.AbortPredicate,
+		Participants:     req.Participants,
+		ParticipantsCIDR: req.ParticipantsCIDR,
+		Protocol:         req.Protocol,
+		Rate:             req.Rate,
+		Window:           window,
+		Drain:            drain,
+		Seed:             req.Seed,
+		RateProfile:      req.RateProfile,
+		AbortPredicate:   req.AbortPredicate,
 	}, "", nil
 }
 

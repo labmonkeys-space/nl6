@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"slices"
 	"time"
 )
 
@@ -18,8 +19,18 @@ import (
 // only — semantic resolution (device existence) happens at arm time, per
 // the two-stage validation pattern (FR2/FR3, architecture D6).
 type Scenario struct {
-	// Participants are device management IPs (dotted quad).
+	// Participants are device management IPs (dotted quad). Closed-world
+	// selector: an entry that resolves to no live device is a loud arm-time
+	// exclusion.
 	Participants []string
+	// ParticipantsCIDR are IPv4 prefixes in canonical (masked) form. Open-world
+	// selector: the participant set is the union of Participants and every live
+	// device whose management IP falls inside any listed prefix. An address
+	// inside a prefix that matches no device is silent (non-matches are not
+	// enumerable); an explicit Participants entry covered by a prefix is
+	// therefore a deliberate assertion, not a redundancy — it upgrades that one
+	// address to the loud-miss semantics of the explicit list.
+	ParticipantsCIDR []string
 	// Protocol is the participating push protocol. MVP: "syslog" only.
 	Protocol string
 	// Rate is the per-device emission rate in events/second (FR4). The
@@ -93,12 +104,26 @@ const scenarioMaxRate = 1000
 // at 64 KiB) the binding one, well under the 30k fleet the subsystem targets.
 const scenarioMaxParticipants = 100_000
 
+// scenarioMaxPrefixes bounds the participants_cidr list. The field's entire
+// purpose is compactness — an operator who needs thousands of prefixes has an
+// enumeration, and the explicit list is the shape for enumerations. The bound
+// also keeps the containment validation honest: the body cap is derived from
+// the 100k participant ceiling (~MB-scale), which would otherwise admit enough
+// prefixes to make even a sorted overlap check a request-controlled cost. At
+// the cap, worst-case compact wire cost is ~21 KiB ("255.255.255.255/32" plus
+// quotes and comma), comfortably inside scenarioMaxBody's 64 KiB envelope
+// budget for non-participant fields.
+const scenarioMaxPrefixes = 1024
+
 // Validate performs structural validation (bounds, enums). It deliberately
 // does NOT check device existence — that is arm-time semantics surfaced via
 // the excluded set (FR9), mirroring the -topology-config lazy pattern.
 func (s *Scenario) Validate() error {
-	if len(s.Participants) == 0 {
-		return fmt.Errorf("scenario: participants must not be empty")
+	// At least one selector must be non-empty. Both empty could only ever
+	// produce FR40's 0/N start refusal, so the guaranteed-useless request is
+	// reported at submit (same philosophy as the non-IPv4 rejection below).
+	if len(s.Participants) == 0 && len(s.ParticipantsCIDR) == 0 {
+		return fmt.Errorf("scenario: at least one of participants and participants_cidr must not be empty")
 	}
 	// Bound the list before parsing it, so an over-ceiling request is rejected
 	// without running 100k+ address parses. (It cannot save the *allocation* —
@@ -149,6 +174,9 @@ func (s *Scenario) Validate() error {
 		}
 		seen[ip] = struct{}{}
 	}
+	if err := s.validatePrefixSelector(); err != nil {
+		return err
+	}
 	if !scenarioProtocols[s.Protocol] {
 		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)", s.Protocol)
 	}
@@ -182,11 +210,93 @@ func (s *Scenario) Validate() error {
 	return nil
 }
 
+// validatePrefixSelector validates participants_cidr: canonical IPv4 prefixes,
+// bounded count, and no within-field redundancy. An explicit participant
+// covered by a prefix is deliberately NOT checked here — cross-world overlap
+// is assertion semantics (see the ParticipantsCIDR field comment), and the
+// arm-side merge deduplicates through the parts map it fills anyway.
+func (s *Scenario) validatePrefixSelector() error {
+	if len(s.ParticipantsCIDR) == 0 {
+		return nil
+	}
+	// Bound before parsing, mirroring the participant-ceiling ordering above.
+	if len(s.ParticipantsCIDR) > scenarioMaxPrefixes {
+		return fmt.Errorf("scenario: participants_cidr has %d entries, exceeding the %d cap",
+			len(s.ParticipantsCIDR), scenarioMaxPrefixes)
+	}
+	type rawPrefix struct {
+		p   netip.Prefix
+		raw string
+	}
+	prefixes := make([]rawPrefix, 0, len(s.ParticipantsCIDR))
+	for _, raw := range s.ParticipantsCIDR {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			return fmt.Errorf("scenario: participants_cidr entry %q is not a valid CIDR prefix", raw)
+		}
+		// Same Is4 discipline as the participant loop above: an Is4In6 prefix
+		// ("::ffff:10.42.0.0/120") canonicalises away from the dotted-quad keys
+		// the arm-time membership test parses, so it is the prefix-shaped
+		// spelling of the same guaranteed-useless request.
+		if !p.Addr().Is4() {
+			return fmt.Errorf("scenario: participants_cidr entry %q must be an IPv4 prefix", raw)
+		}
+		// Canonical (masked) form only. Silently masking would make two
+		// distinguishable submits fingerprint differently yet run identically
+		// (config_sha256 hashes the raw spelling), and a host address where a
+		// network was meant is the classic typo — reject loudly, naming the
+		// canonical form for self-service.
+		if p != p.Masked() {
+			return fmt.Errorf("scenario: participants_cidr entry %q has host bits set; the canonical form is %q",
+				raw, p.Masked().String())
+		}
+		prefixes = append(prefixes, rawPrefix{p: p, raw: raw})
+	}
+	// Within-field redundancy. CIDR prefixes form a laminar family — two
+	// prefixes are either disjoint or nested — so after sorting by (address,
+	// bits) every containment surfaces as an adjacent pair: anything sorted
+	// between a container and its containee starts inside the container's range
+	// and is therefore itself contained. That makes this O(n log n), not the
+	// pairwise O(n²) the raw laminar property would suggest. A duplicate or
+	// nested prefix adds no address and no assertion, so it is rejected as
+	// guaranteed-useless (unlike a covered explicit participant, which upgrades
+	// an address to loud-miss semantics and is allowed).
+	slices.SortFunc(prefixes, func(a, b rawPrefix) int {
+		if c := a.p.Addr().Compare(b.p.Addr()); c != 0 {
+			return c
+		}
+		return a.p.Bits() - b.p.Bits()
+	})
+	for i := 1; i < len(prefixes); i++ {
+		prev, cur := prefixes[i-1], prefixes[i]
+		if prev.p == cur.p {
+			return fmt.Errorf("scenario: prefix %q appears more than once; participants_cidr is a set", cur.raw)
+		}
+		// Sorted order guarantees the earlier prefix is the container.
+		if prev.p.Overlaps(cur.p) {
+			return fmt.Errorf("scenario: prefix %q is covered by %q; a nested prefix adds nothing to the union",
+				cur.raw, prev.raw)
+		}
+	}
+	return nil
+}
+
 // rateProfileOrDefault builds the scenario's rate profile (or the constant
 // default). Callers have already passed Validate, so the error is
 // unexpected — surfaced for defensive handling at Start.
 func (s *Scenario) rateProfile() (rateProfile, error) {
 	return buildRateProfile(s.RateProfile, s.Rate, s.Window)
+}
+
+// selectorSummary renders the declared selector cardinality for 0/N refusal
+// messages. The explicit-only form is the historical "%d"; with prefixes the
+// denominator is not an address count, so both selector shapes are named
+// (a CIDR-only scenario would otherwise read as a nonsensical "0/0").
+func (s *Scenario) selectorSummary() string {
+	if len(s.ParticipantsCIDR) == 0 {
+		return fmt.Sprintf("%d", len(s.Participants))
+	}
+	return fmt.Sprintf("%d explicit + %d prefixes", len(s.Participants), len(s.ParticipantsCIDR))
 }
 
 // drainOrDefault returns the configured drain grace, defaulting when zero.
