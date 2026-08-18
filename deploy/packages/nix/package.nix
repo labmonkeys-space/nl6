@@ -35,7 +35,7 @@ buildGo126Module {
   # this to lib.fakeHash, run `nix build`, and copy the printed "got:" value.
   # The Nix Cache workflow also prints the expected hash when its PR build
   # fails for this reason.
-  vendorHash = "sha256-0BF72ItUiNY/6w1mcseoR18wucgoQyfcz8R0jwK6vz4=";
+  vendorHash = "sha256-9VaqAU6X9fVJybl6LRIVuTDPc8OFocFpGxkLtrE7XVo=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
