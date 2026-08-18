@@ -155,16 +155,21 @@ set-nix-version:
 # Required after ANY go.mod/go.sum change (Dependabot bumps included) — a
 # stale vendorHash makes the Nix build substitute the previous cached vendor
 # tree and fail with "inconsistent vendoring". Runs Nix inside Docker, so no
-# local Nix install is needed; the tree is copied into the container, so the
-# real work tree is never modified. Copy the printed "got:" value into
-# `vendorHash` in deploy/packages/nix/package.nix.
+# local Nix install is needed. The fake-hash substitution runs on the host
+# into a mktemp file bind-mounted over package.nix (nixos/nix:latest ships no
+# sed in PATH, and the real work tree is never modified either way). Copy the
+# printed "got:" value into `vendorHash` in deploy/packages/nix/package.nix.
 nix-vendor-hash: check-docker
 	@echo "nix-vendor-hash: probing (builds the Go vendor set once; a few minutes)..."
-	@docker run --rm -v "$(CURDIR)":/repo:ro nixos/nix:latest sh -c "\
-	  cp -r /repo /src && cd /src && \
-	  sed -i 's|vendorHash = \".*\"|vendorHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"|' deploy/packages/nix/package.nix && \
-	  nix --extra-experimental-features 'nix-command flakes' build 'path:/src?dir=deploy/packages/nix#nl6' --no-link 2>&1 | grep -E 'specified:|got:'" \
-	  || true
+	@tmp=$$(mktemp); \
+	sed 's|vendorHash = ".*"|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' \
+	  $(PKG_DIR)/nix/package.nix > $$tmp; \
+	out=$$(docker run --rm -v "$(CURDIR)":/repo:ro \
+	  -v "$$tmp":/repo/deploy/packages/nix/package.nix:ro nixos/nix:latest sh -c "\
+	  cp -r /repo /src && \
+	  nix --extra-experimental-features 'nix-command flakes' build 'path:/src?dir=deploy/packages/nix#nl6' --no-link 2>&1"); \
+	rm -f $$tmp; \
+	echo "$$out" | grep -E 'specified:|got:' || { echo "$$out" | tail -20; exit 1; }
 	@echo "nix-vendor-hash: copy the 'got:' value into vendorHash in $(PKG_DIR)/nix/package.nix"
 
 ## sbom-curate: Fill the product-SBOM licenses no module cache can resolve (SBOM=<path>)
