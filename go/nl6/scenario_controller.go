@@ -393,21 +393,6 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	}()
 }
 
-// exporterPresent reports whether dev still carries the scenario protocol's
-// exporter (arm→start gap check).
-func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
-	if isFlowScenarioProtocol(c.spec.Protocol) {
-		return dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol
-	}
-	if c.spec.Protocol == "snmp-trap" {
-		return dev.trapExporter != nil
-	}
-	if c.spec.Protocol == "gnmi-dialout" {
-		return dev.gnmiDialoutExporter != nil
-	}
-	return c.spec.Protocol == "syslog" && dev.syslogExporter != nil
-}
-
 // Arm resolves participants against the live fleet, installs participation
 // handles, and publishes the armed gate. Unknown/ineligible devices go to
 // the excluded set (FR9) rather than failing the whole arm. Returns the
@@ -471,6 +456,13 @@ type armReadiness struct {
 	ExcludedTotal     int
 	ExcludedByReason  map[string]int
 	ScheduleCancelled bool
+	// Expected is the declared expect_participants (0 when undeclared), and
+	// Mismatch the rendered diagnosis (empty when met or undeclared). Both are
+	// computed inside the same lock hold as Armed and ExcludedTotal — deriving
+	// them in the handler would read c.spec across a second acquisition and
+	// could splice one arm's count onto another's expectation.
+	Expected int
+	Mismatch string
 }
 
 // ArmReadiness arms and returns a self-consistent snapshot. Prefer it over Arm()
@@ -615,11 +607,21 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 	// Derive the count from the map rather than counting loop iterations, so it
 	// cannot drift from the map the rest of the lifecycle uses: Start's 0/N
 	// refusal tests len(c.parts) and the report publishes len(PerDevice).
+	armed := len(c.parts)
+	excludedTotal := sumReasonCounts(c.excludedByReason)
+	expected := 0
+	if c.spec.ExpectParticipants != nil {
+		expected = *c.spec.ExpectParticipants
+	}
 	return armReadiness{
-		Phase:         c.phase,
-		Armed:         len(c.parts),
+		Phase:    c.phase,
+		Armed:    armed,
+		Expected: expected,
+		// Every arm recomputes this, which is the whole of "re-arm re-evaluates
+		// the expectation" — there is no re-arm-specific path to get wrong.
+		Mismatch:      expectationDiagnosis(c.spec.ExpectParticipants, armed, excludedTotal),
 		Excluded:      c.excluded,
-		ExcludedTotal: sumReasonCounts(c.excludedByReason),
+		ExcludedTotal: excludedTotal,
 		// Cloned: handing the controller's own map to a caller would let a later
 		// arm mutate it mid-response. Both publication paths (this and finish)
 		// clone, so neither depends on the accident that no current phase
@@ -686,6 +688,51 @@ func (c *ScenarioController) prefixMatchesLocked() []string {
 	return matches
 }
 
+// rollbackStartLocked undoes a start that got as far as the running transition
+// but cannot proceed: unfreeze the fleet, restore the armed phase, and
+// re-publish the armed gate so no participant sees a running window that will
+// not happen. Caller holds c.mu.
+//
+// This necessarily runs AFTER gate.Store(running), so a flow exporter's own
+// ticker can briefly observe a running gate for a run that then rolls back. The
+// membership refusals no longer reach here — they were moved above the
+// transition precisely to avoid that window — leaving only scheduler
+// construction, which is validated at submit and therefore near-unreachable.
+func (c *ScenarioController) rollbackStartLocked() {
+	c.sm.unfreezeFleet()
+	c.phase = phaseArmed
+	c.gate.Store(&gateState{phase: phaseArmed})
+}
+
+// expectationDiagnosis renders a participant-count mismatch, or "" when the
+// expectation is met or undeclared. ONE renderer for both the readiness
+// disclosure and the start refusal, so an operator reads a single diagnosis
+// rather than two phrasings of the same number.
+//
+// The shortfall branch is the reason the field exists: a shortfall with zero
+// exclusions means nothing was rejected and the selectors simply matched fewer
+// live devices than expected — the signature of a mis-sized prefix, which is
+// otherwise invisible because prefix non-matches are not enumerable.
+func expectationDiagnosis(expected *int, armed, excludedTotal int) string {
+	if expected == nil || *expected == armed {
+		return ""
+	}
+	want := *expected
+	if armed > want {
+		return fmt.Sprintf(
+			"expected %d participants, %d armed: %d more than declared — the fleet holds devices the selectors match but the expectation does not account for",
+			want, armed, armed-want)
+	}
+	if excludedTotal == 0 {
+		return fmt.Sprintf(
+			"expected %d participants, %d armed: %d missing and nothing was excluded — the selectors matched fewer live devices than expected (check prefix sizes in participants_cidr, and the fleet itself)",
+			want, armed, want-armed)
+	}
+	return fmt.Sprintf(
+		"expected %d participants, %d armed: %d missing, %d excluded — see excluded_by_reason for the causes",
+		want, armed, want-armed, excludedTotal)
+}
+
 // Start freezes the fleet, publishes the running gate at T0, and starts the
 // scenario-owned scheduler. Refused at 0/N armed (FR40).
 func (c *ScenarioController) Start(ctx context.Context) error {
@@ -706,9 +753,90 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	if len(c.parts) == 0 {
 		return fmt.Errorf("cannot start scenario %s: 0/%s participants armed", c.id, c.spec.selectorSummary())
 	}
+	// Expectation check, pre-freeze twin of the post-prune one below. Both are
+	// needed for the same reason FR40 needs both sites: this one refuses
+	// cleanly (nothing frozen, no transition, no stamped T0, no rollback), and
+	// the later one is authoritative against membership lost in the arm→start
+	// gap. Failing here keeps the common case off the rollback path entirely.
+	if diag := expectationDiagnosis(c.spec.ExpectParticipants, len(c.parts), sumReasonCounts(c.excludedByReason)); diag != "" {
+		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
+	}
 	if err := c.sm.freezeFleet(c.id); err != nil {
 		return err // e.g. a creation batch is in flight
 	}
+	// Drop participants deleted in the Arm→Start gap (before the freeze) so the
+	// ledger only reports devices that actually ran and the refusals below see
+	// the true count. Protocol-agnostic: the presence check is per-protocol.
+	//
+	// This runs AFTER freezeFleet (membership must not move underneath it) but
+	// BEFORE the running transition and the gate publication, so every refusal
+	// it feeds is a plain unfreeze-and-return. Running it after gate.Store left
+	// a window in which a flow exporter's own ticker could observe the running
+	// gate and emit into a run that then rolled back; the prune reads only the
+	// device map and per-protocol exporter fields, never the gate, so it has no
+	// reason to be on that side of the transition. T0 is now also stamped after
+	// the pruning work rather than before it, which is the more honest instant
+	// for the window to begin.
+	c.sm.mu.RLock()
+	registered := 0
+	for ip, part := range c.parts {
+		dev := c.sm.devicesByIP[ip]
+		if dev == nil {
+			delete(c.parts, ip)
+			delete(c.ledgers, ip)
+			c.recordExcluded(ip, "device deleted between arm and start",
+				"re-arm the scenario after the fleet is stable",
+				scenarioMaxExcludedRows)
+			continue
+		}
+		// RE-INSTALL rather than merely test for an exporter. Presence is a
+		// weaker predicate than the one that armed the device, in two ways that
+		// both inflate the count relative to what will actually emit:
+		//
+		//   - A device deleted and re-created at the same IP in the gap is a
+		//     FRESH DeviceSimulator whose exporter carries no handle — arm
+		//     stored that on the old object. Presence says yes; the device
+		//     would run outside the scenario and never reach its ledger.
+		//   - gnmi-dialout additionally requires a live Publish stream (FR16
+		//     stream-arming proof). A collector that restarted since arm leaves
+		//     the exporter non-nil and the stream dead.
+		//
+		// Re-installing settles both: it re-establishes the handle on whatever
+		// object is live now, and it applies arm's exact admission rule, which
+		// is what lets `registered` be called authoritative.
+		if ok, reason, hint := c.installScenPart(dev, part); !ok {
+			// Release any handle arm left on this still-live device before
+			// dropping it from c.parts. Every other detach path iterates
+			// c.parts, so a handle orphaned here is unreachable forever — and a
+			// stale handle whose gate has reached a terminal phase mutes that
+			// device's exporter for the rest of the process.
+			c.detachScenPart(dev)
+			delete(c.parts, ip)
+			delete(c.ledgers, ip)
+			c.recordExcluded(ip, reason, hint, scenarioMaxExcludedRows)
+			continue
+		}
+		registered++
+	}
+	c.sm.mu.RUnlock()
+	if registered == 0 {
+		c.sm.unfreezeFleet()
+		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
+	}
+	// Authoritative expectation check: `registered` counts the devices that just
+	// re-armed successfully, so this is the site that catches membership lost in
+	// the arm→start gap — a wrong-sized run reached without any misdeclaration.
+	// The exclusion total is re-read AFTER the prune so the diagnosis accounts
+	// for the rows it just recorded.
+	//
+	// Only ever a SHORTFALL: the prune removes and never adds, so registered is
+	// at most len(c.parts), which the pre-freeze check already matched against
+	// the expectation. The surplus branch of the diagnosis is unreachable here.
+	if diag := expectationDiagnosis(c.spec.ExpectParticipants, registered, sumReasonCounts(c.excludedByReason)); diag != "" {
+		c.sm.unfreezeFleet()
+		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
+	}
+
 	if err := c.transitionLocked(phaseRunning); err != nil {
 		c.sm.unfreezeFleet()
 		return err
@@ -718,30 +846,6 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	t1 := t0.Add(c.spec.Window)
 	drainEnd := t1.Add(c.spec.drainOrDefault())
 	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
-
-	// Drop participants deleted in the Arm→Start gap (before the freeze) so the
-	// ledger only reports devices that actually ran and the 0/N refusal sees
-	// the true count. Protocol-agnostic: the presence check is per-protocol.
-	c.sm.mu.RLock()
-	registered := 0
-	for ip := range c.parts {
-		if dev := c.sm.devicesByIP[ip]; dev != nil && c.exporterPresent(dev) {
-			registered++
-			continue
-		}
-		delete(c.parts, ip)
-		delete(c.ledgers, ip)
-		c.recordExcluded(ip, "device deleted between arm and start",
-			"re-arm the scenario after the fleet is stable",
-			scenarioMaxExcludedRows)
-	}
-	c.sm.mu.RUnlock()
-	if registered == 0 {
-		c.sm.unfreezeFleet()
-		c.phase = phaseArmed // roll back the running transition
-		c.gate.Store(&gateState{phase: phaseArmed})
-		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
-	}
 
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
@@ -760,9 +864,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 		if err != nil {
 			// Validated at submit, so unexpected; unwind defensively.
 			cancel()
-			c.sm.unfreezeFleet()
-			c.phase = phaseArmed
-			c.gate.Store(&gateState{phase: phaseArmed})
+			c.rollbackStartLocked()
 			return fmt.Errorf("cannot start scenario %s: %w", c.id, err)
 		}
 		c.sched = sched
@@ -811,6 +913,15 @@ func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) er
 	}
 	if len(c.parts) == 0 {
 		return fmt.Errorf("cannot schedule scenario %s: 0/%s participants armed", c.id, c.spec.selectorSummary())
+	}
+	// The expectation is checked here for the same reason the zero-armed guard
+	// above is: authorising a T0 against a set that already fails the declared
+	// cardinality only defers the refusal to the moment the timer fires, hours
+	// later, when the schedule is released and the run simply did not happen.
+	// Membership can still change before T0 — start re-checks — but a set that
+	// is wrong NOW is worth refusing now.
+	if diag := expectationDiagnosis(c.spec.ExpectParticipants, len(c.parts), sumReasonCounts(c.excludedByReason)); diag != "" {
+		return fmt.Errorf("cannot schedule scenario %s: %s", c.id, diag)
 	}
 	if c.startTimer != nil {
 		return fmt.Errorf("scenario %s already has a scheduled start at %s", c.id, c.scheduledAt.Format(time.RFC3339))
