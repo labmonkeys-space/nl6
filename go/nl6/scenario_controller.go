@@ -708,11 +708,11 @@ func (c *ScenarioController) prefixMatchesLocked() []string {
 // re-publish the armed gate so no participant sees a running window that will
 // not happen. Caller holds c.mu.
 //
-// Note this necessarily runs AFTER gate.Store(running), so there is a narrow
-// window in which a flow exporter's own ticker can observe the running gate and
-// emit into a run that then rolls back. That predates the expectation guard,
-// but the guard makes this path fire far more often than "every participant was
-// deleted" ever did — see design.md D3 for the tightening to evaluate.
+// This necessarily runs AFTER gate.Store(running), so a flow exporter's own
+// ticker can briefly observe a running gate for a run that then rolls back. The
+// membership refusals no longer reach here — they were moved above the
+// transition precisely to avoid that window — leaving only scheduler
+// construction, which is validated at submit and therefore near-unreachable.
 func (c *ScenarioController) rollbackStartLocked() {
 	c.sm.unfreezeFleet()
 	c.phase = phaseArmed
@@ -779,19 +779,19 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	if err := c.sm.freezeFleet(c.id); err != nil {
 		return err // e.g. a creation batch is in flight
 	}
-	if err := c.transitionLocked(phaseRunning); err != nil {
-		c.sm.unfreezeFleet()
-		return err
-	}
-
-	t0 := c.now()
-	t1 := t0.Add(c.spec.Window)
-	drainEnd := t1.Add(c.spec.drainOrDefault())
-	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
-
 	// Drop participants deleted in the Arm→Start gap (before the freeze) so the
-	// ledger only reports devices that actually ran and the 0/N refusal sees
+	// ledger only reports devices that actually ran and the refusals below see
 	// the true count. Protocol-agnostic: the presence check is per-protocol.
+	//
+	// This runs AFTER freezeFleet (membership must not move underneath it) but
+	// BEFORE the running transition and the gate publication, so every refusal
+	// it feeds is a plain unfreeze-and-return. Running it after gate.Store left
+	// a window in which a flow exporter's own ticker could observe the running
+	// gate and emit into a run that then rolled back; the prune reads only the
+	// device map and per-protocol exporter fields, never the gate, so it has no
+	// reason to be on that side of the transition. T0 is now also stamped after
+	// the pruning work rather than before it, which is the more honest instant
+	// for the window to begin.
 	c.sm.mu.RLock()
 	registered := 0
 	for ip := range c.parts {
@@ -807,7 +807,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
-		c.rollbackStartLocked()
+		c.sm.unfreezeFleet()
 		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
 	}
 	// Authoritative expectation check: `registered` is what will actually run,
@@ -816,9 +816,19 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// is re-read AFTER the prune so the diagnosis accounts for the rows it just
 	// recorded.
 	if diag := expectationDiagnosis(c.spec.ExpectParticipants, registered, sumReasonCounts(c.excludedByReason)); diag != "" {
-		c.rollbackStartLocked()
+		c.sm.unfreezeFleet()
 		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
 	}
+
+	if err := c.transitionLocked(phaseRunning); err != nil {
+		c.sm.unfreezeFleet()
+		return err
+	}
+
+	t0 := c.now()
+	t1 := t0.Add(c.spec.Window)
+	drainEnd := t1.Add(c.spec.drainOrDefault())
+	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
 
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
