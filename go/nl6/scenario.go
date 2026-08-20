@@ -51,6 +51,23 @@ type Scenario struct {
 	// AbortPredicate optionally self-aborts a runaway run when a mid-run
 	// ledger metric exceeds a threshold for a grace period (FR7).
 	AbortPredicate *AbortPredicateSpec
+	// ExpectParticipants is the declared participant cardinality: how many
+	// devices the operator expects the selectors to resolve to. Nil means
+	// undeclared (today's behaviour). It extends FR40's zero-armed guard from
+	// zero to N and is enforced at the same two points in startLocked, never at
+	// arm — arm-time membership is not what runs.
+	//
+	// EXACT, in both directions: a surplus is refused as loudly as a shortfall,
+	// because the value of the guard is comparability against a baseline, and a
+	// silently different denominator is what ruins it. "At least N" is a
+	// different intent and would get a different field name.
+	//
+	// A POINTER, not an int, so that an explicit 0 is distinguishable from an
+	// omitted field and can be rejected at submit. Silently reading 0 as
+	// "undeclared" would make a caller that computes N programmatically and hits
+	// a zero-length bug lose the guard exactly when it was needed — the silent
+	// failure this whole field exists to prevent.
+	ExpectParticipants *int
 }
 
 // scenarioProtocols is the set of push protocols a scenario may gate. Widened
@@ -176,6 +193,16 @@ func (s *Scenario) Validate() error {
 	}
 	if err := s.validatePrefixSelector(); err != nil {
 		return err
+	}
+	// A declared expectation must be reachable: below 1 no run could ever
+	// satisfy it (FR40 refuses a zero-armed start), and above the ceiling no
+	// participant set may legally get that large. Both are guaranteed-useless
+	// declarations, reported at submit like every other one.
+	if s.ExpectParticipants != nil {
+		if n := *s.ExpectParticipants; n < 1 || n > scenarioMaxParticipants {
+			return fmt.Errorf("scenario: expect_participants must be between 1 and %d, got %d",
+				scenarioMaxParticipants, n)
+		}
 	}
 	if !scenarioProtocols[s.Protocol] {
 		return fmt.Errorf("scenario: unknown protocol %q (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)", s.Protocol)

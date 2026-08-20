@@ -68,15 +68,19 @@ type scenarioRequest struct {
 	// re-marshals this struct, and without omitempty a nil Participants would
 	// hash as "participants":null while [] hashes as [] — two spellings of the
 	// same semantics with different config_sha256 (design D6).
-	Participants     []string            `json:"participants,omitempty"`
-	ParticipantsCIDR []string            `json:"participants_cidr,omitempty"`
-	Protocol         string              `json:"protocol"`
-	Rate             float64             `json:"rate"`
-	Window           string              `json:"window"`
-	Drain            string              `json:"drain,omitempty"`
-	Seed             int64               `json:"seed,omitempty"`
-	RateProfile      *RateProfileSpec    `json:"rate_profile,omitempty"`
-	AbortPredicate   *AbortPredicateSpec `json:"abort_predicate,omitempty"`
+	Participants     []string `json:"participants,omitempty"`
+	ParticipantsCIDR []string `json:"participants_cidr,omitempty"`
+	// ExpectParticipants is declared intent, so it is fingerprinted. A pointer
+	// so an explicit 0 reaches Validate (and is refused) instead of decoding
+	// indistinguishably from an omitted field.
+	ExpectParticipants *int                `json:"expect_participants,omitempty"`
+	Protocol           string              `json:"protocol"`
+	Rate               float64             `json:"rate"`
+	Window             string              `json:"window"`
+	Drain              string              `json:"drain,omitempty"`
+	Seed               int64               `json:"seed,omitempty"`
+	RateProfile        *RateProfileSpec    `json:"rate_profile,omitempty"`
+	AbortPredicate     *AbortPredicateSpec `json:"abort_predicate,omitempty"`
 }
 
 // toScenario maps the wire DTO into the internal Scenario, parsing the
@@ -95,15 +99,16 @@ func (req *scenarioRequest) toScenario() (spec *Scenario, field string, err erro
 		}
 	}
 	return &Scenario{
-		Participants:     req.Participants,
-		ParticipantsCIDR: req.ParticipantsCIDR,
-		Protocol:         req.Protocol,
-		Rate:             req.Rate,
-		Window:           window,
-		Drain:            drain,
-		Seed:             req.Seed,
-		RateProfile:      req.RateProfile,
-		AbortPredicate:   req.AbortPredicate,
+		Participants:       req.Participants,
+		ParticipantsCIDR:   req.ParticipantsCIDR,
+		ExpectParticipants: req.ExpectParticipants,
+		Protocol:           req.Protocol,
+		Rate:               req.Rate,
+		Window:             window,
+		Drain:              drain,
+		Seed:               req.Seed,
+		RateProfile:        req.RateProfile,
+		AbortPredicate:     req.AbortPredicate,
 	}, "", nil
 }
 
@@ -157,6 +162,14 @@ type readinessResponse struct {
 	ExcludedTotal     int            `json:"excluded_total"`
 	ExcludedTruncated bool           `json:"excluded_truncated,omitempty"`
 	ExcludedByReason  map[string]int `json:"excluded_by_reason,omitempty"`
+	// ParticipantsExpected echoes a declared expect_participants so the operator
+	// sees both numbers where they can still act on it — at arm, with the
+	// re-arm loop available — instead of only as a refusal at start. Omitted
+	// when undeclared, so existing consumers see no new field.
+	ParticipantsExpected int `json:"participants_expected,omitempty"`
+	// ExpectationMismatch is the human-readable diagnosis, identical to the
+	// text the start refusal returns. Present only when the counts disagree.
+	ExpectationMismatch string `json:"expectation_mismatch,omitempty"`
 	// ScheduledStartCancelled reports that this arm withdrew a pending
 	// absolute-T0 start (the membership it was authorised against has been
 	// re-resolved). Omitted when there was nothing to cancel, so the field only
@@ -288,6 +301,8 @@ func armScenarioHandler(w http.ResponseWriter, r *http.Request) {
 		// numbers — the same cross-acquisition shape ArmReadiness exists to close.
 		ID: ctrl.id, Phase: string(rd.Phase), ParticipantsArmed: rd.Armed, Excluded: rows,
 		ExcludedTotal:           rd.ExcludedTotal,
+		ParticipantsExpected:    rd.Expected,
+		ExpectationMismatch:     rd.Mismatch,
 		ExcludedTruncated:       excludedTruncated(rd.ExcludedTotal, len(rows)),
 		ExcludedByReason:        rd.ExcludedByReason,
 		ScheduledStartCancelled: rd.ScheduleCancelled,
