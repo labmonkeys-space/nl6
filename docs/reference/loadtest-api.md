@@ -88,6 +88,7 @@ Request body:
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
+| `expect_participants` | `number` | no | Declared participant cardinality: how many devices you expect the selectors to resolve to. **Exact** — start is refused when the participating count differs in *either* direction, because a silently different denominator is what makes a run incomparable to its baseline. Must be between `1` and **100,000**; an explicit `0` is a `400` (use omission to mean "no expectation", so a caller that computes this number and hits a zero-length bug cannot silently lose the guard). Fingerprinted in `config_sha256` — it is declared intent. Don't know the number yet? Submit without it, arm, read `participants_armed`, then re-submit with it. |
 | `abort_predicate` | `object` | no | Self-abort a runaway run when a mid-run ledger metric crosses a threshold (see below). |
 
 ¹ At least one of `participants` / `participants_cidr` must be non-empty; both empty is a `400`.
@@ -254,6 +255,23 @@ a covered explicit entry is an assertion, not a duplicate. Prefix-matched
 devices resolve in address order, so re-arming against an unchanged fleet
 returns a byte-identical readiness response, including which rows appear in a
 truncated `excluded[]` sample.
+
+**Declared expectation.** When the scenario declared `expect_participants`, the
+readiness response echoes it as `participants_expected` alongside
+`participants_armed`, and adds `expectation_mismatch` — a one-line diagnosis —
+whenever the two disagree. Both fields are omitted when no expectation was
+declared. The mismatch is *disclosed* here and *enforced* at `start`, so arming
+stays a read-only look at the fleet and the re-arm loop is the fix path. Every
+arm recomputes it, which is all "re-arm re-evaluates the expectation" means.
+
+The diagnosis names the direction, and distinguishes the two kinds of shortfall,
+because they have different causes:
+
+| Situation | What it means |
+|---|---|
+| short, and exclusions account for it | Devices were found and rejected. The `excluded_by_reason` breakdown has the causes. |
+| short, with **no** exclusions | Nothing was rejected — the selectors simply matched fewer live devices than you expected. This is the signature of a prefix one bit too narrow, or a fleet smaller than you believe. |
+| more than declared | The fleet holds devices your selectors match but your expectation omits. Never has an `excluded[]` explanation. |
 
 **Resolved-set ceiling (`409`).** The resolved union (explicit hits + prefix
 matches) is bounded by the same 100,000 cap as the explicit list, checked at arm
