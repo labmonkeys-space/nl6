@@ -7,7 +7,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"sort"
 	"strconv"
 	"time"
@@ -113,6 +115,52 @@ type reportMetadata struct {
 	// per its protocol's native lever (FR37) — mechanism + value, plus PEN
 	// status so a PEN-degraded fallback is visible.
 	RunTags runTags `json:"run_tags"`
+	// ResolvedParticipantsSHA256 identifies the devices that actually ran.
+	// config_sha256 fingerprints DECLARED INTENT and is the submit-time
+	// idempotency key; with a derived-membership selector the same declaration
+	// resolves to different fleets on different days, so "same config sha,
+	// different counts" needs a second field to be diagnosable at all. This is
+	// it: one comparison instead of a full counters diff.
+	ResolvedParticipantsSHA256 string `json:"resolved_participants_sha256"`
+}
+
+// resolvedParticipantsSHA256 digests the set of devices that actually
+// participated. See reportMetadata.ResolvedParticipantsSHA256 for why it exists.
+//
+// The input is the FINAL per-device ledger set — post-prune membership, the
+// same map the counters serialize from — never the arm-time participant list.
+// A run that quietly lost devices between arm and start must not be able to
+// digest identically to one that did not, and the arm-time set is a superset.
+//
+// The digest is a function of the participating addresses ALONE: not the
+// selector that produced them, not the configuration that declared them, not
+// their install order. That is the property that makes it useful — an explicit
+// list and a participants_cidr prefix resolving to the same live devices agree,
+// so a baseline stays comparable to a re-declared repeat of it.
+//
+// Encoding is deliberately the dumbest reproducible one: each address followed
+// by "\n", in LEXICAL order, SHA-256, hex. Lexical rather than the address
+// order used for the operator-facing excluded[] rows, because those are read by
+// humans (where 10.42.0.10 before 10.42.0.2 looks wrong) while this is input to
+// a hash, where any total order serves. Lexical is what a collector-side check
+// reproduces in one line:
+//
+//	printf '%s\n' $IPS | sort | sha256sum
+//
+// No empty case exists: a run with zero participants is refused at start, so a
+// report always covers at least one address.
+func resolvedParticipantsSHA256(perDevice map[string]ledgerSnapshot) string {
+	ips := make([]string, 0, len(perDevice))
+	for ip := range perDevice {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+	h := sha256.New()
+	for _, ip := range ips {
+		h.Write([]byte(ip))
+		h.Write([]byte("\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
@@ -196,6 +244,9 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// per-bucket received tally for aborted runs.
 				SubWindowDuration: subWindowDuration(c.spec.Window).String(),
 				RunTags:           buildRunTags(c.spec.Protocol, sm.scenarioPEN, res.ID),
+				// Derived from the same map ParticipantsArmed counts, so the
+				// digest and the count can never describe different sets.
+				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
