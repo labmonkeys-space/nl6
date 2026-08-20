@@ -47,15 +47,39 @@ func TestScenarioAPI_ExpectParticipantsValidation(t *testing.T) {
 	})
 
 	t.Run("accepted", func(t *testing.T) {
-		for name, v := range map[string]string{
-			"one":        "1",
-			"at_ceiling": fmt.Sprint(scenarioMaxParticipants),
-		} {
-			t.Run(name, func(t *testing.T) {
-				id := submitOK(t, router, body(v))
-				deleteScenario(t, router, id)
-			})
+		// One declared participant, so only an expectation of 1 is satisfiable
+		// without a prefix selector (see unsatisfiable_without_cidr below).
+		id := submitOK(t, router, body("1"))
+		deleteScenario(t, router, id)
+
+		// The ceiling itself is reachable when a prefix makes the resolved size
+		// unknowable at submit.
+		id = submitOK(t, router, `{"participants_cidr":["10.42.0.0/16"],"expect_participants":`+
+			fmt.Sprint(scenarioMaxParticipants)+`,"protocol":"syslog","rate":5,"window":"1s"}`)
+		deleteScenario(t, router, id)
+	})
+
+	// An expectation above the declared list, with no prefix selector, is
+	// unsatisfiable by construction: the armed set cannot exceed the list. Same
+	// class as the bounds above, and knowable with the same submit-time
+	// information, so it is refused rather than deferred to a 409 at start.
+	t.Run("unsatisfiable_without_cidr", func(t *testing.T) {
+		w := doReq(t, router, http.MethodPost, "/api/v1/scenarios",
+			`{"participants":["10.42.0.1","10.42.0.2"],"expect_participants":3,"protocol":"syslog","rate":5,"window":"1s"}`)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (body %s)", w.Code, w.Body.String())
 		}
+		if !strings.Contains(w.Body.String(), "can never be satisfied") {
+			t.Fatalf("400 should explain why: %s", w.Body.String())
+		}
+	})
+
+	// The same expectation IS admissible once a prefix can supply the rest —
+	// the resolved size is then unknowable until arm.
+	t.Run("satisfiable_with_cidr", func(t *testing.T) {
+		id := submitOK(t, router,
+			`{"participants":["10.43.0.1"],"participants_cidr":["10.42.0.0/24"],"expect_participants":3,"protocol":"syslog","rate":5,"window":"1s"}`)
+		deleteScenario(t, router, id)
 	})
 }
 
@@ -76,9 +100,11 @@ func TestScenarioAPI_ExpectParticipantsFingerprint(t *testing.T) {
 		return st.ConfigSHA256
 	}
 
-	bare := sha(`{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"1s"}`)
-	withOne := sha(`{"participants":["10.42.0.1"],"expect_participants":1,"protocol":"syslog","rate":5,"window":"1s"}`)
-	withTwo := sha(`{"participants":["10.42.0.1"],"expect_participants":2,"protocol":"syslog","rate":5,"window":"1s"}`)
+	// Two declared participants, so expectations of both 1 and 2 are
+	// satisfiable and reach the fingerprint rather than a validation 400.
+	bare := sha(`{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":5,"window":"1s"}`)
+	withOne := sha(`{"participants":["10.42.0.1","10.42.0.2"],"expect_participants":1,"protocol":"syslog","rate":5,"window":"1s"}`)
+	withTwo := sha(`{"participants":["10.42.0.1","10.42.0.2"],"expect_participants":2,"protocol":"syslog","rate":5,"window":"1s"}`)
 
 	if withOne == bare {
 		t.Error("declaring an expectation must change config_sha256 (it is declared intent)")
@@ -88,7 +114,7 @@ func TestScenarioAPI_ExpectParticipantsFingerprint(t *testing.T) {
 	}
 	// An absent expectation must canonicalize away entirely, or every
 	// pre-feature scenario silently changes fingerprint on upgrade.
-	if again := sha(`{"protocol":"syslog","rate":5,"window":"1s","participants":["10.42.0.1"]}`); again != bare {
+	if again := sha(`{"protocol":"syslog","rate":5,"window":"1s","participants":["10.42.0.1","10.42.0.2"]}`); again != bare {
 		t.Errorf("absent expectation changed the fingerprint: %s vs %s", again, bare)
 	}
 }
@@ -289,6 +315,117 @@ func TestScenarioController_ExpectParticipantsPreFreeze(t *testing.T) {
 		t.Fatalf("fleet frozen by a pre-freeze refusal: %v", err)
 	}
 	sm.unfreezeFleet()
+}
+
+// TestScenarioController_StartPruneReinstalls: a device deleted and re-created
+// at the same IP in the arm→start gap is a FRESH DeviceSimulator whose exporter
+// carries no participation handle — arm stored that on the old object. Merely
+// testing for an exporter would count it toward the cardinality while it ran
+// outside the scenario and never reached its ledger. The prune re-installs, so
+// the count stays honest AND the device actually participates.
+func TestScenarioController_StartPruneReinstalls(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 2)
+	c := newScenarioController(sm, time.Now)
+	if err := c.Submit(&Scenario{
+		ParticipantsCIDR:   []string{"10.42.0.0/24"},
+		ExpectParticipants: intPtr(2),
+		Protocol:           "syslog",
+		Rate:               5,
+		Window:             time.Second,
+	}, "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Swap in a replacement device at the same IP, as a delete+create would.
+	fresh, _ := scenarioTestManager(t, 2)
+	replacement := fresh.devicesByIP["10.42.0.2"]
+	if replacement.syslogExporter.scenPart.Load() != nil {
+		t.Fatal("precondition: a fresh device must carry no participation handle")
+	}
+	sm.mu.Lock()
+	sm.devicesByIP["10.42.0.2"] = replacement
+	sm.mu.Unlock()
+
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _, _ = c.Stop() }()
+
+	// The replacement must have been re-armed, not merely counted.
+	if replacement.syslogExporter.scenPart.Load() == nil {
+		t.Error("re-created device was counted toward the expectation but never armed — its emissions would miss the ledger")
+	}
+}
+
+// TestScenarioController_StartPruneDetaches: when a still-live device fails
+// re-arming, its handle from the first arm must be released. Every other detach
+// path iterates c.parts, so a handle orphaned here is unreachable forever, and
+// once the gate reaches a terminal phase it mutes that device's exporter for the
+// rest of the process.
+// It reuses armFixtureFlow, built for the re-arm form of this same leak: an
+// exporter that stays LIVE while failing installScenPart (the in-process
+// stand-in for a dial-out stream blipping during a collector outage). The
+// syslog shape cannot express it — there, failing means the exporter is nil, so
+// the handle is already unreachable from the device either way.
+func TestScenarioController_StartPruneDetaches(t *testing.T) {
+	sm, _, fe := armFixtureFlow(t, "10.42.0.1")
+	c := newScenarioController(sm, time.Now)
+	if err := c.Submit(&Scenario{
+		Participants: []string{"10.42.0.1"},
+		Protocol:     "netflow9",
+		Rate:         5,
+		Window:       time.Second,
+	}, "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if fe.scenPart.Load() == nil {
+		t.Fatal("precondition: arm should have installed a handle")
+	}
+
+	// Fail re-arming while the exporter stays live and reachable.
+	fe.protocol = "ipfix"
+
+	// The only participant drops, so start refuses — but the detach is the
+	// point: the handle must not survive on the live exporter.
+	if err := c.Start(context.Background()); err == nil {
+		t.Fatal("start should be refused once the only participant drops")
+	}
+	if fe.scenPart.Load() != nil {
+		t.Error("handle left installed on a dropped-but-live exporter; every detach path iterates c.parts, so nothing can ever clear it")
+	}
+}
+
+// TestScenarioController_ExpectParticipantsSchedule: an absolute-T0 schedule is
+// refused immediately when the declared cardinality already fails, rather than
+// deferring the refusal to the moment the timer fires.
+func TestScenarioController_ExpectParticipantsSchedule(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 3)
+	c := newScenarioController(sm, time.Now)
+	if err := c.Submit(&Scenario{
+		ParticipantsCIDR:   []string{"10.42.0.0/24"},
+		ExpectParticipants: intPtr(2), // 3 will arm
+		Protocol:           "syslog",
+		Rate:               5,
+		Window:             time.Second,
+	}, "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	err := c.ScheduleStart(context.Background(), time.Now().Add(time.Hour))
+	if err == nil {
+		t.Fatal("scheduling against a set that fails the expectation should be refused now, not at T0")
+	}
+	if !strings.Contains(err.Error(), "more than declared") {
+		t.Fatalf("refusal should carry the same diagnosis: %v", err)
+	}
 }
 
 // TestScenarioController_ExpectParticipantsMet: the happy path still starts and

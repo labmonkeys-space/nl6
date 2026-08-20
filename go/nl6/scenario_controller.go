@@ -393,21 +393,6 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	}()
 }
 
-// exporterPresent reports whether dev still carries the scenario protocol's
-// exporter (arm→start gap check).
-func (c *ScenarioController) exporterPresent(dev *DeviceSimulator) bool {
-	if isFlowScenarioProtocol(c.spec.Protocol) {
-		return dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol
-	}
-	if c.spec.Protocol == "snmp-trap" {
-		return dev.trapExporter != nil
-	}
-	if c.spec.Protocol == "gnmi-dialout" {
-		return dev.gnmiDialoutExporter != nil
-	}
-	return c.spec.Protocol == "syslog" && dev.syslogExporter != nil
-}
-
 // Arm resolves participants against the live fleet, installs participation
 // handles, and publishes the armed gate. Unknown/ineligible devices go to
 // the excluded set (FR9) rather than failing the whole arm. Returns the
@@ -794,27 +779,59 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// for the window to begin.
 	c.sm.mu.RLock()
 	registered := 0
-	for ip := range c.parts {
-		if dev := c.sm.devicesByIP[ip]; dev != nil && c.exporterPresent(dev) {
-			registered++
+	for ip, part := range c.parts {
+		dev := c.sm.devicesByIP[ip]
+		if dev == nil {
+			delete(c.parts, ip)
+			delete(c.ledgers, ip)
+			c.recordExcluded(ip, "device deleted between arm and start",
+				"re-arm the scenario after the fleet is stable",
+				scenarioMaxExcludedRows)
 			continue
 		}
-		delete(c.parts, ip)
-		delete(c.ledgers, ip)
-		c.recordExcluded(ip, "device deleted between arm and start",
-			"re-arm the scenario after the fleet is stable",
-			scenarioMaxExcludedRows)
+		// RE-INSTALL rather than merely test for an exporter. Presence is a
+		// weaker predicate than the one that armed the device, in two ways that
+		// both inflate the count relative to what will actually emit:
+		//
+		//   - A device deleted and re-created at the same IP in the gap is a
+		//     FRESH DeviceSimulator whose exporter carries no handle — arm
+		//     stored that on the old object. Presence says yes; the device
+		//     would run outside the scenario and never reach its ledger.
+		//   - gnmi-dialout additionally requires a live Publish stream (FR16
+		//     stream-arming proof). A collector that restarted since arm leaves
+		//     the exporter non-nil and the stream dead.
+		//
+		// Re-installing settles both: it re-establishes the handle on whatever
+		// object is live now, and it applies arm's exact admission rule, which
+		// is what lets `registered` be called authoritative.
+		if ok, reason, hint := c.installScenPart(dev, part); !ok {
+			// Release any handle arm left on this still-live device before
+			// dropping it from c.parts. Every other detach path iterates
+			// c.parts, so a handle orphaned here is unreachable forever — and a
+			// stale handle whose gate has reached a terminal phase mutes that
+			// device's exporter for the rest of the process.
+			c.detachScenPart(dev)
+			delete(c.parts, ip)
+			delete(c.ledgers, ip)
+			c.recordExcluded(ip, reason, hint, scenarioMaxExcludedRows)
+			continue
+		}
+		registered++
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
 		c.sm.unfreezeFleet()
 		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
 	}
-	// Authoritative expectation check: `registered` is what will actually run,
-	// so this is the site that catches membership lost in the arm→start gap —
-	// a wrong-sized run reached without any misdeclaration. The exclusion total
-	// is re-read AFTER the prune so the diagnosis accounts for the rows it just
-	// recorded.
+	// Authoritative expectation check: `registered` counts the devices that just
+	// re-armed successfully, so this is the site that catches membership lost in
+	// the arm→start gap — a wrong-sized run reached without any misdeclaration.
+	// The exclusion total is re-read AFTER the prune so the diagnosis accounts
+	// for the rows it just recorded.
+	//
+	// Only ever a SHORTFALL: the prune removes and never adds, so registered is
+	// at most len(c.parts), which the pre-freeze check already matched against
+	// the expectation. The surplus branch of the diagnosis is unreachable here.
 	if diag := expectationDiagnosis(c.spec.ExpectParticipants, registered, sumReasonCounts(c.excludedByReason)); diag != "" {
 		c.sm.unfreezeFleet()
 		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
@@ -896,6 +913,15 @@ func (c *ScenarioController) ScheduleStart(ctx context.Context, at time.Time) er
 	}
 	if len(c.parts) == 0 {
 		return fmt.Errorf("cannot schedule scenario %s: 0/%s participants armed", c.id, c.spec.selectorSummary())
+	}
+	// The expectation is checked here for the same reason the zero-armed guard
+	// above is: authorising a T0 against a set that already fails the declared
+	// cardinality only defers the refusal to the moment the timer fires, hours
+	// later, when the schedule is released and the run simply did not happen.
+	// Membership can still change before T0 — start re-checks — but a set that
+	// is wrong NOW is worth refusing now.
+	if diag := expectationDiagnosis(c.spec.ExpectParticipants, len(c.parts), sumReasonCounts(c.excludedByReason)); diag != "" {
+		return fmt.Errorf("cannot schedule scenario %s: %s", c.id, diag)
 	}
 	if c.startTimer != nil {
 		return fmt.Errorf("scenario %s already has a scheduled start at %s", c.id, c.scheduledAt.Format(time.RFC3339))
