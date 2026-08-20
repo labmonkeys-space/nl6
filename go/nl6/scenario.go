@@ -199,9 +199,19 @@ func (s *Scenario) Validate() error {
 	// participant set may legally get that large. Both are guaranteed-useless
 	// declarations, reported at submit like every other one.
 	if s.ExpectParticipants != nil {
-		if n := *s.ExpectParticipants; n < 1 || n > scenarioMaxParticipants {
+		n := *s.ExpectParticipants
+		if n < 1 || n > scenarioMaxParticipants {
 			return fmt.Errorf("scenario: expect_participants must be between 1 and %d, got %d",
 				scenarioMaxParticipants, n)
+		}
+		// With no prefix selector the armed set cannot exceed the declared list,
+		// so an expectation above it is unsatisfiable by construction — the same
+		// class of guaranteed-useless declaration as the bounds above, and known
+		// with the same submit-time information. A prefix makes the resolved size
+		// unknowable until arm, so no bound is derivable then.
+		if len(s.ParticipantsCIDR) == 0 && n > len(s.Participants) {
+			return fmt.Errorf("scenario: expect_participants is %d but only %d participants are declared and no participants_cidr is set, so it can never be satisfied",
+				n, len(s.Participants))
 		}
 	}
 	if !scenarioProtocols[s.Protocol] {
