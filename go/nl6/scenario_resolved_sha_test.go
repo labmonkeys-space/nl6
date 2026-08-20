@@ -18,7 +18,9 @@ import (
 // digestOf is the INDEPENDENT reference implementation of the documented
 // encoding — deliberately not calling resolvedParticipantsSHA256, so the test
 // asserts the encoding rather than merely agreeing with whatever the code does.
-// Mirrors `printf '%s\n' $IPS | sort | sha256sum`.
+// Mirrors `printf '%s\n' "$IPS" | LC_ALL=C sort | sha256sum` (the C locale is
+// required: glibc's UTF-8 collation ignores punctuation and would order
+// 10.42.10.1 before 10.42.1.2, which byte order reverses).
 func digestOf(sortedIPs ...string) string {
 	h := sha256.New()
 	for _, ip := range sortedIPs {
@@ -60,10 +62,10 @@ func TestResolvedParticipantsSHA_Encoding(t *testing.T) {
 	got := resolvedParticipantsSHA256(map[string]ledgerSnapshot{
 		"10.42.0.2": {}, "10.42.0.1": {}, "10.42.0.10": {},
 	})
-	// LEXICAL order: "10.42.0.1" < "10.42.0.10" < "10.42.0.2".
+	// BYTE order: "10.42.0.1" < "10.42.0.10" < "10.42.0.2".
 	want := digestOf("10.42.0.1", "10.42.0.10", "10.42.0.2")
 	if got != want {
-		t.Fatalf("digest = %s, want %s (lexical order, each address followed by \\n)", got, want)
+		t.Fatalf("digest = %s, want %s (byte order, each address followed by \\n)", got, want)
 	}
 	// Map iteration order must not leak in.
 	for i := 0; i < 20; i++ {

@@ -17,6 +17,7 @@ is built once at stop/abort, immutable thereafter, and served by
     "protocol": "syslog",
     "metadata": {
       "config_sha256": "9b8d8c9c…969314",
+      "resolved_participants_sha256": "3f1c…a204",
       "seed": 42,
       "nl6_version": "v0.16.0",
       "t0": "2026-07-18T09:00:05.000Z",
@@ -24,7 +25,6 @@ is built once at stop/abort, immutable thereafter, and served by
       "drain_end": "2026-07-18T09:00:07.500Z",
       "sub_window_count": 10,
       "sub_window_duration": "200ms",
-      "resolved_participants_sha256": "3f1c…a204",
       "run_tags": {
         "protocol": "syslog", "mechanism": "window_source_ip", "value": "",
         "pen": 0, "pen_required": true, "degraded": true,
@@ -112,21 +112,31 @@ whether you are looking at a pipeline change or simply a different fleet.
 #### Reproducing `resolved_participants_sha256`
 
 The encoding is deliberately the dumbest one that a checker can reproduce
-without a parser: each participating address followed by `\n`, in **lexical**
-order, SHA-256, hex. So a collector that recorded which sources it received from
-can answer "did I receive from the same fleet nl6 sent from?" with one string
+without a parser: each participating address followed by `\n`, in **byte order**,
+SHA-256, hex. So a collector that recorded which sources it received from can
+answer "did I receive from the same fleet nl6 sent from?" with one string
 comparison:
 
 ```sh
-# $IPS = the source addresses your collector saw during [t0,t1)
-printf '%s\n' $IPS | sort | sha256sum
+# "$IPS" = the source addresses your collector saw during [t0,t1)
+printf '%s\n' "$IPS" | LC_ALL=C sort | sha256sum
 ```
 
-Lexical order is a deliberate departure from the **address** order used for the
+`LC_ALL=C` is **required, not decoration**. Under a UTF-8 locale, glibc's
+collation ignores punctuation at the primary level, so `sort` orders
+`10.42.10.1` *before* `10.42.1.2` while byte order puts `10.42.1.2` first. That
+yields a different digest and an operator reads a false "different fleet" from
+the very comparison this section exists to enable. macOS/BSD `sort` happens to
+agree with byte order, so the mistake reproduces only on the Linux collector
+hosts that are the actual audience.
+
+Byte order is a deliberate departure from the **address** order used for the
 `excluded[]` rows. Those rows are read by humans, where `10.42.0.10` sorting
 before `10.42.0.2` looks broken; this is input to a hash function, where any
-total order does, and lexical is the one `sort` gives you for free in any
-language. The trailing newline after the final address is part of the encoding.
+total order does, and byte order is the one every language sorts strings in by
+default. The trailing newline after the final address is part of the encoding.
+
+## `counters[]` — per participant
 
 One row per participant, keyed by the **join tuple** `(protocol, source_ip,
 collector)` — the same tuple a collector groups its received counts by, so the

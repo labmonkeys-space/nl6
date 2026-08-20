@@ -260,6 +260,7 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
       <dt>seed</dt><dd>{{.R.Summary.Metadata.Seed}}</dd>
       <dt>nl6 version</dt><dd>{{.R.Summary.Metadata.Nl6Version}}</dd>
       <dt>config sha256</dt><dd>{{.R.Summary.Metadata.ConfigSHA256}}</dd>
+      <dt title="Identifies the devices that actually ran. Two runs with the same config sha256 but different values here measured different fleets.">resolved participants sha256</dt><dd>{{.R.Summary.Metadata.ResolvedParticipantsSHA256}}</dd>
     </dl>
   </section>
 
