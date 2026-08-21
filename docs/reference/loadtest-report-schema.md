@@ -17,6 +17,7 @@ is built once at stop/abort, immutable thereafter, and served by
     "protocol": "syslog",
     "metadata": {
       "config_sha256": "9b8d8c9c…969314",
+      "resolved_participants_sha256": "3f1c…a204",
       "seed": 42,
       "nl6_version": "v0.16.0",
       "t0": "2026-07-18T09:00:05.000Z",
@@ -85,9 +86,20 @@ The reproducibility fingerprint plus the timestamps the run actually observed.
 Copy the `(config_sha256, seed)` back into a resubmit on the same
 `nl6_version` to re-run a scenario exactly.
 
+Two fingerprints appear here and they answer **different questions**.
+`config_sha256` pins what you *declared* — it is the submit-time idempotency key.
+`resolved_participants_sha256` pins what actually *ran*.
+They diverge as soon as membership is derived rather than enumerated: a
+`participants_cidr` scenario resolves against the live fleet, so one
+`config_sha256` legitimately produces different participant sets on different
+days, or against a half-built fleet. When two runs share a config fingerprint
+but disagree on counts, comparing the resolved digest tells you in one step
+whether you are looking at a pipeline change or simply a different fleet.
+
 | Field | Type | Meaning |
 |-------|------|---------|
-| `config_sha256` | string | SHA-256 over the canonicalized submit config. |
+| `config_sha256` | string | SHA-256 over the canonicalized submit config — **declared intent**. |
+| `resolved_participants_sha256` | string | SHA-256 identifying the devices that **actually participated**. Computed over post-prune membership (the same set `counters[]` serializes and `participants_armed` counts), so a run that lost devices between arm and start cannot digest identically to a whole one. Independent of *how* membership was declared: an explicit list and a prefix selector resolving to the same live devices agree, which is what keeps a baseline comparable to a re-declared repeat. |
 | `seed` | number | The seed that pinned every random draw. |
 | `nl6_version` | string | Simulator version that produced the report — reproduction is guaranteed only on the same version. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
@@ -96,6 +108,33 @@ Copy the `(config_sha256, seed)` back into a resubmit on the same
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
 | `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+
+#### Reproducing `resolved_participants_sha256`
+
+The encoding is deliberately the dumbest one that a checker can reproduce
+without a parser: each participating address followed by `\n`, in **byte order**,
+SHA-256, hex. So a collector that recorded which sources it received from can
+answer "did I receive from the same fleet nl6 sent from?" with one string
+comparison:
+
+```sh
+# "$IPS" = the source addresses your collector saw during [t0,t1)
+printf '%s\n' "$IPS" | LC_ALL=C sort | sha256sum
+```
+
+`LC_ALL=C` is **required, not decoration**. Under a UTF-8 locale, glibc's
+collation ignores punctuation at the primary level, so `sort` orders
+`10.42.10.1` *before* `10.42.1.2` while byte order puts `10.42.1.2` first. That
+yields a different digest and an operator reads a false "different fleet" from
+the very comparison this section exists to enable. macOS/BSD `sort` happens to
+agree with byte order, so the mistake reproduces only on the Linux collector
+hosts that are the actual audience.
+
+Byte order is a deliberate departure from the **address** order used for the
+`excluded[]` rows. Those rows are read by humans, where `10.42.0.10` sorting
+before `10.42.0.2` looks broken; this is input to a hash function, where any
+total order does, and byte order is the one every language sorts strings in by
+default. The trailing newline after the final address is part of the encoding.
 
 ## `counters[]` — per participant
 

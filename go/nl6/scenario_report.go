@@ -7,7 +7,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"sort"
 	"strconv"
 	"time"
@@ -97,11 +99,21 @@ type scenarioReportSummary struct {
 // observed. Grouping them makes "reproduce this run" a single copy-paste.
 type reportMetadata struct {
 	ConfigSHA256 string `json:"config_sha256"`
-	Seed         int64  `json:"seed"`
-	Nl6Version   string `json:"nl6_version"`
-	T0           string `json:"t0"`
-	T1           string `json:"t1"`
-	DrainEnd     string `json:"drain_end"`
+	// ResolvedParticipantsSHA256 identifies the devices that actually ran.
+	// config_sha256 fingerprints DECLARED INTENT and is the submit-time
+	// idempotency key; with a derived-membership selector the same declaration
+	// resolves to different fleets on different days, so "same config sha,
+	// different counts" needs a second field to be diagnosable at all. This is
+	// it: one comparison instead of a full counters diff.
+	//
+	// Declared adjacent to config_sha256 so the two fingerprints serialize
+	// together — declaration order is JSON order for this report.
+	ResolvedParticipantsSHA256 string `json:"resolved_participants_sha256"`
+	Seed                       int64  `json:"seed"`
+	Nl6Version                 string `json:"nl6_version"`
+	T0                         string `json:"t0"`
+	T1                         string `json:"t1"`
+	DrainEnd                   string `json:"drain_end"`
 	// SubWindowCount / SubWindowDuration describe the loss-localization
 	// granularity (FR28): the PLANNED window [T0,T1) is sliced into
 	// SubWindowCount equal buckets, each SubWindowDuration wide (planned
@@ -113,6 +125,51 @@ type reportMetadata struct {
 	// per its protocol's native lever (FR37) — mechanism + value, plus PEN
 	// status so a PEN-degraded fallback is visible.
 	RunTags runTags `json:"run_tags"`
+}
+
+// resolvedParticipantsSHA256 digests the set of devices that actually
+// participated. See reportMetadata.ResolvedParticipantsSHA256 for why it exists.
+//
+// The input is the FINAL per-device ledger set — post-prune membership, the
+// same map the counters serialize from — never the arm-time participant list.
+// A run that quietly lost devices between arm and start must not be able to
+// digest identically to one that did not, and the arm-time set is a superset.
+//
+// The digest is a function of the participating addresses ALONE: not the
+// selector that produced them, not the configuration that declared them, not
+// their install order. That is the property that makes it useful — an explicit
+// list and a participants_cidr prefix resolving to the same live devices agree,
+// so a baseline stays comparable to a re-declared repeat of it.
+//
+// Encoding is deliberately the dumbest reproducible one: each address followed
+// by "\n", in BYTE order (sort.Strings), SHA-256, hex. Byte order rather than
+// the address order used for the operator-facing excluded[] rows, because those
+// are read by humans (where 10.42.0.10 before 10.42.0.2 looks wrong) while this
+// is input to a hash, where any total order serves. A collector-side check
+// reproduces it in one line:
+//
+//	printf '%s\n' "$IPS" | LC_ALL=C sort | sha256sum
+//
+// LC_ALL=C is load-bearing: under a UTF-8 locale glibc's collation ignores
+// punctuation at the primary level and orders 10.42.10.1 before 10.42.1.2,
+// which byte order reverses — a different digest, and a false "different fleet"
+// for whoever compares. BSD sort agrees with byte order, so the mistake shows
+// up only on the Linux hosts the one-liner is written for.
+//
+// No empty case exists: a run with zero participants is refused at start, so a
+// report always covers at least one address.
+func resolvedParticipantsSHA256(perDevice map[string]ledgerSnapshot) string {
+	ips := make([]string, 0, len(perDevice))
+	for ip := range perDevice {
+		ips = append(ips, ip)
+	}
+	sort.Strings(ips)
+	h := sha256.New()
+	for _, ip := range ips {
+		h.Write([]byte(ip))
+		h.Write([]byte("\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // scenarioCounterRow is one participant's ledger, keyed by the join tuple.
@@ -196,6 +253,9 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// per-bucket received tally for aborted runs.
 				SubWindowDuration: subWindowDuration(c.spec.Window).String(),
 				RunTags:           buildRunTags(c.spec.Protocol, sm.scenarioPEN, res.ID),
+				// Derived from the same map ParticipantsArmed counts, so the
+				// digest and the count can never describe different sets.
+				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
