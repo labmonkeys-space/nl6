@@ -161,7 +161,10 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 func TestScenarioAcceptance_AbortIntact(t *testing.T) {
 	sm, _ := scenarioTestManager(t, 2)
 	c := newScenarioController(sm, nil)
-	sm.scenarioController = c // register so abortActiveScenario finds it
+	// Register so abortActiveScenario finds it. Setup, not assertion: this
+	// test drives a hand-built controller rather than submitScenario, so it
+	// has to register by hand. Keyed by the ID Submit assigns below.
+	sm.scenarios = map[string]*ScenarioController{"s-000009": c}
 
 	spec := &Scenario{
 		Participants: []string{"10.42.0.1", "10.42.0.2"}, Protocol: "syslog",

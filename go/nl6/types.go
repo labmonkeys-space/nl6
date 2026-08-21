@@ -319,14 +319,19 @@ type SimulatorManager struct {
 	// batch and a freeze can never both proceed (review interlock).
 	fleetFrozenBy string
 
-	// scenarioController holds the single active load-test scenario (MVP:
-	// one at a time — FR38). nil until the first POST /api/v1/scenarios.
-	// Guarded by scenarioMu; a terminal scenario is replaceable by the next
-	// submit. scenarioSeq is the monotonic source of the zero-padded
-	// s-%06d scenario ID (D2/D5).
-	scenarioMu         sync.Mutex
-	scenarioController *ScenarioController
-	scenarioSeq        uint64
+	// scenarios registers every load-test scenario by ID, keyed s-%06d.
+	// Guarded by scenarioMu; scenarioSeq is the monotonic source of that ID
+	// (D2/D5).
+	//
+	// The registry holds many, but the ADMISSION POLICY is what decides how
+	// many may be live: today submitScenario still refuses while any scenario
+	// is non-terminal, so behaviour is unchanged from the single-slot version
+	// this replaced. Per-device overlap (#392) changes that policy without
+	// touching this structure — the split is deliberate, so a policy change
+	// and a structural change never land in the same diff.
+	scenarioMu  sync.Mutex
+	scenarios   map[string]*ScenarioController
+	scenarioSeq uint64
 	// scenarioPEN is the IANA Private Enterprise Number used to form
 	// PEN-dependent run tags (syslog SD-PARAM `nl6@<PEN>`, SNMP enterprise
 	// varbind). 0 = unset → those levers degrade to window + source-IP
