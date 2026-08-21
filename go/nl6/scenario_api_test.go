@@ -117,14 +117,14 @@ func TestScenarioAPI_NotFoundAnd409(t *testing.T) {
 
 	id := submitOK(t, router, validScenarioBody)
 
-	// 409 — second submit while one is active.
-	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", validScenarioBody)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("double submit = %d, want 409", w.Code)
-	}
+	// A second submit is NO LONGER a 409: exclusivity moved from the submit
+	// slot to the devices themselves (#392), so overlapping scenarios are
+	// refused at arm — where membership is known — and disjoint ones run
+	// concurrently. Submit now refuses only at the concurrency bound, which
+	// TestScenarioRegistry_ConcurrencyBound covers.
 
 	// 409 — report before the scenario reaches a terminal phase.
-	w = doReq(t, router, http.MethodGet, "/api/v1/scenarios/"+id+"/report", "")
+	w := doReq(t, router, http.MethodGet, "/api/v1/scenarios/"+id+"/report", "")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("premature report = %d, want 409 (body %s)", w.Code, w.Body.String())
 	}

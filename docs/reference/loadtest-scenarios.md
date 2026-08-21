@@ -6,7 +6,7 @@ feature? Start with the [overview](./loadtest-overview.md). For copy-pasteable
 recipes by use case, see the [runbooks](./loadtest-runbooks.md); for endpoints
 and shapes, the [REST API](./loadtest-api.md) and [report schema](./loadtest-report-schema.md).
 
-Scope: **one active scenario at a time**, over any one of the seven shipped
+Scope: **up to 8 concurrent scenarios**, each over any one of the seven shipped
 push protocols — **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**,
 **sFlow**, and **gNMI dial-out**. Each protocol opts a device in via its own
 export config; the scenario gates whichever protocol it targets.
@@ -303,7 +303,8 @@ Above 900 arm-time exclusions the list is a **sample**: `excluded_truncated` is 
 | `start` → `409 expected N participants, M armed: … nothing was excluded` | The selectors matched fewer live devices than declared, and nothing was rejected — so the shortfall is entirely silent. | Almost always a prefix one bit too narrow (`/19` for `/18`), or a fleet smaller than you think. Check the prefix, then `GET /api/v1/devices` for the real count. |
 | `start` → `409 expected N participants, M armed: … see excluded_by_reason` | Devices were found but rejected, so the shortfall has enumerable causes. | Fix what `excluded_by_reason` reports (usually a missing exporter), re-arm, and the count recovers. |
 | `start` → `409 expected N participants, M armed: M−N more than declared` | The fleet holds devices your selectors match but your expectation omits. | Either the fleet grew or the expectation is stale. Update `expect_participants` — an over-sized run is refused because it is no longer comparable to the baseline it would be measured against. |
-| `POST /scenarios` → `409 a scenario is already active` | Another scenario is still non-terminal (only one active at a time). | Stop / abort / `DELETE` the active scenario first (`GET /api/v1/scenarios/{id}` to see its phase). |
+| `POST /scenarios` → `409 too many active scenarios` | 8 scenarios are already non-terminal. | Stop / abort / `DELETE` one first (`GET /api/v1/scenarios` lists them with their phases). |
+| `arm` → `409 … participant(s) are claimed by scenario …` | Those devices belong to another non-terminal scenario. A device participates in at most one scenario at a time (FR38). | Stop or delete the named scenario, or narrow this one's participants. Note an **armed** scenario already holds its fleet — it does not have to be running — so cancelling it releases the devices. |
 | `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](./loadtest-api.md#phase--verb-matrix). |
 | `report` → `409 … available only after stop or abort` | The scenario has not finalized yet. | Stop it (or wait for the window to auto-close at `T1`), then re-request the report. |
 | Device create/delete → `409 fleet … frozen by running scenario` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |

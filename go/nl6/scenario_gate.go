@@ -93,6 +93,14 @@ type scenarioPart struct {
 	// math is sampling extrapolation) and every non-flow protocol. Owned here,
 	// not passed per call, so a second batch call site cannot disagree.
 	countApps bool
+	// owner is the scenario ID that installed this handle. It makes the
+	// exporter's single scenPart slot self-arbitrating under per-device
+	// overlap (#392): a claim is a compare-and-swap that succeeds on an empty
+	// slot or one this same scenario already holds, and a release only clears
+	// a handle we own. Without it, a re-arm could not re-claim its own devices,
+	// a conflict could not name the holder, and a teardown could silently clear
+	// another scenario's claim.
+	owner string
 }
 
 // classify maps a FRESH write-return time to the (in-window, sub-window)
@@ -178,5 +186,54 @@ func (p *scenarioPart) bucketFlowBatch(t time.Time, batch []FlowRecord) {
 	}
 	if p.countApps {
 		p.ledger.addAppBatch(batch, inWindow, subIdx)
+	}
+}
+
+// claimScenPart installs part into an exporter's participation slot, which is
+// the ONLY arbiter of per-device exclusivity (#392 design D4). Making the
+// install itself the claim means there is no separate ownership record that can
+// drift from the handles actually installed — the failure mode this subsystem
+// has already been bitten by once, when re-arm's bookkeeping and its handles
+// disagreed.
+//
+// Succeeds on an empty slot (nil → mine) or one this same scenario already
+// holds (mine → mine, so a re-arm re-claims its own devices). Otherwise it
+// fails and names the holder. The loop retries a lost CAS rather than failing,
+// because losing to a concurrent release means the slot is now free and this
+// claim should take it.
+func claimScenPart(slot *atomic.Pointer[scenarioPart], part *scenarioPart) (ok bool, holder string) {
+	for {
+		cur := slot.Load()
+		switch {
+		case cur == nil:
+			if slot.CompareAndSwap(nil, part) {
+				return true, ""
+			}
+		case cur.owner == part.owner:
+			if slot.CompareAndSwap(cur, part) {
+				return true, ""
+			}
+		default:
+			return false, cur.owner
+		}
+	}
+}
+
+// releaseScenPart clears the slot only if owner still holds it. The ownership
+// test is what makes teardown safe under overlap: an arm that failed to claim a
+// device must not clear the claim of the scenario that legitimately owns it,
+// and the arm→start prune releases handles for devices it is dropping.
+// Reports whether it actually released, so callers can gate any DERIVED state
+// they own on the same ownership test — clearing that unconditionally would
+// undo it for the scenario that legitimately holds the device.
+func releaseScenPart(slot *atomic.Pointer[scenarioPart], owner string) bool {
+	for {
+		cur := slot.Load()
+		if cur == nil || cur.owner != owner {
+			return false
+		}
+		if slot.CompareAndSwap(cur, nil) {
+			return true
+		}
 	}
 }

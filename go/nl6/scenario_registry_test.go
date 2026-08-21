@@ -10,45 +10,75 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
-// TestScenarioRegistry_TerminalIsReapedOnSubmit pins the reaping that keeps the
-// refactor behaviour-identical. Overwriting the old single slot made the
-// previous terminal scenario's report unreachable; a map would retain it
-// forever, which is both a behaviour change and an unbounded growth path.
-func TestScenarioRegistry_TerminalIsReapedOnSubmit(t *testing.T) {
+// TestScenarioRegistry_TerminalReportsSurvivePeerSubmit pins the retention
+// contract. The single-slot version reaped every terminal scenario on submit,
+// because overwriting the slot did — unsurprising when submits were serialised,
+// since you only submitted after your own run finished. With concurrency it
+// would delete the report a peer is reading, so recent finished runs are kept.
+func TestScenarioRegistry_TerminalReportsSurvivePeerSubmit(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
 
 	first := submitOK(t, router, validScenarioBody)
-	// Terminal without ever running: a submitted scenario is dropped by DELETE,
-	// so drive it to a terminal phase the registry must then reap.
-	if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+first+"/arm", ""); w.Code != http.StatusOK {
-		t.Fatalf("arm = %d (%s)", w.Code, w.Body.String())
-	}
-	if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+first+"/start", ""); w.Code != http.StatusOK {
-		t.Fatalf("start = %d (%s)", w.Code, w.Body.String())
-	}
-	if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+first+"/stop", ""); w.Code != http.StatusOK {
-		t.Fatalf("stop = %d (%s)", w.Code, w.Body.String())
-	}
-	// While it is the only scenario, its report is still queryable.
-	if w := doReq(t, router, http.MethodGet, "/api/v1/scenarios/"+first+"/report", ""); w.Code != http.StatusOK {
-		t.Fatalf("report before the next submit = %d, want 200", w.Code)
+	for _, verb := range []string{"arm", "start", "stop"} {
+		if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+first+"/"+verb, ""); w.Code != http.StatusOK {
+			t.Fatalf("%s = %d (%s)", verb, w.Code, w.Body.String())
+		}
 	}
 
+	// A peer submit must NOT destroy the finished run's report.
 	second := submitOK(t, router, validScenarioBody)
 	if second == first {
 		t.Fatal("the second submit reused the first ID")
 	}
-	// The successor's submit reaps it, exactly as overwriting the slot did.
-	if w := doReq(t, router, http.MethodGet, "/api/v1/scenarios/"+first+"/report", ""); w.Code != http.StatusNotFound {
-		t.Errorf("reaped scenario report = %d, want 404", w.Code)
+	if w := doReq(t, router, http.MethodGet, "/api/v1/scenarios/"+first+"/report", ""); w.Code != http.StatusOK {
+		t.Fatalf("finished report after a peer submit = %d, want 200 — a peer's submit deleted it", w.Code)
 	}
-	if got := len(manager.listScenarios()); got != 1 {
-		t.Errorf("registry holds %d scenarios after reaping, want 1", got)
+}
+
+// TestScenarioRegistry_RetentionIsBounded: retention cannot be unlimited, or
+// the registry grows for the life of the process. The oldest terminal
+// scenarios are reaped first, so the reports most likely still being read are
+// the ones kept.
+func TestScenarioRegistry_RetentionIsBounded(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 1)
+	old := manager
+	manager = sm
+	t.Cleanup(func() { manager = old })
+
+	// More finished scenarios than the retention bound.
+	for i := 0; i < scenarioMaxRetained+3; i++ {
+		c, _, err := sm.submitScenario(&Scenario{
+			Participants: []string{"10.42.0.1"}, Protocol: "syslog", Rate: 5, Window: time.Millisecond,
+		}, "sha")
+		if err != nil {
+			t.Fatalf("submit %d: %v", i, err)
+		}
+		if _, _, err := c.Arm(); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Stop(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	listed := sm.listScenarios()
+	if len(listed) > scenarioMaxRetained+1 { // +1: the newest submit is still registered
+		t.Fatalf("registry holds %d scenarios, want at most %d", len(listed), scenarioMaxRetained+1)
+	}
+	// The survivors are the NEWEST, and the listing is sequence-ordered.
+	if first := listed[0].ID; first == "s-000001" {
+		t.Error("retention kept the oldest scenarios; it should reap those first")
 	}
 }
 
@@ -86,19 +116,40 @@ func TestScenarioRegistry_ListIsIDOrdered(t *testing.T) {
 	}
 }
 
-// TestScenarioRegistry_PolicyUnchanged: this PR is a refactor, so the admission
-// policy must still be one non-terminal scenario at a time. The per-device
-// overlap change replaces this; until then a second submit is a 409.
-func TestScenarioRegistry_PolicyUnchanged(t *testing.T) {
+// TestScenarioRegistry_ConcurrencyBound replaces the one-at-a-time assertion
+// this file carried while the registry landed. Per-device overlap (#392) moved
+// exclusivity to the devices, so submit now refuses only at the resource bound
+// — each live scenario retains ledgers, a drain barrier, and possibly a
+// scheduler goroutine.
+func TestScenarioRegistry_ConcurrencyBound(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
-	id := submitOK(t, router, validScenarioBody)
 
-	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", validScenarioBody)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("second submit = %d, want 409", w.Code)
+	// Disjoint participants, so nothing collides at arm; these are admitted
+	// purely on the bound.
+	body := func(n int) string {
+		return fmt.Sprintf(
+			`{"participants":["10.99.%d.1"],"protocol":"syslog","rate":5,"window":"1s"}`, n)
 	}
-	// The refusal still names the holder, which is what makes it actionable.
-	if body := w.Body.String(); !strings.Contains(body, id) {
-		t.Errorf("409 should name the active scenario %s: %s", id, body)
+	for i := 0; i < scenarioMaxConcurrent; i++ {
+		if id := submitOK(t, router, body(i)); id == "" {
+			t.Fatalf("submit %d produced no id", i)
+		}
+	}
+
+	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body(scenarioMaxConcurrent))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("submit over the bound = %d, want 409 (body %s)", w.Code, w.Body.String())
+	}
+	if b := w.Body.String(); !strings.Contains(b, fmt.Sprint(scenarioMaxConcurrent)) {
+		t.Errorf("409 should name the bound: %s", b)
+	}
+
+	// Freeing one admits the next: the bound counts LIVE scenarios, not
+	// lifetime submits.
+	if err := manager.deleteScenario("s-000001"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if id := submitOK(t, router, body(scenarioMaxConcurrent)); id == "" {
+		t.Fatal("submit after freeing a slot produced no id")
 	}
 }

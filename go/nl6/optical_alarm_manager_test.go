@@ -364,7 +364,7 @@ func TestOpticalAlarmDeleteLifecycle(t *testing.T) {
 	if _, _, ok := ev.ActiveAlarms("10.42.0.1", "OCH-1-1"); !ok {
 		t.Fatal("freeze-rejected delete silenced a live device's alarms")
 	}
-	mgr.unfreezeFleet()
+	mgr.unfreezeFleet("s-test")
 
 	// Successful delete-all: enrolment must be gone.
 	if err := mgr.DeleteAllDevices(); err != nil {

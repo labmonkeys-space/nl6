@@ -26,6 +26,7 @@ import (
 	"log"
 	"math/big"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -300,19 +301,30 @@ func (sm *SimulatorManager) freezeFleet(scenarioID string) error {
 	if creating, ok := sm.isCreatingDevices.Load().(bool); ok && creating {
 		return fmt.Errorf("cannot freeze fleet for scenario %s: a device-creation batch is in progress; retry after it completes", scenarioID)
 	}
-	sm.fleetFrozenBy = scenarioID
+	if sm.fleetFrozenBy == nil {
+		sm.fleetFrozenBy = make(map[string]struct{}, 1)
+	}
+	sm.fleetFrozenBy[scenarioID] = struct{}{}
 	return nil
 }
 
-// unfreezeFleet clears the fleet-membership freeze.
-func (sm *SimulatorManager) unfreezeFleet() {
+// unfreezeFleet releases ONE scenario's hold. The freeze lifts only when the
+// last holder leaves.
+//
+// Per-scenario rather than a single clear (#392): with several scenarios able
+// to run at once, a single slot meant the first to finish unfroze the fleet
+// while its peers were still running, re-opening the arm/start membership
+// TOCTOU the freeze exists to close — and every rollback path would have done
+// the same. Passing the ID makes releasing someone else's hold impossible
+// rather than merely unlikely.
+func (sm *SimulatorManager) unfreezeFleet(scenarioID string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	sm.fleetFrozenBy = ""
+	delete(sm.fleetFrozenBy, scenarioID)
 }
 
-// fleetFreezeCheck returns an error naming the freezing scenario when the
-// fleet is frozen, nil otherwise. The error text carries the scenario ID so
+// fleetFreezeCheck returns an error naming the freezing scenarios when the
+// fleet is frozen, nil otherwise. The error text carries the scenario IDs so
 // the REST layer can map the rejection to 409 with actionable context.
 func (sm *SimulatorManager) fleetFreezeCheck() error {
 	sm.mu.RLock()
@@ -323,10 +335,16 @@ func (sm *SimulatorManager) fleetFreezeCheck() error {
 // fleetFreezeCheckLocked is fleetFreezeCheck for callers already holding
 // sm.mu (read or write).
 func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
-	if sm.fleetFrozenBy != "" {
-		return fmt.Errorf("fleet membership is frozen by running scenario %s: device create/delete is rejected until the scenario finishes", sm.fleetFrozenBy)
+	if len(sm.fleetFrozenBy) == 0 {
+		return nil
 	}
-	return nil
+	holders := make([]string, 0, len(sm.fleetFrozenBy))
+	for id := range sm.fleetFrozenBy {
+		holders = append(holders, id)
+	}
+	slices.Sort(holders) // map order must not leak into an operator-facing error
+	return fmt.Errorf("fleet membership is frozen by running scenario(s) %s: device create/delete is rejected until they finish",
+		strings.Join(holders, ", "))
 }
 
 func (sm *SimulatorManager) DeleteDevice(deviceID string) error {

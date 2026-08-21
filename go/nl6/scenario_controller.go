@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -302,16 +303,14 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		// template protocols only — sflow byte totals are sampling
 		// extrapolation at the collector and would not reconcile.
 		part.countApps = c.spec.Protocol != "sflow"
-		dev.flowExporter.scenPart.Store(part)
-		return true, "", ""
+		return c.claim(&dev.flowExporter.scenPart, part)
 	}
 	if c.spec.Protocol == "snmp-trap" {
 		if dev.trapExporter == nil {
 			return false, "device has no snmp trap exporter",
 				"enable trap export on the device (seed flag or per-device traps block)"
 		}
-		dev.trapExporter.scenPart.Store(part)
-		return true, "", ""
+		return c.claim(&dev.trapExporter.scenPart, part)
 	}
 	if c.spec.Protocol == "gnmi-dialout" {
 		if dev.gnmiDialoutExporter == nil {
@@ -324,45 +323,121 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 			return false, "gnmi dial-out stream not established (collector unreachable?)",
 				"ensure the dial-out collector is reachable, then re-arm"
 		}
-		dev.gnmiDialoutExporter.scenPart.Store(part)
-		return true, "", ""
+		return c.claim(&dev.gnmiDialoutExporter.scenPart, part)
 	}
 	switch c.spec.Protocol {
 	case "syslog":
 		if dev.syslogExporter == nil {
 			return false, "device has no syslog exporter", "enable syslog export on the device (seed flag or per-device block)"
 		}
-		dev.syslogExporter.scenPart.Store(part)
+		return c.claim(&dev.syslogExporter.scenPart, part)
 	default:
 		return false, "unsupported scenario protocol", ""
+	}
+}
+
+// claim installs part via compare-and-swap, turning a lost claim into the
+// exclusion shape installScenPart already speaks.
+//
+// Reaching this with a conflict is RARE by construction: ArmReadiness
+// pre-checks every candidate and refuses the whole arm when any is held, so a
+// failure here means another scenario claimed the device in the window between
+// that check and this install. The pre-check is what produces the good
+// diagnostic; this is what makes the exclusivity true rather than merely
+// usually-true, and it degrades to an honest excluded row rather than silently
+// stealing a device from its owner.
+func (c *ScenarioController) claim(slot *atomic.Pointer[scenarioPart], part *scenarioPart) (ok bool, reason, hint string) {
+	if ok, holder := claimScenPart(slot, part); !ok {
+		return false, fmt.Sprintf("device claimed by scenario %s", holder),
+			fmt.Sprintf("stop or delete scenario %s, or exclude this device from this scenario", holder)
 	}
 	return true, "", ""
 }
 
 // detachScenPart nil-swaps the participation handle on the protocol's exporter.
 func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
+	slot := c.installedSlot(dev)
+	if slot == nil {
+		return
+	}
+	// Ownership-checked: this is called for devices this arm is DROPPING, and
+	// under per-device overlap a drop can be caused by another scenario holding
+	// the device. Clearing unconditionally would release their claim.
+	released := releaseScenPart(slot, c.id)
+	// scenDriven is DERIVED state owned by whoever holds the claim, so it is
+	// gated on the same ownership test. Clearing it unconditionally would hand
+	// the holder's device back to the fleet ticker while their scenario ticker
+	// still drives it — both would tick, double-counting into their ledger.
+	if released && isFlowScenarioProtocol(c.spec.Protocol) && dev.flowExporter != nil {
+		dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+	}
+}
+
+// scenPartSlot returns the slot this scenario COMPETES for on dev — the one an
+// arm would claim — or nil when dev carries no exporter this scenario could
+// use. Used by the overlap pre-check. Releasing uses installedSlot instead,
+// because a handle already installed must stay releasable even if the exporter
+// has since changed protocol.
+func (c *ScenarioController) scenPartSlot(dev *DeviceSimulator) *atomic.Pointer[scenarioPart] {
+	if isFlowScenarioProtocol(c.spec.Protocol) {
+		// The protocol match is part of the identity, exactly as installScenPart
+		// requires it: a device whose flow exporter speaks a DIFFERENT protocol
+		// could never be a participant here, so it is not a device this scenario
+		// competes for. Returning its slot anyway would make a peer's claim on
+		// an unrelated protocol refuse this whole arm, when without that claim
+		// the device would simply have been one excluded row.
+		if dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol {
+			return &dev.flowExporter.scenPart
+		}
+		return nil
+	}
+	switch c.spec.Protocol {
+	case "snmp-trap":
+		if dev.trapExporter != nil {
+			return &dev.trapExporter.scenPart
+		}
+	case "gnmi-dialout":
+		if dev.gnmiDialoutExporter != nil {
+			return &dev.gnmiDialoutExporter.scenPart
+		}
+	case "syslog":
+		if dev.syslogExporter != nil {
+			return &dev.syslogExporter.scenPart
+		}
+	}
+	return nil
+}
+
+// installedSlot returns the slot where THIS scenario's handle could be sitting
+// on dev, which is not the same question scenPartSlot answers.
+//
+// A device's flow exporter can change protocol after we armed it; the handle we
+// installed is still in that slot and must stay releasable, or it leaks onto a
+// live exporter where no detach path can ever reach it (the very failure
+// TestScenarioArm_ReArmDetachesDroppedHandle exists for). Release is safe
+// without the protocol match because it is ownership-checked: we only ever
+// clear a handle that is ours.
+func (c *ScenarioController) installedSlot(dev *DeviceSimulator) *atomic.Pointer[scenarioPart] {
 	if isFlowScenarioProtocol(c.spec.Protocol) {
 		if dev.flowExporter != nil {
-			dev.flowExporter.scenPart.Store(nil)
-			dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+			return &dev.flowExporter.scenPart
 		}
-		return
+		return nil
 	}
-	if c.spec.Protocol == "snmp-trap" {
-		if dev.trapExporter != nil {
-			dev.trapExporter.scenPart.Store(nil)
-		}
-		return
+	return c.scenPartSlot(dev)
+}
+
+// claimOwner reports the scenario currently holding dev for this scenario's
+// protocol ("" = free or no exporter). Caller holds sm.mu (read).
+func (c *ScenarioController) claimOwner(dev *DeviceSimulator) string {
+	slot := c.scenPartSlot(dev)
+	if slot == nil {
+		return ""
 	}
-	if c.spec.Protocol == "gnmi-dialout" {
-		if dev.gnmiDialoutExporter != nil {
-			dev.gnmiDialoutExporter.scenPart.Store(nil)
-		}
-		return
+	if cur := slot.Load(); cur != nil {
+		return cur.owner
 	}
-	if c.spec.Protocol == "syslog" && dev.syslogExporter != nil {
-		dev.syslogExporter.scenPart.Store(nil)
-	}
+	return ""
 }
 
 // startScenarioFlowTicker drives participant flow emission at the scenario
@@ -533,6 +608,29 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 		}
 	}
 
+	// Per-device overlap (FR38): refuse the whole arm when any candidate is
+	// already claimed. Like the ceiling above, this runs before every mutation,
+	// which is what makes "the holding scenario is unaffected, and so is our own
+	// previous arm" true by construction rather than by unwinding — nothing has
+	// been claimed, transitioned, or swapped yet.
+	//
+	// Overlap is a property of the REQUEST, not of one participant, which is
+	// what distinguishes it from the per-device exclusions below: a device
+	// missing an exporter is that device's problem, whereas colliding with a
+	// live scenario means this scenario, as declared, cannot run. That is the
+	// same reasoning that makes the resolved-set ceiling a wholesale refusal.
+	//
+	// The CAS in claim() is still the real arbiter. This check cannot be atomic
+	// with the install — ArmReadiness holds c.mu, and submitScenario/
+	// deleteScenario take scenarioMu BEFORE c.mu, so taking scenarioMu here
+	// would invert the lock order. A concurrent arm that claims a device in the
+	// window between this check and the install therefore wins, and that single
+	// device degrades to an excluded row instead of being silently stolen.
+	if conflicts := c.conflictingClaimsLocked(prefixMatches); len(conflicts) > 0 {
+		c.sm.mu.RUnlock()
+		return armReadiness{}, conflicts.err(c.id)
+	}
+
 	if err := c.transitionLocked(phaseArmed); err != nil {
 		c.sm.mu.RUnlock()
 		return armReadiness{}, err
@@ -581,7 +679,7 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 		if led == nil {
 			led = &ledgerEntry{}
 		}
-		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
+		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now, owner: c.id}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
 			c.recordExcluded(ip, reason, hint, scenarioExcludedArmRows)
 			continue
@@ -605,7 +703,7 @@ func (c *ScenarioController) ArmReadiness() (armReadiness, error) {
 		if led == nil {
 			led = &ledgerEntry{}
 		}
-		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now}
+		part := &scenarioPart{gate: &c.gate, ledger: led, drain: &c.drain, now: c.now, owner: c.id}
 		if ok, reason, hint := c.installScenPart(dev, part); !ok {
 			c.recordExcluded(ip, reason, hint, scenarioExcludedArmRows)
 			continue
@@ -720,7 +818,7 @@ func (c *ScenarioController) prefixMatchesLocked() []string {
 // transition precisely to avoid that window — leaving only scheduler
 // construction, which is validated at submit and therefore near-unreachable.
 func (c *ScenarioController) rollbackStartLocked() {
-	c.sm.unfreezeFleet()
+	c.sm.unfreezeFleet(c.id)
 	c.phase = phaseArmed
 	c.gate.Store(&gateState{phase: phaseArmed})
 }
@@ -841,7 +939,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
 	}
 	// Authoritative expectation check: `registered` counts the devices that just
@@ -854,12 +952,12 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// at most len(c.parts), which the pre-freeze check already matched against
 	// the expectation. The surplus branch of the diagnosis is unreachable here.
 	if diag := expectationDiagnosis(c.spec.ExpectParticipants, registered, sumReasonCounts(c.excludedByReason)); diag != "" {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
 	}
 
 	if err := c.transitionLocked(phaseRunning); err != nil {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return err
 	}
 
@@ -1096,7 +1194,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	c.sm.mu.RUnlock()
 
-	c.sm.unfreezeFleet()
+	c.sm.unfreezeFleet(c.id)
 
 	perDevice := make(map[string]ledgerSnapshot, len(c.ledgers))
 	apps := make(map[appKey]appCounters)
@@ -1238,4 +1336,76 @@ func (c *ScenarioController) PlannedWindow() time.Duration {
 		return 0
 	}
 	return c.spec.Window
+}
+
+// claimConflict names one device already claimed by another scenario.
+type claimConflict struct {
+	device string
+	holder string
+}
+
+// claimConflicts is the ordered set of overlaps found by the arm-time
+// pre-check.
+type claimConflicts []claimConflict
+
+// scenarioConflictSample bounds how many contended devices an overlap refusal
+// names. The message is an operator-facing string, and a whole-fleet collision
+// would otherwise render tens of thousands of addresses into a 409 body — the
+// same reasoning that caps the excluded[] rows.
+const scenarioConflictSample = 5
+
+// err renders the wholesale overlap refusal: how many devices collided, who
+// holds them, and enough concrete addresses to act on.
+func (cc claimConflicts) err(id string) error {
+	holders := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+	for _, c := range cc {
+		if _, dup := seen[c.holder]; !dup {
+			seen[c.holder] = struct{}{}
+			holders = append(holders, c.holder)
+		}
+	}
+	slices.Sort(holders)
+
+	sample := make([]string, 0, scenarioConflictSample)
+	for _, c := range cc {
+		if len(sample) == scenarioConflictSample {
+			break
+		}
+		sample = append(sample, c.device)
+	}
+	more := ""
+	if len(cc) > len(sample) {
+		more = fmt.Sprintf(" and %d more", len(cc)-len(sample))
+	}
+	return fmt.Errorf(
+		"cannot arm scenario %s: %d participant(s) are claimed by scenario %s (%s%s); stop or delete it, or narrow this scenario's participants",
+		id, len(cc), strings.Join(holders, ", "), strings.Join(sample, ", "), more)
+}
+
+// conflictingClaimsLocked reports which of this scenario's candidate
+// participants are held by a DIFFERENT scenario. Devices this scenario already
+// holds are not conflicts — that is a re-arm. Caller holds c.sm.mu (read).
+//
+// Returns conflicts in a deterministic order (explicit participants in declared
+// order, then prefix matches, which prefixMatchesLocked already sorted by
+// address), so the sampled addresses in the refusal do not vary run to run.
+func (c *ScenarioController) conflictingClaimsLocked(prefixMatches []string) claimConflicts {
+	var out claimConflicts
+	check := func(ip string) {
+		dev := c.sm.devicesByIP[ip]
+		if dev == nil {
+			return // resolves to nothing; an exclusion, not a conflict
+		}
+		if holder := c.claimOwner(dev); holder != "" && holder != c.id {
+			out = append(out, claimConflict{device: ip, holder: holder})
+		}
+	}
+	for _, ip := range c.spec.Participants {
+		check(ip)
+	}
+	for _, ip := range prefixMatches {
+		check(ip)
+	}
+	return out
 }
