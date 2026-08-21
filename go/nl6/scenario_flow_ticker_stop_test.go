@@ -83,6 +83,12 @@ func startedFlowScenario(t *testing.T, sm *SimulatorManager) *ScenarioController
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// Self-limiting: a t.Fatal between here and the caller's own Stop would
+	// otherwise leave the ticker goroutine live and the Window-length auto-stop
+	// timer armed for the rest of the binary run, writing to a collector socket
+	// the fixture's cleanup has already closed. Cleanups run LIFO, so this Stop
+	// precedes that close. Stop is idempotent on a terminal scenario.
+	t.Cleanup(func() { _, _ = c.Stop() })
 	return c
 }
 

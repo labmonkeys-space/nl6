@@ -400,8 +400,10 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 				for _, fe := range feList {
 					// Re-checked per participant, not just per tick: at fleet
 					// scale one pass is not instant, and finalize now blocks on
-					// this goroutine, so a cancelled pass that ran to the end
-					// would extend every stop by up to a full pass.
+					// this goroutine WHILE HOLDING c.mu, so a cancelled pass
+					// that ran to the end would extend every stop — and every
+					// concurrent Phase/Result/LiveCounts read — by up to a full
+					// pass of UDP writes. Load-bearing, not an optimisation.
 					if ctx.Err() != nil {
 						return
 					}
@@ -1072,6 +1074,14 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	// pass its gate, and be admitted to its drain as an indistinguishable
 	// legitimate send — inflating identity terms in a report that has no way to
 	// know. Joining here closes both by construction.
+	//
+	// This join runs under c.mu, so it extends the lock hold across whatever
+	// fe.Tick is in flight — a UDP write that can park on a full socket buffer
+	// — and Phase/LiveCounts/Result/ScheduledStart block behind it. The
+	// per-participant ctx.Err() check in startScenarioFlowTicker is what bounds
+	// that to ONE exporter instead of a fleet-sized pass, so it is load-bearing
+	// for this reason and not merely a promptness optimisation: do not remove
+	// it. (The trap join above has the same shape.)
 	if c.flowTickerDone != nil {
 		<-c.flowTickerDone
 	}
