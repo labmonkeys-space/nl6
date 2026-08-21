@@ -24,33 +24,49 @@ import (
 // scenario with that ID exists (maps to 404).
 var errNoActiveScenario = fmt.Errorf("no scenario with that id")
 
-// errScenarioActive is returned when a submit is attempted while a
-// non-terminal scenario already exists (maps to 409). MVP allows exactly
-// one active scenario.
-var errScenarioActive = fmt.Errorf("a scenario is already active")
+// errScenarioActive is returned when a submit would exceed the concurrency
+// bound (maps to 409). It no longer means "one at a time": per-device overlap
+// (#392) moved exclusivity to the devices themselves, so scenarios with
+// disjoint participants run concurrently and only the resource bound applies.
+// The name is kept because the HTTP layer discriminates on it.
+var errScenarioActive = fmt.Errorf("too many active scenarios")
+
+// scenarioMaxConcurrent bounds simultaneously non-terminal scenarios. Each
+// retains ledgers, a drain barrier, and possibly a scheduler goroutine, so the
+// count is a resource surface; it is bounded explicitly rather than by accident,
+// as every other limit in this subsystem is. Eight is well above the mixed-
+// protocol experiments this exists for (#392: syslog against one fleet half
+// while IPFIX loads the other) and well below anything that strains the box.
+const scenarioMaxConcurrent = 8
 
 // errScenarioRunning is returned when a DELETE targets a running scenario;
 // it must be stopped or aborted first (maps to 409).
 var errScenarioRunning = fmt.Errorf("scenario is running; stop or abort it before deleting")
 
 // submitScenario validates the spec, allocates the next s-%06d ID, and
-// registers a fresh controller. It refuses (errScenarioActive) while an
-// existing scenario has not reached a terminal phase; terminal scenarios are
-// reaped. Returns the new controller and its ID.
+// registers a fresh controller. It refuses (errScenarioActive) only when the
+// concurrency bound is reached; terminal scenarios are reaped. Returns the new
+// controller and its ID.
 //
-// The admission policy here is unchanged from the single-slot version this
-// replaced — one non-terminal scenario at a time. Per-device overlap (#392)
-// replaces the policy; the registry it needs lands first, by itself, so a
-// structural change and a semantic one are never in the same diff.
+// Admission no longer decides exclusivity — the DEVICES do, via the claim in
+// ArmReadiness (#392). Two scenarios with disjoint participants both submit and
+// both run; overlapping ones are refused at arm, where membership is finally
+// known. Submit cannot make that call: participants_cidr resolves against the
+// live fleet, so at submit the participant set is not merely unknown but
+// unknowable.
 func (sm *SimulatorManager) submitScenario(spec *Scenario, configSHA string) (*ScenarioController, string, error) {
 	sm.scenarioMu.Lock()
 	defer sm.scenarioMu.Unlock()
 
+	live := 0
 	for _, c := range sm.scenarios {
 		if !isTerminalPhase(c.Phase()) {
-			return nil, "", fmt.Errorf("%w: %s (phase %s); MVP allows one active scenario",
-				errScenarioActive, c.id, c.Phase())
+			live++
 		}
+	}
+	if live >= scenarioMaxConcurrent {
+		return nil, "", fmt.Errorf("%w: %d already active (max %d); stop or delete one first",
+			errScenarioActive, live, scenarioMaxConcurrent)
 	}
 
 	sm.scenarioSeq++
@@ -62,12 +78,11 @@ func (sm *SimulatorManager) submitScenario(spec *Scenario, configSHA string) (*S
 	}
 	ctrl.configSHA = configSHA
 
-	// Reap terminal scenarios, which reproduces the old slot's behaviour
-	// EXACTLY: overwriting it made the previous terminal scenario's report
-	// unreachable, so a GET on it 404s. Retaining them here instead would be a
-	// behaviour change (reports outliving their successor's submit) smuggled
-	// into a refactor, and would grow the map without bound. A retention policy
-	// belongs with the change that makes several scenarios coexist.
+	// Reap terminal scenarios. Inherited from the single-slot version, whose
+	// overwrite made the previous terminal scenario's report unreachable; kept
+	// because the registry would otherwise grow without bound across a long
+	// process lifetime. A finished scenario's report stays queryable until the
+	// next submit, which is the same window it had before.
 	for sid, c := range sm.scenarios {
 		if isTerminalPhase(c.Phase()) {
 			delete(sm.scenarios, sid)

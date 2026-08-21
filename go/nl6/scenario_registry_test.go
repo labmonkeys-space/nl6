@@ -10,6 +10,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -86,19 +87,40 @@ func TestScenarioRegistry_ListIsIDOrdered(t *testing.T) {
 	}
 }
 
-// TestScenarioRegistry_PolicyUnchanged: this PR is a refactor, so the admission
-// policy must still be one non-terminal scenario at a time. The per-device
-// overlap change replaces this; until then a second submit is a 409.
-func TestScenarioRegistry_PolicyUnchanged(t *testing.T) {
+// TestScenarioRegistry_ConcurrencyBound replaces the one-at-a-time assertion
+// this file carried while the registry landed. Per-device overlap (#392) moved
+// exclusivity to the devices, so submit now refuses only at the resource bound
+// — each live scenario retains ledgers, a drain barrier, and possibly a
+// scheduler goroutine.
+func TestScenarioRegistry_ConcurrencyBound(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
-	id := submitOK(t, router, validScenarioBody)
 
-	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", validScenarioBody)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("second submit = %d, want 409", w.Code)
+	// Disjoint participants, so nothing collides at arm; these are admitted
+	// purely on the bound.
+	body := func(n int) string {
+		return fmt.Sprintf(
+			`{"participants":["10.99.%d.1"],"protocol":"syslog","rate":5,"window":"1s"}`, n)
 	}
-	// The refusal still names the holder, which is what makes it actionable.
-	if body := w.Body.String(); !strings.Contains(body, id) {
-		t.Errorf("409 should name the active scenario %s: %s", id, body)
+	for i := 0; i < scenarioMaxConcurrent; i++ {
+		if id := submitOK(t, router, body(i)); id == "" {
+			t.Fatalf("submit %d produced no id", i)
+		}
+	}
+
+	w := doReq(t, router, http.MethodPost, "/api/v1/scenarios", body(scenarioMaxConcurrent))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("submit over the bound = %d, want 409 (body %s)", w.Code, w.Body.String())
+	}
+	if b := w.Body.String(); !strings.Contains(b, fmt.Sprint(scenarioMaxConcurrent)) {
+		t.Errorf("409 should name the bound: %s", b)
+	}
+
+	// Freeing one admits the next: the bound counts LIVE scenarios, not
+	// lifetime submits.
+	if err := manager.deleteScenario("s-000001"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if id := submitOK(t, router, body(scenarioMaxConcurrent)); id == "" {
+		t.Fatal("submit after freeing a slot produced no id")
 	}
 }
