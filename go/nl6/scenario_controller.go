@@ -87,6 +87,11 @@ type ScenarioController struct {
 	// read in finalize — both hold the lock).
 	trapTickerDone chan struct{}
 
+	// flowTickerDone is the same join for flow scenarios: non-nil only when
+	// startScenarioFlowTicker ran, closed by that goroutine on return. Same
+	// lock discipline as trapTickerDone.
+	flowTickerDone chan struct{}
+
 	now func() time.Time // injectable clock (tests); defaults to time.Now
 
 	// transitions is the ordered lifecycle log (D7 abort observability):
@@ -364,6 +369,10 @@ func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
 // cadence during [T0,T1) (D1 flow-cadence adaptation). It marks each
 // participant scenDriven so the fleet ticker yields, then ticks each exporter
 // at spec.interval() until ctx is cancelled at finalize.
+//
+// Sets c.flowTickerDone, which finalize JOINS: cancelling this goroutine is not
+// the same as it having stopped, and flow was the only one of the four emission
+// architectures without that join (syslog #415, trap #409). Callers hold c.mu.
 func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	c.sm.mu.RLock()
 	feList := make([]*FlowExporter, 0, len(c.parts))
@@ -376,7 +385,10 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	c.sm.mu.RUnlock()
 
 	interval := c.spec.interval()
+	done := make(chan struct{})
+	c.flowTickerDone = done
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -386,6 +398,15 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 			case <-ticker.C:
 				now := c.now()
 				for _, fe := range feList {
+					// Re-checked per participant, not just per tick: at fleet
+					// scale one pass is not instant, and finalize now blocks on
+					// this goroutine WHILE HOLDING c.mu, so a cancelled pass
+					// that ran to the end would extend every stop — and every
+					// concurrent Phase/Result/LiveCounts read — by up to a full
+					// pass of UDP writes. Load-bearing, not an optimisation.
+					if ctx.Err() != nil {
+						return
+					}
 					c.sm.tickFlowExporter(fe, now)
 				}
 			}
@@ -1041,6 +1062,28 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	// select carries ctx.Done, and worker fires never block indefinitely.
 	if c.trapTickerDone != nil {
 		<-c.trapTickerDone
+	}
+	// flow scenarios: join the scenario-owned flow ticker. Cancelling it above
+	// is not the same as it having stopped, and the difference is observable in
+	// two ways. Today: a straggler tick at a terminal gate takes the suppress
+	// branch, which still does ledger.backgroundSuppressed.Add — mutating a
+	// counter after the drain barrier below has closed, the same race #409
+	// fixed for traps, benign only because that counter sits outside the ledger
+	// identity. And once a device may be claimed by a SUCCESSOR scenario
+	// (per-device overlap), a straggler would load that successor's handle,
+	// pass its gate, and be admitted to its drain as an indistinguishable
+	// legitimate send — inflating identity terms in a report that has no way to
+	// know. Joining here closes both by construction.
+	//
+	// This join runs under c.mu, so it extends the lock hold across whatever
+	// fe.Tick is in flight — a UDP write that can park on a full socket buffer
+	// — and Phase/LiveCounts/Result/ScheduledStart block behind it. The
+	// per-participant ctx.Err() check in startScenarioFlowTicker is what bounds
+	// that to ONE exporter instead of a fleet-sized pass, so it is load-bearing
+	// for this reason and not merely a promptness optimisation: do not remove
+	// it. (The trap join above has the same shape.)
+	if c.flowTickerDone != nil {
+		<-c.flowTickerDone
 	}
 	c.drain.closeAndWait() // admission closes; outlasts every in-flight fire
 
