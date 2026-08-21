@@ -6,9 +6,11 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -106,8 +108,38 @@ func (sm *SimulatorManager) listScenarios() []scenarioListEntry {
 	for _, c := range ctrls {
 		out = append(out, scenarioListEntry{ID: c.id, Phase: string(c.Phase())})
 	}
-	slices.SortFunc(out, func(a, b scenarioListEntry) int { return strings.Compare(a.ID, b.ID) })
+	slices.SortFunc(out, func(a, b scenarioListEntry) int { return compareScenarioID(a.ID, b.ID) })
 	return out
+}
+
+// compareScenarioID orders scenario IDs by their numeric sequence, not
+// lexically. IDs are formatted s-%06d, and %06d is a minimum width, not a
+// clamp: at the millionth submit the ID grows a digit and "s-1000000" sorts
+// BEFORE "s-999999" byte-wise, silently un-stabilising the very listing the
+// sort exists to stabilise. Reaching that needs a million submits in one
+// process — and under today's one-at-a-time policy the list holds a single
+// entry — but per-device overlap (#392) is what makes multi-entry listings
+// real, so the trap is removed before it can be reached rather than after.
+//
+// Falls back to a byte comparison for anything not in s-<digits> form, since
+// controllers can be constructed with arbitrary IDs in tests.
+func compareScenarioID(a, b string) int {
+	an, aok := scenarioIDSeq(a)
+	bn, bok := scenarioIDSeq(b)
+	if aok && bok {
+		return cmp.Compare(an, bn)
+	}
+	return strings.Compare(a, b)
+}
+
+// scenarioIDSeq extracts the numeric suffix of an s-<digits> scenario ID.
+func scenarioIDSeq(id string) (uint64, bool) {
+	rest, ok := strings.CutPrefix(id, "s-")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(rest, 10, 64)
+	return n, err == nil
 }
 
 // deleteScenario releases the identified scenario. An armed scenario is

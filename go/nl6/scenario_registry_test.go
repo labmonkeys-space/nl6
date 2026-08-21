@@ -57,7 +57,10 @@ func TestScenarioRegistry_TerminalIsReapedOnSubmit(t *testing.T) {
 // map order, or a client polling it sees rows shuffle between calls.
 func TestScenarioRegistry_ListIsIDOrdered(t *testing.T) {
 	sm, _ := scenarioTestManager(t, 1)
-	for _, id := range []string{"s-000003", "s-000001", "s-000002"} {
+	// s-1000000 is the case a byte comparison gets wrong: %06d is a minimum
+	// width, not a clamp, so past the millionth submit the ID grows a digit and
+	// "s-1000000" sorts before "s-999999" byte-wise.
+	for _, id := range []string{"s-1000000", "s-000003", "s-999999", "s-000001", "s-000002"} {
 		c := newScenarioController(sm, nil)
 		if err := c.Submit(&Scenario{
 			Participants: []string{"10.42.0.1"}, Protocol: "syslog", Rate: 5, Window: 1,
@@ -69,13 +72,16 @@ func TestScenarioRegistry_ListIsIDOrdered(t *testing.T) {
 		}
 		sm.scenarios[id] = c
 	}
+	want := []string{"s-000001", "s-000002", "s-000003", "s-999999", "s-1000000"}
 	for i := 0; i < 10; i++ {
 		got := sm.listScenarios()
-		if len(got) != 3 {
-			t.Fatalf("listed %d, want 3", len(got))
+		if len(got) != len(want) {
+			t.Fatalf("listed %d, want %d", len(got), len(want))
 		}
-		if got[0].ID != "s-000001" || got[1].ID != "s-000002" || got[2].ID != "s-000003" {
-			t.Fatalf("listing is not ID-ordered: %v", got)
+		for j, w := range want {
+			if got[j].ID != w {
+				t.Fatalf("listing is not sequence-ordered: got %v, want %v", got, want)
+			}
 		}
 	}
 }
