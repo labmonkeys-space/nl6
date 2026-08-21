@@ -39,6 +39,14 @@ var errScenarioActive = fmt.Errorf("too many active scenarios")
 // while IPFIX loads the other) and well below anything that strains the box.
 const scenarioMaxConcurrent = 8
 
+// scenarioMaxRetained bounds how many FINISHED scenarios stay queryable for
+// their reports. A finished run must outlive a peer's submit — with several
+// scenarios in flight, the alternative deletes the report someone is reading —
+// but retention cannot be unlimited or the registry grows for the life of the
+// process. The oldest are reaped first, so the reports most likely still being
+// read are the ones kept.
+const scenarioMaxRetained = 8
+
 // errScenarioRunning is returned when a DELETE targets a running scenario;
 // it must be stopped or aborted first (maps to 409).
 var errScenarioRunning = fmt.Errorf("scenario is running; stop or abort it before deleting")
@@ -78,13 +86,24 @@ func (sm *SimulatorManager) submitScenario(spec *Scenario, configSHA string) (*S
 	}
 	ctrl.configSHA = configSHA
 
-	// Reap terminal scenarios. Inherited from the single-slot version, whose
-	// overwrite made the previous terminal scenario's report unreachable; kept
-	// because the registry would otherwise grow without bound across a long
-	// process lifetime. A finished scenario's report stays queryable until the
-	// next submit, which is the same window it had before.
+	// Reap the OLDEST terminal scenarios, keeping the most recent
+	// scenarioMaxRetained so a finished run's report survives a peer's submit.
+	//
+	// The single-slot version reaped every terminal scenario, because
+	// overwriting the slot did. That was unsurprising when submits were
+	// serialised: you only submitted after your own run had finished. With
+	// concurrency it is not — a peer submitting would delete the report you are
+	// reading. Retention is bounded rather than unlimited because the registry
+	// would otherwise grow for the life of the process.
+	var terminal []string
 	for sid, c := range sm.scenarios {
 		if isTerminalPhase(c.Phase()) {
+			terminal = append(terminal, sid)
+		}
+	}
+	if excess := len(terminal) - scenarioMaxRetained; excess > 0 {
+		slices.SortFunc(terminal, compareScenarioID) // oldest first
+		for _, sid := range terminal[:excess] {
 			delete(sm.scenarios, sid)
 		}
 	}

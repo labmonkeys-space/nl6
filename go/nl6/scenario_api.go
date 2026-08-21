@@ -512,7 +512,8 @@ func scenarioStatus(c *ScenarioController) statusResponse {
 }
 
 // listScenariosHandler: GET /api/v1/scenarios → the scenarios with their
-// phases (MVP: 0 or 1 — one active scenario at a time).
+// phases, in ID order (up to scenarioMaxConcurrent non-terminal, plus retained
+// terminal ones).
 func listScenariosHandler(w http.ResponseWriter, r *http.Request) {
 	list := manager.listScenarios()
 	writeScenarioJSON(w, http.StatusOK, map[string]any{"scenarios": list})

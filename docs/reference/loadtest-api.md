@@ -61,9 +61,12 @@ endpoints to run a fidelity check and troubleshoot failures.
 ### `POST /api/v1/scenarios` — submit
 
 Registers a scenario and validates it structurally. Returns the allocated ID
-and the config fingerprint. Refused (`409`) while another scenario is
-non-terminal (only one active scenario at a time; a terminal scenario is
-transparently replaced).
+and the config fingerprint. Refused (`409`) only when **8 scenarios are already
+non-terminal** — exclusivity is per *device*, not per submit, so scenarios with
+disjoint participants run concurrently and overlapping ones are refused at
+`arm`, where membership is finally known. Submit cannot make that call:
+`participants_cidr` resolves against the live fleet, so at submit the
+participant set is not merely unknown but unknowable.
 
 Request body:
 
@@ -420,7 +423,7 @@ time). Empty `scenarios: []` when none.
 
 Releases the scenario. An `armed` scenario is canceled — transports release
 and **no report is produced**. A `submitted` or terminal scenario is simply
-dropped, freeing the single-active slot. A `running` scenario is refused
+dropped, releasing any devices it held. A `running` scenario is refused
 (`409`) — stop or abort it first. After a successful `DELETE`, the ID returns
 `404`.
 

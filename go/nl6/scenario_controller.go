@@ -356,26 +356,37 @@ func (c *ScenarioController) claim(slot *atomic.Pointer[scenarioPart], part *sce
 
 // detachScenPart nil-swaps the participation handle on the protocol's exporter.
 func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
-	slot := c.scenPartSlot(dev)
+	slot := c.installedSlot(dev)
 	if slot == nil {
 		return
 	}
 	// Ownership-checked: this is called for devices this arm is DROPPING, and
 	// under per-device overlap a drop can be caused by another scenario holding
 	// the device. Clearing unconditionally would release their claim.
-	releaseScenPart(slot, c.id)
-	if isFlowScenarioProtocol(c.spec.Protocol) && dev.flowExporter != nil {
+	released := releaseScenPart(slot, c.id)
+	// scenDriven is DERIVED state owned by whoever holds the claim, so it is
+	// gated on the same ownership test. Clearing it unconditionally would hand
+	// the holder's device back to the fleet ticker while their scenario ticker
+	// still drives it — both would tick, double-counting into their ledger.
+	if released && isFlowScenarioProtocol(c.spec.Protocol) && dev.flowExporter != nil {
 		dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
 	}
 }
 
-// scenPartSlot returns the participation slot for this scenario's protocol on
-// dev, or nil when dev carries no exporter for it. One dispatch shared by the
-// claim, the release, and the overlap pre-check, so the three cannot disagree
-// about which slot a scenario competes for.
+// scenPartSlot returns the slot this scenario COMPETES for on dev — the one an
+// arm would claim — or nil when dev carries no exporter this scenario could
+// use. Used by the overlap pre-check. Releasing uses installedSlot instead,
+// because a handle already installed must stay releasable even if the exporter
+// has since changed protocol.
 func (c *ScenarioController) scenPartSlot(dev *DeviceSimulator) *atomic.Pointer[scenarioPart] {
 	if isFlowScenarioProtocol(c.spec.Protocol) {
-		if dev.flowExporter != nil {
+		// The protocol match is part of the identity, exactly as installScenPart
+		// requires it: a device whose flow exporter speaks a DIFFERENT protocol
+		// could never be a participant here, so it is not a device this scenario
+		// competes for. Returning its slot anyway would make a peer's claim on
+		// an unrelated protocol refuse this whole arm, when without that claim
+		// the device would simply have been one excluded row.
+		if dev.flowExporter != nil && dev.flowExporter.protocol == c.spec.Protocol {
 			return &dev.flowExporter.scenPart
 		}
 		return nil
@@ -395,6 +406,25 @@ func (c *ScenarioController) scenPartSlot(dev *DeviceSimulator) *atomic.Pointer[
 		}
 	}
 	return nil
+}
+
+// installedSlot returns the slot where THIS scenario's handle could be sitting
+// on dev, which is not the same question scenPartSlot answers.
+//
+// A device's flow exporter can change protocol after we armed it; the handle we
+// installed is still in that slot and must stay releasable, or it leaks onto a
+// live exporter where no detach path can ever reach it (the very failure
+// TestScenarioArm_ReArmDetachesDroppedHandle exists for). Release is safe
+// without the protocol match because it is ownership-checked: we only ever
+// clear a handle that is ours.
+func (c *ScenarioController) installedSlot(dev *DeviceSimulator) *atomic.Pointer[scenarioPart] {
+	if isFlowScenarioProtocol(c.spec.Protocol) {
+		if dev.flowExporter != nil {
+			return &dev.flowExporter.scenPart
+		}
+		return nil
+	}
+	return c.scenPartSlot(dev)
 }
 
 // claimOwner reports the scenario currently holding dev for this scenario's
@@ -788,7 +818,7 @@ func (c *ScenarioController) prefixMatchesLocked() []string {
 // transition precisely to avoid that window — leaving only scheduler
 // construction, which is validated at submit and therefore near-unreachable.
 func (c *ScenarioController) rollbackStartLocked() {
-	c.sm.unfreezeFleet()
+	c.sm.unfreezeFleet(c.id)
 	c.phase = phaseArmed
 	c.gate.Store(&gateState{phase: phaseArmed})
 }
@@ -909,7 +939,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	}
 	c.sm.mu.RUnlock()
 	if registered == 0 {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return fmt.Errorf("cannot start scenario %s: all armed participants were deleted before start", c.id)
 	}
 	// Authoritative expectation check: `registered` counts the devices that just
@@ -922,12 +952,12 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// at most len(c.parts), which the pre-freeze check already matched against
 	// the expectation. The surplus branch of the diagnosis is unreachable here.
 	if diag := expectationDiagnosis(c.spec.ExpectParticipants, registered, sumReasonCounts(c.excludedByReason)); diag != "" {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return fmt.Errorf("cannot start scenario %s: %s", c.id, diag)
 	}
 
 	if err := c.transitionLocked(phaseRunning); err != nil {
-		c.sm.unfreezeFleet()
+		c.sm.unfreezeFleet(c.id)
 		return err
 	}
 
@@ -1164,7 +1194,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	c.sm.mu.RUnlock()
 
-	c.sm.unfreezeFleet()
+	c.sm.unfreezeFleet(c.id)
 
 	perDevice := make(map[string]ledgerSnapshot, len(c.ledgers))
 	apps := make(map[appKey]appCounters)

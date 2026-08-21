@@ -223,14 +223,17 @@ func claimScenPart(slot *atomic.Pointer[scenarioPart], part *scenarioPart) (ok b
 // test is what makes teardown safe under overlap: an arm that failed to claim a
 // device must not clear the claim of the scenario that legitimately owns it,
 // and the arm→start prune releases handles for devices it is dropping.
-func releaseScenPart(slot *atomic.Pointer[scenarioPart], owner string) {
+// Reports whether it actually released, so callers can gate any DERIVED state
+// they own on the same ownership test — clearing that unconditionally would
+// undo it for the scenario that legitimately holds the device.
+func releaseScenPart(slot *atomic.Pointer[scenarioPart], owner string) bool {
 	for {
 		cur := slot.Load()
 		if cur == nil || cur.owner != owner {
-			return
+			return false
 		}
 		if slot.CompareAndSwap(cur, nil) {
-			return
+			return true
 		}
 	}
 }

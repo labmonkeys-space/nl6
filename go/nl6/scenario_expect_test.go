@@ -275,7 +275,7 @@ func TestScenarioController_ExpectParticipantsGapLoss(t *testing.T) {
 	if err := sm.freezeFleet("probe"); err != nil {
 		t.Fatalf("fleet left frozen by a refused start: %v", err)
 	}
-	sm.unfreezeFleet()
+	sm.unfreezeFleet("probe")
 }
 
 // TestScenarioController_ExpectParticipantsPreFreeze asserts the OTHER site: a
@@ -314,7 +314,7 @@ func TestScenarioController_ExpectParticipantsPreFreeze(t *testing.T) {
 	if err := sm.freezeFleet("probe"); err != nil {
 		t.Fatalf("fleet frozen by a pre-freeze refusal: %v", err)
 	}
-	sm.unfreezeFleet()
+	sm.unfreezeFleet("probe")
 }
 
 // TestScenarioController_StartPruneReinstalls: a device deleted and re-created

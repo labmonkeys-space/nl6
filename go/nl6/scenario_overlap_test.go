@@ -295,3 +295,116 @@ func TestScenarioOverlap_LostRaceBecomesExclusion(t *testing.T) {
 		t.Error("the lost race stole the device from its owner")
 	}
 }
+
+// TestScenarioOverlap_FreezeSurvivesPeerStop is the regression for the freeze
+// bug this change would otherwise have introduced: the fleet freeze was a
+// single scenario ID, so with concurrency the FIRST scenario to finish unfroze
+// the fleet while its peers were still running — re-opening the arm/start
+// membership TOCTOU the freeze exists to close.
+func TestScenarioOverlap_FreezeSurvivesPeerStop(t *testing.T) {
+	sm, _ := overlapFixture(t, 2)
+	first := newScenario(t, sm, "s-000001", "syslog", "10.42.0.1")
+	second := newScenario(t, sm, "s-000002", "syslog", "10.42.0.2")
+
+	for _, c := range []*ScenarioController{first, second} {
+		if _, _, err := c.Arm(); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Start(context.Background()); err != nil {
+			t.Fatalf("%s start: %v", c.id, err)
+		}
+	}
+	if err := sm.fleetFreezeCheck(); err == nil {
+		t.Fatal("fleet should be frozen while scenarios run")
+	}
+
+	if _, err := first.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	// The surviving scenario still holds the freeze.
+	err := sm.fleetFreezeCheck()
+	if err == nil {
+		t.Fatal("a peer stopping unfroze the fleet while another scenario was still running")
+	}
+	if !strings.Contains(err.Error(), "s-000002") {
+		t.Errorf("freeze should now name only the surviving holder: %v", err)
+	}
+	if strings.Contains(err.Error(), "s-000001") {
+		t.Errorf("a stopped scenario is still named as a freeze holder: %v", err)
+	}
+
+	if _, err := second.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sm.fleetFreezeCheck(); err != nil {
+		t.Errorf("freeze outlived its last holder: %v", err)
+	}
+}
+
+// TestScenarioOverlap_MismatchedFlowProtocolIsNotAConflict: a device whose flow
+// exporter speaks a different protocol could never participate here, so a peer's
+// claim on it must not refuse this whole arm. Without this it would be one
+// excluded row; with a peer's claim it was refusing everything.
+func TestScenarioOverlap_MismatchedFlowProtocolIsNotAConflict(t *testing.T) {
+	sm, fe := overlapFixture(t, 1)
+	// fe speaks netflow9 and is claimed by a peer.
+	fe.scenPart.Store(&scenarioPart{owner: "s-000009"})
+
+	// An ipfix scenario naming the same device plus a usable one.
+	c := newScenarioController(sm, time.Now)
+	if err := c.Submit(&Scenario{
+		Participants: []string{"10.43.0.1"},
+		Protocol:     "ipfix",
+		Rate:         5,
+		Window:       time.Minute,
+	}, "s-000002"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = c.Stop() })
+
+	armed, excluded, err := c.Arm()
+	if err != nil {
+		t.Fatalf("a peer's claim on a DIFFERENT protocol must not refuse the arm: %v", err)
+	}
+	if armed != 0 || len(excluded) != 1 {
+		t.Fatalf("armed=%d excluded=%d, want 0/1", armed, len(excluded))
+	}
+	if !strings.Contains(excluded[0].Reason, "ipfix") {
+		t.Errorf("exclusion should be the ordinary wrong-protocol one, not a conflict: %q", excluded[0].Reason)
+	}
+	// The peer's claim is untouched.
+	if got := fe.scenPart.Load(); got == nil || got.owner != "s-000009" {
+		t.Errorf("peer claim disturbed: %+v", got)
+	}
+}
+
+// TestScenarioOverlap_ForeignDetachKeepsScenDriven: scenDriven is derived state
+// owned by the claim holder. A scenario that failed to claim a device must not
+// clear it, or the fleet ticker resumes that device WHILE the holder's scenario
+// ticker still drives it — both tick, double-counting into the holder's ledger.
+func TestScenarioOverlap_ForeignDetachKeepsScenDriven(t *testing.T) {
+	sm, fe := overlapFixture(t, 1)
+	holder := newScenario(t, sm, "s-000001", "netflow9", "10.43.0.1")
+	if _, _, err := holder.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !fe.scenDriven.Load() {
+		t.Fatal("precondition: the holder's participant should be scenario-driven")
+	}
+
+	// A different scenario tears down the same device (the arm→start prune path
+	// calls detachScenPart on devices it drops).
+	other := newScenario(t, sm, "s-000002", "netflow9", "10.43.0.1")
+	other.detachScenPart(sm.devicesByIP["10.43.0.1"])
+
+	if got := fe.scenPart.Load(); got == nil || got.owner != "s-000001" {
+		t.Errorf("foreign detach released the holder's claim: %+v", got)
+	}
+	if !fe.scenDriven.Load() {
+		t.Error("foreign detach handed the holder's device back to the fleet ticker; " +
+			"both tickers would now drive it")
+	}
+}

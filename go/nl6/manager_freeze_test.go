@@ -92,7 +92,7 @@ func TestFleetFreeze_RejectsCreate(t *testing.T) {
 func TestFleetFreeze_ClearRestoresNormalBehavior(t *testing.T) {
 	sm := newFreezeTestManager()
 	mustFreeze(t, sm, "s-000001")
-	sm.unfreezeFleet()
+	sm.unfreezeFleet("s-000001")
 
 	// Delete on an unknown device must surface the normal not-found error,
 	// not a freeze rejection.

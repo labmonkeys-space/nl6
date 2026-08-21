@@ -308,16 +308,21 @@ type SimulatorManager struct {
 	flowTemplateInterval time.Duration
 	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
 
-	// fleetFrozenBy names the load-test scenario currently freezing fleet
-	// membership (empty = not frozen). While set, device create/delete is
-	// rejected so the scenario's T0→T1 counter deltas can never be
-	// corrupted by mid-window membership changes (FR35/FR38, scenario PR0).
-	// Guarded by sm.mu; set/cleared only via freezeFleet/unfreezeFleet —
-	// the scenario controller (story 1.2) is the sole intended caller.
-	// freezeFleet refuses while isCreatingDevices is set, and creation
-	// batches publish isCreatingDevices BEFORE their freeze check, so a
-	// batch and a freeze can never both proceed (review interlock).
-	fleetFrozenBy string
+	// fleetFrozenBy is the SET of load-test scenarios currently freezing fleet
+	// membership (empty = not frozen). While non-empty, device create/delete is
+	// rejected so a scenario's T0→T1 counter deltas can never be corrupted by
+	// mid-window membership changes (FR35/FR38, scenario PR0).
+	//
+	// A set, not one ID: per-device overlap (#392) lets several scenarios run
+	// at once, and a single slot meant the first to finish unfroze the fleet
+	// for all of them — silently re-opening the very TOCTOU the freeze closes.
+	// The freeze lifts when the LAST holder releases.
+	//
+	// Guarded by sm.mu; mutated only via freezeFleet/unfreezeFleet. freezeFleet
+	// refuses while isCreatingDevices is set, and creation batches publish
+	// isCreatingDevices BEFORE their freeze check, so a batch and a freeze can
+	// never both proceed (review interlock).
+	fleetFrozenBy map[string]struct{}
 
 	// scenarios registers every load-test scenario by ID, keyed s-%06d.
 	// Guarded by scenarioMu; scenarioSeq is the monotonic source of that ID
