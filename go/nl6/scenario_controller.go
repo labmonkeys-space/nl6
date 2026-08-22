@@ -115,7 +115,68 @@ type ScenarioController struct {
 	// fact. Minimal precursor to the full structured phase log (story 5.2).
 	transitions []scenarioTransition
 
+	// overlaps records the peer scenarios of the SAME protocol whose windows
+	// overlapped this one's — they drew from the same rate-limiter token
+	// bucket, so this run did not measure what it would have measured alone.
+	//
+	// Recorded as overlaps BEGIN, never reconstructed at finalize: a peer can
+	// be stopped and deleted before this scenario finishes, and the disclosure
+	// must still name it. A sync.Map because peers write into each other's sets
+	// at start, and routing that through c.mu would need one controller to take
+	// another's lock — a cycle waiting to happen.
+	overlaps sync.Map // scenario ID → struct{}
+
+	// rateCapAtStart is the ceiling in force when this run BEGAN. Sampled here
+	// rather than read at report time because a report outlives its run — it
+	// stays fetchable while retained — and the subsystem can be stopped or
+	// restarted with a different cap in between, which would make a capped run
+	// report no cap at all: the schema reads an absent field as "this protocol
+	// has no ceiling", so the stale read would not merely be vague, it would be
+	// wrong. Same reason overlaps are recorded as they begin.
+	rateCapAtStart int
+
+	// emitting is true from start until the drain barrier has closed — the
+	// window in which this scenario can still consume shared limiter tokens.
+	// Peer discovery uses it rather than phase==running because finalize
+	// publishes the terminal phase BEFORE draining, so a peer in drain is no
+	// longer "running" while its admitted fires are still spending tokens.
+	// Lock-free so peers can read it while holding their own c.mu.
+	emitting atomic.Bool
+
 	result *ScenarioResult // populated at finalize
+}
+
+// protocol reports the scenario's push protocol. Safe without c.mu: spec is
+// written once by Submit, before the controller is ever registered, so no
+// reader can observe it being set.
+func (c *ScenarioController) protocol() string {
+	if c.spec == nil {
+		return ""
+	}
+	return c.spec.Protocol
+}
+
+// noteOverlapsLocked links this scenario with every peer already running on the
+// same protocol, in both directions, so each report names the other regardless
+// of which finishes first. Callers hold c.mu.
+func (c *ScenarioController) noteOverlapsLocked() {
+	for _, peer := range c.sm.runningPeers(c.protocol(), c.id) {
+		peer.overlaps.Store(c.id, struct{}{})
+		c.overlaps.Store(peer.id, struct{}{})
+	}
+}
+
+// overlapIDs returns the recorded peer scenario IDs, sequence-ordered.
+func (c *ScenarioController) overlapIDs() []string {
+	var ids []string
+	c.overlaps.Range(func(k, _ any) bool {
+		if id, ok := k.(string); ok {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	slices.SortFunc(ids, compareScenarioID)
+	return ids
 }
 
 // scenarioTransition is one recorded lifecycle step.
@@ -1032,6 +1093,15 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// cap tokens on fires the gate silently suppresses, starving the fleet.
 	// An explicit early Stop()/Abort() cancels this timer.
 	c.autoStop = time.AfterFunc(c.spec.Window, func() { _, _ = c.Stop() })
+
+	// Record contention AFTER every fallible step. Linking earlier would leave
+	// a scenario whose start rolled back (scheduler construction failing, say)
+	// named in every concurrent peer's shared_with — attributing contention to
+	// a run that never emitted. Here rather than in Start so the scheduled-start
+	// path, which enters with c.mu already held, is covered by the same line.
+	c.rateCapAtStart = c.sm.effectiveRateCap(c.spec.Protocol)
+	c.emitting.Store(true)
+	c.noteOverlapsLocked()
 	return nil
 }
 
@@ -1198,6 +1268,9 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 		<-c.flowTickerDone
 	}
 	c.drain.closeAndWait() // admission closes; outlasts every in-flight fire
+	// From here this scenario can no longer consume shared limiter tokens, so
+	// it stops counting as contention for a peer starting now.
+	c.emitting.Store(false)
 
 	// Detach participation handles (atomic nil-swap; producers tolerate nil).
 	c.sm.mu.RLock()

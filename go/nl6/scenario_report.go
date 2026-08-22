@@ -125,6 +125,35 @@ type reportMetadata struct {
 	// per its protocol's native lever (FR37) — mechanism + value, plus PEN
 	// status so a PEN-degraded fallback is visible.
 	RunTags runTags `json:"run_tags"`
+	// RateCap discloses the fleet-wide rate ceiling in force for this run's
+	// protocol, and which same-protocol scenarios overlapped it. Absent when
+	// the protocol has no cap (flow protocols and gNMI dial-out never do), so
+	// the common case is unchanged.
+	//
+	// A capped run that shared its bucket did not measure what it would have
+	// measured alone. Forbidding concurrency under a cap would disable the
+	// feature precisely for operators deliberately rate-limiting; a silent
+	// numeric dependency on what else happened to be running is the failure
+	// this subsystem keeps designing against, so it is disclosed instead.
+	RateCap *rateCapDisclosure `json:"rate_cap,omitempty"`
+}
+
+// rateCapDisclosure is the shared-cap record for one run.
+type rateCapDisclosure struct {
+	// PerSecond is the fleet-wide ceiling for this protocol (> 0, or the field
+	// would be absent).
+	PerSecond int `json:"per_second"`
+	// SharedWith names the same-protocol SCENARIOS whose windows overlapped
+	// this one, sequence-ordered. Only same-protocol runs contend, because
+	// limiters are per protocol.
+	//
+	// Empty means no peer scenario overlapped — NOT that the bucket was
+	// uncontended. The scenario scheduler shares the FLEET limiter, and the
+	// background scheduler spends a token per pop even for fires the scenario
+	// gate then suppresses, so on a busy non-fidelity fleet a solo run is still
+	// throttled by background traffic. Run with -fidelity for a bucket this
+	// scenario genuinely has to itself.
+	SharedWith []string `json:"shared_with"`
 }
 
 // resolvedParticipantsSHA256 digests the set of devices that actually
@@ -256,6 +285,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// Derived from the same map ParticipantsArmed counts, so the
 				// digest and the count can never describe different sets.
 				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
+				RateCap:                    buildRateCapDisclosure(c),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
@@ -485,4 +515,18 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 		return dev.syslogConfig.Collector
 	}
 	return ""
+}
+
+// buildRateCapDisclosure records the rate ceiling this run competed under, or
+// nil when its protocol has none. See reportMetadata.RateCap.
+func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
+	capPerSec := c.rateCapAtStart
+	if capPerSec <= 0 {
+		return nil
+	}
+	shared := c.overlapIDs()
+	if shared == nil {
+		shared = []string{} // an explicit empty list reads as "had it to itself"
+	}
+	return &rateCapDisclosure{PerSecond: capPerSec, SharedWith: shared}
 }
