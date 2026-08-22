@@ -242,14 +242,22 @@ func (sm *SimulatorManager) abortActiveScenario() {
 func (sm *SimulatorManager) effectiveRateCap(protocol string) int {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	switch protocol {
-	case "syslog":
+	// SYSLOG ONLY. Having a global cap configured is not the same as a
+	// scenario's emission passing through it, and only syslog does: its
+	// scenario scheduler is built with the fleet scheduler's limiter verbatim
+	// (SyslogSchedulerOptions.SharedLimiter).
+	//
+	// -trap-global-cap governs the fleet TrapScheduler's background firing. The
+	// scenario trap path is startScenarioTrapTicker → fireScenario →
+	// fireWithSource → fireWithCtx and takes no token anywhere; the exporter's
+	// own limiter is consumed only for INFORM retransmissions. Disclosing that
+	// cap would tell an operator their run was throttled and contended when it
+	// was neither — a false statement in the artifact this disclosure exists to
+	// make trustworthy, which is worse than no statement.
+	if protocol == "syslog" {
 		return sm.syslogGlobalCap
-	case "snmp-trap":
-		return sm.trapGlobalCap
-	default:
-		return 0 // flow protocols and gnmi-dial-out are not rate-limited
 	}
+	return 0
 }
 
 // runningPeers returns the OTHER scenarios of the same protocol that are
@@ -266,7 +274,11 @@ func (sm *SimulatorManager) runningPeers(protocol, selfID string) []*ScenarioCon
 	}
 	var peers []*ScenarioController
 	for _, c := range *snap {
-		if c.id == selfID || c.Phase() != phaseRunning || c.protocol() != protocol {
+		// emitting, not phase: finalize publishes the terminal phase BEFORE the
+		// drain barrier, so a peer mid-drain is no longer "running" while its
+		// already-admitted fires still spend tokens. A scenario starting inside
+		// that grace is genuinely contended and must record it.
+		if c.id == selfID || !c.emitting.Load() || c.protocol() != protocol {
 			continue
 		}
 		peers = append(peers, c)

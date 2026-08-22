@@ -578,3 +578,90 @@ func TestScenarioOverlap_DeletedPeerStillDisclosed(t *testing.T) {
 			rc.SharedWith, peerID)
 	}
 }
+
+// TestScenarioOverlap_TrapCapNotDisclosed: having a cap configured is not the
+// same as a scenario's emission passing through it. -trap-global-cap governs
+// the fleet TrapScheduler's background firing; the scenario trap path takes no
+// token (the exporter's own limiter is consumed only for INFORM retries). So
+// disclosing it would tell an operator the run was throttled and contended when
+// it was neither — a false statement in the artifact this exists to make
+// trustworthy, which is worse than saying nothing.
+func TestScenarioOverlap_TrapCapNotDisclosed(t *testing.T) {
+	sm := capFixture(t, 1, 5000)
+	sm.trapGlobalCap = 5000 // configured, but scenario traps never consume it
+
+	if got := sm.effectiveRateCap("snmp-trap"); got != 0 {
+		t.Errorf("snmp-trap cap = %d, want 0: scenario traps do not pass through the limiter", got)
+	}
+	if got := sm.effectiveRateCap("syslog"); got != 5000 {
+		t.Errorf("syslog cap = %d, want 5000: its scenario scheduler shares the fleet limiter", got)
+	}
+	for _, p := range []string{"netflow9", "ipfix", "sflow", "netflow5", "gnmi-dialout"} {
+		if got := sm.effectiveRateCap(p); got != 0 {
+			t.Errorf("%s cap = %d, want 0 (no limiter for this protocol)", p, got)
+		}
+	}
+}
+
+// TestScenarioOverlap_CapSnapshotAtStart: a report outlives its run — it stays
+// fetchable while retained — and the subsystem can be stopped or reconfigured
+// in between. Reading the cap at report time would let a capped run report no
+// cap at all, which the schema reads as "this protocol has no ceiling": not
+// merely vague, but wrong.
+func TestScenarioOverlap_CapSnapshotAtStart(t *testing.T) {
+	sm := capFixture(t, 1, 5000)
+	c := newScenario(t, sm, "s-000001", "syslog", "10.42.0.1")
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The subsystem is torn down after the run, as StopSyslogExport does.
+	sm.mu.Lock()
+	sm.syslogGlobalCap = 0
+	sm.mu.Unlock()
+
+	rc := buildScenarioReport(sm, c).Summary.Metadata.RateCap
+	if rc == nil {
+		t.Fatal("the cap in force at start was lost when the subsystem was torn down")
+	}
+	if rc.PerSecond != 5000 {
+		t.Errorf("cap = %d, want the 5000 in force when the run began", rc.PerSecond)
+	}
+}
+
+// TestScenarioOverlap_EmittingSpansTheDrain pins the predicate peer discovery
+// uses. finalize publishes the terminal phase BEFORE the drain barrier, so a
+// peer mid-drain is no longer "running" while its admitted fires still spend
+// shared tokens — a scenario starting in that grace is genuinely contended.
+func TestScenarioOverlap_EmittingSpansTheDrain(t *testing.T) {
+	sm := capFixture(t, 1, 5000)
+	c := newScenario(t, sm, "s-000001", "syslog", "10.42.0.1")
+
+	if c.emitting.Load() {
+		t.Error("a submitted scenario should not count as emitting")
+	}
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if c.emitting.Load() {
+		t.Error("an armed scenario emits nothing until it starts")
+	}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !c.emitting.Load() {
+		t.Error("a running scenario must count as contention for a starting peer")
+	}
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if c.emitting.Load() {
+		t.Error("emitting outlived the drain barrier")
+	}
+}

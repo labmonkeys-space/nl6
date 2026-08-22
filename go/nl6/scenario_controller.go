@@ -126,6 +126,23 @@ type ScenarioController struct {
 	// another's lock — a cycle waiting to happen.
 	overlaps sync.Map // scenario ID → struct{}
 
+	// rateCapAtStart is the ceiling in force when this run BEGAN. Sampled here
+	// rather than read at report time because a report outlives its run — it
+	// stays fetchable while retained — and the subsystem can be stopped or
+	// restarted with a different cap in between, which would make a capped run
+	// report no cap at all: the schema reads an absent field as "this protocol
+	// has no ceiling", so the stale read would not merely be vague, it would be
+	// wrong. Same reason overlaps are recorded as they begin.
+	rateCapAtStart int
+
+	// emitting is true from start until the drain barrier has closed — the
+	// window in which this scenario can still consume shared limiter tokens.
+	// Peer discovery uses it rather than phase==running because finalize
+	// publishes the terminal phase BEFORE draining, so a peer in drain is no
+	// longer "running" while its admitted fires are still spending tokens.
+	// Lock-free so peers can read it while holding their own c.mu.
+	emitting atomic.Bool
+
 	result *ScenarioResult // populated at finalize
 }
 
@@ -1024,11 +1041,6 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	drainEnd := t1.Add(c.spec.drainOrDefault())
 	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
 
-	// Link with any peer already running on this protocol. Done here rather
-	// than in Start so the scheduled-start path (which enters startLocked with
-	// c.mu already held) is covered by the same line.
-	c.noteOverlapsLocked()
-
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
 
@@ -1081,6 +1093,15 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// cap tokens on fires the gate silently suppresses, starving the fleet.
 	// An explicit early Stop()/Abort() cancels this timer.
 	c.autoStop = time.AfterFunc(c.spec.Window, func() { _, _ = c.Stop() })
+
+	// Record contention AFTER every fallible step. Linking earlier would leave
+	// a scenario whose start rolled back (scheduler construction failing, say)
+	// named in every concurrent peer's shared_with — attributing contention to
+	// a run that never emitted. Here rather than in Start so the scheduled-start
+	// path, which enters with c.mu already held, is covered by the same line.
+	c.rateCapAtStart = c.sm.effectiveRateCap(c.spec.Protocol)
+	c.emitting.Store(true)
+	c.noteOverlapsLocked()
 	return nil
 }
 
@@ -1247,6 +1268,9 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 		<-c.flowTickerDone
 	}
 	c.drain.closeAndWait() // admission closes; outlasts every in-flight fire
+	// From here this scenario can no longer consume shared limiter tokens, so
+	// it stops counting as contention for a peer starting now.
+	c.emitting.Store(false)
 
 	// Detach participation handles (atomic nil-swap; producers tolerate nil).
 	c.sm.mu.RLock()

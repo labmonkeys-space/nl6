@@ -143,9 +143,16 @@ type rateCapDisclosure struct {
 	// PerSecond is the fleet-wide ceiling for this protocol (> 0, or the field
 	// would be absent).
 	PerSecond int `json:"per_second"`
-	// SharedWith names the same-protocol scenarios whose windows overlapped
-	// this one, sequence-ordered. Empty means this run had the bucket to
-	// itself. Only same-protocol runs contend: limiters are per protocol.
+	// SharedWith names the same-protocol SCENARIOS whose windows overlapped
+	// this one, sequence-ordered. Only same-protocol runs contend, because
+	// limiters are per protocol.
+	//
+	// Empty means no peer scenario overlapped — NOT that the bucket was
+	// uncontended. The scenario scheduler shares the FLEET limiter, and the
+	// background scheduler spends a token per pop even for fires the scenario
+	// gate then suppresses, so on a busy non-fidelity fleet a solo run is still
+	// throttled by background traffic. Run with -fidelity for a bucket this
+	// scenario genuinely has to itself.
 	SharedWith []string `json:"shared_with"`
 }
 
@@ -278,7 +285,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// Derived from the same map ParticipantsArmed counts, so the
 				// digest and the count can never describe different sets.
 				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
-				RateCap:                    buildRateCapDisclosure(sm, c),
+				RateCap:                    buildRateCapDisclosure(c),
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),
@@ -512,8 +519,8 @@ func (sm *SimulatorManager) scenarioCollectorFor(ip, protocol string) string {
 
 // buildRateCapDisclosure records the rate ceiling this run competed under, or
 // nil when its protocol has none. See reportMetadata.RateCap.
-func buildRateCapDisclosure(sm *SimulatorManager, c *ScenarioController) *rateCapDisclosure {
-	capPerSec := sm.effectiveRateCap(c.spec.Protocol)
+func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
+	capPerSec := c.rateCapAtStart
 	if capPerSec <= 0 {
 		return nil
 	}
