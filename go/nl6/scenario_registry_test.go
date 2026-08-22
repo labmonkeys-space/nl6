@@ -153,3 +153,51 @@ func TestScenarioRegistry_ConcurrencyBound(t *testing.T) {
 		t.Fatal("submit after freeing a slot produced no id")
 	}
 }
+
+// TestScenarioRegistry_APINotBlockedByPeerDrain is the regression for the
+// lock-contention this change removes. finish() holds c.mu across the whole
+// stop — the drain barrier and the trap/flow ticker joins — and the manager
+// inspects every registered scenario's phase while holding scenarioMu. Reading
+// that phase under c.mu meant one scenario's drain stalled the ENTIRE scenario
+// API: the submit blocks on the draining scenario's mutex while holding
+// scenarioMu, and every other endpoint queues behind it.
+//
+// Harmless while only one scenario could exist. Per-device overlap makes the
+// blast radius the whole registry, which is the regime this subsystem now runs
+// in — so the phase is published for lock-free reads.
+func TestScenarioRegistry_APINotBlockedByPeerDrain(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 2)
+	old := manager
+	manager = sm
+	t.Cleanup(func() { manager = old })
+
+	busy, _, err := sm.submitScenario(&Scenario{
+		Participants: []string{"10.42.0.1"}, Protocol: "syslog", Rate: 5, Window: time.Minute,
+	}, "sha")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Stand in for a scenario inside finish(): c.mu held for the drain's
+	// duration. Nothing else in the API may depend on acquiring it.
+	busy.mu.Lock()
+	defer busy.mu.Unlock()
+
+	for name, call := range map[string]func(){
+		"submit": func() {
+			_, _, _ = sm.submitScenario(&Scenario{Participants: []string{"10.42.0.2"}, Protocol: "syslog", Rate: 5, Window: time.Minute}, "sha")
+		},
+		"lookup":  func() { _, _ = sm.scenarioByID("s-000001") },
+		"list":    func() { _ = sm.listScenarios() },
+		"deleteX": func() { _ = sm.deleteScenario("s-999999") },
+	} {
+		done := make(chan struct{})
+		go func() { defer close(done); call() }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second): // generous failsafe, not a timing assertion
+			t.Fatalf("%s blocked while a peer scenario held its own mutex: "+
+				"one scenario's drain stalls the whole scenario API", name)
+		}
+	}
+}
