@@ -49,6 +49,18 @@ func newScenario(t *testing.T, sm *SimulatorManager, id, proto string, participa
 	}, id); err != nil {
 		t.Fatal(err)
 	}
+	// Register as submitScenario does. Overlap discovery reads the registry
+	// snapshot, so an unregistered controller is invisible to its peers —
+	// which is correct in production (every scenario is registered) but makes
+	// a hand-built one silently untestable.
+	sm.scenarioMu.Lock()
+	if sm.scenarios == nil {
+		sm.scenarios = map[string]*ScenarioController{}
+	}
+	sm.scenarios[id] = c
+	sm.refreshScenarioSnapLocked()
+	sm.scenarioMu.Unlock()
+
 	t.Cleanup(func() { _, _ = c.Stop() })
 	return c
 }
@@ -406,5 +418,163 @@ func TestScenarioOverlap_ForeignDetachKeepsScenDriven(t *testing.T) {
 	if !fe.scenDriven.Load() {
 		t.Error("foreign detach handed the holder's device back to the fleet ticker; " +
 			"both tickers would now drive it")
+	}
+}
+
+// capFixture gives the manager a syslog rate ceiling, which is what makes the
+// disclosure appear at all.
+func capFixture(t *testing.T, n, capPerSec int) *SimulatorManager {
+	t.Helper()
+	sm, _ := overlapFixture(t, n)
+	sm.syslogGlobalCap = capPerSec
+	return sm
+}
+
+// TestScenarioOverlap_SharedCapDisclosed: two same-protocol runs under a cap
+// draw from one token bucket, so neither measured what it would have measured
+// alone. Each report names the other.
+func TestScenarioOverlap_SharedCapDisclosed(t *testing.T) {
+	sm := capFixture(t, 2, 5000)
+	first := newScenario(t, sm, "s-000001", "syslog", "10.42.0.1")
+	second := newScenario(t, sm, "s-000002", "syslog", "10.42.0.2")
+
+	for _, c := range []*ScenarioController{first, second} {
+		if _, _, err := c.Arm(); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Start(context.Background()); err != nil {
+			t.Fatalf("%s start: %v", c.id, err)
+		}
+	}
+	if _, err := first.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		c    *ScenarioController
+		peer string
+	}{
+		{first, "s-000002"}, {second, "s-000001"},
+	} {
+		rep := buildScenarioReport(sm, tc.c)
+		if rep == nil {
+			t.Fatalf("%s produced no report", tc.c.id)
+		}
+		rc := rep.Summary.Metadata.RateCap
+		if rc == nil {
+			t.Fatalf("%s: a capped run must disclose its cap", tc.c.id)
+		}
+		if rc.PerSecond != 5000 {
+			t.Errorf("%s: cap = %d, want 5000", tc.c.id, rc.PerSecond)
+		}
+		if len(rc.SharedWith) != 1 || rc.SharedWith[0] != tc.peer {
+			t.Errorf("%s: shared_with = %v, want [%s]", tc.c.id, rc.SharedWith, tc.peer)
+		}
+	}
+}
+
+// TestScenarioOverlap_SoloRunUnderCapDisclosesEmpty: the cap is still disclosed
+// when nothing overlapped, with an explicit empty list — "I had the bucket to
+// myself" is a different claim from "nobody checked".
+func TestScenarioOverlap_SoloRunUnderCapDisclosesEmpty(t *testing.T) {
+	sm := capFixture(t, 1, 250)
+	c := newScenario(t, sm, "s-000001", "syslog", "10.42.0.1")
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	rc := buildScenarioReport(sm, c).Summary.Metadata.RateCap
+	if rc == nil || rc.PerSecond != 250 {
+		t.Fatalf("solo capped run should still disclose the cap: %+v", rc)
+	}
+	if rc.SharedWith == nil {
+		t.Error("shared_with should be an explicit empty list, not null")
+	}
+	if len(rc.SharedWith) != 0 {
+		t.Errorf("shared_with = %v, want empty", rc.SharedWith)
+	}
+}
+
+// TestScenarioOverlap_UncappedRunDisclosesNothing: flow protocols have no
+// limiter, so there is no bucket to share and no field to emit.
+func TestScenarioOverlap_UncappedRunDisclosesNothing(t *testing.T) {
+	sm := capFixture(t, 1, 5000) // syslog cap set, but this run is netflow9
+	c := newScenario(t, sm, "s-000001", "netflow9", "10.43.0.1")
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	if rc := buildScenarioReport(sm, c).Summary.Metadata.RateCap; rc != nil {
+		t.Errorf("an unrate-limited protocol must disclose no cap: %+v", rc)
+	}
+}
+
+// TestScenarioOverlap_DeletedPeerStillDisclosed is why overlaps are recorded as
+// they BEGIN rather than reconstructed at finalize: a peer can be stopped and
+// deleted before this scenario finishes, and the disclosure must still name it.
+func TestScenarioOverlap_DeletedPeerStillDisclosed(t *testing.T) {
+	sm := capFixture(t, 2, 5000)
+	old := manager
+	manager = sm
+	t.Cleanup(func() { manager = old })
+
+	// Registered, so the peer is discoverable at start and deletable after.
+	peer, peerID, err := sm.submitScenario(&Scenario{
+		Participants: []string{"10.42.0.1"}, Protocol: "syslog", Rate: 5, Window: time.Minute,
+	}, "sha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := peer.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := peer.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	subject := newScenario(t, sm, "s-000099", "syslog", "10.42.0.2")
+	if _, _, err := subject.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := subject.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The peer finishes and is deleted entirely, before the subject finalizes.
+	if _, err := peer.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sm.deleteScenario(peerID); err != nil {
+		t.Fatalf("delete peer: %v", err)
+	}
+	if _, err := sm.scenarioByID(peerID); err == nil {
+		t.Fatal("precondition: the peer should be gone from the registry")
+	}
+
+	if _, err := subject.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	rc := buildScenarioReport(sm, subject).Summary.Metadata.RateCap
+	if rc == nil {
+		t.Fatal("no cap disclosure")
+	}
+	if len(rc.SharedWith) != 1 || rc.SharedWith[0] != peerID {
+		t.Errorf("shared_with = %v, want [%s] — a peer deleted before finalize must still be named",
+			rc.SharedWith, peerID)
 	}
 }

@@ -113,6 +113,7 @@ func (sm *SimulatorManager) submitScenario(spec *Scenario, configSHA string) (*S
 		sm.scenarios = make(map[string]*ScenarioController, 1)
 	}
 	sm.scenarios[id] = ctrl
+	sm.refreshScenarioSnapLocked()
 	return ctrl, id, nil
 }
 
@@ -197,6 +198,7 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 		}
 	}
 	delete(sm.scenarios, id)
+	sm.refreshScenarioSnapLocked()
 	return nil
 }
 
@@ -228,4 +230,56 @@ func (sm *SimulatorManager) abortActiveScenario() {
 		}
 		log.Printf("[scenario] %s aborted for shutdown", c.id)
 	}
+}
+
+// effectiveRateCap returns the fleet-wide events/second ceiling in force for a
+// scenario protocol, or 0 when that protocol has none.
+//
+// Limiters are PER PROTOCOL (syslog, trap and flap each own one; flow and
+// gNMI dial-out have none), which is why concurrent scenarios only contend
+// when they share a protocol — the mixed-protocol experiments per-device
+// overlap exists for share no bucket at all.
+func (sm *SimulatorManager) effectiveRateCap(protocol string) int {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	switch protocol {
+	case "syslog":
+		return sm.syslogGlobalCap
+	case "snmp-trap":
+		return sm.trapGlobalCap
+	default:
+		return 0 // flow protocols and gnmi-dial-out are not rate-limited
+	}
+}
+
+// runningPeers returns the OTHER scenarios of the same protocol that are
+// running right now — the ones whose windows overlap this one's and which
+// therefore draw from the same token bucket.
+//
+// Reads the lock-free registry snapshot rather than the map, so it is callable
+// with c.mu held. Taking scenarioMu there would invert the established
+// scenarioMu → c.mu order.
+func (sm *SimulatorManager) runningPeers(protocol, selfID string) []*ScenarioController {
+	snap := sm.scenarioSnap.Load()
+	if snap == nil {
+		return nil
+	}
+	var peers []*ScenarioController
+	for _, c := range *snap {
+		if c.id == selfID || c.Phase() != phaseRunning || c.protocol() != protocol {
+			continue
+		}
+		peers = append(peers, c)
+	}
+	return peers
+}
+
+// refreshScenarioSnapLocked republishes the lock-free registry mirror. Callers
+// hold scenarioMu.
+func (sm *SimulatorManager) refreshScenarioSnapLocked() {
+	snap := make([]*ScenarioController, 0, len(sm.scenarios))
+	for _, c := range sm.scenarios {
+		snap = append(snap, c)
+	}
+	sm.scenarioSnap.Store(&snap)
 }

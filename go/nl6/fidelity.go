@@ -15,6 +15,15 @@ import "sync/atomic"
 // gets a clean measurement window: silent before the run, only the scenario
 // during it, silent again after. Without a scenario, nothing is pushed at all.
 //
+// With several scenarios able to run at once (#392), read that promise
+// PER DEVICE rather than fleet-wide, which is how the mute already works: the
+// check below is in the non-participant branch, so a device holding any
+// participation handle emits under its own scenario's gate and one holding
+// none stays silent. What is no longer true is the fleet-wide reading — with
+// overlapping windows a shared collector sees both runs at once. Per-scenario
+// reconciliation survives that: run tagging (FR37) isolates each run, and
+// participants are disjoint by construction, so the source IPs are too.
+//
 // It is a thin mute checked in each exporter's non-participant fire path (the
 // `scenPart == nil` branch); the participant path is untouched, so scenario
 // accounting and the gate are byte-for-byte unchanged.

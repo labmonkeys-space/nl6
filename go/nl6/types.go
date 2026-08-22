@@ -337,6 +337,12 @@ type SimulatorManager struct {
 	scenarioMu  sync.Mutex
 	scenarios   map[string]*ScenarioController
 	scenarioSeq uint64
+	// scenarioSnap mirrors the registry for LOCK-FREE iteration, republished
+	// under scenarioMu whenever the registry changes. It exists so a running
+	// scenario can look up its concurrent peers while holding its own c.mu:
+	// taking scenarioMu there would invert the scenarioMu → c.mu order that
+	// submitScenario and deleteScenario establish.
+	scenarioSnap atomic.Pointer[[]*ScenarioController]
 	// scenarioPEN is the IANA Private Enterprise Number used to form
 	// PEN-dependent run tags (syslog SD-PARAM `nl6@<PEN>`, SNMP enterprise
 	// varbind). 0 = unset → those levers degrade to window + source-IP

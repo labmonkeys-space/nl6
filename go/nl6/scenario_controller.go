@@ -115,7 +115,51 @@ type ScenarioController struct {
 	// fact. Minimal precursor to the full structured phase log (story 5.2).
 	transitions []scenarioTransition
 
+	// overlaps records the peer scenarios of the SAME protocol whose windows
+	// overlapped this one's — they drew from the same rate-limiter token
+	// bucket, so this run did not measure what it would have measured alone.
+	//
+	// Recorded as overlaps BEGIN, never reconstructed at finalize: a peer can
+	// be stopped and deleted before this scenario finishes, and the disclosure
+	// must still name it. A sync.Map because peers write into each other's sets
+	// at start, and routing that through c.mu would need one controller to take
+	// another's lock — a cycle waiting to happen.
+	overlaps sync.Map // scenario ID → struct{}
+
 	result *ScenarioResult // populated at finalize
+}
+
+// protocol reports the scenario's push protocol. Safe without c.mu: spec is
+// written once by Submit, before the controller is ever registered, so no
+// reader can observe it being set.
+func (c *ScenarioController) protocol() string {
+	if c.spec == nil {
+		return ""
+	}
+	return c.spec.Protocol
+}
+
+// noteOverlapsLocked links this scenario with every peer already running on the
+// same protocol, in both directions, so each report names the other regardless
+// of which finishes first. Callers hold c.mu.
+func (c *ScenarioController) noteOverlapsLocked() {
+	for _, peer := range c.sm.runningPeers(c.protocol(), c.id) {
+		peer.overlaps.Store(c.id, struct{}{})
+		c.overlaps.Store(peer.id, struct{}{})
+	}
+}
+
+// overlapIDs returns the recorded peer scenario IDs, sequence-ordered.
+func (c *ScenarioController) overlapIDs() []string {
+	var ids []string
+	c.overlaps.Range(func(k, _ any) bool {
+		if id, ok := k.(string); ok {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	slices.SortFunc(ids, compareScenarioID)
+	return ids
 }
 
 // scenarioTransition is one recorded lifecycle step.
@@ -979,6 +1023,11 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	t1 := t0.Add(c.spec.Window)
 	drainEnd := t1.Add(c.spec.drainOrDefault())
 	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
+
+	// Link with any peer already running on this protocol. Done here rather
+	// than in Start so the scheduled-start path (which enters startLocked with
+	// c.mu already held) is covered by the same line.
+	c.noteOverlapsLocked()
 
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
