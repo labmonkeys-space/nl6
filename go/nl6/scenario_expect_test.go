@@ -272,10 +272,12 @@ func TestScenarioController_ExpectParticipantsGapLoss(t *testing.T) {
 	if phase != phaseArmed {
 		t.Fatalf("phase = %s after refused start, want armed", phase)
 	}
-	if err := sm.freezeFleet("probe"); err != nil {
+	// fleetFreezeCheck, NOT freezeFleet: freezeFleet only errors on an in-flight
+	// creation batch, so probing with it passes even when the refused start has
+	// leaked this scenario's hold — exactly the property under test.
+	if err := sm.fleetFreezeCheck(); err != nil {
 		t.Fatalf("fleet left frozen by a refused start: %v", err)
 	}
-	sm.unfreezeFleet("probe")
 }
 
 // TestScenarioController_ExpectParticipantsPreFreeze asserts the OTHER site: a
@@ -311,10 +313,9 @@ func TestScenarioController_ExpectParticipantsPreFreeze(t *testing.T) {
 			t.Errorf("pre-freeze refusal must not publish a running transition: %+v", transitions)
 		}
 	}
-	if err := sm.freezeFleet("probe"); err != nil {
+	if err := sm.fleetFreezeCheck(); err != nil {
 		t.Fatalf("fleet frozen by a pre-freeze refusal: %v", err)
 	}
-	sm.unfreezeFleet("probe")
 }
 
 // TestScenarioController_StartPruneReinstalls: a device deleted and re-created

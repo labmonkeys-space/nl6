@@ -36,6 +36,20 @@ type ScenarioController struct {
 	spec  *Scenario
 	id    string
 	phase scenarioPhase
+	// phasePub mirrors phase for LOCK-FREE reads. The manager inspects every
+	// registered scenario's phase while holding scenarioMu (admission counting,
+	// retention reaping, delete), and finish() holds c.mu across the whole
+	// stop — drain barrier, trap and flow ticker joins. Reading phase under
+	// c.mu from there would let one scenario's drain stall the entire scenario
+	// API: the submit blocks on that c.mu while holding scenarioMu, and every
+	// other endpoint queues behind it. Harmless when one scenario could exist;
+	// per-device overlap (#392) makes the blast radius the whole registry.
+	//
+	// Written only by setPhaseLocked, under c.mu, so it can never lead the
+	// mutex-guarded field. A reader may observe a phase that changes moments
+	// later, which is true of any phase read and is why every mutator
+	// re-validates the transition under c.mu.
+	phasePub atomic.Value // scenarioPhase
 
 	// configSHA is the SHA-256 fingerprint over the canonicalized submit
 	// config (D5). Opaque identity string set once at submit by the manager
@@ -249,7 +263,7 @@ func (c *ScenarioController) transitionLocked(to scenarioPhase) error {
 	if !ok {
 		return fmt.Errorf("%w: %s -> %s", errInvalidTransition, from, to)
 	}
-	c.phase = to
+	c.setPhaseLocked(to)
 	c.transitions = append(c.transitions, scenarioTransition{Phase: to, At: c.now()})
 	// Structured key=value transition log (5.2 / NFR-O2): `scenario=<id>
 	// phase=<to>` is the correlation surface a monitoring stack greps/parses;
@@ -819,7 +833,7 @@ func (c *ScenarioController) prefixMatchesLocked() []string {
 // construction, which is validated at submit and therefore near-unreachable.
 func (c *ScenarioController) rollbackStartLocked() {
 	c.sm.unfreezeFleet(c.id)
-	c.phase = phaseArmed
+	c.setPhaseLocked(phaseArmed)
 	c.gate.Store(&gateState{phase: phaseArmed})
 }
 
@@ -1256,11 +1270,22 @@ func (c *ScenarioController) Cancel() error {
 	return nil
 }
 
-// Phase returns the current lifecycle phase (test/observability helper).
+// setPhaseLocked is the ONLY writer of the phase, keeping the mutex-guarded
+// field and its lock-free mirror in step. Callers hold c.mu.
+func (c *ScenarioController) setPhaseLocked(p scenarioPhase) {
+	c.phase = p
+	c.phasePub.Store(p)
+}
+
+// Phase returns the current lifecycle phase. Lock-free by design: the manager
+// reads it for every registered scenario while holding scenarioMu, and taking
+// c.mu there would queue the whole scenario API behind any one scenario's drain
+// (see phasePub).
 func (c *ScenarioController) Phase() scenarioPhase {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.phase
+	if p, ok := c.phasePub.Load().(scenarioPhase); ok {
+		return p
+	}
+	return phaseSubmitted // pre-publication: a controller starts submitted
 }
 
 // LiveCounts sums the participant ledgers with APPROXIMATE mid-run atomic reads

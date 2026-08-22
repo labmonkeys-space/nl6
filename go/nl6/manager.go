@@ -342,7 +342,11 @@ func (sm *SimulatorManager) fleetFreezeCheckLocked() error {
 	for id := range sm.fleetFrozenBy {
 		holders = append(holders, id)
 	}
-	slices.Sort(holders) // map order must not leak into an operator-facing error
+	// By sequence, not bytes: %06d is a minimum width, so past the millionth
+	// submit s-1000000 would sort before s-999999 — the same trap
+	// compareScenarioID exists to close for the scenario listing. This is the
+	// other place multiple scenario IDs are rendered for an operator.
+	slices.SortFunc(holders, compareScenarioID)
 	return fmt.Errorf("fleet membership is frozen by running scenario(s) %s: device create/delete is rejected until they finish",
 		strings.Join(holders, ", "))
 }
