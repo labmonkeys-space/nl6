@@ -29,7 +29,7 @@ func TestReconcile_Classification(t *testing.T) {
 		k("syslog", "10.42.0.4", "c:514"): 1100,
 		k("syslog", "10.42.0.9", "c:514"): 42, // phantom — not in report
 	}
-	got := reconcile(sent, received, 0.005)
+	got := reconcile(sent, received, 0.005, true)
 
 	want := map[string]string{
 		"10.42.0.1": statusOK,
@@ -58,10 +58,10 @@ func TestReconcile_Classification(t *testing.T) {
 func TestReconcile_ToleranceBoundary(t *testing.T) {
 	sent := map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 1000}
 	// exactly 0.5% loss → OK; 1.0% loss → LOSS
-	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 995}, 0.005); got[0].Status != statusOK {
+	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 995}, 0.005, true); got[0].Status != statusOK {
 		t.Fatalf("ratio == tolerance: status=%s, want OK", got[0].Status)
 	}
-	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 990}, 0.005); got[0].Status != statusLoss {
+	if got := reconcile(sent, map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 990}, 0.005, true); got[0].Status != statusLoss {
 		t.Fatalf("ratio > tolerance: status=%s, want LOSS", got[0].Status)
 	}
 }
@@ -143,8 +143,9 @@ func TestRender_Formats(t *testing.T) {
 		map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 100},
 		map[joinKey]uint64{k("syslog", "10.0.0.1", "c"): 95},
 		0.005,
+		true, // queue drained: a shortfall here IS loss
 	)
-	if txt := renderText(res, 0.005); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
+	if txt := renderText(res, 0.005, true); !strings.Contains(txt, "LOSS") || !strings.Contains(txt, "Summary:") {
 		t.Fatalf("text render missing LOSS/Summary:\n%s", txt)
 	}
 	if c := renderCSV(res); !strings.HasPrefix(c, "protocol,source_ip,collector,sent,received,delta,loss_ratio,status") {
@@ -169,8 +170,131 @@ func TestReconcile_EndToEnd_JSONvsPrometheus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := reconcile(sent, recv, 0.005)
+	got := reconcile(sent, recv, 0.005, true)
 	if len(got) != 1 || got[0].Status != statusOK || got[0].LossRatio != 0 {
 		t.Fatalf("end-to-end: %+v", got)
+	}
+}
+
+// TestReconcile_ShortfallIsResidualUntilDrainIsAsserted is the whole point of
+// design D2c: a shortfall measured while the collector's queue may still be
+// draining is BACKLOG, which resolves itself, and calling it LOSS sends an
+// operator chasing a network fault that isn't there. The tool cannot see the
+// queue, so it must not guess.
+func TestReconcile_ShortfallIsResidualUntilDrainIsAsserted(t *testing.T) {
+	sent := map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 159500}
+	recv := map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40586}
+
+	undrained := reconcile(sent, recv, 0.005, false)
+	if undrained[0].Status != statusResidual {
+		t.Errorf("without -drained: got %q, want %q — an unclassified shortfall must not be called loss",
+			undrained[0].Status, statusResidual)
+	}
+
+	drained := reconcile(sent, recv, 0.005, true)
+	if drained[0].Status != statusLoss {
+		t.Errorf("with -drained: got %q, want %q", drained[0].Status, statusLoss)
+	}
+
+	// Both remain failures — an unresolved residual is not a pass.
+	for _, r := range append(undrained, drained...) {
+		if r.Status == statusOK {
+			t.Error("a beyond-tolerance shortfall must never reconcile as OK")
+		}
+	}
+}
+
+// TestRenderText_DoesNotLabelUndrainedShortfallAsLoss guards the summary line,
+// which is where the original harness defect lived: one figure merging backlog
+// and loss.
+func TestRenderText_DoesNotLabelUndrainedShortfallAsLoss(t *testing.T) {
+	res := reconcile(
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 159500},
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40586},
+		0.005, false,
+	)
+	txt := renderText(res, 0.005, false)
+	if strings.Contains(txt, "fleet_loss") {
+		t.Errorf("undrained summary reports fleet_loss, merging backlog and loss:\n%s", txt)
+	}
+	if !strings.Contains(txt, "fleet_residual") {
+		t.Errorf("undrained summary should report fleet_residual:\n%s", txt)
+	}
+	if !strings.Contains(txt, "-drained") {
+		t.Errorf("undrained output should tell the operator how to classify the residual:\n%s", txt)
+	}
+}
+
+// TestRenderText_NoteOnlyWhenSomethingIsUnclassified: a run whose only flagged
+// rows are PHANTOM or DUP has nothing a queue drain would change. Telling that
+// operator to re-run with -drained sends them to wait on an event that cannot
+// affect the result.
+func TestRenderText_NoteOnlyWhenSomethingIsUnclassified(t *testing.T) {
+	// PHANTOM only: received traffic with no report row.
+	res := reconcile(
+		map[joinKey]uint64{},
+		map[joinKey]uint64{k("syslog", "10.42.0.9", "c:514"): 500},
+		0.005, false,
+	)
+	if res[0].Status != statusPhantom {
+		t.Fatalf("fixture: got %q, want PHANTOM", res[0].Status)
+	}
+	if txt := renderText(res, 0.005, false); strings.Contains(txt, "-drained") {
+		t.Errorf("PHANTOM-only run advises -drained, which cannot change it:\n%s", txt)
+	}
+
+	// DUP only: received exceeds sent; a drain cannot reduce it.
+	dup := reconcile(
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 100},
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 130},
+		0.005, false,
+	)
+	if dup[0].Status != statusDup {
+		t.Fatalf("fixture: got %q, want DUP", dup[0].Status)
+	}
+	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "-drained") {
+		t.Errorf("DUP-only run advises -drained:\n%s", txt)
+	}
+}
+
+// TestRenderText_FleetLabelMatchesTheNumber: "residual" names a positive
+// shortfall. A clean run has no residual, and a duplication-heavy run has a
+// NEGATIVE one, which is not a thing.
+func TestRenderText_FleetLabelMatchesTheNumber(t *testing.T) {
+	clean := reconcile(
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 1000},
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 1000},
+		0.005, false,
+	)
+	if txt := renderText(clean, 0.005, false); strings.Contains(txt, "fleet_residual") {
+		t.Errorf("a fully reconciled run reports a residual of zero as a residual:\n%s", txt)
+	}
+
+	dup := reconcile(
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 100},
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 130},
+		0.005, false,
+	)
+	if txt := renderText(dup, 0.005, false); strings.Contains(txt, "fleet_residual=-") {
+		t.Errorf("duplication rendered as a negative residual:\n%s", txt)
+	}
+}
+
+// TestReconcile_MissingIsUnclassifiedToo: MISSING is the 100% shortfall. A
+// low-rate device whose messages are all still queued produces no received row
+// at all, so treating MISSING as settled total loss is the same mislabel this
+// change exists to prevent, just at the extreme.
+func TestReconcile_MissingIsUnclassifiedToo(t *testing.T) {
+	res := reconcile(
+		map[joinKey]uint64{k("syslog", "10.42.0.1", "c:514"): 40},
+		map[joinKey]uint64{},
+		0.005, false,
+	)
+	if res[0].Status != statusMissing {
+		t.Fatalf("fixture: got %q, want MISSING", res[0].Status)
+	}
+	txt := renderText(res, 0.005, false)
+	if !strings.Contains(txt, "-drained") {
+		t.Errorf("MISSING without a drain assertion is unclassified and must say so:\n%s", txt)
 	}
 }

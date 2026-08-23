@@ -26,13 +26,35 @@ type joinKey struct {
 }
 
 // reconciliation status for one joined key.
+//
+// LOSS vs RESIDUAL is the distinction this tool exists to preserve. A shortfall
+// measured while the collector's queue is still draining is BACKLOG, and
+// backlog resolves itself; the same shortfall measured after the queue has
+// emptied is LOSS, and loss never resolves. They have opposite remedies, so
+// collapsing them into one figure reproduces the very defect this method was
+// written to eliminate (design D2c).
+//
+// The tool cannot observe the collector's queue, so it cannot make the call on
+// its own: the operator asserts a drained queue with -drained. Absent that
+// assertion a shortfall is reported as RESIDUAL — unclassified, and still a
+// non-zero exit, because an unresolved residual is not a pass.
 const (
-	statusOK      = "OK"      // |loss_ratio| within tolerance
-	statusLoss    = "LOSS"    // received < sent beyond tolerance (real loss)
-	statusDup     = "DUP"     // received > sent beyond tolerance (duplication)
-	statusMissing = "MISSING" // in report, no received row (total loss or a join gap)
-	statusPhantom = "PHANTOM" // in received, no report row (unexpected/background traffic)
+	statusOK       = "OK"       // |loss_ratio| within tolerance
+	statusLoss     = "LOSS"     // received < sent beyond tolerance, queue drained: real loss
+	statusResidual = "RESIDUAL" // received < sent beyond tolerance, drain not asserted: backlog or loss, unclassified
+	statusDup      = "DUP"      // received > sent beyond tolerance (duplication)
+	statusMissing  = "MISSING"  // in report, no received row (total loss or a join gap)
+	statusPhantom  = "PHANTOM"  // in received, no report row (unexpected/background traffic)
 )
+
+// shortfallStatus names a beyond-tolerance shortfall according to whether the
+// caller attested that the collector's queue had drained.
+func shortfallStatus(drained bool) string {
+	if drained {
+		return statusLoss
+	}
+	return statusResidual
+}
 
 // result is one reconciled key.
 type result struct {
@@ -185,7 +207,7 @@ func parsePrometheus(data []byte) (map[joinKey]uint64, error) {
 
 // reconcile outer-joins sent and received on the tuple and classifies each
 // key against the tolerance band. Deterministic order (sorted by key).
-func reconcile(sent, received map[joinKey]uint64, tolerance float64) []result {
+func reconcile(sent, received map[joinKey]uint64, tolerance float64, drained bool) []result {
 	keys := make(map[joinKey]struct{}, len(sent)+len(received))
 	for k := range sent {
 		keys[k] = struct{}{}
@@ -205,6 +227,12 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64) []result {
 		case !inReport:
 			res.Status = statusPhantom
 		case !inReceived:
+			// MISSING stays its own status because "no received row at all" is a
+			// join-shape fact worth keeping distinct from a partial shortfall —
+			// it is as often a join gap as a delivery problem. But it is the
+			// 100% case of the same ambiguity, so it counts as UNCLASSIFIED
+			// until the drain is asserted, and callers must not read it as
+			// total loss on its own.
 			res.Status = statusMissing
 			res.LossRatio = 1
 		default:
@@ -220,7 +248,7 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64) []result {
 			res.LossRatio = float64(int64(s)-int64(r)) / float64(s)
 			switch {
 			case res.LossRatio > tolerance:
-				res.Status = statusLoss
+				res.Status = shortfallStatus(drained)
 			case res.LossRatio < -tolerance:
 				res.Status = statusDup
 			default:
@@ -243,12 +271,12 @@ func reconcile(sent, received map[joinKey]uint64, tolerance float64) []result {
 
 // --- rendering ----------------------------------------------------------
 
-func renderText(results []result, tolerance float64) string {
+func renderText(results []result, tolerance float64, drained bool) string {
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 2, 2, ' ', 0)
 	// Writes to a strings.Builder-backed tabwriter never error; ignore explicitly.
 	_, _ = fmt.Fprintln(tw, "PROTOCOL\tSOURCE_IP\tCOLLECTOR\tSENT\tRECEIVED\tDELTA\tLOSS%\tSTATUS")
-	var okN, badN int
+	var okN, badN, unclassifiedN int
 	var totSent, totRecv uint64
 	for _, r := range results {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%.2f%%\t%s\n",
@@ -260,14 +288,37 @@ func renderText(results []result, tolerance float64) string {
 		} else {
 			badN++
 		}
+		if r.Status == statusResidual || r.Status == statusMissing {
+			unclassifiedN++
+		}
 	}
 	_ = tw.Flush()
 	fleetLoss := 0.0
 	if totSent > 0 {
 		fleetLoss = float64(int64(totSent)-int64(totRecv)) / float64(totSent) * 100
 	}
-	_, _ = fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d fleet_loss=%.2f%%\n",
-		len(results), okN, badN, tolerance*100, totSent, totRecv, fleetLoss)
+	// The fleet figure is labelled by what was actually established. Calling an
+	// undrained shortfall "loss" is precisely the single-number merge of
+	// backlog and loss that design D2c rules out.
+	label := "fleet_delta"
+	switch {
+	case fleetLoss <= 0:
+	case drained:
+		label = "fleet_loss"
+	default:
+		label = "fleet_residual"
+	}
+	_, _ = fmt.Fprintf(&b, "\nSummary: %d keys | %d OK | %d flagged | tolerance %.2f%% | sent=%d received=%d %s=%.2f%%\n",
+		len(results), okN, badN, tolerance*100, totSent, totRecv, label, fleetLoss)
+	// Gate on an actually-unclassified row, not on badN: a run whose only
+	// flagged rows are PHANTOM or DUP has nothing a drain would change, and
+	// telling that operator to wait for a queue to empty wastes their time.
+	if !drained && unclassifiedN > 0 {
+		_, _ = fmt.Fprint(&b, "\nNOTE: shortfalls above are UNCLASSIFIED (RESIDUAL, or MISSING with no received row).\n"+
+			"Still-queued messages are backlog and resolve themselves; drained-and-missing\n"+
+			"messages are loss and do not. Re-run with -drained once the collector's input\n"+
+			"queue has emptied to classify them.\n")
+	}
 	return b.String()
 }
 

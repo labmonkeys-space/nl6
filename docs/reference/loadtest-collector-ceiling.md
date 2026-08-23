@@ -357,6 +357,36 @@ An earlier draft of this page called it a byte cap on the strength of `994 / 4`,
 The same lab was later measured at 4 partitions, in [the ordering check](#the-check-is-not-a-formality-it-fired), where the throughput was higher and the configuration disqualified.
 A single Minion and a 4 vCPU Core with a single-partition sink is not a tuned production deployment, and a manifest has to say so as plainly as the number does.
 
+## What this would take with real devices
+
+A ceiling only earns its place in a capacity plan if it survives contact with the fleet it is meant to describe, and this one does not survive it intact.
+
+Capacity here **rises with offered rate**. Both rows below were measured on the same 500-device fleet at the same 4 partitions, so worker count is held fixed and only the per-device rate differs:
+
+| offered | per device | mean batch | drain rate |
+|---|---|---|---|
+| 160/s | 0.32/s | 1.0 | (reconciled exactly; below ceiling) |
+| 900/s | 1.8/s | ~1 | ~144/s |
+| 3000/s | 6/s | ~4 | ~320/s |
+
+**The obvious explanation does not survive this page's own model, and that is worth stating rather than smoothing over.**
+Batch size tracks per-device rate, so batching is the natural suspect for the 2.2x jump. But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s per worker — about 30%, and [the ordering section](#the-check-is-not-a-formality-it-fired) puts it at 12% against the asymptote. Neither is 2.2x. Held the other way the model overshoots: four workers at batch 1 predicts ~412/s against a measured 144/s.
+
+So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood** — the offered-rate effect is real and measured, but its cause is not established as batch size. The database was the most loaded component at these rates and is the standing candidate. Resolving it needs a run that varies per-device rate with batch size pinned, which this session did not do.
+
+What survives without the mechanism is the **shape** of the dependency, which is measured directly: capacity depends on per-device rate, not only on the fleet's total.
+Total offered rate alone does not predict whether a fleet is inside the ceiling; **concentration does**.
+
+So "~320/s" is not a number to plan a real deployment against.
+Reaching it requires every device sustaining roughly 6 syslog messages per second, which is a device in a fault storm, not a device in steady state.
+A production fleet at rest sits at the low-per-device-rate end of the table, and its usable figure is the lower one.
+
+This inverts the usual sizing question. The number to check is not "how many messages per second will the fleet send" but **"how many messages per second will the busiest devices send during an incident"**, since that is both when volume peaks and where the measured capacity is highest.
+
+Two honest limits on the above.
+The three rows are measured; the 10,000-device extrapolation is **inference from them** and has not been run. It assumes only that the measured dependence on per-device rate continues down to 0.03/s — deliberately not that batching causes it, since the paragraph above shows that attribution failing. It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.
+And the 320/s configuration is disqualified anyway on ordering grounds ([the check fired](#the-check-is-not-a-formality-it-fired)), so it bounds what the tuning *could* buy, not what it is safe to run.
+
 ## Related
 
 - [Runbooks](./loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
