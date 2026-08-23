@@ -24,7 +24,7 @@ sudo ./nl6 [flags]
 -no-namespace           # Disable network namespace isolation
 -version                # Print version string and exit (no startup side effects)
 -fidelity               # [global] Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a running load-test scenario window. Devices still answer polls; on-demand fires still go through. Default: false.
-                        #          THIS is how you silence a fleet for a measurement. A long per-device `interval` does NOT work — it is accepted, echoed back by GET /api/v1/devices, and ignored by the scheduler (nl6#445). Startup-only today.
+                        #          THIS is how you silence a fleet for a measurement. A long per-device `interval` does NOT work: it is accepted, echoed back by GET /api/v1/devices, and ignored by the scheduler (nl6#445). Also togglable at runtime via POST /api/v1/fidelity (optional `duration` auto-reverts, 24h cap); GET reports the value in force AND the startup flag, since once mutable the flag is a default rather than a fact.
 -scenario-pen <uint>    # [global] IANA PEN for PEN-dependent scenario run tags (syslog SD-PARAM, SNMP enterprise varbind); 0 = unset → those levers degrade to window+source-IP.
 -optical-scenario <s>   # [seed]   Auto-start-batch per-device optical health band (optical transport types only): clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via optical_scenario.
 -if-error-scenario <s>  # Auto-start-batch per-device error/discard scenario: clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via if_error_scenario.

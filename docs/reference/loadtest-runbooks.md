@@ -17,8 +17,12 @@ namespace). For a clean window with no background noise, add
 > fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence
 > regardless. Setting `"interval": "24h"` on 500 devices leaves ~50 events/s of
 > background running, which is enough to contaminate an accept-rate measurement
-> while every surface reports success. `-fidelity` is the supported way, and it
-> is startup-only today — apply it at launch, not mid-run.
+> while every surface reports success. `-fidelity` is the supported way. Set it
+> at launch, or toggle it at runtime with `POST /api/v1/fidelity` (optional
+> `duration` auto-reverts, capped at 24h), which is what you want when
+> bracketing a measurement on a fleet you do not wish to rebuild.
+> `GET /api/v1/fidelity` reports the value in force alongside the startup flag,
+> because once the value is mutable the flag is only a default.
 
 A scenario **gates an export that already exists** — it never configures the
 wire. So each device must have the target protocol's exporter enabled first, via

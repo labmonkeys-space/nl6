@@ -248,6 +248,11 @@ func main() {
 	manager = NewSimulatorManagerWithOptions(useNamespace)
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 	fidelitySilent.Store(*fidelity)
+	// Remember what the flag said, so GET /api/v1/fidelity can report the
+	// startup default alongside the value in force. Once the value is mutable
+	// the flag is a default rather than a fact, and reporting only the flag
+	// would be the nl6#445 defect in a new place.
+	fidelityStartupFlag.Store(*fidelity)
 	if *fidelity {
 		log.Printf("[fidelity] fleet silent — no autonomous push telemetry until a scenario runs (-fidelity)")
 	}

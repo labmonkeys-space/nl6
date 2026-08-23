@@ -136,6 +136,31 @@ type reportMetadata struct {
 	// numeric dependency on what else happened to be running is the failure
 	// this subsystem keeps designing against, so it is disclosed instead.
 	RateCap *rateCapDisclosure `json:"rate_cap,omitempty"`
+	// Fidelity discloses whether the fleet was silent for this window, and
+	// whether that changed mid-run.
+	//
+	// Always present, unlike RateCap: "was the rest of the fleet quiet?" is a
+	// question every collector-side reconciliation depends on, and absence
+	// would be indistinguishable from "silent". Fidelity became runtime-mutable
+	// and a pre-armed auto-revert can fire inside a window with no request
+	// behind it, so this is not inferable from the run's own inputs.
+	Fidelity fidelityDisclosure `json:"fidelity"`
+}
+
+// fidelityDisclosure records fleet silence across one run.
+type fidelityDisclosure struct {
+	// SilentAtStart is the value in force at T0.
+	SilentAtStart bool `json:"silent_at_start"`
+	// ChangedDuringWindow is true when fleet silence was toggled, or a timed
+	// revert fired, between T0 and finalize.
+	//
+	// A true here means the run did NOT measure what its operator believes:
+	// non-participant devices resumed or ceased autonomous push part-way
+	// through, so the collector-side accept rate covers a mixture. The ledger
+	// stays exact either way (the mute lives in the non-participant branch),
+	// which is precisely why this needs saying out loud — the numbers look
+	// clean.
+	ChangedDuringWindow bool `json:"changed_during_window"`
 }
 
 // rateCapDisclosure is the shared-cap record for one run.
@@ -286,6 +311,10 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// digest and the count can never describe different sets.
 				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
 				RateCap:                    buildRateCapDisclosure(c),
+				Fidelity: fidelityDisclosure{
+					SilentAtStart:       c.fidelitySilentAtStart,
+					ChangedDuringWindow: fidelityTransitions.Load() != c.fidelityTransitionsAtStart,
+				},
 			},
 			Duration:             res.T1Actual.Sub(res.T0Actual).String(),
 			ParticipantsArmed:    len(res.PerDevice),

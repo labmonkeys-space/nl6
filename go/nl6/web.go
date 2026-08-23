@@ -644,6 +644,8 @@ func setupRoutes() *mux.Router {
 
 	// API routes
 	api := router.PathPrefix("/api/v1").Subrouter()
+	api.HandleFunc("/fidelity", fidelityStatusHandler).Methods("GET")
+	api.HandleFunc("/fidelity", fidelityToggleHandler).Methods("POST")
 	api.HandleFunc("/devices", createDevicesHandler).Methods("POST")
 	api.HandleFunc("/devices", listDevicesHandler).Methods("GET")
 	api.HandleFunc("/devices/export", exportDevicesCSVHandler).Methods("GET")

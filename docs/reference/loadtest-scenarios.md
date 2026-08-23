@@ -62,6 +62,25 @@ fleet is **silent** — no autonomous push leaves any device — **except** duri
 running scenario's `[T0,T1)` window, where only that scenario's gated traffic
 flows. Silence before the run, only the scenario during it, silence again after.
 
+Fidelity is also togglable **at runtime**, which is what you want when
+bracketing a measurement on a fleet you would rather not rebuild — a restart
+destroys every REST-created device:
+
+```console
+curl -sX POST $NL6/api/v1/fidelity -H 'Content-Type: application/json' \
+  -d '{"silent": true}'
+
+# or bound it, so it restores itself even if you forget
+curl -sX POST $NL6/api/v1/fidelity -H 'Content-Type: application/json' \
+  -d '{"silent": true, "duration": "20m"}'
+
+curl -s $NL6/api/v1/fidelity   # value in force, startup flag, pending revert
+```
+
+`GET` reports the value in force **and** the startup flag separately: once the
+value is mutable, `-fidelity` is only a default, and a surface reporting the
+flag alone would assert something the engine may have stopped honouring.
+
 - Devices still answer **polls** (SNMP / SSH / HTTPS) normally — fidelity mutes
   only autonomous *push* telemetry.
 - Explicit **on-demand** fires (`POST /devices/{ip}/{trap,syslog}`) still go
