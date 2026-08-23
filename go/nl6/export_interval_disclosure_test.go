@@ -375,3 +375,48 @@ func TestEffectiveIntervals_CarriesNoPerDeviceNote(t *testing.T) {
 		t.Errorf("per-device block is %d bytes; it is replicated once per device", len(raw))
 	}
 }
+
+// TestEcho_AllThreeCreationPaths pins the property task 7c.2 asked for, across
+// every way a device can come into existence.
+//
+// The original report was that a read-back showed a defaulted interval as
+// though the operator had chosen it. Provenance plus the echo helpers resolve
+// it, and the CLI seed path resolves correctly by construction rather than by
+// explicit handling — which is worth a test, because it is exactly the kind of
+// accidental correctness that a later refactor breaks silently.
+func TestEcho_AllThreeCreationPaths(t *testing.T) {
+	const flagInterval = 60 * time.Second
+
+	t.Run("REST with an explicit interval is echoed", func(t *testing.T) {
+		c := &DeviceSyslogConfig{Collector: "x:514", Interval: jsonDuration(24 * time.Hour)}
+		c.markIntervalProvenance() // handler does this on the raw body
+		c.ApplyDefaults()
+		if got := time.Duration(echoSyslogConfig(c).Interval); got != 24*time.Hour {
+			t.Errorf("interval = %s, want the requested 24h; operator intent must survive", got)
+		}
+	})
+
+	t.Run("REST without an interval echoes nothing", func(t *testing.T) {
+		c := &DeviceSyslogConfig{Collector: "x:514"}
+		c.markIntervalProvenance()
+		c.ApplyDefaults() // stamps the package default
+		if got := time.Duration(echoSyslogConfig(c).Interval); got != 0 {
+			t.Errorf("interval = %s, want omitted; the caller chose nothing", got)
+		}
+	})
+
+	t.Run("CLI seed echoes nothing", func(t *testing.T) {
+		// simulator.go builds this from -syslog-collector / -syslog-interval and
+		// never calls markIntervalProvenance: the flag is a fleet-wide setting,
+		// not a per-device choice, so it must not read back as one. Correct
+		// today only because the zero value is false — hence this test.
+		c := &DeviceSyslogConfig{Collector: "x:514", Interval: jsonDuration(flagInterval)}
+		c.ApplyDefaults()
+		if c.IntervalWasSet() {
+			t.Fatal("seed path marked provenance; a fleet flag is not a per-device choice")
+		}
+		if got := time.Duration(echoSyslogConfig(c).Interval); got != 0 {
+			t.Errorf("interval = %s, want omitted for a flag-derived value", got)
+		}
+	})
+}
