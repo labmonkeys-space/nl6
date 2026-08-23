@@ -67,6 +67,7 @@ const sidebars: SidebarsConfig = {
             'reference/loadtest-scenarios',
             'reference/loadtest-runbooks',
             'reference/loadtest-report-schema',
+            'reference/loadtest-collector-ceiling',
           ],
         },
         'reference/resource-files',
