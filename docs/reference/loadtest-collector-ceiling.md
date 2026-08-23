@@ -20,7 +20,11 @@ The difference matters because the wrong cause implies the wrong fix.
 
 That said, the first attempt's *instinct* was better than its reasoning, which is worth admitting because it is the more common shape of being wrong.
 Partitions turned out to be the only tuning that moved the number at all, so a correction that dismissed them as the wrong suspect over-corrected.
-The mechanism really was batch size over dispatch cost; the lever really was partitions; those are different questions and it is easy to answer one while thinking you answered the other.
+The mechanism really was batch size over dispatch cost, and the lever the throughput numbers pointed to really was partitions.
+Those are different questions, and it is easy to answer one while believing you answered the other.
+
+**That lever was then disqualified on correctness**, so nothing above should be read as a recommendation to add partitions.
+See [the ordering check](#the-check-is-not-a-formality-it-fired) for why, and for what is left afterwards.
 
 ## Vocabulary
 
@@ -134,6 +138,7 @@ The worker term matters: on a single-consumer pipeline it is 1 and disappears, b
 **Service time is wall clock, not CPU**, and the difference decides how the identity scales.
 Where the per-message cost is dominated by waiting (database round trips, network), adding workers overlaps those waits and throughput rises without CPU rising with it.
 Measured here, 4 workers took ~130/s to ~320/s, a 2.4x gain from 4x the workers, while the collector used only 1.2 of 4 available vCPU.
+Treat that figure as an illustration of scaling arithmetic and not as a capacity result: the same configuration is [disqualified on ordering](#the-check-is-not-a-formality-it-fired) further down.
 Expect sub-linear scaling, and treat a large gap between predicted and measured as a pointer to the *next* constraint rather than a broken model: in this case the database, the most loaded component at that rate.
 
 State which statistic you used.
@@ -212,7 +217,8 @@ That is the opposite of the intuition that a fleet is just a rate.
 
 Two consequences for any result:
 
-- A ceiling figure is meaningless without the **device count and per-device rate** that produced it. Report them beside the number, and carry them in the manifest as controls.
+- A ceiling figure is meaningless without the **device count and per-device rate** that produced it.
+  Report them beside the number, and carry them in the manifest as controls.
 - Comparing two runs at the same aggregate rate but different fleet sizes compares two different workloads, not two configurations.
 
 ## The matrix
@@ -279,23 +285,42 @@ For a monitoring system that is semantically loaded, not cosmetic.
 A `linkDown` and `linkUp` pair delivered inverted leaves an interface latched down that is actually up.
 
 So the parallelism axis carries a mandatory ordering check: emit a known-ordered per-device sequence and assert the order survives.
+Where the collector's persisted records cannot reconstruct that sequence, assert instead that all of one source's work units land on a single partition, which is sufficient because the ordering guarantee holds only within a partition.
 A result showing higher throughput with broken ordering is **reported as a regression**, not as a gain.
 
 Work-unit size changes alter packing rather than order, so that axis carries no equivalent confound, which is a further reason to test it first.
 
 ### The check is not a formality: it fired
 
-Run against Horizon 36.0.3 at 4 partitions, the assertion **failed**.
+The assertion was run against Horizon 36.0.3 at 4 partitions, and it **failed**.
 
-Messages are aggregated per host *within* a work unit, but the work units are produced to the queue **unkeyed**, so consecutive records from one device round-robin across partitions. Forty strictly sequential messages from a single device produced seven records spread across three of four partitions. With one consumer per partition those are processed concurrently, and per-device order is gone.
+Forty strictly sequential messages from a single device produced seven work units, spread across three of the four partitions.
+Messages are aggregated per host *within* a work unit, so ordering holds inside one record.
+It is the spread of records across partitions that breaks it, because with one consumer per partition those records are processed concurrently.
 
-The consequence is concrete rather than theoretical: a `linkDown` in one record can be persisted after the `linkUp` in the next, leaving an interface latched down while it is actually up, with nothing downstream flagging it.
+**What was measured is the spread, not its cause.**
+Records from one device are evidently not partitioned by device, but this test does not establish why.
+An unkeyed record and a record keyed by something other than the device would both produce this result, and modern queue clients do not necessarily round-robin unkeyed records anyway.
+Naming a mechanism here would be the same unmeasured-cause error this page opens by criticising.
+The disqualification does not depend on the cause: spread across partitions is sufficient, because the ordering guarantee exists only *within* a partition.
 
-So on that deployment the only tuning that raised throughput, 130/s to ~320/s, is **reported as a regression**. Batching could not move the number and parallelism could not move it safely, which leaves no tuning-level lever at all: keying the records by source would be a code change.
+The consequence is concrete rather than theoretical.
+A `linkDown` in one record can be persisted after the `linkUp` in the next, leaving an interface latched down while it is actually up.
+Whether anything downstream would catch that was not measured, and on this deployment nothing obviously would.
 
-A throughput-only report would have recommended four partitions. That is the entire reason this check is mandatory rather than advisory.
+So on that deployment the only tuning that raised throughput, 130/s to ~320/s, is **reported as a regression**.
+The other axis had already failed: service time was proportional to batch contents at roughly 3 ms fixed plus 6.7 ms per message, so `n / (3 + 6.7n)` asymptotes near 149/s and batching buys about 12%.
+That leaves no tuning-level lever at all, since keying the records by source would be a code change.
 
-Note that a collector's persisted events may not be able to verify ordering end to end. Here, unmatched syslog persists a generic message carrying neither device identity nor original content, so the partition-spread test is the usable instrument, and it is the stronger one anyway: order is guaranteed only *within* a partition, so spread across partitions is sufficient to prove the guarantee is gone.
+A throughput-only report would have recommended four partitions.
+That is the entire reason this check is mandatory rather than advisory.
+
+**On instruments.** A collector's persisted events may not be able to verify ordering end to end.
+Here, unmatched syslog persists a generic message carrying neither device identity nor original content, so the sequence cannot be reconstructed downstream.
+Partition spread is then the usable instrument, and it is the stronger **disqualifier**: it proves the guarantee is absent regardless of whether an inversion happened to occur during the run.
+It is correspondingly weaker as evidence that messages *were* misordered, which is a distinction worth keeping when reporting the result.
+
+
 
 ## Worked example: OpenNMS Horizon 36.0.3
 
@@ -328,7 +353,8 @@ The batching is a **count cap plus an interval flush**, not a byte cap, and the 
 `SyslogSinkModule` exposes an aggregation policy with `getBatchSize()` (a count) and `getBatchIntervalMs()`; neither is configured in this lab, so both run at defaults, and the observed batch tracks per-device rate rather than record size.
 An earlier draft of this page called it a byte cap on the strength of `994 / 4`, which was the same mistake it warns about elsewhere: reasoning from a derived average instead of measuring.
 
-**This is one topology's number.**
+**This is one topology's number**, and only its single-partition state.
+The same lab was later measured at 4 partitions, in [the ordering check](#the-check-is-not-a-formality-it-fired), where the throughput was higher and the configuration disqualified.
 A single Minion and a 4 vCPU Core with a single-partition sink is not a tuned production deployment, and a manifest has to say so as plainly as the number does.
 
 ## Related
