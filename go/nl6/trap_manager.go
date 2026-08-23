@@ -481,16 +481,27 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	device.trapExporter = exporter
 	device.mu.Unlock()
 
-	// Per-device Interval is stored on cfg but not honored by the
-	// scheduler today — the scheduler draws Poisson fires from its
-	// simulator-wide MeanInterval (design debt, same pattern as flow's
-	// TickInterval). Warn ONCE per subsystem lifecycle at the first
-	// divergent attach — per-device logging floods at fleet scale
-	// (phase-5 review P13).
-	if time.Duration(cfg.Interval) != 0 && time.Duration(cfg.Interval) != scheduler.MeanInterval() {
-		if sm.trapIntervalWarned.CompareAndSwap(false, true) {
-			log.Printf("trap export: device %s configured interval=%s but the scheduler runs at mean=%s; per-device intervals are not yet honored (further divergences suppressed this lifecycle)",
-				device.IP, time.Duration(cfg.Interval), scheduler.MeanInterval())
+	// Per-device Interval is stored on cfg but not honored: the scheduler
+	// draws Poisson fires from its simulator-wide MeanInterval.
+	//
+	// Identical in shape to the syslog scheduler (min-heap, per-entry
+	// nextFire). Flow's TickInterval looks like the same debt but is not:
+	// one global ticker drives every device there, so per-device cadence
+	// means restructuring rather than a field.
+	//
+	// The REST surface now discloses this to the caller who set the value
+	// (see export_interval_disclosure.go). This log stays warn-ONCE per
+	// subsystem lifecycle at the first divergent attach, because per-device
+	// logging floods at fleet scale (phase-5 review P13); the response path
+	// does not share that suppression by design.
+	// Gate on caller intent, not post-defaults divergence. See the syslog
+	// twin: the old test fired for callers who set nothing.
+	if cfg.IntervalWasSet() && sm.trapIntervalWarned.CompareAndSwap(false, true) {
+		// Same text as the REST disclosure — see the syslog twin.
+		if wrn := intervalDisclosure("traps.interval", true,
+			time.Duration(cfg.Interval), scheduler.MeanInterval()); wrn != nil {
+			log.Printf("trap export: device %s: %s (further devices suppressed this lifecycle)",
+				device.IP, wrn.Message)
 		}
 	}
 

@@ -275,7 +275,7 @@ No per-device override exists for `source_per_device` — the
   "collector":       "192.168.1.10:162",        // required; host:port
   "mode":            "trap",                     // optional; "trap" | "inform"; default "trap"
   "community":       "public",                   // optional; SNMPv2c community; default "public"
-  "interval":        "30s",                      // optional; per-device mean Poisson firing interval; default 30s
+  "interval":        "30s",                      // optional; ACCEPTED AND STORED BUT NOT HONORED (see below); default 30s
   "inform_timeout":  "5s",                       // optional; INFORM retry timeout; default 5s
   "inform_retries":  2                           // optional; max retransmissions per INFORM; default 2
 }
@@ -295,9 +295,93 @@ without per-device binding is a runtime attach failure, not a 400.
 "syslog": {
   "collector": "192.168.1.10:514",              // required; host:port
   "format":    "5424",                           // optional; "5424" | "3164"; default "5424"
-  "interval":  "10s"                             // optional; per-device mean Poisson firing interval; default 10s
+  "interval":  "10s"                             // optional; ACCEPTED AND STORED BUT NOT HONORED (see below); default 10s
 }
 ```
+
+### Interval fields are not honored
+
+Three per-device cadence settings are accepted, stored, and echoed back, but the engine ignores them: `syslog.interval`, `traps.interval`, and `flow.tick_interval`.
+
+The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. (`-flow-tick-interval` does not change it either — the ticker latches its period before the flag is applied, so every deployment ticks at 5s; see [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446).)
+
+So that the API does not confirm a wrong belief, both values are reported:
+
+| field | means |
+|---|---|
+| `interval` / `tick_interval` | what you **asked for** (inert) |
+| `effective_intervals.*` (sibling object) | the cadence the scheduler is **configured** with |
+
+Omitted for subsystems a device does not use. Present only when the device exports something.
+
+**`*_effective` is not an observed emission rate.** It is strictly more truthful than the inert `interval`, but three things modulate real output without changing it:
+
+- **`-syslog-global-cap` / `-trap-global-cap`** throttle by *blocking*, so a cap of 5/s across 30,000 devices gives a real cadence near 100 minutes while the field still reports `10s`.
+- **`-fidelity`** suppresses background emission entirely — the device emits nothing while the field still reports the mean.
+- **A running scenario** drives its participants from a scenario-owned scheduler at the scenario's own rate, which this field never sees.
+
+Use it to answer "is my per-device setting doing anything?" (it is not), not to compute expected event volume.
+
+For flow specifically, `effective_intervals.flow_tick_interval` reports the period the ticker actually latched, which is `5s` in every deployment — `-flow-tick-interval` is currently inert ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)).
+
+```json
+"syslog": {
+  "collector": "192.0.2.144:1514",
+  "format":    "5424",
+  "interval":  "24h0m0s"            // what was requested (inert)
+},
+"effective_intervals": {
+  "syslog_interval": "10s"          // what the scheduler is configured with
+}
+```
+
+An interval you did **not** set is omitted from the echo entirely: the stored value would just be the package default, and reporting it would attribute a choice to you that you never made (and make a re-POST of the body warn about it). `effective_intervals` tells you the cadence in force either way.
+
+The effective values sit in a **sibling object**, deliberately not inside the config blocks. A block that carried a read-only field would stop being a valid `POST` body — `POST /api/v1/devices` rejects unknown fields and that strictness reaches into nested objects — which would break every read-modify-write client, `scripts/fleet.sh import` included.
+
+A create request that SETS any of these fields gets a `warnings` entry in the response — including when the value happens to match the simulator-wide cadence, because the field is inert either way. Note it sits under `data`, inside the standard response envelope, so a scripted client reads `.data.warnings` and not `.warnings`:
+
+A **rejected** request carries the same disclosure. If a body is both invalid and sets an inert interval, the `400` reports the validation error in `message` and the disclosure in `data.warnings`, so both facts arrive in one round trip:
+
+```json
+{
+  "success": false,
+  "message": "syslog: invalid collector \"not-a-host-port\"",
+  "data": {
+    "requested": 1,
+    "warnings": [{ "field": "syslog.interval", "message": "syslog.interval is not honored: ..." }]
+  }
+}
+```
+
+The warning text describes the **field**, never the request's outcome, which is what lets the identical message ride a success, a partial batch, and a rejection alike.
+
+```json
+{
+  "success": true,
+  "message": "Created 500 devices starting from 10.42.0.1",
+  "data": {
+    "created": 500, "requested": 500, "failed": 0,
+    "warnings": [{
+      "field": "syslog.interval", "requested": "24h0m0s", "effective": "10s",
+      "message": "syslog.interval is not honored: every device is scheduled at the simulator-wide 10s, not the 24h0m0s given. ..."
+    }]
+  }
+}
+```
+
+### A GET block is a valid POST block
+
+Config blocks round-trip: take a `flow` / `traps` / `syslog` object from `GET /api/v1/devices`, change what you like, and POST it back. Nothing needs stripping.
+
+That is why the effective cadences live in a sibling object rather than inside the blocks. Strict decoding is retained, so a genuine typo is still caught:
+
+```console
+# 400 Invalid JSON: unknown field "intervl"
+POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
+```
+
+`scripts/fleet.sh export | fleet.sh import` relies on this round trip.
 
 **`gnmi_dialout` block** (see the
 [gNMI dial-out reference](gnmi-dial-out.md) for full semantics):

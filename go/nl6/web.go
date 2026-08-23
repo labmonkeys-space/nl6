@@ -134,10 +134,64 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		IfFlapScenario:  ifFlapScenario,
 		OpticalScenario: opticalScenario,
 	}
+	// Record whether each interval was EXPLICITLY supplied, from the RAW
+	// request — ApplyDefaults below stamps the package default over an omitted
+	// zero and destroys the distinction permanently. Every downstream surface
+	// (the attach logs, the read-back, a re-POST of an exported inventory)
+	// depends on this marker to tell "the operator asked for 10s" from "the
+	// operator asked for nothing".
+	seed.Syslog.markIntervalProvenance()
+	seed.Traps.markIntervalProvenance()
+	seed.Flow.markIntervalProvenance()
+
+	// Disclose interval settings the engine will not honor, to the caller who
+	// set them. The detection already existed in all three managers but was
+	// routed to a log, warn-once-per-subsystem-lifecycle, which never reaches
+	// an operator driving the simulator over HTTP.
+	//
+	// Computed BEFORE the per-block validation below so that a rejected request
+	// still carries it: otherwise a caller with both a bad collector and an
+	// inert interval needs two round trips to learn two facts already known
+	// here. This is safe only because the warning text makes no claim about the
+	// request's outcome (see intervalDisclosure) — it describes the field, and
+	// is equally true on a 400, a partial batch, and a success.
+	//
+	// The nil check on `manager` exists for handler-level tests, which
+	// deliberately construct none (see web_create_devices_scenario_test.go).
+	// In a running simulator it is always set before the listener starts.
+	var exportWarnings []exportWarning
+	if manager != nil {
+		addWarning := func(wrn *exportWarning) {
+			if wrn != nil {
+				exportWarnings = append(exportWarnings, *wrn)
+			}
+		}
+		if seed.Syslog != nil {
+			addWarning(intervalDisclosure("syslog.interval", seed.Syslog.IntervalWasSet(),
+				time.Duration(seed.Syslog.Interval), manager.effectiveSyslogInterval()))
+		}
+		if seed.Traps != nil {
+			addWarning(intervalDisclosure("traps.interval", seed.Traps.IntervalWasSet(),
+				time.Duration(seed.Traps.Interval), manager.effectiveTrapInterval()))
+		}
+		if seed.Flow != nil {
+			addWarning(intervalDisclosure("flow.tick_interval", seed.Flow.TickIntervalWasSet(),
+				time.Duration(seed.Flow.TickInterval), manager.effectiveFlowTickInterval()))
+		}
+	}
+	// rejectWith fails the request while still handing back any disclosures.
+	rejectWith := func(msg string, code int) {
+		if len(exportWarnings) == 0 {
+			sendErrorResponse(w, msg, code)
+			return
+		}
+		sendErrorResponseWithData(w, msg, code, RejectedRequestData{Warnings: exportWarnings})
+	}
+
 	if seed.Flow != nil {
 		seed.Flow.ApplyDefaults()
 		if err := seed.Flow.Validate(); err != nil {
-			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
 		// An explicit flow block on a request whose every device is a type
@@ -157,7 +211,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		// with a log line, because failing the batch would make a
 		// batch-wide flow seed unusable with -round-robin.
 		if rf, ok := flowIncapableRequest(req); ok {
-			sendErrorResponse(w, fmt.Sprintf(
+			rejectWith(fmt.Sprintf(
 				"device type %q does not support flow export: it is a layer-1 transport platform and performs no layer-3/4 inspection; remove the \"flow\" block",
 				rf), http.StatusBadRequest)
 			return
@@ -166,7 +220,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	if seed.Traps != nil {
 		seed.Traps.ApplyDefaults()
 		if err := seed.Traps.Validate(); err != nil {
-			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
 		// INFORM mode requires per-device UDP source binding so the
@@ -176,21 +230,21 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		// batch failure matches the contract for every other validation
 		// rule on this endpoint.
 		if strings.EqualFold(seed.Traps.Mode, "inform") && !manager.TrapSourcePerDevice() {
-			sendErrorResponse(w, "traps: mode=inform requires the simulator-wide -trap-source-per-device flag (default true) to be enabled", http.StatusBadRequest)
+			rejectWith("traps: mode=inform requires the simulator-wide -trap-source-per-device flag (default true) to be enabled", http.StatusBadRequest)
 			return
 		}
 	}
 	if seed.Syslog != nil {
 		seed.Syslog.ApplyDefaults()
 		if err := seed.Syslog.Validate(); err != nil {
-			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 	if seed.GnmiDialout != nil {
 		seed.GnmiDialout.ApplyDefaults()
 		if err := seed.GnmiDialout.Validate(); err != nil {
-			sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+			rejectWith(err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -228,7 +282,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Message: msg,
-		Data:    CreateDevicesResult{Created: created, Requested: req.DeviceCount, Failed: failed},
+		Data:    CreateDevicesResult{Created: created, Requested: req.DeviceCount, Failed: failed, Warnings: exportWarnings},
 	})
 }
 
@@ -550,11 +604,25 @@ func sendDataResponse(w http.ResponseWriter, data interface{}) {
 }
 
 func sendErrorResponse(w http.ResponseWriter, message string, statusCode int) {
+	sendErrorResponseWithData(w, message, statusCode, nil)
+}
+
+// sendErrorResponseWithData is sendErrorResponse plus a payload, for the case
+// where a rejected request still carries information the caller needs.
+//
+// APIResponse already had a Data field; error responses simply never set it, so
+// this changes no envelope shape and existing error bodies stay byte-identical
+// (a nil Data is dropped by omitempty). Its one use today is attaching interval
+// disclosures to a 400, so a caller learns in ONE round trip both that their
+// request was invalid and that one of their fields would have been inert
+// anyway.
+func sendErrorResponseWithData(w http.ResponseWriter, message string, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: false,
 		Message: message,
+		Data:    data,
 	})
 }
 

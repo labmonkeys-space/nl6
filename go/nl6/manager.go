@@ -209,6 +209,11 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
+	// Resolve the simulator-wide cadences ONCE. They are identical for every
+	// device, so doing it per device meant 3xN Duration.String() calls inside
+	// this read lock on the fleet-list path.
+	effSnap := sm.snapshotEffectiveIntervals()
+
 	var devices []DeviceInfo
 	for _, device := range sm.devices {
 		info := DeviceInfo{
@@ -223,13 +228,22 @@ func (sm *SimulatorManager) ListDevices() []DeviceInfo {
 		if device.tunIface != nil {
 			info.Interface = device.tunIface.Name
 		}
-		// Echo the per-device export config blocks (phase 3 task 3.9).
-		// Pointer copy so JSON emission sees the resolved config; nil
-		// blocks are omitted via `omitempty` on DeviceInfo.
-		info.Flow = device.flowConfig
-		info.Traps = device.trapConfig
-		info.Syslog = device.syslogConfig
+		// Echo the per-device export config blocks verbatim (phase 3 task
+		// 3.9), so a GET block stays a valid POST block. The cadence that is
+		// actually in effect rides alongside in EffectiveIntervals rather than
+		// inside these blocks — nesting it there broke every read-modify-write
+		// client, the repo's own scripts/fleet.sh included.
+		//
+		// The echo* helpers hide an interval the caller never supplied: the
+		// stored value is then just whatever ApplyDefaults stamped, and echoing
+		// it both reports a choice nobody made and makes a re-POST of this body
+		// (scripts/fleet.sh import) warn about an interval the simulator
+		// invented. They return the original pointer when nothing needs hiding.
+		info.Flow = echoFlowConfig(device.flowConfig)
+		info.Traps = echoTrapConfig(device.trapConfig)
+		info.Syslog = echoSyslogConfig(device.syslogConfig)
 		info.GnmiDialout = device.gnmiDialoutConfig
+		info.EffectiveIntervals = buildEffectiveIntervals(device, effSnap)
 		// Emit scenario on GET only when non-default, so clean-mode
 		// devices (the common case) don't clutter the response. Matches
 		// the omitempty pattern used by the export blocks.

@@ -526,16 +526,35 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 	device.syslogExporter = exporter
 	device.mu.Unlock()
 
-	// Per-device Interval is stored on cfg but not honored by the
-	// scheduler today — the scheduler draws Poisson fires from its
-	// simulator-wide MeanInterval (design debt, same pattern as trap
-	// Interval and flow TickInterval). Warn ONCE per subsystem
-	// lifecycle — per-device logging floods at fleet scale (phase-5
-	// review P13).
-	if time.Duration(cfg.Interval) != 0 && time.Duration(cfg.Interval) != scheduler.MeanInterval() {
-		if sm.syslogIntervalWarned.CompareAndSwap(false, true) {
-			log.Printf("syslog export: device %s configured interval=%s but the scheduler runs at mean=%s; per-device intervals are not yet honored (further divergences suppressed this lifecycle)",
-				device.IP, time.Duration(cfg.Interval), scheduler.MeanInterval())
+	// Per-device Interval is stored on cfg but not honored: the scheduler
+	// draws Poisson fires from its simulator-wide MeanInterval.
+	//
+	// The trap side shares this shape exactly (min-heap, per-entry nextFire,
+	// so a per-device cadence would be a field on the heap entry). Flow does
+	// NOT: it drives every device from one global ticker, where the same
+	// feature means restructuring. Same symptom, materially different fix
+	// cost, so do not treat the three as one item.
+	//
+	// The REST surface now discloses this to the caller who set
+	// the value (see export_interval_disclosure.go): the create response
+	// carries a warning and the read-back reports effective_intervals. This
+	// log stays warn-ONCE-per-subsystem-lifecycle because per-device logging
+	// floods at fleet scale (phase-5 review P13); the response path
+	// deliberately does not share that suppression, since a caller is not
+	// helped by an earlier, unrelated caller having already been warned.
+	// Gate on whether the CALLER set the field, matching the response path.
+	// The old `!= 0 && != MeanInterval()` test ran AFTER ApplyDefaults had
+	// stamped the package default, so a fleet started with -syslog-interval 60s
+	// logged "configured interval=10s" about callers who configured nothing.
+	if cfg.IntervalWasSet() && sm.syslogIntervalWarned.CompareAndSwap(false, true) {
+		// Reuse the REST disclosure's own text so the log and the response can
+		// never disagree. Hand-writing it here is what produced the
+		// self-contradicting "configured interval=10s but the scheduler runs at
+		// mean=10s" once the gate stopped requiring divergence.
+		if wrn := intervalDisclosure("syslog.interval", true,
+			time.Duration(cfg.Interval), scheduler.MeanInterval()); wrn != nil {
+			log.Printf("syslog export: device %s: %s (further devices suppressed this lifecycle)",
+				device.IP, wrn.Message)
 		}
 	}
 

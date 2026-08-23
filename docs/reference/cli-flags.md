@@ -184,7 +184,7 @@ details.
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | — | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker interval. |
+| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker interval. **Currently inert** — the ticker latches its period during manager construction, before this flag is applied, and is never restarted, so every deployment ticks at `5s` ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)). The per-device `tick_interval` is likewise accepted and not honored. |
 | `-flow-active-timeout` | int (seconds) | `30` | **seed** | Active flow timeout. |
 | `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Inactive flow timeout. |
 | `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
@@ -202,7 +202,7 @@ prerequisites and `snmptrapd` smoke-test, and
 |------|------|---------|-------|---------|
 | `-trap-collector` | string | — | **seed** | Enable trap export to this UDP collector (e.g. `192.168.1.10:162`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `traps` block. |
 | `-trap-mode` | `trap` \| `inform` | `trap` | **seed** | Notification mode. TRAP is fire-and-forget; INFORM is acknowledged and retried. |
-| `-trap-interval` | duration | `30s` | **seed** | Per-device mean firing interval (Poisson-distributed, not periodic). |
+| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence; the per-device `interval` in a REST `traps` block is accepted, echoed by `GET /api/v1/devices`, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). To silence a fleet use `-fidelity`, not a long interval. |
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-trap-community` | string | `public` | **seed** | SNMPv2c community string. |
@@ -253,7 +253,7 @@ prerequisites and `netcat` smoke-test, and
 |------|------|---------|-------|---------|
 | `-syslog-collector` | string | — | **seed** | Enable syslog export to this UDP collector (e.g. `192.168.1.10:514`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `syslog` block. |
 | `-syslog-format` | `5424` \| `3164` | `5424` | **seed** | Wire format. RFC 5424 is structured (recommended); RFC 3164 is legacy BSD. Per-device as of phase 5 — different devices can emit different formats to the same collector; the shared-socket pool is keyed by `(collector, format)` so streams never interleave. |
-| `-syslog-interval` | duration | `10s` | **seed** | Per-device mean firing interval (Poisson-distributed, not periodic). |
+| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence; the per-device `interval` in a REST `syslog` block is accepted, echoed by `GET /api/v1/devices`, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). To silence a fleet use `-fidelity`, not a long interval. |
 | `-syslog-global-cap` | int (rate) | `0` | **global** | Simulator-wide rate ceiling across scheduled fires. On-demand HTTP fires bypass the cap. `0` is unlimited. |
 | `-syslog-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-syslog-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. Per-device bind failures are non-fatal (unlike INFORM mode on the trap side) — the exporter falls back to the shared socket with a warning. |
