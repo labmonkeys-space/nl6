@@ -26,7 +26,20 @@ async function apiCall(endpoint, options = {}) {
             headers: { 'Content-Type': 'application/json', ...options.headers },
             ...options
         });
-        if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        if (!response.ok) {
+            // Parse the body before throwing. The server sends a JSON envelope
+            // on errors too — `message` explains the rejection and `data`
+            // may carry disclosures (e.g. an inert interval) that the caller
+            // needs in the SAME round trip. Throwing on status alone discarded
+            // both, so the console showed a bare "HTTP 400: Bad Request".
+            let payload = null;
+            try { payload = await response.json(); } catch (_) { /* non-JSON error body */ }
+            const err = new Error(
+                (payload && payload.message) || ('HTTP ' + response.status + ': ' + response.statusText));
+            err.status = response.status;
+            err.payload = payload;
+            throw err;
+        }
         return await response.json();
     } catch (error) {
         console.error('API Error:', error);
@@ -214,12 +227,25 @@ async function createDevices(startIp, deviceCount, netmask, resourceFile, catego
         const failed = response.data && typeof response.data.failed === 'number' ? response.data.failed : 0;
         showAlert(response.message, failed > 0 ? 'error' : 'success');
 
+        // Surface settings the server accepted but does not honor. The console
+        // provisioning form is where a `traps.interval` / `syslog.interval`
+        // most often gets typed, so dropping these warnings would leave the
+        // console user with exactly the silent success the server-side
+        // disclosure exists to remove (nl6#445).
+        const warnings = (response.data && response.data.warnings) || [];
+        warnings.forEach(w => showAlert(w.message || String(w), 'warning'));
+
         // Start status polling to track progress
         startStatusPolling();
 
         await loadDevices();
     } catch (error) {
         showAlert('Failed to create devices: ' + error.message, 'error');
+        // A rejected request can still carry disclosures about fields the
+        // engine would not have honored. Showing them here is the point of
+        // attaching them to the 400 at all.
+        const rejected = (error.payload && error.payload.data && error.payload.data.warnings) || [];
+        rejected.forEach(wn => showAlert(wn.message || String(wn), 'warning'));
         throw error;
     }
 }
@@ -250,6 +276,10 @@ async function createClosFabric(fabric, exportSnapshot, onProgress) {
     const totalDevices = tiers.reduce((s, t) => s + t.count, 0);
     let requested = 0;
     let created = 0;
+    // Fields already disclosed this run. The same export snapshot goes out with
+    // every batch, so an un-deduped loop would raise the identical warning once
+    // per chunk (~20 toasts for a k=4 fabric).
+    const closWarned = new Set();
     for (const t of tiers) {
         for (const batch of TopologyLogic.closDeviceBatches(t, DEVICE_CHUNK)) {
             const body = {
@@ -268,6 +298,17 @@ async function createClosFabric(fabric, exportSnapshot, onProgress) {
             // Prefer the server's actual created count; fall back to the batch
             // size for older servers that don't report it.
             created += (resp && resp.data && typeof resp.data.created === 'number') ? resp.data.created : batch.count;
+            // Surface settings the server accepted but does not honor. The
+            // fabric wizard provisions the LARGEST fleets carrying an export
+            // block, so dropping these left the silent success the disclosure
+            // exists to remove (nl6#445). Deduped: the same export snapshot is
+            // posted for every batch, so warn once per field, not ~20 times.
+            ((resp && resp.data && resp.data.warnings) || []).forEach(wn => {
+                const key = wn.field || JSON.stringify(wn);
+                if (closWarned.has(key)) return;
+                closWarned.add(key);
+                showAlert(wn.message || key, 'warning');
+            });
             if (onProgress) onProgress('Creating ' + t.label + ' — ' + requested + '/' + totalDevices + ' devices…');
         }
     }

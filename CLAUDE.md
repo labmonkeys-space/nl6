@@ -24,6 +24,7 @@ sudo ./nl6 [flags]
 -no-namespace           # Disable network namespace isolation
 -version                # Print version string and exit (no startup side effects)
 -fidelity               # [global] Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a running load-test scenario window. Devices still answer polls; on-demand fires still go through. Default: false.
+                        #          THIS is how you silence a fleet for a measurement. A long per-device `interval` does NOT work — it is accepted, echoed back by GET /api/v1/devices, and ignored by the scheduler (nl6#445). Startup-only today.
 -scenario-pen <uint>    # [global] IANA PEN for PEN-dependent scenario run tags (syslog SD-PARAM, SNMP enterprise varbind); 0 = unset → those levers degrade to window+source-IP.
 -optical-scenario <s>   # [seed]   Auto-start-batch per-device optical health band (optical transport types only): clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via optical_scenario.
 -if-error-scenario <s>  # Auto-start-batch per-device error/discard scenario: clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via if_error_scenario.
@@ -61,7 +62,7 @@ sudo ./nl6 [flags]
 # Flags marked [global] retain simulator-wide effect.
 -flow-collector <host:port>       # [seed]   Seed collector for auto-start batch
 -flow-protocol <proto>            # [seed]   netflow9 (default) | ipfix | netflow5 | sflow (alias: sflow5)
--flow-tick-interval <duration>    # [seed]   How often to emit flows (default: 5s)
+-flow-tick-interval <duration>    # [seed]   CURRENTLY INERT (nl6#446): the ticker latches its period during manager construction, before this flag is applied, and is never restarted — every deployment ticks at 5s. ONE simulator-wide ticker drives every device; per-device `tick_interval` is accepted and echoed but NOT honored (nl6#445).
 -flow-active-timeout <duration>   # [seed]   Active flow expiry timeout (default: 30s)
 -flow-inactive-timeout <duration> # [seed]   Inactive flow expiry timeout (default: 15s)
 -flow-template-interval <dur>     # [global] Re-send template every N seconds (default: 60s; ignored under netflow5/sflow)
@@ -72,7 +73,7 @@ sudo ./nl6 [flags]
 # SNMP trap / INFORM export flags (SNMPv2c only)
 -trap-collector <host:port>       # [seed]   Seed trap collector for auto-start batch (default port 162)
 -trap-mode <proto>                # [seed]   trap (default, fire-and-forget) | inform (acknowledged)
--trap-interval <duration>         # [seed]   Per-device mean firing interval, Poisson-distributed (default: 30s)
+-trap-interval <duration>         # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 30s). Per-device `interval` is accepted and echoed but NOT honored, same as syslog.
 -trap-global-cap <tps>            # [global] Simulator-wide tps ceiling (0 = unlimited)
 -trap-catalog <path>              # [global] Override embedded universal catalog (5 entries) + per-type overlays — when set, the single file becomes the catalog for every device
 -trap-community <string>          # [seed]   SNMPv2c community (default: public)
@@ -83,7 +84,7 @@ sudo ./nl6 [flags]
 # UDP syslog export flags (RFC 5424 / RFC 3164)
 -syslog-collector <host:port>     # [seed]   Seed collector for auto-start batch (default port 514)
 -syslog-format <fmt>              # [seed]   5424 (default, structured) | 3164 (legacy BSD)
--syslog-interval <duration>       # [seed]   Per-device mean firing interval, Poisson-distributed (default: 10s)
+-syslog-interval <duration>       # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 10s). The per-device `interval` in a REST syslog block is accepted and echoed but NOT honored (nl6#445) — every device fires at this value. To silence a fleet use -fidelity, not a long per-device interval.
 -syslog-global-cap <rate>         # [global] Simulator-wide rate ceiling (0 = unlimited)
 -syslog-catalog <path>            # [global] Override embedded universal 6-entry catalog
 -syslog-source-per-device         # [global] Source IP = device IP (default: true; bind failure is non-fatal, falls back to shared socket)

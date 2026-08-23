@@ -10,6 +10,16 @@ to read back. They build on the operating guide: the
 namespace). For a clean window with no background noise, add
 [`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
 
+> **A long per-device `interval` will not silence a fleet.** The per-device
+> `interval` / `tick_interval` fields are accepted, echoed back by
+> `GET /api/v1/devices`, and **not honored**
+> ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)): every device
+> fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence
+> regardless. Setting `"interval": "24h"` on 500 devices leaves ~50 events/s of
+> background running, which is enough to contaminate an accept-rate measurement
+> while every surface reports success. `-fidelity` is the supported way, and it
+> is startup-only today — apply it at launch, not mid-run.
+
 A scenario **gates an export that already exists** — it never configures the
 wire. So each device must have the target protocol's exporter enabled first, via
 the seed flags shown (auto-start batch) or a per-device block in

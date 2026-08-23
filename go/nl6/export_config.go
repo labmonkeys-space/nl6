@@ -93,7 +93,21 @@ type DeviceFlowConfig struct {
 	// matches the shape real Cisco IOS-XR exporters emit). Valid only under
 	// netflow9/ipfix — Validate rejects other protocols.
 	OptionsInterfaceTable string `json:"options_interface_table,omitempty"`
+
+	// tickIntervalSet — see DeviceSyslogConfig.intervalSet.
+	tickIntervalSet bool
 }
+
+// markIntervalProvenance records whether TickInterval was explicitly supplied.
+// MUST be called on the raw decoded body, BEFORE ApplyDefaults.
+func (c *DeviceFlowConfig) markIntervalProvenance() {
+	if c != nil {
+		c.tickIntervalSet = time.Duration(c.TickInterval) != 0
+	}
+}
+
+// TickIntervalWasSet reports whether the caller supplied an explicit tick interval.
+func (c *DeviceFlowConfig) TickIntervalWasSet() bool { return c != nil && c.tickIntervalSet }
 
 // DeviceTrapConfig is the per-device SNMP trap/INFORM configuration.
 //
@@ -106,7 +120,21 @@ type DeviceTrapConfig struct {
 	Interval      jsonDuration `json:"interval,omitempty"`
 	InformTimeout jsonDuration `json:"inform_timeout,omitempty"`
 	InformRetries int          `json:"inform_retries,omitempty"`
+
+	// intervalSet — see DeviceSyslogConfig.intervalSet.
+	intervalSet bool
 }
+
+// markIntervalProvenance records whether Interval was explicitly supplied.
+// MUST be called on the raw decoded body, BEFORE ApplyDefaults.
+func (c *DeviceTrapConfig) markIntervalProvenance() {
+	if c != nil {
+		c.intervalSet = time.Duration(c.Interval) != 0
+	}
+}
+
+// IntervalWasSet reports whether the caller supplied an explicit interval.
+func (c *DeviceTrapConfig) IntervalWasSet() bool { return c != nil && c.intervalSet }
 
 // DeviceSyslogConfig is the per-device UDP syslog configuration.
 //
@@ -116,7 +144,29 @@ type DeviceSyslogConfig struct {
 	Collector string       `json:"collector"`
 	Format    string       `json:"format,omitempty"`
 	Interval  jsonDuration `json:"interval,omitempty"`
+
+	// intervalSet records whether the CALLER supplied Interval, as opposed to
+	// ApplyDefaults having stamped the package default over an omitted zero.
+	// Unexported: it is internal provenance, not wire state, and must not
+	// round-trip. Set via markIntervalProvenance from the raw request body.
+	//
+	// Without it every surface downstream of the create handler conflates "the
+	// operator asked for 10s" with "the operator asked for nothing" — which is
+	// the root cause behind the attach-log false positives and the
+	// export/import re-POST warnings.
+	intervalSet bool
 }
+
+// markIntervalProvenance records whether Interval was explicitly supplied.
+// MUST be called on the raw decoded body, BEFORE ApplyDefaults.
+func (c *DeviceSyslogConfig) markIntervalProvenance() {
+	if c != nil {
+		c.intervalSet = time.Duration(c.Interval) != 0
+	}
+}
+
+// IntervalWasSet reports whether the caller supplied an explicit interval.
+func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.intervalSet }
 
 // DialoutTLSConfig is the TLS/transport-security block of a dial-out
 // config. `Enabled=false` selects a plaintext gRPC connection (matching

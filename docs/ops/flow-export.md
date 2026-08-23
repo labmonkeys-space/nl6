@@ -117,12 +117,18 @@ per `(collector, protocol)` tuple:
   per device). If you need the same device to appear on multiple
   collectors, run multiple simulator processes — the `nl6sim` netns +
   per-device-source-IP scheme isn't designed to multicast.
-- The global `-flow-tick-interval` and `-flow-template-interval` are
-  simulator-wide — every exporter ticks at the same cadence regardless
-  of batch. Per-device `tick_interval` in the REST body is accepted and
-  validated but not yet honored; a single warning is logged per
-  subsystem lifecycle if any device's value diverges from the global
-  (phase-4+5 design debt).
+- `-flow-template-interval` is simulator-wide — every exporter ticks at the
+  same cadence regardless of batch. Per-device `tick_interval` in the REST body
+  is accepted and validated but **not honored**; a single warning is logged per
+  subsystem lifecycle the first time any device SETS it (not only when it
+  diverges), and the create response carries the same disclosure
+  ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)).
+- `-flow-tick-interval` is **currently inert**. The ticker latches its period
+  during manager construction, before the flag is applied, and is never
+  restarted — so every deployment ticks at the 5s default
+  ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)).
+  `effective_intervals.flow_tick_interval` in the device read-back reports the
+  period actually latched, which is how you can tell.
 - Collector-side `rp_filter` tuning applies per collector host, not
   per protocol — see the next section.
 

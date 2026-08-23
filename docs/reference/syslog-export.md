@@ -335,6 +335,8 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-syslog-interval` cadence ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, not a long interval.
+
 `/api/v1/syslog/status` reports both batches as separate records keyed
 by `(collector, format)`.
 

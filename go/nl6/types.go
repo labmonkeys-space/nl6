@@ -304,6 +304,18 @@ type SimulatorManager struct {
 	flowAggregates   sync.Map // key: flowConnKey, value: *flowCollectorAggregate
 	flowBufPool      sync.Pool
 	flowTickInterval time.Duration
+	// flowTickerPeriod is the cadence the running ticker actually LATCHED,
+	// which is not always flowTickInterval. startFlowTicker runs from the
+	// constructor, while SetFlowTickInterval is called afterwards from the
+	// flag-parsing path and only mutates the field — the ticker is never
+	// restarted. Reporting flowTickInterval as "effective" would therefore
+	// state a cadence nothing runs at. Written once, before the ticker
+	// goroutine starts; read concurrently by the device read-back.
+	flowTickerPeriod atomic.Int64
+	// flowIntervalWarned CAS-gates the tick_interval disclosure log to one
+	// line per lifecycle, matching trapIntervalWarned / syslogIntervalWarned.
+	// Flow was the odd one out and flooded 30k lines on a fleet-scale batch.
+	flowIntervalWarned atomic.Bool
 
 	flowTemplateInterval time.Duration
 	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
@@ -603,10 +615,24 @@ type DeviceInfo struct {
 	// Per-device export configuration echoed for GET /api/v1/devices
 	// consumers. Fields are omitted from JSON when nil. Populated from
 	// the device's runtime state in phases 3–5.
+	//
+	// These are the stored config structs verbatim, so a GET block remains a
+	// valid POST block and a read-modify-write client (including the repo's own
+	// scripts/fleet.sh import) keeps working. The cadence actually in effect is
+	// reported SEPARATELY in EffectiveIntervals — nesting it here made the
+	// blocks un-POSTable under DisallowUnknownFields. See
+	// export_interval_disclosure.go.
 	Flow        *DeviceFlowConfig        `json:"flow,omitempty"`
 	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
 	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
 	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
+	// EffectiveIntervals reports the cadences the schedulers are configured
+	// with, for the subsystems this device participates in. Present only when
+	// the device has at least one export config. It exists because the
+	// per-device interval fields above are accepted, stored, and NOT honored
+	// (nl6#445): reporting only what was asked for would let the API confirm a
+	// wrong belief.
+	EffectiveIntervals *effectiveIntervals `json:"effective_intervals,omitempty"`
 	// IfErrorScenario surfaces the per-device counter scenario set at
 	// creation time. Omitted from JSON when "" so clean-default devices
 	// don't clutter GET responses.
@@ -645,6 +671,22 @@ type CreateDevicesResult struct {
 	Created   int `json:"created"`
 	Requested int `json:"requested"`
 	Failed    int `json:"failed"`
+	// Warnings disclose settings that were accepted and stored but are not
+	// honored by the engine — today the three interval knobs. Additive and
+	// omitted when empty, so existing clients are unaffected; the point is
+	// that the caller who set the value is the one who hears about it,
+	// rather than a container log they will never read.
+	Warnings []exportWarning `json:"warnings,omitempty"`
+}
+
+// RejectedRequestData is the payload on a 400 that still carries disclosures.
+//
+// Deliberately NOT CreateDevicesResult: that type's contract is created /
+// requested / failed, and a rejection would report "N requested, 0 created,
+// 0 failed" for a batch that was never attempted — a client computing
+// failed = requested - created reads that as a silent total loss.
+type RejectedRequestData struct {
+	Warnings []exportWarning `json:"warnings,omitempty"`
 }
 
 type ManagerStatus struct {

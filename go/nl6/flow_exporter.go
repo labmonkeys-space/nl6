@@ -803,13 +803,37 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 	}
 	canonicalCollector := collectorAddr.String()
 
-	// Per-device TickInterval is stored on cfg but not honored by the
-	// single global ticker (design debt documented in the change). Warn
-	// once per device at attach so operators aren't silently surprised
-	// when they set a distinct value (review fix P2).
-	if time.Duration(cfg.TickInterval) != 0 && time.Duration(cfg.TickInterval) != sm.flowTickInterval {
-		log.Printf("flow export: device %s configured tick_interval=%s but the simulator-wide ticker runs at %s; per-device tick rates are not yet honored",
-			device.IP, time.Duration(cfg.TickInterval), sm.flowTickInterval)
+	// Per-device TickInterval is stored on cfg but not honored: ONE
+	// simulator-wide ticker drives every device.
+	//
+	// This is NOT the same debt as the syslog / trap Interval fields, though
+	// the three are often described together. Those run on min-heap
+	// schedulers with a per-entry nextFire, where a per-device cadence is a
+	// field on the heap entry. Here it would mean restructuring the ticker.
+	// Same symptom, materially different cost.
+	//
+	// The REST surface now discloses this to the caller who set the field
+	// (see export_interval_disclosure.go), which is the fix that IS uniform
+	// across all three, precisely because it is independent of the mechanism
+	// underneath. Like its trap/syslog counterparts this log is CAS-gated to
+	// one line per subsystem lifecycle; it used to warn per device and flooded
+	// at fleet scale (review fix P2).
+	// Disclose only when the CALLER actually set a tick interval. Gating on
+	// `!= 0` was wrong twice over: ApplyDefaults always stamps 5s, so the
+	// condition was permanently true, the one-shot CAS was burned by device #1
+	// with the self-contradicting line "configured tick_interval=5s but every
+	// device ticks at 5s", and a genuinely divergent device later logged
+	// nothing at all.
+	//
+	// The effective value is the LATCHED period, the same reference the REST
+	// disclosure uses, so the two channels cannot contradict each other.
+	if cfg.TickIntervalWasSet() && sm.flowIntervalWarned.CompareAndSwap(false, true) {
+		// Same text as the REST disclosure — see the syslog twin.
+		if wrn := intervalDisclosure("flow.tick_interval", true,
+			time.Duration(cfg.TickInterval), sm.effectiveFlowTickInterval()); wrn != nil {
+			log.Printf("flow export: device %s: %s (further devices suppressed this lifecycle)",
+				device.IP, wrn.Message)
+		}
 	}
 
 	device.flowExporter = NewFlowExporter(device, flowProfile,
@@ -862,13 +886,33 @@ func (sm *SimulatorManager) initFlowSubsystem() {
 	sm.startFlowTicker()
 }
 
-// SetFlowTickInterval overrides the simulator-wide flow ticker cadence.
-// Call before device creation. Per-device `TickInterval` fields are
-// stored on DeviceFlowConfig but not yet honored (design debt documented
-// in the per-device-export-config change).
+// SetFlowTickInterval sets the simulator-wide flow ticker cadence field.
+//
+// It does NOT change the cadence of the running ticker. startFlowTicker latches
+// its period from the SimulatorManager constructor and is never called again,
+// so by the time the flag path reaches this setter the ticker is already
+// running at the default. Writing the field here therefore affects nothing that
+// emits; -flow-tick-interval is inert. Tracked as nl6#446 — fixing it changes
+// emission rate for anyone running with the flag set, so it is deliberately
+// not fixed as a side effect of a reporting change.
+//
+// Per-device `TickInterval` fields are stored on DeviceFlowConfig but not
+// honored either (design debt documented in the per-device-export-config
+// change); the read-back discloses that via effective_intervals.flow_tick_interval, which
+// reports the latched period rather than this field.
 func (sm *SimulatorManager) SetFlowTickInterval(d time.Duration) {
-	if d > 0 {
-		sm.flowTickInterval = d
+	if d <= 0 {
+		return
+	}
+	sm.flowTickInterval = d
+	// Disclose to the operator who set the flag, which was the one channel this
+	// change left silent. A benchmark tool quietly emitting flows at 6x the
+	// configured rate is worse than the per-device case, which now gets both a
+	// log line and a REST warning.
+	if latched := time.Duration(sm.flowTickerPeriod.Load()); latched > 0 && latched != d {
+		log.Printf("flow export: -flow-tick-interval=%s is NOT honored; the ticker latched %s "+
+			"during manager construction and is never restarted, so every device ticks at %s "+
+			"(see nl6#446)", d, latched, latched)
 	}
 }
 
@@ -885,10 +929,20 @@ func (sm *SimulatorManager) SetFlowTemplateInterval(d time.Duration) {
 // every active device's FlowExporter at flowTickInterval. The goroutine exits
 // when flowStopCh is closed.
 func (sm *SimulatorManager) startFlowTicker() {
+	// Latch the period SYNCHRONOUSLY, before the goroutine starts, and record
+	// it as the cadence the ticker is actually configured with.
+	//
+	// Two reasons. First, reading sm.flowTickInterval inside the goroutine
+	// raced with SetFlowTickInterval, which the flag path calls after the
+	// constructor has already started this ticker. Second, that same ordering
+	// means the field and the running cadence can disagree, so the read-back
+	// must report what was latched rather than what the field says.
+	period := sm.flowTickInterval
+	sm.flowTickerPeriod.Store(int64(period))
 	sm.flowWg.Add(1)
 	go func() {
 		defer sm.flowWg.Done()
-		ticker := time.NewTicker(sm.flowTickInterval)
+		ticker := time.NewTicker(period)
 		defer ticker.Stop()
 		for {
 			select {

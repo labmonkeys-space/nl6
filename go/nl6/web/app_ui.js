@@ -737,7 +737,7 @@ function renderProvisionTrapsStep() {
     const hintHidden = provisionDraft.trapCollector ? ' style="display:none"' : '';
     const skipHint = '<div class="step-skip-hint" data-skip-hint role="note"' + hintHidden + '>No collector — this step will be skipped.</div>';
     return '<div class="modal-form">' +
-        '<p class="tab-summary">Devices fire SNMPv2c traps or INFORM requests at a Poisson cadence. Leave the collector blank to skip traps for this batch.</p>' +
+        '<p class="tab-summary">Devices fire SNMPv2c traps or INFORM requests at a Poisson cadence set simulator-wide by <code>-trap-interval</code>. Leave the collector blank to skip traps for this batch.</p>' +
         skipHint +
         '<div class="form-group form-group-wide"><label>Collector (host:port)</label>' +
             '<input type="text" class="mono" data-field="trapCollector" value="' + escapeHtml(provisionDraft.trapCollector) + '" placeholder="192.168.1.10:162"></div>' +
@@ -747,7 +747,7 @@ function renderProvisionTrapsStep() {
             '</select></div>' +
         '<div class="form-group"><label>Community</label>' +
             '<input type="text" class="mono" data-field="trapCommunity" value="' + escapeHtml(provisionDraft.trapCommunity) + '" placeholder="public"></div>' +
-        '<div class="form-group"><label>Interval (Poisson mean)</label>' +
+        '<div class="form-group"><label>Interval (Poisson mean) <span class="muted">(not honored per-device)</span></label>' +
             '<input type="text" class="mono" data-field="trapInterval" value="' + escapeHtml(provisionDraft.trapInterval) + '" placeholder="30s"></div>' +
         '<div class="form-group"><label>INFORM retry timeout</label>' +
             '<input type="text" class="mono" data-field="trapInformTimeout" value="' + escapeHtml(provisionDraft.trapInformTimeout) + '" placeholder="5s"></div>' +
@@ -760,7 +760,7 @@ function renderProvisionSyslogStep() {
     const hintHidden = provisionDraft.syslogCollector ? ' style="display:none"' : '';
     const skipHint = '<div class="step-skip-hint" data-skip-hint role="note"' + hintHidden + '>No collector — this step will be skipped.</div>';
     return '<div class="modal-form">' +
-        '<p class="tab-summary">Devices emit syslog messages at a Poisson cadence. Leave the collector blank to skip syslog for this batch.</p>' +
+        '<p class="tab-summary">Devices emit syslog messages at a Poisson cadence set simulator-wide by <code>-syslog-interval</code>. Leave the collector blank to skip syslog for this batch.</p>' +
         skipHint +
         '<div class="form-group form-group-wide"><label>Collector (host:port)</label>' +
             '<input type="text" class="mono" data-field="syslogCollector" value="' + escapeHtml(provisionDraft.syslogCollector) + '" placeholder="192.168.1.10:514"></div>' +
@@ -768,7 +768,7 @@ function renderProvisionSyslogStep() {
             '<select data-field="syslogFormat">' +
                 ['5424', '3164'].map(f => '<option value="' + f + '"' + (provisionDraft.syslogFormat === f ? ' selected' : '') + '>' + (f === '5424' ? 'RFC 5424 (structured)' : 'RFC 3164 (legacy BSD)') + '</option>').join('') +
             '</select></div>' +
-        '<div class="form-group"><label>Interval (Poisson mean)</label>' +
+        '<div class="form-group"><label>Interval (Poisson mean) <span class="muted">(not honored per-device)</span></label>' +
             '<input type="text" class="mono" data-field="syslogInterval" value="' + escapeHtml(provisionDraft.syslogInterval) + '" placeholder="10s"></div>' +
     '</div>';
 }
