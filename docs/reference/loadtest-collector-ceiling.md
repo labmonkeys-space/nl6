@@ -127,6 +127,11 @@ throughput = (messages per work unit / service time per work unit) × concurrent
 
 The worker term matters: on a single-consumer pipeline it is 1 and disappears, but any run that varies parallelism must carry it or the identity under-predicts by exactly the worker count.
 
+**Service time is wall clock, not CPU**, and the difference decides how the identity scales.
+Where the per-message cost is dominated by waiting (database round trips, network), adding workers overlaps those waits and throughput rises without CPU rising with it.
+Measured here, 4 workers took ~130/s to ~320/s, a 2.4x gain from 4x the workers, while the collector used only 1.2 of 4 available vCPU.
+Expect sub-linear scaling, and treat a large gap between predicted and measured as a pointer to the *next* constraint rather than a broken model: in this case the database, the most loaded component at that rate.
+
 State which statistic you used.
 The mean and the median give different answers (`4 / 0.030 = 133`, `4 / 0.0294 = 136`), so a reader replicating your check needs to know which one you meant.
 
@@ -162,13 +167,49 @@ G2  Does the collector parallelise when given more partitions?
 
 The matrix that follows is not a gate; it is the work these two gates decide the shape of.
 
-**G2 has a trap that produces a false negative.**
-On Kafka, `num.partitions` only affects newly created topics.
-Raising it without an explicit `--alter` on the existing topic changes nothing, which looks exactly like the collector failing to parallelise, and would retire a live axis on no evidence.
-Alter the topic, then confirm the added consumers are distinct workers doing real work rather than idle assignees.
+**G2 has two traps, and the second one loses data.**
+
+First, on Kafka `num.partitions` only affects newly created topics.
+Raising it without an explicit `--alter` on the existing topic changes nothing, which looks exactly like the collector failing to parallelise and would retire a live axis on no evidence.
+
+Second, and more serious: **the producer starts using new partitions immediately, while a running consumer may never discover them.**
+Measured on Horizon 36.0.3, going from 1 to 4 partitions left the new three carrying thousands of records that did not appear in the consumer group at all, with no consumer, no committed offset and no lag tracked.
+They were never processed until the collector was restarted.
+
+So a reader who alters a live topic and then checks the assignment gets **both** a data-stranding incident and a false "inert" reading, because the assignment is still what it was.
+Restart the collector after altering, re-read the assignment, and only then judge the axis.
+Then confirm the added consumers are distinct instances doing real work rather than one consumer holding several partitions.
+
+Do not perform this on a production topic without planning for the restart.
+Partition counts also cannot be reduced, so the change is one-way.
 
 If both gates fail, the honest answer is "this collector's ceiling is X and only a code change moves it".
 That is worth knowing and costs about an hour.
+
+## Load shape is a variable, not a detail
+
+An aggregate rate does not determine the work the collector sees.
+
+Where the collector aggregates **per source** and flushes on an interval, batch size follows the PER-DEVICE rate:
+
+```
+   batch size  ~  per_device_rate x flush_interval
+```
+
+Measured on Horizon 36.0.3, whose syslog sink keys aggregation per host and flushes at roughly 500 ms, at one fixed aggregate rate of ~3000/s:
+
+| devices | per-device rate | messages per work unit |
+|---|---|---|
+| 500 | 6/s | 4.0 |
+| 63 | 47/s | 24.0 |
+
+**More devices at the same aggregate rate makes the collector slower**, because it shreds the batches.
+That is the opposite of the intuition that a fleet is just a rate.
+
+Two consequences for any result:
+
+- A ceiling figure is meaningless without the **device count and per-device rate** that produced it. Report them beside the number, and carry them in the manifest as controls.
+- Comparing two runs at the same aggregate rate but different fleet sizes compares two different workloads, not two configurations.
 
 ## The matrix
 
@@ -265,9 +306,9 @@ Two honest limits on this example.
 The per-message figure of about 248 bytes is `994 / 4`, a **queue-side** number that includes record framing.
 nl6's syslog datagrams are smaller on the wire, roughly 130 to 210 bytes depending on the catalog entry, so 248 must not be read as a datagram size.
 
-Whether the batch is capped by bytes or by count is **undetermined**.
-A flat, exact 4.0 messages per work unit across varying message sizes is what a *count* cap looks like; a byte cap would let short messages pack more densely.
-Resolving it is exactly what G1 is for, and it needs the batch-size property named, which nobody has yet located.
+The batching is a **count cap plus an interval flush**, not a byte cap, and the interval is what actually binds here.
+`SyslogSinkModule` exposes an aggregation policy with `getBatchSize()` (a count) and `getBatchIntervalMs()`; neither is configured in this lab, so both run at defaults, and the observed batch tracks per-device rate rather than record size.
+An earlier draft of this page called it a byte cap on the strength of `994 / 4`, which was the same mistake it warns about elsewhere: reasoning from a derived average instead of measuring.
 
 **This is one topology's number.**
 A single Minion and a 4 vCPU Core with a single-partition sink is not a tuned production deployment, and a manifest has to say so as plainly as the number does.
