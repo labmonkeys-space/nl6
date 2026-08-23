@@ -63,6 +63,7 @@ func TestIntervalDisclosure(t *testing.T) {
 			if got == nil {
 				t.Fatalf("intervalDisclosure(%s, wasSet=%v, %s, %s) = nil, want a warning",
 					tc.field, tc.wasSet, tc.requested, tc.effective)
+				return
 			}
 			if got.Field != tc.field {
 				t.Errorf("Field = %q, want %q", got.Field, tc.field)
@@ -112,6 +113,7 @@ func TestIntervalDisclosure_DistinctPhrasing(t *testing.T) {
 	diverging := intervalDisclosure("traps.interval", true, time.Hour, 30*time.Second)
 	if matching == nil || diverging == nil {
 		t.Fatal("both cases must disclose")
+		return
 	}
 	if matching.Message == diverging.Message {
 		t.Fatal("matching and diverging cases share one message; the matching case needs its own wording")
@@ -191,6 +193,7 @@ func TestEffectiveIntervals_OnlyForParticipatingSubsystems(t *testing.T) {
 	})
 	if only == nil {
 		t.Fatal("syslog-only device produced no block")
+		return
 	}
 	if only.SyslogInterval == "" {
 		t.Error("syslog_interval missing for a syslog-exporting device")

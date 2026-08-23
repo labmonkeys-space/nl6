@@ -100,6 +100,7 @@ func TestCreateDevicesResult_WarningsSerialize(t *testing.T) {
 	wrn := intervalDisclosure("syslog.interval", true, 24*time.Hour, 10*time.Second)
 	if wrn == nil {
 		t.Fatal("expected a warning to embed")
+		return
 	}
 	raw, err := json.Marshal(APIResponse{
 		Success: true,
@@ -242,7 +243,7 @@ func TestWarningSurvivesValidationFailure(t *testing.T) {
 		t.Fatalf("status = %d, want 400 for an invalid collector", w.Code)
 	}
 	var resp struct {
-		Success bool `json:"success"`
+		Success bool   `json:"success"`
 		Message string `json:"message"`
 		Data    struct {
 			Warnings []exportWarning `json:"warnings"`
