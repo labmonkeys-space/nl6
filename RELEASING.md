@@ -140,7 +140,6 @@ publish:
       The website has its own SBOM, retained as a workflow artifact (`nl6-website-sbom`) on each docs-deploy run — it is not a release asset and deliberately not published on the site.
 - [ ] Curate the release notes — the auto-generated list is a starting point;
       trim `chore:`/`docs:`/deps noise down to user-visible highlights.
-      One-time, first release after 2026-07-30: call out that `nl6.sbom.spdx.json` narrowed from a whole-repo scan (~1,400 packages, mostly the docs toolchain) to the shipped binary's modules; anyone consuming the npm inventory moves to the website SBOM. Delete this line once shipped.
 - [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
 - [ ] **Publish** the draft:
