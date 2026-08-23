@@ -558,6 +558,20 @@ func (sm *SimulatorManager) Shutdown() error {
 	log.Println("Shutting down simulator manager...")
 	startTime := time.Now()
 
+	// Stop any pending fidelity auto-revert.
+	//
+	// NOT because it would "fire into a torn-down manager" — the callback
+	// touches only package globals and a log, never manager state — so the
+	// placement here is not load-bearing and a later reader should not
+	// preserve it as if it were. It is here so a pending timer does not
+	// outlive the process's intent.
+	//
+	// Note this DROPS the revert rather than applying it, leaving the value at
+	// whatever the temporary toggle set. Inert today: Shutdown has one caller,
+	// the signal handler, which exits immediately afterwards. It becomes a real
+	// bug if Shutdown is ever made non-terminal.
+	cancelFidelityRevert()
+
 	// D7: abort a running load-test scenario FIRST — before the export
 	// subsystems tear down — so the scenario finalizes its report while
 	// participant exporters still exist, and the fleet freeze is released.

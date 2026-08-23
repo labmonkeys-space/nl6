@@ -108,7 +108,8 @@ func intervalDisclosure(field string, wasSet bool, requested, effective time.Dur
 		msg = fmt.Sprintf(
 			"%s is not honored: every device is scheduled at the simulator-wide %s, not the "+
 				"%s given. Per-device intervals are not implemented (see nl6#445). To silence "+
-				"a fleet use -fidelity (a restart is required today), not a long interval.",
+				"a fleet use -fidelity, or POST /api/v1/fidelity to toggle it at runtime, "+
+				"not a long interval.",
 			field, effective, requested)
 	}
 	return &exportWarning{

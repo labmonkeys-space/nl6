@@ -370,7 +370,13 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	part := fe.scenPart.Load()
 	// Fidelity mode: a non-participant device emits no autonomous flow at all
 	// (not even templates) — the wire is silent until a scenario drives it.
-	if part == nil && fidelitySilent.Load() {
+	//
+	// Routed through fidelityMutesBackground rather than reading the flag
+	// directly so all four push subsystems observe fidelity through ONE rule.
+	// A tick is autonomous by definition (flow has no on-demand endpoint), so
+	// sourceBackground is the honest classification and this is behaviourally
+	// identical to the previous raw read.
+	if part == nil && fidelityMutesBackground(sourceBackground) {
 		return FlowTickStats{}
 	}
 	scenActive := false

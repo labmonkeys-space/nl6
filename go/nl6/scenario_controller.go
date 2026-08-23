@@ -134,6 +134,13 @@ type ScenarioController struct {
 	// has no ceiling", so the stale read would not merely be vague, it would be
 	// wrong. Same reason overlaps are recorded as they begin.
 	rateCapAtStart int
+	// fidelitySilentAtStart / fidelityTransitionsAtStart sample fleet silence
+	// at T0, so the report can disclose both the state the run began in and
+	// whether it changed mid-window. Fidelity is runtime-mutable, and a
+	// pre-armed auto-revert can fire inside a window with no request behind
+	// it, so neither is inferable after the fact.
+	fidelitySilentAtStart      bool
+	fidelityTransitionsAtStart uint64
 
 	// emitting is true from start until the drain barrier has closed — the
 	// window in which this scenario can still consume shared limiter tokens.
@@ -1100,6 +1107,8 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 	// a run that never emitted. Here rather than in Start so the scheduled-start
 	// path, which enters with c.mu already held, is covered by the same line.
 	c.rateCapAtStart = c.sm.effectiveRateCap(c.spec.Protocol)
+	c.fidelitySilentAtStart = fidelityInForce()
+	c.fidelityTransitionsAtStart = fidelityTransitions.Load()
 	c.emitting.Store(true)
 	c.noteOverlapsLocked()
 	return nil

@@ -29,7 +29,40 @@ management web UI at `/`.
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
+| `/api/v1/fidelity` | GET | Fidelity mode: the value **in force**, the startup flag it began from, and any pending auto-revert. |
+| `/api/v1/fidelity` | POST | Toggle fleet silence at runtime, with optional `duration` auto-revert (24h cap). |
 | `/health` | GET | Health check endpoint. |
+
+## Fidelity mode
+
+`GET /api/v1/fidelity` reports fleet silence; `POST` changes it without a restart.
+
+```json
+// GET response .data
+{
+  "silent": true,           // the value IN FORCE
+  "startup_flag": false,    // what -fidelity was set to at launch
+  "revert_pending": true,
+  "revert_at": "2026-08-24T14:32:10Z",
+  "revert_to": false        // what the pending revert restores
+}
+```
+
+`silent` and `startup_flag` are reported separately because once the value is mutable the flag is only a default; a surface reporting the flag alone would assert something the engine may have stopped honouring.
+
+```bash
+curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
+  -d '{"silent": true}'                        # standing change
+
+curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
+  -d '{"silent": true, "duration": "20m"}'     # auto-reverts, 24h cap
+```
+
+`silent` is **required**: omitting it would read as `false` and un-mute the fleet, so a body without it is rejected with `400`.
+
+**Auto-revert restores the value from before the current chain of timed toggles**, not simply the previous value. Shortening or extending a window keeps the same destination; a toggle in the *opposite* direction starts a new chain and reverts to whatever was in force when it was issued. `revert_to` reports the target, because it is not inferable from `silent`.
+
+A scenario report records `fidelity.silent_at_start` and `fidelity.changed_during_window`, so an archived measurement can say whether the rest of the fleet was quiet for its window.
 
 ## Create devices
 
@@ -317,7 +350,7 @@ Omitted for subsystems a device does not use. Present only when the device expor
 **`*_effective` is not an observed emission rate.** It is strictly more truthful than the inert `interval`, but three things modulate real output without changing it:
 
 - **`-syslog-global-cap` / `-trap-global-cap`** throttle by *blocking*, so a cap of 5/s across 30,000 devices gives a real cadence near 100 minutes while the field still reports `10s`.
-- **`-fidelity`** suppresses background emission entirely — the device emits nothing while the field still reports the mean.
+- **`-fidelity`** (and `POST /api/v1/fidelity` at runtime) suppresses background emission entirely — the device emits nothing while the field still reports the mean.
 - **A running scenario** drives its participants from a scenario-owned scheduler at the scenario's own rate, which this field never sees.
 
 Use it to answer "is my per-device setting doing anything?" (it is not), not to compute expected event volume.

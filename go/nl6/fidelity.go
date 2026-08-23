@@ -7,7 +7,8 @@ package main
 
 import "sync/atomic"
 
-// fidelity.go — global "fidelity mode" (-fidelity). When on, the fleet is
+// fidelity.go — global "fidelity mode" (-fidelity, and POST /api/v1/fidelity
+// at runtime). When on, the fleet is
 // SILENT: no autonomous background push telemetry (flow, SNMP trap, syslog,
 // gNMI dial-out) leaves any device that is not currently inside a running
 // load-test scenario window. Devices still answer polls (SNMP/SSH/HTTPS), and
@@ -28,8 +29,17 @@ import "sync/atomic"
 // `scenPart == nil` branch); the participant path is untouched, so scenario
 // accounting and the gate are byte-for-byte unchanged.
 
-// fidelitySilent is set once at startup from -fidelity and read (atomically,
-// from many exporter goroutines) on every non-participant fire. 0 = off.
+// fidelitySilent is the value IN FORCE, read atomically from many exporter
+// goroutines on every non-participant fire. 0 = off.
+//
+// It is seeded from -fidelity at startup and is MUTABLE at runtime via
+// POST /api/v1/fidelity (see fidelity_api.go). Do not cache it anywhere: an
+// exporter that reads it once at construction would silently stop honouring
+// the toggle. Consult fidelityMutesBackground on every fire instead.
+//
+// TestFidelity_SingleConsultPoint enforces only HALF of that: it catches a
+// direct read of this variable, not a cached call to the predicate, which a
+// grep cannot see. The caching hazard is on you.
 var fidelitySilent atomic.Bool
 
 // fidelityMutesBackground reports whether fidelity mode should drop a
@@ -37,6 +47,16 @@ var fidelitySilent atomic.Bool
 // background cadence and flap-driven state notifications — but lets explicit
 // on-demand operator fires (POST /devices/{ip}/{trap,syslog}) through, since
 // those are a deliberate action, not fleet chatter.
+// fidelityInForce reports the current value for OBSERVERS — status endpoints,
+// report disclosure — as opposed to deciders.
+//
+// Kept separate from fidelityMutesBackground on purpose. A caller asking "was
+// the fleet silent?" is not a caller asking "should I drop this fire?", and
+// only the latter needs the fireSource distinction. Having one name for each
+// lets TestFidelity_SingleConsultPoint stay strict about direct reads of the
+// variable without an allowlist that would also wave through a genuine decider.
+func fidelityInForce() bool { return fidelitySilent.Load() }
+
 func fidelityMutesBackground(src fireSource) bool {
 	return fidelitySilent.Load() && (src == sourceBackground || src == sourceStateDriven)
 }
