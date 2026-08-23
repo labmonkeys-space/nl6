@@ -43,6 +43,7 @@ wire/collector loss, not measurement noise.
 | [Scenarios](./loadtest-scenarios.md) | The operating guide — lifecycle, fidelity mode, run tagging, reconciliation, troubleshooting. |
 | [Runbooks](./loadtest-runbooks.md) | Copy-pasteable worked recipes, one per use case. |
 | [Report schema](./loadtest-report-schema.md) | Every field, the ledger identity, loss localization, and the semver policy. |
+| [Collector ceiling](./loadtest-collector-ceiling.md) | Method for measuring what a collector actually accepts, and not mistaking a drain rate for a capacity. |
 
 New to it? Walk the [lifecycle](./loadtest-scenarios.md#run-a-fidelity-check),
 then pick a matching [runbook](./loadtest-runbooks.md). There is a runnable
