@@ -18,6 +18,10 @@ It reported a rate and named a Kafka partition count as the likely limiter, on t
 The real mechanism was arithmetic nothing had measured: messages per work unit divided by the time to process one.
 The difference matters because the wrong cause implies the wrong fix.
 
+That said, the first attempt's *instinct* was better than its reasoning, which is worth admitting because it is the more common shape of being wrong.
+Partitions turned out to be the only tuning that moved the number at all, so a correction that dismissed them as the wrong suspect over-corrected.
+The mechanism really was batch size over dispatch cost; the lever really was partitions; those are different questions and it is easy to answer one while thinking you answered the other.
+
 ## Vocabulary
 
 One quantity travels under four names, and conflating them is the most common way this measurement goes wrong.
@@ -278,6 +282,20 @@ So the parallelism axis carries a mandatory ordering check: emit a known-ordered
 A result showing higher throughput with broken ordering is **reported as a regression**, not as a gain.
 
 Work-unit size changes alter packing rather than order, so that axis carries no equivalent confound, which is a further reason to test it first.
+
+### The check is not a formality: it fired
+
+Run against Horizon 36.0.3 at 4 partitions, the assertion **failed**.
+
+Messages are aggregated per host *within* a work unit, but the work units are produced to the queue **unkeyed**, so consecutive records from one device round-robin across partitions. Forty strictly sequential messages from a single device produced seven records spread across three of four partitions. With one consumer per partition those are processed concurrently, and per-device order is gone.
+
+The consequence is concrete rather than theoretical: a `linkDown` in one record can be persisted after the `linkUp` in the next, leaving an interface latched down while it is actually up, with nothing downstream flagging it.
+
+So on that deployment the only tuning that raised throughput, 130/s to ~320/s, is **reported as a regression**. Batching could not move the number and parallelism could not move it safely, which leaves no tuning-level lever at all: keying the records by source would be a code change.
+
+A throughput-only report would have recommended four partitions. That is the entire reason this check is mandatory rather than advisory.
+
+Note that a collector's persisted events may not be able to verify ordering end to end. Here, unmatched syslog persists a generic message carrying neither device identity nor original content, so the partition-spread test is the usable instrument, and it is the stronger one anyway: order is guaranteed only *within* a partition, so spread across partitions is sufficient to prove the guarantee is gone.
 
 ## Worked example: OpenNMS Horizon 36.0.3
 
