@@ -163,9 +163,14 @@ curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
 nl6-reconcile -report report.json -received collector.csv
 # PROTOCOL  SOURCE_IP   COLLECTOR     SENT  RECEIVED  DELTA  LOSS%   STATUS
 # syslog    10.42.0.1   10.0.0.9:514  1000  1000      0      0.00%   OK
-# syslog    10.42.0.2   10.0.0.9:514  1000  950       50     5.00%   LOSS
+# syslog    10.42.0.2   10.0.0.9:514  1000  950       50     5.00%   RESIDUAL
 #
-# Summary: 2 keys | 1 OK | 1 flagged | tolerance 0.50% | sent=2000 received=1950 fleet_loss=2.50%
+# Summary: 2 keys | 1 OK | 1 flagged | tolerance 0.50% | sent=2000 received=1950 fleet_residual=2.50%
+#
+# NOTE: shortfalls above are UNCLASSIFIED (RESIDUAL, or MISSING with no received row).
+# Still-queued messages are backlog and resolve themselves; drained-and-missing
+# messages are loss and do not. Re-run with -drained once the collector's input
+# queue has emptied to classify them.
 ```
 
 - **Inputs.** `-report` takes the report **JSON** or the flat **CSV** projection
@@ -177,10 +182,27 @@ nl6-reconcile -report report.json -received collector.csv
   `|loss_ratio|` within it is `OK` — records still on the wire at `T1` cause a
   tiny delta that is not real loss. Widen it for lossy paths, tighten to `0` for
   an exact check.
-- **Statuses.** `OK` · `LOSS` (received < sent) · `DUP` (received > sent —
-  duplication) · `MISSING` (in the report, no received row — total loss or a
-  join gap) · `PHANTOM` (received but not in the report — background noise leaked
+- **Statuses.** `OK` · `RESIDUAL` (received < sent, queue state unknown) ·
+  `LOSS` (received < sent **and** you passed `-drained`) · `DUP` (received > sent —
+  duplication) · `MISSING` (in the report, no received row — a join gap, or the
+  100 % case of the same shortfall ambiguity, so it is unclassified without
+  `-drained` too) · `PHANTOM` (received but not in the report — background noise leaked
   into your export; see the run-tagging notes to isolate it).
+- **`-drained`: classify the shortfall.** A shortfall measured while the
+  collector's input queue is still draining is **backlog**, and backlog resolves
+  itself. The same shortfall measured after the queue has emptied is **loss**,
+  and loss does not. They have opposite remedies, so `nl6-reconcile` will not
+  guess: it cannot see your collector's queue, and by default reports a
+  shortfall as `RESIDUAL`. Pass `-drained` once the queue has emptied to assert
+  the run is over and get `LOSS`. Reporting a single unclassified residual as
+  loss is the defect this flag exists to prevent — see
+  [Collector ceiling](./loadtest-collector-ceiling.md).
+- **Compatibility note.** `-drained` changed the DEFAULT output: a shortfall that
+  previously printed `LOSS` now prints `RESIDUAL`, in text, CSV and JSON alike,
+  and the summary reads `fleet_residual` (or `fleet_delta` when the figure is
+  zero or negative). Exit codes are unchanged, so CI gates still fire as before,
+  but a pipeline grepping for the literal `LOSS` or `fleet_loss=` needs either
+  `-drained` or an updated pattern.
 - **Exit code.** `0` when every key is `OK`, `1` when any key is flagged — so
   `nl6-reconcile` drops straight into a CI gate. Use `-format csv|json` for a
   machine-readable diff.

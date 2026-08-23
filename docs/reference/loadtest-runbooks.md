@@ -144,7 +144,11 @@ Skip the manual join — feed the report and your collector's counts to
 ```bash
 curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
 nl6-reconcile -report report.json -received collector.csv
-# exit 1 (and a LOSS / PHANTOM row) if anything is off — drop it into CI.
+# exit 1 (and a RESIDUAL / PHANTOM row) if anything is off — drop it into CI.
+
+# A shortfall is RESIDUAL until you assert the collector's queue has drained.
+# Backlog resolves itself; loss does not. Re-run once the queue is empty:
+nl6-reconcile -report report.json -received collector.csv -drained
 ```
 
 ### 7. IPFIX-only fidelity

@@ -14,6 +14,11 @@
 // (protocol, source_ip, collector) tuple, and prints loss_ratio per key with
 // an in-flight tolerance band. Exit status is non-zero when any key exceeds
 // tolerance (or is phantom/missing), so it doubles as a CI gate.
+//
+// A shortfall is only called LOSS when -drained asserts the collector's queue
+// had emptied; otherwise it is RESIDUAL, since a still-queued message is
+// backlog and backlog resolves itself. The two have opposite remedies and the
+// tool cannot observe the queue, so it does not guess.
 package main
 
 import (
@@ -31,6 +36,8 @@ func main() {
 	receivedPath := flag.String("received", "", "path to the received-counts input (CSV or Prometheus range JSON); '-' for stdin")
 	tolerance := flag.Float64("tolerance", 0.005, "in-flight tolerance band on loss_ratio (0.005 = 0.5%); |ratio| within it is OK")
 	format := flag.String("format", "text", "output format: text | csv | json")
+	drained := flag.Bool("drained", false, "assert the collector's input queue had drained when -received was captured; "+
+		"without it a shortfall is reported as RESIDUAL (backlog or loss, unclassified) rather than LOSS")
 	showVersion := flag.Bool("version", false, "print the nl6-reconcile version and exit")
 	flag.Parse()
 
@@ -71,12 +78,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	results := reconcile(sent, received, *tolerance)
+	results := reconcile(sent, received, *tolerance, *drained)
 
 	var out string
 	switch *format {
 	case "text":
-		out = renderText(results, *tolerance)
+		out = renderText(results, *tolerance, *drained)
 	case "csv":
 		out = renderCSV(results)
 	case "json":
