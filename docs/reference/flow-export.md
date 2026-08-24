@@ -213,12 +213,12 @@ Each synthetic flow is given a duration sampled from the device profile. A flow 
 
 `-flow-tick-interval` sets how finely that stream is cut into datagrams, not how much of it there is. Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat — bounded by the interval rather than proportional to it. Measured across a 30x cadence range:
 
-| tick | records/s | records per tick |
+| tick | records/s | mean records per tick |
 |---|---|---|
-| 1s | 4.37 | ~4 |
-| 5s | 4.24 | ~22 |
-| 15s | 3.94 | ~64 |
-| 30s | 3.63 | 128 |
+| 1s | 4.37 | 4 |
+| 5s | 4.24 | 21 |
+| 15s | 3.94 | 59 |
+| 30s | 3.63 | 109 |
 
 Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits about 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
 
@@ -227,6 +227,25 @@ Setting the tick close to or above the mean flow lifetime is not useful — ever
 To raise or lower volume, change the concurrent-flow count or the timeouts.
 
 ### Changed in nl6#446: cadence and volume both moved
+
+> **Measured on the wire.** The emission model here was derived by reading the code and simulating the loop. Two of its predictions were then checked against a packet capture, and the rest were not — the distinction matters, so it is drawn explicitly below.
+>
+> The capture ran on a **simulated** fleet: one nl6 device of type `cisco_ios` (a simulated device type, not a physical router) on a KVM virtual machine, 300s per cell, netflow9, comparing binaries built from the two commits either side of this change.
+>
+> | cell | measured | model | delta |
+> |---|---|---|---|
+> | pre-change, 5s cadence | 6.07 rec/s, **40 of 55 ticks silent** | 6.40 | −5.2 % |
+> | post-change, 5s cadence | 4.12 rec/s, **0 of 58 silent** | 4.24 | −2.8 % |
+> | pre-change, 30s cadence | 6.09 rec/s | — | flag inert, confirmed |
+> | post-change, 30s cadence | 3.03 rec/s | 3.63 | **−16.5 %** |
+>
+> The rows of the cadence table above at 1s and 15s were **not** captured; they are model output.
+>
+> What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
+>
+> The model runs about 5 % hot in every cell, which is expected — it advances time in exact tick increments with no scheduling jitter or warm-up truncation, so it counts expiries the wire narrowly misses.
+>
+> **The 30s cell is the exception and is not explained by that.** A 16.5 % shortfall is larger than jitter accounts for. Capture-side packet loss was the leading alternative and is **excluded**: NetFlow v9 carries a per-exporter datagram sequence number, and all four captures are sequence-continuous with zero gaps, so nothing was dropped between the exporter and the measurement. The remaining candidate is the model's own quantisation — at a 30s cadence against a ~29s mean lifetime the cache turns over wholesale each tick, so a flow whose lifetime lands just past a boundary slips a whole period, which the model resolves identically every time and real timing does not. That is a hypothesis, not a finding. Treat coarse-cadence rate predictions as approximate, which is a further reason to keep the tick well below the mean flow lifetime.
 
 Two independent corrections landed together. **Both change the load a given configuration offers**, so measurements taken across this boundary are not comparable on the flow axis. Reports carry `nl6_version`, so the boundary stays identifiable.
 
