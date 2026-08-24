@@ -270,14 +270,17 @@ func TestEffectiveIntervals_FallbackWhenSubsystemDown(t *testing.T) {
 // TestEffectiveFlowTickInterval_LatchedPeriodWins is the regression guard for
 // the reporting lie this change nearly shipped.
 //
-// startFlowTicker latches its period in the constructor; SetFlowTickInterval is
-// called afterwards by the flag path and only writes the field, never
-// restarting the ticker. Reporting the field would state a cadence nothing runs
-// at, so the LATCHED value must win. (That the two disagree at all is nl6#446.)
+// startFlowTicker latches its period, so the LATCHED value is what runs.
+// Reporting the field would state a cadence nothing ticks at.
+//
+// nl6#446 (the flag never reaching the ticker) is fixed, so the two now agree
+// in production. This guard is kept anyway: it pins that the report is true by
+// CONSTRUCTION rather than because the call ordering currently happens to be
+// right, and it is what would catch a future late write to the field.
 func TestEffectiveFlowTickInterval_LatchedPeriodWins(t *testing.T) {
 	sm := &SimulatorManager{}
 	sm.flowTickerPeriod.Store(int64(5 * time.Second)) // what the ticker latched
-	sm.SetFlowTickInterval(30 * time.Second)          // what the flag asked for, too late
+	sm.flowTickInterval = 30 * time.Second            // a field write the ticker never saw
 
 	if got := sm.effectiveFlowTickInterval(); got != 5*time.Second {
 		t.Errorf("effectiveFlowTickInterval() = %s, want the LATCHED 5s; "+
@@ -289,7 +292,7 @@ func TestEffectiveFlowTickInterval_LatchedPeriodWins(t *testing.T) {
 // non-fallback: the unsynchronised field must not be read from HTTP goroutines.
 func TestEffectiveFlowTickInterval_NoTickerIgnoresTheField(t *testing.T) {
 	sm := &SimulatorManager{}
-	sm.SetFlowTickInterval(45 * time.Second)
+	sm.flowTickInterval = 45 * time.Second
 
 	if got := sm.effectiveFlowTickInterval(); got != defaultFlowTickInterval {
 		t.Errorf("effectiveFlowTickInterval() = %s, want the package default %s", got, defaultFlowTickInterval)

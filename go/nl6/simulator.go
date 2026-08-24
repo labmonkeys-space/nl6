@@ -245,7 +245,8 @@ func main() {
 
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
-	manager = NewSimulatorManagerWithOptions(useNamespace)
+	manager = NewSimulatorManagerWithOptions(useNamespace,
+		WithFlowTickInterval(time.Duration(*flowTickSecs)*time.Second))
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 	fidelitySilent.Store(*fidelity)
 	// Remember what the flag said, so GET /api/v1/fidelity can report the
@@ -292,7 +293,6 @@ func main() {
 	// design §D5. Always applied so operators can tune the ticker cadence
 	// even when no CLI-seed flow export is configured.
 	manager.SetFlowSourcePerDevice(*flowSourcePerDevice)
-	manager.SetFlowTickInterval(time.Duration(*flowTickSecs) * time.Second)
 	manager.SetFlowTemplateInterval(time.Duration(*flowTemplateIntervalSecs) * time.Second)
 
 	// Build the CLI-seed flow config for the auto-start batch. Phase 3 of

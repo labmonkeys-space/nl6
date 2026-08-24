@@ -203,25 +203,24 @@ func (sm *SimulatorManager) effectiveTrapInterval() time.Duration {
 // which is deliberately not sm.flowTickInterval.
 //
 // Those two can disagree. startFlowTicker runs from the SimulatorManager
-// constructor and latches the value then; SetFlowTickInterval is called
+// constructor and latches the value then; a late field write would be
 // afterwards from the flag path and only writes the field, never restarting
 // the ticker. So a simulator started with -flow-tick-interval 30s holds 30s in
 // the field while flow records leave every 5s.
 //
 // Reporting the field would make this accessor state a cadence nothing runs
-// at, so it reports the latched period instead. That the two disagree at all is
-// a separate pre-existing bug (-flow-tick-interval has no effect, nl6#446);
-// surfacing it honestly is preferable to hiding it behind a number that merely
-// looks right.
+// at, so it reports the latched period instead. Since nl6#446 was fixed the two
+// agree in production; reading the latch keeps that true by CONSTRUCTION rather
+// than by the constructor's call order happening to be right.
 func (sm *SimulatorManager) effectiveFlowTickInterval() time.Duration {
 	if latched := sm.flowTickerPeriod.Load(); latched > 0 {
 		return time.Duration(latched)
 	}
 	// Ticker not started (a bare manager, i.e. tests). Deliberately does NOT
-	// fall back to sm.flowTickInterval: that field is written by
-	// SetFlowTickInterval without synchronisation, and this accessor runs on
-	// HTTP goroutines via ListDevices and the create handler. Reading it here
-	// would reintroduce, on a new path, the very race the latch removed.
+	// fall back to sm.flowTickInterval: that field is written during
+	// construction without synchronisation, and this accessor runs on HTTP
+	// goroutines via ListDevices and the create handler. Reading it here would
+	// reintroduce, on a new path, the very race the latch removed.
 	return defaultFlowTickInterval
 }
 

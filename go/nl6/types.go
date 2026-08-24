@@ -306,7 +306,7 @@ type SimulatorManager struct {
 	flowTickInterval time.Duration
 	// flowTickerPeriod is the cadence the running ticker actually LATCHED,
 	// which is not always flowTickInterval. startFlowTicker runs from the
-	// constructor, while SetFlowTickInterval is called afterwards from the
+	// constructor, so the latched value is what runs; reporting the
 	// flag-parsing path and only mutates the field — the ticker is never
 	// restarted. Reporting flowTickInterval as "effective" would therefore
 	// state a cadence nothing runs at. Written once, before the ticker

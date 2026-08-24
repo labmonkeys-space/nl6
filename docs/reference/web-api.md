@@ -336,7 +336,7 @@ without per-device binding is a runtime attach failure, not a 400.
 
 Three per-device cadence settings are accepted, stored, and echoed back, but the engine ignores them: `syslog.interval`, `traps.interval`, and `flow.tick_interval`.
 
-The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. (`-flow-tick-interval` does not change it either — the ticker latches its period before the flag is applied, so every deployment ticks at 5s; see [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446).)
+The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. The simulator-wide `-flow-tick-interval` **is** honored ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) is fixed); it is the per-device override that is not.
 
 So that the API does not confirm a wrong belief, both values are reported:
 
@@ -355,7 +355,7 @@ Omitted for subsystems a device does not use. Present only when the device expor
 
 Use it to answer "is my per-device setting doing anything?" (it is not), not to compute expected event volume.
 
-For flow specifically, `effective_intervals.flow_tick_interval` reports the period the ticker actually latched, which is `5s` in every deployment — `-flow-tick-interval` is currently inert ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)).
+For flow specifically, `effective_intervals.flow_tick_interval` reports the period the ticker actually latched — the simulator-wide cadence in force, which is `-flow-tick-interval` when set and `5s` otherwise.
 
 ```json
 "syslog": {

@@ -123,12 +123,14 @@ per `(collector, protocol)` tuple:
   subsystem lifecycle the first time any device SETS it (not only when it
   diverges), and the create response carries the same disclosure
   ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)).
-- `-flow-tick-interval` is **currently inert**. The ticker latches its period
-  during manager construction, before the flag is applied, and is never
-  restarted — so every deployment ticks at the 5s default
-  ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)).
+- `-flow-tick-interval` sets the simulator-wide cadence and **is** honored
+  ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) fixed). It
+  controls **batching, not volume**: a slower tick puts more records in each
+  datagram rather than proportionally reducing the record rate. Volume is set
+  by the profile's concurrent-flow count and the expiry timeouts. Values
+  outside `(0, 1h]` are rejected with a log line and the 5s default applies.
   `effective_intervals.flow_tick_interval` in the device read-back reports the
-  period actually latched, which is how you can tell.
+  period actually latched.
 - Collector-side `rp_filter` tuning applies per collector host, not
   per protocol — see the next section.
 
