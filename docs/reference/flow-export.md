@@ -228,6 +228,22 @@ To raise or lower volume, change the concurrent-flow count or the timeouts.
 
 ### Changed in nl6#446: cadence and volume both moved
 
+> **Measured on the wire.** The figures below and in the table above were first
+> derived from the emission algorithm and later confirmed by packet capture on
+> real hardware (one `cisco_ios` device, 300s window, KVM lab). Pre-change:
+> 6.07 records/s with **40 of 55 ticks emitting nothing**, the whole 128-flow
+> cache leaving at once. Post-change: 4.12 records/s with **zero** silent ticks.
+> Measured volume ratio 0.679 against the 0.66 stated here. The same capture
+> confirms the flag itself: pre-change a 5s and a 30s cadence both produced
+> ~6.1 records/s, because the flag never reached the ticker.
+>
+> One caveat the capture surfaced: at a 30s cadence the measured rate is 3.03
+> records/s where the model predicts 3.63. The shortfall is larger than timing
+> jitter explains and is not reconciled — treat coarse-cadence rate predictions
+> as approximate, which is a further reason to keep the tick well below the mean
+> flow lifetime.
+
+
 Two independent corrections landed together. **Both change the load a given configuration offers**, so measurements taken across this boundary are not comparable on the flow axis. Reports carry `nl6_version`, so the boundary stays identifiable.
 
 | | before | after |
