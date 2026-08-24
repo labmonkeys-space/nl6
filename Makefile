@@ -285,22 +285,30 @@ fmt-check: check-go
 # as `unused` on macOS. Pin GOOS so a local run and CI agree by construction.
 # CGO_ENABLED=0 is required to cross-analyse (cgo preprocessing cannot target
 # linux from a darwin toolchain).
-LINT_ENV := CGO_ENABLED=0 GOOS=linux
+#
+# Every static analyser here shares it, not just the linter. gosec and
+# govulncheck are reachability-based: analysing the host build silently narrows
+# what they inspect rather than reporting a false finding, so the failure mode is
+# a MISSED vulnerability, not a noisy one. Measured on a darwin host, gosec saw
+# 39,054 lines against 40,082 under GOOS=linux — 1,028 lines of Linux-only code
+# were never scanned. Both were clean, so nothing was actually missed; the
+# exposure was.
+ANALYSIS_ENV := CGO_ENABLED=0 GOOS=linux
 
 lint: check-go
-	@cd $(GO_DIR) && $(LINT_ENV) $(GOBIN_DIR)/golangci-lint run ./... || { \
+	@cd $(GO_DIR) && $(ANALYSIS_ENV) $(GOBIN_DIR)/golangci-lint run ./... || { \
 		status=$$?; \
 		echo ""; \
 		echo "lint failed — retrying once with a clean analysis cache."; \
 		echo "A stale golangci-lint cache can report findings that do not exist"; \
 		echo "(observed: ~100 phantom SA5011s on an otherwise clean tree)."; \
 		$(GOBIN_DIR)/golangci-lint cache clean; \
-		$(LINT_ENV) $(GOBIN_DIR)/golangci-lint run ./...; \
+		$(ANALYSIS_ENV) $(GOBIN_DIR)/golangci-lint run ./...; \
 	}
 
 ## vuln: Run govulncheck against the Go module
 vuln: check-go
-	cd $(GO_DIR) && $(GOBIN_DIR)/govulncheck ./...
+	cd $(GO_DIR) && $(ANALYSIS_ENV) $(GOBIN_DIR)/govulncheck ./...
 
 ## sec: Run gosec static security analysis over the Go module
 #
@@ -328,7 +336,7 @@ vuln: check-go
 #          log.Printf. gosec's taint analyzer does not follow the
 #          validation, producing false positives.
 sec: check-go
-	cd $(GO_DIR) && $(GOBIN_DIR)/gosec \
+	cd $(GO_DIR) && $(ANALYSIS_ENV) $(GOBIN_DIR)/gosec \
 	  -exclude=G104,G115,G404,G204,G304,G401,G405,G501,G502,G505,G103,G706 \
 	  ./...
 

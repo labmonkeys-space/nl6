@@ -42,13 +42,18 @@ Before pushing, run the same quality gates CI does:
 ```sh
 make fmt-check   # gofmt + goimports
 make lint        # golangci-lint
+make sec         # gosec
+make vuln        # govulncheck
 ```
 
-`make lint` pins `GOOS=linux` deliberately. The simulator is Linux-only and much
-of it — including whole test files — sits behind `//go:build linux`, so linting
-with a macOS host's own GOOS analyses a different build than CI and reports
-findings CI will never see. The target also retries once with a clean analysis
-cache on failure, because a stale cache can invent findings that do not exist.
+`lint`, `sec` and `vuln` all pin `CGO_ENABLED=0 GOOS=linux`. The simulator is
+Linux-only and much of it — including whole test files — sits behind
+`//go:build linux`, so analysing with a macOS host's own GOOS inspects a
+different build than the one that ships. For the linter that means findings CI
+will never see; for `gosec` and `govulncheck`, which work from reachability, it
+instead means silently scanning less (measured: 1,028 fewer lines). `make lint`
+also retries once with a clean analysis cache on failure, because a stale cache
+can invent findings that do not exist.
 
 New and edited source files carry an SPDX license header — see the "Source file
 headers" section of [CLAUDE.md](CLAUDE.md) for the exact form (forked upstream
