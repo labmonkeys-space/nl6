@@ -234,14 +234,14 @@ To raise or lower volume, change the concurrent-flow count or the timeouts.
 >
 > | cell | measured | model | delta |
 > |---|---|---|---|
-> | pre-change, 5s cadence | 6.07 rec/s, **40 of 55 ticks silent** | 6.40 | −5.2 % |
+> | pre-change, 5s cadence | 6.07 rec/s, **40 of 54 ticks silent** | 6.40 | −5.2 % |
 > | post-change, 5s cadence | 4.12 rec/s, **0 of 58 silent** | 4.24 | −2.8 % |
 > | pre-change, 30s cadence | 6.09 rec/s | — | flag inert, confirmed |
 > | post-change, 30s cadence | 3.03 rec/s | 3.63 | **−16.5 %** |
 >
 > The rows of the cadence table above at 1s and 15s were **not** captured; they are model output.
 >
-> What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
+> What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (roughly 3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
 >
 > The model runs about 5 % hot in every cell, which is expected — it advances time in exact tick increments with no scheduling jitter or warm-up truncation, so it counts expiries the wire narrowly misses.
 >
