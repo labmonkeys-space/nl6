@@ -145,6 +145,28 @@ type reportMetadata struct {
 	// and a pre-armed auto-revert can fire inside a window with no request
 	// behind it, so this is not inferable from the run's own inputs.
 	Fidelity fidelityDisclosure `json:"fidelity"`
+	// Rate discloses what the run was asked for and what it actually did.
+	//
+	// A requested rate alone is what made nl6#456 a reporting defect rather
+	// than a configuration one: an archived report named a target that the run
+	// may never have pursued, indistinguishable from one that hit it. Pacing a
+	// flow scenario works by sizing an integer flow cache, so the achievable
+	// rate lands NEAR the request rather than on it — reporting only the
+	// request would hide that rounding, and reporting only the achievement
+	// would hide the intent.
+	Rate rateDisclosure `json:"rate"`
+}
+
+// rateDisclosure records the run's requested per-device rate, whether the
+// protocol paces to it at all, and what was achieved.
+type rateDisclosure struct {
+	RequestedPerDevice float64 `json:"requested_per_device"`
+	// Paced is false for protocols whose emission cadence is not driven by
+	// the scenario rate — gnmi-dialout streams at its own SAMPLE interval.
+	// When false, AchievedPerDevice still reports what happened, but the
+	// request explains nothing about it.
+	Paced             bool    `json:"paced"`
+	AchievedPerDevice float64 `json:"achieved_per_device"`
 }
 
 // fidelityDisclosure records fleet silence across one run.
@@ -311,6 +333,11 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				// digest and the count can never describe different sets.
 				ResolvedParticipantsSHA256: resolvedParticipantsSHA256(res.PerDevice),
 				RateCap:                    buildRateCapDisclosure(c),
+				Rate: rateDisclosure{
+					RequestedPerDevice: c.spec.Rate,
+					Paced:              c.pacesRate(),
+					AchievedPerDevice:  achievedPerDeviceRate(res),
+				},
 				Fidelity: fidelityDisclosure{
 					SilentAtStart:       c.fidelitySilentAtStart,
 					ChangedDuringWindow: fidelityTransitions.Load() != c.fidelityTransitionsAtStart,
@@ -558,4 +585,27 @@ func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
 		shared = []string{} // an explicit empty list reads as "had it to itself"
 	}
 	return &rateCapDisclosure{PerSecond: capPerSec, SharedWith: shared}
+}
+
+// achievedPerDeviceRate is the mean per-device emission rate actually attained
+// over the window: total in-window records divided by the window and by the
+// number of participants.
+//
+// In-window only. Drain records were produced during the window but written
+// after it, so counting them would inflate the rate by the drain's share while
+// the window's own duration stayed the denominator — the same mistake the
+// per-application block avoids by keeping drain bytes out of its rate.
+func achievedPerDeviceRate(res *ScenarioResult) float64 {
+	if res == nil || len(res.PerDevice) == 0 {
+		return 0
+	}
+	window := res.T1Actual.Sub(res.T0Actual).Seconds()
+	if window <= 0 {
+		return 0
+	}
+	var inWindow uint64
+	for _, s := range res.PerDevice {
+		inWindow += s.InWindow
+	}
+	return float64(inWindow) / window / float64(len(res.PerDevice))
 }

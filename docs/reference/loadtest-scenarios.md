@@ -408,6 +408,18 @@ interesting one is usually cardinality:
   magnitude, and measure on your own hardware before designing a run that
   depends on the exact number.
 
+- **Flow protocols have a hard per-device rate ceiling, around 8.5–9.7 records/s.**
+  A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / mean-flow-lifetime` — roughly 8.5/s for the GPU-server profile up to 9.7/s for the campus-switch one.
+  A rate above a participant's ceiling is **refused at arm**, with the ceiling in the message, rather than silently under-delivered.
+  Fleet throughput scales with participant count; per-device rate does not scale past the cache. Flow is not a protocol to drive hard per device.
+
+- **`rate_profile` is not supported for flow protocols** and is refused at submit.
+  Resizing the cache moves the rate with a lag of about one mean flow lifetime (~29s at the shipped defaults, measured at 1.03x), so a ramp shorter than that would be smeared into a shape that is neither the profile requested nor a constant.
+  Use a constant rate for flow, or drive the shape with `syslog`.
+
+- **`rate` does not set the flow tick cadence.** It did before: the scenario ticker ran at `1s/rate`, which set *batching* rather than volume, so the requested rate was never what the wire carried.
+  The cadence now follows `-flow-tick-interval` (clamped so a short window is still divided into enough batches to report a rate), and `rate` sets the cache population, which is what determines volume.
+
 So high-cardinality runs are best driven at **low per-device rates**: 30,000
 participants at `rate: 0.5` is a comfortable 15k events/s, while the same fleet
 at `rate: 10` asks for 300k/s and will likely be scheduler-bound rather than

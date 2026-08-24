@@ -367,6 +367,39 @@ func (c *ScenarioController) Transitions() []scenarioTransition {
 	return out
 }
 
+// pacesRate reports whether this scenario's protocol actually emits at
+// spec.Rate.
+//
+// syslog and snmp-trap pace per event through their own schedulers; flow paces
+// by sizing each participant's flow cache. gnmi-dialout does neither — it is a
+// stream whose cadence is the dial-out SAMPLE interval, so `rate` changes
+// nothing about what it emits.
+//
+// Used to decide whether a target-rate metric may be published at all. A gauge
+// named "target" for a run that never pursued the target is the defect this
+// change exists to remove, and it survives here for the one protocol still
+// affected.
+func (c *ScenarioController) pacesRate() bool {
+	if c.spec == nil {
+		return false
+	}
+	// Fail CLOSED: a protocol added later must be classified deliberately, not
+	// inherit "paced" and start publishing a target gauge for a rate it may
+	// never pursue — which is the disclosure defect this function exists to
+	// remove.
+	switch c.spec.Protocol {
+	case "syslog":
+		return true // scenario-owned NHPP/fixed-interval scheduler
+	case "snmp-trap":
+		return true // scenario-owned trap scheduler
+	default:
+		// Flow protocols are paced by sizing the participant's flow cache.
+		// gnmi-dialout is not: it is a stream whose cadence is the dial-out
+		// SAMPLE interval, so spec.Rate changes nothing it emits.
+		return isFlowScenarioProtocol(c.spec.Protocol)
+	}
+}
+
 // usesScheduler reports whether the scenario protocol emits via a scenario-
 // owned scheduler (syslog) or via the device's own gated exporter cadence
 // (flow protocols — the gate lives in FlowExporter.Tick, no scheduler).
@@ -385,7 +418,23 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		// template protocols only — sflow byte totals are sampling
 		// extrapolation at the collector and would not reconcile.
 		part.countApps = c.spec.Protocol != "sflow"
-		return c.claim(&dev.flowExporter.scenPart, part)
+		// Ceiling check BEFORE the claim: a device that cannot reach the rate is
+		// excluded with a reason, the same way one lacking the exporter is.
+		// Checked here rather than at submit because the ceiling depends on the
+		// device's own profile and timeouts, and participants may be named by a
+		// selector that submit has not resolved (design D4).
+		if reason, hint, ok := flowRateReachable(dev.flowExporter, c.spec.Rate); !ok {
+			return false, reason, hint
+		}
+		ok, reason, hint = c.claim(&dev.flowExporter.scenPart, part)
+		if ok {
+			// Pace the device by sizing its cache. Only after a SUCCESSFUL
+			// claim: installing it before would resize a device another
+			// scenario holds, and the loser of a claim race must leave the
+			// winner's device exactly as it found it.
+			dev.flowExporter.setConcurrentOverride(flowPacingTarget(dev.flowExporter, c.spec.Rate))
+		}
+		return ok, reason, hint
 	}
 	if c.spec.Protocol == "snmp-trap" {
 		if dev.trapExporter == nil {
@@ -436,6 +485,12 @@ func (c *ScenarioController) claim(slot *atomic.Pointer[scenarioPart], part *sce
 	return true, "", ""
 }
 
+// ownsScenPart reports whether this scenario currently holds the slot.
+func (c *ScenarioController) ownsScenPart(slot *atomic.Pointer[scenarioPart]) bool {
+	p := slot.Load()
+	return p != nil && p.owner == c.id
+}
+
 // detachScenPart nil-swaps the participation handle on the protocol's exporter.
 func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
 	slot := c.installedSlot(dev)
@@ -445,14 +500,23 @@ func (c *ScenarioController) detachScenPart(dev *DeviceSimulator) {
 	// Ownership-checked: this is called for devices this arm is DROPPING, and
 	// under per-device overlap a drop can be caused by another scenario holding
 	// the device. Clearing unconditionally would release their claim.
-	released := releaseScenPart(slot, c.id)
-	// scenDriven is DERIVED state owned by whoever holds the claim, so it is
-	// gated on the same ownership test. Clearing it unconditionally would hand
-	// the holder's device back to the fleet ticker while their scenario ticker
-	// still drives it — both would tick, double-counting into their ledger.
-	if released && isFlowScenarioProtocol(c.spec.Protocol) && dev.flowExporter != nil {
+	// Clear derived state BEFORE releasing the claim, not after.
+	//
+	// Releasing first opens a window in which the slot is nil and claimable: a
+	// successor can arm the device and install ITS pacing override, and this
+	// scenario's next instruction then wipes it. The successor would run its
+	// whole window at the profile population while its report said
+	// `paced: true` — nl6#456 restored, on a device nobody was looking at.
+	//
+	// Clearing first is safe in the other direction: if we do NOT own the claim
+	// the clear is skipped entirely, and if we do, no successor can be holding
+	// it yet.
+	if c.ownsScenPart(slot) && isFlowScenarioProtocol(c.spec.Protocol) && dev.flowExporter != nil {
 		dev.flowExporter.scenDriven.Store(false) // hand cadence back to the fleet ticker
+		dev.flowExporter.setConcurrentOverride(0)
 	}
+	released := releaseScenPart(slot, c.id)
+	_ = released
 }
 
 // scenPartSlot returns the slot this scenario COMPETES for on dev — the one an
@@ -522,10 +586,37 @@ func (c *ScenarioController) claimOwner(dev *DeviceSimulator) string {
 	return ""
 }
 
+// scenarioFlowTicksPerWindow is the minimum number of emission batches a
+// scenario window is divided into. Twenty is arbitrary but bounded: enough that
+// a short run still reports a rate rather than a single lump, few enough that a
+// long run does not tick pointlessly fast.
+const scenarioFlowTicksPerWindow = 20
+
+// scenarioFlowTickFloor bounds how fast the scenario ticker may run, so a very
+// short window cannot spin the emission loop.
+const scenarioFlowTickFloor = 50 * time.Millisecond
+
+// scenarioFlowTickInterval picks the scenario emission cadence: the fleet's,
+// unless the window is too short to be divided into enough batches at that
+// cadence. Never faster than the floor.
+func scenarioFlowTickInterval(fleet, window time.Duration) time.Duration {
+	interval := fleet
+	if window > 0 {
+		if perWindow := window / scenarioFlowTicksPerWindow; perWindow < interval {
+			interval = perWindow
+		}
+	}
+	if interval < scenarioFlowTickFloor {
+		interval = scenarioFlowTickFloor
+	}
+	return interval
+}
+
 // startScenarioFlowTicker drives participant flow emission at the scenario
 // cadence during [T0,T1) (D1 flow-cadence adaptation). It marks each
 // participant scenDriven so the fleet ticker yields, then ticks each exporter
-// at spec.interval() until ctx is cancelled at finalize.
+// at the scenario cadence until ctx is cancelled at finalize. The cadence is
+// NOT derived from spec.Rate — see scenarioFlowTickInterval.
 //
 // Sets c.flowTickerDone, which finalize JOINS: cancelling this goroutine is not
 // the same as it having stopped, and flow was the only one of the four emission
@@ -541,7 +632,27 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	}
 	c.sm.mu.RUnlock()
 
-	interval := c.spec.interval()
+	// The scenario ticker uses the FLEET cadence, not 1s/rate.
+	//
+	// It used to derive its period from spec.interval(). That applied `rate` to
+	// CADENCE, and cadence sets batching rather than volume (nl6#446, confirmed
+	// by packet capture) — so it never produced the requested record rate. Now
+	// that the cache sizing sets volume, deriving the period from rate as well
+	// would apply one number to two quantities: at a low rate the period grows
+	// past the mean flow lifetime, the cache turns over between ticks, and a
+	// slow steady rate comes out as bursts.
+	//
+	// Taking the fleet's configured cadence keeps one meaning per number and
+	// makes scenario emission batch exactly as fleet emission does — but it is
+	// only an upper bound. A window shorter than a few fleet ticks would emit
+	// once or not at all, which is a measurement of nothing; two existing tests
+	// (2s windows against the 5s default) caught exactly that.
+	//
+	// So: no slower than the fleet, no faster than the floor, and at least
+	// scenarioFlowTicksPerWindow batches within the window. Cadence still does
+	// not set the RATE — the cache does — so varying it here changes only how
+	// finely the run is chopped up.
+	interval := scenarioFlowTickInterval(c.sm.effectiveFlowTickInterval(), c.spec.Window)
 	done := make(chan struct{})
 	c.flowTickerDone = done
 	go func() {

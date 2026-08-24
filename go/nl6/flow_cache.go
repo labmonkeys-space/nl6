@@ -176,6 +176,39 @@ func (fc *FlowCache) ExpiryReasons() (active, inactive uint64) {
 	return fc.expiredActive, fc.expiredInactive
 }
 
+// TrimTo drops flows until the cache holds at most target, and reports how many
+// it dropped. Called BEFORE Expire on each tick, so a cache being resized
+// downward converges in one tick instead of draining over a flow lifetime.
+//
+// Ordering matters. Trimming AFTER Expire lets the surplus population have one
+// last harvest: measured at rate 0.5 from a warm cache, that single tick put
+// the run 47% over its target across a 60s window, because ~22 flows of the old
+// 128 came due before the trim reached them. Trimming first drops them unsent.
+//
+// Dropping is accounting-safe: a flow is counted only when EXPORTED, so a
+// trimmed flow has never reached a ledger, a wire, or a collector.
+//
+// Eviction follows map-iteration order, deliberately NOT age. Evicting newest
+// first would leave a uniformly OLD survivor set that expires within a short
+// span — re-creating the synchronised cohort burst nl6#446 removed. Arbitrary
+// eviction preserves the age spread that keeps emission continuous.
+func (fc *FlowCache) TrimTo(target int) int {
+	if target < 0 {
+		target = 0
+	}
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	dropped := 0
+	for key := range fc.flows {
+		if len(fc.flows) <= target {
+			break
+		}
+		delete(fc.flows, key)
+		dropped++
+	}
+	return dropped
+}
+
 // Len returns the current number of active flows in the cache.
 func (fc *FlowCache) Len() int {
 	fc.mu.Lock()
@@ -184,11 +217,18 @@ func (fc *FlowCache) Len() int {
 }
 
 // GenerateFlows synthesises new FlowRecords from profile and adds them until
-// the cache reaches profile.ConcurrentFlows. startUptimeMs is the device's
-// current uptime in milliseconds, used to anchor flow start/end timestamps.
-func (fc *FlowCache) GenerateFlows(profile *FlowProfile, deviceIP net.IP, rng *rand.Rand, now time.Time, startUptimeMs uint32) {
+// the cache reaches `target`. startUptimeMs is the device's current uptime in
+// milliseconds, used to anchor flow start/end timestamps.
+//
+// GenerateFlows takes the target population EXPLICITLY rather than reading
+// profile.ConcurrentFlows. FlowProfile values are shared package-level pointers
+// held by every exporter of a device type, so a caller that wanted a different
+// population for ONE device and set it on the profile would change it for the
+// whole fleet. Passing the target makes that mistake impossible to express
+// here: the only way to vary it is per call site, which is per exporter.
+func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP net.IP, rng *rand.Rand, now time.Time, startUptimeMs uint32) {
 	fc.mu.Lock()
-	need := profile.ConcurrentFlows - len(fc.flows)
+	need := target - len(fc.flows)
 	fc.mu.Unlock()
 	if need <= 0 {
 		return

@@ -73,7 +73,7 @@ sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5 \
 
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
-  "protocol": "netflow9", "rate": 20, "window": "1m", "drain": "5s", "seed": 7
+  "protocol": "netflow9", "rate": 4, "window": "1m", "drain": "5s", "seed": 7
 }'
 ```
 
@@ -88,7 +88,14 @@ the report's `metadata.run_tags` records which one and how.
 Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how
 much.
 
-```bash
+```
+
+> **Flow rate is per device and capped.** Flow protocols are paced by sizing each
+> device's flow cache, which bounds the per-device rate at roughly 8.5–9.7 records/s.
+> A rate above a participant's ceiling excludes it at arm. Earlier revisions of this
+> runbook used `"rate": 20`, which every shipped profile now refuses — scale a run
+> with participants rather than per-device rate.
+bash
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1"], "protocol": "syslog", "rate": 100, "window": "5m", "seed": 42,
   "rate_profile": { "kind": "linear", "start_rate": 5, "end_rate": 200 }
@@ -166,7 +173,7 @@ sudo ./nl6 -fidelity -auto-start-ip 10.42.0.1 -auto-count 5 \
 
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
-  "protocol": "ipfix", "rate": 20, "window": "1m", "drain": "5s", "seed": 7
+  "protocol": "ipfix", "rate": 4, "window": "1m", "drain": "5s", "seed": 7
 }'
 ```
 
