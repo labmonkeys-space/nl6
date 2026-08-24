@@ -41,8 +41,52 @@ var deleteDeviceTunInterfacesInNamespace = func(sm *SimulatorManager, interfaceN
 	return sm.bulkDeleteTunInterfacesInNamespace(interfaceNames)
 }
 
+// ManagerOption configures a SimulatorManager during construction.
+//
+// This exists because a post-construction setter cannot configure a subsystem
+// the constructor has already started. startFlowTicker latches its period, so
+// the flow cadence in particular MUST arrive this way (nl6#446).
+//
+// Options are applied immediately before the flow subsystem starts, which is
+// NOT the same as "before everything": the namespace, shared SSH key and TLS
+// cert are already built by then. An option for any of those would be inert,
+// so move this application point up before adding one.
+type ManagerOption func(*SimulatorManager)
+
+// maxFlowTickInterval bounds the flow cadence. Nothing about a simulator wants
+// a tick measured in days, and without a ceiling an out-of-range value is worse
+// than an error: `-flow-tick-interval 999999999999` overflows int64 into a
+// POSITIVE ~123-year duration, passes a `d > 0` gate, latches, and exports zero
+// records for the lifetime of the process with nothing in the log.
+const maxFlowTickInterval = time.Hour
+
+// WithFlowTickInterval sets the simulator-wide flow ticker cadence.
+//
+// Cadence is deliberately construction-time only, not runtime-mutable. It is a
+// property OF a measurement rather than a bracket around one: a run whose
+// cadence changed mid-window would report a record rate describing neither
+// setting, and unlike fidelity mode there is no per-run disclosure that could
+// make such a run interpretable.
+//
+// A value outside (0, maxFlowTickInterval] leaves the default and says so. It
+// is a startup flag, so a log line is the only channel available; silently
+// falling back is what made the original defect survive so long.
+func WithFlowTickInterval(d time.Duration) ManagerOption {
+	return func(sm *SimulatorManager) {
+		if d <= 0 || d > maxFlowTickInterval {
+			if d != 0 {
+				log.Printf("flow export: ignoring out-of-range tick interval %s "+
+					"(must be >0 and <=%s); using the %s default",
+					d, maxFlowTickInterval, defaultFlowTickInterval)
+			}
+			return
+		}
+		sm.flowTickInterval = d
+	}
+}
+
 // NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
-func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
+func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *SimulatorManager {
 	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call
 	// would be a no-op (and is deprecated).
 
@@ -82,6 +126,21 @@ func NewSimulatorManagerWithOptions(useNamespace bool) *SimulatorManager {
 
 	// Pre-generate shared TLS certificate for all API servers
 	sm.generateSharedTLSCert()
+
+	// Options must land before initFlowSubsystem, which latches the flow
+	// cadence; an option applied afterwards would be inert, which is precisely
+	// the defect this seam exists to fix.
+	//
+	// A nil option is skipped rather than dereferenced. The natural way to
+	// write a conditional option leaves a nil in the slice, and panicking here
+	// would abort AFTER the netns and its iptables rule exist but before any
+	// path that removes them, leaking both.
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		opt(sm)
+	}
 
 	// Bring up the always-on flow-export infrastructure (buf pool + ticker
 	// goroutine + stop channel). No-op at startup when no device has

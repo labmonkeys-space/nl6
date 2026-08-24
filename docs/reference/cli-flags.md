@@ -184,13 +184,33 @@ details.
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | — | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker interval. **Currently inert** — the ticker latches its period during manager construction, before this flag is applied, and is never restarted, so every deployment ticks at `5s` ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446)). The per-device `tick_interval` is likewise accepted and not honored. |
-| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Active flow timeout. |
-| `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Inactive flow timeout. |
+| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. The per-device `tick_interval` is still accepted and not honored ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). |
+| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. |
+| `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Idle time after a flow's last packet before it is exported. |
+
 | `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
 | `-flow-sub-agent-id` | uint | `0` | **seed** | sFlow `sub_agent_id` emitted in every datagram header by the auto-start batch (one value for the whole batch; per-group values via the REST `flow.sub_agent_id` field). Ignored by non-sFlow protocols. See [Flow export reference → sFlow sub-agent id](flow-export.md#sflow-sub-agent-id). |
 | `-flow-option-interface-table` | `if-scoped` \| `system-scoped` | — (off) | **seed** | Emit v9/IPFIX interface option records ("option interface-table") for the auto-start batch: `if-scoped` carries the ifIndex in the scope with fields 82+83; `system-scoped` carries it as option field `INPUT_SNMP(10)` with field 83 only (the IOS-XR shape). Requires `-flow-protocol netflow9` or `ipfix` — other protocols fail startup validation. Per-group shapes via the REST `flow.options_interface_table` field. See [Flow export reference → Interface option records](flow-export.md#interface-option-records-netflow-v9--ipfix). |
 | `-flow-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. |
+
+:::note Tick interval sets batching, not volume
+
+It is natural to reach for `-flow-tick-interval` to turn flow volume up or down. It is not that knob.
+
+Export volume is set by how many flows exist and how long they live:
+
+```
+records/s  ≈  ConcurrentFlows / mean-flow-lifetime
+mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeout)
+```
+
+The tick interval decides how finely that stream is cut into datagrams. A slower tick sends **bigger datagrams**, not proportionally fewer records. A residual dependence remains — export polls, so a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average — but it is bounded by the interval and is not a proportional control.
+
+To change volume, change the device profile's concurrent-flow count or the timeouts.
+
+**Before [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) was fixed**, this flag was inert (every deployment ticked at 5s) and volume *did* step with cadence, because the whole cache expired on one tick and then sat empty. Both are fixed; a deployment that set this flag will see a different cadence and every flow deployment will see a different record rate. See [Flow export](./flow-export.md).
+
+:::
 
 ## SNMP trap / INFORM export flags
 

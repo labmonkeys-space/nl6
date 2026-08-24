@@ -57,7 +57,9 @@ type flowEntry struct {
 
 // FlowCache maintains the set of active synthetic flows for a single device.
 //
-// Flows are inserted via Add and aged out by Expire. Callers should call
+// Flows are inserted via GenerateFlows (the only production path) and aged out
+// by Expire. Add is retained for direct insertion and is currently exercised
+// only by tests. Callers should call
 // GenerateFlows periodically to keep the cache at the target concurrency level,
 // then call Expire to harvest records ready for export.
 //
@@ -67,7 +69,19 @@ type FlowCache struct {
 	activeTimeout   time.Duration
 	inactiveTimeout time.Duration
 	maxFlows        int
-	mu              sync.Mutex
+	// expiredActive / expiredInactive tally which timeout retired each flow.
+	// Totals alone cannot show that both paths are live — before nl6#446 the
+	// active path was unreachable and the totals still looked healthy.
+	expiredActive   uint64
+	expiredInactive uint64
+	// warmed records whether the first fill has happened. That fill starts the
+	// cache COLD — every flow created at one instant — and the active timeout
+	// is a fixed offset from creation, so the whole cohort would then expire on
+	// one tick and keep doing so forever. Sampled durations alone do not fix
+	// it: they stagger only the minority of flows that leave by the inactive
+	// timeout. See warmStartOffset.
+	warmed bool
+	mu     sync.Mutex
 }
 
 // NewFlowCache creates a FlowCache with the given timeout values and maximum
@@ -84,6 +98,26 @@ func NewFlowCache(activeTimeout, inactiveTimeout time.Duration, maxFlows int) *F
 // Add inserts r into the cache or accumulates bytes/packets into an existing
 // entry. New entries are silently dropped when the cache is at capacity,
 // mirroring real router behaviour under high flow load.
+//
+// NOTE ON lastSeenAt, because this deliberately differs from GenerateFlows and
+// the difference looks like the nl6#446 defect at a glance.
+//
+// Add is a PACKET-ARRIVAL api: `now` IS the moment of the flow's latest packet,
+// so `lastSeenAt = now` is correct, and a caller that keeps calling Add keeps
+// the flow alive until the active timeout caps it. GenerateFlows is not that —
+// it synthesises an entire flow in one call from a duration the profile
+// sampled, so its last packet lies in the FUTURE and pinning lastSeenAt to the
+// creation instant made every synthetic flow look idle from birth. That was
+// nl6#446; it is not a defect here.
+//
+// A review of nl6#446 proposed "fixing" this the same way. Making the change
+// breaks TestFlowCache_InactiveTimeout and TestFlowCache_InactiveReset, which
+// pin exactly the contract above — the inactive timer must reset on a fresh
+// packet. Those tests are the specification; do not reconcile the two paths.
+//
+// Add has no production caller today (GenerateFlows is the only insertion path
+// used by FlowExporter). It is retained as the ingest seam and exercised by
+// tests.
 func (fc *FlowCache) Add(r FlowRecord, now time.Time) {
 	key := recordKey(r)
 	fc.mu.Lock()
@@ -114,13 +148,32 @@ func (fc *FlowCache) Expire(now time.Time) []FlowRecord {
 	defer fc.mu.Unlock()
 	var expired []FlowRecord
 	for key, e := range fc.flows {
-		if now.Sub(e.createdAt) >= fc.activeTimeout ||
-			now.Sub(e.lastSeenAt) >= fc.inactiveTimeout {
-			expired = append(expired, e.record)
-			delete(fc.flows, key)
+		byActive := now.Sub(e.createdAt) >= fc.activeTimeout
+		byInactive := now.Sub(e.lastSeenAt) >= fc.inactiveTimeout
+		if !byActive && !byInactive {
+			continue
 		}
+		// Attribute to the active timeout when both apply: a flow still within
+		// its modelled duration is capped, not idle.
+		if byActive {
+			fc.expiredActive++
+		} else {
+			fc.expiredInactive++
+		}
+		expired = append(expired, e.record)
+		delete(fc.flows, key)
 	}
 	return expired
+}
+
+// ExpiryReasons returns cumulative counts of flows retired by the active and
+// inactive timeouts. Exposed so a test can assert that BOTH paths are live;
+// a total record count cannot distinguish a healthy split from a collapsed
+// model where only one timeout can ever fire.
+func (fc *FlowCache) ExpiryReasons() (active, inactive uint64) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	return fc.expiredActive, fc.expiredInactive
 }
 
 // Len returns the current number of active flows in the cache.
@@ -151,15 +204,77 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, deviceIP net.IP, rng *r
 	// between the need-check and the individual Add calls.
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
+	// Mark warmed AFTER this batch: only the first fill is backdated.
+	defer func() { fc.warmed = true }()
 	for _, r := range batch {
 		if len(fc.flows) >= fc.maxFlows {
 			break
 		}
 		key := recordKey(r)
 		if _, ok := fc.flows[key]; !ok {
-			fc.flows[key] = &flowEntry{record: r, createdAt: now, lastSeenAt: now}
+			createdAt := now
+			if !fc.warmed {
+				createdAt = now.Add(-fc.warmStartOffset(r, rng))
+			}
+			// lastSeenAt is the time of the flow's LAST PACKET, which for a
+			// synthetic flow is its creation plus the duration the profile
+			// already sampled (carried on the record as EndMs-StartMs). It is
+			// normally in the FUTURE, and that is the point: the inactive
+			// timeout must not start counting until the flow has actually
+			// stopped sending.
+			//
+			// Setting it to `now` — as this did before — made every flow look
+			// idle from birth. Expiry then collapsed to
+			// min(active, inactive), the active timeout became unreachable
+			// under the shipped defaults, and because a refill creates its
+			// whole batch at one instant the entire cache expired on a single
+			// tick, producing a burst-then-silence sawtooth no real exporter
+			// emits.
+			//
+			// With the modelled end, expiry falls out of the UNCHANGED
+			// condition in Expire as min(active, duration+inactive): a flow
+			// still running at the cap leaves by the active timeout, one that
+			// ended and went idle leaves by the inactive one. Independently
+			// sampled durations also stagger the cohort for free.
+			fc.flows[key] = &flowEntry{
+				record:     r,
+				createdAt:  createdAt,
+				lastSeenAt: createdAt.Add(recordDuration(r)),
+			}
 		}
 	}
+}
+
+// warmStartOffset returns how far into its own life a flow should already be at
+// the first fill, so the cache starts as a running router's would: holding
+// flows of every age rather than a cohort born together.
+//
+// The offset is drawn from the flow's OWN lifetime — min(active, duration +
+// inactive) — rather than from the active timeout, so a warm flow can never be
+// born already expired and produce a spurious burst on the first tick.
+//
+// Only the first fill needs this. Afterwards expiries are spread, so each tick
+// refills a few flows at its own instant and the spread sustains itself.
+func (fc *FlowCache) warmStartOffset(r FlowRecord, rng *rand.Rand) time.Duration {
+	lifetime := recordDuration(r) + fc.inactiveTimeout
+	if fc.activeTimeout < lifetime {
+		lifetime = fc.activeTimeout
+	}
+	if lifetime <= 0 {
+		return 0
+	}
+	return time.Duration(rng.Int63n(int64(lifetime)))
+}
+
+// recordDuration is the flow's modelled lifetime, taken from the uptime-
+// relative timestamps the profile already sampled. Clamped at zero so a record
+// whose EndMs wrapped (the ~49-day uptime guard in syntheticFlow) cannot
+// produce a lastSeenAt before createdAt and expire the flow instantly.
+func recordDuration(r FlowRecord) time.Duration {
+	if r.EndMs <= r.StartMs {
+		return 0
+	}
+	return time.Duration(r.EndMs-r.StartMs) * time.Millisecond
 }
 
 // recordKey derives a FlowKey from a FlowRecord's 5-tuple.

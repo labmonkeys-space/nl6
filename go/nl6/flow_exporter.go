@@ -352,11 +352,19 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		return FlowTickStats{}
 	}
 
+	// EXPIRE FIRST, then refill. A router frees the cache entry and then admits
+	// new flows into the vacated slot; doing it the other way round means a
+	// flow can never leave on the tick it was born, so the cache alternates
+	// between full and empty once the tick period approaches the flow lifetime.
+	// At -flow-tick-interval 30s with the 30s default active timeout that
+	// produced a literal [0 128 0 128 ...] — the whole cache on one tick, then
+	// a silent one, forever. Expiring first refills the vacated slots in the
+	// same tick, so a coarse cadence yields big datagrams rather than
+	// alternating bursts and silence.
+	expired := fe.cache.Expire(now)
+
 	// Replenish cache to the configured ConcurrentFlows level.
 	fe.cache.GenerateFlows(fe.profile, deviceIP, fe.rng, now, uptimeMs)
-
-	// Collect all records that crossed an active or inactive timeout boundary.
-	expired := fe.cache.Expire(now)
 
 	sendTemplate := fe.seqNo == 0 || now.Sub(fe.lastTempl) >= fe.templateInterval
 	if len(expired) == 0 && !sendTemplate {
@@ -872,7 +880,7 @@ func domainIDtoIP(id uint32) net.IP {
 //
 // Called unconditionally from `NewSimulatorManagerWithOptions` (design
 // §D9: always-on scheduler). The simulator-wide tick / template interval
-// defaults are set here; operators override them via SetFlowTickInterval
+// defaults are set here; operators override them via WithFlowTickInterval
 // / SetFlowTemplateInterval before creating devices. Safe to call once.
 func (sm *SimulatorManager) initFlowSubsystem() {
 	// sync.Pool wants pointer-typed values to avoid the extra alloc on
@@ -892,36 +900,13 @@ func (sm *SimulatorManager) initFlowSubsystem() {
 	sm.startFlowTicker()
 }
 
-// SetFlowTickInterval sets the simulator-wide flow ticker cadence field.
+// The flow ticker cadence is configured at construction via
+// WithFlowTickInterval, not by a setter. startFlowTicker latches the period, so
+// a setter running after the constructor could only write a field nothing
+// re-reads — which was nl6#446. The seam is an option deliberately, so the
+// ordering cannot regress silently: an option applied too late is a compile-
+// time call-site change, whereas a setter called too late looks correct.
 //
-// It does NOT change the cadence of the running ticker. startFlowTicker latches
-// its period from the SimulatorManager constructor and is never called again,
-// so by the time the flag path reaches this setter the ticker is already
-// running at the default. Writing the field here therefore affects nothing that
-// emits; -flow-tick-interval is inert. Tracked as nl6#446 — fixing it changes
-// emission rate for anyone running with the flag set, so it is deliberately
-// not fixed as a side effect of a reporting change.
-//
-// Per-device `TickInterval` fields are stored on DeviceFlowConfig but not
-// honored either (design debt documented in the per-device-export-config
-// change); the read-back discloses that via effective_intervals.flow_tick_interval, which
-// reports the latched period rather than this field.
-func (sm *SimulatorManager) SetFlowTickInterval(d time.Duration) {
-	if d <= 0 {
-		return
-	}
-	sm.flowTickInterval = d
-	// Disclose to the operator who set the flag, which was the one channel this
-	// change left silent. A benchmark tool quietly emitting flows at 6x the
-	// configured rate is worse than the per-device case, which now gets both a
-	// log line and a REST warning.
-	if latched := time.Duration(sm.flowTickerPeriod.Load()); latched > 0 && latched != d {
-		log.Printf("flow export: -flow-tick-interval=%s is NOT honored; the ticker latched %s "+
-			"during manager construction and is never restarted, so every device ticks at %s "+
-			"(see nl6#446)", d, latched, latched)
-	}
-}
-
 // SetFlowTemplateInterval overrides the simulator-wide template refresh
 // interval (applies to NetFlow v9 / IPFIX). Call before device creation.
 // `template_interval` is global per design §D5.
@@ -938,12 +923,20 @@ func (sm *SimulatorManager) startFlowTicker() {
 	// Latch the period SYNCHRONOUSLY, before the goroutine starts, and record
 	// it as the cadence the ticker is actually configured with.
 	//
-	// Two reasons. First, reading sm.flowTickInterval inside the goroutine
-	// raced with SetFlowTickInterval, which the flag path calls after the
-	// constructor has already started this ticker. Second, that same ordering
-	// means the field and the running cadence can disagree, so the read-back
-	// must report what was latched rather than what the field says.
+	// Two reasons, both still load-bearing after nl6#446 was fixed. First,
+	// reading sm.flowTickInterval inside the goroutine would race any write to
+	// it. Second, latching makes the reported cadence true BY CONSTRUCTION
+	// rather than by the call ordering happening to be right — the report
+	// describes what runs even if a future caller reintroduces a late write.
 	period := sm.flowTickInterval
+	// Floor the invariant HERE rather than trusting every writer of the field
+	// to have applied it. time.NewTicker panics on a non-positive period, and
+	// the callers that currently guarantee it (WithFlowTickInterval's d > 0
+	// gate, initFlowSubsystem's defaulting) are not the only ones that could
+	// exist tomorrow.
+	if period <= 0 {
+		period = defaultFlowTickInterval
+	}
 	sm.flowTickerPeriod.Store(int64(period))
 	sm.flowWg.Add(1)
 	go func() {

@@ -199,6 +199,47 @@ CLI flags, which take integer seconds.
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the
 full per-device schema.
 
+## How much flow a device emits
+
+Export volume is a property of the flow cache, not of the export cadence:
+
+```
+records/s  ≈  ConcurrentFlows / mean-flow-lifetime
+
+mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeout)
+```
+
+Each synthetic flow is given a duration sampled from the device profile. A flow still running when it reaches the **active timeout** is exported and restarted; a flow that has ended and then sat idle for the **inactive timeout** is exported then. Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one, giving a mean cached lifetime near 29s.
+
+`-flow-tick-interval` sets how finely that stream is cut into datagrams, not how much of it there is. Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat — bounded by the interval rather than proportional to it. Measured across a 30x cadence range:
+
+| tick | records/s | records per tick |
+|---|---|---|
+| 1s | 4.37 | ~4 |
+| 5s | 4.24 | ~22 |
+| 15s | 3.94 | ~64 |
+| 30s | 3.63 | 128 |
+
+Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits about 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+
+Setting the tick close to or above the mean flow lifetime is not useful — every flow then lives about one tick and the cache turns over wholesale. Values above 1h are rejected.
+
+To raise or lower volume, change the concurrent-flow count or the timeouts.
+
+### Changed in nl6#446: cadence and volume both moved
+
+Two independent corrections landed together. **Both change the load a given configuration offers**, so measurements taken across this boundary are not comparable on the flow axis. Reports carry `nl6_version`, so the boundary stays identifiable.
+
+| | before | after |
+|---|---|---|
+| **cadence** — deployments setting `-flow-tick-interval` | flag inert; every deployment ticked at 5s | the configured cadence applies |
+| **volume** — **every** flow deployment, flag or not | ~6.4 records/s per device | **~4.2 records/s** (about 0.66x) |
+| **shape** | whole cache exported on one tick, then several silent ticks | records on every tick, at every cadence |
+
+The volume change reaches deployments that set no flag at all, which makes it the wider-reaching of the two.
+
+It happened because a flow's "last seen" time was pinned to its creation instant, so every flow looked idle from birth. Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together — a burst followed by silence that no real exporter produces. Flow lifetimes now derive from the duration the profile already sampled.
+
 ## Status API
 
 ```bash
