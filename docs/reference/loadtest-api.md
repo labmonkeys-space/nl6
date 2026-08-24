@@ -86,7 +86,15 @@ Request body:
 | `participants` | `[]string` | yes¹ | Device management IPs, as a **set**. At most **100,000** entries, **no repeats** (a duplicate is a `400` — a device named twice is still one source on the report's join tuple, so the second entry has no meaning). Each must be an **IPv4 dotted quad**: IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are rejected at submit, because the fleet is IPv4 throughout and such an entry could only ever become a `device not found` exclusion. Existence is **not** checked here — that is an arm-time concern (see readiness `excluded`). |
 | `participants_cidr` | `[]string` | yes¹ | Compact prefix selector: IPv4 CIDR prefixes in **canonical (masked) form**, at most **1,024** entries. The participant set is the **union** of `participants` and every live device whose IP falls inside any prefix, resolved at arm time. `400` at submit for: a non-canonical prefix (`10.42.1.5/16` — the error names the canonical form), an IPv6 or IPv4-mapped prefix, a duplicate prefix, or a prefix nested inside another (it adds nothing to the union). An **explicit `participants` entry covered by a prefix is allowed** — it upgrades that address from the prefix's silent miss to the list's loud `excluded` row, a per-device existence assertion. `["0.0.0.0/0"]` spells whole-fleet. |
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
-| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and the **flow-tick cadence** for flow protocols (`ipfix`/`netflow9`): during `[T0,T1)` the scenario ticks each participant's flow exporter every `1/rate` s, and the fleet's own flow ticker yields to it (D1 flow-cadence adaptation). Always required and fingerprinted. |
+| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).
+
+For **flow protocols** it sets the RECORD rate, by sizing each participant's flow cache to `rate x mean-flow-lifetime` for the window. It no longer sets the flow-tick cadence: ticking faster produces bigger datagrams, not more records, so the old `1/rate` ticker never delivered the requested rate.
+
+Flow protocols have a per-device ceiling of roughly **8.5–9.7 records/s** (`MaxFlows / mean-flow-lifetime`, lowest on the GPU-server profile). A rate above a participant's ceiling excludes that participant at arm, with the ceiling in the reason. Fleet throughput scales with participant count; per-device rate does not.
+
+For `gnmi-dialout`, `rate` does **not** control emission — the stream runs at its dial-out SAMPLE interval — and no `nl6_scenario_target_rate` gauge is published for such a run.
+
+Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |

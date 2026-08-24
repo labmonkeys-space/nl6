@@ -160,7 +160,14 @@ func TestScenarioFlowTicker_StopIsFinal(t *testing.T) {
 	// Prove the counters MOVE while running, or "unchanged after Stop" says
 	// nothing. This is the non-vacuity guard the fixture's short template
 	// interval exists for.
-	deadline := time.Now().Add(2 * time.Second)
+	// The deadline must cover a few emission cadences. It used to be a flat 2s,
+	// which worked only because the scenario ticker then ran at 1s/rate — 5ms
+	// at this fixture's rate of 200. The cadence no longer derives from rate
+	// (rate sets the CACHE, which sets volume), so derive the deadline from the
+	// cadence the ticker actually uses rather than from a constant that happened
+	// to fit the old coupling.
+	cadence := scenarioFlowTickInterval(sm.effectiveFlowTickInterval(), time.Minute)
+	deadline := time.Now().Add(4 * cadence)
 	for read().packets == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("no flow emission observed during the run; the negative assertion below would be vacuous")
@@ -172,7 +179,12 @@ func TestScenarioFlowTicker_StopIsFinal(t *testing.T) {
 		t.Fatalf("stop: %v", err)
 	}
 	before := read()
-	time.Sleep(50 * time.Millisecond) // ~10 cadences, generous failsafe
+	// Must exceed the emission cadence, or the ticker is simply parked on its
+	// timer and the negative assertion below cannot fail. The old 50ms was
+	// "~10 cadences" when the cadence was 1s/rate = 5ms; it is now 1/60th of
+	// one, which made this assertion vacuous — removing the flowTickerDone join
+	// left it green.
+	time.Sleep(2 * cadence)
 	if after := read(); after != before {
 		t.Errorf("exporter kept ticking after Stop returned:\n  before %+v\n  after  %+v", before, after)
 	}

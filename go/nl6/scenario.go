@@ -241,6 +241,20 @@ func (s *Scenario) Validate() error {
 	if _, err := buildRateProfile(s.RateProfile, s.Rate, s.Window); err != nil {
 		return fmt.Errorf("scenario: %w", err)
 	}
+	// A flow scenario is paced by sizing the device's flow cache, and the cache
+	// reaches a new population only as flows age out — a lag of roughly one mean
+	// flow lifetime, measured at 1.03x it. A ramp shorter than that comes out
+	// smeared into something that is neither the requested shape nor a constant.
+	//
+	// Refused rather than accepted-and-disclosed: the operator's chance to pick
+	// a different protocol or shape is here, not in the report afterwards.
+	// Protocol alone decides this, so it belongs at submit.
+	if s.RateProfile != nil && isFlowScenarioProtocol(s.Protocol) {
+		return fmt.Errorf("scenario: rate_profile is not supported for flow protocols (%s): flow is paced by "+
+			"resizing the device's flow cache, which follows a change with a lag of about one mean flow "+
+			"lifetime (~29s at the shipped defaults), so a time-varying rate would be smeared rather than "+
+			"reproduced. Use a constant rate, or drive the shape with syslog", s.Protocol)
+	}
 	if _, err := buildAbortPredicate(s.AbortPredicate); err != nil {
 		return fmt.Errorf("scenario: %w", err)
 	}

@@ -73,9 +73,16 @@ func renderScenarioMetrics(sm *SimulatorManager, c *ScenarioController) []byte {
 	// For a rate_profile scenario this is the constant base rate, not the
 	// instantaneous λ(t): the profile's shape (linear/sine/staged) varies the
 	// live rate, which this gauge does not track.
-	b.WriteString("# HELP nl6_scenario_target_rate Configured base emission rate in events per second (constant base rate for a rate_profile scenario, not instantaneous λ(t)).\n")
-	b.WriteString("# TYPE nl6_scenario_target_rate gauge\n")
-	b.WriteString("nl6_scenario_target_rate{id=\"" + escapePromLabel(id) + "\"} " + strconv.FormatFloat(c.spec.Rate, 'g', -1, 64) + "\n")
+	//
+	// Emitted only when the protocol actually paces to it. gnmi-dialout does
+	// not — its cadence is the dial-out SAMPLE interval — and a gauge named
+	// "target" for a run that never pursued one is indistinguishable, in an
+	// archived scrape, from a run that hit it.
+	if c.pacesRate() {
+		b.WriteString("# HELP nl6_scenario_target_rate Configured base emission rate in events per second (constant base rate for a rate_profile scenario, not instantaneous λ(t)).\n")
+		b.WriteString("# TYPE nl6_scenario_target_rate gauge\n")
+		b.WriteString("nl6_scenario_target_rate{id=\"" + escapePromLabel(id) + "\"} " + strconv.FormatFloat(c.spec.Rate, 'g', -1, 64) + "\n")
+	}
 
 	perDevice := c.LivePerDevice()
 	ips := make([]string, 0, len(perDevice))

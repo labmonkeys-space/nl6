@@ -33,7 +33,7 @@ func expiryProbe(t *testing.T, profile *FlowProfile, tick, active, inactive, hor
 		// slots. Probing the other order measures a loop production does not
 		// run.
 		n := len(fc.Expire(now))
-		fc.GenerateFlows(profile, ip, rng, now, uint32(el.Milliseconds()))
+		fc.GenerateFlows(profile, profile.ConcurrentFlows, ip, rng, now, uint32(el.Milliseconds()))
 		perTick = append(perTick, n)
 	}
 	return perTick
@@ -58,7 +58,7 @@ func TestFlowExpiry_BothTimeoutsAreReachable(t *testing.T) {
 	for el := time.Duration(0); el <= 600*time.Second; el += 5 * time.Second {
 		now := base.Add(el)
 		fc.Expire(now)
-		fc.GenerateFlows(flowProfileEdgeRouter, ip, rng, now, uint32(el.Milliseconds()))
+		fc.GenerateFlows(flowProfileEdgeRouter, flowProfileEdgeRouter.ConcurrentFlows, ip, rng, now, uint32(el.Milliseconds()))
 	}
 
 	active, inactive := fc.ExpiryReasons()

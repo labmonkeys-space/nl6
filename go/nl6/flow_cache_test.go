@@ -165,14 +165,14 @@ func TestFlowCache_GenerateFlows(t *testing.T) {
 	fc := NewFlowCache(60*time.Second, 15*time.Second, profile.MaxFlows)
 	now := time.Now()
 
-	fc.GenerateFlows(profile, deviceIP, rng, now, 0)
+	fc.GenerateFlows(profile, profile.ConcurrentFlows, deviceIP, rng, now, 0)
 
 	if got := fc.Len(); got != profile.ConcurrentFlows {
 		t.Errorf("expected %d concurrent flows, got %d", profile.ConcurrentFlows, got)
 	}
 
 	// A second call should be a no-op (already at target).
-	fc.GenerateFlows(profile, deviceIP, rng, now, 0)
+	fc.GenerateFlows(profile, profile.ConcurrentFlows, deviceIP, rng, now, 0)
 	if got := fc.Len(); got != profile.ConcurrentFlows {
 		t.Errorf("expected no extra flows on second generate, got %d", got)
 	}
@@ -185,7 +185,7 @@ func TestFlowCache_GeneratedFlowsHaveValidFields(t *testing.T) {
 	fc := NewFlowCache(60*time.Second, 15*time.Second, profile.MaxFlows)
 	now := time.Now()
 
-	fc.GenerateFlows(profile, deviceIP, rng, now, 5000)
+	fc.GenerateFlows(profile, profile.ConcurrentFlows, deviceIP, rng, now, 5000)
 	expired := fc.Expire(now.Add(61 * time.Second))
 
 	for i, r := range expired {

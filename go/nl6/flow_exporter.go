@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"sort"
@@ -77,15 +78,22 @@ type FlowTickStats struct {
 // or using different protocols tick independently through the same
 // goroutine.
 type FlowExporter struct {
-	cache            *FlowCache
-	profile          *FlowProfile
-	rng              *rand.Rand
-	seqNo            uint32
-	domainID         uint32    // device IPv4 as uint32 (RFC 7011 §3.1)
-	subAgentID       uint32    // sFlow sub_agent_id (0 = single-agent default)
-	startTime        time.Time // reference point for SysUptime
-	lastTempl        time.Time // last template transmission time
-	templateInterval time.Duration
+	cache   *FlowCache
+	profile *FlowProfile
+	// concurrentOverride replaces profile.ConcurrentFlows for THIS exporter when
+	// positive. It exists so a scenario can pace one device without touching the
+	// profile, which is a shared pointer held by every device of the same type:
+	// writing through to it would resize the cache of the whole fleet, including
+	// devices the scenario never armed, and would outlive the run if anything
+	// went wrong. Zero means "use the profile".
+	concurrentOverride atomic.Int64
+	rng                *rand.Rand
+	seqNo              uint32
+	domainID           uint32    // device IPv4 as uint32 (RFC 7011 §3.1)
+	subAgentID         uint32    // sFlow sub_agent_id (0 = single-agent default)
+	startTime          time.Time // reference point for SysUptime
+	lastTempl          time.Time // last template transmission time
+	templateInterval   time.Duration
 
 	// Per-device wire configuration (owned by the exporter, not the manager).
 	// collectorStr keeps the human-readable "host:port" for status reporting;
@@ -319,6 +327,95 @@ func (fe *FlowExporter) logFirstOptionsErr(err error) {
 	})
 }
 
+// flowRateReachable reports whether this exporter can be paced to `rate`.
+//
+// The cache cannot hold more than MaxFlows, so the reachable per-device rate is
+// bounded by MaxFlows / mean-lifetime — about 8.6 to 9.7 records/second across
+// the shipped profiles, which is lower than operators expect. Flow is not a
+// protocol to drive hard per device: fleet throughput scales with participant
+// count, per-device rate does not scale past the cache.
+//
+// Returning a reason rather than silently clamping is the point. Delivering 8.8
+// against a requested 50 while the report names 50 as the target is the exact
+// defect this change exists to remove.
+func flowRateReachable(fe *FlowExporter, rate float64) (reason, hint string, ok bool) {
+	if rate <= 0 || fe == nil || fe.profile == nil || fe.cache == nil {
+		return "", "", true // no rate to honor
+	}
+	lifetime := MeanFlowLifetime(fe.profile, fe.cache.activeTimeout, fe.cache.inactiveTimeout)
+	if lifetime <= 0 {
+		return "", "", true
+	}
+	ceiling := float64(fe.profile.MaxFlows) / lifetime.Seconds()
+	if rate <= ceiling {
+		return "", "", true
+	}
+	return fmt.Sprintf("requested rate %.2f/s exceeds this device's flow ceiling of %.2f/s "+
+			"(cache holds at most %d flows, mean flow lifetime %.1fs)",
+			rate, ceiling, fe.profile.MaxFlows, lifetime.Seconds()),
+		fmt.Sprintf("lower the per-device rate to %.2f/s or below, or add participants — "+
+			"fleet throughput scales with participant count, per-device rate does not", ceiling),
+		false
+}
+
+// flowPacingTarget is the cache population that makes this exporter emit at
+// `rate` records/second, from the identity in MeanFlowLifetime. Returns 0 (no
+// override, keep the profile's population) for a non-positive rate.
+//
+// Rounded to at least 1: a rate low enough to round to zero would otherwise
+// silence the device entirely, which is not what a small rate means. Rates too
+// LOW to express are floored here; rates too HIGH to reach are refused at
+// submit instead, because silently under-delivering a requested rate is the
+// defect this whole change exists to remove.
+func flowPacingTarget(fe *FlowExporter, rate float64) int {
+	if rate <= 0 || fe == nil || fe.profile == nil || fe.cache == nil {
+		return 0
+	}
+	// A profile with auto-generation disabled cannot be paced by this
+	// mechanism: pacing works by setting the population GenerateFlows fills to,
+	// and this profile asks it to fill to nothing. The cache holds only what a
+	// caller injected through Add, which is not ours to resize.
+	//
+	// No shipped profile sets this — every one is 8..200 — so this guards the
+	// inject-only path rather than a real device.
+	if fe.profile.ConcurrentFlows <= 0 {
+		return 0
+	}
+	// The timeouts live on the cache, which is what actually ages the flows —
+	// reading them from anywhere else risks pacing against a value the engine
+	// is not using.
+	lifetime := MeanFlowLifetime(fe.profile, fe.cache.activeTimeout, fe.cache.inactiveTimeout)
+	if lifetime <= 0 {
+		return 0
+	}
+	target := int(math.Round(rate * lifetime.Seconds()))
+	if target < 1 {
+		target = 1
+	}
+	return target
+}
+
+// targetFlows is the cache population this exporter aims for: its scenario
+// override when one is installed, otherwise its profile's value.
+func (fe *FlowExporter) targetFlows() int {
+	if n := fe.concurrentOverride.Load(); n > 0 {
+		return int(n)
+	}
+	return fe.profile.ConcurrentFlows
+}
+
+// setConcurrentOverride installs (n > 0) or clears (n <= 0) this exporter's
+// cache-population override. Clearing must happen on EVERY path that ends
+// participation — finalize, abort, device teardown — or a device keeps emitting
+// at a scenario's rate after the scenario is gone.
+func (fe *FlowExporter) setConcurrentOverride(n int) {
+	if n <= 0 {
+		fe.concurrentOverride.Store(0)
+		return
+	}
+	fe.concurrentOverride.Store(int64(n))
+}
+
 // Tick is called by the shared SimulatorManager ticker goroutine on every
 // flowTickInterval. It replenishes the flow cache to ConcurrentFlows, expires
 // aged records, and emits one or more UDP datagrams to `fe.collectorAddr`
@@ -352,7 +449,22 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		return FlowTickStats{}
 	}
 
-	// EXPIRE FIRST, then refill. A router frees the cache entry and then admits
+	// Trim BEFORE expiring: a cache being resized downward (a scenario pacing
+	// this device below its profile population) must converge now, not over a
+	// flow lifetime. Letting the surplus expire first gives it one last harvest
+	// and puts a short run well over its target.
+	//
+	// ONLY when a scenario is pacing this device. Trimming unconditionally would
+	// evict flows a caller injected through Add — the ingest seam, whose whole
+	// point is that the cache holds what it was given rather than what the
+	// generator would have produced. Nothing needs to converge when no override
+	// is installed, so there is nothing to trim toward.
+	target := fe.targetFlows()
+	if fe.concurrentOverride.Load() > 0 {
+		fe.cache.TrimTo(target)
+	}
+
+	// EXPIRE, then refill. A router frees the cache entry and then admits
 	// new flows into the vacated slot; doing it the other way round means a
 	// flow can never leave on the tick it was born, so the cache alternates
 	// between full and empty once the tick period approaches the flow lifetime.
@@ -363,8 +475,8 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// alternating bursts and silence.
 	expired := fe.cache.Expire(now)
 
-	// Replenish cache to the configured ConcurrentFlows level.
-	fe.cache.GenerateFlows(fe.profile, deviceIP, fe.rng, now, uptimeMs)
+	// Replenish the cache to its target population.
+	fe.cache.GenerateFlows(fe.profile, target, deviceIP, fe.rng, now, uptimeMs)
 
 	sendTemplate := fe.seqNo == 0 || now.Sub(fe.lastTempl) >= fe.templateInterval
 	if len(expired) == 0 && !sendTemplate {
