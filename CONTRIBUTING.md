@@ -37,6 +37,19 @@ go test ./nl6/ -run TestSomething
 See [CLAUDE.md](CLAUDE.md) for the full build/run reference (flags, architecture,
 conventions). Running the simulator needs root for TUN/network-namespace setup.
 
+Before pushing, run the same quality gates CI does:
+
+```sh
+make fmt-check   # gofmt + goimports
+make lint        # golangci-lint
+```
+
+`make lint` pins `GOOS=linux` deliberately. The simulator is Linux-only and much
+of it — including whole test files — sits behind `//go:build linux`, so linting
+with a macOS host's own GOOS analyses a different build than CI and reports
+findings CI will never see. The target also retries once with a clean analysis
+cache on failure, because a stale cache can invent findings that do not exist.
+
 New and edited source files carry an SPDX license header — see the "Source file
 headers" section of [CLAUDE.md](CLAUDE.md) for the exact form (forked upstream
 files keep their original Apache header).

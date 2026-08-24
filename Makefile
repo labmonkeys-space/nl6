@@ -278,8 +278,25 @@ fmt-check: check-go
 	fi
 
 ## lint: Run golangci-lint over the Go module
+# The simulator is Linux-only (TUN/netns syscalls), and much of the package —
+# including whole test files — sits behind `//go:build linux`. Linting with the
+# host's own GOOS therefore analyses a DIFFERENT build than CI does, and reports
+# findings CI will never see: code reachable only from a linux-tagged test reads
+# as `unused` on macOS. Pin GOOS so a local run and CI agree by construction.
+# CGO_ENABLED=0 is required to cross-analyse (cgo preprocessing cannot target
+# linux from a darwin toolchain).
+LINT_ENV := CGO_ENABLED=0 GOOS=linux
+
 lint: check-go
-	cd $(GO_DIR) && $(GOBIN_DIR)/golangci-lint run ./...
+	@cd $(GO_DIR) && $(LINT_ENV) $(GOBIN_DIR)/golangci-lint run ./... || { \
+		status=$$?; \
+		echo ""; \
+		echo "lint failed — retrying once with a clean analysis cache."; \
+		echo "A stale golangci-lint cache can report findings that do not exist"; \
+		echo "(observed: ~100 phantom SA5011s on an otherwise clean tree)."; \
+		$(GOBIN_DIR)/golangci-lint cache clean; \
+		$(LINT_ENV) $(GOBIN_DIR)/golangci-lint run ./...; \
+	}
 
 ## vuln: Run govulncheck against the Go module
 vuln: check-go
