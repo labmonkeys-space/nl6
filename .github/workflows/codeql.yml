@@ -98,10 +98,9 @@ jobs:
           # Adopting the broader pack is worth doing (see nl6#479) — but as its
           # own change, with the findings triaged, not as a side effect.
           #
-          # There is deliberately NO `queries:` key. The default suite is what
-          # runs when none is named; `queries: default` is not a pack name and
-          # fails the analysis outright with "Query pack default cannot be
-          # found".
+          # SPIKE ONLY — DO NOT MERGE. Temporarily widened to enumerate what
+          # the broader pack would report, for nl6#479. Revert before merging.
+          queries: security-and-quality
 
       - name: Autobuild
         if: matrix.build-mode == 'autobuild'
