@@ -84,7 +84,24 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          queries: security-and-quality
+          # Deliberately the DEFAULT suite, matching what default setup ran
+          # before this workflow replaced it.
+          #
+          # The first revision of this file said `security-and-quality`, which
+          # is a broader pack. It landed inside a Go-toolchain PR described as
+          # leaving coverage unchanged — true of languages, quietly false of
+          # queries. The result was 30 previously-unqueried `go/log-injection`
+          # findings appearing on main at once, all at severity `error`, which
+          # the "protect main" ruleset's code_scanning rule blocks on. Every
+          # subsequent PR was gated by a posture change nobody had agreed to.
+          #
+          # Adopting the broader pack is worth doing (see nl6#479) — but as its
+          # own change, with the findings triaged, not as a side effect.
+          #
+          # There is deliberately NO `queries:` key. The default suite is what
+          # runs when none is named; `queries: default` is not a pack name and
+          # fails the analysis outright with "Query pack default cannot be
+          # found".
 
       - name: Autobuild
         if: matrix.build-mode == 'autobuild'
