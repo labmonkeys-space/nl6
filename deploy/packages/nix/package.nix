@@ -8,7 +8,7 @@
 , procps
   # Single source of truth for the Nix package version. Bump on each release
   # (see RELEASING.md "Before you tag"); release.yml asserts it equals the tag.
-, version ? "0.24.0"
+, version ? "0.25.0"
 }:
 
 buildGo127Module {
@@ -35,7 +35,7 @@ buildGo127Module {
   # this to lib.fakeHash, run `nix build`, and copy the printed "got:" value.
   # The Nix Cache workflow also prints the expected hash when its PR build
   # fails for this reason.
-  vendorHash = "sha256-9VaqAU6X9fVJybl6LRIVuTDPc8OFocFpGxkLtrE7XVo=";
+  vendorHash = "sha256-8K9pBRh2Uj955a9Yfy1l1KWNUChDaHAinUHvJJF6r/M=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 
