@@ -57,12 +57,14 @@ UNAME_S := $(shell uname -s)
 all: build
 
 ## build: Cross-compile the simulator binary for Linux (GOOS=linux GOARCH=amd64)
-# GOTOOLCHAIN=auto is Go's own default, stated explicitly because one caller
-# overrides it: CodeQL's default-setup autobuild runs this target with
-# GOTOOLCHAIN=local and a bundled Go older than go.mod requires, so the build
-# aborts with "go.mod requires go >= 1.27.0 (running go 1.26.6)". There is no
-# workflow file to add a setup-go step to — default setup is configured in repo
-# settings — so the target has to be able to honour go.mod's pin on its own.
+# GOTOOLCHAIN=auto is Go's own default, stated explicitly because callers do
+# override it: CodeQL sets GOTOOLCHAIN=local, and with a bundled Go older than
+# go.mod requires the build aborts with "go.mod requires go >= 1.27.0".
+#
+# This line is NOT what fixes CodeQL — .github/workflows/codeql.yml sets the
+# variable job-wide, which is the only place that also reaches the extractor's
+# own go invocations. It is kept because a build target should be able to
+# honour the toolchain its go.mod pins whatever the caller's environment says.
 build: check-go
 	cd $(BUILD_DIR) && GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
