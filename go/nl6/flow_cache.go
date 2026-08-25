@@ -51,12 +51,12 @@ type FlowRecord struct {
 // flowEntry wraps a FlowRecord with metadata used by the aging engine.
 type flowEntry struct {
 	record     FlowRecord
-	createdAt  time.Time
 	lastSeenAt time.Time
-	// activeDeadline is when this flow hits the active timeout — createdAt plus
-	// the configured timeout plus a per-flow jitter.
+	// activeDeadline is when this flow hits the active timeout: its creation
+	// instant plus the configured timeout plus a per-flow jitter.
 	//
-	// Stored per entry rather than recomputed from createdAt because the whole
+	// It is stored rather than derived, and the entry no longer keeps its
+	// creation time at all, because the whole
 	// point is that it is NOT a fixed offset. A deterministic deadline makes
 	// expiry a pure delay of creation, and since creation refills exactly what
 	// expired, the creation profile is then replayed every timeout period
@@ -152,7 +152,6 @@ func (fc *FlowCache) Add(r FlowRecord, now time.Time) {
 	}
 	fc.flows[key] = &flowEntry{
 		record:     r,
-		createdAt:  now,
 		lastSeenAt: now,
 		// No jitter on the ingest path: jitter exists to break the
 		// expiry-drives-creation loop, and a caller feeding Add drives creation
@@ -311,7 +310,6 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 			// sampled durations also stagger the cohort for free.
 			fc.flows[key] = &flowEntry{
 				record:         r,
-				createdAt:      createdAt,
 				lastSeenAt:     createdAt.Add(recordDuration(r)),
 				activeDeadline: createdAt.Add(deadline),
 			}

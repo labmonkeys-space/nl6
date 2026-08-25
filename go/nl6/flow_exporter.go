@@ -377,8 +377,8 @@ func flowRateReachable(fe *FlowExporter, rate float64, sweep time.Duration) (rea
 		return "", "", true
 	}
 	return fmt.Sprintf("requested rate %.2f/s exceeds this device's flow ceiling of %.2f/s "+
-			"(cache holds at most %d flows, mean flow lifetime %.1fs)",
-			rate, ceiling, fe.profile.MaxFlows, lifetime.Seconds()),
+			"(cache holds at most %d flows, mean residency %.1fs = lifetime + half the %s sweep)",
+			rate, ceiling, fe.profile.MaxFlows, lifetime.Seconds(), sweep),
 		fmt.Sprintf("lower the per-device rate to %.2f/s or below, or add participants — "+
 			"fleet throughput scales with participant count, per-device rate does not", ceiling),
 		false

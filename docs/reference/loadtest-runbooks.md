@@ -89,7 +89,8 @@ Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how
 much.
 
 > **Flow rate is per device and capped.** Flow protocols are paced by sizing each
-> device's flow cache, which bounds the per-device rate at roughly 8.1–9.2 records/s.
+> device's flow cache, which bounds the per-device rate at roughly 8.1–9.2 records/s
+> at the default 5s tick (lower on a longer one).
 > A rate above a participant's ceiling excludes it at arm. Earlier revisions of this
 > runbook used `"rate": 20`, which every shipped profile now refuses. Scale a run
 > with participants rather than per-device rate.

@@ -91,7 +91,10 @@ func TestFlowPacing_OverrideClears(t *testing.T) {
 // the previous flat 8% let a 4% model error pass unnoticed at target 95 while
 // leaving the smallest case sitting exactly on the edge. The 0.04 term is the
 // model band the quantisation does not explain, and that is the part a
-// regression would move.
+// regression would move. About a quarter of it is already spoken for on the
+// campus-switch profile: symmetric jitter on a deadline is not symmetric in
+// min(deadline, duration+inactive), and that concavity costs it 1.18 % of mean
+// lifetime (0.05-0.57 % on the others).
 func TestFlowPacing_AchievesRequestedRate(t *testing.T) {
 	const active, inactive, tick = 30 * time.Second, 15 * time.Second, 5 * time.Second
 

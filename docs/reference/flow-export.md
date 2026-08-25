@@ -211,7 +211,7 @@ mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeo
 
 Each synthetic flow is given a duration sampled from the device profile. A flow still running when it reaches the **active timeout** is exported and restarted; a flow that has ended and then sat idle for the **inactive timeout** is exported then. Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one, giving a mean cached lifetime near 29s.
 
-The **active timeout is jittered per flow**, by ±25 % of its configured value. A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s. The jitter is symmetric. It does not move the mean lifetime, so it changes when records leave, not how many. See [Changed in nl6#462: emission shape](#changed-in-nl6462-emission-shape) for why.
+The **active timeout is jittered per flow**, by ±25 % of its configured value. A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s. The jitter is symmetric, but symmetric in the deadline is not symmetric in the lifetime: the lifetime is a **minimum** of that deadline and another, and a minimum is concave, so a spread lowers it slightly. Measured across the shipped profiles the mean lifetime falls by 0.05 % to **1.18 %**, largest on the campus-switch profile whose sampled durations cluster near the timeout. So the jitter changes when records leave, and how many by about a percent. See [Changed in nl6#462: emission shape](#changed-in-nl6462-emission-shape) for why.
 
 Expiry is noticed by a periodic sweep. A flow's real residency is therefore the mean lifetime **plus about half a tick interval**, because it waits for the sweep that notices its deadline. That term matters for pacing. A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
 
@@ -272,7 +272,7 @@ Volume is unchanged. **Timing is not**, and it moves for every flow deployment w
 | **volume** | ~4.2 records/s per device | unchanged |
 | **active-timeout deadline** | exactly the configured value | uniform over ±25 % of it |
 | **shape** | a disturbance repeats every flow lifetime, indefinitely | it fades within about four lifetimes |
-| **per-device scenario ceiling** | ~8.5–9.7 records/s | ~8.1–9.2 records/s |
+| **per-device scenario ceiling** | ~8.5–9.7 records/s | ~8.1–9.2 records/s at the 5s default tick |
 
 **Why the deadline was a problem.** Flow creation is driven by expiry. The cache refills exactly what it lost. When the expiry offset is also deterministic, the creation profile becomes a pure delay of itself:
 
