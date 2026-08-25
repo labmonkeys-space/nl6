@@ -149,8 +149,12 @@ type DeviceSyslogConfig struct {
 	// existing request body keeps its meaning.
 	Transport string `json:"transport,omitempty"`
 	// Framing selects the RFC 6587 framing when Transport is tcp:
-	// "octet-counting" (default) or "non-transparent". Ignored under udp.
+	// "octet-counting" (default) or "non-transparent". Ignored under udp, and
+	// forced to octet-counting under tls (RFC 5425 §4.3.1 mandates it).
 	Framing string `json:"framing,omitempty"`
+	// TLS configures verification of the COLLECTOR when Transport is tls.
+	// nil means system roots.
+	TLS *SyslogTLSConfig `json:"tls,omitempty"`
 
 	// intervalSet records whether the CALLER supplied Interval, as opposed to
 	// ApplyDefaults having stamped the package default over an omitted zero.
@@ -393,7 +397,7 @@ func (c *DeviceSyslogConfig) ApplyDefaults() {
 	if c.Transport == "" {
 		c.Transport = string(SyslogTransportUDP)
 	}
-	if c.Transport == string(SyslogTransportTCP) && c.Framing == "" {
+	if (c.Transport == string(SyslogTransportTCP) || c.Transport == string(SyslogTransportTLS)) && c.Framing == "" {
 		c.Framing = string(SyslogFramingOctetCounting)
 	}
 	if time.Duration(c.Interval) == 0 {
@@ -411,7 +415,7 @@ func (c *DeviceSyslogConfig) Validate() error {
 	if time.Duration(c.Interval) < 0 {
 		return fmt.Errorf("syslog: interval must be >= 0, got %s", time.Duration(c.Interval))
 	}
-	if err := validateCollector("syslog", c.Collector); err != nil {
+	if err := validateCollector("syslog", syslogCollectorWithDefaultPort(c.Collector, SyslogTransportKind(c.Transport))); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Format) == "" {
@@ -437,9 +441,21 @@ func (c *DeviceSyslogConfig) Validate() error {
 			return fmt.Errorf("syslog: unknown framing %q (want %q or %q)",
 				c.Framing, SyslogFramingOctetCounting, SyslogFramingNonTransparent)
 		}
+	case string(SyslogTransportTLS):
+		// RFC 5425 §4.3.1 MANDATES octet-counting. Accepting another framing
+		// and overriding it would be the nl6#445 defect, and would also put a
+		// stream on the wire that no conformant collector can parse — so the
+		// failure would surface at the collector instead of here.
+		if c.Framing != "" && c.Framing != string(SyslogFramingOctetCounting) {
+			return fmt.Errorf("syslog: transport tls requires framing %q (RFC 5425 §4.3.1 mandates it), got %q",
+				SyslogFramingOctetCounting, c.Framing)
+		}
+		if c.TLS != nil && c.TLS.MTLS {
+			return fmt.Errorf("syslog: tls.mtls is not implemented (nl6#93 scopes client-cert auth out)")
+		}
 	default:
-		return fmt.Errorf("syslog: unknown transport %q (want %q or %q)",
-			c.Transport, SyslogTransportUDP, SyslogTransportTCP)
+		return fmt.Errorf("syslog: unknown transport %q (want %q, %q or %q)",
+			c.Transport, SyslogTransportUDP, SyslogTransportTCP, SyslogTransportTLS)
 	}
 	return nil
 }

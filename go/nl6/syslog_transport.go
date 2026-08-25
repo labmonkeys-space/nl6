@@ -33,6 +33,9 @@ type SyslogTransportKind string
 const (
 	SyslogTransportUDP SyslogTransportKind = "udp"
 	SyslogTransportTCP SyslogTransportKind = "tcp"
+	// SyslogTransportTLS is RFC 5425: RFC 6587 framing inside a TLS session.
+	// It is not a separate transport type — see syslog_transport_tls.go.
+	SyslogTransportTLS SyslogTransportKind = "tls"
 )
 
 // SyslogTransport carries an already-encoded syslog message to a collector.
