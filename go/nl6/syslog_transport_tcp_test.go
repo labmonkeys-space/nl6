@@ -269,40 +269,67 @@ func TestSyslogTCP_CloseJoinsTheDialLoop(t *testing.T) {
 	}
 }
 
-// TestSyslogTCP_SendBufferIsCapped guards a feasibility constraint, not a
-// preference: at the Linux default of ~4 MiB per connection, 30,000 devices
-// would ask for ~117 GiB of kernel send buffer (design D10).
-func TestSyslogTCP_SendBufferIsCapped(t *testing.T) {
-	if syslogTCPSendBuffer > 64<<10 {
-		t.Errorf("send buffer %d exceeds 64 KiB; at fleet scale this is the difference "+
-			"between the feature working and exhausting kernel memory", syslogTCPSendBuffer)
-	}
-	col := newTCPCollector(t, SyslogFramingOctetCounting, true) // stalls: never reads
+// TestSyslogTCP_SendDoesNotBlockOnAStalledCollector is the regression for the
+// defect this file previously HID.
+//
+// The old version of this test called SetWriteDeadline itself before each
+// Send, which meant it exercised the test's bound, not the transport's — and
+// the transport had none. Against a collector that accepts and then stops
+// reading, Send blocked indefinitely once the send buffer filled (~2100
+// messages). Because the syslog scheduler fires INLINE, that stalls the whole
+// fleet, and the blocked call holds writeMu so the device's on-demand and
+// state-driven fires queue behind it too.
+//
+// The transport must bound its own writes. Nothing here touches the conn.
+func TestSyslogTCP_SendDoesNotBlockOnAStalledCollector(t *testing.T) {
+	col := newTCPCollector(t, SyslogFramingOctetCounting, true) // accepts, never reads
 	tr := newTCPTransport(net.ParseIP("10.42.0.1"), col.ln.Addr().String(), SyslogFramingOctetCounting,
 		dialerTo(col.ln.Addr().String()))
 	tr.start()
 	t.Cleanup(func() { _ = tr.Close() })
 	waitConnected(t, tr)
 
-	// Against a collector that never reads, the buffer must fill in bounded
-	// time rather than absorbing an unbounded backlog.
 	msg := make([]byte, 200)
-	var sent int
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if cp := tr.conn.Load(); cp != nil {
-			if tc, ok := (*cp).(*net.TCPConn); ok {
-				_ = tc.SetWriteDeadline(time.Now().Add(time.Second))
+	// Generous: the buffer must fill and Send must fail within it. The whole
+	// budget is bounded by syslogTCPWriteTimeout plus fill time, so a hang is
+	// unambiguous rather than slow.
+	budget := syslogTCPWriteTimeout + 30*time.Second
+	deadline := time.Now().Add(budget)
+
+	failed := make(chan int, 1)
+	go func() {
+		sent := 0
+		for {
+			if err := tr.Send(msg); err != nil {
+				failed <- sent
+				return
+			}
+			sent++
+			if sent > 500_000 {
+				failed <- -1
+				return
 			}
 		}
-		if err := tr.Send(msg); err != nil {
-			t.Logf("write stopped making progress after %d messages (~%d KiB)", sent, sent*200/1024)
-			return
+	}()
+
+	select {
+	case n := <-failed:
+		if n < 0 {
+			t.Fatal("absorbed 500k messages without pushing back — SO_SNDBUF is not capped")
 		}
-		sent++
-		if sent > 200_000 {
-			t.Fatalf("absorbed %d messages without pushing back — the send buffer is not capped", sent)
-		}
+		t.Logf("Send returned an error after %d messages (~%d KiB) instead of blocking", n, n*200/1024)
+	case <-time.After(time.Until(deadline)):
+		t.Fatal("Send BLOCKED on a stalled collector — with an inline fleet scheduler " +
+			"this stops every device, not just this one")
 	}
-	t.Logf("sent %d messages before the deadline", sent)
+}
+
+// TestSyslogTCP_SendBufferIsCapped guards the feasibility constraint behind the
+// cap: at the Linux default of ~4 MiB per connection, 30,000 devices would ask
+// for ~117 GiB of kernel send buffer (design D10).
+func TestSyslogTCP_SendBufferIsCapped(t *testing.T) {
+	if syslogTCPSendBuffer > 64<<10 {
+		t.Errorf("send buffer %d exceeds 64 KiB; at fleet scale this is the difference "+
+			"between the feature working and exhausting kernel memory", syslogTCPSendBuffer)
+	}
 }

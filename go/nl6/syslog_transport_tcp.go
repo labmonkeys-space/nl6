@@ -64,6 +64,25 @@ const (
 	// syslogTCPMaxConcurrentDials caps in-namespace dials across ALL devices.
 	syslogTCPMaxConcurrentDials = 64
 
+	// syslogTCPStableConnection is how long a connection must survive before
+	// it is treated as working. Below it, the backoff keeps growing, so an
+	// accept-then-immediately-close collector backs off instead of being
+	// re-dialled every second by every device.
+	syslogTCPStableConnection = 10 * time.Second
+
+	// syslogTCPWriteTimeout bounds ONE write. Without it a collector that
+	// accepts and stops reading blocks Send once the send buffer fills
+	// (measured: ~2100 messages), and because the syslog scheduler fires
+	// INLINE that blocks the whole fleet, not one device. The blocked call
+	// also holds writeMu, so on-demand HTTP fires and state-notify goroutines
+	// for the device queue behind it, and inside a scenario it holds the drain
+	// barrier open and stalls finalize.
+	//
+	// A timeout here is a DROP, not an error to retry: syslog has no
+	// application ack, so a partially-written frame has desynchronised the
+	// stream and the connection has to be replaced either way.
+	syslogTCPWriteTimeout = 2 * time.Second
+
 	// syslogTCPKeepAlive is the TCP keepalive period. Without it a collector
 	// that dies WITHOUT closing (host crash, network partition) is
 	// undetectable on an otherwise idle connection: the read that detects
@@ -153,7 +172,7 @@ func (t *tcpTransport) run() {
 			continue
 		}
 		t.conn.Store(&c)
-		backoff = syslogTCPInitialBackoff
+		connectedAt := time.Now()
 
 		// Close this connection when the transport shuts down. run holds its
 		// OWN reference deliberately: Send may have already swapped the
@@ -169,11 +188,19 @@ func (t *tcpTransport) run() {
 			}
 		}()
 
-		// Hold the connection until it breaks. A syslog collector sends
-		// nothing, so a read returning at all means the peer closed, the
-		// connection failed, or we are shutting down — all reconnect triggers.
-		one := make([]byte, 1)
-		_, rerr := c.Read(one)
+		// Hold the connection until it BREAKS. Only an error counts: a read
+		// that returns bytes is a collector or middlebox sending a banner or
+		// probe, and treating that as loss would drop a perfectly good
+		// connection and re-dial in a loop forever. Syslog is unidirectional,
+		// so inbound data is simply discarded.
+		var rerr error
+		buf := make([]byte, 256)
+		for {
+			if _, err := c.Read(buf); err != nil {
+				rerr = err
+				break
+			}
+		}
 		close(watchDone)
 
 		t.conn.CompareAndSwap(&c, nil)
@@ -183,6 +210,14 @@ func (t *tcpTransport) run() {
 		}
 		if rerr != nil {
 			t.logFirstWriteErr(fmt.Errorf("connection lost: %w", rerr))
+		}
+		// Reset the backoff only if the connection STAYED UP long enough to
+		// count as working. A collector that accepts and immediately closes
+		// (an ACL reject) would otherwise be re-dialled once per second
+		// forever — and at fleet scale each dial pins an OS thread. Same rule
+		// gNMI dial-out applies to its stream.
+		if time.Since(connectedAt) >= syslogTCPStableConnection {
+			backoff = syslogTCPInitialBackoff
 		}
 		if !t.sleep(&backoff) {
 			return
@@ -271,7 +306,11 @@ func (t *tcpTransport) frame(pdu []byte) []byte {
 //
 // A nil return means the bytes were accepted by the kernel, NOT that the
 // collector processed them — under load those differ by however deep the send
-// buffer is. That is why the exporter reports offered and written separately.
+// buffer is. SyslogStats.Sent therefore means "handed to the kernel" on this
+// transport, where on the datagram path it approximates "on the wire". The
+// separate offered/written counters that would have made the gap visible were
+// cut with the rest of the backpressure work (add-syslog-tcp §1.4), so this
+// caveat lives in the docs rather than in a metric.
 func (t *tcpTransport) Send(pdu []byte) error {
 	cp := t.conn.Load()
 	if cp == nil {
@@ -280,6 +319,9 @@ func (t *tcpTransport) Send(pdu []byte) error {
 	c := *cp
 
 	t.writeMu.Lock()
+	// Bound the write. See syslogTCPWriteTimeout: unbounded, one stalled
+	// collector stops the entire fleet's inline scheduler.
+	_ = c.SetWriteDeadline(time.Now().Add(syslogTCPWriteTimeout))
 	_, err := c.Write(t.frame(pdu))
 	t.writeMu.Unlock()
 

@@ -55,6 +55,10 @@ type SyslogExporter struct {
 	// per-callsite locking.
 	countersPersisted sync.Once
 
+	// transportKind names the transport for status aggregation. Derived at
+	// construction so the status path never type-switches on the transport.
+	transportKind SyslogTransportKind
+
 	// transport carries the encoded message to the collector. Everything
 	// above it in this type is transport-independent; see syslog_transport.go.
 	transport SyslogTransport
@@ -142,8 +146,10 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 	// unaffected; an explicit Transport is how a non-datagram transport
 	// (add-syslog-tcp) is supplied.
 	transport := opts.Transport
+	kind := SyslogTransportTCP
 	if transport == nil {
 		transport = newUDPTransport(opts.DeviceIP, opts.Collector, opts.CollectorStr, opts.SharedConn)
+		kind = SyslogTransportUDP
 	}
 	if opts.Encoder == nil {
 		// Default to RFC 5424 so a constructor typo doesn't ship RFC 3164
@@ -157,19 +163,20 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 		opts.IfNameFn = func(int) string { return "" }
 	}
 	return &SyslogExporter{
-		deviceIP:     append(net.IP(nil), opts.DeviceIP...),
-		encoder:      opts.Encoder,
-		collectorStr: opts.CollectorStr,
-		format:       opts.Format,
-		transport:    transport,
-		sysName:      opts.SysName,
-		model:        opts.Model,
-		serial:       opts.Serial,
-		chassisID:    opts.ChassisID,
-		ifIndexFn:    opts.IfIndexFn,
-		ifNameFn:     opts.IfNameFn,
-		startTime:    time.Now(),
-		stats:        &SyslogStats{},
+		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
+		encoder:       opts.Encoder,
+		collectorStr:  opts.CollectorStr,
+		format:        opts.Format,
+		transport:     transport,
+		transportKind: kind,
+		sysName:       opts.SysName,
+		model:         opts.Model,
+		serial:        opts.Serial,
+		chassisID:     opts.ChassisID,
+		ifIndexFn:     opts.IfIndexFn,
+		ifNameFn:      opts.IfNameFn,
+		startTime:     time.Now(),
+		stats:         &SyslogStats{},
 	}
 }
 
@@ -181,6 +188,9 @@ func (e *SyslogExporter) CollectorString() string { return e.collectorStr }
 // Format returns the exporter's wire format (5424 or 3164). Used as the
 // (collector, format) key for the status-endpoint aggregate.
 func (e *SyslogExporter) Format() SyslogFormat { return e.format }
+
+// TransportKind names this exporter's transport, for status aggregation.
+func (e *SyslogExporter) TransportKind() SyslogTransportKind { return e.transportKind }
 
 // SetConn installs the per-device UDP socket. Must be called before the
 // exporter is registered with the scheduler if per-device source IPs are
