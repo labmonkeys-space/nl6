@@ -107,8 +107,32 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
+| `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only** and is therefore biased low by a window-length-sensitive amount. See [Why `achieved_per_device` reads low](#why-achieved_per_device-reads-low). |
 | `rate_cap` | object | **Shared-cap disclosure**, present only when this run's protocol has a fleet-wide ceiling in force (`{per_second, shared_with}`). Rate limiters are **per protocol** — syslog and SNMP trap each own one, flow protocols and gNMI dial-out have none — so only *same-protocol* runs contend. `shared_with` names the same-protocol *scenarios* whose windows overlapped this one, sequence-ordered. An empty list means no peer scenario overlapped — **not** that the bucket was uncontended: the scenario scheduler shares the fleet limiter, and background firing spends a token per pop even for fires the scenario gate suppresses, so on a busy non-`-fidelity` fleet a solo run is still throttled by background traffic. The cap is the one in force when the run **began**, not when the report was fetched. Currently emitted for `syslog` only — it is the one protocol whose scenario emission provably passes through the fleet limiter; `-trap-global-cap` governs background trap firing, which the scenario trap path does not go through. A run that shared its bucket did not measure what it would have measured alone, and this is what makes that visible in the artifact instead of silently changing the numbers. Overlaps are recorded as they begin, not reconstructed at finalize, so a peer stopped and deleted before this run finishes is still named. |
 | `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+
+#### Why `achieved_per_device` reads low
+
+```
+achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
+```
+
+Both halves of that are deliberate, and together they make the figure read **below** what a packet capture counts leaving the same devices over the same run.
+
+`in_window` excludes records that were produced during the window but written after it. Those are counted under the drain instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and the shortfall it produces is a property of the definition rather than a counting error.
+
+**The consequence is that the bias scales with `drain / window`, not with the rate.** A 5s drain is 4.2 % of a 120s window and 0.42 % of a 1200s one. Measured against `tcpdump` on the emitting node, five participants, netflow9:
+
+| window | `achieved_per_device` vs wire |
+|---|---|
+| 120s | −3 % to −8 % |
+| 1200s | −1.2 % to −2.1 % |
+
+Drain exclusion accounts for most of the short-window gap and well under half of the long-window one, so it is the dominant term rather than the only one ([nl6#463]).
+
+**What this means in practice.** Do not compare `achieved_per_device` across runs whose `window` or `drain` differ: the same true emission rate reports differently, and the difference is the definition rather than the simulator. For an absolute rate, measure on the wire or divide `sent` by `window + drain`. For "did pacing hit its target", the figure is fine as long as the runs being compared share a window.
+
+[nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
 
 #### Reproducing `resolved_participants_sha256`
 
