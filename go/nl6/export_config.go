@@ -183,8 +183,10 @@ func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.interv
 // config. `Enabled=false` selects a plaintext gRPC connection (matching
 // the Arista `-collector_tls=false` default and the goarista reference
 // collector's plaintext mode). When enabled, `InsecureSkipVerify` skips
-// collector-certificate verification (dev only), `CAFile` supplies a
-// PEM CA bundle to verify the collector against (empty → system roots),
+// collector-certificate verification (dev only), `CAPEM` supplies an
+// inline PEM CA bundle to verify the collector against (empty → system
+// roots; a FILE path is accepted only via -gnmi-dialout-tls-ca, never
+// here, because this struct is settable over REST),
 // and `MTLS` presents the simulator's shared certificate as a client
 // cert for mutual TLS.
 //
@@ -193,10 +195,26 @@ func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.interv
 // `{"enabled": false}` — ApplyDefaults installs the secure default only
 // when the whole block is absent.
 type DialoutTLSConfig struct {
-	Enabled            bool   `json:"enabled"`
-	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
-	CAFile             string `json:"ca_file,omitempty"`
-	MTLS               bool   `json:"mtls,omitempty"`
+	Enabled            bool `json:"enabled"`
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
+	// CAPEM is the PEM bundle verifying the collector, INLINE.
+	//
+	// Inline rather than a path: this struct is settable over REST, and a path
+	// here would let any API caller name a file for the simulator to open. The
+	// content never reaches the caller, but the difference between "read
+	// failed" and "no PEM certificates found" is an oracle for file existence
+	// and shape. CAs are small and pasteable, so a path bought nothing that
+	// justified that.
+	CAPEM string `json:"ca_pem,omitempty"`
+	// CAFile is retained ONLY to reject it with a migration message. It used
+	// to name a file the simulator would read at dial time. Removing the field
+	// outright would still be safe — the create handler sets
+	// DisallowUnknownFields, so an old body 400s either way — but the error
+	// would just say "unknown field" and leave the operator to guess.
+	//
+	// Delete this shim once the deprecation has had a release to land.
+	CAFile string `json:"ca_file,omitempty"`
+	MTLS   bool   `json:"mtls,omitempty"`
 }
 
 // DeviceGnmiDialoutConfig is the per-device gNMI dial-out (telemetry
@@ -499,6 +517,11 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 	if time.Duration(c.SampleInterval) < 0 {
 		return fmt.Errorf("gnmi_dialout: sample_interval must be >= 0, got %s", time.Duration(c.SampleInterval))
 	}
+	if c.TLS != nil && c.TLS.CAFile != "" {
+		return fmt.Errorf("gnmi_dialout: tls.ca_file is no longer accepted — a path here is settable " +
+			"over REST and lets a caller name any file for the simulator to open. Supply the bundle " +
+			"inline as tls.ca_pem, or use -gnmi-dialout-tls-ca on the command line")
+	}
 	if err := validateCollector("gnmi_dialout", c.Collector); err != nil {
 		return err
 	}
@@ -534,8 +557,8 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 			return fmt.Errorf("gnmi_dialout: invalid path %q: %w", p, err)
 		}
 	}
-	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAFile != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
-		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_file/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
+	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAPEM != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
+		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_pem/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
 	}
 	return nil
 }

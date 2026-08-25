@@ -493,7 +493,7 @@ nl6 -syslog-transport tls -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
 That file is read once at startup and its contents stamped into the seed config,
 so the trusted read happens in exactly one place.
 
-Verification cannot be lost by omission: with no `ca_file` and no explicit
+Verification cannot be lost by omission: with no `ca_pem` and no explicit
 `insecure_skip_verify`, a collector the host does not trust fails to connect.
 
 TLS 1.2 is the floor and is not configurable.

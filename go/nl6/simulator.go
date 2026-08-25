@@ -436,6 +436,17 @@ func main() {
 		if *gnmiDialoutColl == "" {
 			log.Fatalf("gnmi dial-out: -gnmi-mode=dial-out requires -gnmi-dialout-collector")
 		}
+		// Read the CA once, here, from a path the OPERATOR named on the
+		// command line. The per-device config carries PEM inline so no HTTP
+		// request can name a file for the simulator to open.
+		var gnmiDialoutCAPEM string
+		if *gnmiDialoutTLSCA != "" {
+			pem, err := loadTLSCAFile(*gnmiDialoutTLSCA, "-gnmi-dialout-tls-ca")
+			if err != nil {
+				log.Fatalf("gnmi dial-out: %v", err)
+			}
+			gnmiDialoutCAPEM = pem
+		}
 		gnmiDialoutSeed = &DeviceGnmiDialoutConfig{
 			Collector:      *gnmiDialoutColl,
 			Flavor:         *gnmiDialoutFlavor,
@@ -445,7 +456,7 @@ func main() {
 			TLS: &DialoutTLSConfig{
 				Enabled:            *gnmiDialoutTLS,
 				InsecureSkipVerify: *gnmiDialoutTLSSkip,
-				CAFile:             *gnmiDialoutTLSCA,
+				CAPEM:              gnmiDialoutCAPEM,
 				MTLS:               *gnmiDialoutMTLS,
 			},
 		}
@@ -502,7 +513,7 @@ func main() {
 		if *syslogTransport == string(SyslogTransportTLS) {
 			tlsCfg := &SyslogTLSConfig{InsecureSkipVerify: *syslogTLSInsecure}
 			if *syslogTLSCA != "" {
-				pem, err := loadSyslogTLSCAFile(*syslogTLSCA)
+				pem, err := loadTLSCAFile(*syslogTLSCA, "-syslog-tls-ca")
 				if err != nil {
 					log.Fatalf("syslog export: %v", err)
 				}
