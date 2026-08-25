@@ -18,6 +18,8 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -310,5 +312,51 @@ func TestSyslogTLS_CAIsInlineNotAPath(t *testing.T) {
 	blob, _ := json.Marshal(&SyslogTLSConfig{CAPEM: "x"})
 	if bytes.Contains(blob, []byte("ca_file")) {
 		t.Error("ca_file is still part of the REST config; the whole point is that a path is not settable over HTTP")
+	}
+}
+
+// TestLoadTLSCAFile_StripsAndNamesTheFlag covers the shared loader, which had
+// no test after being generalised from the syslog-only version.
+//
+// Two things it pins. The flagName is threaded through rather than hardcoded,
+// so a transposed argument would produce `read /etc/ca.pem "-syslog-tls-ca"`
+// and nothing would notice. And a bundle carrying a private key is reduced to
+// its certificates before it can be stored on a device config and echoed by
+// GET /api/v1/devices.
+func TestLoadTLSCAFile_StripsAndNamesTheFlag(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := loadTLSCAFile(dir+"/missing.pem", "-syslog-tls-ca"); err == nil {
+		t.Error("a missing file was accepted")
+	} else if !strings.Contains(err.Error(), "-syslog-tls-ca") {
+		t.Errorf("error does not name the flag the operator typed: %v", err)
+	}
+
+	junk := dir + "/junk.pem"
+	if err := os.WriteFile(junk, []byte("nothing here\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTLSCAFile(junk, "-gnmi-dialout-tls-ca"); err == nil {
+		t.Error("a non-PEM file was accepted")
+	} else if !strings.Contains(err.Error(), "-gnmi-dialout-tls-ca") {
+		t.Errorf("error does not name the flag: %v", err)
+	}
+
+	_, leaf := newTestTLSCert(t)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+	combined := dir + "/chain-with-key.pem"
+	body := append([]byte("-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIHNOTAREALKEY\n-----END PRIVATE KEY-----\n"), certPEM...)
+	if err := os.WriteFile(combined, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadTLSCAFile(combined, "-syslog-tls-ca")
+	if err != nil {
+		t.Fatalf("a chain bundle that also carries a key should load after stripping: %v", err)
+	}
+	if strings.Contains(got, "PRIVATE KEY") {
+		t.Error("PRIVATE KEY survived the load; it would be stamped into every seeded device config")
+	}
+	if !strings.Contains(got, "CERTIFICATE") {
+		t.Error("stripping removed the certificate too")
 	}
 }

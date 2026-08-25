@@ -26,9 +26,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 // syslogTLSDefaultPort is the RFC 5425 §4.1 registered port for syslog over
@@ -162,8 +164,57 @@ func loadTLSCAFile(path, flagName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read %s %q: %w", flagName, path, err)
 	}
-	if !x509.NewCertPool().AppendCertsFromPEM(b) {
+	certs := certificateBlocksOnly(b)
+	if len(certs) == 0 {
 		return "", fmt.Errorf("%s %q: no PEM certificates found", flagName, path)
 	}
-	return string(b), nil
+	return string(certs), nil
+}
+
+// certificateBlocksOnly re-encodes just the CERTIFICATE blocks of a PEM
+// bundle, discarding everything else. Returns nil when there are none.
+//
+// This is a disclosure control, not tidiness. A trust bundle is stored on the
+// device config and echoed back by GET /api/v1/devices, and
+// `AppendCertsFromPEM` returns true as soon as ONE certificate parses — it
+// ignores other block types rather than rejecting them. So a combined
+// chain-plus-key file, a common /etc/ssl layout, would validate happily and
+// then serve the operator's PRIVATE KEY over an unauthenticated HTTP endpoint.
+//
+// Keeping only the certificates means the stored value is public material by
+// construction, whatever the operator points at and whatever a REST caller
+// posts.
+func certificateBlocksOnly(pemBytes []byte) []byte {
+	var out []byte
+	rest := pemBytes
+	for {
+		var blk *pem.Block
+		blk, rest = pem.Decode(rest)
+		if blk == nil {
+			break
+		}
+
+		if blk.Type != "CERTIFICATE" {
+			continue
+		}
+		if _, err := x509.ParseCertificate(blk.Bytes); err != nil {
+			continue // not a certificate despite the label
+		}
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: blk.Bytes})...)
+	}
+	return out
+}
+
+// sanitiseCAPEM normalises a caller-supplied trust bundle to certificates
+// only, and reports whether anything usable survived. Applied at config
+// validation so a REST body cannot store non-certificate material either.
+func sanitiseCAPEM(in string) (string, bool) {
+	if strings.TrimSpace(in) == "" {
+		return "", false
+	}
+	certs := certificateBlocksOnly([]byte(in))
+	if len(certs) == 0 {
+		return "", false
+	}
+	return string(certs), true
 }

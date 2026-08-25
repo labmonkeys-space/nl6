@@ -493,6 +493,10 @@ nl6 -syslog-transport tls -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
 That file is read once at startup and its contents stamped into the seed config,
 so the trusted read happens in exactly one place.
 
+Whatever the source, **only `CERTIFICATE` blocks are kept**. A bundle that also
+carries a private key has the key discarded rather than stored, because this
+config is echoed back by `GET /api/v1/devices`. `ca_pem` is capped at 64 KiB.
+
 Verification cannot be lost by omission: with no `ca_pem` and no explicit
 `insecure_skip_verify`, a collector the host does not trust fails to connect.
 

@@ -250,6 +250,18 @@ func buildDialoutCreds(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (cred
 	if cfg == nil || !cfg.Enabled {
 		return insecure.NewCredentials(), nil
 	}
+	tlsCfg, err := buildDialoutTLSConfig(cfg, sharedCert)
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewTLS(tlsCfg), nil
+}
+
+// buildDialoutTLSConfig is split out from buildDialoutCreds so the invariants
+// it sets are assertable. credentials.NewTLS returns an opaque type, so a test
+// holding only the credentials cannot check MinVersion or the trust pool — and
+// a test that cannot check them is not coverage, however it is captioned.
+func buildDialoutTLSConfig(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (*tls.Config, error) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if cfg.InsecureSkipVerify {
 		tlsCfg.InsecureSkipVerify = true
@@ -257,7 +269,7 @@ func buildDialoutCreds(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (cred
 	if cfg.CAPEM != "" {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(cfg.CAPEM)) {
-			return nil, fmt.Errorf("ca_pem: no PEM certificates found")
+			return nil, fmt.Errorf("ca_pem: no PEM certificates found in %d bytes of configured trust bundle", len(cfg.CAPEM))
 		}
 		tlsCfg.RootCAs = pool
 	}
@@ -267,7 +279,7 @@ func buildDialoutCreds(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (cred
 		}
 		tlsCfg.Certificates = []tls.Certificate{*sharedCert}
 	}
-	return credentials.NewTLS(tlsCfg), nil
+	return tlsCfg, nil
 }
 
 // persistGnmiDialoutCounters folds a dying exporter's cumulative counters

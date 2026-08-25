@@ -194,6 +194,11 @@ func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.interv
 // omitted `tls` object is distinguishable from an explicit
 // `{"enabled": false}` — ApplyDefaults installs the secure default only
 // when the whole block is absent.
+// maxCAPEMBytes bounds an inline trust bundle. Generous for a real chain (a
+// full distribution root store is ~200 KB and does not belong on a per-device
+// config), and small enough that a caller cannot pin megabytes per device.
+const maxCAPEMBytes = 64 << 10
+
 type DialoutTLSConfig struct {
 	Enabled            bool `json:"enabled"`
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
@@ -471,6 +476,21 @@ func (c *DeviceSyslogConfig) Validate() error {
 		if c.TLS != nil && c.TLS.MTLS {
 			return fmt.Errorf("syslog: tls.mtls is not implemented (nl6#93 scopes client-cert auth out)")
 		}
+		if c.TLS != nil && c.TLS.CAPEM != "" {
+			// Same treatment as the dial-out bundle, and for the same reason:
+			// this is stored on the device config and echoed back by
+			// GET /api/v1/devices, so anything non-certificate in it would be
+			// served over an unauthenticated endpoint.
+			if len(c.TLS.CAPEM) > maxCAPEMBytes {
+				return fmt.Errorf("syslog: tls.ca_pem is %d bytes, over the %d-byte limit "+
+					"(note the request body itself is capped at 64 KiB)", len(c.TLS.CAPEM), maxCAPEMBytes)
+			}
+			clean, ok := sanitiseCAPEM(c.TLS.CAPEM)
+			if !ok {
+				return fmt.Errorf("syslog: tls.ca_pem: no PEM certificates found")
+			}
+			c.TLS.CAPEM = clean
+		}
 	default:
 		return fmt.Errorf("syslog: unknown transport %q (want %q, %q or %q)",
 			c.Transport, SyslogTransportUDP, SyslogTransportTCP, SyslogTransportTLS)
@@ -517,10 +537,32 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 	if time.Duration(c.SampleInterval) < 0 {
 		return fmt.Errorf("gnmi_dialout: sample_interval must be >= 0, got %s", time.Duration(c.SampleInterval))
 	}
+	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAPEM != "" || c.TLS.CAFile != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
+		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_pem/ca_file/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
+	}
 	if c.TLS != nil && c.TLS.CAFile != "" {
-		return fmt.Errorf("gnmi_dialout: tls.ca_file is no longer accepted — a path here is settable " +
+		// Leads with ca_pem because that is the only replacement a REST caller
+		// can act on: -gnmi-dialout-tls-ca is a [seed] flag and stamps the
+		// auto-start batch only, so following it for a REST-created device
+		// would silently fall back to system roots.
+		return fmt.Errorf("gnmi_dialout: tls.ca_file is no longer accepted. A path here is settable " +
 			"over REST and lets a caller name any file for the simulator to open. Supply the bundle " +
-			"inline as tls.ca_pem, or use -gnmi-dialout-tls-ca on the command line")
+			"inline as tls.ca_pem. For the auto-start batch a file path is still accepted via " +
+			"-gnmi-dialout-tls-ca on the command line")
+	}
+	if c.TLS != nil && c.TLS.CAPEM != "" {
+		if len(c.TLS.CAPEM) > maxCAPEMBytes {
+			return fmt.Errorf("gnmi_dialout: tls.ca_pem is %d bytes, over the %d-byte limit "+
+				"(note the request body itself is capped at 64 KiB)", len(c.TLS.CAPEM), maxCAPEMBytes)
+		}
+		// Parse HERE rather than at attach. Unvalidated, a bad bundle returns
+		// 201 Created and then disables dial-out per device at attach time,
+		// logging once per device while the caller believes it worked.
+		clean, ok := sanitiseCAPEM(c.TLS.CAPEM)
+		if !ok {
+			return fmt.Errorf("gnmi_dialout: tls.ca_pem: no PEM certificates found")
+		}
+		c.TLS.CAPEM = clean
 	}
 	if err := validateCollector("gnmi_dialout", c.Collector); err != nil {
 		return err
@@ -556,9 +598,6 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 		if _, err := parseGnmiPath(p); err != nil {
 			return fmt.Errorf("gnmi_dialout: invalid path %q: %w", p, err)
 		}
-	}
-	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAPEM != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
-		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_pem/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
 	}
 	return nil
 }

@@ -431,7 +431,14 @@ func main() {
 	var gnmiDialoutSeed *DeviceGnmiDialoutConfig
 	switch strings.ToLower(strings.TrimSpace(*gnmiMode)) {
 	case "", "dial-in":
-		// dial-in only; no seed.
+		// dial-in only; no seed. The dial-out TLS flags apply to nothing here,
+		// so refuse them rather than parsing them into silence — an operator
+		// who passes -gnmi-dialout-tls-ca in dial-in mode gets no CA, no
+		// warning, and a collector that fails to verify for no visible reason.
+		if *gnmiDialoutTLSCA != "" || *gnmiDialoutTLSSkip || *gnmiDialoutMTLS {
+			log.Fatalf("gnmi dial-out: -gnmi-dialout-tls-ca / -gnmi-dialout-tls-insecure / " +
+				"-gnmi-dialout-mtls require -gnmi-mode=dial-out")
+		}
 	case "dial-out":
 		if *gnmiDialoutColl == "" {
 			log.Fatalf("gnmi dial-out: -gnmi-mode=dial-out requires -gnmi-dialout-collector")
@@ -440,6 +447,13 @@ func main() {
 		// command line. The per-device config carries PEM inline so no HTTP
 		// request can name a file for the simulator to open.
 		var gnmiDialoutCAPEM string
+		// Gated on TLS being ON. Reading first meant `-gnmi-dialout-tls=false
+		// -gnmi-dialout-tls-ca=/x` opened the file, then failed validation with
+		// a message about ca_pem the operator never typed. The syslog seed
+		// refuses its flag before reading; match that.
+		if *gnmiDialoutTLSCA != "" && !*gnmiDialoutTLS {
+			log.Fatalf("gnmi dial-out: -gnmi-dialout-tls-ca requires -gnmi-dialout-tls")
+		}
 		if *gnmiDialoutTLSCA != "" {
 			pem, err := loadTLSCAFile(*gnmiDialoutTLSCA, "-gnmi-dialout-tls-ca")
 			if err != nil {
