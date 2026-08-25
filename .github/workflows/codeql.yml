@@ -95,7 +95,7 @@ jobs:
           # the "protect main" ruleset's code_scanning rule blocks on. Every
           # subsequent PR was gated by a posture change nobody had agreed to.
           #
-          # Adopting the broader pack is worth doing (see nl6#478) — but as its
+          # Adopting the broader pack is worth doing (see nl6#479) — but as its
           # own change, with the findings triaged, not as a side effect.
           queries: default
 
