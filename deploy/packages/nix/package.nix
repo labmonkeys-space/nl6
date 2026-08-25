@@ -1,7 +1,7 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 { lib
-, buildGo126Module  # go.mod requires Go >= 1.26.4
+, buildGo127Module  # go.mod requires Go >= 1.27.0
 , makeWrapper
 , iproute2
 , iptables
@@ -11,7 +11,7 @@
 , version ? "0.24.0"
 }:
 
-buildGo126Module {
+buildGo127Module {
   pname = "nl6";
   inherit version;
 

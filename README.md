@@ -76,7 +76,7 @@ link-utilisation benchmarking — see
 [Flow export reference → sFlow caveat](https://labmonkeys-space.github.io/nl6/reference/flow-export/#sflow-caveat)).
 
 **Tested scale** — up to 30,000 concurrent simulated devices on a single
-host. **Toolchain** — Go 1.26 or later; canonical version pinned in
+host. **Toolchain** — Go 1.27 or later; canonical version pinned in
 [`go/go.mod`](go/go.mod).
 
 ## Quick start
