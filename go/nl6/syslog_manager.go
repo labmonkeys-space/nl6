@@ -480,6 +480,14 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 	}
 	canonicalCollector := collectorAddr.String()
 
+	// TCP is a different attach entirely: it owns a per-device connection and
+	// has no shared-socket rung to fall back to (add-syslog-tcp design D2), so
+	// it returns before any of the datagram socket machinery below runs.
+	if cfg.Transport == string(SyslogTransportTCP) {
+		return sm.startDeviceSyslogTCPExporter(device, cfg, encoder, format, canonicalCollector,
+			modelLabel)
+	}
+
 	// Open per-device socket first (when enabled) so we know whether to
 	// wire in the shared-pool fallback; passing SharedConn at
 	// construction avoids an unsynchronised post-hoc field write.
@@ -779,4 +787,61 @@ func (sm *SimulatorManager) WriteSyslogStatusJSON(w http.ResponseWriter) {
 func (sm *SimulatorManager) SyslogCatalogFor(ip string) *SyslogCatalog {
 	cat, _ := sm.syslogCatalogWithLabelFor(ip)
 	return cat
+}
+
+// startDeviceSyslogTCPExporter attaches a device over TCP.
+//
+// It deliberately does NOT mirror the datagram attach's fallback ladder. A
+// shared connection would multiplex several devices into one framed byte stream
+// with no field to demultiplex on, so the collector would see a single client
+// and per-device identity would be destroyed rather than degraded. TCP
+// therefore has one rung: the per-device connection, or no attach at all
+// (add-syslog-tcp design D2).
+//
+// The dial itself is asynchronous. Attach succeeds as soon as the transport is
+// constructed and its reconnect loop is running, because refusing to attach a
+// device whose collector happens to be down at that instant would make fleet
+// startup depend on collector availability — and the loop recovers from exactly
+// that. What is refused is a device that cannot be given a transport at all.
+func (sm *SimulatorManager) startDeviceSyslogTCPExporter(
+	device *DeviceSimulator,
+	cfg *DeviceSyslogConfig,
+	encoder SyslogEncoder,
+	format SyslogFormat,
+	canonicalCollector string,
+	modelLabel string,
+) error {
+	if device == nil || cfg == nil {
+		return fmt.Errorf("syslog export: tcp attach requires a device and config")
+	}
+	framing := SyslogFraming(cfg.Framing)
+	if framing == "" {
+		framing = SyslogFramingOctetCounting
+	}
+
+	transport := newTCPTransport(device.IP, canonicalCollector, framing,
+		newSyslogTCPDialerForDevice(device, canonicalCollector))
+	transport.start()
+
+	exporter := NewSyslogExporter(SyslogExporterOptions{
+		DeviceIP: device.IP,
+		Encoder:  encoder,
+		// Collector is required by the constructor's guard and is unused by a
+		// stream transport, which addresses the collector by name at dial time.
+		Collector:    &net.UDPAddr{IP: device.IP},
+		CollectorStr: canonicalCollector,
+		Format:       format,
+		Transport:    transport,
+		SysName:      device.sysName,
+		Model:        modelLabel,
+		Serial:       synthSerial(device.IP),
+		ChassisID:    synthChassisID(device.IP),
+		IfIndexFn:    deviceIfIndexFn(device),
+		IfNameFn:     deviceIfNameFn(device),
+	})
+
+	device.mu.Lock()
+	device.syslogExporter = exporter
+	device.mu.Unlock()
+	return nil
 }
