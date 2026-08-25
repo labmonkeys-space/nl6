@@ -282,13 +282,25 @@ expiries at t  →  refills at t  →  expiries at t+30s  →  refills at t+30s 
 
 There is no mixing term, so nothing damps. Any irregularity is re-emitted every lifetime forever. A scenario arming, a re-pacing, a scheduling hiccup: all of them persist. Real exporters do not behave this way, and the reason is exactly the coupling. Their flows are created by arriving traffic, a process independent of what the cache happens to be releasing.
 
-Measured as autocorrelation of per-tick record counts across multiples of the flow lifetime, after re-pacing a device:
+Measured in-process as autocorrelation of per-tick record counts across multiples of the flow lifetime, after re-pacing a device:
 
 | | 1 lifetime | 2 | 3 | 4 |
 |---|---|---|---|---|
 | before, GPU-server profile | +0.96 | +0.94 | +0.91 | **+0.89** |
 | before, edge-router profile | +0.87 | +0.77 | +0.68 | **+0.59** |
 | after, edge-router profile | +0.23 | +0.18 | +0.08 | **+0.01** |
+
+**On the wire the same defect shows up as dispersion rather than periodicity**, and the distinction is worth stating because the table above overstates what a capture sees. Five devices, 20-minute windows, three paced rates:
+
+| requested | before: CV / r(1 lifetime) | after: CV / r(1 lifetime) |
+|---|---|---|
+| 2 rec/s | 0.98 / +0.22 | **0.57** / +0.08 |
+| 4 rec/s | 0.78 / +0.29 | **0.49** / −0.00 |
+| 8 rec/s | 0.99 / +0.15 | **0.20** / +0.18 |
+
+Autocorrelation at one lifetime never exceeded +0.29 on the wire, so the repetition an in-process probe sees at +0.96 is not what a collector was receiving. What a collector was receiving is over-dispersion: before the change, per-tick counts scattered three to six times wider than Poisson counting noise allows; after it, the 8 rec/s case sits essentially at the Poisson floor.
+
+Both symptoms come from the same deterministic deadline. Flows created in one tick expire in one tick, which lumps each tick's output immediately (variance) and repeats the lump a lifetime later (periodicity). The warm first fill added by [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) already staggered creation ages enough to blunt the repetition on real timing, leaving the variance as the dominant wire symptom.
 
 **What this means for a collector.** A rule keyed on flows arriving at exactly the configured active timeout will now see a spread instead of a spike. `-flow-active-timeout` sets a mean, not an exact deadline.
 
