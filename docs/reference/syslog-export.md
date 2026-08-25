@@ -471,10 +471,27 @@ answers "who is connecting", which nothing here asks.
 
 | field | effect |
 |---|---|
-| `tls.ca_file` | PEM bundle used to verify the collector |
+| `tls.ca_pem` | PEM bundle used to verify the collector, **inline** |
 | *(omitted)* | verify against the host's root store |
 | `tls.insecure_skip_verify` | disable verification (development only) |
 | `tls.mtls` | **not implemented** — rejected at configuration rather than ignored |
+
+The CA is inline PEM rather than a file path, and that is deliberate. A path in
+the per-device config is settable over REST, which would let any API caller name
+a file for the simulator to open — an arbitrary-file-read primitive, where even
+the error message distinguishes "could not read" from "no certificates here".
+Certificate authorities are small and pasteable, so a path bought nothing worth
+that.
+
+A path survives on the command line, where the operator who started the process
+names it:
+
+```sh
+nl6 -syslog-transport tls -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
+```
+
+That file is read once at startup and its contents stamped into the seed config,
+so the trusted read happens in exactly one place.
 
 Verification cannot be lost by omission: with no `ca_file` and no explicit
 `insecure_skip_verify`, a collector the host does not trust fails to connect.

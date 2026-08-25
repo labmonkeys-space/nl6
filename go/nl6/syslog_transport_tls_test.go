@@ -7,12 +7,15 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
+	"encoding/pem"
 	"math/big"
 	"net"
 	"testing"
@@ -269,5 +272,43 @@ func TestSyslogTLS_MTLSIsRefusedUntilImplemented(t *testing.T) {
 	c.ApplyDefaults()
 	if err := c.Validate(); err == nil {
 		t.Error("tls.mtls accepted while unimplemented; it must refuse rather than no-op")
+	}
+}
+
+// TestSyslogTLS_CAIsInlineNotAPath is the regression for a CodeQL
+// `go/path-injection` finding, and for the design decision behind it.
+//
+// An earlier revision took `ca_file`. That field is settable over REST, so it
+// handed any API caller an arbitrary-file-read primitive: the simulator would
+// open whatever path it named, and the difference between "read failed" and
+// "no PEM certificates found" is an oracle for file existence and shape.
+//
+// The config now carries PEM inline. A path survives only on the command line,
+// where the operator who started the process names it.
+func TestSyslogTLS_CAIsInlineNotAPath(t *testing.T) {
+	_, leaf := newTestTLSCert(t)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+
+	cfg, err := buildSyslogTLSConfig(&SyslogTLSConfig{CAPEM: string(pemBytes)}, "localhost")
+	if err != nil {
+		t.Fatalf("inline PEM rejected: %v", err)
+	}
+	if cfg.RootCAs == nil {
+		t.Fatal("inline PEM did not populate RootCAs")
+	}
+
+	// Garbage must be refused, not silently ignored into system-roots
+	// verification — that would look like it worked and verify nothing.
+	if _, err := buildSyslogTLSConfig(&SyslogTLSConfig{CAPEM: "not a certificate"}, "localhost"); err == nil {
+		t.Error("non-PEM ca_pem accepted; it must fail rather than fall back to system roots")
+	}
+
+	// The struct must expose no path-shaped field to the REST surface.
+	if _, err := json.Marshal(&SyslogTLSConfig{CAPEM: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	blob, _ := json.Marshal(&SyslogTLSConfig{CAPEM: "x"})
+	if bytes.Contains(blob, []byte("ca_file")) {
+		t.Error("ca_file is still part of the REST config; the whole point is that a path is not settable over HTTP")
 	}
 }

@@ -48,9 +48,21 @@ const syslogTLSDefaultPort = "6514"
 // Deliberately the same vocabulary as DialoutTLSConfig, so the two subsystems
 // do not grow different words for the same job.
 type SyslogTLSConfig struct {
-	// CAFile is a PEM bundle used to verify the collector. Empty means the
-	// host's root store.
-	CAFile string `json:"ca_file,omitempty"`
+	// CAPEM is the PEM bundle used to verify the collector, INLINE. Empty
+	// means the host's root store.
+	//
+	// Inline rather than a path, deliberately. A path here is settable over
+	// REST, which hands any API caller an arbitrary-file-read primitive: the
+	// simulator would open whatever it names, and the difference between "read
+	// failed" and "no PEM certificates found" is an oracle for file existence
+	// and shape. Certificate authorities are small and pasteable, so the path
+	// bought nothing that justified that.
+	//
+	// The CLI keeps a path (`-syslog-tls-ca`), because reading a file named by
+	// the operator who started the process is not the same act as reading one
+	// named by an HTTP request. It is loaded once at startup and stamped in
+	// here, so the trusted read happens in exactly one place.
+	CAPEM string `json:"ca_pem,omitempty"`
 	// InsecureSkipVerify disables verification entirely. Named explicitly so a
 	// deployment cannot lose verification by omitting something.
 	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
@@ -77,14 +89,10 @@ func buildSyslogTLSConfig(cfg *SyslogTLSConfig, serverName string) (*tls.Config,
 	if cfg.InsecureSkipVerify {
 		out.InsecureSkipVerify = true
 	}
-	if cfg.CAFile != "" {
-		pem, err := os.ReadFile(cfg.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("read ca_file %q: %w", cfg.CAFile, err)
-		}
+	if cfg.CAPEM != "" {
 		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("ca_file %q: no PEM certificates found", cfg.CAFile)
+		if !pool.AppendCertsFromPEM([]byte(cfg.CAPEM)) {
+			return nil, fmt.Errorf("ca_pem: no PEM certificates found")
 		}
 		out.RootCAs = pool
 	}
@@ -137,4 +145,21 @@ func syslogCollectorWithDefaultPort(collector string, transport SyslogTransportK
 		return net.JoinHostPort(collector, syslogTLSDefaultPort)
 	}
 	return net.JoinHostPort(collector, "514")
+}
+
+// loadSyslogTLSCAFile reads a CA bundle from a path supplied on the COMMAND
+// LINE and returns it as PEM for stamping into the seed config.
+//
+// This is the one place a syslog-TLS CA is read from disk, and it is reachable
+// only from process startup. The per-device config carries PEM inline
+// precisely so that no HTTP request can name a path for the simulator to open.
+func loadSyslogTLSCAFile(path string) (string, error) {
+	b, err := os.ReadFile(path) //nolint:gosec // operator-supplied CLI path, not reachable from the REST surface
+	if err != nil {
+		return "", fmt.Errorf("read -syslog-tls-ca %q: %w", path, err)
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(b) {
+		return "", fmt.Errorf("-syslog-tls-ca %q: no PEM certificates found", path)
+	}
+	return string(b), nil
 }
