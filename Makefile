@@ -57,8 +57,14 @@ UNAME_S := $(shell uname -s)
 all: build
 
 ## build: Cross-compile the simulator binary for Linux (GOOS=linux GOARCH=amd64)
+# GOTOOLCHAIN=auto is Go's own default, stated explicitly because one caller
+# overrides it: CodeQL's default-setup autobuild runs this target with
+# GOTOOLCHAIN=local and a bundled Go older than go.mod requires, so the build
+# aborts with "go.mod requires go >= 1.27.0 (running go 1.26.6)". There is no
+# workflow file to add a setup-go step to — default setup is configured in repo
+# settings — so the target has to be able to honour go.mod's pin on its own.
 build: check-go
-	cd $(BUILD_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	cd $(BUILD_DIR) && GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 ## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
 reconcile: check-go
