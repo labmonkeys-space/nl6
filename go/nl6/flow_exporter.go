@@ -327,6 +327,32 @@ func (fe *FlowExporter) logFirstOptionsErr(err error) {
 	})
 }
 
+// effectiveFlowLifetime is how long a flow actually occupies the cache: the
+// lifetime the profile and timeouts imply, PLUS half the sweep interval.
+//
+// Expiry is noticed by a periodic sweep, so a flow whose deadline falls between
+// sweeps waits for the next one — on average half an interval. That delay is
+// real residency and it belongs in the denominator: pacing divides a requested
+// rate by this to get a cache size, and omitting the term sizes every cache
+// short, so every paced run emits low.
+//
+// It was invisible until the active deadline gained jitter. Without jitter a
+// flow created on a sweep boundary had a deadline exactly `active` later, which
+// landed on another sweep boundary and cost nothing — an alignment artifact of
+// synthetic timing, not a property of the exporter. Measured across a 10x range
+// of sweep intervals, `MeanFlowLifetime + sweep/2` predicts the real residency
+// to within 0.3%.
+func effectiveFlowLifetime(fe *FlowExporter, sweep time.Duration) time.Duration {
+	base := MeanFlowLifetime(fe.profile, fe.cache.activeTimeout, fe.cache.inactiveTimeout)
+	if base <= 0 {
+		return 0
+	}
+	if sweep > 0 {
+		base += sweep / 2
+	}
+	return base
+}
+
 // flowRateReachable reports whether this exporter can be paced to `rate`.
 //
 // The cache cannot hold more than MaxFlows, so the reachable per-device rate is
@@ -338,11 +364,11 @@ func (fe *FlowExporter) logFirstOptionsErr(err error) {
 // Returning a reason rather than silently clamping is the point. Delivering 8.8
 // against a requested 50 while the report names 50 as the target is the exact
 // defect this change exists to remove.
-func flowRateReachable(fe *FlowExporter, rate float64) (reason, hint string, ok bool) {
+func flowRateReachable(fe *FlowExporter, rate float64, sweep time.Duration) (reason, hint string, ok bool) {
 	if rate <= 0 || fe == nil || fe.profile == nil || fe.cache == nil {
 		return "", "", true // no rate to honor
 	}
-	lifetime := MeanFlowLifetime(fe.profile, fe.cache.activeTimeout, fe.cache.inactiveTimeout)
+	lifetime := effectiveFlowLifetime(fe, sweep)
 	if lifetime <= 0 {
 		return "", "", true
 	}
@@ -351,8 +377,8 @@ func flowRateReachable(fe *FlowExporter, rate float64) (reason, hint string, ok 
 		return "", "", true
 	}
 	return fmt.Sprintf("requested rate %.2f/s exceeds this device's flow ceiling of %.2f/s "+
-			"(cache holds at most %d flows, mean flow lifetime %.1fs)",
-			rate, ceiling, fe.profile.MaxFlows, lifetime.Seconds()),
+			"(cache holds at most %d flows, mean residency %.1fs = lifetime + half the %s sweep)",
+			rate, ceiling, fe.profile.MaxFlows, lifetime.Seconds(), sweep),
 		fmt.Sprintf("lower the per-device rate to %.2f/s or below, or add participants — "+
 			"fleet throughput scales with participant count, per-device rate does not", ceiling),
 		false
@@ -367,7 +393,7 @@ func flowRateReachable(fe *FlowExporter, rate float64) (reason, hint string, ok 
 // LOW to express are floored here; rates too HIGH to reach are refused at
 // submit instead, because silently under-delivering a requested rate is the
 // defect this whole change exists to remove.
-func flowPacingTarget(fe *FlowExporter, rate float64) int {
+func flowPacingTarget(fe *FlowExporter, rate float64, sweep time.Duration) int {
 	if rate <= 0 || fe == nil || fe.profile == nil || fe.cache == nil {
 		return 0
 	}
@@ -384,7 +410,7 @@ func flowPacingTarget(fe *FlowExporter, rate float64) int {
 	// The timeouts live on the cache, which is what actually ages the flows —
 	// reading them from anywhere else risks pacing against a value the engine
 	// is not using.
-	lifetime := MeanFlowLifetime(fe.profile, fe.cache.activeTimeout, fe.cache.inactiveTimeout)
+	lifetime := effectiveFlowLifetime(fe, sweep)
 	if lifetime <= 0 {
 		return 0
 	}

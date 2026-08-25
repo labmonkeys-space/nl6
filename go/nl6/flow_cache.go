@@ -51,8 +51,17 @@ type FlowRecord struct {
 // flowEntry wraps a FlowRecord with metadata used by the aging engine.
 type flowEntry struct {
 	record     FlowRecord
-	createdAt  time.Time
 	lastSeenAt time.Time
+	// activeDeadline is when this flow hits the active timeout: its creation
+	// instant plus the configured timeout plus a per-flow jitter.
+	//
+	// It is stored rather than derived, and the entry no longer keeps its
+	// creation time at all, because the whole
+	// point is that it is NOT a fixed offset. A deterministic deadline makes
+	// expiry a pure delay of creation, and since creation refills exactly what
+	// expired, the creation profile is then replayed every timeout period
+	// forever with nothing to damp it.
+	activeDeadline time.Time
 }
 
 // FlowCache maintains the set of active synthetic flows for a single device.
@@ -81,17 +90,24 @@ type FlowCache struct {
 	// it: they stagger only the minority of flows that leave by the inactive
 	// timeout. See warmStartOffset.
 	warmed bool
-	mu     sync.Mutex
+	// activeJitterFraction defaults to flowActiveJitterFraction. It is a field
+	// rather than a direct read of the constant so a test can construct an
+	// UNDAMPED cache and measure the echo it is supposed to remove — the
+	// damping assertion is relative to that baseline, not to a threshold
+	// someone would later tune to fit.
+	activeJitterFraction float64
+	mu                   sync.Mutex
 }
 
 // NewFlowCache creates a FlowCache with the given timeout values and maximum
 // number of concurrent flows.
 func NewFlowCache(activeTimeout, inactiveTimeout time.Duration, maxFlows int) *FlowCache {
 	return &FlowCache{
-		flows:           make(map[FlowKey]*flowEntry),
-		activeTimeout:   activeTimeout,
-		inactiveTimeout: inactiveTimeout,
-		maxFlows:        maxFlows,
+		flows:                make(map[FlowKey]*flowEntry),
+		activeTimeout:        activeTimeout,
+		activeJitterFraction: flowActiveJitterFraction,
+		inactiveTimeout:      inactiveTimeout,
+		maxFlows:             maxFlows,
 	}
 }
 
@@ -136,8 +152,11 @@ func (fc *FlowCache) Add(r FlowRecord, now time.Time) {
 	}
 	fc.flows[key] = &flowEntry{
 		record:     r,
-		createdAt:  now,
 		lastSeenAt: now,
+		// No jitter on the ingest path: jitter exists to break the
+		// expiry-drives-creation loop, and a caller feeding Add drives creation
+		// itself. Its arrivals already carry whatever variance its traffic has.
+		activeDeadline: now.Add(fc.activeTimeout),
 	}
 }
 
@@ -148,7 +167,7 @@ func (fc *FlowCache) Expire(now time.Time) []FlowRecord {
 	defer fc.mu.Unlock()
 	var expired []FlowRecord
 	for key, e := range fc.flows {
-		byActive := now.Sub(e.createdAt) >= fc.activeTimeout
+		byActive := !now.Before(e.activeDeadline)
 		byInactive := now.Sub(e.lastSeenAt) >= fc.inactiveTimeout
 		if !byActive && !byInactive {
 			continue
@@ -235,9 +254,18 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 	}
 
 	// Generate synthetic records outside the lock (pure CPU, no shared state).
+	//
+	// The active-timeout jitter is drawn HERE, one per record, alongside the
+	// record itself — unconditionally, before anything can skip it. Drawing it
+	// later (only for flows that will take the active branch, say) would make
+	// the number of RNG draws depend on the flow, desynchronising the stream and
+	// changing every subsequent flow on this device. A seeded run has to
+	// reproduce exactly: scenario ground truth reconciles against it.
 	batch := make([]FlowRecord, need)
+	jitters := make([]time.Duration, need)
 	for i := range batch {
 		batch[i] = syntheticFlow(profile, deviceIP, rng, startUptimeMs)
+		jitters[i] = activeTimeoutJitter(fc.activeTimeout, fc.activeJitterFraction, rng)
 	}
 
 	// Insert the whole batch under a single lock acquisition to avoid TOCTOU
@@ -246,15 +274,19 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 	defer fc.mu.Unlock()
 	// Mark warmed AFTER this batch: only the first fill is backdated.
 	defer func() { fc.warmed = true }()
-	for _, r := range batch {
+	for i, r := range batch {
 		if len(fc.flows) >= fc.maxFlows {
 			break
 		}
 		key := recordKey(r)
 		if _, ok := fc.flows[key]; !ok {
+			deadline := fc.activeTimeout + jitters[i]
 			createdAt := now
 			if !fc.warmed {
-				createdAt = now.Add(-fc.warmStartOffset(r, rng))
+				// Offset drawn from this flow's OWN lifetime, which now includes
+				// its jitter — otherwise a flow whose jitter shortened its
+				// deadline could be born already expired.
+				createdAt = now.Add(-fc.warmStartOffset(r, deadline, rng))
 			}
 			// lastSeenAt is the time of the flow's LAST PACKET, which for a
 			// synthetic flow is its creation plus the duration the profile
@@ -277,9 +309,9 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 			// ended and went idle leaves by the inactive one. Independently
 			// sampled durations also stagger the cohort for free.
 			fc.flows[key] = &flowEntry{
-				record:     r,
-				createdAt:  createdAt,
-				lastSeenAt: createdAt.Add(recordDuration(r)),
+				record:         r,
+				lastSeenAt:     createdAt.Add(recordDuration(r)),
+				activeDeadline: createdAt.Add(deadline),
 			}
 		}
 	}
@@ -295,15 +327,55 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 //
 // Only the first fill needs this. Afterwards expiries are spread, so each tick
 // refills a few flows at its own instant and the spread sustains itself.
-func (fc *FlowCache) warmStartOffset(r FlowRecord, rng *rand.Rand) time.Duration {
+func (fc *FlowCache) warmStartOffset(r FlowRecord, activeDeadline time.Duration, rng *rand.Rand) time.Duration {
 	lifetime := recordDuration(r) + fc.inactiveTimeout
-	if fc.activeTimeout < lifetime {
-		lifetime = fc.activeTimeout
+	if activeDeadline < lifetime {
+		lifetime = activeDeadline
 	}
 	if lifetime <= 0 {
 		return 0
 	}
 	return time.Duration(rng.Int63n(int64(lifetime)))
+}
+
+// flowActiveJitterFraction is the half-width of the active-timeout jitter, as a
+// fraction of the timeout: a 30 s timeout yields deadlines spread over
+// [22.5 s, 37.5 s].
+//
+// 0.25 is the SMALLEST swept value that brings the one-lifetime emission
+// autocorrelation below 0.25 on every shipped profile. Measured on a re-pacing
+// disturbance (edge / GPU / campus), r at one lifetime:
+//
+//	fraction   0.00   0.10   0.15   0.20   0.25   0.30
+//	edge      +0.87  +0.51  +0.50  +0.37  +0.23  +0.06
+//	gpu       +0.96  +0.50  +0.45  +0.26  +0.17  +0.07
+//	campus    +0.54  +0.24  +0.26  +0.23  +0.20  +0.08
+//
+// Below 0.20 the echo is halved but plainly still there. Above it the returns
+// are small and the cost is not: the jitter is a spread on a user-facing
+// timeout, and at 0.50 the deadline lands anywhere in [15 s, 45 s], which
+// empties `-flow-active-timeout` of meaning and drives the correlation
+// NEGATIVE (-0.12 on edge) — an artifact of its own, not a quieter emitter.
+//
+// TestFlowEmission_EchoIsDamped asserts the property this value buys, relative
+// to an undamped baseline it computes itself, so the number is not load-bearing
+// for the test passing.
+const flowActiveJitterFraction = 0.25
+
+// activeTimeoutJitter returns a zero-mean offset to apply to one flow's active
+// deadline, uniform on ±flowActiveJitterFraction of the timeout.
+//
+// Zero-mean in the DEADLINE. That is not the same as zero-mean in the lifetime:
+// a flow's lifetime is min(deadline, duration+inactive), and a minimum is
+// concave, so symmetric jitter lowers the expectation. MeanFlowLifetime is what
+// scenario pacing calibrates against, so the size of that shift is measured
+// rather than assumed.
+func activeTimeoutJitter(active time.Duration, fraction float64, rng *rand.Rand) time.Duration {
+	if active <= 0 || fraction <= 0 {
+		return 0
+	}
+	span := float64(active) * fraction
+	return time.Duration((rng.Float64()*2 - 1) * span)
 }
 
 // recordDuration is the flow's modelled lifetime, taken from the uptime-

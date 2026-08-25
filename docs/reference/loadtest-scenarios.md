@@ -408,8 +408,9 @@ interesting one is usually cardinality:
   magnitude, and measure on your own hardware before designing a run that
   depends on the exact number.
 
-- **Flow protocols have a hard per-device rate ceiling, around 8.5–9.7 records/s.**
-  A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / mean-flow-lifetime` — roughly 8.5/s for the GPU-server profile up to 9.7/s for the campus-switch one.
+- **Flow protocols have a hard per-device rate ceiling, around 8.1–9.2 records/s at the default 5s tick.**
+  A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / residency`: roughly 8.1/s for the GPU-server profile up to 9.2/s for the campus-switch one.
+  Residency is `mean-flow-lifetime + half the tick interval`, so **the ceiling falls as the tick lengthens**: at `-flow-tick-interval 60` residency is about 59s and the ceiling roughly 4.3/s, half the figure above. Compute it from the formula rather than quoting the number when the tick is not the default. The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes. It was omitted before [nl6#462](https://github.com/labmonkeys-space/nl6/issues/462), which stated the ceiling about 5 % high and ran every paced rate a few percent low.
   A rate above a participant's ceiling is **refused at arm**, with the ceiling in the message, rather than silently under-delivered.
   Fleet throughput scales with participant count; per-device rate does not scale past the cache. Flow is not a protocol to drive hard per device.
 

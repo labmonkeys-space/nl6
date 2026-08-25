@@ -423,7 +423,10 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		// Checked here rather than at submit because the ceiling depends on the
 		// device's own profile and timeouts, and participants may be named by a
 		// selector that submit has not resolved (design D4).
-		if reason, hint, ok := flowRateReachable(dev.flowExporter, c.spec.Rate); !ok {
+		// The sweep the SCENARIO will run at, not the fleet's: pacing must be
+		// calibrated against the cadence that will actually drain this device.
+		sweep := scenarioFlowTickInterval(c.sm.effectiveFlowTickInterval(), c.spec.Window)
+		if reason, hint, ok := flowRateReachable(dev.flowExporter, c.spec.Rate, sweep); !ok {
 			return false, reason, hint
 		}
 		ok, reason, hint = c.claim(&dev.flowExporter.scenPart, part)
@@ -432,7 +435,7 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 			// claim: installing it before would resize a device another
 			// scenario holds, and the loser of a claim race must leave the
 			// winner's device exactly as it found it.
-			dev.flowExporter.setConcurrentOverride(flowPacingTarget(dev.flowExporter, c.spec.Rate))
+			dev.flowExporter.setConcurrentOverride(flowPacingTarget(dev.flowExporter, c.spec.Rate, sweep))
 		}
 		return ok, reason, hint
 	}

@@ -8,7 +8,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -81,10 +83,18 @@ func TestFlowPacing_OverrideClears(t *testing.T) {
 // what the engine emits when paced, rather than re-deriving the arithmetic that
 // chose the cache size — that would only prove the formula equals itself.
 //
-// Tolerance is 8%: the identity was measured across all eight shipped profiles
-// at worst −4.3% (CampusSwitch, whose DurationMax sits exactly on the active
-// timeout), plus tick-quantisation headroom. Tightening it to the edge-router's
-// −0.8% would make this a test that only one profile can pass.
+// Tolerance is DERIVED, not picked: `0.04 + 0.5/target`.
+//
+// The cache is an integer count of flows, so rounding alone costs up to half a
+// flow out of `target` — 8.3% at target 6, 0.5% at target 95. A flat band wide
+// enough for the small caches is far too slack for the large ones, and it was:
+// the previous flat 8% let a 4% model error pass unnoticed at target 95 while
+// leaving the smallest case sitting exactly on the edge. The 0.04 term is the
+// model band the quantisation does not explain, and that is the part a
+// regression would move. About a quarter of it is already spoken for on the
+// campus-switch profile: symmetric jitter on a deadline is not symmetric in
+// min(deadline, duration+inactive), and that concavity costs it 1.18 % of mean
+// lifetime (0.05-0.57 % on the others).
 func TestFlowPacing_AchievesRequestedRate(t *testing.T) {
 	const active, inactive, tick = 30 * time.Second, 15 * time.Second, 5 * time.Second
 
@@ -102,7 +112,7 @@ func TestFlowPacing_AchievesRequestedRate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fe := newTestFlowExporter(testDevice("10.0.0.9"), tc.profile, active, inactive, time.Hour)
-			target := flowPacingTarget(fe, tc.rate)
+			target := flowPacingTarget(fe, tc.rate, tick)
 			if target < 1 {
 				t.Fatalf("pacing target %d for rate %v", target, tc.rate)
 			}
@@ -121,11 +131,13 @@ func TestFlowPacing_AchievesRequestedRate(t *testing.T) {
 			achieved := float64(total) / window
 
 			deviation := achieved/tc.rate - 1
-			if deviation < -0.08 || deviation > 0.08 {
-				t.Errorf("requested %.2f rec/s, achieved %.2f (%.1f%%) with cache target %d",
-					tc.rate, achieved, deviation*100, target)
+			tolerance := 0.04 + 0.5/float64(target)
+			if deviation < -tolerance || deviation > tolerance {
+				t.Errorf("requested %.2f rec/s, achieved %.2f (%+.1f%%, tolerance %.1f%%) with cache target %d",
+					tc.rate, achieved, deviation*100, tolerance*100, target)
 			}
-			t.Logf("requested %.2f  achieved %.2f  (%+.1f%%)  cache=%d", tc.rate, achieved, deviation*100, target)
+			t.Logf("requested %.2f  achieved %.2f  (%+.1f%%, tol %.1f%%)  cache=%d",
+				tc.rate, achieved, deviation*100, tolerance*100, target)
 		})
 	}
 }
@@ -134,8 +146,9 @@ func TestFlowPacing_AchievesRequestedRate(t *testing.T) {
 // rate x lifetime rounds below one flow must still emit. Silencing a device is
 // not what "a low rate" means, and a silent participant would reconcile as loss.
 func TestFlowPacing_LowRateFloorsAtOne(t *testing.T) {
+	const tick = 5 * time.Second
 	fe := newTestFlowExporter(testDevice("10.0.0.10"), flowProfileEdgeRouter, 30*time.Second, 15*time.Second, time.Hour)
-	if got := flowPacingTarget(fe, 0.001); got < 1 {
+	if got := flowPacingTarget(fe, 0.001, tick); got < 1 {
 		t.Errorf("target = %d for a very low rate; it must floor at 1, not silence the device", got)
 	}
 }
@@ -143,9 +156,10 @@ func TestFlowPacing_LowRateFloorsAtOne(t *testing.T) {
 // TestFlowPacing_NoRateNoOverride: a scenario without a rate must leave the
 // device on its profile, not pace it to zero.
 func TestFlowPacing_NoRateNoOverride(t *testing.T) {
+	const tick = 5 * time.Second
 	fe := newTestFlowExporter(testDevice("10.0.0.11"), flowProfileEdgeRouter, 30*time.Second, 15*time.Second, time.Hour)
 	for _, r := range []float64{0, -1} {
-		if got := flowPacingTarget(fe, r); got != 0 {
+		if got := flowPacingTarget(fe, r, tick); got != 0 {
 			t.Errorf("rate %v produced target %d, want 0 (meaning: keep the profile)", r, got)
 		}
 	}
@@ -172,7 +186,8 @@ func TestFlowPacing_LifecycleThroughInstallAndDetach(t *testing.T) {
 		t.Fatalf("installScenPart refused: %s", reason)
 	}
 
-	want := flowPacingTarget(dev.flowExporter, 2.0)
+	want := flowPacingTarget(dev.flowExporter, 2.0,
+		scenarioFlowTickInterval(c.sm.effectiveFlowTickInterval(), c.spec.Window))
 	if got := dev.flowExporter.targetFlows(); got != want {
 		t.Fatalf("after arm, target = %d, want the paced %d", got, want)
 	}
@@ -208,7 +223,8 @@ func TestFlowPacing_LosingClaimDoesNotPace(t *testing.T) {
 	if ok, reason, _ := winner.installScenPart(dev, &scenarioPart{owner: winner.id}); !ok {
 		t.Fatalf("winner could not arm: %s", reason)
 	}
-	wantWinner := flowPacingTarget(dev.flowExporter, 2.0)
+	wantWinner := flowPacingTarget(dev.flowExporter, 2.0,
+		scenarioFlowTickInterval(winner.sm.effectiveFlowTickInterval(), winner.spec.Window))
 
 	// A second scenario wants the same device at a very different rate.
 	loser := newScenarioController(&SimulatorManager{}, nil)
@@ -262,15 +278,15 @@ func TestFlowPacing_RefusesUnreachableRateAtArm(t *testing.T) {
 // TestFlowPacing_AcceptsRateAtTheCeiling pins the boundary is inclusive, so a
 // rate exactly at the ceiling is not refused by an off-by-one.
 func TestFlowPacing_AcceptsRateAtTheCeiling(t *testing.T) {
+	const tick = 5 * time.Second
 	p := flowProfileEdgeRouter
 	fe := newTestFlowExporter(testDevice("10.42.0.4"), p, 30*time.Second, 15*time.Second, time.Hour)
-	lifetime := MeanFlowLifetime(p, 30*time.Second, 15*time.Second)
-	ceiling := float64(p.MaxFlows) / lifetime.Seconds()
+	ceiling := float64(p.MaxFlows) / effectiveFlowLifetime(fe, tick).Seconds()
 
-	if _, _, ok := flowRateReachable(fe, ceiling); !ok {
+	if _, _, ok := flowRateReachable(fe, ceiling, tick); !ok {
 		t.Errorf("a rate exactly at the ceiling %.4f/s was refused", ceiling)
 	}
-	if _, _, ok := flowRateReachable(fe, ceiling*1.01); ok {
+	if _, _, ok := flowRateReachable(fe, ceiling*1.01, tick); ok {
 		t.Errorf("a rate 1%% above the ceiling %.4f/s was accepted", ceiling)
 	}
 }
@@ -458,7 +474,7 @@ func TestFlowPacing_TickAchievesRateFromWarmCache(t *testing.T) {
 			// Now pace it, and measure over a window a real run would use —
 			// SHORT relative to the flow lifetime, which is the regime that
 			// exposed the defect.
-			fe.setConcurrentOverride(flowPacingTarget(fe, rate))
+			fe.setConcurrentOverride(flowPacingTarget(fe, rate, tick))
 			achieved := tickRate(t, fe, conn, addr, testPool(), base.Add(600*time.Second), tick, 60*time.Second)
 
 			if deviation := achieved/rate - 1; deviation < -0.25 || deviation > 0.25 {
@@ -527,5 +543,62 @@ func TestFlowPacing_UnreachableRateStopsTheRun(t *testing.T) {
 	// And the run must not start.
 	if err := c.Start(context.Background()); err == nil {
 		t.Fatal("Start succeeded with 0 armed participants; the run must be refused")
+	}
+}
+
+// TestFlowJitter_DrawIsUnconditional protects design D4, which the existing
+// determinism test cannot.
+//
+// TestScenarioAppTraffic_Determinism compares two runs of the SAME code, so a
+// conditional jitter draw — one taken only for flows whose deadline it would
+// actually move — reproduces itself perfectly and passes. The defect is
+// invisible from inside a single build.
+//
+// It is visible across builds, which is what matters: a conditional draw makes
+// the number of RNG calls depend on the flow, so a later change to the branch
+// condition silently re-rolls every subsequent flow on that device and the
+// scenario ground truth stops reconciling against captures taken before it.
+//
+// The probe: two caches, same seed, active timeouts far enough apart that a
+// branch-dependent draw would diverge. The RECORDS are drawn before the jitter,
+// so under an unconditional draw they must be identical; under a conditional
+// one they desynchronise from the first flow whose branch differs.
+func TestFlowJitter_DrawIsUnconditional(t *testing.T) {
+	const flows = 64
+	ip := net.ParseIP("10.42.0.7").To4()
+	now := time.Unix(1700000000, 0)
+
+	gen := func(active time.Duration) []string {
+		fc := NewFlowCache(active, 15*time.Second, 4096)
+		// Skip the warm first fill. warmStartOffset legitimately reads the
+		// jittered deadline, so a warm batch differs between the two timeouts
+		// by design and would mask the property under test.
+		fc.warmed = true
+		fc.GenerateFlows(flowProfileEdgeRouter, flows, ip, rand.New(rand.NewSource(42)), now, 0)
+		// Canonical whole-record strings, not a field subset: the cache is a
+		// map, so the read order is arbitrary, and ICMP records carry zero
+		// ports — a (SrcPort, DstPort) key is not a total order and ties
+		// resolve differently per run.
+		got := make([]string, 0, flows)
+		fc.mu.Lock()
+		defer fc.mu.Unlock()
+		for _, e := range fc.flows {
+			got = append(got, fmt.Sprintf("%+v", e.record))
+		}
+		sort.Strings(got)
+		return got
+	}
+
+	// 5s puts nearly every flow on the active branch; 5m puts nearly none.
+	short, long := gen(5*time.Second), gen(5*time.Minute)
+	if len(short) != len(long) {
+		t.Fatalf("fixture: %d vs %d flows", len(short), len(long))
+	}
+	for i := range short {
+		if short[i] != long[i] {
+			t.Fatalf("flow %d differs between active timeouts under the same seed:\n  %s\n  %s\n"+
+				"the jitter draw is branch-dependent, which desynchronises the RNG stream (design D4)",
+				i, short[i], long[i])
+		}
 	}
 }

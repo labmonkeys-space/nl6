@@ -88,9 +88,9 @@ Request body:
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
 | `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).
 
-For **flow protocols** it sets the RECORD rate, by sizing each participant's flow cache to `rate x mean-flow-lifetime` for the window. It no longer sets the flow-tick cadence: ticking faster produces bigger datagrams, not more records, so the old `1/rate` ticker never delivered the requested rate.
+For **flow protocols** it sets the RECORD rate, by sizing each participant's flow cache to `rate x residency` for the window, where residency is the mean flow lifetime plus half the tick interval (the sweep delay). It no longer sets the flow-tick cadence: ticking faster produces bigger datagrams, not more records, so the old `1/rate` ticker never delivered the requested rate.
 
-Flow protocols have a per-device ceiling of roughly **8.5–9.7 records/s** (`MaxFlows / mean-flow-lifetime`, lowest on the GPU-server profile). A rate above a participant's ceiling excludes that participant at arm, with the ceiling in the reason. Fleet throughput scales with participant count; per-device rate does not.
+Flow protocols have a per-device ceiling of roughly **8.1–9.2 records/s** at the default 5s tick (`MaxFlows / residency`, lowest on the GPU-server profile). Residency includes half the tick interval, so a longer `-flow-tick-interval` lowers the ceiling proportionally. A rate above a participant's ceiling excludes that participant at arm, with the ceiling in the reason. Fleet throughput scales with participant count; per-device rate does not.
 
 For `gnmi-dialout`, `rate` does **not** control emission — the stream runs at its dial-out SAMPLE interval — and no `nl6_scenario_target_rate` gauge is published for such a run.
 
