@@ -211,6 +211,10 @@ mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeo
 
 Each synthetic flow is given a duration sampled from the device profile. A flow still running when it reaches the **active timeout** is exported and restarted; a flow that has ended and then sat idle for the **inactive timeout** is exported then. Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one, giving a mean cached lifetime near 29s.
 
+The **active timeout is jittered per flow**, by ±25 % of its configured value. A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s. The jitter is symmetric. It does not move the mean lifetime, so it changes when records leave, not how many. See [Changed in nl6#462: emission shape](#changed-in-nl6462-emission-shape) for why.
+
+Expiry is noticed by a periodic sweep. A flow's real residency is therefore the mean lifetime **plus about half a tick interval**, because it waits for the sweep that notices its deadline. That term matters for pacing. A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
+
 `-flow-tick-interval` sets how finely that stream is cut into datagrams, not how much of it there is. Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat — bounded by the interval rather than proportional to it. Measured across a 30x cadence range:
 
 | tick | records/s | mean records per tick |
@@ -258,6 +262,39 @@ Two independent corrections landed together. **Both change the load a given conf
 The volume change reaches deployments that set no flag at all, which makes it the wider-reaching of the two.
 
 It happened because a flow's "last seen" time was pinned to its creation instant, so every flow looked idle from birth. Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together — a burst followed by silence that no real exporter produces. Flow lifetimes now derive from the duration the profile already sampled.
+
+### Changed in nl6#462: emission shape
+
+Volume is unchanged. **Timing is not**, and it moves for every flow deployment whether or not a scenario runs.
+
+| | before | after |
+|---|---|---|
+| **volume** | ~4.2 records/s per device | unchanged |
+| **active-timeout deadline** | exactly the configured value | uniform over ±25 % of it |
+| **shape** | a disturbance repeats every flow lifetime, indefinitely | it fades within about four lifetimes |
+| **per-device scenario ceiling** | ~8.5–9.7 records/s | ~8.1–9.2 records/s |
+
+**Why the deadline was a problem.** Flow creation is driven by expiry. The cache refills exactly what it lost. When the expiry offset is also deterministic, the creation profile becomes a pure delay of itself:
+
+```
+expiries at t  →  refills at t  →  expiries at t+30s  →  refills at t+30s  →  …
+```
+
+There is no mixing term, so nothing damps. Any irregularity is re-emitted every lifetime forever. A scenario arming, a re-pacing, a scheduling hiccup: all of them persist. Real exporters do not behave this way, and the reason is exactly the coupling. Their flows are created by arriving traffic, a process independent of what the cache happens to be releasing.
+
+Measured as autocorrelation of per-tick record counts across multiples of the flow lifetime, after re-pacing a device:
+
+| | 1 lifetime | 2 | 3 | 4 |
+|---|---|---|---|---|
+| before, GPU-server profile | +0.96 | +0.94 | +0.91 | **+0.89** |
+| before, edge-router profile | +0.87 | +0.77 | +0.68 | **+0.59** |
+| after, edge-router profile | +0.23 | +0.18 | +0.08 | **+0.01** |
+
+**What this means for a collector.** A rule keyed on flows arriving at exactly the configured active timeout will now see a spread instead of a spike. `-flow-active-timeout` sets a mean, not an exact deadline.
+
+**Why the ceiling moved.** The stated per-device scenario ceiling was `MaxFlows / mean-flow-lifetime`, which omitted the sweep delay described above. Pacing now divides by the real residency. The ceiling is about 5 % lower, and a paced rate is actually achieved. Before this, pacing ran a few percent low at every rate, which is what [nl6#462](https://github.com/labmonkeys-space/nl6/issues/462) was reporting.
+
+The old figure was not wrong by accident. With a deterministic deadline, flows created on a tick boundary expired on a tick boundary, so the sweep genuinely cost nothing. That alignment was an artifact of synthetic timing, and the jitter removed it.
 
 ## Status API
 

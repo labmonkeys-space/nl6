@@ -72,8 +72,12 @@ func startedFlowScenario(t *testing.T, sm *SimulatorManager) *ScenarioController
 	if err := c.Submit(&Scenario{
 		Participants: []string{"10.42.0.1"},
 		Protocol:     "netflow9",
-		Rate:         200,
-		Window:       time.Minute,
+		// 100/s, not 200: the fixture's 1 ms timeouts do not make a flow's
+		// residency 1 ms. It is swept, and the sweep here runs every 3 s, so
+		// the reachable ceiling is MaxFlows / ~1.5 s ~= 170/s. The rate is
+		// incidental to what this test asserts; it only has to be reachable.
+		Rate:   100,
+		Window: time.Minute,
 	}, "s-000001"); err != nil {
 		t.Fatal(err)
 	}

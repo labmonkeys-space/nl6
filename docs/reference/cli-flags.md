@@ -185,7 +185,7 @@ details.
 | `-flow-collector` | string | — | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
 | `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. The per-device `tick_interval` is still accepted and not honored ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). |
-| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. |
+| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#changed-in-nl6462-emission-shape). |
 | `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Idle time after a flow's last packet before it is exported. |
 
 | `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
@@ -204,7 +204,9 @@ records/s  ≈  ConcurrentFlows / mean-flow-lifetime
 mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeout)
 ```
 
-The tick interval decides how finely that stream is cut into datagrams. A slower tick sends **bigger datagrams**, not proportionally fewer records. A residual dependence remains — export polls, so a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average — but it is bounded by the interval and is not a proportional control.
+The tick interval decides how finely that stream is cut into datagrams. A slower tick sends **bigger datagrams**, not proportionally fewer records. A residual dependence remains, because export polls: a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average. It is bounded by the interval and is not a proportional control.
+
+That `T/2` is not only a rate effect. It is real cache residency, so scenario pacing divides a requested rate by `mean-flow-lifetime + T/2` rather than by the lifetime alone. Omitting it sized every paced cache short and ran every paced run a few percent low ([nl6#462](https://github.com/labmonkeys-space/nl6/issues/462)).
 
 To change volume, change the device profile's concurrent-flow count or the timeouts.
 
