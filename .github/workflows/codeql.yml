@@ -1,0 +1,96 @@
+name: CodeQL
+
+# Advanced setup, replacing GitHub's default setup.
+#
+# The move was forced, not cosmetic. Default setup runs the Go extractor with
+# GOTOOLCHAIN=local and a bundled Go older than go.mod requires, so once the
+# toolchain moved to 1.27 every Go analysis failed with
+# "go.mod requires go >= 1.27.0 (running go 1.26.6; GOTOOLCHAIN=local)".
+# That is a merge blocker in its own right: the "protect main" ruleset carries a
+# code_scanning rule with alerts_threshold=errors, which is separate from the
+# required status checks.
+#
+# Default setup is configured in repo settings and exposes no way to set an env
+# var, and setting GOTOOLCHAIN in the Makefile is not enough either — the
+# extractor runs its own Go tooling rather than the build target. A workflow is
+# the only place the variable reaches both.
+#
+# Language coverage must stay equal to what default setup scanned
+# (actions, go, javascript, javascript-typescript, typescript). The last three
+# are the same extractor: `javascript-typescript` analyses both, and the two
+# singular names are legacy aliases for it. Dropping a language here silently
+# drops scanning for it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly-published advisory is found on an idle repo too.
+    - cron: '27 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      # Uploading results is the point of the job.
+      security-events: write
+      # The action reads workflow run status to attach results to the run.
+      actions: read
+      contents: read
+    env:
+      # The reason this workflow exists. Applies to the whole job, so it reaches
+      # the CodeQL extractor's own go invocations and not just `make build`.
+      # `auto` is Go's default; CodeQL overrides it to `local`, which refuses to
+      # honour the toolchain go.mod pins.
+      GOTOOLCHAIN: auto
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Before init: the extractor inspects the toolchain during database
+      # creation, so a Go newer than the bundle's has to already be on PATH.
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+
+      - name: Autobuild
+        if: matrix.build-mode == 'autobuild'
+        uses: github/codeql-action/autobuild@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4.37.8
+        with:
+          category: /language:${{ matrix.language }}
