@@ -501,7 +501,7 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		sharedConn    *net.UDPConn
 	)
 
-	if cfg.Transport == string(SyslogTransportTCP) {
+	if cfg.Transport == string(SyslogTransportTCP) || cfg.Transport == string(SyslogTransportTLS) {
 		// TCP has no shared-socket rung (design D2): a shared connection
 		// would multiplex devices into one framed stream with nothing to
 		// demultiplex on. With -syslog-source-per-device=false there is
@@ -516,7 +516,11 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 		// Dial the CONFIGURED collector, not the resolved literal:
 		// DialContextInNamespace re-resolves per dial so DNS failover is
 		// picked up on every reconnect, and handing it an IP defeats that.
-		transport = sm.newDeviceSyslogTCPTransport(device, cfg, canonicalCollector)
+		t, terr := sm.newDeviceSyslogStreamTransport(device, cfg, canonicalCollector)
+		if terr != nil {
+			return terr
+		}
+		transport = t
 	} else {
 		// Open per-device socket first (when enabled) so we know whether to
 		// wire in the shared-pool fallback; passing SharedConn at
@@ -540,19 +544,20 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 	}
 
 	opts := SyslogExporterOptions{
-		DeviceIP:     device.IP,
-		Encoder:      encoder,
-		Collector:    collectorAddr,
-		CollectorStr: canonicalCollector,
-		Format:       format,
-		SharedConn:   sharedConn,
-		Transport:    transport,
-		SysName:      device.sysName,
-		Model:        modelLabel,
-		Serial:       synthSerial(device.IP),
-		ChassisID:    synthChassisID(device.IP),
-		IfIndexFn:    deviceIfIndexFn(device),
-		IfNameFn:     deviceIfNameFn(device),
+		DeviceIP:      device.IP,
+		Encoder:       encoder,
+		Collector:     collectorAddr,
+		CollectorStr:  canonicalCollector,
+		Format:        format,
+		SharedConn:    sharedConn,
+		Transport:     transport,
+		TransportKind: SyslogTransportKind(cfg.Transport),
+		SysName:       device.sysName,
+		Model:         modelLabel,
+		Serial:        synthSerial(device.IP),
+		ChassisID:     synthChassisID(device.IP),
+		IfIndexFn:     deviceIfIndexFn(device),
+		IfNameFn:      deviceIfNameFn(device),
 	}
 
 	exporter := NewSyslogExporter(opts)
@@ -821,25 +826,45 @@ func (sm *SimulatorManager) SyslogCatalogFor(ip string) *SyslogCatalog {
 	return cat
 }
 
-// newDeviceSyslogTCPTransport builds and starts a device's TCP transport.
+// newDeviceSyslogStreamTransport builds and starts a device's stream transport,
+// plaintext or TLS.
 //
 // The dial is asynchronous by design: attach succeeds as soon as the reconnect
 // loop is running. Refusing to attach a device whose collector happens to be
 // down at that instant would make fleet startup depend on collector
 // availability, which is exactly the condition the reconnect loop exists to
 // ride out.
-func (sm *SimulatorManager) newDeviceSyslogTCPTransport(
+func (sm *SimulatorManager) newDeviceSyslogStreamTransport(
 	device *DeviceSimulator, cfg *DeviceSyslogConfig, canonicalCollector string,
-) SyslogTransport {
+) (SyslogTransport, error) {
 	framing := SyslogFraming(cfg.Framing)
 	if framing == "" {
 		framing = SyslogFramingOctetCounting
 	}
+	kind := SyslogTransportKind(cfg.Transport)
 	// cfg.Collector is the operator's string (possibly a DNS name);
 	// canonicalCollector is the resolved literal and is used only for the
-	// status-aggregation key and log lines.
-	t := newTCPTransport(device.IP, canonicalCollector, framing,
-		newSyslogTCPDialerForDevice(device, cfg.Collector))
+	// status-aggregation key and log lines. TLS defaults the port to 6514
+	// where the other transports use 514 (RFC 5425 §4.1).
+	dialTarget := syslogCollectorWithDefaultPort(cfg.Collector, kind)
+
+	dialer := newSyslogTCPDialerForDevice(device, dialTarget)
+	if kind == SyslogTransportTLS {
+		host, _, err := net.SplitHostPort(dialTarget)
+		if err != nil {
+			return nil, fmt.Errorf("syslog export: tls collector %q: %w", dialTarget, err)
+		}
+		// ServerName is the CONFIGURED host. Using the resolved literal would
+		// make verification fail against any certificate naming the host,
+		// which is every certificate a real collector presents.
+		tlsCfg, err := buildSyslogTLSConfig(cfg.TLS, host)
+		if err != nil {
+			return nil, fmt.Errorf("syslog export: device %s: %w", device.IP, err)
+		}
+		dialer = newSyslogTLSDialerForDevice(device, dialTarget, tlsCfg)
+	}
+
+	t := newTCPTransport(device.IP, canonicalCollector, framing, dialer)
 	t.start()
-	return t
+	return t, nil
 }

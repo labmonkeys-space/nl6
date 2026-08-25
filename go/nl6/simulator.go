@@ -137,8 +137,8 @@ func main() {
 		// UDP syslog export flags. See CLAUDE.md "Syslog export" for detail.
 		syslogCollector       = flag.String("syslog-collector", "", "UDP syslog collector address (host:port, e.g. 10.0.0.50:514); enables syslog export when non-empty")
 		syslogFormat          = flag.String("syslog-format", "5424", "Syslog wire format: 5424 (default, structured RFC 5424) or 3164 (BSD RFC 3164)")
-		syslogTransport       = flag.String("syslog-transport", "udp", "Syslog transport for the auto-start batch: udp (default) or tcp (RFC 6587)")
-		syslogFraming         = flag.String("syslog-framing", "", "RFC 6587 framing when -syslog-transport=tcp: octet-counting (default) or non-transparent (LF-terminated). Ignored under udp")
+		syslogTransport       = flag.String("syslog-transport", "udp", "Syslog transport for the auto-start batch: udp (default), tcp (RFC 6587), or tls (RFC 5425, port 6514 by default)")
+		syslogFraming         = flag.String("syslog-framing", "", "RFC 6587 framing when -syslog-transport=tcp: octet-counting (default) or non-transparent (LF-terminated). Rejected under udp; forced to octet-counting under tls")
 		syslogInterval        = flag.Duration("syslog-interval", 10*time.Second, "Per-device mean firing interval (Poisson-distributed); default 10s")
 		syslogGlobalCap       = flag.Int("syslog-global-cap", 0, "Simulator-wide rate ceiling for syslog fires (0 = unlimited)")
 		syslogCatalog         = flag.String("syslog-catalog", "", "Path to a JSON syslog catalog; overrides the embedded universal 6-entry catalog when set")

@@ -430,6 +430,67 @@ A write that cannot complete within a short bound is dropped and the connection
 replaced. Blocking is not an option: the syslog scheduler fires inline for the
 whole fleet, so one stalled collector would stop every device.
 
+### TLS (RFC 5425)
+
+`transport: "tls"` carries the same stream inside a TLS session. Everything the
+plaintext stream transport does is unchanged — per-device connection,
+reconnection, keepalives, the write bound, the refusal to share a connection.
+
+Three things differ:
+
+| | |
+|---|---|
+| **framing** | octet-counting is **forced**, not defaulted. RFC 5425 §4.3.1 mandates it, so any other framing is rejected at configuration rather than overridden. |
+| **default port** | **6514** where the other transports use 514 (RFC 5425 §4.1). |
+| **verification** | the collector's certificate is verified. |
+
+:::warning A bare hostname changes port when you change transport
+
+`"collector": "logs.example"` means `logs.example:514` under `udp` and `tcp`,
+and `logs.example:6514` under `tls`. That is what the RFC assigns, and it means
+switching a portless collector to TLS silently moves which port it talks to.
+Give the collector an explicit port if you do not want that.
+
+:::
+
+#### What is verified, and by whom
+
+nl6 is the **client** here. It verifies the *collector*; it presents no
+certificate of its own.
+
+```
+        nl6 (client)                     collector (server)
+             │──── dial, handshake ─────────▶│
+   verifies the collector ◀──── presents its server cert
+```
+
+This is worth stating because it is the opposite of what the rest of the
+simulator does with TLS: the HTTPS API and gNMI target present nl6's shared
+certificate as *servers*. That certificate is irrelevant on this path — it
+answers "who is connecting", which nothing here asks.
+
+| field | effect |
+|---|---|
+| `tls.ca_file` | PEM bundle used to verify the collector |
+| *(omitted)* | verify against the host's root store |
+| `tls.insecure_skip_verify` | disable verification (development only) |
+| `tls.mtls` | **not implemented** — rejected at configuration rather than ignored |
+
+Verification cannot be lost by omission: with no `ca_file` and no explicit
+`insecure_skip_verify`, a collector the host does not trust fails to connect.
+
+TLS 1.2 is the floor and is not configurable.
+
+#### Memory at fleet scale
+
+The socket send-buffer cap applies as it does for plaintext, and is applied to
+the underlying socket *before* the TLS wrap — after wrapping, the connection is
+no longer a raw TCP socket and the setting is unreachable.
+
+TLS adds record buffers **per connection**, on top of the socket buffer. So the
+per-device cost is higher than the plaintext figure, and a fleet-scale estimate
+should not simply reuse it.
+
 ### Collector-side caveats
 
 - `rp_filter` may need relaxing (`net.ipv4.conf.*.rp_filter=0` or `2`) to accept
@@ -439,6 +500,9 @@ whole fleet, so one stalled collector would stop every device.
   concurrent connections from 30,000 distinct source addresses is a different
   proposition from receiving datagrams, and file-descriptor and accept-backlog
   limits are usually what bites first.
+- TLS moves the same caveats to port 6514, and adds handshake cost per
+  reconnect — a collector that bounces makes a fleet renegotiate, not just
+  reconnect.
 - **OpenNMS's classic Syslogd is UDP-only** — `syslogd-configuration.xml` has no
   transport attribute. The documented pattern is to terminate TCP in rsyslog or
   syslog-ng and relay onward. Measured, rsyslog's `imtcp` absorbs roughly

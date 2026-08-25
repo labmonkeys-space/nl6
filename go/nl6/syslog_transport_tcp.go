@@ -242,12 +242,13 @@ func (t *tcpTransport) dialOnce() (net.Conn, error) {
 	}
 	// Cap the send buffer. See the file comment — at fleet scale the
 	// inherited default is the difference between working and not.
+	//
+	// This assertion CANNOT see through a *tls.Conn, which is why the TLS
+	// dialer applies these to the underlying socket itself before handshaking.
+	// Left to this branch alone, a TLS device would silently inherit the ~4 MiB
+	// default and no keepalives.
 	if tc, ok := c.(*net.TCPConn); ok {
-		if err := tc.SetWriteBuffer(syslogTCPSendBuffer); err != nil {
-			log.Printf("syslog tcp: device %s could not set send buffer: %v", t.deviceIP, err)
-		}
-		_ = tc.SetKeepAlive(true)
-		_ = tc.SetKeepAlivePeriod(syslogTCPKeepAlive)
+		applySyslogTCPSocketOptions(tc, t.deviceIP)
 	}
 	return c, nil
 }
@@ -358,6 +359,19 @@ func (t *tcpTransport) Close() error {
 		return nil
 	}
 	return err
+}
+
+// applySyslogTCPSocketOptions caps the send buffer and enables keepalives.
+//
+// Split out because it must be reachable from the TLS dialer, which holds the
+// raw socket only briefly before wrapping it — once wrapped, the connection is
+// a *tls.Conn and these settings are unreachable.
+func applySyslogTCPSocketOptions(tc *net.TCPConn, deviceIP net.IP) {
+	if err := tc.SetWriteBuffer(syslogTCPSendBuffer); err != nil {
+		log.Printf("syslog tcp: device %s could not set send buffer: %v", deviceIP, err)
+	}
+	_ = tc.SetKeepAlive(true)
+	_ = tc.SetKeepAlivePeriod(syslogTCPKeepAlive)
 }
 
 // newSyslogTCPDialerForDevice builds the production dialer: connect from inside

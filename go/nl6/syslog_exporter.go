@@ -112,6 +112,10 @@ type SyslogExporterOptions struct {
 	CollectorStr string       // canonical "host:port"; used for status aggregation key
 	Format       SyslogFormat // wire format; used for status aggregation key
 	SharedConn   *net.UDPConn // fallback; may be nil
+	// TransportKind names Transport for status aggregation. Required whenever
+	// Transport is set: without it every injected transport reports as the
+	// same kind, and a TLS fleet would show up as plaintext.
+	TransportKind SyslogTransportKind
 	// Transport, when set, is used verbatim and Collector/SharedConn are
 	// ignored. Left unset — the case every existing caller takes — a
 	// udpTransport is built from them, so the datagram path is unchanged.
@@ -146,10 +150,15 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 	// unaffected; an explicit Transport is how a non-datagram transport
 	// (add-syslog-tcp) is supplied.
 	transport := opts.Transport
-	kind := SyslogTransportTCP
+	kind := opts.TransportKind
 	if transport == nil {
 		transport = newUDPTransport(opts.DeviceIP, opts.Collector, opts.CollectorStr, opts.SharedConn)
 		kind = SyslogTransportUDP
+	} else if kind == "" {
+		// A caller that injects a transport without naming it would otherwise
+		// report an empty transport in status. Default to the plaintext stream
+		// kind, which is what every in-tree injector other than TLS uses.
+		kind = SyslogTransportTCP
 	}
 	if opts.Encoder == nil {
 		// Default to RFC 5424 so a constructor typo doesn't ship RFC 3164
