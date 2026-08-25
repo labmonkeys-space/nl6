@@ -21,8 +21,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -47,13 +45,8 @@ type SyslogStats struct {
 type SyslogExporter struct {
 	deviceIP     net.IP
 	encoder      SyslogEncoder
-	collector    *net.UDPAddr
 	collectorStr string       // canonical "host:port" for status aggregation keying
 	format       SyslogFormat // wire format this exporter is emitting
-
-	// firstWriteErr gates at most one log line per exporter on a failed
-	// write (review fix pattern from trap phase 4 P8).
-	firstWriteErr sync.Once
 
 	// countersPersisted ensures SimulatorManager.persistSyslogCounters adds
 	// this exporter's counters into the simulator-wide aggregate at most
@@ -62,15 +55,13 @@ type SyslogExporter struct {
 	// per-callsite locking.
 	countersPersisted sync.Once
 
-	// conn is the per-device UDP socket. Nil when per-device binding was
-	// disabled or failed and the fallback shared socket is used. Stored as
-	// atomic.Pointer so Close / Fire can observe writes safely without
-	// holding a mutex in the hot path.
-	conn atomic.Pointer[net.UDPConn]
+	// transportKind names the transport for status aggregation. Derived at
+	// construction so the status path never type-switches on the transport.
+	transportKind SyslogTransportKind
 
-	// sharedConn is the fallback UDP socket used when per-device bind is
-	// disabled or failed. Read-only after construction.
-	sharedConn *net.UDPConn
+	// transport carries the encoded message to the collector. Everything
+	// above it in this type is transport-independent; see syslog_transport.go.
+	transport SyslogTransport
 
 	// scenPart is this device's participation handle in the active
 	// load-test scenario (nil = not participating; every fire path then
@@ -121,7 +112,11 @@ type SyslogExporterOptions struct {
 	CollectorStr string       // canonical "host:port"; used for status aggregation key
 	Format       SyslogFormat // wire format; used for status aggregation key
 	SharedConn   *net.UDPConn // fallback; may be nil
-	SysName      string       // device's sysName.0 value — empty falls back to DeviceIP at encode time
+	// Transport, when set, is used verbatim and Collector/SharedConn are
+	// ignored. Left unset — the case every existing caller takes — a
+	// udpTransport is built from them, so the datagram path is unchanged.
+	Transport SyslogTransport
+	SysName   string // device's sysName.0 value — empty falls back to DeviceIP at encode time
 	// Class 1 device-context fields. Constant for the device's lifetime;
 	// consumed by `{{.Model}}` / `{{.Serial}}` / `{{.ChassisID}}` in the
 	// unified template vocabulary.
@@ -146,6 +141,16 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 	if opts.Collector == nil {
 		panic("NewSyslogExporter: Collector required")
 	}
+
+	// The datagram path stays the default so every existing caller is
+	// unaffected; an explicit Transport is how a non-datagram transport
+	// (add-syslog-tcp) is supplied.
+	transport := opts.Transport
+	kind := SyslogTransportTCP
+	if transport == nil {
+		transport = newUDPTransport(opts.DeviceIP, opts.Collector, opts.CollectorStr, opts.SharedConn)
+		kind = SyslogTransportUDP
+	}
 	if opts.Encoder == nil {
 		// Default to RFC 5424 so a constructor typo doesn't ship RFC 3164
 		// by accident. In practice the manager always passes one explicitly.
@@ -158,20 +163,20 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 		opts.IfNameFn = func(int) string { return "" }
 	}
 	return &SyslogExporter{
-		deviceIP:     append(net.IP(nil), opts.DeviceIP...),
-		encoder:      opts.Encoder,
-		collector:    opts.Collector,
-		collectorStr: opts.CollectorStr,
-		format:       opts.Format,
-		sharedConn:   opts.SharedConn,
-		sysName:      opts.SysName,
-		model:        opts.Model,
-		serial:       opts.Serial,
-		chassisID:    opts.ChassisID,
-		ifIndexFn:    opts.IfIndexFn,
-		ifNameFn:     opts.IfNameFn,
-		startTime:    time.Now(),
-		stats:        &SyslogStats{},
+		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
+		encoder:       opts.Encoder,
+		collectorStr:  opts.CollectorStr,
+		format:        opts.Format,
+		transport:     transport,
+		transportKind: kind,
+		sysName:       opts.SysName,
+		model:         opts.Model,
+		serial:        opts.Serial,
+		chassisID:     opts.ChassisID,
+		ifIndexFn:     opts.IfIndexFn,
+		ifNameFn:      opts.IfNameFn,
+		startTime:     time.Now(),
+		stats:         &SyslogStats{},
 	}
 }
 
@@ -184,19 +189,8 @@ func (e *SyslogExporter) CollectorString() string { return e.collectorStr }
 // (collector, format) key for the status-endpoint aggregate.
 func (e *SyslogExporter) Format() SyslogFormat { return e.format }
 
-// logFirstWriteErr emits at most one log line per exporter on a failed
-// write. Gated by e.firstWriteErr so a down/misconfigured collector
-// doesn't flood logs at fire cadence × device count (mirror of
-// TrapExporter.logFirstWriteErr from trap phase 4 P8).
-func (e *SyslogExporter) logFirstWriteErr(err error) {
-	if e == nil || err == nil {
-		return
-	}
-	e.firstWriteErr.Do(func() {
-		log.Printf("syslog export: device %s write to %s failed: %v (further errors suppressed for this exporter)",
-			e.deviceIP, e.collectorStr, err)
-	})
-}
+// TransportKind names this exporter's transport, for status aggregation.
+func (e *SyslogExporter) TransportKind() SyslogTransportKind { return e.transportKind }
 
 // SetConn installs the per-device UDP socket. Must be called before the
 // exporter is registered with the scheduler if per-device source IPs are
@@ -206,10 +200,15 @@ func (e *SyslogExporter) logFirstWriteErr(err error) {
 // If a previous conn was installed, it is closed here — callers do not
 // need to close it themselves, and forgetting to would leak a file
 // descriptor per rebind.
+//
+// This is DATAGRAM-SPECIFIC and survives the transport seam deliberately: it
+// is the two-step construction the manager and the existing tests use (build
+// the exporter, then hand it the socket bound inside the device's netns). On
+// any other transport it is a no-op, because there is no per-device datagram
+// socket to install.
 func (e *SyslogExporter) SetConn(c *net.UDPConn) {
-	old := e.conn.Swap(c)
-	if old != nil && old != c {
-		_ = old.Close()
+	if t, ok := e.transport.(*udpTransport); ok {
+		t.setConn(c)
 	}
 }
 
@@ -401,55 +400,7 @@ func (e *SyslogExporter) write(pdu []byte) error {
 	if e.writeOverride != nil {
 		return e.writeOverride(pdu)
 	}
-	return e.writeDatagram(pdu)
-}
-
-// writeDatagram sends pdu to the collector using the per-device socket
-// (preferred) or the shared fallback.
-//
-// Error reporting: on fallback, if the per-device write fails but the
-// shared write succeeds, the per-device error is LOGGED (so operators can
-// debug the primary failure) but nil is returned so the caller's counter
-// treats it as a successful send. If both writes fail, a joined error is
-// returned carrying both causes so callers don't lose the primary
-// diagnostic.
-func (e *SyslogExporter) writeDatagram(pdu []byte) error {
-	var primaryErr error
-	conn := e.conn.Load()
-	if conn != nil {
-		if _, err := conn.WriteToUDP(pdu, e.collector); err == nil {
-			return nil
-		} else {
-			primaryErr = fmt.Errorf("per-device socket: %w", err)
-		}
-	}
-	if e.sharedConn == nil {
-		if primaryErr != nil {
-			e.logFirstWriteErr(primaryErr)
-			return primaryErr
-		}
-		e.logFirstWriteErr(errNoSyslogSocket)
-		return errNoSyslogSocket
-	}
-	_, err := e.sharedConn.WriteToUDP(pdu, e.collector)
-	if err == nil {
-		if primaryErr != nil {
-			// Fallback succeeded — log the primary failure so the operator
-			// can diagnose why the per-device path stopped working.
-			log.Printf("syslog: %s per-device write failed, sent via shared socket: %v",
-				e.deviceIP, primaryErr)
-		}
-		return nil
-	}
-	sharedErr := fmt.Errorf("shared socket: %w", err)
-	var finalErr error
-	if primaryErr != nil {
-		finalErr = errors.Join(primaryErr, sharedErr)
-	} else {
-		finalErr = sharedErr
-	}
-	e.logFirstWriteErr(finalErr)
-	return finalErr
+	return e.transport.Send(pdu)
 }
 
 // uptimeHundredths returns device uptime in 1/100-second ticks, matching
@@ -466,11 +417,7 @@ func (e *SyslogExporter) Close() error {
 		return nil
 	}
 	e.closing.Store(true)
-	conn := e.conn.Swap(nil)
-	if conn != nil {
-		return conn.Close()
-	}
-	return nil
+	return e.transport.Close()
 }
 
 // errNoSyslogSocket is returned by Fire when neither a per-device nor a

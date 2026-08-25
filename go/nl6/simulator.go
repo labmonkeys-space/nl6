@@ -137,6 +137,8 @@ func main() {
 		// UDP syslog export flags. See CLAUDE.md "Syslog export" for detail.
 		syslogCollector       = flag.String("syslog-collector", "", "UDP syslog collector address (host:port, e.g. 10.0.0.50:514); enables syslog export when non-empty")
 		syslogFormat          = flag.String("syslog-format", "5424", "Syslog wire format: 5424 (default, structured RFC 5424) or 3164 (BSD RFC 3164)")
+		syslogTransport       = flag.String("syslog-transport", "udp", "Syslog transport for the auto-start batch: udp (default) or tcp (RFC 6587)")
+		syslogFraming         = flag.String("syslog-framing", "", "RFC 6587 framing when -syslog-transport=tcp: octet-counting (default) or non-transparent (LF-terminated). Ignored under udp")
 		syslogInterval        = flag.Duration("syslog-interval", 10*time.Second, "Per-device mean firing interval (Poisson-distributed); default 10s")
 		syslogGlobalCap       = flag.Int("syslog-global-cap", 0, "Simulator-wide rate ceiling for syslog fires (0 = unlimited)")
 		syslogCatalog         = flag.String("syslog-catalog", "", "Path to a JSON syslog catalog; overrides the embedded universal 6-entry catalog when set")
@@ -482,13 +484,18 @@ func main() {
 	// Build the CLI-seed syslog config for the auto-start batch. Mirrors
 	// the flow-seed and trap-seed patterns. `DeviceSyslogConfig.Validate`
 	// canonicalises Format via ParseSyslogFormat, so a malformed
-	// -syslog-format surfaces here.
+	// -syslog-format surfaces here, as does an unknown -syslog-transport or a
+	// -syslog-framing set while the transport is udp (framing is a stream
+	// concept, and accepting it silently would be the nl6#445 failure mode:
+	// a setting echoed back that nothing reads).
 	var syslogSeed *DeviceSyslogConfig
 	if *syslogCollector != "" {
 		syslogSeed = &DeviceSyslogConfig{
 			Collector: *syslogCollector,
 			Format:    *syslogFormat,
 			Interval:  jsonDuration(*syslogInterval),
+			Transport: *syslogTransport,
+			Framing:   *syslogFraming,
 		}
 		syslogSeed.ApplyDefaults()
 		if err := syslogSeed.Validate(); err != nil {

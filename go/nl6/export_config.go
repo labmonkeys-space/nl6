@@ -145,6 +145,13 @@ type DeviceSyslogConfig struct {
 	Format    string       `json:"format,omitempty"`
 	Interval  jsonDuration `json:"interval,omitempty"`
 
+	// Transport is "udp" (default) or "tcp". Empty means udp, so every
+	// existing request body keeps its meaning.
+	Transport string `json:"transport,omitempty"`
+	// Framing selects the RFC 6587 framing when Transport is tcp:
+	// "octet-counting" (default) or "non-transparent". Ignored under udp.
+	Framing string `json:"framing,omitempty"`
+
 	// intervalSet records whether the CALLER supplied Interval, as opposed to
 	// ApplyDefaults having stamped the package default over an omitted zero.
 	// Unexported: it is internal provenance, not wire state, and must not
@@ -383,6 +390,12 @@ func (c *DeviceSyslogConfig) ApplyDefaults() {
 	if c.Format == "" {
 		c.Format = defaultSyslogFormat
 	}
+	if c.Transport == "" {
+		c.Transport = string(SyslogTransportUDP)
+	}
+	if c.Transport == string(SyslogTransportTCP) && c.Framing == "" {
+		c.Framing = string(SyslogFramingOctetCounting)
+	}
 	if time.Duration(c.Interval) == 0 {
 		c.Interval = jsonDuration(defaultSyslogInterval)
 	}
@@ -409,6 +422,25 @@ func (c *DeviceSyslogConfig) Validate() error {
 		return fmt.Errorf("syslog: %w", err)
 	}
 	c.Format = string(fm)
+
+	switch c.Transport {
+	case "", string(SyslogTransportUDP):
+		// Framing is a stream concept. Accepting it under udp would let an
+		// operator believe a setting applied when nothing reads it.
+		if c.Framing != "" {
+			return fmt.Errorf("syslog: framing %q is only valid with transport tcp", c.Framing)
+		}
+	case string(SyslogTransportTCP):
+		switch c.Framing {
+		case "", string(SyslogFramingOctetCounting), string(SyslogFramingNonTransparent):
+		default:
+			return fmt.Errorf("syslog: unknown framing %q (want %q or %q)",
+				c.Framing, SyslogFramingOctetCounting, SyslogFramingNonTransparent)
+		}
+	default:
+		return fmt.Errorf("syslog: unknown transport %q (want %q or %q)",
+			c.Transport, SyslogTransportUDP, SyslogTransportTCP)
+	}
 	return nil
 }
 
