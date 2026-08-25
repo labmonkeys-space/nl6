@@ -22,7 +22,12 @@ name: CodeQL
 # drops scanning for it.
 on:
   push:
-    branches: [main]
+    # spike/** is temporary — see the DO NOT MERGE note below. A PULL REQUEST
+    # cannot enumerate findings in unchanged code: CodeQL runs diff-informed
+    # analysis on PRs and computes results only for changed files, so a PR that
+    # touches one workflow file reports zero Go results. A branch PUSH gets the
+    # full analysis.
+    branches: [main, 'spike/**']
   pull_request:
     branches: [main]
   schedule:
