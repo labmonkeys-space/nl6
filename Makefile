@@ -57,8 +57,16 @@ UNAME_S := $(shell uname -s)
 all: build
 
 ## build: Cross-compile the simulator binary for Linux (GOOS=linux GOARCH=amd64)
+# GOTOOLCHAIN=auto is Go's own default, stated explicitly because callers do
+# override it: CodeQL sets GOTOOLCHAIN=local, and with a bundled Go older than
+# go.mod requires the build aborts with "go.mod requires go >= 1.27.0".
+#
+# This line is NOT what fixes CodeQL — .github/workflows/codeql.yml sets the
+# variable job-wide, which is the only place that also reaches the extractor's
+# own go invocations. It is kept because a build target should be able to
+# honour the toolchain its go.mod pins whatever the caller's environment says.
 build: check-go
-	cd $(BUILD_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
+	cd $(BUILD_DIR) && GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 ## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
 reconcile: check-go
@@ -248,8 +256,8 @@ run: check-linux build
 # Tool versions are pinned here so local developers and CI run the same
 # binaries. Bump in lockstep across all environments; Dependabot does not
 # track these `go install` versions today.
-GOLANGCI_LINT_VERSION ?= v2.12.2
-GOVULNCHECK_VERSION   ?= v1.1.4
+GOLANGCI_LINT_VERSION ?= v2.13.1
+GOVULNCHECK_VERSION   ?= v1.7.0
 GOSEC_VERSION         ?= v2.26.1
 GOIMPORTS_VERSION     ?= v0.45.0
 

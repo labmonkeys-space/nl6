@@ -8,7 +8,7 @@ container workflows see [Docker](docker.md).
 
 - Linux host with root access (TUN interface and network-namespace creation
   require privileges).
-- Go 1.26 or later. The canonical version is pinned in
+- Go 1.27 or later. The canonical version is pinned in
   [`go/go.mod`](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod).
 - Basic networking tools: `ip`, `iptables`.
 
