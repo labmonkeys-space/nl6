@@ -350,6 +350,101 @@ per-device schema.
 rejected with 400 — a deliberate mismatch with the `-syslog-interval`
 CLI flag, which takes integer seconds.
 
+## TCP transport (RFC 6587)
+
+Syslog is UDP by default. Setting `-syslog-transport tcp`, or a per-device
+`"transport": "tcp"`, carries the same messages over a per-device TCP
+connection instead.
+
+The message does not change. Catalog, template vocabulary, wire format and the
+resolved bytes are properties of the message; the transport only decides how
+those bytes reach the collector. Moving a deployment between transports gives
+you the same bytes, framed differently.
+
+### Framing
+
+| framing | shape | when |
+|---|---|---|
+| `octet-counting` (default) | `<byteCount> SP <msg>` | RFC 6587 §3.4.1. What rsyslog emits, and unambiguous for any payload. |
+| `non-transparent` | `<msg> LF` | RFC 6587 §3.4.2. Some Cisco platforms speak only this. |
+
+Octet-counting is the default because it is safe by construction. LF framing is
+only unambiguous because the message body cannot contain a bare line feed, and
+that guarantee comes from a control-byte replacement added to prevent injection
+of a forged `<PRI>` line. It holds today, but it is a precondition, and the
+default should not depend on one.
+
+Setting `framing` while the transport is `udp` is **rejected**, not ignored.
+
+### TCP refuses where UDP degrades
+
+Under UDP a device that cannot bind its own socket falls back to a shared one,
+losing source-address attribution and nothing else. A datagram socket is
+stateless, so one socket can serve any number of devices.
+
+There is no equivalent for TCP. A shared connection would multiplex several
+devices into **one framed byte stream carrying no field to demultiplex on**, so
+the collector would see a single client and per-device identity would be
+destroyed rather than degraded.
+
+Two consequences:
+
+- A device whose connection cannot be established does not attach.
+- `-syslog-source-per-device=false` makes a TCP attach **fail**, because the
+  fallback it selects does not exist for a stream transport.
+
+The dial itself is asynchronous: attach succeeds once the reconnect loop is
+running. Requiring the collector to be up at attach time would make fleet
+startup depend on collector availability, which is the condition the reconnect
+loop exists to ride out.
+
+### Connection handling
+
+One connection per device, dialled from inside the device's network namespace
+so the source address is the device's own. Reconnect uses capped backoff, and
+the backoff only resets once a connection has survived long enough to count as
+working — a collector that accepts and immediately closes (an ACL reject) backs
+off instead of being re-dialled every second by every device.
+
+TCP keepalives are on. Without them a collector that dies **without closing**
+(host crash, network partition) is undetectable on an idle connection: the read
+that would notice never returns, and the device is silently gone.
+
+### What `sent` means under TCP
+
+`GET /api/v1/syslog/status` rows carry a `transport` field, so TCP and UDP
+devices sending the same format to the same collector do not merge into one row.
+
+On the datagram path `sent` approximates "on the wire". **On TCP it means
+"handed to the kernel"**, and under load those differ by however deep the send
+buffer is.
+
+The per-connection send buffer is capped deliberately rather than inherited.
+Linux auto-tunes it to roughly 4 MiB against a collector that has stopped
+reading; at 30,000 devices that would be ~117 GiB of kernel buffer, so the
+default is the difference between the feature existing at fleet scale and not.
+The cap also means a stalled collector is noticed in seconds rather than
+minutes.
+
+A write that cannot complete within a short bound is dropped and the connection
+replaced. Blocking is not an option: the syslog scheduler fires inline for the
+whole fleet, so one stalled collector would stop every device.
+
+### Collector-side caveats
+
+- `rp_filter` may need relaxing (`net.ipv4.conf.*.rp_filter=0` or `2`) to accept
+  connections whose source addresses are in the simulated range — the same
+  caveat already documented for flow, trap and UDP syslog.
+- A fleet means **one connection per device**. A collector accepting 30,000
+  concurrent connections from 30,000 distinct source addresses is a different
+  proposition from receiving datagrams, and file-descriptor and accept-backlog
+  limits are usually what bites first.
+- **OpenNMS's classic Syslogd is UDP-only** — `syslogd-configuration.xml` has no
+  transport attribute. The documented pattern is to terminate TCP in rsyslog or
+  syslog-ng and relay onward. Measured, rsyslog's `imtcp` absorbs roughly
+  262,000 frames/s, comfortably above what a simulated fleet produces, so a
+  realistic deployment does not approach backpressure.
+
 ## HTTP endpoints
 
 ### Fire a syslog message on demand

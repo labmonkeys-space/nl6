@@ -43,6 +43,23 @@ const embeddedSyslogCatalogPath = "resources/_common/syslog.json"
 // maxSyslogMessageBytes is the dry-render ceiling enforced at catalog load
 // time (design.md §D12). 1400 leaves headroom below the typical 1500-byte
 // Ethernet MTU for IP + UDP headers and any small collector-side framing.
+//
+// IT IS A DATAGRAM BOUND AND IT APPLIES TO EVERY CATALOG REGARDLESS OF
+// TRANSPORT. Over TCP the message is framed on a stream and no MTU applies, so
+// a TCP-only deployment is constrained by a limit protecting a transport it is
+// not using.
+//
+// That is deliberate, and it is the cheaper of the honest options
+// (add-syslog-tcp design D9). The check is a per-entry dry render performed
+// ONCE at load; making it transport-aware would mean deferring it to attach,
+// where it becomes per-device, runs later, and turns a fast startup failure
+// into a scattered runtime one — a clear regression for the default transport
+// to buy headroom almost nobody needs. RFC 5424 asks receivers to support 480
+// bytes and recommends 2048; the shipped catalogs render 200-500.
+//
+// If a TCP deployment ever genuinely needs longer messages, the fix is a
+// transport-aware catalog, which requires knowing the fleet's transports at
+// load time. Nothing knows that today: devices attach after catalogs load.
 const maxSyslogMessageBytes = 1400
 
 // allowedSyslogTemplateFields enumerates the eleven-field unified template
