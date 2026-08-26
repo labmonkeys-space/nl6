@@ -16,7 +16,7 @@ import (
 // out full-MTU (1500 B) buffers, so the budget was spent on the UDP PAYLOAD
 // and the IP + UDP headers pushed the frame over the MTU. NetFlow v9 emitted
 // 32 records per datagram (1496 B payload → 1524 B frame) and IPFIX 27
-// (1478 → 1506); both fragmented. A capture at flow rate 8 showed 888 of 2062
+// (1480 → 1508); both fragmented. A capture at flow rate 8 showed 888 of 2062
 // datagrams fragmented, every one a first fragment at exactly 1500 bytes.
 //
 // The tests below assert the invariant that was missing: the on-wire FRAME,
@@ -228,6 +228,86 @@ func TestFlowOptionDatagramsFitMTU(t *testing.T) {
 				assertDatagramsFitMTU(t, protocol+"/"+shape+" options", packets)
 			})
 		}
+	}
+}
+
+// TestFlowEncoderPadBudget guards the trailing-pad hazard the datagram-budget
+// change exposed. Both NetFlow v9 and IPFIX pad their data set to a 4-byte
+// boundary AFTER writing the records, but record capacity was computed as
+// `available / recordSize` with no allowance for that pad, so any buffer whose
+// leftover bytes were fewer than the pad an odd record count needs wrote past
+// the end and panicked in the shared flow-ticker goroutine.
+//
+// This was latent under the old full-MTU buffer and is one byte away under the
+// new budget: at maxFlowPayloadIPv6 a full NetFlow v9 packet lands on exactly
+// len(buf) with ZERO bytes spare. A later change to flowLinkMTU or a header
+// constant would otherwise convert a clean size error into a process-killing
+// panic, so the bound is asserted across every buffer size rather than at the
+// two budgets alone.
+func TestFlowEncoderPadBudget(t *testing.T) {
+	records := make([]FlowRecord, 64)
+	for i := range records {
+		records[i] = FlowRecord{
+			SrcIP: net.ParseIP("10.0.0.1").To4(), DstIP: net.ParseIP("10.0.0.2").To4(),
+			NextHop: net.IPv4(0, 0, 0, 0).To4(),
+			SrcPort: uint16(49152 + i), DstPort: 443, Protocol: 6, Bytes: 100, Packets: 1,
+		}
+	}
+
+	for _, enc := range []struct {
+		name    string
+		encoder FlowEncoder
+	}{
+		{"netflow9", NetFlow9Encoder{}},
+		{"ipfix", IPFIXEncoder{}},
+	} {
+		t.Run(enc.name, func(t *testing.T) {
+			overhead, templSize, recSize := enc.encoder.PacketSizes()
+
+			for _, withTemplate := range []bool{false, true} {
+				base := overhead
+				if withTemplate {
+					base += templSize
+				}
+				// Sweep every buffer size from "one record won't fit" up past
+				// several records: the overflow only bites at specific
+				// residues, so a spot check would miss it.
+				for size := base; size <= base+recSize*4; size++ {
+					buf := make([]byte, size)
+					n, err := func() (n int, err error) {
+						defer func() {
+							if r := recover(); r != nil {
+								t.Fatalf("%s: EncodePacket panicked at len(buf)=%d "+
+									"(template=%v): %v — the trailing pad is not budgeted",
+									enc.name, size, withTemplate, r)
+							}
+						}()
+						return enc.encoder.EncodePacket(1, 1, 1, records, withTemplate, buf)
+					}()
+					if err != nil {
+						continue // "buffer too small" is the correct answer, not a panic
+					}
+					if n > size {
+						t.Errorf("%s: wrote %d bytes into a %d-byte buffer (template=%v)",
+							enc.name, n, size, withTemplate)
+					}
+				}
+			}
+
+			// The two production budgets specifically, with the spare-byte
+			// count called out: netflow9 at the IPv6 budget is the zero-spare
+			// case that makes this test load-bearing rather than defensive.
+			for _, budget := range []int{maxFlowPayloadIPv4, maxFlowPayloadIPv6} {
+				buf := make([]byte, budget)
+				n, err := enc.encoder.EncodePacket(1, 1, 1, records, false, buf)
+				if err != nil {
+					t.Fatalf("%s at budget %d: %v", enc.name, budget, err)
+				}
+				if n > budget {
+					t.Errorf("%s: wrote %d bytes into the %d-byte budget", enc.name, n, budget)
+				}
+			}
+		})
 	}
 }
 

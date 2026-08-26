@@ -54,7 +54,7 @@ type FlowEncoder interface {
 // payload plus the transport and network headers. Pagination must therefore
 // budget the PAYLOAD, not the frame. Budgeting the full MTU for the payload
 // puts a NetFlow v9 datagram at 1524 bytes on the wire and the kernel
-// fragments it (nl6#485); IPFIX lands at 1506. NetFlow v5 and sFlow happened
+// fragments it (nl6#485); IPFIX lands at 1508. NetFlow v5 and sFlow happened
 // to fit, but by arithmetic accident rather than design: v5's 30-record
 // protocol cap coincides with what the budget allowed, and sFlow's worst-case
 // record size is conservative enough to leave slack.
