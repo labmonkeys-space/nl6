@@ -348,6 +348,9 @@ func main() {
 		GlobalCap:             *trapGlobalCap,
 		SourcePerDevice:       *trapSourcePerDevice,
 		MeanSchedulerInterval: *trapInterval,
+		// Passed explicitly rather than read inside the loader. SetLinkMTU has
+		// already applied -datagram-mtu above, so maxTrapPDU is final here.
+		PDUBudget: maxTrapPDU,
 	}); err != nil {
 		log.Fatalf("Failed to initialize trap subsystem: %v", err)
 	}

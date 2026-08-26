@@ -37,6 +37,7 @@ func setupTestDeviceForAttach(t *testing.T, sm *SimulatorManager, id string, ip 
 func TestStartDeviceTrapExporter_FullAttachPath(t *testing.T) {
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Hour,
 	}); err != nil {
@@ -291,6 +292,7 @@ func TestDeviceStop_PersistsSyslogCountersViaRealLifecycle(t *testing.T) {
 func TestDeviceStop_PersistsTrapCountersViaRealLifecycle(t *testing.T) {
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Hour,
 	}); err != nil {
@@ -349,6 +351,7 @@ func TestDeviceStop_PersistsTrapCountersViaRealLifecycle(t *testing.T) {
 func TestStartTrapSubsystem_PostStopShape(t *testing.T) {
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		MeanSchedulerInterval: time.Second,
 	}); err != nil {
 		t.Fatal(err)

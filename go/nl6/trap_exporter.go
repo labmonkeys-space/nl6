@@ -81,6 +81,12 @@ type TrapExporter struct {
 	// WriteTo (review fix P6 pattern from phase 3).
 	firstWriteErr sync.Once
 
+	// firstEncodeErr does the same for a failed resolve/encode on the fire
+	// path. Ungated, that log fires on EVERY attempt: an oversized catalog
+	// entry at 30k devices on a 30 s mean interval is ~1,000 lines/second,
+	// indefinitely, for a defect present since startup (nl6#487).
+	firstEncodeErr sync.Once
+
 	// countersPersisted ensures SimulatorManager.persistTrapCounters adds
 	// this exporter's counters into the simulator-wide aggregate at most
 	// once. Both `device.Stop()` / `device.stopListenersOnly()` and
@@ -289,6 +295,21 @@ func (e *TrapExporter) logFirstWriteErr(err error) {
 	})
 }
 
+// logFirstEncodeErr emits at most one log line per exporter on a failed
+// resolve or encode. Same gate and same trade-off as logFirstWriteErr: it
+// suppresses subsequent DISTINCT errors too, which is the right call at fleet
+// scale because the signal is not lost — `sendFailures` on the scenario ledger
+// still counts every occurrence, and only the log line is dropped.
+func (e *TrapExporter) logFirstEncodeErr(stage, entry string, err error) {
+	if e == nil || err == nil {
+		return
+	}
+	e.firstEncodeErr.Do(func() {
+		log.Printf("trap %s %s for %s: %v (further encode errors suppressed for this exporter)",
+			stage, entry, e.deviceIP, err)
+	})
+}
+
 // PendingInformsLen returns the current size of the pending-inform map.
 // Used by GET /api/v1/traps/status.
 func (e *TrapExporter) PendingInformsLen() int {
@@ -425,7 +446,7 @@ var trapBufPool = sync.Pool{
 func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrides map[string]string, p *scenarioPart) uint32 {
 	varbinds, err := entry.Resolve(ctx, overrides)
 	if err != nil {
-		log.Printf("trap: resolve %s for %s: %v", entry.Name, e.deviceIP, err)
+		e.logFirstEncodeErr("resolve", entry.Name, err)
 		if p != nil {
 			p.ledger.sendFailures.Add(1)
 		}
@@ -468,7 +489,7 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 		pdu = scratch[:n]
 	}
 	if err != nil {
-		log.Printf("trap: encode %s for %s: %v", entry.Name, e.deviceIP, err)
+		e.logFirstEncodeErr("encode", entry.Name, err)
 		if p != nil {
 			p.ledger.sendFailures.Add(1)
 		}

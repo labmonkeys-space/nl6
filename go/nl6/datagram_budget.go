@@ -132,9 +132,10 @@ func recomputeDatagramBudgets() {
 	maxFlowPayloadIPv4 = linkMTU - ipv4HeaderBytes - udpHeaderBytes
 	maxFlowPayloadIPv6 = linkMTU - ipv6HeaderBytes - udpHeaderBytes
 	flowBufSize = linkMTU
-	// nl6#487 (maxTrapPDU) and nl6#489 (GETBULK ceiling) join here when they
-	// land. Both are udp4-only, so both derive linkMTU-ipv4-udp with no
-	// address-family branch.
+	// Trap notifications (nl6#487). udp4-only, so no address-family branch.
+	maxTrapPDU = linkMTU - ipv4HeaderBytes - udpHeaderBytes
+	// nl6#489 (the GETBULK response ceiling) joins here when it lands. Also
+	// udp4-only, so it derives the same expression.
 }
 
 // Budgets are PER-SUBSYSTEM and deliberately not unified into one constant.
