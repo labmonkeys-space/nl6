@@ -22,10 +22,22 @@ import "fmt"
 // full MTU for the payload put a NetFlow v9 datagram at 1524 bytes on the wire
 // and the kernel fragmented it (nl6#485); IPFIX landed at 1508.
 //
-// Fragmentation is invisible on loopback and veth paths, which is why that
-// survived every in-process measurement. On a real network one lost fragment
-// discards the entire datagram — 31 records under NetFlow v9, not one — and
-// middleboxes and strict collectors drop fragments outright.
+// Fragmentation is invisible on LOOPBACK, whose MTU is 65536, which is where
+// every Go test in this package sends. That is why the bug survived every
+// in-process measurement.
+//
+// It is NOT invisible on veth. veth takes the kernel default of 1500 and
+// fragments a 1524-byte frame like any other link — verified in an Ubuntu VM
+// against nl6's own netns→veth path: emulating the pre-fix budget produced 85
+// of 212 datagrams fragmented (40%), first fragments at exactly 1500 bytes,
+// reproducing the original capture's signature. Current main over the same
+// path fragments zero of 129. An earlier revision of this comment claimed veth
+// could not fragment; that was wrong, and it made the verification look like it
+// needed hardware it never needed.
+//
+// On a real network one lost fragment discards the entire datagram — 31 records
+// under NetFlow v9, not one — and middleboxes and strict collectors drop
+// fragments outright.
 const (
 	// defaultLinkMTU is the assumed path MTU when `-datagram-mtu` is not given.
 	// Standard Ethernet; also what nl6's own TUN and veth devices take, since
