@@ -241,6 +241,10 @@ func ipfixDataPadBytes(n int) int {
 	return 0
 }
 
+// TrailingPadBytes reports the data-Set pad for n records so Tick's
+// pagination and EncodePacket's record cap use the same formula.
+func (IPFIXEncoder) TrailingPadBytes(n int) int { return ipfixDataPadBytes(n) }
+
 // MaxRecordSize returns 0 because IPFIX records are fixed-size under this
 // simulator's single 19-field template; Tick paginates by PacketSizes()'s
 // recordSize in that case.

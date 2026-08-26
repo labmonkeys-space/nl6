@@ -239,6 +239,10 @@ func nf9DataPadBytes(n int) int {
 	return 0
 }
 
+// TrailingPadBytes reports the data-FlowSet pad for n records so Tick's
+// pagination and EncodePacket's record cap use the same formula.
+func (NetFlow9Encoder) TrailingPadBytes(n int) int { return nf9DataPadBytes(n) }
+
 // MaxRecordSize returns 0 because NetFlow v9 records are fixed-size; Tick
 // paginates by PacketSizes()'s recordSize in that case.
 func (NetFlow9Encoder) MaxRecordSize() int { return 0 }

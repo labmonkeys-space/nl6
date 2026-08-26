@@ -88,6 +88,11 @@ func (SFlowEncoder) PacketSizes() (int, int, int) {
 	return sflowDatagramHeaderSize, 0, sflowMaxFlowSampleSize
 }
 
+// TrailingPadBytes returns 0: sFlow pads each sampled_header inside the sample
+// it belongs to, so there is no trailing pad after the record set for Tick to
+// budget.
+func (SFlowEncoder) TrailingPadBytes(int) int { return 0 }
+
 // MaxRecordSize returns the worst-case byte size of a single flow_sample on
 // the wire. FlowExporter.Tick uses this to bound the number of flow records
 // per datagram so no datagram payload exceeds len(buf) — which Tick has

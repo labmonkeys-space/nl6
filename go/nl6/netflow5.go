@@ -66,6 +66,10 @@ func (*NetFlow5Encoder) PacketSizes() (int, int, int) {
 	return netFlow5HeaderLen, 0, netFlow5RecordLen
 }
 
+// TrailingPadBytes returns 0: NetFlow v5 has no set structure and no padding —
+// its 24-byte header and 48-byte records are already 4-byte aligned.
+func (*NetFlow5Encoder) TrailingPadBytes(int) int { return 0 }
+
 // MaxRecordSize returns 0 because NetFlow v5 records are fixed-size at 48
 // bytes on the wire; Tick paginates by PacketSizes()'s recordSize in that case.
 func (*NetFlow5Encoder) MaxRecordSize() int { return 0 }

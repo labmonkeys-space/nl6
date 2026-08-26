@@ -6,8 +6,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -311,6 +313,127 @@ func TestFlowEncoderPadBudget(t *testing.T) {
 	}
 }
 
+// countWireRecords walks the data sets of a NetFlow v9 or IPFIX datagram and
+// returns the number of flow records actually on the wire. Both protocols use
+// the same set framing (ID uint16, length uint16), so one walker serves both;
+// the trailing pad is absorbed by the integer division since it is always
+// smaller than a record.
+func countWireRecords(t *testing.T, pkt []byte, headerSize, dataSetID, recSize int) int {
+	t.Helper()
+	total := 0
+	for pos := headerSize; pos+4 <= len(pkt); {
+		setID := int(binary.BigEndian.Uint16(pkt[pos:]))
+		length := int(binary.BigEndian.Uint16(pkt[pos+2:]))
+		if length < 4 || pos+length > len(pkt) {
+			t.Fatalf("malformed set at offset %d: id=%d length=%d (datagram %d B)",
+				pos, setID, length, len(pkt))
+		}
+		if setID == dataSetID {
+			total += (length - 4) / recSize
+		}
+		pos += length
+	}
+	return total
+}
+
+// TestFlowTickCapacityMatchesEncoder guards the silent-loss path between Tick's
+// pagination and the encoder's own record cap.
+//
+// Tick decides how many records leave the expiry queue, and `expired` is
+// advanced by that count before the encoder ever sees the batch. If the
+// encoder then truncates the batch — which it does when the trailing set pad
+// will not fit — the surplus records are gone from the queue, absent from the
+// wire, and still counted into RecordsSent and the scenario ledger. No error,
+// no dropped counter, an over-reporting ground truth.
+//
+// So the assertion is wire-versus-reported, not reported-versus-reported:
+// RecordsSent is derived from len(batch) and would happily agree with itself.
+//
+// Buffer sizes are swept rather than spot-checked because the mismatch only
+// appears at the residues where the pad does not fit.
+func TestFlowTickCapacityMatchesEncoder(t *testing.T) {
+	cases := []struct {
+		name       string
+		encoder    FlowEncoder
+		headerSize int
+		dataSetID  int
+		recSize    int
+	}{
+		{"netflow9", NetFlow9Encoder{}, nf9HeaderSize, nf9TemplateID, nf9RecordSize},
+		{"ipfix", IPFIXEncoder{}, ipfixHeaderSize, ipfixTemplateID, ipfixRecordSize},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			overhead, _, _ := tc.encoder.PacketSizes()
+			minViable := overhead + tc.recSize + tc.encoder.TrailingPadBytes(1)
+
+			for size := overhead + tc.recSize; size <= overhead+tc.recSize*5; size++ {
+				ln, ch := testUDPListener(t)
+				conn := testSender(t)
+				collectorAddr := ln.LocalAddr().(*net.UDPAddr)
+
+				fe := newTestFlowExporter(testDevice("10.1.2.11"), mtuTestProfile(),
+					1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
+				// Skip the template so every datagram is data-only and the
+				// sweep can reach down to the smallest data-only buffer.
+				// Tick sends a template when `seqNo == 0` OR the interval has
+				// elapsed, so BOTH have to be suppressed — setting lastTempl
+				// alone still templates the first tick. Template framing is
+				// covered by TestFlowDatagramsFitMTU.
+				fe.seqNo = 1
+				fe.lastTempl = time.Now()
+
+				const want = 24
+				fillExpiredFlows(t, fe, want)
+
+				pool := &sync.Pool{New: func() interface{} {
+					buf := make([]byte, size)
+					return &buf
+				}}
+				stats := tickWithEncoder(fe, time.Now(), tc.encoder, conn, collectorAddr, pool)
+
+				// Read exactly the datagrams Tick says it sent, rather than
+				// draining until a timeout: the sweep is a few hundred
+				// iterations and a per-iteration timeout tail would put this
+				// test over a minute. Every write completes before Tick
+				// returns, so a missing packet here is a real failure, not a
+				// race.
+				onWire := 0
+				for i := 0; i < int(stats.PacketsSent); i++ {
+					pkt := receivePacket(ch)
+					if pkt == nil {
+						t.Fatalf("%s at len(buf)=%d: Tick reported %d datagrams but only %d arrived",
+							tc.name, size, stats.PacketsSent, i)
+					}
+					onWire += countWireRecords(t, pkt, tc.headerSize, tc.dataSetID, tc.recSize)
+				}
+				conn.Close()
+				ln.Close()
+
+				// The invariant that must hold at EVERY size: what Tick reports
+				// as sent is what actually reached the wire.
+				if onWire != int(stats.RecordsSent) {
+					t.Fatalf("%s at len(buf)=%d: %d records on the wire but RecordsSent=%d "+
+						"— Tick handed the encoder more records than it encoded, and they are "+
+						"gone from the expiry queue",
+						tc.name, size, onWire, stats.RecordsSent)
+				}
+				// Full delivery is only meaningful once the buffer can hold a
+				// padded record at all. Below that the encoder can emit nothing
+				// and Tick correctly reports zero; production buffers are two
+				// orders of magnitude above this, so the degenerate sizes are
+				// swept for the over-report check alone.
+				if size >= minViable && onWire != want {
+					t.Fatalf("%s at len(buf)=%d: %d records on the wire, want all %d "+
+						"(records were dropped between the cache and the wire)",
+						tc.name, size, onWire, want)
+				}
+			}
+		})
+	}
+}
+
 // TestFlowPayloadBudget pins the header arithmetic and the address-family
 // branch. An IPv6 collector costs 20 more header bytes than IPv4, enough to
 // change the record count per datagram, so the family is resolved rather than
@@ -392,8 +515,9 @@ func TestFlowTickRespectsIPv6Budget(t *testing.T) {
 		t.Fatalf("expected ≥2 datagrams for 240 records, got %d", len(packets))
 	}
 
-	// (1452 - 24) / 46 = 31 records → the same 1450 B payload as IPv4 here,
-	// because 46 divides the extra 20 bytes away. Assert the budget, not a
+	// (1452 - 24) / 46 = 31 records, plus 2 bytes of pad for the odd count →
+	// 1452 B, the same payload as IPv4 and exactly the v6 budget with zero
+	// bytes spare (see TestFlowEncoderPadBudget). Assert the budget, not a
 	// record count: what must hold is that no payload exceeds the v6 ceiling.
 	largest := 0
 	for i, pkt := range packets {

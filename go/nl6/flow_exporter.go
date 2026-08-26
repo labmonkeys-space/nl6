@@ -48,11 +48,27 @@ type FlowEncoder interface {
 	// IPFIX) return 0 and keep the existing PacketSizes()-driven pagination.
 	// A non-zero return opts into variable-length pagination in Tick().
 	MaxRecordSize() int
+	// TrailingPadBytes returns the bytes the encoder writes AFTER n records to
+	// pad its data set to an alignment boundary (RFC 3954 §5.3, RFC 7011
+	// §3.3.1). Encoders that never pad return 0.
+	//
+	// Tick must budget this or it silently loses records: Tick's own capacity
+	// arithmetic decides how many records leave the expiry queue, and a batch
+	// the encoder then truncates for want of pad room is already gone from
+	// `expired` and already counted into RecordsSent and the scenario ledger.
+	// That is a drop with no error, no dropped counter, and an over-reporting
+	// ground truth — the worst shape a bug can take on this path.
+	//
+	// This exists so Tick and the encoder compute capacity from ONE formula.
+	// They agree at today's constants, but NetFlow v9 at the IPv6 budget lands
+	// on exactly len(buf), so the margin that keeps them agreeing is zero.
+	TrailingPadBytes(recordCount int) int
 }
 
 // Datagram sizing. Flow export is UDP, so the on-wire frame is the encoded
-// payload plus the transport and network headers. Pagination must therefore
-// budget the PAYLOAD, not the frame. Budgeting the full MTU for the payload
+// payload plus the transport and network headers. What pagination fills is the
+// payload, but what constrains it is the frame: the payload's ceiling is the
+// MTU MINUS the IP and UDP headers, not the MTU. Budgeting the full MTU for the payload
 // puts a NetFlow v9 datagram at 1524 bytes on the wire and the kernel
 // fragments it (nl6#485); IPFIX lands at 1508. NetFlow v5 and sFlow happened
 // to fit, but by arithmetic accident rather than design: v5's 30-record
@@ -656,6 +672,14 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		}
 		if len(buf) >= overhead+perRec {
 			cap := (len(buf) - overhead) / perRec
+			// Match the encoder's own capacity exactly, pad included. Handing
+			// it one record more than it will encode drops that record
+			// silently while still counting it as sent (see TrailingPadBytes).
+			// Dropping one record flips the pad parity, so one decrement is
+			// always enough.
+			if cap > 0 && overhead+cap*perRec+encoder.TrailingPadBytes(cap) > len(buf) {
+				cap--
+			}
 			if cap >= len(expired) {
 				batch = expired
 				expired = nil
