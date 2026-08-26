@@ -299,15 +299,22 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 		varBinding = append(varBinding, varBindingContents...)
 
 		if snmpMessageSizeFor(msgPrefix, pduPrefix, len(varBindList)+len(varBinding)) > maxSNMPResponseSize {
-			// Always emit at least one binding. A response with an empty
-			// binding list and no error stalls a collector's walk forever with
-			// no signal — the worst outcome available, and unreachable in
-			// practice at any sane MTU, but the loop must not permit it.
-			if len(varBindList) == 0 {
-				varBindList = append(varBindList, varBinding...)
-				continue
-			}
 			truncated = true
+			// Under TRUNCATE only, always emit at least one binding: a response
+			// with an empty binding list and no error stalls a collector's walk
+			// forever with no signal, which is worse than one oversized
+			// datagram. Reachable at a low -datagram-mtu (the flag accepts 576,
+			// giving a 548 B budget) with an ordinary long ifAlias.
+			//
+			// NOT under tooBig. Emitting the binding there would produce an
+			// oversized datagram carrying error-status noError — the fragmenting
+			// response this bound exists to prevent, and a violation of RFC 3416
+			// §4.2.1, which this same function enforces two lines below. A GET
+			// that cannot be answered within one datagram must say so
+			// (nl6#489 review).
+			if len(varBindList) == 0 && rule == overflowTruncate {
+				varBindList = append(varBindList, varBinding...)
+			}
 			break
 		}
 		varBindList = append(varBindList, varBinding...)

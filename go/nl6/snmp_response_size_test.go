@@ -388,3 +388,171 @@ func TestSameOversizedSetTruncatesUnderBulkAndFailsUnderGet(t *testing.T) {
 }
 
 // buildGetPDU already exists in snmp_getbulk_test.go and is reused here.
+
+// TestGetBulkMalformedPDUDoesNotPanic is the regression test for a remotely
+// triggerable crash introduced by this change and caught in review.
+//
+// Making parseBERInt sign-extend meant a non-repeaters field of INTEGER 0xFF
+// parsed as -1. The negative clamp sat AFTER six early returns, so a PDU whose
+// max-repetitions field is absent took one of them and carried -1 into
+// handleGetBulk, where `allOIDs[cap:]` panicked with "slice bounds out of range
+// [-1:]". There is no recover() on the SNMP serve path, so one malformed UDP
+// packet took the whole simulator down. Before the change `int(data[pos])`
+// yielded 255 and clamped harmlessly.
+//
+// Sweeps a range of malformed shapes rather than only the one found, because
+// the class — a hostile value reaching a slice index — is what matters.
+func TestGetBulkMalformedPDUDoesNotPanic(t *testing.T) {
+	s := newSizeTestServer(4)
+	vb := encodeSequence(encodeSequence(append(encodeOID("1.3.6.1.2.1.2.2.1.2"), encodeNull()...)))
+
+	build := func(fields ...[]byte) []byte {
+		body := encodeInteger(42)
+		for _, f := range fields {
+			body = append(body, f...)
+		}
+		body = append(body, vb...)
+		pdu := []byte{ASN1_GET_BULK}
+		pdu = append(pdu, encodeLength(len(body))...)
+		pdu = append(pdu, body...)
+		msg := encodeInteger(1)
+		msg = append(msg, encodeOctetString("public")...)
+		msg = append(msg, pdu...)
+		return encodeSequence(msg)
+	}
+
+	neg1 := []byte{ASN1_INTEGER, 0x01, 0xFF}          // -1
+	neg128 := []byte{ASN1_INTEGER, 0x01, 0x80}        // -128
+	negWide := []byte{ASN1_INTEGER, 0x02, 0xFF, 0x00} // -256
+
+	for _, tc := range []struct {
+		name string
+		pdu  []byte
+	}{
+		{"negative non-repeaters, max-repetitions absent", build(neg1)},
+		{"negative non-repeaters and negative max-repetitions", build(neg1, neg1)},
+		{"most-negative single octet", build(neg128, neg128)},
+		{"negative multi-octet", build(negWide, negWide)},
+		{"non-repeaters only, nothing after", build(neg1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nr, mr := s.parseGetBulkParams(tc.pdu)
+			if nr < 0 || mr < 0 {
+				t.Errorf("parsed negative values (nonRepeaters=%d maxRepetitions=%d); they reach "+
+					"a slice index and panic the serve path", nr, mr)
+			}
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("handleGetBulk panicked on a malformed PDU: %v — one packet would "+
+						"take the simulator down, there is no recover() on the serve path", r)
+				}
+			}()
+			s.handleGetBulk("1.3.6.1.2.1.2.2.1.2", tc.pdu)
+		})
+	}
+}
+
+// TestGetBulkWalkClampAppliesBelowTheGlobalCeiling guards the walk guard.
+//
+// The first version wrapped the per-column clamp in `maxRepetitions > maxFit`,
+// which made it inert for everything below ~98 — so 30 columns x 98 repetitions
+// still walked 2940 MIB steps to emit the ~60 bindings that fit, which is the
+// amplification the guard exists to stop.
+//
+// Asserted through the parser+handler rather than by reading the clamp, so it
+// measures the effect rather than restating the implementation.
+func TestGetBulkWalkClampAppliesBelowTheGlobalCeiling(t *testing.T) {
+	s := newSizeTestServer(64)
+	cols := columnsFor(30)
+
+	// 98 is under the global maxFit (budget/minVarbindSize) but far over what
+	// 30 columns can fit, so the per-column clamp must engage.
+	resp := s.handleGetBulk(cols[0], buildBulkPDU(0, 98, cols))
+	n, status := countResponseVarbinds(t, resp)
+	if status != snmpErrNoError {
+		t.Fatalf("error-status = %d, want noError", status)
+	}
+	if len(resp) > maxSNMPResponseSize {
+		t.Errorf("response %d B over the %d B budget", len(resp), maxSNMPResponseSize)
+	}
+	// The response must still be full: the clamp is a CPU guard and must never
+	// cost datagram utilisation.
+	full := s.handleGetBulk(cols[0], buildBulkPDU(0, 2, cols))
+	fullN, _ := countResponseVarbinds(t, full)
+	if n < fullN {
+		t.Errorf("clamped walk returned %d bindings but maxRep 2 returned %d — the CPU guard "+
+			"is under-filling the datagram", n, fullN)
+	}
+}
+
+// TestGetOversizedSingleBindingStillReturnsTooBig guards the escape hatch.
+//
+// "Always emit at least one binding" is correct for GETBULK — an empty
+// no-error response stalls a walk forever. Applying it to GET produced an
+// oversized datagram carrying error-status noError: the fragmenting response
+// this bound exists to prevent, and a violation of RFC 3416 §4.2.1 that the
+// same function enforces elsewhere. Reachable at a low -datagram-mtu with an
+// ordinary long value.
+func TestGetOversizedSingleBindingStillReturnsTooBig(t *testing.T) {
+	restoreLinkMTU(t)
+	if err := SetLinkMTU(minLinkMTU); err != nil {
+		t.Fatal(err)
+	}
+
+	long := make([]byte, 900)
+	for i := range long {
+		long[i] = 'x'
+	}
+	oid := ".1.3.6.1.2.1.1.1.0"
+	s := newTestServer(map[string]string{oid: string(long)})
+
+	resp := s.handleGetRequestVarbinds([]string{oid}, buildGetPDU([]string{oid}))
+	n, status := countResponseVarbinds(t, resp)
+	if status != snmpErrTooBig {
+		t.Errorf("single oversized binding: error-status = %d, want tooBig(%d) — the "+
+			"always-emit-one relaxation must not apply to GET", status, snmpErrTooBig)
+	}
+	if n != 0 {
+		t.Errorf("tooBig response carries %d bindings, want 0", n)
+	}
+	if len(resp) > maxSNMPResponseSize {
+		t.Errorf("GET emitted a %d B response against a %d B budget — the datagram this "+
+			"bound exists to prevent", len(resp), maxSNMPResponseSize)
+	}
+
+	// GETBULK keeps the relaxation: a stalled walk is worse than one oversized
+	// datagram, and it has no other way to make progress.
+	bulk := s.handleGetBulk(oid, buildBulkPDU(0, 1, []string{oid}))
+	bn, bstatus := countResponseVarbinds(t, bulk)
+	if bstatus != snmpErrNoError || bn == 0 {
+		t.Errorf("GETBULK returned status=%d bindings=%d; it must still emit one binding "+
+			"rather than stall the walk", bstatus, bn)
+	}
+}
+
+// TestParseBERIntAcceptsPaddedIntegers guards the padded-INTEGER path.
+// Rejecting anything wider than 8 octets made the caller keep its default —
+// the same "requested value silently replaced" failure the parser fix removes.
+func TestParseBERIntAcceptsPaddedIntegers(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content []byte
+		want    int
+	}{
+		{"single octet", []byte{0x64}, 100},
+		{"two octets, positive", []byte{0x00, 0xC8}, 200},
+		{"padded to 4", []byte{0x00, 0x00, 0x00, 0xC8}, 200},
+		{"padded to 12", []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03, 0xE8}, 1000},
+		{"negative", []byte{0xFF}, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseBERInt(tc.content, 0, len(tc.content))
+			if !ok {
+				t.Fatalf("rejected a legal INTEGER; the caller would silently keep its default")
+			}
+			if got != tc.want {
+				t.Errorf("parsed %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

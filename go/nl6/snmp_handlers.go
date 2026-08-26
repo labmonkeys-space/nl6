@@ -397,6 +397,16 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 // requested column, leaving ifDescr/ifName/ifAlias/ifSpeed as N/A.
 func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	nonRepeaters, maxRepetitions := s.parseGetBulkParams(requestData)
+	// Defence in depth. parseGetBulkParams already rejects negatives, but the
+	// consequence of one slipping through is a slice-bounds panic that takes
+	// the whole simulator down from a single malformed UDP packet — there is no
+	// recover() on the serve path. Two guards is the right price for that.
+	if nonRepeaters < 0 {
+		nonRepeaters = 0
+	}
+	if maxRepetitions < 0 {
+		maxRepetitions = 0
+	}
 
 	// Parse every OID from the variable-bindings list.
 	allOIDs := s.parseAllOIDsFromRequest(requestData)
@@ -449,10 +459,12 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	// many could ever fit. The +1 keeps it from ever under-walking; the encode
 	// bound trims whatever is left over, so being generous here costs nothing
 	// but being tight would under-fill datagrams.
-	if maxFit := maxSNMPResponseSize / minVarbindSize; maxRepetitions > maxFit {
-		if perRep := maxFit/len(repeaterCols) + 1; maxRepetitions > perRep {
-			maxRepetitions = perRep
-		}
+	// No outer `maxRepetitions > maxFit` test: it made the clamp inert for
+	// everything below ~98, so 30 columns x 98 repetitions still walked 2940
+	// steps to emit the ~60 bindings that fit — precisely the amplification
+	// this guard exists to stop (nl6#489 review).
+	if perRep := maxSNMPResponseSize/minVarbindSize/len(repeaterCols) + 1; maxRepetitions > perRep {
+		maxRepetitions = perRep
 	}
 
 	// currentOIDs tracks the "cursor" position in each column.
@@ -693,7 +705,11 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	pos++
 	nonRepLen, newPos := parseLength(data, pos)
 	pos = newPos
-	if v, ok := parseBERInt(data, pos, nonRepLen); ok {
+	if v, ok := parseBERInt(data, pos, nonRepLen); ok && v >= 0 {
+		// Clamped HERE, not after the parse: six early returns follow, and a
+		// negative reaching handleGetBulk becomes `allOIDs[cap:]` with a
+		// negative index — a slice-bounds panic on the inline serve path, with
+		// no recover() anywhere, from one malformed packet (nl6#489 review).
 		nonRepeaters = v
 	}
 	pos += nonRepLen
@@ -705,15 +721,10 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	pos++
 	maxRepLen, newPos := parseLength(data, pos)
 	pos = newPos
-	if v, ok := parseBERInt(data, pos, maxRepLen); ok {
+	// RFC 3416 §4.2.3 defines max-repetitions as non-negative; a negative value
+	// is rejected at the parse site for the same reason as non-repeaters above.
+	if v, ok := parseBERInt(data, pos, maxRepLen); ok && v >= 0 {
 		maxRepetitions = v
-	}
-	// RFC 3416 §4.2.3 defines max-repetitions as non-negative.
-	if maxRepetitions < 0 {
-		maxRepetitions = 0
-	}
-	if nonRepeaters < 0 {
-		nonRepeaters = 0
 	}
 
 	// log.Printf("SNMP %s: GetBulk parsed parameters - nonRepeaters: %d, maxRepetitions: %d",
@@ -746,12 +757,23 @@ const minVarbindSize = 15
 // Returns false when the content is absent, truncated, or wider than an int64
 // can hold — callers keep their existing default in that case.
 func parseBERInt(data []byte, pos, length int) (int, bool) {
-	if length <= 0 || length > 8 || pos+length > len(data) {
+	if length <= 0 || pos+length > len(data) {
 		return 0, false
 	}
-	v := int64(int8(data[pos])) // sign-extend from the first octet
-	for i := 1; i < length; i++ {
-		v = v<<8 | int64(data[pos+i])
+	// Skip leading 0x00 padding before measuring width. Encoders that pad to a
+	// fixed field width emit legal INTEGERs wider than 8 octets, and rejecting
+	// those outright would make the caller keep its default — the same "value
+	// silently replaced by a default" failure this function exists to remove.
+	start, end := pos, pos+length
+	for start < end-1 && data[start] == 0x00 && data[start+1]&0x80 == 0 {
+		start++
+	}
+	if end-start > 8 {
+		return 0, false
+	}
+	v := int64(int8(data[start])) // sign-extend from the first significant octet
+	for i := start + 1; i < end; i++ {
+		v = v<<8 | int64(data[i])
 	}
 	return int(v), true
 }

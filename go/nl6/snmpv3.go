@@ -346,6 +346,18 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	nonRepeaters := 0
 	maxRepetitions := 10
 
+	// NOT bounded by maxSNMPResponseSize, unlike the v2c path (nl6#489).
+	//
+	// Unreachable today rather than safe by design: this hardcoded 10, walking
+	// a single column, yields ~10 variable bindings (~500 B) and cannot
+	// approach the budget. The moment this TODO is done and a real
+	// max-repetitions is honoured, the v3 response needs the same bound the
+	// v2c path got — createSNMPv3GetBulkResponse builds its own message and
+	// consults no ceiling.
+	//
+	// Stated in docs/reference/snmp.md as a known gap so it reads as a decision
+	// rather than an oversight.
+	//
 	// TODO: Implement proper SNMPv3 GetBulk parameter parsing
 	// For now, use defaults
 

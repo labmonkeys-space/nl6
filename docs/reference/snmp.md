@@ -60,9 +60,13 @@ That mattered for benchmarking more than for correctness: an operator setting `m
 
 A negative value is treated as 0, per RFC 3416's definition of the field as non-negative.
 
-### Known limitation: SNMPv3 `msgMaxSize`
+### Known limitations
 
-The bound is the link-MTU-derived budget. An SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
+**SNMPv3 GETBULK is not bounded.** Everything above describes the SNMPv2c path. The v3 GETBULK handler builds its response through a separate encoder that consults no size ceiling, and it currently hardcodes `max-repetitions` to 10. That combination makes an oversized v3 response unreachable in practice — ten bindings from a single column is roughly 500 bytes — but it is unreachable by accident, not bounded by design. Honouring a real `max-repetitions` on the v3 path requires giving it the same bound first.
+
+**SNMPv3 `msgMaxSize`**
+
+— the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
 
 ## OID lookup internals
 
