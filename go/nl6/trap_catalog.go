@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -490,6 +491,21 @@ func (c *Catalog) EntriesByRole(role string) []*CatalogEntry {
 	return base
 }
 
+// worstCaseDetail is the longest {{.Detail}} the simulator itself produces, used
+// by the load-time size check. The optical alarm manager formats it as
+// " (OSNR %.2f dB)" (optical_alarm_manager.go); this is that shape at its widest
+// plausible value, with a little slack. A REST varbindOverrides Detail can
+// exceed it — that is the fire-time guard's job, not this one's.
+const worstCaseDetail = " (OSNR -999.99 dB)"
+
+// dryRenderCommunity is the community string the load-time size check renders
+// with. It is the shipped default; a per-device community set via
+// -trap-community or the REST `community` field can be longer, adding
+// len(community)-len("public") bytes at fire time. Not bounded here because the
+// per-device configs do not exist yet at catalog load — the encode guard covers
+// it, and over-reserving would disable entries that are fine in practice.
+const dryRenderCommunity = "public"
+
 // ApplySizeBudget dry-renders every entry and marks any whose encoded
 // notification exceeds `budget` as unschedulable, returning a description of
 // each one disabled (empty when none were). Weight metadata is recomputed so
@@ -501,8 +517,25 @@ func (c *Catalog) EntriesByRole(role string) []*CatalogEntry {
 // place and consumed in another (nl6#486, nl6#490, and this one); passing it in
 // puts the dependency where a reader can see it (design D5).
 //
-// Rendering uses a worst-case context with an EMPTY Detail: Detail is per-fire
-// free-form and has no worst case, and the fire-time encode guard covers it.
+// Rendering uses a worst-case context, INCLUDING a worst-case Detail.
+//
+// An earlier version rendered Detail empty, on the reasoning that it is
+// per-fire free-form with no worst case. That was wrong for the content that
+// actually ships: all four Ciena optical alarms interpolate {{.Detail}}, and
+// the alarm manager fills it with a bounded string (" (OSNR %.2f dB)", see
+// optical_alarm_manager.go). Rendering it empty let opticalPreFecS[DF]Raise
+// pass the load check at 985 B and then fail at fire time at 1011 B — the exact
+// per-fire failure this check exists to convert into one startup warning.
+//
+// Worse, it split a Raise/Clear pair: the Clear entries carry longer literal
+// text, so they were disabled at load while their Raise counterparts were not.
+// A collector can then receive a degrade raise whose matching clear never
+// arrives, leaving a stuck alarm — an outcome worse than disabling both.
+//
+// What this still cannot bound, by construction: a per-device `community`
+// longer than the default and a REST `varbindOverrides` Detail. Both are known
+// only at fire time, so the encode guard remains the backstop for them. The
+// check is a best-effort early warning for STATIC content, not a guarantee.
 //
 // Entries are DISABLED, never rejected — see the `oversized` field for why.
 func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
@@ -520,6 +553,7 @@ func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
 		Serial:    "SNffffffff",
 		ChassisID: "02:42:ff:ff:ff:ff",
 		NowLocal:  "2026-12-31 23:59:59",
+		Detail:    worstCaseDetail,
 	}
 	var disabled []string
 	scratch := make([]byte, 0, 65535)
@@ -531,14 +565,37 @@ func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
 			// let the fire path report it rather than silently disabling it.
 			continue
 		}
-		pdu, err := encodeV2cNotificationFast(scratch[:0], ASN1_TRAP_V2C, "public", 1,
+		// math.MaxUint32 for the request ID: the fire path uses a monotonically
+		// growing counter, and appendInteger spends 5 content bytes past
+		// 0x7FFFFFFF against 1 for a small value. Rendering with 1 understated
+		// every entry by 4 bytes.
+		pdu, err := encodeV2cNotificationFast(scratch[:0], ASN1_TRAP_V2C, dryRenderCommunity, math.MaxUint32,
 			e.pre, e.SnmpTrapOID, e.SnmpTrapEnterprise, ctx.Uptime, vbs)
-		size := len(pdu)
-		if err == nil && size <= budget {
+		if err == nil && len(pdu) <= budget {
 			continue
 		}
 		e.oversized = true
-		disabled = append(disabled, fmt.Sprintf("%s/%s (%d B > %d B budget)", source, e.Name, size, budget))
+
+		// The encoder's own guard fires before this budget comparison whenever
+		// budget == maxTrapPDU — which is the PRODUCTION wiring, so the error
+		// path is normal here, not an edge case. On that path pdu is nil, so
+		// len(pdu) reports 0 and the operator's only diagnostic reads
+		// "0 B > 972 B budget", which says nothing about how far over the entry
+		// is or what MTU would admit it. Recover the real size from the typed
+		// error (nl6#487 review).
+		var tooLarge *pduTooLargeError
+		if errors.As(err, &tooLarge) {
+			disabled = append(disabled, fmt.Sprintf(
+				"%s/%s (%d B, over the %d B budget by %d B; needs -datagram-mtu >= %d)",
+				source, e.Name, tooLarge.size, budget, tooLarge.size-budget,
+				tooLarge.size+ipv4HeaderBytes+udpHeaderBytes))
+			continue
+		}
+		if err != nil {
+			disabled = append(disabled, fmt.Sprintf("%s/%s (%v; budget %d B)", source, e.Name, err, budget))
+			continue
+		}
+		disabled = append(disabled, fmt.Sprintf("%s/%s (%d B > %d B budget)", source, e.Name, len(pdu), budget))
 	}
 	if len(disabled) > 0 {
 		// Ignore the error: a non-positive TOTAL weight is impossible here

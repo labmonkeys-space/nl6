@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"sort"
@@ -368,4 +369,123 @@ func TestLogFirstEncodeErr_IgnoresNil(t *testing.T) {
 	if !strings.Contains(buf.String(), "real failure") {
 		t.Errorf("the nil consumed the sync.Once; the real error was swallowed: %q", buf.String())
 	}
+}
+
+// TestApplySizeBudget_ReportsRealSize guards the diagnostic that design D2
+// relies on instead of failing the load.
+//
+// In production `budget == maxTrapPDU`, so the encoder's own guard fires before
+// the budget comparison and returns a nil PDU. The first version reported
+// len(pdu), i.e. "0 B > 972 B budget" — no size, no gap, no remedy. Since this
+// log line is the ONLY signal an operator gets, an uninformative one makes
+// warn-and-disable worse than the reject it replaced.
+func TestApplySizeBudget_ReportsRealSize(t *testing.T) {
+	restoreLinkMTU(t)
+	if err := SetLinkMTU(1000); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadCatalogFromFile("resources/ciena_waveserver5/traps.json")
+	if err != nil {
+		t.Fatalf("load ciena: %v", err)
+	}
+
+	// The production wiring: budget IS maxTrapPDU.
+	disabled := c.ApplySizeBudget(maxTrapPDU, "ciena_waveserver5")
+	if len(disabled) == 0 {
+		t.Fatal("no entry disabled at -datagram-mtu 1000")
+	}
+	for _, msg := range disabled {
+		// Anchored on the opening paren: a bare "0 B" substring also matches
+		// inside a legitimate "1000 B".
+		if strings.Contains(msg, "(0 B") {
+			t.Errorf("disable message reports a zero size, which tells an operator nothing: %q", msg)
+		}
+		if !strings.Contains(msg, "over the") || !strings.Contains(msg, "needs -datagram-mtu >=") {
+			t.Errorf("disable message lacks the gap or the remedy: %q", msg)
+		}
+	}
+}
+
+// TestApplySizeBudget_AccountsForDetail is the regression test for the worst
+// bug the review found: rendering {{.Detail}} empty let an entry pass the load
+// check and fail at every fire.
+//
+// All four shipped Ciena optical alarms interpolate Detail, and the alarm
+// manager fills it with " (OSNR %.2f dB)". With Detail empty, the two *Raise
+// entries passed at ~985 B and then encoded to ~1011 B at fire time — and
+// because the *Clear entries carry longer literal text, they were disabled
+// while their Raise counterparts were not. A split Raise/Clear pair can leave a
+// collector holding an alarm that never clears.
+func TestApplySizeBudget_AccountsForDetail(t *testing.T) {
+	restoreLinkMTU(t)
+	if err := SetLinkMTU(1000); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadCatalogFromFile("resources/ciena_waveserver5/traps.json")
+	if err != nil {
+		t.Fatalf("load ciena: %v", err)
+	}
+	c.ApplySizeBudget(maxTrapPDU, "ciena_waveserver5")
+
+	// No entry may survive the load check and then fail at fire time with a
+	// Detail the simulator itself produces.
+	ctx := worstCaseTrapCtx()
+	ctx.Detail = " (OSNR -12.34 dB)"
+	for _, e := range c.Entries {
+		if e.oversized {
+			continue
+		}
+		vbs, rerr := e.Resolve(ctx, nil)
+		if rerr != nil {
+			t.Fatalf("resolve %s: %v", e.Name, rerr)
+		}
+		if _, eerr := encodeV2cNotificationFast(make([]byte, 0, 65535), ASN1_TRAP_V2C,
+			dryRenderCommunity, math.MaxUint32, e.pre, e.SnmpTrapOID, e.SnmpTrapEnterprise,
+			ctx.Uptime, vbs); eerr != nil {
+			t.Errorf("%s passed the load-time check but fails at fire time with a real "+
+				"Detail: %v — the dry render must account for Detail", e.Name, eerr)
+		}
+	}
+
+	// A Raise and its Clear must share a fate. Half a pair is worse than none.
+	pairs := [][2]string{
+		{"opticalPreFecSdRaise", "opticalPreFecSdClear"},
+		{"opticalPreFecSfRaise", "opticalPreFecSfClear"},
+	}
+	for _, pr := range pairs {
+		raise, ok1 := c.ByName[pr[0]]
+		clear, ok2 := c.ByName[pr[1]]
+		if !ok1 || !ok2 {
+			t.Fatalf("missing %v in the ciena catalog", pr)
+		}
+		if raise.oversized != clear.oversized {
+			t.Errorf("%s disabled=%v but %s disabled=%v — a split pair can leave a "+
+				"collector holding an alarm that never clears",
+				pr[0], raise.oversized, pr[1], clear.oversized)
+		}
+	}
+}
+
+// TestDryRenderUsesWorstCaseRequestID pins the request-ID half of the sizing.
+// The fire path uses a monotonically growing counter and appendInteger spends 5
+// content bytes past 0x7FFFFFFF against 1 for a small value, so rendering with
+// reqID 1 understated every entry by 4 bytes.
+func TestDryRenderUsesWorstCaseRequestID(t *testing.T) {
+	vbs := []Varbind{{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "x"}}
+	small, err := encodeV2cNotificationFast(make([]byte, 0, 4096), ASN1_TRAP_V2C, "public", 1,
+		nil, "1.3.6.1.6.3.1.1.5.3", "", 1, vbs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	large, err := encodeV2cNotificationFast(make([]byte, 0, 4096), ASN1_TRAP_V2C, "public", math.MaxUint32,
+		nil, "1.3.6.1.6.3.1.1.5.3", "", 1, vbs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(large) <= len(small) {
+		t.Fatalf("a max request ID (%d B) is not larger than reqID 1 (%d B); the dry render's "+
+			"choice of MaxUint32 would be pointless", len(large), len(small))
+	}
+	t.Logf("request-ID width costs %d B; the dry render must use the max or it understates "+
+		"every entry by that much", len(large)-len(small))
 }

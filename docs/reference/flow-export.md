@@ -234,7 +234,9 @@ The MTU defaults to 1500 and is set with `-datagram-mtu`. That default holds for
 
 **Lower it when the collector path is not standard Ethernet.** A Docker overlay or VXLAN network is typically 1450 and a tunnelled path lower still. Measured at 1450 against a 1500-derived build, NetFlow v9 (1480 B frame), IPFIX (1484) and NetFlow v5 (1492) all fragment, as does an SNMP GETBULK at OpenNMS's default collector settings (1464). Only sFlow and SNMP traps fit.
 
-**The flag currently governs flow export only.** SNMP traps and GETBULK responses still carry their own fixed bounds and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set. Those two subsystems join the shared value when nl6#487 and nl6#489 land; syslog is deliberately excluded and keeps its own 1400-byte ceiling.
+**The flag governs flow export and SNMP trap notifications.** SNMP GETBULK responses still carry their own fixed bound and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set; that subsystem joins the shared value when nl6#489 lands. Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
+
+On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them — they are disabled at catalog load and named in the startup log with the MTU that would admit them.
 
 The value is validated at startup and an out-of-range one is fatal, so a misconfiguration surfaces immediately rather than as per-datagram encode failures across the fleet.
 
