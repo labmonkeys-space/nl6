@@ -63,45 +63,55 @@ type FlowEncoder interface {
 	// They agree at today's constants, but NetFlow v9 at the IPv6 budget lands
 	// on exactly len(buf), so the margin that keeps them agreeing is zero.
 	TrailingPadBytes(recordCount int) int
+	// MaxRecordsPerDatagram returns a protocol-imposed ceiling on records per
+	// datagram that is INDEPENDENT of buffer space, or 0 when the only limit
+	// is how much fits. NetFlow v5 returns 30 (the Cisco datagram cap);
+	// everything else returns 0.
+	//
+	// Tick must honour this for the same reason it must honour
+	// TrailingPadBytes: it advances `expired` by its own capacity before the
+	// encoder sees the batch, so records the encoder then discards are gone
+	// from the queue while still counted into RecordsSent, the scenario ledger
+	// and the sequence counter. Under NetFlow v5 that also desynchronises
+	// `flow_sequence`, which counts records rather than packets — a collector
+	// reads the gap as lost flows.
+	//
+	// This was invisible while the datagram budget was fixed at 1472, where
+	// `(1472-24)/48` happens to equal exactly 30. `-datagram-mtu` makes larger
+	// buffers reachable and turns that coincidence into silent data loss:
+	// measured at MTU 9000, 60 of 240 records reached the wire while
+	// RecordsSent reported all 240.
+	MaxRecordsPerDatagram() int
 }
 
-// Datagram sizing. Flow export is UDP, so the on-wire frame is the encoded
-// payload plus the transport and network headers. What pagination fills is the
-// payload, but what constrains it is the frame: the payload's ceiling is the
-// MTU MINUS the IP and UDP headers, not the MTU. Budgeting the full MTU for the payload
-// puts a NetFlow v9 datagram at 1524 bytes on the wire and the kernel
-// fragments it (nl6#485); IPFIX lands at 1508. NetFlow v5 and sFlow happened
-// to fit, but by arithmetic accident rather than design: v5's 30-record
-// protocol cap coincides with what the budget allowed, and sFlow's worst-case
-// record size is conservative enough to leave slack.
+// Flow's own datagram ceilings, derived from the shared egress-path constants
+// in datagram_budget.go. The inputs are shared because they are facts about
+// the path; this budget is flow's own because it is a PACKING TARGET — Tick
+// fills each datagram with as many records as fit, so every unused byte is
+// throughput lost and the value must be exact. See datagram_budget.go for why
+// the budgets are deliberately per-subsystem rather than one shared constant.
 //
-// Fragmentation is invisible on loopback and veth paths, which is why this
-// survived every in-process measurement. On a real network one lost fragment
-// discards the entire datagram (32 records under v9, not one), and middleboxes
-// and strict collectors drop fragments outright.
-const (
-	// flowLinkMTU is the assumed path MTU. nl6 sets no MTU on its TUN or veth
-	// interfaces, so both take the kernel default of 1500. Deliberately not
-	// configurable: no jumbo or tunnelled path exists today, and the collector
-	// path beyond the host is outside nl6's control either way.
-	flowLinkMTU = 1500
-
-	// Fixed header sizes subtracted from the MTU to get the payload budget.
-	// IPv4 options and IPv6 extension headers are not accounted for; nothing
-	// in the egress path adds either.
-	flowUDPHeaderBytes  = 8
-	flowIPv4HeaderBytes = 20
-	flowIPv6HeaderBytes = 40
-
-	// maxFlowPayloadIPv4 / maxFlowPayloadIPv6 are the resulting per-datagram
-	// payload ceilings: 1472 and 1452.
-	maxFlowPayloadIPv4 = flowLinkMTU - flowIPv4HeaderBytes - flowUDPHeaderBytes
-	maxFlowPayloadIPv6 = flowLinkMTU - flowIPv6HeaderBytes - flowUDPHeaderBytes
+// NetFlow v5 and sFlow happened to fit even under the old (wrong) full-MTU
+// budget, but by arithmetic accident rather than design: v5's 30-record
+// protocol cap coincided with what the budget allowed, and sFlow's worst-case
+// record size is conservative enough to leave slack. Neither was evidence the
+// budget was right.
+// These are variables rather than constants because `-datagram-mtu` sets
+// linkMTU at startup and recomputeDatagramBudgets refreshes them; they are
+// read-only afterwards. Anything that captures one at package-init time would
+// keep the 1500-derived value and silently fragment on a lower-MTU path.
+var (
+	// maxFlowPayloadIPv4 / maxFlowPayloadIPv6 are the per-datagram payload
+	// ceilings: 1472 and 1452 at the default MTU. Flow branches on address
+	// family because an IPv6 collector is reachable through the shared
+	// dual-stack socket.
+	maxFlowPayloadIPv4 = defaultLinkMTU - ipv4HeaderBytes - udpHeaderBytes
+	maxFlowPayloadIPv6 = defaultLinkMTU - ipv6HeaderBytes - udpHeaderBytes
 
 	// flowBufSize is the pooled buffer size. It stays at the full MTU so a
 	// pooled buffer is never smaller than a budget derived from it; Tick
 	// reslices to the budget its own collector needs.
-	flowBufSize = flowLinkMTU
+	flowBufSize = defaultLinkMTU
 )
 
 // flowPayloadBudget returns the datagram payload ceiling for a collector at
@@ -679,6 +689,12 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			// always enough.
 			if cap > 0 && overhead+cap*perRec+encoder.TrailingPadBytes(cap) > len(buf) {
 				cap--
+			}
+			// Honour a protocol record-count ceiling that buffer arithmetic
+			// cannot see (NetFlow v5's 30). The remainder stays in `expired`
+			// and rides the next datagram, so nothing is lost.
+			if m := encoder.MaxRecordsPerDatagram(); m > 0 && cap > m {
+				cap = m
 			}
 			if cap >= len(expired) {
 				batch = expired

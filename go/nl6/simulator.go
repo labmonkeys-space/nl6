@@ -103,6 +103,7 @@ func main() {
 		port            = flag.String("port", "8080", "Server port (default: 8080)")
 		snmpPort        = flag.Int("snmp-port", DEFAULT_SNMP_PORT, "UDP port for SNMP listener on each device (default: 161)")
 		noNamespace     = flag.Bool("no-namespace", false, "Disable network namespace isolation (use root namespace)")
+		datagramMTU     = flag.Int("datagram-mtu", defaultLinkMTU, "Assumed MTU of the egress path to collectors, in bytes (default: 1500). Currently sizes FLOW export datagrams only; SNMP traps and GETBULK responses still carry their own fixed bounds (nl6#487, nl6#489) and are NOT yet affected by this flag. Lower it when the path to the collector is not standard Ethernet — a Docker overlay or VXLAN network is typically 1450, tunnels lower — otherwise full-size flow datagrams are IP-fragmented. This is an assumption about a path nl6 does not control, not a property of nl6's own interfaces.")
 		showHelp        = flag.Bool("help", false, "Show this help message")
 		showVersion     = flag.Bool("version", false, "Print the simulator version string and exit")
 		ifScenario      = flag.Int("if-scenario", 2, "Interface state scenario: 1=all-shutdown, 2=all-normal (default), 3=all-failure, 4=pct-failure")
@@ -237,6 +238,16 @@ func main() {
 		fmt.Printf("    -snmpv3-engine-id 800000090300AABBCCDD -snmpv3-auth md5\n")
 		fmt.Println()
 		return
+	}
+
+	// Set the egress-path MTU before anything derives a datagram budget from
+	// it. Fails loudly here rather than as silent per-emission errors later.
+	//
+	// Placed AFTER the -help and -version branches so `-help` still prints
+	// usage even when paired with a bad -datagram-mtu. Nothing between those
+	// branches and here derives a budget, so the ordering is safe.
+	if err := SetLinkMTU(*datagramMTU); err != nil {
+		log.Fatalf("Invalid -datagram-mtu: %v", err)
 	}
 
 	log.Printf("simulator %s starting (pid=%d)", Version, os.Getpid())

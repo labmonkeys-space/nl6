@@ -66,6 +66,12 @@ func (*NetFlow5Encoder) PacketSizes() (int, int, int) {
 	return netFlow5HeaderLen, 0, netFlow5RecordLen
 }
 
+// MaxRecordsPerDatagram returns the Cisco v5 datagram cap. This is a
+// record-COUNT limit independent of buffer space, so Tick must honour it or it
+// hands the encoder records that EncodePacket silently discards (nl6#488
+// review) — including desynchronising flow_sequence, which counts records.
+func (*NetFlow5Encoder) MaxRecordsPerDatagram() int { return netFlow5MaxRecords }
+
 // TrailingPadBytes returns 0: NetFlow v5 has no set structure and no padding —
 // its 24-byte header and 48-byte records are already 4-byte aligned.
 func (*NetFlow5Encoder) TrailingPadBytes(int) int { return 0 }

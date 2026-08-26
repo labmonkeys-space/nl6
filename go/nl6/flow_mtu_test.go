@@ -33,7 +33,7 @@ import (
 // frameBytes converts a received UDP payload length into the IPv4 frame size
 // that carried it: payload + UDP header + IPv4 header.
 func frameBytes(payloadLen int) int {
-	return payloadLen + flowUDPHeaderBytes + flowIPv4HeaderBytes
+	return payloadLen + udpHeaderBytes + ipv4HeaderBytes
 }
 
 // assertDatagramsFitMTU fails if any datagram's frame exceeds the link MTU.
@@ -51,7 +51,7 @@ func assertDatagramsFitMTU(t *testing.T, label string, packets [][]byte) int {
 		if len(pkt) > maxFlowPayloadIPv4 {
 			t.Errorf("%s: datagram %d payload = %d B (frame %d B) exceeds the IPv4 budget of %d B "+
 				"(MTU %d) — this fragments on the wire",
-				label, i, len(pkt), frame, maxFlowPayloadIPv4, flowLinkMTU)
+				label, i, len(pkt), frame, maxFlowPayloadIPv4, linkMTU)
 		}
 	}
 	return largest
@@ -177,7 +177,7 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 
 			if tc.tightlyPacked {
 				_, _, recSize := tc.encoder.PacketSizes()
-				largestPayload := largest - flowUDPHeaderBytes - flowIPv4HeaderBytes
+				largestPayload := largest - udpHeaderBytes - ipv4HeaderBytes
 				if slack := maxFlowPayloadIPv4 - largestPayload; slack >= recSize {
 					t.Errorf("largest %s payload = %d B, leaving %d B of the %d B budget "+
 						"unused — that is ≥ one %d B record, so pagination is under-filling",
@@ -242,7 +242,7 @@ func TestFlowOptionDatagramsFitMTU(t *testing.T) {
 //
 // This was latent under the old full-MTU buffer and is one byte away under the
 // new budget: at maxFlowPayloadIPv6 a full NetFlow v9 packet lands on exactly
-// len(buf) with ZERO bytes spare. A later change to flowLinkMTU or a header
+// len(buf) with ZERO bytes spare. A later change to linkMTU or a header
 // constant would otherwise convert a clean size error into a process-killing
 // panic, so the bound is asserted across every buffer size rather than at the
 // two budgets alone.
@@ -361,6 +361,10 @@ func TestFlowTickCapacityMatchesEncoder(t *testing.T) {
 	}{
 		{"netflow9", NetFlow9Encoder{}, nf9HeaderSize, nf9TemplateID, nf9RecordSize},
 		{"ipfix", IPFIXEncoder{}, ipfixHeaderSize, ipfixTemplateID, ipfixRecordSize},
+		// NetFlow v5 is the case this test originally missed. It has no set
+		// framing to walk, so countWireRecords cannot parse it — the v5
+		// coverage lives in TestFlowTickHonoursRecordCountCap instead, which
+		// reads the header's own record count.
 	}
 
 	for _, tc := range cases {
@@ -525,12 +529,87 @@ func TestFlowTickRespectsIPv6Budget(t *testing.T) {
 			largest = len(pkt)
 		}
 		if len(pkt) > maxFlowPayloadIPv6 {
-			frame := len(pkt) + flowUDPHeaderBytes + flowIPv6HeaderBytes
+			frame := len(pkt) + udpHeaderBytes + ipv6HeaderBytes
 			t.Errorf("datagram %d payload = %d B (frame %d B) exceeds the IPv6 budget of %d B",
 				i, len(pkt), frame, maxFlowPayloadIPv6)
 		}
 	}
 	if largest == 0 {
 		t.Fatal("no datagram carried a payload")
+	}
+}
+
+// TestFlowTickHonoursRecordCountCap covers the gap that let a High-severity
+// regression through: a protocol record-COUNT ceiling that buffer arithmetic
+// cannot see.
+//
+// TestFlowTickCapacityMatchesEncoder walks data sets to count records, which
+// only works for the set-framed protocols (NetFlow v9, IPFIX) — so NetFlow v5,
+// the one encoder with a hard 30-record cap, was never covered by it. And it
+// sweeps SMALL buffers, while this failure needs a LARGE one.
+//
+// Before `-datagram-mtu`, `(1472-24)/48` happened to equal exactly 30 and Tick
+// and the encoder agreed by coincidence. Raising the MTU broke that: at 9000,
+// Tick handed the encoder 186 records, EncodePacket kept 30, and the other 156
+// were gone from `expired` while still counted into RecordsSent and into
+// flow_sequence — which counts RECORDS under v5, so a collector reads the gap
+// as lost flows.
+func TestFlowTickHonoursRecordCountCap(t *testing.T) {
+	restoreLinkMTU(t)
+
+	const records = 240
+	for _, mtu := range []int{1500, 1540, 2000, 9000} {
+		t.Run(fmt.Sprintf("mtu%d", mtu), func(t *testing.T) {
+			if err := SetLinkMTU(mtu); err != nil {
+				t.Fatalf("SetLinkMTU(%d): %v", mtu, err)
+			}
+
+			ln, ch := testUDPListener(t)
+			defer ln.Close()
+			conn := testSender(t)
+			defer conn.Close()
+
+			fe := newTestFlowExporter(testDevice("10.1.2.7"), mtuTestProfile(),
+				1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
+			fe.seqNo = 1 // suppress the first-tick template
+			fe.lastTempl = time.Now()
+			fillExpiredFlows(t, fe, records)
+			seqBefore := fe.seqNo
+
+			stats := tickWithEncoder(fe, time.Now(), &NetFlow5Encoder{}, conn,
+				ln.LocalAddr().(*net.UDPAddr), testPool())
+
+			// NetFlow v5's header carries its own record count at bytes 2:4,
+			// so the wire truth is readable without set framing.
+			onWire := 0
+			for _, pkt := range drainPackets(ch) {
+				if len(pkt) < 4 {
+					t.Fatalf("runt datagram: %d bytes", len(pkt))
+				}
+				n := int(binary.BigEndian.Uint16(pkt[2:]))
+				if n > netFlow5MaxRecords {
+					t.Errorf("datagram carries %d records, over the v5 cap of %d",
+						n, netFlow5MaxRecords)
+				}
+				onWire += n
+			}
+
+			if onWire != records {
+				t.Errorf("at MTU %d: %d records on the wire, want all %d — Tick handed "+
+					"the encoder more than its %d-record cap and the surplus was discarded",
+					mtu, onWire, records, netFlow5MaxRecords)
+			}
+			if int(stats.RecordsSent) != onWire {
+				t.Errorf("at MTU %d: RecordsSent=%d but %d on the wire — over-reporting "+
+					"records that never left", mtu, stats.RecordsSent, onWire)
+			}
+			// v5 advances flow_sequence by RECORD count, so a mismatch here is
+			// what a collector reads as lost flows.
+			if adv := int(fe.seqNo - seqBefore); adv != onWire {
+				t.Errorf("at MTU %d: flow_sequence advanced %d but %d records were sent — "+
+					"a collector reads the %d-record gap as flow loss",
+					mtu, adv, onWire, adv-onWire)
+			}
+		})
 	}
 }

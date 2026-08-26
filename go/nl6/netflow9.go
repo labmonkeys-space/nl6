@@ -229,7 +229,7 @@ func (NetFlow9Encoder) SeqIncrement(_ int) int {
 //
 // Not a theoretical edge. At the IPv6 datagram budget a full NetFlow v9 packet
 // lands on exactly len(buf) with zero bytes spare, so any later shift in
-// flowLinkMTU or the header constants would turn a clean size error into an
+// linkMTU or the header constants would turn a clean size error into an
 // index-out-of-range panic inside the shared flow-ticker goroutine, taking the
 // process down with it.
 func nf9DataPadBytes(n int) int {
@@ -238,6 +238,10 @@ func nf9DataPadBytes(n int) int {
 	}
 	return 0
 }
+
+// MaxRecordsPerDatagram returns 0: NetFlow v9 has no record-count cap, only
+// the datagram budget.
+func (NetFlow9Encoder) MaxRecordsPerDatagram() int { return 0 }
 
 // TrailingPadBytes reports the data-FlowSet pad for n records so Tick's
 // pagination and EncodePacket's record cap use the same formula.

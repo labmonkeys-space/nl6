@@ -88,6 +88,10 @@ func (SFlowEncoder) PacketSizes() (int, int, int) {
 	return sflowDatagramHeaderSize, 0, sflowMaxFlowSampleSize
 }
 
+// MaxRecordsPerDatagram returns 0: sFlow has no record-count cap. Its
+// per-datagram limit is byte-based and already expressed via MaxRecordSize.
+func (SFlowEncoder) MaxRecordsPerDatagram() int { return 0 }
+
 // TrailingPadBytes returns 0: sFlow pads each sampled_header inside the sample
 // it belongs to, so there is no trailing pad after the record set for Tick to
 // budget.

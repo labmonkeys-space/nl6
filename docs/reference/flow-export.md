@@ -228,7 +228,15 @@ Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 re
 
 The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers: 1472 bytes for an IPv4 collector and 1452 for IPv6. nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented. That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
 
-The MTU is assumed to be 1500 and is not configurable. That holds for nl6's own TUN and veth interfaces, which take the kernel default, but it is an assumption about the **egress** path to the collector rather than a fact nl6 controls. If the container runs on a Docker overlay or VXLAN network (typically MTU 1450), or the collector is reached through a tunnel, full-size datagrams will still fragment: the same failure, at a lower threshold. Check the egress interface MTU before reading a fragment count as a bug.
+The MTU defaults to 1500 and is set with `-datagram-mtu`. That default holds for nl6's own TUN and veth interfaces, which take the kernel default, but it is an assumption about the **egress** path to the collector rather than a fact nl6 controls.
+
+**Lower it when the collector path is not standard Ethernet.** A Docker overlay or VXLAN network is typically 1450 and a tunnelled path lower still. Measured at 1450 against a 1500-derived build, NetFlow v9 (1480 B frame), IPFIX (1484) and NetFlow v5 (1492) all fragment, as does an SNMP GETBULK at OpenNMS's default collector settings (1464). Only sFlow and SNMP traps fit.
+
+**The flag currently governs flow export only.** SNMP traps and GETBULK responses still carry their own fixed bounds and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set. Those two subsystems join the shared value when nl6#487 and nl6#489 land; syslog is deliberately excluded and keeps its own 1400-byte ceiling.
+
+The value is validated at startup and an out-of-range one is fatal, so a misconfiguration surfaces immediately rather than as per-datagram encode failures across the fleet.
+
+nl6 does not discover the MTU, deliberately. Reading the route's interface MTU would work for flow, traps and syslog, which each have a configured collector known when the exporter attaches — but not for SNMP, which answers whoever polls it and knows the destination only per request. Since one value has to cover every subsystem, discovery cannot be the mechanism. There is no path-MTU discovery either: a route lookup sees only the first hop, so a tunnel further along the path is invisible either way. If you see fragments, check the egress interface MTU and set the flag to match.
 
 Setting the tick close to or above the mean flow lifetime is not useful — every flow then lives about one tick and the cache turns over wholesale. Values above 1h are rejected.
 
