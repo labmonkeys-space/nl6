@@ -82,11 +82,16 @@ func testDevice(ipStr string) *DeviceSimulator {
 	return &DeviceSimulator{IP: net.ParseIP(ipStr).To4()}
 }
 
-// testPool returns a sync.Pool supplying 1500-byte buffers, wrapped
+// testPool returns a sync.Pool supplying flowBufSize buffers, wrapped
 // in `*[]byte` to match the SA6002-correct production shape.
+//
+// The size must come from the production constant, not a literal: Tick
+// reslices the pooled buffer down to the collector's payload budget, so a
+// test pool that hardcodes its own size would keep passing against a
+// mis-sized production pool (nl6#485).
 func testPool() *sync.Pool {
 	return &sync.Pool{New: func() interface{} {
-		buf := make([]byte, 1500)
+		buf := make([]byte, flowBufSize)
 		return &buf
 	}}
 }
@@ -408,7 +413,8 @@ func TestFlowExporter_Tick_IPFIXPagination(t *testing.T) {
 }
 
 // TestFlowExporter_Tick_Pagination verifies that when more records expire than
-// fit in a single 1500-byte UDP datagram, multiple packets are sent.
+// fit in a single datagram payload, multiple packets are sent. The datagrams'
+// size bound is asserted separately by TestFlowDatagramsFitMTU.
 func TestFlowExporter_Tick_Pagination(t *testing.T) {
 	ln, ch := testUDPListener(t)
 	defer ln.Close()

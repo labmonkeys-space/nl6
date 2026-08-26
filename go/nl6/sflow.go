@@ -90,7 +90,10 @@ func (SFlowEncoder) PacketSizes() (int, int, int) {
 
 // MaxRecordSize returns the worst-case byte size of a single flow_sample on
 // the wire. FlowExporter.Tick uses this to bound the number of flow records
-// per datagram so no datagram exceeds the UDP buffer (1500 B).
+// per datagram so no datagram payload exceeds len(buf) — which Tick has
+// already capped to flowPayloadBudget, i.e. the MTU minus the IP and UDP
+// headers. The bound is the on-wire FRAME, not the buffer: sizing to the
+// buffer alone is what fragmented NetFlow v9 and IPFIX exports (nl6#485).
 func (SFlowEncoder) MaxRecordSize() int { return sflowMaxFlowSampleSize }
 
 // SeqIncrement returns 1 because sFlow v5's datagram sequence_number is the

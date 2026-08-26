@@ -244,7 +244,10 @@ func (IPFIXEncoder) MaxRecordSize() int { return 0 }
 //	records         — flow records to include in the Data Set.
 //	includeTemplate — when true, a Template Set is prepended; send on the first
 //	                  packet and every templateInterval thereafter.
-//	buf             — caller-supplied output buffer; must be ≥ 1500 bytes.
+//	buf             — caller-supplied output buffer. The encoder writes at most
+//	                  len(buf) bytes, so the caller's slice length IS the
+//	                  datagram payload budget: Tick passes a buffer already
+//	                  capped to flowPayloadBudget so the frame fits the MTU.
 //
 // Returns an error if buf is too small to hold even a single record.
 func (IPFIXEncoder) EncodePacket(

@@ -224,7 +224,9 @@ Expiry is noticed by a periodic sweep. A flow's real residency is therefore the 
 | 15s | 3.94 | 59 |
 | 30s | 3.63 | 109 |
 
-Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits about 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+
+The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers: 1472 bytes for an IPv4 collector and 1452 for IPv6. nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented. That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
 
 Setting the tick close to or above the mean flow lifetime is not useful — every flow then lives about one tick and the cache turns over wholesale. Values above 1h are rejected.
 

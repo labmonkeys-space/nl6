@@ -50,6 +50,58 @@ type FlowEncoder interface {
 	MaxRecordSize() int
 }
 
+// Datagram sizing. Flow export is UDP, so the on-wire frame is the encoded
+// payload plus the transport and network headers. Pagination must therefore
+// budget the PAYLOAD, not the frame. Budgeting the full MTU for the payload
+// puts a NetFlow v9 datagram at 1524 bytes on the wire and the kernel
+// fragments it (nl6#485); IPFIX lands at 1506. NetFlow v5 and sFlow happened
+// to fit, but by arithmetic accident rather than design: v5's 30-record
+// protocol cap coincides with what the budget allowed, and sFlow's worst-case
+// record size is conservative enough to leave slack.
+//
+// Fragmentation is invisible on loopback and veth paths, which is why this
+// survived every in-process measurement. On a real network one lost fragment
+// discards the entire datagram (32 records under v9, not one), and middleboxes
+// and strict collectors drop fragments outright.
+const (
+	// flowLinkMTU is the assumed path MTU. nl6 sets no MTU on its TUN or veth
+	// interfaces, so both take the kernel default of 1500. Deliberately not
+	// configurable: no jumbo or tunnelled path exists today, and the collector
+	// path beyond the host is outside nl6's control either way.
+	flowLinkMTU = 1500
+
+	// Fixed header sizes subtracted from the MTU to get the payload budget.
+	// IPv4 options and IPv6 extension headers are not accounted for; nothing
+	// in the egress path adds either.
+	flowUDPHeaderBytes  = 8
+	flowIPv4HeaderBytes = 20
+	flowIPv6HeaderBytes = 40
+
+	// maxFlowPayloadIPv4 / maxFlowPayloadIPv6 are the resulting per-datagram
+	// payload ceilings: 1472 and 1452.
+	maxFlowPayloadIPv4 = flowLinkMTU - flowIPv4HeaderBytes - flowUDPHeaderBytes
+	maxFlowPayloadIPv6 = flowLinkMTU - flowIPv6HeaderBytes - flowUDPHeaderBytes
+
+	// flowBufSize is the pooled buffer size. It stays at the full MTU so a
+	// pooled buffer is never smaller than a budget derived from it; Tick
+	// reslices to the budget its own collector needs.
+	flowBufSize = flowLinkMTU
+)
+
+// flowPayloadBudget returns the datagram payload ceiling for a collector at
+// addr. The IPv6 header costs 20 bytes more than IPv4, which is enough to
+// change the record count per datagram, so the address family is resolved
+// rather than assumed: attachFlowExporter resolves collectors with
+// net.ResolveUDPAddr("udp", …) and an IPv6 collector is reachable through the
+// shared (dual-stack) socket. A nil or family-less address takes the
+// conservative IPv6 budget.
+func flowPayloadBudget(addr *net.UDPAddr) int {
+	if addr != nil && addr.IP.To4() != nil {
+		return maxFlowPayloadIPv4
+	}
+	return maxFlowPayloadIPv6
+}
+
 // FlowTickStats holds per-tick export counters returned by Tick.
 // tickAllFlowExporters sums these across all devices and adds them to the
 // cumulative atomic counters on SimulatorManager.
@@ -453,7 +505,8 @@ func (fe *FlowExporter) setConcurrentOverride(n int) {
 // per-device mode is disabled. sharedConn may be nil when the pool
 // could not open a socket for this exporter's (collector, protocol) tuple.
 //
-// bufPool must supply []byte slices of at least 1500 bytes.
+// bufPool must supply []byte slices of at least flowBufSize bytes; Tick
+// reslices them down to the collector's flowPayloadBudget.
 // Write errors are ignored (best-effort delivery; collector may be down).
 // The returned FlowTickStats are summed by tickAllFlowExporters into the
 // per-exporter atomic counters and aggregated at status-endpoint read time.
@@ -565,13 +618,22 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// `sync.Pool` stores `*[]byte` (SA6002). Deref once into a local
 	// slice header — the backing array is shared, so writes via `buf`
 	// land in the same memory the pointer references.
+	//
+	// Reslice to this collector's payload budget. Every sizing decision
+	// below (the flow loop, the sFlow counters loop, and the options
+	// encoders) derives from len(buf), so capping it here is the single
+	// point that keeps all of them inside the MTU (nl6#485).
 	bufPtr := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bufPtr)
 	buf := *bufPtr
+	if budget := flowPayloadBudget(collectorAddr); budget < len(buf) {
+		buf = buf[:budget]
+	}
 
 	var stats FlowTickStats
 
-	// Paginate: send as many records as fit in each 1500-byte UDP datagram.
+	// Paginate: send as many records as fit in one datagram payload (buf has
+	// already been capped to the collector's flowPayloadBudget above).
 	// Capacity depends on the active encoder's protocol (NF9: 46B/record,
 	// IPFIX: 54B/record), so we ask the encoder for its sizes rather than
 	// hard-coding NF9 constants here.
@@ -674,7 +736,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		}
 		for len(allRecords) > 0 {
 			batch := allRecords
-			// Pick the largest batch that fits in a 1500-byte buf. Each record
+			// Pick the largest batch that fits in buf. Each record
 			// occupies at most sflowMaxCountersSampleSize bytes once wrapped,
 			// and each counters_sample wrapper contributes
 			// sflowCountersSampleHeaderSize bytes of overhead on top of the
@@ -1011,7 +1073,7 @@ func domainIDtoIP(id uint32) net.IP {
 }
 
 // initFlowSubsystem sets up the simulator-wide flow export infrastructure
-// that's always live: the 1500-byte buffer pool, the stop channel, and
+// that's always live: the flowBufSize buffer pool, the stop channel, and
 // the ticker goroutine. After this runs, per-device attach via
 // `attachFlowExporter` wires up individual exporters; the ticker walks
 // them on every tick interval and no-ops when the list is empty.
@@ -1024,7 +1086,7 @@ func (sm *SimulatorManager) initFlowSubsystem() {
 	// sync.Pool wants pointer-typed values to avoid the extra alloc on
 	// every Get/Put pair (staticcheck SA6002); store `*[]byte`.
 	sm.flowBufPool.New = func() interface{} {
-		buf := make([]byte, 1500)
+		buf := make([]byte, flowBufSize)
 		return &buf
 	}
 	sm.flowStopCh = make(chan struct{})
