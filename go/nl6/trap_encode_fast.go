@@ -69,6 +69,24 @@ import (
 // overrunning a pooled buffer and has to keep matching the pool.
 var maxTrapPDU = defaultLinkMTU - ipv4HeaderBytes - udpHeaderBytes
 
+// pduTooLargeError reports an assembled notification that exceeded the bound,
+// carrying the size it reached.
+//
+// Typed rather than a bare fmt.Errorf because the size is the only actionable
+// part of the message and callers need it programmatically: the catalog's
+// load-time check reports "over budget by N" to the operator, and it cannot
+// recover the size from len(dst) — a failed encode returns a nil slice, and the
+// check's budget equals maxTrapPDU in production, so this guard always fires
+// first (nl6#487 review).
+type pduTooLargeError struct {
+	size  int
+	limit int
+}
+
+func (e *pduTooLargeError) Error() string {
+	return fmt.Sprintf("encoded PDU (%d bytes) exceeds buffer (%d)", e.size, e.limit)
+}
+
 // tlvHdrReserve is the placeholder written when a TLV is opened. Four bytes
 // covers tag + the 0x82 long form, which is enough for any content length below
 // 65536 — and maxTrapPDU keeps us two orders of magnitude below that.
@@ -434,7 +452,7 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 	dst = endTLV(dst, outerMark, ASN1_SEQUENCE)
 
 	if len(dst) > maxTrapPDU {
-		return nil, fmt.Errorf("encoded PDU (%d bytes) exceeds buffer (%d)", len(dst), maxTrapPDU)
+		return nil, &pduTooLargeError{size: len(dst), limit: maxTrapPDU}
 	}
 	return dst, nil
 }
