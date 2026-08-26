@@ -26,9 +26,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 // syslogTLSDefaultPort is the RFC 5425 §4.1 registered port for syslog over
@@ -147,19 +149,72 @@ func syslogCollectorWithDefaultPort(collector string, transport SyslogTransportK
 	return net.JoinHostPort(collector, "514")
 }
 
-// loadSyslogTLSCAFile reads a CA bundle from a path supplied on the COMMAND
-// LINE and returns it as PEM for stamping into the seed config.
+// loadTLSCAFile reads a CA bundle from a path supplied on the COMMAND LINE and
+// returns it as PEM for stamping into a seed config.
 //
-// This is the one place a syslog-TLS CA is read from disk, and it is reachable
-// only from process startup. The per-device config carries PEM inline
-// precisely so that no HTTP request can name a path for the simulator to open.
-func loadSyslogTLSCAFile(path string) (string, error) {
+// This is the ONLY place either export subsystem reads a CA from disk, and it
+// is reachable only from process startup. Both per-device configs carry PEM
+// inline precisely so that no HTTP request can name a path for the simulator
+// to open — see SyslogTLSConfig.CAPEM and DialoutTLSConfig.CAPEM.
+//
+// flagName is threaded through so the error names the flag the operator
+// actually typed rather than a generic "ca file".
+func loadTLSCAFile(path, flagName string) (string, error) {
 	b, err := os.ReadFile(path) //nolint:gosec // operator-supplied CLI path, not reachable from the REST surface
 	if err != nil {
-		return "", fmt.Errorf("read -syslog-tls-ca %q: %w", path, err)
+		return "", fmt.Errorf("read %s %q: %w", flagName, path, err)
 	}
-	if !x509.NewCertPool().AppendCertsFromPEM(b) {
-		return "", fmt.Errorf("-syslog-tls-ca %q: no PEM certificates found", path)
+	certs := certificateBlocksOnly(b)
+	if len(certs) == 0 {
+		return "", fmt.Errorf("%s %q: no PEM certificates found", flagName, path)
 	}
-	return string(b), nil
+	return string(certs), nil
+}
+
+// certificateBlocksOnly re-encodes just the CERTIFICATE blocks of a PEM
+// bundle, discarding everything else. Returns nil when there are none.
+//
+// This is a disclosure control, not tidiness. A trust bundle is stored on the
+// device config and echoed back by GET /api/v1/devices, and
+// `AppendCertsFromPEM` returns true as soon as ONE certificate parses — it
+// ignores other block types rather than rejecting them. So a combined
+// chain-plus-key file, a common /etc/ssl layout, would validate happily and
+// then serve the operator's PRIVATE KEY over an unauthenticated HTTP endpoint.
+//
+// Keeping only the certificates means the stored value is public material by
+// construction, whatever the operator points at and whatever a REST caller
+// posts.
+func certificateBlocksOnly(pemBytes []byte) []byte {
+	var out []byte
+	rest := pemBytes
+	for {
+		var blk *pem.Block
+		blk, rest = pem.Decode(rest)
+		if blk == nil {
+			break
+		}
+
+		if blk.Type != "CERTIFICATE" {
+			continue
+		}
+		if _, err := x509.ParseCertificate(blk.Bytes); err != nil {
+			continue // not a certificate despite the label
+		}
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: blk.Bytes})...)
+	}
+	return out
+}
+
+// sanitiseCAPEM normalises a caller-supplied trust bundle to certificates
+// only, and reports whether anything usable survived. Applied at config
+// validation so a REST body cannot store non-certificate material either.
+func sanitiseCAPEM(in string) (string, bool) {
+	if strings.TrimSpace(in) == "" {
+		return "", false
+	}
+	certs := certificateBlocksOnly([]byte(in))
+	if len(certs) == 0 {
+		return "", false
+	}
+	return string(certs), true
 }

@@ -430,7 +430,10 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
   "tls": {                                                          // optional; default {"enabled": true}
     "enabled": true,
     "insecure_skip_verify": false,                                  // dev only
-    "ca_file": "",                                                  // PEM CA bundle; empty = system roots
+    "ca_pem": "",                                                   // PEM CA bundle INLINE; empty = system roots.
+                                                                    // Not a path: this block is REST-settable, and a path
+                                                                    // would let a caller name any file to open. Use
+                                                                    // -gnmi-dialout-tls-ca for a file. "ca_file" is rejected.
     "mtls": false                                                   // present the shared cert as a client cert
   }
 }

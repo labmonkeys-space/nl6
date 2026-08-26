@@ -183,8 +183,10 @@ func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.interv
 // config. `Enabled=false` selects a plaintext gRPC connection (matching
 // the Arista `-collector_tls=false` default and the goarista reference
 // collector's plaintext mode). When enabled, `InsecureSkipVerify` skips
-// collector-certificate verification (dev only), `CAFile` supplies a
-// PEM CA bundle to verify the collector against (empty → system roots),
+// collector-certificate verification (dev only), `CAPEM` supplies an
+// inline PEM CA bundle to verify the collector against (empty → system
+// roots; a FILE path is accepted only via -gnmi-dialout-tls-ca, never
+// here, because this struct is settable over REST),
 // and `MTLS` presents the simulator's shared certificate as a client
 // cert for mutual TLS.
 //
@@ -192,11 +194,32 @@ func (c *DeviceSyslogConfig) IntervalWasSet() bool { return c != nil && c.interv
 // omitted `tls` object is distinguishable from an explicit
 // `{"enabled": false}` — ApplyDefaults installs the secure default only
 // when the whole block is absent.
+// maxCAPEMBytes bounds an inline trust bundle. Generous for a real chain (a
+// full distribution root store is ~200 KB and does not belong on a per-device
+// config), and small enough that a caller cannot pin megabytes per device.
+const maxCAPEMBytes = 64 << 10
+
 type DialoutTLSConfig struct {
-	Enabled            bool   `json:"enabled"`
-	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
-	CAFile             string `json:"ca_file,omitempty"`
-	MTLS               bool   `json:"mtls,omitempty"`
+	Enabled            bool `json:"enabled"`
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty"`
+	// CAPEM is the PEM bundle verifying the collector, INLINE.
+	//
+	// Inline rather than a path: this struct is settable over REST, and a path
+	// here would let any API caller name a file for the simulator to open. The
+	// content never reaches the caller, but the difference between "read
+	// failed" and "no PEM certificates found" is an oracle for file existence
+	// and shape. CAs are small and pasteable, so a path bought nothing that
+	// justified that.
+	CAPEM string `json:"ca_pem,omitempty"`
+	// CAFile is retained ONLY to reject it with a migration message. It used
+	// to name a file the simulator would read at dial time. Removing the field
+	// outright would still be safe — the create handler sets
+	// DisallowUnknownFields, so an old body 400s either way — but the error
+	// would just say "unknown field" and leave the operator to guess.
+	//
+	// Delete this shim once the deprecation has had a release to land.
+	CAFile string `json:"ca_file,omitempty"`
+	MTLS   bool   `json:"mtls,omitempty"`
 }
 
 // DeviceGnmiDialoutConfig is the per-device gNMI dial-out (telemetry
@@ -453,6 +476,21 @@ func (c *DeviceSyslogConfig) Validate() error {
 		if c.TLS != nil && c.TLS.MTLS {
 			return fmt.Errorf("syslog: tls.mtls is not implemented (nl6#93 scopes client-cert auth out)")
 		}
+		if c.TLS != nil && c.TLS.CAPEM != "" {
+			// Same treatment as the dial-out bundle, and for the same reason:
+			// this is stored on the device config and echoed back by
+			// GET /api/v1/devices, so anything non-certificate in it would be
+			// served over an unauthenticated endpoint.
+			if len(c.TLS.CAPEM) > maxCAPEMBytes {
+				return fmt.Errorf("syslog: tls.ca_pem is %d bytes, over the %d-byte limit "+
+					"(note the request body itself is capped at 64 KiB)", len(c.TLS.CAPEM), maxCAPEMBytes)
+			}
+			clean, ok := sanitiseCAPEM(c.TLS.CAPEM)
+			if !ok {
+				return fmt.Errorf("syslog: tls.ca_pem: no PEM certificates found")
+			}
+			c.TLS.CAPEM = clean
+		}
 	default:
 		return fmt.Errorf("syslog: unknown transport %q (want %q, %q or %q)",
 			c.Transport, SyslogTransportUDP, SyslogTransportTCP, SyslogTransportTLS)
@@ -499,6 +537,33 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 	if time.Duration(c.SampleInterval) < 0 {
 		return fmt.Errorf("gnmi_dialout: sample_interval must be >= 0, got %s", time.Duration(c.SampleInterval))
 	}
+	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAPEM != "" || c.TLS.CAFile != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
+		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_pem/ca_file/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
+	}
+	if c.TLS != nil && c.TLS.CAFile != "" {
+		// Leads with ca_pem because that is the only replacement a REST caller
+		// can act on: -gnmi-dialout-tls-ca is a [seed] flag and stamps the
+		// auto-start batch only, so following it for a REST-created device
+		// would silently fall back to system roots.
+		return fmt.Errorf("gnmi_dialout: tls.ca_file is no longer accepted. A path here is settable " +
+			"over REST and lets a caller name any file for the simulator to open. Supply the bundle " +
+			"inline as tls.ca_pem. For the auto-start batch a file path is still accepted via " +
+			"-gnmi-dialout-tls-ca on the command line")
+	}
+	if c.TLS != nil && c.TLS.CAPEM != "" {
+		if len(c.TLS.CAPEM) > maxCAPEMBytes {
+			return fmt.Errorf("gnmi_dialout: tls.ca_pem is %d bytes, over the %d-byte limit "+
+				"(note the request body itself is capped at 64 KiB)", len(c.TLS.CAPEM), maxCAPEMBytes)
+		}
+		// Parse HERE rather than at attach. Unvalidated, a bad bundle returns
+		// 201 Created and then disables dial-out per device at attach time,
+		// logging once per device while the caller believes it worked.
+		clean, ok := sanitiseCAPEM(c.TLS.CAPEM)
+		if !ok {
+			return fmt.Errorf("gnmi_dialout: tls.ca_pem: no PEM certificates found")
+		}
+		c.TLS.CAPEM = clean
+	}
 	if err := validateCollector("gnmi_dialout", c.Collector); err != nil {
 		return err
 	}
@@ -533,9 +598,6 @@ func (c *DeviceGnmiDialoutConfig) Validate() error {
 		if _, err := parseGnmiPath(p); err != nil {
 			return fmt.Errorf("gnmi_dialout: invalid path %q: %w", p, err)
 		}
-	}
-	if c.TLS != nil && !c.TLS.Enabled && (c.TLS.CAFile != "" || c.TLS.MTLS || c.TLS.InsecureSkipVerify) {
-		return fmt.Errorf("gnmi_dialout: tls.enabled is false but ca_file/mtls/insecure_skip_verify is set (a plaintext connection ignores them)")
 	}
 	return nil
 }

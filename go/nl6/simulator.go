@@ -431,10 +431,35 @@ func main() {
 	var gnmiDialoutSeed *DeviceGnmiDialoutConfig
 	switch strings.ToLower(strings.TrimSpace(*gnmiMode)) {
 	case "", "dial-in":
-		// dial-in only; no seed.
+		// dial-in only; no seed. The dial-out TLS flags apply to nothing here,
+		// so refuse them rather than parsing them into silence — an operator
+		// who passes -gnmi-dialout-tls-ca in dial-in mode gets no CA, no
+		// warning, and a collector that fails to verify for no visible reason.
+		if *gnmiDialoutTLSCA != "" || *gnmiDialoutTLSSkip || *gnmiDialoutMTLS {
+			log.Fatalf("gnmi dial-out: -gnmi-dialout-tls-ca / -gnmi-dialout-tls-insecure / " +
+				"-gnmi-dialout-mtls require -gnmi-mode=dial-out")
+		}
 	case "dial-out":
 		if *gnmiDialoutColl == "" {
 			log.Fatalf("gnmi dial-out: -gnmi-mode=dial-out requires -gnmi-dialout-collector")
+		}
+		// Read the CA once, here, from a path the OPERATOR named on the
+		// command line. The per-device config carries PEM inline so no HTTP
+		// request can name a file for the simulator to open.
+		var gnmiDialoutCAPEM string
+		// Gated on TLS being ON. Reading first meant `-gnmi-dialout-tls=false
+		// -gnmi-dialout-tls-ca=/x` opened the file, then failed validation with
+		// a message about ca_pem the operator never typed. The syslog seed
+		// refuses its flag before reading; match that.
+		if *gnmiDialoutTLSCA != "" && !*gnmiDialoutTLS {
+			log.Fatalf("gnmi dial-out: -gnmi-dialout-tls-ca requires -gnmi-dialout-tls")
+		}
+		if *gnmiDialoutTLSCA != "" {
+			pem, err := loadTLSCAFile(*gnmiDialoutTLSCA, "-gnmi-dialout-tls-ca")
+			if err != nil {
+				log.Fatalf("gnmi dial-out: %v", err)
+			}
+			gnmiDialoutCAPEM = pem
 		}
 		gnmiDialoutSeed = &DeviceGnmiDialoutConfig{
 			Collector:      *gnmiDialoutColl,
@@ -445,7 +470,7 @@ func main() {
 			TLS: &DialoutTLSConfig{
 				Enabled:            *gnmiDialoutTLS,
 				InsecureSkipVerify: *gnmiDialoutTLSSkip,
-				CAFile:             *gnmiDialoutTLSCA,
+				CAPEM:              gnmiDialoutCAPEM,
 				MTLS:               *gnmiDialoutMTLS,
 			},
 		}
@@ -502,7 +527,7 @@ func main() {
 		if *syslogTransport == string(SyslogTransportTLS) {
 			tlsCfg := &SyslogTLSConfig{InsecureSkipVerify: *syslogTLSInsecure}
 			if *syslogTLSCA != "" {
-				pem, err := loadSyslogTLSCAFile(*syslogTLSCA)
+				pem, err := loadTLSCAFile(*syslogTLSCA, "-syslog-tls-ca")
 				if err != nil {
 					log.Fatalf("syslog export: %v", err)
 				}

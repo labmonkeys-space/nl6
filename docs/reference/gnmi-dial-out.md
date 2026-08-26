@@ -109,7 +109,7 @@ REST-created devices do **not** inherit these — they opt in per device.
     "mode": "on-change",
     "paths": ["/interfaces/interface[name=*]/state/oper-status"],
     "sample_interval": "10s",
-    "tls": { "enabled": true, "insecure_skip_verify": false, "ca_file": "", "mtls": false }
+    "tls": { "enabled": true, "insecure_skip_verify": false, "ca_pem": "", "mtls": false }
   }
 }
 ```
@@ -120,10 +120,26 @@ rejected (`400`).
 ### TLS note
 
 `tls.enabled=false` selects a plaintext gRPC connection. When enabled, the
-collector is verified against `ca_file` (or the system roots), or verification is
+collector is verified against `ca_pem` (or the system roots), or verification is
 skipped with `insecure_skip_verify` (dev only). The simulator's shared TLS
 certificate is a **server leaf** cert — it can be presented as a client cert
-(`mtls: true`) but cannot verify the collector, which is why `ca_file` exists.
+(`mtls: true`) but cannot verify the collector, which is why `ca_pem` exists.
+
+`ca_pem` is the bundle **inline**, not a path. This block is settable over REST,
+and a path here would let any API caller name a file for the simulator to open —
+an arbitrary-file-read primitive, where even the error distinguishes "could not
+read" from "no certificates here". A path is accepted only from
+`-gnmi-dialout-tls-ca`, read once at startup by the operator who launched the
+process.
+
+:::warning `tls.ca_file` is no longer accepted
+
+It named a file the simulator opened at dial time. Requests carrying it are now
+**rejected** with a message naming both replacements, rather than silently
+ignored. Move the bundle inline as `ca_pem`, or pass the path on the command
+line.
+
+:::
 
 ## Status
 

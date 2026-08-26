@@ -14,7 +14,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -239,26 +238,38 @@ func (sm *SimulatorManager) startDeviceGnmiDialoutExporter(device *DeviceSimulat
 
 // buildDialoutCreds turns a DialoutTLSConfig into gRPC transport
 // credentials. A nil block or Enabled=false selects plaintext (Arista
-// -collector_tls=false parity). Otherwise TLS: verify against CAFile (or
+// -collector_tls=false parity). Otherwise TLS: verify against CAPEM (or
 // system roots), or skip verification in dev; present the shared cert for
 // mTLS when requested. The shared server cert can only be used AS a client
-// cert — it cannot build a trust pool, which is why CAFile exists.
+// cert — it cannot build a trust pool, which is why CAPEM exists.
+//
+// CAPEM is inline PEM, never a path: this config is settable over REST, and
+// reading a caller-named file would be an arbitrary-file-read primitive. A
+// path is accepted only from -gnmi-dialout-tls-ca, read once at startup.
 func buildDialoutCreds(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (credentials.TransportCredentials, error) {
 	if cfg == nil || !cfg.Enabled {
 		return insecure.NewCredentials(), nil
 	}
+	tlsCfg, err := buildDialoutTLSConfig(cfg, sharedCert)
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewTLS(tlsCfg), nil
+}
+
+// buildDialoutTLSConfig is split out from buildDialoutCreds so the invariants
+// it sets are assertable. credentials.NewTLS returns an opaque type, so a test
+// holding only the credentials cannot check MinVersion or the trust pool — and
+// a test that cannot check them is not coverage, however it is captioned.
+func buildDialoutTLSConfig(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (*tls.Config, error) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if cfg.InsecureSkipVerify {
 		tlsCfg.InsecureSkipVerify = true
 	}
-	if cfg.CAFile != "" {
-		pem, err := os.ReadFile(cfg.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("read ca_file %q: %w", cfg.CAFile, err)
-		}
+	if cfg.CAPEM != "" {
 		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("ca_file %q: no PEM certificates found", cfg.CAFile)
+		if !pool.AppendCertsFromPEM([]byte(cfg.CAPEM)) {
+			return nil, fmt.Errorf("ca_pem: no PEM certificates found in %d bytes of configured trust bundle", len(cfg.CAPEM))
 		}
 		tlsCfg.RootCAs = pool
 	}
@@ -268,7 +279,7 @@ func buildDialoutCreds(cfg *DialoutTLSConfig, sharedCert *tls.Certificate) (cred
 		}
 		tlsCfg.Certificates = []tls.Certificate{*sharedCert}
 	}
-	return credentials.NewTLS(tlsCfg), nil
+	return tlsCfg, nil
 }
 
 // persistGnmiDialoutCounters folds a dying exporter's cumulative counters
