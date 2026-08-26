@@ -721,6 +721,11 @@ type FlowCollectorStatus struct {
 	Protocol    string `json:"protocol"`
 	Devices     int    `json:"devices"`
 	SentPackets uint64 `json:"sent_packets"`
+	// SendFailures counts datagrams the kernel refused. sent_packets therefore
+	// means "reached the kernel", matching syslog's status shape. Additive in
+	// nl6#491; before it, failures were counted as sends and a down collector
+	// was invisible here.
+	SendFailures uint64 `json:"send_failures"`
 	SentBytes   uint64 `json:"sent_bytes"`
 	SentRecords uint64 `json:"sent_records"`
 }
