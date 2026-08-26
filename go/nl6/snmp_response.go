@@ -180,64 +180,178 @@ func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) [
 }
 
 // createGetBulkResponse creates a GetBulk response with multiple variable bindings
+// maxSNMPResponseSize bounds an assembled SNMP response so the resulting UDP
+// datagram FRAME fits the link, not so the payload fills it.
+//
+// Derived from the shared egress-path constants (datagram_budget.go) and
+// refreshed by recomputeDatagramBudgets, so it tracks `-datagram-mtu`. udp4
+// only, so no address-family branch: an agent answers whoever polls it, and
+// nl6's devices bind per-device IPv4 sockets.
+//
+// Before nl6#489 there was no bound at all — `handleGetBulk` built
+// maxRepetitions × repeaterCols bindings and handed the result to the kernel.
+// At 10 columns × 127 repetitions that is a ~29 KB datagram in 20 fragments.
+var maxSNMPResponseSize = defaultLinkMTU - ipv4HeaderBytes - udpHeaderBytes
+
+// SNMP error-status values (RFC 3416 §3).
+const (
+	snmpErrNoError = 0
+	snmpErrTooBig  = 1
+)
+
+// snmpOverflowRule selects what happens when a response will not fit the
+// datagram budget. The two PDU types share this response encoder (deliberately
+// — see nl6#176) but RFC 3416 gives them opposite rules, so the rule is an
+// explicit argument rather than something the encoder infers from its caller.
+//
+// Getting this backwards is the most damaging mistake available here: a
+// truncated GET is a silent partial answer that the requester cannot detect and
+// has no way to complete.
+type snmpOverflowRule int
+
+const (
+	// overflowTruncate: RFC 3416 §4.2.3. Emit as many variable bindings as fit
+	// and stop. Safe because a walk resumes from the last OID returned.
+	overflowTruncate snmpOverflowRule = iota
+	// overflowTooBig: RFC 3416 §4.2.1. Replace the whole response with
+	// error-status tooBig and an EMPTY binding list. A GET requester asked for
+	// specific bindings and has no resume point.
+	overflowTooBig
+)
+
+// lenBytesFor returns how many bytes encodeLength spends on a content length of
+// n. Needed to size a message without assembling it: the three nested SEQUENCEs
+// (variable-bindings, PDU, message) each carry one, and the width steps at 128
+// and 256 — which is precisely the boundary region this bound operates in.
+func lenBytesFor(n int) int {
+	switch {
+	case n < 128:
+		return 1
+	case n < 256:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// snmpMessageSizeFor computes the exact encoded size of a GetResponse whose
+// variable-binding list is varBindLen bytes, given the pre-computed sizes of
+// the message prefix (version + community) and the PDU prefix (request-id +
+// error-status + error-index).
+//
+// Exact and O(1), so the encode loop can test each candidate binding without
+// assembling anything. An estimate would be the wrong tool here: every bug in
+// this family has been a mismatch between a predicted size and an emitted one.
+func snmpMessageSizeFor(msgPrefix, pduPrefix, varBindLen int) int {
+	vbSeq := 1 + lenBytesFor(varBindLen) + varBindLen
+	pduContents := pduPrefix + vbSeq
+	pdu := 1 + lenBytesFor(pduContents) + pduContents
+	msgContents := msgPrefix + pdu
+	return 1 + lenBytesFor(msgContents) + msgContents
+}
+
+// createGetBulkResponse encodes a GETBULK response, truncating to fit the
+// datagram budget (RFC 3416 §4.2.3).
 func (s *SNMPServer) createGetBulkResponse(oids []string, responses []string, requestData []byte) []byte {
+	return s.createVarbindResponse(oids, responses, requestData, overflowTruncate)
+}
+
+// createGetResponse encodes a GET response, returning tooBig rather than a
+// partial one when it will not fit (RFC 3416 §4.2.1).
+func (s *SNMPServer) createGetResponse(oids []string, responses []string, requestData []byte) []byte {
+	return s.createVarbindResponse(oids, responses, requestData, overflowTooBig)
+}
+
+// createVarbindResponse builds a multi-variable-binding GetResponse bounded by
+// maxSNMPResponseSize.
+//
+// `rule` decides what happens on overflow and MUST be supplied by the caller:
+// GETBULK truncates, GET returns tooBig. See snmpOverflowRule for why that
+// difference cannot be inferred here.
+//
+// Sizing is exact and incremental. Each binding is encoded once, its size added
+// to a running total, and the resulting MESSAGE size computed in O(1) via
+// snmpMessageSizeFor before it is committed — so nothing is ever assembled and
+// then thrown away, and no estimate can drift from the encoder (the drift that
+// produced nl6#486 and nl6#490).
+func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
+	requestData []byte, rule snmpOverflowRule) []byte {
 	if len(oids) != len(responses) {
 		// Fallback to single response
 		return s.createSNMPResponse(".1.3.6.1.2.1.1.1.0", "No data", requestData)
 	}
 
-	// Parse request to get community and request ID
 	req := s.parseIncomingRequest(requestData)
-	// log.Printf("SNMP %s: GetBulk using Request-ID: %d, Community: %s, Version: %d",
-	//	s.device.ID, req.RequestID, req.Community, req.Version)
 
-	// Build multiple variable bindings - using same format as single response
+	// Fixed prefixes, needed to size the message without assembling it.
+	msgPrefix := len(encodeInteger(req.Version)) + len(encodeOctetString(req.Community))
+	pduPrefix := len(encodeInteger(req.RequestID)) + len(encodeInteger(0)) + len(encodeInteger(0))
+
 	var varBindList []byte
-
+	truncated := false
 	for i, oid := range oids {
-		// Encode value with the correct ASN.1 type for this OID (RFC 1902).
-		value := responses[i]
-		valueBytes := encodeTypedValue(oid, value)
-
-		// Create variable binding: SEQUENCE { OID, value } - CORRECT ORDER
+		valueBytes := encodeTypedValue(oid, responses[i])
 		oidBytes := encodeOID(oid)
 		varBindingContents := append(oidBytes, valueBytes...)
 
 		varBinding := []byte{ASN1_SEQUENCE}
-		varBinding = append(varBinding, encodeLength(len(varBindingContents))...) // Length BEFORE contents
+		varBinding = append(varBinding, encodeLength(len(varBindingContents))...)
 		varBinding = append(varBinding, varBindingContents...)
 
+		if snmpMessageSizeFor(msgPrefix, pduPrefix, len(varBindList)+len(varBinding)) > maxSNMPResponseSize {
+			truncated = true
+			// Under TRUNCATE only, always emit at least one binding: a response
+			// with an empty binding list and no error stalls a collector's walk
+			// forever with no signal, which is worse than one oversized
+			// datagram. Reachable at a low -datagram-mtu (the flag accepts 576,
+			// giving a 548 B budget) with an ordinary long ifAlias.
+			//
+			// NOT under tooBig. Emitting the binding there would produce an
+			// oversized datagram carrying error-status noError — the fragmenting
+			// response this bound exists to prevent, and a violation of RFC 3416
+			// §4.2.1, which this same function enforces two lines below. A GET
+			// that cannot be answered within one datagram must say so
+			// (nl6#489 review).
+			if len(varBindList) == 0 && rule == overflowTruncate {
+				varBindList = append(varBindList, varBinding...)
+			}
+			break
+		}
 		varBindList = append(varBindList, varBinding...)
 	}
 
-	// Wrap variable bindings in SEQUENCE
+	if truncated && rule == overflowTooBig {
+		// RFC 3416 §4.2.1: the requester asked for specific bindings and cannot
+		// resume, so report the failure instead of answering partially.
+		return s.encodeGetResponse(req, nil, snmpErrTooBig)
+	}
+	return s.encodeGetResponse(req, varBindList, snmpErrNoError)
+}
+
+// encodeGetResponse wraps an already-encoded variable-binding list in the PDU
+// and message framing. Split out so the tooBig path and the normal path cannot
+// drift in their framing.
+func (s *SNMPServer) encodeGetResponse(req SNMPRequest, varBindList []byte, errStatus int) []byte {
 	varBindSequence := []byte{ASN1_SEQUENCE}
 	varBindSequence = append(varBindSequence, encodeLength(len(varBindList))...)
 	varBindSequence = append(varBindSequence, varBindList...)
 
-	// PDU contents: request-id, error-status, error-index, variable-bindings
 	var pduContents []byte
-	pduContents = append(pduContents, encodeInteger(req.RequestID)...) // Use actual request ID
-	pduContents = append(pduContents, encodeInteger(0)...)             // error-status (noError)
-	pduContents = append(pduContents, encodeInteger(0)...)             // error-index
-	pduContents = append(pduContents, varBindSequence...)              // variable-bindings
+	pduContents = append(pduContents, encodeInteger(req.RequestID)...)
+	pduContents = append(pduContents, encodeInteger(errStatus)...) // error-status
+	pduContents = append(pduContents, encodeInteger(0)...)         // error-index
+	pduContents = append(pduContents, varBindSequence...)
 
-	// GetResponse PDU (same as regular responses)
 	pdu := []byte{SNMP_GET_RESPONSE}
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
-	// Message contents: version, community, PDU
 	msgContents := []byte{}
-	msgContents = append(msgContents, encodeInteger(req.Version)...)       // Use client's version
-	msgContents = append(msgContents, encodeOctetString(req.Community)...) // Use actual community
-	msgContents = append(msgContents, pdu...)                              // PDU
+	msgContents = append(msgContents, encodeInteger(req.Version)...)
+	msgContents = append(msgContents, encodeOctetString(req.Community)...)
+	msgContents = append(msgContents, pdu...)
 
-	// Complete SNMP message - use same approach as regular response
-	msg := encodeSequence(msgContents)
-	// Debug: Hex dump of GetBulk response
-	// log.Printf("SNMP %s: GetBulk response hex: %x", s.device.ID, msg[:min(len(msg), 100)])
-	return msg
+	return encodeSequence(msgContents)
 }
 
 // decryptScopedPDU decrypts an encrypted scoped PDU

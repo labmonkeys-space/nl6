@@ -161,11 +161,7 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		if len(oids) == 0 {
 			oids = []string{oid} // fallback for an unparseable varbind list
 		}
-		responses := make([]string, len(oids))
-		for i, o := range oids {
-			responses[i] = s.findResponse(o)
-		}
-		return s.createGetBulkResponse(oids, responses, requestData)
+		return s.handleGetRequestVarbinds(oids, requestData)
 	}
 
 	// GETNEXT: single next-OID per request.

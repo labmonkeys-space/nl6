@@ -28,6 +28,46 @@ stack is implemented in `go/nl6/snmp*.go` — see
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
 
+## Response size, `max-repetitions` and truncation
+
+An SNMP response is bounded so the resulting UDP **frame** fits the link: the payload ceiling is the MTU minus the IPv4 and UDP headers, 1472 bytes at the default MTU, and it moves with `-datagram-mtu`. See the flow-export reference for that flag.
+
+**GETBULK truncates.** A response carrying more variable bindings than fit is cut to what fits, per RFC 3416 §4.2.3, with `error-status` left at `noError`. The collector resumes the walk from the last OID returned — which is how a walk already works, so nothing is lost and no data is skipped.
+
+**GET does not truncate.** A GET response that will not fit is replaced by `error-status = tooBig(1)` with an empty variable-binding list, per RFC 3416 §4.2.1. A GET requester asked for specific bindings and has no resume point, so a partial answer would be a wrong answer it could not detect. nl6 supports multi-binding GETs (a collector may bundle several OIDs in one request) and returns every binding in request order when they fit.
+
+### How response size scales
+
+Size grows as `columns × repetitions`. Measured against a device with 64 interfaces, walking the ten ifTable/ifXTable columns a collector typically requests:
+
+| columns | max-repetitions | bindings | response | frame |
+|---|---|---|---|---|
+| 10 | 2 | 20 | 500 B | 528 B |
+| 30 | 2 | 60 | 1436 B | 1464 B |
+| 10 | 10 | 61 | 1470 B | 1498 B |
+| 10 | 127 | 61 | 1470 B | 1498 B |
+| 10 | 1000 | 61 | 1470 B | 1498 B |
+
+Past roughly 60 bindings the response is truncated to fit, so raising `max-repetitions` further changes nothing about the datagram — it only means the walk completes in fewer requests up to that point.
+
+The 30 × 2 row is the OpenNMS collector default (`max-vars-per-pdu` 30, `max-repetitions` 2). It fits with 36 bytes to spare, which is why nothing fragments out of the box and why a slightly larger configuration used to.
+
+### `max-repetitions` is honoured as sent
+
+Any value is accepted and used. Before nl6#489 the parser read only single-byte BER content, which looks like a 255 ceiling but is really a 127 one — BER encodes any value from 128 upward in two bytes, because the leading `0x00` is what keeps it positive. Everything above 127 silently fell back to the default of 10.
+
+That mattered for benchmarking more than for correctness: an operator setting `max-repetitions=200` got 10, the collector performed twenty times the round-trips, and the result described a configuration nobody chose. **Numbers gathered against nl6 before this change, with `max-repetitions` above 127, are not comparable with numbers gathered after it.**
+
+A negative value is treated as 0, per RFC 3416's definition of the field as non-negative.
+
+### Known limitations
+
+**SNMPv3 GETBULK is not bounded.** Everything above describes the SNMPv2c path. The v3 GETBULK handler builds its response through a separate encoder that consults no size ceiling, and it currently hardcodes `max-repetitions` to 10. That combination makes an oversized v3 response unreachable in practice — ten bindings from a single column is roughly 500 bytes — but it is unreachable by accident, not bounded by design. Honouring a real `max-repetitions` on the v3 path requires giving it the same bound first.
+
+**SNMPv3 `msgMaxSize`**
+
+— the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
+
 ## OID lookup internals
 
 OIDs are stored per-device in a `sync.Map` for lock-free O(1) reads under

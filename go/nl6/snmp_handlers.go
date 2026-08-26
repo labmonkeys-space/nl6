@@ -397,6 +397,16 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 // requested column, leaving ifDescr/ifName/ifAlias/ifSpeed as N/A.
 func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	nonRepeaters, maxRepetitions := s.parseGetBulkParams(requestData)
+	// Defence in depth. parseGetBulkParams already rejects negatives, but the
+	// consequence of one slipping through is a slice-bounds panic that takes
+	// the whole simulator down from a single malformed UDP packet — there is no
+	// recover() on the serve path. Two guards is the right price for that.
+	if nonRepeaters < 0 {
+		nonRepeaters = 0
+	}
+	if maxRepetitions < 0 {
+		maxRepetitions = 0
+	}
 
 	// Parse every OID from the variable-bindings list.
 	allOIDs := s.parseAllOIDsFromRequest(requestData)
@@ -436,6 +446,27 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 		return s.createGetBulkResponse(responseOIDs, responseValues, requestData)
 	}
 
+	// Bound the WALK, not just the response.
+	//
+	// Truncation at encode time is what makes the response correct; this is a
+	// CPU guard. Without it a request for max-repetitions 1000 across 10 columns
+	// walks 10,000 MIB steps to emit the ~60 variable bindings that fit, and a
+	// walk step is not cheap here — ~29 SNMP req/s already saturates the cores
+	// on the LLDP path.
+	//
+	// Clamped rather than estimated: minVarbindSize is a floor on what any
+	// binding can encode to, so budget/minVarbindSize is a hard ceiling on how
+	// many could ever fit. The +1 keeps it from ever under-walking; the encode
+	// bound trims whatever is left over, so being generous here costs nothing
+	// but being tight would under-fill datagrams.
+	// No outer `maxRepetitions > maxFit` test: it made the clamp inert for
+	// everything below ~98, so 30 columns x 98 repetitions still walked 2940
+	// steps to emit the ~60 bindings that fit — precisely the amplification
+	// this guard exists to stop (nl6#489 review).
+	if perRep := maxSNMPResponseSize/minVarbindSize/len(repeaterCols) + 1; maxRepetitions > perRep {
+		maxRepetitions = perRep
+	}
+
 	// currentOIDs tracks the "cursor" position in each column.
 	currentOIDs := make([]string, len(repeaterCols))
 	copy(currentOIDs, repeaterCols)
@@ -465,6 +496,25 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	}
 
 	return s.createGetBulkResponse(responseOIDs, responseValues, requestData)
+}
+
+// handleGetRequestVarbinds answers a multi-variable-binding GET.
+//
+// It uses the tooBig overflow rule, NOT truncation: RFC 3416 §4.2.1 requires a
+// GET response to carry every requested binding or none. Unlike a GETBULK walk,
+// the requester has no resume point, so a partial response is a wrong answer it
+// cannot detect (nl6#489, design D3).
+//
+// Multi-binding GET support itself is load-bearing: OpenNMS Enlinkd's
+// LldpLocPortGetter bundles lldpLocPortIdSubtype/Id/Desc in one GET, and
+// answering only the first binding leaves the discovered topology with no edges
+// (nl6#176).
+func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte) []byte {
+	responses := make([]string, len(oids))
+	for i, o := range oids {
+		responses[i] = s.findResponse(o)
+	}
+	return s.createGetResponse(oids, responses, requestData)
 }
 
 // parseAllOIDsFromRequest extracts every OID from the variable-bindings list
@@ -655,8 +705,12 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	pos++
 	nonRepLen, newPos := parseLength(data, pos)
 	pos = newPos
-	if nonRepLen == 1 && pos < len(data) {
-		nonRepeaters = int(data[pos])
+	if v, ok := parseBERInt(data, pos, nonRepLen); ok && v >= 0 {
+		// Clamped HERE, not after the parse: six early returns follow, and a
+		// negative reaching handleGetBulk becomes `allOIDs[cap:]` with a
+		// negative index — a slice-bounds panic on the inline serve path, with
+		// no recover() anywhere, from one malformed packet (nl6#489 review).
+		nonRepeaters = v
 	}
 	pos += nonRepLen
 
@@ -667,14 +721,61 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	pos++
 	maxRepLen, newPos := parseLength(data, pos)
 	pos = newPos
-	if maxRepLen == 1 && pos < len(data) {
-		maxRepetitions = int(data[pos])
+	// RFC 3416 §4.2.3 defines max-repetitions as non-negative; a negative value
+	// is rejected at the parse site for the same reason as non-repeaters above.
+	if v, ok := parseBERInt(data, pos, maxRepLen); ok && v >= 0 {
+		maxRepetitions = v
 	}
 
 	// log.Printf("SNMP %s: GetBulk parsed parameters - nonRepeaters: %d, maxRepetitions: %d",
 	//	s.device.ID, nonRepeaters, maxRepetitions)
 
 	return nonRepeaters, maxRepetitions
+}
+
+// minVarbindSize is a floor on the encoded size of one variable binding:
+// SEQUENCE header (2) + the shortest plausible OID TLV (2 + ~8) + the shortest
+// value TLV (2 + 1). Deliberately an UNDER-estimate — it is used only to cap
+// how far the GETBULK walk runs, and under-estimating means walking slightly
+// too far, which the encode-time bound then trims. Over-estimating would stop
+// the walk early and under-fill datagrams.
+const minVarbindSize = 15
+
+// parseBERInt decodes a BER INTEGER's content octets (two's complement,
+// big-endian) at `pos` for `length` bytes.
+//
+// The previous implementation read only single-byte content, which looks like a
+// 255 ceiling but is actually a 127 one: BER encodes any value >= 128 in two
+// bytes, because the leading 0x00 is what keeps it positive. Everything above
+// 127 therefore fell back to the default of 10 — silently, and right in the
+// middle of the range operators tune `max-repetitions` to (nl6#489).
+//
+// That mattered beyond correctness: an operator testing max-repetitions=200 got
+// 10, the collector performed 20x the round-trips, and the benchmark reported a
+// plausible number describing a configuration nobody chose.
+//
+// Returns false when the content is absent, truncated, or wider than an int64
+// can hold — callers keep their existing default in that case.
+func parseBERInt(data []byte, pos, length int) (int, bool) {
+	if length <= 0 || pos+length > len(data) {
+		return 0, false
+	}
+	// Skip leading 0x00 padding before measuring width. Encoders that pad to a
+	// fixed field width emit legal INTEGERs wider than 8 octets, and rejecting
+	// those outright would make the caller keep its default — the same "value
+	// silently replaced by a default" failure this function exists to remove.
+	start, end := pos, pos+length
+	for start < end-1 && data[start] == 0x00 && data[start+1]&0x80 == 0 {
+		start++
+	}
+	if end-start > 8 {
+		return 0, false
+	}
+	v := int64(int8(data[start])) // sign-extend from the first significant octet
+	for i := start + 1; i < end; i++ {
+		v = v<<8 | int64(data[i])
+	}
+	return int(v), true
 }
 
 // overrideIfHC replaces staticResp with the live cycler value for any ifTable

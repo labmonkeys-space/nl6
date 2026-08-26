@@ -54,8 +54,10 @@ const (
 	// maxSyslogMessageBytes is a fixed 1400 that is deliberately never
 	// derived from linkMTU (see the note at the foot of this file), so a
 	// 1400-byte syslog message still fragments on a path the operator
-	// declared to be 576. Trap and GETBULK likewise keep their own bounds
-	// until nl6#487 and nl6#489 land.
+	// declared to be 576. Traps and SNMP responses DO derive from linkMTU now
+	// (nl6#487, nl6#489), but deriving is not the same as fitting: an oversized
+	// trap entry is disabled at load and named, and an oversized SNMP response
+	// is truncated (GETBULK) or answered with tooBig (GET).
 	//
 	// Rejecting values below 576 therefore prevents an obviously nonsensical
 	// configuration; it does not certify the fleet against the value given.
@@ -134,8 +136,10 @@ func recomputeDatagramBudgets() {
 	flowBufSize = linkMTU
 	// Trap notifications (nl6#487). udp4-only, so no address-family branch.
 	maxTrapPDU = linkMTU - ipv4HeaderBytes - udpHeaderBytes
-	// nl6#489 (the GETBULK response ceiling) joins here when it lands. Also
-	// udp4-only, so it derives the same expression.
+	// SNMP responses (nl6#489). Also udp4-only: devices bind per-device IPv4
+	// sockets, and an agent answers whoever polls it rather than a configured
+	// collector, so there is no address family to resolve.
+	maxSNMPResponseSize = linkMTU - ipv4HeaderBytes - udpHeaderBytes
 }
 
 // Budgets are PER-SUBSYSTEM and deliberately not unified into one constant.
@@ -146,7 +150,7 @@ func recomputeDatagramBudgets() {
 //	---------  -------------------------------  ------------------  --------
 //	flow       maxFlowPayloadIPv4 / ...IPv6      packing target      v4 + v6
 //	trap       maxTrapPDU                        rejection threshold udp4 only
-//	getbulk    (response truncation ceiling)     truncation ceiling  udp4 only
+//	snmp       maxSNMPResponseSize              truncate / tooBig   udp4 only
 //	syslog     maxSyslogMessageBytes = 1400      dry-render ceiling  all transports
 //
 // Flow packs records to fill a datagram, so every unused byte is throughput
