@@ -613,3 +613,80 @@ func TestFlowTickHonoursRecordCountCap(t *testing.T) {
 		})
 	}
 }
+
+// TestFlowTickSeparatesSendFailuresFromSends is the regression test for
+// nl6#491: Tick used to increment PacketsSent, BytesSent and RecordsSent after
+// a FAILED WriteTo, so GET /api/v1/flows/status reported datagrams that never
+// left the host and a down collector was invisible there.
+//
+// Syslog already had this right — syslog_exporter.go increments SendFailures
+// and returns, and only reaches Sent on the success path. This aligns flow with
+// its sibling rather than inventing a new convention.
+//
+// The failure is induced by closing the socket before the tick, which is the
+// cheapest way to make every WriteTo fail deterministically.
+func TestFlowTickSeparatesSendFailuresFromSends(t *testing.T) {
+	restoreLinkMTU(t)
+
+	ln, _ := testUDPListener(t)
+	addr := ln.LocalAddr().(*net.UDPAddr)
+	ln.Close()
+
+	conn := testSender(t)
+	conn.Close() // every WriteTo from here on fails
+
+	fe := newTestFlowExporter(testDevice("10.1.2.12"), mtuTestProfile(),
+		1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
+	fe.seqNo = 1 // suppress the template so every datagram is data
+	fe.lastTempl = time.Now()
+	fillExpiredFlows(t, fe, 240)
+
+	stats := tickWithEncoder(fe, time.Now(), NetFlow9Encoder{}, conn, addr, testPool())
+
+	if stats.SendFailures == 0 {
+		t.Fatal("no send failures recorded against a closed socket; the test induced nothing")
+	}
+	if stats.PacketsSent != 0 {
+		t.Errorf("PacketsSent = %d after every write failed — status would report datagrams "+
+			"that never left the host, and a down collector stays invisible", stats.PacketsSent)
+	}
+	if stats.BytesSent != 0 {
+		t.Errorf("BytesSent = %d after every write failed", stats.BytesSent)
+	}
+	if stats.RecordsSent != 0 {
+		t.Errorf("RecordsSent = %d after every write failed", stats.RecordsSent)
+	}
+}
+
+// TestFlowTickCountsSuccessfulSends is the other half: the split must not
+// stop counting the normal path.
+func TestFlowTickCountsSuccessfulSends(t *testing.T) {
+	restoreLinkMTU(t)
+
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+
+	fe := newTestFlowExporter(testDevice("10.1.2.13"), mtuTestProfile(),
+		1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
+	fe.seqNo = 1
+	fe.lastTempl = time.Now()
+	fillExpiredFlows(t, fe, 240)
+
+	stats := tickWithEncoder(fe, time.Now(), NetFlow9Encoder{}, conn, addrOf(ln), testPool())
+	got := len(drainPackets(ch))
+
+	if stats.SendFailures != 0 {
+		t.Errorf("SendFailures = %d on a working socket", stats.SendFailures)
+	}
+	if stats.PacketsSent == 0 {
+		t.Fatal("PacketsSent = 0 on a working socket")
+	}
+	if int(stats.PacketsSent) != got {
+		t.Errorf("PacketsSent = %d but %d datagrams arrived — the counter must track the wire",
+			stats.PacketsSent, got)
+	}
+}
+
+func addrOf(ln *net.UDPConn) *net.UDPAddr { return ln.LocalAddr().(*net.UDPAddr) }

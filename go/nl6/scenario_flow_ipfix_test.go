@@ -108,11 +108,17 @@ func TestScenarioIPFIX_FleetTickerYields(t *testing.T) {
 		devicesByIP: map[string]*DeviceSimulator{},
 	}
 	sm.flowBufPool.New = func() any { b := make([]byte, 1500); return &b }
+	// This test asks "was Tick called", so it counts ATTEMPTS — sends plus
+	// failures. statPackets alone stopped being that proxy in nl6#491, where it
+	// narrowed to "reached the kernel"; the collector here is never listened
+	// on, so a delivered-only counter can legitimately read zero.
+	attempts := func() uint64 { return fe.statPackets.Load() + fe.statFailures.Load() }
+
 	// scenDriven=false → fleet ticker DOES tick it (packets attempted).
 	fe.scenDriven.Store(false)
 	injectExpiredFlows(fe, 2, time.Now())
 	sm.tickAllFlowExporters(time.Now())
-	before := fe.statPackets.Load()
+	before := attempts()
 	if before == 0 {
 		t.Fatal("fleet ticker should tick a non-scenario-driven exporter")
 	}
@@ -120,7 +126,7 @@ func TestScenarioIPFIX_FleetTickerYields(t *testing.T) {
 	fe.scenDriven.Store(true)
 	injectExpiredFlows(fe, 2, time.Now())
 	sm.tickAllFlowExporters(time.Now())
-	if fe.statPackets.Load() != before {
+	if attempts() != before {
 		t.Fatal("fleet ticker must skip a scenario-driven exporter")
 	}
 }

@@ -132,9 +132,20 @@ func flowPayloadBudget(addr *net.UDPAddr) int {
 // tickAllFlowExporters sums these across all devices and adds them to the
 // cumulative atomic counters on SimulatorManager.
 type FlowTickStats struct {
-	PacketsSent    uint64
-	BytesSent      uint64
-	RecordsSent    uint64
+	PacketsSent uint64
+	BytesSent   uint64
+	RecordsSent uint64
+	// SendFailures counts datagrams the kernel refused. Kept separate from
+	// PacketsSent rather than folded into it, so `sent` means "reached the
+	// kernel" — the reading syslog already uses (syslog_exporter.go increments
+	// SendFailures and returns; Sent only on the success path).
+	//
+	// Before nl6#491 all three counters incremented after a failed WriteTo, so
+	// GET /api/v1/flows/status reported datagrams that never left the host and
+	// a down collector was undetectable from it. That is also why nl6#488's
+	// datagram gate cannot drive Tick through its probe socket: an EMSGSIZE
+	// never reaches the return value.
+	SendFailures   uint64
 	LastTemplateMs int64 // unix ms of the most-recent template send this tick; 0 if none
 }
 
@@ -186,9 +197,10 @@ type FlowExporter struct {
 	// time and persisted into the simulator-wide per-collector aggregate
 	// when the device is deleted, so /api/v1/flows/status exposes
 	// monotonic totals even as devices come and go.
-	statPackets atomic.Uint64
-	statBytes   atomic.Uint64
-	statRecords atomic.Uint64
+	statPackets  atomic.Uint64
+	statFailures atomic.Uint64
+	statBytes    atomic.Uint64
+	statRecords  atomic.Uint64
 
 	// firstWriteErr ensures we log at most one write-failure message per
 	// exporter; silent swallowing of WriteTo errors was an observability
@@ -746,11 +758,21 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 				part.bucketFlowBatch(now, batch)
 			}
 		}
-		stats.PacketsSent++
-		stats.BytesSent += uint64(n)
-		stats.RecordsSent += uint64(len(batch))
+		if writeErr {
+			stats.SendFailures++
+		} else {
+			stats.PacketsSent++
+			stats.BytesSent += uint64(n)
+			stats.RecordsSent += uint64(len(batch))
+		}
 		// Advance flow_sequence per the protocol's semantics. NF9/IPFIX advance
 		// by 1 per packet; NF5 advances by the record count of this packet.
+		//
+		// Advanced even on a failed write, deliberately and unchanged by
+		// nl6#491. The alternative — reusing the sequence — would hide the loss
+		// from the collector entirely, whereas advancing shows it as a gap.
+		// Either is defensible; changing it would alter wire semantics, which
+		// is a bigger question than the status counters this fixes.
 		fe.seqNo += uint32(encoder.SeqIncrement(len(batch)))
 		if sendTemplate {
 			fe.lastTempl = now
@@ -982,9 +1004,10 @@ func (sm *SimulatorManager) closeFlowConnPool() {
 // by `persistFlowCounters` on device Stop; read by `GetFlowStatus` and
 // merged with live-exporter counters to produce cumulative totals.
 type flowCollectorAggregate struct {
-	packets atomic.Uint64
-	bytes   atomic.Uint64
-	records atomic.Uint64
+	packets  atomic.Uint64
+	bytes    atomic.Uint64
+	records  atomic.Uint64
+	failures atomic.Uint64
 }
 
 // persistFlowCounters snapshots a FlowExporter's cumulative counters
@@ -1004,6 +1027,7 @@ func (sm *SimulatorManager) persistFlowCounters(fe *FlowExporter) {
 		v, _ := sm.flowAggregates.LoadOrStore(key, &flowCollectorAggregate{})
 		agg := v.(*flowCollectorAggregate)
 		agg.packets.Add(fe.statPackets.Load())
+		agg.failures.Add(fe.statFailures.Load())
 		agg.bytes.Add(fe.statBytes.Load())
 		agg.records.Add(fe.statRecords.Load())
 	})
@@ -1236,11 +1260,16 @@ func (sm *SimulatorManager) tickFlowExporter(fe *FlowExporter, now time.Time) Fl
 		sharedConn = sm.flowConnFor(flowConnKey{collector: fe.collectorStr, protocol: fe.protocol})
 	}
 	s := fe.Tick(now, sharedConn, &sm.flowBufPool)
-	if s.PacketsSent > 0 {
-		fe.statPackets.Add(s.PacketsSent)
-		fe.statBytes.Add(s.BytesSent)
-		fe.statRecords.Add(s.RecordsSent)
-	}
+	// Unguarded: the old `if s.PacketsSent > 0` skip was harmless while every
+	// tick that did anything incremented PacketsSent, but nl6#491 split
+	// failures out — and on a tick where EVERY write failed, PacketsSent is 0,
+	// so that guard would have swallowed the failure count too. A counter that
+	// cannot record the thing it exists for is worse than no counter. Adding
+	// zero is free.
+	fe.statPackets.Add(s.PacketsSent)
+	fe.statFailures.Add(s.SendFailures)
+	fe.statBytes.Add(s.BytesSent)
+	fe.statRecords.Add(s.RecordsSent)
 	return s
 }
 
@@ -1275,6 +1304,7 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 		}
 		rec.Devices++
 		rec.SentPackets += fe.statPackets.Load()
+		rec.SendFailures += fe.statFailures.Load()
 		rec.SentBytes += fe.statBytes.Load()
 		rec.SentRecords += fe.statRecords.Load()
 	}
@@ -1296,6 +1326,7 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 			agg[key] = rec
 		}
 		rec.SentPackets += pers.packets.Load()
+		rec.SendFailures += pers.failures.Load()
 		rec.SentBytes += pers.bytes.Load()
 		rec.SentRecords += pers.records.Load()
 		return true
