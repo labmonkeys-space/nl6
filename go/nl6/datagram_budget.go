@@ -134,8 +134,10 @@ func recomputeDatagramBudgets() {
 	flowBufSize = linkMTU
 	// Trap notifications (nl6#487). udp4-only, so no address-family branch.
 	maxTrapPDU = linkMTU - ipv4HeaderBytes - udpHeaderBytes
-	// nl6#489 (the GETBULK response ceiling) joins here when it lands. Also
-	// udp4-only, so it derives the same expression.
+	// SNMP responses (nl6#489). Also udp4-only: devices bind per-device IPv4
+	// sockets, and an agent answers whoever polls it rather than a configured
+	// collector, so there is no address family to resolve.
+	maxSNMPResponseSize = linkMTU - ipv4HeaderBytes - udpHeaderBytes
 }
 
 // Budgets are PER-SUBSYSTEM and deliberately not unified into one constant.
