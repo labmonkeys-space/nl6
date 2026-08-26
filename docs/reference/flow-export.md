@@ -226,7 +226,9 @@ Expiry is noticed by a periodic sweep. A flow's real residency is therefore the 
 
 Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
 
-The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers: 1472 bytes for an IPv4 collector and 1452 for IPv6. nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented. That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
+The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers. At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu` (below). nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented. That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
+
+**NetFlow v5 does not scale with the MTU.** Cisco v5 caps a datagram at 30 records regardless of how much space is available, so a v5 exporter stays at 30 records and roughly 1464 bytes whatever `-datagram-mtu` is set to. Raising the MTU for a jumbo path increases v9 and IPFIX datagram size but leaves v5 emitting the same number of the same-sized datagrams. That cap is also why v5 fit inside the old, incorrect budget by accident rather than by design.
 
 The MTU defaults to 1500 and is set with `-datagram-mtu`. That default holds for nl6's own TUN and veth interfaces, which take the kernel default, but it is an assumption about the **egress** path to the collector rather than a fact nl6 controls.
 
