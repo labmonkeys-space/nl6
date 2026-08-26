@@ -726,8 +726,8 @@ type FlowCollectorStatus struct {
 	// nl6#491; before it, failures were counted as sends and a down collector
 	// was invisible here.
 	SendFailures uint64 `json:"send_failures"`
-	SentBytes   uint64 `json:"sent_bytes"`
-	SentRecords uint64 `json:"sent_records"`
+	SentBytes    uint64 `json:"sent_bytes"`
+	SentRecords  uint64 `json:"sent_records"`
 }
 
 // ExportSeed carries the optional per-device export configs handed to
