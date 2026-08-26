@@ -305,6 +305,19 @@ func (c *DeviceFlowConfig) Validate() error {
 	if c == nil {
 		return nil
 	}
+	// The engine cannot honour a per-device flow tick_interval: one simulator-wide ticker drives every device, so there is no
+	// per-device cadence to set. Rejecting
+	// at the door rather than storing-and-ignoring, because an API that echoes
+	// a value it does not use actively confirms a wrong belief — the operator's
+	// natural check is to read the value back. The in-tree precedent is
+	// -syslog-framing under udp, which is refused at startup rather than
+	// silently dropped (nl6#445).
+	//
+	// Use -flow-tick-interval for the fleet-wide value.
+	if c.TickIntervalWasSet() {
+		return fmt.Errorf("flow: tick_interval is not supported per device — one " +
+			"simulator-wide ticker drives every device; use -flow-tick-interval")
+	}
 	// Range checks first so canonicalisation never runs on invalid input.
 	if time.Duration(c.TickInterval) < 0 {
 		return fmt.Errorf("flow: tick_interval must be >= 0, got %s", time.Duration(c.TickInterval))
@@ -380,6 +393,19 @@ func (c *DeviceTrapConfig) Validate() error {
 	if c == nil {
 		return nil
 	}
+	// The engine cannot honour a per-device trap interval: one central scheduler fires every device at its own
+	// mean interval. Rejecting
+	// at the door rather than storing-and-ignoring, because an API that echoes
+	// a value it does not use actively confirms a wrong belief — the operator's
+	// natural check is to read the value back. The in-tree precedent is
+	// -syslog-framing under udp, which is refused at startup rather than
+	// silently dropped (nl6#445).
+	//
+	// Use -trap-interval for the fleet-wide value.
+	if c.IntervalWasSet() {
+		return fmt.Errorf("traps: interval is not supported per device — one central " +
+			"scheduler fires every device at the simulator-wide mean; use -trap-interval")
+	}
 	// Range checks first.
 	if c.InformRetries < 0 {
 		return fmt.Errorf("traps: inform_retries must be >= 0, got %d", c.InformRetries)
@@ -434,6 +460,19 @@ func (c *DeviceSyslogConfig) ApplyDefaults() {
 func (c *DeviceSyslogConfig) Validate() error {
 	if c == nil {
 		return nil
+	}
+	// The engine cannot honour a per-device syslog interval: one central scheduler fires every device at its own
+	// mean interval. Rejecting
+	// at the door rather than storing-and-ignoring, because an API that echoes
+	// a value it does not use actively confirms a wrong belief — the operator's
+	// natural check is to read the value back. The in-tree precedent is
+	// -syslog-framing under udp, which is refused at startup rather than
+	// silently dropped (nl6#445).
+	//
+	// Use -syslog-interval for the fleet-wide value.
+	if c.IntervalWasSet() {
+		return fmt.Errorf("syslog: interval is not supported per device — one central " +
+			"scheduler fires every device at the simulator-wide mean; use -syslog-interval")
 	}
 	if time.Duration(c.Interval) < 0 {
 		return fmt.Errorf("syslog: interval must be >= 0, got %s", time.Duration(c.Interval))

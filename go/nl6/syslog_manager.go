@@ -429,7 +429,6 @@ func (sm *SimulatorManager) StopSyslogExport() {
 	// startDeviceSyslogExporter (phase-5 review P3).
 	sm.syslogAggregates = sync.Map{}
 	sm.syslogFirstAttachLog.Store(false)
-	sm.syslogIntervalWarned.Store(false)
 	// Reset subsystem-scalar state so a subsequent StartSyslogSubsystem
 	// starts from a clean slate (phase-5 review P-E1).
 	sm.syslogLimiter = nil
@@ -585,21 +584,6 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 	// floods at fleet scale (phase-5 review P13); the response path
 	// deliberately does not share that suppression, since a caller is not
 	// helped by an earlier, unrelated caller having already been warned.
-	// Gate on whether the CALLER set the field, matching the response path.
-	// The old `!= 0 && != MeanInterval()` test ran AFTER ApplyDefaults had
-	// stamped the package default, so a fleet started with -syslog-interval 60s
-	// logged "configured interval=10s" about callers who configured nothing.
-	if cfg.IntervalWasSet() && sm.syslogIntervalWarned.CompareAndSwap(false, true) {
-		// Reuse the REST disclosure's own text so the log and the response can
-		// never disagree. Hand-writing it here is what produced the
-		// self-contradicting "configured interval=10s but the scheduler runs at
-		// mean=10s" once the gate stopped requiring divergence.
-		if wrn := intervalDisclosure("syslog.interval", true,
-			time.Duration(cfg.Interval), scheduler.MeanInterval()); wrn != nil {
-			log.Printf("syslog export: device %s: %s (further devices suppressed this lifecycle)",
-				device.IP, wrn.Message)
-		}
-	}
 
 	// Register through the background wrapper so scheduler-driven fires
 	// carry the background source flag for the scenario gate (the matrix

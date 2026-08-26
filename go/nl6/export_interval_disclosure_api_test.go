@@ -88,55 +88,6 @@ func TestCreateDevices_StillRejectsGenuineTypos(t *testing.T) {
 	}
 }
 
-// TestCreateDevicesResult_WarningsSerialize asserts the warning actually
-// reaches the wire, under the `data` envelope where the docs say it lives.
-//
-// The response is built by the handler on success, which needs a real manager,
-// so this exercises the payload type directly — the half that is testable
-// without root, and the half a scripted client depends on. It pins the field
-// path (`.data.warnings`, not `.warnings`), which the docs got wrong once
-// already.
-func TestCreateDevicesResult_WarningsSerialize(t *testing.T) {
-	wrn := intervalDisclosure("syslog.interval", true, 24*time.Hour, 10*time.Second)
-	if wrn == nil {
-		t.Fatal("expected a warning to embed")
-		return
-	}
-	raw, err := json.Marshal(APIResponse{
-		Success: true,
-		Message: "Created 1 devices starting from 10.0.0.1",
-		Data:    CreateDevicesResult{Created: 1, Requested: 1, Warnings: []exportWarning{*wrn}},
-	})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-
-	var envelope struct {
-		Data struct {
-			Warnings []struct {
-				Field     string `json:"field"`
-				Requested string `json:"requested"`
-				Effective string `json:"effective"`
-				Message   string `json:"message"`
-			} `json:"warnings"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(envelope.Data.Warnings) != 1 {
-		t.Fatalf("data.warnings length = %d, want 1 — a client reading .data.warnings must find it: %s",
-			len(envelope.Data.Warnings), raw)
-	}
-	got := envelope.Data.Warnings[0]
-	if got.Field != "syslog.interval" || got.Requested != "24h0m0s" || got.Effective != "10s" {
-		t.Errorf("warning = %+v, want field/requested/effective populated", got)
-	}
-	if got.Message == "" {
-		t.Error("message empty; it is the only field a human reads in a raw body")
-	}
-}
-
 // TestCreateDevicesResult_NoWarningsOmitted keeps the field out of the common
 // response entirely, so existing clients see a byte-identical body.
 func TestCreateDevicesResult_NoWarningsOmitted(t *testing.T) {
@@ -146,39 +97,6 @@ func TestCreateDevicesResult_NoWarningsOmitted(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "warnings") {
 		t.Errorf("empty warnings must be omitted, got %s", raw)
-	}
-}
-
-// TestDisclosureSurvivesApplyDefaults is the ordering guard, rewritten.
-//
-// The previous version asserted that a PURE FUNCTION is pure, which it is by
-// construction, so it could not detect the reordering it claimed to prevent.
-// The real invariant is that provenance is captured before ApplyDefaults and
-// SURVIVES it — that is what a reordering would break, and it is observable on
-// the config object itself.
-func TestDisclosureSurvivesApplyDefaults(t *testing.T) {
-	const fleetMean = 60 * time.Second // e.g. -syslog-interval 60s
-
-	// A caller who set nothing, handled in handler order.
-	omitted := &DeviceSyslogConfig{Collector: "x:514"}
-	omitted.markIntervalProvenance() // BEFORE defaults, as createDevicesHandler does
-	omitted.ApplyDefaults()
-
-	if omitted.IntervalWasSet() {
-		t.Fatal("provenance says the caller set an interval; a reordering (or a value-based " +
-			"test) would make every default-interval device warn on a non-default fleet")
-	}
-	if got := intervalDisclosure("syslog.interval", omitted.IntervalWasSet(),
-		time.Duration(omitted.Interval), fleetMean); got != nil {
-		t.Fatalf("disclosed against a caller who set nothing: %+v", got)
-	}
-
-	// And the marker must survive defaults for a caller who DID set one.
-	set := &DeviceSyslogConfig{Collector: "x:514", Interval: jsonDuration(24 * time.Hour)}
-	set.markIntervalProvenance()
-	set.ApplyDefaults()
-	if !set.IntervalWasSet() {
-		t.Error("provenance lost across ApplyDefaults")
 	}
 }
 
@@ -279,32 +197,5 @@ func TestErrorResponseUnchangedWithoutWarnings(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), `"data"`) {
 		t.Errorf("error response grew a data key with no warnings to carry: %s", w.Body.String())
-	}
-}
-
-// TestWarningMessageMakesNoOutcomeClaim is the invariant that permits the
-// warning to ride a rejection at all.
-//
-// The message used to say "is accepted and stored", true only on the success
-// path — which is precisely why it could not be attached to a 400 or to a
-// created=0 batch. If someone reintroduces an outcome claim, attaching it
-// elsewhere becomes a lie, so this fails.
-func TestWarningMessageMakesNoOutcomeClaim(t *testing.T) {
-	for _, w := range []*exportWarning{
-		intervalDisclosure("syslog.interval", true, 24*time.Hour, 10*time.Second),
-		intervalDisclosure("traps.interval", true, 30*time.Second, 30*time.Second),
-	} {
-		if w == nil {
-			t.Fatal("expected a warning")
-		}
-		for _, claim := range []string{"accepted", "stored", "created", "was applied"} {
-			if strings.Contains(strings.ToLower(w.Message), claim) {
-				t.Errorf("message claims an outcome (%q), so it cannot ride a 400 or a "+
-					"created=0 batch truthfully: %q", claim, w.Message)
-			}
-		}
-		if !strings.Contains(w.Message, "not honored") {
-			t.Errorf("message must still say the field is not honored: %q", w.Message)
-		}
 	}
 }

@@ -6,28 +6,31 @@
 package main
 
 import (
-	"fmt"
 	"time"
 )
 
-// export_interval_disclosure.go — makes the export APIs honest about the
-// interval fields they accept but do not honor.
+// export_interval_disclosure.go — reports the intervals actually in force.
 //
-// Three per-device settings are stored, echoed, and ignored: syslog
+// Three per-device settings USED TO BE stored, echoed, and ignored: syslog
 // `interval`, trap `interval`, and flow `tick_interval`. The syslog and trap
 // schedulers fire every device at their simulator-wide MeanInterval; flow
 // drives every device from one simulator-wide ticker. That the feature is
-// missing is defensible. That the API reports a value the engine does not use
-// is not: a configuration surface which confirms a wrong belief is worse than
+// missing is defensible. That the API reported a value the engine did not use
+// was not: a configuration surface which confirms a wrong belief is worse than
 // one that stays silent, because the operator's natural check is to read the
 // value back.
 //
+// nl6#445 resolved that by REJECTING those fields with a 400 rather than
+// disclosing them, so the wrong belief is now impossible rather than merely
+// annotated. What remains in this file is the other half: telling a caller what
+// the intervals actually ARE, through the effective_intervals block on
+// GET /api/v1/devices.
+//
 // THREE THINGS LIVE HERE
 //
-//  1. intervalDisclosure, the inert-field predicate. It takes two durations, a
-//     field name, and whether the caller actually asked for the value. Nothing
-//     else, so it is testable without constructing a manager and all three
-//     subsystems cannot drift in message shape.
+//  1. (REMOVED in nl6#445) intervalDisclosure, the inert-field predicate. The
+//     fields it warned about are rejected outright now, so the warning has no
+//     subject left.
 //
 //  2. The effectiveIntervals block. The effective values are reported in a
 //     SIBLING object on the device read-back, NOT as extra fields inside the
@@ -72,53 +75,15 @@ type exportWarning struct {
 	Message   string `json:"message"`
 }
 
-// intervalDisclosure reports an interval the caller asked for that the engine
-// will not honor, or nil when the caller asked for nothing.
+// intervalDisclosure was removed in nl6#445. It reported an interval the
+// caller asked for that the engine would not honour — a warning attached to a
+// request that had nonetheless stored the value. Those fields are now rejected
+// with a 400 in the three Validate methods (export_config.go), so there is
+// nothing left to disclose: an inert value can no longer be accepted at all.
 //
-// `requested` gates on WAS-THE-FIELD-SET, not on whether it diverges. The
-// defect is that the field does nothing, so a caller who happens to name the
-// current fleet mean is under exactly the same misapprehension as one who names
-// 24h. Disclosing only on divergence also meant an identical request warned or
-// stayed silent depending on unrelated fleet configuration.
-//
-// `wasSet` must be derived from the RAW request, because `ApplyDefaults` stamps
-// the package default over an omitted zero and thereby destroys the
-// distinction. Deriving it from a non-zero duration after that point discloses
-// against every caller who set nothing at all.
-func intervalDisclosure(field string, wasSet bool, requested, effective time.Duration) *exportWarning {
-	if !wasSet {
-		return nil
-	}
-	// The message is a statement about the FIELD, never about this request's
-	// outcome. It used to say "is accepted and stored", which is true only on
-	// the success path — that wording is why the warning could not be attached
-	// to a 400 (nothing was accepted) or to a created=0 batch (nothing was
-	// stored). Keeping it outcome-free lets the same warning ride any response.
-	var msg string
-	if requested == effective {
-		// D4 made this the COMMON case, and it needs its own wording: naming
-		// the same duration twice ("=30s ... scheduled at 30s") reads as a
-		// simulator bug rather than a disclosure.
-		msg = fmt.Sprintf(
-			"%s is not honored. The value given (%s) happens to match the simulator-wide "+
-				"cadence, so emission is unchanged. But the field is inert: changing it "+
-				"will not change anything. Per-device intervals are not implemented (see nl6#445).",
-			field, requested)
-	} else {
-		msg = fmt.Sprintf(
-			"%s is not honored: every device is scheduled at the simulator-wide %s, not the "+
-				"%s given. Per-device intervals are not implemented (see nl6#445). To silence "+
-				"a fleet use -fidelity, or POST /api/v1/fidelity to toggle it at runtime, "+
-				"not a long interval.",
-			field, effective, requested)
-	}
-	return &exportWarning{
-		Field:     field,
-		Requested: requested.String(),
-		Effective: effective.String(),
-		Message:   msg,
-	}
-}
+// The exportWarning type above survives on purpose: it is the general "your
+// request was accepted, but here is something you should know" channel and part
+// of the response shape. Nothing populates it today.
 
 // effectiveIntervals is the sibling block on a device read-back reporting the
 // cadences actually configured, for whichever export subsystems the device

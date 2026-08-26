@@ -1105,14 +1105,6 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 	//
 	// The effective value is the LATCHED period, the same reference the REST
 	// disclosure uses, so the two channels cannot contradict each other.
-	if cfg.TickIntervalWasSet() && sm.flowIntervalWarned.CompareAndSwap(false, true) {
-		// Same text as the REST disclosure — see the syslog twin.
-		if wrn := intervalDisclosure("flow.tick_interval", true,
-			time.Duration(cfg.TickInterval), sm.effectiveFlowTickInterval()); wrn != nil {
-			log.Printf("flow export: device %s: %s (further devices suppressed this lifecycle)",
-				device.IP, wrn.Message)
-		}
-	}
 
 	device.flowExporter = NewFlowExporter(device, flowProfile,
 		time.Duration(cfg.ActiveTimeout),

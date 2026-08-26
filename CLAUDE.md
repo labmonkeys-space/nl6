@@ -24,7 +24,7 @@ sudo ./nl6 [flags]
 -no-namespace           # Disable network namespace isolation
 -version                # Print version string and exit (no startup side effects)
 -fidelity               # [global] Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a running load-test scenario window. Devices still answer polls; on-demand fires still go through. Default: false.
-                        #          THIS is how you silence a fleet for a measurement. A long per-device `interval` does NOT work: it is accepted, echoed back by GET /api/v1/devices, and ignored by the scheduler (nl6#445). Also togglable at runtime via POST /api/v1/fidelity (optional `duration` auto-reverts, 24h cap); GET reports the value in force AND the startup flag, since once mutable the flag is a default rather than a fact.
+                        #          THIS is how you silence a fleet for a measurement. A long per-device `interval` does NOT work and is now REJECTED with a 400 (nl6#445) — it used to be accepted, echoed back and ignored. Also togglable at runtime via POST /api/v1/fidelity (optional `duration` auto-reverts, 24h cap); GET reports the value in force AND the startup flag, since once mutable the flag is a default rather than a fact.
 -scenario-pen <uint>    # [global] IANA PEN for PEN-dependent scenario run tags (syslog SD-PARAM, SNMP enterprise varbind); 0 = unset → those levers degrade to window+source-IP.
 -optical-scenario <s>   # [seed]   Auto-start-batch per-device optical health band (optical transport types only): clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via optical_scenario.
 -if-error-scenario <s>  # Auto-start-batch per-device error/discard scenario: clean (default) | typical | degraded | failing. REST-created devices default to clean; opt in via if_error_scenario.
@@ -62,7 +62,7 @@ sudo ./nl6 [flags]
 # Flags marked [global] retain simulator-wide effect.
 -flow-collector <host:port>       # [seed]   Seed collector for auto-start batch
 -flow-protocol <proto>            # [seed]   netflow9 (default) | ipfix | netflow5 | sflow (alias: sflow5)
--flow-tick-interval <duration>    # [seed]   Flow ticker cadence (default: 5s). Honored since nl6#446 was fixed; applied at manager construction, NOT runtime-mutable. This is a BATCHING knob, not a volume knob: it sets how finely the stream is cut into datagrams. Volume is ConcurrentFlows / mean-flow-lifetime, so a slower tick makes bigger datagrams, not proportionally fewer records (a residual ~T/2 polling effect remains — a flow sits cached up to one interval past its deadline). ONE simulator-wide ticker drives every device; per-device `tick_interval` is accepted and echoed but NOT honored (nl6#445).
+-flow-tick-interval <duration>    # [seed]   Flow ticker cadence (default: 5s). Honored since nl6#446 was fixed; applied at manager construction, NOT runtime-mutable. This is a BATCHING knob, not a volume knob: it sets how finely the stream is cut into datagrams. Volume is ConcurrentFlows / mean-flow-lifetime, so a slower tick makes bigger datagrams, not proportionally fewer records (a residual ~T/2 polling effect remains — a flow sits cached up to one interval past its deadline). ONE simulator-wide ticker drives every device; per-device `tick_interval` is REJECTED with a 400 (nl6#445) rather than accepted and ignored.
 -flow-active-timeout <duration>   # [seed]   Cap on how long a still-running flow stays cached before export (default: 30s). Binds for ~92% of flows under the shipped profile. Sets a MEAN, not an exact deadline: each flow's deadline carries ±25% jitter (nl6#462), so 30s spreads expiry over 22.5-37.5s. Symmetric, so it moves emission SHAPE, not volume.
 -flow-inactive-timeout <duration> # [seed]   Idle time after a flow's last packet before export (default: 15s). Only reachable for flows shorter than (active - inactive), ~8% under the shipped profile. NOTE: before nl6#446 this was the ONLY timeout that could fire — `lastSeenAt` was pinned to flow creation, so every flow looked idle from birth and `-flow-active-timeout` was inert above this value.
 -flow-template-interval <dur>     # [global] Re-send template every N seconds (default: 60s; ignored under netflow5/sflow)
@@ -86,7 +86,7 @@ sudo ./nl6 [flags]
 # SNMP trap / INFORM export flags (SNMPv2c only)
 -trap-collector <host:port>       # [seed]   Seed trap collector for auto-start batch (default port 162)
 -trap-mode <proto>                # [seed]   trap (default, fire-and-forget) | inform (acknowledged)
--trap-interval <duration>         # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 30s). Per-device `interval` is accepted and echoed but NOT honored, same as syslog.
+-trap-interval <duration>         # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 30s). Per-device `interval` is REJECTED with a 400, same as syslog (nl6#445).
 -trap-global-cap <tps>            # [global] Simulator-wide tps ceiling (0 = unlimited)
 -trap-catalog <path>              # [global] Override embedded universal catalog (5 entries) + per-type overlays — when set, the single file becomes the catalog for every device
 -trap-community <string>          # [seed]   SNMPv2c community (default: public)
@@ -99,7 +99,7 @@ sudo ./nl6 [flags]
 -syslog-transport <t>             # [seed]   udp (default) | tcp (RFC 6587) | tls (RFC 5425: tcp inside TLS, port 6514 default, octet-counting FORCED). TCP is one connection PER DEVICE with capped-backoff reconnect and keepalives; per-device via REST `syslog.transport`.
 -syslog-framing <f>               # [seed]   octet-counting (default) | non-transparent. TCP only — setting it under udp is REJECTED at startup, not ignored (nl6#445 failure mode).
 -syslog-format <fmt>              # [seed]   5424 (default, structured) | 3164 (legacy BSD)
--syslog-interval <duration>       # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 10s). The per-device `interval` in a REST syslog block is accepted and echoed but NOT honored (nl6#445) — every device fires at this value. To silence a fleet use -fidelity, not a long per-device interval.
+-syslog-interval <duration>       # [seed]   SIMULATOR-WIDE mean firing interval, Poisson-distributed (default: 10s). The per-device `interval` in a REST syslog block is REJECTED with a 400 (nl6#445) — every device fires at this value. To silence a fleet use -fidelity, not a long per-device interval.
 -syslog-global-cap <rate>         # [global] Simulator-wide rate ceiling (0 = unlimited)
 -syslog-catalog <path>            # [global] Override embedded universal 6-entry catalog
 -syslog-source-per-device         # [global] Source IP = device IP (default: true; bind failure is non-fatal, falls back to shared socket)

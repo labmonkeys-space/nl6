@@ -311,12 +311,7 @@ type SimulatorManager struct {
 	// restarted. Reporting flowTickInterval as "effective" would therefore
 	// state a cadence nothing runs at. Written once, before the ticker
 	// goroutine starts; read concurrently by the device read-back.
-	flowTickerPeriod atomic.Int64
-	// flowIntervalWarned CAS-gates the tick_interval disclosure log to one
-	// line per lifecycle, matching trapIntervalWarned / syslogIntervalWarned.
-	// Flow was the odd one out and flooded 30k lines on a fleet-scale batch.
-	flowIntervalWarned atomic.Bool
-
+	flowTickerPeriod     atomic.Int64
 	flowTemplateInterval time.Duration
 	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
 
@@ -390,7 +385,6 @@ type SimulatorManager struct {
 	trapConns           sync.Map      // key: string collector, value: *net.UDPConn (shared-socket fallback pool, TRAP mode only)
 	trapAggregates      sync.Map      // key: trapAggKey, value: *trapCollectorAggregate — monotonic counters surviving device delete
 	trapFirstAttachLog  atomic.Bool   // CAS-gated so the "trap export active" line fires once per lifecycle; race-free reset on Stop
-	trapIntervalWarned  atomic.Bool   // CAS-gated divergence warning — one line per lifecycle, not per device (phase-5 review P13)
 	trapGlobalCap       int
 	trapSourcePerDevice bool
 	trapCatalogPath     string // "" when using embedded catalog
@@ -409,7 +403,6 @@ type SimulatorManager struct {
 	syslogConns           sync.Map                        // key: syslogConnKey, value: *net.UDPConn (shared-socket fallback pool)
 	syslogAggregates      sync.Map                        // key: syslogConnKey, value: *syslogCollectorAggregate — monotonic counters surviving device delete
 	syslogFirstAttachLog  atomic.Bool                     // CAS-gated so the "syslog export active" line fires once per lifecycle; race-free reset on Stop
-	syslogIntervalWarned  atomic.Bool                     // CAS-gated divergence warning — one line per lifecycle, not per device (phase-5 review P13)
 	syslogGlobalCap       int
 	syslogSourcePerDevice bool
 	syslogCatalogPath     string // "" when using embedded catalog
