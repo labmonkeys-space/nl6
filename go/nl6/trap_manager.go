@@ -113,6 +113,16 @@ type TrapSubsystemConfig struct {
 	// device-specific intervals are known. Individual devices still
 	// register with their own per-device interval on the heap.
 	MeanSchedulerInterval time.Duration
+	// PDUBudget is the maximum assembled-notification size, in bytes, that an
+	// entry may reach before it is disabled at load. Callers pass `maxTrapPDU`
+	// AFTER `SetLinkMTU` has applied `-datagram-mtu`.
+	//
+	// Explicit rather than read from the package global inside the loader, so
+	// the dependency on startup ordering is visible at the call site rather
+	// than ambient — this family has produced three bugs from a value computed
+	// in one place and consumed in another (design D5). A non-positive value is
+	// rejected rather than defaulted, so forgetting it fails loudly.
+	PDUBudget int
 }
 
 // StartTrapSubsystem loads the catalog, creates the shared scheduler
@@ -147,6 +157,11 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 		return err
 	}
 
+	if cfg.PDUBudget <= 0 {
+		return fmt.Errorf("trap export: PDUBudget must be positive (got %d); "+
+			"pass maxTrapPDU after SetLinkMTU has run", cfg.PDUBudget)
+	}
+
 	catalogsByType := map[string]*Catalog{
 		universalCatalogKey: catalog,
 	}
@@ -157,6 +172,19 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 		}
 		for slug, c := range perType {
 			catalogsByType[slug] = c
+		}
+	}
+
+	// Disable any entry that cannot fit a datagram at the configured MTU. Done
+	// after overlays are merged so an overlay entry is judged in the catalog it
+	// actually lands in. Disabled, not fatal: the budget follows -datagram-mtu,
+	// and rejecting would make a low MTU refuse to boot on shipped catalogs
+	// (design D2).
+	for slug, c := range catalogsByType {
+		for _, msg := range c.ApplySizeBudget(cfg.PDUBudget, slug) {
+			log.Printf("trap catalog: %s exceeds the datagram budget and is DISABLED "+
+				"(it will not fire from the scheduler or from link state changes); "+
+				"lower catalog size or raise -datagram-mtu", msg)
 		}
 	}
 

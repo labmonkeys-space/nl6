@@ -47,10 +47,27 @@ import (
 	"strconv"
 )
 
-// maxTrapPDU bounds an assembled notification. Matches the 1500-byte buffer the
-// legacy path allocated per fire, so the size at which a catalog entry is
-// rejected does not change with the encoder.
-const maxTrapPDU = 1500
+// maxTrapPDU bounds an assembled notification so the resulting UDP datagram
+// FRAME fits the link, not so the payload fills it.
+//
+// It was previously a literal 1500, justified as "matches the 1500-byte buffer
+// the legacy path allocated" — the same buffer-versus-frame conflation that put
+// NetFlow v9 at 1524 bytes on the wire (nl6#485). A notification at that bound
+// produced a 1528-byte frame and fragmented. See nl6#487.
+//
+// Derived, not literal, so it tracks `-datagram-mtu`: a hardcoded value would
+// silently ignore the flag and re-break on exactly the lower-MTU paths the flag
+// exists to serve. Refreshed by recomputeDatagramBudgets (datagram_budget.go).
+//
+// No address-family branch, unlike flow's budget: trap collectors resolve as
+// `udp4` only (trap_manager.go), so IPv6 headers never apply here.
+//
+// Read at three sites that must stay in agreement — the trapBufPool allocation
+// and the reference-encoder scratch clamp (both trap_exporter.go) and the
+// encode guard below. All read it lazily at fire time, so a startup-set value
+// propagates; the clamp in particular exists to stop the reference encoder
+// overrunning a pooled buffer and has to keep matching the pool.
+var maxTrapPDU = defaultLinkMTU - ipv4HeaderBytes - udpHeaderBytes
 
 // tlvHdrReserve is the placeholder written when a TLV is opened. Four bytes
 // covers tag + the 0x82 long form, which is enough for any content length below

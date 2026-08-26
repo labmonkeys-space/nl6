@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 )
 
 //go:embed resources/_common/traps.json
@@ -217,6 +218,18 @@ type CatalogEntry struct {
 	// device's catalog has overlay entries for a role, the universal (base)
 	// entries for that role are suppressed.
 	fromOverlay bool
+
+	// oversized marks an entry whose dry-rendered notification exceeds the
+	// datagram budget. Such an entry stays in the catalog but is excluded from
+	// BOTH weighted-random Pick and role-driven firing, and is named once at
+	// startup (nl6#487, design D2).
+	//
+	// Disabled rather than rejected because the budget derives from linkMTU,
+	// which `-datagram-mtu` makes operator-settable. Failing the load would
+	// make any MTU below ~1004 refuse to boot on nl6's own shipped optical
+	// catalogs — a situation the operator can fix neither by editing the
+	// embedded catalog nor by changing the network.
+	oversized bool
 
 	// pre holds the entry's constant BER fragments, folded once by
 	// precomputeEntry at compile time (see trap_precompute.go). Read-only
@@ -433,7 +446,7 @@ func (c *Catalog) recomputeWeights() error {
 	c.schedCumulativeW = c.schedCumulativeW[:0]
 	sched := 0
 	for _, e := range c.Entries {
-		if e.Role != "" {
+		if e.Role != "" || e.oversized {
 			continue
 		}
 		sched += e.Weight
@@ -458,6 +471,13 @@ func (c *Catalog) EntriesByRole(role string) []*CatalogEntry {
 		if e.Role != role {
 			continue
 		}
+		// An oversized entry is excluded here as well as from Pick. Filtering
+		// only Pick would leave an oversized linkDown firing on every
+		// oper-status transition and failing at encode — converting a single
+		// startup warning into a per-transition failure (nl6#487, design D2).
+		if e.oversized {
+			continue
+		}
 		if e.fromOverlay {
 			overlay = append(overlay, e)
 		} else {
@@ -468,6 +488,65 @@ func (c *Catalog) EntriesByRole(role string) []*CatalogEntry {
 		return overlay
 	}
 	return base
+}
+
+// ApplySizeBudget dry-renders every entry and marks any whose encoded
+// notification exceeds `budget` as unschedulable, returning a description of
+// each one disabled (empty when none were). Weight metadata is recomputed so
+// the disabled entries drop out of Pick immediately.
+//
+// The budget is a PARAMETER, not a read of the package-level maxTrapPDU, so a
+// caller cannot accidentally size-check a catalog before `-datagram-mtu` has
+// been applied. Three bugs in this family came from a value computed in one
+// place and consumed in another (nl6#486, nl6#490, and this one); passing it in
+// puts the dependency where a reader can see it (design D5).
+//
+// Rendering uses a worst-case context with an EMPTY Detail: Detail is per-fire
+// free-form and has no worst case, and the fire-time encode guard covers it.
+//
+// Entries are DISABLED, never rejected — see the `oversized` field for why.
+func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
+	if c == nil || budget <= 0 {
+		return nil
+	}
+	ctx := TemplateCtx{
+		IfIndex:   2147483647,
+		IfName:    "GigabitEthernet0/2147483647",
+		Uptime:    4294967295,
+		Now:       time.Now().Unix(),
+		DeviceIP:  "255.255.255.255",
+		SysName:   "device-with-a-fairly-long-system-name-0000",
+		Model:     "Ciena Waveserver 5",
+		Serial:    "SNffffffff",
+		ChassisID: "02:42:ff:ff:ff:ff",
+		NowLocal:  "2026-12-31 23:59:59",
+	}
+	var disabled []string
+	scratch := make([]byte, 0, 65535)
+	for _, e := range c.Entries {
+		vbs, err := e.Resolve(ctx, nil)
+		if err != nil {
+			// A template that cannot render is a load-time schema problem the
+			// parser already rejects; if one reaches here, leave it alone and
+			// let the fire path report it rather than silently disabling it.
+			continue
+		}
+		pdu, err := encodeV2cNotificationFast(scratch[:0], ASN1_TRAP_V2C, "public", 1,
+			e.pre, e.SnmpTrapOID, e.SnmpTrapEnterprise, ctx.Uptime, vbs)
+		size := len(pdu)
+		if err == nil && size <= budget {
+			continue
+		}
+		e.oversized = true
+		disabled = append(disabled, fmt.Sprintf("%s/%s (%d B > %d B budget)", source, e.Name, size, budget))
+	}
+	if len(disabled) > 0 {
+		// Ignore the error: a non-positive TOTAL weight is impossible here
+		// because oversized entries keep their weight in the full tally; only
+		// the schedulable subset shrinks, and an empty one is legal.
+		_ = c.recomputeWeights()
+	}
+	return disabled
 }
 
 // MergeOverlay returns a new Catalog that is the name-based overlay of `overlay`

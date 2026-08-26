@@ -49,7 +49,8 @@ func TestParseTrapMode_AllCases(t *testing.T) {
 // is covered in export_config_test.go.
 func TestStartTrapSubsystem_RejectsNegativeGlobalCap(t *testing.T) {
 	sm := newTestSimulatorManager()
-	err := sm.StartTrapSubsystem(TrapSubsystemConfig{GlobalCap: -1})
+	err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget: maxTrapPDU, GlobalCap: -1})
 	if err == nil || !strings.Contains(err.Error(), "global-cap") {
 		t.Fatalf("want global-cap error, got %v", err)
 	}
@@ -60,12 +61,14 @@ func TestStartTrapSubsystem_RejectsNegativeGlobalCap(t *testing.T) {
 // silently replacing the scheduler.
 func TestStartTrapSubsystem_DoubleStartRejected(t *testing.T) {
 	sm := newTestSimulatorManager()
-	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{MeanSchedulerInterval: time.Second}); err != nil {
+	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget: maxTrapPDU, MeanSchedulerInterval: time.Second}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(sm.StopTrapExport)
 
-	err := sm.StartTrapSubsystem(TrapSubsystemConfig{MeanSchedulerInterval: time.Second})
+	err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget: maxTrapPDU, MeanSchedulerInterval: time.Second})
 	if err == nil || !strings.Contains(err.Error(), "already started") {
 		t.Fatalf("want already-started error, got %v", err)
 	}
@@ -77,6 +80,7 @@ func TestStartTrapSubsystem_DoubleStartRejected(t *testing.T) {
 func TestStartDeviceTrapExporter_RejectsInformWithoutPerDeviceBinding(t *testing.T) {
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Second,
 	}); err != nil {
@@ -127,6 +131,7 @@ func startTrapForTest(t *testing.T, mode TrapMode) (*SimulatorManager, *mockColl
 
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Second,
 	}); err != nil {
@@ -334,6 +339,7 @@ func TestInformInvariant_AtExporterLevel(t *testing.T) {
 func TestCreateDevicesHandler_RejectsInformWithoutPerDeviceBinding(t *testing.T) {
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Second,
 	}); err != nil {

@@ -132,6 +132,7 @@ func TestDeleteDeviceDoesNotDeadlockWithLiveTrapAndSyslogSubsystems(t *testing.T
 
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: time.Hour,
 	}); err != nil {

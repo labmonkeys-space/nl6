@@ -133,6 +133,7 @@ func TestStopTrapExport_DrainsTailToWire(t *testing.T) {
 
 	sm := newTestSimulatorManager()
 	if err := sm.StartTrapSubsystem(TrapSubsystemConfig{
+		PDUBudget:             maxTrapPDU,
 		SourcePerDevice:       false,
 		MeanSchedulerInterval: 2 * time.Millisecond, // ~500 fires/s of load
 	}); err != nil {
