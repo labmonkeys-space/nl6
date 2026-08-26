@@ -311,7 +311,7 @@ type SimulatorManager struct {
 	// restarted. Reporting flowTickInterval as "effective" would therefore
 	// state a cadence nothing runs at. Written once, before the ticker
 	// goroutine starts; read concurrently by the device read-back.
-	flowTickerPeriod atomic.Int64
+	flowTickerPeriod     atomic.Int64
 	flowTemplateInterval time.Duration
 	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
 

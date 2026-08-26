@@ -88,7 +88,6 @@ func TestCreateDevices_StillRejectsGenuineTypos(t *testing.T) {
 	}
 }
 
-
 // TestCreateDevicesResult_NoWarningsOmitted keeps the field out of the common
 // response entirely, so existing clients see a byte-identical body.
 func TestCreateDevicesResult_NoWarningsOmitted(t *testing.T) {
@@ -100,7 +99,6 @@ func TestCreateDevicesResult_NoWarningsOmitted(t *testing.T) {
 		t.Errorf("empty warnings must be omitted, got %s", raw)
 	}
 }
-
 
 // TestDeviceInfo_EmitsEffectiveIntervals asserts the read-back wire shape at
 // the DeviceInfo level, so a change to how ListDevices assembles the response
@@ -201,4 +199,3 @@ func TestErrorResponseUnchangedWithoutWarnings(t *testing.T) {
 		t.Errorf("error response grew a data key with no warnings to carry: %s", w.Body.String())
 	}
 }
-

@@ -12,9 +12,6 @@ import (
 	"time"
 )
 
-
-
-
 // TestMarkIntervalProvenance covers the capture that must happen on the RAW
 // request, and its nil-safety (the seed blocks are frequently nil).
 func TestMarkIntervalProvenance(t *testing.T) {
