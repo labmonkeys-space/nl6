@@ -401,7 +401,6 @@ func (sm *SimulatorManager) StopTrapExport() {
 	// earlier sync.Once{} reassignment which was a data race with the
 	// Do() call in startDeviceTrapExporter (phase-5 review P3).
 	sm.trapFirstAttachLog.Store(false)
-	sm.trapIntervalWarned.Store(false)
 	// Reset subsystem-scalar state so a subsequent StartTrapSubsystem
 	// starts from a clean slate (phase-5 review P-E1).
 	sm.trapLimiter = nil
@@ -524,14 +523,6 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	// does not share that suppression by design.
 	// Gate on caller intent, not post-defaults divergence. See the syslog
 	// twin: the old test fired for callers who set nothing.
-	if cfg.IntervalWasSet() && sm.trapIntervalWarned.CompareAndSwap(false, true) {
-		// Same text as the REST disclosure — see the syslog twin.
-		if wrn := intervalDisclosure("traps.interval", true,
-			time.Duration(cfg.Interval), scheduler.MeanInterval()); wrn != nil {
-			log.Printf("trap export: device %s: %s (further devices suppressed this lifecycle)",
-				device.IP, wrn.Message)
-		}
-	}
 
 	scheduler.Register(device.IP, backgroundTrapFirer{exporter})
 

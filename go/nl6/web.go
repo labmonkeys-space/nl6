@@ -149,36 +149,18 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	// routed to a log, warn-once-per-subsystem-lifecycle, which never reaches
 	// an operator driving the simulator over HTTP.
 	//
-	// Computed BEFORE the per-block validation below so that a rejected request
-	// still carries it: otherwise a caller with both a bad collector and an
-	// inert interval needs two round trips to learn two facts already known
-	// here. This is safe only because the warning text makes no claim about the
-	// request's outcome (see intervalDisclosure) — it describes the field, and
-	// is equally true on a 400, a partial batch, and a success.
+	// The `warnings` channel is retained deliberately even though nothing
+	// populates it today: it is the general "your request was accepted, but
+	// here is something you should know" surface, and re-adding it later is
+	// more churn than leaving it. The interval disclosures that used to fill it
+	// became a 400 in nl6#445 — a field the engine cannot honour is refused at
+	// the door rather than stored, echoed and ignored.
 	//
 	// The nil check on `manager` exists for handler-level tests, which
 	// deliberately construct none (see web_create_devices_scenario_test.go).
-	// In a running simulator it is always set before the listener starts.
 	var exportWarnings []exportWarning
-	if manager != nil {
-		addWarning := func(wrn *exportWarning) {
-			if wrn != nil {
-				exportWarnings = append(exportWarnings, *wrn)
-			}
-		}
-		if seed.Syslog != nil {
-			addWarning(intervalDisclosure("syslog.interval", seed.Syslog.IntervalWasSet(),
-				time.Duration(seed.Syslog.Interval), manager.effectiveSyslogInterval()))
-		}
-		if seed.Traps != nil {
-			addWarning(intervalDisclosure("traps.interval", seed.Traps.IntervalWasSet(),
-				time.Duration(seed.Traps.Interval), manager.effectiveTrapInterval()))
-		}
-		if seed.Flow != nil {
-			addWarning(intervalDisclosure("flow.tick_interval", seed.Flow.TickIntervalWasSet(),
-				time.Duration(seed.Flow.TickInterval), manager.effectiveFlowTickInterval()))
-		}
-	}
+	_ = manager
+
 	// rejectWith fails the request while still handing back any disclosures.
 	rejectWith := func(msg string, code int) {
 		if len(exportWarnings) == 0 {
