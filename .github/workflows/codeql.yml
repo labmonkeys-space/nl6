@@ -59,10 +59,32 @@ jobs:
         include:
           - language: actions
             build-mode: none
+            queries: ''
           - language: go
             build-mode: autobuild
+            # The 21 Go correctness queries (index-out-of-bounds,
+            # duplicate-condition, impossible-interface-nil-check, ...) on
+            # top of the default suite. `queries:` ADDS to the default; it
+            # does not replace it.
+            #
+            # NOT `security-and-quality`. That applies
+            # security-and-frozen-quality-selectors.yml, which pulls in
+            # security-extended and with it `go/log-injection` — 50
+            # findings here, every one a typed value that cannot carry a
+            # newline, and all at severity `error`, which blocks every PR
+            # under the ruleset's code_scanning rule. `go-code-quality`
+            # applies code-quality-selectors.yml and imports no security
+            # suite, so the security surface is unchanged and nothing is
+            # suppressed.
+            #
+            # Verified on a branch push before landing (nl6#479): the
+            # suite name resolves and reports zero findings here. A PR
+            # cannot verify either — CodeQL is diff-informed on pull
+            # requests and computes nothing for unchanged Go files.
+            queries: go-code-quality
           - language: javascript-typescript
             build-mode: none
+            queries: ''
 
     steps:
       - name: Checkout
@@ -84,24 +106,25 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # Deliberately the DEFAULT suite, matching what default setup ran
-          # before this workflow replaced it.
+          # Per language: go-code-quality is a Go suite and does not
+          # resolve for the actions or javascript-typescript extractors.
+          queries: ${{ matrix.queries }}
+          # HISTORY, because both mistakes are easy to repeat.
           #
-          # The first revision of this file said `security-and-quality`, which
-          # is a broader pack. It landed inside a Go-toolchain PR described as
-          # leaving coverage unchanged — true of languages, quietly false of
-          # queries. The result was 30 previously-unqueried `go/log-injection`
-          # findings appearing on main at once, all at severity `error`, which
-          # the "protect main" ruleset's code_scanning rule blocks on. Every
-          # subsequent PR was gated by a posture change nobody had agreed to.
+          # An early revision set `security-and-quality` inside a Go-toolchain
+          # PR described as leaving coverage unchanged. True of languages,
+          # quietly false of queries: 50 previously-unqueried
+          # `go/log-injection` findings appeared on main at once, all severity
+          # `error`, and the "protect main" ruleset's code_scanning rule
+          # blocked every subsequent PR on a posture change nobody agreed to.
+          # Reverted in #478. `go-code-quality` above is the deliberate
+          # version of that intent, minus the security pack.
           #
-          # Adopting the broader pack is worth doing (see nl6#479) — but as its
-          # own change, with the findings triaged, not as a side effect.
-          #
-          # There is deliberately NO `queries:` key. The default suite is what
-          # runs when none is named; `queries: default` is not a pack name and
-          # fails the analysis outright with "Query pack default cannot be
-          # found".
+          # The revert then set `queries: default`, which is NOT a pack name —
+          # the analysis fails outright with "Query pack default cannot be
+          # found". Omitting the key is how you get the default suite, and the
+          # per-language empty string above does exactly that for the
+          # extractors that take no extra queries.
 
       - name: Autobuild
         if: matrix.build-mode == 'autobuild'
