@@ -43,9 +43,10 @@ const (
 	ipfixFlowEndMilliseconds      = 153 // flowEndMilliseconds   (absolute epoch ms, 8B)
 
 	// Derived sizes.
-	ipfixHeaderSize   = 16 // bytes — IPFIX Message Header (RFC 7011 §3.1)
-	ipfixRecordSize   = 54 // bytes — one data record with the 19-field template below
-	ipfixTemplSetSize = 84 // bytes — Template Set (4 set-hdr + 4 tmpl-hdr + 19×4 fields)
+	ipfixHeaderSize     = 16 // bytes — IPFIX Message Header (RFC 7011 §3.1)
+	ipfixDataSetHdrSize = 4  // bytes — data Set header (Set ID + length)
+	ipfixRecordSize     = 54 // bytes — one data record with the 19-field template below
+	ipfixTemplSetSize   = 84 // bytes — Template Set (4 set-hdr + 4 tmpl-hdr + 19×4 fields)
 
 	// Interface option-table wire constants (RFC 7011 §3.4.2). Template ID
 	// 257 sits beside the data template's 256.
@@ -225,6 +226,25 @@ func (IPFIXEncoder) SeqIncrement(_ int) int {
 	return 1
 }
 
+// ipfixDataPadBytes returns the padding the data Set needs to reach a 4-byte
+// boundary (RFC 7011 §3.3.1) when carrying n records. Records are 54 bytes and
+// the Set header is 4, so an odd record count needs 2 bytes of pad and an even
+// count needs none.
+//
+// Same contract and same hazard as nf9DataPadBytes — see that function for why
+// the pad has to be budgeted in the record-capacity arithmetic rather than
+// written on faith after it.
+func ipfixDataPadBytes(n int) int {
+	if rem := (ipfixDataSetHdrSize + n*ipfixRecordSize) % 4; rem != 0 {
+		return 4 - rem
+	}
+	return 0
+}
+
+// TrailingPadBytes reports the data-Set pad for n records so Tick's
+// pagination and EncodePacket's record cap use the same formula.
+func (IPFIXEncoder) TrailingPadBytes(n int) int { return ipfixDataPadBytes(n) }
+
 // MaxRecordSize returns 0 because IPFIX records are fixed-size under this
 // simulator's single 19-field template; Tick paginates by PacketSizes()'s
 // recordSize in that case.
@@ -244,7 +264,10 @@ func (IPFIXEncoder) MaxRecordSize() int { return 0 }
 //	records         — flow records to include in the Data Set.
 //	includeTemplate — when true, a Template Set is prepended; send on the first
 //	                  packet and every templateInterval thereafter.
-//	buf             — caller-supplied output buffer; must be ≥ 1500 bytes.
+//	buf             — caller-supplied output buffer. The encoder writes at most
+//	                  len(buf) bytes, so the caller's slice length IS the
+//	                  datagram payload budget: Tick passes a buffer already
+//	                  capped to flowPayloadBudget so the frame fits the MTU.
 //
 // Returns an error if buf is too small to hold even a single record.
 func (IPFIXEncoder) EncodePacket(
@@ -278,13 +301,18 @@ func (IPFIXEncoder) EncodePacket(
 	if len(buf) < overhead {
 		return 0, fmt.Errorf("ipfix: buffer too small (%d bytes), need at least %d", len(buf), overhead)
 	}
-	if len(buf) < overhead+ipfixRecordSize && len(records) > 0 {
-		return 0, fmt.Errorf("ipfix: buffer too small (%d bytes), need at least %d", len(buf), overhead+ipfixRecordSize)
+	if minOne := overhead + ipfixRecordSize + ipfixDataPadBytes(1); len(buf) < minOne && len(records) > 0 {
+		return 0, fmt.Errorf("ipfix: buffer too small (%d bytes), need at least %d", len(buf), minOne)
 	}
 
-	// Cap records to what fits in buf.
+	// Cap records to what fits in buf, INCLUDING the trailing pad. Dropping one
+	// record flips the pad parity (see ipfixDataPadBytes), so a single
+	// decrement always suffices — no loop needed.
 	available := len(buf) - overhead
 	maxRecords := available / ipfixRecordSize
+	if maxRecords > 0 && overhead+maxRecords*ipfixRecordSize+ipfixDataPadBytes(maxRecords) > len(buf) {
+		maxRecords--
+	}
 	if maxRecords < len(records) {
 		records = records[:maxRecords]
 	}

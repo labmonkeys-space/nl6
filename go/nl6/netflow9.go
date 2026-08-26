@@ -39,9 +39,10 @@ const (
 	nf9Direction     = 61 // DIRECTION: 0x00 = ingress, 0x01 = egress
 
 	// Derived sizes.
-	nf9HeaderSize       = 20 // bytes — Packet Header (RFC 3954 §5)
-	nf9RecordSize       = 46 // bytes — one data record with the 19-field template below
-	nf9TemplFlowSetSize = 84 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 19×4 fields)
+	nf9HeaderSize         = 20 // bytes — Packet Header (RFC 3954 §5)
+	nf9DataFlowSetHdrSize = 4  // bytes — data FlowSet header (FlowSet ID + length)
+	nf9RecordSize         = 46 // bytes — one data record with the 19-field template below
+	nf9TemplFlowSetSize   = 84 // bytes — Template FlowSet (4 hdr + 4 tmpl hdr + 19×4 fields)
 
 	// Interface option-table wire constants ("option interface-table",
 	// RFC 3954 §6.1). Template ID 257 sits beside the data template's 256 —
@@ -214,6 +215,34 @@ func (NetFlow9Encoder) SeqIncrement(_ int) int {
 	return 1
 }
 
+// nf9DataPadBytes returns the padding the data FlowSet needs to reach a 4-byte
+// boundary (RFC 3954 §5.3) when carrying n records. Records are 46 bytes and
+// the FlowSet header is 4, so an odd record count needs 2 bytes of pad and an
+// even count needs none — which is why dropping a single record is always
+// enough to make an over-budget packet fit.
+//
+// The pad is written AFTER the records, so record-capacity arithmetic has to
+// budget it. `available / nf9RecordSize` alone overflows the buffer whenever
+// the leftover bytes are fewer than the pad an odd record count needs: a
+// 70-byte buffer (exactly overhead + one record) admits one record, then pads
+// two bytes past the end.
+//
+// Not a theoretical edge. At the IPv6 datagram budget a full NetFlow v9 packet
+// lands on exactly len(buf) with zero bytes spare, so any later shift in
+// flowLinkMTU or the header constants would turn a clean size error into an
+// index-out-of-range panic inside the shared flow-ticker goroutine, taking the
+// process down with it.
+func nf9DataPadBytes(n int) int {
+	if rem := (nf9DataFlowSetHdrSize + n*nf9RecordSize) % 4; rem != 0 {
+		return 4 - rem
+	}
+	return 0
+}
+
+// TrailingPadBytes reports the data-FlowSet pad for n records so Tick's
+// pagination and EncodePacket's record cap use the same formula.
+func (NetFlow9Encoder) TrailingPadBytes(n int) int { return nf9DataPadBytes(n) }
+
 // MaxRecordSize returns 0 because NetFlow v9 records are fixed-size; Tick
 // paginates by PacketSizes()'s recordSize in that case.
 func (NetFlow9Encoder) MaxRecordSize() int { return 0 }
@@ -230,7 +259,10 @@ func (NetFlow9Encoder) MaxRecordSize() int { return 0 }
 //	records         — flow records to include in the Data FlowSet.
 //	includeTemplate — when true, a Template FlowSet is prepended; send on the
 //	                  first packet and every templateInterval thereafter.
-//	buf             — caller-supplied output buffer; must be >= 1500 bytes.
+//	buf             — caller-supplied output buffer. The encoder writes at most
+//	                  len(buf) bytes, so the caller's slice length IS the
+//	                  datagram payload budget: Tick passes a buffer already
+//	                  capped to flowPayloadBudget so the frame fits the MTU.
 //
 // Returns an error if buf is too small to hold even a single record.
 func (NetFlow9Encoder) EncodePacket(
@@ -254,13 +286,18 @@ func (NetFlow9Encoder) EncodePacket(
 	if len(buf) < overhead {
 		return 0, fmt.Errorf("netflow9: buffer too small (%d bytes), need at least %d", len(buf), overhead)
 	}
-	if len(buf) < overhead+nf9RecordSize && len(records) > 0 {
-		return 0, fmt.Errorf("netflow9: buffer too small (%d bytes), need at least %d", len(buf), overhead+nf9RecordSize)
+	if minOne := overhead + nf9RecordSize + nf9DataPadBytes(1); len(buf) < minOne && len(records) > 0 {
+		return 0, fmt.Errorf("netflow9: buffer too small (%d bytes), need at least %d", len(buf), minOne)
 	}
 
-	// Cap records to what fits in buf.
+	// Cap records to what fits in buf, INCLUDING the trailing pad. Dropping one
+	// record flips the pad parity (see nf9DataPadBytes), so a single decrement
+	// always suffices — no loop needed.
 	available := len(buf) - overhead
 	maxRecords := available / nf9RecordSize
+	if maxRecords > 0 && overhead+maxRecords*nf9RecordSize+nf9DataPadBytes(maxRecords) > len(buf) {
+		maxRecords--
+	}
 	if maxRecords < len(records) {
 		records = records[:maxRecords]
 	}

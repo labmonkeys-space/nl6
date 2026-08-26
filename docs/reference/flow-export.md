@@ -224,7 +224,11 @@ Expiry is noticed by a periodic sweep. A flow's real residency is therefore the 
 | 15s | 3.94 | 59 |
 | 30s | 3.63 | 109 |
 
-Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits about 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one. Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+
+The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers: 1472 bytes for an IPv4 collector and 1452 for IPv6. nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented. That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
+
+The MTU is assumed to be 1500 and is not configurable. That holds for nl6's own TUN and veth interfaces, which take the kernel default, but it is an assumption about the **egress** path to the collector rather than a fact nl6 controls. If the container runs on a Docker overlay or VXLAN network (typically MTU 1450), or the collector is reached through a tunnel, full-size datagrams will still fragment: the same failure, at a lower threshold. Check the egress interface MTU before reading a fragment count as a bug.
 
 Setting the tick close to or above the mean flow lifetime is not useful — every flow then lives about one tick and the cache turns over wholesale. Values above 1h are rejected.
 
