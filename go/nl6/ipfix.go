@@ -241,6 +241,10 @@ func ipfixDataPadBytes(n int) int {
 	return 0
 }
 
+// MaxRecordsPerDatagram returns 0: IPFIX has no record-count cap, only the
+// datagram budget.
+func (IPFIXEncoder) MaxRecordsPerDatagram() int { return 0 }
+
 // TrailingPadBytes reports the data-Set pad for n records so Tick's
 // pagination and EncodePacket's record cap use the same formula.
 func (IPFIXEncoder) TrailingPadBytes(n int) int { return ipfixDataPadBytes(n) }

@@ -69,6 +69,19 @@ sudo ./nl6 [flags]
 -flow-sub-agent-id <uint>         # [seed]   sFlow sub_agent_id for the auto-start batch (default: 0; one value for the whole batch — use per-device REST flow.sub_agent_id for per-group values; ignored by non-sflow protocols)
 -flow-option-interface-table <s>  # [seed]   v9/IPFIX interface option records: if-scoped (ifIndex in scope, fields 82+83) | system-scoped (ifIndex as option field, field 83 only; IOS-XR shape). Empty = off (default). Requires netflow9/ipfix; per-group shapes via REST flow.options_interface_table
 -flow-source-per-device           # [global] Bind per-device UDP socket so src IP = device IP (default: true)
+-datagram-mtu <bytes>             # [global] Assumed MTU of the EGRESS path to collectors (default: 1500). EVERY UDP-emitting
+                                  #          subsystem sizes datagrams to fit this frame — flow now, trap (#487) and SNMP
+                                  #          GETBULK (#489) when those land. Lower it when the collector path is not standard
+                                  #          Ethernet: a Docker overlay / VXLAN is typically 1450, tunnels lower. At 1450 on a
+                                  #          1500-derived build, NetFlow v9 (1480), IPFIX (1484), NetFlow v5 (1492) and an
+                                  #          OpenNMS-default GETBULK (1464) ALL fragment — measured, not estimated.
+                                  #          This is an assumption about a path nl6 does NOT control, not a property of its own
+                                  #          interfaces (nl6 sets no MTU on TUN or veth; both take the kernel default 1500).
+                                  #          NOT auto-discovered, deliberately: reading the route's interface MTU works for
+                                  #          flow/trap/syslog (configured collector, known at attach) but NOT for SNMP, which
+                                  #          answers whoever polls it and knows the destination only per request — so discovery
+                                  #          cannot be the mechanism that covers every subsystem. No PMTU discovery either.
+                                  #          Validated at startup (576..65535); an out-of-range value is fatal, not silent.
 
 # SNMP trap / INFORM export flags (SNMPv2c only)
 -trap-collector <host:port>       # [seed]   Seed trap collector for auto-start batch (default port 162)
