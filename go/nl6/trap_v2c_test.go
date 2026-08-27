@@ -305,7 +305,7 @@ func TestSNMPv2cEncoder_ParseAck_OversizedErrorStatusInteger(t *testing.T) {
 	// Craft a 9-byte INTEGER for error-status: tag 0x02, length 0x09, then 9 bytes of data.
 	// We'll use 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 (9 bytes).
 	pduContents = append(pduContents, 0x02, 0x09, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08)
-	pduContents = append(pduContents, encodeInteger(0)...) // error-index
+	pduContents = append(pduContents, encodeInteger(0)...)    // error-index
 	pduContents = append(pduContents, encodeSequence(nil)...) // empty varbind list
 
 	var pdu []byte
