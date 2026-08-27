@@ -291,6 +291,50 @@ func TestSNMPv2cEncoder_ParseAck_EmptyBuffer(t *testing.T) {
 	}
 }
 
+func TestSNMPv2cEncoder_ParseAck_OversizedErrorStatusInteger(t *testing.T) {
+	// Regression test for the oversized INTEGER panic (pentest finding).
+	// A 9+ byte error-status INTEGER used to reach parseIntBE with len(b) > 8,
+	// causing copy(tmp[8-len(b):], b) to panic on a negative slice bound.
+	// The fix truncates to the least significant 8 bytes before the copy.
+	enc := SNMPv2cEncoder{}
+
+	// Manually craft a GetResponse-PDU with a 9-byte error-status INTEGER.
+	// Structure: SEQUENCE { version, community, PDU { reqID, errorStatus, errorIndex, varbinds } }
+	var pduContents []byte
+	pduContents = append(pduContents, encodeInteger(42)...) // request-id
+	// Craft a 9-byte INTEGER for error-status: tag 0x02, length 0x09, then 9 bytes of data.
+	// We'll use 0x00 0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 (9 bytes).
+	pduContents = append(pduContents, 0x02, 0x09, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08)
+	pduContents = append(pduContents, encodeInteger(0)...)    // error-index
+	pduContents = append(pduContents, encodeSequence(nil)...) // empty varbind list
+
+	var pdu []byte
+	pdu = append(pdu, ASN1_GET_RESPONSE)
+	pdu = append(pdu, encodeLength(len(pduContents))...)
+	pdu = append(pdu, pduContents...)
+
+	var outer []byte
+	outer = append(outer, encodeInteger(1)...) // version = 1 (v2c)
+	outer = append(outer, encodeOctetString("public")...)
+	outer = append(outer, pdu...)
+	pkt := encodeSequence(outer)
+
+	// Before the fix, this would panic. After the fix, it should parse successfully
+	// by truncating the 9-byte INTEGER to its least significant 8 bytes.
+	reqID, ok, err := enc.ParseAck(pkt)
+	if err != nil {
+		t.Fatalf("ParseAck with 9-byte error-status INTEGER: %v (should truncate, not panic)", err)
+	}
+	if reqID != 42 {
+		t.Errorf("reqID = %d, want 42", reqID)
+	}
+	// The 9-byte value 0x00010203_04050607_08 truncated to 8 bytes is 0x01020304_05060708,
+	// which is non-zero, so ok should be false.
+	if ok {
+		t.Error("ok = true, want false (non-zero error-status after truncation)")
+	}
+}
+
 func TestSNMPv2cEncoder_RequestIDDistinct_10k(t *testing.T) {
 	// Simulates what TrapExporter will do: encode 10k distinct request IDs and
 	// assert they round-trip through ParseAck-equivalent decode as 10k
