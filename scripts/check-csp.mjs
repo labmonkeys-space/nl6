@@ -42,9 +42,13 @@ const REQUIRED_DIRECTIVES = [
 // contains keyword sources like 'self', so single quotes cannot delimit it.
 const CSP_META_RE =
   /<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*content="([^"]+)"/i;
-// `\s*` before the closing `>`: `</script >` is a valid end tag, and a regex
-// that misses it ends the match late and hashes the wrong bytes.
-const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+// An end tag is `</` + name + anything up to `>`: the HTML parser accepts
+// `</script >` and also `</script foo="bar">`, discarding the attributes
+// (WHATWG §13.2.5.10). A regex that insists on `</script>` — or on `\s*>` —
+// ends the match late and hashes the wrong bytes, which for a hash allowlist
+// means the browser blocks the script. Requiring whitespace after the name
+// keeps `</scriptfoo>` from matching, since that is not an end tag.
+const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi;
 const TYPE_ATTR_RE = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 const EXECUTABLE_SCRIPT_TYPES = new Set([
   '',

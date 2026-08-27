@@ -46,10 +46,14 @@ const PLUGIN_NAME = 'csp-meta';
 const GOOGLE_FONTS_CSS = 'https://fonts.googleapis.com';
 const GOOGLE_FONTS_FILES = 'https://fonts.gstatic.com';
 
-// `\s*` before the closing `>`: an end tag may carry whitespace (`</script >`)
-// and the HTML parser accepts it, so a regex that insists on `</script>` ends
-// the match at the wrong place and hashes the wrong bytes.
-const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+// An end tag is `</` + name + anything up to `>`: the HTML parser accepts
+// `</script >` and also `</script foo="bar">`, discarding the attributes
+// (WHATWG §13.2.5.10). A regex that insists on `</script>` — or on `\s*>` —
+// ends the match at the wrong place and hashes the wrong bytes, which for a
+// hash allowlist means the browser blocks the script. Requiring whitespace
+// after the name keeps `</scriptfoo>` from matching, since that is not an
+// end tag.
+const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi;
 const TYPE_ATTR_RE = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 const SRC_ATTR_RE = /\bsrc\s*=/i;
 const CHARSET_META_RE = /<meta[^>]*\bcharset\s*=[^>]*>/i;
