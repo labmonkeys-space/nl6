@@ -125,12 +125,18 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 		// Encrypted scoped PDU
 		pos++
 		pduLen, newPos := parseLength(data, pos)
+		if pduLen < 0 || newPos+pduLen > len(data) {
+			return nil, fmt.Errorf("invalid scoped PDU length: %d", pduLen)
+		}
 		pos = newPos
 		msg.ScopedPDU = data[pos : pos+pduLen]
 	} else if data[pos] == ASN1_SEQUENCE {
 		// Plaintext scoped PDU
 		pos++
 		pduLen, newPos := parseLength(data, pos)
+		if pduLen < 0 || newPos+pduLen > len(data) {
+			return nil, fmt.Errorf("invalid scoped PDU length: %d", pduLen)
+		}
 		pos = newPos
 		msg.ScopedPDU = data[pos : pos+pduLen]
 	} else {
@@ -274,6 +280,11 @@ func isSNMPv3Request(data []byte) bool {
 		return false
 	}
 	pos = newPos
+
+	// Bounds check: ensure version byte is present
+	if pos >= len(data) {
+		return false
+	}
 
 	version := int(data[pos])
 	return version == SNMPV3_VERSION

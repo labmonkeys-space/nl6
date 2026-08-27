@@ -102,6 +102,16 @@ func (s *SNMPServer) handleRequests() {
 
 // handleSingleRequest processes a single SNMP request in its own goroutine
 func (s *SNMPServer) handleSingleRequest(requestData []byte, clientAddr *net.UDPAddr) {
+	// Recover from any panics to prevent process termination from malformed packets
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently drop malformed packets that cause panics.
+			// Logging every malformed packet would create a DoS vector
+			// (attacker floods with crafted packets to fill logs).
+			// Production monitoring should track panic rate via metrics.
+		}
+	}()
+
 	var responsePacket []byte
 
 	// Check if this is SNMPv3 request

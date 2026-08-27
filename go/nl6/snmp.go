@@ -131,6 +131,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 	pos++
 	engineIDLen, newPos := parseLength(scopedPDU, pos)
+	if engineIDLen < 0 || newPos+engineIDLen > len(scopedPDU) {
+		return "", ASN1_GET_REQUEST, fmt.Errorf("invalid contextEngineID length: %d", engineIDLen)
+	}
 	pos = newPos + engineIDLen
 
 	// Parse contextName (OCTET STRING)
@@ -139,6 +142,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 	pos++
 	contextNameLen, newPos := parseLength(scopedPDU, pos)
+	if contextNameLen < 0 || newPos+contextNameLen > len(scopedPDU) {
+		return "", ASN1_GET_REQUEST, fmt.Errorf("invalid contextName length: %d", contextNameLen)
+	}
 	pos = newPos + contextNameLen
 
 	// Parse PDU - should be GetRequest (0xA0) or GetNext (0xA1)
@@ -154,7 +160,10 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	pos++
 
 	// Skip PDU length
-	_, newPos = parseLength(scopedPDU, pos)
+	pduLen, newPos := parseLength(scopedPDU, pos)
+	if pduLen < 0 || newPos+pduLen > len(scopedPDU) {
+		return "", pduType, fmt.Errorf("invalid PDU length: %d", pduLen)
+	}
 	pos = newPos
 
 	// Parse request ID, error status, error index (skip them)
@@ -164,6 +173,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 		}
 		pos++
 		intLen, newPos := parseLength(scopedPDU, pos)
+		if intLen < 0 || newPos+intLen > len(scopedPDU) {
+			return "", pduType, fmt.Errorf("invalid INTEGER length: %d", intLen)
+		}
 		pos = newPos + intLen
 	}
 
@@ -172,7 +184,10 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 		return "", pduType, fmt.Errorf("expected variable bindings SEQUENCE")
 	}
 	pos++
-	_, newPos = parseLength(scopedPDU, pos)
+	vbLen, newPos := parseLength(scopedPDU, pos)
+	if vbLen < 0 || newPos+vbLen > len(scopedPDU) {
+		return "", pduType, fmt.Errorf("invalid variable bindings length: %d", vbLen)
+	}
 	pos = newPos
 
 	// Parse first variable binding (SEQUENCE)
@@ -180,7 +195,10 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 		return "", pduType, fmt.Errorf("expected first variable binding SEQUENCE")
 	}
 	pos++
-	_, newPos = parseLength(scopedPDU, pos)
+	vbItemLen, newPos := parseLength(scopedPDU, pos)
+	if vbItemLen < 0 || newPos+vbItemLen > len(scopedPDU) {
+		return "", pduType, fmt.Errorf("invalid variable binding length: %d", vbItemLen)
+	}
 	pos = newPos
 
 	// Parse OID (OBJECT IDENTIFIER)
@@ -189,11 +207,10 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 	pos++
 	oidLen, newPos := parseLength(scopedPDU, pos)
-	pos = newPos
-
-	if pos+oidLen > len(scopedPDU) {
-		return "", pduType, fmt.Errorf("OID length exceeds remaining data")
+	if oidLen < 0 || newPos+oidLen > len(scopedPDU) {
+		return "", pduType, fmt.Errorf("invalid OID length: %d", oidLen)
 	}
+	pos = newPos
 
 	oidBytes := scopedPDU[pos : pos+oidLen]
 	oid := decodeOID(oidBytes)
