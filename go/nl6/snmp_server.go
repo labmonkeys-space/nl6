@@ -102,6 +102,15 @@ func (s *SNMPServer) handleRequests() {
 
 // handleSingleRequest processes a single SNMP request in its own goroutine
 func (s *SNMPServer) handleSingleRequest(requestData []byte, clientAddr *net.UDPAddr) {
+	// Recover from any panics caused by malformed packets to prevent process-wide DoS.
+	// Malformed BER encodings can cause out-of-bounds array access in the hand-written
+	// parser; we reject such datagrams silently rather than terminating the simulator.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("SNMP parser panic (malformed packet from %v): %v", clientAddr, r)
+		}
+	}()
+
 	var responsePacket []byte
 
 	// Check if this is SNMPv3 request
@@ -179,25 +188,34 @@ func (s *SNMPServer) getPDUType(data []byte) byte {
 	pos := 0
 
 	// Skip SEQUENCE tag and length
-	if data[pos] != ASN1_SEQUENCE {
+	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
 		return ASN1_GET_REQUEST
 	}
 	pos++
-	pos += s.skipLength(data[pos:])
+	_, newPos := parseLength(data, pos)
+	if newPos < 0 || newPos > len(data) {
+		return ASN1_GET_REQUEST
+	}
+	pos = newPos
 
 	// Skip version
 	if pos < len(data) && data[pos] == ASN1_INTEGER {
 		pos++
-		pos += s.skipLength(data[pos:])
-		pos++ // skip version value
+		versionLen, newPos := parseLength(data, pos)
+		if versionLen < 0 || newPos+versionLen > len(data) {
+			return ASN1_GET_REQUEST
+		}
+		pos = newPos + versionLen
 	}
 
 	// Skip community
 	if pos < len(data) && data[pos] == ASN1_OCTET_STRING {
 		pos++
-		communityLen := int(data[pos])
-		pos++
-		pos += communityLen
+		communityLen, newPos := parseLength(data, pos)
+		if communityLen < 0 || newPos+communityLen > len(data) {
+			return ASN1_GET_REQUEST
+		}
+		pos = newPos + communityLen
 	}
 
 	// Get PDU type

@@ -48,17 +48,23 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	pos := 0
 
 	// Skip SEQUENCE tag and length
-	if data[pos] != ASN1_SEQUENCE {
+	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
 		return req
 	}
 	pos++
-	lengthSkip := s.skipLength(data[pos:])
-	pos += lengthSkip
+	_, newPos := parseLength(data, pos)
+	if newPos < 0 || newPos > len(data) {
+		return req
+	}
+	pos = newPos
 
 	// Parse version
 	if pos < len(data) && data[pos] == ASN1_INTEGER {
 		pos++
 		versionLen, newPos := parseLength(data, pos)
+		if versionLen < 0 || newPos+versionLen > len(data) {
+			return req
+		}
 		pos = newPos
 		if versionLen == 1 && pos < len(data) {
 			req.Version = int(data[pos])
@@ -72,6 +78,9 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	if pos < len(data) && data[pos] == ASN1_OCTET_STRING {
 		pos++
 		communityLen, newPos := parseLength(data, pos)
+		if communityLen < 0 || newPos+communityLen > len(data) {
+			return req
+		}
 		pos = newPos
 		if communityLen > 0 && pos+communityLen <= len(data) {
 			req.Community = string(data[pos : pos+communityLen])
@@ -82,13 +91,19 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	// Parse PDU (GetRequest = 0xa0, GetNext = 0xa1, GetBulk = 0xa5)
 	if pos < len(data) && (data[pos] == 0xa0 || data[pos] == 0xa1 || data[pos] == 0xa5) {
 		pos++
-		pduLengthSkip := s.skipLength(data[pos:])
-		pos += pduLengthSkip
+		_, newPos := parseLength(data, pos)
+		if newPos < 0 || newPos > len(data) {
+			return req
+		}
+		pos = newPos
 
 		// Parse request ID
 		if pos < len(data) && data[pos] == ASN1_INTEGER {
 			pos++
 			reqIDLen, newPos := parseLength(data, pos)
+			if reqIDLen < 0 || newPos+reqIDLen > len(data) {
+				return req
+			}
 			pos = newPos
 			if reqIDLen > 0 && reqIDLen <= 4 && pos+reqIDLen <= len(data) {
 				req.RequestID = 0
@@ -104,6 +119,9 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 			if pos < len(data) && data[pos] == ASN1_INTEGER {
 				pos++
 				fieldLen, newPos := parseLength(data, pos)
+				if fieldLen < 0 || newPos+fieldLen > len(data) {
+					return req
+				}
 				if fieldLen >= 0 {
 					pos = newPos + fieldLen
 				}
@@ -113,17 +131,28 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		// Parse variable bindings
 		if pos < len(data) && data[pos] == ASN1_SEQUENCE {
 			pos++
-			pos += s.skipLength(data[pos:])
+			_, newPos := parseLength(data, pos)
+			if newPos < 0 || newPos > len(data) {
+				return req
+			}
+			pos = newPos
 
 			// First variable binding
 			if pos < len(data) && data[pos] == ASN1_SEQUENCE {
 				pos++
-				pos += s.skipLength(data[pos:])
+				_, newPos := parseLength(data, pos)
+				if newPos < 0 || newPos > len(data) {
+					return req
+				}
+				pos = newPos
 
 				// Parse OID
 				if pos < len(data) && data[pos] == ASN1_OID {
 					pos++
 					oidLen, newPos := parseLength(data, pos)
+					if oidLen < 0 || newPos+oidLen > len(data) {
+						return req
+					}
 					pos = newPos
 					if oidLen > 0 && pos+oidLen <= len(data) {
 						oidBytes := data[pos : pos+oidLen]
