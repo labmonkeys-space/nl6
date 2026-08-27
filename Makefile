@@ -33,17 +33,28 @@ APP_VERSION := $(or $(strip $(APP_VERSION)),$(VERSION))
 # Guard against shell-metachar / whitespace injection through APP_VERSION
 # into the -ldflags string. Allowed grammar tracks the characters that
 # appear in real git tags (semver + pre-release + build-metadata).
-# Validation must occur WITHOUT expanding APP_VERSION in any shell context.
-# Use Make's $(file) to write the value safely, then validate from the file.
-_APP_VERSION_FILE := $(shell mktemp)
-$(file >$(_APP_VERSION_FILE),$(APP_VERSION))
-_APP_VERSION_VALID := $(shell grep -Eq '^[A-Za-z0-9._+-]+$$' '$(_APP_VERSION_FILE)' && echo ok; rm -f '$(_APP_VERSION_FILE)')
-ifneq ($(_APP_VERSION_VALID),ok)
-$(error APP_VERSION "$(APP_VERSION)" contains unsafe characters; allowed: [A-Za-z0-9._+-]+)
-endif
-# Additional check: APP_VERSION must not be empty
+#
+# Order matters. The grammar check below interpolates the value into a
+# single-quoted shell word, so a value containing a single quote would close
+# that quoting and run the remainder — reject the quote first, with Make's own
+# $(findstring), before any shell sees the value. With no quote present, every
+# other metacharacter is inert inside the single quotes.
+#
+# What this guard structurally CANNOT catch: a value carrying Make syntax.
+# APP_VERSION arrives from the environment or the command line, so Make has
+# already expanded `$(...)` in it by the time any check here runs — the guard
+# only ever sees the result. The pre-expansion grammar check therefore belongs
+# in the caller, which is why .github/workflows/gates.yml validates
+# GITHUB_REF_NAME before invoking make. Git ref names permit `$`, `(` and `)`.
+_SQUOTE := '
 ifeq ($(strip $(APP_VERSION)),)
 $(error APP_VERSION must not be empty)
+endif
+ifneq (,$(findstring $(_SQUOTE),$(APP_VERSION)))
+$(error APP_VERSION "$(APP_VERSION)" contains a single quote; allowed grammar: [A-Za-z0-9._+-]+)
+endif
+ifneq ($(shell printf '%s' '$(APP_VERSION)' | grep -Eq '^[A-Za-z0-9._+-]+$$' && echo ok),ok)
+$(error APP_VERSION "$(APP_VERSION)" contains unsafe characters; allowed grammar: [A-Za-z0-9._+-]+)
 endif
 
 LDFLAGS     := -X main.Version=$(APP_VERSION)
