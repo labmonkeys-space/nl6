@@ -192,9 +192,30 @@ func main() {
 		// dial-out push) except during a running load-test scenario window, so
 		// the measurement window is clean. Devices still answer polls.
 		fidelity = flag.Bool("fidelity", false, "Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a load-test scenario window")
+
+		// API authentication flag. Protects the entire /api/v1 administrative
+		// control plane with API key authentication. If not set, checks the
+		// NL6_API_KEY environment variable. If neither is set, authentication
+		// is disabled (backward compatibility, but insecure for network-exposed
+		// deployments).
+		apiKey = flag.String("api-key", "", "API key for authenticating administrative HTTP requests to /api/v1 endpoints. If not set, checks NL6_API_KEY environment variable. If neither is set, authentication is disabled (insecure for network-exposed deployments)")
 	)
 
 	flag.Parse()
+
+	// Configure API authentication. Priority: -api-key flag > NL6_API_KEY env var > disabled.
+	// Empty string means authentication is disabled (backward compatibility).
+	if *apiKey != "" {
+		apiKeyAuth = *apiKey
+		log.Println("API authentication enabled via -api-key flag")
+	} else if envKey := os.Getenv("NL6_API_KEY"); envKey != "" {
+		apiKeyAuth = envKey
+		log.Println("API authentication enabled via NL6_API_KEY environment variable")
+	} else {
+		log.Println("WARNING: API authentication is DISABLED. The /api/v1 administrative control plane is exposed without authentication.")
+		log.Println("         Set -api-key flag or NL6_API_KEY environment variable to enable authentication.")
+		log.Println("         This is INSECURE for network-exposed deployments (Docker, Kubernetes, etc.).")
+	}
 
 	// `-version` prints the baked-in Version and exits before any
 	// simulator setup runs (no flag dependencies, no TUN, no netns, no

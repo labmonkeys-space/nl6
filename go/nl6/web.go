@@ -16,11 +16,14 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"runtime/pprof"
 	"strings"
 	"time"
@@ -29,6 +32,49 @@ import (
 )
 
 // Web handlers for HTTP API endpoints
+
+// apiKeyAuth is the configured API key for authentication.
+// Empty string means authentication is disabled (backward compatibility).
+var apiKeyAuth string
+
+// authMiddleware validates the API key for administrative endpoints.
+// If apiKeyAuth is empty (not configured), all requests are allowed.
+// Otherwise, requests must include a valid X-API-Key header.
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If no API key is configured, allow all requests (backward compatibility)
+		if apiKeyAuth == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Extract API key from X-API-Key header
+		providedKey := r.Header.Get("X-API-Key")
+		if providedKey == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Message: "Missing X-API-Key header",
+			})
+			return
+		}
+
+		// Use constant-time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(apiKeyAuth)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(APIResponse{
+				Success: false,
+				Message: "Invalid API key",
+			})
+			return
+		}
+
+		// Valid API key, proceed to the next handler
+		next.ServeHTTP(w, r)
+	})
+}
 
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
@@ -617,15 +663,20 @@ func webUIHandler(w http.ResponseWriter, r *http.Request) {
 func setupRoutes() *mux.Router {
 	router := mux.NewRouter()
 
-	// Web UI
+	// Web UI (no authentication required for UI assets)
 	router.HandleFunc("/", webUIHandler).Methods("GET")
 	router.HandleFunc("/ui", webUIHandler).Methods("GET")
 
 	// Static web assets (CSS, JS)
 	router.PathPrefix("/web/").Handler(http.StripPrefix("/web/", http.FileServer(http.Dir("web"))))
 
-	// API routes
+	// API routes - protected by authentication middleware
 	api := router.PathPrefix("/api/v1").Subrouter()
+	
+	// Apply authentication middleware to all /api/v1 routes
+	// This protects the entire administrative control plane
+	api.Use(authMiddleware)
+	
 	api.HandleFunc("/fidelity", fidelityStatusHandler).Methods("GET")
 	api.HandleFunc("/fidelity", fidelityToggleHandler).Methods("POST")
 	api.HandleFunc("/devices", createDevicesHandler).Methods("POST")
@@ -672,7 +723,7 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
 	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 
-	// Health check
+	// Health check (no authentication required for monitoring/orchestration)
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
