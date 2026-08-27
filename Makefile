@@ -33,8 +33,17 @@ APP_VERSION := $(or $(strip $(APP_VERSION)),$(VERSION))
 # Guard against shell-metachar / whitespace injection through APP_VERSION
 # into the -ldflags string. Allowed grammar tracks the characters that
 # appear in real git tags (semver + pre-release + build-metadata).
-ifneq ($(shell printf '%s' '$(APP_VERSION)' | grep -Eq '^[A-Za-z0-9._+-]+$$' && echo ok),ok)
-$(error APP_VERSION "$(APP_VERSION)" contains unsafe characters; allowed grammar: [A-Za-z0-9._+-]+)
+# Validation must occur WITHOUT expanding APP_VERSION in any shell context.
+# Use Make's $(file) to write the value safely, then validate from the file.
+_APP_VERSION_FILE := $(shell mktemp)
+$(file >$(_APP_VERSION_FILE),$(APP_VERSION))
+_APP_VERSION_VALID := $(shell grep -Eq '^[A-Za-z0-9._+-]+$$' '$(_APP_VERSION_FILE)' && echo ok; rm -f '$(_APP_VERSION_FILE)')
+ifneq ($(_APP_VERSION_VALID),ok)
+$(error APP_VERSION "$(APP_VERSION)" contains unsafe characters; allowed: [A-Za-z0-9._+-]+)
+endif
+# Additional check: APP_VERSION must not be empty
+ifeq ($(strip $(APP_VERSION)),)
+$(error APP_VERSION must not be empty)
 endif
 
 LDFLAGS     := -X main.Version=$(APP_VERSION)
