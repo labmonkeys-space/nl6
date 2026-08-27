@@ -1,3 +1,25 @@
+⚠️  SECURITY WARNING ⚠️
+This deployment runs a PRIVILEGED pod with hostNetwork access on node:
+{{- range $key, $value := .Values.nodeSelector }}
+  {{ $key }}: {{ $value }}
+{{- end }}
+
+Network operations performed by nl6 affect the NODE, not just the pod.
+Ensure you have implemented ALL required mitigations:
+  ✓ Dedicated, isolated node (no other workloads)
+  ✓ Node taints to prevent co-location
+{{- if .Values.security.networkPolicy.enabled }}
+  ✓ NetworkPolicy enabled (restricts API access)
+{{- else }}
+  ✗ NetworkPolicy DISABLED — API is accessible from any pod!
+    Set security.networkPolicy.enabled: true to restrict access.
+{{- end }}
+  ✓ No external exposure of the API (no LoadBalancer/Ingress)
+
+See deploy/helm/nl6-minion/SECURITY.md for full risk assessment.
+
+═══════════════════════════════════════════════════════════════════════════════
+
 nl6-minion {{ .Chart.Version }} deployed as release "{{ .Release.Name }}".
 
 Pod: one nl6 simulator + one OpenNMS Minion sidecar (hostNetwork, Kafka transport).
@@ -10,6 +32,9 @@ Pod: one nl6 simulator + one OpenNMS Minion sidecar (hostNetwork, Kafka transpor
 2. nl6 control plane (on the node's host network, port {{ .Values.nl6.probes.port }}):
      kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "nl6-minion.fullname" . }} -c nl6 -- \
        wget -qO- http://127.0.0.1:{{ .Values.nl6.probes.port }}/api/v1/version
+
+   ⚠️  The API has NO authentication. With hostNetwork:true, port {{ .Values.nl6.probes.port }}
+       is exposed on the node's IP. Do NOT expose this to untrusted networks.
 
 3. Confirm the Minion registered with the core ({{ .Values.minion.location }} / {{ .Values.minion.id }}):
      - In OpenNMS:  Admin > Manage Minions
@@ -25,3 +50,4 @@ CHECKLIST (things this chart can NOT verify for you):
     so the Minion actually polls the simulated fleet.
 
 Kubernetes is NOT an officially supported nl6 target — see docs/ops/kubernetes.md.
+

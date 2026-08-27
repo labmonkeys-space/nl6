@@ -1,0 +1,39 @@
+{{/*
+Copyright 2026 Ronny Trommer <ronny@no42.org>
+SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- if .Values.security.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nl6-minion.fullname" . }}
+  labels:
+    {{- include "nl6-minion.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nl6-minion.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # nl6 HTTP API port — restrict to authorized clients only.
+    # The API has NO built-in authentication, so network-level access control
+    # is the only protection against unauthorized device manipulation.
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.nl6.probes.port }}
+      {{- with .Values.security.networkPolicy.ingress }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+    # Minion health check port — typically accessed by kubelet (node) and
+    # monitoring systems. Adjust if your monitoring runs in a specific namespace.
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.minion.probes.port }}
+      from:
+        - namespaceSelector: {}  # Allow from any namespace for health checks
+    # SNMP, trap, syslog, gNMI, SSH ports on simulated device IPs are accessed
+    # via the host network, not pod IPs, so they are not governed by this policy.
+    # Use node-level firewall rules (iptables, nftables, cloud security groups)
+    # to restrict access to the device CIDR (default: 10.42.0.0/16) if needed.
+{{- end }}

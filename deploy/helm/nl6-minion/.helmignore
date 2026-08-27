@@ -7,3 +7,7 @@
 *.bak
 *.orig
 *~
+# Keep SECURITY.md and README.md in the package for user reference
+# Exclude internal patch documentation
+PATCH_SUMMARY.md
+

@@ -2,14 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 apiVersion: v2
 name: nl6-minion
-description: |
+description: |-
   nl6 network-device simulator with an OpenNMS Minion sidecar (Kafka transport).
   Single-node lab convenience deployment — Kubernetes is NOT an officially
   supported target for nl6 (see docs/ops/kubernetes.md). The Minion shares the
   pod's hostNetwork so it inherits the host routes nl6 installs into the
   nl6sim namespace and can poll the simulated devices directly.
+  
+  ⚠️  SECURITY WARNING: This chart requires privileged pods with hostNetwork
+  access. Deploy ONLY on dedicated, isolated lab nodes. See SECURITY.md.
 type: application
-version: 0.1.4
+version: 0.1.5
 # appVersion tracks the nl6 simulator image tag this chart defaults to.
 appVersion: "0.21.0"
 keywords:
@@ -19,6 +22,18 @@ keywords:
   - snmp
   - simulator
 home: https://nl6.eu
+sources:
+  - https://github.com/labmonkeys-space/nl6
 maintainers:
   - name: Ronny Trommer
     email: ronny@no42.org
+annotations:
+  # Artifact Hub annotations
+  artifacthub.io/containsSecurityUpdates: "true"
+  artifacthub.io/changes: |
+    - kind: security
+      description: Added security warnings, NetworkPolicy, and risk acknowledgment requirement
+  artifacthub.io/recommendations: |
+    - url: https://github.com/labmonkeys-space/nl6/blob/main/deploy/helm/nl6-minion/SECURITY.md
+      description: Security considerations and required mitigations
+

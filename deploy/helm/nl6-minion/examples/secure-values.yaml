@@ -1,0 +1,119 @@
+# Example values file for nl6-minion Helm chart
+# This demonstrates a secure deployment with all required mitigations.
+#
+# Usage:
+#   helm install nl6-lab deploy/helm/nl6-minion -n nl6 --create-namespace -f examples/secure-values.yaml
+
+# ---------------------------------------------------------------------------
+# Security Configuration (REQUIRED)
+# ---------------------------------------------------------------------------
+security:
+  # REQUIRED: Acknowledge you understand the security risks
+  acknowledgeRisks: true
+
+  # RECOMMENDED: Enable NetworkPolicy to restrict API access
+  networkPolicy:
+    enabled: true
+    ingress:
+      # Example: Allow only from monitoring namespace
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      # Example: Allow only from specific pods
+      # - from:
+      #   - podSelector:
+      #       matchLabels:
+      #         app: opennms-core
+
+# ---------------------------------------------------------------------------
+# Node Placement (REQUIRED)
+# ---------------------------------------------------------------------------
+# Pin to a dedicated, isolated node
+nodeSelector:
+  kubernetes.io/hostname: lab-node-01
+  # Or use a role label:
+  # node-role.kubernetes.io/nl6-simulator: "true"
+
+# Tolerate node taints (if you applied them)
+tolerations:
+  - key: nl6-simulator
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# nl6 Simulator Configuration
+# ---------------------------------------------------------------------------
+nl6:
+  # Device fleet configuration
+  args:
+    - "-auto-start-ip"
+    - "10.42.0.1"
+    - "-auto-count"
+    - "100"  # Adjust to your needs
+    - "-port"
+    - "8080"
+    # Optional: Add more flags as needed
+    # - "-snmp-port"
+    # - "161"
+    # - "-flow-collector"
+    # - "collector.example.com:2055"
+
+  # Security context (privileged mode required for network namespace operations)
+  securityContext:
+    privileged: true
+    capabilities:
+      add:
+        - NET_ADMIN
+        - SYS_ADMIN
+        - NET_BIND_SERVICE
+      drop:
+        - ALL
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+# ---------------------------------------------------------------------------
+# OpenNMS Minion Configuration
+# ---------------------------------------------------------------------------
+minion:
+  # Minion identity (must match OpenNMS Monitoring Location)
+  id: nl6-minion-01
+  location: nl6-lab
+
+  # OpenNMS core connection
+  httpUrl: http://opennms-core.opennms.svc.cluster.local:8980/opennms
+
+  # Kafka transport
+  kafka:
+    bootstrapServers: kafka.kafka.svc.cluster.local:9092
+    # Optional: Add SASL/TLS configuration
+    # extraProperties:
+    #   security.protocol: "SASL_PLAINTEXT"
+    #   sasl.mechanism: "PLAIN"
+    #   sasl.jaas.config: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"minion\" password=\"secret\";"
+
+  # Credentials for OpenNMS REST API
+  credentials:
+    username: minion
+    password: changeme  # Use a real secret in production
+    # Or reference an existing secret:
+    # existingSecret: opennms-credentials
+    # userKey: username
+    # passKey: password
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"

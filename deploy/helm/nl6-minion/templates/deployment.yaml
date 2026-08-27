@@ -2,6 +2,12 @@
 Copyright 2026 Ronny Trommer <ronny@no42.org>
 SPDX-License-Identifier: Apache-2.0
 */}}
+{{- if not .Values.security.acknowledgeRisks }}
+{{- fail "\n\n⚠️  SECURITY ACKNOWLEDGMENT REQUIRED ⚠️\n\nThis Helm chart deploys a privileged pod with hostNetwork access that can\naffect the Kubernetes node's network stack. It is intended ONLY for dedicated\nlab/test nodes, NOT for production or multi-tenant clusters.\n\nRisks:\n  • hostNetwork:true makes network operations affect the node, not just the pod\n  • privileged:true grants unrestricted host access and container escape paths\n  • CAP_SYS_ADMIN + CAP_NET_ADMIN allow namespace and network manipulation\n  • Unauthenticated HTTP API exposed on node IP can trigger these operations\n\nRequired mitigations:\n  • Deploy on a dedicated, isolated node (set nodeSelector)\n  • Apply node taints to prevent workload co-location\n  • Enable NetworkPolicy to restrict API access (security.networkPolicy.enabled)\n  • Do NOT expose the API to untrusted networks\n  • Review docs/ops/kubernetes.md for full risk assessment\n\nTo proceed, set security.acknowledgeRisks: true in your values.yaml\n" }}
+{{- end }}
+{{- if not .Values.nodeSelector }}
+{{- fail "\n\n⚠️  NODE SELECTOR REQUIRED ⚠️\n\nYou must pin this deployment to a specific node using nodeSelector.\nThe simulator mutates the node's network stack, so the placement must be\nstable and isolated from other workloads.\n\nExample:\n  nodeSelector:\n    kubernetes.io/hostname: lab-node-01\n\nSee values.yaml for details.\n" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,8 +44,19 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "nl6-minion.serviceAccountName" . }}
-      # Share the node's network stack so the Minion inherits the /24 host
-      # routes nl6 installs into the nl6sim namespace (AddRouteForDevices).
+      # ⚠️  SECURITY WARNING: hostNetwork:true makes this pod share the node's
+      # network namespace. Network operations performed by nl6 (route installation,
+      # sysctl writes, iptables rules, namespace creation) affect the NODE, not
+      # just the pod. This is required for the Minion sidecar to reach simulated
+      # devices via the host routes nl6 installs, but it weakens node isolation.
+      #
+      # REQUIRED MITIGATIONS:
+      #   • Deploy on a dedicated node isolated from production workloads
+      #   • Use NetworkPolicy to restrict access to the nl6 API port
+      #   • Do NOT expose the API to untrusted networks (no authentication)
+      #   • Apply node taints to prevent other pods from scheduling here
+      #
+      # See docs/ops/kubernetes.md for full risk assessment and alternatives.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       {{- with .Values.imagePullSecrets }}
