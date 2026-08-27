@@ -46,7 +46,10 @@ const PLUGIN_NAME = 'csp-meta';
 const GOOGLE_FONTS_CSS = 'https://fonts.googleapis.com';
 const GOOGLE_FONTS_FILES = 'https://fonts.gstatic.com';
 
-const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+// `\s*` before the closing `>`: an end tag may carry whitespace (`</script >`)
+// and the HTML parser accepts it, so a regex that insists on `</script>` ends
+// the match at the wrong place and hashes the wrong bytes.
+const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const TYPE_ATTR_RE = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 const SRC_ATTR_RE = /\bsrc\s*=/i;
 const CHARSET_META_RE = /<meta[^>]*\bcharset\s*=[^>]*>/i;

@@ -42,7 +42,9 @@ const REQUIRED_DIRECTIVES = [
 // contains keyword sources like 'self', so single quotes cannot delimit it.
 const CSP_META_RE =
   /<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*content="([^"]+)"/i;
-const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+// `\s*` before the closing `>`: `</script >` is a valid end tag, and a regex
+// that misses it ends the match late and hashes the wrong bytes.
+const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
 const TYPE_ATTR_RE = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 const EXECUTABLE_SCRIPT_TYPES = new Set([
   '',
