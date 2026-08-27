@@ -26,6 +26,29 @@ import (
 	"time"
 )
 
+// Validate rejects an SNMPv3 config that cannot derive a privacy key.
+//
+// Both AES and DES localise the key by repeating the password to fill a 1 MB
+// buffer (RFC 3414 §A.2), which is undefined for an empty password. The config
+// is settable per device over REST, so without this check a single POST arms
+// every subsequent encrypted request on that device to fail key derivation.
+// Nil and privacy-disabled configs are valid; only the privacy case needs a
+// password. Safe on nil.
+func (c *SNMPv3Config) Validate() error {
+	if c == nil || !c.Enabled || c.PrivProtocol == SNMPV3_PRIV_NONE {
+		return nil
+	}
+
+	// Mirror generateDESKey's fallback: PrivPassword when set, else Password.
+	// Checking only PrivPassword would reject the common config that carries
+	// one password for both auth and privacy.
+	if c.PrivPassword == "" && c.Password == "" {
+		return fmt.Errorf("snmpv3: privacy protocol %d requires a non-empty password (set \"password\" or \"priv_password\")", c.PrivProtocol)
+	}
+
+	return nil
+}
+
 // createSNMPv3Response creates an SNMPv3 response message
 func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
 	if s.v3Config == nil || !s.v3Config.Enabled {
@@ -320,6 +343,12 @@ func (s *SNMPServer) generateAESKey(password string) []byte {
 	// RFC 3414 key localization algorithm for AES
 	// Create 1MB buffer from password
 	passwordBytes := []byte(password)
+	// See generateDESKey: an empty password divides by zero in the modulo
+	// below. nil fails cleanly through aes.NewCipher's KeySizeError; a
+	// zero-filled key of the right length would not fail at all.
+	if len(passwordBytes) == 0 {
+		return nil
+	}
 	buffer := make([]byte, 1048576) // 1MB
 
 	for i := 0; i < len(buffer); i++ {

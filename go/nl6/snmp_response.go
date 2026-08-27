@@ -388,6 +388,17 @@ func (s *SNMPServer) generateDESKey() []byte {
 
 	// Create 1MB buffer with repeated password (RFC 3414)
 	passwordBytes := []byte(password)
+	// RFC 3414 §A.2.1 derives the key by repeating the password to fill the
+	// buffer, which has no meaning for an empty password — and the modulo
+	// below divides by zero. Return nil rather than a zero-filled key of the
+	// right length: des.NewCipher rejects nil with a KeySizeError the caller
+	// already handles, whereas a plausible-looking all-zero key would encrypt
+	// successfully under a key the config never asked for. Configs reaching
+	// here empty are rejected at device creation (SNMPv3Config.Validate); this
+	// is the backstop for any path that bypasses it.
+	if len(passwordBytes) == 0 {
+		return nil
+	}
 	keyBuffer := make([]byte, 1048576) // 1MB
 	for i := 0; i < len(keyBuffer); i++ {
 		keyBuffer[i] = passwordBytes[i%len(passwordBytes)]

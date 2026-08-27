@@ -48,6 +48,10 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 		return nil, fmt.Errorf("invalid version length")
 	}
 	pos = newPos
+	// A declared length is not a delivered byte: the datagram can end here.
+	if pos >= len(data) {
+		return nil, fmt.Errorf("unexpected end of data when parsing version")
+	}
 	msg.Version = int(data[pos])
 	pos++
 
@@ -85,6 +89,9 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 		return nil, fmt.Errorf("invalid msgFlags length")
 	}
 	pos = newPos
+	if pos >= len(data) {
+		return nil, fmt.Errorf("unexpected end of data when parsing msgFlags")
+	}
 	msg.GlobalData.MsgFlags = data[pos]
 	pos++
 
@@ -94,7 +101,15 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 	}
 
 	// Parse msgSecurityParameters (OCTET STRING)
-	if pos >= len(data) || data[pos] != ASN1_OCTET_STRING {
+	//
+	// The `||` short-circuits, but the error message it guards does not: its
+	// arguments are evaluated whenever the branch is taken, so reporting
+	// data[pos] here panicked on precisely the truncated input the bounds
+	// check was added to reject. Report the length instead of the byte.
+	if pos >= len(data) {
+		return nil, fmt.Errorf("unexpected end of data at pos %d when parsing msgSecurityParameters", pos)
+	}
+	if data[pos] != ASN1_OCTET_STRING {
 		return nil, fmt.Errorf("expected msgSecurityParameters OCTET STRING at pos %d, got 0x%02X", pos, data[pos])
 	}
 	pos++
@@ -126,12 +141,18 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 		pos++
 		pduLen, newPos := parseLength(data, pos)
 		pos = newPos
+		if pduLen < 0 || pos+pduLen > len(data) {
+			return nil, fmt.Errorf("invalid encrypted scopedPduData length: %d", pduLen)
+		}
 		msg.ScopedPDU = data[pos : pos+pduLen]
 	} else if data[pos] == ASN1_SEQUENCE {
 		// Plaintext scoped PDU
 		pos++
 		pduLen, newPos := parseLength(data, pos)
 		pos = newPos
+		if pduLen < 0 || pos+pduLen > len(data) {
+			return nil, fmt.Errorf("invalid plaintext scopedPduData length: %d", pduLen)
+		}
 		msg.ScopedPDU = data[pos : pos+pduLen]
 	} else {
 		return nil, fmt.Errorf("expected scopedPduData OCTET STRING or SEQUENCE, got 0x%02X at pos %d", data[pos], pos)
@@ -274,6 +295,13 @@ func isSNMPv3Request(data []byte) bool {
 		return false
 	}
 	pos = newPos
+
+	// A datagram may declare a one-byte version and then end. This is the
+	// classifier every request passes through before dispatch, so an
+	// unguarded read here takes down the whole fleet, not one device.
+	if pos >= len(data) {
+		return false
+	}
 
 	version := int(data[pos])
 	return version == SNMPV3_VERSION
