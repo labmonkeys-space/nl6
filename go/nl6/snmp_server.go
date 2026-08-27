@@ -192,12 +192,17 @@ func (s *SNMPServer) getPDUType(data []byte) byte {
 		pos++ // skip version value
 	}
 
-	// Skip community
+	// Skip community. Read the length through parseLength rather than as a
+	// raw byte: the raw read runs off the end when the OCTET STRING tag is
+	// the last byte of the datagram, and it also mis-reads a long-form
+	// length, which a community string of 128 bytes or more encodes as.
 	if pos < len(data) && data[pos] == ASN1_OCTET_STRING {
 		pos++
-		communityLen := int(data[pos])
-		pos++
-		pos += communityLen
+		communityLen, newPos := parseLength(data, pos)
+		if communityLen < 0 {
+			return ASN1_GET_REQUEST
+		}
+		pos = newPos + communityLen
 	}
 
 	// Get PDU type

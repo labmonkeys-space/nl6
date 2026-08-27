@@ -90,6 +90,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject a privacy-enabled SNMPv3 block with no password here rather
+	// than at first encrypted request: the same 400-not-201 reasoning as the
+	// TLS ca_pem blocks, since a 201 followed by per-device key-derivation
+	// failure gives the operator nothing to act on.
+	if err := req.SNMPv3.Validate(); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Parse and validate per-device export blocks. Each block is
 	// optional; missing or nil → export disabled for batch. Validation
 	// failures return 400 with the underlying error so the operator

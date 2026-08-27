@@ -131,6 +131,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 	pos++
 	engineIDLen, newPos := parseLength(scopedPDU, pos)
+	if engineIDLen < 0 {
+		return "", ASN1_GET_REQUEST, fmt.Errorf("invalid contextEngineID length")
+	}
 	pos = newPos + engineIDLen
 
 	// Parse contextName (OCTET STRING)
@@ -139,6 +142,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 	pos++
 	contextNameLen, newPos := parseLength(scopedPDU, pos)
+	if contextNameLen < 0 {
+		return "", ASN1_GET_REQUEST, fmt.Errorf("invalid contextName length")
+	}
 	pos = newPos + contextNameLen
 
 	// Parse PDU - should be GetRequest (0xA0) or GetNext (0xA1)
@@ -164,6 +170,9 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 		}
 		pos++
 		intLen, newPos := parseLength(scopedPDU, pos)
+		if intLen < 0 {
+			return "", pduType, fmt.Errorf("invalid INTEGER length in PDU")
+		}
 		pos = newPos + intLen
 	}
 
@@ -191,7 +200,10 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	oidLen, newPos := parseLength(scopedPDU, pos)
 	pos = newPos
 
-	if pos+oidLen > len(scopedPDU) {
+	// oidLen < 0 is parseLength's "unparseable" signal. Testing only the
+	// upper bound lets it through — pos+(-1) is below len — and the slice
+	// expression below then panics on an inverted range.
+	if oidLen < 0 || pos+oidLen > len(scopedPDU) {
 		return "", pduType, fmt.Errorf("OID length exceeds remaining data")
 	}
 

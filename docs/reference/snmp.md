@@ -68,6 +68,22 @@ A negative value is treated as 0, per RFC 3416's definition of the field as non-
 
 — the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
 
+## Malformed-datagram handling
+
+Every simulated device answers from one process, and the request path is a hand-written BER parser rather than `encoding/asn1`.
+A panic in it is therefore not a per-device fault — it unwinds the listener goroutine and takes the whole fleet down mid-run.
+The parsers are consequently required to be **total**: any byte sequence must produce a value or an error, never a panic.
+
+There is deliberately **no `recover()`** on the request path.
+A blanket recover would convert a parser defect into a silently dropped datagram, which is indistinguishable from a network drop and hides the bug for as long as it exists.
+The guarantee is enforced by the fuzz targets in `snmp_parser_robustness_test.go` instead — one per parser reachable from a datagram, seeded with the inputs that previously crashed each.
+`go test` replays every seed on an ordinary run, so a regression fails the normal suite rather than only a fuzzing session.
+
+Two traps this parser family has fallen into, both worth knowing before editing it:
+
+- **`parseLength` signals failure with `-1`, and `-1` passes an upper-bound check.** `if pos+n > len(buf)` is false when `n` is `-1`, so the guard admits the value and the slice expression that follows panics on an inverted range. Length checks need the `n < 0` arm as well.
+- **A short-circuiting guard does not short-circuit its own error message.** `if pos >= len(data) || data[pos] != tag { return fmt.Errorf("... got 0x%02X", data[pos]) }` evaluates `data[pos]` whenever the branch is taken — including on the out-of-range case the check exists to catch.
+
 ## OID lookup internals
 
 OIDs are stored per-device in a `sync.Map` for lock-free O(1) reads under
