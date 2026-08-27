@@ -33,6 +33,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate APP_VERSION format
+        # Defense in depth: validate APP_VERSION before it reaches the Makefile.
+        # Allowed characters match the Makefile's validation: [A-Za-z0-9._+-]+
+        # This prevents shell injection even if the Makefile validation is bypassed.
+        if: ${{ inputs.assert-version-matches-tag }}
+        run: |
+          if ! printf '%s' "${GITHUB_REF_NAME}" | grep -Eq '^[A-Za-z0-9._+-]+$'; then
+            echo "ERROR: Tag name '${GITHUB_REF_NAME}' contains unsafe characters."
+            echo "Allowed characters: [A-Za-z0-9._+-]+"
+            exit 1
+          fi
+          echo "Tag validation passed: ${GITHUB_REF_NAME}"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
