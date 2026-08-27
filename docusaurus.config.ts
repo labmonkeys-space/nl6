@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+import cspMetaPlugin from './src/plugins/csp-meta';
 
 // Resolved at build time and exposed to the landing page via `customFields`.
 // Precedence: APP_VERSION env (CI override) > latest git tag > 'dev' (shallow
@@ -97,6 +98,14 @@ const config: Config = {
         ],
       }),
     }),
+
+    // Content-Security-Policy as a <meta http-equiv> on every built page.
+    // GitHub Pages serves the site and cannot be given custom response
+    // headers, so meta delivery is the only option. Must stay LAST: it
+    // rewrites the emitted HTML in postBuild and hashes the inline scripts it
+    // finds there, so any plugin that also touches the output has to run
+    // before it. See src/plugins/csp-meta.ts.
+    cspMetaPlugin,
   ],
 
   i18n: {

@@ -51,7 +51,7 @@ UNAME_S := $(shell uname -s)
 
 .PHONY: all build reconcile run test test-race test-web tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
-        docs-install docs-serve docs-build docs-check-orphans docs-audit-overrides docs-clean \
+        docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
 
 all: build
@@ -409,9 +409,14 @@ docs-serve: node_modules/.package-lock.json
 docs-check-orphans: check-node
 	node scripts/check-doc-orphans.mjs
 
-## docs-build: Build the docs site (onBrokenLinks=throw; fails on broken links / warnings / orphaned pages)
+## docs-build: Build the docs site (onBrokenLinks=throw; fails on broken links / warnings / orphaned pages / missing CSP)
 docs-build: node_modules/.package-lock.json docs-check-orphans
 	$(NPM) run build
+	node scripts/check-csp.mjs build
+
+## docs-check-csp: Verify every built page carries an enforceable CSP (needs a build in build/)
+docs-check-csp: check-node
+	node scripts/check-csp.mjs build
 
 ## docs-audit-overrides: Report which package.json overrides still change resolution (report-only, needs network)
 # Deliberately NOT part of the CI gates: the result depends on the npm registry
