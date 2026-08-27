@@ -388,6 +388,17 @@ func (s *SNMPServer) generateDESKey() []byte {
 
 	// Create 1MB buffer with repeated password (RFC 3414)
 	passwordBytes := []byte(password)
+	
+	// Defensive check: empty password would cause division by zero in the
+	// modulo operation below. This should never happen if configuration
+	// validation is working, but we guard against it to prevent a panic
+	// that would crash the entire process.
+	if len(passwordBytes) == 0 {
+		// Return a deterministic but non-functional key. The decryption
+		// will fail with a normal error rather than crashing the process.
+		return make([]byte, 8)
+	}
+	
 	keyBuffer := make([]byte, 1048576) // 1MB
 	for i := 0; i < len(keyBuffer); i++ {
 		keyBuffer[i] = passwordBytes[i%len(passwordBytes)]

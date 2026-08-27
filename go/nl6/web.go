@@ -90,6 +90,14 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate SNMPv3 configuration if provided. Empty passwords with
+	// privacy enabled would cause a process crash on the first encrypted
+	// request, so reject the configuration at creation time.
+	if err := req.SNMPv3.Validate(); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Parse and validate per-device export blocks. Each block is
 	// optional; missing or nil → export disabled for batch. Validation
 	// failures return 400 with the underlying error so the operator

@@ -635,6 +635,12 @@ func main() {
 					PrivProtocol: privProto,
 					PrivPassword: PASSWORD, // Use same password for privacy
 				}
+				// Validate the SNMPv3 configuration. Empty passwords with
+				// privacy enabled would cause a process crash on the first
+				// encrypted request, so reject the configuration at startup.
+				if err := v3Config.Validate(); err != nil {
+					log.Fatalf("SNMPv3 configuration error: %v", err)
+				}
 				log.Printf("SNMPv3 enabled with engine ID: %s, auth: %s, priv: %s",
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}

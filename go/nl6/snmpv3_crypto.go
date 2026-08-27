@@ -26,6 +26,34 @@ import (
 	"time"
 )
 
+// Validate checks SNMPv3 configuration for security issues. Returns an error
+// if privacy is enabled but the effective password is empty, which would
+// cause a division-by-zero panic during key derivation. Safe on nil.
+func (c *SNMPv3Config) Validate() error {
+	if c == nil || !c.Enabled {
+		return nil
+	}
+
+	// When privacy (encryption) is enabled, we must have a non-empty
+	// effective password for key derivation. Both AES and DES key
+	// generation repeat the password bytes using modulo operations that
+	// panic on empty passwords.
+	if c.PrivProtocol != SNMPV3_PRIV_NONE {
+		// DES falls back from PrivPassword to Password; AES uses Password directly.
+		// The effective password is the one that will actually be used.
+		effectivePassword := c.PrivPassword
+		if effectivePassword == "" {
+			effectivePassword = c.Password
+		}
+
+		if effectivePassword == "" {
+			return fmt.Errorf("snmpv3: privacy protocol %d requires a non-empty password (set either 'password' or 'priv_password')", c.PrivProtocol)
+		}
+	}
+
+	return nil
+}
+
 // createSNMPv3Response creates an SNMPv3 response message
 func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
 	if s.v3Config == nil || !s.v3Config.Enabled {
@@ -320,6 +348,17 @@ func (s *SNMPServer) generateAESKey(password string) []byte {
 	// RFC 3414 key localization algorithm for AES
 	// Create 1MB buffer from password
 	passwordBytes := []byte(password)
+	
+	// Defensive check: empty password would cause division by zero in the
+	// modulo operation below. This should never happen if configuration
+	// validation is working, but we guard against it to prevent a panic
+	// that would crash the entire process.
+	if len(passwordBytes) == 0 {
+		// Return a deterministic but non-functional key. The decryption
+		// will fail with a normal error rather than crashing the process.
+		return make([]byte, 16)
+	}
+	
 	buffer := make([]byte, 1048576) // 1MB
 
 	for i := 0; i < len(buffer); i++ {
