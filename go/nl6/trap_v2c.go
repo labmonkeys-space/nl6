@@ -369,6 +369,13 @@ func parseIntBE(b []byte) int64 {
 	if len(b) == 0 {
 		return 0
 	}
+	// Truncate oversized INTEGERs to prevent negative slice bounds. BER permits
+	// arbitrarily long INTEGERs; an attacker-controlled 9+ byte value would
+	// otherwise cause copy(tmp[8-len(b):], b) to panic. We take the least
+	// significant 8 bytes, matching parseUintBE's truncation strategy.
+	if len(b) > 8 {
+		b = b[len(b)-8:]
+	}
 	// Sign-extend from the most significant byte.
 	negative := b[0]&0x80 != 0
 	var tmp [8]byte
