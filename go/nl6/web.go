@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"runtime/pprof"
 	"strings"
 	"time"
@@ -29,6 +31,113 @@ import (
 )
 
 // Web handlers for HTTP API endpoints
+
+// authMiddleware validates API key for sensitive endpoints.
+// The API key is read from the NL6_API_KEY environment variable.
+// If the environment variable is not set, authentication is disabled
+// (backward compatibility for local development).
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiKey := os.Getenv("NL6_API_KEY")
+		
+		// If no API key is configured, allow the request (backward compatibility)
+		if apiKey == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		
+		// Check Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			sendErrorResponse(w, "Missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+		
+		// Support both "Bearer <token>" and plain token formats
+		token := authHeader
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+		
+		if token != apiKey {
+			sendErrorResponse(w, "Invalid API key", http.StatusUnauthorized)
+			return
+		}
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
+// validateIPRange checks if the requested IP range is within allowed simulator ranges.
+// This prevents attackers from configuring arbitrary network ranges that could
+// affect host networking or reserved address spaces.
+func validateIPRange(startIP string, netmask string) error {
+	ip := net.ParseIP(startIP)
+	if ip == nil {
+		return fmt.Errorf("invalid IP address: %s", startIP)
+	}
+	
+	// Ensure it's IPv4
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return fmt.Errorf("only IPv4 addresses are supported")
+	}
+	
+	// Define allowed private ranges for simulator use
+	// RFC 1918 private address spaces
+	allowedRanges := []string{
+		"10.0.0.0/8",      // Class A private
+		"172.16.0.0/12",   // Class B private
+		"192.168.0.0/16",  // Class C private
+	}
+	
+	// Check if the IP falls within any allowed range
+	inAllowedRange := false
+	for _, cidr := range allowedRanges {
+		_, allowedNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		if allowedNet.Contains(ip4) {
+			inAllowedRange = true
+			break
+		}
+	}
+	
+	if !inAllowedRange {
+		return fmt.Errorf("IP address %s is outside allowed simulator ranges (RFC 1918 private addresses: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)", startIP)
+	}
+	
+	// Additional validation: reject reserved/special-use addresses within private ranges
+	// Reject network addresses (x.x.x.0) and broadcast addresses (x.x.x.255)
+	// for /24 networks to prevent common misconfigurations
+	if netmask == "24" {
+		lastOctet := ip4[3]
+		if lastOctet == 0 {
+			return fmt.Errorf("IP address %s appears to be a network address (ends in .0); use a host address instead", startIP)
+		}
+		if lastOctet == 255 {
+			return fmt.Errorf("IP address %s appears to be a broadcast address (ends in .255); use a host address instead", startIP)
+		}
+	}
+	
+	// Reject localhost range (127.0.0.0/8)
+	if ip4[0] == 127 {
+		return fmt.Errorf("IP address %s is in the localhost range (127.0.0.0/8) and cannot be used for device simulation", startIP)
+	}
+	
+	// Reject link-local range (169.254.0.0/16)
+	if ip4[0] == 169 && ip4[1] == 254 {
+		return fmt.Errorf("IP address %s is in the link-local range (169.254.0.0/16) and cannot be used for device simulation", startIP)
+	}
+	
+	// Reject multicast range (224.0.0.0/4)
+	if ip4[0] >= 224 && ip4[0] <= 239 {
+		return fmt.Errorf("IP address %s is in the multicast range (224.0.0.0/4) and cannot be used for device simulation", startIP)
+	}
+	
+	return nil
+}
 
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
@@ -78,6 +187,14 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	case "8", "16", "24":
 	default:
 		sendErrorResponse(w, "netmask must be 8, 16, or 24", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that the requested IP range is within allowed simulator ranges.
+	// This prevents unauthorized control of host networking via arbitrary address
+	// ranges that could affect routing tables or reserved address spaces.
+	if err := validateIPRange(req.StartIP, req.Netmask); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -626,51 +743,55 @@ func setupRoutes() *mux.Router {
 
 	// API routes
 	api := router.PathPrefix("/api/v1").Subrouter()
-	api.HandleFunc("/fidelity", fidelityStatusHandler).Methods("GET")
-	api.HandleFunc("/fidelity", fidelityToggleHandler).Methods("POST")
-	api.HandleFunc("/devices", createDevicesHandler).Methods("POST")
+	
+	// Read-only endpoints (no authentication required for backward compatibility)
+	api.HandleFunc("/status", statusHandler).Methods("GET")
+	api.HandleFunc("/version", versionHandler).Methods("GET")
 	api.HandleFunc("/devices", listDevicesHandler).Methods("GET")
 	api.HandleFunc("/devices/export", exportDevicesCSVHandler).Methods("GET")
 	api.HandleFunc("/devices/routes", generateRouteScriptHandler).Methods("GET")
-	api.HandleFunc("/devices/{id}", deleteDeviceHandler).Methods("DELETE")
-	api.HandleFunc("/devices", deleteAllDevicesHandler).Methods("DELETE")
 	api.HandleFunc("/resources", listResourcesHandler).Methods("GET")
-	api.HandleFunc("/status", statusHandler).Methods("GET")
 	api.HandleFunc("/system-stats", systemStatsHandler).Methods("GET")
-	api.HandleFunc("/version", versionHandler).Methods("GET")
 	api.HandleFunc("/flows/status", flowStatusHandler).Methods("GET")
 	api.HandleFunc("/traps/status", trapStatusHandler).Methods("GET")
-	api.HandleFunc("/devices/{ip}/trap", fireTrapHandler).Methods("POST")
 	api.HandleFunc("/syslog/status", syslogStatusHandler).Methods("GET")
-	api.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
 	api.HandleFunc("/gnmi/status", gnmiStatusHandler).Methods("GET")
 	api.HandleFunc("/gnmi/dialout/status", gnmiDialoutStatusHandler).Methods("GET")
 	api.HandleFunc("/dns/status", dnsStatusHandler).Methods("GET")
-	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
-	// On-demand optical degradation (#334): drive one channel across the FEC
-	// threshold, optionally for a bounded window.
-	api.HandleFunc("/devices/{ip}/optical/{component}/degrade", degradeOpticalHandler).Methods("POST")
-	api.HandleFunc("/devices/{ip}/optical", opticalStatusHandler).Methods("GET")
-	api.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
-	api.HandleFunc("/topology", createTopologyHandler).Methods("POST")
+	api.HandleFunc("/fidelity", fidelityStatusHandler).Methods("GET")
 	api.HandleFunc("/topology", listTopologyHandler).Methods("GET")
-	api.HandleFunc("/topology", deleteTopologyHandler).Methods("DELETE")
 	api.HandleFunc("/topology/status", topologyStatusHandler).Methods("GET")
 	api.HandleFunc("/topology/graph", topologyGraphHandler).Methods("GET")
-
-	// Load-test scenario control surface (epic 1).
-	api.HandleFunc("/scenarios", createScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios", listScenariosHandler).Methods("GET")
-	api.HandleFunc("/scenarios/{id}/arm", armScenarioHandler).Methods("POST")
-	api.HandleFunc("/scenarios/{id}/start", startScenarioHandler).Methods("POST")
-	api.HandleFunc("/scenarios/{id}/stop", stopScenarioHandler).Methods("POST")
 	api.HandleFunc("/scenarios/{id}/report", scenarioReportHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}/metrics", scenarioMetricsHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}", scenarioStatusHandler).Methods("GET")
-	api.HandleFunc("/scenarios/{id}", deleteScenarioHandler).Methods("DELETE")
-
-	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
-	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
+	api.HandleFunc("/devices/{ip}/optical", opticalStatusHandler).Methods("GET")
+	
+	// Mutating endpoints (require authentication when NL6_API_KEY is set)
+	// These endpoints can modify simulator state, create/delete devices,
+	// or trigger privileged network operations
+	authenticated := api.PathPrefix("").Subrouter()
+	authenticated.Use(authMiddleware)
+	
+	authenticated.HandleFunc("/fidelity", fidelityToggleHandler).Methods("POST")
+	authenticated.HandleFunc("/devices", createDevicesHandler).Methods("POST")
+	authenticated.HandleFunc("/devices/{id}", deleteDeviceHandler).Methods("DELETE")
+	authenticated.HandleFunc("/devices", deleteAllDevicesHandler).Methods("DELETE")
+	authenticated.HandleFunc("/devices/{ip}/trap", fireTrapHandler).Methods("POST")
+	authenticated.HandleFunc("/devices/{ip}/syslog", fireSyslogHandler).Methods("POST")
+	authenticated.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/oper-status", setOperStatusHandler).Methods("POST")
+	authenticated.HandleFunc("/devices/{ip}/optical/{component}/degrade", degradeOpticalHandler).Methods("POST")
+	authenticated.HandleFunc("/devices/{ip}/interfaces/{ifIndex}/admin-status", setAdminStatusHandler).Methods("POST")
+	authenticated.HandleFunc("/topology", createTopologyHandler).Methods("POST")
+	authenticated.HandleFunc("/topology", deleteTopologyHandler).Methods("DELETE")
+	authenticated.HandleFunc("/scenarios", createScenarioHandler).Methods("POST")
+	authenticated.HandleFunc("/scenarios/{id}/arm", armScenarioHandler).Methods("POST")
+	authenticated.HandleFunc("/scenarios/{id}/start", startScenarioHandler).Methods("POST")
+	authenticated.HandleFunc("/scenarios/{id}/stop", stopScenarioHandler).Methods("POST")
+	authenticated.HandleFunc("/scenarios/{id}", deleteScenarioHandler).Methods("DELETE")
+	authenticated.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
+	authenticated.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
 
 	// Health check
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
