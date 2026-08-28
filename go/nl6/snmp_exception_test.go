@@ -259,24 +259,5 @@ func getRequestAtVersion(version int, oid string) []byte {
 }
 
 func getRequestAtVersionMulti(version int, oids []string) []byte {
-	var varbinds []byte
-	for _, oid := range oids {
-		varbinds = append(varbinds, encodeVarBind(oid, encodeNull())...)
-	}
-
-	var pduBody []byte
-	pduBody = append(pduBody, encodeInteger(42)...) // request-id
-	pduBody = append(pduBody, encodeInteger(0)...)  // error-status
-	pduBody = append(pduBody, encodeInteger(0)...)  // error-index
-	pduBody = append(pduBody, encodeSequence(varbinds)...)
-
-	pdu := []byte{ASN1_GET_REQUEST}
-	pdu = append(pdu, encodeLength(len(pduBody))...)
-	pdu = append(pdu, pduBody...)
-
-	var msg []byte
-	msg = append(msg, encodeInteger(version)...)
-	msg = append(msg, encodeOctetString("public")...)
-	msg = append(msg, pdu...)
-	return encodeSequence(msg)
+	return snmpRequestAt(ASN1_GET_REQUEST, version, oids)
 }

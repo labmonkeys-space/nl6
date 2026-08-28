@@ -57,6 +57,31 @@ The standard separates the two by OID prefix registration, and a profile is a fl
 The mapping applies to GET and GETNEXT only.
 GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
 
+### SNMPv1 never returns a Counter64
+
+Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column used to answer tag `0x46` under `error-status = noError` (nl6#524).
+
+RFC 3584 §4.2.2.1 prescribes two different behaviours, and the difference matters more than it first looks:
+
+- A **GET** answers `error-status = noSuchName`, with `error-index` at the first offending binding and every requested name echoed with a NULL value.
+- A **GETNEXT** **skips** the object and continues to the next lexicographic successor.
+
+A GETNEXT names a position rather than an object, so answering it with an error would stop a v1 walk at the first HC column and truncate the table with nothing to explain why.
+A v1 walk over `ifXTable` therefore returns the Counter32 and Gauge32 columns and steps silently over the Counter64 block.
+
+The diversion is keyed on the OID's declared MIB type, not on what its value happens to encode as.
+A Counter64 column holding a non-numeric value would have gone out as an OCTET STRING, which is legal in v1, and it still diverts: the object's type is what a v1 manager cannot represent, and a bad stored value should not quietly soften protocol semantics.
+
+SNMPv2c and SNMPv3 are unaffected, and SNMPv3 is never v1.
+
+A walk that skips its way past the last non-Counter64 OID ends in `noSuchName`, which is how v1 signals end-of-MIB here.
+Only the first variable binding of a GETNEXT is processed, as before.
+
+Two limitations are worth stating plainly:
+
+- **GETBULK is deliberately untouched.** SNMPv1 has no GETBULK, but nl6 answers a version-0 GETBULK anyway, and it will hand a v1 manager raw `0x46` tags. This is the same decision the exception mapping makes above: a GETBULK's bindings are walked OIDs rather than the request's names, so the RFC 1157 echo does not apply to them.
+- **Coverage is bounded by the type table.** The eight `ifXTable` HC columns are the Counter64 objects nl6 recognises. A 64-bit counter served from a resource file under any other OID (a vendor HC column, `ipIfStatsHC*`, `dot3HC*`) is not recognised as Counter64, so a v1 request for it still returns `0x46`.
+
 **SNMPv3 GET and GETNEXT are covered.** Since nl6#518 the v3 encoder (`createScopedPDU`) goes through `encodeTypedValue` as well, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
 The v3 GETBULK handler is the exception; see the known limitations below.
 

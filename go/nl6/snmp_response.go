@@ -344,6 +344,22 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 	// error-index to the position of the varbind that produced the exception,
 	// so report the first one; indices are 1-based (RFC 1157).
 	//
+	// A Counter64-typed OID diverts the same way (RFC 3584 §4.2.2.1, nl6#524).
+	// Counter64 does not exist in SNMPv1, and encodeTypedValue picks the tag
+	// from the OID alone, so without this a v1 GET of an ifHC* column answered
+	// tag 0x46 under error-status noError.
+	//
+	// Both offences are tested in ONE pass, deliberately. Two sequential loops
+	// would let an offence late in the list beat an earlier one, and RFC 1157
+	// wants the FIRST offending binding.
+	//
+	// The test is on the OID's declared type, not on what the value happens to
+	// encode as. encodeTypedValue only emits 0x46 when the value parses as a
+	// uint64, so a Counter64 column holding a non-numeric value used to go out
+	// as an OCTET STRING, which is legal in v1. It still diverts: the object's
+	// MIB type is what a v1 manager cannot represent, and a bad stored value
+	// should not quietly soften protocol semantics.
+	//
 	// GET only. GETBULK does not exist in SNMPv1, so a version-0 GETBULK is a
 	// malformed request and is answered as before rather than diverted: its
 	// `oids` are walked OIDs, not the request's names, and there can be
@@ -356,8 +372,9 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 	// of a request the socket already accepted. Running it through the sizing
 	// loop would produce a partial noSuchName echo, which is a wrong answer.
 	if req.Version == snmpVersion1 && rule == overflowTooBig {
-		for i, v := range responses {
-			if isSNMPExceptionValue(v) {
+		for i := range oids {
+			// Index oids, not responses: the Counter64 test is on the OID.
+			if isSNMPExceptionValue(responses[i]) || snmpTypeTag(oids[i]) == ASN1_COUNTER64 {
 				var echoed []byte
 				for _, o := range oids {
 					echoed = append(echoed, encodeVarBind(o, encodeNull())...)
