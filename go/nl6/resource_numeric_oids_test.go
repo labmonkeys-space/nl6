@@ -14,10 +14,10 @@ import (
 	"testing"
 )
 
-// numericOIDSubtrees are MIB subtrees whose every leaf is defined numerically.
-// A string response under one of these is a data defect: nl6 encodes it as an
-// OCTET STRING, and a collector that types the OID per its MIB — as OpenNMS
-// does for `freeMem`, `type="gauge"` in the stock cisco-router group — cannot
+// numericLeafOIDs are scalar MIB leaves whose value is numeric by definition.
+// A string response for one of these is a data defect: nl6 encodes it as an
+// OCTET STRING, and a collector that types the OID per its MIB (as OpenNMS
+// does for `freeMem`, `type="gauge"` in the stock cisco-router group) cannot
 // convert it and drops the attribute on every poll of every device.
 //
 // nl6#515 is why this test exists. `freeMem` (.1.3.6.1.4.1.9.2.1.8.0) carried
@@ -25,85 +25,77 @@ import (
 // chassisId entry where a string is correct. It was invisible until a
 // 2,150-device benchmark turned it into a sustained error rate.
 //
-// Keep this list conservative. An entry belongs here only when every leaf
-// beneath it is numeric in the MIB — a subtree with mixed types would make
-// this test reject legitimate data.
-var numericOIDSubtrees = []struct {
-	prefix string
-	mib    string
+// The list names exact leaves, not subtrees. The obvious subtree here,
+// OLD-CISCO-SYSTEM-MIB lsystem (1.3.6.1.4.1.9.2.1), also holds DisplayString
+// and IpAddress leaves (hostName .3, whyReload .2, authAddr .5, ...), so a
+// prefix match would reject legitimate data the moment a profile gains one.
+//
+// Width follows the MIB SYNTAX and the encoder (`encodeTypedValue`): a Gauge
+// leaf must be in the `oidTypeTable` and parses as uint32; an INTEGER leaf
+// takes the default branch and must fit int32.
+var numericLeafOIDs = []struct {
+	oid      string
+	name     string
+	unsigned bool
 }{
-	// OLD-CISCO-SYSTEM-MIB / OLD-CISCO-MEMORY-MIB: memory sizes, CPU busy
-	// percentages and buffer counters. All Integer32 or Gauge.
-	{"1.3.6.1.4.1.9.2.1.", "OLD-CISCO-SYSTEM-MIB"},
+	{"1.3.6.1.4.1.9.2.1.8", "OLD-CISCO-MEMORY-MIB::freeMem", true},
+	{"1.3.6.1.4.1.9.2.1.54", "OLD-CISCO-SYSTEM-MIB::writeMem", false},
+	{"1.3.6.1.4.1.9.2.1.56", "OLD-CISCO-SYSTEM-MIB::busyPer", false},
+	{"1.3.6.1.4.1.9.2.1.57", "OLD-CISCO-SYSTEM-MIB::avgBusy1", false},
+	{"1.3.6.1.4.1.9.2.1.58", "OLD-CISCO-SYSTEM-MIB::avgBusy5", false},
 }
 
-func TestResourceProfiles_NumericSubtreesHoldNumbers(t *testing.T) {
-	roots, err := filepath.Glob("resources/*")
+func TestResourceProfiles_NumericLeavesHoldNumbers(t *testing.T) {
+	// One level deep, like the loader (loadSpecificResourcesFromDir uses a
+	// non-recursive ReadDir).
+	files, err := filepath.Glob("resources/*/*.json")
 	if err != nil {
 		t.Fatalf("glob resources: %v", err)
 	}
-	if len(roots) == 0 {
-		t.Fatal("no resource directories found — has the layout changed?")
+	if len(files) == 0 {
+		t.Fatal("no resource files found — has the layout changed?")
 	}
 
-	scanned := 0
+	matched := 0
 
-	for _, root := range roots {
-		files, err := filepath.Glob(filepath.Join(root, "*.json"))
+	for _, f := range files {
+		raw, err := os.ReadFile(f) // #nosec G304 -- test-only, path from a repo glob
 		if err != nil {
-			t.Fatalf("glob %s: %v", root, err)
+			t.Fatalf("read %s: %v", f, err)
 		}
-		for _, f := range files {
-			raw, err := os.ReadFile(f) // #nosec G304 -- test-only, path from a repo glob
-			if err != nil {
-				t.Fatalf("read %s: %v", f, err)
-			}
-			var doc any
-			if err := json.Unmarshal(raw, &doc); err != nil {
-				// Not every file under resources/ is an OID map (traps.json,
-				// syslog.json, optical inventories). Malformed JSON is caught
-				// by the loader; this test only cares about OID/response pairs.
-				continue
-			}
-			scanned++
-			walkOIDPairs(doc, func(oid, response string) {
-				for _, sub := range numericOIDSubtrees {
-					if !strings.HasPrefix(oid, sub.prefix) {
-						continue
-					}
-					if _, err := strconv.ParseInt(strings.TrimSpace(response), 10, 64); err != nil {
-						t.Errorf("%s: .%s (%s) has non-numeric response %q — "+
-							"every leaf under %s is numeric, so this encodes as an "+
-							"OCTET STRING and a collector typing it per the MIB drops it",
-							f, oid, sub.mib, response, sub.prefix)
-					}
+		// Decode into the loader's own type so this test rejects exactly what
+		// the loader rejects (a non-string "response" included). Catalog and
+		// optical files decode too; they simply carry no "snmp" part.
+		var doc DeviceResources
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s: does not decode as a resource file: %v", f, err)
+		}
+		for _, r := range doc.SNMP {
+			oid := strings.TrimPrefix(r.OID, ".")
+			for _, leaf := range numericLeafOIDs {
+				if oid != leaf.oid && !strings.HasPrefix(oid, leaf.oid+".") {
+					continue
 				}
-			})
+				matched++
+				// No TrimSpace: the encoder does not trim either, so a
+				// padded value would go out as an OCTET STRING.
+				var perr error
+				if leaf.unsigned {
+					_, perr = strconv.ParseUint(r.Response, 10, 32)
+				} else {
+					_, perr = strconv.ParseInt(r.Response, 10, 32)
+				}
+				if perr != nil {
+					t.Errorf("%s: .%s (%s) has non-numeric response %q: "+
+						"the leaf is numeric in the MIB, so this encodes as an "+
+						"OCTET STRING and a collector typing it per the MIB drops it",
+						f, oid, leaf.name, r.Response)
+				}
+			}
 		}
 	}
 
-	if scanned == 0 {
-		t.Fatal("scanned no JSON resource files — the glob is wrong")
-	}
-}
-
-// walkOIDPairs visits every {"oid": ..., "response": ...} object in a decoded
-// resource document, whatever nesting the file uses. The resource files are
-// not uniformly shaped, so this walks rather than assuming a schema.
-func walkOIDPairs(node any, visit func(oid, response string)) {
-	switch v := node.(type) {
-	case map[string]any:
-		oid, oidOK := v["oid"].(string)
-		resp, respOK := v["response"].(string)
-		if oidOK && respOK {
-			visit(oid, resp)
-		}
-		for _, child := range v {
-			walkOIDPairs(child, visit)
-		}
-	case []any:
-		for _, child := range v {
-			walkOIDPairs(child, visit)
-		}
+	if matched == 0 {
+		t.Fatal("no resource entry matched a guarded leaf — the test asserted nothing")
 	}
 }

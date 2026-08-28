@@ -49,6 +49,11 @@ func TestSnmpTypeTag(t *testing.T) {
 		// ipRouteNextHop → IpAddress
 		{".1.3.6.1.2.1.4.21.1.7.0.0.0.0", ASN1_IPADDRESS},
 
+		// freeMem (OLD-CISCO-MEMORY-MIB) → Gauge32; a sibling lsystem leaf
+		// must not inherit it (.8 must not match .80).
+		{".1.3.6.1.4.1.9.2.1.8.0", ASN1_GAUGE32},
+		{".1.3.6.1.4.1.9.2.1.80.0", 0},
+
 		// ifIndex → INTEGER (not in table → 0)
 		{".1.3.6.1.2.1.2.2.1.1.1", 0},
 
