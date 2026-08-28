@@ -112,9 +112,11 @@ func TestGetResponse_SNMPv1MapsExceptionToNoSuchName(t *testing.T) {
 // binding, 1-based, and every requested name must be echoed with a NULL value
 // (RFC 1157 §4.1.3: the response's variable-bindings are the request's).
 func TestGetResponse_SNMPv1MultiVarbindErrorIndex(t *testing.T) {
-	const known, known2 = ".1.3.6.1.2.1.1.1.0", ".1.3.6.1.2.1.1.5.0"
+	// known2 is sysContact, not sysName: newTestServer (snmp_testutil_test.go)
+	// rejects sysName because buildResourceIndexes drops it.
+	const known, known2 = ".1.3.6.1.2.1.1.1.0", ".1.3.6.1.2.1.1.4.0"
 	const unknown, unknown2 = ".1.3.6.1.4.1.9.2.1.46.0", ".1.3.6.1.4.1.9.2.1.47.0"
-	s := newTestServer(map[string]string{known: "a device", known2: "host"})
+	s := newTestServer(map[string]string{known: "a device", known2: "ops@example.net"})
 
 	tests := []struct {
 		name      string

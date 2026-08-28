@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Note: the simulator package uses Linux-only syscalls (TUN/netns) so tests
-// must be run on Linux. The //go:build linux constraint above ensures this file
-// is skipped on macOS/Windows during local development.
+// Note: the //go:build linux constraint above keeps this file CI-only; the
+// package's Linux-only paths are the TUN/netns runtime, not these encoders.
+// The shared server constructor lives in the untagged snmp_testutil_test.go.
 
 package main
 
@@ -15,12 +15,6 @@ import (
 	"fmt"
 	"testing"
 )
-
-// ── Test helpers ─────────────────────────────────────────────────────────────
-//
-// The shared SNMPServer constructor lives in the untagged
-// snmp_testutil_test.go so the non-Linux suites can use it too. What stays
-// here is GETBULK-specific.
 
 // buildGetBulkPDU constructs a minimal SNMPv2c GETBULK packet for the given
 // OIDs, non-repeaters, and max-repetitions values.

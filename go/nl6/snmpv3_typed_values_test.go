@@ -10,21 +10,6 @@ import (
 	"testing"
 )
 
-// v3TestServer is newTestServer with SNMPv3 enabled. Privacy is off so
-// the scoped PDU stays in the clear and its bytes can be asserted directly.
-func v3TestServer(oidValues map[string]string) *SNMPServer {
-	s := newTestServer(oidValues)
-	s.v3Config = &SNMPv3Config{
-		Enabled:      true,
-		EngineID:     "0x80001234",
-		Username:     "testuser",
-		Password:     "s3cret",
-		AuthProtocol: SNMPV3_AUTH_NONE,
-		PrivProtocol: SNMPV3_PRIV_NONE,
-	}
-	return s
-}
-
 // TestSNMPv3_ScopedPDUMatchesV2cTypes is the invariant nl6#518 violated: the
 // same OID and value must carry the same ASN.1 type whichever protocol version
 // answered. Before the fix, v3 encoded everything as INTEGER or OCTET STRING;
