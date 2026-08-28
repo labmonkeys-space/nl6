@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Note: the simulator package uses Linux-only syscalls (TUN/netns) so tests
-// must be run on Linux. The //go:build linux constraint above ensures this file
-// is skipped on macOS/Windows during local development.
+// Note: the //go:build linux constraint above keeps this file CI-only; the
+// package's Linux-only paths are the TUN/netns runtime, not these encoders.
+// The shared server constructor lives in the untagged snmp_testutil_test.go.
 
 package main
 
@@ -15,24 +15,6 @@ import (
 	"fmt"
 	"testing"
 )
-
-// ── Test helpers ─────────────────────────────────────────────────────────────
-
-// newTestServer returns an SNMPServer backed by the supplied OID→value map.
-// Indexes are built via buildResourceIndexes so findNextOID works correctly.
-func newTestServer(oidValues map[string]string) *SNMPServer {
-	res := &DeviceResources{
-		SNMP: make([]SNMPResource, 0, len(oidValues)),
-	}
-	for oid, val := range oidValues {
-		res.SNMP = append(res.SNMP, SNMPResource{OID: oid, Response: val})
-	}
-	sm := &SimulatorManager{}
-	sm.buildResourceIndexes(res)
-
-	device := &DeviceSimulator{resources: res}
-	return &SNMPServer{device: device}
-}
 
 // buildGetBulkPDU constructs a minimal SNMPv2c GETBULK packet for the given
 // OIDs, non-repeaters, and max-repetitions values.

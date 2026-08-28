@@ -1,0 +1,77 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import "strings"
+
+// Test helpers shared across the SNMP suites. This file is deliberately
+// UNTAGGED: some SNMP suites carry //go:build linux (the list lives in
+// CLAUDE.md, "SNMP test helpers are split by build tag"), so a helper defined
+// in one of those is invisible to the untagged suites and cannot be exercised
+// during local development on macOS, only in CI. Keeping the constructors here
+// is what lets one definition serve both halves.
+//
+// New shared SNMP test helpers belong here, not in a suite-specific file.
+
+// newTestServer returns an SNMPServer backed by the supplied OID→value map.
+// Indexes are built via buildResourceIndexes so findNextOID works correctly.
+//
+// The server is deliberately minimal, and what it does NOT have matters as
+// much as what it does. The DeviceSimulator is zero-valued: no IP, no
+// sysName/sysLocation, no metricsCycler (so no ifCounters/InterfaceState),
+// and no v3Config (see v3TestServer). It also assumes the package globals are
+// at their defaults, which every test that sets them restores in t.Cleanup:
+// manager == nil and ifStateConfig.Scenario == IfScenarioAllNormal.
+// Consequences in findResponse: the CPU/memory and IF-MIB dispatch is skipped
+// (metricsCycler == nil), the interface-state override is inert (AllNormal),
+// and the LLDP provider returns "" (lldpManager() == nil), so every OID
+// resolves against the static index. This constructor is for the static OID
+// lookup, encoding and walk paths.
+//
+// One trap: buildResourceIndexes drops sysName (.1.3.6.1.2.1.1.5.0) and
+// sysLocation (.1.3.6.1.2.1.1.6.0) because findResponse serves them from the
+// device fields instead. Passing either here would NOT make it a known OID:
+// findResponse would return the zero-valued device's "", which is neither
+// the supplied value nor an exception sentinel, and a test would assert
+// against that silently. The constructor therefore panics on them, matching
+// with or without the leading dot as buildResourceIndexes does; pick a
+// different value-bearing OID (sysContact .1.3.6.1.2.1.1.4.0 is a safe
+// DisplayString). The guard cannot cover the walk side: findNextOID always
+// injects sysName.0 and sysLocation.0 as candidates, so a GETNEXT/GETBULK
+// through the system group yields two empty-valued bindings the caller never
+// supplied (see TestSNMPv3_GetNextPastEndTerminatesWalk for the workaround).
+func newTestServer(oidValues map[string]string) *SNMPServer {
+	res := &DeviceResources{
+		SNMP: make([]SNMPResource, 0, len(oidValues)),
+	}
+	for oid, val := range oidValues {
+		if norm := strings.TrimPrefix(oid, "."); norm == "1.3.6.1.2.1.1.5.0" || norm == "1.3.6.1.2.1.1.6.0" {
+			panic("newTestServer: " + oid + " is served from device fields, not the OID index; use another OID")
+		}
+		res.SNMP = append(res.SNMP, SNMPResource{OID: oid, Response: val})
+	}
+	sm := &SimulatorManager{}
+	sm.buildResourceIndexes(res)
+
+	device := &DeviceSimulator{resources: res}
+	return &SNMPServer{device: device}
+}
+
+// v3TestServer is newTestServer with SNMPv3 enabled at noAuthNoPriv: no
+// HMAC to compute and the scoped PDU stays in the clear, so the response
+// bytes can be asserted directly.
+func v3TestServer(oidValues map[string]string) *SNMPServer {
+	s := newTestServer(oidValues)
+	s.v3Config = &SNMPv3Config{
+		Enabled:      true,
+		EngineID:     "0x80001234",
+		Username:     "testuser",
+		Password:     "s3cret", // inert: no auth, no priv
+		AuthProtocol: SNMPV3_AUTH_NONE,
+		PrivProtocol: SNMPV3_PRIV_NONE,
+	}
+	return s
+}
