@@ -7,7 +7,8 @@
 
 // Note: the simulator package uses Linux-only syscalls (TUN/netns) so tests
 // must be run on Linux. The //go:build linux constraint above matches
-// snmp_getbulk_test.go, whose helpers these tests reuse.
+// snmp_getbulk_test.go, whose buildGetBulkPDU these tests reuse. The shared
+// server constructor lives in the untagged snmp_testutil_test.go.
 
 package main
 

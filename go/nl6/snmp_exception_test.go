@@ -46,7 +46,7 @@ func TestEncodeTypedValue_Exceptions(t *testing.T) {
 // Before nl6#517 this returned the octet string "OID not supported", which a
 // manager receives as data.
 func TestFindResponse_UnknownOIDYieldsException(t *testing.T) {
-	s := exceptionTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
 
 	if got := s.findResponse(".1.3.6.1.4.1.9.2.1.46.0"); got != valueNoSuchObject {
 		t.Errorf("findResponse(unknown) = %q, want %q", got, valueNoSuchObject)
@@ -60,7 +60,7 @@ func TestFindResponse_UnknownOIDYieldsException(t *testing.T) {
 // into an assembled v2c GetResponse, with error-status left at noError — the
 // response is a success and the exception is per-varbind (RFC 3416 §4.2.1).
 func TestGetResponse_UnknownOIDCarriesNoSuchObject(t *testing.T) {
-	s := exceptionTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
 
 	const unknown = ".1.3.6.1.4.1.9.2.1.46.0"
 	resp := s.createSNMPResponse(unknown, s.findResponse(unknown), v2cGetRequest(unknown))
@@ -86,7 +86,7 @@ func TestGetResponse_UnknownOIDCarriesNoSuchObject(t *testing.T) {
 // Emitting 0x80 or 0x82 to a v1 manager is itself a violation — and nl6
 // already did that for endOfMibView.
 func TestGetResponse_SNMPv1MapsExceptionToNoSuchName(t *testing.T) {
-	s := exceptionTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "a device"})
 
 	const unknown = ".1.3.6.1.4.1.9.2.1.46.0"
 
@@ -114,7 +114,7 @@ func TestGetResponse_SNMPv1MapsExceptionToNoSuchName(t *testing.T) {
 func TestGetResponse_SNMPv1MultiVarbindErrorIndex(t *testing.T) {
 	const known, known2 = ".1.3.6.1.2.1.1.1.0", ".1.3.6.1.2.1.1.5.0"
 	const unknown, unknown2 = ".1.3.6.1.4.1.9.2.1.46.0", ".1.3.6.1.4.1.9.2.1.47.0"
-	s := exceptionTestServer(map[string]string{known: "a device", known2: "host"})
+	s := newTestServer(map[string]string{known: "a device", known2: "host"})
 
 	tests := []struct {
 		name      string
@@ -150,7 +150,7 @@ func TestGetResponse_SNMPv1MultiVarbindErrorIndex(t *testing.T) {
 // normal noError response carrying the value.
 func TestGetResponse_SNMPv1KnownOIDUnaffected(t *testing.T) {
 	const known = ".1.3.6.1.2.1.1.1.0"
-	s := exceptionTestServer(map[string]string{known: "a device"})
+	s := newTestServer(map[string]string{known: "a device"})
 
 	resp := s.handleGetRequestVarbinds([]string{known}, v1GetRequest(known))
 	hdr := decodeResponseHeader(t, resp)
@@ -168,7 +168,7 @@ func TestGetResponse_SNMPv1KnownOIDUnaffected(t *testing.T) {
 // be neither the RFC 1157 request echo nor bounded by the datagram budget.
 func TestGetBulkResponse_SNMPv1NotDiverted(t *testing.T) {
 	const known = ".1.3.6.1.2.1.1.1.0"
-	s := exceptionTestServer(map[string]string{known: "a device"})
+	s := newTestServer(map[string]string{known: "a device"})
 
 	oids := []string{known, known}
 	resp := s.createGetBulkResponse(oids, []string{"a device", valueEndOfMibView}, getRequestAtVersionMulti(snmpVersion1, oids))
@@ -243,21 +243,6 @@ func expectTag(t *testing.T, data []byte, pos int, tag byte) int {
 		t.Fatalf("bad length after tag 0x%02X at %d", tag, pos)
 	}
 	return next
-}
-
-// exceptionTestServer builds an SNMPServer over the supplied OID→value map.
-//
-// It duplicates snmp_getbulk_test.go's newTestServer rather than calling it:
-// that file carries //go:build linux, so its helper is invisible on macOS and
-// a test depending on it cannot be run during local development — it would
-// only ever be exercised in CI.
-func exceptionTestServer(oidValues map[string]string) *SNMPServer {
-	res := &DeviceResources{SNMP: make([]SNMPResource, 0, len(oidValues))}
-	for oid, val := range oidValues {
-		res.SNMP = append(res.SNMP, SNMPResource{OID: oid, Response: val})
-	}
-	(&SimulatorManager{}).buildResourceIndexes(res)
-	return &SNMPServer{device: &DeviceSimulator{resources: res}}
 }
 
 // v2cGetRequest and v1GetRequest build a minimal GET for the given OID at the

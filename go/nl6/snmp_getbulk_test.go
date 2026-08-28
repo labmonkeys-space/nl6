@@ -17,22 +17,10 @@ import (
 )
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
-
-// newTestServer returns an SNMPServer backed by the supplied OID→value map.
-// Indexes are built via buildResourceIndexes so findNextOID works correctly.
-func newTestServer(oidValues map[string]string) *SNMPServer {
-	res := &DeviceResources{
-		SNMP: make([]SNMPResource, 0, len(oidValues)),
-	}
-	for oid, val := range oidValues {
-		res.SNMP = append(res.SNMP, SNMPResource{OID: oid, Response: val})
-	}
-	sm := &SimulatorManager{}
-	sm.buildResourceIndexes(res)
-
-	device := &DeviceSimulator{resources: res}
-	return &SNMPServer{device: device}
-}
+//
+// The shared SNMPServer constructor lives in the untagged
+// snmp_testutil_test.go so the non-Linux suites can use it too. What stays
+// here is GETBULK-specific.
 
 // buildGetBulkPDU constructs a minimal SNMPv2c GETBULK packet for the given
 // OIDs, non-repeaters, and max-repetitions values.

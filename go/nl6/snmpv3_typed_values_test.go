@@ -10,10 +10,10 @@ import (
 	"testing"
 )
 
-// v3TestServer is exceptionTestServer with SNMPv3 enabled. Privacy is off so
+// v3TestServer is newTestServer with SNMPv3 enabled. Privacy is off so
 // the scoped PDU stays in the clear and its bytes can be asserted directly.
 func v3TestServer(oidValues map[string]string) *SNMPServer {
-	s := exceptionTestServer(oidValues)
+	s := newTestServer(oidValues)
 	s.v3Config = &SNMPv3Config{
 		Enabled:      true,
 		EngineID:     "0x80001234",
