@@ -245,8 +245,13 @@ const (
 // Caveat, inherited from the endOfMibView design and widened by adding a
 // second sentinel: the test is on the value string, so a resource file whose
 // legitimate value were literally "noSuchObject" would encode as an exception.
-// No shipped profile does. Removing the hazard means a typed value in place of
-// the string, which is a larger change than this one.
+// No shipped profile does, and validateSNMPResourceValues (resources.go) now
+// rejects such a file at load. Removing the hazard at the root means a typed
+// value in place of the string, which is a larger change than this one.
+//
+// If you add a third sentinel here, add it to encodeTypedValue's switch too:
+// the two sets are enumerated separately, and the load guard is blind to any
+// sentinel the encoder knows but this predicate does not.
 func isSNMPExceptionValue(v string) bool {
 	return v == valueNoSuchObject || v == valueEndOfMibView
 }

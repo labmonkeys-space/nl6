@@ -61,8 +61,33 @@ GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is ans
 The v3 GETBULK handler is the exception; see the known limitations below.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
-That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception.
-No shipped profile does, and removing the hazard needs a typed value rather than a string.
+That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception, and a v1 manager would get `noSuchName` for a value that is simply a string.
+Removing the hazard at the root needs a typed value rather than a string, which is a larger change.
+Until then the resource-file route to it is closed at load time.
+
+### A resource value that collides with a sentinel is rejected at load
+
+`validateSNMPResourceValues` rejects a resource entry whose response is exactly `noSuchObject` or `endOfMibView`.
+The error names the file, the OID and the value, because fixing it means editing one line of one file.
+
+The match is exact.
+`noSuchObject seen`, `NoSuchObject` and ` noSuchObject` are ordinary data and load normally.
+
+The check runs on every load path, and applies to the `snmp` array only.
+SSH, API and optical entries never reach `encodeTypedValue`, and the trap and syslog catalogs use a different encoder.
+In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
+
+It closes the resource-file route, not every route.
+`sysName` and `sysLocation` are served outside the resource map, and `sysLocation` comes from the operator-supplied worldcities CSV, so a sentinel-valued entry there is still served as an exception.
+
+Where a rejection surfaces matters.
+Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call in the middle of a run, not only a refusal at startup.
+Two call sites downgrade the rejection to a log line rather than failing: the startup load in `simulator.go` falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
+At those two sites the guard is advisory.
+
+The scope is one rule.
+A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, tracked as nl6#529 and still open — it is entangled with `encodeOID`'s own first-arc arithmetic, and its acceptance criterion is a `decodeOID(encodeOID(x)) == x` round-trip property test rather than a hand-derived bound.
+A non-numeric `Counter32`, `Gauge32` or `TimeTicks` value, or an unparseable `ipAdEntAddr`, is likewise still accepted at load and degrades to an OCTET STRING when served.
 
 ## Response size, `max-repetitions` and truncation
 

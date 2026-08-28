@@ -51,6 +51,10 @@ func (sm *SimulatorManager) LoadResources(filename string) error {
 		return err
 	}
 
+	if err := validateSNMPResourceValues(filename, sm.deviceResources); err != nil {
+		return err
+	}
+
 	// Build indexes for loaded default resources
 	sm.buildResourceIndexes(sm.deviceResources)
 
@@ -89,6 +93,12 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 			return fmt.Errorf("failed to parse %s: %v", filePath, err)
 		}
 		file.Close()
+
+		// Validated per part: a resource directory holds ~15 split files, and
+		// validating once after the merge would name only the directory.
+		if err := validateSNMPResourceValues(filePath, &partResources); err != nil {
+			return err
+		}
 
 		sm.deviceResources.SNMP = append(sm.deviceResources.SNMP, partResources.SNMP...)
 		sm.deviceResources.SSH = append(sm.deviceResources.SSH, partResources.SSH...)
@@ -162,6 +172,54 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 	return nil
 }
 
+// validateSNMPResourceValues rejects a resource response that collides with an
+// RFC 3416 exception sentinel (nl6#523). Same loud-fail shape as
+// validateOpticalInventory: the error names the file, the OID and the value,
+// because fixing it means editing one line of one file.
+//
+// The exceptions travel from lookup to encoder as strings in the VALUE space
+// (valueNoSuchObject, valueEndOfMibView), so a file whose response is literally
+// one of them is encoded as the exception tag instead of the OCTET STRING it
+// asked for, and a v1 manager gets error-status noSuchName. Removing the
+// hazard at the root means a typed value rather than a string, which is the
+// larger fix #523 defers. This closes the RESOURCE-FILE route to it; sysName
+// and sysLocation are served outside the resource map (sysLocation comes from
+// the operator-supplied worldcities CSV) and are NOT covered.
+//
+// The test is isSNMPExceptionValue, which is EXACT: "noSuchObject seen",
+// "NoSuchObject" and " noSuchObject" are ordinary data and load.
+//
+// Rejecting rather than warning (unlike the trap-catalog size check, which
+// disables oversized entries) is defensible because this rule depends on no
+// operator-settable knob: the whole shipped set passes, so a refusal can only
+// come from a file the operator wrote and can fix.
+//
+// Scope is the SNMP `snmp` array only. SSH, API and Optical entries never reach
+// encodeTypedValue, and the trap/syslog catalogs use a different encoder. It is
+// wired at five loaders, four of which a resource file can reach; the fifth
+// (createDefaultResources) validates compiled-in constants and cannot fire.
+//
+// One rule only, deliberately. The OID-typed hazard on the same surface, a
+// non-OID value on sysObjectID and encodeOID's first-arc fabrication, is
+// nl6#529, whose arithmetic needs a decodeOID round-trip property test rather
+// than a hand-derived bound.
+func validateSNMPResourceValues(resourceFile string, resources *DeviceResources) error {
+	if resources == nil {
+		return nil
+	}
+	for _, r := range resources.SNMP {
+		if isSNMPExceptionValue(r.Response) {
+			return fmt.Errorf("resource %s: OID %s has value %q, which collides with an SNMP exception "+
+				"sentinel and would be encoded as an RFC 3416 exception instead of a string. "+
+				"There is no escaping form: change the value. To make the OID answer "+
+				"noSuchObject on purpose, omit the entry entirely, since an absent OID "+
+				"already answers with the exception",
+				resourceFile, r.OID, r.Response)
+		}
+	}
+	return nil
+}
+
 func (sm *SimulatorManager) createDefaultResources(filename string) error {
 	defaultResources := &DeviceResources{
 		SNMP: []SNMPResource{
@@ -206,6 +264,13 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 			{Command: "ping 8.8.8.8", Response: "Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to 8.8.8.8, timeout is 2 seconds:\n!!!!!\nSuccess rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms"},
 			{Command: "traceroute 8.8.8.8", Response: "Type escape sequence to abort.\nTracing the route to 8.8.8.8\n  1 192.168.1.254 4 msec 2 msec 4 msec\n  2 * * *\n  3 8.8.8.8 20 msec 18 msec 20 msec"},
 		},
+	}
+
+	// Validated BEFORE the file is written. These are compiled-in constants, so
+	// no input can make this fire, but validating after os.Create would mean
+	// persisting a file the loader would then refuse.
+	if err := validateSNMPResourceValues(filename, defaultResources); err != nil {
+		return err
 	}
 
 	file, err := os.Create(filename)
@@ -274,6 +339,10 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 		return nil, fmt.Errorf("failed to parse resource file %s: %v", resourcePath, err)
 	}
 
+	if err := validateSNMPResourceValues(resourcePath, &resources); err != nil {
+		return nil, err
+	}
+
 	// Build performance indexes for fast lookups (also sorts by OID after normalizing)
 	sm.buildResourceIndexes(&resources)
 
@@ -314,6 +383,11 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 			return nil, fmt.Errorf("failed to parse %s: %v", filePath, err)
 		}
 		file.Close()
+
+		// Validated per part, for the same reason as loadResourcesFromDir.
+		if err := validateSNMPResourceValues(filePath, &partResources); err != nil {
+			return nil, err
+		}
 
 		resources.SNMP = append(resources.SNMP, partResources.SNMP...)
 		resources.SSH = append(resources.SSH, partResources.SSH...)
