@@ -174,14 +174,6 @@ func TestOIDRoundTripRegressions(t *testing.T) {
 	}
 }
 
-func legalOIDArcPairFor(oid string) bool {
-	var f, s, rest int
-	if n, _ := fmt.Sscanf(oid, "%d.%d.%d", &f, &s, &rest); n < 2 {
-		return false
-	}
-	return legalOIDArcPair(f, s)
-}
-
 // TestOIDArcPairsOutsideX690AreRejected pins that an unrepresentable pair takes
 // the degenerate path rather than silently becoming a different OID. 1.40 is
 // the subtle one: 40*1+40 == 80 == 40*2+0, so it would ALIAS 2.0 on decode.
@@ -278,7 +270,8 @@ func TestShippedOIDsUnchangedOnTheWire(t *testing.T) {
 		}
 		checked++
 		enc := encodeOID(oid)
-		fmt.Fprintf(h, "%s=%x\n", oid, enc)
+		// hash.Hash.Write never returns an error, but errcheck cannot know that.
+		_, _ = fmt.Fprintf(h, "%s=%x\n", oid, enc)
 
 		if len(enc) == 2 && enc[1] == 0x00 {
 			t.Errorf("shipped OID %q now encodes to the degenerate 06 00", oid)
