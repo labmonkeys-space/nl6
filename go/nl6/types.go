@@ -211,6 +211,10 @@ type SNMPServer struct {
 	// transition, or device creation — so the steady-state GETBULK walk hot
 	// path skips the per-request build + sort entirely.
 	lldpServedCache atomic.Pointer[lldpServedSnapshot]
+
+	// firstSkipAbort gates the log line for a v1 Counter64 skip loop that
+	// ended on a safety bound (see logFirstSkipAbort).
+	firstSkipAbort sync.Once
 }
 
 // lldpServedSnapshot is an immutable (gen, served) pair stored under

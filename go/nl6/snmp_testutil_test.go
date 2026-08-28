@@ -92,8 +92,13 @@ func snmpRequestAt(pduTag byte, version int, oids []string) []byte {
 
 	var pduBody []byte
 	pduBody = append(pduBody, encodeInteger(42)...) // request-id
-	pduBody = append(pduBody, encodeInteger(0)...)  // error-status
-	pduBody = append(pduBody, encodeInteger(0)...)  // error-index
+	// For a GETBULK tag these two integers are non-repeaters and
+	// max-repetitions (RFC 3416 §4.2.3), not error-status and error-index, so
+	// a GETBULK built here asks for ZERO repetitions. That is enough for the
+	// tests that only need a version-0/version-1 GETBULK to parse; a test that
+	// needs real repetitions must build its own PDU.
+	pduBody = append(pduBody, encodeInteger(0)...) // error-status (GETBULK: non-repeaters)
+	pduBody = append(pduBody, encodeInteger(0)...) // error-index  (GETBULK: max-repetitions)
 	pduBody = append(pduBody, encodeSequence(varbinds)...)
 
 	pdu := []byte{pduTag}

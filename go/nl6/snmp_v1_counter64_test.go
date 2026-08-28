@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // SNMPv1 has no Counter64 (RFC 3584 §4.2.2.1), and the RFC prescribes two
@@ -175,6 +176,81 @@ func TestV2cGetNextStillReturnsCounter64(t *testing.T) {
 	}
 	if !containsTagAtVarbindValue(hdr.varbinds, ASN1_COUNTER64) {
 		t.Errorf("v2c GETNEXT no longer returns a Counter64; v1 semantics have leaked into v2c")
+	}
+}
+
+// TestV1GetNextResumesInsideCounter64Run is the mid-table resume case: a
+// manager that stopped at ifHCOutOctets.2 and continues from there must be
+// answered with the first non-Counter64 successor, not the next HC instance.
+func TestV1GetNextResumesInsideCounter64Run(t *testing.T) {
+	s := newTestServer(counter64Fixture())
+
+	resp := s.handleSNMPv2cRequest(v1GetNext(oidFor(10, 2))) // ifHCOutOctets.2
+	hdr := decodeResponseHeader(t, resp)
+	if hdr.errStatus != 0 {
+		t.Fatalf("v1 GETNEXT from inside the HC run: error-status=%d, want noError", hdr.errStatus)
+	}
+	assertNoCounter64Tag(t, hdr.varbinds)
+	if got := firstVarbindOID(t, hdr.varbinds); !containsOID([]string{got}, c32HighSpeed) {
+		t.Errorf("v1 GETNEXT(%s) returned %s, want %s", oidFor(10, 2), got, c32HighSpeed)
+	}
+}
+
+// TestV1GetNextSkipRunEndsInNoSuchName pins the branch the docs describe: a
+// walk that skips its way past the last non-Counter64 OID ends in noSuchName,
+// with the request's own name echoed, and never a 0x46 tag.
+func TestV1GetNextSkipRunEndsInNoSuchName(t *testing.T) {
+	vals := counter64Fixture()
+	delete(vals, c32HighSpeed) // nothing after the HC run
+	s := newTestServer(vals)
+
+	resp := s.handleSNMPv2cRequest(v1GetNext(c32Broadcast))
+	hdr := decodeResponseHeader(t, resp)
+	if hdr.errStatus != snmpErrNoSuchName {
+		t.Fatalf("v1 GETNEXT past the last non-Counter64 OID: error-status=%d, want noSuchName(%d)",
+			hdr.errStatus, snmpErrNoSuchName)
+	}
+	assertNoCounter64Tag(t, hdr.varbinds)
+	if got := firstVarbindOID(t, hdr.varbinds); !containsOID([]string{got}, c32Broadcast) {
+		t.Errorf("v1 end-of-MIB echoed %s, want the request's own name %s", got, c32Broadcast)
+	}
+}
+
+// TestV1GetNextSkipLoopTerminatesOnNonAdvancingMap pins the skip loop's safety
+// bounds. Deleting the non-advance check (or the step cap that backs it up)
+// must fail here, not surface as a wedged UDP handler in production. The
+// oidNextMap is operator data, so a self-referencing or backwards entry is a
+// reachable input, and the loop runs inline with no recover().
+func TestV1GetNextSkipLoopTerminatesOnNonAdvancingMap(t *testing.T) {
+	cases := []struct {
+		name string
+		next string
+	}{
+		{"self-referencing", c64InOctets},
+		{"backwards", c32Broadcast},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(counter64Fixture())
+			// Corrupt the successor of the first HC OID so the run never advances.
+			s.device.resources.oidNextMap.Store(c64InOctets, tc.next)
+
+			done := make(chan []byte, 1)
+			go func() { done <- s.handleSNMPv2cRequest(v1GetNext(c32Broadcast)) }()
+			var resp []byte
+			select {
+			case resp = <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("v1 GETNEXT did not return: the Counter64 skip loop is unbounded on a non-advancing oidNextMap")
+			}
+
+			hdr := decodeResponseHeader(t, resp)
+			if hdr.errStatus != snmpErrNoSuchName {
+				t.Fatalf("error-status=%d, want noSuchName(%d): a non-advancing successor must end the walk as end-of-MIB",
+					hdr.errStatus, snmpErrNoSuchName)
+			}
+			assertNoCounter64Tag(t, hdr.varbinds)
+		})
 	}
 }
 
@@ -399,16 +475,30 @@ func TestV2cGetBulkCounter64Unchanged(t *testing.T) {
 	}
 }
 
+// TestV3GetCounter64Unchanged drives a real noAuthNoPriv v3 GET through
+// handleSNMPv3Request. SNMPv3 is never version 1, so the divert must not reach
+// it: the scoped PDU must still carry tag 0x46 under noError.
 func TestV3GetCounter64Unchanged(t *testing.T) {
+	const requestID = 4243
 	s := v3TestServer(counter64Fixture())
 
-	// SNMPv3 is never version 1, so the divert must not reach it.
-	got := encodeTypedValue(c64InOctets, "9876543210")
-	if len(got) == 0 || got[0] != ASN1_COUNTER64 {
-		t.Fatalf("encodeTypedValue no longer emits Counter64: % x", got)
+	resp := s.handleSNMPv3Request(v3RequestAt(t, s, ASN1_GET_REQUEST, requestID, c64InOctets))
+	if len(resp) == 0 {
+		t.Fatal("handleSNMPv3Request returned an empty response")
 	}
-	if s.v3Config == nil || !s.v3Config.Enabled {
-		t.Fatal("precondition: v3TestServer should have SNMPv3 enabled")
+	msg, err := s.parseSNMPv3Message(resp)
+	if err != nil {
+		t.Fatalf("response does not parse as SNMPv3: %v", err)
+	}
+	gotID, oid, value := decodeScopedPDU(t, msg.ScopedPDU)
+	if gotID != requestID {
+		t.Errorf("response request-id = %d, want %d", gotID, requestID)
+	}
+	if oid != c64InOctets {
+		t.Errorf("response OID = %s, want %s", oid, c64InOctets)
+	}
+	if len(value) == 0 || value[0] != ASN1_COUNTER64 {
+		t.Errorf("v3 GET value tag = % x, want Counter64 0x46: the v1 divert has leaked into v3", value)
 	}
 }
 
