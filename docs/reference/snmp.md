@@ -57,8 +57,8 @@ The standard separates the two by OID prefix registration, and a profile is a fl
 The mapping applies to GET and GETNEXT only.
 GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
 
-**SNMPv3 is not covered yet.** The v3 encoder (`createScopedPDU`) does not go through `encodeTypedValue`, so a v3 GET for an absent OID returns the OCTET STRING `noSuchObject` as data, and a v3 walk ends in the string `endOfMibView` rather than the `82 00` tag.
-Tracked as nl6#518.
+**SNMPv3 GET and GETNEXT are covered.** Since nl6#518 the v3 encoder (`createScopedPDU`) goes through `encodeTypedValue` as well, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
+The v3 GETBULK handler is the exception; see the known limitations below.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
 That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception.
@@ -96,10 +96,15 @@ That mattered for benchmarking more than for correctness: an operator setting `m
 
 A negative value is treated as 0, per RFC 3416's definition of the field as non-negative.
 
+### SNMPv3 values are typed like v2c
+
+Both versions encode a value through `encodeTypedValue`, so the same OID carries the same ASN.1 type whichever version answered.
+That was not always true: the v3 scoped-PDU builder used to branch on `strconv.Atoi` and emit only INTEGER or OCTET STRING, which meant v3 had no Counter32/Gauge32/TimeTicks/IpAddress typing and sent `endOfMibView` as literal text rather than as an exception, so a GETNEXT-driven v3 walk did not terminate where the protocol says it should (nl6#518).
+**Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it.** The wire types differ.
+
 ### Known limitations
 
-**SNMPv3 response encoding matches v2c.** Both versions encode a value through `encodeTypedValue`, so the same OID carries the same ASN.1 type whichever version answered. That was not always true: the v3 scoped-PDU builder used to branch on `strconv.Atoi` and emit only INTEGER or OCTET STRING, which meant v3 had no Counter32/Gauge32/TimeTicks/IpAddress typing and sent `endOfMibView` as literal text rather than as an exception, so a v3 walk did not terminate where the protocol says it should (nl6#518).
-**Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it** — the wire types differ.
+**SNMPv3 GETBULK does not emit `endOfMibView`.** The v3 GETBULK handler drops the sentinel before it reaches the encoder and, when nothing is left to return, answers a placeholder `sysDescr.0` binding whose OID sorts before the request. A GETBULK-driven v3 walk therefore still does not terminate on the exception; only the GETNEXT path does.
 
 **SNMPv3 GETBULK is not bounded.** Everything above describes the SNMPv2c path. The v3 GETBULK handler builds its response through a separate encoder that consults no size ceiling, and it currently hardcodes `max-repetitions` to 10. That combination makes an oversized v3 response unreachable in practice — ten bindings from a single column is roughly 500 bytes — but it is unreachable by accident, not bounded by design. Honouring a real `max-repetitions` on the v3 path requires giving it the same bound first.
 
