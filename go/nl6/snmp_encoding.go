@@ -404,9 +404,9 @@ func encodeTypedValue(oid, value string) []byte {
 	// exceptions and needs the noSuchName error-status instead (RFC 3584
 	// §4.2.2.2). The response builders divert it.
 	//
-	// The SNMPv3 path does not reach here at all: createScopedPDU encodes with
-	// its own int/octet-string heuristic, so a v3 manager receives the sentinel
-	// as an OCTET STRING. Routing v3 through this function is nl6#518.
+	// The SNMPv3 GET and GETNEXT path reaches here too: createScopedPDU is
+	// the third caller (nl6#518). handleSNMPv3GetBulk never passes the
+	// endOfMibView sentinel on, so a v3 GETBULK still ends without it.
 	switch value {
 	case valueEndOfMibView:
 		return []byte{0x82, 0x00} // endOfMibView   [2] IMPLICIT NULL

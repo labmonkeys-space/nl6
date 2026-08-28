@@ -22,7 +22,6 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -125,17 +124,26 @@ func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Messag
 	// Extract the original request ID from the incoming scoped PDU
 	requestID := s.extractRequestIDFromScopedPDU(requestMsg.ScopedPDU)
 
-	// Create the response PDU similar to v2c but wrapped in scoped PDU
-	var valueBytes []byte
-	if intVal, err := strconv.Atoi(value); err == nil {
-		valueBytes = encodeInteger(intVal)
-	} else {
-		valueBytes = encodeOctetString(value)
-	}
-
-	// Create variable binding
-	oidBytes := encodeOID(oid)
-	varBind := encodeSequence(append(oidBytes, valueBytes...))
+	// Encode through the same path as v2c (snmp_response.go). This function
+	// used to branch on strconv.Atoi (integer or octet string, nothing else),
+	// which had two consequences (nl6#518):
+	//
+	//   1. The exception sentinels were never recognised, so a v3 GETNEXT past
+	//      the last OID emitted the TEXT "endOfMibView" as an octet string
+	//      instead of {0x82, 0x00}. snmp4j terminates a walk on
+	//      Null.isExceptionSyntax, which a string never satisfies, so a
+	//      GETNEXT-driven v3 walk did not terminate on the exception. This
+	//      fixes GETNEXT only: handleSNMPv3GetBulk drops the sentinel before
+	//      it gets here and answers a placeholder binding instead, so a
+	//      GETBULK-driven v3 walk still does not see endOfMibView.
+	//   2. v3 had no type fidelity at all: no Counter32, Gauge32, TimeTicks,
+	//      IpAddress or OBJECT IDENTIFIER. The same OID answered over v2c and
+	//      v3 carried different ASN.1 types, which for a simulator built to
+	//      validate collectors is a defect in its own right.
+	//
+	// SNMPv1 needs no consideration here: v1 has no scoped PDUs and cannot
+	// reach this path.
+	varBind := encodeVarBind(oid, encodeTypedValue(oid, value))
 	varBindList := encodeSequence(varBind)
 
 	// Create PDU contents
