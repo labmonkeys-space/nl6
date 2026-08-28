@@ -73,7 +73,11 @@ func (s *SNMPServer) findResponse(oid string) string {
 			return response.(string)
 		}
 	}
-	return "OID not supported"
+	// Not in this device's MIB view. RFC 3416 §4.2.1 requires a noSuchObject
+	// exception, not a value — answering with an octet string makes an
+	// unimplemented OID look like data, and a collector typing the OID per its
+	// MIB fails to convert it (nl6#517).
+	return valueNoSuchObject
 }
 
 // Compare two OIDs lexicographically

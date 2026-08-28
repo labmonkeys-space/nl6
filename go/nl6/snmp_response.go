@@ -153,6 +153,13 @@ func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) [
 	// Parse incoming request to get actual community and request ID
 	req := s.parseIncomingRequest(requestData)
 
+	// SNMPv1 has no exception values. Divert to a noSuchName error-status
+	// before encoding, or the manager receives a context tag its decoder does
+	// not define (RFC 3584 §4.2.2.2.1). Single varbind, so error-index is 1.
+	if req.Version == snmpVersion1 && isSNMPExceptionValue(value) {
+		return s.encodeGetResponseAt(req, encodeVarBind(oid, encodeNull()), snmpErrNoSuchName, 1)
+	}
+
 	// Encode value with the correct ASN.1 type for this OID (RFC 1902).
 	valueBytes := encodeTypedValue(oid, value)
 
@@ -206,7 +213,37 @@ var maxSNMPResponseSize = defaultLinkMTU - ipv4HeaderBytes - udpHeaderBytes
 const (
 	snmpErrNoError = 0
 	snmpErrTooBig  = 1
+	// snmpErrNoSuchName is SNMPv1's only way to say "no such object". v1 has
+	// no exception values, so RFC 3584 §4.2.2.2.1 maps a v2c noSuchObject /
+	// noSuchInstance onto this error-status when answering a v1 manager.
+	snmpErrNoSuchName = 2
 )
+
+// SNMPv1 is version 0 on the wire (SNMPv2c is 1, SNMPv3 is 3). Named because
+// the exception encoding below turns on it.
+const snmpVersion1 = 0
+
+// Sentinel response values. findResponse and findNextOID return these strings
+// in place of a value, and encodeTypedValue turns them into the corresponding
+// RFC 3416 exception. They live in the value space rather than in the type
+// system, which is how endOfMibView has always worked here — see the caveat on
+// isSNMPExceptionValue.
+const (
+	valueNoSuchObject = "noSuchObject"
+	valueEndOfMibView = "endOfMibView"
+)
+
+// isSNMPExceptionValue reports whether a response string is a sentinel that
+// encodes to an RFC 3416 exception rather than to data.
+//
+// Caveat, inherited from the endOfMibView design and widened by adding a
+// second sentinel: the test is on the value string, so a resource file whose
+// legitimate value were literally "noSuchObject" would encode as an exception.
+// No shipped profile does. Removing the hazard means a typed value in place of
+// the string, which is a larger change than this one.
+func isSNMPExceptionValue(v string) bool {
+	return v == valueNoSuchObject || v == valueEndOfMibView
+}
 
 // snmpOverflowRule selects what happens when a response will not fit the
 // datagram budget. The two PDU types share this response encoder (deliberately
@@ -292,6 +329,21 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 
 	req := s.parseIncomingRequest(requestData)
 
+	// SNMPv1 diversion, as in createSNMPResponse. RFC 3584 §4.2.2.2.1 sets
+	// error-index to the position of the varbind that produced the exception,
+	// so report the first one; indices are 1-based (RFC 1157).
+	if req.Version == snmpVersion1 {
+		for i, v := range responses {
+			if isSNMPExceptionValue(v) {
+				var echoed []byte
+				for _, o := range oids {
+					echoed = append(echoed, encodeVarBind(o, encodeNull())...)
+				}
+				return s.encodeGetResponseAt(req, echoed, snmpErrNoSuchName, i+1)
+			}
+		}
+	}
+
 	// Fixed prefixes, needed to size the message without assembling it.
 	msgPrefix := len(encodeInteger(req.Version)) + len(encodeOctetString(req.Community))
 	pduPrefix := len(encodeInteger(req.RequestID)) + len(encodeInteger(0)) + len(encodeInteger(0))
@@ -341,6 +393,16 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 // and message framing. Split out so the tooBig path and the normal path cannot
 // drift in their framing.
 func (s *SNMPServer) encodeGetResponse(req SNMPRequest, varBindList []byte, errStatus int) []byte {
+	return s.encodeGetResponseAt(req, varBindList, errStatus, 0)
+}
+
+// encodeGetResponseAt is encodeGetResponse with an explicit error-index.
+//
+// tooBig carries index 0 (the failure is the whole message), but the SNMPv1
+// noSuchName mapping requires the position of the offending variable binding
+// — RFC 3584 §4.2.2.2.1 sets error-index to the varbind that produced the
+// exception. Indices are 1-based per RFC 1157.
+func (s *SNMPServer) encodeGetResponseAt(req SNMPRequest, varBindList []byte, errStatus, errIndex int) []byte {
 	varBindSequence := []byte{ASN1_SEQUENCE}
 	varBindSequence = append(varBindSequence, encodeLength(len(varBindList))...)
 	varBindSequence = append(varBindSequence, varBindList...)
@@ -348,7 +410,7 @@ func (s *SNMPServer) encodeGetResponse(req SNMPRequest, varBindList []byte, errS
 	var pduContents []byte
 	pduContents = append(pduContents, encodeInteger(req.RequestID)...)
 	pduContents = append(pduContents, encodeInteger(errStatus)...) // error-status
-	pduContents = append(pduContents, encodeInteger(0)...)         // error-index
+	pduContents = append(pduContents, encodeInteger(errIndex)...)  // error-index
 	pduContents = append(pduContents, varBindSequence...)
 
 	pdu := []byte{SNMP_GET_RESPONSE}

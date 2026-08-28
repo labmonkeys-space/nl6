@@ -44,6 +44,22 @@ They are verbatim bytes captured from net-snmp and snmp4j, which matters.
 Every other SNMP test in the package builds its input with nl6's own encoders, so encoder and parser can share a misconception and still agree.
 The empty-community defect survived exactly that blind spot.
 
+### Unimplemented OIDs return an exception, not a value
+
+An OID absent from a device's profile is answered with the RFC 3416 `noSuchObject` exception — the context-specific tag `80 00` in the variable binding's value position — not with a string.
+`error-status` stays `noError`: the response is a success and the exception is per-varbind (§4.2.1).
+
+Only `noSuchObject` is ever emitted, never `noSuchInstance`.
+The standard separates the two by OID prefix registration, and a profile is a flat OID→value map with no MIB registry, so nl6 cannot evaluate that test.
+`noSuchObject` is the only answer it can defend.
+
+**SNMPv1 has no exception values.** A v1 request that would produce one gets `error-status = noSuchName(2)` instead, with `error-index` set to the offending variable binding, per RFC 3584 §4.2.2.2.1.
+This applies to `endOfMibView` as well as to `noSuchObject`.
+
+The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
+That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception.
+No shipped profile does, and removing the hazard needs a typed value rather than a string.
+
 ## Response size, `max-repetitions` and truncation
 
 An SNMP response is bounded so the resulting UDP **frame** fits the link: the payload ceiling is the MTU minus the IPv4 and UDP headers, 1472 bytes at the default MTU, and it moves with `-datagram-mtu`. See the flow-export reference for that flag.

@@ -146,7 +146,7 @@ func TestLLDP_LocalPortRow(t *testing.T) {
 	}
 	// Unlinked port (if4) has no local port row.
 	noRow := fmt.Sprintf("%s%d.4", lldpLocPortPrefix, colLldpLocPortId)
-	if got := a.snmpServer.findResponse(noRow); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(noRow); got != valueNoSuchObject {
 		t.Errorf("unlinked locPortId = %q, want OID not supported", got)
 	}
 }
@@ -188,7 +188,7 @@ func TestLLDP_LivenessSuppression(t *testing.T) {
 	}
 	// Local port down → row gone.
 	setOper(a, 1, false)
-	if got := a.snmpServer.findResponse(row); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(row); got != valueNoSuchObject {
 		t.Errorf("local down: row = %q, want absent", got)
 	}
 	setOper(a, 1, true)
@@ -197,7 +197,7 @@ func TestLLDP_LivenessSuppression(t *testing.T) {
 	}
 	// Peer port down → row gone on A too.
 	setOper(b, 2, false)
-	if got := a.snmpServer.findResponse(row); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(row); got != valueNoSuchObject {
 		t.Errorf("peer down: row = %q, want absent", got)
 	}
 }
@@ -238,7 +238,7 @@ func TestLLDP_IfAliasGetPersistsWhenDown(t *testing.T) {
 		t.Errorf("ifAlias while down = %q, want %q", got, want)
 	}
 	// But the remote row IS gone at the same instant.
-	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != valueNoSuchObject {
 		t.Errorf("remote row while down = %q, want absent", got)
 	}
 }
@@ -246,7 +246,7 @@ func TestLLDP_IfAliasGetPersistsWhenDown(t *testing.T) {
 func TestLLDP_IfAliasUnlinkedFallsThrough(t *testing.T) {
 	_, a, _, _ := lineTopology(t)
 	// if4 has no link; no static .18.4 either → not supported.
-	if got := a.snmpServer.findResponse(ifAliasPrefix + "4"); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(ifAliasPrefix + "4"); got != valueNoSuchObject {
 		t.Errorf("unlinked ifAlias = %q, want OID not supported", got)
 	}
 }
@@ -256,7 +256,7 @@ func TestLLDP_IfAliasUnresolvablePeerNoGarbage(t *testing.T) {
 	a := f.addDevice(t, 1, 4, "alpha")
 	// Link to a peer that does not exist → ifAlias must NOT render "to__".
 	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep("10.42.0.250", 7)))
-	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != valueNoSuchObject {
 		t.Errorf("unresolvable-peer ifAlias = %q, want OID not supported (never to__)", got)
 	}
 }
@@ -365,10 +365,10 @@ func TestLLDP_LazyPeerAppearsLater(t *testing.T) {
 	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep(peerIP, 2)))
 
 	// Peer absent → no remote row, no ifAlias.
-	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != valueNoSuchObject {
 		t.Fatalf("pre-create remote row = %q, want absent", got)
 	}
-	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != valueNoSuchObject {
 		t.Fatalf("pre-create ifAlias = %q, want absent", got)
 	}
 
@@ -397,10 +397,10 @@ func TestLLDP_DeletePrunesAndRevertsIfAlias(t *testing.T) {
 	f.mgr.mu.Unlock()
 	f.mgr.topology.PruneDevice(b.IP.String())
 
-	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(remOID(colLldpRemSysName, 1)); got != valueNoSuchObject {
 		t.Errorf("post-delete remote row = %q, want absent", got)
 	}
-	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != "OID not supported" {
+	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != valueNoSuchObject {
 		t.Errorf("post-delete ifAlias = %q, want absent (no to__)", got)
 	}
 	if n := f.mgr.topology.LinksFor(a.IP.String()); len(n) != 0 {
@@ -467,7 +467,7 @@ func TestLLDP_NumericSysNameEncodesAsOctetString(t *testing.T) {
 func countNeighbors(d *DeviceSimulator, maxPort int) int {
 	n := 0
 	for p := 1; p <= maxPort; p++ {
-		if d.snmpServer.findResponse(remOID(colLldpRemSysName, p)) != "OID not supported" {
+		if d.snmpServer.findResponse(remOID(colLldpRemSysName, p)) != valueNoSuchObject {
 			n++
 		}
 	}
