@@ -81,12 +81,13 @@ It closes the resource-file route, not every route.
 `sysName` and `sysLocation` are served outside the resource map, and `sysLocation` comes from the operator-supplied worldcities CSV, so a sentinel-valued entry there is still served as an exception.
 
 Where a rejection surfaces matters.
-Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call in the middle of a run, not only a refusal at startup.
+Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call (HTTP 500, carrying the same error text) in the middle of a run, not only a refusal at startup.
 Two call sites downgrade the rejection to a log line rather than failing: the startup load in `simulator.go` falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
 At those two sites the guard is advisory.
 
 The scope is one rule.
-A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, tracked as nl6#529 and still open — it is entangled with `encodeOID`'s own first-arc arithmetic, and its acceptance criterion is a `decodeOID(encodeOID(x)) == x` round-trip property test rather than a hand-derived bound.
+A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, tracked as nl6#529 and still open.
+It is entangled with `encodeOID`'s own first-arc arithmetic, and its acceptance criterion is a `decodeOID(encodeOID(x)) == x` round-trip property test rather than a hand-derived bound.
 A non-numeric `Counter32`, `Gauge32` or `TimeTicks` value, or an unparseable `ipAdEntAddr`, is likewise still accepted at load and degrades to an OCTET STRING when served.
 
 ## Response size, `max-repetitions` and truncation

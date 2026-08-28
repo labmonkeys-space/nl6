@@ -101,26 +101,6 @@ func TestValidateSNMPResourceValues_CleanInputAccepted(t *testing.T) {
 
 // ── wiring: the loaders must actually call the guard ───────────────────────
 
-// TestGuardIsWiredIntoLoaders is the test that fails if a
-// validateSNMPResourceValues call is deleted from a loader. Calling the
-// validator directly cannot detect that, which is the gap this closes.
-//
-// It covers all four loaders that can read an operator-supplied file: the two
-// directory loaders and the two legacy single-file loaders, reached by writing
-// the fixture as a directory or as a bare <slug>.json respectively. The fifth
-// call site, createDefaultResources, encodes compiled-in constants that no
-// fixture can invalidate, so it is deliberately not covered here.
-//
-// Every case carries a POSITIVE CONTROL: the same fixture with a clean value
-// must load and yield a non-zero entry count. Without it a loader that errored
-// unconditionally, or one broken so that nothing decodes, would pass.
-//
-// Fixtures live in a temp directory, never in the tracked resources/ tree. The
-// loaders resolve "resources/<slug>" relative to the working directory, so the
-// test chdirs. t.Chdir restores it on cleanup and refuses to run if THIS test
-// (or an ancestor) is parallel. It does not exclude unrelated parallel tests,
-// and three tests in this package resolve resources/ relative to cwd, so do
-// not add t.Parallel() here.
 // TestSentinelValueWouldReachTheWireAsAnException is why the predicate must be
 // EXACT rather than trimmed or case-folded: it pins the harm the load guard
 // prevents. A value equal to a sentinel encodes to the RFC 3416 exception tag,
@@ -130,11 +110,21 @@ func TestValidateSNMPResourceValues_CleanInputAccepted(t *testing.T) {
 func TestSentinelValueWouldReachTheWireAsAnException(t *testing.T) {
 	const anyOID = ".1.3.6.1.2.1.1.1.0"
 
-	for _, v := range []string{valueNoSuchObject, valueEndOfMibView} {
+	// The strings and tags are LITERALS, not the predicate's constants, so this
+	// is the encoder's view of the sentinel set. If encodeTypedValue learns a
+	// third exception (noSuchInstance, 0x81, is the obvious candidate) without
+	// isSNMPExceptionValue learning it too, the second loop below fails: the
+	// encoder-only sentinel encodes as an exception but loads as data, which is
+	// exactly the hazard the guard exists to close.
+	encoderSentinels := map[string]byte{
+		"noSuchObject": 0x80, // [0] IMPLICIT NULL
+		"endOfMibView": 0x82, // [2] IMPLICIT NULL
+	}
+	for v, tag := range encoderSentinels {
 		got := encodeTypedValue(anyOID, v)
-		if len(got) != 2 || got[1] != 0x00 || (got[0] != 0x80 && got[0] != 0x82) {
-			t.Errorf("encodeTypedValue(%q) = % x, want a 2-byte exception tag; "+
-				"if this fails the guard is rejecting values that are no longer hazardous", v, got)
+		if len(got) != 2 || got[0] != tag || got[1] != 0x00 {
+			t.Errorf("encodeTypedValue(%q) = % x, want %02x 00; "+
+				"if this fails the guard is rejecting values that are no longer hazardous", v, got, tag)
 		}
 		if !isSNMPExceptionValue(v) {
 			t.Errorf("isSNMPExceptionValue(%q) = false, but the encoder treats it as an exception; "+
@@ -142,7 +132,10 @@ func TestSentinelValueWouldReachTheWireAsAnException(t *testing.T) {
 		}
 	}
 
-	for _, v := range []string{"noSuchObject seen", "NoSuchObject", " noSuchObject", "endOfMibView reached"} {
+	// Near-miss forms, plus the exception the encoder does NOT emit. Any string
+	// that encodes as data must load as data, and any string that encodes as a
+	// 2-byte exception tag must appear in encoderSentinels above.
+	for _, v := range []string{"noSuchObject seen", "NoSuchObject", " noSuchObject", "endOfMibView reached", "noSuchInstance"} {
 		got := encodeTypedValue(anyOID, v)
 		if len(got) == 0 || got[0] != ASN1_OCTET_STRING {
 			t.Errorf("encodeTypedValue(%q) = % x, want OCTET STRING; a near-miss form is data, "+
@@ -154,6 +147,27 @@ func TestSentinelValueWouldReachTheWireAsAnException(t *testing.T) {
 	}
 }
 
+// TestGuardIsWiredIntoLoaders is the test that fails if a
+// validateSNMPResourceValues call is deleted from a loader. Calling the
+// validator directly cannot detect that, which is the gap this closes.
+//
+// It covers all four loaders that can read an operator-supplied file: the two
+// directory loaders and the two legacy single-file loaders, reached by writing
+// the fixture as a directory or as a bare <slug>.json respectively.
+// createDefaultResources writes compiled-in constants that no fixture can
+// invalidate, so it is not guarded and not covered here.
+//
+// Every case carries a POSITIVE CONTROL: the same fixture with a clean value
+// must load and yield exactly the fixture's entry count. Without it a loader
+// that errored unconditionally, or one broken so that nothing decodes or that
+// dropped a part on merge, would pass.
+//
+// Fixtures live in a temp directory, never in the tracked resources/ tree. The
+// loaders resolve "resources/<slug>" relative to the working directory, so the
+// test chdirs. t.Chdir restores it on cleanup and refuses to run if THIS test
+// (or an ancestor) is parallel. It does not exclude unrelated parallel tests,
+// and other tests in this package resolve resources/ relative to cwd, so do
+// not add t.Parallel() here.
 func TestGuardIsWiredIntoLoaders(t *testing.T) {
 	const (
 		badEntry   = `{"oid":"1.3.6.1.2.1.1.1.0","response":"noSuchObject"}`
@@ -181,15 +195,21 @@ func TestGuardIsWiredIntoLoaders(t *testing.T) {
 				})
 
 				// Positive control: same shape, value one character different.
+				// The directory fixture carries a clean sibling part, so the
+				// exact count also proves both parts were merged.
 				t.Run("accepts-clean", func(t *testing.T) {
 					_, load := guardFixture(t, layout, loader, cleanEntry)
 					res, err := load()
 					if err != nil {
 						t.Fatalf("%s (%s layout) rejected a clean fixture: %v", loader, layout, err)
 					}
-					if n := snmpCount(res); n == 0 {
-						t.Fatalf("%s (%s layout) loaded zero SNMP entries. The negative case "+
-							"above would pass even on a loader that decodes nothing", loader, layout)
+					want := 1
+					if layout == "directory" {
+						want = 2
+					}
+					if n := snmpCount(res); n != want {
+						t.Fatalf("%s (%s layout) loaded %d SNMP entries, want %d. The negative case "+
+							"above would pass even on a loader that decodes nothing", loader, layout, n, want)
 					}
 				})
 			})
@@ -276,8 +296,9 @@ func TestShippedResourcesLoadClean(t *testing.T) {
 	}
 	dirs, inspected := 0, 0
 	for _, e := range entries {
-		// _common holds the shared trap/syslog catalogs and has no snmp part.
-		if !e.IsDir() || e.Name() == "_common" {
+		// _-prefixed directories are not device types: _common holds the
+		// shared trap/syslog catalogs and has no snmp part.
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
 			continue
 		}
 		name := e.Name() + ".json"

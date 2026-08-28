@@ -196,8 +196,9 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 //
 // Scope is the SNMP `snmp` array only. SSH, API and Optical entries never reach
 // encodeTypedValue, and the trap/syslog catalogs use a different encoder. It is
-// wired at five loaders, four of which a resource file can reach; the fifth
-// (createDefaultResources) validates compiled-in constants and cannot fire.
+// wired at the four loaders a resource file can reach. createDefaultResources
+// writes compiled-in constants and is deliberately not guarded: no input can
+// make that check fire.
 //
 // One rule only, deliberately. The OID-typed hazard on the same surface, a
 // non-OID value on sysObjectID and encodeOID's first-arc fabrication, is
@@ -264,13 +265,6 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 			{Command: "ping 8.8.8.8", Response: "Type escape sequence to abort.\nSending 5, 100-byte ICMP Echos to 8.8.8.8, timeout is 2 seconds:\n!!!!!\nSuccess rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms"},
 			{Command: "traceroute 8.8.8.8", Response: "Type escape sequence to abort.\nTracing the route to 8.8.8.8\n  1 192.168.1.254 4 msec 2 msec 4 msec\n  2 * * *\n  3 8.8.8.8 20 msec 18 msec 20 msec"},
 		},
-	}
-
-	// Validated BEFORE the file is written. These are compiled-in constants, so
-	// no input can make this fire, but validating after os.Create would mean
-	// persisting a file the loader would then refuse.
-	if err := validateSNMPResourceValues(filename, defaultResources); err != nil {
-		return err
 	}
 
 	file, err := os.Create(filename)

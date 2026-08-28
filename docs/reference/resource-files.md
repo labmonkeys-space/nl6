@@ -78,11 +78,12 @@ The rule covers the `snmp` array only.
 
 Where the rejection surfaces matters:
 
-- Resource files are also loaded on REST device creation, so a bad file is a failed API call in the middle of a run, not only a refusal at startup.
+- Resource files are also loaded on REST device creation, so a bad file is a failed API call (HTTP 500, carrying the same error text) in the middle of a run, not only a refusal at startup.
 - In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
 - Two call sites downgrade the rejection to a log line instead of failing: the startup load falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
 
-This is the only value rule enforced at load, and it covers resource files only.
+This is the only rule on `snmp` values enforced at load, and it covers resource files only.
+The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
 `sysName` and `sysLocation` are served from elsewhere (`sysLocation` from the worldcities CSV) and are not checked.
 A malformed OID, a non-OID value on `sysObjectID` (tracked as nl6#529), and a non-numeric `Counter32`/`Gauge32`/`TimeTicks` or unparseable `ipAdEntAddr` value are all still accepted, and degrade silently when served.
 See [SNMP reference → A resource value that collides with a sentinel is rejected at load](snmp.md#a-resource-value-that-collides-with-a-sentinel-is-rejected-at-load).
