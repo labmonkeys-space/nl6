@@ -153,8 +153,14 @@ func TestOIDRoundTripRegressions(t *testing.T) {
 				if len(enc) != 2 || enc[0] != ASN1_OID || enc[1] != 0x00 {
 					t.Fatalf("encodeOID(%q) = % x, want the degenerate 06 00: this input is not representable", tt.in, enc)
 				}
-				if got := decodeOID(nil); got != "" {
-					t.Fatalf("decodeOID of an empty body = %q, want \"\"", got)
+				// Decode the body that was actually produced, not a constant:
+				// the degenerate TLV has an empty body and must decode to "".
+				body, ok := oidBody(t, enc)
+				if !ok {
+					t.Fatalf("encodeOID(%q) produced an undecodable TLV: % x", tt.in, enc)
+				}
+				if got := decodeOID(body); got != "" {
+					t.Fatalf("decodeOID of the degenerate body = %q, want \"\"", got)
 				}
 				return
 			}
@@ -210,6 +216,10 @@ func TestDecodeOIDRejectsMalformed(t *testing.T) {
 		{"unterminated first sub-identifier", []byte{0xff}},
 		{"overflow past 2^32-1", overflow},
 		{"all continuation bytes", []byte{0xff, 0xff, 0xff}},
+		// X.690 §8.19.2: a leading 0x80 is a non-minimal varint. Accepting it
+		// would let unbounded distinct byte strings decode to one OID.
+		{"non-minimal first sub-identifier", []byte{0x80, 0x2b}},
+		{"non-minimal later sub-identifier", []byte{0x2b, 0x80, 0x06}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,6 +343,14 @@ func collectShippedOIDs(t *testing.T) []string {
 							seen[str] = true
 						case "response":
 							if name != "" && snmpTypeTag(normaliseOIDKey(name)) == ASN1_OBJECT_ID {
+								seen[str] = true
+							}
+						case "value":
+							// A trap varbind VALUE declared "oid" goes through
+							// appendOID too. No shipped catalog uses that type
+							// today, so this adds nothing to the digest yet; it
+							// is here so a future one is pinned.
+							if typ, _ := x["type"].(string); typ == "oid" {
 								seen[str] = true
 							}
 						}
@@ -468,7 +486,10 @@ func TestOIDEncodingMatchesEncodingASN1(t *testing.T) {
 
 			want, err := asn1.Marshal(ref)
 			if err != nil {
-				t.Skipf("encoding/asn1 cannot marshal %q: %v", in, err)
+				// Every case is marshalable; a failure here is a bad table
+				// entry, and skipping would silently weaken the only check in
+				// this file that is not nl6 verifying nl6.
+				t.Fatalf("encoding/asn1 cannot marshal %q: %v", in, err)
 			}
 			if got := encodeOID(in); !bytes.Equal(got, want) {
 				t.Errorf("encodeOID(%q) = % x, encoding/asn1 says % x", in, got, want)
@@ -546,4 +567,48 @@ func truncateForLog(s string) string {
 		return s
 	}
 	return s[:60] + "..."
+}
+
+// TestOIDBodyBoundIsSharedByBothEncoders pins maxOIDBodyBytes at its edge:
+// a body of exactly 0xFFFF bytes is encoded by both encoders, one byte more
+// is refused by both. Above the bound encodeLength would write a three-octet
+// length that appendOID's two-octet rewrite cannot, so the two would diverge.
+func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
+	// 2^32-1 is a five-byte varint; the first sub-identifier "1.3" is one.
+	const wide = "4294967295"
+	build := func(bodyLen int) string {
+		var sb strings.Builder
+		sb.WriteString("1.3")
+		body := 1
+		for body+5 <= bodyLen {
+			sb.WriteString("." + wide)
+			body += 5
+		}
+		for body < bodyLen {
+			sb.WriteString(".1")
+			body++
+		}
+		return sb.String()
+	}
+	degenerate := []byte{ASN1_OID, 0x00}
+
+	at := build(maxOIDBodyBytes)
+	enc := encodeOID(at)
+	if bytes.Equal(enc, degenerate) {
+		t.Fatalf("encodeOID refused a body of exactly %d bytes", maxOIDBodyBytes)
+	}
+	if body, ok := oidBody(t, enc); !ok || len(body) != maxOIDBodyBytes {
+		t.Fatalf("encodeOID at the bound: body length %d, want %d", len(body), maxOIDBodyBytes)
+	}
+	if fast := appendOID(nil, at); !bytes.Equal(fast, enc) {
+		t.Fatalf("encoders disagree at the bound: encodeOID %d bytes, appendOID %d bytes", len(enc), len(fast))
+	}
+
+	over := build(maxOIDBodyBytes + 1)
+	if enc := encodeOID(over); !bytes.Equal(enc, degenerate) {
+		t.Fatalf("encodeOID accepted a body of %d bytes: % x...", maxOIDBodyBytes+1, enc[:4])
+	}
+	if fast := appendOID(nil, over); !bytes.Equal(fast, degenerate) {
+		t.Fatalf("appendOID accepted a body of %d bytes: % x...", maxOIDBodyBytes+1, fast[:4])
+	}
 }

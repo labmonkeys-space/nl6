@@ -50,7 +50,6 @@ func parseLength(data []byte, pos int) (int, int) {
 	return length, pos
 }
 
-// decodeOID converts ASN.1 encoded OID bytes to dot notation string
 // legalOIDArcPair reports whether (first, second) is a pair X.690 §8.19.4 can
 // represent. The first arc is 0, 1 or 2; when it is 0 or 1 the second arc is
 // limited to 0..39, because 40*first+second is what actually goes on the wire
@@ -80,6 +79,10 @@ func legalOIDArcPair(first, second int) bool {
 // 2^32-1, and without a bound the accumulator below wraps: ten continuation
 // bytes used to decode to the arc -1, which then flowed into a response and
 // back out through the encoder (nl6#529).
+//
+// Untyped, and compared against int in both encoders, so this package
+// assumes a 64-bit int: on a 32-bit GOARCH the comparison is a constant
+// overflow at compile time. nl6 only builds for amd64 and arm64.
 const maxOIDSubIdentifier = 0xFFFFFFFF
 
 // maxOIDBodyBytes is the largest OID content field both encoders can express

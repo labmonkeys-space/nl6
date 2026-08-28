@@ -157,8 +157,8 @@ func TestFastEncoderMatchesLegacy_Types(t *testing.T) {
 		{"ipaddress", []Varbind{{OID: "1.3.6.1.4.1.9.9.1.1", Type: TrapVTIPAddress, Value: "10.42.0.9"}}},
 		{"no-varbinds", nil},
 		{"many-varbinds", manyVarbinds(20)},
-		// Malformed OIDs: encodeOID does not error on these, it emits a
-		// degenerate or zero-component encoding. The fast path must agree.
+		// Malformed OIDs: encodeOID does not error on these, it emits the
+		// degenerate 06 00 (nl6#529). The fast path must agree.
 		{"oid-single-component", []Varbind{{OID: "1", Type: TrapVTInteger, Value: "1"}}},
 		{"oid-empty", []Varbind{{OID: "", Type: TrapVTInteger, Value: "1"}}},
 		{"oid-leading-dot", []Varbind{{OID: ".1.3.6.1.2.1", Type: TrapVTInteger, Value: "1"}}},

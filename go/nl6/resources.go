@@ -201,9 +201,9 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 // make that check fire.
 //
 // One rule only, deliberately. The OID-typed hazard on the same surface, a
-// non-OID value on sysObjectID and encodeOID's first-arc fabrication, is
-// nl6#529, whose arithmetic needs a decodeOID round-trip property test rather
-// than a hand-derived bound.
+// non-OID value on sysObjectID, is still open under nl6#529. The encoder half
+// of that issue (the first-arc fabrication) has landed; the load-time guard
+// for OID-typed values has not.
 func validateSNMPResourceValues(resourceFile string, resources *DeviceResources) error {
 	if resources == nil {
 		return nil
