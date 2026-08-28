@@ -190,19 +190,32 @@ func TestPrivacyKeyDerivation_EmptyPasswordYieldsNoKey(t *testing.T) {
 	}
 }
 
+// addGoldenV2cSeeds registers the real-client captures from
+// snmp_golden_packets_test.go as fuzz seeds. Each crasher seed above is a
+// malformed input; these are well-formed datagrams encoded by third-party
+// stacks, so mutations start from shapes nl6's own encoders never produce
+// (a zero-length community, a long-form community length).
+func addGoldenV2cSeeds(f *testing.F) {
+	f.Add(goldenNetSNMPEmptyCommunity)
+	f.Add(goldenNetSNMPLongCommunity)
+}
+
 func FuzzGetPDUType(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	f.Add([]byte{0x30, 0x05, 0x02, 0x01, 0x00, 0x04})
+	addGoldenV2cSeeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().getPDUType(data) })
 }
 
 func FuzzParseIncomingRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
+	addGoldenV2cSeeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().parseIncomingRequest(data) })
 }
 
 func FuzzParseAllOIDsFromRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
+	addGoldenV2cSeeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().parseAllOIDsFromRequest(data) })
 }
 
