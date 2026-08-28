@@ -341,6 +341,11 @@ var oidTypeTable = []oidTypeEntry{
 	// label or static alias is never emitted as INTEGER.
 	{".1.3.6.1.2.1.31.1.1.1.18", ASN1_OCTET_STRING}, // ifAlias
 
+	// OLD-CISCO-MEMORY-MIB freeMem — SYNTAX Gauge. Without this entry a
+	// numeric value takes the default INTEGER branch, which is the wrong type
+	// and caps the value at 2^31-1 (nl6#515).
+	{".1.3.6.1.4.1.9.2.1.8", ASN1_GAUGE32}, // freeMem
+
 	// LLDP-MIB (IEEE 802.1AB) string-typed columns. The chassis-id is a
 	// binary OCTET STRING (macAddress subtype); the sys/port name and
 	// description leaves are SnmpAdminString. Subtype columns (.3.1, .3.7.1.2,
