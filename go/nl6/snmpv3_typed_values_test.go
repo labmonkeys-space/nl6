@@ -141,6 +141,13 @@ func TestSNMPv3_GetNextPastEndTerminatesWalk(t *testing.T) {
 // request-shaping helper, not a golden fixture.
 func v3GetNextRequest(t *testing.T, s *SNMPServer, requestID int, oid string) []byte {
 	t.Helper()
+	return v3RequestAt(t, s, ASN1_GET_NEXT, requestID, oid)
+}
+
+// v3RequestAt is v3GetNextRequest with the PDU tag as a parameter, so a v3 GET
+// can be driven through handleSNMPv3Request as well (nl6#524 review).
+func v3RequestAt(t *testing.T, s *SNMPServer, pduTag byte, requestID int, oid string) []byte {
+	t.Helper()
 
 	var pduBody []byte
 	pduBody = append(pduBody, encodeInteger(requestID)...)
@@ -148,7 +155,7 @@ func v3GetNextRequest(t *testing.T, s *SNMPServer, requestID int, oid string) []
 	pduBody = append(pduBody, encodeInteger(0)...) // error-index
 	pduBody = append(pduBody, encodeSequence(encodeVarBind(oid, encodeNull()))...)
 
-	pdu := []byte{ASN1_GET_NEXT}
+	pdu := []byte{pduTag}
 	pdu = append(pdu, encodeLength(len(pduBody))...)
 	pdu = append(pdu, pduBody...)
 

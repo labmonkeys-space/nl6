@@ -75,3 +75,39 @@ func v3TestServer(oidValues map[string]string) *SNMPServer {
 	}
 	return s
 }
+
+// snmpRequestAt builds a minimal SNMP request message with the given PDU tag,
+// version and variable-binding names, each encoded with a NULL value the way a
+// manager sends them.
+//
+// The PDU tag is a parameter because before nl6#524 every builder in the
+// package hardcoded ASN1_GET_REQUEST, so no suite could construct a GETNEXT at
+// a chosen version, and the v1 GETNEXT skip had no way to be tested at the
+// wire level.
+func snmpRequestAt(pduTag byte, version int, oids []string) []byte {
+	var varbinds []byte
+	for _, oid := range oids {
+		varbinds = append(varbinds, encodeVarBind(oid, encodeNull())...)
+	}
+
+	var pduBody []byte
+	pduBody = append(pduBody, encodeInteger(42)...) // request-id
+	// For a GETBULK tag these two integers are non-repeaters and
+	// max-repetitions (RFC 3416 §4.2.3), not error-status and error-index, so
+	// a GETBULK built here asks for ZERO repetitions. That is enough for the
+	// tests that only need a version-0/version-1 GETBULK to parse; a test that
+	// needs real repetitions must build its own PDU.
+	pduBody = append(pduBody, encodeInteger(0)...) // error-status (GETBULK: non-repeaters)
+	pduBody = append(pduBody, encodeInteger(0)...) // error-index  (GETBULK: max-repetitions)
+	pduBody = append(pduBody, encodeSequence(varbinds)...)
+
+	pdu := []byte{pduTag}
+	pdu = append(pdu, encodeLength(len(pduBody))...)
+	pdu = append(pdu, pduBody...)
+
+	var msg []byte
+	msg = append(msg, encodeInteger(version)...)
+	msg = append(msg, encodeOctetString("public")...)
+	msg = append(msg, pdu...)
+	return encodeSequence(msg)
+}

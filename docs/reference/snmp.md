@@ -65,6 +65,32 @@ That puts them in the value space: a resource file whose legitimate value were l
 Removing the hazard at the root needs a typed value rather than a string, which is a larger change.
 Until then the resource-file route to it is closed at load time.
 
+### SNMPv1 never returns a Counter64
+
+Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column used to answer tag `0x46` under `error-status = noError` (nl6#524).
+
+RFC 3584 §4.2.2.1 prescribes two different behaviours, and the difference matters more than it first looks:
+
+- A **GET** answers `error-status = noSuchName`, with `error-index` at the first offending binding and every requested name echoed with a NULL value.
+- A **GETNEXT** **skips** the object and continues to the next lexicographic successor.
+
+A GETNEXT names a position rather than an object, so answering it with an error would stop a v1 walk at the first HC column and truncate the table with nothing to explain why.
+A v1 walk over `ifXTable` therefore returns every non-Counter64 column and steps silently over the Counter64 block.
+
+The diversion is keyed on the OID's declared MIB type, not on what its value happens to encode as.
+A Counter64 column holding a non-numeric value would have gone out as an OCTET STRING, which is legal in v1, and it still diverts: the object's type is what a v1 manager cannot represent, and a bad stored value should not quietly soften protocol semantics.
+
+SNMPv2c and SNMPv3 are unaffected, and SNMPv3 is never v1.
+
+A walk that skips its way past the last non-Counter64 OID ends in `noSuchName`, which is how v1 signals end-of-MIB here.
+
+If the skip runs into a resource-file defect (a successor that does not advance, or the step cap), the walk is answered as end-of-MIB and one log line per device names the OID, because from the manager's side that walk is indistinguishable from a short table.
+
+Two limitations are worth stating plainly:
+
+- **GETBULK is deliberately untouched.** SNMPv1 has no GETBULK, but nl6 answers a version-0 GETBULK anyway, and it will hand a v1 manager raw `0x46` tags. This is the same decision the exception mapping makes above: a GETBULK's bindings are walked OIDs rather than the request's names, so the RFC 1157 echo does not apply to them.
+- **Coverage is bounded by the type table.** The eight `ifXTable` HC columns are the Counter64 objects nl6 recognises. A 64-bit counter served from a resource file under any other OID (a vendor HC column, `ipIfStatsHC*`, `dot3HC*`) is not recognised as Counter64, so a v1 request for it still returns `0x46`.
+
 ### A resource value that collides with a sentinel is rejected at load
 
 `validateSNMPResourceValues` rejects a resource entry whose response is exactly `noSuchObject` or `endOfMibView`.
@@ -129,6 +155,8 @@ That was not always true: the v3 scoped-PDU builder used to branch on `strconv.A
 **Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it.** The wire types differ.
 
 ### Known limitations
+
+**A GETNEXT processes only its first variable binding.** The v1/v2c GETNEXT dispatcher reads one OID from the request and answers one successor. A multi-binding GETNEXT (as some walkers send to fetch several columns per round trip) gets an answer for the first binding only. Pre-existing; the SNMPv1 Counter64 skip inherits it.
 
 **SNMPv3 GETBULK does not emit `endOfMibView`.** The v3 GETBULK handler drops the sentinel before it reaches the encoder and, when nothing is left to return, answers a placeholder `sysDescr.0` binding whose OID sorts before the request. A GETBULK-driven v3 walk therefore still does not terminate on the exception; only the GETNEXT path does.
 
