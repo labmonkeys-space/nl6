@@ -36,7 +36,7 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		Community: "public",
 		RequestID: 123,
 		OID:       ".1.3.6.1.2.1.1.1.0",
-		Version:   1, // Default to SNMPv2c
+		Version:   snmpVersion2c,
 	}
 
 	if len(data) < 10 {
@@ -155,7 +155,9 @@ func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) [
 
 	// SNMPv1 has no exception values. Divert to a noSuchName error-status
 	// before encoding, or the manager receives a context tag its decoder does
-	// not define (RFC 3584 §4.2.2.2.1). Single varbind, so error-index is 1.
+	// not define (RFC 3584 §4.2.2.2: §4.2.2.2.1 for noSuchObject, §4.2.2.2.2
+	// for the endOfMibView a v1 GETNEXT reaches past the last OID). Single
+	// varbind, so error-index is 1.
 	if req.Version == snmpVersion1 && isSNMPExceptionValue(value) {
 		return s.encodeGetResponseAt(req, encodeVarBind(oid, encodeNull()), snmpErrNoSuchName, 1)
 	}
@@ -214,14 +216,18 @@ const (
 	snmpErrNoError = 0
 	snmpErrTooBig  = 1
 	// snmpErrNoSuchName is SNMPv1's only way to say "no such object". v1 has
-	// no exception values, so RFC 3584 §4.2.2.2.1 maps a v2c noSuchObject /
-	// noSuchInstance onto this error-status when answering a v1 manager.
+	// no exception values, so RFC 3584 §4.2.2.2 maps a v2c noSuchObject /
+	// noSuchInstance (§4.2.2.2.1) and endOfMibView (§4.2.2.2.2) onto this
+	// error-status when answering a v1 manager.
 	snmpErrNoSuchName = 2
 )
 
-// SNMPv1 is version 0 on the wire (SNMPv2c is 1, SNMPv3 is 3). Named because
-// the exception encoding below turns on it.
-const snmpVersion1 = 0
+// SNMP message versions on the wire (SNMPv3 is 3). Named because the
+// exception encoding below turns on the v1 value.
+const (
+	snmpVersion1  = 0
+	snmpVersion2c = 1
+)
 
 // Sentinel response values. findResponse and findNextOID return these strings
 // in place of a value, and encodeTypedValue turns them into the corresponding
@@ -332,7 +338,19 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 	// SNMPv1 diversion, as in createSNMPResponse. RFC 3584 §4.2.2.2.1 sets
 	// error-index to the position of the varbind that produced the exception,
 	// so report the first one; indices are 1-based (RFC 1157).
-	if req.Version == snmpVersion1 {
+	//
+	// GET only. GETBULK does not exist in SNMPv1, so a version-0 GETBULK is a
+	// malformed request and is answered as before rather than diverted: its
+	// `oids` are walked OIDs, not the request's names, and there can be
+	// max-repetitions × columns of them, so the echo below would be neither
+	// the RFC 1157 request echo nor bounded.
+	//
+	// The echo skips the datagram budget deliberately. On the GET path `oids`
+	// is the request's own varbind list, and OID + NULL is exactly how the
+	// request encoded each binding, so the response is byte-for-byte the size
+	// of a request the socket already accepted. Running it through the sizing
+	// loop would produce a partial noSuchName echo, which is a wrong answer.
+	if req.Version == snmpVersion1 && rule == overflowTooBig {
 		for i, v := range responses {
 			if isSNMPExceptionValue(v) {
 				var echoed []byte
@@ -400,7 +418,7 @@ func (s *SNMPServer) encodeGetResponse(req SNMPRequest, varBindList []byte, errS
 //
 // tooBig carries index 0 (the failure is the whole message), but the SNMPv1
 // noSuchName mapping requires the position of the offending variable binding
-// — RFC 3584 §4.2.2.2.1 sets error-index to the varbind that produced the
+// — RFC 3584 §4.2.2.2 sets error-index to the varbind that produced the
 // exception. Indices are 1-based per RFC 1157.
 func (s *SNMPServer) encodeGetResponseAt(req SNMPRequest, varBindList []byte, errStatus, errIndex int) []byte {
 	varBindSequence := []byte{ASN1_SEQUENCE}

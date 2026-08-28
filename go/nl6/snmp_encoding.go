@@ -380,7 +380,7 @@ func snmpTypeTag(oid string) byte {
 // as INTEGER (0x02) regardless of the OID's MIB definition.
 //
 // Type resolution priority:
-//  1. "endOfMibView" exception (SNMPv2c)
+//  1. RFC 3416 exception sentinel (valueNoSuchObject, valueEndOfMibView)
 //  2. OID-derived application type (Counter32, Gauge32, TimeTicks, Counter64, IpAddress)
 //  3. Integer-parseable value → INTEGER
 //  4. Everything else → OCTET STRING
@@ -397,7 +397,11 @@ func encodeTypedValue(oid, value string) []byte {
 	//
 	// Callers on the SNMPv1 path must not reach here with a sentinel: v1 has no
 	// exceptions and needs the noSuchName error-status instead (RFC 3584
-	// §4.2.2.2.1). The response builders divert it.
+	// §4.2.2.2). The response builders divert it.
+	//
+	// The SNMPv3 path does not reach here at all: createScopedPDU encodes with
+	// its own int/octet-string heuristic, so a v3 manager receives the sentinel
+	// as an OCTET STRING. Routing v3 through this function is nl6#518.
 	switch value {
 	case valueEndOfMibView:
 		return []byte{0x82, 0x00} // endOfMibView   [2] IMPLICIT NULL

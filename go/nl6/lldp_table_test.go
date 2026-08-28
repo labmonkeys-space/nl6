@@ -147,7 +147,7 @@ func TestLLDP_LocalPortRow(t *testing.T) {
 	// Unlinked port (if4) has no local port row.
 	noRow := fmt.Sprintf("%s%d.4", lldpLocPortPrefix, colLldpLocPortId)
 	if got := a.snmpServer.findResponse(noRow); got != valueNoSuchObject {
-		t.Errorf("unlinked locPortId = %q, want OID not supported", got)
+		t.Errorf("unlinked locPortId = %q, want noSuchObject", got)
 	}
 }
 
@@ -247,7 +247,7 @@ func TestLLDP_IfAliasUnlinkedFallsThrough(t *testing.T) {
 	_, a, _, _ := lineTopology(t)
 	// if4 has no link; no static .18.4 either → not supported.
 	if got := a.snmpServer.findResponse(ifAliasPrefix + "4"); got != valueNoSuchObject {
-		t.Errorf("unlinked ifAlias = %q, want OID not supported", got)
+		t.Errorf("unlinked ifAlias = %q, want noSuchObject", got)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestLLDP_IfAliasUnresolvablePeerNoGarbage(t *testing.T) {
 	// Link to a peer that does not exist → ifAlias must NOT render "to__".
 	must(t, f.mgr.topology.AddLink(ep(a.IP.String(), 1), ep("10.42.0.250", 7)))
 	if got := a.snmpServer.findResponse(ifAliasPrefix + "1"); got != valueNoSuchObject {
-		t.Errorf("unresolvable-peer ifAlias = %q, want OID not supported (never to__)", got)
+		t.Errorf("unresolvable-peer ifAlias = %q, want noSuchObject (never to__)", got)
 	}
 }
 

@@ -95,7 +95,7 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		if responseOID == "" {
 			// End of MIB view - use a special response
 			responseOID = oid
-			response = "endOfMibView"
+			response = valueEndOfMibView
 		}
 		// log.Printf("SNMPv3 %s: GetNext %s -> %s = %s", s.device.ID, oid, responseOID, response)
 	} else if pduType == ASN1_GET_BULK {

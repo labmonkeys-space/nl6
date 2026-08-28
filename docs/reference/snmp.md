@@ -53,8 +53,12 @@ Only `noSuchObject` is ever emitted, never `noSuchInstance`.
 The standard separates the two by OID prefix registration, and a profile is a flat OID→value map with no MIB registry, so nl6 cannot evaluate that test.
 `noSuchObject` is the only answer it can defend.
 
-**SNMPv1 has no exception values.** A v1 request that would produce one gets `error-status = noSuchName(2)` instead, with `error-index` set to the offending variable binding, per RFC 3584 §4.2.2.2.1.
-This applies to `endOfMibView` as well as to `noSuchObject`.
+**SNMPv1 has no exception values.** A v1 request that would produce one gets `error-status = noSuchName(2)` instead, with `error-index` set to the offending variable binding and every requested name echoed with a NULL value, per RFC 3584 §4.2.2.2 (§4.2.2.2.1 for `noSuchObject`, §4.2.2.2.2 for the `endOfMibView` a v1 GETNEXT reaches past the last OID).
+The mapping applies to GET and GETNEXT only.
+GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
+
+**SNMPv3 is not covered yet.** The v3 encoder (`createScopedPDU`) does not go through `encodeTypedValue`, so a v3 GET for an absent OID returns the OCTET STRING `noSuchObject` as data, and a v3 walk ends in the string `endOfMibView` rather than the `82 00` tag.
+Tracked as nl6#518.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
 That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception.

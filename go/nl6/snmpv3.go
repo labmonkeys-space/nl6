@@ -354,7 +354,7 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 	// Collect up to maxRepetitions OIDs
 	for count < maxRepetitions {
 		nextOID, response := s.findNextOID(currentOID)
-		if nextOID == "" || response == "endOfMibView" {
+		if nextOID == "" || response == valueEndOfMibView {
 			break
 		}
 

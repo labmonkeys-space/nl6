@@ -140,7 +140,7 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		if responseOID == "" {
 			// End of MIB view - use a special response
 			responseOID = oid
-			response = "endOfMibView"
+			response = valueEndOfMibView
 		}
 		// log.Printf("SNMP %s: GetNext %s -> %s = %s", s.device.ID, oid, responseOID, response)
 	} else if pduType == ASN1_GET_BULK {
