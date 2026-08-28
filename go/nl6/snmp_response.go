@@ -73,7 +73,16 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		pos++
 		communityLen, newPos := parseLength(data, pos)
 		pos = newPos
-		if communityLen > 0 && pos+communityLen <= len(data) {
+		// `>= 0`, not `> 0`: a zero-length community is a legal OCTET STRING and
+		// both shipped clients emit it on request (net-snmp 5.6.2.1 and snmp4j
+		// 3.13.1 each send `04 00` for `-c ""`). Treating it as absent left
+		// req.Community at its "public" default, which nl6 then echoed back to a
+		// caller that had sent no community at all (nl6#514).
+		//
+		// The lower bound cannot be dropped entirely: parseLength signals failure
+		// with -1, and pos+(-1) <= len(data) is true, so an unbounded guard would
+		// evaluate data[pos : pos-1] and panic on the inverted range.
+		if communityLen >= 0 && pos+communityLen <= len(data) {
 			req.Community = string(data[pos : pos+communityLen])
 			pos += communityLen
 		}

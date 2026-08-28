@@ -28,6 +28,22 @@ stack is implemented in `go/nl6/snmp*.go` — see
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
 
+### The community string is echoed, never checked
+
+nl6 does not authenticate on the community: it parses the value, answers the request, and echoes the same value back in the response.
+There is no ACL and no rejection path, by design.
+This is a simulator for collector validation, not an access-control surface.
+
+A **zero-length** community is legal and is parsed as the empty string, not as absent.
+Both shipped clients emit one on request: net-snmp and snmp4j each send `04 00` for `-c ""`.
+nl6 answers with an empty community rather than substituting `public` (nl6#514).
+A community of 128 octets or more encodes its length in BER long form (`04 81 c8`), which is parsed correctly on every path.
+
+Golden fixtures for these cases live in `go/nl6/snmp_golden_packets_test.go`.
+They are verbatim bytes captured from net-snmp and snmp4j, which matters.
+Every other SNMP test in the package builds its input with nl6's own encoders, so encoder and parser can share a misconception and still agree.
+The empty-community defect survived exactly that blind spot.
+
 ## Response size, `max-repetitions` and truncation
 
 An SNMP response is bounded so the resulting UDP **frame** fits the link: the payload ceiling is the MTU minus the IPv4 and UDP headers, 1472 bytes at the default MTU, and it moves with `-datagram-mtu`. See the flow-export reference for that flag.
