@@ -88,6 +88,10 @@ The `optical` part of an optical transport type has its own load-time check, whi
 A malformed OID, a non-OID value on `sysObjectID` (tracked as nl6#529), and a non-numeric `Counter32`/`Gauge32`/`TimeTicks` or unparseable `ipAdEntAddr` value are all still accepted, and degrade silently when served.
 See [SNMP reference → A resource value that collides with a sentinel is rejected at load](snmp.md#a-resource-value-that-collides-with-a-sentinel-is-rejected-at-load).
 
+An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc at most `4294967295`, and every component a number.
+An OID that breaks those rules is emitted as a degenerate `06 00` rather than silently becoming a different OID.
+See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint).
+
 ## Round-robin and category selection
 
 The REST API's [`/api/v1/devices`](web-api.md#create-devices) endpoint

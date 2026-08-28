@@ -244,20 +244,39 @@ func appendOID(dst []byte, oid string) []byte {
 	dst = append(dst, 0) // single-byte length placeholder; see the guard below
 	bodyStart := len(dst)
 
-	// The first two components collapse into one byte (40*first + second); the
-	// rest are base-128 varints. Atoi errors are swallowed exactly as encodeOID
-	// swallows them, yielding 0 for a non-numeric component.
+	// The FIRST sub-identifier carries 40*first+second and is a base-128
+	// varint like every other one (X.690 §8.19.4); emitting it as a single
+	// byte fabricated OIDs (nl6#529). strconv errors are NOT swallowed here or
+	// in encodeOID: yielding 0 for a non-numeric component was the second
+	// route into the same fabrication ("1.3.x.7" became .1.3.0.7).
 	idx, start, first := 0, 0, 0
 	for i := 0; i <= len(oid); i++ {
 		if i != len(oid) && oid[i] != '.' {
 			continue
 		}
-		v, _ := strconv.Atoi(oid[start:i])
+		v, convErr := strconv.Atoi(oid[start:i])
+		if convErr != nil || v < 0 {
+			return append(dst[:lenMark-1], ASN1_OID, 0x00)
+		}
+		// idx 0 and 1 are bounded together by legalOIDArcPair below, on the
+		// COMBINED value; only later arcs are bounded individually. Bounding
+		// the raw second arc here instead made this encoder reject inputs
+		// encodeOID accepted (FuzzOIDRoundTrip found "2.7000000000").
+		if idx >= 2 && v > maxOIDSubIdentifier {
+			return append(dst[:lenMark-1], ASN1_OID, 0x00)
+		}
 		switch idx {
 		case 0:
 			first = v
 		case 1:
-			dst = append(dst, byte(40*first+v))
+			// Varint, matching encodeOID: the first two arcs share one
+			// sub-identifier and it is not always one byte (nl6#529).
+			// An arc pair X.690 cannot represent takes encodeOID's degenerate
+			// path, or the two encoders stop agreeing byte for byte.
+			if !legalOIDArcPair(first, v) {
+				return append(dst[:lenMark-1], ASN1_OID, 0x00)
+			}
+			dst = appendOIDComponent(dst, 40*first+v)
 		default:
 			dst = appendOIDComponent(dst, v)
 		}
@@ -266,6 +285,11 @@ func appendOID(dst []byte, oid string) []byte {
 	}
 
 	bodyLen := len(dst) - bodyStart
+	if bodyLen > maxOIDBodyBytes {
+		// Matches encodeOID: past this the length needs a third octet, which
+		// the rewrite below does not write, and the two encoders would differ.
+		return append(dst[:lenMark-1], ASN1_OID, 0x00)
+	}
 	if bodyLen < 0x80 {
 		dst[lenMark] = byte(bodyLen)
 		return dst
