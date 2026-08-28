@@ -98,6 +98,9 @@ A negative value is treated as 0, per RFC 3416's definition of the field as non-
 
 ### Known limitations
 
+**SNMPv3 response encoding matches v2c.** Both versions encode a value through `encodeTypedValue`, so the same OID carries the same ASN.1 type whichever version answered. That was not always true: the v3 scoped-PDU builder used to branch on `strconv.Atoi` and emit only INTEGER or OCTET STRING, which meant v3 had no Counter32/Gauge32/TimeTicks/IpAddress typing and sent `endOfMibView` as literal text rather than as an exception, so a v3 walk did not terminate where the protocol says it should (nl6#518).
+**Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it** — the wire types differ.
+
 **SNMPv3 GETBULK is not bounded.** Everything above describes the SNMPv2c path. The v3 GETBULK handler builds its response through a separate encoder that consults no size ceiling, and it currently hardcodes `max-repetitions` to 10. That combination makes an oversized v3 response unreachable in practice — ten bindings from a single column is roughly 500 bytes — but it is unreachable by accident, not bounded by design. Honouring a real `max-repetitions` on the v3 path requires giving it the same bound first.
 
 **SNMPv3 `msgMaxSize`**
