@@ -73,7 +73,11 @@ func (s *SNMPServer) findResponse(oid string) string {
 			return response.(string)
 		}
 	}
-	return "OID not supported"
+	// Not in this device's MIB view. RFC 3416 §4.2.1 requires a noSuchObject
+	// exception, not a value — answering with an octet string makes an
+	// unimplemented OID look like data, and a collector typing the OID per its
+	// MIB fails to convert it (nl6#517).
+	return valueNoSuchObject
 }
 
 // Compare two OIDs lexicographically
@@ -269,7 +273,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 			consider(lldpNextLLDP, lldpNextVal)
 		}
 		if best == "" {
-			return "", "endOfMibView"
+			return "", valueEndOfMibView
 		}
 		return best, s.overrideLLDP(best, bestVal)
 	}
@@ -363,7 +367,7 @@ func (s *SNMPServer) findNextOIDWithServed(currentOID string, lldpServed []kvOID
 	}
 
 	if len(candidates) == 0 {
-		return "", "endOfMibView"
+		return "", valueEndOfMibView
 	}
 
 	// Find lexicographically smallest candidate
@@ -434,7 +438,7 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 		nextOID, nextVal := s.findNextOIDWithServed(allOIDs[i], lldpServed)
 		if nextOID == "" {
 			nextOID = allOIDs[i]
-			nextVal = "endOfMibView"
+			nextVal = valueEndOfMibView
 		}
 		responseOIDs = append(responseOIDs, nextOID)
 		responseValues = append(responseValues, nextVal)
@@ -479,14 +483,14 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 			if endOfMib[col] {
 				// RFC 3416: pad with the ORIGINAL requested OID + endOfMibView.
 				responseOIDs = append(responseOIDs, startCol)
-				responseValues = append(responseValues, "endOfMibView")
+				responseValues = append(responseValues, valueEndOfMibView)
 				continue
 			}
 			nextOID, nextVal := s.findNextOIDWithServed(currentOIDs[col], lldpServed)
-			if nextOID == "" || nextVal == "endOfMibView" {
+			if nextOID == "" || nextVal == valueEndOfMibView {
 				endOfMib[col] = true
 				responseOIDs = append(responseOIDs, startCol)
-				responseValues = append(responseValues, "endOfMibView")
+				responseValues = append(responseValues, valueEndOfMibView)
 			} else {
 				responseOIDs = append(responseOIDs, nextOID)
 				responseValues = append(responseValues, nextVal)

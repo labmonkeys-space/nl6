@@ -222,6 +222,13 @@ func encodeSequence(contents []byte) []byte {
 	return result
 }
 
+// encodeVarBind wraps an OID and an already-encoded value in the VarBind
+// SEQUENCE of RFC 3416. Used where the value is not derived from resource data
+// — an SNMPv1 noSuchName response echoes the requested names with NULL values.
+func encodeVarBind(oid string, valueBytes []byte) []byte {
+	return encodeSequence(append(encodeOID(oid), valueBytes...))
+}
+
 func encodeNull() []byte {
 	return []byte{ASN1_NULL, 0x00}
 }
@@ -378,13 +385,33 @@ func snmpTypeTag(oid string) byte {
 // as INTEGER (0x02) regardless of the OID's MIB definition.
 //
 // Type resolution priority:
-//  1. "endOfMibView" exception (SNMPv2c)
+//  1. RFC 3416 exception sentinel (valueNoSuchObject, valueEndOfMibView)
 //  2. OID-derived application type (Counter32, Gauge32, TimeTicks, Counter64, IpAddress)
 //  3. Integer-parseable value → INTEGER
 //  4. Everything else → OCTET STRING
 func encodeTypedValue(oid, value string) []byte {
-	if value == "endOfMibView" {
-		return []byte{0x82, 0x00}
+	// RFC 3416 exceptions occupy the varbind's value position as
+	// context-specific, primitive, zero-length tags. The response is otherwise
+	// a success: error-status stays noError.
+	//
+	// Only noSuchObject is emitted, never noSuchInstance. §4.2.1 separates them
+	// by OID prefix registration — noSuchObject when no accessible variable
+	// shares the prefix, noSuchInstance when the object exists but the instance
+	// does not. A profile is a flat OID→value map with no MIB registry, so nl6
+	// cannot evaluate that test and noSuchObject is the only defensible answer.
+	//
+	// Callers on the SNMPv1 path must not reach here with a sentinel: v1 has no
+	// exceptions and needs the noSuchName error-status instead (RFC 3584
+	// §4.2.2.2). The response builders divert it.
+	//
+	// The SNMPv3 path does not reach here at all: createScopedPDU encodes with
+	// its own int/octet-string heuristic, so a v3 manager receives the sentinel
+	// as an OCTET STRING. Routing v3 through this function is nl6#518.
+	switch value {
+	case valueEndOfMibView:
+		return []byte{0x82, 0x00} // endOfMibView   [2] IMPLICIT NULL
+	case valueNoSuchObject:
+		return []byte{0x80, 0x00} // noSuchObject   [0] IMPLICIT NULL
 	}
 
 	tag := snmpTypeTag(oid)
