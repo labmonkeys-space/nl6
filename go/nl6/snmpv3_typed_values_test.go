@@ -146,7 +146,7 @@ func v3GetNextRequest(t *testing.T, s *SNMPServer, requestID int, oid string) []
 
 // v3RequestAt is v3GetNextRequest with the PDU tag as a parameter, so a v3 GET
 // can be driven through handleSNMPv3Request as well (nl6#524 review).
-func v3RequestAt(t *testing.T, s *SNMPServer, pduTag byte, requestID int, oid string) []byte {
+func v3RequestAt(t testing.TB, s *SNMPServer, pduTag byte, requestID int, oid string) []byte {
 	t.Helper()
 
 	var pduBody []byte

@@ -243,7 +243,7 @@ func FuzzExtractOIDAndTypeFromScopedPDU(f *testing.F) {
 // ── nl6#513: Tier 0 — leaf parsers, no fixture ───────────────────────────────
 //
 // Added by the parser-family measurement spike. nl6#512 fuzzed six parsers,
-// which is a small share of the package's ~59 parseLength/skipLength call
+// which is a small share of the package's 57 parseLength/skipLength call
 // sites, and nobody knew whether the panic class it fixed recurs elsewhere.
 // These targets exist to produce that number, not to fix anything: a crasher
 // found here is recorded and filed, and the fuzzing continues.
@@ -332,9 +332,11 @@ func FuzzParseIntegerAndOctetString(f *testing.F) {
 	f.Add([]byte{0x04, 0xff}, 0)
 	f.Fuzz(func(_ *testing.T, data []byte, pos int) {
 		// A negative position is not a parser input any caller produces; it
-		// would only mask the out-of-range cases that matter.
+		// would only mask the out-of-range cases that matter. Bitwise NOT
+		// rather than negation: -math.MinInt overflows and stays negative,
+		// which would make the harness itself report a crasher.
 		if pos < 0 {
-			pos = -pos
+			pos = ^pos
 		}
 		_, _, _ = parseInteger(data, pos)
 		_, _, _ = parseOctetString(data, pos)
@@ -343,7 +345,7 @@ func FuzzParseIntegerAndOctetString(f *testing.F) {
 
 // FuzzParseLengthInvariants fuzzes parseLength for an INVARIANT rather than a
 // panic, because parseLength is total by inspection and the interesting
-// question is the contract its 59 call sites rely on:
+// question is the contract its 57 call sites rely on:
 //
 //	length >= -1              -1 is the only sentinel
 //	newPos >= pos             a caller that advances never moves backwards
@@ -361,7 +363,7 @@ func FuzzParseLengthInvariants(f *testing.F) {
 	f.Add([]byte{0x81}, 0)
 	f.Fuzz(func(t *testing.T, data []byte, pos int) {
 		if pos < 0 {
-			pos = -pos
+			pos = ^pos // not -pos: see FuzzParseIntegerAndOctetString
 		}
 		length, newPos := parseLength(data, pos)
 
@@ -423,6 +425,13 @@ func fuzzFixtureSize(dflt int) int {
 	return dflt
 }
 
+// fuzzTestServer is the Tier 1 fixture: n OIDs plus a noAuthNoPriv v3 user.
+// Auth is NONE deliberately, so a fuzz input that reaches the scoped PDU is
+// not first discarded by an HMAC it cannot forge. The cost is stated plainly:
+// the auth and priv branches of validateSNMPv3Credentials and the decrypt
+// path are NOT exercised by any target in this file, and the pinned-scoped
+// targets (FuzzHandleSNMPv3GetBulkScoped, FuzzCreateSNMPv3Response) bypass
+// credential validation altogether.
 func fuzzTestServer(n int) *SNMPServer {
 	n = fuzzFixtureSize(n)
 	s := newTestServer(fuzzFixtureOIDs(n))
@@ -435,6 +444,63 @@ func fuzzTestServer(n int) *SNMPServer {
 		PrivProtocol: SNMPV3_PRIV_NONE,
 	}
 	return s
+}
+
+// addValidV3Seeds adds the v3 datagrams nl6#513 requires as Tier 2 seeds: a
+// discovery message (empty engine ID and user, RFC 3414 §4), a noAuthNoPriv
+// GET the fixture's user accepts, and the discovery probe with its scoped PDU
+// wrapped as an OCTET STRING, which is the shape an encrypted (authPriv)
+// message has on the wire. Every crasher seed is rejected by
+// parseSNMPv3Message before it reaches the USM or scoped-PDU length reads, so
+// without these the v3 targets gated on a successful parse never call the
+// function they are named after on an ordinary `go test`, and the encrypted
+// branch's length read is never executed at all.
+func addValidV3Seeds(f *testing.F) {
+	s := fuzzTestServer(0)
+	f.Add(v3DiscoveryRequest(f, s, false))
+	f.Add(v3RequestAt(f, s, ASN1_GET_REQUEST, 7, ".1.3.6.1.2.1.1.1.0"))
+	f.Add(v3DiscoveryRequest(f, s, true))
+}
+
+// v3DiscoveryRequest builds the engine-ID discovery probe a manager sends
+// first: USM parameters with empty engine ID and user name, and a scoped PDU
+// carrying an empty GET. With encryptedShape the scoped PDU goes out as an
+// OCTET STRING instead of a SEQUENCE; the content is still plaintext, which
+// is enough to drive the parser's encrypted branch and nothing past it.
+func v3DiscoveryRequest(tb testing.TB, s *SNMPServer, encryptedShape bool) []byte {
+	tb.Helper()
+	var pduBody []byte
+	pduBody = append(pduBody, encodeInteger(1)...)
+	pduBody = append(pduBody, encodeInteger(0)...)
+	pduBody = append(pduBody, encodeInteger(0)...)
+	pduBody = append(pduBody, encodeSequence(nil)...)
+	pdu := append([]byte{ASN1_GET_REQUEST}, append(encodeLength(len(pduBody)), pduBody...)...)
+	var scoped []byte
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, pdu...)
+	scopedPDU := encodeSequence(scoped)
+	if encryptedShape {
+		scopedPDU = encodeOctetString(string(scopedPDU))
+	}
+	usm, err := s.encodeUSMSecurityParameters(&SNMPv3SecurityParams{})
+	if err != nil {
+		tb.Fatalf("encodeUSMSecurityParameters: %v", err)
+	}
+	req, err := s.encodeSNMPv3Message(&SNMPv3Message{
+		Version: SNMPV3_VERSION,
+		GlobalData: SNMPv3GlobalData{
+			MsgID:            1,
+			MsgMaxSize:       65507,
+			MsgFlags:         SNMPV3_MSG_FLAG_REPORT,
+			MsgSecurityModel: SNMPV3_SECURITY_MODEL_USM,
+		},
+		ScopedPDU: scopedPDU,
+	}, usm)
+	if err != nil {
+		tb.Fatalf("encodeSNMPv3Message: %v", err)
+	}
+	return req
 }
 
 func FuzzHandleGetBulk(f *testing.F) {
@@ -469,6 +535,7 @@ func FuzzHandleGetRequestVarbinds(f *testing.F) {
 // the second reaches the scoped-PDU parser on every execution.
 func FuzzHandleSNMPv3GetBulkDerived(f *testing.F) {
 	f.Add(crasherParseV3)
+	addValidV3Seeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		s := fuzzTestServer(50)
 		msg, err := s.parseSNMPv3Message(data)
@@ -501,6 +568,7 @@ func FuzzCreateSNMPv3Response(f *testing.F) {
 
 func FuzzCreateSNMPv3DiscoveryResponse(f *testing.F) {
 	f.Add(crasherParseV3)
+	addValidV3Seeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		s := fuzzTestServer(20)
 		msg, err := s.parseSNMPv3Message(data)
@@ -513,6 +581,7 @@ func FuzzCreateSNMPv3DiscoveryResponse(f *testing.F) {
 
 func FuzzValidateSNMPv3Credentials(f *testing.F) {
 	f.Add(crasherParseV3)
+	addValidV3Seeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		s := fuzzTestServer(20)
 		msg, err := s.parseSNMPv3Message(data)
@@ -543,6 +612,7 @@ func FuzzHandleSingleRequest(f *testing.F) {
 	f.Add(snmpRequestAt(ASN1_GET_REQUEST, snmpVersion2c, []string{".1.3.6.1.2.1.1.1.0"}))
 	f.Add(snmpRequestAt(ASN1_GET_NEXT, snmpVersion1, []string{".1.3.6.1.2.1.1.1.0"}))
 	f.Add(buildGetBulkPDUForFuzz(0, 10, ".1.3.6.1.2.1.1.1.0"))
+	addValidV3Seeds(f)
 	addGoldenV2cSeeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		fuzzTestServer(50).handleSingleRequest(data, nil)

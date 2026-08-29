@@ -207,17 +207,16 @@ A blanket recover would convert a parser defect into a silently dropped datagram
 The fuzz targets in `snmp_parser_robustness_test.go` hold the guarantee instead, each seeded with the input that previously crashed it.
 `go test` replays every seed on an ordinary run, so a regression fails the normal suite rather than only a fuzzing session.
 
-That guarantee was measured rather than assumed (nl6#513).
-Twenty-one targets now execute 54 of the 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, and 55 minutes of fuzzing across 80.6 million executions produced no panic.
-That includes the INFORM acknowledgement parser, which is reachable by anyone able to send the simulator a datagram from a spoofed collector address and had never been fuzzed.
-The three remaining sites are inside `parseSNMPv3Message`, whose seeds stop short of them.
+That guarantee was measured rather than assumed ([nl6#513](https://github.com/labmonkeys-space/nl6/issues/513)).
+Twenty-one targets execute all 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, so an ordinary `go test` reaches every one of them.
+55 minutes of fuzzing across 80.6 million executions produced no panic.
+That includes the INFORM acknowledgement parser, which had never been fuzzed and which any host that can reach a device's per-device UDP socket can feed: `readerLoop` does not check the source address, so no collector-address spoofing is needed.
+The fuzz corpus those runs built is committed under `testdata/fuzz/`, so CI replays it too.
+
+The no-`recover()` position above rests on that null result, and the result is **provisional**: the pre-registered rule asked for ten minutes of fuzzing per target, and 5 of the 21 targets got that budget.
+The verdict is strongest for the request path, the INFORM-ack path and the v3 scoped-PDU path, which are the five, and rests on seed replay alone for the other sixteen.
 
 `parseLength` keeps its `-1` failure sentinel on the same evidence: 22.3 million executions confirmed it returns `-1` and never any other negative value, so screening for `< 0` at a call site is sufficient as well as necessary.
-
-**Coverage is currently partial, and the gap is known.** Six parsers are fuzzed: `getPDUType`, `parseIncomingRequest`, `parseAllOIDsFromRequest`, `isSNMPv3Request`, `parseSNMPv3Message` and `extractOIDAndTypeFromScopedPDU`.
-That is 5 of the 56 `parseLength` / `skipLength` call sites in the package — `snmp_handlers.go` holds 17 and `trap_v2c.go` 6, and neither file has ever been fuzzed.
-So the totality requirement above is a **statement of intent for the whole family, verified for those six**. Do not read it as a claim that the rest have been checked.
-Sizing the remainder is [nl6#513](https://github.com/labmonkeys-space/nl6/issues/513).
 
 Two traps this parser family has fallen into, both worth knowing before editing it:
 
