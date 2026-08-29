@@ -132,10 +132,13 @@ func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Messag
 	//      the last OID emitted the TEXT "endOfMibView" as an octet string
 	//      instead of {0x82, 0x00}. snmp4j terminates a walk on
 	//      Null.isExceptionSyntax, which a string never satisfies, so a
-	//      GETNEXT-driven v3 walk did not terminate on the exception. This
-	//      fixes GETNEXT only: handleSNMPv3GetBulk drops the sentinel before
-	//      it gets here and answers a placeholder binding instead, so a
-	//      GETBULK-driven v3 walk still does not see endOfMibView.
+	//      GETNEXT-driven v3 walk did not terminate on the exception. GETBULK
+	//      reached the same encoder only after nl6#526 stopped its handler
+	//      discarding the sentinel and answering a placeholder binding. One
+	//      carve-out remains: handleSNMPv3Request's decrypt-failure fallback
+	//      rewrites the request to a GET of sysDescr.0, so a GETBULK whose
+	//      scoped PDU will not decrypt is still answered from that OID rather
+	//      than terminated.
 	//   2. v3 had no type fidelity at all: no Counter32, Gauge32, TimeTicks,
 	//      IpAddress or OBJECT IDENTIFIER. The same OID answered over v2c and
 	//      v3 carried different ASN.1 types, which for a simulator built to

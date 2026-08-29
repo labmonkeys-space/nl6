@@ -552,7 +552,16 @@ func FuzzHandleSNMPv3GetBulkScoped(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, scopedPDU []byte) {
 		s := fuzzTestServer(50)
 		msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: scopedPDU}
-		_ = s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, scopedPDU)
+		// Take the start OID from the fuzzed scoped PDU rather than pinning a
+		// literal. Since nl6#526 that OID is echoed back as the name of the
+		// end-of-MIB binding, so it reaches encodeOID: an OID the encoder
+		// refuses would become a zero-length name, which sorts before
+		// everything and recreates the very defect nl6#526 removed.
+		startOID, _, err := s.extractOIDAndTypeFromScopedPDU(scopedPDU)
+		if err != nil || startOID == "" {
+			startOID = ".1.3.6.1.2.1.1.1.0"
+		}
+		_ = s.handleSNMPv3GetBulk(startOID, msg, scopedPDU)
 	})
 }
 

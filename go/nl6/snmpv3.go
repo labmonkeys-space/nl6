@@ -351,10 +351,36 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 	currentOID := startOID
 	count := 0
 
-	// Collect up to maxRepetitions OIDs
+	// Collect up to maxRepetitions OIDs.
+	//
+	// An empty collection is answered as the endOfMibView exception, named with
+	// startOID, by createSNMPv3GetBulkResponse (nl6#526). The sentinel is not
+	// appended to oids here because that builder still ships a single binding.
+	//
+	// The three break conditions are NOT the same thing, and the difference
+	// matters because each ends the walk with a well-formed exception that a
+	// manager cannot distinguish from a genuine end of MIB:
+	//
+	//   nextOID == ""          genuine end of the MIB view.
+	//   response == sentinel   a RESOURCE VALUE that is literally the string
+	//                          "endOfMibView". That truncates the walk early
+	//                          and undetectably. validateSNMPResourceValues
+	//                          (nl6#523) rejects such a file at load, which is
+	//                          the mitigation; this is the consequence if one
+	//                          ever gets past it.
+	//   non-advancing          an oidNextMap that maps an OID to itself or to a
+	//                          smaller one. Without this check the loop would
+	//                          hand back a non-increasing OID with no
+	//                          exception, which is EXACTLY the symptom nl6#526
+	//                          set out to remove, arriving by a different
+	//                          route. The v1/v2c GETNEXT path grew the same
+	//                          bound in nl6#524.
 	for count < maxRepetitions {
 		nextOID, response := s.findNextOID(currentOID)
 		if nextOID == "" || response == valueEndOfMibView {
+			break
+		}
+		if compareOIDsLexicographically(nextOID, currentOID) <= 0 {
 			break
 		}
 
@@ -365,7 +391,7 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 	}
 
 	// Create SNMPv3 GetBulk response
-	return s.createSNMPv3GetBulkResponse(oids, responses, msg)
+	return s.createSNMPv3GetBulkResponse(startOID, oids, responses, msg)
 }
 
 // parseSNMPv3GetBulkParams extracts non-repeaters and max-repetitions from SNMPv3 GetBulk scoped PDU
@@ -392,19 +418,37 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	return nonRepeaters, maxRepetitions
 }
 
-// createSNMPv3GetBulkResponse creates an SNMPv3 GetBulk response with multiple variable bindings
-func (s *SNMPServer) createSNMPv3GetBulkResponse(oids []string, responses []string, msg *SNMPv3Message) []byte {
+// createSNMPv3GetBulkResponse creates an SNMPv3 GetBulk response.
+//
+// requestedOID is the OID the manager asked to walk from, and it is what names
+// the binding when nothing follows it. That naming is load-bearing (nl6#526).
+// This used to answer a placeholder sysDescr.0 = "No data" binding, and the
+// damage was not only that a string stood where an RFC 3416 exception belongs:
+// sysDescr.0 sorts BEFORE almost any requested OID, so a v3 bulk walker
+// (snmp4j TreeUtils, which OpenNMS uses) saw a non-increasing OID and either
+// reported "OID not increasing" or kept walking. The walk never terminated.
+// An exception on a wrongly-named binding would have fixed only half of that.
+//
+// The encoder needs nothing here: nl6#518 and nl6#522 already route
+// createScopedPDU through encodeTypedValue, so the sentinel becomes the 82 00
+// tag on its own. The defect was purely that handleSNMPv3GetBulk discarded the
+// sentinel before the encoder ever saw it.
+func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []string, responses []string, msg *SNMPv3Message) []byte {
 	if len(oids) == 0 {
-		// Fallback to single response if no OIDs found
-		responseBytes, err := s.createSNMPv3Response(".1.3.6.1.2.1.1.1.0", "No data", msg)
+		// Nothing follows the requested OID, so this is the end of the MIB
+		// view. RFC 3416: answer the exception, named with what was asked for.
+		responseBytes, err := s.createSNMPv3Response(requestedOID, valueEndOfMibView, msg)
 		if err != nil {
 			return []byte{}
 		}
 		return responseBytes
 	}
 
-	// For simplicity, create a response with the first OID found
-	// In a complete implementation, you would create multiple variable bindings
+	// Ships ONE binding however many the collection loop gathered, so a v3
+	// GETBULK is correct but no more efficient than a GETNEXT (nl6#535).
+	// Verified: the response is byte-identical for 1 and 10 collected OIDs.
+	// That, honouring a real max-repetitions, and bounding the response are one
+	// change, and max-repetitions must NOT be honoured without the bound.
 	responseBytes, err := s.createSNMPv3Response(oids[0], responses[0], msg)
 	if err != nil {
 		return []byte{}
