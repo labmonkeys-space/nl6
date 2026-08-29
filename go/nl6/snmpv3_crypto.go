@@ -54,11 +54,27 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 		return nil, fmt.Errorf("SNMPv3 not configured")
 	}
 
-	// Create scoped PDU (similar to v2c PDU but wrapped)
 	scopedPDU, err := s.createScopedPDU(oid, value, requestMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scoped PDU: %v", err)
 	}
+	return s.wrapScopedPDUInV3Message(scopedPDU, requestMsg)
+}
+
+// wrapScopedPDUInV3Message encrypts a scoped PDU when the request asked for
+// privacy and wraps it in the SNMPv3 message envelope.
+//
+// Split out of createSNMPv3Response so a multi-binding GETBULK response can
+// reuse the SAME envelope rather than growing a second one. This package has
+// been bitten twice by paired encoders that were supposed to agree and drifted
+// (nl6#529's encodeOID/appendOID, nl6#539's validateDottedOID), so the
+// GETBULK builder measures its candidate through this function rather than
+// predicting what it would produce.
+func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMPv3Message) ([]byte, error) {
+	if s.v3Config == nil || !s.v3Config.Enabled {
+		return nil, fmt.Errorf("SNMPv3 not configured")
+	}
+	var err error
 
 	// Encrypt scoped PDU if privacy is enabled
 	encryptedPDU := scopedPDU
@@ -120,61 +136,49 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 }
 
 // createScopedPDU creates the scoped PDU containing the actual SNMP data
-func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
-	// Extract the original request ID from the incoming scoped PDU
+// createScopedPDUMulti builds a scoped PDU carrying SEVERAL variable bindings.
+//
+// createScopedPDU is the single-binding case and delegates here, so there is
+// ONE envelope construction rather than two that can drift. Drift between a
+// pair of encoders that were supposed to agree is a recurring defect in this
+// package: see nl6#529's encodeOID/appendOID pair and nl6#539's
+// validateDottedOID.
+//
+// Every value goes through encodeTypedValue, so the exception sentinels and the
+// per-OID types nl6#518 and nl6#522 established apply to each binding here too.
+func (s *SNMPServer) createScopedPDUMulti(oids, values []string, requestMsg *SNMPv3Message) ([]byte, error) {
+	if len(oids) != len(values) {
+		return nil, fmt.Errorf("createScopedPDUMulti: %d oids but %d values", len(oids), len(values))
+	}
+
 	requestID := s.extractRequestIDFromScopedPDU(requestMsg.ScopedPDU)
 
-	// Encode through the same path as v2c (snmp_response.go). This function
-	// used to branch on strconv.Atoi (integer or octet string, nothing else),
-	// which had two consequences (nl6#518):
-	//
-	//   1. The exception sentinels were never recognised, so a v3 GETNEXT past
-	//      the last OID emitted the TEXT "endOfMibView" as an octet string
-	//      instead of {0x82, 0x00}. snmp4j terminates a walk on
-	//      Null.isExceptionSyntax, which a string never satisfies, so a
-	//      GETNEXT-driven v3 walk did not terminate on the exception. GETBULK
-	//      reached the same encoder only after nl6#526 stopped its handler
-	//      discarding the sentinel and answering a placeholder binding. One
-	//      carve-out remains: handleSNMPv3Request's decrypt-failure fallback
-	//      rewrites the request to a GET of sysDescr.0, so a GETBULK whose
-	//      scoped PDU will not decrypt is still answered from that OID rather
-	//      than terminated (the comment at that fallback in snmp.go owns the
-	//      explanation).
-	//   2. v3 had no type fidelity at all: no Counter32, Gauge32, TimeTicks,
-	//      IpAddress or OBJECT IDENTIFIER. The same OID answered over v2c and
-	//      v3 carried different ASN.1 types, which for a simulator built to
-	//      validate collectors is a defect in its own right.
-	//
-	// SNMPv1 needs no consideration here: v1 has no scoped PDUs and cannot
-	// reach this path.
-	varBind := encodeVarBind(oid, encodeTypedValue(oid, value))
-	varBindList := encodeSequence(varBind)
+	var varBinds []byte
+	for i, oid := range oids {
+		varBinds = append(varBinds, encodeVarBind(oid, encodeTypedValue(oid, values[i]))...)
+	}
+	varBindList := encodeSequence(varBinds)
 
-	// Create PDU contents
-	pduContents := []byte{}
-	pduContents = append(pduContents, encodeInteger(requestID)...) // Use original request ID
-	pduContents = append(pduContents, encodeInteger(0)...)         // error-status (noError)
-	pduContents = append(pduContents, encodeInteger(0)...)         // error-index
-	pduContents = append(pduContents, varBindList...)              // variable-bindings
+	var pduContents []byte
+	pduContents = append(pduContents, encodeInteger(requestID)...)
+	pduContents = append(pduContents, encodeInteger(0)...) // error-status (noError)
+	pduContents = append(pduContents, encodeInteger(0)...) // error-index
+	pduContents = append(pduContents, varBindList...)
 
-	// GetResponse PDU (0xA2)
 	pdu := []byte{ASN1_GET_RESPONSE}
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
-	// Scoped PDU: contextEngineID + contextName + data
-	// Use the same context as the request
-	contextEngineID := encodeOctetString(s.v3Config.EngineID)
-	contextName := encodeOctetString("") // Default context (empty string)
-
-	scopedContents := []byte{}
-	scopedContents = append(scopedContents, contextEngineID...)
-	scopedContents = append(scopedContents, contextName...)
+	var scopedContents []byte
+	scopedContents = append(scopedContents, encodeOctetString(s.v3Config.EngineID)...)
+	scopedContents = append(scopedContents, encodeOctetString("")...)
 	scopedContents = append(scopedContents, pdu...)
 
-	scopedPDU := encodeSequence(scopedContents)
+	return encodeSequence(scopedContents), nil
+}
 
-	return scopedPDU, nil
+func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
+	return s.createScopedPDUMulti([]string{oid}, []string{value}, requestMsg)
 }
 
 // extractRequestIDFromScopedPDU extracts the request ID from the incoming scoped PDU

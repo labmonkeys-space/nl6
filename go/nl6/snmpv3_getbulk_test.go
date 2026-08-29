@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -128,8 +129,8 @@ func TestV3GetBulkMidMibPairsNameWithItsOwnValue(t *testing.T) {
 	s := v3TestServer(fixture)
 
 	r := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil))
-	if len(r.varbinds) != 1 {
-		t.Fatalf("mid-MIB response carries %d bindings, want 1 (see nl6#535)", len(r.varbinds))
+	if len(r.varbinds) == 0 {
+		t.Fatal("mid-MIB response carries no bindings")
 	}
 	vb := r.varbinds[0]
 
@@ -461,35 +462,46 @@ func TestV3GetBulkTerminatesOnNonAdvancingMap(t *testing.T) {
 	}
 }
 
-// TestV3GetBulkShipsOneBinding records the deferred defect (nl6#535) as an
-// executable fact rather than a claim in a comment: the response is identical
-// whether the collection loop gathered one OID or many. When #535 lands this
-// test should fail and be replaced by one asserting the real count.
-func TestV3GetBulkShipsOneBinding(t *testing.T) {
-	s := v3TestServer(v3BulkFixture())
+// TestV3GetBulkShipsEveryCollectedBinding replaces the nl6#526-era
+// TestV3GetBulkShipsOneBinding, which asserted that the response was
+// byte-identical for 1 and many collected OIDs and was written to FAIL when
+// nl6#535 landed. It did.
+//
+// A v3 GETBULK now carries every binding the collection loop gathered, in
+// order, each paired with its own value.
+func TestV3GetBulkShipsEveryCollectedBinding(t *testing.T) {
+	fixture := v3BulkFixture()
+	s := v3TestServer(fixture)
 	msg := v3BulkMsg()
 
-	oids, responses := []string{}, []string{}
+	// What the collection loop will gather, computed the same way it does.
+	var want []string
 	cur := ".1.3.6.1.2.1.1.1.0"
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		n, v := s.findNextOID(cur)
 		if n == "" || v == valueEndOfMibView {
 			break
 		}
-		oids, responses, cur = append(oids, n), append(responses, v), n
+		want = append(want, n)
+		cur = n
 	}
-	if len(oids) < 3 {
-		t.Fatalf("fixture only yielded %d successors; need at least 3 to show the discard", len(oids))
+	if len(want) < 3 {
+		t.Fatalf("fixture yielded only %d successors; need at least 3 to show more than one ships", len(want))
 	}
 
-	many := s.createSNMPv3GetBulkResponse(cur, oids, responses, msg)
-	one := s.createSNMPv3GetBulkResponse(cur, oids[:1], responses[:1], msg)
-	if !bytes.Equal(many, one) {
-		t.Fatalf("response for %d OIDs differs from the response for 1: nl6#535 may be fixed, "+
-			"in which case replace this test with one asserting the binding count", len(oids))
+	r := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, nil))
+	if len(r.varbinds) != len(want) {
+		t.Fatalf("response carries %d bindings, want %d: a GETBULK must not discard what it collected",
+			len(r.varbinds), len(want))
 	}
-	if r := decodeV3Response(t, many); len(r.varbinds) != 1 {
-		t.Fatalf("decoded %d bindings from a %d-OID response, want 1", len(r.varbinds), len(oids))
+	for i, vb := range r.varbinds {
+		if vb.oid != want[i] {
+			t.Errorf("binding %d is %q, want %q: order must be preserved", i, vb.oid, want[i])
+		}
+		if v, ok := fixture[vb.oid]; ok && string(vb.value) != v {
+			t.Errorf("binding %d (%s) carries %q, fixture says %q: name and value came from "+
+				"different objects", i, vb.oid, vb.value, v)
+		}
 	}
 }
 
@@ -567,4 +579,67 @@ func buildV3GetBulkRequest(t *testing.T, s *SNMPServer, oid string, reqID int) [
 	msg = append(msg, secParams...)
 	msg = append(msg, scopedPDU...)
 	return encodeSequence(msg)
+}
+
+// TestV3GetBulkRespectsTheDatagramBudget covers the bound nl6#535 added. The
+// v3 path had NO size ceiling at all: createSNMPv3GetBulkResponse built its own
+// message and consulted nothing. That was survivable only because the handler
+// shipped one binding and max-repetitions was hardcoded to 10; making it ship
+// every collected binding is what makes the bound necessary rather than
+// theoretical.
+//
+// The size is MEASURED rather than predicted, because a v3 message's envelope
+// depends on the engine ID, user name and privacy parameters, and under privacy
+// the scoped PDU is padded to a cipher block. This test drives real values
+// through the real builder rather than asserting an arithmetic model.
+func TestV3GetBulkRespectsTheDatagramBudget(t *testing.T) {
+	// Values long enough that a handful of bindings would exceed a datagram.
+	long := strings.Repeat("X", 400)
+	vals := map[string]string{".1.3.6.1.2.1.1.1.0": "dev"}
+	for i := 1; i <= 20; i++ {
+		vals[fmt.Sprintf(".1.3.6.1.2.1.31.1.1.1.18.%d", i)] = long
+	}
+	s := v3TestServer(vals)
+
+	resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil)
+	if len(resp) == 0 {
+		t.Fatal("no response")
+	}
+	if len(resp) > maxSNMPResponseSize {
+		t.Errorf("v3 GETBULK response is %d bytes, over the %d-byte budget: the datagram would "+
+			"fragment on a standard-MTU path", len(resp), maxSNMPResponseSize)
+	}
+
+	r := decodeV3Response(t, resp)
+	if len(r.varbinds) == 0 {
+		t.Error("response carries no bindings; a GETBULK must emit at least one or a walk stalls")
+	}
+	// Truncation drops from the END, so a walker resumes from the last OID
+	// returned (RFC 3416 §4.2.3). Order must still be ascending.
+	prev := ""
+	for i, vb := range r.varbinds {
+		if prev != "" && compareOIDsLexicographically(vb.oid, prev) <= 0 {
+			t.Fatalf("binding %d (%s) does not increase after %s; a truncated response must still "+
+				"let the walker resume", i, vb.oid, prev)
+		}
+		prev = vb.oid
+	}
+}
+
+// TestV3GetBulkEmitsOneBindingEvenIfOversized pins the carve-out the v2c
+// truncate rule also makes: a response with an empty binding list and no error
+// stalls a walk forever with no signal, which is worse than one oversized
+// datagram.
+func TestV3GetBulkEmitsOneBindingEvenIfOversized(t *testing.T) {
+	huge := strings.Repeat("Y", maxSNMPResponseSize*2)
+	s := v3TestServer(map[string]string{
+		".1.3.6.1.2.1.1.1.0":         "dev",
+		".1.3.6.1.2.1.31.1.1.1.18.1": huge,
+	})
+
+	r := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil))
+	if len(r.varbinds) == 0 {
+		t.Error("a single oversized binding produced an empty binding list; that stalls a walk " +
+			"with no signal, which is why the v2c truncate rule always emits at least one")
+	}
 }

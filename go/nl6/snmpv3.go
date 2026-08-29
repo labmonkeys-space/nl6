@@ -461,14 +461,36 @@ func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []str
 		return responseBytes
 	}
 
-	// Ships ONE binding however many the collection loop gathered, so a v3
-	// GETBULK is correct but no more efficient than a GETNEXT (nl6#535).
-	// Verified: the response is byte-identical for 1 and 10 collected OIDs.
-	// That, honouring a real max-repetitions, and bounding the response are one
-	// change, and max-repetitions must NOT be honoured without the bound.
-	responseBytes, err := s.createSNMPv3Response(oids[0], responses[0], msg)
-	if err != nil {
-		return []byte{}
+	// Emit as many bindings as fit the datagram budget, dropping from the end
+	// (RFC 3416 §4.2.3: a GETBULK truncates, and the walker resumes from the
+	// last OID returned).
+	//
+	// The size is MEASURED, not predicted. The v2c path can compute its length
+	// arithmetically because its envelope is fixed, but a v3 message wraps the
+	// scoped PDU in globalData and securityParameters whose sizes depend on the
+	// engine ID, the user name and the privacy parameters, and under privacy
+	// the scoped PDU is encrypted and PADDED to a cipher block. Predicting that
+	// is exactly the kind of estimate this package has been bitten by:
+	// "every bug in this family was a predicted size disagreeing with an
+	// emitted one". Building the candidate and measuring it cannot disagree
+	// with itself. The loop runs at most max-repetitions times over a message
+	// of at most a datagram, so the cost is immaterial.
+	for n := len(oids); n > 0; n-- {
+		scopedPDU, err := s.createScopedPDUMulti(oids[:n], responses[:n], msg)
+		if err != nil {
+			return []byte{}
+		}
+		resp, err := s.wrapScopedPDUInV3Message(scopedPDU, msg)
+		if err != nil {
+			return []byte{}
+		}
+		if len(resp) <= maxSNMPResponseSize || n == 1 {
+			// Always emit at least one binding, as the v2c truncate rule does:
+			// an empty binding list with no error stalls a walk forever with no
+			// signal, which is worse than one oversized datagram. Reachable at
+			// a low -datagram-mtu with a long ifAlias.
+			return resp
+		}
 	}
-	return responseBytes
+	return []byte{}
 }
