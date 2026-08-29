@@ -429,9 +429,11 @@ func fuzzFixtureSize(dflt int) int {
 // Auth is NONE deliberately, so a fuzz input that reaches the scoped PDU is
 // not first discarded by an HMAC it cannot forge. The cost is stated plainly:
 // the auth and priv branches of validateSNMPv3Credentials and the decrypt
-// path are NOT exercised by any target in this file, and the pinned-scoped
-// targets (FuzzHandleSNMPv3GetBulkScoped, FuzzCreateSNMPv3Response) bypass
-// credential validation altogether.
+// path are NOT exercised by any target driven from this server, and the
+// pinned-scoped targets (FuzzHandleSNMPv3GetBulkScoped,
+// FuzzCreateSNMPv3Response) bypass credential validation altogether. The
+// decrypt path has its own target, FuzzHandleSNMPv3RequestPriv, on a
+// privacy-enabled server.
 func fuzzTestServer(n int) *SNMPServer {
 	n = fuzzFixtureSize(n)
 	s := newTestServer(fuzzFixtureOIDs(n))
@@ -633,4 +635,55 @@ func FuzzHandleSingleRequest(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		fuzzTestServer(50).handleSingleRequest(data, nil)
 	})
+}
+
+// ── nl6#527: the decrypt branch ──────────────────────────────────────────────
+
+// FuzzHandleSNMPv3RequestPriv covers the one parseLength call site none of the
+// targets above can reach: the unwrap of a DECRYPTED scoped PDU in
+// handleSNMPv3Request (nl6#527), which runs only when the server has privacy
+// configured and the message carries the PRIV flag. A mutated ciphertext
+// decrypts to arbitrary bytes, so this is also where the unwrap's length guard
+// (a SEQUENCE tag followed by a bad length) is exercised rather than argued.
+//
+// Seeded with a genuinely encrypted GET for each privacy protocol and with a
+// ciphertext whose plaintext is a SEQUENCE carrying an over-long length, so an
+// ordinary `go test` executes both arms of the guard.
+func FuzzHandleSNMPv3RequestPriv(f *testing.F) {
+	f.Add(crasherParseV3)
+	for _, proto := range []int{SNMPV3_PRIV_DES, SNMPV3_PRIV_AES128} {
+		s := fuzzPrivTestServer(20, proto)
+		plainMsg, err := s.parseSNMPv3Message(buildV3RequestAt(f, s, ASN1_GET_REQUEST, ".1.3.6.1.2.1.1.1.0", 7))
+		if err != nil {
+			f.Fatalf("parse plaintext seed: %v", err)
+		}
+		cipherText, privParams, err := s.encryptScopedPDU(encodeSequence(plainMsg.ScopedPDU), v3PrivSeed(s))
+		if err != nil {
+			f.Fatalf("encrypt seed: %v", err)
+		}
+		f.Add(buildV3EncryptedRequest(f, s, cipherText, privParams))
+
+		// SEQUENCE tag, length 0x84 00 00 00 40 (64) over a 16-byte body: the
+		// tag test passes, the bound test must fail.
+		badLen := append([]byte{ASN1_SEQUENCE, 0x84, 0x00, 0x00, 0x00, 0x40}, make([]byte, 10)...)
+		cipherText, privParams, err = s.encryptScopedPDU(badLen, v3PrivSeed(s))
+		if err != nil {
+			f.Fatalf("encrypt bad-length seed: %v", err)
+		}
+		f.Add(buildV3EncryptedRequest(f, s, cipherText, privParams))
+	}
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		_ = fuzzPrivTestServer(20, SNMPV3_PRIV_DES).handleSNMPv3Request(data)
+		_ = fuzzPrivTestServer(20, SNMPV3_PRIV_AES128).handleSNMPv3Request(data)
+	})
+}
+
+// fuzzPrivTestServer is fuzzTestServer with authPriv configured, so a message
+// carrying the PRIV flag reaches decryptScopedPDU and the unwrap after it.
+func fuzzPrivTestServer(n, privProto int) *SNMPServer {
+	s := fuzzTestServer(n)
+	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+	s.v3Config.PrivProtocol = privProto
+	s.v3Config.PrivPassword = "s3cretpassword"
+	return s
 }

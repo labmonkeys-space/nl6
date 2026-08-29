@@ -469,6 +469,12 @@ var oidTypeTable = []oidTypeEntry{
 	// label or static alias is never emitted as INTEGER.
 	{".1.3.6.1.2.1.31.1.1.1.18", ASN1_OCTET_STRING}, // ifAlias
 
+	// SNMP-USER-BASED-SM-MIB usmStats* — RFC 3414 §5 types every counter in
+	// this subtree as Counter32. They appear in the discovery Report PDU, and
+	// without this entry the Report answered INTEGER, a type a manager's USM
+	// implementation does not expect for a statistics object (nl6#527).
+	{".1.3.6.1.6.3.15.1.1", ASN1_COUNTER32}, // usmStats*
+
 	// OLD-CISCO-MEMORY-MIB freeMem — SYNTAX Gauge. Without this entry a
 	// numeric value takes the default INTEGER branch, which is the wrong type
 	// and caps the value at 2^31-1 (nl6#515).

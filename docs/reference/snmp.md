@@ -94,6 +94,20 @@ A non-minimal sub-identifier, one whose leading octet is `0x80` (X.690 §8.19.2)
 
 Nothing that ships with nl6 changes on the wire: all 5,676 distinct OIDs across the resource files and trap catalogs encode to exactly the same bytes as before.
 
+### SNMPv3 authPriv requests are served (fixed in nl6#527)
+
+Until nl6#527 an SNMPv3 request sent with privacy was answered with `sysDescr.0`, whatever OID it asked for and whatever PDU type it used, carrying request-id 1.
+
+The cause was a shape mismatch rather than anything cryptographic. A scoped PDU appears in two forms here: the message parser stores its *contents*, with the outer SEQUENCE header stripped, while decryption returns the whole thing including that header. The code that reads the OID and the request id from a scoped PDU expects contents, so on a successful decrypt it failed to parse, and the surrounding decrypt-*failure* fallback took over and substituted `sysDescr.0`.
+
+Nothing reported an error, because the fallback exists precisely to keep the path quiet under adversarial input.
+That fallback is still there: a request whose scoped PDU genuinely fails to decrypt (a wrong privacy password, or a decrypt that does not yield a well-formed SEQUENCE) is still answered as a GET of `sysDescr.0` with request-id 1, unchanged by this fix.
+
+If you are testing an SNMPv3 collector against a version of nl6 older than this fix, authPriv results are not meaningful: every device answers `sysDescr.0`. authNoPriv and noAuthNoPriv were unaffected.
+
+The discovery Report also now carries `usmStatsUnknownEngineIDs.0` as a Counter32, which is the type RFC 3414 §5 gives it. It previously went out as an INTEGER.
+Only the type changed: the value is a fixed `1` and does not count unknown-engine-ID events.
+
 ### SNMPv1 never returns a Counter64
 
 Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column used to answer tag `0x46` under `error-status = noError` (nl6#524).
@@ -209,6 +223,7 @@ The fuzz targets in `snmp_parser_robustness_test.go` hold the guarantee instead,
 
 That guarantee was measured rather than assumed ([nl6#513](https://github.com/labmonkeys-space/nl6/issues/513)).
 Twenty-one targets execute all 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, so an ordinary `go test` reaches every one of them.
+The nl6#527 unwrap added a 58th site on the decrypt branch, reachable only with privacy configured; a twenty-second target, `FuzzHandleSNMPv3RequestPriv`, seeds it with a genuinely encrypted GET per privacy protocol and a ciphertext whose plaintext carries a bad SEQUENCE length.
 55 minutes of fuzzing across 80.6 million executions produced no panic.
 That includes the INFORM acknowledgement parser, which had never been fuzzed and which any host that can reach a device's per-device UDP socket can feed: `readerLoop` does not check the source address, so no collector-address spoofing is needed.
 The fuzz corpus those runs built is committed under `testdata/fuzz/`, so CI replays it too.

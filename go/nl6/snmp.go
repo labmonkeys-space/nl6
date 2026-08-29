@@ -68,8 +68,26 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 			// Verify the decrypted data looks valid (starts with SEQUENCE tag).
 			// On invalid decrypt we fall through to the default OID; no log
 			// to keep the SNMPv3 hot path quiet under adversarial input.
+			//
+			// UNWRAP the SEQUENCE before using it. parseSNMPv3Message stores
+			// the scoped PDU's CONTENTS for a plaintext request (it strips the
+			// header), while decryptScopedPDU returns the whole TLV, and both
+			// extractOIDAndTypeFromScopedPDU and extractRequestIDFromScopedPDU
+			// parse contents. Handing them the wrapped form made every
+			// consumer fail: the OID extraction errored, so the caller's
+			// decrypt-FAILURE fallback fired on a SUCCESSFUL decrypt and
+			// answered sysDescr.0 as a GET, and the request-id fell back to 1
+			// (nl6#527). An authPriv request of any OID and any PDU type was
+			// therefore answered as a GET of sysDescr.0.
 			if len(decryptedPDU) > 0 && decryptedPDU[0] == ASN1_SEQUENCE {
-				scopedPDU = decryptedPDU
+				contentLen, contentStart := parseLength(decryptedPDU, 1)
+				if contentLen >= 0 && contentStart+contentLen <= len(decryptedPDU) {
+					scopedPDU = decryptedPDU[contentStart : contentStart+contentLen]
+					// The response builder reads the request id from the
+					// message, not from this local, so it needs the plaintext
+					// too.
+					v3Msg.ScopedPDU = scopedPDU
+				}
 			}
 		}
 	}
@@ -282,8 +300,12 @@ func (s *SNMPServer) createSNMPv3DiscoveryResponse(requestMsg *SNMPv3Message) []
 
 // createDiscoveryScopedPDU creates a scoped PDU for discovery responses
 func (s *SNMPServer) createDiscoveryScopedPDU(oid, value string) ([]byte, error) {
-	// Create integer value for report counter
-	valueBytes := encodeInteger(1)
+	// Encode through the same path as every other value, so the Report gets
+	// the type its OID declares. RFC 3414 §5 makes every usmStats* object a
+	// Counter32; this used to hardcode encodeInteger(1), which both ignored
+	// the value argument and answered the wrong ASN.1 type (nl6#527). The
+	// prefix is in oidTypeTable, so encodeTypedValue resolves it.
+	valueBytes := encodeTypedValue(oid, value)
 
 	// Create variable binding
 	oidBytes := encodeOID(oid)
