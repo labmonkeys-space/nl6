@@ -140,10 +140,10 @@ Resource files are also loaded on REST device creation, so a bad operator-suppli
 Two call sites downgrade the rejection to a log line rather than failing: the startup load in `simulator.go` falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
 At those two sites the guard is advisory.
 
-The scope is one rule.
-A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, still open under nl6#529.
-The encoder half of that issue has landed and is described under [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above; what remains is rejecting such a value when the resource file is loaded.
-The encoder entanglement that made it hard is gone: the round-trip property test that its acceptance criterion called for now exists.
+The same guard carries a second rule (nl6#529): a value on an OID-typed leaf, today only `sysObjectID`, must be an OID the encoder can represent.
+Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire; see [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
+The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
+OID keys are not checked.
 A non-numeric `Counter32`, `Gauge32` or `TimeTicks` value, or an unparseable `ipAdEntAddr`, is likewise still accepted at load and degrades to an OCTET STRING when served.
 
 ## Response size, `max-repetitions` and truncation

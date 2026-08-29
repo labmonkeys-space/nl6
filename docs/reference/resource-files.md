@@ -82,16 +82,16 @@ Where the rejection surfaces matters:
 - In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
 - Two call sites downgrade the rejection to a log line instead of failing: the startup load falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
 
-This is the only rule on `snmp` values enforced at load, and it covers resource files only.
+This and the OID-typed value rule below are the only rules on `snmp` values enforced at load, and they cover resource files only.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
 `sysName` and `sysLocation` are served from elsewhere (`sysLocation` from the worldcities CSV) and are not checked.
-A malformed OID, a non-OID value on `sysObjectID` (tracked as nl6#529), and a non-numeric `Counter32`/`Gauge32`/`TimeTicks` or unparseable `ipAdEntAddr` value are all still accepted, and degrade silently when served.
+A malformed OID key, and a non-numeric `Counter32`/`Gauge32`/`TimeTicks` or unparseable `ipAdEntAddr` value, are still accepted, and degrade silently when served.
 See [SNMP reference → A resource value that collides with a sentinel is rejected at load](snmp.md#a-resource-value-that-collides-with-a-sentinel-is-rejected-at-load).
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
-The **value** of an OID-typed leaf is now checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
-An OID **key** is still not checked: a malformed key reaches the encoder and is served as the degenerate encoding `06 00`, with nothing logged.
-An OID that breaks those rules is emitted as a degenerate `06 00` rather than silently becoming a different OID.
+The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
+Which leaves count as OID-typed is bounded by the encoder's type table, which today lists only `sysObjectID`; a non-OID value on any other OBJECT IDENTIFIER leaf still loads and is served as an OCTET STRING.
+An OID **key** is still not checked: a malformed key reaches the encoder and is served as the degenerate encoding `06 00` rather than silently becoming a different OID, with nothing logged.
 See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint).
 
 ## Round-robin and category selection

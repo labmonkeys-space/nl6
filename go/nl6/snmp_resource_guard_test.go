@@ -362,20 +362,47 @@ func TestValidateSNMPResourceValues_NonOIDOnOIDLeafRejected(t *testing.T) {
 		"3.40.1",         // first arc 3
 		"1.40.1",         // second arc 40 with first arc 1: would alias 2.0.1
 		"2.0.4294967296", // arc past the SMI maximum
+		// Legal arcs, but the encoded body reaches maxOIDBodyBytes: the
+		// encoder's third refusal route, and the guard must follow it too.
+		"1.3" + strings.Repeat(".4294967295", maxOIDBodyBytes/5),
 	} {
-		t.Run(bad, func(t *testing.T) {
-			res := &DeviceResources{SNMP: []SNMPResource{{OID: sysObjectID, Response: bad}}}
-			err := validateSNMPResourceValues("probe.json", res)
-			if err == nil {
-				t.Fatalf("value %q accepted on an OID-typed leaf; encodeOID cannot represent it, "+
-					"so it would go out as a degenerate 06 00", bad)
-			}
-			for _, want := range []string{"probe.json", sysObjectID, bad} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error does not name %q: %v", want, err)
+		name := bad
+		if len(name) > 32 {
+			name = name[:32] + "..."
+		}
+		// Both key spellings: resource files may carry a leading dot, and the
+		// rule is type-directed through snmpTypeTag, which expects one. Only
+		// the dotted case exercises the normalisation.
+		for _, key := range []string{sysObjectID, "." + sysObjectID} {
+			t.Run(key+"="+name, func(t *testing.T) {
+				res := &DeviceResources{SNMP: []SNMPResource{{OID: key, Response: bad}}}
+				err := validateSNMPResourceValues("probe.json", res)
+				if err == nil {
+					t.Fatalf("value %q accepted on OID-typed key %q; encodeOID cannot represent it, "+
+						"so it would go out as a degenerate 06 00", name, key)
 				}
-			}
-		})
+				for _, want := range []string{"probe.json", key, bad} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error does not name %q: %v", want, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestValidateSNMPResourceValues_SentinelWinsOnOIDLeaf pins rule order. A
+// sentinel on sysObjectID trips BOTH rules; encodeTypedValue tests the
+// sentinel first, so the diagnosis must match the wire and keep the
+// "omit the entry" remediation that only the sentinel error carries.
+func TestValidateSNMPResourceValues_SentinelWinsOnOIDLeaf(t *testing.T) {
+	res := &DeviceResources{SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.1.2.0", Response: valueNoSuchObject}}}
+	err := validateSNMPResourceValues("probe.json", res)
+	if err == nil {
+		t.Fatal("sentinel on sysObjectID accepted")
+	}
+	if !strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "OID-typed") {
+		t.Errorf("sentinel on an OID-typed leaf must be reported as a sentinel collision, got: %v", err)
 	}
 }
 
@@ -388,9 +415,11 @@ func TestValidateSNMPResourceValues_ValidOIDAccepted(t *testing.T) {
 		"1.39", "2.0", // arc-range boundaries
 		"1.2.4294967295", // the SMI maximum
 	} {
-		res := &DeviceResources{SNMP: []SNMPResource{{OID: sysObjectID, Response: good}}}
-		if err := validateSNMPResourceValues("probe.json", res); err != nil {
-			t.Errorf("valid OID %q rejected: %v", good, err)
+		for _, key := range []string{sysObjectID, "." + sysObjectID} {
+			res := &DeviceResources{SNMP: []SNMPResource{{OID: key, Response: good}}}
+			if err := validateSNMPResourceValues("probe.json", res); err != nil {
+				t.Errorf("valid OID %q on key %q rejected: %v", good, key, err)
+			}
 		}
 	}
 }
