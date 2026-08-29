@@ -30,7 +30,10 @@ func TestScopedPDUConsumersExpectContents(t *testing.T) {
 	}
 
 	contents := msg.ScopedPDU
-	if len(contents) == 0 || contents[0] != ASN1_OCTET_STRING {
+	if len(contents) == 0 {
+		t.Fatal("parseSNMPv3Message stored an empty scoped PDU")
+	}
+	if contents[0] != ASN1_OCTET_STRING {
 		t.Fatalf("parseSNMPv3Message should store scoped-PDU CONTENTS, starting with the "+
 			"contextEngineID OCTET STRING; got 0x%02x", contents[0])
 	}
@@ -57,70 +60,53 @@ func TestScopedPDUConsumersExpectContents(t *testing.T) {
 	}
 }
 
-// TestAuthPrivDecryptIsUnwrapped drives the decrypt branch of
-// handleSNMPv3Request and asserts the request is SERVED rather than answered
-// from the decrypt-failure fallback.
-func TestAuthPrivDecryptIsUnwrapped(t *testing.T) {
-	s := v3TestServer(map[string]string{
-		".1.3.6.1.2.1.1.1.0":     "dev",
-		".1.3.6.1.2.1.2.2.1.2.3": "Gi0/3",
-	})
-	// Privacy on, so handleSNMPv3Request takes the decrypt branch.
-	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
-	s.v3Config.PrivProtocol = SNMPV3_PRIV_DES
+// TestDecryptScopedPDUReturnsWrappedTLV pins the one fact the dispatcher test
+// below does not: decryptScopedPDU hands back the WHOLE TLV, SEQUENCE header
+// included, for both privacy protocols. That is the premise of the unwrap in
+// handleSNMPv3Request. It deliberately does NOT perform the unwrap itself: an
+// earlier test did, and passed with the production fix reverted because it
+// reproduced the fix instead of exercising it.
+func TestDecryptScopedPDUReturnsWrappedTLV(t *testing.T) {
+	for _, priv := range []struct {
+		name  string
+		proto int
+	}{
+		{"des", SNMPV3_PRIV_DES},
+		{"aes128", SNMPV3_PRIV_AES128},
+	} {
+		t.Run(priv.name, func(t *testing.T) {
+			s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+			s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+			s.v3Config.PrivProtocol = priv.proto
 
-	req := buildV3GetBulkRequest(t, s, ".1.3.6.1.2.1.2.2.1.2.3", 4242)
-	plainMsg, err := s.parseSNMPv3Message(req)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+			plainMsg, err := s.parseSNMPv3Message(buildV3GetBulkRequest(t, s, ".1.3.6.1.2.1.2.2.1.2.3", 4242))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			wrapped := encodeSequence(plainMsg.ScopedPDU)
 
-	// Encrypt the scoped PDU the way a manager would, then hand the decrypt
-	// path exactly what it will see on the wire.
-	wrapped := encodeSequence(plainMsg.ScopedPDU)
-	seed := &SNMPv3Message{
-		GlobalData:     SNMPv3GlobalData{MsgID: 1},
-		SecurityParams: SNMPv3SecurityParams{UserName: s.v3Config.Username, AuthoritativeEngineID: s.v3Config.EngineID},
-	}
-	cipher, privParams, err := s.encryptScopedPDU(wrapped, seed)
-	if err != nil {
-		t.Skipf("privacy not available in this configuration: %v", err)
-	}
-
-	encMsg := &SNMPv3Message{
-		GlobalData:     SNMPv3GlobalData{MsgID: 1, MsgFlags: SNMPV3_MSG_FLAG_PRIV | SNMPV3_MSG_FLAG_AUTH},
-		SecurityParams: SNMPv3SecurityParams{UserName: s.v3Config.Username, PrivParams: privParams},
-		ScopedPDU:      cipher,
-	}
-	decrypted, err := s.decryptScopedPDU(encMsg.ScopedPDU, privParams)
-	if err != nil {
-		t.Skipf("decrypt unavailable: %v", err)
-	}
-	if len(decrypted) == 0 || decrypted[0] != ASN1_SEQUENCE {
-		t.Fatalf("decryptScopedPDU should return the whole TLV; got 0x%02x", decrypted[0])
-	}
-
-	// The unwrap handleSNMPv3Request now performs.
-	n, start := parseLength(decrypted, 1)
-	if n < 0 || start+n > len(decrypted) {
-		t.Fatal("decrypted TLV has a bad length")
-	}
-	unwrapped := decrypted[start : start+n]
-
-	oid, pduType, err := s.extractOIDAndTypeFromScopedPDU(unwrapped)
-	if err != nil {
-		t.Fatalf("after unwrapping, the OID extraction still fails: %v. Without the unwrap "+
-			"the caller's decrypt-FAILURE fallback fires on a SUCCESSFUL decrypt and answers "+
-			"sysDescr.0 as a GET", err)
-	}
-	if oid != ".1.3.6.1.2.1.2.2.1.2.3" {
-		t.Errorf("served OID = %q, want the requested one; sysDescr.0 here means the fallback fired", oid)
-	}
-	if pduType != ASN1_GET_BULK {
-		t.Errorf("PDU type = 0x%02x, want GETBULK; 0xA0 here means the fallback rewrote it to a GET", pduType)
-	}
-	if got := s.extractRequestIDFromScopedPDU(unwrapped); got != 4242 {
-		t.Errorf("request-id = %d, want 4242; 1 is the fallback", got)
+			cipherText, privParams, err := s.encryptScopedPDU(wrapped, v3PrivSeed(s))
+			if err != nil {
+				// Deterministic config with a non-empty password: a failure
+				// here is a crypto regression, not an unavailable feature.
+				t.Fatalf("encryptScopedPDU: %v", err)
+			}
+			decrypted, err := s.decryptScopedPDU(cipherText, privParams)
+			if err != nil {
+				t.Fatalf("decryptScopedPDU: %v", err)
+			}
+			if len(decrypted) == 0 {
+				t.Fatal("decryptScopedPDU returned nothing")
+			}
+			if decrypted[0] != ASN1_SEQUENCE {
+				t.Fatalf("decryptScopedPDU should return the whole TLV; got 0x%02x", decrypted[0])
+			}
+			// AES-CFB returns the exact length; DES may carry padding past the
+			// SEQUENCE, which the unwrap's length read is what discards.
+			if len(decrypted) < len(wrapped) || string(decrypted[:len(wrapped)]) != string(wrapped) {
+				t.Errorf("decrypted TLV does not start with the plaintext TLV")
+			}
+		})
 	}
 }
 
@@ -130,24 +116,21 @@ func TestAuthPrivDecryptIsUnwrapped(t *testing.T) {
 func TestDiscoveryReportValueIsCounter32(t *testing.T) {
 	const usmStatsUnknownEngineIDs = ".1.3.6.1.6.3.15.1.1.4.0"
 
-	if got := snmpTypeTag(usmStatsUnknownEngineIDs); got != ASN1_COUNTER32 {
-		t.Fatalf("snmpTypeTag(%s) = 0x%02x, want Counter32 (0x41): the usmStats prefix should be "+
-			"in oidTypeTable so the Report resolves through encodeTypedValue like every other value",
-			usmStatsUnknownEngineIDs, got)
-	}
-
 	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
 	scoped, err := s.createDiscoveryScopedPDU(usmStatsUnknownEngineIDs, "1")
 	if err != nil {
 		t.Fatalf("createDiscoveryScopedPDU: %v", err)
 	}
-	name, tag := scopedPDUFirstVarbind(t, scoped)
-	if tag != ASN1_COUNTER32 {
-		t.Errorf("discovery Report value tag = 0x%02x, want Counter32 (0x41); INTEGER (0x02) is "+
-			"the pre-nl6#527 answer", tag)
+	r := decodeScopedPDUContents(t, expectSeq(t, scoped, "scopedPDU"))
+	if len(r.varbinds) == 0 {
+		t.Fatal("Report carries no binding")
 	}
-	if name != usmStatsUnknownEngineIDs {
-		t.Errorf("Report binding named %q, want %q", name, usmStatsUnknownEngineIDs)
+	if r.varbinds[0].valueTag != ASN1_COUNTER32 {
+		t.Errorf("discovery Report value tag = 0x%02x, want Counter32 (0x41); INTEGER (0x02) is "+
+			"the pre-nl6#527 answer", r.varbinds[0].valueTag)
+	}
+	if r.varbinds[0].oid != usmStatsUnknownEngineIDs {
+		t.Errorf("Report binding named %q, want %q", r.varbinds[0].oid, usmStatsUnknownEngineIDs)
 	}
 
 	// The value argument is honoured rather than ignored.
@@ -157,6 +140,34 @@ func TestDiscoveryReportValueIsCounter32(t *testing.T) {
 	}
 	if string(other) == string(scoped) {
 		t.Error("createDiscoveryScopedPDU ignores its value argument: \"1\" and \"7\" produced identical bytes")
+	}
+}
+
+// TestDiscoveryReportThroughDispatcher pins the Report a MANAGER receives, not
+// the helper's output: the caller supplies the value literal, and a value the
+// Counter32 branch cannot parse would fall through to OCTET STRING with the
+// helper test above still passing on its own "1".
+func TestDiscoveryReportThroughDispatcher(t *testing.T) {
+	const usmStatsUnknownEngineIDs = ".1.3.6.1.6.3.15.1.1.4.0"
+	const reportPDU = 0xA8 // Report-PDU, RFC 3416 §3
+
+	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	resp := s.handleSNMPv3Request(v3DiscoveryRequest(t, s, false))
+	if len(resp) == 0 {
+		t.Fatal("dispatcher returned nothing for a discovery probe")
+	}
+	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
+	if r.pduTag != reportPDU {
+		t.Fatalf("discovery answered with PDU 0x%02x, want Report (0xA8)", r.pduTag)
+	}
+	if len(r.varbinds) == 0 {
+		t.Fatal("Report carries no binding")
+	}
+	if r.varbinds[0].oid != usmStatsUnknownEngineIDs {
+		t.Errorf("Report binding named %q, want %q", r.varbinds[0].oid, usmStatsUnknownEngineIDs)
+	}
+	if r.varbinds[0].valueTag != ASN1_COUNTER32 {
+		t.Errorf("Report value tag on the wire = 0x%02x, want Counter32 (0x41)", r.varbinds[0].valueTag)
 	}
 }
 
@@ -172,51 +183,10 @@ func TestUsmStatsSubtreeIsCounter32(t *testing.T) {
 		".1.3.6.1.6.3.15.1.1.6.0", // usmStatsDecryptionErrors
 	} {
 		if got := snmpTypeTag(oid); got != ASN1_COUNTER32 {
-			t.Errorf("snmpTypeTag(%s) = 0x%02x, want Counter32 (RFC 3414 §5)", oid, got)
+			t.Errorf("snmpTypeTag(%s) = 0x%02x, want Counter32 (RFC 3414 §5): the usmStats prefix "+
+				"should be in oidTypeTable so the Report resolves through encodeTypedValue", oid, got)
 		}
 	}
-}
-
-// scopedPDUFirstVarbind decodes a scoped PDU in CONTENTS form
-// (contextEngineID, contextName, PDU) down to its first varbind. Written
-// structurally rather than by scanning for a tag: a byte scan over a whole
-// scoped PDU finds the engine ID and the OID before it ever reaches the value,
-// which is how the first version of this assertion reported a false negative
-// against bytes that plainly ended 41 01 01.
-func scopedPDUFirstVarbind(t *testing.T, scoped []byte) (string, byte) {
-	t.Helper()
-
-	body := scoped
-	if len(body) > 0 && body[0] == ASN1_SEQUENCE {
-		body = expectSeq(t, scoped, "scopedPDU") // tolerate the wrapped form
-	}
-	pos := skipTLV(t, body, 0, "contextEngineID")
-	pos = skipTLV(t, body, pos, "contextName")
-	if pos >= len(body) {
-		t.Fatal("scoped PDU has no data field")
-	}
-
-	n, after := parseLength(body, pos+1)
-	if n < 0 || after+n > len(body) {
-		t.Fatal("bad PDU length in scoped PDU")
-	}
-	pdu := body[after : after+n]
-
-	pp := 0
-	_, pp = expectInt(t, pdu, pp, "request-id")
-	_, pp = expectInt(t, pdu, pp, "error-status")
-	_, pp = expectInt(t, pdu, pp, "error-index")
-
-	vbl := expectSeq(t, pdu[pp:], "variable-bindings")
-	vb := expectSeq(t, vbl, "varbind")
-	if len(vb) == 0 || vb[0] != ASN1_OID {
-		t.Fatalf("varbind does not start with an OBJECT IDENTIFIER: % x", vb)
-	}
-	nl, an := parseLength(vb, 1)
-	if nl < 0 || an+nl > len(vb) {
-		t.Fatal("bad varbind name length")
-	}
-	return decodeOID(vb[an : an+nl]), vb[an+nl]
 }
 
 // TestAuthPrivRequestIsServedThroughDispatcher drives handleSNMPv3Request with
@@ -226,63 +196,114 @@ func scopedPDUFirstVarbind(t *testing.T, scoped []byte) (string, byte) {
 // This is the assertion that matters: an earlier version of this file computed
 // the unwrap inline and passed even with the fix reverted, which is the same
 // defect it was written to catch.
+//
+// Table-driven over both privacy protocols because decryptDES and
+// decryptAES128 are separate implementations with different output shapes
+// (DES strips padding, AES-CFB returns the exact length), and over the three
+// request PDU types because the docs claim "any PDU type" and GETBULK takes a
+// different handler from GET/GETNEXT.
 func TestAuthPrivRequestIsServedThroughDispatcher(t *testing.T) {
 	const wantOID = ".1.3.6.1.2.1.2.2.1.2.3"
+	const wantValue = "Gi0/3"
 
-	s := v3TestServer(map[string]string{
-		".1.3.6.1.2.1.1.1.0": "dev",
-		wantOID:              "Gi0/3",
-	})
-	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
-	s.v3Config.PrivProtocol = SNMPV3_PRIV_DES
-
-	// Take a plaintext request's scoped PDU and encrypt it, so the message the
-	// dispatcher sees is exactly what a manager would send.
-	plainReq := buildV3GetRequest(t, s, wantOID, 4242)
-	plainMsg, err := s.parseSNMPv3Message(plainReq)
-	if err != nil {
-		t.Fatalf("parse plaintext: %v", err)
+	privs := []struct {
+		name  string
+		proto int
+	}{
+		{"des", SNMPV3_PRIV_DES},
+		{"aes128", SNMPV3_PRIV_AES128},
 	}
-	seed := &SNMPv3Message{
-		GlobalData:     SNMPv3GlobalData{MsgID: 1},
-		SecurityParams: SNMPv3SecurityParams{UserName: s.v3Config.Username, AuthoritativeEngineID: s.v3Config.EngineID},
-	}
-	cipher, privParams, err := s.encryptScopedPDU(encodeSequence(plainMsg.ScopedPDU), seed)
-	if err != nil {
-		t.Skipf("privacy unavailable: %v", err)
+	pdus := []struct {
+		name string
+		tag  byte
+		ask  string // the OID in the request
+	}{
+		{"get", ASN1_GET_REQUEST, wantOID},
+		{"getnext", ASN1_GET_NEXT, ".1.3.6.1.2.1.2.2.1.2"}, // wantOID is the successor
+		{"getbulk", ASN1_GET_BULK, ".1.3.6.1.2.1.2.2.1.2"}, // first repetition is wantOID
 	}
 
-	encReq := buildV3EncryptedRequest(t, s, cipher, privParams)
-	resp := s.handleSNMPv3Request(encReq)
-	if len(resp) == 0 {
-		t.Fatal("dispatcher returned nothing for an authPriv request")
-	}
+	for _, priv := range privs {
+		for _, pdu := range pdus {
+			t.Run(priv.name+"/"+pdu.name, func(t *testing.T) {
+				s := v3TestServer(map[string]string{
+					".1.3.6.1.2.1.1.1.0": "dev",
+					wantOID:              wantValue,
+				})
+				s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+				s.v3Config.PrivProtocol = priv.proto
 
-	// The response is encrypted too, so decrypt it before decoding.
-	// v3TestServer keeps the same key material, so this is symmetric.
-	r := decodeV3ResponsePossiblyEncrypted(t, s, resp)
-	if len(r.varbinds) == 0 {
-		t.Fatal("response carries no bindings")
-	}
-	if r.varbinds[0].oid != wantOID {
-		t.Errorf("authPriv request for %q was answered with %q. sysDescr.0 here means the "+
-			"decrypt-FAILURE fallback fired on a SUCCESSFUL decrypt, which is what happens "+
-			"when the decrypted scoped PDU is not unwrapped (nl6#527)", wantOID, r.varbinds[0].oid)
-	}
-	if r.requestID != 4242 {
-		t.Errorf("response request-id = %d, want 4242; 1 is the fallback", r.requestID)
+				// Take a plaintext request's scoped PDU and encrypt it, so the
+				// message the dispatcher sees is what a manager would send.
+				plainMsg, err := s.parseSNMPv3Message(buildV3RequestAt(t, s, pdu.tag, pdu.ask, 4242))
+				if err != nil {
+					t.Fatalf("parse plaintext: %v", err)
+				}
+				cipherText, privParams, err := s.encryptScopedPDU(encodeSequence(plainMsg.ScopedPDU), v3PrivSeed(s))
+				if err != nil {
+					t.Fatalf("encryptScopedPDU: %v", err)
+				}
+
+				resp := s.handleSNMPv3Request(buildV3EncryptedRequest(t, s, cipherText, privParams))
+				if len(resp) == 0 {
+					t.Fatal("dispatcher returned nothing for an authPriv request")
+				}
+
+				// The response must be encrypted too; v3TestServer keeps the
+				// same key material, so decrypting it here is symmetric.
+				r := decodeV3ResponsePossiblyEncrypted(t, s, resp, true)
+				if r.pduTag != ASN1_GET_RESPONSE {
+					t.Errorf("response PDU = 0x%02x, want GetResponse (0xA2)", r.pduTag)
+				}
+				if r.errStatus != 0 {
+					t.Errorf("response error-status = %d, want noError", r.errStatus)
+				}
+				if r.requestID != 4242 {
+					t.Errorf("response request-id = %d, want 4242; 1 is the fallback", r.requestID)
+				}
+				if len(r.varbinds) == 0 {
+					t.Fatal("response carries no bindings")
+				}
+				vb := r.varbinds[0]
+				if vb.oid != wantOID {
+					t.Fatalf("authPriv %s for %q was answered with %q. sysDescr.0 here means the "+
+						"decrypt-FAILURE fallback fired on a SUCCESSFUL decrypt, which is what happens "+
+						"when the decrypted scoped PDU is not unwrapped (nl6#527)", pdu.name, pdu.ask, vb.oid)
+				}
+				if vb.valueTag != ASN1_OCTET_STRING || string(vb.value) != wantValue {
+					t.Errorf("binding value = tag 0x%02x %q, want OCTET STRING %q", vb.valueTag, vb.value, wantValue)
+				}
+			})
+		}
 	}
 }
 
-func buildV3GetRequest(t *testing.T, s *SNMPServer, oid string, reqID int) []byte {
-	t.Helper()
+// v3PrivSeed is the request-side message the privacy layer derives its
+// parameters from (engine ID for the salt, user for the key).
+func v3PrivSeed(s *SNMPServer) *SNMPv3Message {
+	return &SNMPv3Message{
+		GlobalData:     SNMPv3GlobalData{MsgID: 1},
+		SecurityParams: SNMPv3SecurityParams{UserName: s.v3Config.Username, AuthoritativeEngineID: s.v3Config.EngineID},
+	}
+}
+
+// buildV3RequestAt builds a plaintext (authNoPriv-shaped) SNMPv3 request with
+// the given PDU tag and a single NULL-valued binding. For a GETBULK the two
+// integers after the request-id are non-repeaters (0) and max-repetitions
+// (10); for GET/GETNEXT they are error-status and error-index (both 0).
+func buildV3RequestAt(tb testing.TB, s *SNMPServer, pduTag byte, oid string, reqID int) []byte {
+	tb.Helper()
 	vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
 	var body []byte
 	body = append(body, encodeInteger(reqID)...)
 	body = append(body, encodeInteger(0)...)
-	body = append(body, encodeInteger(0)...)
+	if pduTag == ASN1_GET_BULK {
+		body = append(body, encodeInteger(10)...)
+	} else {
+		body = append(body, encodeInteger(0)...)
+	}
 	body = append(body, encodeSequence(vb)...)
-	pdu := append([]byte{ASN1_GET_REQUEST}, append(encodeLength(len(body)), body...)...)
+	pdu := append([]byte{pduTag}, append(encodeLength(len(body)), body...)...)
 
 	var scoped []byte
 	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
@@ -291,9 +312,9 @@ func buildV3GetRequest(t *testing.T, s *SNMPServer, oid string, reqID int) []byt
 	return assembleV3(s, encodeSequence(scoped), nil, false)
 }
 
-func buildV3EncryptedRequest(t *testing.T, s *SNMPServer, cipher, privParams []byte) []byte {
-	t.Helper()
-	return assembleV3(s, encodeOctetString(string(cipher)), privParams, true)
+func buildV3EncryptedRequest(tb testing.TB, s *SNMPServer, cipherText, privParams []byte) []byte {
+	tb.Helper()
+	return assembleV3(s, encodeOctetString(string(cipherText)), privParams, true)
 }
 
 // assembleV3 wraps a scopedPduData field (already encoded as SEQUENCE or
@@ -326,26 +347,33 @@ func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool)
 }
 
 // decodeV3ResponsePossiblyEncrypted decodes a v3 response, decrypting the
-// scoped PDU first when the response carries the privacy flag.
-func decodeV3ResponsePossiblyEncrypted(t *testing.T, s *SNMPServer, resp []byte) v3Response {
+// scoped PDU first when the response carries the privacy flag. wantEncrypted
+// asserts the flag itself, so a response that leaked plaintext for an
+// authPriv request is a failure rather than something silently decoded.
+func decodeV3ResponsePossiblyEncrypted(t *testing.T, s *SNMPServer, resp []byte, wantEncrypted bool) v3Response {
 	t.Helper()
 	msg, err := s.parseSNMPv3Message(resp)
 	if err != nil {
 		t.Fatalf("parse response: %v", err)
 	}
+	encrypted := msg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV != 0
+	if encrypted != wantEncrypted {
+		t.Fatalf("response privacy flag = %v, want %v", encrypted, wantEncrypted)
+	}
 	scoped := msg.ScopedPDU
-	if msg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV != 0 {
+	if encrypted {
 		dec, err := s.decryptScopedPDU(scoped, msg.SecurityParams.PrivParams)
 		if err != nil {
 			t.Fatalf("decrypt response: %v", err)
 		}
-		if len(dec) > 0 && dec[0] == ASN1_SEQUENCE {
-			n, start := parseLength(dec, 1)
-			if n < 0 || start+n > len(dec) {
-				t.Fatal("bad decrypted response length")
-			}
-			scoped = dec[start : start+n]
+		if len(dec) == 0 || dec[0] != ASN1_SEQUENCE {
+			t.Fatalf("decrypted response is not a SEQUENCE TLV: % x", dec)
 		}
+		n, start := parseLength(dec, 1)
+		if n < 0 || start+n > len(dec) {
+			t.Fatal("bad decrypted response length")
+		}
+		scoped = dec[start : start+n]
 	}
 	return decodeScopedPDUContents(t, scoped)
 }
@@ -386,8 +414,13 @@ func decodeScopedPDUContents(t *testing.T, scoped []byte) v3Response {
 		}
 		v := v3Varbind{oid: decodeOID(vb[an : an+nl])}
 		vpos := an + nl
-		if vpos < len(vb) {
-			v.valueTag = vb[vpos]
+		if vpos >= len(vb) {
+			t.Fatal("varbind has a name but no value")
+		}
+		v.valueTag = vb[vpos]
+		vlen, afterV := parseLength(vb, vpos+1)
+		if vlen >= 0 && afterV+vlen <= len(vb) {
+			v.value = vb[afterV : afterV+vlen]
 		}
 		out.varbinds = append(out.varbinds, v)
 	}
