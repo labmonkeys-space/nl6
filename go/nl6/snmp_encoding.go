@@ -508,9 +508,13 @@ func encodeTypedValue(oid, value string) []byte {
 	// exceptions and needs the noSuchName error-status instead (RFC 3584
 	// §4.2.2.2). The response builders divert it.
 	//
-	// The SNMPv3 GET and GETNEXT path reaches here too: createScopedPDU is
-	// the third caller (nl6#518). handleSNMPv3GetBulk never passes the
-	// endOfMibView sentinel on, so a v3 GETBULK still ends without it.
+	// Every SNMPv3 path reaches here: createScopedPDU is the third caller
+	// (nl6#518), and since nl6#526 the GETBULK handler answers end-of-MIB with
+	// the sentinel too, so a v3 GET, GETNEXT or GETBULK that reaches this
+	// encoder terminates a walk on the exception rather than on a placeholder.
+	// A GETBULK whose scoped PDU fails to decrypt does not reach it: that
+	// fallback rewrites the request to a GET of sysDescr.0 (see the comment
+	// at handleSNMPv3Request's decrypt-failure fallback in snmp.go).
 	switch value {
 	case valueEndOfMibView:
 		return []byte{0x82, 0x00} // endOfMibView   [2] IMPLICIT NULL

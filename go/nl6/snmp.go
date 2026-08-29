@@ -80,6 +80,15 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		// log.Printf("Failed to extract OID from scoped PDU: %v, using default", err)
 		// For encrypted requests where decryption failed, use a reasonable default
 		// Since snmpwalk typically starts with 1.3.6.1.2.1.1, use system description
+		//
+		// This fallback is the one remaining route to nl6#526's symptom: a
+		// GETBULK (or GETNEXT) whose scoped PDU will not decrypt loses its PDU
+		// type here and is answered as a GET of sysDescr.0, an OID that sorts
+		// before almost any request, so a walker that hits an authPriv
+		// mismatch mid-walk does not terminate. Documented rather than fixed
+		// (deferred-work.md, PR #536): preserving the PDU type through this
+		// path is a change to the v3 security handling, not to GETBULK. The
+		// comments in snmpv3_crypto.go and snmp_encoding.go point here.
 		oid = ".1.3.6.1.2.1.1.1.0" // System description OID
 		pduType = ASN1_GET_REQUEST // Default to GET
 		// log.Printf("SNMPv3: Using default OID %s for failed decryption case", oid)

@@ -215,6 +215,10 @@ type SNMPServer struct {
 	// firstSkipAbort gates the log line for a v1 Counter64 skip loop that
 	// ended on a safety bound (see logFirstSkipAbort).
 	firstSkipAbort sync.Once
+
+	// firstBulkAbort gates the log line for a v3 GETBULK collection loop that
+	// ended on a non-advancing successor (see logFirstBulkAbort).
+	firstBulkAbort sync.Once
 }
 
 // lldpServedSnapshot is an immutable (gen, served) pair stored under

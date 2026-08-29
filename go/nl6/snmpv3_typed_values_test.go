@@ -101,9 +101,10 @@ func TestSNMPv3_EndOfMibViewIsAnException(t *testing.T) {
 // name and request-id. snmp4j stops a walk on Null.isExceptionSyntax (syntax
 // >= 128), which the pre-fix octet string never satisfied.
 //
-// This covers GETNEXT only. handleSNMPv3GetBulk drops the sentinel before it
-// reaches the encoder, so a GETBULK-driven v3 walk still does not terminate on
-// the exception; that is a separate, pre-existing defect.
+// This covers GETNEXT. The GETBULK equivalent is
+// TestV3GetBulkPastEndOfMibReturnsException in snmpv3_getbulk_test.go, which
+// became possible once nl6#526 stopped the GETBULK handler discarding the
+// sentinel.
 func TestSNMPv3_GetNextPastEndTerminatesWalk(t *testing.T) {
 	// findNextOID always serves sysName.0 and sysLocation.0 dynamically, so the
 	// walk's last OID has to sort after .1.3.6.1.2.1.1.6.0 for the GETNEXT to
