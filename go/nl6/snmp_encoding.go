@@ -50,6 +50,23 @@ func parseLength(data []byte, pos int) (int, int) {
 	return length, pos
 }
 
+// encodableAsOID reports whether encodeOID can represent v faithfully.
+//
+// It asks the ENCODER rather than re-deriving the rules, deliberately. A second
+// predicate that happened to agree today is how nl6#539 arose on the trap
+// catalog side: validateDottedOID and the encoder drifted into disagreeing
+// about what an OID is, so a catalog could accept what the encoder then
+// refused. Defining "encodable" as "the encoder did not fall back" makes drift
+// impossible by construction.
+//
+// The degenerate form is an unambiguous signal: an OID has at least two arcs,
+// so its content field is never empty, and 06 00 is therefore never a
+// legitimate encoding of anything.
+func encodableAsOID(v string) bool {
+	enc := encodeOID(v)
+	return !(len(enc) == 2 && enc[0] == ASN1_OID && enc[1] == 0x00)
+}
+
 // legalOIDArcPair reports whether (first, second) is a pair X.690 §8.19.4 can
 // represent. The first arc is 0, 1 or 2; when it is 0 or 1 the second arc is
 // limited to 0..39, because 40*first+second is what actually goes on the wire

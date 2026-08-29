@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,6 +174,11 @@ func TestGuardIsWiredIntoLoaders(t *testing.T) {
 	const (
 		badEntry   = `{"oid":"1.3.6.1.2.1.1.1.0","response":"noSuchObject"}`
 		cleanEntry = `{"oid":"1.3.6.1.2.1.1.1.0","response":"noSuchObject seen"}`
+		// A non-OID value on the OID-typed sysObjectID leaf: the nl6#529 rule.
+		// Wiring is per RULE, not per guard: a rule added to
+		// validateSNMPResourceValues but reached by only some loaders would
+		// pass a sentinel-only wiring test.
+		badOIDEntry = `{"oid":"1.3.6.1.2.1.1.2.0","response":"3.40.1"}`
 	)
 
 	for _, layout := range []string{"directory", "single-file"} {
@@ -188,6 +195,24 @@ func TestGuardIsWiredIntoLoaders(t *testing.T) {
 						t.Errorf("error %q does not name the offending file %q", err, wantNamed)
 					}
 					for _, want := range []string{"1.3.6.1.2.1.1.1.0", "noSuchObject", "sentinel"} {
+						if !strings.Contains(err.Error(), want) {
+							t.Errorf("error %q does not mention %q", err, want)
+						}
+					}
+				})
+
+				t.Run("rejects-non-oid-on-oid-typed-leaf", func(t *testing.T) {
+					wantNamed, load := guardFixture(t, layout, loader, badOIDEntry)
+					res, err := load()
+					if err == nil {
+						t.Fatalf("%s (%s layout) loaded %q on sysObjectID (%d entries); "+
+							"encodeOID cannot represent it, so it would go out as 06 00",
+							loader, layout, "3.40.1", snmpCount(res))
+					}
+					if !strings.Contains(err.Error(), wantNamed) {
+						t.Errorf("error %q does not name the offending file %q", err, wantNamed)
+					}
+					for _, want := range []string{"1.3.6.1.2.1.1.2.0", "3.40.1", "OID-typed"} {
 						if !strings.Contains(err.Error(), want) {
 							t.Errorf("error %q does not mention %q", err, want)
 						}
@@ -318,4 +343,150 @@ func TestShippedResourcesLoadClean(t *testing.T) {
 		t.Fatalf("loaded %d directories but zero SNMP entries, so the assertion would be vacuous", dirs)
 	}
 	t.Logf("loaded %d resource directories, %d SNMP entries inspected", dirs, inspected)
+}
+
+// ── nl6#529: OID-typed values ───────────────────────────────────────────────
+
+// TestValidateSNMPResourceValues_NonOIDOnOIDLeafRejected closes the second half
+// of nl6#529. The encoder half (PR #532) stopped encodeOID fabricating an OID
+// for input it cannot represent; this stops a resource file supplying such a
+// value in the first place, on a leaf whose declared type is OBJECT IDENTIFIER.
+//
+// The cases below are exactly the ones the varint change made refusable:
+// non-numeric components, a first arc above 2, and a second arc above 39 when
+// the first is 0 or 1 (which would ALIAS a higher first arc, since 1.40 and 2.0
+// both encode to 80).
+func TestValidateSNMPResourceValues_NonOIDOnOIDLeafRejected(t *testing.T) {
+	const sysObjectID = "1.3.6.1.2.1.1.2.0"
+
+	overLongOID := "1.3" + strings.Repeat(".4294967295", maxOIDBodyBytes/5)
+	if encodableAsOID(overLongOID) {
+		t.Fatalf("fixture is not over maxOIDBodyBytes (%d); a changed constant would make "+
+			"this case test an accepted value", maxOIDBodyBytes)
+	}
+
+	for _, bad := range []string{
+		"unknown", "1.3.x.7", "", "1", "1.3..7", "1.3.-1",
+		"3.40.1",         // first arc 3
+		"1.40.1",         // second arc 40 with first arc 1: would alias 2.0.1
+		"2.0.4294967296", // arc past the SMI maximum
+		// Legal arcs, but the encoded body EXCEEDS maxOIDBodyBytes: the
+		// encoder's third refusal route, and the guard must follow it too.
+		// Each max arc is a 5-byte varint, so (maxOIDBodyBytes/5)*5 bytes plus
+		// the 1-byte first sub-identifier is one over the bound.
+		overLongOID,
+	} {
+		name := bad
+		if len(name) > 32 {
+			name = name[:32] + "..."
+		}
+		// Both key spellings: resource files may carry a leading dot, and the
+		// rule is type-directed through snmpTypeTag, which expects one. The
+		// undotted key exercises the prepend in normaliseResourceOID, the
+		// dotted key its pass-through arm.
+		for _, key := range []string{sysObjectID, "." + sysObjectID} {
+			t.Run(key+"="+name, func(t *testing.T) {
+				res := &DeviceResources{SNMP: []SNMPResource{{OID: key, Response: bad}}}
+				err := validateSNMPResourceValues("probe.json", res)
+				if err == nil {
+					t.Fatalf("value %q accepted on OID-typed key %q; encodeOID cannot represent it, "+
+						"so it would go out as a degenerate 06 00", name, key)
+				}
+				for _, want := range []string{"probe.json", key, fmt.Sprintf("%q", bad)} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error does not name %q: %v", want, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestValidateSNMPResourceValues_SentinelWinsOnOIDLeaf pins rule order. A
+// sentinel on sysObjectID trips BOTH rules; encodeTypedValue tests the
+// sentinel first, so the diagnosis must match the wire and keep the
+// "omit the entry" remediation that only the sentinel error carries.
+func TestValidateSNMPResourceValues_SentinelWinsOnOIDLeaf(t *testing.T) {
+	res := &DeviceResources{SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.1.2.0", Response: valueNoSuchObject}}}
+	err := validateSNMPResourceValues("probe.json", res)
+	if err == nil {
+		t.Fatal("sentinel on sysObjectID accepted")
+	}
+	if !strings.Contains(err.Error(), "sentinel") || strings.Contains(err.Error(), "OID-typed") {
+		t.Errorf("sentinel on an OID-typed leaf must be reported as a sentinel collision, got: %v", err)
+	}
+}
+
+func TestValidateSNMPResourceValues_ValidOIDAccepted(t *testing.T) {
+	const sysObjectID = "1.3.6.1.2.1.1.2.0"
+
+	for _, good := range []string{
+		"1.3.6.1.4.1.9.1.1", ".1.3.6.1.4.1.9.1.1", // both spellings
+		"2.999",       // the legal ITU test arc, expressible since PR #532
+		"1.39", "2.0", // arc-range boundaries
+		"1.2.4294967295", // the SMI maximum
+	} {
+		for _, key := range []string{sysObjectID, "." + sysObjectID} {
+			res := &DeviceResources{SNMP: []SNMPResource{{OID: key, Response: good}}}
+			if err := validateSNMPResourceValues("probe.json", res); err != nil {
+				t.Errorf("valid OID %q on key %q rejected: %v", good, key, err)
+			}
+		}
+	}
+}
+
+// TestValidateSNMPResourceValues_OIDRuleIsTypeDirected pins that the rule fires
+// on the leaf's DECLARED type rather than on the value's shape. A non-OID value
+// is ordinary data on an ordinary leaf and must load.
+func TestValidateSNMPResourceValues_OIDRuleIsTypeDirected(t *testing.T) {
+	for _, oid := range []string{
+		"1.3.6.1.2.1.1.1.0",      // sysDescr, OCTET STRING
+		"1.3.6.1.2.1.4.20.1.1.1", // ipAdEntAddr, IpAddress
+		"1.3.6.1.2.1.2.2.1.10.1", // ifInOctets, Counter32
+	} {
+		res := &DeviceResources{SNMP: []SNMPResource{{OID: oid, Response: "not an oid at all"}}}
+		if err := validateSNMPResourceValues("probe.json", res); err != nil {
+			t.Errorf("leaf %s is not OID-typed, so %q is ordinary data, but it was rejected: %v",
+				oid, "not an oid at all", err)
+		}
+	}
+}
+
+// TestGuardAgreesWithTheEncoder is the anti-drift assertion. The guard asks
+// encodeOID rather than re-deriving the rules, precisely so a second predicate
+// cannot disagree with the encoder the way trap_catalog.go's validateDottedOID
+// does (nl6#539). This pins that property rather than trusting the comment.
+func TestGuardAgreesWithTheEncoder(t *testing.T) {
+	const sysObjectID = "1.3.6.1.2.1.1.2.0"
+
+	for _, v := range []string{
+		"1.3.6.1.4.1.9.1.1", "2.999", "3.40.1", "1.40.1", "unknown", "1.3.x.7",
+		"", "1", "2.0", "1.39", "1.2.4294967295", "1.2.4294967296", "0.39", "0.40",
+	} {
+		res := &DeviceResources{SNMP: []SNMPResource{{OID: sysObjectID, Response: v}}}
+		guardAccepts := validateSNMPResourceValues("probe.json", res) == nil
+		encoderAccepts := encodableAsOID(v)
+
+		if guardAccepts != encoderAccepts {
+			t.Errorf("guard and encoder disagree about %q: guard accepts=%v, encoder accepts=%v. "+
+				"They must not drift; that is why the guard asks the encoder", v, guardAccepts, encoderAccepts)
+		}
+
+		// The claim is about the WIRE, not only encodeOID: the value must take
+		// the same path a GET would, through encodeTypedValue's type dispatch on
+		// the same key spelling the loader normalises to.
+		wire := encodeTypedValue("."+sysObjectID, v)
+		wireAccepts := !bytes.Equal(wire, []byte{ASN1_OID, 0x00})
+		if guardAccepts != wireAccepts {
+			t.Errorf("guard and wire disagree about %q: guard accepts=%v, encodeTypedValue emits %x",
+				v, guardAccepts, wire)
+		}
+
+		// And the trap encoder refuses the same set.
+		trapAccepts := !bytes.Equal(appendOID(nil, v), []byte{ASN1_OID, 0x00})
+		if guardAccepts != trapAccepts {
+			t.Errorf("guard and appendOID disagree about %q: guard accepts=%v, appendOID accepts=%v",
+				v, guardAccepts, trapAccepts)
+		}
+	}
 }

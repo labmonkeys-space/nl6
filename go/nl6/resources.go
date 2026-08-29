@@ -172,6 +172,16 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 	return nil
 }
 
+// normaliseResourceOID gives a resource-file OID key the leading dot that
+// oidTypeTable, oidIndex and every lookup expect. Resource files may spell a
+// key either way; this is the single place that reconciles them.
+func normaliseResourceOID(oid string) string {
+	if len(oid) > 0 && oid[0] != '.' {
+		return "." + oid
+	}
+	return oid
+}
+
 // validateSNMPResourceValues rejects a resource response that collides with an
 // RFC 3416 exception sentinel (nl6#523). Same loud-fail shape as
 // validateOpticalInventory: the error names the file, the OID and the value,
@@ -200,10 +210,15 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 // writes compiled-in constants and is deliberately not guarded: no input can
 // make that check fire.
 //
-// One rule only, deliberately. The OID-typed hazard on the same surface, a
-// non-OID value on sysObjectID, is still open under nl6#529. The encoder half
-// of that issue (the first-arc fabrication) has landed; the load-time guard
-// for OID-typed values has not.
+// Two rules. The sentinel rule above (nl6#523), checked FIRST because
+// encodeTypedValue tests the sentinel before the type tag, so it is the
+// diagnosis that matches what the wire would do. Then the OID-typed value rule
+// (nl6#529): a value on a leaf whose snmpTypeTag is ASN1_OBJECT_ID must be one
+// encodeOID can represent, decided by asking the encoder (encodableAsOID).
+// Before nl6#529 such a value was encoded anyway, as a different and
+// valid-looking OID; since the encoder fix it becomes the degenerate 06 00.
+// Coverage is bounded by oidTypeTable, which today carries one OBJECT
+// IDENTIFIER row (sysObjectID).
 func validateSNMPResourceValues(resourceFile string, resources *DeviceResources) error {
 	if resources == nil {
 		return nil
@@ -215,6 +230,15 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 				"There is no escaping form: change the value. To make the OID answer "+
 				"noSuchObject on purpose, omit the entry entirely, since an absent OID "+
 				"already answers with the exception",
+				resourceFile, r.OID, r.Response)
+		}
+
+		if snmpTypeTag(normaliseResourceOID(r.OID)) == ASN1_OBJECT_ID && !encodableAsOID(r.Response) {
+			return fmt.Errorf("resource %s: OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
+				"is not an OID this encoder can represent. It needs at least two dot-separated "+
+				"numbers, a first arc of 0, 1 or 2, a second arc no greater than 39 when the first "+
+				"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes. "+
+				"Correct the value; served as-is it would go out as the degenerate encoding 06 00",
 				resourceFile, r.OID, r.Response)
 		}
 	}
@@ -424,10 +448,7 @@ func (sm *SimulatorManager) buildResourceIndexes(resources *DeviceResources) {
 	// Build oidIndex and sortedOIDs, skipping dynamic OIDs handled elsewhere.
 	// Normalize OIDs from JSON to always use a leading dot.
 	for _, resource := range resources.SNMP {
-		oid := resource.OID
-		if len(oid) > 0 && oid[0] != '.' {
-			oid = "." + oid
-		}
+		oid := normaliseResourceOID(resource.OID)
 		if oid == ".1.3.6.1.2.1.1.5.0" || oid == ".1.3.6.1.2.1.1.6.0" {
 			continue
 		}
