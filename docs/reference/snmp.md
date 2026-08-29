@@ -210,6 +210,22 @@ That was not always true: the v3 scoped-PDU builder used to branch on `strconv.A
 
 — the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
 
+### A malformed variable-bindings list discards the request
+
+A variable-bindings list that is not a valid ASN.1 encoding makes the whole PDU malformed, and RFC 1157 §4.1 (step 1) and RFC 3412 §7.2 discard such a datagram rather than answering it. nl6 does the same for SNMPv1 and v2c GET, GETNEXT and GETBULK: no response datagram is sent at all.
+Once the list header has been read, the parser checks the list length against the datagram, each binding's framing, the name's tag, length and content, and that exactly one value follows the name; any of those failing discards the request.
+The first such discard on a device is logged once; RFC 3412 would count it in `snmpInASNParseErrs`, which nl6 does not serve.
+
+Until nl6#537 the offending binding was silently dropped and the rest of the request was answered, so a GET carrying three bindings came back with two. RFC 3416 requires the response's bindings to correspond to the request's, and a collector had no way to tell which one had gone missing.
+A GETNEXT with a malformed name was answered as a walk restart from `sysDescr.0`, an OID the requester never sent.
+
+A PDU whose variable-bindings list is empty, or whose envelope cannot be read as far as the list, is a different case and is still answered.
+The general request parser falls back to `sysDescr.0` for it, so what comes back is one binding the requester did not name; that behaviour predates nl6#537 and is unchanged.
+
+The SNMPv3 path is not covered by this change and is tracked as nl6#547.
+A malformed OID there flows on as an empty name with no error, so a v3 GETNEXT is answered as a walk restart from the first OID in the MIB.
+The fallback that would have to catch it is shared with decryption failure, which RFC 3414 wants answered with a Report rather than silence, so the two cases need separating first.
+
 ## Malformed-datagram handling
 
 Every simulated device answers from one process, and the request path is a hand-written BER parser rather than `encoding/asn1`.

@@ -145,6 +145,17 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 	// log.Printf("SNMP %s: Detected PDU type: 0x%02X for OID: %s", s.device.ID, pduType, oid)
 
 	if pduType == ASN1_GET_NEXT {
+		// A variable-bindings list that is not a valid ASN.1 encoding makes
+		// the PDU malformed, and the datagram is discarded (nl6#537; see the
+		// GET branch below). GETNEXT needs its own gate because it answers
+		// from req.OID, and parseIncomingRequest leaves that at its sysDescr.0
+		// DEFAULT when the name fails to decode, so without this a malformed
+		// GETNEXT was answered as a walk restart from an OID nobody sent.
+		if _, ok := s.parseAllOIDsFromRequest(requestData); !ok {
+			s.logFirstMalformedList(pduType)
+			return nil
+		}
+
 		// Handle GetNext request for SNMP walk. The LLDP served-OID snapshot
 		// is taken ONCE here (generation-cached, so this is a pointer load in
 		// steady state) and shared with the v1 Counter64 skip loop below, so
@@ -231,7 +242,20 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// stored empty, and the discovered topology has no edges (issue #176).
 		// Reuse the multi-varbind parser + GetResponse encoder (as GETBULK);
 		// responses are returned per OID, in request order.
-		oids := s.parseAllOIDsFromRequest(requestData)
+		oids, ok := s.parseAllOIDsFromRequest(requestData)
+		if !ok {
+			// A variable-bindings list that is not a valid ASN.1 encoding
+			// makes the PDU malformed. RFC 1157 §4.1 step 1 and RFC 3412 §7.2
+			// discard such a datagram rather than answering it, and returning
+			// nothing here means handleSingleRequest sends no datagram at all
+			// (nl6#537).
+			//
+			// Distinct from the zero case below: that one is a PDU whose
+			// envelope could not be read as far as a list, or whose list is
+			// empty, which the single parsed OID still covers.
+			s.logFirstMalformedList(pduType)
+			return nil
+		}
 		if len(oids) == 0 {
 			oids = []string{oid} // fallback for an unparseable varbind list
 		}
@@ -253,6 +277,20 @@ func (s *SNMPServer) logFirstSkipAbort(why, at string) {
 	s.firstSkipAbort.Do(func() {
 		log.Printf("SNMP %s: v1 Counter64 skip aborted at %s (%s); answering end-of-MIB (further aborts suppressed for this device)",
 			s.device.ID, at, why)
+	})
+}
+
+// logFirstMalformedList emits at most one log line per device when a datagram
+// is discarded because its variable-bindings list is not a valid ASN.1
+// encoding (nl6#537). RFC 3412 §7.2 counts these in snmpInASNParseErrs; nl6
+// serves no such counter, and without any trace a discard is
+// indistinguishable from a network drop, which is the property the no-recover()
+// rule on this path exists to avoid. Gated like logFirstSkipAbort: a manager
+// that sends one malformed request tends to send it every poll.
+func (s *SNMPServer) logFirstMalformedList(pduType byte) {
+	s.firstMalformedList.Do(func() {
+		log.Printf("SNMP %s: discarded PDU 0x%02X whose varbind list is not a valid ASN.1 encoding (further discards suppressed for this device)",
+			s.device.ID, pduType)
 	})
 }
 

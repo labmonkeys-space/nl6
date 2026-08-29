@@ -216,6 +216,10 @@ type SNMPServer struct {
 	// ended on a safety bound (see logFirstSkipAbort).
 	firstSkipAbort sync.Once
 
+	// firstMalformedList gates the log line for a discarded datagram whose
+	// varbind list is not a valid ASN.1 encoding (see logFirstMalformedList).
+	firstMalformedList sync.Once
+
 	// firstBulkAbort gates the log line for a v3 GETBULK collection loop that
 	// ended on a non-advancing successor (see logFirstBulkAbort).
 	firstBulkAbort sync.Once

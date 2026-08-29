@@ -182,7 +182,7 @@ func TestParseAllOIDsFromRequest_SingleOID(t *testing.T) {
 	want := []string{".1.3.6.1.2.1.2.2.1.2"}
 
 	pdu := buildGetBulkPDU(0, 10, want)
-	got := s.parseAllOIDsFromRequest(pdu)
+	got, _ := s.parseAllOIDsFromRequest(pdu)
 
 	if len(got) != len(want) {
 		t.Fatalf("got %d OID(s), want %d", len(got), len(want))
@@ -204,7 +204,7 @@ func TestParseAllOIDsFromRequest_MultipleOIDs(t *testing.T) {
 	}
 
 	pdu := buildGetBulkPDU(0, 10, want)
-	got := s.parseAllOIDsFromRequest(pdu)
+	got, _ := s.parseAllOIDsFromRequest(pdu)
 
 	if len(got) != len(want) {
 		t.Fatalf("got %d OIDs, want %d", len(got), len(want))
@@ -219,15 +219,17 @@ func TestParseAllOIDsFromRequest_MultipleOIDs(t *testing.T) {
 func TestParseAllOIDsFromRequest_MalformedPDU(t *testing.T) {
 	s := &SNMPServer{device: &DeviceSimulator{}}
 
-	// Should return empty slice without panicking.
-	got := s.parseAllOIDsFromRequest([]byte{0x00, 0x01, 0x02})
-	if len(got) != 0 {
-		t.Errorf("expected empty slice for malformed PDU, got %v", got)
+	// Should return empty slice without panicking. An unreadable ENVELOPE
+	// reports ok=true (absent, still answered); only a broken varbind LIST
+	// reports false (nl6#537).
+	got, ok := s.parseAllOIDsFromRequest([]byte{0x00, 0x01, 0x02})
+	if len(got) != 0 || !ok {
+		t.Errorf("expected (empty, true) for unreadable envelope, got (%v, %v)", got, ok)
 	}
 
-	got = s.parseAllOIDsFromRequest(nil)
-	if len(got) != 0 {
-		t.Errorf("expected empty slice for nil input, got %v", got)
+	got, ok = s.parseAllOIDsFromRequest(nil)
+	if len(got) != 0 || !ok {
+		t.Errorf("expected (empty, true) for nil input, got (%v, %v)", got, ok)
 	}
 }
 

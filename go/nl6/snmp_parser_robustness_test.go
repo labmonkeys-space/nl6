@@ -86,7 +86,7 @@ func TestSNMPParsers_MalformedDatagramsDoNotPanic(t *testing.T) {
 			// either — the parsers are expected to be total.
 			s.getPDUType(pkt)
 			s.parseIncomingRequest(pkt)
-			s.parseAllOIDsFromRequest(pkt)
+			_, _ = s.parseAllOIDsFromRequest(pkt)
 			isSNMPv3Request(pkt)
 			_, _ = s.parseSNMPv3Message(pkt)
 			_, _, _ = s.extractOIDAndTypeFromScopedPDU(pkt)
@@ -203,6 +203,19 @@ func addGoldenV2cSeeds(f *testing.F) {
 	f.Add(goldenNetSNMPLongCommunity)
 }
 
+// addMalformedVarbindSeeds registers datagrams whose varbind LIST is present
+// but not a valid ASN.1 encoding, so the nl6#537 discard branch (and the
+// GETNEXT gate that feeds it) is replayed on every ordinary go test rather
+// than reached by chance.
+func addMalformedVarbindSeeds(f *testing.F) {
+	f.Add(malformedNameRequest(ASN1_GET_REQUEST, snmpVersion2c, 3, 1))
+	f.Add(malformedNameRequest(ASN1_GET_NEXT, snmpVersion2c, 1, 0))
+	f.Add(malformedNameRequest(ASN1_GET_BULK, snmpVersion2c, 2, 1))
+	for _, tc := range brokenVarbindLists {
+		f.Add(requestWithRawList(ASN1_GET_REQUEST, snmpVersion2c, tc.list))
+	}
+}
+
 func FuzzGetPDUType(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	f.Add([]byte{0x30, 0x05, 0x02, 0x01, 0x00, 0x04})
@@ -219,7 +232,8 @@ func FuzzParseIncomingRequest(f *testing.F) {
 func FuzzParseAllOIDsFromRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	addGoldenV2cSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().parseAllOIDsFromRequest(data) })
+	addMalformedVarbindSeeds(f)
+	f.Fuzz(func(_ *testing.T, data []byte) { _, _ = robustnessTestServer().parseAllOIDsFromRequest(data) })
 }
 
 func FuzzIsSNMPv3Request(f *testing.F) {
@@ -522,7 +536,7 @@ func FuzzHandleGetRequestVarbinds(f *testing.F) {
 		// The oids argument is what the server itself parsed out of the same
 		// datagram, so deriving it here keeps the pair consistent the way the
 		// real dispatcher does.
-		oids := s.parseAllOIDsFromRequest(data)
+		oids, _ := s.parseAllOIDsFromRequest(data)
 		if len(oids) == 0 {
 			oids = []string{".1.3.6.1.2.1.1.1.0"}
 		}
@@ -632,6 +646,7 @@ func FuzzHandleSingleRequest(f *testing.F) {
 	f.Add(buildGetBulkPDUForFuzz(0, 10, ".1.3.6.1.2.1.1.1.0"))
 	addValidV3Seeds(f)
 	addGoldenV2cSeeds(f)
+	addMalformedVarbindSeeds(f)
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		fuzzTestServer(50).handleSingleRequest(data, nil)
 	})
