@@ -172,6 +172,16 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 	return nil
 }
 
+// normaliseResourceOID gives a resource-file OID key the leading dot that
+// oidTypeTable, oidIndex and every lookup expect. Resource files may spell a
+// key either way; this is the single place that reconciles them.
+func normaliseResourceOID(oid string) string {
+	if len(oid) > 0 && oid[0] != '.' {
+		return "." + oid
+	}
+	return oid
+}
+
 // validateSNMPResourceValues rejects a resource response that collides with an
 // RFC 3416 exception sentinel (nl6#523). Same loud-fail shape as
 // validateOpticalInventory: the error names the file, the OID and the value,
@@ -209,16 +219,6 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 // valid-looking OID; since the encoder fix it becomes the degenerate 06 00.
 // Coverage is bounded by oidTypeTable, which today carries one OBJECT
 // IDENTIFIER row (sysObjectID).
-// normaliseResourceOID gives a resource-file OID key the leading dot that
-// oidTypeTable, oidIndex and every lookup expect. Resource files may spell a
-// key either way; this is the single place that reconciles them.
-func normaliseResourceOID(oid string) string {
-	if len(oid) > 0 && oid[0] != '.' {
-		return "." + oid
-	}
-	return oid
-}
-
 func validateSNMPResourceValues(resourceFile string, resources *DeviceResources) error {
 	if resources == nil {
 		return nil
@@ -237,7 +237,8 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 			return fmt.Errorf("resource %s: OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
 				"is not an OID this encoder can represent. It needs at least two dot-separated "+
 				"numbers, a first arc of 0, 1 or 2, a second arc no greater than 39 when the first "+
-				"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes",
+				"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes. "+
+				"Correct the value; served as-is it would go out as the degenerate encoding 06 00",
 				resourceFile, r.OID, r.Response)
 		}
 	}

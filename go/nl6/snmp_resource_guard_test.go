@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -357,22 +359,31 @@ func TestShippedResourcesLoadClean(t *testing.T) {
 func TestValidateSNMPResourceValues_NonOIDOnOIDLeafRejected(t *testing.T) {
 	const sysObjectID = "1.3.6.1.2.1.1.2.0"
 
+	overLongOID := "1.3" + strings.Repeat(".4294967295", maxOIDBodyBytes/5)
+	if encodableAsOID(overLongOID) {
+		t.Fatalf("fixture is not over maxOIDBodyBytes (%d); a changed constant would make "+
+			"this case test an accepted value", maxOIDBodyBytes)
+	}
+
 	for _, bad := range []string{
 		"unknown", "1.3.x.7", "", "1", "1.3..7", "1.3.-1",
 		"3.40.1",         // first arc 3
 		"1.40.1",         // second arc 40 with first arc 1: would alias 2.0.1
 		"2.0.4294967296", // arc past the SMI maximum
-		// Legal arcs, but the encoded body reaches maxOIDBodyBytes: the
+		// Legal arcs, but the encoded body EXCEEDS maxOIDBodyBytes: the
 		// encoder's third refusal route, and the guard must follow it too.
-		"1.3" + strings.Repeat(".4294967295", maxOIDBodyBytes/5),
+		// Each max arc is a 5-byte varint, so (maxOIDBodyBytes/5)*5 bytes plus
+		// the 1-byte first sub-identifier is one over the bound.
+		overLongOID,
 	} {
 		name := bad
 		if len(name) > 32 {
 			name = name[:32] + "..."
 		}
 		// Both key spellings: resource files may carry a leading dot, and the
-		// rule is type-directed through snmpTypeTag, which expects one. Only
-		// the dotted case exercises the normalisation.
+		// rule is type-directed through snmpTypeTag, which expects one. The
+		// undotted key exercises the prepend in normaliseResourceOID, the
+		// dotted key its pass-through arm.
 		for _, key := range []string{sysObjectID, "." + sysObjectID} {
 			t.Run(key+"="+name, func(t *testing.T) {
 				res := &DeviceResources{SNMP: []SNMPResource{{OID: key, Response: bad}}}
@@ -381,7 +392,7 @@ func TestValidateSNMPResourceValues_NonOIDOnOIDLeafRejected(t *testing.T) {
 					t.Fatalf("value %q accepted on OID-typed key %q; encodeOID cannot represent it, "+
 						"so it would go out as a degenerate 06 00", name, key)
 				}
-				for _, want := range []string{"probe.json", key, bad} {
+				for _, want := range []string{"probe.json", key, fmt.Sprintf("%q", bad)} {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("error does not name %q: %v", want, err)
 					}
@@ -459,6 +470,23 @@ func TestGuardAgreesWithTheEncoder(t *testing.T) {
 		if guardAccepts != encoderAccepts {
 			t.Errorf("guard and encoder disagree about %q: guard accepts=%v, encoder accepts=%v. "+
 				"They must not drift; that is why the guard asks the encoder", v, guardAccepts, encoderAccepts)
+		}
+
+		// The claim is about the WIRE, not only encodeOID: the value must take
+		// the same path a GET would, through encodeTypedValue's type dispatch on
+		// the same key spelling the loader normalises to.
+		wire := encodeTypedValue("."+sysObjectID, v)
+		wireAccepts := !bytes.Equal(wire, []byte{ASN1_OID, 0x00})
+		if guardAccepts != wireAccepts {
+			t.Errorf("guard and wire disagree about %q: guard accepts=%v, encodeTypedValue emits %x",
+				v, guardAccepts, wire)
+		}
+
+		// And the trap encoder refuses the same set.
+		trapAccepts := !bytes.Equal(appendOID(nil, v), []byte{ASN1_OID, 0x00})
+		if guardAccepts != trapAccepts {
+			t.Errorf("guard and appendOID disagree about %q: guard accepts=%v, appendOID accepts=%v",
+				v, guardAccepts, trapAccepts)
 		}
 	}
 }
