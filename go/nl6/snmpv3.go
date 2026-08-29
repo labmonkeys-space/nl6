@@ -17,6 +17,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 )
 
 // SNMPv3 message parsing and authentication functions
@@ -381,6 +382,10 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 			break
 		}
 		if compareOIDsLexicographically(nextOID, currentOID) <= 0 {
+			// A data defect, so log it once per device (same gate as the v1
+			// skip loop): without a line here the manager sees a walk that
+			// ends early, indistinguishable from a short MIB.
+			s.logFirstBulkAbort(nextOID, currentOID)
 			break
 		}
 
@@ -392,6 +397,18 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 
 	// Create SNMPv3 GetBulk response
 	return s.createSNMPv3GetBulkResponse(startOID, oids, responses, msg)
+}
+
+// logFirstBulkAbort emits at most one log line per device when the SNMPv3
+// GETBULK collection loop ends on a non-advancing successor (nl6#526). Same
+// gating rationale as logFirstSkipAbort: the condition is a resource-file
+// defect present from load, so ungated it would repeat on every bulk walk of
+// every device sharing the profile.
+func (s *SNMPServer) logFirstBulkAbort(next, at string) {
+	s.firstBulkAbort.Do(func() {
+		log.Printf("SNMP %s: v3 GETBULK successor %s does not advance past %s; answering end-of-MIB (further aborts suppressed for this device)",
+			s.device.ID, next, at)
+	})
 }
 
 // parseSNMPv3GetBulkParams extracts non-repeaters and max-repetitions from SNMPv3 GetBulk scoped PDU

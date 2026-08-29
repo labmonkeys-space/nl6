@@ -513,7 +513,8 @@ func encodeTypedValue(oid, value string) []byte {
 	// the sentinel too, so a v3 GET, GETNEXT or GETBULK that reaches this
 	// encoder terminates a walk on the exception rather than on a placeholder.
 	// A GETBULK whose scoped PDU fails to decrypt does not reach it: that
-	// fallback rewrites the request to a GET of sysDescr.0.
+	// fallback rewrites the request to a GET of sysDescr.0 (see the comment
+	// at handleSNMPv3Request's decrypt-failure fallback in snmp.go).
 	switch value {
 	case valueEndOfMibView:
 		return []byte{0x82, 0x00} // endOfMibView   [2] IMPLICIT NULL

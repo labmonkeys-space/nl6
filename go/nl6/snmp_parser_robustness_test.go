@@ -542,7 +542,14 @@ func FuzzHandleSNMPv3GetBulkDerived(f *testing.F) {
 		if err != nil || msg == nil {
 			return
 		}
-		_ = s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, msg.ScopedPDU)
+		// Same reasoning as FuzzHandleSNMPv3GetBulkScoped: the start OID is
+		// echoed as the end-of-MIB binding's name, so it must come from the
+		// fuzzed input rather than a literal.
+		startOID, _, err := s.extractOIDAndTypeFromScopedPDU(msg.ScopedPDU)
+		if err != nil || startOID == "" {
+			startOID = ".1.3.6.1.2.1.1.1.0"
+		}
+		_ = s.handleSNMPv3GetBulk(startOID, msg, msg.ScopedPDU)
 	})
 }
 

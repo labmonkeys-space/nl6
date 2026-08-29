@@ -138,7 +138,8 @@ func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Messag
 	//      carve-out remains: handleSNMPv3Request's decrypt-failure fallback
 	//      rewrites the request to a GET of sysDescr.0, so a GETBULK whose
 	//      scoped PDU will not decrypt is still answered from that OID rather
-	//      than terminated.
+	//      than terminated (the comment at that fallback in snmp.go owns the
+	//      explanation).
 	//   2. v3 had no type fidelity at all: no Counter32, Gauge32, TimeTicks,
 	//      IpAddress or OBJECT IDENTIFIER. The same OID answered over v2c and
 	//      v3 carried different ASN.1 types, which for a simulator built to

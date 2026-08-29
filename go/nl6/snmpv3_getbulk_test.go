@@ -369,7 +369,7 @@ func decodeV3Response(t *testing.T, resp []byte) v3Response {
 func expectSeq(t *testing.T, b []byte, what string) []byte {
 	t.Helper()
 	if len(b) == 0 || b[0] != ASN1_SEQUENCE {
-		t.Fatalf("%s: expected SEQUENCE, got % x", what, b[:min2(8, len(b))])
+		t.Fatalf("%s: expected SEQUENCE, got % x", what, b[:min(8, len(b))])
 	}
 	n, after := parseLength(b, 1)
 	if n < 0 || after+n > len(b) {
@@ -393,24 +393,23 @@ func skipTLV(t *testing.T, b []byte, pos int, what string) int {
 func expectInt(t *testing.T, b []byte, pos int, what string) (int, int) {
 	t.Helper()
 	if pos >= len(b) || b[pos] != ASN1_INTEGER {
-		t.Fatalf("%s: expected INTEGER at %d, got % x", what, pos, b[pos:min2(pos+4, len(b))])
+		t.Fatalf("%s: expected INTEGER at %d, got % x", what, pos, b[pos:min(pos+4, len(b))])
 	}
 	n, after := parseLength(b, pos+1)
 	if n < 0 || after+n > len(b) {
 		t.Fatalf("%s: bad INTEGER length", what)
 	}
+	// BER INTEGER is two's complement: sign-extend from the first content
+	// octet so a negative value (or a request-id >= 0x80000000) decodes as
+	// the number that was encoded.
 	v := 0
+	if n > 0 && b[after]&0x80 != 0 {
+		v = -1
+	}
 	for _, c := range b[after : after+n] {
 		v = v<<8 | int(c)
 	}
 	return v, after + n
-}
-
-func min2(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // v3ScopedVarbind is the single-binding convenience over decodeV3Response.
@@ -429,22 +428,36 @@ func v3ScopedVarbind(t *testing.T, resp []byte) (name string, valueTag byte) {
 // back a non-increasing OID with no exception — which is precisely what a
 // walker cannot terminate on. The v1/v2c GETNEXT path grew the same bound in
 // nl6#524; this pins it for v3 bulk.
+//
+// Both halves of the bound are pinned: an entry that maps to ITSELF and one
+// that maps BACKWARD. Loosening the guard from <= 0 to == 0 keeps the self
+// case green and answers the backward case with a non-increasing OID under
+// noError, which is the nl6#526 symptom by the route this guard closes.
 func TestV3GetBulkTerminatesOnNonAdvancingMap(t *testing.T) {
-	s := v3TestServer(v3BulkFixture())
-	const stuck = ".1.3.6.1.2.1.1.1.0"
-	s.device.resources.oidNextMap.Store(stuck, stuck)
+	cases := []struct {
+		name, stuck, next string
+	}{
+		{"self", ".1.3.6.1.2.1.1.1.0", ".1.3.6.1.2.1.1.1.0"},
+		{"backward", ".1.3.6.1.2.1.2.2.1.2.3", ".1.3.6.1.2.1.2.2.1.2.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := v3TestServer(v3BulkFixture())
+			s.device.resources.oidNextMap.Store(tc.stuck, tc.next)
 
-	r := decodeV3Response(t, s.handleSNMPv3GetBulk(stuck, v3BulkMsg(), nil))
-	if len(r.varbinds) != 1 {
-		t.Fatalf("got %d bindings, want 1", len(r.varbinds))
-	}
-	vb := r.varbinds[0]
-	if vb.valueTag != 0x82 {
-		t.Errorf("non-advancing map: value tag = 0x%02x, want 0x82; a walker cannot terminate "+
-			"on a non-increasing OID that carries no exception", vb.valueTag)
-	}
-	if vb.oid != stuck {
-		t.Errorf("terminating binding named %q, want the requested %q", vb.oid, stuck)
+			r := decodeV3Response(t, s.handleSNMPv3GetBulk(tc.stuck, v3BulkMsg(), nil))
+			if len(r.varbinds) != 1 {
+				t.Fatalf("got %d bindings, want 1", len(r.varbinds))
+			}
+			vb := r.varbinds[0]
+			if vb.valueTag != 0x82 {
+				t.Errorf("non-advancing map (%s -> %s): value tag = 0x%02x, want 0x82; a walker cannot "+
+					"terminate on a non-increasing OID that carries no exception", tc.stuck, tc.next, vb.valueTag)
+			}
+			if vb.oid != tc.stuck {
+				t.Errorf("terminating binding named %q, want the requested %q", vb.oid, tc.stuck)
+			}
+		})
 	}
 }
 
