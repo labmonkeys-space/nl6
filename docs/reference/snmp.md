@@ -207,6 +207,13 @@ A blanket recover would convert a parser defect into a silently dropped datagram
 The fuzz targets in `snmp_parser_robustness_test.go` hold the guarantee instead, each seeded with the input that previously crashed it.
 `go test` replays every seed on an ordinary run, so a regression fails the normal suite rather than only a fuzzing session.
 
+That guarantee was measured rather than assumed (nl6#513).
+Twenty-one targets now execute 54 of the 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, and 55 minutes of fuzzing across 80.6 million executions produced no panic.
+That includes the INFORM acknowledgement parser, which is reachable by anyone able to send the simulator a datagram from a spoofed collector address and had never been fuzzed.
+The three remaining sites are inside `parseSNMPv3Message`, whose seeds stop short of them.
+
+`parseLength` keeps its `-1` failure sentinel on the same evidence: 22.3 million executions confirmed it returns `-1` and never any other negative value, so screening for `< 0` at a call site is sufficient as well as necessary.
+
 **Coverage is currently partial, and the gap is known.** Six parsers are fuzzed: `getPDUType`, `parseIncomingRequest`, `parseAllOIDsFromRequest`, `isSNMPv3Request`, `parseSNMPv3Message` and `extractOIDAndTypeFromScopedPDU`.
 That is 5 of the 56 `parseLength` / `skipLength` call sites in the package — `snmp_handlers.go` holds 17 and `trap_v2c.go` 6, and neither file has ever been fuzzed.
 So the totality requirement above is a **statement of intent for the whole family, verified for those six**. Do not read it as a claim that the rest have been checked.
