@@ -213,7 +213,7 @@ That was not always true: the v3 scoped-PDU builder used to branch on `strconv.A
 ### A malformed variable-bindings list discards the request
 
 A variable-bindings list that is not a valid ASN.1 encoding makes the whole PDU malformed, and RFC 1157 §4.1 (step 1) and RFC 3412 §7.2 discard such a datagram rather than answering it. nl6 does the same for SNMPv1 and v2c GET, GETNEXT and GETBULK: no response datagram is sent at all.
-That covers a binding whose name is not a valid OBJECT IDENTIFIER, a name field with the wrong tag or a length that runs past the end of the datagram, and a later binding that is structurally broken.
+Once the list header has been read, the parser checks the list length against the datagram, each binding's framing, the name's tag, length and content, and that exactly one value follows the name; any of those failing discards the request.
 The first such discard on a device is logged once; RFC 3412 would count it in `snmpInASNParseErrs`, which nl6 does not serve.
 
 Until nl6#537 the offending binding was silently dropped and the rest of the request was answered, so a GET carrying three bindings came back with two. RFC 3416 requires the response's bindings to correspond to the request's, and a collector had no way to tell which one had gone missing.

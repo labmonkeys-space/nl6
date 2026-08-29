@@ -211,7 +211,9 @@ func addMalformedVarbindSeeds(f *testing.F) {
 	f.Add(malformedNameRequest(ASN1_GET_REQUEST, snmpVersion2c, 3, 1))
 	f.Add(malformedNameRequest(ASN1_GET_NEXT, snmpVersion2c, 1, 0))
 	f.Add(malformedNameRequest(ASN1_GET_BULK, snmpVersion2c, 2, 1))
-	f.Add(requestWithVarbinds(ASN1_GET_REQUEST, snmpVersion2c, []byte{ASN1_SEQUENCE, 0x00}))
+	for _, tc := range brokenVarbindLists {
+		f.Add(requestWithRawList(ASN1_GET_REQUEST, snmpVersion2c, tc.list))
+	}
 }
 
 func FuzzGetPDUType(f *testing.F) {

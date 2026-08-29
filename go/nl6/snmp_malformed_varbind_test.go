@@ -6,6 +6,10 @@
 package main
 
 import (
+	"bytes"
+	"log"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -23,11 +27,12 @@ import (
 // continuation bit, so the OID is truncated.
 var unterminatedOIDName = []byte{ASN1_OID, 0x02, 0x2b, 0xff}
 
-// requestWithVarbinds builds a v1/v2c message of the given PDU tag and version
-// around a RAW variable-bindings list, so a test can put any bytes where the
-// bindings go. Everything outside the list is well formed. For a GETBULK tag
-// the two integers after request-id are non-repeaters=0 and max-repetitions=10.
-func requestWithVarbinds(pduTag byte, version int, vbs []byte) []byte {
+// requestWithRawList builds a v1/v2c message of the given PDU tag and version
+// around RAW bytes standing where the variable-bindings list goes, header
+// included, so a test can make the list's own header wrong. Everything
+// outside the list is well formed. For a GETBULK tag the two integers after
+// request-id are non-repeaters=0 and max-repetitions=10.
+func requestWithRawList(pduTag byte, version int, list []byte) []byte {
 	var body []byte
 	body = append(body, encodeInteger(42)...)
 	body = append(body, encodeInteger(0)...)
@@ -36,7 +41,7 @@ func requestWithVarbinds(pduTag byte, version int, vbs []byte) []byte {
 	} else {
 		body = append(body, encodeInteger(0)...)
 	}
-	body = append(body, encodeSequence(vbs)...)
+	body = append(body, list...)
 	pdu := append([]byte{pduTag}, append(encodeLength(len(body)), body...)...)
 
 	var msg []byte
@@ -44,6 +49,12 @@ func requestWithVarbinds(pduTag byte, version int, vbs []byte) []byte {
 	msg = append(msg, encodeOctetString("public")...)
 	msg = append(msg, pdu...)
 	return encodeSequence(msg)
+}
+
+// requestWithVarbinds is requestWithRawList with a correctly framed list
+// around the given VarBind bytes.
+func requestWithVarbinds(pduTag byte, version int, vbs []byte) []byte {
+	return requestWithRawList(pduTag, version, encodeSequence(vbs))
 }
 
 // malformedNameRequest builds a request carrying `count` bindings, with the one
@@ -60,6 +71,50 @@ func malformedNameRequest(pduTag byte, version, count, badIndex int) []byte {
 	}
 	return requestWithVarbinds(pduTag, version, vbs)
 }
+
+// brokenVarbindLists are variable-bindings lists, header included, that are
+// not valid ASN.1 encodings for a reason OTHER than a bad OID content. Each
+// used to be skipped, broken out of, or read past silently, which answered a
+// short list or an OID nobody sent. Shared with addMalformedVarbindSeeds so
+// every shape here is replayed by the fuzz targets on an ordinary go test.
+var brokenVarbindLists = func() []struct {
+	name string
+	list []byte
+} {
+	good := encodeVarBind(".1.3.6.1.2.1.1.1.0", encodeNull())
+	goodName := encodeOID(".1.3.6.1.2.1.1.1.0")
+	vb := func(vbs ...[]byte) []byte { return encodeSequence(slices.Concat(vbs...)) }
+	return []struct {
+		name string
+		list []byte
+	}{
+		// The list's own length runs 20 bytes past the datagram.
+		{"list length overruns the datagram", slices.Concat([]byte{ASN1_SEQUENCE, byte(len(good) + 20)}, good)},
+		// Name field carries a NULL tag where an OBJECT IDENTIFIER belongs.
+		{"name tag is not OID", vb(good, encodeSequence(slices.Concat(encodeNull(), encodeNull())))},
+		// Name declares 40 bytes of content but the datagram ends after 2.
+		{"name length overruns the datagram", vb(good, encodeSequence([]byte{ASN1_OID, 0x28, 0x2b, 0x06}))},
+		// Name declares 8 bytes inside a 4-byte VarBind: bounded by the
+		// datagram it would read the NEXT binding's bytes as its own arcs.
+		{"name length overruns its varbind", vb([]byte{ASN1_SEQUENCE, 0x04, ASN1_OID, 0x08, 0x2b, 0x06}, good)},
+		// Empty name: 06 00 is never a legitimate OID (it has at least two arcs).
+		{"zero-length name", vb(good, encodeSequence(slices.Concat([]byte{ASN1_OID, 0x00}, encodeNull())))},
+		// A VarBind with a name and no value.
+		{"varbind without a value", vb(good, encodeSequence(goodName))},
+		// A VarBind with bytes after its value.
+		{"varbind with trailing bytes", vb(good, encodeSequence(slices.Concat(goodName, encodeNull(), []byte{0x00})))},
+		// A second VarBind that is not a SEQUENCE.
+		{"later varbind has wrong tag", vb(good, []byte{ASN1_INTEGER, 0x01, 0x00})},
+		// A second VarBind whose length claims to extend past the list.
+		{"later varbind overruns the list", vb(good, []byte{ASN1_SEQUENCE, 0x7f})},
+		// A second VarBind whose length field is a truncated long form.
+		{"varbind length field truncated", vb(good, []byte{ASN1_SEQUENCE, 0x84})},
+		// A second VarBind with an indefinite length, which BER-for-SNMP forbids.
+		{"varbind length indefinite", vb(good, []byte{ASN1_SEQUENCE, 0x80})},
+		// An empty VarBind SEQUENCE.
+		{"empty varbind", vb(good, []byte{ASN1_SEQUENCE, 0x00})},
+	}
+}()
 
 // TestMalformedVarbindNameDiscardsTheDatagram drives every v1/v2c PDU type
 // through the dispatcher. GETNEXT is in the table because it is the one branch
@@ -103,49 +158,54 @@ func TestMalformedVarbindNameDiscardsTheDatagram(t *testing.T) {
 }
 
 // TestStructurallyBrokenVarbindListDiscardsTheDatagram covers the failures
-// that are not a bad OID CONTENT but a bad list SHAPE. Each of these used to
-// skip the binding or break out of the loop with a partial list, which is the
-// same short-response defect by a different route.
+// that are not a bad OID CONTENT but a bad list SHAPE, at every consumer.
 func TestStructurallyBrokenVarbindListDiscardsTheDatagram(t *testing.T) {
 	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
-	good := encodeVarBind(".1.3.6.1.2.1.1.1.0", encodeNull())
 
-	for _, tc := range []struct {
+	for _, pdu := range []struct {
 		name string
-		vbs  []byte
-	}{
-		// Name field carries a NULL tag where an OBJECT IDENTIFIER belongs.
-		{"name tag is not OID", concat(good, encodeSequence(append(encodeNull(), encodeNull()...)))},
-		// Name declares 40 bytes of content but the datagram ends after 2.
-		{"name length overruns the datagram", concat(good, encodeSequence([]byte{ASN1_OID, 0x28, 0x2b, 0x06}))},
-		// Empty name: 06 00 is never a legitimate OID (it has at least two arcs).
-		{"zero-length name", concat(good, encodeSequence(append([]byte{ASN1_OID, 0x00}, encodeNull()...)))},
-		// A second VarBind that is not a SEQUENCE.
-		{"later varbind has wrong tag", concat(good, []byte{ASN1_INTEGER, 0x01, 0x00})},
-		// A second VarBind whose length claims to extend past the list.
-		{"later varbind overruns the list", concat(good, []byte{ASN1_SEQUENCE, 0x7f})},
-		// An empty VarBind SEQUENCE.
-		{"empty varbind", concat(good, []byte{ASN1_SEQUENCE, 0x00})},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req := requestWithVarbinds(ASN1_GET_REQUEST, snmpVersion2c, tc.vbs)
-			if resp := s.handleSNMPv2cRequest(req); len(resp) != 0 {
-				t.Errorf("a structurally broken varbind list was answered with a %d-byte response "+
-					"carrying %d bindings; the request's list held 2 entries", len(resp), countVarbinds(t, resp))
-			}
-			if oids, ok := s.parseAllOIDsFromRequest(req); ok {
-				t.Errorf("parser reported the list as parseable, returning %v", oids)
-			}
-		})
+		tag  byte
+	}{{"GET", ASN1_GET_REQUEST}, {"GETNEXT", ASN1_GET_NEXT}, {"GETBULK", ASN1_GET_BULK}} {
+		for _, tc := range brokenVarbindLists {
+			t.Run(pdu.name+"/"+tc.name, func(t *testing.T) {
+				req := requestWithRawList(pdu.tag, snmpVersion2c, tc.list)
+				if oids, ok := s.parseAllOIDsFromRequest(req); ok {
+					t.Errorf("parser reported the list as parseable, returning %v", oids)
+				}
+				if resp := s.handleSNMPv2cRequest(req); len(resp) != 0 {
+					t.Errorf("a structurally broken varbind list was answered with a %d-byte response "+
+						"carrying %d bindings", len(resp), countVarbinds(t, resp))
+				}
+			})
+		}
 	}
 }
 
-func concat(parts ...[]byte) []byte {
-	var out []byte
-	for _, p := range parts {
-		out = append(out, p...)
+// TestMalformedListIsLoggedOncePerDevice pins the sync.Once gate: a manager
+// that sends one malformed request tends to send it every poll, and at fleet
+// scale an ungated line is a flood, while no line at all makes the discard
+// indistinguishable from a network drop.
+func TestMalformedListIsLoggedOncePerDevice(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	s := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	for _, tag := range []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK, ASN1_GET_REQUEST} {
+		s.handleSNMPv2cRequest(malformedNameRequest(tag, snmpVersion2c, 1, 0))
+		s.handleSNMPv2cRequest(requestWithRawList(tag, snmpVersion2c, brokenVarbindLists[0].list))
 	}
-	return out
+	if got := strings.Count(buf.String(), "not a valid ASN.1 encoding"); got != 1 {
+		t.Errorf("expected exactly one discard log line for the device, got %d:\n%s", got, buf.String())
+	}
+
+	// A second device has its own gate.
+	s2 := newTestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	s2.handleSNMPv2cRequest(malformedNameRequest(ASN1_GET_REQUEST, snmpVersion2c, 1, 0))
+	if got := strings.Count(buf.String(), "not a valid ASN.1 encoding"); got != 2 {
+		t.Errorf("expected the second device to log its own first discard, total %d", got)
+	}
 }
 
 // TestWellFormedMultiVarbindStillAnswered is the positive control. Without it,
