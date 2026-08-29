@@ -5,7 +5,10 @@
 
 package main
 
-import "strings"
+import (
+	"strings"
+	"testing"
+)
 
 // Test helpers shared across the SNMP suites. This file is deliberately
 // UNTAGGED: some SNMP suites carry //go:build linux (the list lives in
@@ -110,4 +113,40 @@ func snmpRequestAt(pduTag byte, version int, oids []string) []byte {
 	msg = append(msg, encodeOctetString("public")...)
 	msg = append(msg, pdu...)
 	return encodeSequence(msg)
+}
+
+// countVarbinds decodes a v1/v2c GetResponse and returns its binding count.
+// Lives here rather than beside countResponseVarbinds because that one sits in
+// the linux-tagged snmp_getbulk_test.go family and is invisible to the
+// untagged suites (see the build-tag note in CLAUDE.md).
+func countVarbinds(t *testing.T, resp []byte) int {
+	t.Helper()
+	body := expectSeq(t, resp, "message")
+	pos := skipTLV(t, body, 0, "version")
+	pos = skipTLV(t, body, pos, "community")
+	if pos >= len(body) {
+		t.Fatal("no PDU")
+	}
+	n, after := parseLength(body, pos+1)
+	if n < 0 || after+n > len(body) {
+		t.Fatal("bad PDU length")
+	}
+	pdu := body[after : after+n]
+	pp := 0
+	_, pp = expectInt(t, pdu, pp, "request-id")
+	_, pp = expectInt(t, pdu, pp, "error-status")
+	_, pp = expectInt(t, pdu, pp, "error-index")
+	vbl := expectSeq(t, pdu[pp:], "variable-bindings")
+
+	count := 0
+	for vp := 0; vp < len(vbl); {
+		expectSeq(t, vbl[vp:], "varbind")
+		n2, after2 := parseLength(vbl, vp+1)
+		if n2 < 0 || after2+n2 > len(vbl) {
+			t.Fatal("bad varbind length")
+		}
+		vp = after2 + n2
+		count++
+	}
+	return count
 }

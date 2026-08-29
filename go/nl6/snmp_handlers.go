@@ -416,9 +416,10 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	allOIDs, ok := s.parseAllOIDsFromRequest(requestData)
 	if !ok {
 		// A varbind name that is not a valid OBJECT IDENTIFIER makes the PDU
-		// malformed. RFC 1157 and RFC 3412 discard such a datagram rather than
-		// answering it; an empty response means handleSingleRequest sends
-		// nothing (nl6#537).
+		// malformed. RFC 1157 §4.1 step 1 and RFC 3412 §7.2 discard such a
+		// datagram rather than answering it; returning nil means no datagram
+		// is sent (nl6#537).
+		s.logFirstMalformedName(ASN1_GET_BULK)
 		return nil
 	}
 	if len(allOIDs) == 0 {
@@ -532,21 +533,25 @@ func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte)
 // of an SNMP PDU (GET, GETNEXT, or GETBULK). For GETBULK this returns all
 // column starters; for GET/GETNEXT it returns the single requested OID.
 //
-// The bool reports whether every varbind name PARSED. It is false when a name
-// field is present but its content is not a valid OBJECT IDENTIFIER encoding,
-// which RFC 1157 and RFC 3412 treat as an ASN.1 error: the datagram is
-// discarded and no response is sent.
+// The bool reports whether the variable-bindings list PARSED. It is false when
+// the list is present but is not a valid ASN.1 encoding: a name whose content
+// is not a valid OBJECT IDENTIFIER, a name field with a tag other than OBJECT
+// IDENTIFIER or a length that overruns the datagram, or a later VarBind that
+// is structurally broken. RFC 1157 §4.1 step 1 and RFC 3412 §7.2 treat all of
+// these as an ASN.1 error: the datagram is discarded and no response is sent.
 //
 // This used to be indistinguishable from "that binding is absent". The loop
-// below appended only names that decoded, so a malformed one silently vanished
-// and the response came back with FEWER bindings than the request carried,
-// against RFC 3416's correspondence requirement (nl6#537). The skip was
-// near-unreachable until nl6#529 made decodeOID refuse malformed input rather
-// than invent a value for it, which is what exposed it.
+// below appended only names that decoded and skipped or broke on everything
+// else, so a malformed binding silently vanished and the response came back
+// with FEWER bindings than the request carried, against RFC 3416's
+// correspondence requirement (nl6#537). The skip was near-unreachable until
+// nl6#529 made decodeOID refuse malformed input rather than invent a value for
+// it, which is what exposed it.
 //
 // A caller must distinguish the two zero cases: (nil, false) means malformed,
-// discard; (nil, true) means the PDU carried no variable bindings at all,
-// which is structurally fine.
+// discard; (nil, true) means the walk never reached a variable-bindings list
+// (the envelope before it was unreadable, or the list is empty), which the
+// general request parser's single OID still covers.
 func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) ([]string, bool) {
 	var oids []string
 
@@ -641,36 +646,43 @@ func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) ([]string, bool) {
 	pos = newPos
 	end := pos + vbListLen
 
-	// Walk every VarBind
+	// Walk every VarBind. From here on every structural failure is an ASN.1
+	// error in a list the requester DID send, so it reports malformed rather
+	// than breaking out with a partial list: a break here answered the
+	// bindings before the defect and dropped the rest, the same short-list
+	// symptom as a bad name (nl6#537).
 	for pos < end && pos < len(data) {
 		if data[pos] != ASN1_SEQUENCE {
-			break
+			return nil, false
 		}
 		pos++
 		vbLen, newPos := parseLength(data, pos)
 		if vbLen < 0 {
-			break
+			return nil, false
 		}
 		pos = newPos
 		nextVarBind := pos + vbLen
 		if nextVarBind > end {
-			break // VarBind claims to extend beyond declared VarBindList boundary
+			return nil, false // VarBind claims to extend beyond declared VarBindList boundary
 		}
 
-		// OID inside VarBind
-		if pos < len(data) && data[pos] == ASN1_OID {
-			pos++
-			oidLen, newPos := parseLength(data, pos)
-			if oidLen >= 0 && newPos+oidLen <= len(data) {
-				oid := decodeOID(data[newPos : newPos+oidLen])
-				if oid == "" {
-					// A name field that is present but not a valid OBJECT
-					// IDENTIFIER. Report it rather than dropping the binding.
-					return nil, false
-				}
-				oids = append(oids, oid)
-			}
+		// Name inside VarBind. A tag other than OBJECT IDENTIFIER, a length
+		// that overruns the datagram, or content decodeOID refuses (including
+		// the empty "06 00") is a name field that is present but not a valid
+		// OID; report it rather than dropping the binding.
+		if pos >= len(data) || data[pos] != ASN1_OID {
+			return nil, false
 		}
+		pos++
+		oidLen, newPos := parseLength(data, pos)
+		if oidLen < 0 || newPos+oidLen > len(data) {
+			return nil, false
+		}
+		oid := decodeOID(data[newPos : newPos+oidLen])
+		if oid == "" {
+			return nil, false
+		}
+		oids = append(oids, oid)
 
 		pos = nextVarBind
 	}
