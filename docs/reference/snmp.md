@@ -210,6 +210,16 @@ That was not always true: the v3 scoped-PDU builder used to branch on `strconv.A
 
 — the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
 
+### A malformed variable-binding name discards the request
+
+A variable binding whose name is not a valid OBJECT IDENTIFIER encoding makes the whole PDU malformed, and RFC 1157 and RFC 3412 discard such a datagram rather than answering it. nl6 does the same: no response datagram is sent at all.
+
+Until nl6#537 the offending binding was silently dropped and the rest of the request was answered, so a GET carrying three bindings came back with two. RFC 3416 requires the response's bindings to correspond to the request's, and a collector had no way to tell which one had gone missing.
+
+A PDU whose variable-bindings list is simply absent or unreadable is a different case and is still answered, from the single OID the general request parser recovers.
+
+The SNMPv3 path is not covered by this change: a malformed OID there is currently answered with `sysDescr.0`, because the fallback that handles it is shared with decryption failure, which RFC 3414 wants answered with a Report rather than silence.
+
 ## Malformed-datagram handling
 
 Every simulated device answers from one process, and the request path is a hand-written BER parser rather than `encoding/asn1`.

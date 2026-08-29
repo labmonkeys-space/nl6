@@ -182,7 +182,7 @@ func TestParseAllOIDsFromRequest_SingleOID(t *testing.T) {
 	want := []string{".1.3.6.1.2.1.2.2.1.2"}
 
 	pdu := buildGetBulkPDU(0, 10, want)
-	got := s.parseAllOIDsFromRequest(pdu)
+	got, _ := s.parseAllOIDsFromRequest(pdu)
 
 	if len(got) != len(want) {
 		t.Fatalf("got %d OID(s), want %d", len(got), len(want))
@@ -204,7 +204,7 @@ func TestParseAllOIDsFromRequest_MultipleOIDs(t *testing.T) {
 	}
 
 	pdu := buildGetBulkPDU(0, 10, want)
-	got := s.parseAllOIDsFromRequest(pdu)
+	got, _ := s.parseAllOIDsFromRequest(pdu)
 
 	if len(got) != len(want) {
 		t.Fatalf("got %d OIDs, want %d", len(got), len(want))
@@ -220,12 +220,12 @@ func TestParseAllOIDsFromRequest_MalformedPDU(t *testing.T) {
 	s := &SNMPServer{device: &DeviceSimulator{}}
 
 	// Should return empty slice without panicking.
-	got := s.parseAllOIDsFromRequest([]byte{0x00, 0x01, 0x02})
+	got, _ := s.parseAllOIDsFromRequest([]byte{0x00, 0x01, 0x02})
 	if len(got) != 0 {
 		t.Errorf("expected empty slice for malformed PDU, got %v", got)
 	}
 
-	got = s.parseAllOIDsFromRequest(nil)
+	got, _ = s.parseAllOIDsFromRequest(nil)
 	if len(got) != 0 {
 		t.Errorf("expected empty slice for nil input, got %v", got)
 	}

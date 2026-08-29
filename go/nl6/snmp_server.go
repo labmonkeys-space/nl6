@@ -231,7 +231,18 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// stored empty, and the discovered topology has no edges (issue #176).
 		// Reuse the multi-varbind parser + GetResponse encoder (as GETBULK);
 		// responses are returned per OID, in request order.
-		oids := s.parseAllOIDsFromRequest(requestData)
+		oids, ok := s.parseAllOIDsFromRequest(requestData)
+		if !ok {
+			// A varbind name that is not a valid OBJECT IDENTIFIER makes the
+			// PDU malformed. RFC 1157 and RFC 3412 discard such a datagram
+			// rather than answering it, and returning nothing here means
+			// handleSingleRequest sends no datagram at all (nl6#537).
+			//
+			// Distinct from the zero case below: that one is a PDU whose
+			// varbind list is absent or structurally unreadable, which the
+			// single parsed OID still covers.
+			return nil
+		}
 		if len(oids) == 0 {
 			oids = []string{oid} // fallback for an unparseable varbind list
 		}

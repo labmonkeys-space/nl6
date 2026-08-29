@@ -413,7 +413,14 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	}
 
 	// Parse every OID from the variable-bindings list.
-	allOIDs := s.parseAllOIDsFromRequest(requestData)
+	allOIDs, ok := s.parseAllOIDsFromRequest(requestData)
+	if !ok {
+		// A varbind name that is not a valid OBJECT IDENTIFIER makes the PDU
+		// malformed. RFC 1157 and RFC 3412 discard such a datagram rather than
+		// answering it; an empty response means handleSingleRequest sends
+		// nothing (nl6#537).
+		return nil
+	}
 	if len(allOIDs) == 0 {
 		// Fallback: use the single OID extracted by the general request parser.
 		allOIDs = []string{startOID}
@@ -524,96 +531,112 @@ func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte)
 // parseAllOIDsFromRequest extracts every OID from the variable-bindings list
 // of an SNMP PDU (GET, GETNEXT, or GETBULK). For GETBULK this returns all
 // column starters; for GET/GETNEXT it returns the single requested OID.
-func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) []string {
+//
+// The bool reports whether every varbind name PARSED. It is false when a name
+// field is present but its content is not a valid OBJECT IDENTIFIER encoding,
+// which RFC 1157 and RFC 3412 treat as an ASN.1 error: the datagram is
+// discarded and no response is sent.
+//
+// This used to be indistinguishable from "that binding is absent". The loop
+// below appended only names that decoded, so a malformed one silently vanished
+// and the response came back with FEWER bindings than the request carried,
+// against RFC 3416's correspondence requirement (nl6#537). The skip was
+// near-unreachable until nl6#529 made decodeOID refuse malformed input rather
+// than invent a value for it, which is what exposed it.
+//
+// A caller must distinguish the two zero cases: (nil, false) means malformed,
+// discard; (nil, true) means the PDU carried no variable bindings at all,
+// which is structurally fine.
+func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) ([]string, bool) {
 	var oids []string
 
 	pos := 0
 
 	// Outer SEQUENCE
 	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
-		return oids
+		return oids, true
 	}
 	pos++
 	outerLen, newPos := parseLength(data, pos)
 	if outerLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos
 
 	// Version (INTEGER)
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids
+		return oids, true
 	}
 	pos++
 	verLen, newPos := parseLength(data, pos)
 	if verLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos + verLen
 
 	// Community (OCTET STRING)
 	if pos >= len(data) || data[pos] != ASN1_OCTET_STRING {
-		return oids
+		return oids, true
 	}
 	pos++
 	commLen, newPos := parseLength(data, pos)
 	if commLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos + commLen
 
 	// PDU tag (any: GET / GETNEXT / GETBULK / …)
 	if pos >= len(data) {
-		return oids
+		return oids, true
 	}
 	pos++ // consume PDU type byte
 	pduLen, newPos := parseLength(data, pos)
 	if pduLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos
 
 	// Request-ID (INTEGER)
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids
+		return oids, true
 	}
 	pos++
 	reqIDLen, newPos := parseLength(data, pos)
 	if reqIDLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos + reqIDLen
 
 	// error-status / non-repeaters (INTEGER)
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids
+		return oids, true
 	}
 	pos++
 	f1Len, newPos := parseLength(data, pos)
 	if f1Len < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos + f1Len
 
 	// error-index / max-repetitions (INTEGER)
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids
+		return oids, true
 	}
 	pos++
 	f2Len, newPos := parseLength(data, pos)
 	if f2Len < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos + f2Len
 
 	// VarBindList (SEQUENCE)
 	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
-		return oids
+		return oids, true
 	}
 	pos++
 	vbListLen, newPos := parseLength(data, pos)
 	if vbListLen < 0 {
-		return oids
+		return oids, true
 	}
 	pos = newPos
 	end := pos + vbListLen
@@ -639,16 +662,20 @@ func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) []string {
 			pos++
 			oidLen, newPos := parseLength(data, pos)
 			if oidLen >= 0 && newPos+oidLen <= len(data) {
-				if oid := decodeOID(data[newPos : newPos+oidLen]); oid != "" {
-					oids = append(oids, oid)
+				oid := decodeOID(data[newPos : newPos+oidLen])
+				if oid == "" {
+					// A name field that is present but not a valid OBJECT
+					// IDENTIFIER. Report it rather than dropping the binding.
+					return nil, false
 				}
+				oids = append(oids, oid)
 			}
 		}
 
 		pos = nextVarBind
 	}
 
-	return oids
+	return oids, true
 }
 
 // parseGetBulkParams extracts non-repeaters and max-repetitions from GetBulk request

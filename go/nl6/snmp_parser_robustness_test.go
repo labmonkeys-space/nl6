@@ -86,7 +86,7 @@ func TestSNMPParsers_MalformedDatagramsDoNotPanic(t *testing.T) {
 			// either — the parsers are expected to be total.
 			s.getPDUType(pkt)
 			s.parseIncomingRequest(pkt)
-			s.parseAllOIDsFromRequest(pkt)
+			_, _ = s.parseAllOIDsFromRequest(pkt)
 			isSNMPv3Request(pkt)
 			_, _ = s.parseSNMPv3Message(pkt)
 			_, _, _ = s.extractOIDAndTypeFromScopedPDU(pkt)
@@ -219,7 +219,7 @@ func FuzzParseIncomingRequest(f *testing.F) {
 func FuzzParseAllOIDsFromRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	addGoldenV2cSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().parseAllOIDsFromRequest(data) })
+	f.Fuzz(func(_ *testing.T, data []byte) { _, _ = robustnessTestServer().parseAllOIDsFromRequest(data) })
 }
 
 func FuzzIsSNMPv3Request(f *testing.F) {
@@ -522,7 +522,7 @@ func FuzzHandleGetRequestVarbinds(f *testing.F) {
 		// The oids argument is what the server itself parsed out of the same
 		// datagram, so deriving it here keeps the pair consistent the way the
 		// real dispatcher does.
-		oids := s.parseAllOIDsFromRequest(data)
+		oids, _ := s.parseAllOIDsFromRequest(data)
 		if len(oids) == 0 {
 			oids = []string{".1.3.6.1.2.1.1.1.0"}
 		}
