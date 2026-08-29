@@ -65,6 +65,35 @@ That puts them in the value space: a resource file whose legitimate value were l
 Removing the hazard at the root needs a typed value rather than a string, which is a larger change.
 Until then the resource-file route to it is closed at load time.
 
+### The first OID sub-identifier is a varint
+
+X.690 §8.19.4 packs the first two arcs of an OID into a single sub-identifier valued `40*first + second`, encoded as a base-128 varint like every other one.
+nl6 used to emit that sub-identifier as one byte, and to read it back as one, so the encoder and decoder agreed with each other while both disagreed with the standard.
+
+The round-trip held only while the second arc stayed below 40, and fabricated silently above it:
+
+| OID | went out as | since nl6#529 |
+|---|---|---|
+| `3.40.1` | `.4.0.1` | degenerate `06 00`, first arc 3 is not representable |
+| `2.87.1` | `.4.7.1` | round-trips |
+| `2.175.1` | `.6.15.1` | round-trips |
+| `2.999` | `.1.15` | round-trips |
+
+That is valid-looking BER carrying an OID nobody wrote, which a collector has no way to detect. `2.999` is the ITU test arc and is perfectly legal; it simply could not be expressed before.
+
+An OID the encoder cannot represent faithfully now takes a degenerate encoding, `06 00`, rather than becoming a different OID.
+That encoding is itself non-conformant: X.690 §8.19.1 requires at least one sub-identifier, so nl6 emits bytes its own decoder refuses.
+The trade is deliberate and worth stating plainly. A wrong-but-well-formed OID is undetectable and gets recorded as fact; a malformed one is visible to any decoder, and in a `snmpTrapOID.0` or `sysObjectID` position a collector will reject the message rather than believe it.
+Refusing to build the message at all would be better still, but that needs an error return through seven varbind-name call sites and is not this change; it is tracked in `deferred-work.md`.
+The OCTET STRING fallback nl6#529 asks for in a value slot (the way `encodeIPAddress` already degrades an unparseable address) is also still open: `encodeTypedValue`'s OID branch returns the same `06 00`, so a `sysObjectID` of `unknown` still goes out as a degenerate OID rather than as a string. That covers a first arc above 2, a second arc above 39 when the first is 0 or 1 (a wider one would be indistinguishable from a higher first arc, since `1.40` and `2.0` both compute 80), a combined first sub-identifier or any later arc above 2^32-1, and any component that is not a number.
+
+The decoder is stricter too, because it parses bytes that arrive from the network.
+A sub-identifier whose final byte still sets the continuation bit is truncated and is now refused, where it used to be accepted at face value.
+A sub-identifier wider than 2^32-1 is refused, where it used to wrap and could produce a negative arc.
+A non-minimal sub-identifier, one whose leading octet is `0x80` (X.690 §8.19.2), is refused too; otherwise an attacker could pad any OID with continuation bytes and produce unbounded distinct byte strings that all decode to one OID.
+
+Nothing that ships with nl6 changes on the wire: all 5,676 distinct OIDs across the resource files and trap catalogs encode to exactly the same bytes as before.
+
 ### SNMPv1 never returns a Counter64
 
 Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column used to answer tag `0x46` under `error-status = noError` (nl6#524).
@@ -112,8 +141,9 @@ Two call sites downgrade the rejection to a log line rather than failing: the st
 At those two sites the guard is advisory.
 
 The scope is one rule.
-A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, tracked as nl6#529 and still open.
-It is entangled with `encodeOID`'s own first-arc arithmetic, and its acceptance criterion is a `decodeOID(encodeOID(x)) == x` round-trip property test rather than a hand-derived bound.
+A non-OID value on the OID-typed `sysObjectID` leaf is a separate hazard, still open under nl6#529.
+The encoder half of that issue has landed and is described under [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above; what remains is rejecting such a value when the resource file is loaded.
+The encoder entanglement that made it hard is gone: the round-trip property test that its acceptance criterion called for now exists.
 A non-numeric `Counter32`, `Gauge32` or `TimeTicks` value, or an unparseable `ipAdEntAddr`, is likewise still accepted at load and degrades to an OCTET STRING when served.
 
 ## Response size, `max-repetitions` and truncation

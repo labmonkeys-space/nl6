@@ -150,6 +150,22 @@ Per-varbind object:
 | `type` | string | yes | One of `integer`, `octet-string`, `oid`, `counter32`, `gauge32`, `timeticks`, `counter64`, `ipaddress`. |
 | `value` | string | yes | Literal value, type-parsed against the `type` field. Templates allowed. |
 
+### What counts as a well-formed OID
+
+Every dotted OID in this file, whether a varbind name, `snmpTrapOID` or `snmpTrapEnterprise`, must satisfy the rules the encoder can actually represent (X.690 §8.19):
+
+- The first arc is `0`, `1` or `2`.
+- When the first arc is `0` or `1`, the second arc is at most `39`. A wider one would be indistinguishable on the wire from a higher first arc, since `1.40` and `2.0` both encode to the same value. Only a first arc of `2` may carry a large second arc, which is how OIDs such as the ITU test arc `2.999` exist.
+- Every arc, and the combined value of the first two, is at most `4294967295`.
+- Every component is a number. A non-numeric component is not treated as zero.
+
+Literal `snmpTrapEnterprise` values are checked for digits-and-dots at load and rejected otherwise; the arc bounds above are not checked at load for any field. Only templated varbind names can carry a non-numeric component to the encoder.
+
+An OID that breaks any of these is emitted as a degenerate `06 00` rather than as a different, valid-looking OID. That is deliberate, and it is visible: a collector will reject the message rather than record an OID nobody wrote. Before nl6#529 such an OID was silently fabricated instead, so `3.40.1` went on the wire as `.4.0.1`.
+
+A templated OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked after rendering, so an override supplying a non-numeric or out-of-range `IfIndex` produces the degenerate encoding at fire time.
+That fire is not observable from nl6: the encoder has no error return, so no log line is written and no status counter moves. The collector's rejection is the only signal.
+
 ### Universal catalog (embedded default)
 
 Ships five entries, all from `SNMPv2-MIB`:

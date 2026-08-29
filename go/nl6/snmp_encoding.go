@@ -50,41 +50,114 @@ func parseLength(data []byte, pos int) (int, int) {
 	return length, pos
 }
 
-// decodeOID converts ASN.1 encoded OID bytes to dot notation string
+// legalOIDArcPair reports whether (first, second) is a pair X.690 §8.19.4 can
+// represent. The first arc is 0, 1 or 2; when it is 0 or 1 the second arc is
+// limited to 0..39, because 40*first+second is what actually goes on the wire
+// and a wider second arc would ALIAS a higher first arc: 1.40 and 2.0 both
+// compute 80 and could not be told apart on decode.
+//
+// Only the first arc 2 may carry an unbounded second arc, which is how
+// legitimate OIDs such as the ITU test arc 2.999 exist. Encoding a pair
+// outside this set would produce a valid-looking OID that is not the one the
+// caller named, which is the fabrication class nl6#529 exists to remove.
+func legalOIDArcPair(first, second int) bool {
+	if first < 0 || second < 0 || first > 2 {
+		return false
+	}
+	if first < 2 && second > 39 {
+		return false
+	}
+	// The COMBINED value is what goes on the wire, so it is what must fit an
+	// SMI sub-identifier. Bounding the raw second arc instead is not the same
+	// test, and having the two encoders bound different things is precisely
+	// how they diverged on "2.7000000000" (found by FuzzOIDRoundTrip).
+	// Computed in uint64 so the sum cannot overflow a 32-bit int.
+	return uint64(40)*uint64(first)+uint64(second) <= maxOIDSubIdentifier
+}
+
+// maxOIDSubIdentifier bounds a decoded sub-identifier. SMI caps an arc at
+// 2^32-1, and without a bound the accumulator below wraps: ten continuation
+// bytes used to decode to the arc -1, which then flowed into a response and
+// back out through the encoder (nl6#529).
+//
+// Untyped, and compared against int in both encoders, so this package
+// assumes a 64-bit int: on a 32-bit GOARCH the comparison is a constant
+// overflow at compile time. nl6 only builds for amd64 and arm64.
+const maxOIDSubIdentifier = 0xFFFFFFFF
+
+// maxOIDBodyBytes is the largest OID content field both encoders can express
+// identically: appendOID writes a two-octet long-form length at most.
+const maxOIDBodyBytes = 0xFFFF
+
+// decodeOID decodes a BER OBJECT IDENTIFIER body into dotted form, or returns
+// "" if the bytes are not a well-formed OID.
+//
+// The first sub-identifier is a base-128 varint carrying 40*first + second
+// (X.690 §8.19.4), NOT a single byte. Reading it as one byte was symmetric
+// with the old encodeOID and both were wrong: the round-trip held only while
+// the second arc stayed under 40, and fabricated silently above it.
+//
+// This is on the request-parse path (snmp_handlers.go, snmp.go,
+// snmp_response.go all decode attacker-supplied bytes), so it refuses
+// malformed input rather than inventing a value for it.
 func decodeOID(oidBytes []byte) string {
 	if len(oidBytes) == 0 {
 		return ""
 	}
 
-	var oid []string
-
-	// First byte encodes first two sub-identifiers
-	// first = byte / 40, second = byte % 40
-	firstByte := oidBytes[0]
-	first := firstByte / 40
-	second := firstByte % 40
-	oid = append(oid, strconv.Itoa(int(first)))
-	oid = append(oid, strconv.Itoa(int(second)))
-
-	// Process remaining bytes
-	pos := 1
+	subIDs, pos := make([]uint64, 0, len(oidBytes)), 0
 	for pos < len(oidBytes) {
-		value := 0
+		// X.690 §8.19.2: a sub-identifier is encoded minimally, so its leading
+		// octet is never 0x80. Without this an attacker can pad any OID with
+		// arbitrarily many 0x80 bytes and produce unbounded distinct byte
+		// strings that all decode to the same OID, which defeats any
+		// dedup, cache key or equality check keyed on the wire form.
+		if oidBytes[pos] == 0x80 {
+			return ""
+		}
 
-		// Parse variable length encoding (base 128)
+		var value uint64
+		terminated := false
 		for pos < len(oidBytes) {
 			b := oidBytes[pos]
 			pos++
 
-			value = (value << 7) | int(b&0x7F)
+			// Guard BEFORE shifting: 2^32-1 needs at most five 7-bit groups,
+			// so anything wider is out of range whatever the remaining bytes
+			// hold, and shifting first is what produced a negative arc. This
+			// is the ONLY range check; a post-shift one cannot fire, since the
+			// largest value reachable through this guard is exactly 2^32-1.
+			if value > (maxOIDSubIdentifier >> 7) {
+				return ""
+			}
+			value = (value << 7) | uint64(b&0x7F)
 
-			// If high bit is 0, this is the last byte of this sub-identifier
 			if (b & 0x80) == 0 {
+				terminated = true
 				break
 			}
 		}
+		// A sub-identifier whose last byte still sets the continuation bit is
+		// truncated, not complete. It used to be accepted at face value.
+		if !terminated {
+			return ""
+		}
+		subIDs = append(subIDs, value)
+	}
 
-		oid = append(oid, strconv.Itoa(value))
+	// Split the first sub-identifier back into two arcs. X.690 §8.19.4: the
+	// first arc is 0, 1 or 2, and only 0 and 1 are limited to a second arc
+	// under 40, which is why the first arc is clamped rather than divided out.
+	first := subIDs[0] / 40
+	if first > 2 {
+		first = 2
+	}
+	second := subIDs[0] - 40*first
+
+	oid := make([]string, 0, len(subIDs)+1)
+	oid = append(oid, strconv.FormatUint(first, 10), strconv.FormatUint(second, 10))
+	for _, v := range subIDs[1:] {
+		oid = append(oid, strconv.FormatUint(v, 10))
 	}
 
 	return "." + strings.Join(oid, ".")
@@ -170,15 +243,46 @@ func encodeOID(oid string) []byte {
 
 	var encoded []byte
 
-	// First two components are encoded as 40*first + second
-	first, _ := strconv.Atoi(parts[0])
-	second, _ := strconv.Atoi(parts[1])
-	encoded = append(encoded, byte(40*first+second))
+	// X.690 §8.19.4: the first two arcs share ONE sub-identifier valued
+	// 40*first + second, and every sub-identifier is a base-128 varint. This
+	// used to emit that byte directly, which silently fabricated any OID whose
+	// combined value exceeded what one byte can carry: 3.40.1 went out as
+	// .4.0.1, 2.999 (the legal ITU arc) as .1.15. Valid-looking BER carrying
+	// data nobody wrote, which a collector cannot detect (nl6#529).
+	//
+	// encodeOIDComponent already emits a correct varint, so this is the same
+	// treatment every other arc has always had. decodeOID reads it back as a
+	// varint; the two must move together or the round-trip breaks.
+	// strconv errors are NOT swallowed. Discarding them was the second route
+	// into the same fabrication: "1.3.x.7" became the perfectly valid-looking
+	// OID .1.3.0.7, and "1." became .1.0, because a component that failed to
+	// parse silently contributed the arc 0. An OID this function cannot
+	// represent faithfully takes the degenerate path instead of becoming a
+	// different OID (nl6#529).
+	first, err1 := strconv.Atoi(parts[0])
+	second, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || !legalOIDArcPair(first, second) {
+		return []byte{ASN1_OID, 0x00}
+	}
+	encoded = append(encoded, encodeOIDComponent(40*first+second)...)
 
 	// Encode remaining components
 	for i := 2; i < len(parts); i++ {
-		val, _ := strconv.Atoi(parts[i])
+		val, err := strconv.Atoi(parts[i])
+		if err != nil || val < 0 || val > maxOIDSubIdentifier {
+			return []byte{ASN1_OID, 0x00}
+		}
 		encoded = append(encoded, encodeOIDComponent(val)...)
+	}
+
+	// Both encoders must agree byte for byte, and appendOID writes at most a
+	// two-octet long-form length. A body at or past 0x10000 would take three
+	// octets here and be truncated there, so it is refused in both rather than
+	// silently diverging. No SNMP datagram could carry an OID this size in any
+	// case: the bound is about keeping the two implementations identical, not
+	// about the wire.
+	if len(encoded) > maxOIDBodyBytes {
+		return []byte{ASN1_OID, 0x00}
 	}
 
 	result := []byte{ASN1_OID}
