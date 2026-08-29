@@ -48,12 +48,10 @@ func (c *SNMPv3Config) Validate() error {
 	return nil
 }
 
-// createSNMPv3Response creates an SNMPv3 response message
+// createSNMPv3Response creates a single-binding SNMPv3 response message. The
+// "not configured" guard lives in wrapScopedPDUInV3Message, which every
+// response passes through.
 func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
-	if s.v3Config == nil || !s.v3Config.Enabled {
-		return nil, fmt.Errorf("SNMPv3 not configured")
-	}
-
 	scopedPDU, err := s.createScopedPDU(oid, value, requestMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scoped PDU: %v", err)
@@ -74,12 +72,11 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 	if s.v3Config == nil || !s.v3Config.Enabled {
 		return nil, fmt.Errorf("SNMPv3 not configured")
 	}
-	var err error
 
 	// Encrypt scoped PDU if privacy is enabled
-	encryptedPDU := scopedPDU
-	privParams := []byte{}
+	encryptedPDU, privParams := scopedPDU, []byte{}
 	if s.v3Config.PrivProtocol != SNMPV3_PRIV_NONE && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV) != 0 {
+		var err error
 		encryptedPDU, privParams, err = s.encryptScopedPDU(scopedPDU, requestMsg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt scoped PDU: %v", err)
@@ -135,7 +132,6 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 	return msgBytes, nil
 }
 
-// createScopedPDU creates the scoped PDU containing the actual SNMP data
 // createScopedPDUMulti builds a scoped PDU carrying SEVERAL variable bindings.
 //
 // createScopedPDU is the single-binding case and delegates here, so there is
@@ -177,6 +173,7 @@ func (s *SNMPServer) createScopedPDUMulti(oids, values []string, requestMsg *SNM
 	return encodeSequence(scopedContents), nil
 }
 
+// createScopedPDU creates the scoped PDU carrying one variable binding.
 func (s *SNMPServer) createScopedPDU(oid, value string, requestMsg *SNMPv3Message) ([]byte, error) {
 	return s.createScopedPDUMulti([]string{oid}, []string{value}, requestMsg)
 }

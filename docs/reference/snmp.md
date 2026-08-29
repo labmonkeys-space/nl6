@@ -58,7 +58,7 @@ The mapping applies to GET and GETNEXT only.
 GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
 
 **SNMPv3 GET and GETNEXT are covered.** Since nl6#518 the v3 encoder (`createScopedPDU`) goes through `encodeTypedValue` as well, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
-The v3 GETBULK handler is the exception; see the known limitations below.
+The v3 GETBULK handler reaches the same encoder through `createScopedPDUMulti`, so its bindings carry the same tags; what it still lacks is a real `max-repetitions`, see the known limitations below.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
 That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception, and a v1 manager would get `noSuchName` for a value that is simply a string.
@@ -202,13 +202,11 @@ That was not always true: the v3 scoped-PDU builder used to branch on `strconv.A
 
 **A GETNEXT processes only its first variable binding.** The v1/v2c GETNEXT dispatcher reads one OID from the request and answers one successor. A multi-binding GETNEXT (as some walkers send to fetch several columns per round trip) gets an answer for the first binding only. Pre-existing; the SNMPv1 Counter64 skip inherits it.
 
-**SNMPv3 GETBULK still hardcodes `max-repetitions` to 10** (nl6#535). `parseSNMPv3GetBulkParams` ignores the scoped PDU and returns a fixed 10, so a manager asking for more gets 10 and one asking for fewer gets 10. That is the last of the three defects nl6#535 named; the response now carries every binding the handler collected, and it is bounded, so honouring a real value is safe to add next. A multi-column GETBULK is still answered with the first column only, which is a wrong answer under RFC 3416 rather than merely a small one.
+**SNMPv3 GETBULK still hardcodes `max-repetitions` to 10** (nl6#535). `parseSNMPv3GetBulkParams` ignores the scoped PDU and returns a fixed 10, so a manager asking for more gets 10 and one asking for fewer gets 10. That is the last of the three defects nl6#535 named; the response now carries every binding the handler collected, and it is bounded, so honouring a real value is safe to add next. `non-repeaters` is discarded by the same handler and goes with it. A GETBULK whose scoped PDU fails to decrypt is still rewritten to a GET of `sysDescr.0` and so does not terminate a walk; that fallback is tracked as nl6#547. A multi-column GETBULK is still answered with the first column only, which is a wrong answer under RFC 3416 rather than merely a small one.
 
 **SNMPv3 GETBULK is bounded by measurement, not arithmetic** (nl6#535). The v2c path computes its response length from fixed prefixes, which it can because its envelope is fixed. A v3 message cannot: its `msgGlobalData` and `msgSecurityParameters` sizes depend on the engine ID, the user name and the privacy parameters, and under privacy the scoped PDU is encrypted and PADDED to a cipher block. So the GETBULK builder assembles the candidate response through the real encoder and measures it, dropping bindings from the end until it fits. RFC 3416 §4.2.3 makes that correct: a truncated GETBULK is resumable, since the walker continues from the last OID returned. As on the v2c path, at least one binding is always emitted even when it does not fit, because an empty binding list with no error stalls a walk forever with no signal.
 
-**SNMPv3 `msgMaxSize`**
-
-— the bound is the link-MTU-derived budget, and an SNMPv3 request declaring a smaller `msgMaxSize` does not further reduce the response. This is a deliberate omission rather than an oversight — the MTU bound is the binding constraint in every configuration measured — and a future change honouring `msgMaxSize` would refine a stated position rather than correct a gap.
+**SNMPv3 `msgMaxSize`.** A v3 GETBULK response fits the smaller of the link-MTU-derived budget and the `msgMaxSize` the requester declared (RFC 3412 §7.1). A declaration below 484, the floor RFC 3412 §7.2 sets, is malformed and is ignored. Single-binding v3 GET and GETNEXT responses do not consult `msgMaxSize`; they cannot approach either bound.
 
 ### A malformed variable-bindings list discards the request
 
