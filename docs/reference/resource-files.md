@@ -89,7 +89,8 @@ A malformed OID, a non-OID value on `sysObjectID` (tracked as nl6#529), and a no
 See [SNMP reference → A resource value that collides with a sentinel is rejected at load](snmp.md#a-resource-value-that-collides-with-a-sentinel-is-rejected-at-load).
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
-This is not checked when the file is loaded: an OID that breaks it is served as the degenerate encoding `06 00` and nothing is logged.
+The **value** of an OID-typed leaf is now checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
+An OID **key** is still not checked: a malformed key reaches the encoder and is served as the degenerate encoding `06 00`, with nothing logged.
 An OID that breaks those rules is emitted as a degenerate `06 00` rather than silently becoming a different OID.
 See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint).
 

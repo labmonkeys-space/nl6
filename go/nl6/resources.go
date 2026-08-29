@@ -194,6 +194,8 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 // operator-settable knob: the whole shipped set passes, so a refusal can only
 // come from a file the operator wrote and can fix.
 //
+// TWO rules now (nl6#523 sentinel, nl6#529 OID-typed value).
+//
 // Scope is the SNMP `snmp` array only. SSH, API and Optical entries never reach
 // encodeTypedValue, and the trap/syslog catalogs use a different encoder. It is
 // wired at the four loaders a resource file can reach. createDefaultResources
@@ -209,6 +211,21 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 		return nil
 	}
 	for _, r := range resources.SNMP {
+		// oidTypeTable keys carry a leading dot; buildResourceIndexes
+		// normalises the same way before its own lookups.
+		oid := r.OID
+		if len(oid) > 0 && oid[0] != '.' {
+			oid = "." + oid
+		}
+		if snmpTypeTag(oid) == ASN1_OBJECT_ID && !encodableAsOID(r.Response) {
+			return fmt.Errorf("resource %s: OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
+				"is not an OID this encoder can represent. It needs at least two dot-separated "+
+				"numbers, a first arc of 0, 1 or 2, a second arc no greater than 39 when the first "+
+				"is 0 or 1, and every arc within 4294967295. Until nl6#529 a value like this was "+
+				"encoded anyway, as a different and valid-looking OID",
+				resourceFile, r.OID, r.Response)
+		}
+
 		if isSNMPExceptionValue(r.Response) {
 			return fmt.Errorf("resource %s: OID %s has value %q, which collides with an SNMP exception "+
 				"sentinel and would be encoded as an RFC 3416 exception instead of a string. "+
