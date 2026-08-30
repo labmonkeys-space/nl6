@@ -159,12 +159,18 @@ Every dotted OID in this file, whether a varbind name, `snmpTrapOID` or `snmpTra
 - Every arc, and the combined value of the first two, is at most `4294967295`.
 - Every component is a number. A non-numeric component is not treated as zero.
 
-Literal `snmpTrapEnterprise` values are checked for digits-and-dots at load and rejected otherwise; the arc bounds above are not checked at load for any field. Only templated varbind names can carry a non-numeric component to the encoder.
+An OID that breaks any of these is **rejected when the catalog loads**, naming the entry and the field (nl6#539).
+That covers `snmpTrapOID`, `snmpTrapEnterprise` and literal body-varbind OIDs.
+Whether a value qualifies is decided by asking the encoder itself, so the catalog can never load an OID the encoder then refuses.
+The load check is slightly stricter than the encoder on spelling and length: a signed component such as `+1.3` and an OID over 256 characters are refused at load even though the encoder could carry them.
+A rejected entry fails its catalog file at load, like every other catalog validation error.
 
-An OID that breaks any of these is emitted as a degenerate `06 00` rather than as a different, valid-looking OID. That is deliberate, and it is visible: a collector will reject the message rather than record an OID nobody wrote. Before nl6#529 such an OID was silently fabricated instead, so `3.40.1` went on the wire as `.4.0.1`.
-
-A templated OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked after rendering, so an override supplying a non-numeric or out-of-range `IfIndex` produces the degenerate encoding at fire time.
-That fire is not observable from nl6: the encoder has no error return, so no log line is written and no status counter moves. The collector's rejection is the only signal.
+A **templated** varbind OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked only after it renders, since a `varbindOverrides` value supplied over REST can make it unencodable at fire time whatever the catalog says.
+An override supplying a non-numeric or out-of-range component therefore produces the degenerate `06 00` encoding at fire time.
+That is deliberate, and it is visible: a collector will reject the message rather than record an OID nobody wrote.
+Before nl6#529 such an OID was silently fabricated instead, so `3.40.1` went on the wire as `.4.0.1`.
+That fire is not observable from nl6: the encoder has no error return, so no log line is written and no status counter moves.
+The collector's rejection is the only signal.
 
 ### Universal catalog (embedded default)
 
