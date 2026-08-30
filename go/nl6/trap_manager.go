@@ -71,6 +71,7 @@ type TrapCollectorStatus struct {
 	Mode           string `json:"mode"`
 	Devices        int    `json:"devices"`
 	Sent           uint64 `json:"sent"`
+	SendFailures   uint64 `json:"send_failures"`
 	InformsPending uint64 `json:"informs_pending,omitempty"`
 	InformsAcked   uint64 `json:"informs_acked,omitempty"`
 	InformsFailed  uint64 `json:"informs_failed,omitempty"`
@@ -88,6 +89,7 @@ type trapAggKey struct {
 // tuple that survive device deletion (review decision D1.b pattern).
 type trapCollectorAggregate struct {
 	sent           atomic.Uint64
+	sendFailures   atomic.Uint64
 	informsAcked   atomic.Uint64
 	informsFailed  atomic.Uint64
 	informsDropped atomic.Uint64
@@ -319,6 +321,7 @@ func (sm *SimulatorManager) persistTrapCounters(fe *TrapExporter) {
 		agg := v.(*trapCollectorAggregate)
 		stats := fe.Stats()
 		agg.sent.Add(stats.Sent.Load())
+		agg.sendFailures.Add(stats.SendFailures.Load())
 		agg.informsAcked.Add(stats.InformsAcked.Load())
 		agg.informsFailed.Add(stats.InformsFailed.Load())
 		agg.informsDropped.Add(stats.InformsDropped.Load())
@@ -666,6 +669,7 @@ func (sm *SimulatorManager) GetTrapStatus() TrapStatus {
 		rec.Devices++
 		st := te.Stats()
 		rec.Sent += st.Sent.Load()
+		rec.SendFailures += st.SendFailures.Load()
 		if te.Mode() == TrapModeInform {
 			rec.InformsPending += uint64(te.PendingInformsLen())
 			rec.InformsAcked += st.InformsAcked.Load()
@@ -695,6 +699,7 @@ func (sm *SimulatorManager) GetTrapStatus() TrapStatus {
 			agg[key] = rec
 		}
 		rec.Sent += pers.sent.Load()
+		rec.SendFailures += pers.sendFailures.Load()
 		if key.mode == TrapModeInform {
 			rec.InformsAcked += pers.informsAcked.Load()
 			rec.InformsFailed += pers.informsFailed.Load()

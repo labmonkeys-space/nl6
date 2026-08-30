@@ -61,13 +61,19 @@ func precomputeEntry(e *CatalogEntry) *preEncodedEntry {
 		varbindOID:   make([][]byte, len(e.Varbinds)),
 	}
 
-	// snmpTrapOID.0 — a complete varbind, both halves constant.
-	vb, m := beginTLV(nil)
-	vb = appendOID(vb, oidSnmpTrapOID0)
-	vb = appendOID(vb, e.SnmpTrapOID)
-	pre.trapOIDVB = endTLV(vb, m, ASN1_SEQUENCE)
+	// snmpTrapOID.0 — a complete varbind, both halves constant. Cached only
+	// when the encoder can represent it; a nil slot sends the fire path down
+	// the checked branch, same rule as the body varbinds below (nl6#540).
+	// compileEntry validates both fields before calling here (nl6#539), so
+	// like the varbind guard this is defence in depth for a direct caller.
+	if encodableAsOID(e.SnmpTrapOID) {
+		vb, m := beginTLV(nil)
+		vb = appendOID(vb, oidSnmpTrapOID0)
+		vb = appendOID(vb, e.SnmpTrapOID)
+		pre.trapOIDVB = endTLV(vb, m, ASN1_SEQUENCE)
+	}
 
-	if e.SnmpTrapEnterprise != "" {
+	if e.SnmpTrapEnterprise != "" && encodableAsOID(e.SnmpTrapEnterprise) {
 		ent, em := beginTLV(nil)
 		ent = appendOID(ent, oidSnmpTrapEnterprise0)
 		ent = appendOID(ent, e.SnmpTrapEnterprise)
@@ -75,7 +81,17 @@ func precomputeEntry(e *CatalogEntry) *preEncodedEntry {
 	}
 
 	for i, vt := range e.Varbinds {
-		if !isTemplated(vt.rawOID) {
+		// Precompute only an OID the encoder can actually represent. Caching
+		// appendOID's degenerate 06 00 would bake a malformed name into every
+		// fire of this entry AND bypass the fire-path check, so the fast and
+		// legacy encoders would disagree about whether the entry is even
+		// emittable (nl6#540; the parity test caught exactly that). Leaving
+		// the slot nil makes the fire path take the checked branch and report
+		// an encode error, which the exporter already logs once and counts.
+		//
+		// Since nl6#539 a literal catalog OID cannot get here unencodable, so
+		// this is defence in depth for a caller that builds an entry directly.
+		if !isTemplated(vt.rawOID) && encodableAsOID(vt.rawOID) {
 			pre.varbindOID[i] = appendOID(nil, vt.rawOID)
 		}
 		if referencesNowLocal(vt.rawOID) || referencesNowLocal(vt.rawValue) {
