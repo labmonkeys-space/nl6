@@ -166,7 +166,9 @@ The load check is slightly stricter than the encoder on spelling and length: a s
 A rejected entry fails its catalog file at load, like every other catalog validation error.
 
 A **templated** varbind OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked only after it renders, since a `varbindOverrides` value supplied over REST can make it unencodable at fire time whatever the catalog says.
-An override supplying a non-numeric or out-of-range component therefore produces the degenerate `06 00` encoding at fire time.
+An override supplying a non-numeric or out-of-range component therefore makes the trap fail to encode at fire time (nl6#540).
+The failure is logged once per device and counted in the exporter's send failures, so a template that renders badly is visible without a packet capture.
+Before that it was emitted as a degenerate `06 00`, a binding no manager can match, with nothing recorded anywhere.
 That is deliberate, and it is visible: a collector will reject the message rather than record an OID nobody wrote.
 Before nl6#529 such an OID was silently fabricated instead, so `3.40.1` went on the wire as `.4.0.1`.
 That fire is not observable from nl6: the encoder has no error return, so no log line is written and no status counter moves.

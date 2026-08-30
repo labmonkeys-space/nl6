@@ -437,6 +437,12 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 	if pre != nil {
 		dst = append(dst, pre.trapOIDVB...)
 	} else {
+		// Validated at catalog load since nl6#539; checked again here because
+		// this encoder is also reachable with a caller-supplied trapOID, and
+		// the identity varbind is the worst place to emit a degenerate OID.
+		if !encodableAsOID(trapOID) {
+			return nil, fmt.Errorf("snmpTrapOID %q is not one the encoder can represent", trapOID)
+		}
 		dst, m = beginTLV(dst)
 		dst = appendOID(dst, oidSnmpTrapOID0)
 		dst = appendOID(dst, trapOID)
@@ -449,6 +455,9 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 			dst = append(dst, pre.enterpriseVB...)
 		}
 	} else if enterpriseOID != "" {
+		if !encodableAsOID(enterpriseOID) {
+			return nil, fmt.Errorf("snmpTrapEnterprise %q is not one the encoder can represent", enterpriseOID)
+		}
 		dst, m = beginTLV(dst)
 		dst = appendOID(dst, oidSnmpTrapEnterprise0)
 		dst = appendOID(dst, enterpriseOID)
@@ -461,6 +470,22 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 		if pre != nil && i < len(pre.varbindOID) && pre.varbindOID[i] != nil {
 			dst = append(dst, pre.varbindOID[i]...)
 		} else {
+			// This branch carries a RENDERED templated OID. nl6#539 validates
+			// literal catalog OIDs at load, but a template cannot be decided
+			// until it renders, and a REST varbindOverrides value can make it
+			// unencodable at that point whatever the catalog said.
+			//
+			// Refuse rather than emitting the degenerate 06 00 (nl6#540).
+			// appendOID would silently produce an empty NAME, and a binding no
+			// manager can match went on the wire with nothing recorded: no log
+			// line, no counter, diagnosable only from a packet capture.
+			// Returning an error here routes it to the exporter's existing
+			// logFirstEncodeErr and sendFailures, so the signal already has
+			// somewhere to go.
+			if !encodableAsOID(vb.OID) {
+				return nil, fmt.Errorf("varbind %d: OID %q is not one the encoder can represent "+
+					"(rendered from a templated catalog OID or a REST override)", i, vb.OID)
+			}
 			dst = appendOID(dst, vb.OID)
 		}
 		var err error

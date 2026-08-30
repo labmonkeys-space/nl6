@@ -141,6 +141,19 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 	//      optional on native v2c notifications; when catalog authors set it
 	//      we emit it in the same position RFC 3584 pins.
 	//   N. body varbinds
+	// An OID this encoder cannot represent is REFUSED rather than emitted as
+	// the degenerate 06 00 (nl6#540). The wording and the positions are kept
+	// identical to encodeNotificationFast's: the two must agree byte for byte
+	// AND fault for fault, or TestFastEncoderMatchesLegacy_* passes while one
+	// ships a message the other refuses. That parity test caught exactly this
+	// when only the fast path was changed.
+	if !encodableAsOID(trapOID) {
+		return 0, fmt.Errorf("snmpTrapOID %q is not one the encoder can represent", trapOID)
+	}
+	if enterpriseOID != "" && !encodableAsOID(enterpriseOID) {
+		return 0, fmt.Errorf("snmpTrapEnterprise %q is not one the encoder can represent", enterpriseOID)
+	}
+
 	vbContents := make([]byte, 0, 64+len(varbinds)*32)
 	vbContents = append(vbContents, encodeVarbindTimeTicks(oidSysUpTime0, uptimeHundredths)...)
 	vbContents = append(vbContents, encodeVarbindOID(oidSnmpTrapOID0, trapOID)...)
@@ -148,6 +161,10 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 		vbContents = append(vbContents, encodeVarbindOID(oidSnmpTrapEnterprise0, enterpriseOID)...)
 	}
 	for i, vb := range varbinds {
+		if !encodableAsOID(vb.OID) {
+			return 0, fmt.Errorf("varbind %d: OID %q is not one the encoder can represent "+
+				"(rendered from a templated catalog OID or a REST override)", i, vb.OID)
+		}
 		enc, err := encodeVarbindTyped(vb)
 		if err != nil {
 			return 0, fmt.Errorf("varbind %d (%s): %w", i, vb.OID, err)

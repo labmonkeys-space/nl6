@@ -75,7 +75,17 @@ func precomputeEntry(e *CatalogEntry) *preEncodedEntry {
 	}
 
 	for i, vt := range e.Varbinds {
-		if !isTemplated(vt.rawOID) {
+		// Precompute only an OID the encoder can actually represent. Caching
+		// appendOID's degenerate 06 00 would bake a malformed name into every
+		// fire of this entry AND bypass the fire-path check, so the fast and
+		// legacy encoders would disagree about whether the entry is even
+		// emittable (nl6#540; the parity test caught exactly that). Leaving
+		// the slot nil makes the fire path take the checked branch and report
+		// an encode error, which the exporter already logs once and counts.
+		//
+		// Since nl6#539 a literal catalog OID cannot get here unencodable, so
+		// this is defence in depth for a caller that builds an entry directly.
+		if !isTemplated(vt.rawOID) && encodableAsOID(vt.rawOID) {
 			pre.varbindOID[i] = appendOID(nil, vt.rawOID)
 		}
 		if referencesNowLocal(vt.rawOID) || referencesNowLocal(vt.rawValue) {
