@@ -8,8 +8,11 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"log"
+	"math/bits"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A GETBULK-driven SNMPv3 walk used never to terminate (nl6#526). The handler
@@ -539,46 +542,11 @@ func TestV3GetBulkThroughDispatcher(t *testing.T) {
 	}
 }
 
-// buildV3GetBulkRequest assembles a plaintext SNMPv3 GETBULK message.
+// buildV3GetBulkRequest assembles a plaintext SNMPv3 GETBULK message with
+// non-repeaters 0 and max-repetitions 10.
 func buildV3GetBulkRequest(t *testing.T, s *SNMPServer, oid string, reqID int) []byte {
 	t.Helper()
-
-	vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
-	var pduBody []byte
-	pduBody = append(pduBody, encodeInteger(reqID)...)
-	pduBody = append(pduBody, encodeInteger(0)...)  // non-repeaters
-	pduBody = append(pduBody, encodeInteger(10)...) // max-repetitions
-	pduBody = append(pduBody, encodeSequence(vb)...)
-	pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(pduBody)), pduBody...)...)
-
-	var scoped []byte
-	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
-	scoped = append(scoped, encodeOctetString("")...)
-	scoped = append(scoped, pdu...)
-	scopedPDU := encodeSequence(scoped)
-
-	var global []byte
-	global = append(global, encodeInteger(1)...)     // msgID
-	global = append(global, encodeInteger(65507)...) // msgMaxSize
-	global = append(global, encodeOctetString(string([]byte{0x00}))...)
-	global = append(global, encodeInteger(3)...) // USM
-	globalData := encodeSequence(global)
-
-	var usm []byte
-	usm = append(usm, encodeOctetString(s.v3Config.EngineID)...)
-	usm = append(usm, encodeInteger(0)...)
-	usm = append(usm, encodeInteger(0)...)
-	usm = append(usm, encodeOctetString(s.v3Config.Username)...)
-	usm = append(usm, encodeOctetString("")...)
-	usm = append(usm, encodeOctetString("")...)
-	secParams := encodeOctetString(string(encodeSequence(usm)))
-
-	var msg []byte
-	msg = append(msg, encodeInteger(3)...)
-	msg = append(msg, globalData...)
-	msg = append(msg, secParams...)
-	msg = append(msg, scopedPDU...)
-	return encodeSequence(msg)
+	return buildV3GetBulkRequestWith(t, s, oid, reqID, 0, 10)
 }
 
 // TestV3GetBulkRespectsTheDatagramBudget covers the bound nl6#535 added. The
@@ -817,5 +785,490 @@ func TestV3GetBulkEmitsOneBindingEvenIfOversized(t *testing.T) {
 	if len(r.varbinds) == 0 {
 		t.Error("a single oversized binding produced an empty binding list; that stalls a walk " +
 			"with no signal, which is why the v2c truncate rule always emits at least one")
+	}
+}
+
+// ── nl6#535: max-repetitions is honoured ────────────────────────────────────
+
+// v3BulkScopedPDUBytes builds a GETBULK scoped PDU in CONTENTS form with the
+// given parameters, which is the shape parseSNMPv3GetBulkParams reads. Pure so
+// the fuzz targets can seed from it without a *testing.T or a server.
+func v3BulkScopedPDUBytes(engineID, oid string, nonRepeaters, maxRepetitions int) []byte {
+	vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
+	var body []byte
+	body = append(body, encodeInteger(42)...)
+	body = append(body, encodeInteger(nonRepeaters)...)
+	body = append(body, encodeInteger(maxRepetitions)...)
+	body = append(body, encodeSequence(vb)...)
+	pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(body)), body...)...)
+
+	var scoped []byte
+	scoped = append(scoped, encodeOctetString(engineID)...)
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, pdu...)
+	return scoped // CONTENTS form, as parseSNMPv3Message stores it
+}
+
+func v3BulkScopedPDU(t *testing.T, s *SNMPServer, oid string, nonRepeaters, maxRepetitions int) []byte {
+	t.Helper()
+	return v3BulkScopedPDUBytes(s.v3Config.EngineID, oid, nonRepeaters, maxRepetitions)
+}
+
+// brokenBulkScopedPDUs is the shape table for parseSNMPv3GetBulkParams: one
+// entry per check the parser makes AFTER the GETBULK tag, so each of its
+// length reads is reached by a committed input on an ordinary `go test`. The
+// earlier rows all bailed at or before the tag, which left the five new
+// parseLength sites and both parseBERInt reads covered by live fuzzing only.
+// Shared between TestV3GetBulkMalformedParamsFallBack and the fuzz seeds.
+func brokenBulkScopedPDUs(engineID string) map[string][]byte {
+	const oid = ".1.3.6.1.2.1.1.1.0"
+	good := v3BulkScopedPDUBytes(engineID, oid, 0, 5)
+	engIDTLV := len(encodeOctetString(engineID))
+	ctxNameTLV := len(encodeOctetString(""))
+	pduStart := engIDTLV + ctxNameTLV // offset of the 0xA5 tag
+	// Inside the PDU: tag(1) len(1) then request-id (02 01 2a), non-repeaters
+	// (02 01 00), max-repetitions (02 01 05).
+	reqID := pduStart + 2
+	nonRep := reqID + 3
+	maxRep := nonRep + 3
+
+	cut := func(n int) []byte { return append([]byte(nil), good[:n]...) }
+	withPDULen := func(l byte) []byte {
+		b := cut(len(good))
+		b[pduStart+1] = l
+		return b
+	}
+	// A GETBULK-tagged PDU whose declared length is shorter than its fields:
+	// the container bound must stop the reads even though the datagram has
+	// the bytes.
+	shortContainer := withPDULen(byte(maxRep - pduStart - 2)) // ends before max-repetitions
+	// max-repetitions carried as a 9-octet INTEGER, wider than parseBERInt
+	// accepts.
+	wide := cut(maxRep)
+	wide = append(wide, ASN1_INTEGER, 9, 0x01, 0, 0, 0, 0, 0, 0, 0, 0)
+	// A long-form length claiming four bytes that are not there.
+	badLen := cut(nonRep + 1)
+	badLen = append(badLen, 0x84)
+
+	return map[string][]byte{
+		"truncated after contextEngineID":  cut(engIDTLV),
+		"truncated after contextName":      cut(pduStart),
+		"truncated after PDU tag":          cut(pduStart + 1),
+		"truncated after PDU length":       cut(pduStart + 2),
+		"truncated inside request-id":      cut(reqID + 2),
+		"truncated after request-id":       cut(nonRep),
+		"truncated inside non-repeaters":   cut(nonRep + 2),
+		"truncated after non-repeaters":    cut(maxRep),
+		"truncated inside max-repetitions": cut(maxRep + 2),
+		"PDU length overruns datagram":     withPDULen(0x7f),
+		"PDU length ends before max-reps":  shortContainer,
+		"max-repetitions nine octets":      wide,
+		"non-repeaters bad long-form len":  badLen,
+	}
+}
+
+// wideBulkFixture has enough OIDs to distinguish max-repetitions values.
+func wideBulkFixture(n int) map[string]string {
+	vals := map[string]string{".1.3.6.1.2.1.1.1.0": "dev"}
+	for i := 1; i <= n; i++ {
+		vals[fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", i)] = fmt.Sprintf("Gi0/%d", i)
+	}
+	return vals
+}
+
+func TestV3GetBulkHonoursMaxRepetitions(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(300))
+	const start = ".1.3.6.1.2.1.1.1.0"
+
+	for _, want := range []int{1, 2, 5, 10} {
+		t.Run(fmt.Sprintf("max-repetitions=%d", want), func(t *testing.T) {
+			sp := v3BulkScopedPDU(t, s, start, 0, want)
+			msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+
+			r := decodeV3Response(t, s.handleSNMPv3GetBulk(start, msg, sp))
+			if len(r.varbinds) != want {
+				t.Errorf("max-repetitions=%d produced %d bindings; the value used to be a "+
+					"hardcoded 10 regardless", want, len(r.varbinds))
+			}
+		})
+	}
+}
+
+// TestV3GetBulkZeroRepetitionsIsEmptyNotEndOfMib pins RFC 3416 §4.2.3 with
+// N = 0 and M = 0: a response with no bindings and noError. The collection
+// loop gathers nothing for max-repetitions = 0, and the builder's empty branch
+// means "end of MIB", so without a distinct answer a manager asking for zero
+// repetitions was told the MIB had ended. Unreachable while 10 was hardcoded.
+func TestV3GetBulkZeroRepetitionsIsEmptyNotEndOfMib(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(20))
+	const start = ".1.3.6.1.2.1.1.1.0"
+
+	sp := v3BulkScopedPDU(t, s, start, 0, 0)
+	msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+
+	resp := s.handleSNMPv3GetBulk(start, msg, sp)
+	if len(resp) == 0 {
+		t.Fatal("max-repetitions=0 produced no response at all")
+	}
+	r := decodeV3Response(t, resp)
+	if r.pduTag != ASN1_GET_RESPONSE || r.errStatus != 0 {
+		t.Errorf("PDU 0x%02x error-status %d, want GetResponse/noError", r.pduTag, r.errStatus)
+	}
+	if r.requestID != 42 {
+		t.Errorf("request-id = %d, want the request's 42", r.requestID)
+	}
+	if len(r.varbinds) != 0 {
+		t.Errorf("max-repetitions=0 produced %d bindings, want none: %+v. An endOfMibView "+
+			"here tells a walker the MIB ended when nothing about the MIB was asked",
+			len(r.varbinds), r.varbinds)
+	}
+}
+
+// TestV3GetBulkMaxRepetitionsAbove127 is the specific case that bit the v2c
+// parser: it read single-byte BER content only, so anything >= 128 silently
+// became 10. Benchmark numbers taken above 127 before that fix were not
+// comparable with ones after it, and repeating the bug here would reintroduce
+// the same silent discontinuity on the v3 path.
+func TestV3GetBulkMaxRepetitionsAbove127(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(400))
+	const start = ".1.3.6.1.2.1.1.1.0"
+
+	for _, n := range []int{127, 128, 200, 300} {
+		t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
+			sp := v3BulkScopedPDU(t, s, start, 0, n)
+			gotNR, gotMR := s.parseSNMPv3GetBulkParams(sp)
+			if gotMR != n {
+				t.Errorf("parsed max-repetitions = %d, want %d: a value >= 128 needs a "+
+					"multi-octet BER read", gotMR, n)
+			}
+			if gotNR != 0 {
+				t.Errorf("parsed non-repeaters = %d, want 0", gotNR)
+			}
+		})
+	}
+}
+
+// TestV3GetBulkNonRepeatersMakesItAGetNext pins RFC 3416's non-repeaters split
+// as it applies to this single-column handler: a column counted as a
+// non-repeater gets exactly ONE successor, not max-repetitions of them. The
+// rule is non-repeaters > 0, not == 1, and it wins over max-repetitions = 0.
+func TestV3GetBulkNonRepeatersMakesItAGetNext(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(50))
+	const start = ".1.3.6.1.2.1.1.1.0"
+
+	for _, tc := range []struct{ nonRep, maxRep int }{
+		{1, 10},
+		{5, 10},
+		{1, 0},
+	} {
+		t.Run(fmt.Sprintf("non-repeaters=%d,max-repetitions=%d", tc.nonRep, tc.maxRep), func(t *testing.T) {
+			sp := v3BulkScopedPDU(t, s, start, tc.nonRep, tc.maxRep)
+			msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+
+			r := decodeV3Response(t, s.handleSNMPv3GetBulk(start, msg, sp))
+			if len(r.varbinds) != 1 {
+				t.Errorf("produced %d bindings, want 1: the only column is a non-repeater, "+
+					"so it gets GETNEXT semantics", len(r.varbinds))
+			}
+		})
+	}
+}
+
+// TestV3GetBulkClampsTheWalk pins that an absurd max-repetitions does not make
+// the device perform that many walk steps before the encode bound discards
+// them. Without the clamp a manager asking for 100000 costs 100000 findNextOID
+// calls inline on the UDP handler for the ~dozens of bindings that can fit.
+//
+// The clamp cannot be seen through the binding count: the encode bound trims
+// the collection to the same bindings either way. It IS visible through the
+// walk: corrupt the successor just past the ceiling so it does not advance,
+// and the once-per-device logFirstBulkAbort line fires only if the loop got
+// there. With the clamp wired in, it never does.
+func TestV3GetBulkClampsTheWalk(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(400))
+	const start = ".1.3.6.1.2.1.1.1.0"
+	ceiling := maxSNMPResponseSize/minVarbindSize + 1
+	if ceiling >= 400 {
+		t.Fatalf("fixture too small for ceiling %d", ceiling)
+	}
+
+	// Step k of the walk from sysDescr.0 lands on ifDescr.k, so the clamped
+	// loop's last call is findNextOID(ifDescr.<ceiling-1>). The next entry
+	// is the first one an unclamped loop would consult.
+	past := fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%03d", ceiling)
+	s.device.resources.oidNextMap.Store(past, past)
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	sp := v3BulkScopedPDU(t, s, start, 0, 100000)
+	msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+
+	// The parser must return the real value; the CLAMP is the handler's job,
+	// so a test that only checked the parser would miss it being absent.
+	if _, mr := s.parseSNMPv3GetBulkParams(sp); mr != 100000 {
+		t.Fatalf("parser returned %d, want the requested 100000", mr)
+	}
+
+	done := make(chan []byte, 1)
+	go func() { done <- s.handleSNMPv3GetBulk(start, msg, sp) }()
+	var resp []byte
+	select {
+	case resp = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("v3 GETBULK did not return")
+	}
+
+	r := decodeV3Response(t, resp)
+	if len(r.varbinds) > ceiling {
+		t.Errorf("walk produced %d bindings, above the %d ceiling", len(r.varbinds), ceiling)
+	}
+	if len(r.varbinds) == 0 {
+		t.Error("clamped walk produced nothing")
+	}
+	if strings.Contains(buf.String(), "does not advance") {
+		t.Errorf("the walk reached %s, one step past the %d ceiling: clampBulkWalk is not "+
+			"applied in handleSNMPv3GetBulk. The binding count cannot show this, only the "+
+			"work can", past, ceiling)
+	}
+}
+
+// TestV3GetBulkMalformedParamsFallBack pins that an unreadable scoped PDU
+// yields the historical defaults rather than an unbounded or negative value,
+// at every check the parser makes.
+func TestV3GetBulkMalformedParamsFallBack(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(20))
+
+	cases := map[string][]byte{
+		"empty":         nil,
+		"garbage":       {0x00, 0x01, 0x02},
+		"truncated":     {ASN1_OCTET_STRING, 0x02, 0x41},
+		"not a getbulk": validScopedPDU(".1.3.6.1.2.1.1.1.0"), // a GET; only a GETBULK carries the fields
+	}
+	for name, sp := range brokenBulkScopedPDUs(s.v3Config.EngineID) {
+		cases[name] = sp
+	}
+	for name, sp := range cases {
+		t.Run(name, func(t *testing.T) {
+			nr, mr := s.parseSNMPv3GetBulkParams(sp)
+			if nr != 0 || mr != 10 {
+				t.Errorf("got (%d, %d), want the (0, 10) defaults: a malformed request must "+
+					"behave as it did rather than as an unbounded one", nr, mr)
+			}
+		})
+	}
+
+	// Positive control: the table's base input parses, so a parser that
+	// returned the defaults for everything would not pass by accident.
+	if nr, mr := s.parseSNMPv3GetBulkParams(v3BulkScopedPDU(t, s, ".1.3.6.1.2.1.1.1.0", 0, 5)); nr != 0 || mr != 5 {
+		t.Errorf("well-formed base input parsed as (%d, %d), want (0, 5)", nr, mr)
+	}
+}
+
+// TestV3GetBulkNegativeParamsRejected pins the clamp at the parse site. A
+// negative reaching the handler becomes a negative loop bound on the inline
+// serve path, where there is no recover().
+func TestV3GetBulkNegativeParamsRejected(t *testing.T) {
+	s := v3TestServer(wideBulkFixture(20))
+
+	sp := v3BulkScopedPDU(t, s, ".1.3.6.1.2.1.1.1.0", -1, -5)
+	nr, mr := s.parseSNMPv3GetBulkParams(sp)
+	if nr < 0 || mr < 0 {
+		t.Fatalf("negative parameters survived the parse: (%d, %d)", nr, mr)
+	}
+
+	msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+	if resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, sp); len(resp) == 0 {
+		t.Error("negative parameters produced no response at all")
+	}
+}
+
+// buildV3GetBulkRequestWith is buildV3GetBulkRequest with the two GETBULK
+// integers exposed. Every dispatcher-level test used to send 10, which is also
+// the parser's fallback, so a parser handed the wrong buffer at the dispatcher
+// (the wrapped decrypt, say) returned (0, 10) and nothing noticed.
+func buildV3GetBulkRequestWith(t *testing.T, s *SNMPServer, oid string, reqID, nonRepeaters, maxRepetitions int) []byte {
+	t.Helper()
+
+	vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
+	var pduBody []byte
+	pduBody = append(pduBody, encodeInteger(reqID)...)
+	pduBody = append(pduBody, encodeInteger(nonRepeaters)...)
+	pduBody = append(pduBody, encodeInteger(maxRepetitions)...)
+	pduBody = append(pduBody, encodeSequence(vb)...)
+	pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(pduBody)), pduBody...)...)
+
+	var scoped []byte
+	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, pdu...)
+	scopedPDU := encodeSequence(scoped)
+
+	var global []byte
+	global = append(global, encodeInteger(1)...)     // msgID
+	global = append(global, encodeInteger(65507)...) // msgMaxSize
+	global = append(global, encodeOctetString(string([]byte{0x00}))...)
+	global = append(global, encodeInteger(3)...) // USM
+	globalData := encodeSequence(global)
+
+	var usm []byte
+	usm = append(usm, encodeOctetString(s.v3Config.EngineID)...)
+	usm = append(usm, encodeInteger(0)...)
+	usm = append(usm, encodeInteger(0)...)
+	usm = append(usm, encodeOctetString(s.v3Config.Username)...)
+	usm = append(usm, encodeOctetString("")...)
+	usm = append(usm, encodeOctetString("")...)
+	secParams := encodeOctetString(string(encodeSequence(usm)))
+
+	var msg []byte
+	msg = append(msg, encodeInteger(3)...)
+	msg = append(msg, globalData...)
+	msg = append(msg, secParams...)
+	msg = append(msg, scopedPDU...)
+	return encodeSequence(msg)
+}
+
+// TestV3GetBulkParamsSurviveTheDispatcher asserts, through handleSNMPv3Request,
+// that a declared max-repetitions other than the fallback 10 is what gets
+// honoured, in the clear and under both privacy protocols. The authPriv rows
+// are the point: the scoped PDU reaches the parser only after the decrypt is
+// unwrapped (nl6#527), and a parser handed the wrapped form falls back to 10
+// silently, which is the benchmark discontinuity this change exists to close.
+func TestV3GetBulkParamsSurviveTheDispatcher(t *testing.T) {
+	const start = ".1.3.6.1.2.1.1.1.0"
+	privs := []struct {
+		name  string
+		proto int
+	}{
+		{"noPriv", SNMPV3_PRIV_NONE},
+		{"des", SNMPV3_PRIV_DES},
+		{"aes128", SNMPV3_PRIV_AES128},
+	}
+	params := []struct{ nonRep, maxRep, want int }{
+		{0, 3, 3},
+		{0, 25, 25},
+		{1, 10, 1},
+	}
+
+	for _, priv := range privs {
+		for _, p := range params {
+			t.Run(fmt.Sprintf("%s/nr=%d,mr=%d", priv.name, p.nonRep, p.maxRep), func(t *testing.T) {
+				s := v3TestServer(wideBulkFixture(60))
+				var req []byte
+				if priv.proto == SNMPV3_PRIV_NONE {
+					req = buildV3GetBulkRequestWith(t, s, start, 4242, p.nonRep, p.maxRep)
+				} else {
+					s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+					s.v3Config.PrivProtocol = priv.proto
+					plain, err := s.parseSNMPv3Message(buildV3GetBulkRequestWith(t, s, start, 4242, p.nonRep, p.maxRep))
+					if err != nil {
+						t.Fatalf("parse plaintext: %v", err)
+					}
+					cipherText, privParams, err := s.encryptScopedPDU(encodeSequence(plain.ScopedPDU), v3PrivSeed(s))
+					if err != nil {
+						t.Fatalf("encryptScopedPDU: %v", err)
+					}
+					req = buildV3EncryptedRequest(t, s, cipherText, privParams)
+				}
+
+				resp := s.handleSNMPv3Request(req)
+				if len(resp) == 0 {
+					t.Fatal("dispatcher returned nothing")
+				}
+				r := decodeV3ResponsePossiblyEncrypted(t, s, resp, priv.proto != SNMPV3_PRIV_NONE)
+				if r.requestID != 4242 {
+					t.Errorf("request-id = %d, want 4242", r.requestID)
+				}
+				if len(r.varbinds) != p.want {
+					t.Errorf("got %d bindings, want %d: the value the dispatcher handed the "+
+						"parser was not the one the manager sent (10 is the fallback)", len(r.varbinds), p.want)
+				}
+			})
+		}
+	}
+}
+
+// TestLargestFittingPrefixBisects pins the search shape. Every other assertion
+// about a GETBULK response is satisfied equally by a linear descent, which is
+// what this replaced: a descent fully builds and, under privacy, fully encrypts
+// every over-budget candidate, so at a real max-repetitions it costs O(n^2)
+// bytes and n encryptions per request, inline on the UDP handler.
+//
+// Counting calls is the only way to see the difference; timing would be flaky.
+func TestLargestFittingPrefixBisects(t *testing.T) {
+	// A synthetic builder whose result grows 10 bytes per binding, so the
+	// largest n fitting `limit` is known exactly.
+	const perBinding = 10
+	for _, tc := range []struct{ count, fits int }{
+		{count: 1000, fits: 37},
+		{count: 500, fits: 499},
+		{count: 64, fits: 1},
+		{count: 300, fits: 300},
+	} {
+		t.Run(fmt.Sprintf("count=%d,fits=%d", tc.count, tc.fits), func(t *testing.T) {
+			calls := 0
+			build := func(n int) ([]byte, error) {
+				calls++
+				return make([]byte, n*perBinding), nil
+			}
+			limit := tc.fits * perBinding
+
+			resp, err := largestFittingPrefix(tc.count, limit, build)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := len(resp) / perBinding; got != tc.fits {
+				t.Errorf("selected %d bindings, want %d (maximal fit)", got, tc.fits)
+			}
+
+			// The bisection budget: one build for the full set, one for the
+			// floor, then a search over [1, count] that halves the interval
+			// each step, so at most bits.Len(count) more. A descent needs
+			// count-fits calls, which for the first case is 963.
+			ceiling := 2 + bits.Len(uint(tc.count))
+			if calls > ceiling {
+				t.Errorf("took %d builds for count=%d; a bisection needs at most %d. A linear "+
+					"descent passes every other test in this file, so this is the only "+
+					"assertion that catches its return", calls, tc.count, ceiling)
+			}
+			t.Logf("count=%d fits=%d -> %d builds (ceiling %d)", tc.count, tc.fits, calls, ceiling)
+		})
+	}
+}
+
+// Even one binding over the limit must still come back, matching the v2c
+// truncate carve-out.
+func TestLargestFittingPrefixAlwaysReturnsOne(t *testing.T) {
+	resp, err := largestFittingPrefix(5, 1, func(n int) ([]byte, error) {
+		return make([]byte, n*100), nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp) != 100 {
+		t.Errorf("got %d bytes, want the single-binding 100: an empty binding list with no "+
+			"error stalls a walk forever", len(resp))
+	}
+}
+
+// TestClampBulkWalkBoundsTheWalk pins the walk clamp's arithmetic directly;
+// TestV3GetBulkClampsTheWalk pins that the handler applies it.
+func TestClampBulkWalkBoundsTheWalk(t *testing.T) {
+	ceiling := maxSNMPResponseSize/minVarbindSize + 1
+
+	for _, in := range []int{100000, 1 << 20, ceiling + 1} {
+		if got := clampBulkWalk(in); got != ceiling {
+			t.Errorf("clampBulkWalk(%d) = %d, want the %d ceiling: without it the device performs "+
+				"that many findNextOID steps before the encode bound discards them", in, got, ceiling)
+		}
+	}
+	// Values at or below the ceiling pass through untouched, or the clamp would
+	// silently reduce what a reasonable manager asked for.
+	for _, in := range []int{0, 1, 10, ceiling} {
+		if got := clampBulkWalk(in); got != in {
+			t.Errorf("clampBulkWalk(%d) = %d, want it unchanged", in, got)
+		}
 	}
 }

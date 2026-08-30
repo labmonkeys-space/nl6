@@ -572,6 +572,15 @@ func FuzzHandleSNMPv3GetBulkDerived(f *testing.F) {
 func FuzzHandleSNMPv3GetBulkScoped(f *testing.F) {
 	f.Add(crasherScopedPDU)
 	f.Add(validScopedPDU(".1.3.6.1.2.1.1.1.0"))
+	// GETBULK-shaped seeds. Neither seed above carries the 0xA5 tag, so
+	// without these parseSNMPv3GetBulkParams' reads past the tag (nl6#535)
+	// were reached by live fuzzing only, never by an ordinary `go test`.
+	engineID := fuzzTestServer(1).v3Config.EngineID
+	f.Add(v3BulkScopedPDUBytes(engineID, ".1.3.6.1.2.1.1.1.0", 0, 5))
+	f.Add(v3BulkScopedPDUBytes(engineID, ".1.3.6.1.2.1.1.1.0", 1, 200))
+	for _, seed := range brokenBulkScopedPDUs(engineID) {
+		f.Add(seed)
+	}
 	f.Fuzz(func(_ *testing.T, scopedPDU []byte) {
 		s := fuzzTestServer(50)
 		msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: scopedPDU}
