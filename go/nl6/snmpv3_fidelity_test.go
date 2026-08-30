@@ -426,3 +426,139 @@ func decodeScopedPDUContents(t *testing.T, scoped []byte) v3Response {
 	}
 	return out
 }
+
+// ── nl6#547: a malformed scoped PDU and a decrypt failure are different ─────
+//
+// Both used to take the same fallback and be answered with a GET of sysDescr.0
+// carrying request-id 1. RFC 3412 §7.2 discards a malformed datagram; RFC 3414
+// §3.2 step 8 answers a decryption failure with a usmStatsDecryptionErrors
+// Report. Opposite answers, so they had to be separated before either could be
+// right.
+
+// v3RequestWithMalformedOID builds a plaintext v3 GETNEXT whose varbind name is
+// an unterminated varint: structurally a valid TLV, but not a valid OID.
+func v3RequestWithMalformedOID(t *testing.T, s *SNMPServer) []byte {
+	t.Helper()
+	name := []byte{ASN1_OID, 0x02, 0x2b, 0xff}
+	vb := encodeSequence(append(name, encodeNull()...))
+
+	var body []byte
+	body = append(body, encodeInteger(42)...)
+	body = append(body, encodeInteger(0)...)
+	body = append(body, encodeInteger(0)...)
+	body = append(body, encodeSequence(vb)...)
+	pdu := append([]byte{ASN1_GET_NEXT}, append(encodeLength(len(body)), body...)...)
+
+	var scoped []byte
+	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, pdu...)
+	return assembleV3(s, encodeSequence(scoped), nil, false)
+}
+
+func TestV3MalformedOIDIsDiscarded(t *testing.T) {
+	s := v3TestServer(map[string]string{
+		".1.3.6.1.2.1.1.1.0":     "dev",
+		".1.3.6.1.2.1.2.2.1.2.1": "Gi0/1",
+	})
+
+	resp := s.handleSNMPv3Request(v3RequestWithMalformedOID(t, s))
+	if len(resp) != 0 {
+		r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
+		name := ""
+		if len(r.varbinds) > 0 {
+			name = r.varbinds[0].oid
+		}
+		t.Errorf("a malformed v3 varbind name was answered with %d bytes naming %q. It used to be "+
+			"answered as a GET of sysDescr.0, which reads as a walk RESTART because that OID "+
+			"sorts before almost any request; RFC 3412 §7.2 discards instead", len(resp), name)
+	}
+}
+
+// TestV3ExtractReportsMalformedOIDAsError pins the seam. The extractor used to
+// return ("", pduType, nil) — a NIL error — so the caller treated a malformed
+// name as a successful parse and findNextOID("") returned the first OID in the
+// MIB.
+func TestV3ExtractReportsMalformedOIDAsError(t *testing.T) {
+	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+
+	name := []byte{ASN1_OID, 0x02, 0x2b, 0xff}
+	vb := encodeSequence(append(name, encodeNull()...))
+	var body []byte
+	body = append(body, encodeInteger(42)...)
+	body = append(body, encodeInteger(0)...)
+	body = append(body, encodeInteger(0)...)
+	body = append(body, encodeSequence(vb)...)
+	pdu := append([]byte{ASN1_GET_NEXT}, append(encodeLength(len(body)), body...)...)
+	var scoped []byte
+	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
+	scoped = append(scoped, encodeOctetString("")...)
+	scoped = append(scoped, pdu...)
+
+	oid, _, err := s.extractOIDAndTypeFromScopedPDU(scoped)
+	if err == nil {
+		t.Errorf("a malformed varbind name parsed cleanly, returning oid=%q with a nil error: "+
+			"the caller cannot then tell it from a successful parse", oid)
+	}
+
+	// And a well-formed one still parses, or the change would discard
+	// everything.
+	good := s.handleSNMPv3Request(buildV3GetBulkRequest(t, s, ".1.3.6.1.2.1.1.1.0", 7))
+	if len(good) == 0 {
+		t.Error("a well-formed v3 GET was discarded")
+	}
+}
+
+// TestV3DecryptFailureAnswersReport pins the other half. A wrong privacy key
+// must still be ANSWERED, with the RFC 3414 Report rather than a value for an
+// object the manager never asked about — and never with silence, which would
+// be indistinguishable from an unreachable device.
+func TestV3DecryptFailureAnswersReport(t *testing.T) {
+	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+	s.v3Config.PrivProtocol = SNMPV3_PRIV_DES
+
+	// Ciphertext that will not decrypt to a SEQUENCE under the device's key.
+	garbage := make([]byte, 32)
+	for i := range garbage {
+		garbage[i] = byte(i * 7)
+	}
+	req := buildV3EncryptedRequest(t, s, garbage, make([]byte, 8))
+
+	resp := s.handleSNMPv3Request(req)
+	if len(resp) == 0 {
+		t.Fatal("a decryption failure produced no datagram; RFC 3414 §3.2 step 8 answers a " +
+			"Report, and silence is indistinguishable from an unreachable device")
+	}
+
+	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
+	if r.pduTag != 0xA8 {
+		t.Errorf("PDU tag = 0x%02x, want 0xA8 (Report)", r.pduTag)
+	}
+	if len(r.varbinds) == 0 {
+		t.Fatal("Report carries no bindings")
+	}
+	if r.varbinds[0].oid != oidUsmStatsDecryptionErrors {
+		t.Errorf("Report names %q, want usmStatsDecryptionErrors (%s). sysDescr.0 here means the "+
+			"decrypt failure is still sharing the malformed-PDU fallback",
+			r.varbinds[0].oid, oidUsmStatsDecryptionErrors)
+	}
+	if r.varbinds[0].valueTag != ASN1_COUNTER32 {
+		t.Errorf("Report value tag = 0x%02x, want Counter32 (RFC 3414 §5)", r.varbinds[0].valueTag)
+	}
+}
+
+// Discovery must still name usmStatsUnknownEngineIDs, since it now shares the
+// Report builder with the decryption-error case.
+func TestV3DiscoveryStillNamesUnknownEngineIDs(t *testing.T) {
+	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+
+	resp := s.createSNMPv3DiscoveryResponse(&SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}})
+	if len(resp) == 0 {
+		t.Fatal("no discovery response")
+	}
+	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
+	if len(r.varbinds) == 0 || r.varbinds[0].oid != oidUsmStatsUnknownEngineIDs {
+		t.Errorf("discovery Report names %v, want %s", r.varbinds, oidUsmStatsUnknownEngineIDs)
+	}
+}

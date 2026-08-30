@@ -220,7 +220,9 @@ A GETNEXT with a malformed name was answered as a walk restart from `sysDescr.0`
 A PDU whose variable-bindings list is empty, or whose envelope cannot be read as far as the list, is a different case and is still answered.
 The general request parser falls back to `sysDescr.0` for it, so what comes back is one binding the requester did not name; that behaviour predates nl6#537 and is unchanged.
 
-The SNMPv3 path is not covered by this change and is tracked as nl6#547.
+The SNMPv3 path behaves the same way since nl6#547.
+A malformed scoped PDU is discarded there too, and a request that fails to DECRYPT — which used to share the same fallback and be answered with `sysDescr.0` — is answered with a `usmStatsDecryptionErrors` Report, as RFC 3414 §3.2 step 8 requires.
+The two faults take opposite answers, discard against answer, which is why they had to be told apart before either could be right.
 A malformed OID there flows on as an empty name with no error, so a v3 GETNEXT is answered as a walk restart from the first OID in the MIB.
 The fallback that would have to catch it is shared with decryption failure, which RFC 3414 wants answered with a Report rather than silence, so the two cases need separating first.
 
