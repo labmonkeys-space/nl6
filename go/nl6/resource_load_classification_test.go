@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // nl6#538: a resource-file rejection must be FATAL, CLASSIFIABLE and
@@ -473,6 +474,15 @@ func TestCreateDevicesHandlerRejectsBadResourceFile(t *testing.T) {
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body.String())
 		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "nosuchtype") {
+			t.Errorf("body %q does not name the device type", body)
+		}
+		// The docs promise the 400 body never contains a directory path; the
+		// original not-found message interpolated resources/<slug> twice.
+		if strings.Contains(body, "resources/") || strings.Contains(body, `resources\/`) {
+			t.Errorf("body %q discloses a server-side directory path", body)
+		}
 	})
 
 	t.Run("bad-file-name-is-400-without-a-path", func(t *testing.T) {
@@ -654,6 +664,35 @@ func TestResourceFileErrorSanitisesHostileInput(t *testing.T) {
 		}
 	})
 
+	t.Run("c1-and-line-separators-are-stripped", func(t *testing.T) {
+		e := &resourceFileError{
+			File: "a.json\u0085NEL header",
+			Msg:  "bad\u2028line\u2029break\u009bCSI",
+			kind: errResourceInvalid,
+		}
+		for _, got := range []string{e.Error(), e.PublicMessage()} {
+			for _, r := range []rune{'\u0085', '\u2028', '\u2029', '\u009b'} {
+				if strings.ContainsRune(got, r) {
+					t.Errorf("rendering %q still contains U+%04X", got, r)
+				}
+			}
+		}
+	})
+
+	t.Run("truncation-lands-on-a-rune-boundary", func(t *testing.T) {
+		// The prefix "resource a.json: " is 17 bytes, so the 512-byte cap
+		// falls an odd number of bytes into a run of 2-byte runes — exactly
+		// the mid-rune cut a byte-slicing truncation ships as invalid UTF-8.
+		e := &resourceFileError{File: "a.json", Msg: strings.Repeat("ü", 400), kind: errResourceInvalid}
+		got := e.PublicMessage()
+		if !utf8.ValidString(got) {
+			t.Errorf("PublicMessage() is not valid UTF-8: %q", got)
+		}
+		if !strings.HasSuffix(got, "(truncated)") {
+			t.Errorf("PublicMessage() = %q; the oversized message was not truncated", got)
+		}
+	})
+
 	t.Run("length-is-capped", func(t *testing.T) {
 		e := &resourceFileError{File: "a.json", Msg: strings.Repeat("x", 100000), kind: errResourceInvalid}
 		if n := len(e.PublicMessage()); n > maxResourceMessageBytes+32 {
@@ -661,4 +700,115 @@ func TestResourceFileErrorSanitisesHostileInput(t *testing.T) {
 				"must not become a multi-megabyte HTTP body", n)
 		}
 	})
+}
+
+// ── matrix row: startup on an UNCLASSIFIED fault ───────────────────────────
+
+// An asr9k.json that exists but cannot be READ is neither invalid content nor
+// absent, and must be fatal: the round-robin twin of this rule has
+// TestRoundRobinAbortsOnUnreadableType, and without this test the startup
+// guard `!errors.Is(err, errResourceNotFound)` could quietly narrow to
+// `errors.Is(err, errResourceInvalid)` — every other startup test stays green
+// while an I/O fault silently substitutes the cisco_ios profile again.
+func TestStartupIsFatalOnUnclassifiedLoadFailure(t *testing.T) {
+	sm := classifyFixture(t)
+	locked := filepath.Join("resources", "asr9k.json")
+	writeResourceFile(t, locked, `{"snmp":[`+cleanEntry+`]}`)
+	writeResourceFile(t, filepath.Join("resources", "cisco_ios.json"), `{"snmp":[`+cleanEntry+`]}`)
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
+	if f, err := os.Open(locked); err == nil {
+		f.Close()
+		t.Skip("mode 0000 is readable (running as root?); cannot stage an unreadable file")
+	}
+
+	err := loadDefaultResources(sm)
+	if err == nil {
+		t.Fatal("an unreadable asr9k.json fell back; it must be fatal")
+	}
+	if errors.Is(err, errResourceInvalid) || errors.Is(err, errResourceNotFound) {
+		t.Errorf("error %q is classified; an unreadable file is neither kind, and "+
+			"this test exists to pin the fatal UNCLASSIFIED arm", err)
+	}
+	if sm.deviceResources != nil {
+		t.Fatalf("startup published %d entries from a fallback profile on an "+
+			"unreadable asr9k.json; it must exit instead", len(sm.deviceResources.SNMP))
+	}
+}
+
+// ── matrix row: zero-entry single file ─────────────────────────────────────
+
+// A single file containing `{}` (or only empty arrays) is the sibling of the
+// null document: it decodes cleanly, passes the guard, and publishes or caches
+// a set from which every device answers no OID at all. Directory parts stay
+// exempt — a part legitimately carries only some sections
+// (TestNullDirectoryPartLoadsAsEmpty pins that half).
+func TestZeroEntrySingleFileIsInvalid(t *testing.T) {
+	for _, body := range []string{`{}`, `{"snmp":[],"ssh":[]}`} {
+		t.Run(body, func(t *testing.T) {
+			t.Run("LoadResources", func(t *testing.T) {
+				sm := classifyFixture(t)
+				before := &DeviceResources{SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.1.1.0", Response: "previous"}}}
+				sm.deviceResources = before
+				writeResourceFile(t, filepath.Join("resources", "hollow.json"), body)
+
+				err := sm.LoadResources(filepath.Join("resources", "hollow.json"))
+				_ = assertInvalid(t, err)
+				if sm.deviceResources != before {
+					t.Error("a zero-entry file replaced the loaded set")
+				}
+			})
+			t.Run("LoadSpecificResources", func(t *testing.T) {
+				sm := classifyFixture(t)
+				writeResourceFile(t, filepath.Join("resources", "hollow.json"), body)
+
+				res, err := sm.LoadSpecificResources("hollow.json")
+				if err == nil {
+					t.Fatalf("a zero-entry file loaded and would be cached: %+v", res)
+				}
+				_ = assertInvalid(t, err)
+				if _, cached := sm.resourcesCache["hollow.json"]; cached {
+					t.Error("a zero-entry file was cached")
+				}
+			})
+		})
+	}
+}
+
+// ── matrix row: trailing data after the document ───────────────────────────
+
+// json.Decoder reads ONE value and stops, so a half-broken file used to load
+// silently as whatever its first value happened to be. All four decode sites
+// carry the check; the two loaders here reach all of them between them.
+func TestTrailingDataIsInvalid(t *testing.T) {
+	const goodDoc = `{"snmp":[` + cleanEntry + `]}`
+	for _, shape := range []struct{ name, body string }{
+		{"second-document", goodDoc + `{"snmp":[]}`},
+		{"stray-bracket", goodDoc + `]`},
+	} {
+		for _, layout := range []string{"single-file", "directory"} {
+			t.Run(shape.name+"/"+layout, func(t *testing.T) {
+				sm := classifyFixture(t)
+				switch layout {
+				case "single-file":
+					writeResourceFile(t, filepath.Join("resources", "trailing.json"), shape.body)
+				case "directory":
+					writeResourceFile(t, filepath.Join("resources", "trailing", "p_snmp.json"), shape.body)
+				}
+				_, err := sm.LoadSpecificResources("trailing.json")
+				_ = assertInvalid(t, err)
+
+				sm2 := classifyFixture(t)
+				switch layout {
+				case "single-file":
+					writeResourceFile(t, filepath.Join("resources", "trailing.json"), shape.body)
+				case "directory":
+					writeResourceFile(t, filepath.Join("resources", "trailing", "p_snmp.json"), shape.body)
+				}
+				_ = assertInvalid(t, sm2.LoadResources(filepath.Join("resources", "trailing.json")))
+			})
+		}
+	}
 }

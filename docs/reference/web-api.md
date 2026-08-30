@@ -285,8 +285,8 @@ Four cases take it:
 
 - the file name is not a device-type slug (`../../etc/passwd`, `a b.json`);
 - no such device type exists — neither `resources/<slug>/` nor `resources/<slug>.json`;
-- the file or one of its directory parts is invalid content: JSON that does not parse, a document that is literally `null`, a directory with no JSON part in it, an SNMP value the load-time guard rejects, or an optical inventory that disagrees with the device type's channel count;
-- a round-robin batch in which any device type fails to load for any reason other than not being shipped.
+- the file or one of its directory parts is invalid content: JSON that does not parse, a document that is literally `null`, a single file with no resource entries at all, trailing data after the JSON document, a directory with no JSON part in it, an SNMP value the load-time guard rejects, or an optical inventory that disagrees with the device type's channel count;
+- a round-robin batch in which a device type is invalid content as above (an absent type is skipped with a warning instead; any other failure — an unreadable file, an unlistable directory — aborts the batch and answers `500`, because the server, not the request, is at fault).
 
 The `message` names the file's base name, and the offending OID and value when
 the fault is attributable to one entry.

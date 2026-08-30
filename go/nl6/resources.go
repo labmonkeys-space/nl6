@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Resource-load faults come in exactly two kinds, and callers must be able to
@@ -129,22 +131,44 @@ func sanitiseResourceName(name string) string {
 	return clean
 }
 
-// sanitiseForMessage replaces every ASCII control character and DEL with "_".
+// sanitiseForMessage replaces control characters with "_": C0 and DEL, the C1
+// range U+0080-U+009F (which carries NEL and CSI), and the Unicode line
+// separators U+2028/U+2029, which break lines in JS-consuming log viewers.
 func sanitiseForMessage(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || r == '\u2028' || r == '\u2029' {
 			return '_'
 		}
 		return r
 	}, s)
 }
 
-// truncateForMessage caps a rendered message, marking that it was cut.
+// truncateForMessage caps a rendered message, marking that it was cut. The
+// cut backs up to a rune boundary so the capped body stays valid UTF-8.
 func truncateForMessage(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "… (truncated)"
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "… (truncated)"
+}
+
+// checkSingleDocument rejects bytes after the first JSON document in a
+// resource file. json.Decoder reads one value and stops, so without this a
+// half-broken file loads silently as whatever its first value happens to be.
+func checkSingleDocument(file string, dec *json.Decoder) error {
+	if _, err := dec.Token(); err != io.EOF {
+		return invalidResource(file, "trailing data after the JSON document")
+	}
+	return nil
+}
+
+// resourceEntryCount is the total across the four entry arrays.
+func resourceEntryCount(r *DeviceResources) int {
+	return len(r.SNMP) + len(r.SSH) + len(r.API) + len(r.Optical)
 }
 
 // invalidResource builds an invalid-CONTENT fault.
@@ -209,12 +233,23 @@ func (sm *SimulatorManager) LoadResources(filename string) error {
 	// returns nil for nil input, so before this check buildResourceIndexes
 	// dereferenced it and PANICKED.
 	var resources *DeviceResources
-	if err := json.NewDecoder(file).Decode(&resources); err != nil {
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(&resources); err != nil {
 		return invalidResourceCause(filename, err, "failed to parse: %v", err)
 	}
 	if resources == nil {
 		return invalidResource(filename, "decoded to JSON null; expected an object with "+
 			"\"snmp\", \"ssh\", \"api\" and/or \"optical\" arrays")
+	}
+	if err := checkSingleDocument(filename, dec); err != nil {
+		return err
+	}
+	// A zero-entry single file is the `{}` sibling of the null document: it
+	// publishes a set from which every device answers no OID at all. Directory
+	// parts stay exempt — a part legitimately carries only some sections.
+	if resourceEntryCount(resources) == 0 {
+		return invalidResource(filename, "contains no resource entries; a single-file resource "+
+			"needs at least one entry in \"snmp\", \"ssh\", \"api\" or \"optical\"")
 	}
 
 	if err := validateSNMPResourceValues(filename, resources); err != nil {
@@ -263,9 +298,14 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 		// empty part rather than to nil. Only LoadResources' single-file
 		// decode targets a pointer.
 		var partResources DeviceResources
-		if err := json.NewDecoder(file).Decode(&partResources); err != nil {
+		dec := json.NewDecoder(file)
+		if err := dec.Decode(&partResources); err != nil {
 			file.Close()
 			return invalidResourceCause(filePath, err, "failed to parse: %v", err)
+		}
+		if err := checkSingleDocument(filePath, dec); err != nil {
+			file.Close()
+			return err
 		}
 		file.Close()
 
@@ -535,8 +575,8 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 	// Fallback to old single-file format for backwards compatibility
 	resourcePath := fmt.Sprintf("resources/%s", filename)
 	if _, err := os.Stat(resourcePath); os.IsNotExist(err) {
-		return nil, notFoundResource(filename, "no such device type: neither the directory resources/%s nor the file resources/%s exists",
-			strings.TrimSuffix(filename, ".json"), filename)
+		return nil, notFoundResource(filename, "no such device type %q: no resource directory "+
+			"or single-file resource is shipped for it", strings.TrimSuffix(filename, ".json"))
 	}
 
 	file, err := os.Open(resourcePath)
@@ -555,12 +595,22 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 	// Directory PARTS keep decoding into a value: a part legitimately carries
 	// only some sections, so an empty one is ordinary there.
 	var resources *DeviceResources
-	if err := json.NewDecoder(file).Decode(&resources); err != nil {
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(&resources); err != nil {
 		return nil, invalidResourceCause(resourcePath, err, "failed to parse: %v", err)
 	}
 	if resources == nil {
 		return nil, invalidResource(resourcePath, "decoded to JSON null; expected an object with "+
 			"\"snmp\", \"ssh\", \"api\" and/or \"optical\" arrays")
+	}
+	if err := checkSingleDocument(resourcePath, dec); err != nil {
+		return nil, err
+	}
+	// Same rule as LoadResources: a zero-entry single file would be CACHED as
+	// a device type from which every device answers no OID at all.
+	if resourceEntryCount(resources) == 0 {
+		return nil, invalidResource(resourcePath, "contains no resource entries; a single-file resource "+
+			"needs at least one entry in \"snmp\", \"ssh\", \"api\" or \"optical\"")
 	}
 
 	if err := validateSNMPResourceValues(resourcePath, resources); err != nil {
@@ -603,9 +653,14 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 		}
 
 		var partResources DeviceResources
-		if err := json.NewDecoder(file).Decode(&partResources); err != nil {
+		dec := json.NewDecoder(file)
+		if err := dec.Decode(&partResources); err != nil {
 			file.Close()
 			return nil, invalidResourceCause(filePath, err, "failed to parse: %v", err)
+		}
+		if err := checkSingleDocument(filePath, dec); err != nil {
+			file.Close()
+			return nil, err
 		}
 		file.Close()
 

@@ -96,7 +96,7 @@ Where the rejection surfaces matters:
 - At startup, a missing `resources/asr9k.json` is **not** a fallback to `cisco_ios`.
   The simulator writes a synthesised default profile of about 30 compiled-in OIDs to that path and serves it.
   The `cisco_ios` fallback runs only when that file cannot be written, for example into a read-only `resources/` directory.
-- A file containing the literal `null`, a file whose JSON does not parse, and a device-type directory containing no JSON part at all are treated as invalid content and take the same route.
+- A file containing the literal `null`, a file whose JSON does not parse, a file with data trailing the JSON document, a single file with no resource entries at all, and a device-type directory containing no JSON part at all are treated as invalid content and take the same route.
   A `null` **part** inside a device-type directory is fine: a part legitimately carries only some sections.
 - A failed load never replaces the resource set already in memory, not even partially.
 
