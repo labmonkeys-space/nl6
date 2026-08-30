@@ -354,6 +354,16 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 
 	maxRepetitions = clampBulkWalk(maxRepetitions)
 
+	// RFC 3416 §4.2.3 with N = 0 and M = 0 is a response with NO bindings, not
+	// an end-of-MIB exception. The collection loop below would gather nothing
+	// and the builder would answer {startOID, endOfMibView}, which a walker
+	// reads as the end of the MIB when nothing about the MIB was asked.
+	// Unreachable while max-repetitions was a hardcoded 10; reachable now. The
+	// v2c handler makes the same distinction (handleGetBulk).
+	if maxRepetitions == 0 {
+		return s.createSNMPv3EmptyGetBulkResponse(msg)
+	}
+
 	// Collect multiple OIDs starting from startOID
 	var oids []string
 	var responses []string
@@ -423,26 +433,6 @@ func (s *SNMPServer) logFirstBulkAbort(next, at string) {
 	})
 }
 
-// parseSNMPv3GetBulkParams extracts non-repeaters and max-repetitions from SNMPv3 GetBulk scoped PDU
-// parseSNMPv3GetBulkParams reads non-repeaters and max-repetitions from a
-// GETBULK scoped PDU, in CONTENTS form (contextEngineID, contextName, PDU) as
-// parseSNMPv3Message and handleSNMPv3Request supply it.
-//
-// It used to be a TODO returning a hardcoded (0, 10), which made an oversized
-// v3 response unreachable by accident rather than by design (nl6#535). Reading
-// a real value is only safe now that createSNMPv3GetBulkResponse bounds what it
-// emits; the reverse order was the unsafe one.
-//
-// Integers are read via parseBERInt at ANY width. The v2c parser originally
-// read single-byte BER content only, so any max-repetitions >= 128 silently
-// became 10 — benchmark numbers taken above 127 before that fix are not
-// comparable with ones after it. Repeating that here would reintroduce the same
-// silent discontinuity on the v3 path.
-//
-// Both values are clamped at the PARSE SITE rather than by the caller, matching
-// the v2c parser: a negative reaching the handler becomes a negative loop bound
-// or a negative slice index on the inline serve path, where there is no
-// recover().
 // clampBulkWalk bounds how far a GETBULK walks, as distinct from how much it
 // emits.
 //
@@ -469,6 +459,29 @@ func clampBulkWalk(maxRepetitions int) int {
 	return maxRepetitions
 }
 
+// parseSNMPv3GetBulkParams reads non-repeaters and max-repetitions from a
+// GETBULK scoped PDU, in CONTENTS form (contextEngineID, contextName, PDU) as
+// parseSNMPv3Message and handleSNMPv3Request supply it.
+//
+// It used to be a TODO returning a hardcoded (0, 10), which made an oversized
+// v3 response unreachable by accident rather than by design (nl6#535). Reading
+// a real value is only safe now that createSNMPv3GetBulkResponse bounds what it
+// emits; the reverse order was the unsafe one.
+//
+// Integers are read via parseBERInt at ANY width. The v2c parser originally
+// read single-byte BER content only, so any max-repetitions >= 128 silently
+// became 10 — benchmark numbers taken above 127 before that fix are not
+// comparable with ones after it. Repeating that here would reintroduce the same
+// silent discontinuity on the v3 path.
+//
+// Both values are clamped at the PARSE SITE rather than by the caller, matching
+// the v2c parser: a negative reaching the handler becomes a negative loop bound
+// or a negative slice index on the inline serve path, where there is no
+// recover().
+//
+// The three INTEGER fields are bounded by the PDU they sit in, not by the
+// datagram (the nl6#537 rule): a field read across its container's end is a
+// value nobody sent.
 func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	// Defaults if the PDU does not parse. Ten matches the historical hardcoded
 	// value, so a malformed request behaves as it did rather than as an
@@ -494,31 +507,31 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
-	if _, newPos := parseLength(scopedPDU, pos); true {
-		if newPos <= pos {
-			return nonRepeaters, maxRepetitions
-		}
-		pos = newPos
+	pduLen, newPos := parseLength(scopedPDU, pos)
+	if pduLen < 0 || newPos+pduLen > len(scopedPDU) {
+		return nonRepeaters, maxRepetitions
 	}
+	pos = newPos
+	end := newPos + pduLen // the PDU's own boundary bounds every read below
 
 	// request-id, skipped.
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+	if pos >= end || scopedPDU[pos] != ASN1_INTEGER {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
 	reqLen, newPos := parseLength(scopedPDU, pos)
-	if reqLen < 0 || newPos+reqLen > len(scopedPDU) {
+	if reqLen < 0 || newPos+reqLen > end {
 		return nonRepeaters, maxRepetitions
 	}
 	pos = newPos + reqLen
 
 	// non-repeaters.
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+	if pos >= end || scopedPDU[pos] != ASN1_INTEGER {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
 	nrLen, newPos := parseLength(scopedPDU, pos)
-	if nrLen < 0 || newPos+nrLen > len(scopedPDU) {
+	if nrLen < 0 || newPos+nrLen > end {
 		return nonRepeaters, maxRepetitions
 	}
 	pos = newPos
@@ -528,12 +541,12 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	pos += nrLen
 
 	// max-repetitions.
-	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+	if pos >= end || scopedPDU[pos] != ASN1_INTEGER {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
 	mrLen, newPos := parseLength(scopedPDU, pos)
-	if mrLen < 0 || newPos+mrLen > len(scopedPDU) {
+	if mrLen < 0 || newPos+mrLen > end {
 		return nonRepeaters, maxRepetitions
 	}
 	if v, ok := parseBERInt(scopedPDU, newPos, mrLen); ok && v >= 0 {
@@ -541,6 +554,22 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	}
 
 	return nonRepeaters, maxRepetitions
+}
+
+// createSNMPv3EmptyGetBulkResponse answers a GETBULK that asked for zero
+// repetitions: a GetResponse with an empty variable-bindings list and noError.
+// Distinct from the len(oids) == 0 branch of createSNMPv3GetBulkResponse, which
+// means the walk found nothing and is an end-of-MIB exception.
+func (s *SNMPServer) createSNMPv3EmptyGetBulkResponse(msg *SNMPv3Message) []byte {
+	scopedPDU, err := s.createScopedPDUMulti(nil, nil, msg)
+	if err != nil {
+		return []byte{}
+	}
+	resp, err := s.wrapScopedPDUInV3Message(scopedPDU, msg)
+	if err != nil {
+		return []byte{}
+	}
+	return resp
 }
 
 // createSNMPv3GetBulkResponse creates an SNMPv3 GetBulk response.
