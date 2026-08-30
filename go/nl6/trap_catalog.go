@@ -819,21 +819,33 @@ func validateVarbindOID(raw, entryName string, idx int) error {
 	//
 	// A TEMPLATED OID returned above cannot be checked here: it is rendered per
 	// fire, and a REST varbindOverrides value can make it unencodable at that
-	// point regardless of what the catalog says. That is a fire-time question,
-	// tracked separately.
+	// point regardless of what the catalog says. That fire-time gap stays open;
+	// see the fire-time paragraph in docs/reference/snmp-traps.md.
 	return validateDottedOID(raw, entryName, fmt.Sprintf("varbind %d", idx))
 }
 
-// maxDottedOIDLen caps the length of top-level literal OID fields (currently
-// only snmpTrapEnterprise). Well under the UDP MTU budget and comfortably
-// larger than any real enterprise OID.
+// maxDottedOIDLen caps the length of every literal OID field routed through
+// validateDottedOID: snmpTrapOID, snmpTrapEnterprise and literal body-varbind
+// OIDs (nl6#539). Well under the UDP MTU budget and comfortably larger than
+// any real OID. The encoder itself carries far longer bodies, so this cap is
+// one of the places the catalog is deliberately stricter; see the function
+// comment.
 const maxDottedOIDLen = 256
 
 // validateDottedOID rejects malformed literal dotted-decimal OIDs:
 // empty strings, strings over maxDottedOIDLen, single-arc, trailing dot,
-// empty arcs (consecutive dots), and non-numeric characters. Used on
-// literal-OID fields (snmpTrapEnterprise); body varbinds use a template
-// grammar and go through validateVarbindOID instead.
+// empty arcs (consecutive dots), non-numeric characters, and anything
+// encodeOID cannot represent. Used on every literal OID field: snmpTrapOID,
+// snmpTrapEnterprise, and literal body varbinds via validateVarbindOID
+// (a templated varbind bypasses it and renders per fire).
+//
+// The relation to the encoder is ONE-DIRECTIONAL, not an equivalence: the
+// catalog never accepts what the encoder refuses (the direction nl6#539
+// closed, since that is what ships a degenerate 06 00), but it stays
+// deliberately stricter the other way. The digits-only walk rejects signed
+// spellings such as "+1.3" that strconv.Atoi, and therefore encodeOID,
+// accepts; maxDottedOIDLen rejects lengths the encoder can carry.
+// FuzzCatalogOIDAgreement pins the implication, not two-way agreement.
 func validateDottedOID(oid, entryName, field string) error {
 	if oid == "" {
 		return fmt.Errorf("entry %q %s: OID is empty", entryName, field)
@@ -882,7 +894,8 @@ func validateDottedOID(oid, entryName, field string) error {
 	if !encodableAsOID(oid) {
 		return fmt.Errorf("entry %q %s: OID %q is not one the encoder can represent: "+
 			"the first arc must be 0, 1 or 2, the second no greater than 39 when the first "+
-			"is 0 or 1, and every arc within 4294967295. It would go on the wire as a "+
+			"is 0 or 1, and every arc must fit 4294967295, as must the combined value "+
+			"40*first+second of the first two arcs. It would go on the wire as a "+
 			"degenerate empty OID", entryName, field, oid)
 	}
 	return nil
