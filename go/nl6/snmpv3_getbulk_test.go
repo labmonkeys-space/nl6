@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -128,8 +129,8 @@ func TestV3GetBulkMidMibPairsNameWithItsOwnValue(t *testing.T) {
 	s := v3TestServer(fixture)
 
 	r := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil))
-	if len(r.varbinds) != 1 {
-		t.Fatalf("mid-MIB response carries %d bindings, want 1 (see nl6#535)", len(r.varbinds))
+	if len(r.varbinds) == 0 {
+		t.Fatal("mid-MIB response carries no bindings")
 	}
 	vb := r.varbinds[0]
 
@@ -461,35 +462,46 @@ func TestV3GetBulkTerminatesOnNonAdvancingMap(t *testing.T) {
 	}
 }
 
-// TestV3GetBulkShipsOneBinding records the deferred defect (nl6#535) as an
-// executable fact rather than a claim in a comment: the response is identical
-// whether the collection loop gathered one OID or many. When #535 lands this
-// test should fail and be replaced by one asserting the real count.
-func TestV3GetBulkShipsOneBinding(t *testing.T) {
-	s := v3TestServer(v3BulkFixture())
+// TestV3GetBulkShipsEveryCollectedBinding replaces the nl6#526-era
+// TestV3GetBulkShipsOneBinding, which asserted that the response was
+// byte-identical for 1 and many collected OIDs and was written to FAIL when
+// nl6#535 landed. It did.
+//
+// A v3 GETBULK now carries every binding the collection loop gathered, in
+// order, each paired with its own value.
+func TestV3GetBulkShipsEveryCollectedBinding(t *testing.T) {
+	fixture := v3BulkFixture()
+	s := v3TestServer(fixture)
 	msg := v3BulkMsg()
 
-	oids, responses := []string{}, []string{}
+	// What the collection loop will gather, computed the same way it does.
+	var want []string
 	cur := ".1.3.6.1.2.1.1.1.0"
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 10; i++ {
 		n, v := s.findNextOID(cur)
 		if n == "" || v == valueEndOfMibView {
 			break
 		}
-		oids, responses, cur = append(oids, n), append(responses, v), n
+		want = append(want, n)
+		cur = n
 	}
-	if len(oids) < 3 {
-		t.Fatalf("fixture only yielded %d successors; need at least 3 to show the discard", len(oids))
+	if len(want) < 3 {
+		t.Fatalf("fixture yielded only %d successors; need at least 3 to show more than one ships", len(want))
 	}
 
-	many := s.createSNMPv3GetBulkResponse(cur, oids, responses, msg)
-	one := s.createSNMPv3GetBulkResponse(cur, oids[:1], responses[:1], msg)
-	if !bytes.Equal(many, one) {
-		t.Fatalf("response for %d OIDs differs from the response for 1: nl6#535 may be fixed, "+
-			"in which case replace this test with one asserting the binding count", len(oids))
+	r := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, nil))
+	if len(r.varbinds) != len(want) {
+		t.Fatalf("response carries %d bindings, want %d: a GETBULK must not discard what it collected",
+			len(r.varbinds), len(want))
 	}
-	if r := decodeV3Response(t, many); len(r.varbinds) != 1 {
-		t.Fatalf("decoded %d bindings from a %d-OID response, want 1", len(r.varbinds), len(oids))
+	for i, vb := range r.varbinds {
+		if vb.oid != want[i] {
+			t.Errorf("binding %d is %q, want %q: order must be preserved", i, vb.oid, want[i])
+		}
+		if v, ok := fixture[vb.oid]; ok && string(vb.value) != v {
+			t.Errorf("binding %d (%s) carries %q, fixture says %q: name and value came from "+
+				"different objects", i, vb.oid, vb.value, v)
+		}
 	}
 }
 
@@ -567,4 +579,243 @@ func buildV3GetBulkRequest(t *testing.T, s *SNMPServer, oid string, reqID int) [
 	msg = append(msg, secParams...)
 	msg = append(msg, scopedPDU...)
 	return encodeSequence(msg)
+}
+
+// TestV3GetBulkRespectsTheDatagramBudget covers the bound nl6#535 added. The
+// v3 path had NO size ceiling at all: createSNMPv3GetBulkResponse built its own
+// message and consulted nothing. That was survivable only because the handler
+// shipped one binding and max-repetitions was hardcoded to 10; making it ship
+// every collected binding is what makes the bound necessary rather than
+// theoretical.
+//
+// The size is MEASURED rather than predicted, because a v3 message's envelope
+// depends on the engine ID, user name and privacy parameters, and under privacy
+// the scoped PDU is padded to a cipher block. This test drives real values
+// through the real builder rather than asserting an arithmetic model.
+func TestV3GetBulkRespectsTheDatagramBudget(t *testing.T) {
+	// The bound is MEASURED through the real envelope, so the test has to be
+	// able to catch a builder that measures the wrong thing. With one value
+	// length, consecutive candidates differ by ~410 B and the ~70 B
+	// noAuthNoPriv envelope never falls between two of them: a builder that
+	// measured the bare scoped PDU passed. So the value length is SWEPT, which
+	// puts the envelope, and under privacy the cipher-block padding, on the
+	// wrong side of the boundary for some length in the range.
+	privs := []struct {
+		name  string
+		proto int
+	}{
+		{"noAuthNoPriv", SNMPV3_PRIV_NONE},
+		{"des", SNMPV3_PRIV_DES},
+		{"aes128", SNMPV3_PRIV_AES128},
+	}
+	for _, priv := range privs {
+		t.Run(priv.name, func(t *testing.T) {
+			for length := 300; length <= 420; length++ {
+				checkV3BulkBudget(t, priv.proto, length, maxSNMPResponseSize, 0)
+			}
+		})
+	}
+}
+
+// checkV3BulkBudget builds a 20-row ifAlias table of values `length` bytes long,
+// asks a GETBULK from sysDescr.0 under the given privacy protocol with the given
+// msgMaxSize declaration (0 = none), and asserts three things about the reply:
+// it fits `limit`; its bindings are the PREFIX of what an unbounded collection
+// would have returned (truncation drops from the END, so a walker resumes
+// without a gap); and the fit is maximal (one more binding would not fit).
+//
+// The prefix check is what catches a builder that drops from the head: that
+// still returns ascending bindings under budget, and a walker resuming from
+// the last one silently skips the rows that were dropped.
+func checkV3BulkBudget(t *testing.T, privProto, length, limit, declaredMax int) {
+	t.Helper()
+	vals := map[string]string{".1.3.6.1.2.1.1.1.0": "dev"}
+	for i := 1; i <= 20; i++ {
+		vals[fmt.Sprintf(".1.3.6.1.2.1.31.1.1.1.18.%d", i)] = strings.Repeat("X", length)
+	}
+	s := v3TestServer(vals)
+	msg := v3PrivSeed(s)
+	msg.GlobalData.MsgMaxSize = declaredMax
+	encrypted := privProto != SNMPV3_PRIV_NONE
+	if encrypted {
+		s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+		s.v3Config.PrivProtocol = privProto
+		msg.GlobalData.MsgFlags = SNMPV3_MSG_FLAG_AUTH | SNMPV3_MSG_FLAG_PRIV
+	}
+
+	resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, nil)
+	if len(resp) == 0 {
+		t.Fatalf("length %d: no response", length)
+	}
+	if len(resp) > limit {
+		t.Fatalf("length %d: v3 GETBULK response is %d bytes, over the %d-byte limit: the datagram "+
+			"would fragment on a standard-MTU path (or exceed what the manager said it accepts)",
+			length, len(resp), limit)
+	}
+
+	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, encrypted)
+	if len(r.varbinds) == 0 {
+		t.Fatalf("length %d: response carries no bindings; a GETBULK must emit at least one or a walk stalls", length)
+	}
+
+	// Oracle: what the collection loop gathers, unbounded.
+	var want []string
+	cur := ".1.3.6.1.2.1.1.1.0"
+	for i := 0; i < 10; i++ {
+		n, v := s.findNextOID(cur)
+		if n == "" || v == valueEndOfMibView {
+			break
+		}
+		want = append(want, n)
+		cur = n
+	}
+	if len(r.varbinds) > len(want) {
+		t.Fatalf("length %d: %d bindings shipped, only %d collected", length, len(r.varbinds), len(want))
+	}
+	for i, vb := range r.varbinds {
+		if vb.oid != want[i] {
+			t.Fatalf("length %d: binding %d is %s, want %s: truncation must drop from the END so a "+
+				"walker resuming from the last OID returned sees every row", length, i, vb.oid, want[i])
+		}
+	}
+
+	// Maximal: the next binding would not have fit. Measured the same way the
+	// builder measures, so this cannot disagree with it on arithmetic.
+	if n := len(r.varbinds); n < len(want) {
+		scoped, err := s.createScopedPDUMulti(want[:n+1], valuesFor(s, want[:n+1]), msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bigger, err := s.wrapScopedPDUInV3Message(scoped, msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(bigger) <= limit {
+			t.Fatalf("length %d: %d bindings shipped but %d would still fit in %d bytes (%d): the "+
+				"truncation is not maximal", length, n, n+1, limit, len(bigger))
+		}
+	}
+}
+
+func valuesFor(s *SNMPServer, oids []string) []string {
+	out := make([]string, len(oids))
+	for i, oid := range oids {
+		out[i] = s.findResponse(oid)
+	}
+	return out
+}
+
+// TestV3GetBulkHonoursManagerMsgMaxSize pins RFC 3412 §7.1: a response fits the
+// msgMaxSize the requester declared when that is smaller than the datagram
+// budget. A declaration below the RFC 3412 §7.2 floor of 484 is malformed and
+// is ignored rather than honoured, which the second case pins from the other
+// side.
+func TestV3GetBulkHonoursManagerMsgMaxSize(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		declared      int
+		expectedLimit int
+	}{
+		{"declared 700 clamps the budget", 700, 700},
+		{"declared 100 is below the floor and ignored", 100, maxSNMPResponseSize},
+		{"declared 65507 does not raise the budget", 65507, maxSNMPResponseSize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for length := 100; length <= 140; length++ {
+				checkV3BulkBudget(t, SNMPV3_PRIV_NONE, length, tc.expectedLimit, tc.declared)
+			}
+		})
+	}
+	// The ignored-floor case asserts a LIMIT of the full budget, which a
+	// response under 100 bytes would also satisfy; make sure it actually went
+	// over the declared value.
+	vals := map[string]string{".1.3.6.1.2.1.1.1.0": "dev"}
+	for i := 1; i <= 6; i++ {
+		vals[fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", i)] = strings.Repeat("Z", 60)
+	}
+	s := v3TestServer(vals)
+	msg := v3BulkMsg()
+	msg.GlobalData.MsgMaxSize = 100
+	if resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", msg, nil); len(resp) <= 100 {
+		t.Errorf("a sub-484 msgMaxSize of 100 was honoured (%d-byte response); it is malformed and must be ignored", len(resp))
+	}
+}
+
+// TestV3GetBulkTruncatedWalkResumesWithoutGapOrRepeat is the v3 twin of the
+// v2c test of the same name: the RFC 3416 §4.2.3 property the truncation
+// relies on, driven as a collector drives it.
+func TestV3GetBulkTruncatedWalkResumesWithoutGapOrRepeat(t *testing.T) {
+	vals := map[string]string{".1.3.6.1.2.1.1.1.0": "dev"}
+	for i := 1; i <= 20; i++ {
+		vals[fmt.Sprintf(".1.3.6.1.2.1.31.1.1.1.18.%d", i)] = strings.Repeat("X", 400)
+	}
+	s := v3TestServer(vals)
+
+	first := decodeV3Response(t, s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil))
+	if len(first.varbinds) == 0 || len(first.varbinds) >= 10 {
+		t.Fatalf("first response carries %d bindings; the fixture is sized so that the 10 collected do not fit", len(first.varbinds))
+	}
+	last := first.varbinds[len(first.varbinds)-1].oid
+	second := decodeV3Response(t, s.handleSNMPv3GetBulk(last, v3BulkMsg(), nil))
+	if len(second.varbinds) == 0 {
+		t.Fatal("resume returned no bindings")
+	}
+
+	// No repeat, no gap: the two responses together are a prefix of the
+	// column in walk order.
+	var got []string
+	for _, vb := range first.varbinds {
+		got = append(got, vb.oid)
+	}
+	for _, vb := range second.varbinds {
+		got = append(got, vb.oid)
+	}
+	cur := ".1.3.6.1.2.1.1.1.0"
+	for i, oid := range got {
+		next, _ := s.findNextOID(cur)
+		if oid != next {
+			t.Fatalf("walk position %d is %s, want %s: the resume from %s skipped or repeated a row", i, oid, next, last)
+		}
+		cur = next
+	}
+}
+
+// TestV3GetBulkMultiBindingThroughDispatcher drives a real datagram through
+// handleSNMPv3Request, so the request-id echo, the flags copy and the USM
+// envelope are exercised on a MANY-binding response and not only on the
+// single-binding responses the older dispatcher tests use.
+func TestV3GetBulkMultiBindingThroughDispatcher(t *testing.T) {
+	s := v3TestServer(v3BulkFixture())
+	resp := s.handleSNMPv3Request(buildV3GetBulkRequest(t, s, ".1.3.6.1.2.1.1.1.0", 7777))
+	if len(resp) == 0 {
+		t.Fatal("dispatcher returned nothing")
+	}
+	r := decodeV3Response(t, resp)
+	if r.requestID != 7777 {
+		t.Errorf("request-id = %d, want 7777", r.requestID)
+	}
+	if len(r.varbinds) != 6 {
+		t.Errorf("response carries %d bindings, want the 6 successors the fixture holds", len(r.varbinds))
+	}
+}
+
+func TestV3GetBulkEmitsOneBindingEvenIfOversized(t *testing.T) {
+	huge := strings.Repeat("Y", maxSNMPResponseSize*2)
+	s := v3TestServer(map[string]string{
+		".1.3.6.1.2.1.1.1.0":         "dev",
+		".1.3.6.1.2.1.31.1.1.1.18.1": huge,
+	})
+
+	resp := s.handleSNMPv3GetBulk(".1.3.6.1.2.1.1.1.0", v3BulkMsg(), nil)
+	// Premise first: the one binding really is over budget. Without this a
+	// shrunken fixture would pass the test while exercising nothing.
+	if len(resp) <= maxSNMPResponseSize {
+		t.Fatalf("fixture no longer produces an oversized response (%d bytes <= %d); the carve-out is untested",
+			len(resp), maxSNMPResponseSize)
+	}
+	r := decodeV3Response(t, resp)
+	if len(r.varbinds) == 0 {
+		t.Error("a single oversized binding produced an empty binding list; that stalls a walk " +
+			"with no signal, which is why the v2c truncate rule always emits at least one")
+	}
 }

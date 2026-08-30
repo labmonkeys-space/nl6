@@ -356,7 +356,10 @@ func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, sc
 	//
 	// An empty collection is answered as the endOfMibView exception, named with
 	// startOID, by createSNMPv3GetBulkResponse (nl6#526). The sentinel is not
-	// appended to oids here because that builder still ships a single binding.
+	// appended to oids here: the builder ships every binding collected, so
+	// appending it would put the exception after real bindings mid-walk and
+	// make the walker stop early. The NEXT request, starting from the last
+	// OID returned, collects nothing and gets the exception on its own.
 	//
 	// The three break conditions are NOT the same thing, and the difference
 	// matters because each ends the walk with a well-formed exception that a
@@ -417,14 +420,13 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 	nonRepeaters := 0
 	maxRepetitions := 10
 
-	// NOT bounded by maxSNMPResponseSize, unlike the v2c path (nl6#489).
-	//
-	// Unreachable today rather than safe by design: this hardcoded 10, walking
-	// a single column, yields ~10 variable bindings (~500 B) and cannot
-	// approach the budget. The moment this TODO is done and a real
-	// max-repetitions is honoured, the v3 response needs the same bound the
-	// v2c path got — createSNMPv3GetBulkResponse builds its own message and
-	// consults no ceiling.
+	// The response IS bounded now: createSNMPv3GetBulkResponse measures its
+	// candidate against the datagram budget and the manager's msgMaxSize
+	// (nl6#535). That was the precondition for honouring a real value here,
+	// and it is the part still open: this returns a fixed 10 whatever the
+	// scoped PDU says, and non-repeaters is discarded by the handler. When
+	// this is done the linear descent in the builder must become a bisection
+	// (see the comment there), because at a real max-repetitions it is O(n^2).
 	//
 	// Stated in docs/reference/snmp.md as a known gap so it reads as a decision
 	// rather than an oversight.
@@ -446,10 +448,11 @@ func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
 // reported "OID not increasing" or kept walking. The walk never terminated.
 // An exception on a wrongly-named binding would have fixed only half of that.
 //
-// The encoder needs nothing here: nl6#518 and nl6#522 already route
-// createScopedPDU through encodeTypedValue, so the sentinel becomes the 82 00
-// tag on its own. The defect was purely that handleSNMPv3GetBulk discarded the
-// sentinel before the encoder ever saw it.
+// The encoder needs nothing here: nl6#518 and nl6#522 already route the scoped
+// PDU builder (createScopedPDUMulti, which createScopedPDU delegates to)
+// through encodeTypedValue, so the sentinel becomes the 82 00 tag on its own.
+// The defect was purely that handleSNMPv3GetBulk discarded the sentinel before
+// the encoder ever saw it.
 func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []string, responses []string, msg *SNMPv3Message) []byte {
 	if len(oids) == 0 {
 		// Nothing follows the requested OID, so this is the end of the MIB
@@ -461,14 +464,57 @@ func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []str
 		return responseBytes
 	}
 
-	// Ships ONE binding however many the collection loop gathered, so a v3
-	// GETBULK is correct but no more efficient than a GETNEXT (nl6#535).
-	// Verified: the response is byte-identical for 1 and 10 collected OIDs.
-	// That, honouring a real max-repetitions, and bounding the response are one
-	// change, and max-repetitions must NOT be honoured without the bound.
-	responseBytes, err := s.createSNMPv3Response(oids[0], responses[0], msg)
-	if err != nil {
-		return []byte{}
+	// Emit as many bindings as fit the datagram budget, dropping from the end
+	// (RFC 3416 §4.2.3: a GETBULK truncates, and the walker resumes from the
+	// last OID returned).
+	//
+	// The size is MEASURED, not predicted. The v2c path can compute its length
+	// arithmetically because its envelope is fixed, but a v3 message wraps the
+	// scoped PDU in globalData and securityParameters whose sizes depend on the
+	// engine ID, the user name and the privacy parameters, and under privacy
+	// the scoped PDU is encrypted and PADDED to a cipher block. Predicting that
+	// is exactly the kind of estimate this package has been bitten by:
+	// "every bug in this family was a predicted size disagreeing with an
+	// emitted one". Building the candidate and measuring it cannot disagree
+	// with itself.
+	//
+	// The descent is linear and every over-budget candidate is fully built
+	// and, under privacy, fully encrypted. That is immaterial WHILE
+	// max-repetitions is the hardcoded 10 (at most ten encodes of at most a
+	// datagram). It is NOT immaterial once a real max-repetitions is honoured
+	// (nl6#535): at a few hundred it is O(n^2) bytes and n encryptions per
+	// request, inline on the UDP handler. That follow-up must replace the
+	// descent with a bisection over n, which still measures and never
+	// predicts, since len(resp) is monotone in n.
+	//
+	// The ceiling is the datagram budget, further reduced by the manager's
+	// own msgMaxSize when it declares a smaller one: RFC 3412 §7.1 requires a
+	// response to fit what the requester said it can receive. RFC 3412 §7.2
+	// puts the legal range at 484 and up, so a declaration below that is
+	// malformed and is ignored rather than honoured.
+	limit := maxSNMPResponseSize
+	if m := msg.GlobalData.MsgMaxSize; m >= snmpV3MinMsgMaxSize && m < limit {
+		limit = m
 	}
-	return responseBytes
+	for n := len(oids); ; n-- {
+		scopedPDU, err := s.createScopedPDUMulti(oids[:n], responses[:n], msg)
+		if err != nil {
+			return []byte{}
+		}
+		resp, err := s.wrapScopedPDUInV3Message(scopedPDU, msg)
+		if err != nil {
+			return []byte{}
+		}
+		if len(resp) <= limit || n == 1 {
+			// Always emit at least one binding, as the v2c truncate rule does:
+			// an empty binding list with no error stalls a walk forever with no
+			// signal, which is worse than one oversized datagram. Reachable at
+			// a low -datagram-mtu with a long ifAlias.
+			return resp
+		}
+	}
 }
+
+// snmpV3MinMsgMaxSize is the smallest msgMaxSize an SNMPv3 message may declare
+// (RFC 3412 §7.2, "484..2147483647"). A declaration below it is not honoured.
+const snmpV3MinMsgMaxSize = 484
