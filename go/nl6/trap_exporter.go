@@ -47,6 +47,13 @@ const DefaultInformPendingCap = 100
 type TrapStats struct {
 	// Sent counts every datagram written to the wire including retries.
 	Sent atomic.Uint64
+	// SendFailures counts every fire that never reached the kernel: a
+	// resolve or encode failure (nl6#540 — an unencodable rendered OID lands
+	// here), a failed write, and a failed INFORM retransmission. Increments
+	// on every occurrence while the matching log line is sync.Once-gated,
+	// and surfaces as send_failures on GET /api/v1/traps/status — the same
+	// sent-means-reached-the-kernel split flow and syslog use (nl6#491).
+	SendFailures atomic.Uint64
 	// InformsOriginated counts the number of distinct INFORMs ever started
 	// (not counting retransmissions). Used for the invariant
 	// informsPending + informsAcked + informsFailed + informsDropped ==
@@ -447,6 +454,7 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 	varbinds, err := entry.Resolve(ctx, overrides)
 	if err != nil {
 		e.logFirstEncodeErr("resolve", entry.Name, err)
+		e.stats.SendFailures.Add(1)
 		if p != nil {
 			p.ledger.sendFailures.Add(1)
 		}
@@ -490,6 +498,7 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 	}
 	if err != nil {
 		e.logFirstEncodeErr("encode", entry.Name, err)
+		e.stats.SendFailures.Add(1)
 		if p != nil {
 			p.ledger.sendFailures.Add(1)
 		}
@@ -518,6 +527,7 @@ func (e *TrapExporter) fireWithCtx(entry *CatalogEntry, ctx TemplateCtx, overrid
 			}
 			e.pendingMu.Unlock()
 		}
+		e.stats.SendFailures.Add(1)
 		if p != nil {
 			p.ledger.sendFailures.Add(1)
 		}
@@ -753,6 +763,8 @@ func (e *TrapExporter) checkPending(ctx context.Context) {
 
 		if e.writePDU(pdu) {
 			e.stats.Sent.Add(1)
+		} else {
+			e.stats.SendFailures.Add(1)
 		}
 	}
 }

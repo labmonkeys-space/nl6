@@ -157,8 +157,9 @@ func TestFastEncoderMatchesLegacy_Types(t *testing.T) {
 		{"ipaddress", []Varbind{{OID: "1.3.6.1.4.1.9.9.1.1", Type: TrapVTIPAddress, Value: "10.42.0.9"}}},
 		{"no-varbinds", nil},
 		{"many-varbinds", manyVarbinds(20)},
-		// Malformed OIDs: encodeOID does not error on these, it emits the
-		// degenerate 06 00 (nl6#529). The fast path must agree.
+		// Malformed OIDs: both encoders REFUSE these since nl6#540 (before
+		// that, encodeOID emitted the degenerate 06 00 for them). The rows
+		// stay because the refusals must agree fault for fault.
 		{"oid-single-component", []Varbind{{OID: "1", Type: TrapVTInteger, Value: "1"}}},
 		{"oid-empty", []Varbind{{OID: "", Type: TrapVTInteger, Value: "1"}}},
 		{"oid-leading-dot", []Varbind{{OID: ".1.3.6.1.2.1", Type: TrapVTInteger, Value: "1"}}},
@@ -166,6 +167,7 @@ func TestFastEncoderMatchesLegacy_Types(t *testing.T) {
 		{"oid-double-dot", []Varbind{{OID: "1.3..6", Type: TrapVTInteger, Value: "1"}}},
 		{"oid-nonnumeric", []Varbind{{OID: "1.3.x.6", Type: TrapVTInteger, Value: "1"}}},
 		// Error paths must agree too.
+		{"oid-value-unencodable", []Varbind{{OID: "1.3.6.1", Type: TrapVTOID, Value: "3.40.1"}}},
 		{"bad-integer", []Varbind{{OID: "1.3.6.1", Type: TrapVTInteger, Value: "not-a-number"}}},
 		{"bad-ipaddress", []Varbind{{OID: "1.3.6.1", Type: TrapVTIPAddress, Value: "2001:db8::1"}}},
 		{"unknown-type", []Varbind{{OID: "1.3.6.1", Type: TrapVarbindType("bogus"), Value: "1"}}},

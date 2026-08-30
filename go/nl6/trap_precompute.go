@@ -61,13 +61,19 @@ func precomputeEntry(e *CatalogEntry) *preEncodedEntry {
 		varbindOID:   make([][]byte, len(e.Varbinds)),
 	}
 
-	// snmpTrapOID.0 — a complete varbind, both halves constant.
-	vb, m := beginTLV(nil)
-	vb = appendOID(vb, oidSnmpTrapOID0)
-	vb = appendOID(vb, e.SnmpTrapOID)
-	pre.trapOIDVB = endTLV(vb, m, ASN1_SEQUENCE)
+	// snmpTrapOID.0 — a complete varbind, both halves constant. Cached only
+	// when the encoder can represent it; a nil slot sends the fire path down
+	// the checked branch, same rule as the body varbinds below (nl6#540).
+	// compileEntry validates both fields before calling here (nl6#539), so
+	// like the varbind guard this is defence in depth for a direct caller.
+	if encodableAsOID(e.SnmpTrapOID) {
+		vb, m := beginTLV(nil)
+		vb = appendOID(vb, oidSnmpTrapOID0)
+		vb = appendOID(vb, e.SnmpTrapOID)
+		pre.trapOIDVB = endTLV(vb, m, ASN1_SEQUENCE)
+	}
 
-	if e.SnmpTrapEnterprise != "" {
+	if e.SnmpTrapEnterprise != "" && encodableAsOID(e.SnmpTrapEnterprise) {
 		ent, em := beginTLV(nil)
 		ent = appendOID(ent, oidSnmpTrapEnterprise0)
 		ent = appendOID(ent, e.SnmpTrapEnterprise)

@@ -142,11 +142,12 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 	//      we emit it in the same position RFC 3584 pins.
 	//   N. body varbinds
 	// An OID this encoder cannot represent is REFUSED rather than emitted as
-	// the degenerate 06 00 (nl6#540). The wording and the positions are kept
-	// identical to encodeNotificationFast's: the two must agree byte for byte
-	// AND fault for fault, or TestFastEncoderMatchesLegacy_* passes while one
-	// ships a message the other refuses. That parity test caught exactly this
-	// when only the fast path was changed.
+	// the degenerate 06 00 (nl6#540). The checks sit at the same positions as
+	// encodeV2cNotificationFast's: the two must agree byte for byte AND fault
+	// for fault, or TestFastEncoderMatchesLegacy_* passes while one ships a
+	// message the other refuses. That parity test caught exactly this when
+	// only the fast path was changed. (It compares which inputs error, not
+	// the error text; the shared wording is a courtesy, not test-enforced.)
 	if !encodableAsOID(trapOID) {
 		return 0, fmt.Errorf("snmpTrapOID %q is not one the encoder can represent", trapOID)
 	}
@@ -230,6 +231,10 @@ func encodeVarbindTyped(vb Varbind) ([]byte, error) {
 		body = append(body, encodeOctetString(vb.Value)...)
 
 	case TrapVTOID:
+		// Same refusal as appendVarbindValue's, wording included (nl6#540).
+		if !encodableAsOID(vb.Value) {
+			return nil, fmt.Errorf("oid: value %q is not one the encoder can represent", vb.Value)
+		}
 		body = append(body, encodeOID(vb.Value)...)
 
 	case TrapVTCounter32:

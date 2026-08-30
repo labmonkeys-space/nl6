@@ -354,6 +354,12 @@ func appendVarbindValue(dst []byte, vb Varbind) ([]byte, error) {
 		return appendOctetString(dst, vb.Value), nil
 
 	case TrapVTOID:
+		// The VALUE slot can carry an unencodable OID by the same rendered-
+		// template / REST-override route as a varbind NAME, and parity between
+		// the encoders cannot catch it because both would agree (nl6#540).
+		if !encodableAsOID(vb.Value) {
+			return nil, fmt.Errorf("oid: value %q is not one the encoder can represent", vb.Value)
+		}
 		return appendOID(dst, vb.Value), nil
 
 	case TrapVTCounter32:
@@ -434,7 +440,10 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 	dst = endTLV(dst, m, ASN1_SEQUENCE)
 
 	// Mandatory varbind 2: snmpTrapOID.0. Entirely constant per catalog entry.
-	if pre != nil {
+	// The slot is nil when precomputeEntry refused an unencodable trapOID
+	// (nl6#540), so an empty slot must fall through to the checked branch —
+	// appending nothing would silently drop the mandatory varbind instead.
+	if pre != nil && len(pre.trapOIDVB) > 0 {
 		dst = append(dst, pre.trapOIDVB...)
 	} else {
 		// Validated at catalog load since nl6#539; checked again here because
@@ -450,10 +459,11 @@ func encodeV2cNotificationFast(dst []byte, pduTag byte, community string, reqID 
 	}
 
 	// Optional varbind 3: snmpTrapEnterprise.0, in the RFC 3584 §4.1 position.
-	if pre != nil {
-		if pre.enterpriseVB != nil {
-			dst = append(dst, pre.enterpriseVB...)
-		}
+	// A nil slot with a non-empty enterpriseOID means precomputeEntry refused
+	// it (nl6#540); falling through to the checked branch turns that into an
+	// error instead of silently omitting the varbind the legacy path refuses.
+	if pre != nil && pre.enterpriseVB != nil {
+		dst = append(dst, pre.enterpriseVB...)
 	} else if enterpriseOID != "" {
 		if !encodableAsOID(enterpriseOID) {
 			return nil, fmt.Errorf("snmpTrapEnterprise %q is not one the encoder can represent", enterpriseOID)

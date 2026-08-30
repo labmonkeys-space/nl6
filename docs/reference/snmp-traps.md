@@ -167,12 +167,9 @@ A rejected entry fails its catalog file at load, like every other catalog valida
 
 A **templated** varbind OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked only after it renders, since a `varbindOverrides` value supplied over REST can make it unencodable at fire time whatever the catalog says.
 An override supplying a non-numeric or out-of-range component therefore makes the trap fail to encode at fire time (nl6#540).
-The failure is logged once per device and counted in the exporter's send failures, so a template that renders badly is visible without a packet capture.
-Before that it was emitted as a degenerate `06 00`, a binding no manager can match, with nothing recorded anywhere.
-That is deliberate, and it is visible: a collector will reject the message rather than record an OID nobody wrote.
-Before nl6#529 such an OID was silently fabricated instead, so `3.40.1` went on the wire as `.4.0.1`.
-That fire is not observable from nl6: the encoder has no error return, so no log line is written and no status counter moves.
-The collector's rejection is the only signal.
+The same refusal covers the value of an `oid`-typed varbind, which can go bad by the identical rendered-template route.
+The failure is logged once per device and counted in `send_failures` on `GET /api/v1/traps/status`, so a template that renders badly is visible without a packet capture.
+The history of this spot: before nl6#529 such an OID was silently fabricated, so `3.40.1` went on the wire as `.4.0.1`; nl6#529 replaced the fabrication with a degenerate `06 00`, a binding no manager can match, still with no log line and no counter; nl6#540 replaced that emission with the refusal.
 
 ### Universal catalog (embedded default)
 
@@ -376,6 +373,7 @@ directly at the top level.
       "mode":      "inform",
       "devices":   80,
       "sent":      182430,
+      "send_failures": 2,
       "informs_pending": 17,
       "informs_acked":   182380,
       "informs_failed":  33,
@@ -385,7 +383,8 @@ directly at the top level.
       "collector": "192.168.1.20:162",
       "mode":      "trap",
       "devices":   20,
-      "sent":      6000
+      "sent":      6000,
+      "send_failures": 0
     }
   ],
   "devices_exporting": 100,
@@ -400,6 +399,10 @@ directly at the top level.
 
 The **four `informs_*` fields appear only on records whose `mode == inform`**.
 TRAP-mode records omit them.
+
+`sent` means the datagram reached the kernel; a fire that did not lands in `send_failures` instead — a template that resolves or renders to something unencodable (nl6#540), a refused write, or a failed INFORM retransmission.
+The counter moves on every occurrence even though the matching log line is emitted only once per exporter.
+This is the same split flow and syslog status use (nl6#491).
 
 `subsystem_active` is the authoritative "is the feature live?" signal —
 `true` after `StartTrapSubsystem` runs. During normal operation of the
