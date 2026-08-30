@@ -150,9 +150,12 @@ It closes the resource-file route, not every route.
 `sysName` and `sysLocation` are served outside the resource map, and `sysLocation` comes from the operator-supplied worldcities CSV, so a sentinel-valued entry there is still served as an exception.
 
 Where a rejection surfaces matters.
-Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call (HTTP 500, carrying the same error text) in the middle of a run, not only a refusal at startup.
-Two call sites downgrade the rejection to a log line rather than failing: the startup load in `simulator.go` falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
-At those two sites the guard is advisory.
+Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call in the middle of a run, not only a refusal at startup.
+It answers HTTP 400, with the file's base name in the body, plus the OID and the value when the fault is attributable to one entry; the full path stays in the server log.
+A rejection is never downgraded to a log line (nl6#538).
+The startup load exits rather than substituting another profile, and round-robin device creation fails the call rather than skipping the offending device type.
+An absent file is a different kind of fault: round-robin still skips it, while over REST it is also a 400, because naming a device type that does not exist is an unsatisfiable request rather than a server fault.
+The no-path guarantee covers these classified rejections only — an unclassified loader failure still answers 500 with the raw error text.
 
 The same guard carries a second rule (nl6#529): a value on an OID-typed leaf, today only `sysObjectID`, must be an OID the encoder can represent.
 Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire; see [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.

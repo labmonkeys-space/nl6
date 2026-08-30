@@ -277,6 +277,32 @@ Only `failing` crosses the SD-FEC threshold, so
 [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
 BER table.
 
+### `resource_file` failures
+
+`resource_file` names the device type to load, and a request that names one the
+simulator cannot use is answered **`400`** (nl6#538), not `500`.
+Four cases take it:
+
+- the file name is not a device-type slug (`../../etc/passwd`, `a b.json`);
+- no such device type exists — neither `resources/<slug>/` nor `resources/<slug>.json`;
+- the file or one of its directory parts is invalid content: JSON that does not parse, a document that is literally `null`, a directory with no JSON part in it, an SNMP value the load-time guard rejects, or an optical inventory that disagrees with the device type's channel count;
+- a round-robin batch in which any device type fails to load for any reason other than not being shipped.
+
+The `message` names the file's base name, and the offending OID and value when
+the fault is attributable to one entry.
+It never contains a directory path, control characters are stripped from it,
+and it is length-capped.
+That guarantee covers the four cases above.
+Anything else that fails the load — a file the process cannot open, a directory
+it cannot list — still answers `500` with the raw error, which may contain a
+path.
+
+`resource_file` is validated **before** the privilege check, so a request
+naming a bad device type gets this `400` whether or not the simulator is
+running as root.
+A request naming a good one proceeds, and without root gets the pre-existing
+`500` `root privileges required to create TUN interfaces`.
+
 ### Per-device export blocks
 
 `POST /api/v1/devices` accepts four optional top-level blocks —

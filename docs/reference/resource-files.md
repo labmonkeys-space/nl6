@@ -78,9 +78,27 @@ The rule covers the `snmp` array only.
 
 Where the rejection surfaces matters:
 
-- Resource files are also loaded on REST device creation, so a bad file is a failed API call (HTTP 500, carrying the same error text) in the middle of a run, not only a refusal at startup.
+- Resource files are also loaded on REST device creation, so a bad file is a failed API call in the middle of a run, not only a refusal at startup.
+  It answers **HTTP 400**.
+  The body names the file's base name; for a fault attributable to one entry it also names the OID and the value.
+  A parse failure, a `null` document, an empty directory, an optical-inventory mismatch and a rejected file name have no single entry to name, so they carry neither.
+- The 400 body never contains a directory path, and control characters in it are stripped and its length capped.
+  That guarantee covers the classified rejections above only.
+  Faults the loader does not classify — a file it cannot open, a directory it cannot list — still answer 500 with the raw error, and some of those embed the full path.
 - In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
-- Two call sites downgrade the rejection to a log line instead of failing: the startup load falls back to the `cisco_ios` profile, and round-robin device creation skips the offending device type.
+- A rejection is never downgraded to a log line.
+  At startup an invalid default resource file is fatal: the simulator exits rather than serving a substituted profile.
+  In round-robin device creation an invalid device type fails the whole call rather than being skipped, because skipping it silently changes the mix of device types you asked for.
+  So does any other failure to load one, such as an unreadable file — that is not evidence the device type is not shipped.
+- A file that is simply **absent** is a different kind of fault.
+  Round-robin still skips a device type that is not shipped, with a warning, and the other types still load.
+  Over REST an absent file is also a 400: `resource_file` is your field, and naming a device type that does not exist is a request that cannot be satisfied, not a server fault.
+- At startup, a missing `resources/asr9k.json` is **not** a fallback to `cisco_ios`.
+  The simulator writes a synthesised default profile of about 30 compiled-in OIDs to that path and serves it.
+  The `cisco_ios` fallback runs only when that file cannot be written, for example into a read-only `resources/` directory.
+- A file containing the literal `null`, a file whose JSON does not parse, and a device-type directory containing no JSON part at all are treated as invalid content and take the same route.
+  A `null` **part** inside a device-type directory is fine: a part legitimately carries only some sections.
+- A failed load never replaces the resource set already in memory, not even partially.
 
 This and the OID-typed value rule below are the only rules on `snmp` values enforced at load, and they cover resource files only.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.

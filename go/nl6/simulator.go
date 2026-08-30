@@ -17,6 +17,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -292,14 +293,8 @@ func main() {
 	}
 
 	// Load default resources - look for asr9k first, then fallback to cisco_ios
-	err := manager.LoadResources("resources/asr9k.json")
-	if err != nil {
-		log.Printf("Failed to load ASR9K resources: %v", err)
-		log.Println("Trying to load default Cisco IOS resources...")
-		err = manager.LoadResources("resources/cisco_ios.json")
-		if err != nil {
-			log.Fatalf("Failed to load any resources: %v", err)
-		}
+	if err := loadDefaultResources(manager); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Configure simulator-wide flow parameters. Per-device fields (collector,
@@ -711,4 +706,33 @@ func main() {
 
 	// Keep the main thread alive
 	select {}
+}
+
+// loadDefaultResources loads the startup default resource set: asr9k, falling
+// back to cisco_ios.
+//
+// The fallback is for an ABSENT asr9k only (nl6#538). A file that exists but
+// whose content is invalid is FATAL: substituting the cisco_ios profile there
+// would serve every device a device type nobody asked for, which no collector
+// can detect, and would bury the one log line that says which file to fix. An
+// error that is neither (an unreadable file, a directory that cannot be
+// listed) is fatal for the same reason — it is not evidence that the type is
+// simply not shipped.
+//
+// It returns the error rather than calling log.Fatalf itself so the decision
+// is reachable from a test; main turns a non-nil return into log.Fatalf.
+func loadDefaultResources(sm *SimulatorManager) error {
+	err := sm.LoadResources("resources/asr9k.json")
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, errResourceNotFound) {
+		return fmt.Errorf("failed to load ASR9K resources: %w", err)
+	}
+	log.Printf("Failed to load ASR9K resources: %v", err)
+	log.Println("Trying to load default Cisco IOS resources...")
+	if err := sm.LoadResources("resources/cisco_ios.json"); err != nil {
+		return fmt.Errorf("failed to load any resources: %w", err)
+	}
+	return nil
 }

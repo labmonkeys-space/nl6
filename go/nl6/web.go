@@ -256,7 +256,8 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	// giving us the actual created count (req.MaxWorkers is 0 when unset).
 	created, err := manager.CreateDevicesWithOptions(req.StartIP, req.DeviceCount, req.Netmask, req.ResourceFile, req.SNMPv3, true, req.MaxWorkers, req.RoundRobin, req.Category, snmpPort, seed)
 	if err != nil {
-		sendErrorResponse(w, err.Error(), http.StatusInternalServerError)
+		msg, status := createDevicesErrorResponse(err)
+		sendErrorResponse(w, msg, status)
 		return
 	}
 
@@ -688,4 +689,32 @@ func setupRoutes() *mux.Router {
 	}).Methods("GET")
 
 	return router
+}
+
+// createDevicesErrorResponse maps a CreateDevicesWithOptions failure to the
+// body and status the device-creation endpoint answers with.
+//
+// Every CLASSIFIED resource fault is caller data that is wrong, so all of them
+// take the same 400 as opticalIncapableRequest and flowIncapableRequest, not a
+// 500 (nl6#538). That covers the ABSENT kind too: resource_file is a
+// caller-controlled field, and naming a device type that does not exist is an
+// unsatisfiable request, not server state. The two sentinels still differ
+// elsewhere — round-robin skips a not-found type and fails on an invalid one —
+// which is why they are two and not one.
+//
+// A 400 body is rendered by PublicMessage: base name only, control characters
+// stripped, length capped. NOTE the limit — non-disclosure holds for the
+// classified branch ALONE. The 500 branch below returns err.Error() verbatim,
+// and several unclassified loader errors (a failed os.Open, a failed ReadDir)
+// embed the full path.
+//
+// This is a function rather than an inline branch so a test can drive the
+// mapping directly; the handler is separately pinned end to end by
+// TestCreateDevicesHandlerRejectsBadResourceFile.
+func createDevicesErrorResponse(err error) (string, int) {
+	var rerr *resourceFileError
+	if errors.As(err, &rerr) {
+		return rerr.PublicMessage(), http.StatusBadRequest
+	}
+	return err.Error(), http.StatusInternalServerError
 }
