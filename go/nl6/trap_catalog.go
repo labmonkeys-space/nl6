@@ -687,6 +687,14 @@ func compileEntry(raw catalogEntryJSON, source string, idx int) (*CatalogEntry, 
 	if raw.SnmpTrapOID == "" {
 		return nil, fmt.Errorf("trap catalog: %s entry %q: snmpTrapOID is required", source, raw.Name)
 	}
+	// Structurally validated like snmpTrapEnterprise. This field is the
+	// notification's IDENTITY: it becomes the snmpTrapOID.0 varbind, so an
+	// unencodable value here does not merely mistype one binding, it makes
+	// every trap from this entry unidentifiable. Emptiness was the only check
+	// before nl6#539.
+	if err := validateDottedOID(raw.SnmpTrapOID, raw.Name, "snmpTrapOID"); err != nil {
+		return nil, fmt.Errorf("trap catalog: %s %v", source, err)
+	}
 	weight := raw.Weight
 	if weight == 0 {
 		weight = 1 // OQ#1: default weight = 1
@@ -804,7 +812,16 @@ func validateVarbindOID(raw, entryName string, idx int) error {
 			"use the entry-level `snmpTrapEnterprise` field instead of a body varbind",
 			entryName, idx, raw)
 	}
-	return nil
+
+	// A literal varbind OID gets the same structural check as the entry-level
+	// fields. It had none before nl6#539, so an unencodable one loaded and went
+	// out as a degenerate empty NAME, which is a binding no manager can match.
+	//
+	// A TEMPLATED OID returned above cannot be checked here: it is rendered per
+	// fire, and a REST varbindOverrides value can make it unencodable at that
+	// point regardless of what the catalog says. That is a fire-time question,
+	// tracked separately.
+	return validateDottedOID(raw, entryName, fmt.Sprintf("varbind %d", idx))
 }
 
 // maxDottedOIDLen caps the length of top-level literal OID fields (currently
@@ -828,7 +845,13 @@ func validateDottedOID(oid, entryName, field string) error {
 	if strings.HasSuffix(oid, ".") {
 		return fmt.Errorf("entry %q %s: OID %q has trailing dot", entryName, field, oid)
 	}
-	arcs := strings.Split(oid, ".")
+
+	// A leading dot is a spelling, not a defect: encodeOID strips it, resource
+	// files accept both forms, and compileEntry already normalises this field
+	// before storing it. Without this the arc walk below saw an empty first arc
+	// and rejected an OID the encoder accepts — one half of the drift nl6#539
+	// is about.
+	arcs := strings.Split(strings.TrimPrefix(oid, "."), ".")
 	if len(arcs) < 2 {
 		return fmt.Errorf("entry %q %s: OID %q must have at least two arcs",
 			entryName, field, oid)
@@ -844,6 +867,23 @@ func validateDottedOID(oid, entryName, field string) error {
 					entryName, field, oid, r)
 			}
 		}
+	}
+
+	// Everything above is shape. This is the part that matters: ask the ENCODER
+	// whether it can represent the OID, rather than re-deriving its rules.
+	//
+	// The checks above accepted OIDs encodeOID refuses — a first arc above 2, a
+	// second arc above 39 when the first is 0 or 1 (which would ALIAS a higher
+	// first arc), any arc past 2^32-1 — so a catalog could load an entry that
+	// went on the wire as the degenerate 06 00. Two predicates that agreed on
+	// the day they were written and drifted is exactly the failure nl6#529 cost
+	// (encodeOID versus appendOID) and nl6#539 records here; the resource-file
+	// guard was given the same treatment in nl6#544, and for the same reason.
+	if !encodableAsOID(oid) {
+		return fmt.Errorf("entry %q %s: OID %q is not one the encoder can represent: "+
+			"the first arc must be 0, 1 or 2, the second no greater than 39 when the first "+
+			"is 0 or 1, and every arc within 4294967295. It would go on the wire as a "+
+			"degenerate empty OID", entryName, field, oid)
 	}
 	return nil
 }
