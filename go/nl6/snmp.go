@@ -57,18 +57,23 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 
 	// Handle scoped PDU decryption
 	scopedPDU := v3Msg.ScopedPDU
+	decryptFailed := false
 	if v3Msg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV != 0 {
-		// log.Printf("SNMPv3: Privacy enabled, attempting decryption")
+		// A PRIV-flagged message to a device configured without privacy is
+		// not a decryption failure, it is a security level the device does
+		// not support: RFC 3414 §3.2 step 5, usmStatsUnsupportedSecLevels.
+		// Without this test decryptScopedPDU hands the ciphertext back
+		// untouched, the SEQUENCE check below fails, and the manager is told
+		// its KEY is wrong when its CONFIGURATION is.
+		if s.v3Config.PrivProtocol == SNMPV3_PRIV_NONE {
+			return s.createSNMPv3ReportResponse(oidUsmStatsUnsupportedSecLevels, v3Msg)
+		}
 		decryptedPDU, err := s.decryptScopedPDU(v3Msg.ScopedPDU, v3Msg.SecurityParams.PrivParams)
 		if err != nil {
-			// log.Printf("SNMPv3: Failed to decrypt scoped PDU: %v", err)
-			// log.Printf("SNMPv3: Using default OID for encrypted request (decryption failed)")
+			// A hard error: bad privParams length, ciphertext not a multiple
+			// of the block size, no usable key.
+			decryptFailed = true
 		} else {
-			// log.Printf("SNMPv3: Successfully decrypted scoped PDU (%d bytes)", len(decryptedPDU))
-			// Verify the decrypted data looks valid (starts with SEQUENCE tag).
-			// On invalid decrypt we fall through to the default OID; no log
-			// to keep the SNMPv3 hot path quiet under adversarial input.
-			//
 			// UNWRAP the SEQUENCE before using it. parseSNMPv3Message stores
 			// the scoped PDU's CONTENTS for a plaintext request (it strips the
 			// header), while decryptScopedPDU returns the whole TLV, and both
@@ -79,6 +84,17 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 			// answered sysDescr.0 as a GET, and the request-id fell back to 1
 			// (nl6#527). An authPriv request of any OID and any PDU type was
 			// therefore answered as a GET of sysDescr.0.
+			//
+			// A decrypt that returns without error but does not yield a
+			// SEQUENCE is a wrong key just as surely as a hard error is:
+			// block ciphers happily "decrypt" under the wrong key and produce
+			// noise. Both count as decryption failures. The test is a
+			// HEURISTIC, not a proof: noise starts with 0x30 and a plausible
+			// length about one time in 256, and that request falls through
+			// to the extractor, fails there, and is discarded as malformed
+			// rather than answered with the Report. A padding check would
+			// not close it either, since RFC 3414 privacy has no MAC.
+			unwrapped := false
 			if len(decryptedPDU) > 0 && decryptedPDU[0] == ASN1_SEQUENCE {
 				contentLen, contentStart := parseLength(decryptedPDU, 1)
 				if contentLen >= 0 && contentStart+contentLen <= len(decryptedPDU) {
@@ -87,29 +103,50 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 					// message, not from this local, so it needs the plaintext
 					// too.
 					v3Msg.ScopedPDU = scopedPDU
+					unwrapped = true
 				}
+			}
+			if !unwrapped {
+				decryptFailed = true
 			}
 		}
 	}
 
 	// Parse the scoped PDU to extract OID and request type
+	// A decryption failure and a malformed PDU are DIFFERENT faults and RFC
+	// 3414 and RFC 3412 give them opposite answers. They shared this fallback
+	// and both got a GET of sysDescr.0 with request-id 1 (nl6#547).
+	//
+	// Decryption failure: the manager used the wrong privacy key, or none. RFC
+	// 3414 §3.2 step 8 answers a usmStatsDecryptionErrors Report, so the
+	// manager learns WHY rather than being handed a plausible-looking value
+	// for an object it did not ask about. Silence would be worse still: a
+	// wrong-password probe would be indistinguishable from an unreachable
+	// device.
+	if decryptFailed {
+		return s.createSNMPv3ReportResponse(oidUsmStatsDecryptionErrors, v3Msg)
+	}
+
 	oid, pduType, err := s.extractOIDAndTypeFromScopedPDU(scopedPDU)
 	if err != nil {
-		// log.Printf("Failed to extract OID from scoped PDU: %v, using default", err)
-		// For encrypted requests where decryption failed, use a reasonable default
-		// Since snmpwalk typically starts with 1.3.6.1.2.1.1, use system description
+		// The scoped PDU decrypted (or was never encrypted) and still does not
+		// parse, so the datagram is malformed. RFC 1157 §4.1 and RFC 3412 §7.2
+		// discard rather than answering, which is what the v1/v2c path does
+		// since nl6#537. Returning nothing means handleSingleRequest sends no
+		// datagram.
 		//
-		// This fallback is the one remaining route to nl6#526's symptom: a
-		// GETBULK (or GETNEXT) whose scoped PDU will not decrypt loses its PDU
-		// type here and is answered as a GET of sysDescr.0, an OID that sorts
-		// before almost any request, so a walker that hits an authPriv
-		// mismatch mid-walk does not terminate. Documented rather than fixed
-		// (deferred-work.md, PR #536): preserving the PDU type through this
-		// path is a change to the v3 security handling, not to GETBULK. The
-		// comments in snmpv3_crypto.go and snmp_encoding.go point here.
-		oid = ".1.3.6.1.2.1.1.1.0" // System description OID
-		pduType = ASN1_GET_REQUEST // Default to GET
-		// log.Printf("SNMPv3: Using default OID %s for failed decryption case", oid)
+		// The extractor's error is broader than the v2c list check: it also
+		// covers a PDU type this server does not serve (SET, INFORM, TRAP,
+		// Report) and an empty variable-bindings list, and it validates the
+		// FIRST binding's name only. All of those are discarded here; the
+		// v2c path answers an empty list from its default OID. Before nl6#547
+		// every one of them was answered as a GET of sysDescr.0.
+		//
+		// This is also the last route to nl6#526's symptom: answering here
+		// substituted sysDescr.0, an OID sorting before almost any request, so
+		// a walker that hit a malformed binding mid-walk never terminated.
+		s.logFirstMalformedV3(err)
+		return []byte{}
 	}
 
 	// Handle GetNext request for SNMP walk (same logic as SNMPv2)
@@ -236,24 +273,53 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 
 	oidBytes := scopedPDU[pos : pos+oidLen]
 	oid := decodeOID(oidBytes)
+	if oid == "" {
+		// decodeOID refuses a name that is not a valid OBJECT IDENTIFIER
+		// encoding (nl6#529). Returning it as an empty string with a NIL error
+		// made the caller treat it as a successful parse: findNextOID("")
+		// returns the first OID in the MIB, so a malformed v3 GETNEXT read as
+		// "start of walk" rather than being refused (nl6#547).
+		return "", pduType, fmt.Errorf("variable binding name is not a valid OBJECT IDENTIFIER")
+	}
 
 	return oid, pduType, nil
 }
 
-// createSNMPv3DiscoveryResponse creates a discovery response with engine ID
+// usmStats OIDs a Report can name (RFC 3414 §5). The whole subtree is typed
+// Counter32 in oidTypeTable, so encodeTypedValue gives them the right tag.
+const (
+	oidUsmStatsUnsupportedSecLevels = ".1.3.6.1.6.3.15.1.1.1.0"
+	oidUsmStatsUnknownEngineIDs     = ".1.3.6.1.6.3.15.1.1.4.0"
+	oidUsmStatsDecryptionErrors     = ".1.3.6.1.6.3.15.1.1.6.0"
+)
+
+// createSNMPv3DiscoveryResponse answers an engine-ID discovery probe with a
+// Report naming usmStatsUnknownEngineIDs.
 func (s *SNMPServer) createSNMPv3DiscoveryResponse(requestMsg *SNMPv3Message) []byte {
+	return s.createSNMPv3ReportResponse(oidUsmStatsUnknownEngineIDs, requestMsg)
+}
+
+// createSNMPv3ReportResponse builds a Report PDU naming the given usmStats
+// counter, in the discovery envelope: noAuthNoPriv, report flag, empty user.
+// Discovery and the decryption-error Report differ only in which counter they
+// name, so they share this rather than growing a second envelope.
+//
+// RFC 3414 §3.2 step 8 requires a decryption failure to be answered this way.
+// It used to share the malformed-PDU fallback and be answered with a GET of
+// sysDescr.0 instead, so a manager using the wrong privacy key was handed a
+// plausible-looking value for an object it had not asked about, with
+// request-id 1 (nl6#547). Answering nothing would be worse than either: a
+// wrong-password probe would be indistinguishable from an unreachable device.
+//
+// The request-id inside the Report is 1 for every caller: on a decryption
+// failure the real one is inside the ciphertext. msgID is echoed, which is
+// what RFC 3412 §7.2 matches a Report on.
+func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SNMPv3Message) []byte {
 	if s.v3Config == nil || !s.v3Config.Enabled {
 		return []byte{}
 	}
 
-	// log.Printf("SNMPv3: Creating discovery response with engine ID: %s", s.v3Config.EngineID)
-
-	// Create discovery response scoped PDU (typically a report PDU)
-	reportOID := ".1.3.6.1.6.3.15.1.1.4.0" // usmStatsUnknownEngineIDs
-	reportValue := "1"                     // Counter value
-
-	// Create simple report scoped PDU
-	scopedPDU, err := s.createDiscoveryScopedPDU(reportOID, reportValue)
+	scopedPDU, err := s.createDiscoveryScopedPDU(reportOID, "1")
 	if err != nil {
 		// log.Printf("Failed to create discovery scoped PDU: %v", err)
 		return []byte{}

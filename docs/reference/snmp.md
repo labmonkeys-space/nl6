@@ -101,7 +101,7 @@ Until nl6#527 an SNMPv3 request sent with privacy was answered with `sysDescr.0`
 The cause was a shape mismatch rather than anything cryptographic. A scoped PDU appears in two forms here: the message parser stores its *contents*, with the outer SEQUENCE header stripped, while decryption returns the whole thing including that header. The code that reads the OID and the request id from a scoped PDU expects contents, so on a successful decrypt it failed to parse, and the surrounding decrypt-*failure* fallback took over and substituted `sysDescr.0`.
 
 Nothing reported an error, because the fallback exists precisely to keep the path quiet under adversarial input.
-That fallback is still there: a request whose scoped PDU genuinely fails to decrypt (a wrong privacy password, or a decrypt that does not yield a well-formed SEQUENCE) is still answered as a GET of `sysDescr.0` with request-id 1, unchanged by this fix.
+That fallback was left in place by this fix and removed by nl6#547: a request whose scoped PDU genuinely fails to decrypt is now answered with a `usmStatsDecryptionErrors` Report (see the malformed-datagram section).
 
 If you are testing an SNMPv3 collector against a version of nl6 older than this fix, authPriv results are not meaningful: every device answers `sysDescr.0`. authNoPriv and noAuthNoPriv were unaffected.
 
@@ -220,9 +220,13 @@ A GETNEXT with a malformed name was answered as a walk restart from `sysDescr.0`
 A PDU whose variable-bindings list is empty, or whose envelope cannot be read as far as the list, is a different case and is still answered.
 The general request parser falls back to `sysDescr.0` for it, so what comes back is one binding the requester did not name; that behaviour predates nl6#537 and is unchanged.
 
-The SNMPv3 path is not covered by this change and is tracked as nl6#547.
-A malformed OID there flows on as an empty name with no error, so a v3 GETNEXT is answered as a walk restart from the first OID in the MIB.
-The fallback that would have to catch it is shared with decryption failure, which RFC 3414 wants answered with a Report rather than silence, so the two cases need separating first.
+The SNMPv3 path behaves the same way since nl6#547.
+A malformed scoped PDU is discarded there too, and a request that fails to DECRYPT — which used to share the same fallback and be answered with `sysDescr.0` — is answered with a `usmStatsDecryptionErrors` Report, as RFC 3414 §3.2 step 8 requires.
+The two faults take opposite answers, discard against answer, which is why they had to be told apart before either could be right.
+Two differences from the v1/v2c rule are worth knowing.
+The v3 gate is broader: a PDU type nl6 does not serve (SET, INFORM, TRAP, Report) and an empty variable-bindings list are discarded too, where v1/v2c answers the empty list from its default OID, and only the first binding's name is validated.
+And a PRIV-flagged request to a device configured without privacy is neither malformed nor a decryption failure; it is answered with a `usmStatsUnsupportedSecLevels` Report (RFC 3414 §3.2 step 5).
+Every Report goes out unauthenticated with request-id 1 and the request's `msgID` echoed; on a decryption failure the real request-id is inside the ciphertext.
 
 ## Malformed-datagram handling
 

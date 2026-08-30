@@ -220,6 +220,10 @@ type SNMPServer struct {
 	// varbind list is not a valid ASN.1 encoding (see logFirstMalformedList).
 	firstMalformedList sync.Once
 
+	// firstMalformedV3 gates the log line for a discarded SNMPv3 request whose
+	// scoped PDU does not parse (see logFirstMalformedV3).
+	firstMalformedV3 sync.Once
+
 	// firstBulkAbort gates the log line for a v3 GETBULK collection loop that
 	// ended on a non-advancing successor (see logFirstBulkAbort).
 	firstBulkAbort sync.Once

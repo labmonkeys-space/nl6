@@ -294,6 +294,16 @@ func (s *SNMPServer) logFirstMalformedList(pduType byte) {
 	})
 }
 
+// logFirstMalformedV3 emits at most one line per device when an SNMPv3 scoped
+// PDU is discarded as malformed. Same gate as logFirstMalformedList: the
+// condition is attacker-controlled, so ungated it is a log-flood primitive.
+func (s *SNMPServer) logFirstMalformedV3(err error) {
+	s.firstMalformedV3.Do(func() {
+		log.Printf("SNMP %s: discarded an SNMPv3 request whose scoped PDU does not parse: %v (further discards suppressed for this device)",
+			s.device.ID, err)
+	})
+}
+
 // Extract PDU type from SNMP request
 func (s *SNMPServer) getPDUType(data []byte) byte {
 	if len(data) < 10 {
