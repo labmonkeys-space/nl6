@@ -342,8 +342,17 @@ func (s *SNMPServer) validateSNMPv3Credentials(msg *SNMPv3Message) bool {
 
 // handleSNMPv3GetBulk processes SNMPv3 GetBulk requests
 func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, scopedPDU []byte) []byte {
-	// Parse GetBulk parameters from the scoped PDU
-	_, maxRepetitions := s.parseSNMPv3GetBulkParams(scopedPDU)
+	nonRepeaters, maxRepetitions := s.parseSNMPv3GetBulkParams(scopedPDU)
+
+	// This handler serves ONE column (startOID), so RFC 3416's non-repeaters
+	// split reduces to a single question: is that column a non-repeater? If it
+	// is, it gets exactly one successor, which is GETNEXT semantics. Ignoring
+	// non-repeaters would over-answer a manager that asked for one binding.
+	if nonRepeaters > 0 {
+		maxRepetitions = 1
+	}
+
+	maxRepetitions = clampBulkWalk(maxRepetitions)
 
 	// Collect multiple OIDs starting from startOID
 	var oids []string
@@ -415,24 +424,121 @@ func (s *SNMPServer) logFirstBulkAbort(next, at string) {
 }
 
 // parseSNMPv3GetBulkParams extracts non-repeaters and max-repetitions from SNMPv3 GetBulk scoped PDU
-func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
-	// Default values
-	nonRepeaters := 0
-	maxRepetitions := 10
+// parseSNMPv3GetBulkParams reads non-repeaters and max-repetitions from a
+// GETBULK scoped PDU, in CONTENTS form (contextEngineID, contextName, PDU) as
+// parseSNMPv3Message and handleSNMPv3Request supply it.
+//
+// It used to be a TODO returning a hardcoded (0, 10), which made an oversized
+// v3 response unreachable by accident rather than by design (nl6#535). Reading
+// a real value is only safe now that createSNMPv3GetBulkResponse bounds what it
+// emits; the reverse order was the unsafe one.
+//
+// Integers are read via parseBERInt at ANY width. The v2c parser originally
+// read single-byte BER content only, so any max-repetitions >= 128 silently
+// became 10 — benchmark numbers taken above 127 before that fix are not
+// comparable with ones after it. Repeating that here would reintroduce the same
+// silent discontinuity on the v3 path.
+//
+// Both values are clamped at the PARSE SITE rather than by the caller, matching
+// the v2c parser: a negative reaching the handler becomes a negative loop bound
+// or a negative slice index on the inline serve path, where there is no
+// recover().
+// clampBulkWalk bounds how far a GETBULK walks, as distinct from how much it
+// emits.
+//
+// The encode bound trims what does not fit, but without this a manager asking
+// for max-repetitions of 100000 would still make the device perform 100000
+// findNextOID steps before a single binding was discarded. That amplification
+// is what the v2c path guards against for the same reason (nl6#489 review), and
+// each step is expensive: CLAUDE.md records ~29 req/s saturating all cores on
+// the LLDP walk path.
+//
+// A separate function rather than an inline expression because it is a
+// PERFORMANCE guard: the binding count is identical with or without it once the
+// encode bound has trimmed, so no assertion about a response can see it. Only
+// calling it directly can.
+//
+// minVarbindSize is a floor on what any binding can encode to, so
+// budget/minVarbindSize is a hard ceiling on how many could ever fit. The +1
+// keeps it from ever under-walking; the encode bound trims the remainder, so
+// being generous here costs nothing while being tight would under-fill.
+func clampBulkWalk(maxRepetitions int) int {
+	if ceiling := maxSNMPResponseSize/minVarbindSize + 1; maxRepetitions > ceiling {
+		return ceiling
+	}
+	return maxRepetitions
+}
 
-	// The response IS bounded now: createSNMPv3GetBulkResponse measures its
-	// candidate against the datagram budget and the manager's msgMaxSize
-	// (nl6#535). That was the precondition for honouring a real value here,
-	// and it is the part still open: this returns a fixed 10 whatever the
-	// scoped PDU says, and non-repeaters is discarded by the handler. When
-	// this is done the linear descent in the builder must become a bisection
-	// (see the comment there), because at a real max-repetitions it is O(n^2).
-	//
-	// Stated in docs/reference/snmp.md as a known gap so it reads as a decision
-	// rather than an oversight.
-	//
-	// TODO: Implement proper SNMPv3 GetBulk parameter parsing
-	// For now, use defaults
+func (s *SNMPServer) parseSNMPv3GetBulkParams(scopedPDU []byte) (int, int) {
+	// Defaults if the PDU does not parse. Ten matches the historical hardcoded
+	// value, so a malformed request behaves as it did rather than as an
+	// unbounded one.
+	nonRepeaters, maxRepetitions := 0, 10
+
+	pos := 0
+	// contextEngineID and contextName, both OCTET STRING.
+	for i := 0; i < 2; i++ {
+		if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OCTET_STRING {
+			return nonRepeaters, maxRepetitions
+		}
+		pos++
+		n, newPos := parseLength(scopedPDU, pos)
+		if n < 0 || newPos+n > len(scopedPDU) {
+			return nonRepeaters, maxRepetitions
+		}
+		pos = newPos + n
+	}
+
+	// The PDU itself. Only a GETBULK carries these two fields.
+	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_GET_BULK {
+		return nonRepeaters, maxRepetitions
+	}
+	pos++
+	if _, newPos := parseLength(scopedPDU, pos); true {
+		if newPos <= pos {
+			return nonRepeaters, maxRepetitions
+		}
+		pos = newPos
+	}
+
+	// request-id, skipped.
+	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+		return nonRepeaters, maxRepetitions
+	}
+	pos++
+	reqLen, newPos := parseLength(scopedPDU, pos)
+	if reqLen < 0 || newPos+reqLen > len(scopedPDU) {
+		return nonRepeaters, maxRepetitions
+	}
+	pos = newPos + reqLen
+
+	// non-repeaters.
+	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+		return nonRepeaters, maxRepetitions
+	}
+	pos++
+	nrLen, newPos := parseLength(scopedPDU, pos)
+	if nrLen < 0 || newPos+nrLen > len(scopedPDU) {
+		return nonRepeaters, maxRepetitions
+	}
+	pos = newPos
+	if v, ok := parseBERInt(scopedPDU, pos, nrLen); ok && v >= 0 {
+		nonRepeaters = v
+	}
+	pos += nrLen
+
+	// max-repetitions.
+	if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_INTEGER {
+		return nonRepeaters, maxRepetitions
+	}
+	pos++
+	mrLen, newPos := parseLength(scopedPDU, pos)
+	if mrLen < 0 || newPos+mrLen > len(scopedPDU) {
+		return nonRepeaters, maxRepetitions
+	}
+	if v, ok := parseBERInt(scopedPDU, newPos, mrLen); ok && v >= 0 {
+		maxRepetitions = v
+	}
 
 	return nonRepeaters, maxRepetitions
 }
@@ -478,14 +584,13 @@ func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []str
 	// emitted one". Building the candidate and measuring it cannot disagree
 	// with itself.
 	//
-	// The descent is linear and every over-budget candidate is fully built
-	// and, under privacy, fully encrypted. That is immaterial WHILE
-	// max-repetitions is the hardcoded 10 (at most ten encodes of at most a
-	// datagram). It is NOT immaterial once a real max-repetitions is honoured
-	// (nl6#535): at a few hundred it is O(n^2) bytes and n encryptions per
-	// request, inline on the UDP handler. That follow-up must replace the
-	// descent with a bisection over n, which still measures and never
-	// predicts, since len(resp) is monotone in n.
+	// The search over n is a BISECTION, not a linear descent. A descent fully
+	// builds and, under privacy, fully encrypts every over-budget candidate:
+	// immaterial while max-repetitions was the hardcoded 10, but O(n^2) bytes
+	// and n encryptions per request once a real value is honoured (nl6#535),
+	// inline on the UDP handler. len(resp) is monotone in n, so bisection finds
+	// the same answer in O(log n) encodes while still MEASURING every candidate
+	// rather than predicting any of them.
 	//
 	// The ceiling is the datagram budget, further reduced by the manager's
 	// own msgMaxSize when it declares a smaller one: RFC 3412 §7.1 requires a
@@ -496,23 +601,70 @@ func (s *SNMPServer) createSNMPv3GetBulkResponse(requestedOID string, oids []str
 	if m := msg.GlobalData.MsgMaxSize; m >= snmpV3MinMsgMaxSize && m < limit {
 		limit = m
 	}
-	for n := len(oids); ; n-- {
+	resp, err := largestFittingPrefix(len(oids), limit, func(n int) ([]byte, error) {
 		scopedPDU, err := s.createScopedPDUMulti(oids[:n], responses[:n], msg)
 		if err != nil {
-			return []byte{}
+			return nil, err
 		}
-		resp, err := s.wrapScopedPDUInV3Message(scopedPDU, msg)
+		return s.wrapScopedPDUInV3Message(scopedPDU, msg)
+	})
+	if err != nil {
+		return []byte{}
+	}
+	return resp
+}
+
+// largestFittingPrefix returns build(n) for the largest n in [1, count] whose
+// result is within limit, or build(1) when even one does not fit.
+//
+// Extracted so the search can be driven with a counting builder in a test:
+// every other assertion about the response is satisfied equally by a linear
+// descent, so without a way to count encodes there is nothing to stop one
+// coming back.
+//
+// It BISECTS. len(build(n)) is monotone in n, so bisection reaches the same
+// answer as a descent in O(log n) calls while still measuring every candidate
+// rather than predicting any. That matters because each call fully builds and,
+// under privacy, fully encrypts a candidate: a descent is O(n^2) bytes and n
+// encryptions per request at a real max-repetitions, inline on the UDP handler.
+//
+// Returning build(1) when nothing fits is the v2c truncate rule's carve-out: an
+// empty binding list with no error stalls a walk forever with no signal, which
+// is worse than one oversized datagram.
+func largestFittingPrefix(count, limit int, build func(int) ([]byte, error)) ([]byte, error) {
+	if count <= 0 {
+		return nil, fmt.Errorf("largestFittingPrefix: count must be positive, got %d", count)
+	}
+
+	// The common case is that everything fits, and it costs one call.
+	full, err := build(count)
+	if err != nil {
+		return nil, err
+	}
+	if len(full) <= limit || count == 1 {
+		return full, nil
+	}
+
+	best, err := build(1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Invariant: lo fits or is the floor; hi does not fit.
+	lo, hi := 1, count
+	for hi-lo > 1 {
+		mid := lo + (hi-lo)/2
+		resp, err := build(mid)
 		if err != nil {
-			return []byte{}
+			return nil, err
 		}
-		if len(resp) <= limit || n == 1 {
-			// Always emit at least one binding, as the v2c truncate rule does:
-			// an empty binding list with no error stalls a walk forever with no
-			// signal, which is worse than one oversized datagram. Reachable at
-			// a low -datagram-mtu with a long ifAlias.
-			return resp
+		if len(resp) <= limit {
+			lo, best = mid, resp
+		} else {
+			hi = mid
 		}
 	}
+	return best, nil
 }
 
 // snmpV3MinMsgMaxSize is the smallest msgMaxSize an SNMPv3 message may declare
