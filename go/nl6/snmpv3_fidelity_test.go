@@ -6,6 +6,9 @@
 package main
 
 import (
+	"bytes"
+	"log"
+	"strings"
 	"testing"
 )
 
@@ -435,43 +438,102 @@ func decodeScopedPDUContents(t *testing.T, scoped []byte) v3Response {
 // Report. Opposite answers, so they had to be separated before either could be
 // right.
 
-// v3RequestWithMalformedOID builds a plaintext v3 GETNEXT whose varbind name is
-// an unterminated varint: structurally a valid TLV, but not a valid OID.
-func v3RequestWithMalformedOID(t *testing.T, s *SNMPServer) []byte {
-	t.Helper()
-	name := []byte{ASN1_OID, 0x02, 0x2b, 0xff}
+// v3ScopedContentsWithName builds the CONTENTS of a scoped PDU (contextEngineID,
+// contextName, PDU) carrying one binding whose name is the given raw TLV, so
+// the seam test and the dispatcher tests cannot drift apart.
+func v3ScopedContentsWithName(s *SNMPServer, pduTag byte, name []byte, reqID int) []byte {
 	vb := encodeSequence(append(name, encodeNull()...))
-
 	var body []byte
-	body = append(body, encodeInteger(42)...)
+	body = append(body, encodeInteger(reqID)...)
 	body = append(body, encodeInteger(0)...)
 	body = append(body, encodeInteger(0)...)
 	body = append(body, encodeSequence(vb)...)
-	pdu := append([]byte{ASN1_GET_NEXT}, append(encodeLength(len(body)), body...)...)
+	pdu := append([]byte{pduTag}, append(encodeLength(len(body)), body...)...)
 
 	var scoped []byte
 	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
 	scoped = append(scoped, encodeOctetString("")...)
 	scoped = append(scoped, pdu...)
-	return assembleV3(s, encodeSequence(scoped), nil, false)
+	return scoped
 }
 
-func TestV3MalformedOIDIsDiscarded(t *testing.T) {
-	s := v3TestServer(map[string]string{
-		".1.3.6.1.2.1.1.1.0":     "dev",
-		".1.3.6.1.2.1.2.2.1.2.1": "Gi0/1",
-	})
+// malformedOIDName is an unterminated varint: structurally a valid TLV, but
+// not a valid OBJECT IDENTIFIER.
+var malformedOIDName = []byte{ASN1_OID, 0x02, 0x2b, 0xff}
 
-	resp := s.handleSNMPv3Request(v3RequestWithMalformedOID(t, s))
-	if len(resp) != 0 {
-		r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
-		name := ""
-		if len(r.varbinds) > 0 {
-			name = r.varbinds[0].oid
-		}
-		t.Errorf("a malformed v3 varbind name was answered with %d bytes naming %q. It used to be "+
-			"answered as a GET of sysDescr.0, which reads as a walk RESTART because that OID "+
-			"sorts before almost any request; RFC 3412 §7.2 discards instead", len(resp), name)
+// v3RequestWithMalformedOID builds a plaintext v3 GETNEXT whose varbind name
+// is malformedOIDName.
+func v3RequestWithMalformedOID(t *testing.T, s *SNMPServer) []byte {
+	t.Helper()
+	return assembleV3(s, encodeSequence(v3ScopedContentsWithName(s, ASN1_GET_NEXT, malformedOIDName, 42)), nil, false)
+}
+
+// v3PrivRequestFromScoped encrypts scoped contents under the server's own
+// key material and wraps them as an authPriv request.
+func v3PrivRequestFromScoped(t *testing.T, s *SNMPServer, scoped []byte) []byte {
+	t.Helper()
+	cipherText, privParams, err := s.encryptScopedPDU(encodeSequence(scoped), v3PrivSeed(s))
+	if err != nil {
+		t.Fatalf("encryptScopedPDU: %v", err)
+	}
+	return buildV3EncryptedRequest(t, s, cipherText, privParams)
+}
+
+// TestV3MalformedOIDIsDiscarded drives a malformed name through the
+// dispatcher in the clear and under both privacy protocols. The privacy rows
+// are the case where the two branches are adjacent: the PDU DECRYPTS, so the
+// decrypt arm must not claim it, and then fails to parse, so the discard must.
+func TestV3MalformedOIDIsDiscarded(t *testing.T) {
+	privs := []struct {
+		name  string
+		proto int
+	}{
+		{"noPriv", SNMPV3_PRIV_NONE},
+		{"des", SNMPV3_PRIV_DES},
+		{"aes128", SNMPV3_PRIV_AES128},
+	}
+	for _, priv := range privs {
+		t.Run(priv.name, func(t *testing.T) {
+			s := v3TestServer(map[string]string{
+				".1.3.6.1.2.1.1.1.0":     "dev",
+				".1.3.6.1.2.1.2.2.1.2.1": "Gi0/1",
+			})
+			var req []byte
+			if priv.proto == SNMPV3_PRIV_NONE {
+				req = v3RequestWithMalformedOID(t, s)
+			} else {
+				s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+				s.v3Config.PrivProtocol = priv.proto
+				req = v3PrivRequestFromScoped(t, s, v3ScopedContentsWithName(s, ASN1_GET_NEXT, malformedOIDName, 42))
+			}
+
+			resp := s.handleSNMPv3Request(req)
+			if len(resp) != 0 {
+				r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
+				name := ""
+				if len(r.varbinds) > 0 {
+					name = r.varbinds[0].oid
+				}
+				t.Errorf("a malformed v3 varbind name was answered with %d bytes (PDU 0x%02x) naming %q. It "+
+					"used to be answered as a GET of sysDescr.0, which reads as a walk RESTART because "+
+					"that OID sorts before almost any request; RFC 3412 §7.2 discards instead. A Report "+
+					"here means the decrypt arm claimed a PDU that decrypted fine", len(resp), r.pduTag, name)
+			}
+
+			// Positive control on the SAME PDU type: a well-formed GETNEXT is
+			// still answered, so an unconditional discard cannot pass.
+			var good []byte
+			goodScoped := v3ScopedContentsWithName(s, ASN1_GET_NEXT, encodeOID(".1.3.6.1.2.1.1.1.0"), 43)
+			if priv.proto == SNMPV3_PRIV_NONE {
+				good = assembleV3(s, encodeSequence(goodScoped), nil, false)
+			} else {
+				good = v3PrivRequestFromScoped(t, s, goodScoped)
+			}
+			gr := decodeV3ResponsePossiblyEncrypted(t, s, s.handleSNMPv3Request(good), priv.proto != SNMPV3_PRIV_NONE)
+			if len(gr.varbinds) != 1 || gr.varbinds[0].oid != ".1.3.6.1.2.1.2.2.1.2.1" {
+				t.Errorf("a well-formed v3 GETNEXT was not answered with its successor: %+v", gr.varbinds)
+			}
+		})
 	}
 }
 
@@ -482,55 +544,52 @@ func TestV3MalformedOIDIsDiscarded(t *testing.T) {
 func TestV3ExtractReportsMalformedOIDAsError(t *testing.T) {
 	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
 
-	name := []byte{ASN1_OID, 0x02, 0x2b, 0xff}
-	vb := encodeSequence(append(name, encodeNull()...))
-	var body []byte
-	body = append(body, encodeInteger(42)...)
-	body = append(body, encodeInteger(0)...)
-	body = append(body, encodeInteger(0)...)
-	body = append(body, encodeSequence(vb)...)
-	pdu := append([]byte{ASN1_GET_NEXT}, append(encodeLength(len(body)), body...)...)
-	var scoped []byte
-	scoped = append(scoped, encodeOctetString(s.v3Config.EngineID)...)
-	scoped = append(scoped, encodeOctetString("")...)
-	scoped = append(scoped, pdu...)
-
-	oid, _, err := s.extractOIDAndTypeFromScopedPDU(scoped)
+	oid, _, err := s.extractOIDAndTypeFromScopedPDU(v3ScopedContentsWithName(s, ASN1_GET_NEXT, malformedOIDName, 42))
 	if err == nil {
 		t.Errorf("a malformed varbind name parsed cleanly, returning oid=%q with a nil error: "+
 			"the caller cannot then tell it from a successful parse", oid)
 	}
 
-	// And a well-formed one still parses, or the change would discard
-	// everything.
-	good := s.handleSNMPv3Request(buildV3GetBulkRequest(t, s, ".1.3.6.1.2.1.1.1.0", 7))
-	if len(good) == 0 {
-		t.Error("a well-formed v3 GET was discarded")
+	// And a well-formed one still parses.
+	good, _, err := s.extractOIDAndTypeFromScopedPDU(v3ScopedContentsWithName(s, ASN1_GET_NEXT, encodeOID(".1.3.6.1.2.1.1.1.0"), 42))
+	if err != nil || good != ".1.3.6.1.2.1.1.1.0" {
+		t.Errorf("a well-formed name did not parse: oid=%q err=%v", good, err)
 	}
 }
 
-// TestV3DecryptFailureAnswersReport pins the other half. A wrong privacy key
-// must still be ANSWERED, with the RFC 3414 Report rather than a value for an
-// object the manager never asked about — and never with silence, which would
-// be indistinguishable from an unreachable device.
-func TestV3DecryptFailureAnswersReport(t *testing.T) {
+// TestV3MalformedIsLoggedOncePerDevice pins the sync.Once gate on the v3
+// discard, the same way TestMalformedListIsLoggedOncePerDevice does for the
+// v2c list: the condition is attacker-controlled, so ungated it is a log
+// flood, while no line at all makes the discard look like a network drop.
+func TestV3MalformedIsLoggedOncePerDevice(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	const marker = "scoped PDU does not parse"
 	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
-	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
-	s.v3Config.PrivProtocol = SNMPV3_PRIV_DES
-
-	// Ciphertext that will not decrypt to a SEQUENCE under the device's key.
-	garbage := make([]byte, 32)
-	for i := range garbage {
-		garbage[i] = byte(i * 7)
+	for i := 0; i < 3; i++ {
+		s.handleSNMPv3Request(v3RequestWithMalformedOID(t, s))
 	}
-	req := buildV3EncryptedRequest(t, s, garbage, make([]byte, 8))
+	if got := strings.Count(buf.String(), marker); got != 1 {
+		t.Errorf("expected exactly one discard log line for the device, got %d:\n%s", got, buf.String())
+	}
 
-	resp := s.handleSNMPv3Request(req)
+	s2 := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	s2.handleSNMPv3Request(v3RequestWithMalformedOID(t, s2))
+	if got := strings.Count(buf.String(), marker); got != 2 {
+		t.Errorf("expected the second device to log its own first discard, total %d", got)
+	}
+}
+
+// assertUsmReport decodes a plaintext Report and checks the counter it names.
+func assertUsmReport(t *testing.T, s *SNMPServer, resp []byte, wantOID string) {
+	t.Helper()
 	if len(resp) == 0 {
-		t.Fatal("a decryption failure produced no datagram; RFC 3414 §3.2 step 8 answers a " +
-			"Report, and silence is indistinguishable from an unreachable device")
+		t.Fatal("no datagram; RFC 3414 answers a Report, and silence is indistinguishable from an " +
+			"unreachable device")
 	}
-
 	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
 	if r.pduTag != 0xA8 {
 		t.Errorf("PDU tag = 0x%02x, want 0xA8 (Report)", r.pduTag)
@@ -538,27 +597,85 @@ func TestV3DecryptFailureAnswersReport(t *testing.T) {
 	if len(r.varbinds) == 0 {
 		t.Fatal("Report carries no bindings")
 	}
-	if r.varbinds[0].oid != oidUsmStatsDecryptionErrors {
-		t.Errorf("Report names %q, want usmStatsDecryptionErrors (%s). sysDescr.0 here means the "+
-			"decrypt failure is still sharing the malformed-PDU fallback",
-			r.varbinds[0].oid, oidUsmStatsDecryptionErrors)
+	if r.varbinds[0].oid != wantOID {
+		t.Errorf("Report names %q, want %s", r.varbinds[0].oid, wantOID)
 	}
 	if r.varbinds[0].valueTag != ASN1_COUNTER32 {
 		t.Errorf("Report value tag = 0x%02x, want Counter32 (RFC 3414 §5)", r.varbinds[0].valueTag)
 	}
 }
 
+// TestV3DecryptFailureAnswersReport pins the other half. A wrong privacy key
+// must still be ANSWERED, with the RFC 3414 Report rather than a value for an
+// object the manager never asked about — and never with silence, which would
+// be indistinguishable from an unreachable device.
+//
+// Both decrypt arms are driven, under both protocols. "noise" is well-formed
+// input that decrypts without error to bytes that are not a SEQUENCE; the
+// other rows make decryptScopedPDU itself return an error, which is the arm a
+// single 32-byte/8-byte garbage case never reaches.
+func TestV3DecryptFailureAnswersReport(t *testing.T) {
+	noise := func(n int) []byte {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = byte(i*7 + 3)
+		}
+		return b
+	}
+	cases := []struct {
+		name       string
+		proto      int
+		cipherText []byte
+		privParams []byte
+	}{
+		{"des/noise", SNMPV3_PRIV_DES, noise(32), make([]byte, 8)},
+		{"des/odd-length ciphertext", SNMPV3_PRIV_DES, noise(31), make([]byte, 8)},
+		{"des/short privParams", SNMPV3_PRIV_DES, noise(32), make([]byte, 4)},
+		{"aes128/noise", SNMPV3_PRIV_AES128, noise(32), make([]byte, 8)},
+		{"aes128/short privParams", SNMPV3_PRIV_AES128, noise(32), make([]byte, 4)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+			s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+			s.v3Config.PrivProtocol = tc.proto
+
+			// Confirm the row exercises the arm it claims to.
+			_, err := s.decryptScopedPDU(tc.cipherText, tc.privParams)
+			if strings.Contains(tc.name, "noise") && err != nil {
+				t.Fatalf("noise row hit the hard-error arm (%v); it is meant to decrypt cleanly", err)
+			}
+			if !strings.Contains(tc.name, "noise") && err == nil {
+				t.Fatalf("hard-error row decrypted without error; it is meant to make decryptScopedPDU fail")
+			}
+
+			resp := s.handleSNMPv3Request(buildV3EncryptedRequest(t, s, tc.cipherText, tc.privParams))
+			assertUsmReport(t, s, resp, oidUsmStatsDecryptionErrors)
+		})
+	}
+}
+
+// TestV3PrivFlagOnNoPrivDeviceReportsUnsupportedSecLevel pins RFC 3414 §3.2
+// step 5. A PRIV-flagged message to a device configured without privacy is a
+// security level the device does not support, not a wrong key; without the
+// check decryptScopedPDU hands the ciphertext back and the SEQUENCE test
+// reports usmStatsDecryptionErrors, telling the manager its key is wrong when
+// its configuration is.
+func TestV3PrivFlagOnNoPrivDeviceReportsUnsupportedSecLevel(t *testing.T) {
+	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
+	if s.v3Config.PrivProtocol != SNMPV3_PRIV_NONE {
+		t.Fatalf("fixture has privacy %d; this test needs a no-priv device", s.v3Config.PrivProtocol)
+	}
+	garbage := make([]byte, 32)
+	resp := s.handleSNMPv3Request(buildV3EncryptedRequest(t, s, garbage, make([]byte, 8)))
+	assertUsmReport(t, s, resp, oidUsmStatsUnsupportedSecLevels)
+}
+
 // Discovery must still name usmStatsUnknownEngineIDs, since it now shares the
-// Report builder with the decryption-error case.
+// Report builder with the error cases.
 func TestV3DiscoveryStillNamesUnknownEngineIDs(t *testing.T) {
 	s := v3TestServer(map[string]string{".1.3.6.1.2.1.1.1.0": "dev"})
 
 	resp := s.createSNMPv3DiscoveryResponse(&SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}})
-	if len(resp) == 0 {
-		t.Fatal("no discovery response")
-	}
-	r := decodeV3ResponsePossiblyEncrypted(t, s, resp, false)
-	if len(r.varbinds) == 0 || r.varbinds[0].oid != oidUsmStatsUnknownEngineIDs {
-		t.Errorf("discovery Report names %v, want %s", r.varbinds, oidUsmStatsUnknownEngineIDs)
-	}
+	assertUsmReport(t, s, resp, oidUsmStatsUnknownEngineIDs)
 }

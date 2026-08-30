@@ -299,7 +299,7 @@ func (s *SNMPServer) logFirstMalformedList(pduType byte) {
 // condition is attacker-controlled, so ungated it is a log-flood primitive.
 func (s *SNMPServer) logFirstMalformedV3(err error) {
 	s.firstMalformedV3.Do(func() {
-		log.Printf("SNMP %s: discarded an SNMPv3 request whose scoped PDU is malformed: %v (further discards suppressed for this device)",
+		log.Printf("SNMP %s: discarded an SNMPv3 request whose scoped PDU does not parse: %v (further discards suppressed for this device)",
 			s.device.ID, err)
 	})
 }
