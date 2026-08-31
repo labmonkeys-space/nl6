@@ -226,14 +226,27 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		return 0, fmt.Errorf("root privileges required to create TUN interfaces")
 	}
 
-	// Initialize with a write lock, then release it for the loop
+	// Rewind the allocation cursor to the batch start under the write lock,
+	// then release it for the loop.
+	//
+	// This UNDOES the currentIP half of reservePreAllocBatch, deliberately and
+	// necessarily: the pre-allocated interfaces are addressed startIP..startIP+
+	// count-1, so device creation has to walk that same range or every device
+	// misses the pool. The consequence is that IP allocation is a shared cursor
+	// rather than a reserved range, and two overlapping batches can still
+	// overlap on device IPs (nl6#556 review R4) — the reservation closes TUN
+	// NAMING only.
 	sm.mu.Lock()
 	sm.currentIP = ip
 	sm.mu.Unlock()
 
+	// Both pre-allocation settings read as one pair under the lock that owns
+	// them; reading them bare here raced a concurrent batch's reservation.
+	poolSize, poolWorkers := sm.preAllocSnapshot()
+
 	successCount := 0
 
-	if sm.tunPoolSize > 0 {
+	if poolSize > 0 {
 		// Pre-allocation was done - create devices in parallel
 		sm.createDevicesParallel(count, netmask, resourceFile, resources, v3Config, &successCount, roundRobin, roundRobinResources, roundRobinResourceFiles, snmpPort, seed)
 	} else {
@@ -521,9 +534,9 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 	log.Printf("   Total device creation time: %v", deviceElapsed)
 	log.Printf("   Average time per device: %.3f ms", float64(deviceElapsed.Nanoseconds())/float64(successCount*1e6))
 	log.Printf("   Devices created per second: %.2f", float64(successCount)/deviceElapsed.Seconds())
-	if sm.tunPoolSize > 0 {
+	if poolSize > 0 {
 		log.Printf("   Mode: Parallel creation with pre-allocated interfaces")
-		log.Printf("   Workers used: %d", sm.maxWorkers)
+		log.Printf("   Workers used: %d", poolWorkers)
 	} else {
 		log.Printf("   Mode: Sequential creation with on-demand interfaces")
 	}
@@ -554,20 +567,24 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 // `seed` is propagated verbatim to every worker; each worker passes it into
 // `createSingleDevice` which copies per-device.
 func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, resourceFile string, resources *DeviceResources, v3Config *SNMPv3Config, successCount *int, roundRobin bool, roundRobinResources []*DeviceResources, roundRobinResourceFiles []string, snmpPort int, seed *ExportSeed) {
-	// Worker pool for parallel device creation
-	sem := make(chan struct{}, sm.maxWorkers) // Limit concurrent workers
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	log.Printf("Creating %d devices in parallel with %d workers...", count, sm.maxWorkers)
-	parallelStartTime := time.Now()
-	log.Printf("PARALLEL DEVICE START TIME: %v", parallelStartTime.Format("15:04:05.000"))
+	// maxWorkers is an sm.mu field too, and sizing the semaphore from a bare
+	// read raced a concurrent batch's reservation (nl6#556).
+	_, workers := sm.preAllocSnapshot()
 
 	// Get starting IP with read lock
 	sm.mu.RLock()
 	startingIP := make(net.IP, len(sm.currentIP))
 	copy(startingIP, sm.currentIP)
 	sm.mu.RUnlock()
+
+	// Worker pool for parallel device creation
+	sem := make(chan struct{}, workers) // Limit concurrent workers
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	log.Printf("Creating %d devices in parallel with %d workers...", count, workers)
+	parallelStartTime := time.Now()
+	log.Printf("PARALLEL DEVICE START TIME: %v", parallelStartTime.Format("15:04:05.000"))
 
 	// Pre-compute all device IPs in O(n) instead of O(n²)
 	prefix := parsePrefix(netmask)

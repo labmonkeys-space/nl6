@@ -291,7 +291,25 @@ type SimulatorManager struct {
 	// Populated from -topology-config at startup and the
 	// POST/DELETE /api/v1/topology endpoints at runtime; pruned on
 	// DeleteDevice. nil only in tests that construct the manager directly.
-	topology        *Topology
+	topology *Topology
+	// currentIP and nextTunIndex are the two allocation counters of the
+	// device-creation path and are BOTH guarded by sm.mu (nl6#556).
+	//
+	// They advance together and must be observed together: nextTunIndex names
+	// TUN interfaces, currentIP addresses them, so a reader that sees one
+	// advanced against a stale other is reading a half-updated pair.
+	// PreAllocateTunInterfaces therefore commits its whole slice of both in a
+	// single critical section (reservePreAllocBatch) BEFORE its workers start,
+	// and passes the reserved index base into the workers rather than letting
+	// them read the field. Nothing excludes two concurrent batches from each
+	// other — isCreatingDevices is a UI status flag, not a mutex.
+	//
+	// Only nextTunIndex is genuinely RESERVED by a batch. currentIP remains a
+	// SHARED CURSOR: CreateDevicesWithOptions rewinds it to the batch start
+	// after pre-allocation (the devices must land on the addresses the pool was
+	// created with), so two overlapping batches can still hand out overlapping
+	// device IPs. That is the residual defect nl6#556 does not close; closing
+	// it needs one-batch-at-a-time exclusion, which is a behaviour change.
 	currentIP       net.IP
 	nextTunIndex    int
 	deviceResources *DeviceResources
@@ -335,15 +353,34 @@ type SimulatorManager struct {
 	netNamespace *NetNamespace // Network namespace for all simulated devices
 	useNamespace bool          // Whether to use network namespace isolation
 
-	// TUN interface pre-allocation settings
+	// TUN interface pre-allocation settings.
+	//
+	// tunPoolSize and maxWorkers are guarded by sm.mu, like the two allocation
+	// counters above — and are last-writer-wins across concurrent batches:
+	// locking makes them race-free, not correct. tunInterfacePool is guarded by
+	// tunPoolMutex — its ENTRIES and the map value itself, since a mutex that
+	// guards a map's contents does not guard replacing the map. Lock order
+	// where both are needed is sm.mu → tunPoolMutex (shutdownFast establishes
+	// it), so the pool lock is never held while taking sm.mu.
 	tunPoolSize      int                      // Size of the pre-allocated pool (0 = no pre-allocation)
 	maxWorkers       int                      // Maximum parallel workers for interface creation
 	tunInterfacePool map[string]*TunInterface // Pool of pre-allocated interfaces indexed by IP
 	tunPoolMutex     sync.RWMutex             // Mutex for interface pool access
 
 	// Status tracking for pre-allocation and device creation
-	isPreAllocating      atomic.Value // bool - true when pre-allocation is in progress
-	preAllocProgress     atomic.Value // int - number of interfaces pre-allocated so far
+	isPreAllocating atomic.Value // bool - true when pre-allocation is in progress
+	// preAllocProgress is an Add-ONLY atomic counter (not atomic.Value): the
+	// pre-allocation workers increment it concurrently, and a load-then-store
+	// on an atomic.Value loses updates. preAllocProgressBase is the baseline a
+	// batch publishes at its start, so status can report batch-relative
+	// progress without any batch storing a zero over a concurrent batch's live
+	// count. See beginPreAllocProgress / bumpPreAllocProgress.
+	//
+	// atomic.Int64 also removes the .Load().(int) type assertion GetStatus used
+	// to do, which panicked on a directly-constructed manager that never stored
+	// the field — several test files construct one that way.
+	preAllocProgress     atomic.Int64
+	preAllocProgressBase atomic.Int64
 	isCreatingDevices    atomic.Value // bool - true when device creation is in progress
 	deviceCreateProgress atomic.Value // int - number of devices created so far
 	deviceCreateTotal    atomic.Value // int - total number of devices to create
