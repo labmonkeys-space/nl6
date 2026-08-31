@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -304,42 +305,182 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 // Raising it needs a reason.
 const bareColumnEntriesShipped = 0
 
-// TestBareColumnCensusHasNotGrown pins the size of an ACKNOWLEDGED gap. It is
-// not a fix and does not pretend to be one — the framing this replaces read as
-// though bare columns were now impossible, which they are not.
-func TestBareColumnCensusHasNotGrown(t *testing.T) {
-	all := map[string]struct{}{}
-	byProfile := map[[2]string]string{} // (profile, oid) -> part
-	for _, e := range shippedSNMPEntries(t) {
-		all[e.OID] = struct{}{}
-		byProfile[[2]string{e.Profile, e.OID}] = e.Part
-	}
+// ── the shared bare-column detector, and the control that keeps it honest ───
+//
+// Both guards for this class — the JSON census below and the serve-path walk in
+// TestNoShippedWalkEmitsABareColumnOID — go through bareColumnsAcrossProfiles and
+// bareColumnCountViolation, and both begin by calling
+// assertBareColumnDetectionIsCorpusWide. That is not tidiness. The fourth review
+// layer of nl6#571 demonstrated that each guard could be narrowed back to a
+// per-profile scan, with a real cross-profile bare column planted, and BOTH would
+// pass reporting zero — reintroducing precisely the regression nl6#571 exists to
+// fix, with a green suite, because a narrowing changes no shipped byte and
+// therefore moves no digest and no ledger.
+//
+// The old controls could not catch it: the census had none at all, and the walk
+// test's exercised the detector on a set holding a column and its instance
+// TOGETHER, which a per-profile scan still finds. The control below is
+// CROSS-PROFILE by construction — the column in profile A, its instance in
+// profile B — so a narrowed detector fails it.
 
-	interior := 0
-	profiles := map[string]struct{}{}
-	for k, part := range byProfile {
-		e := shippedSNMPEntry{Profile: k[0], Part: part, OID: k[1]}
-		for other := range all {
-			if other != e.OID && strings.HasPrefix(other, e.OID+".") {
-				interior++
-				profiles[e.Profile] = struct{}{}
-				t.Logf("bare column: %s serves %s, which is a prefix of another shipped entry",
-					e.Part, e.OID)
-				break
+// bareColumnsAcrossProfiles returns every (profile, OID) pair whose OID is an
+// INTERIOR node of the corpus-wide served set: some OID served by ANY profile has
+// it as a proper prefix. The value is the extending OID, for the message.
+//
+// The union is taken across profiles deliberately and must stay that way.
+// Legality is a property of the OID, not of which profile carries it: 20 of the 61
+// entries nl6#571 deleted were bare columns whose only instantiated sibling lived
+// in a different profile.
+//
+// WHAT IT CANNOT DECIDE, and this bit on first use (nl6#571 review R1). The test
+// is "something extends it", which is a heuristic for "it is a column", and the
+// heuristic inverts when the EXTENDING sibling is the malformed one. At
+// ciscoImageString (1.3.6.1.4.1.9.9.25.1.1.1.2) all four Cisco profiles shipped
+// .2.2 AND .2.2.1; ciscoImageEntry's INDEX is a single sub-identifier, so .2.2 is
+// the LEGAL instance and .2.2.1 is over-specified — and this function reported
+// .2.2, the legal one. Telling the two apart needs the table's INDEX arity, which
+// means a MIB; nothing here has one. So a hit is a candidate to be checked against
+// the MIB, never a verdict, and the corresponding ledger table records the arity
+// finding per row (nl6571DeletedOverSpecifiedInstances).
+func bareColumnsAcrossProfiles(perProfile map[string]map[string]struct{}) map[[2]string]string {
+	union := map[string]struct{}{}
+	for _, oids := range perProfile {
+		for oid := range oids {
+			union[oid] = struct{}{}
+		}
+	}
+	// Walk each OID's own prefixes rather than comparing pairwise: at 42k OIDs
+	// that is the difference between instant and 1.8e9 comparisons.
+	columns := map[string]string{} // column -> an OID that extends it
+	for oid := range union {
+		for i := len(oid) - 1; i > 0; i-- {
+			if oid[i] != '.' {
+				continue
+			}
+			if _, ok := union[oid[:i]]; ok {
+				columns[oid[:i]] = oid
 			}
 		}
 	}
+	out := map[[2]string]string{}
+	for profile, oids := range perProfile {
+		for oid := range oids {
+			if ext, ok := columns[oid]; ok {
+				out[[2]string{profile, oid}] = ext
+			}
+		}
+	}
+	return out
+}
 
-	if interior > bareColumnEntriesShipped {
-		t.Errorf("%d bare-column entries ship, up from the recorded %d, across %d profiles. A "+
-			"table column with no instance is not a legal varbind name: a walk emits a binding "+
-			"named with a column OID. Give the entry an instance suffix, or delete it",
-			interior, bareColumnEntriesShipped, len(profiles))
+// bareColumnCountViolation is the comparison both guards make, as a pure
+// function returning "" when the count is on census. It is a function so the
+// control can require it to REPORT a violation, which an inline `if` cannot be
+// asked to do.
+func bareColumnCountViolation(got, want int) string {
+	switch {
+	case got > want:
+		return fmt.Sprintf("%d bare-column entries ship, up from the recorded %d. A table column "+
+			"with no instance sub-identifier is not a legal varbind name: a walk emits a binding "+
+			"named with a column OID. Give the entry an instance suffix, or delete it — but check "+
+			"the table's INDEX arity first, because the detector cannot tell a column from a legal "+
+			"instance with an over-specified sibling", got, want)
+	case got < want:
+		return fmt.Sprintf("%d bare-column entries ship, down from the recorded %d — good, but "+
+			"lower bareColumnEntriesShipped to %d so the pin keeps its grip", got, want, got)
 	}
-	if interior < bareColumnEntriesShipped {
-		t.Errorf("%d bare-column entries ship, down from the recorded %d — good, but lower "+
-			"bareColumnEntriesShipped to %d so the pin keeps its grip",
-			interior, bareColumnEntriesShipped, interior)
+	return ""
+}
+
+// crossProfileBareColumnFixture is the shared positive control input: profile A
+// serves the bare hrStorageAllocationUnits column, profile B serves an instance of
+// it, and nobody serves both. A per-profile scan sees no bare column here; a
+// corpus-wide one sees exactly the pair in profile A.
+func crossProfileBareColumnFixture() map[string]map[string]struct{} {
+	return map[string]map[string]struct{}{
+		"zzprofile_a.json": {
+			".1.3.6.1.2.1.25.2.3.1.4": {}, // the column, with no instance
+			".1.3.6.1.2.1.1.1.0":      {}, // an ordinary leaf, must not be reported
+		},
+		"zzprofile_b.json": {
+			".1.3.6.1.2.1.25.2.3.1.4.1": {}, // its instance, in ANOTHER profile
+		},
 	}
-	t.Logf("%d bare-column entries across %d profiles (recorded: %d)", interior, len(profiles), bareColumnEntriesShipped)
+}
+
+// assertBareColumnDetectionIsCorpusWide is the control every guard for this class
+// runs first. It fails on the two mutations that would otherwise pass silently: a
+// detector narrowed to one profile, and a comparison that no longer reports.
+func assertBareColumnDetectionIsCorpusWide(t *testing.T) {
+	t.Helper()
+
+	found := bareColumnsAcrossProfiles(crossProfileBareColumnFixture())
+	want := [2]string{"zzprofile_a.json", ".1.3.6.1.2.1.25.2.3.1.4"}
+	if len(found) != 1 {
+		t.Fatalf("the control fixture plants ONE bare column, in a different profile from its "+
+			"instance, and the detector reported %d: %v.\nIf it reported none, the scan has been "+
+			"narrowed to a single profile — which is exactly the blind spot nl6#571 was filed for, "+
+			"and it makes the zero this test asserts meaningless. Keep the union corpus-wide.", len(found), found)
+	}
+	if _, ok := found[want]; !ok {
+		t.Fatalf("the control found %v, want the planted column %v", found, want)
+	}
+
+	// A column and its instance in the SAME profile must still be found, or a
+	// "fix" that only looked across profiles would pass the check above.
+	same := bareColumnsAcrossProfiles(map[string]map[string]struct{}{
+		"zzprofile_a.json": {
+			".1.3.6.1.2.1.25.2.3.1.4":   {},
+			".1.3.6.1.2.1.25.2.3.1.4.1": {},
+		},
+	})
+	if len(same) != 1 {
+		t.Fatalf("a bare column and its instance in ONE profile must still be detected, got %v", same)
+	}
+
+	// And the comparison must still speak up. Asserted by requiring a message,
+	// so disabling the condition inside bareColumnCountViolation fails here
+	// rather than silently making every zero-assertion vacuous.
+	if bareColumnCountViolation(1, 0) == "" {
+		t.Fatal("bareColumnCountViolation(1, 0) reports nothing: the comparison behind every " +
+			"bare-column assertion has stopped working, so those assertions cannot fail")
+	}
+	if bareColumnCountViolation(0, 1) == "" {
+		t.Fatal("bareColumnCountViolation(0, 1) reports nothing: a census that has become stale " +
+			"low would no longer be reported")
+	}
+	if msg := bareColumnCountViolation(0, 0); msg != "" {
+		t.Fatalf("bareColumnCountViolation(0, 0) reported %q, so the guard would fail on a clean "+
+			"corpus", msg)
+	}
+}
+
+// TestBareColumnCensusHasNotGrown is the JSON-side guard: it says what the corpus
+// CONTAINS. TestNoShippedWalkEmitsABareColumnOID is the serve-path side and says
+// what a walk EMITS. Two independent guards over one shared detector, so
+// disabling one still leaves a real defect reported by the other.
+func TestBareColumnCensusHasNotGrown(t *testing.T) {
+	assertBareColumnDetectionIsCorpusWide(t)
+
+	perProfile := map[string]map[string]struct{}{}
+	part := map[[2]string]string{}
+	for _, e := range shippedSNMPEntries(t) {
+		if perProfile[e.Profile] == nil {
+			perProfile[e.Profile] = map[string]struct{}{}
+		}
+		perProfile[e.Profile][e.OID] = struct{}{}
+		part[[2]string{e.Profile, e.OID}] = e.Part
+	}
+
+	found := bareColumnsAcrossProfiles(perProfile)
+	profiles := map[string]struct{}{}
+	for k, ext := range found {
+		profiles[k[0]] = struct{}{}
+		t.Logf("bare column: %s serves %s, which %s extends", part[k], k[1], ext)
+	}
+	if msg := bareColumnCountViolation(len(found), bareColumnEntriesShipped); msg != "" {
+		t.Errorf("%s (across %d profiles)", msg, len(profiles))
+	}
+	t.Logf("%d bare-column entries across %d profiles (recorded: %d)",
+		len(found), len(profiles), bareColumnEntriesShipped)
 }

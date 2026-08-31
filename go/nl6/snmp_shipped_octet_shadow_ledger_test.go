@@ -1646,7 +1646,7 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	// change, so reaching the pre-octet-shadow digest means undoing both stages.
 	// This change's own stage is pinned separately by
 	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs.
-	restored := append(append([]string{}, oids...), nl6574DeletedOIDNames()...)
+	restored := append(append([]string{}, oids...), nl6574RestorableOIDNames(t)...)
 	restored = append(restored, deleted...)
 	sort.Strings(restored)
 

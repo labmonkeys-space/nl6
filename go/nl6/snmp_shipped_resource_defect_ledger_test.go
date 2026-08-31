@@ -33,15 +33,22 @@ import (
 //     unreachable — the same argument nl6#570 used for its 1322 .10 / .16 rows.
 //     ifTable .7 / .8 are NOT here: InitIfCountersWithScenario reads both to
 //     seed the interface-state engine, so those are live input.
-//   - nl6#571 — 61 entries whose OID is a table COLUMN with no instance
-//     sub-identifier, across 15 distinct OIDs and 13 profiles. A column OID is
-//     not a legal varbind name, so a walk emitted a phantom binding named with
-//     one. None remain: the class is closed for the shipped set, and
-//     TestNoShippedWalkEmitsABareColumnOID asserts zero rather than a carve-out.
+//   - nl6#571 — 57 entries whose OID is a table COLUMN with no instance
+//     sub-identifier, across 14 distinct OIDs and 13 profiles, PLUS 4 that are
+//     the mirror-image defect: an OVER-SPECIFIED instance, one sub-identifier
+//     more than the table's INDEX arity allows. Neither is a legal varbind name.
+//     61 entries in total. The over-specified four are why this change had to be
+//     revised: the first cut deleted the legal name and kept the illegal one.
+//   - nl6#569, corpus-wide half — 24 entries of the Palo Alto enterprise subtree
+//     served by twelve profiles that are not Palo Alto devices, deleted rather
+//     than corrected. In scope because this change already swept those same
+//     twelve files for the bare PAN column.
 //   - nl6#569 — 5 semantic value corrections and 3 deleted OIDs in the
 //     palo_alto_pa3220 PAN subtree, resolved against PAN-COMMON-MIB. One of the
-//     three deletions (.4.1.3) is counted under nl6#571 above, since it is a
-//     bare column as well; the other two are here.
+//     three deletions (.4.1.3) is counted in the bare-column bucket, since it is
+//     a bare column as well and ships in 13 profiles; the other two
+//     (.4.1.3.1, .5.1.0) are in nl6569DeletedInvalidOIDs. 829 deletions and 5
+//     value corrections in total.
 //
 // Every recorded oldValue was read OUT OF GIT at ec4700f (nl6#570's B3 rule)
 // rather than taken from a table, and
@@ -836,13 +843,10 @@ var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.6", "1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.9", "1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.13", "CiscoCatalyst9500"},
-	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2", "16.12.04"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.2636.3.1.13.1.8", "25"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
-	{"cisco_crs_x.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2", "6.7.3"},
 	{"cisco_crs_x.json", ".1.3.6.1.4.1.2636.3.1.13.1.8", "39"},
 	{"cisco_crs_x.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
-	{"cisco_ios.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2", "15.1(04)S"},
 	{"cisco_ios.json", ".1.3.6.1.4.1.2636.3.1.13.1.8", "35"},
 	{"cisco_ios.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.25.2.3.1.4", "1"},
@@ -853,7 +857,6 @@ var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.6", "1"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.9", "1"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.13", "CiscoNexus9500"},
-	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2", "9.3.8"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.2636.3.1.13.1.8", "28"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
 	{"dell_poweredge_r750.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
@@ -896,6 +899,79 @@ var nl6569DeletedInvalidOIDs = []struct{ profile, oid, oldValue string }{
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.5.1.0", "500"},
 }
 
+// nl6571DeletedOverSpecifiedInstances is the MIRROR-IMAGE defect, and it is the
+// one that caught this change out. ciscoImageEntry's INDEX is
+// { ciscoImageIndex } — a SINGLE sub-identifier — so at 1.3.6.1.4.1.9.9.25.1.1.1.2
+// (ciscoImageString) the legal instance is .2.2 and .2.2.1 is OVER-SPECIFIED:
+// one sub-identifier too many, and not a legal varbind name either.
+//
+// All four Cisco profiles shipped BOTH. The first cut of nl6#571 deleted .2.2 and
+// kept .2.2.1 — it deleted the legal name and kept the illegal one, inverting the
+// fix — because columnNodesIn saw .2.2 extended by .2.2.1 and concluded .2.2 was a
+// column. See the limitation documented on columnNodesIn: the heuristic cannot
+// tell "a column with an instance below it" from "a legal instance with an
+// over-specified sibling below it" without knowing the table's INDEX arity, and
+// it is fooled exactly when the EXTENDING sibling is the malformed one.
+//
+// .2.2 is restored with its original per-profile value (the review's note that all
+// four were "15.1(04)S" holds for .2.2.1 only; .2.2 carried 16.12.04, 6.7.3,
+// 15.1(04)S and 9.3.8), and .2.2.1 is deleted instead. Net entry count unchanged.
+var nl6571DeletedOverSpecifiedInstances = []struct{ profile, oid, oldValue string }{
+	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2.1", "15.1(04)S"},
+	{"cisco_crs_x.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2.1", "15.1(04)S"},
+	{"cisco_ios.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2.1", "15.1(04)S"},
+	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2.1", "15.1(04)S"},
+}
+
+// panEnterprisePrefix is the Palo Alto Networks enterprise arc (IANA PEN 25461)
+// and paloAltoProfile is the one shipped profile entitled to serve anything under
+// it. Named rather than inlined because three tests key on the pair.
+const (
+	panEnterprisePrefix = ".1.3.6.1.4.1.25461"
+	paloAltoProfile     = "palo_alto_pa3220.json"
+)
+
+// nl6569DeletedForeignPANEntries is a Palo Alto enterprise subtree served by
+// twelve profiles that are not Palo Alto devices: panChassisType (= "127", the
+// exact value nl6#569 called wrong) and panSessionUtilization (= "2500", whose
+// DESCRIPTION bounds it to 0..100). They are DELETED, not corrected — an Arista
+// should not answer a PAN enterprise OID at all.
+//
+// They are in scope here for a reason that only became visible after the fact:
+// this change already swept these same twelve files for the bare PAN column
+// .2.1.2.4.1.3, so deleting one PAN OID from a file and leaving two others behind
+// would be inconsistent rather than scoped. The wider cross-vendor contamination
+// audit is nl6#576.
+//
+// TestPaloAltoPANSubtreeMatchesTheMIB cannot see these: it is scoped to one
+// profile. TestNoForeignPANOIDsShip is the corpus-wide half.
+var nl6569DeletedForeignPANEntries = []struct{ profile, oid, oldValue string }{
+	{"arista_7280r3.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"arista_7280r3.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"cisco_catalyst_9500.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"cisco_crs_x.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"cisco_crs_x.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"cisco_ios.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"cisco_ios.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"cisco_nexus_9500.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"dell_poweredge_r750.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"dell_poweredge_r750.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"fortinet_fortigate_600e.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"fortinet_fortigate_600e.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"hpe_proliant_dl380.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"hpe_proliant_dl380.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"huawei_ne8000.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"huawei_ne8000.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"juniper_mx240.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"juniper_mx240.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"juniper_mx960.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"juniper_mx960.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+	{"nokia_7750_sr12.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127"},
+	{"nokia_7750_sr12.json", ".1.3.6.1.4.1.25461.2.1.2.3.1.0", "2500"},
+}
+
 // nl6569ValueCorrections is the semantic half of nl6#569: five real Palo Alto
 // OIDs that answered a value of the wrong KIND. Resolved against PAN-COMMON-MIB;
 // see docs/reference/resource-files.md for the audit table. Three of the five
@@ -909,7 +985,7 @@ var nl6569ValueCorrections = []struct {
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.1.17.0", "PA3220-001", "790286-4437636", ASN1_OCTET_STRING, ASN1_OCTET_STRING},
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127", "PA-3220", ASN1_INTEGER, ASN1_OCTET_STRING},
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.0", "4194304", "connected", ASN1_INTEGER, ASN1_OCTET_STRING},
-	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.2.0", "DDR4", "connected", ASN1_OCTET_STRING, ASN1_OCTET_STRING},
+	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.2.0", "DDR4", "not-connected", ASN1_OCTET_STRING, ASN1_OCTET_STRING},
 }
 
 // shippedTagDigestBeforeResourceDataDefects is the (profile, OID, emitted tag)
@@ -922,11 +998,19 @@ const shippedTagDigestBeforeResourceDataDefects = "cfe569609d6cf99f777d764b306b0
 // shipped it. Shared with the nl6#570 and nl6#541 ledger reversals, whose own
 // starting point is the tree this one reconstructs — the chain is
 // today -> ec4700f -> 3a69927 -> 44ef67f.
+func nl6574RemovalLedgers() [][]struct{ profile, oid, oldValue string } {
+	return [][]struct{ profile, oid, oldValue string }{
+		nl6574DeletedDeadRows,
+		nl6571DeletedBareColumns,
+		nl6571DeletedOverSpecifiedInstances,
+		nl6569DeletedForeignPANEntries,
+		nl6569DeletedInvalidOIDs,
+	}
+}
+
 func restoreNl6574ResourceDefectEntries(t *testing.T, cur map[[2]string]string) {
 	t.Helper()
-	for _, group := range [][]struct{ profile, oid, oldValue string }{
-		nl6574DeletedDeadRows, nl6571DeletedBareColumns, nl6569DeletedInvalidOIDs,
-	} {
+	for _, group := range nl6574RemovalLedgers() {
 		for _, d := range group {
 			k := [2]string{d.profile, d.oid}
 			if got, ok := cur[k]; ok {
@@ -961,10 +1045,10 @@ func restoreNl6574ResourceDefectEntries(t *testing.T, cur map[[2]string]string) 
 // What it does NOT pin, measured rather than assumed: the digest hashes
 // (profile, OID, first encoded byte), so a recorded oldValue is visible only
 // through its tag. Two of the five nl6#569 corrections are tag-neutral
-// (OCTET STRING both sides) and every one of the 805 deleted rows is restored
+// (OCTET STRING both sides) and every one of the 829 deleted rows is restored
 // only as a tag here.
 // TestResourceDataDefectLedgerValuesMatchTheParentRevision closes that for all
-// 810 recorded values.
+// 834 recorded values.
 func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 	cur := map[[2]string]string{}
 	for _, e := range shippedSNMPEntries(t) {
@@ -1025,7 +1109,9 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 		want int
 	}{
 		{"nl6#574 dead ifTable rows", len(nl6574DeletedDeadRows), 742},
-		{"nl6#571 bare columns", len(nl6571DeletedBareColumns), 61},
+		{"nl6#571 bare columns", len(nl6571DeletedBareColumns), 57},
+		{"nl6#571 over-specified instances", len(nl6571DeletedOverSpecifiedInstances), 4},
+		{"nl6#569 foreign PAN entries", len(nl6569DeletedForeignPANEntries), 24},
 		{"nl6#569 invalid OIDs", len(nl6569DeletedInvalidOIDs), 2},
 		{"nl6#569 value corrections", len(nl6569ValueCorrections), 5},
 	} {
@@ -1122,12 +1208,12 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 	// corpus as ec4700f shipped it — reconstructed here rather than asserted,
 	// because after the deletion nothing in the tree can show it.
 	parent := map[string]struct{}{}
+	shipped := map[[2]string]string{}
 	for _, e := range shippedSNMPEntries(t) {
 		parent[e.OID] = struct{}{}
+		shipped[[2]string{e.Profile, e.OID}] = e.Value
 	}
-	for _, g := range [][]struct{ profile, oid, oldValue string }{
-		nl6574DeletedDeadRows, nl6571DeletedBareColumns, nl6569DeletedInvalidOIDs,
-	} {
+	for _, g := range nl6574RemovalLedgers() {
 		for _, d := range g {
 			parent[d.oid] = struct{}{}
 		}
@@ -1150,9 +1236,51 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 				d.profile, d.oid)
 		}
 	}
-	if len(bareOIDs) != 15 || len(bareProfiles) != 13 {
-		t.Errorf("bare-column ledger spans %d distinct OIDs across %d profiles, want 15 and 13",
+	if len(bareOIDs) != 14 || len(bareProfiles) != 13 {
+		t.Errorf("bare-column ledger spans %d distinct OIDs across %d profiles, want 14 and 13",
 			len(bareOIDs), len(bareProfiles))
+	}
+
+	// nl6#571, the over-specified four. The claim is the INVERSE of the bare
+	// column: the row is not an interior node, its PROPER PREFIX is a legal
+	// instance that shipped at ec4700f and still ships today. That is what makes
+	// the first cut's mistake visible in the ledger rather than only in prose —
+	// it deleted the prefix and kept this row.
+	for _, d := range nl6571DeletedOverSpecifiedInstances {
+		cut := strings.LastIndexByte(d.oid, '.')
+		if cut <= 0 {
+			t.Errorf("%s %s has no proper prefix", d.profile, d.oid)
+			continue
+		}
+		prefix := d.oid[:cut]
+		if _, ok := parent[prefix]; !ok {
+			t.Errorf("%s %s is in the over-specified ledger, but %s did not ship at ec4700f, so "+
+				"this row was not the extending sibling of a legal instance",
+				d.profile, d.oid, prefix)
+		}
+		if got := shipped[[2]string{d.profile, prefix}]; got == "" {
+			t.Errorf("%s no longer serves %s. The over-specified row was deleted INSTEAD of its "+
+				"legal prefix; if the prefix is gone too, the inversion has been reintroduced",
+				d.profile, prefix)
+		}
+	}
+
+	// nl6#569, the foreign PAN entries: a non-Palo-Alto profile serving a Palo
+	// Alto enterprise OID. Both halves of that are the claim.
+	foreignProfiles := map[string]struct{}{}
+	for _, d := range nl6569DeletedForeignPANEntries {
+		if !strings.HasPrefix(d.oid, panEnterprisePrefix) {
+			t.Errorf("%s %s is in the foreign-PAN ledger but is not under %s",
+				d.profile, d.oid, panEnterprisePrefix)
+		}
+		if d.profile == paloAltoProfile {
+			t.Errorf("%s %s is in the FOREIGN PAN ledger but palo_alto_pa3220 is the Palo Alto "+
+				"profile; its own PAN OIDs are corrections, not deletions", d.profile, d.oid)
+		}
+		foreignProfiles[d.profile] = struct{}{}
+	}
+	if len(foreignProfiles) != 12 {
+		t.Errorf("foreign-PAN ledger spans %d profiles, want 12", len(foreignProfiles))
 	}
 
 	// nl6#569: the tags are the wire claim, so both sides are asserted against
@@ -1191,20 +1319,18 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 // (`git show ec4700f:<path>`), not from the ledger table, so comparing the table
 // against it is a comparison with the tree as it actually was. A digest derived
 // from the table would only prove the table equals itself.
-const nl6574ValueDigestAtEc4700f = "b480b09f388d70aa7b57b83afe7140954211caf2dce567307ac760517802cae9"
+const nl6574ValueDigestAtEc4700f = "2460878e6276626b72558e97413aa17bc52635dca38258faa8cb7bd0ba9f3fd6"
 
 // TestResourceDataDefectLedgerValuesMatchTheParentRevision pins the ledger's
 // VALUES, which the tag digest cannot see. Without it the recorded oldValues are
-// unfalsifiable for the 805 deleted rows: the deletion removed them from the
+// unfalsifiable for the 829 deleted rows: the deletion removed them from the
 // tree, so nothing else in the package has anything left to compare against.
 //
 // If it fails after an edit to the tables, the tables are wrong — the parent
 // revision cannot change.
 func TestResourceDataDefectLedgerValuesMatchTheParentRevision(t *testing.T) {
 	lines := []string{}
-	for _, g := range [][]struct{ profile, oid, oldValue string }{
-		nl6574DeletedDeadRows, nl6571DeletedBareColumns, nl6569DeletedInvalidOIDs,
-	} {
+	for _, g := range nl6574RemovalLedgers() {
 		for _, d := range g {
 			lines = append(lines, fmt.Sprintf("%s\t%s\t%s", d.profile, d.oid, d.oldValue))
 		}
@@ -1238,9 +1364,7 @@ func TestResourceDataDefectLedgerValuesMatchTheParentRevision(t *testing.T) {
 func nl6574DeletedOIDNames() []string {
 	seen := map[string]struct{}{}
 	var out []string
-	for _, g := range [][]struct{ profile, oid, oldValue string }{
-		nl6574DeletedDeadRows, nl6571DeletedBareColumns, nl6569DeletedInvalidOIDs,
-	} {
+	for _, g := range nl6574RemovalLedgers() {
 		for _, d := range g {
 			o := strings.TrimPrefix(d.oid, ".")
 			if _, dup := seen[o]; dup {
@@ -1262,26 +1386,58 @@ func nl6574DeletedOIDNames() []string {
 //
 // The five nl6#569 value corrections do not appear here at all, which is the
 // point of doing it this way: they change values, not OID names, so the OID
-// digest must be explained by the 257 deleted names alone.
+// digest must be explained by the deleted names alone.
+// nl6574RestorableOIDNames is nl6574DeletedOIDNames minus the names that are
+// STILL in the corpus, which is what an OID-digest reversal must add back: that
+// digest hashes DISTINCT names corpus-wide, so a name another profile still
+// serves never left and restoring it would double-count.
+//
+// Exactly one name is in that position and it is pinned here rather than
+// filtered silently: panChassisType was deleted from twelve foreign profiles
+// (nl6#569's corpus-wide half) while palo_alto_pa3220 still serves it, corrected
+// to "PA-3220". A future edit that removed the last copy, or that left a
+// deletion incomplete, changes this partition and fails here — which is the
+// point of asserting it instead of computing it.
+//
+// Shared by all three reversal sites (this change's, nl6#570's and nl6#541's)
+// so the partition cannot be got right in one and wrong in another.
+func nl6574RestorableOIDNames(t *testing.T) []string {
+	t.Helper()
+
+	shipped := map[string]struct{}{}
+	for _, o := range collectShippedOIDs(t) {
+		shipped[o] = struct{}{}
+	}
+	var toRestore, stillShipped []string
+	for _, o := range nl6574DeletedOIDNames() {
+		if _, ok := shipped[o]; ok {
+			stillShipped = append(stillShipped, o)
+			continue
+		}
+		toRestore = append(toRestore, o)
+	}
+	if len(stillShipped) != 1 || stillShipped[0] != "1.3.6.1.4.1.25461.2.1.2.2.1.0" {
+		t.Fatalf("deleted names still shipped = %v, want exactly "+
+			"[1.3.6.1.4.1.25461.2.1.2.2.1.0] (panChassisType, kept by the Palo Alto profile). "+
+			"Either a deletion is incomplete, or the last copy of a name has gone and the OID "+
+			"digest needs re-deriving", stillShipped)
+	}
+	if len(toRestore) != 258 {
+		t.Errorf("%d deleted names vanished from the corpus, want 258", len(toRestore))
+	}
+	return toRestore
+}
+
 func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	deleted := nl6574DeletedOIDNames()
-	if len(deleted) != 257 {
-		t.Errorf("the ledger yields %d distinct deleted OID names, want 257", len(deleted))
+	if len(deleted) != 259 {
+		t.Errorf("the ledger yields %d distinct deleted OID names, want 259", len(deleted))
 	}
 
 	oids := collectShippedOIDs(t)
-	shipped := map[string]struct{}{}
-	for _, o := range oids {
-		shipped[o] = struct{}{}
-	}
-	for _, o := range deleted {
-		if _, ok := shipped[o]; ok {
-			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+
-				"pre-deletion digest or explain the new corpus", o)
-		}
-	}
+	toRestore := nl6574RestorableOIDNames(t)
 
-	restored := append(append([]string{}, oids...), deleted...)
+	restored := append(append([]string{}, oids...), toRestore...)
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -1300,11 +1456,11 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Errorf("restoring %d deleted OID names gives digest %s, want the pre-deletion value %s "+
 			"over %d OIDs.\nSo the re-pin of shippedOIDEncodingDigest is NOT explained by this "+
 			"change's deletions alone: something else about what a shipped OID puts on the wire "+
-			"has changed.", len(deleted), got,
+			"has changed.", len(toRestore), got,
 			shippedOIDEncodingDigestBeforeResourceDataDefects, checked)
 	}
 	t.Logf("%d OIDs with this change's %d deleted names restored reproduce the pre-change digest",
-		checked, len(deleted))
+		checked, len(toRestore))
 }
 
 // TestNoShippedWalkEmitsABareColumnOID is the nl6#571 SYMPTOM test, and it is
@@ -1337,31 +1493,29 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 // illegal varbind name. Those four profiles now model no storage, and that is
 // the correct outcome: do not restore the row to make the table non-empty.
 //
-// A test that requires zero of something has to prove it can still count, so
-// columnNodesIn is exercised on a synthetic set with a planted column first.
-// Without that, a detector broken to return nothing would pass here forever.
+// A test that requires zero of something cannot fail on its own, so this one
+// starts with assertBareColumnDetectionIsCorpusWide — the control shared with
+// TestBareColumnCensusHasNotGrown, which plants a bare column in one profile and
+// its instance in ANOTHER and requires the detector to report it. Narrow the scan
+// back to a single profile and that control fails here and in the census. It
+// replaces a control that could not do this: the previous one planted the column
+// and its instance in the same set, which a per-profile scan still finds, so
+// both guards could be narrowed with the whole suite green (nl6#571 review B1).
+//
+// It also asserts a floor on the OIDs walked, so a walk that stopped early cannot
+// pass by having nothing to find a column in.
 func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
+	assertBareColumnDetectionIsCorpusWide(t)
+
 	// A generous per-profile bound: the widest shipped profile walks a few tens
 	// of thousands of OIDs, and a runaway walk is a defect in its own right.
 	const maxSteps = 200000
-	// A floor on the total, so a walk that stopped early cannot pass by emitting
-	// nothing to find a column in. Today it is 42155.
+	// A floor on the total. Measured at 42127 today; the floor is deliberately
+	// slack, because its job is to catch a walk that broke, not to pin a count.
 	const walkedFloor = 40000
-
-	// Positive control for the detector itself.
-	control := columnNodesIn(map[string]struct{}{
-		".1.3.6.1.2.1.25.2.3.1.4":   {}, // a column
-		".1.3.6.1.2.1.25.2.3.1.4.1": {}, // its instance
-		".1.3.6.1.2.1.1.1.0":        {}, // an ordinary leaf
-	})
-	if len(control) != 1 {
-		t.Fatalf("columnNodesIn found %v in a set with exactly one planted column; the detector "+
-			"is broken, so the zero it reports below would mean nothing", control)
-	}
 
 	profiles := shippedProfileNames(t)
 	emitted := map[string]map[string]struct{}{} // profile -> emitted OIDs
-	union := map[string]struct{}{}
 	totalSteps := 0
 
 	for _, profile := range profiles {
@@ -1375,9 +1529,7 @@ func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
 			if next == "" || (cur != "" && compareOIDs(next, cur) <= 0) {
 				break
 			}
-			n := normaliseResourceOID(next)
-			set[n] = struct{}{}
-			union[n] = struct{}{}
+			set[normaliseResourceOID(next)] = struct{}{}
 			cur = next
 		}
 		if len(set) == 0 {
@@ -1395,43 +1547,20 @@ func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
 			"anything about what a walk names", totalSteps, walkedFloor)
 	}
 
-	columns := columnNodesIn(union)
-	for _, profile := range profiles {
-		for oid := range emitted[profile] {
-			if _, isColumn := columns[oid]; !isColumn {
-				continue
-			}
-			t.Errorf("%s: a walk emits a binding named %s, which some shipped profile's walk "+
-				"extends — so it is a table column with no instance sub-identifier, which is not "+
-				"a legal varbind name. Give the entry an instance suffix, or delete it. Deleting "+
-				"is what nl6#571 did in all 61 cases, including the four where it emptied a "+
-				"table", profile, oid)
-		}
+	found := bareColumnsAcrossProfiles(emitted)
+	for k, ext := range found {
+		t.Errorf("%s: a walk emits a binding named %s, which %s extends — so it is a table column "+
+			"with no instance sub-identifier, which is not a legal varbind name. Check the table's "+
+			"INDEX arity before deleting: at ciscoImageString the EXTENDING name was the illegal "+
+			"one, and nl6#571's first cut deleted the legal instance because of it", k[0], k[1], ext)
 	}
-	if len(columns) != 0 {
-		t.Errorf("%d OIDs the walks emit are column nodes: %v", len(columns), columns)
+	if msg := bareColumnCountViolation(len(found), 0); msg != "" {
+		t.Error(msg)
 	}
-	t.Logf("%d OIDs walked across %d profiles; none of them is a column node",
-		totalSteps, len(profiles))
-}
-
-// columnNodesIn returns the members of set that some OTHER member extends — the
-// table columns. Split out of the test so the test can prove it still detects
-// one, and written as a walk over each OID's own prefixes rather than a pairwise
-// scan, which at 42k OIDs is the difference between instant and 1.8e9 compares.
-func columnNodesIn(set map[string]struct{}) map[string]struct{} {
-	out := map[string]struct{}{}
-	for oid := range set {
-		for i := len(oid) - 1; i > 0; i-- {
-			if oid[i] != '.' {
-				continue
-			}
-			if _, ok := set[oid[:i]]; ok {
-				out[oid[:i]] = struct{}{}
-			}
-		}
+	if !t.Failed() {
+		t.Logf("%d OIDs walked across %d profiles; none of them is a column node",
+			totalSteps, len(profiles))
 	}
-	return out
 }
 
 // TestEveryDeletedDeadRowIsAnsweredByTheCycler fires on the DEFECT rather than
@@ -1487,9 +1616,13 @@ func TestEveryDeletedDeadRowIsAnsweredByTheCycler(t *testing.T) {
 // as "these are the values nl6#569 resolved", never as "these are verified
 // against a MIB by CI".
 func TestPaloAltoPANSubtreeMatchesTheMIB(t *testing.T) {
-	const panPrefix = ".1.3.6.1.4.1.25461.2.1.2."
+	const panPrefix = panEnterprisePrefix + ".2.1.2."
 
-	srv := deviceForProfile(t, "palo_alto_pa3220.json")
+	// panMgmtPanorama2Connected reads "not-connected": a PA-3220 with one
+	// Panorama is the ordinary case, and answering "connected" on both would
+	// assert a second Panorama that nothing else in the profile models.
+
+	srv := deviceForProfile(t, paloAltoProfile)
 
 	// The 8 OIDs that survive, with the object each one is. Every one is a
 	// DisplayString except panSessionActive, which is an Integer32.
@@ -1504,7 +1637,7 @@ func TestPaloAltoPANSubtreeMatchesTheMIB(t *testing.T) {
 		{panPrefix + "2.1.0", "panChassisType", "PA-3220", ASN1_OCTET_STRING},
 		{panPrefix + "3.3.0", "panSessionActive", "1800", ASN1_INTEGER},
 		{panPrefix + "4.1.0", "panMgmtPanoramaConnected", "connected", ASN1_OCTET_STRING},
-		{panPrefix + "4.2.0", "panMgmtPanorama2Connected", "connected", ASN1_OCTET_STRING},
+		{panPrefix + "4.2.0", "panMgmtPanorama2Connected", "not-connected", ASN1_OCTET_STRING},
 	} {
 		got := srv.findResponse(tc.oid)
 		if got != tc.want {
@@ -1534,7 +1667,7 @@ func TestPaloAltoPANSubtreeMatchesTheMIB(t *testing.T) {
 	// and .5 must stay empty until the three real panGPGWUtilization* children
 	// are added with their own sub-identifiers (deliberately NOT invented here).
 	for _, e := range shippedSNMPEntries(t) {
-		if e.Profile != "palo_alto_pa3220.json" || !strings.HasPrefix(e.OID, panPrefix+"4.") {
+		if e.Profile != paloAltoProfile || !strings.HasPrefix(e.OID, panPrefix+"4.") {
 			continue
 		}
 		if e.OID != panPrefix+"4.1.0" && e.OID != panPrefix+"4.2.0" {
@@ -1542,4 +1675,59 @@ func TestPaloAltoPANSubtreeMatchesTheMIB(t *testing.T) {
 				"and panMgmtPanorama2Connected (.4.2)", e.Part, e.OID)
 		}
 	}
+}
+
+// TestNoForeignPANOIDsShip is the corpus-wide half of nl6#569, and it exists
+// because TestPaloAltoPANSubtreeMatchesTheMIB cannot see the defect: that test
+// builds one device from one profile, so twelve OTHER profiles serving Palo Alto
+// enterprise OIDs were invisible to it, and to every load guard, and to both
+// corpus digests (the values encode fine — they are simply not this device's
+// objects).
+//
+// A vendor enterprise subtree is an identity claim. An Arista answering
+// panChassisType is not a fidelity approximation, it is a different vendor's MIB
+// on the wire, and a collector keyed on PAN-COMMON-MIB would treat that device as
+// a firewall. nl6#569 deleted 24 such entries across 12 profiles; the wider
+// cross-vendor audit is nl6#576, and this test is the part of it this change can
+// honestly close.
+func TestNoForeignPANOIDsShip(t *testing.T) {
+	// Positive control: the check must be able to see a planted entry, or the
+	// zero below would be vacuous in the same way nl6#571's census was.
+	if !isForeignPANEntry("arista_7280r3.json", panEnterprisePrefix+".2.1.2.2.1.0") {
+		t.Fatal("isForeignPANEntry does not flag a PAN OID on a non-PAN profile; the assertion " +
+			"below cannot fail")
+	}
+	if isForeignPANEntry(paloAltoProfile, panEnterprisePrefix+".2.1.2.2.1.0") {
+		t.Fatal("isForeignPANEntry flags the Palo Alto profile's own PAN OIDs")
+	}
+
+	offenders := map[string][]string{}
+	panOwn := 0
+	for _, e := range shippedSNMPEntries(t) {
+		switch {
+		case isForeignPANEntry(e.Profile, e.OID):
+			offenders[e.Profile] = append(offenders[e.Profile], e.OID)
+		case strings.HasPrefix(e.OID, panEnterprisePrefix+"."):
+			panOwn++
+		}
+	}
+	for profile, oids := range offenders {
+		sort.Strings(oids)
+		t.Errorf("%s serves %d OID(s) under the Palo Alto enterprise arc %s: %v. Delete them — "+
+			"do not correct them; a non-Palo-Alto device should not answer a PAN OID at all",
+			profile, len(oids), panEnterprisePrefix, oids)
+	}
+
+	// And the Palo Alto profile must still serve its own, or the check above
+	// would also pass on a corpus that had lost the subtree entirely.
+	if panOwn == 0 {
+		t.Errorf("no profile serves anything under %s any more, so this test would pass on an "+
+			"empty corpus", panEnterprisePrefix)
+	}
+	t.Logf("%d PAN entries ship, all on %s; %d foreign", panOwn, paloAltoProfile, len(offenders))
+}
+
+// isForeignPANEntry is the rule, as a function so the control can exercise it.
+func isForeignPANEntry(profile, oid string) bool {
+	return strings.HasPrefix(oid, panEnterprisePrefix+".") && profile != paloAltoProfile
 }
