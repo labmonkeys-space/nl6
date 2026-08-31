@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -555,20 +557,18 @@ func FuzzHandleGetBulk(f *testing.F) {
 	f.Add(buildGetBulkPDUForFuzz(0, 10, ".1.3.6.1.2.1.1.1.0"))
 	addGoldenV2cSeeds(f)
 	addAgreementSeeds(f)
-	// NOT WIRED to assertV2cParserAgreement, and the reason is measured rather
-	// than assumed: 21 of this target's 205 COMMITTED corpus entries already
-	// violate CLAIM 1, every one of them an instance of nl6#560 (the negative
-	// community length that walks parseGetBulkParams' cursor backwards onto a
-	// 0xa5 byte). Wiring the helper here today turns an ordinary `go test`
-	// red for a defect nl6#534 is not permitted to repair.
-	//
-	// That the corpus was already full of the defect while a panic-only
-	// fuzzer replayed it on every CI run is the clearest statement of what
-	// nl6#513 could not see. TestGetBulkCorpusIsBlockedOnNl6560 pins the
-	// blockage and starts FAILING once nl6#560 lands, which is the prompt to
-	// wire this target (nl6#534 review R5).
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		_ = fuzzTestServer(50).handleGetBulk(".1.3.6.1.2.1.1.1.0", data)
+	// WIRED to assertV2cParserAgreement as of nl6#560. It was the one
+	// raw-datagram target left out, and the reason was measured rather than
+	// assumed: 21 of its 205 COMMITTED corpus entries violated CLAIM 1, every
+	// one of them the negative community length that walked
+	// parseGetBulkParams' cursor backwards onto a 0xa5 byte. That a panic-only
+	// fuzzer had been replaying the defect on every CI run without noticing is
+	// the sharpest available statement of what nl6#513 could not see.
+	// TestGetBulkCorpusAgrees now pins the whole corpus as agreeing.
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := fuzzTestServer(50)
+		_ = s.handleGetBulk(".1.3.6.1.2.1.1.1.0", data)
+		assertV2cParserAgreement(t, s, data)
 	})
 }
 
@@ -880,10 +880,41 @@ func assertV2cParserAgreement(t fatalfTB, s *SNMPServer, data []byte) {
 		return
 	}
 
-	req := s.parseIncomingRequest(data)
-	pduTag := s.getPDUType(data)
 	oids, listOK := s.parseAllOIDsFromRequest(data)
 	nonRep, maxRep := s.parseGetBulkParams(data)
+	checkV2cParserAgreement(t, v2cParseResults{
+		req:    s.parseIncomingRequest(data),
+		pduTag: s.getPDUType(data),
+		oids:   oids,
+		listOK: listOK,
+		nonRep: nonRep,
+		maxRep: maxRep,
+	}, data)
+}
+
+// v2cParseResults is what the four envelope readers made of one datagram.
+//
+// It exists so the CLAIMS can be driven over results the parsers did not
+// produce. Every line of checkV2cParserAgreement runs only as an assertion, so
+// its ability to FIRE has to be demonstrated by something — and until nl6#559
+// and nl6#560 were fixed that something was the defects themselves, which are
+// now gone. Feeding the pre-fix results in directly keeps each claim's
+// firing half under test without keeping a defect in the parsers to supply it.
+type v2cParseResults struct {
+	req    SNMPRequest
+	pduTag byte
+	oids   []string
+	listOK bool
+	nonRep int
+	maxRep int
+}
+
+// checkV2cParserAgreement holds the claims themselves. See
+// assertV2cParserAgreement above for what they mean; this split is a
+// testability seam and nothing else.
+func checkV2cParserAgreement(t fatalfTB, r v2cParseResults, data []byte) {
+	t.Helper()
+	req, pduTag, oids, listOK, nonRep, maxRep := r.req, r.pduTag, r.oids, r.listOK, r.nonRep, r.maxRep
 
 	// CLAIM 1 — getPDUType and parseGetBulkParams agree on where the PDU
 	// starts.
@@ -900,15 +931,12 @@ func assertV2cParserAgreement(t fatalfTB, s *SNMPServer, data []byte) {
 	// Writing this as an equality in both directions is exactly the assertion
 	// that has to be relaxed until it is silent.
 	//
-	// KNOWN OPEN DEFECTS — this claim FIRES on live fuzzing, within about ten
-	// seconds of FuzzGetPDUType, on nl6#560 (parseGetBulkParams has no `< 0`
-	// guard on three declared lengths) and on nl6#559 (getPDUType assumes a
-	// one-octet version). Neither is fixed here: nl6#534 is the test change
-	// and a parser fix is a separate change with its own review. Their
-	// reproducers are repro560NegativeLengthWalksBackwards and
-	// repro559NonMinimalVersion below, deliberately NOT committed as fuzz
-	// seeds — a seed would fail an ordinary `go test` for a defect this change
-	// is not allowed to repair.
+	// This claim FOUND nl6#560 (parseGetBulkParams read three declared lengths
+	// with no `< 0` arm, so parseLength's -1 walked its cursor backward and it
+	// parsed a GETBULK out of bytes that were not one) and, with CLAIM 3,
+	// nl6#559 (getPDUType assumed a one-octet version). Both are fixed, and
+	// their reproducers are committed as fuzz seeds by addAgreementSeeds — an
+	// ordinary `go test` replays them, so a regression fails the suite.
 	if (nonRep != defaultBulkNonRepeat || maxRep != defaultBulkMaxRepeat) && pduTag != ASN1_GET_BULK {
 		t.Fatalf("PDU-offset disagreement: parseGetBulkParams read a GETBULK PDU "+
 			"(non-repeaters=%d, max-repetitions=%d, defaults are %d/%d) but getPDUType reports tag 0x%02X, "+
@@ -1003,6 +1031,29 @@ func assertV2cParserAgreement(t fatalfTB, s *SNMPServer, data []byte) {
 	// A zero-length version INTEGER (`02 00`) is NOT in this category: it
 	// desynchronises getPDUType's bare `pos++` and is a second instance of
 	// nl6#559, pinned as repro559ZeroLengthVersion.
+	//
+	// NOT ASSERTED, and this is the suite's sharpest remaining blind spot: a
+	// getPDUType BAIL that should have been a tag.
+	//
+	// ASN1_GET_REQUEST (0xA0) does double duty — it is a PDU tag AND the value
+	// getPDUType returns when it cannot read the envelope at all — so CLAIM 3
+	// exempts it, and CLAIM 1 cannot reach it either (parseGetBulkParams
+	// declines the same unreadable envelope and returns its defaults, which is
+	// CLAIM 1's own skip). A datagram on which getPDUType bails while
+	// parseIncomingRequest walks in and decodes a GETNEXT is therefore INVISIBLE
+	// to all three claims, and the dispatcher answers the walk step from the GET
+	// branch. That is not hypothetical: it is exactly what the first cut of the
+	// nl6#559 fix left standing at the community field, where getPDUType bailed
+	// on an unreadable length and parseIncomingRequest carried on
+	// (repro559CommunityLengthUnreadable).
+	//
+	// Closing it needs a PDU-TYPE field on SNMPRequest — a production change
+	// this file has already declined once, for the same reason, in CLAIM 3's
+	// own note. Until then the shape is pinned BEHAVIOURALLY rather than by an
+	// agreement claim, by TestUnreadableCommunityLengthIsWalkedAsAGetNext, and
+	// the production rule is that the four readers walk each envelope field
+	// the same way. Every instance of this bug found so far has been a
+	// violation of that rule rather than of a claim here.
 }
 
 // assertMalformedListIsDiscarded is the dispatcher-side half of CLAIM 2's
@@ -1034,27 +1085,25 @@ func assertMalformedListIsDiscarded(t fatalfTB, s *SNMPServer, data []byte) {
 	}
 }
 
-// ── nl6#559 / nl6#560: the two disagreements this change FOUND ───────────────
+// ── nl6#559 / nl6#560: the two disagreements nl6#534 FOUND, now fixed ────────
 //
-// Both are recorded here as named variables rather than as fuzz seeds. A seed
-// would fail an ordinary `go test` for a defect nl6#534 is not permitted to
-// repair (a parser fix is a separate change with its own review), so these are
-// driven only by TestAgreementHelperCatchesADisagreement, which asserts the
-// helper NOTICES them through a recorder instead of failing the suite.
-//
-// When nl6#559 and nl6#560 land, each of these belongs in addAgreementSeeds.
+// nl6#534 recorded these as named variables and deliberately kept them OUT of
+// the seed corpus: a seed would have failed an ordinary `go test` for a defect
+// that change was not permitted to repair. Both parsers are fixed here, so all
+// four are now committed seeds through addAgreementSeeds and an ordinary
+// `go test` replays them — a regression in either envelope reader fails the
+// suite rather than waiting for a fuzz campaign to rediscover it.
 
 // repro560NegativeLengthWalksBackwards is nl6#560, found by FuzzGetPDUType
-// after 445,685 executions.
+// after 445,685 executions and fixed by the `< 0` arms parseGetBulkParams now
+// carries on all seven of its declared-length reads.
 //
-// parseGetBulkParams reads the community length with parseLength and then does
+// parseGetBulkParams read the community length with parseLength and then did
 // `pos = newPos + commLen` with NO `commLen < 0` test. parseLength signals
-// failure with -1, so the cursor moves BACKWARD onto the community length byte
-// 0xa5 — which is also ASN1_GET_BULK — and it parses a GETBULK PDU out of
-// bytes that are not one, reporting non-repeaters 12336. getPDUType, which
-// does guard, answers its ASN1_GET_REQUEST bail. Three sites in that one
-// function lack the guard (verLen, commLen, reqIdLen) plus `pos += nonRepLen`;
-// every sibling parser guards all of them.
+// failure with -1, so the cursor moved BACKWARD onto the community length byte
+// 0xa5 — which is also ASN1_GET_BULK — and it parsed a GETBULK PDU out of
+// bytes that are not one, reporting non-repeaters 12336. getPDUType, which did
+// guard, answered its ASN1_GET_REQUEST bail.
 var repro560NegativeLengthWalksBackwards = []byte{
 	0x30, 0x30, 0x02, 0x01, 0x30, 0x04, 0xa5, 0x30, 0x02, 0x04,
 	0x30, 0x30, 0x30, 0x30, 0x02, 0x02, 0x30, 0x30,
@@ -1062,8 +1111,9 @@ var repro560NegativeLengthWalksBackwards = []byte{
 
 // nonMinimalVersionRequest builds a v2c request whose version INTEGER is
 // encoded in TWO content octets (`02 02 00 01`). BER — which SNMP uses, not
-// DER — permits it, and every parser in the package reads it correctly except
-// getPDUType, which skips the version as skipLength plus a bare `pos++`.
+// DER — permits it, and every parser in the package read it correctly except
+// getPDUType, which skipped the version as skipLength plus a bare `pos++` and
+// so reported the version's own second content octet (0x01) as the PDU tag.
 func nonMinimalVersionRequest(pduTag byte, oids []string) []byte {
 	var varbinds []byte
 	for _, oid := range oids {
@@ -1083,9 +1133,45 @@ func nonMinimalVersionRequest(pduTag byte, oids []string) []byte {
 	return encodeSequence(msg)
 }
 
+// unreadableCommunityLengthRequest builds a v1/v2c request whose community
+// OCTET STRING declares an INDEFINITE length (`04 80`), which parseLength
+// refuses. Everything after it is a well-formed PDU.
+//
+// This is nl6#559 ONE FIELD LATER, and it is what the first cut of the nl6#559
+// fix left standing: getPDUType bailed to ASN1_GET_REQUEST on an unreadable
+// community length while parseIncomingRequest leaves the cursor on the length
+// octet and carries on, decoding a GETNEXT with real varbind names. The
+// dispatcher runs on getPDUType's answer, so the walk step was served from the
+// GET branch.
+//
+// No agreement claim can see it, which is why it also needs
+// TestUnreadableCommunityLengthIsWalkedAsAGetNext: CLAIM 3 exempts
+// ASN1_GET_REQUEST because that is also getPDUType's bail value, and CLAIM 1
+// cannot fire because parseGetBulkParams declines the same datagram. See the
+// NOT ASSERTED entry at the end of checkV2cParserAgreement.
+func unreadableCommunityLengthRequest(pduTag byte, oids []string) []byte {
+	var varbinds []byte
+	for _, oid := range oids {
+		varbinds = append(varbinds, encodeVarBind(oid, encodeNull())...)
+	}
+	var pduBody []byte
+	pduBody = append(pduBody, encodeInteger(42)...)
+	pduBody = append(pduBody, encodeInteger(0)...)
+	pduBody = append(pduBody, encodeInteger(0)...)
+	pduBody = append(pduBody, encodeSequence(varbinds)...)
+	pdu := append([]byte{pduTag}, append(encodeLength(len(pduBody)), pduBody...)...)
+
+	var msg []byte
+	msg = append(msg, encodeInteger(snmpVersion2c)...)
+	msg = append(msg, 0x04, 0x80) // community, indefinite length: parseLength refuses it
+	msg = append(msg, pdu...)
+	return encodeSequence(msg)
+}
+
 // zeroLengthVersionRequest builds a v1/v2c request whose version INTEGER has
 // ZERO content octets (`02 00`). The same getPDUType defect as nl6#559 in the
-// other direction: its bare `pos++` steps one octet too FAR.
+// other direction: its bare `pos++` stepped one octet too FAR, landing on the
+// community string's length octet and reporting 0x06 as the PDU tag.
 func zeroLengthVersionRequest(pduTag byte, oids []string) []byte {
 	var varbinds []byte
 	for _, oid := range oids {
@@ -1114,7 +1200,417 @@ var (
 	repro559NonMinimalVersionGetNext = nonMinimalVersionRequest(ASN1_GET_NEXT, []string{".1.3.6.1.2.1.2.2.1.2.1"})
 	// The zero-content-octet instance of nl6#559.
 	repro559ZeroLengthVersion = zeroLengthVersionRequest(ASN1_GET_NEXT, []string{".1.3.6.1.2.1.2.2.1.2.1"})
+	// nl6#559 one field later: an unreadable COMMUNITY length. Every claim is
+	// silent on it in both directions, so its pin is a dispatcher test.
+	repro559CommunityLengthUnreadable = unreadableCommunityLengthRequest(ASN1_GET_NEXT, []string{repro559WalkStart})
 )
+
+// repro559WalkStart is the OID repro559CommunityLengthUnreadable walks FROM.
+// It is a name the fuzz fixture serves and is deliberately not the last one,
+// so a GETNEXT of it has a successor to return and the walk step is
+// distinguishable from a GET.
+const repro559WalkStart = ".1.3.6.1.2.1.2.2.1.2.1"
+
+// brokenGetBulkEnvelopes is one row per declared-length read in
+// parseGetBulkParams, each a datagram whose length is unreadable AT THAT FIELD
+// and nowhere else. Shared by the guard test and the fuzz seeds, the same
+// shape as brokenVarbindLists and brokenBulkScopedPDUs.
+//
+// Which of these rows WITNESSES its guard — fails when that one guard is
+// removed and no other — is measured and recorded in
+// TestParseGetBulkParamsBailsOnEveryUnreadableLength's comment, not in a field
+// here: nothing inside a test can observe its own mutant, so a `witness: true`
+// column would be prose with a compiler's blessing and no enforcement.
+var brokenGetBulkEnvelopes = []struct {
+	name string
+	data []byte
+	// wantNonRep/wantMaxRep are the documented defaults on every row but the
+	// last. The fields are read in order and each is committed as it is read,
+	// so a length that fails at max-repetitions keeps the non-repeaters value
+	// that was already read correctly: the guard's job is to stop the walk,
+	// not to unwind a field the parser did read. Stating the expectation per
+	// row rather than assuming 0/10 everywhere is what keeps that visible.
+	wantNonRep int
+	wantMaxRep int
+}{
+	{
+		// Indefinite-length outer SEQUENCE. parseLength refuses it (X.690's
+		// indefinite form is not admitted here), and skipLength — which the
+		// two sibling readers used to use — answers 1 for the same byte.
+		name:       "outer SEQUENCE length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: []byte{
+			0x30, 0x80, 0x02, 0x01, 0x01, 0x04, 0x00, 0xa5, 0x0c,
+			0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+		},
+	},
+	{
+		// The outer SEQUENCE declares more content than the datagram carries.
+		// Bounding rather than sign-checking is what catches this one.
+		name:       "outer SEQUENCE length over-declares",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: []byte{
+			0x30, 0x7f, 0x02, 0x01, 0x01, 0x04, 0x00, 0xa5, 0x0c,
+			0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+		},
+	},
+	{
+		name:       "version length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope([]byte{0x02, 0x80}, encodeOctetString(""), gbParamPDU(gbGoodParams)),
+	},
+	{
+		// The one nl6#560 named, and the only FIELD guard with a witness: the
+		// cursor lands back on the 0xa5 length octet, which is ALSO the GETBULK
+		// tag the next branch tests for.
+		//
+		// The bytes after it are laid out so the walk-back SUCCEEDS all the way
+		// to the parameters: 0x09 is a readable PDU length covering exactly the
+		// three INTEGERs. An earlier version of this row put a second 0xa5
+		// there and was masked — the mutant reached the PDU-length read, failed
+		// it, and bailed on the SIBLING guard, so the row passed with the guard
+		// it was written for removed. A witness has to survive every other
+		// guard on the path or it is not a witness for its own.
+		name:       "community length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), []byte{0x04, 0xa5},
+			append([]byte{byte(len(gbGoodParams))}, gbGoodParams...)),
+	},
+	{
+		// This row cannot witness the PDU-length SIGN guard, and the reason is
+		// worth knowing: the reslice below it, `data[:newPos+pduLen]`, truncates
+		// the buffer to one octet BEFORE the cursor when pduLen is -1, so the
+		// walk stops on the bounds check whether the sign guard is there or
+		// not. The sign guard is pinned by TestGetBulkCorpusAgrees instead
+		// (measured), and the reslice by the under-declare row.
+		name:       "PDU length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""),
+			append(append([]byte{ASN1_GET_BULK, 0x80}, gbGoodParams...), 0x00)),
+	},
+	{
+		// The two CONTAINER lengths do more than pass a sign test: they reslice
+		// the buffer, so a read cannot leave the container it belongs to. These
+		// two rows are the witnesses for that, and they are the only ones a
+		// sign check alone does not cover — here the length is perfectly
+		// READABLE and simply smaller than what follows, which is how a
+		// parameter gets read from outside the PDU that is supposed to own it
+		// (the nl6#537 rule).
+		name:       "outer SEQUENCE length under-declares",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: []byte{
+			0x30, 0x05, 0x02, 0x01, 0x01, 0x04, 0x00, // the SEQUENCE ends here
+			0xa5, 0x09, 0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07, // outside it
+		},
+	},
+	{
+		name:       "PDU length under-declares",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""),
+			append([]byte{ASN1_GET_BULK, 0x03, 0x02, 0x01, 0x01}, // PDU holds the request-id only
+				0x02, 0x01, 0x05, 0x02, 0x01, 0x07)), // the parameters sit outside it
+	},
+	{
+		name:       "PDU length over-declares",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: []byte{
+			0x30, 0x14, 0x02, 0x01, 0x01, 0x04, 0x00, 0xa5, 0x7f,
+			0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07,
+		},
+	},
+	{
+		name:       "request-id length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""),
+			gbParamPDU(append([]byte{0x02, 0x80}, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07))),
+	},
+	{
+		name:       "non-repeaters length",
+		wantNonRep: defaultBulkNonRepeat, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""),
+			gbParamPDU([]byte{0x02, 0x01, 0x01, 0x02, 0x80, 0x02, 0x01, 0x07})),
+	},
+	{
+		name: "max-repetitions length",
+		// Non-repeaters was already read, and correctly: 5.
+		wantNonRep: 5, wantMaxRep: defaultBulkMaxRepeat,
+		data: gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""),
+			gbParamPDU([]byte{0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x80})),
+	},
+}
+
+// gbGoodParams is request-id 1, non-repeaters 5, max-repetitions 7 — both
+// parameters deliberately NON-default, so a row that wrongly parses reports
+// 5/7 and is distinguishable from the 0/10 the guards must produce.
+var gbGoodParams = []byte{0x02, 0x01, 0x01, 0x02, 0x01, 0x05, 0x02, 0x01, 0x07}
+
+func gbParamPDU(body []byte) []byte {
+	return append([]byte{ASN1_GET_BULK}, append(encodeLength(len(body)), body...)...)
+}
+
+func gbEnvelope(version, community, pdu []byte) []byte {
+	var msg []byte
+	msg = append(msg, version...)
+	msg = append(msg, community...)
+	msg = append(msg, pdu...)
+	return encodeSequence(msg)
+}
+
+// TestParseGetBulkParamsBailsOnEveryUnreadableLength pins the nl6#560 guards
+// one field at a time.
+//
+// Removing the seven guards TOGETHER fails a great deal; removing them one at
+// a time was measured to fail nothing for six of them, which is the state this
+// table ends. Every row must answer the documented defaults: a length the
+// parser could not read means it does not know where the PDU is, and reporting
+// parameters from that position is the nl6#560 failure class whatever byte
+// pattern reached it.
+//
+// Which guard each row witnesses was MEASURED, by removing one guard at a time
+// and running the package suite. The result, and it is the honest half of this
+// test:
+//
+//	outer SEQUENCE length   sign  witnessed by the over-declares row
+//	                        bound witnessed by the under-declares row
+//	version length          sign  NO witness (structural, see below)
+//	community length        sign  witnessed by the community row, and by
+//	                              FuzzGetPDUType / FuzzParseIncomingRequest on
+//	                              the seeds this table supplies
+//	PDU length              sign  witnessed by TestGetBulkCorpusAgrees only
+//	                        bound witnessed by the under-declares row
+//	request-id length       sign  NO witness (structural)
+//	non-repeaters length    sign  NO witness (structural)
+//	max-repetitions length  sign  NO witness (structural)
+//
+// The four unwitnessed guards cannot be witnessed, and that is a property of
+// the encoding rather than a gap here. On a failed read parseLength returns
+// newPos pointing AT the offending length octet, so an unguarded
+// `pos = newPos + (-1)` lands the cursor exactly there. For the next branch to
+// then misfire, that octet would have to both FAIL parseLength (0x80, or a long
+// form declaring 0 or more than 4 length octets) and EQUAL the tag the branch
+// tests for. That is possible only at the community field, whose next branch
+// tests for 0xA5 — a byte that declares 37 length octets and is also
+// ASN1_GET_BULK, which is precisely why nl6#560 was found there. The version,
+// request-id and non-repeaters branches test for 0x04 and 0x02, both valid
+// short-form lengths parseLength never rejects, and the max-repetitions read is
+// the last thing the function does. Those four are therefore defence-in-depth:
+// they hold only while their siblings do, and they are kept so the rule "every
+// length read tests its sign" needs no exceptions — which is cheaper than
+// a reader having to re-derive this argument at each site.
+func TestParseGetBulkParamsBailsOnEveryUnreadableLength(t *testing.T) {
+	s := robustnessTestServer()
+
+	for _, tc := range brokenGetBulkEnvelopes {
+		t.Run(tc.name, func(t *testing.T) {
+			nonRep, maxRep := s.parseGetBulkParams(tc.data)
+			if nonRep != tc.wantNonRep || maxRep != tc.wantMaxRep {
+				t.Errorf("parseGetBulkParams = (%d, %d), want (%d, %d): the %s is unreadable, so "+
+					"the parser must stop rather than report parameters from a position it "+
+					"guessed (nl6#560)\ndatagram: % x",
+					nonRep, maxRep, tc.wantNonRep, tc.wantMaxRep, tc.name, tc.data)
+			}
+		})
+	}
+
+	// The positive control: the same envelope with every length readable must
+	// report 5/7, or the table above would pass on a function that returned
+	// the defaults unconditionally.
+	good := gbEnvelope(encodeInteger(snmpVersion2c), encodeOctetString(""), gbParamPDU(gbGoodParams))
+	if nonRep, maxRep := s.parseGetBulkParams(good); nonRep != 5 || maxRep != 7 {
+		t.Errorf("positive control: parseGetBulkParams = (%d, %d), want (5, 7)\ndatagram: % x",
+			nonRep, maxRep, good)
+	}
+}
+
+// TestExtractRequestIDGuardsNegativeLengths is nl6#560's second site, one
+// message layer up, with one row per declared-length read in the function.
+//
+// extractRequestIDFromScopedPDU skipped contextEngineID and contextName with
+// `pos = newPos + n` and no `n < 0` arm, so parseLength's -1 walked the cursor
+// BACKWARD onto the offending length octet. That octet is then re-read as a
+// tag, and 0xA0 is both a length byte parseLength refuses (32 length octets,
+// past its 4-octet ceiling) and ASN1_GET_REQUEST — so the function walked into
+// a PDU that is not there and returned a request id nobody sent. A v3 response
+// carrying it is answered to a request the manager cannot match.
+//
+// Each row is a witness for ONE guard: the first returns at the
+// contextEngineID skip, the second walks past a well-formed contextEngineID so
+// that removing only the contextName guard is caught, and the last two cover
+// the PDU length, which reads a request id out of a PDU whose own extent is
+// unknown rather than walking backward. The witness value is exact — 12345
+// unguarded against the documented fallback of 1 — because "not 12345" also
+// passes for a function that fails some other way.
+//
+// No agreement assertion covers this function: the four self-differential
+// readers describe the v1/v2c envelope, and a scoped PDU has no second reader
+// here, so the guards need their own subject or reverting one is silent.
+func TestExtractRequestIDGuardsNegativeLengths(t *testing.T) {
+	s := robustnessTestServer()
+
+	tests := []struct {
+		name      string
+		scopedPDU []byte
+	}{
+		{
+			name: "contextEngineID length",
+			scopedPDU: []byte{
+				0x04, 0xa0, // contextEngineID OCTET STRING, unreadable length 0xA0
+				0x06,                   // what the unguarded walk re-reads as a PDU length
+				0x02, 0x02, 0x30, 0x39, // INTEGER 12345 — the invented request id
+				0x05, 0x00, 0x00, 0x00, // padding to clear the 10-byte floor
+			},
+		},
+		{
+			name: "contextName length",
+			scopedPDU: []byte{
+				0x04, 0x00, // a well-formed empty contextEngineID, so the walk gets past it
+				0x04, 0xa0, // contextName OCTET STRING, unreadable length 0xA0
+				0x06,
+				0x02, 0x02, 0x30, 0x39,
+				0x05, 0x00, 0x00,
+			},
+		},
+		{
+			name: "PDU length",
+			scopedPDU: []byte{
+				0x04, 0x00, 0x04, 0x00,
+				0xa0, 0x80, // GetRequest whose length is the indefinite form
+				0x02, 0x02, 0x30, 0x39,
+				0x05, 0x00,
+			},
+		},
+		{
+			name: "PDU length over-declares",
+			scopedPDU: []byte{
+				0x04, 0x00, 0x04, 0x00,
+				0xa0, 0x7f, // declares 127 content octets; six are present
+				0x02, 0x02, 0x30, 0x39,
+				0x05, 0x00,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := s.extractRequestIDFromScopedPDU(tc.scopedPDU); got != 1 {
+				t.Errorf("extractRequestIDFromScopedPDU = %d, want the fallback 1: the %s is "+
+					"unreadable, so the request id was read out of bytes that are not a PDU "+
+					"(nl6#560)\nscoped PDU: % x", got, tc.name, tc.scopedPDU)
+			}
+		})
+	}
+
+	// Positive control: the same shape with every length readable must return
+	// the request id, or the rows above would pass on a function that returned
+	// 1 unconditionally.
+	good := []byte{0x04, 0x00, 0x04, 0x00, 0xa0, 0x04, 0x02, 0x02, 0x30, 0x39, 0x05, 0x00}
+	if got := s.extractRequestIDFromScopedPDU(good); got != 12345 {
+		t.Errorf("positive control: extractRequestIDFromScopedPDU = %d, want 12345\nscoped PDU: % x",
+			got, good)
+	}
+}
+
+// syntheticResultsMarker stands where a datagram would be in the synthetic
+// rows of TestAgreementHelperCatchesADisagreement. The claims print the
+// datagram, and passing nil there produces a message ending in "datagram: "
+// with nothing after it, which reads like a real failure on empty input.
+// TestUnreadableCommunityLengthIsWalkedAsAGetNext pins nl6#559's community
+// instance, which no agreement claim can see (see the NOT ASSERTED entry at
+// the end of checkV2cParserAgreement).
+//
+// The datagram is a GETNEXT whose community declares an indefinite length.
+// parseIncomingRequest has always read it as a GETNEXT of a real name; the
+// question is whether getPDUType agrees, and the only oracle-free way to ask
+// is the DISPATCHER, which runs on getPDUType's answer. A GETNEXT returns the
+// SUCCESSOR of the requested name; a GET returns the requested name itself, so
+// the two branches are distinguishable from the response alone without this
+// test needing to know which OID the successor is.
+//
+// Asserting the tag as well is deliberate: the response check alone would pass
+// if the walk were served for some other reason, and the tag check alone is the
+// kind of assertion that keeps passing while the dispatcher changes under it.
+func TestUnreadableCommunityLengthIsWalkedAsAGetNext(t *testing.T) {
+	s := newTestServer(fuzzFixtureOIDs(20))
+	data := repro559CommunityLengthUnreadable
+
+	if tag := s.getPDUType(data); tag != ASN1_GET_NEXT {
+		t.Errorf("getPDUType = 0x%02X, want GETNEXT (0x%02X): it bailed on the community "+
+			"length while parseIncomingRequest walked past it (nl6#559, community instance)"+
+			"\ndatagram: % x", tag, ASN1_GET_NEXT, data)
+	}
+	if req := s.parseIncomingRequest(data); req.OID != repro559WalkStart {
+		t.Fatalf("premise broken: parseIncomingRequest reads %q, want %q — this datagram is "+
+			"only a witness while that parser reads the name\ndatagram: % x",
+			req.OID, repro559WalkStart, data)
+	}
+
+	resp := s.handleSNMPv2cRequest(data)
+	if len(resp) == 0 {
+		t.Fatalf("the dispatcher discarded the datagram\ndatagram: % x", data)
+	}
+	names, ok := s.parseAllOIDsFromRequest(resp)
+	if !ok || len(names) == 0 {
+		t.Fatalf("the response carries no readable varbind name (ok=%v, names=%q)\nresponse: % x",
+			ok, names, resp)
+	}
+	if names[0] == repro559WalkStart {
+		t.Errorf("the walk step was answered from the GET branch: the response names the "+
+			"REQUESTED oid %q instead of its successor\ndatagram: % x\nresponse: % x",
+			repro559WalkStart, data, resp)
+	}
+}
+
+// TestAllThreeEnvelopeReadersStopAtAnUnreadableOuterLength pins the outer
+// SEQUENCE length, which nl6#560 left read three different ways.
+//
+// parseGetBulkParams bailed, while getPDUType and parseIncomingRequest stepped
+// over it with skipLength — a function with no failure signal, which answers a
+// malformed long-form length with a plausible `1 + lengthBytes` skip. On the
+// datagram below that lenient walk lands exactly on a GETNEXT tag, so the two
+// readers disagreed about a datagram whose outer length neither of them could
+// read.
+//
+// The claim is agreement, not any particular answer: all three stop. That is
+// also what parseAllOIDsFromRequest does (it reports the list malformed and the
+// dispatcher discards, nl6#537), so the datagram is answered by nobody rather
+// than by a GET branch that guessed.
+func TestAllThreeEnvelopeReadersStopAtAnUnreadableOuterLength(t *testing.T) {
+	s := newTestServer(fuzzFixtureOIDs(20))
+
+	// 30 80 is the indefinite form: parseLength refuses it, skipLength answers
+	// 1. Everything after it is a well-formed GETNEXT of a served name, so a
+	// lenient reader finds 0xA1 and a strict one finds nothing.
+	data := []byte{0x30, 0x80, 0x02, 0x01, 0x01, 0x04, 0x00, 0xa1, 0x11,
+		0x02, 0x01, 0x2a, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+		0x30, 0x06, 0x30, 0x04, 0x06, 0x00, 0x05, 0x00}
+
+	if tag := s.getPDUType(data); tag != ASN1_GET_REQUEST {
+		t.Errorf("getPDUType = 0x%02X, want its ASN1_GET_REQUEST bail (0x%02X): the outer "+
+			"SEQUENCE length is unreadable, so it must not walk on with a skip computed "+
+			"from a length it could not read\ndatagram: % x", tag, ASN1_GET_REQUEST, data)
+	}
+	if req := s.parseIncomingRequest(data); req.OID != defaultParsedOID || req.RequestID != defaultParsedRequestID {
+		t.Errorf("parseIncomingRequest read OID %q / request-id %d past an unreadable outer "+
+			"length, want its defaults %q / %d\ndatagram: % x",
+			req.OID, req.RequestID, defaultParsedOID, defaultParsedRequestID, data)
+	}
+	if nonRep, maxRep := s.parseGetBulkParams(data); nonRep != defaultBulkNonRepeat || maxRep != defaultBulkMaxRepeat {
+		t.Errorf("parseGetBulkParams = (%d, %d), want the defaults (%d, %d)",
+			nonRep, maxRep, defaultBulkNonRepeat, defaultBulkMaxRepeat)
+	}
+
+	// The positive control: the SAME datagram with a readable outer length is
+	// served as a walk, so the assertions above are about the length byte and
+	// not about the rest of the datagram being unusable.
+	good := append([]byte{}, data...)
+	good[1] = byte(len(data) - 2)
+	if tag := s.getPDUType(good); tag != ASN1_GET_NEXT {
+		t.Errorf("positive control: getPDUType = 0x%02X, want GETNEXT (0x%02X)\ndatagram: % x",
+			tag, ASN1_GET_NEXT, good)
+	}
+}
+
+var syntheticResultsMarker = []byte("SYNTHETIC-RESULTS-NO-DATAGRAM")
 
 // recordingTB is a fatalfTB that records instead of aborting.
 //
@@ -1149,10 +1645,17 @@ func (r *recordingTB) fired(phrase string) bool {
 // independently (the two defects nl6#534 found) and over the well-formed
 // agreement seeds, and asserts which claims fire and which stay silent.
 //
-// CLAIM 2 has no data-only witness, and that absence IS its property: two
-// correct name readers cannot be made to disagree by choosing bytes. It is
-// demonstrated by mutation (drop a byte from parseIncomingRequest's name
-// decode) and is asserted SILENT here, which is the half a data test can pin.
+// Until nl6#559 and nl6#560 were fixed, the FIRING half of that subject came
+// from the defects themselves: four reproducers whose verdict was known
+// independently. Fixing the parsers removed every datagram that can make a
+// correct parser set disagree — by construction, since agreement is now the
+// property — so the firing half is driven through checkV2cParserAgreement with
+// the results the PRE-FIX parsers actually returned. The reproducer datagrams
+// stay, as the silent regression rows that pin the fixes.
+//
+// CLAIM 2 had no witness of either kind before: two correct name readers
+// cannot be made to disagree by choosing bytes. Synthetic results give it its
+// firing half, and it keeps its silent half over the real datagrams.
 func TestAgreementHelperCatchesADisagreement(t *testing.T) {
 	s := newTestServer(fuzzFixtureOIDs(20))
 
@@ -1162,35 +1665,144 @@ func TestAgreementHelperCatchesADisagreement(t *testing.T) {
 		claim3 = "PDU-tag disagreement"
 	)
 
+	// The firing half: parse results no correct parser set produces any more.
+	//
+	// The first three are MEASURED, not modelled. They were captured by
+	// checking the pre-change production files out over the current test file
+	// and printing all four readers' output for each reproducer datagram:
+	//
+	//	git show HEAD~1:go/nl6/snmp_server.go > snmp_server.go   (and _handlers, _response)
+	//	go test ./nl6/ -run TestZZPrefixCapture -v                (a throwaway logging test)
+	//
+	//	repro560NegativeLengthWalksBackwards  getPDUType=0xA0 params=(12336,10) req.OID=default
+	//	repro559NonMinimalVersion (GETBULK)   getPDUType=0x01 params=(0,7)      req.OID=name
+	//	repro559NonMinimalVersionGetNext      getPDUType=0x01 params=(0,10)     req.OID=name
+	//	repro559ZeroLengthVersion             getPDUType=0x06 params=(0,10)     req.OID=name
+	//	repro559CommunityLengthUnreadable     getPDUType=0xA0 params=(0,10)     req.OID=name
+	//
+	// Hand-authoring them would make a guard look reachable when it is not,
+	// which is the failure the nl6#534 review already paid for once. The rows
+	// below are those lines transcribed.
+	//
+	// data is a MARKER rather than nil: a synthetic row's failure message ends
+	// in the datagram, and an empty one there is indistinguishable from a real
+	// datagram that happened to be empty.
+	synthetic := []struct {
+		name   string
+		res    v2cParseResults
+		fires  []string
+		silent []string
+	}{
+		{
+			name: "pre-fix nl6#560: parseGetBulkParams invents a GETBULK, getPDUType bails",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: defaultParsedOID},
+				pduTag: ASN1_GET_REQUEST,
+				nonRep: 12336,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim1},
+			silent: []string{claim2, claim3},
+		},
+		{
+			name: "pre-fix nl6#559: getPDUType reports the version content octet 0x01",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: 0x01,
+				oids:   []string{roundTripOIDs[0]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: 7,
+			},
+			fires:  []string{claim1, claim3},
+			silent: []string{claim2},
+		},
+		{
+			name: "pre-fix nl6#559: zero-length version, getPDUType reports 0x06",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: 0x06,
+				oids:   []string{roundTripOIDs[0]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim3},
+			silent: []string{claim1, claim2},
+		},
+		{
+			// The BLIND SPOT, asserted as such. This is what the pre-fix
+			// parsers returned for repro559CommunityLengthUnreadable: a
+			// getPDUType bail where parseIncomingRequest read a GETNEXT with
+			// a real name. Every claim is silent, because ASN1_GET_REQUEST is
+			// both a PDU tag and getPDUType's bail value (CLAIM 3's exemption)
+			// and parseGetBulkParams declines the same envelope (CLAIM 1's
+			// skip). It is pinned behaviourally instead, by
+			// TestUnreadableCommunityLengthIsWalkedAsAGetNext; this row exists
+			// so that a future claim which CAN see it fails here first and is
+			// noticed rather than silently widening the suite.
+			name: "pre-fix nl6#559 community instance: no claim can see it",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: ASN1_GET_REQUEST,
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			silent: []string{claim1, claim2, claim3},
+		},
+		{
+			name: "two name readers disagree about the first varbind name",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: ASN1_GET_REQUEST,
+				oids:   []string{roundTripOIDs[1]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim2},
+			silent: []string{claim1, claim3},
+		},
+	}
+	for _, tt := range synthetic {
+		t.Run("synthetic: "+tt.name, func(t *testing.T) {
+			var rec recordingTB
+			checkV2cParserAgreement(&rec, tt.res, syntheticResultsMarker)
+			for _, want := range tt.fires {
+				if !rec.fired(want) {
+					t.Errorf("%q did not fire; the helper reported %d message(s): %q",
+						want, len(rec.msgs), rec.msgs)
+				}
+			}
+			for _, notWant := range tt.silent {
+				if rec.fired(notWant) {
+					t.Errorf("%q fired but must not; messages: %q", notWant, rec.msgs)
+				}
+			}
+		})
+	}
+
 	tests := []struct {
 		name   string
 		data   []byte
 		fires  []string
 		silent []string
-	}{
-		{
-			name:   "nl6#560 negative community length walks the cursor backwards",
-			data:   repro560NegativeLengthWalksBackwards,
-			fires:  []string{claim1},
-			silent: []string{claim2, claim3},
-		},
-		{
-			name:  "nl6#559 non-minimal version, GETBULK",
-			data:  repro559NonMinimalVersion,
-			fires: []string{claim1, claim3},
-		},
-		{
-			name:   "nl6#559 non-minimal version, GETNEXT",
-			data:   repro559NonMinimalVersionGetNext,
-			fires:  []string{claim3},
-			silent: []string{claim1, claim2},
-		},
-		{
-			name:   "nl6#559 zero-length version INTEGER",
-			data:   repro559ZeroLengthVersion,
-			fires:  []string{claim3},
-			silent: []string{claim1, claim2},
-		},
+	}{}
+	// The silent half: the four reproducers, which the two envelope fixes
+	// turned from disagreements into ordinary datagrams, plus the well-formed
+	// controls.
+	for _, d := range envelopeReproDatagrams() {
+		tests = append(tests, struct {
+			name   string
+			data   []byte
+			fires  []string
+			silent []string
+		}{
+			name:   "regression: " + d.name,
+			data:   d.data,
+			silent: []string{claim1, claim2, claim3},
+		})
 	}
 	for _, d := range agreementSeedDatagrams() {
 		tests = append(tests, struct {
@@ -1289,9 +1901,38 @@ func TestParserDefaultsMatchTheTestConstants(t *testing.T) {
 	}
 }
 
-// agreementSeedDatagrams is the single definition of the datagrams
-// addAgreementSeeds registers, so the seeds and the reachability test cannot
-// drift apart.
+// envelopeReproDatagrams is the nl6#559 / nl6#560 half of what
+// addAgreementSeeds registers: the five datagrams whose parse the envelope
+// fixes CHANGED.
+//
+// They are kept apart from agreementSeedDatagrams because the two lists answer
+// different questions. Those are well-formed datagrams chosen so each claim's
+// GUARD is satisfied by a committed seed; these are the mis-parsed shapes, and
+// their property is that every claim is now SILENT on them. Mixing them would
+// make TestAgreementSeedsReachEveryGuard's "seed satisfies the guard but
+// violates the claim" check read as a contradiction on a malformed input it
+// was never about.
+func envelopeReproDatagrams() []struct {
+	name string
+	data []byte
+} {
+	return []struct {
+		name string
+		data []byte
+	}{
+		{"nl6#560 negative community length", repro560NegativeLengthWalksBackwards},
+		{"nl6#559 non-minimal version, GETBULK", repro559NonMinimalVersion},
+		{"nl6#559 non-minimal version, GETNEXT", repro559NonMinimalVersionGetNext},
+		{"nl6#559 zero-length version INTEGER", repro559ZeroLengthVersion},
+		{"nl6#559 unreadable community length", repro559CommunityLengthUnreadable},
+	}
+}
+
+// agreementSeedDatagrams is the single definition of the WELL-FORMED
+// datagrams addAgreementSeeds registers, so the seeds and the reachability
+// test cannot drift apart. addAgreementSeeds registers three lists in all —
+// this one, envelopeReproDatagrams and brokenGetBulkEnvelopes — and each is
+// defined once, for the same reason.
 func agreementSeedDatagrams() []struct {
 	name string
 	data []byte
@@ -1323,6 +1964,20 @@ func agreementSeedDatagrams() []struct {
 // claim.
 func addAgreementSeeds(f *testing.F) {
 	for _, d := range agreementSeedDatagrams() {
+		f.Add(d.data)
+	}
+	// The nl6#559 / nl6#560 reproducers, committed as seeds now that the
+	// parsers they mis-parsed are fixed. Every target that calls
+	// assertV2cParserAgreement therefore replays both defects on an ordinary
+	// `go test` run.
+	for _, d := range envelopeReproDatagrams() {
+		f.Add(d.data)
+	}
+	// One datagram per declared-length read in parseGetBulkParams. Four of
+	// those guards have no behavioural witness (see
+	// TestParseGetBulkParamsBailsOnEveryUnreadableLength), so seeding the
+	// shapes is what puts them in front of the agreement claims at all.
+	for _, d := range brokenGetBulkEnvelopes {
 		f.Add(d.data)
 	}
 }
@@ -1508,18 +2163,6 @@ func buildV2cRequestForRoundTrip(pduTag byte, version int, community string, req
 	return encodeSequence(msg)
 }
 
-// berContentLen returns the number of CONTENT octets in a single-TLV encoding
-// whose length is short form, which every encoder here produces for these
-// fields. Used to state a round-trip claim only inside the parser's documented
-// range rather than assuming the encoder stayed inside it.
-func berContentLen(tlv []byte) int {
-	if len(tlv) < 2 {
-		return -1
-	}
-	n, _ := parseLength(tlv, 1)
-	return n
-}
-
 // FuzzV2cRequestRoundTrip is the encoder half of nl6#534.
 //
 // The claim is `parser ≡ encoder⁻¹` and NOT `parser ≡ spec`: the ground truth
@@ -1572,6 +2215,13 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 	// Long-form community length on a short community: legal BER, and the only
 	// non-minimal style that no parser mishandles today, so it is safe to seed.
 	f.Add([]byte("public"), uint8(1), uint32(11), uint8(0), uint8(2), uint32(0), uint32(0), uint8(rtStyleCommunityLong))
+	// A request-id whose padded spelling needs FIVE content octets: legal BER,
+	// what an encoder emits for any value at or above 2^31, and the shape
+	// live fuzzing found within a second of nl6#559/#560 unblocking this
+	// target. Before nl6#562 the parser stopped at it and read the `06 01 30`
+	// inside the PDU as the first varbind name; now every claim above is made
+	// on it unconditionally.
+	f.Add([]byte("public"), uint8(1), uint32(0x7ffffffd), uint8(2), uint8(4), uint32(0), uint32(10), uint8(rtStyleRequestIDPadded))
 
 	f.Fuzz(func(t *testing.T, community []byte, version uint8, reqID uint32, pduSel uint8,
 		nVarbinds uint8, int1, int2 uint32, style uint8) {
@@ -1608,14 +2258,18 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 			t.Fatalf("version round-trip: encoded %d, parsed %d\ndatagram: % x", ver, req.Version, data)
 		}
 
+		// The request-id claim is made at EVERY width the encoder can emit,
+		// including the padded five-octet spelling. It used to be skipped
+		// past four content octets, because parseIncomingRequest documented a
+		// 1..4 bound and did not advance past a wider field — nl6#562, fixed
+		// in this change, so the skip is gone rather than merely narrowed.
+		// Two guards were removed here, not one: the same bound also silenced
+		// the first-name claim below, and a skip on both sides of a defect is
+		// how a target stops being able to see it.
 		if readsPDU {
-			// Skipped only when a padding octet pushes the content past the
-			// 1..4 range parseIncomingRequest documents.
-			if berContentLen(encodeIntegerPadded(rid)) <= 4 || st&rtStyleRequestIDPadded == 0 {
-				if req.RequestID != rid {
-					t.Fatalf("request-id round-trip: encoded %d, parsed %d\ndatagram: % x",
-						rid, req.RequestID, data)
-				}
+			if req.RequestID != rid {
+				t.Fatalf("request-id round-trip: encoded %d, parsed %d\ndatagram: % x",
+					rid, req.RequestID, data)
 			}
 		} else if req.RequestID != defaultParsedRequestID || req.OID != defaultParsedOID {
 			// The contrapositive of parseIncomingRequestReadsPDU: a PDU tag it
@@ -1702,6 +2356,11 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 				t.Fatalf("the server's own GetResponse does not parse as one: %v\nresponse: % x", err, resp)
 			}
 			wantID := rid
+			// A PDU tag the parser does not walk into is the only case left
+			// where the echo is the default: since nl6#562 the request-id is
+			// read at any width the encoder emits, so a padded one is echoed
+			// as itself rather than as 123 to a manager that sent something
+			// else.
 			if !readsPDU {
 				wantID = defaultParsedRequestID
 			}
@@ -1757,50 +2416,308 @@ func readFuzzCorpus(t *testing.T, dir string) [][]byte {
 	return out
 }
 
-// TestGetBulkCorpusIsBlockedOnNl6560 records, as an executable fact rather
-// than a comment, why FuzzHandleGetBulk is the one raw-datagram target that
-// does NOT call assertV2cParserAgreement.
+// wellFormedMinimalCorpus is a deterministic set of v1/v2c requests in the
+// MINIMAL spelling every shipped manager emits: one-octet version, short-form
+// lengths, an unpadded request-id inside 1..4 octets, names the fixture serves.
 //
-// Its committed corpus already contains inputs that violate CLAIM 1 — all of
-// them nl6#560, the missing `< 0` guard in parseGetBulkParams — so wiring the
-// helper would turn an ordinary `go test` red for a defect nl6#534 may not
-// repair. That a panic-only fuzz corpus had been replaying the defect on every
-// CI run without noticing is the sharpest available statement of what nl6#513
-// could not see.
+// Built from nl6's own encoders rather than from captured bytes, so it stays
+// readable, and deliberately NOT fuzz-derived: the acceptance criterion is
+// about the datagrams real managers send, and a corpus of mutated bytes would
+// bury three deliberate changes on malformed input under noise.
+func wellFormedMinimalCorpus() [][]byte {
+	names := []string{
+		".1.3.6.1.2.1.1.1.0",
+		".1.3.6.1.2.1.2.2.1.2.1",
+		".1.3.6.1.2.1.2.2.1.5.3",
+		".1.3.6.1.2.1.31.1.1.1.6.7",
+	}
+	var out [][]byte
+	for _, tag := range []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK} {
+		for _, ver := range []int{snmpVersion1, snmpVersion2c} {
+			for _, comm := range []string{"public", "", "a-very-long-community-string-past-the-usual"} {
+				for _, rid := range []int{1, 42, 65536, 2147483647} {
+					for n := 1; n <= len(names); n++ {
+						out = append(out, buildV2cRequestForRoundTrip(
+							tag, ver, comm, rid, names[:n], 0, 10, 0))
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// TestWellFormedResponsesUnchangedOnTheWire is the in-tree evidence for the
+// acceptance criterion that a well-formed minimal datagram is answered
+// byte-identically to before nl6#559/#560/#562.
 //
-// This test FAILS once nl6#560 is fixed. That is the design: the failure is
-// the prompt to wire FuzzHandleGetBulk (and to promote
-// repro560NegativeLengthWalksBackwards into addAgreementSeeds) and then delete
-// this test.
-func TestGetBulkCorpusIsBlockedOnNl6560(t *testing.T) {
+// Same shape and same reason as TestShippedOIDsUnchangedOnTheWire (nl6#529):
+// the digest was computed against the PRE-CHANGE tree, not re-derived from the
+// new code, or it would prove only that the code agrees with itself. It was
+// captured by checking the pre-change production files out over this test file
+// and running this test, which then reported the digest it wanted:
+//
+//	git show faba13a:go/nl6/snmp_server.go > snmp_server.go   (and _handlers, _response, snmpv3, snmpv3_crypto)
+//	go test ./nl6/ -run TestWellFormedResponsesUnchangedOnTheWire -v
+//
+// What it does NOT cover, stated because a digest test invites the assumption
+// that it covers everything: malformed and non-minimally-encoded datagrams,
+// where this change deliberately DOES alter the answer (that is the fix), and
+// v3, which has no v1/v2c envelope. Those are pinned by the agreement claims
+// and the reproducer seeds instead.
+//
+// %d responses, %s over the corpus. A single changed byte in any response
+// moves the digest, and the failure message names the first datagram whose
+// response length changed, which is the cheapest usable pointer into a digest
+// mismatch.
+func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
+	const wantDigest = "b0983dbe24394884f7cae37e5513c35eb3ff5a01bf2562f4bd7a596e5e8c0d22"
+
+	s := newTestServer(fuzzFixtureOIDs(20))
+	corpus := wellFormedMinimalCorpus()
+	if len(corpus) == 0 {
+		t.Fatal("empty corpus")
+	}
+
+	h := sha256.New()
+	for _, data := range corpus {
+		resp := s.handleSNMPv2cRequest(data)
+		h.Write(data)
+		h.Write([]byte{0})
+		h.Write(resp)
+		h.Write([]byte{0})
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+
+	// Determinism first: a digest over responses that vary run to run would
+	// fail for a reason that has nothing to do with the wire format, and the
+	// next reader would delete the test rather than the non-determinism.
+	h2 := sha256.New()
+	for _, data := range corpus {
+		resp := s.handleSNMPv2cRequest(data)
+		h2.Write(data)
+		h2.Write([]byte{0})
+		h2.Write(resp)
+		h2.Write([]byte{0})
+	}
+	if got2 := hex.EncodeToString(h2.Sum(nil)); got2 != got {
+		t.Fatalf("the corpus is not deterministic within one run: %s then %s — a response "+
+			"carries a live counter or a timestamp and this test cannot pin it", got, got2)
+	}
+
+	if got != wantDigest {
+		t.Errorf("responses over %d well-formed minimal datagrams digest to %s, want %s.\n"+
+			"This change may only alter the answer for NON-minimal or malformed encodings; a "+
+			"mismatch here means a datagram a real manager sends is answered differently.",
+			len(corpus), got, wantDigest)
+	}
+}
+
+// TestPaddedVersionSelectsSNMPv1Behaviour pins the VALUE half of nl6#559.
+//
+// The first cut fixed the version OFFSET and left `versionLen == 1` on the
+// value, so `02 02 00 00` — a legal BER encoding of version 1 — parsed as the
+// snmpVersion2c DEFAULT. Nothing in the response says "version", so a test on
+// req.Version alone would pass over a parser that read it and then ignored it;
+// the assertion that matters is a v1-SPECIFIC BEHAVIOUR, and the Counter64
+// GET-divert (nl6#524) is the cheapest one to reach: v1 has no Counter64, so a
+// GET of an ifHC column must answer noSuchName rather than tag 0x46.
+//
+// Three rows, because either half alone is weak: the minimal v1 spelling is
+// the control that the datagram shape reaches the divert at all, the padded v1
+// spelling is the claim, and the v2c row is the contrapositive — a parser that
+// diverted everything would pass the first two.
+func TestPaddedVersionSelectsSNMPv1Behaviour(t *testing.T) {
+	s := newTestServer(fuzzFixtureOIDs(20))
+	const hcColumn = ".1.3.6.1.2.1.31.1.1.1.6.7" // ifHCInOctets, a Counter64
+
+	tests := []struct {
+		name       string
+		version    int
+		style      int
+		wantVer    int
+		wantDivert bool
+	}{
+		{"minimal v1 (control)", snmpVersion1, 0, snmpVersion1, true},
+		{"padded v1 (nl6#559, value half)", snmpVersion1, rtStyleVersionPadded, snmpVersion1, true},
+		{"padded v2c (contrapositive)", snmpVersion2c, rtStyleVersionPadded, snmpVersion2c, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := buildV2cRequestForRoundTrip(ASN1_GET_REQUEST, tt.version, "public", 42,
+				[]string{hcColumn}, 0, 0, tt.style)
+
+			if got := s.parseIncomingRequest(data).Version; got != tt.wantVer {
+				t.Errorf("parseIncomingRequest version = %d, want %d\ndatagram: % x",
+					got, tt.wantVer, data)
+			}
+
+			resp := s.handleSNMPv2cRequest(data)
+			if len(resp) == 0 {
+				t.Fatalf("the dispatcher discarded the datagram\ndatagram: % x", data)
+			}
+			hdr := decodeResponseHeader(t, resp)
+			diverted := hdr.errStatus == snmpErrNoSuchName
+			if diverted != tt.wantDivert {
+				t.Errorf("Counter64 GET-divert: error-status=%d (diverted=%v), want diverted=%v — "+
+					"the version VALUE decides this, so a v1 request read as v2c gets a "+
+					"Counter64 its decoder has no type for (nl6#524)\ndatagram: % x\nresponse: % x",
+					hdr.errStatus, diverted, tt.wantDivert, data, resp)
+			}
+		})
+	}
+}
+
+// TestIsSNMPv3RequestReadsThePaddedVersion pins nl6#559's third site.
+//
+// isSNMPv3Request is the gate every datagram passes before dispatch, and it
+// required a one-octet version, so a BER-legal `02 02 00 03` was classified
+// not-v3 and fell to the v2c path, which reads msgGlobalData where it expects
+// a community. The classifier and parseSNMPv3Message are asserted TOGETHER: a
+// gate that admits what the parser then rejects turns a wrong answer into a
+// silent discard, which is better but still wrong, and the two drifting apart
+// is the failure this pins.
+func TestIsSNMPv3RequestReadsThePaddedVersion(t *testing.T) {
+	s := fuzzTestServer(0)
+	minimal := v3DiscoveryRequest(t, s, false)
+	padded := withPaddedV3Version(t, minimal)
+
+	for _, tt := range []struct {
+		name string
+		data []byte
+	}{
+		{"minimal version (control)", minimal},
+		{"padded version 02 02 00 03", padded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !isSNMPv3Request(tt.data) {
+				t.Errorf("isSNMPv3Request = false, want true: a v3 message classified v2c is "+
+					"parsed with msgGlobalData where the community belongs\ndatagram: % x", tt.data)
+			}
+			msg, err := s.parseSNMPv3Message(tt.data)
+			if err != nil {
+				t.Fatalf("parseSNMPv3Message: %v — the classifier and the parser must agree "+
+					"about which datagrams are v3\ndatagram: % x", err, tt.data)
+			}
+			if msg.Version != SNMPV3_VERSION {
+				t.Errorf("parsed version = %d, want %d", msg.Version, SNMPV3_VERSION)
+			}
+		})
+	}
+}
+
+// withPaddedV3Version re-spells a v3 message's version INTEGER in two content
+// octets and re-encodes the outer SEQUENCE around it, which is legal BER and
+// what an encoder padding to a fixed field width emits.
+func withPaddedV3Version(t *testing.T, msg []byte) []byte {
+	t.Helper()
+	const minimalVersion = "\x02\x01\x03"
+	body := msg[2:] // strip the outer SEQUENCE tag and its short-form length
+	if !strings.HasPrefix(string(body), minimalVersion) {
+		t.Fatalf("premise broken: the v3 message does not start with a minimal version "+
+			"INTEGER\nmessage: % x", msg)
+	}
+	padded := append([]byte{0x02, 0x02, 0x00, 0x03}, body[len(minimalVersion):]...)
+	return encodeSequence(padded)
+}
+
+// TestAgreementHelperIsWiredIntoEveryRawDatagramTarget pins the wiring per
+// call site, the way TestGuardIsWiredIntoLoaders does for the resource guard.
+//
+// Deleting the assertV2cParserAgreement call from a target fails nothing
+// otherwise: the corpus tests re-run both committed corpora through the helper
+// directly, and the reproducer seeds are replayed by every other wired target,
+// so a target that quietly stopped asserting would keep a green suite and lose
+// only its LIVE fuzzing — which is the whole reason these targets exist.
+// nl6#560 is what that costs: FuzzHandleGetBulk was unwired for one release
+// and its committed corpus accumulated 21 instances of a defect nobody saw.
+//
+// Source inspection rather than behaviour, deliberately: the property is
+// "this call appears in this function", and there is no way to observe it from
+// outside a live fuzz run.
+func TestAgreementHelperIsWiredIntoEveryRawDatagramTarget(t *testing.T) {
+	src, err := os.ReadFile("snmp_parser_robustness_test.go")
+	if err != nil {
+		t.Fatalf("read own source: %v", err)
+	}
+
+	// Every target whose fuzz argument IS a v1/v2c datagram (or, for the
+	// round-trip target, a datagram it builds from one). Targets that fuzz a
+	// scoped PDU, a USM parameter block or a length byte are absent on
+	// purpose: the four readers describe the v1/v2c envelope and running them
+	// over anything else compares parsers on a structure none of them claims.
+	wired := []string{
+		"FuzzGetPDUType",
+		"FuzzParseIncomingRequest",
+		"FuzzParseAllOIDsFromRequest",
+		"FuzzParseGetBulkParams",
+		"FuzzIsSNMPv3Request",
+		"FuzzHandleSingleRequest",
+		"FuzzHandleGetRequestVarbinds",
+		"FuzzHandleGetBulk",
+		"FuzzV2cRequestRoundTrip",
+	}
+
+	bodies := map[string]string{}
+	parts := strings.Split(string(src), "\nfunc ")
+	for _, part := range parts[1:] {
+		name := part[:strings.IndexAny(part, "(")]
+		end := strings.Index(part, "\n}\n")
+		if end < 0 {
+			end = len(part)
+		}
+		bodies[name] = part[:end]
+	}
+
+	for _, name := range wired {
+		body, ok := bodies[name]
+		if !ok {
+			t.Errorf("%s: no such fuzz target in this file — renamed or deleted without "+
+				"updating this list", name)
+			continue
+		}
+		if !strings.Contains(body, "assertV2cParserAgreement(") {
+			t.Errorf("%s: does not call assertV2cParserAgreement. Every target that sees a raw "+
+				"v1/v2c datagram must, or its live-fuzz runs measure panics only — which is "+
+				"exactly how nl6#560 sat in a committed corpus unnoticed", name)
+		}
+	}
+}
+
+// TestGetBulkCorpusAgrees is the tripwire nl6#534 left here, discharged.
+//
+// It replaced TestGetBulkCorpusIsBlockedOnNl6560, which asserted that at least
+// one committed FuzzHandleGetBulk corpus entry still violated CLAIM 1 and was
+// written to FAIL the moment nl6#560 landed. It did fail, exactly here, and
+// the prompt it carried is discharged in full: FuzzHandleGetBulk is wired to
+// assertV2cParserAgreement, repro560NegativeLengthWalksBackwards is a
+// committed seed, and the negative assertion is replaced by this positive one
+// rather than deleted. Deleting it outright would have retired the only
+// standing check that this corpus — 21 of whose entries were instances of the
+// defect — agrees.
+func TestGetBulkCorpusAgrees(t *testing.T) {
 	s := newTestServer(fuzzFixtureOIDs(20))
 	corpus := readFuzzCorpus(t, "FuzzHandleGetBulk")
 
-	violating := 0
-	for _, data := range corpus {
+	for i, data := range corpus {
 		var rec recordingTB
 		assertV2cParserAgreement(&rec, s, data)
-		if rec.fired("PDU-offset disagreement") {
-			violating++
+		if len(rec.msgs) != 0 {
+			t.Errorf("corpus entry %d disagrees: %q\ndatagram: % x", i, rec.msgs, data)
 		}
 	}
-	if violating == 0 {
-		t.Fatalf("no entry in the %d-entry FuzzHandleGetBulk corpus violates CLAIM 1 any more. "+
-			"If nl6#560 is fixed, wire assertV2cParserAgreement into FuzzHandleGetBulk, move "+
-			"repro560NegativeLengthWalksBackwards into addAgreementSeeds, and delete this test.",
-			len(corpus))
-	}
-	t.Logf("%d of %d committed FuzzHandleGetBulk corpus entries violate CLAIM 1 (all nl6#560)",
-		violating, len(corpus))
+	t.Logf("%d committed FuzzHandleGetBulk corpus entries, no disagreement", len(corpus))
 }
 
 // TestEntryPointCorpusAgrees is the positive control for the target that IS
 // wired: every one of FuzzHandleSingleRequest's committed corpus entries must
 // satisfy all three claims.
 //
-// It exists because TestGetBulkCorpusIsBlockedOnNl6560 alone could be read as
-// "the claims fire on anything mutated enough". They do not: the same claims
-// over a 248-entry corpus of equally-mutated datagrams are silent.
+// It exists because a corpus test could be read as "the claims fire on
+// anything mutated enough". They do not: the same claims over a 248-entry
+// corpus of equally-mutated datagrams are silent. Before nl6#560 this was the
+// control for TestGetBulkCorpusIsBlockedOnNl6560, which asserted the opposite
+// about the other corpus; now both corpora are asserted to agree.
 func TestEntryPointCorpusAgrees(t *testing.T) {
 	s := newTestServer(fuzzFixtureOIDs(20))
 	corpus := readFuzzCorpus(t, "FuzzHandleSingleRequest")

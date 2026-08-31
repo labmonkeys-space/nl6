@@ -84,26 +84,3 @@ _bmad/
 # per-machine state, never committed. Start from inventory/devices.example.json.
 inventory/devices.json
 
-# nl6#534 / nl6#559 / nl6#560 — do not let a live `-fuzz` run commit a crasher.
-#
-# The self-differential agreement assertions in
-# go/nl6/snmp_parser_robustness_test.go fire on two OPEN parser defects
-# (nl6#559 getPDUType's one-octet version assumption, nl6#560
-# parseGetBulkParams' missing `< 0` guards), so every target that calls
-# assertV2cParserAgreement fails within seconds of live fuzzing. Go writes that
-# failing input to testdata/fuzz/<target>/, and committing it would fail an
-# ordinary `go test` for a defect nl6#534 is not permitted to repair.
-#
-# Only the target directories with NO committed corpus are listed. Ignoring
-# FuzzHandleSingleRequest/ or FuzzHandleGetBulk/ would silently swallow genuine
-# corpus additions to the 248 and 205 entries already tracked there — for those
-# two, delete a crasher by hand.
-#
-# REMOVE THIS BLOCK when nl6#559 and nl6#560 land.
-go/nl6/testdata/fuzz/FuzzGetPDUType/
-go/nl6/testdata/fuzz/FuzzParseIncomingRequest/
-go/nl6/testdata/fuzz/FuzzParseAllOIDsFromRequest/
-go/nl6/testdata/fuzz/FuzzParseGetBulkParams/
-go/nl6/testdata/fuzz/FuzzHandleGetRequestVarbinds/
-go/nl6/testdata/fuzz/FuzzIsSNMPv3Request/
-go/nl6/testdata/fuzz/FuzzV2cRequestRoundTrip/

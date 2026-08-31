@@ -339,31 +339,81 @@ func (s *SNMPServer) getPDUType(data []byte) byte {
 
 	pos := 0
 
-	// Skip SEQUENCE tag and length
+	// Skip SEQUENCE tag and length. Read it with parseLength rather than
+	// skipLength: skipLength has NO failure signal (it answers a malformed
+	// long-form length with `1 + lengthBytes`, a plausible-looking skip
+	// computed from a length it could not read), so a datagram whose outer
+	// length is unreadable used to be walked from a cursor nobody chose. The
+	// three envelope readers now agree here too — parseGetBulkParams already
+	// bailed, and having this one step over it instead was a divergence
+	// introduced by nl6#560, in the very field family this change exists to
+	// align.
 	if data[pos] != ASN1_SEQUENCE {
 		return ASN1_GET_REQUEST
 	}
 	pos++
-	pos += s.skipLength(data[pos:])
+	outerLen, newPos := parseLength(data, pos)
+	if outerLen < 0 {
+		return ASN1_GET_REQUEST
+	}
+	pos = newPos
 
-	// Skip version
+	// Skip version. Step over the number of content octets the INTEGER
+	// DECLARES, not one: SNMP is BER, not DER, so `02 02 00 01` is a legal
+	// encoding of version 1. The bare `pos++` this replaces assumed exactly
+	// one content octet, so a non-minimal version left the cursor SHORT, the
+	// byte read as the PDU tag was the version's own content octet, and
+	// handleSNMPv2cRequest dispatches on it — a GETNEXT or GETBULK answered
+	// from the GET branch (nl6#559).
+	//
+	// `02 00` is a DIFFERENT case and it is NOT legal BER: X.690 §8.3.1 says
+	// an INTEGER's contents octets shall consist of one or more octets. It is
+	// handled leniently anyway — every reader steps over zero octets, so all
+	// four agree on where the PDU begins and the datagram is served — rather
+	// than discarded under RFC 3412 §7.2, which would also be defensible.
+	// Leniency is the choice this parser family already makes for a
+	// structurally readable envelope (the strict reader for the part that
+	// must be exact is parseAllOIDsFromRequest, nl6#537). Its consequence is
+	// stated where it is felt: parseIncomingRequest reads no value, so the
+	// request is answered as v2c. Before this fix the bare `pos++` stepped one
+	// octet too FAR on it, onto the community's length octet.
+	//
+	// The `versionLen > 0` arm is both halves of the fix: it advances by the
+	// declared length, and it is the `n < 0` guard parseLength's -1 failure
+	// signal requires (nl6#513) — `pos += -1` would walk the cursor backward.
+	// It is deliberately byte-for-byte the shape parseIncomingRequest uses at
+	// snmp_response.go, because these two must agree about where the PDU
+	// begins and the cheapest way to guarantee that is to read it the same way.
 	if pos < len(data) && data[pos] == ASN1_INTEGER {
 		pos++
-		pos += s.skipLength(data[pos:])
-		pos++ // skip version value
+		versionLen, newPos := parseLength(data, pos)
+		pos = newPos
+		if versionLen > 0 {
+			pos += versionLen
+		}
 	}
 
 	// Skip community. Read the length through parseLength rather than as a
 	// raw byte: the raw read runs off the end when the OCTET STRING tag is
 	// the last byte of the datagram, and it also mis-reads a long-form
 	// length, which a community string of 128 bytes or more encodes as.
+	//
+	// This is byte-for-byte parseIncomingRequest's community read, and the
+	// equality is the point. Bailing here on an unreadable length — which is
+	// what nl6#559's first cut did — reproduced nl6#559 ONE FIELD LATER:
+	// parseIncomingRequest does not bail, it leaves the cursor at the length
+	// octet and carries on, so `30 xx 02 01 01 04 80 a1 …` had it decoding a
+	// GETNEXT with real varbind names while getPDUType answered its GET bail
+	// and handleSNMPv2cRequest dispatched the GET branch. Same symptom, same
+	// cause: the two readers walking one field differently. Committed as the
+	// seed repro559CommunityLengthUnreadable.
 	if pos < len(data) && data[pos] == ASN1_OCTET_STRING {
 		pos++
 		communityLen, newPos := parseLength(data, pos)
-		if communityLen < 0 {
-			return ASN1_GET_REQUEST
+		pos = newPos
+		if communityLen >= 0 && pos+communityLen <= len(data) {
+			pos += communityLen
 		}
-		pos = newPos + communityLen
 	}
 
 	// Get PDU type
@@ -374,7 +424,16 @@ func (s *SNMPServer) getPDUType(data []byte) byte {
 	return ASN1_GET_REQUEST
 }
 
-// Helper to skip length bytes
+// Helper to skip length bytes.
+//
+// Two callers remain, both inside parseIncomingRequest's variable-bindings
+// walk, and both deliberate: this function cannot report failure (it answers a
+// malformed long-form length with a plausible-looking `1 + lengthBytes`), so
+// every reader of an ENVELOPE field — outer SEQUENCE, version, community, PDU
+// — was moved to parseLength by nl6#559/#560. The two survivors sit below a
+// PDU tag the reader has already recognised, and the strict reader for that
+// part of the datagram is parseAllOIDsFromRequest (nl6#537), whose verdict the
+// dispatcher gates on. Do not add a third caller on an envelope field.
 func (s *SNMPServer) skipLength(data []byte) int {
 	if len(data) == 0 {
 		return 0
