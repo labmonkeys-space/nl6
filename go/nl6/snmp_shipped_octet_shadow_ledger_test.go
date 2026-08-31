@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1388,9 +1389,16 @@ func restoreNl6570OctetEntries(t *testing.T, cur map[[2]string]string) {
 
 // TestOctetShadowDeletionReproducesTheParentCorpus is the before/after pin for
 // the data half of nl6#570. Reversing the ledger against today's corpus must
-// reproduce the parent tag digest, so the ledger cannot drift from the tree in
-// either direction: a missing row, a wrong old value, or a shipped-data edit
-// made without recording it here all fail.
+// reproduce the parent TAG digest, so a missing row, an extra row, or a
+// shipped-data edit made without recording it here all fail.
+//
+// WHAT IT DOES NOT PIN, measured rather than assumed (review B3): the digest
+// hashes (profile, OID, first encoded byte), so a recorded oldValue is visible
+// only through its TAG. Changing 1012345678 to 1012345679 leaves this test —
+// and the whole package — passing, because both encode as Counter32. Only the
+// 30 rows shared with nl6541TagChanges have their values pinned here, and that
+// is incidental. TestOctetShadowLedgerValuesMatchTheParentRevision closes it
+// for all 1322.
 func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 	cur := map[[2]string]string{}
 	for _, e := range shippedSNMPEntries(t) {
@@ -1488,6 +1496,45 @@ func TestOctetShadowLedgerIsNotVacuous(t *testing.T) {
 		t.Errorf("ledger spans %d profiles, want %d", len(profiles), wantProfiles)
 	}
 
+	// THE PRECONDITION THE WHOLE DELETION RESTS ON (review R6). A deleted row is
+	// replaced by the cycler only if the cycler knows that ifIndex, and
+	// InitIfCounters builds its ifIndex set EXCLUSIVELY from ifXTable .6
+	// (ifHCInOctets) keys, bounded by maxResourceIfIndex. So every deleted
+	// (profile, ifIndex) must have an HC .6 row in the SAME profile. It holds
+	// today across all 20 profiles with zero orphans; nothing pinned it, and a
+	// later profile edit that drops or renumbers HC .6 rows would leave those
+	// columns answering NOTHING — a silent hole where a frozen value used to be.
+	hcRows := map[string]map[string]bool{}
+	for _, e := range shippedSNMPEntries(t) {
+		if !strings.HasPrefix(e.OID, hcInOIDPrefix) {
+			continue
+		}
+		idx := e.OID[len(hcInOIDPrefix):]
+		if hcRows[e.Profile] == nil {
+			hcRows[e.Profile] = map[string]bool{}
+		}
+		hcRows[e.Profile][idx] = true
+	}
+	orphans := 0
+	for _, d := range nl6570DeletedOctetEntries {
+		idx := d.oid[strings.LastIndexByte(d.oid, '.')+1:]
+		if !hcRows[d.profile][idx] {
+			orphans++
+			t.Errorf("%s %s was deleted, but the profile ships no ifXTable .6.%s row, so the "+
+				"cycler knows no ifIndex %s and NOTHING answers that column now", d.profile, d.oid, idx, idx)
+			continue
+		}
+		if n, err := strconv.Atoi(idx); err != nil || n < 1 || n > maxResourceIfIndex {
+			orphans++
+			t.Errorf("%s %s: ifIndex %q is outside 1..%d, so the cycler cannot serve it",
+				d.profile, d.oid, idx, maxResourceIfIndex)
+		}
+	}
+	if orphans == 0 {
+		t.Logf("all %d deleted rows have an ifXTable .6 row in the same profile, so every one is "+
+			"replaced by the cycler", len(nl6570DeletedOctetEntries))
+	}
+
 	// And the columns really are cycler-owned now, which is the premise for
 	// deleting them at all.
 	owned := map[int]bool{}
@@ -1502,6 +1549,50 @@ func TestOctetShadowLedgerIsNotVacuous(t *testing.T) {
 				"removed the only source of a value for it", col)
 		}
 	}
+}
+
+// nl6570OctetValueDigestAt3a69927 is a SHA-256 over the sorted
+// "profile\tOID\tvalue" lines of every ifTable .10 / .16 row as it existed at
+// 3a69927, the revision this branch forked from.
+//
+// It was computed by reading the resource files OUT OF GIT at that revision
+// (`git show 3a69927:<path>`), not from the ledger table, so comparing the table
+// against it is a comparison with the tree as it actually was. A digest derived
+// from the table would only prove the table equals itself.
+const nl6570OctetValueDigestAt3a69927 = "a21077a8e5ceb0c38196cb424ce6b462ebc4233279da9253064a7a05e62f1261"
+
+// TestOctetShadowLedgerValuesMatchTheParentRevision pins the ledger's VALUES,
+// which the tag digest cannot see (review B3). Without it the ledger's recorded
+// oldValues are unfalsifiable for 1292 of 1322 rows: the deletion removed them
+// from the tree, so nothing else in the package has anything left to compare
+// them against.
+//
+// This is what makes the ledger a record rather than an assertion. If it fails
+// after an edit to the table, the table is wrong — the parent revision cannot
+// change.
+func TestOctetShadowLedgerValuesMatchTheParentRevision(t *testing.T) {
+	lines := make([]string, 0, len(nl6570DeletedOctetEntries))
+	for _, d := range nl6570DeletedOctetEntries {
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%s", d.profile, d.oid, d.oldValue))
+	}
+	sort.Strings(lines)
+
+	h := sha256.New()
+	for _, l := range lines {
+		h.Write([]byte(l))
+		h.Write([]byte{'\n'})
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+
+	if got != nl6570OctetValueDigestAt3a69927 {
+		t.Errorf("ledger value digest = %s, want %s (%d rows).\n"+
+			"The recorded (profile, OID, value) triples no longer match what 3a69927 shipped. "+
+			"Re-derive with: git show 3a69927:<part> for every part under go/nl6/resources, "+
+			"collect the .2.2.1.10 / .2.2.1.16 entries, and hash sorted "+
+			"\"profile\\tOID\\tvalue\" lines. Do not re-pin this constant to match an edited "+
+			"table: the parent revision is fixed.", got, nl6570OctetValueDigestAt3a69927, len(lines))
+	}
+	t.Logf("all %d recorded values match the corpus at 3a69927", len(lines))
 }
 
 // nl6570DeletedOctetOIDs returns the DISTINCT OID names the deletion removed

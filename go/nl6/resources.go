@@ -705,8 +705,20 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 			{OID: "1.3.6.1.2.1.2.2.1.5.1", Response: "1000000000"},
 			{OID: "1.3.6.1.2.1.2.2.1.7.1", Response: "1"},
 			{OID: "1.3.6.1.2.1.2.2.1.8.1", Response: "1"},
-			{OID: "1.3.6.1.2.1.2.2.1.10.1", Response: "1000000"},
-			{OID: "1.3.6.1.2.1.2.2.1.16.1", Response: "500000"},
+			// ifHCInOctets.1 / ifHCOutOctets.1. These two rows are what make
+			// the cycler claim this profile's interface at all: its ifIndex set
+			// is built EXCLUSIVELY from ifXTable .6 keys. Without them no
+			// cycler is published, and the static ifInOctets.1 / ifOutOctets.1
+			// entries that used to sit here were served FROZEN forever — the
+			// 0-bps-forever defect nl6#570 exists to remove, shipping on the
+			// fallback path reached whenever a named resource file is absent.
+			// Speed comes from ifSpeed.1 above (ifHighSpeed is absent, and the
+			// init falls back to it), so the interface reads as 1 Gbps and all
+			// eight derived ifTable columns plus the ifXTable family are served
+			// analytically. Do not re-add a static .10 / .16 row here: with
+			// these two present it would be unreachable dead data.
+			{OID: "1.3.6.1.2.1.31.1.1.1.6.1", Response: "0"},
+			{OID: "1.3.6.1.2.1.31.1.1.1.10.1", Response: "0"},
 			{OID: "1.3.6.1.2.1.4.1.0", Response: "1"},
 			{OID: "1.3.6.1.2.1.4.2.0", Response: "64"},
 			{OID: "1.3.6.1.2.1.4.3.0", Response: "100"},
