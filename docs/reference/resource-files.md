@@ -63,6 +63,13 @@ go/nl6/resources/asr9k/
 Browse [`go/nl6/resources/asr9k/`](https://github.com/labmonkeys-space/nl6/tree/main/go/nl6/resources/asr9k)
 for a representative example.
 
+## Unknown keys are ignored
+
+The resource decoder is not strict, so a key it does not recognise is dropped silently.
+That is a hazard for a typo'd `snmp` array — an optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check — and it is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments.
+`palo_alto_pa3220_snmp_4.json` uses one to record an unresolved question about a vendor OID subtree (nl6#569).
+Such a key changes nothing that loads, and `TestUnknownTopLevelKeysAreInert` pins that, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
+
 ## Load-time validation
 
 The `response` of an entry in the `snmp` array must not be exactly `noSuchObject` or `endOfMibView`.

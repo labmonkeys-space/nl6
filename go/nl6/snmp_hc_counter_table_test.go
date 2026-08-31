@@ -115,13 +115,14 @@ func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 // declare Counter64 on a Counter32 column and change that column's tag on the
 // wire.
 //
-// This list is an independent RESTATEMENT of oidTypeTable's rows, which is the
-// right shape for catching an edit to one side. It is NOT independent
-// VERIFICATION: both were written in the same change from the same reading of
-// the same MIB, so a misreading shared by the two would pass. The check that
-// would catch that is re-running snmptranslate against the MIB, which no test
-// here does (it would need the MIBs vendored) — the same limitation
-// TestOpticalPathManifest documents for the OpenConfig leaf set.
+// This list is an independent RESTATEMENT of oidTypeTable's rows, which catches
+// an edit to either side but NOT a misreading shared by both — they were written
+// in the same change from the same reading of the same MIB. That gap is closed
+// separately, by TestOidTypeTableAgreesWithTheMIBs, which compares the table
+// against MIB facts extracted with net-snmp and checked in under
+// testdata/mibs/. Those fixtures are independent of this list and of the table;
+// they are not independent of net-snmp, which is stated there rather than
+// glossed over.
 var ipStatsC64Columns = []int{4, 6, 13, 19, 21, 24, 31, 33, 35, 37, 39, 41, 43, 45}
 
 const ipStatsColumnCount = 47

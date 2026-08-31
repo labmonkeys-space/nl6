@@ -326,17 +326,15 @@ func TestSysNameCannotComposeToASentinel(t *testing.T) {
 // path over the real shipped dataset: nothing in worldCities may be a sentinel
 // after a load.
 //
-// An honest limitation, recorded because a mutation test found it: deleting the
-// dropSentinelLocations CALL from loadWorldCities fails NO test, and cannot,
-// because no input the loader accepts composes to a sentinel — every display
-// string embeds ", " (TestWorldCitiesLocationCannotComposeToASentinel) and the
-// fallback list is compiled-in constants. So the load-time filter is
-// defence-in-depth for a future source or composition, and the enforcement that
-// IS pinned is the funnel assertion in getRandomLocation, which
-// TestGetRandomLocationNeverServesASentinel fails without.
+// The WIRING of the filter — that loadWorldCities actually calls it — is pinned
+// by TestLoadWorldCitiesFiltersTheFallbackSet below. It could not be, until
+// fallbackCities became a package-level var: no CSV row can compose to a
+// sentinel (every display string embeds ", ", see
+// TestWorldCitiesLocationCannotComposeToASentinel), so the fallback branch is
+// the only input a test can drive one through.
 //
-// What this test does add: if the shipped dataset ever gains a row that DOES
-// compose to a sentinel, it fails here rather than at a device's sysLocation.
+// What this test adds: if the shipped dataset ever gains a row that DOES compose
+// to a sentinel, it fails here rather than at a device's sysLocation.
 func TestLoadWorldCitiesPublishesNoSentinel(t *testing.T) {
 	saved := worldCities
 	t.Cleanup(func() { worldCities = saved })
@@ -354,4 +352,74 @@ func TestLoadWorldCitiesPublishesNoSentinel(t *testing.T) {
 		}
 	}
 	t.Logf("%d locations published, none a sentinel", len(worldCities))
+}
+
+// TestLoadWorldCitiesFiltersTheFallbackSet pins the WIRING of the load-time
+// filter, which nothing could reach before fallbackCities was extracted from
+// the body of loadWorldCities: deleting the dropSentinelLocations call used to
+// fail no test at all.
+//
+// The fallback branch is taken when no worldcities/ directory exists, so a
+// temp cwd plus a swapped fallback set drives the whole real load path.
+func TestLoadWorldCitiesFiltersTheFallbackSet(t *testing.T) {
+	savedCities, savedFallback := worldCities, fallbackCities
+	t.Cleanup(func() { worldCities, fallbackCities = savedCities, savedFallback })
+
+	keep := WorldCity{Name: "Reykjavik, Iceland", Latitude: 64.1466, Longitude: -21.9426}
+	fallbackCities = []WorldCity{
+		{Name: valueNoSuchObject, Latitude: 1, Longitude: 2},
+		keep,
+		{Name: valueEndOfMibView, Latitude: 3, Longitude: 4},
+		{Name: "noSuchObject seen, Atlantis", Latitude: 5, Longitude: 6},
+	}
+	worldCities = nil
+
+	// No worldcities/ here, so loadWorldCities takes the fallback branch.
+	t.Chdir(t.TempDir())
+	if err := loadWorldCities(); err != nil {
+		t.Fatalf("loadWorldCities: %v", err)
+	}
+
+	if len(worldCities) != 2 {
+		t.Fatalf("loadWorldCities published %d locations, want 2 (two sentinels filtered): %+v",
+			len(worldCities), worldCities)
+	}
+	for _, c := range worldCities {
+		if isSNMPExceptionValue(c.Name) {
+			t.Errorf("loadWorldCities published %q: the sentinel filter is not wired into the "+
+				"load path", c.Name)
+		}
+	}
+	// Coordinates survive, which is why the rule filters here rather than
+	// diverting a draw to the coordinate-less fallback name.
+	var found bool
+	for _, c := range worldCities {
+		if c == keep {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the ordinary city lost its coordinates or was dropped: %+v", worldCities)
+	}
+
+	// The filter must not mutate the compiled-in set itself. Its CONTENTS are
+	// what to check, not its length: dropSentinelLocations filters in place via
+	// worldCities[:0], so an aliased slice keeps its length while its elements
+	// are overwritten — a load in the same process would then see a different
+	// fleet, with a row duplicated.
+	wantFallback := []WorldCity{
+		{Name: valueNoSuchObject, Latitude: 1, Longitude: 2},
+		keep,
+		{Name: valueEndOfMibView, Latitude: 3, Longitude: 4},
+		{Name: "noSuchObject seen, Atlantis", Latitude: 5, Longitude: 6},
+	}
+	if len(fallbackCities) != len(wantFallback) {
+		t.Fatalf("fallbackCities has %d rows after the load, want %d", len(fallbackCities), len(wantFallback))
+	}
+	for i, want := range wantFallback {
+		if fallbackCities[i] != want {
+			t.Errorf("fallbackCities[%d] = %+v after the load, want %+v: the load path must COPY "+
+				"the compiled-in set, not filter it in place", i, fallbackCities[i], want)
+		}
+	}
 }

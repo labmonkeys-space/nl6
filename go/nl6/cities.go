@@ -41,6 +41,24 @@ const unknownLocationName = "Unknown Location"
 // Global list of world cities loaded from CSV file
 var worldCities []WorldCity
 
+// fallbackCities is the small compiled-in set served when no worldcities
+// dataset is present. It is a package-level var rather than a literal inside
+// loadWorldCities because it is DATA, and data belongs out of control flow —
+// which has the useful side effect of making the load path's sentinel filter
+// testable: no CSV row can compose to a sentinel (every display string embeds
+// ", "), so this is the only input a test can drive one through.
+var fallbackCities = []WorldCity{
+	{"Tokyo, Japan", 35.6870, 139.7495},
+	{"New York, NY, USA", 40.6943, -73.9249},
+	{"London, England, UK", 51.5072, -0.1275},
+	{"Paris, France", 48.8566, 2.3522},
+	{"Sydney, Australia", -33.8678, 151.2100},
+	{"Berlin, Germany", 52.5167, 13.3833},
+	{"Singapore, Singapore", 1.3000, 103.8000},
+	{"Mumbai, India", 19.0758, 72.8775},
+	{"São Paulo, Brazil", -23.5500, -46.6333},
+}
+
 // loadWorldCities loads cities from worldcities directory (split CSV files)
 func loadWorldCities() error {
 	dirPath := "worldcities"
@@ -49,22 +67,17 @@ func loadWorldCities() error {
 	info, err := os.Stat(dirPath)
 	if err != nil || !info.IsDir() {
 		log.Printf("Failed to open worldcities directory, using fallback cities: %v", err)
-		// Fallback to a smaller set of cities if directory is not available
-		worldCities = []WorldCity{
-			{"Tokyo, Japan", 35.6870, 139.7495},
-			{"New York, NY, USA", 40.6943, -73.9249},
-			{"London, England, UK", 51.5072, -0.1275},
-			{"Paris, France", 48.8566, 2.3522},
-			{"Sydney, Australia", -33.8678, 151.2100},
-			{"Berlin, Germany", 52.5167, 13.3833},
-			{"Singapore, Singapore", 1.3000, 103.8000},
-			{"Mumbai, India", 19.0758, 72.8775},
-			{"São Paulo, Brazil", -23.5500, -46.6333},
+		// A COPY, so the filter below cannot shrink the compiled-in set for the
+		// rest of the process (and so a test that swaps fallbackCities sees its
+		// own slice untouched).
+		worldCities = append([]WorldCity(nil), fallbackCities...)
+		// The shipped fallback is compiled-in constants, so this cannot fire for
+		// it. Running the filter on BOTH branches is what makes the invariant
+		// hold of the published slice rather than of one source.
+		if dropped := dropSentinelLocations(); dropped > 0 {
+			log.Printf("Warning: dropped %d fallback city name(s) colliding with an SNMP "+
+				"exception sentinel", dropped)
 		}
-		// Compiled-in constants, so this can never fire — but the filter is
-		// applied to the slice rather than to a source, and running it on both
-		// branches is what makes that true of every branch.
-		dropSentinelLocations()
 		return nil
 	}
 
