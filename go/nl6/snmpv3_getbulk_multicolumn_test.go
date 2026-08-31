@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"testing"
 )
@@ -70,6 +71,64 @@ func v3BulkScopedPDUCols(engineID string, nonRepeaters, maxRepetitions int, oids
 	return scoped
 }
 
+// brokenMultiColumnScopedPDUs is the malformed-list shape table for the
+// multi-column walk: one entry per structural check parseVarBindNames makes on
+// a binding AFTER the first, plus the container-length lies R1 reclassified.
+//
+// Shared between the fuzz seeds and the contract test, so every shape is
+// replayed by an ordinary `go test` rather than reached only by live fuzzing
+// (nl6#535 review R8).
+func brokenMultiColumnScopedPDUs(engineID string) map[string][]byte {
+	good := encodeSequence(append(encodeOID(colIfDescr), encodeNull()...))
+	wrap := func(vbList []byte) []byte {
+		var body []byte
+		body = append(body, encodeInteger(42)...)
+		body = append(body, encodeInteger(0)...)
+		body = append(body, encodeInteger(4)...)
+		body = append(body, encodeSequence(vbList)...)
+		pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(body)), body...)...)
+		var sp []byte
+		sp = append(sp, encodeOctetString(engineID)...)
+		sp = append(sp, encodeOctetString("")...)
+		sp = append(sp, pdu...)
+		return sp
+	}
+
+	out := map[string][]byte{
+		"second name is not an OID": wrap(append(append([]byte{}, good...),
+			encodeSequence(append([]byte{ASN1_OID, 0x02, 0x80, 0x80}, encodeNull()...))...)),
+		"second binding is not a SEQUENCE": wrap(append(append([]byte{}, good...), ASN1_INTEGER, 0x01, 0x00)),
+		"second binding has no value":      wrap(append(append([]byte{}, good...), encodeSequence(encodeOID(colIfName))...)),
+		"trailing bytes after the list":    nil, // filled below
+	}
+
+	// Trailing bytes between the list and the end of the PDU.
+	var body []byte
+	body = append(body, encodeInteger(42)...)
+	body = append(body, encodeInteger(0)...)
+	body = append(body, encodeInteger(4)...)
+	body = append(body, encodeSequence(append(append([]byte{}, good...), good...))...)
+	body = append(body, 0x05, 0x00)
+	pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(body)), body...)...)
+	var sp []byte
+	sp = append(sp, encodeOctetString(engineID)...)
+	sp = append(sp, encodeOctetString("")...)
+	out["trailing bytes after the list"] = append(sp, pdu...)
+
+	// The container-length lies, in both directions.
+	base := v3BulkScopedPDUCols(engineID, 0, 4, []string{colIfDescr, colIfName, colSysOR})
+	pduStart := len(encodeOctetString(engineID)) + len(encodeOctetString(""))
+	for name, delta := range map[string]int{
+		"PDU length lengthened": 8,
+		"PDU length shortened":  -4,
+	} {
+		b := append([]byte(nil), base...)
+		b[pduStart+1] = byte(int(b[pduStart+1]) + delta)
+		out[name] = b
+	}
+	return out
+}
+
 // v3Bulk serves a multi-column GETBULK and returns the decoded response.
 func v3Bulk(t *testing.T, s *SNMPServer, nonRepeaters, maxRepetitions int, cols []string) v3Response {
 	t.Helper()
@@ -101,59 +160,6 @@ func v2cGetBulkRequest(nonRepeaters, maxRepetitions int, oids []string) []byte {
 	msg = append(msg, encodeOctetString("public")...)
 	msg = append(msg, pdu...)
 	return encodeSequence(msg)
-}
-
-// decodeV2cVarbinds decodes every binding of a v2c GetResponse. The existing
-// v2cFirstVarbind stops at the first, which cannot see an interleave.
-func decodeV2cVarbinds(t *testing.T, resp []byte) []v3Varbind {
-	t.Helper()
-	body := expectSeq(t, resp, "v2c message")
-	pos := skipTLV(t, body, 0, "version")
-	pos = skipTLV(t, body, pos, "community")
-	if pos >= len(body) {
-		t.Fatal("no PDU")
-	}
-	n, after := parseLength(body, pos+1)
-	if n < 0 || after+n > len(body) {
-		t.Fatal("bad PDU length")
-	}
-	pdu := body[after : after+n]
-
-	pp := 0
-	_, pp = expectInt(t, pdu, pp, "request-id")
-	_, pp = expectInt(t, pdu, pp, "error-status")
-	_, pp = expectInt(t, pdu, pp, "error-index")
-
-	vbl := expectSeq(t, pdu[pp:], "variable-bindings")
-	var out []v3Varbind
-	for vp := 0; vp < len(vbl); {
-		vb := expectSeq(t, vbl[vp:], "varbind")
-		l, a := parseLength(vbl, vp+1)
-		if l < 0 || a+l > len(vbl) {
-			t.Fatal("bad varbind length")
-		}
-		vp = a + l
-
-		if len(vb) == 0 || vb[0] != ASN1_OID {
-			t.Fatalf("varbind does not start with an OBJECT IDENTIFIER: % x", vb)
-		}
-		nameLen, afterName := parseLength(vb, 1)
-		if nameLen < 0 || afterName+nameLen > len(vb) {
-			t.Fatal("bad varbind name length")
-		}
-		v := v3Varbind{oid: decodeOID(vb[afterName : afterName+nameLen])}
-		vpos := afterName + nameLen
-		if vpos >= len(vb) {
-			t.Fatal("varbind has a name but no value")
-		}
-		v.valueTag = vb[vpos]
-		vlen, afterV := parseLength(vb, vpos+1)
-		if vlen >= 0 && afterV+vlen <= len(vb) {
-			v.value = vb[afterV : afterV+vlen]
-		}
-		out = append(out, v)
-	}
-	return out
 }
 
 func pairs(vbs []v3Varbind) []string {
@@ -316,21 +322,28 @@ func TestV3GetBulkPadsAnExhaustedColumn(t *testing.T) {
 	}
 }
 
-// Row "all columns exhausted": each column contributes its requested OID and
-// endOfMibView, once. Every column the manager named is answered; nothing more
-// is emitted, because further repetitions of nothing but exceptions tell a
-// walker only what the first already did.
+// Row "all columns exhausted": every column is padded with its OWN requested
+// OID and endOfMibView, for every repetition, exactly as v2c pads.
+//
+// The matrix row this replaces read "each column contributes its requested OID
+// + endOfMibView" once, which was written for a stop-when-all-exhausted rule
+// this change no longer has: nl6#526's stop applies to the SINGLE-column loop,
+// and a multi-column loop is byte-identical to v2c (nl6#535 review R4). See
+// the Spec Change Log in the spec file.
 func TestV3GetBulkAllColumnsExhausted(t *testing.T) {
 	s := v3TestServer(multiColFixture(10))
 	cols := []string{colPastEnd, colPastEnd2}
+	const maxRep = 5
 
-	r := v3Bulk(t, s, 0, 5, cols)
-	if len(r.varbinds) != 2 {
-		t.Fatalf("got %d bindings, want one per column: %v", len(r.varbinds), pairs(r.varbinds))
+	r := v3Bulk(t, s, 0, maxRep, cols)
+	if len(r.varbinds) != len(cols)*maxRep {
+		t.Fatalf("got %d bindings, want %d (every column padded in every repetition, as v2c pads): %v",
+			len(r.varbinds), len(cols)*maxRep, pairs(r.varbinds))
 	}
 	for i, vb := range r.varbinds {
-		if vb.oid != cols[i] {
-			t.Errorf("binding %d named %q, want the requested %q", i, vb.oid, cols[i])
+		want := cols[i%len(cols)]
+		if vb.oid != want {
+			t.Errorf("binding %d named %q, want the column's OWN requested OID %q", i, vb.oid, want)
 		}
 		if vb.valueTag != 0x82 {
 			t.Errorf("binding %d tag 0x%02x, want 0x82 (endOfMibView)", i, vb.valueTag)
@@ -480,8 +493,37 @@ func TestV3GetBulkMalformedListDiscarded(t *testing.T) {
 	// Answering a second one logs nothing further: the condition is
 	// attacker-controlled, so an ungated line is a log-flood primitive.
 	_ = s.handleSNMPv3GetBulk(colIfDescr, msg, sp)
-	if n := strings.Count(buf.String(), "does not parse"); n != 1 {
+	if n := strings.Count(buf.String(), errV3VarBindListMalformed.Error()); n != 1 {
 		t.Errorf("logged the discard %d times, want exactly 1 per device: %q", n, buf.String())
+	}
+}
+
+// TestV3MalformedListHasItsOwnLogGate pins that the GETBULK list discard does
+// not share a sync.Once with the dispatcher's malformed-scoped-PDU discard.
+//
+// They shared one, so whichever fault a device saw first silenced the other for
+// the life of the process (nl6#535 review R7). The two have different causes
+// and different fixes, and the v1/v2c side already keeps them apart.
+func TestV3MalformedListHasItsOwnLogGate(t *testing.T) {
+	s := v3TestServer(multiColFixture(4))
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	// Fault 1: the dispatcher's malformed scoped PDU (a name that is not an
+	// OBJECT IDENTIFIER in the FIRST binding).
+	s.logFirstMalformedV3(fmt.Errorf("first fault"))
+	// Fault 2: a malformed list, which must still be reported.
+	s.logFirstMalformedV3List(errV3VarBindListMalformed)
+
+	if !strings.Contains(buf.String(), "first fault") {
+		t.Error("the dispatcher's discard was not logged")
+	}
+	if !strings.Contains(buf.String(), errV3VarBindListMalformed.Error()) {
+		t.Errorf("the list discard was swallowed by the other fault's gate; one sync.Once "+
+			"across two faults hides whichever arrives second: %q", buf.String())
 	}
 }
 
@@ -517,35 +559,66 @@ func TestV3GetBulkEmptyBindingListDiscarded(t *testing.T) {
 // TestV3GetBulkOrderMatchesV2c is the point of the change. Each path being
 // separately plausible is not the property; the two agreeing is.
 //
-// The agreement is asserted over the bindings BOTH paths emit. There is one
-// known divergence, in the tail only, and it is asserted here rather than
-// papered over: when every column has been exhausted, v2c keeps padding for
-// each remaining repetition while v3 stops. The v3 behaviour is the one
-// nl6#526 established (a walk that runs out ships what it collected, and the
-// next request gets the exception); the v2c behaviour is not wrong under RFC
-// 3416 either, since the padded slots carry the right names and the right
-// exception. Reported, not resolved by changing the reference.
+// MULTI-COLUMN v3 is byte-identical to v2c, tail included — including the rows
+// where a column runs out mid-response, which is where an earlier cut of this
+// change diverged and reported the difference as unavoidable. It was not
+// (nl6#535 review R4).
+//
+// The single-column row is the one shape where the two legitimately differ
+// once a column is exhausted, since nl6#526 gives the single-column v3 loop a
+// stop rather than a pad; the row here keeps max-repetitions inside the
+// column so no exhaustion occurs and the orders can still be compared. The
+// divergence itself is pinned by
+// TestV3GetBulkSingleColumnStopIsNotAppliedToMultiColumn.
 func TestV3GetBulkOrderMatchesV2c(t *testing.T) {
 	cases := []struct {
 		name           string
+		rows           int
 		nonRep, maxRep int
 		cols           []string
+		// wantFull is the RFC 3416 §4.2.3 binding count, N + M×R. Asserting it
+		// is a PREMISE, not decoration: v2c and v3 measure their responses
+		// against the same byte budget through DIFFERENT envelopes, so a case
+		// large enough to truncate compares two different truncation points
+		// and fails for a reason that has nothing to do with walk order. Every
+		// row here must fit.
+		wantFull int
 	}{
-		{"three columns, four repetitions", 0, 4, []string{colIfDescr, colIfName, colSysOR}},
-		{"two columns, one repetition", 0, 1, []string{colIfDescr, colIfName}},
-		{"non-repeaters split", 2, 3, []string{
+		{"three columns, four repetitions", 20, 0, 4,
+			[]string{colIfDescr, colIfName, colSysOR}, 12},
+		{"two columns, one repetition", 20, 0, 1,
+			[]string{colIfDescr, colIfName}, 2},
+		{"non-repeaters split", 20, 2, 3, []string{
 			".1.3.6.1.2.1.1.1.0", colIfDescr + ".1", colIfDescr + ".5", colIfName + ".5", colSysOR + ".5",
-		}},
-		{"one column exhausted, one live", 0, 3, []string{colIfDescr + ".1", colPastEnd}},
-		{"single column", 0, 5, []string{colIfDescr}},
+		}, 11},
+		{"one column exhausted, one live", 20, 0, 3,
+			[]string{colIfDescr + ".1", colPastEnd}, 6},
+		// The middle case: a live column that runs out at repetition k of n
+		// with another already dead. This is where the tail divergence used to
+		// begin, so it is the row that must agree now (nl6#535 review R10).
+		// colIfName holds the fixture's LAST OIDs, so a column starting near
+		// its end reaches the true end of the MIB part-way through.
+		{"live column runs out mid-response", 4, 0, 5,
+			[]string{colIfName + ".2", colPastEnd}, 10},
+		{"both columns run out mid-response", 4, 0, 6,
+			[]string{colIfName + ".2", colIfDescr + ".3"}, 12},
+		{"all columns dead from the start", 20, 0, 4,
+			[]string{colPastEnd, colPastEnd2}, 8},
+		{"single column", 20, 0, 5, []string{colIfDescr}, 5},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fixture := multiColFixture(20)
+			fixture := multiColFixture(tc.rows)
 			v3 := v3Bulk(t, v3TestServer(fixture), tc.nonRep, tc.maxRep, tc.cols)
 			v2c := decodeV2cVarbinds(t, newTestServer(fixture).handleGetBulk(
 				tc.cols[0], v2cGetBulkRequest(tc.nonRep, tc.maxRep, tc.cols)))
+
+			if len(v2c) != tc.wantFull {
+				t.Fatalf("premise: v2c emitted %d bindings, want the full %d — the row is "+
+					"truncating, so the comparison is between two different truncation points",
+					len(v2c), tc.wantFull)
+			}
 
 			gotV3, gotV2c := pairs(v3.varbinds), pairs(v2c)
 			if len(gotV3) != len(gotV2c) {
@@ -561,33 +634,178 @@ func TestV3GetBulkOrderMatchesV2c(t *testing.T) {
 	}
 }
 
-// TestV3GetBulkTailDivergesFromV2cOnlyWhenExhausted documents the one case the
-// agreement test above deliberately excludes, so the divergence is pinned
-// rather than merely described in a comment: with every column exhausted, v2c
-// pads to max-repetitions and v3 answers each column once. If either side
-// changes, this fails and the decision gets revisited.
-func TestV3GetBulkTailDivergesFromV2cOnlyWhenExhausted(t *testing.T) {
+// TestV3GetBulkSingleColumnStopIsNotAppliedToMultiColumn is the mutation guard
+// for nl6#535 review R4. nl6#526's stop-instead-of-pad rule belongs to the
+// SINGLE-column loop; applying it to a multi-column loop makes the response
+// diverge from v2c in the tail, which the spec forbids ("the two rules govern
+// different loops and SHALL NOT be applied to each other").
+//
+// The two shapes are asserted side by side, because a fix that applied the
+// multi-column rule everywhere would satisfy the agreement test above and
+// silently break nl6#526's contract instead.
+func TestV3GetBulkSingleColumnStopIsNotAppliedToMultiColumn(t *testing.T) {
 	fixture := multiColFixture(10)
-	cols := []string{colPastEnd, colPastEnd2}
 	const maxRep = 4
 
-	v3 := v3Bulk(t, v3TestServer(fixture), 0, maxRep, cols)
-	v2c := decodeV2cVarbinds(t, newTestServer(fixture).handleGetBulk(
-		cols[0], v2cGetBulkRequest(0, maxRep, cols)))
-
-	if len(v3.varbinds) != len(cols) {
-		t.Errorf("v3 emitted %d bindings, want one per column: %v", len(v3.varbinds), pairs(v3.varbinds))
-	}
-	if len(v2c) != len(cols)*maxRep {
-		t.Errorf("v2c emitted %d bindings, want %d (it pads every repetition): %v",
-			len(v2c), len(cols)*maxRep, pairs(v2c))
-	}
-	// What they DO emit agrees: v3's bindings are the prefix of v2c's.
-	gotV3, gotV2c := pairs(v3.varbinds), pairs(v2c)
-	for i := range gotV3 {
-		if i < len(gotV2c) && gotV3[i] != gotV2c[i] {
-			t.Errorf("binding %d differs:\n v3:  %s\n v2c: %s", i, gotV3[i], gotV2c[i])
+	t.Run("multi-column pads to max-repetitions", func(t *testing.T) {
+		cols := []string{colPastEnd, colPastEnd2}
+		r := v3Bulk(t, v3TestServer(fixture), 0, maxRep, cols)
+		if len(r.varbinds) != len(cols)*maxRep {
+			t.Errorf("got %d bindings, want %d: a multi-column loop pads every repetition, "+
+				"as v2c does", len(r.varbinds), len(cols)*maxRep)
 		}
+	})
+
+	t.Run("single column stops", func(t *testing.T) {
+		r := v3Bulk(t, v3TestServer(fixture), 0, maxRep, []string{colPastEnd})
+		if len(r.varbinds) != 1 {
+			t.Errorf("got %d bindings, want 1: the single-column loop keeps nl6#526's stop, so a "+
+				"walk that finds nothing answers the exception once", len(r.varbinds))
+		}
+	})
+}
+
+// ── the clamp's column argument ─────────────────────────────────────────────
+
+// TestV3GetBulkClampsTheWalkPerColumn is the WIRING test for the clamp's
+// column count. TestClampBulkWalkDividesByColumns pins the pure function and
+// TestV3GetBulkClampsTheWalk is single-column, where ceiling/1 == ceiling — so
+// a reviewer changed the call site to clampBulkWalk(maxRepetitions, 1), which
+// reverts the entire point of the division, and the whole suite passed
+// (nl6#535 review R3).
+//
+// Same probe as the single-column test: the clamp cannot be seen through the
+// binding count, because the encode bound trims to the same bindings either
+// way. It IS visible through the WORK. Corrupt each column's successor one
+// step past ceiling/N and the once-per-device logFirstBulkAbort line fires
+// only if the walk got there.
+func TestV3GetBulkClampsTheWalkPerColumn(t *testing.T) {
+	const columns = 3
+	perCol := maxSNMPResponseSize/minVarbindSize/columns + 1
+	rows := perCol + 5
+
+	// Three independent columns, wide enough that a clamped walk never leaves
+	// its own column and a walk clamped as if there were ONE column would.
+	colOf := func(c int) string { return fmt.Sprintf(".1.3.6.1.4.1.9999.%d.1", c) }
+	vals := map[string]string{}
+	for c := 1; c <= columns; c++ {
+		for i := 1; i <= rows; i++ {
+			vals[fmt.Sprintf("%s.%03d", colOf(c), i)] = "v"
+		}
+	}
+	s := v3TestServer(vals)
+
+	cols := make([]string, columns)
+	for c := 1; c <= columns; c++ {
+		cols[c-1] = colOf(c)
+		// Step k of a column's walk lands on row k, so the clamped loop's last
+		// call is findNextOID(row perCol-1) and it stops holding row perCol.
+		// The entry an UNCLAMPED loop would consult next is this one.
+		past := fmt.Sprintf("%s.%03d", colOf(c), perCol)
+		s.device.resources.oidNextMap.Store(past, past)
+	}
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	r := v3Bulk(t, s, 0, 100000, cols)
+	if len(r.varbinds) == 0 {
+		t.Fatal("clamped walk produced nothing")
+	}
+	if strings.Contains(buf.String(), "does not advance") {
+		t.Errorf("the walk reached row %d of a column, one step past the %d ceiling for %d "+
+			"columns: the clamp is being called with a column count of 1, which is the same as "+
+			"not dividing at all. The binding count cannot show this, only the work can",
+			perCol, perCol, columns)
+	}
+}
+
+// TestClampBulkWalkPreservesTheV2cArithmetic pins that routing handleGetBulk
+// through the shared clampBulkWalk changed nothing: the function computes,
+// input for input, exactly the expression that was inlined there (nl6#535
+// review R11). The v2c EFFECT is covered by
+// TestGetBulkWalkClampAppliesBelowTheGlobalCeiling, which is //go:build linux.
+func TestClampBulkWalkPreservesTheV2cArithmetic(t *testing.T) {
+	inlined := func(maxRepetitions, cols int) int {
+		if perRep := maxSNMPResponseSize/minVarbindSize/cols + 1; maxRepetitions > perRep {
+			return perRep
+		}
+		return maxRepetitions
+	}
+	for _, cols := range []int{1, 2, 3, 7, 30, 98} {
+		for _, m := range []int{0, 1, 2, 10, 97, 98, 99, 127, 128, 1000, 100000} {
+			if got, want := clampBulkWalk(m, cols), inlined(m, cols); got != want {
+				t.Errorf("clampBulkWalk(%d, %d) = %d, the expression v2c inlined gives %d",
+					m, cols, got, want)
+			}
+		}
+	}
+}
+
+// TestV2cGetBulkCallsTheSharedClamp pins the WIRING of the shared walk clamp
+// into handleGetBulk (nl6#535 review R11), and it is a SOURCE-LEVEL assertion
+// on purpose.
+//
+// The v2c clamp cannot be observed through a response. The encode bound trims
+// the collection to the same bindings whether the walk ran 4 repetitions or
+// 98, and the v2c path has no once-per-device abort log for a probe to detect
+// (which is how the v3 side is pinned, in TestV3GetBulkClampsTheWalkPerColumn).
+// Its own behavioural test, TestGetBulkWalkClampAppliesBelowTheGlobalCeiling,
+// guards against an INERT clamp by asserting the datagram stays full — it
+// cannot see a clamp that is merely too LOOSE, which is exactly what
+// re-inlining the expression without the column divisor would produce. A
+// mutation doing that fails no test on any platform.
+//
+// So the property asserted here is the one the change actually claims: there is
+// ONE copy of the arithmetic. That is checkable, and it is what stops the two
+// copies drifting the way nl6#529's encodeOID/appendOID and nl6#539's
+// validateDottedOID did.
+func TestV2cGetBulkCallsTheSharedClamp(t *testing.T) {
+	src, err := os.ReadFile("snmp_handlers.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func (s *SNMPServer) handleGetBulk(")
+	if start < 0 {
+		t.Fatal("handleGetBulk not found")
+	}
+	end := strings.Index(body[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("could not delimit handleGetBulk")
+	}
+	fn := body[start : start+end]
+
+	if !strings.Contains(fn, "clampBulkWalk(maxRepetitions, len(repeaterCols))") {
+		t.Error("handleGetBulk no longer calls clampBulkWalk(maxRepetitions, len(repeaterCols)). " +
+			"The v2c and v3 walk clamps must be ONE function: the response cannot show a clamp " +
+			"that is too loose, so a second copy drifts silently")
+	}
+	if strings.Contains(fn, "maxSNMPResponseSize/minVarbindSize") {
+		t.Error("handleGetBulk has re-inlined the clamp arithmetic. clampBulkWalk is the single " +
+			"definition; a copy here agrees on the day it is written and is unobservable when " +
+			"it stops agreeing")
+	}
+}
+
+// TestReadBufferBoundsTheColumnCount pins the coupling the clamp relies on
+// (nl6#535 review R12). Nothing caps the COLUMN count explicitly: the repeater
+// walk is bounded because clampBulkWalk divides by it, but the non-repeater
+// loop is one walk step per column with no other bound, and what actually
+// stops a request naming thousands of columns is the read buffer.
+//
+// If snmpReadBufferBytes grows, that work grows linearly, so the coupling is
+// asserted rather than left as a comment someone can miss.
+func TestReadBufferBoundsTheColumnCount(t *testing.T) {
+	const documentedCeiling = 300 // columns, at the buffer this test was written for
+	if maxColumns := snmpReadBufferBytes / minVarbindSize; maxColumns > documentedCeiling {
+		t.Errorf("the read buffer (%d B) now admits %d columns, over the %d this change reasoned "+
+			"about. The non-repeater loop walks once PER COLUMN with no cap, so raising the "+
+			"buffer raises that work linearly: add an explicit column cap in "+
+			"handleSNMPv3GetBulk, or re-derive the bound here",
+			snmpReadBufferBytes, maxColumns, documentedCeiling)
 	}
 }
 
@@ -618,17 +836,53 @@ func TestParseAllOIDsFromScopedPDUContract(t *testing.T) {
 	})
 
 	t.Run("unreadable envelope is absent, not malformed", func(t *testing.T) {
+		// Every row here must be BOTH ok and EMPTY. Asserting only ok let a
+		// mutation that returned names alongside true pass the block, and the
+		// "a GET" row that used to sit here was not the absent case at all:
+		// validScopedPDU carries a well-formed varbind list, so the parser
+		// reads it and returns one name (nl6#535 review R9).
 		for name, sp := range map[string][]byte{
-			"nil":                 nil,
-			"garbage":             {0x00, 0x01, 0x02},
-			"truncated":           {ASN1_OCTET_STRING, 0x02, 0x41},
-			"a GET, no bulk ints": validScopedPDU(".1.3.6.1.2.1.1.1.0"),
+			"nil":                          nil,
+			"garbage":                      {0x00, 0x01, 0x02},
+			"contextEngineID tag missing":  {ASN1_INTEGER, 0x01, 0x00},
+			"ends before the PDU tag":      append(encodeOctetString("eng"), encodeOctetString("")...),
+			"unparseable long-form length": {ASN1_OCTET_STRING, 0x84},
 		} {
 			t.Run(name, func(t *testing.T) {
 				got, ok := parseAllOIDsFromScopedPDU(sp)
 				if !ok {
-					t.Errorf("reported malformed; an unreadable envelope is the ABSENT case, "+
-						"which the dispatcher's single OID still covers (got %v)", got)
+					t.Fatalf("reported malformed; this is the ABSENT case, which the "+
+						"dispatcher's single OID still covers (got %v)", got)
+				}
+				if len(got) != 0 {
+					t.Errorf("returned %v with ok=true; the absent case must return no names, "+
+						"or the handler walks columns nobody sent", got)
+				}
+			})
+		}
+	})
+
+	// A GET scoped PDU is NOT the absent case: it carries request-id,
+	// error-status, error-index and a well-formed list, so the parser reads it
+	// and returns the name. The row used to sit under "absent" and passed on a
+	// false premise (nl6#535 review R9).
+	t.Run("a GET scoped PDU parses like any other", func(t *testing.T) {
+		got, ok := parseAllOIDsFromScopedPDU(validScopedPDU(".1.3.6.1.2.1.1.1.0"))
+		if !ok {
+			t.Fatal("a GET scoped PDU reported malformed")
+		}
+		if len(got) != 1 || got[0] != ".1.3.6.1.2.1.1.1.0" {
+			t.Errorf("parsed %v, want the one name the GET carries", got)
+		}
+	})
+
+	// The same shapes the fuzz corpus seeds, asserted directly so a change in
+	// the parser is caught by an ordinary run and not only by live fuzzing.
+	t.Run("shared malformed shape table", func(t *testing.T) {
+		for name, sp := range brokenMultiColumnScopedPDUs(engine) {
+			t.Run(name, func(t *testing.T) {
+				if got, ok := parseAllOIDsFromScopedPDU(sp); ok {
+					t.Errorf("parsed as %v, want malformed", got)
 				}
 			})
 		}
@@ -663,6 +917,79 @@ func TestParseAllOIDsFromScopedPDUContract(t *testing.T) {
 		}
 	})
 
+	// R1: a declared length that OVERRUNS its container is malformed, in every
+	// direction and at every container. Lengthening the PDU byte used to be
+	// classified ABSENT, so the handler fell back to the dispatcher's single
+	// OID and answered the first column only — nl6#535's defect restored by a
+	// one-byte lie, with no discard and no log line — while SHORTENING the
+	// same byte was already malformed.
+	t.Run("an overrunning container length is malformed", func(t *testing.T) {
+		base := v3BulkScopedPDUCols(engine, 0, 4, []string{colIfDescr, colIfName, colSysOR})
+		if got, ok := parseAllOIDsFromScopedPDU(base); !ok || len(got) != 3 {
+			t.Fatalf("premise: base input parsed as (%v, %v), want 3 names and ok", got, ok)
+		}
+		pduStart := len(encodeOctetString(engine)) + len(encodeOctetString(""))
+		if base[pduStart] != ASN1_GET_BULK {
+			t.Fatalf("premise: no GETBULK tag at %d", pduStart)
+		}
+
+		for name, mutate := range map[string]func([]byte){
+			"PDU length lengthened":       func(b []byte) { b[pduStart+1] += 8 },
+			"PDU length shortened":        func(b []byte) { b[pduStart+1] -= 4 },
+			"contextEngineID length long": func(b []byte) { b[1] += byte(len(b)) },
+		} {
+			t.Run(name, func(t *testing.T) {
+				b := append([]byte(nil), base...)
+				mutate(b)
+				if got, ok := parseAllOIDsFromScopedPDU(b); ok {
+					t.Errorf("parsed as %v, want malformed: a container length that overruns "+
+						"what contains it is an ASN.1 error, and treating it as ABSENT hands "+
+						"the handler a single-column fallback that answers the wrong question", got)
+				}
+			})
+		}
+	})
+
+	// The whole point of R1, at the level a manager sees: a one-byte lie must
+	// not turn a served multi-column request back into a first-column-only
+	// answer.
+	t.Run("a lengthened PDU byte does not revert the fix", func(t *testing.T) {
+		s := v3TestServer(multiColFixture(10))
+		cols := []string{colIfDescr, colIfName, colSysOR}
+		sp := v3BulkScopedPDUCols(s.v3Config.EngineID, 0, 4, cols)
+		pduStart := len(encodeOctetString(s.v3Config.EngineID)) + len(encodeOctetString(""))
+		sp[pduStart+1] += 8
+
+		msg := &SNMPv3Message{GlobalData: SNMPv3GlobalData{MsgID: 1}, ScopedPDU: sp}
+		resp := s.handleSNMPv3GetBulk(cols[0], msg, sp)
+		if len(resp) != 0 {
+			r := decodeV3Response(t, resp)
+			t.Fatalf("answered %d bindings instead of discarding: %v", len(r.varbinds), pairs(r.varbinds))
+		}
+	})
+
+	t.Run("trailing bytes after the list are malformed", func(t *testing.T) {
+		// Bytes between the end of the variable-bindings list and the end of
+		// the PDU are not the SEQUENCE RFC 1157 defines; the same nl6#537 rule
+		// that refuses them after a VarBind's value refuses them here.
+		vbList := encodeSequence(append(encodeOID(colIfDescr), encodeNull()...))
+		var body []byte
+		body = append(body, encodeInteger(42)...)
+		body = append(body, encodeInteger(0)...)
+		body = append(body, encodeInteger(5)...)
+		body = append(body, encodeSequence(vbList)...)
+		body = append(body, 0x05, 0x00) // a stray NULL after the list
+		pdu := append([]byte{ASN1_GET_BULK}, append(encodeLength(len(body)), body...)...)
+		var sp []byte
+		sp = append(sp, encodeOctetString(engine)...)
+		sp = append(sp, encodeOctetString("")...)
+		sp = append(sp, pdu...)
+
+		if got, ok := parseAllOIDsFromScopedPDU(sp); ok {
+			t.Errorf("parsed as %v, want malformed: bytes after the list are an ASN.1 error", got)
+		}
+	})
+
 	t.Run("list is bounded by the PDU, not the datagram", func(t *testing.T) {
 		// A PDU whose declared length ends before the list does. Bounding the
 		// list by the datagram instead would read into bytes the PDU does not
@@ -672,7 +999,9 @@ func TestParseAllOIDsFromScopedPDUContract(t *testing.T) {
 		if len(full) != 2 {
 			t.Fatalf("premise: parsed %v, want 2 names", full)
 		}
-		// Shorten the PDU's declared length by one binding's worth.
+		// Shorten the PDU's declared length so the list runs past it. The
+		// list must be bounded by the PDU, not by the datagram: a name read
+		// across its container's end decodes to an OID nobody sent.
 		pduStart := len(encodeOctetString(engine)) + len(encodeOctetString(""))
 		if sp[pduStart] != ASN1_GET_BULK {
 			t.Fatalf("premise: no GETBULK tag at %d", pduStart)

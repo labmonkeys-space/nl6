@@ -475,9 +475,14 @@ func (s *SNMPServer) handleGetBulk(startOID string, requestData []byte) []byte {
 	// everything below ~98, so 30 columns x 98 repetitions still walked 2940
 	// steps to emit the ~60 bindings that fit — precisely the amplification
 	// this guard exists to stop (nl6#489 review).
-	if perRep := maxSNMPResponseSize/minVarbindSize/len(repeaterCols) + 1; maxRepetitions > perRep {
-		maxRepetitions = perRep
-	}
+	//
+	// The arithmetic lives in clampBulkWalk, which the v3 handler calls too.
+	// It was inlined here and duplicated there, and a comment asserted by hand
+	// that the two "divide identically" — the same two-copies-that-agree-today
+	// shape this package has paid for twice (nl6#529, nl6#539). One function
+	// cannot drift from itself, and it gives the v3 clamp's column argument a
+	// wiring test on this side as well (nl6#535 review R11).
+	maxRepetitions = clampBulkWalk(maxRepetitions, len(repeaterCols))
 
 	// currentOIDs tracks the "cursor" position in each column.
 	currentOIDs := make([]string, len(repeaterCols))

@@ -210,17 +210,36 @@ It used to serve a single starting OID: the first binding, and the only one `ext
 A manager bundling `ifDescr`/`ifName`/`ifAlias` in one GETBULK therefore got successors of `ifDescr` and nothing at all for the rest, a wrong answer rather than merely a small one (nl6#535).
 That single-column shape also forced `non-repeaters` to collapse into `max-repetitions = 1`, which is not what the field means: with non-repeaters present and `max-repetitions` zero, the non-repeater bindings are now returned rather than an empty list.
 
-A column that reaches the end of its MIB view is padded with its OWN requested OID and `endOfMibView` for as long as other columns keep producing, so the interleave stays aligned and a manager can still tell which column a slot belongs to.
+A column that reaches the end of its MIB view is padded with its OWN requested OID and `endOfMibView`, so the interleave stays aligned and a manager can still tell which column a slot belongs to.
 The order and the padding match the v2c `handleGetBulk`, and the two paths are pinned against each other rather than each being separately plausible (`TestV3GetBulkOrderMatchesV2c`).
 
-**One deliberate divergence, in the tail only.** Once EVERY column is exhausted, v2c keeps padding for each remaining repetition while v3 stops.
-The bindings the two emit are identical up to that point, and stopping is what preserves the single-column contract nl6#526 established: a v3 walk that runs out mid-response ships what it collected, and the next request receives the exception on its own.
-The one case that is still emitted is a FIRST repetition in which no column produced anything: each column is then answered once with its own OID and `endOfMibView`, rather than the whole response collapsing to a single binding.
-Neither shape is wrong under RFC 3416: the padded slots carry the right names and the right exception.
-The divergence is recorded and pinned (`TestV3GetBulkTailDivergesFromV2cOnlyWhenExhausted`) rather than resolved by changing the v2c reference.
+**A multi-column response is byte-identical to v2c, tail included.**
+The padding continues for every remaining repetition, exactly as v2c pads.
+An earlier cut of this change stopped once every column was exhausted and reported the difference as an unavoidable divergence; it was not.
+nl6#526's stop-instead-of-pad rule is keyed on LOOP SHAPE, not on protocol version, and it constrains the single-column loop only.
+
+**The single-column loop still stops.**
+A v3 walk on one column that runs out mid-response ships what it collected, and the next request, collecting nothing, receives the exception on its own.
+A first repetition that produced nothing is still emitted, so a single column already past the end of the MIB is answered with its own OID and `endOfMibView` rather than with an empty list.
+Applying either rule to the other loop is pinned as a mutation (`TestV3GetBulkSingleColumnStopIsNotAppliedToMultiColumn`).
+
+One thing does still differ from v2c, and only on data that cannot load: a v3 column also ends on the `endOfMibView` sentinel and on a non-advancing successor, and names that binding with the requested OID, where v2c's non-repeater loop tests only for an absent successor.
+Both extra exits are nl6#526 and nl6#524 properties that a shared walk must not lose.
+`validateSNMPResourceValues` rejects the sentinel at load, and a non-advancing `oidNextMap` is a resource-file defect.
 
 The walk clamp divides its ceiling by the repeater-column count, because a repetition costs one walk step per column and the guard bounds the TOTAL work, which is what it bounded when there was only ever one column.
 A malformed variable-bindings list discards the datagram exactly as on the v1/v2c path; the multi-column parse can only add discards (a LATER binding being the malformed one), never relax the nl6#547 rule.
+It has its own log gate, separate from the dispatcher's malformed-scoped-PDU discard, so neither fault can silence the other.
+
+**A declared container length that overruns what contains it is malformed, not absent.**
+That distinction is load-bearing rather than pedantic.
+It used to be classified absent, so adding 8 to one length byte of a well-formed three-column GETBULK made the parser report that there was no list, the handler fall back to the single OID the dispatcher validated, and the response carry ten bindings from the first column: the defect this change fixes, restored by a one-byte lie, with no discard and no log line.
+Shortening the same byte was already treated as malformed, so one lie had opposite verdicts in its two directions.
+Every container is now checked the same way, bytes between the end of the list and the end of the PDU are refused, and every bound is written so that a four-octet BER length cannot wrap an addition negative on a 32-bit build.
+
+The column count itself has no explicit cap.
+The repeater walk is bounded regardless, since the clamp divides by the column count, but the non-repeater loop is one walk step per column, and what bounds that is the 1024-byte read buffer.
+The coupling is asserted in a test so a larger buffer has to acknowledge it.
 
 ### Known limitations
 

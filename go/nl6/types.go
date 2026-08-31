@@ -227,6 +227,18 @@ type SNMPServer struct {
 	// firstBulkAbort gates the log line for a v3 GETBULK collection loop that
 	// ended on a non-advancing successor (see logFirstBulkAbort).
 	firstBulkAbort sync.Once
+
+	// firstMalformedV3List gates the log line for a discarded SNMPv3 GETBULK
+	// whose variable-bindings list is not a valid ASN.1 encoding (see
+	// logFirstMalformedV3List).
+	//
+	// Its OWN gate, not firstMalformedV3's. That one covers a scoped PDU whose
+	// first binding or PDU type is bad; this one covers a LATER binding in a
+	// well-formed-looking list. Sharing a sync.Once means whichever fault a
+	// device saw first silences the other for the life of the process, and the
+	// two have different causes and different fixes. The v1/v2c side already
+	// keeps them apart (logFirstMalformedList).
+	firstMalformedV3List sync.Once
 }
 
 // lldpServedSnapshot is an immutable (gen, served) pair stored under

@@ -25,9 +25,20 @@ import (
 // `sync.Pool` is documented to perform best with pointer-typed values —
 // non-pointer slice headers cost an extra allocation per Get/Put pair
 // (staticcheck SA6002), so we wrap in `*[]byte`.
+// snmpReadBufferBytes is how much of a request datagram the listener reads.
+//
+// It is also the only thing bounding how many variable bindings — GETBULK
+// COLUMNS — one request can name, since the smallest encodable binding is
+// minVarbindSize bytes. The v3 GETBULK repeater walk is bounded regardless
+// (clampBulkWalk divides its ceiling by the column count), but the
+// non-repeater loop is one walk step per column with no other bound, so
+// raising this raises that work linearly. TestReadBufferBoundsTheColumnCount
+// pins the coupling (nl6#535 review R12).
+const snmpReadBufferBytes = 1024
+
 var snmpBufPool = sync.Pool{
 	New: func() interface{} {
-		buf := make([]byte, 1024)
+		buf := make([]byte, snmpReadBufferBytes)
 		return &buf
 	},
 }
@@ -300,6 +311,22 @@ func (s *SNMPServer) logFirstMalformedList(pduType byte) {
 func (s *SNMPServer) logFirstMalformedV3(err error) {
 	s.firstMalformedV3.Do(func() {
 		log.Printf("SNMP %s: discarded an SNMPv3 request whose scoped PDU does not parse: %v (further discards suppressed for this device)",
+			s.device.ID, err)
+	})
+}
+
+// logFirstMalformedV3List emits at most one line per device when an SNMPv3
+// GETBULK is discarded because its variable-bindings list — or a container
+// length on the way to it — is not a valid ASN.1 encoding.
+//
+// Separate from logFirstMalformedV3 on purpose: that gate covers the scoped
+// PDU's first binding and its PDU type, this one covers the rest of the list,
+// and one sync.Once across both means whichever fault arrives first hides the
+// other for the device's lifetime. The v1/v2c side keeps the same two apart
+// and names the PDU tag; this names the fault.
+func (s *SNMPServer) logFirstMalformedV3List(err error) {
+	s.firstMalformedV3List.Do(func() {
+		log.Printf("SNMP %s: discarded an SNMPv3 GETBULK: %v (further discards of this fault suppressed for this device)",
 			s.device.ID, err)
 	})
 }
