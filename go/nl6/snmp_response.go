@@ -192,7 +192,28 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	return req
 }
 
-// Create proper SNMP response packet
+// createSNMPResponse builds a SINGLE-variable-binding GetResponse.
+//
+// PRODUCTION-UNREACHABLE as of nl6#542, and that is worth stating plainly
+// because the code reads as a live path. It was the GETNEXT response builder;
+// GETNEXT now answers every binding through createGetNextResponse, so the only
+// caller left is createVarbindResponse's `len(oids) != len(responses)`
+// fallback, whose value is the literal "No data" — never a sentinel. So the
+// SNMPv1 diversion below cannot fire in production either.
+//
+// It is kept rather than deleted for two reasons. It is the defensive answer to
+// an internal invariant violation (mismatched slice lengths), which is a branch
+// this repo prefers to keep answerable; and its diversion is the SECOND copy of
+// the v1 noSuchName rule, so deleting it silently would leave the reachable
+// copy with no independent check. Instead
+// TestBothV1SentinelDiversionsAgreeByteForByte drives both copies over the same
+// input and requires identical bytes — the nl6#539 lesson, where a second
+// predicate agreed with its twin on the day it was written and drifted later
+// (nl6#542 review R5).
+//
+// The one behavioural difference, deliberate and now unreachable: this builder
+// applies NO maxSNMPResponseSize bound, where createVarbindResponse does. Do
+// not add a caller without considering that.
 func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) []byte {
 	// Parse incoming request to get actual community and request ID
 	req := s.parseIncomingRequest(requestData)
@@ -200,8 +221,11 @@ func (s *SNMPServer) createSNMPResponse(oid, value string, requestData []byte) [
 	// SNMPv1 has no exception values. Divert to a noSuchName error-status
 	// before encoding, or the manager receives a context tag its decoder does
 	// not define (RFC 3584 §4.2.2.2: §4.2.2.2.1 for noSuchObject, §4.2.2.2.2
-	// for the endOfMibView a v1 GETNEXT reaches past the last OID). Single
-	// varbind, so error-index is 1.
+	// for endOfMibView). Single varbind, so error-index is 1.
+	//
+	// The endOfMibView case used to arrive here from a v1 GETNEXT past the last
+	// OID; since nl6#542 that goes through createVarbindResponse under
+	// v1DivertSentinel and this copy is unreachable — see the function comment.
 	if req.Version == snmpVersion1 && isSNMPExceptionValue(value) {
 		return s.encodeGetResponseAt(req, encodeVarBind(oid, encodeNull()), snmpErrNoSuchName, 1)
 	}
@@ -301,9 +325,10 @@ func isSNMPExceptionValue(v string) bool {
 }
 
 // snmpOverflowRule selects what happens when a response will not fit the
-// datagram budget. The two PDU types share this response encoder (deliberately
-// — see nl6#176) but RFC 3416 gives them opposite rules, so the rule is an
-// explicit argument rather than something the encoder infers from its caller.
+// datagram budget. GET, GETNEXT and GETBULK share this response encoder
+// (deliberately — see nl6#176) but RFC 3416 gives GETBULK the opposite rule to
+// the other two, so the rule is an explicit argument rather than something the
+// encoder infers from its caller.
 //
 // Getting this backwards is the most damaging mistake available here: a
 // truncated GET is a silent partial answer that the requester cannot detect and
@@ -311,14 +336,103 @@ func isSNMPExceptionValue(v string) bool {
 type snmpOverflowRule int
 
 const (
+	// overflowRuleUnset is the ZERO VALUE and is not a rule. It exists so that
+	// a varbindResponseRules literal which omits this field cannot compile into
+	// working code with a silently-chosen policy — the positional argument this
+	// struct replaced could not be omitted, and a struct field can be
+	// (nl6#542 review R7).
+	overflowRuleUnset snmpOverflowRule = iota
 	// overflowTruncate: RFC 3416 §4.2.3. Emit as many variable bindings as fit
 	// and stop. Safe because a walk resumes from the last OID returned.
-	overflowTruncate snmpOverflowRule = iota
+	overflowTruncate
 	// overflowTooBig: RFC 3416 §4.2.1. Replace the whole response with
-	// error-status tooBig and an EMPTY binding list. A GET requester asked for
-	// specific bindings and has no resume point.
+	// error-status tooBig and an EMPTY binding list. A GET or GETNEXT requester
+	// asked for specific bindings and has no resume point.
 	overflowTooBig
 )
+
+// v1DiversionRule selects which offences make an SNMPv1 response divert to
+// error-status noSuchName. SNMPv1 has neither exception values nor Counter64,
+// but RFC 3584 does NOT treat the two the same way across PDU types, and the
+// PDU type is not visible from this function's arguments — so the rule is an
+// explicit argument, exactly as snmpOverflowRule is (nl6#489's lesson, applied
+// again by nl6#542).
+//
+// The asymmetry that matters: a GETNEXT names a POSITION, not an object, so a
+// Counter64 successor is SKIPPED by the walk and never reaches here. Diverting
+// on it instead would stop a v1 walk dead at the first ifHC* column and
+// truncate the table with no signal — the most damaging mistake available in
+// this area, which is why it is named rather than inferred.
+type v1DiversionRule int
+
+const (
+	// v1DivertUnset is the ZERO VALUE and is not a rule; see overflowRuleUnset.
+	// Without it the zero value of varbindResponseRules would be silently
+	// GETBULK-shaped ("never divert, truncate"), which is the one combination
+	// no other PDU type wants.
+	v1DivertUnset v1DiversionRule = iota
+	// v1DivertNothing: GETBULK. SNMPv1 has no GETBULK PDU, so a version-0
+	// GETBULK is already a malformed request; its bindings are WALKED OIDs
+	// rather than the request's names, and there can be
+	// max-repetitions × columns of them, so neither the RFC 1157 echo nor a
+	// per-binding error-index means anything. Answered unchanged (nl6#524).
+	v1DivertNothing
+	// v1DivertSentinel: GETNEXT. An exception sentinel diverts (RFC 3584
+	// §4.2.2.2.2 for the endOfMibView a walk reaches past the last OID), a
+	// Counter64-typed binding does NOT — handleSNMPv2cRequest's skip run has
+	// already stepped over it (RFC 3584 §4.2.2.1).
+	v1DivertSentinel
+	// v1DivertSentinelAndCounter64: GET. Both offences divert, and the FIRST
+	// one in the list wins whichever kind it is (RFC 1157 error-index).
+	v1DivertSentinelAndCounter64
+)
+
+// varbindResponseRules carries the per-PDU-type decisions createVarbindResponse
+// cannot infer from its arguments. Every field must be set explicitly at the
+// call site, and BOTH rule fields have a zero value that is not a rule, so a
+// literal that omits one is a detectable bug rather than a silent policy —
+// see resolveDefaults, and TestRuleConstructorsSetEveryField, which pins that
+// each of the three constructors sets both.
+type varbindResponseRules struct {
+	// overflow: what happens when the response will not fit the datagram.
+	overflow snmpOverflowRule
+	// v1Diversion: which offences divert a v1 response to noSuchName.
+	v1Diversion v1DiversionRule
+	// echoNames is the REQUEST's own variable-binding names, echoed with NULL
+	// values in a v1 noSuchName response (RFC 1157 §4.1.3). One per binding,
+	// in request order.
+	//
+	// GET and GETBULK leave it NIL, because there `oids` already ARE the
+	// request's names. GETNEXT must supply it: its `oids` are the SUCCESSORS
+	// it found, so echoing those would answer with names the manager never
+	// sent.
+	//
+	// nil is therefore the normal GET/GETBULK path, NOT an error path, which is
+	// why the fallback below keys on nil and not on a length mismatch. Keying
+	// on the mismatch made a mis-sized GETNEXT slice fall back to `oids` —
+	// echoing the successors, the exact answer the field exists to prevent
+	// (nl6#542 review R6).
+	echoNames []string
+}
+
+// resolveDefaults substitutes for a rule field left at its zero value and
+// reports whether it had to.
+//
+// Unreachable from the three constructors, which is the point: a FUTURE call
+// site that omits a field must not get a working default silently. The
+// substitutes are the STRICTEST rules available — never truncate, always
+// divert — so an omission degrades toward answering a v1 manager correctly and
+// never toward a silent partial response.
+func (r varbindResponseRules) resolveDefaults() (varbindResponseRules, bool) {
+	unset := false
+	if r.overflow == overflowRuleUnset {
+		r.overflow, unset = overflowTooBig, true
+	}
+	if r.v1Diversion == v1DivertUnset {
+		r.v1Diversion, unset = v1DivertSentinelAndCounter64, true
+	}
+	return r, unset
+}
 
 // lenBytesFor returns how many bytes encodeLength spends on a content length of
 // n. Needed to size a message without assembling it: the three nested SEQUENCEs
@@ -354,21 +468,64 @@ func snmpMessageSizeFor(msgPrefix, pduPrefix, varBindLen int) int {
 // createGetBulkResponse encodes a GETBULK response, truncating to fit the
 // datagram budget (RFC 3416 §4.2.3).
 func (s *SNMPServer) createGetBulkResponse(oids []string, responses []string, requestData []byte) []byte {
-	return s.createVarbindResponse(oids, responses, requestData, overflowTruncate)
+	return s.createVarbindResponse(oids, responses, requestData, varbindResponseRules{
+		overflow:    overflowTruncate,
+		v1Diversion: v1DivertNothing,
+	})
 }
 
 // createGetResponse encodes a GET response, returning tooBig rather than a
 // partial one when it will not fit (RFC 3416 §4.2.1).
 func (s *SNMPServer) createGetResponse(oids []string, responses []string, requestData []byte) []byte {
-	return s.createVarbindResponse(oids, responses, requestData, overflowTooBig)
+	return s.createVarbindResponse(oids, responses, requestData, varbindResponseRules{
+		overflow:    overflowTooBig,
+		v1Diversion: v1DivertSentinelAndCounter64,
+	})
+}
+
+// createGetNextResponse encodes a GETNEXT response (RFC 3416 §4.2.2).
+//
+// `names` is the request's variable-binding list and `oids` the successor found
+// for each of them, one for one and in the same order. The two differ, which is
+// the whole reason this constructor exists: the v1 noSuchName echo must carry
+// the names the manager SENT, while the bindings carry the successors.
+//
+// Overflow is tooBig, not truncation. A GETNEXT is a walk STEP: the manager
+// asked for N specific positions and has no resume point for the bindings a
+// truncated response would drop, so RFC 3416 §4.2.1's rule applies here as it
+// does to GET. Counter64 does NOT divert — see v1DivertSentinel.
+func (s *SNMPServer) createGetNextResponse(names, oids, responses []string, requestData []byte) []byte {
+	return s.createVarbindResponse(oids, responses, requestData, varbindResponseRules{
+		overflow:    overflowTooBig,
+		v1Diversion: v1DivertSentinel,
+		echoNames:   names,
+	})
+}
+
+// createTooBigResponse answers a request whose response cannot fit the datagram
+// without building one (RFC 3416 §4.2.1: error-status tooBig, empty binding
+// list).
+//
+// The GETNEXT dispatcher uses it to refuse, WITHOUT WALKING, a request naming
+// more bindings than minVarbindSize allows to fit — at which point tooBig is
+// already decided and every walk step is work spent on a response that would be
+// discarded (nl6#542 review R3). Byte-identical to what createVarbindResponse
+// produces on the same input, which TestTooBigShortCircuitMatchesTheBuilder
+// pins, because two ways of saying tooBig is exactly the drift this repo keeps
+// getting bitten by.
+func (s *SNMPServer) createTooBigResponse(requestData []byte) []byte {
+	return s.encodeGetResponse(s.parseIncomingRequest(requestData), nil, snmpErrTooBig)
 }
 
 // createVarbindResponse builds a multi-variable-binding GetResponse bounded by
 // maxSNMPResponseSize.
 //
-// `rule` decides what happens on overflow and MUST be supplied by the caller:
-// GETBULK truncates, GET returns tooBig. See snmpOverflowRule for why that
-// difference cannot be inferred here.
+// `rules` carries every decision that depends on the PDU type, which this
+// function cannot see: what happens on overflow (GETBULK truncates, GET and
+// GETNEXT return tooBig), which offences divert a v1 response to noSuchName,
+// and which names a v1 echo carries. All three MUST be supplied by the caller —
+// see snmpOverflowRule and v1DiversionRule for why none of them can be inferred
+// here.
 //
 // Sizing is exact and incremental. Each binding is encoded once, its size added
 // to a running total, and the resulting MESSAGE size computed in O(1) via
@@ -376,7 +533,7 @@ func (s *SNMPServer) createGetResponse(oids []string, responses []string, reques
 // then thrown away, and no estimate can drift from the encoder (the drift that
 // produced nl6#486 and nl6#490).
 func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
-	requestData []byte, rule snmpOverflowRule) []byte {
+	requestData []byte, rules varbindResponseRules) []byte {
 	if len(oids) != len(responses) {
 		// Fallback to single response
 		return s.createSNMPResponse(".1.3.6.1.2.1.1.1.0", "No data", requestData)
@@ -384,14 +541,25 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 
 	req := s.parseIncomingRequest(requestData)
 
+	// A rule field left at its zero value is a programming error at a call
+	// site, so it is logged once per device and answered under the strictest
+	// rules rather than under whichever policy the zero value happened to
+	// name (nl6#542 review R7).
+	rules, unset := rules.resolveDefaults()
+	if unset {
+		s.logFirstRulesBug("a varbindResponseRules field was left unset")
+	}
+
 	// SNMPv1 diversion, as in createSNMPResponse. RFC 3584 §4.2.2.2.1 sets
 	// error-index to the position of the varbind that produced the exception,
 	// so report the first one; indices are 1-based (RFC 1157).
 	//
-	// A Counter64-typed OID diverts the same way (RFC 3584 §4.2.2.1, nl6#524).
-	// Counter64 does not exist in SNMPv1, and encodeTypedValue picks the tag
-	// from the OID alone, so without this a v1 GET of an ifHC* column answered
-	// tag 0x46 under error-status noError.
+	// A Counter64-typed OID diverts the same way ON A GET (RFC 3584 §4.2.2.1,
+	// nl6#524). Counter64 does not exist in SNMPv1, and encodeTypedValue picks
+	// the tag from the OID alone, so without this a v1 GET of an ifHC* column
+	// answered tag 0x46 under error-status noError. On a GETNEXT it must NOT:
+	// rules.v1Diversion is what says so, and v1DiversionRule carries the
+	// reasoning.
 	//
 	// Both offences are tested in ONE pass, deliberately. Two sequential loops
 	// would let an offence late in the list beat an earlier one, and RFC 1157
@@ -404,23 +572,43 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 	// MIB type is what a v1 manager cannot represent, and a bad stored value
 	// should not quietly soften protocol semantics.
 	//
-	// GET only. GETBULK does not exist in SNMPv1, so a version-0 GETBULK is a
-	// malformed request and is answered as before rather than diverted: its
-	// `oids` are walked OIDs, not the request's names, and there can be
-	// max-repetitions × columns of them, so the echo below would be neither
-	// the RFC 1157 request echo nor bounded.
+	// The version test comes FIRST and the sentinel test comes before
+	// snmpTypeTag, which is a linear scan of the ~50-row type table that
+	// concatenates a string per row. A v2c fleet must never reach it.
 	//
-	// The echo skips the datagram budget deliberately. On the GET path `oids`
-	// is the request's own varbind list, and OID + NULL is exactly how the
-	// request encoded each binding, so the response is byte-for-byte the size
-	// of a request the socket already accepted. Running it through the sizing
-	// loop would produce a partial noSuchName echo, which is a wrong answer.
-	if req.Version == snmpVersion1 && rule == overflowTooBig {
+	// The echo skips the datagram budget deliberately. `echoed` is the
+	// request's own varbind list, and OID + NULL is exactly how the request
+	// encoded each binding, so the response is byte-for-byte the size of a
+	// request the socket already accepted. Running it through the sizing loop
+	// would produce a partial noSuchName echo, which is a wrong answer.
+	if req.Version == snmpVersion1 && rules.v1Diversion != v1DivertNothing {
+		// GETNEXT's bindings are successors, not the request's names, so the
+		// echo takes the names the caller supplied. NIL means the caller's
+		// `oids` are themselves the request's names (GET, GETBULK).
+		names := rules.echoNames
+		if names == nil {
+			names = oids
+		}
+		// A non-nil slice of the WRONG length is a bug, not a shape any caller
+		// produces: error-index below counts positions in `oids`, so echoing a
+		// differently-sized list points the manager at a binding that is not
+		// there. Answered with an EMPTY binding list, which carries no name and
+		// so cannot misinform, and logged once per device. Echoing `oids`
+		// instead — what this did before nl6#542 review R6 — would send the
+		// SUCCESSORS, names the manager never asked for.
+		if len(names) != len(oids) {
+			s.logFirstRulesBug("echoNames length does not match the binding count")
+			names = nil
+		}
 		for i := range oids {
 			// Index oids, not responses: the Counter64 test is on the OID.
-			if isSNMPExceptionValue(responses[i]) || snmpTypeTag(oids[i]) == ASN1_COUNTER64 {
+			offends := isSNMPExceptionValue(responses[i])
+			if !offends && rules.v1Diversion == v1DivertSentinelAndCounter64 {
+				offends = snmpTypeTag(oids[i]) == ASN1_COUNTER64
+			}
+			if offends {
 				var echoed []byte
-				for _, o := range oids {
+				for _, o := range names {
 					echoed = append(echoed, encodeVarBind(o, encodeNull())...)
 				}
 				return s.encodeGetResponseAt(req, echoed, snmpErrNoSuchName, i+1)
@@ -457,7 +645,7 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 			// §4.2.1, which this same function enforces two lines below. A GET
 			// that cannot be answered within one datagram must say so
 			// (nl6#489 review).
-			if len(varBindList) == 0 && rule == overflowTruncate {
+			if len(varBindList) == 0 && rules.overflow == overflowTruncate {
 				varBindList = append(varBindList, varBinding...)
 			}
 			break
@@ -465,7 +653,7 @@ func (s *SNMPServer) createVarbindResponse(oids []string, responses []string,
 		varBindList = append(varBindList, varBinding...)
 	}
 
-	if truncated && rule == overflowTooBig {
+	if truncated && rules.overflow == overflowTooBig {
 		// RFC 3416 §4.2.1: the requester asked for specific bindings and cannot
 		// resume, so report the failure instead of answering partially.
 		return s.encodeGetResponse(req, nil, snmpErrTooBig)

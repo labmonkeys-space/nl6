@@ -220,6 +220,14 @@ type SNMPServer struct {
 	// varbind list is not a valid ASN.1 encoding (see logFirstMalformedList).
 	firstMalformedList sync.Once
 
+	// firstRulesBug gates the log line for a varbindResponseRules value that
+	// cannot have come from one of its three constructors (see
+	// logFirstRulesBug). Its own gate: it reports a call-site defect, not
+	// anything about the datagram, so sharing a gate with a manager-provoked
+	// fault would let whichever arrived first hide the other for the device's
+	// lifetime.
+	firstRulesBug sync.Once
+
 	// firstMalformedV3 gates the log line for a discarded SNMPv3 request whose
 	// scoped PDU does not parse (see logFirstMalformedV3).
 	firstMalformedV3 sync.Once

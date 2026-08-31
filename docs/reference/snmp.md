@@ -134,6 +134,57 @@ Two limitations are worth stating plainly:
 - **GETBULK is deliberately untouched.** SNMPv1 has no GETBULK, but nl6 answers a version-0 GETBULK anyway, and it will hand a v1 manager raw `0x46` tags. This is the same decision the exception mapping makes above: a GETBULK's bindings are walked OIDs rather than the request's names, so the RFC 1157 echo does not apply to them.
 - **Coverage is bounded by the type table.** The eight `ifXTable` HC columns are the Counter64 objects nl6 recognises. A 64-bit counter served from a resource file under any other OID (a vendor HC column, `ipIfStatsHC*`, `dot3HC*`) is not recognised as Counter64, so a v1 request for it still returns `0x46`.
 
+### A GETNEXT answers every variable binding
+
+RFC 3416 §4.2.2 defines GETNEXT over the whole variable-bindings list, and nl6 answers it that way (nl6#542).
+Each binding carries the lexicographic successor of its own name, in request order.
+A binding with nothing after it carries `endOfMibView` named with the OID that was asked for, so a walker fetching several columns per round trip can tell which column ended.
+Until nl6#542 the dispatcher read one OID and answered one binding, so such a walker got the first column and no signal that the rest had been dropped.
+
+Two of the three behaviours below differ by version; the third is the same either way and is listed with them because all three are decided in one place.
+The SNMPv1 Counter64 rule is the one that matters most.
+
+| Case | SNMPv1 | SNMPv2c |
+|---|---|---|
+| The successor is a Counter64 object | that binding SKIPS it and continues to the next successor (RFC 3584 §4.2.2.1) | returned normally |
+| Nothing follows the requested OID | the response diverts to `noSuchName` with `error-index` at the first such binding, and the request's own names echoed with NULL values | `endOfMibView`, named with the requested OID |
+| The response will not fit the datagram | `tooBig` with an empty binding list | `tooBig` with an empty binding list |
+
+The Counter64 asymmetry is described canonically in the section immediately above; the row here is a summary, not a second definition.
+A GETNEXT names a position, not an object, so diverting on a Counter64 successor would stop a v1 walk dead at the first `ifHC*` column and truncate the table with no signal.
+A GET does divert there, because it names the object.
+The two rules share one response encoder, so which one applies is an explicit argument at the call site (`v1DiversionRule`) rather than something the encoder infers.
+
+Overflow is `tooBig` rather than truncation for the same reason it is on a GET: the manager named N positions and has no resume point for a binding a shorter response would drop.
+**This changed the answer for a single-binding GETNEXT.** Before nl6#542 that path applied no size bound at all and emitted an over-budget datagram; it now answers `tooBig`.
+The change is not reachable with shipped resources, where no value approaches the budget, but it is reachable with an operator resource file carrying a value over roughly 1400 bytes.
+The empty binding list under SNMPv1 is nl6's choice, not something RFC 1157 settles: §4.1.2 and §4.1.3 describe a `tooBig` response as "of identical form", which reads as echoing the request's bindings.
+nl6 sends none, so a `tooBig` cannot be mistaken for an answer.
+
+The whole request takes ONE LLDP served-OID snapshot, shared across every binding and every step of a Counter64 skip run, so no two steps of one request can straddle a topology generation bump.
+
+A version integer that is neither 0 nor 1 is served with SNMPv2c semantics rather than discarded, matching the leniency of the rest of this path.
+
+#### The cost of a wide multi-binding GETNEXT
+
+Answering every binding multiplies the walk, and on a wide profile that is measurable.
+Timed through `handleSNMPv2cRequest` on `cisco_crs_x` with a live counter cycler, an SNMPv1 GETNEXT repeating one name just before the `ifHC*` block:
+
+| Bindings | Request size | Time |
+|---|---|---|
+| 1 | 44 B | 2.9 ms |
+| 10 | 209 B | 27.2 ms |
+| 40 | 752 B | 104.3 ms |
+| 68 | 1256 B (over the 1024 B read buffer) | 176.8 ms |
+
+This runs inline on the shared UDP handler. Two bounds contain it, and neither removes it:
+
+- The binding count is clamped to what a response could ever fit (`maxSNMPResponseSize / minVarbindSize`, 98 at the default MTU). Above that the request is answered `tooBig` **without walking at all**, so no work is spent on a response that would be discarded. This is also the backstop that stops a larger read buffer from raising the work linearly.
+- The SNMPv1 Counter64 skip steps of one datagram share a single budget, so the cost does not scale with a per-binding allowance. The budget is derived, not hand-set: `maxGetNextBindings × longestShippedCounter64Run`, which is exactly what the widest legitimate request needs, so it cannot truncate a real table. An operator resource file with a wider Counter64 run than any shipped profile is the one case it does not cover; such a request is truncated and logged once per device.
+
+`longestShippedCounter64Run` is 1152 — eight `ifHC*` columns across 144 interfaces on `cisco_crs_x` — and it is measured by WALKING, not by scanning the static resource index.
+The distinction is worth 4x: that profile ships static rows for `ifXTable` columns 1, 6, 10, 15 and 18 only, and `IfCounterCycler` serves the rest analytically, so the static index reports 288 while the walk crosses 1152.
+
 ### A resource value that collides with a sentinel is rejected at load
 
 `validateSNMPResourceValues` rejects a resource entry whose response is exactly `noSuchObject` or `endOfMibView`.
@@ -243,7 +294,7 @@ The coupling is asserted in a test so a larger buffer has to acknowledge it.
 
 ### Known limitations
 
-**A GETNEXT processes only its first variable binding.** The v1/v2c GETNEXT dispatcher reads one OID from the request and answers one successor. A multi-binding GETNEXT (as some walkers send to fetch several columns per round trip) gets an answer for the first binding only. Pre-existing; the SNMPv1 Counter64 skip inherits it.
+**An SNMPv3 GET or GETNEXT answers its first variable binding only.** `extractOIDAndTypeFromScopedPDU` validates and returns the first name in the scoped PDU's variable-bindings list, and the v3 handlers build a single-binding response from it. So a v3 manager fetching several columns per round trip gets the first, as every version did before nl6#542 fixed the v1/v2c path. A v3 GETNEXT also calls `findNextOID` per request rather than sharing a served-OID snapshot across bindings, since there is only one. Analogous to the v3 GETBULK gaps below, and tracked with them.
 
 **SNMPv3 GETBULK is bounded by measurement, not arithmetic** (nl6#535). The v2c path computes its response length from fixed prefixes, which it can because its envelope is fixed. A v3 message cannot: its `msgGlobalData` and `msgSecurityParameters` sizes depend on the engine ID, the user name and the privacy parameters, and under privacy the scoped PDU is encrypted and PADDED to a cipher block. So the GETBULK builder assembles the candidate response through the real encoder and measures it, dropping bindings from the end until it fits. RFC 3416 §4.2.3 makes that correct: a truncated GETBULK is resumable, since the walker continues from the last OID returned. As on the v2c path, at least one binding is always emitted even when it does not fit, because an empty binding list with no error stalls a walk forever with no signal.
 
@@ -342,8 +393,13 @@ What did produce them is nl6's own fuzzer, and the two committed corpora had bee
 
 All five reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
 The nine fuzz targets that read a v1/v2c datagram were then run live for 180 seconds each, 43.5 million executions in total, with no find.
+That campaign predates nl6#542, which changed the serve path for GETNEXT — one of the three PDU types those targets reach — so its executions do not cover the multi-binding walk; seeds for that shape were committed with the change and replay on every ordinary `go test`.
 The campaign before nl6#562 was fixed had been recorded as clean and was not: one target failed an agreement assertion 33 seconds in, on an input that then failed deterministically on replay, and two shorter runs had missed it.
-`TestWellFormedResponsesUnchangedOnTheWire` pins the other side: responses to 288 well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
+`TestWellFormedResponsesUnchangedOnTheWire` pins the other side: responses to well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
+The corpus is 432 datagrams; the digest covers 360 of them, because nl6#542 made a multi-binding GETNEXT answer every binding and its response changed by design.
+That shape is excluded and the digest was re-derived against the nl6#542 baseline rather than updated in place, so it is still a pre-change measurement.
+Everything else — GET and GETBULK at any binding count, and the single-binding GETNEXT that is essentially all real GETNEXT traffic — is still byte-identical, including the single-binding Counter64 and past-the-end corners that nl6#542 touched.
+The 72 excluded datagrams are not left unpinned: `TestMultiBindingGetNextResponsesArePinned` freezes them against the new behaviour, so a further move of that shape has to be deliberate.
 
 ## OID lookup internals
 
