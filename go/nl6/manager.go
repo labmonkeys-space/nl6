@@ -349,7 +349,7 @@ func (sm *SimulatorManager) GetStatus() ManagerStatus {
 
 	return ManagerStatus{
 		IsPreAllocating:      sm.isPreAllocating.Load().(bool),
-		PreAllocProgress:     sm.preAllocProgress.Load().(int),
+		PreAllocProgress:     int(sm.preAllocProgress.Load()),
 		PreAllocTotal:        sm.tunPoolSize,
 		IsCreatingDevices:    sm.isCreatingDevices.Load().(bool),
 		DeviceCreateProgress: sm.deviceCreateProgress.Load().(int),

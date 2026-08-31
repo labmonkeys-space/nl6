@@ -59,9 +59,25 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 	startTime := time.Now()
 	log.Printf("PRE-ALLOCATION START TIME: %v", startTime.Format("15:04:05.000"))
 
-	// Store pool size for device creation to know pre-allocation was done
-	sm.tunPoolSize = poolSize
-	sm.maxWorkers = maxWorkers
+	// Walk the batch's IPs up front, in one pass, exactly as the launch loop
+	// used to walk them (same nextHost rule, same order). `walkIP` ends on the
+	// first host AFTER the batch, which is what the manager's currentIP has to
+	// advance to. Precomputing is what lets the reservation below commit the
+	// index base and the end IP together — the same O(n) precompute
+	// createDevicesParallel already does for device IPs.
+	prefix := parsePrefix(netmask)
+	interfaceIPs := make([]net.IP, poolSize)
+	walkIP := make(net.IP, len(startIP))
+	copy(walkIP, startIP)
+	for i := 0; i < poolSize; i++ {
+		interfaceIPs[i] = make(net.IP, len(walkIP))
+		copy(interfaceIPs[i], walkIP)
+		walkIP = nextHost(walkIP, prefix)
+	}
+
+	// Reserve everything this batch takes from the manager's shared allocation
+	// state in ONE critical section, BEFORE any worker starts (nl6#556).
+	baseTunIndex := sm.reservePreAllocBatch(poolSize, maxWorkers, walkIP)
 
 	// Worker pool for parallel interface creation
 	sem := make(chan struct{}, maxWorkers) // Limit concurrent workers
@@ -69,15 +85,8 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 	var mu sync.Mutex
 	var errors []error
 
-	// Current IP for allocation (make a copy to avoid modifying the manager's IP)
-	prefix := parsePrefix(netmask)
-	currentIP := make(net.IP, len(startIP))
-	copy(currentIP, startIP)
-
 	for i := 0; i < poolSize; i++ {
-		// Create a unique IP for this interface
-		interfaceIP := make(net.IP, len(currentIP))
-		copy(interfaceIP, currentIP)
+		interfaceIP := interfaceIPs[i]
 
 		wg.Add(1)
 		go func(interfaceIndex int, ip net.IP) {
@@ -87,8 +96,12 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// Generate unique interface name using the current nextTunIndex offset
-			tunName := fmt.Sprintf("%s%d", TUN_DEVICE_PREFIX, sm.nextTunIndex+interfaceIndex)
+			// Generate unique interface name from the base index this batch
+			// RESERVED before the workers started. Reading sm.nextTunIndex
+			// here (as this did before nl6#556) let a concurrent
+			// getNextTunName move the base mid-batch, so two workers of the
+			// SAME batch could compute the same name.
+			tunName := fmt.Sprintf("%s%d", TUN_DEVICE_PREFIX, baseTunIndex+interfaceIndex)
 
 			// Create TUN interface (in namespace if enabled)
 			var tunIface *TunInterface
@@ -114,11 +127,9 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 			sm.tunPoolMutex.Unlock()
 
 			// Update progress counter
-			current := sm.preAllocProgress.Load().(int)
-			sm.preAllocProgress.Store(current + 1)
+			newCurrent := sm.bumpPreAllocProgress()
 
 			// Log progress every 50 interfaces or for milestones
-			newCurrent := current + 1
 			if newCurrent%50 == 0 || newCurrent == 100 || newCurrent == 200 || newCurrent == 250 {
 				elapsed := time.Since(startTime)
 				rate := float64(newCurrent) / elapsed.Seconds()
@@ -127,9 +138,6 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 			}
 
 		}(i, interfaceIP)
-
-		// Increment IP for next interface
-		currentIP = nextHost(currentIP, prefix)
 	}
 
 	// Wait for all workers to complete with timeout
@@ -148,7 +156,7 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 	}
 
 	elapsed := time.Since(startTime)
-	created := sm.preAllocProgress.Load().(int)
+	created := int(sm.preAllocProgress.Load())
 
 	log.Printf("PRE-ALLOCATION END TIME: %v", time.Now().Format("15:04:05.000"))
 	log.Println()
@@ -176,15 +184,58 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 		log.Printf("   Success rate: 100%%")
 	}
 
-	// Update manager's nextTunIndex to continue after pre-allocated interfaces
+	// nextTunIndex and currentIP were advanced by reservePreAllocBatch before
+	// the workers started — deliberately not here. Advancing them at the end
+	// left the whole batch window in which a concurrent getNextTunName handed
+	// out a name this batch was already using, and a concurrent device create
+	// handed out an IP inside the pool's range. It also meant the timeout
+	// return above left both fields un-advanced while workers had already
+	// created interfaces from that range.
+	return nil
+}
+
+// reservePreAllocBatch commits, in ONE sm.mu critical section, everything a
+// pre-allocation batch takes from the manager's shared allocation state, and
+// returns the TUN index base the batch owns: names TUN_DEVICE_PREFIX+base ..
+// base+poolSize-1 are reserved for it and no other caller can compute them.
+//
+// One critical section, not four, because nextTunIndex and currentIP advance
+// together: a reader must never see the index advanced and the IP not, or two
+// devices land on one address. `endIP` is the first host AFTER the batch.
+//
+// The lock covers the FIELD ACCESSES ONLY. No interface is created, no exec
+// runs and no per-interface I/O happens under it — the 500-worker pre-allocator
+// depends on that.
+func (sm *SimulatorManager) reservePreAllocBatch(poolSize int, maxWorkers int, endIP net.IP) int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// Pool size tells device creation that pre-allocation was done.
+	sm.tunPoolSize = poolSize
+	sm.maxWorkers = maxWorkers
+
+	base := sm.nextTunIndex
 	sm.nextTunIndex += poolSize
 
-	// Update the manager's currentIP to continue after pre-allocated interfaces
-	// so that device creation uses the correct starting IP
-	sm.currentIP = make(net.IP, len(currentIP))
-	copy(sm.currentIP, currentIP)
+	sm.currentIP = make(net.IP, len(endIP))
+	copy(sm.currentIP, endIP)
 
-	return nil
+	return base
+}
+
+// bumpPreAllocProgress increments the pre-allocation progress counter and
+// returns the new value.
+//
+// This is an atomic read-modify-write, not the load-then-store it used to be.
+// The counter is progress only — GetStatus reports it and the summary log
+// divides by it — so a lost update is not a correctness fault. It is fixed
+// anyway because `preAllocProgress` is the field the summary's
+// "Total interfaces created: %d/%d" and per-interface timings are computed
+// from, and an undercount there is indistinguishable from failed interfaces:
+// the cheapest possible fix (atomic.Int64.Add) buys an honest number, whereas
+// documenting the loss would leave a misleading log line behind.
+func (sm *SimulatorManager) bumpPreAllocProgress() int {
+	return int(sm.preAllocProgress.Add(1))
 }
 
 // bulkDeleteTunInterfaces deletes multiple TUN interfaces efficiently using batch commands
@@ -276,7 +327,6 @@ func (sm *SimulatorManager) deleteTunInterfacesParallel(interfaceNames []string)
 // CleanupPreAllocatedInterfaces destroys all pre-allocated TUN interfaces
 func (sm *SimulatorManager) CleanupPreAllocatedInterfaces() {
 	sm.tunPoolMutex.Lock()
-	defer sm.tunPoolMutex.Unlock()
 
 	var interfaceNames []string
 
@@ -287,6 +337,17 @@ func (sm *SimulatorManager) CleanupPreAllocatedInterfaces() {
 			tunIface.destroy() // Close file descriptors
 		}
 	}
+
+	// Clear the pool. The REASSIGNMENT takes the same mutex the pre-allocation
+	// workers take for the CONTENTS — a mutex that guards a map's entries does
+	// not guard replacing the map (nl6#556).
+	//
+	// Cleared BEFORE the deletion below so no lock is held across the `ip`
+	// exec. `interfaceNames` is local by then, and a device create that races
+	// this misses the pool and creates its interface on demand, which is the
+	// right answer for an interface that is being deleted.
+	sm.tunInterfacePool = make(map[string]*TunInterface)
+	sm.tunPoolMutex.Unlock()
 
 	// Bulk delete the interfaces
 	if len(interfaceNames) > 0 {
@@ -301,9 +362,15 @@ func (sm *SimulatorManager) CleanupPreAllocatedInterfaces() {
 		}
 	}
 
-	// Clear the pool
-	sm.tunInterfacePool = make(map[string]*TunInterface)
+	// tunPoolSize belongs to sm.mu (GetStatus reads it under sm.mu.RLock), and
+	// it is written AFTER releasing tunPoolMutex on purpose: shutdownFast takes
+	// tunPoolMutex while holding sm.mu, so the only safe order on this path is
+	// sm.mu → tunPoolMutex. Taking sm.mu here while holding tunPoolMutex would
+	// invert it and deadlock.
+	sm.mu.Lock()
 	sm.tunPoolSize = 0
+	sm.mu.Unlock()
+
 	log.Printf("Cleaned up all %d pre-allocated interfaces", len(interfaceNames))
 }
 
