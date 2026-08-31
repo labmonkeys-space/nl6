@@ -39,9 +39,6 @@ type Scenario struct {
 	Rate float64
 	// Window is the measurement window length: T1 = T0 + Window.
 	Window time.Duration
-	// Drain is the grace period after T1 during which in-flight sends may
-	// complete (bucketed `drain`). Zero selects the default.
-	Drain time.Duration
 	// Seed pins every random draw the scenario makes (FR6/FR33).
 	Seed int64
 	// RateProfile is the optional time-varying intensity λ(t) (FR5). Nil or
@@ -93,8 +90,6 @@ var flowScenarioProtocols = map[string]bool{
 
 // isFlowScenarioProtocol reports whether p is emitted by a FlowExporter.
 func isFlowScenarioProtocol(p string) bool { return flowScenarioProtocols[p] }
-
-const defaultScenarioDrain = 2 * time.Second
 
 // scenarioMaxWindow bounds runaway configs (mirrors the 24h cap convention
 // of the REST auto-revert timers).
@@ -232,9 +227,14 @@ func (s *Scenario) Validate() error {
 	if s.Window > scenarioMaxWindow {
 		return fmt.Errorf("scenario: window %s exceeds the %s cap", s.Window, scenarioMaxWindow)
 	}
-	if s.Drain < 0 {
-		return fmt.Errorf("scenario: drain must be >= 0, got %s", s.Drain)
-	}
+	// There is deliberately NO drain check here, and nothing for it to check:
+	// nl6#500 removed the field from this struct, so a caller building a
+	// Scenario directly (a second submit path, a test) cannot express one. The
+	// wire refusal in scenarioRequest.toScenario is therefore the only site
+	// that CAN reject a drain, and it is not a bypassable validation gap — a
+	// reintroduced grace would have to add a field here first, which
+	// TestScenarioDrainEnd_IsTheReleaseInstantNotADeadline catches by
+	// BEHAVIOUR (whatever the field is called) rather than by name.
 	// Rate profile (FR5): structural validation now so a bad profile is a
 	// submit-time 400, not a Start-time failure. The built profile is
 	// discarded here (rebuilt at Start); validation is the only goal.
@@ -348,14 +348,6 @@ func (s *Scenario) selectorSummary() string {
 		return fmt.Sprintf("%d", len(s.Participants))
 	}
 	return fmt.Sprintf("%d explicit + %d prefixes", len(s.Participants), len(s.ParticipantsCIDR))
-}
-
-// drainOrDefault returns the configured drain grace, defaulting when zero.
-func (s *Scenario) drainOrDefault() time.Duration {
-	if s.Drain == 0 {
-		return defaultScenarioDrain
-	}
-	return s.Drain
 }
 
 // interval returns the fixed inter-fire interval for the constant-rate stub.

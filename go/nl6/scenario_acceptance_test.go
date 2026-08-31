@@ -36,7 +36,7 @@ func TestScenarioAcceptance_GoldenInWindow(t *testing.T) {
 		router := scenarioAPIManager(t, 1)
 		// 10/s over a 1s half-open window, first fire at T0 → exactly 10.
 		// The fire that would land on T1 is excluded by the auto-close.
-		id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":10,"window":"1s","drain":"500ms","seed":123}`)
+		id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":10,"window":"1s","seed":123}`)
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 
@@ -112,7 +112,7 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 	c := newScenarioController(sm, nil)
 	spec := &Scenario{
 		Participants: []string{"10.42.0.1"}, Protocol: "syslog",
-		Rate: 20, Window: 200 * time.Millisecond, Drain: 50 * time.Millisecond, Seed: 7,
+		Rate: 20, Window: 200 * time.Millisecond, Seed: 7,
 	}
 	if err := c.Submit(spec, "s-000001"); err != nil {
 		t.Fatal(err)
@@ -123,8 +123,11 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Real time: let the window run, then finalize.
-	time.Sleep(spec.Window + spec.Drain + 50*time.Millisecond)
+	// Real time: let the window run, then finalize. The margin is 150ms, not
+	// the 50ms a mechanical `+ spec.Drain` removal would leave: this test is
+	// NOT under synctest, so the slack absorbs scheduler jitter on a loaded CI
+	// box. Removing an inert config term must not tighten a real deadline.
+	time.Sleep(spec.Window + 150*time.Millisecond)
 	res, err := c.Stop()
 	if err != nil {
 		// Auto-close may have finalized already — that's fine, read the result.
@@ -132,6 +135,9 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 			t.Fatalf("Stop: %v", err)
 		}
 	}
+	// The drain tail is the mechanism four documents now rest on, so pin it on
+	// a real run (nl6#500): it ends when the admitted writes return.
+	assertDrainTailIsBounded(t, res)
 	sent := res.PerDevice["10.42.0.1"].InWindow + res.PerDevice["10.42.0.1"].Drain
 
 	// Give the collector's read loop time to drain any in-flight datagrams.

@@ -29,8 +29,7 @@ func TestScenarioLocalization_SubWindowsSumToInWindow(t *testing.T) {
 		// one of the 10 one-second buckets is populated.
 		spec := &Scenario{
 			Participants: []string{"10.42.0.1", "10.42.0.2"},
-			Protocol:     "syslog", Rate: 20, Window: 10 * time.Second,
-			Drain: time.Second, Seed: 42,
+			Protocol:     "syslog", Rate: 20, Window: 10 * time.Second, Seed: 42,
 		}
 		if err := c.Submit(spec, "s-000001"); err != nil {
 			t.Fatal(err)
@@ -41,7 +40,7 @@ func TestScenarioLocalization_SubWindowsSumToInWindow(t *testing.T) {
 		if err := c.Start(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(spec.Window + spec.drainOrDefault() + 100*time.Millisecond)
+		time.Sleep(spec.Window + 200*time.Millisecond)
 		synctest.Wait()
 
 		rep := buildScenarioReport(sm, c)
@@ -93,8 +92,7 @@ func TestScenarioLocalization_EarlyStopKeepsPlannedBasis(t *testing.T) {
 		// Planned 10s window (→ 1s buckets); stop early at ~3s.
 		spec := &Scenario{
 			Participants: []string{"10.42.0.1"},
-			Protocol:     "syslog", Rate: 20, Window: 10 * time.Second,
-			Drain: time.Second, Seed: 42,
+			Protocol:     "syslog", Rate: 20, Window: 10 * time.Second, Seed: 42,
 		}
 		if err := c.Submit(spec, "s-000001"); err != nil {
 			t.Fatal(err)
@@ -148,8 +146,7 @@ func TestScenarioLocalization_TimeAttribution(t *testing.T) {
 		// Linear 5/s → 50/s over 10s: later buckets carry many more sends.
 		spec := &Scenario{
 			Participants: []string{"10.42.0.1"},
-			Protocol:     "syslog", Rate: 5, Window: 10 * time.Second,
-			Drain: time.Second, Seed: 7,
+			Protocol:     "syslog", Rate: 5, Window: 10 * time.Second, Seed: 7,
 			RateProfile: &RateProfileSpec{
 				Kind: "linear", StartRate: 5, EndRate: 50,
 			},
@@ -163,7 +160,7 @@ func TestScenarioLocalization_TimeAttribution(t *testing.T) {
 		if err := c.Start(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(spec.Window + spec.drainOrDefault() + 100*time.Millisecond)
+		time.Sleep(spec.Window + 200*time.Millisecond)
 		synctest.Wait()
 
 		rep := buildScenarioReport(sm, c)

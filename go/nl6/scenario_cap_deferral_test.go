@@ -37,7 +37,7 @@ func TestScenarioCapDeferral_Visibility(t *testing.T) {
 	c := newScenarioController(sm, nil)
 	// ~900 demand (300/s × 3 devices × 1s) against a 40-tps cap.
 	spec := &Scenario{
-		Participants: ips, Protocol: "syslog", Rate: 100, Window: window, Drain: 200 * time.Millisecond, Seed: 1,
+		Participants: ips, Protocol: "syslog", Rate: 100, Window: window, Seed: 1,
 		RateProfile: &RateProfileSpec{Kind: "staged", Stages: []ProfileStage{{Duration: "1s", Rate: 300}}},
 	}
 	if err := c.Submit(spec, "s-000001"); err != nil {
@@ -96,7 +96,7 @@ func TestScenarioCapDeferral_UncappedNoDeferral(t *testing.T) {
 
 	c := newScenarioController(sm, nil)
 	spec := &Scenario{
-		Participants: ips, Protocol: "syslog", Rate: 50, Window: window, Drain: 100 * time.Millisecond, Seed: 2,
+		Participants: ips, Protocol: "syslog", Rate: 50, Window: window, Seed: 2,
 		RateProfile: &RateProfileSpec{Kind: "linear", StartRate: 20, EndRate: 80},
 	}
 	if err := c.Submit(spec, "s-000001"); err != nil {

@@ -63,7 +63,7 @@ func TestScenarioDialout_GateCounting(t *testing.T) {
 	}
 
 	// RUNNING + live stream: sent.
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	if !do(t0.Add(time.Minute)) {
 		t.Fatal("in-window on a live stream must enqueue")
 	}
@@ -82,7 +82,7 @@ func TestScenarioDialout_GateCounting(t *testing.T) {
 
 	// STOPPED / post-window: suppressed again.
 	setStreamLive(e, true)
-	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour)})
 	if do(t0.Add(2 * time.Hour)) {
 		t.Fatal("post-window must not enqueue")
 	}
@@ -162,7 +162,7 @@ func TestScenarioDialout_SilentArmingEndToEnd(t *testing.T) {
 
 	// Open the window: updates now flow and are received + counted.
 	t0 := time.Now()
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	waitForResponses(t, col, 1, 5*time.Second)
 	if led.inWindow.Load() == 0 {
 		t.Fatal("in-window updates not counted as sent")

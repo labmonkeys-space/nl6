@@ -83,7 +83,7 @@ func runLinearProfile(t *testing.T, seed int64) (uint64, uint64, uint64) {
 		sink.t0.Store(time.Now().UnixNano())
 		c := newScenarioController(sm, nil)
 		spec := &Scenario{
-			Participants: ips, Protocol: "syslog", Rate: 10, Window: window, Drain: time.Second, Seed: seed,
+			Participants: ips, Protocol: "syslog", Rate: 10, Window: window, Seed: seed,
 			RateProfile: &RateProfileSpec{Kind: "linear", StartRate: 5, EndRate: 50}, // rising 5→50/s
 		}
 		if err := c.Submit(spec, "s-000001"); err != nil {
@@ -159,7 +159,7 @@ func TestScenarioProfile_OverCapGoverned(t *testing.T) {
 	// Demand far above the cap: constant-high would use fixed-interval, so use
 	// a staged profile (NHPP) that wants ~300/device/s across 3 devices.
 	spec := &Scenario{
-		Participants: ips, Protocol: "syslog", Rate: 100, Window: window, Drain: 200 * time.Millisecond, Seed: 1,
+		Participants: ips, Protocol: "syslog", Rate: 100, Window: window, Seed: 1,
 		RateProfile: &RateProfileSpec{Kind: "staged", Stages: []ProfileStage{{Duration: "1s", Rate: 300}}},
 	}
 	if err := c.Submit(spec, "s-000001"); err != nil {

@@ -596,14 +596,18 @@ func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
 // the window's own duration stayed the denominator — the same mistake the
 // per-application block avoids by keeping drain bytes out of its rate.
 //
-// The exclusion is correct and it has a consequence callers must know about:
-// this reads BELOW a packet capture of the same run, by an amount that scales
-// with drain/window rather than with the rate. Measured against tcpdump on five
-// netflow9 participants, -3% to -8% at a 120s window and -1.2% to -2.1% at
-// 1200s. So two runs at different window lengths report different figures for
-// the same true rate, which makes this unsafe to compare across window sizes
-// (nl6#463). Documented in docs/reference/loadtest-report-schema.md; do not
-// "fix" it by folding drain records in.
+// This is an IN-WINDOW rate, and that is the whole of its definition (nl6#463).
+// Comparing it against a packet capture therefore means bounding the capture to
+// [T0, T1) — not correcting the figure by a drain, which was never the term. The
+// drain tail is bounded by the work admitted before T1, not by a duration: one
+// write on the syslog path, where drain_end was measured at T1 + 9ms with a 30s
+// drain configured, and a whole paginated batch on the flow path, which admits
+// around Tick. Either way it is orders of magnitude short of moving a 120s
+// window by percent (nl6#500). The
+// gap nl6#463 chased was measurement-side — template phantoms, post-window
+// emission, and a span-versus-window denominator — with zero ledger error.
+// Documented in docs/reference/loadtest-report-schema.md; do not "fix" it by
+// folding drain records in.
 func achievedPerDeviceRate(res *ScenarioResult) float64 {
 	if res == nil || len(res.PerDevice) == 0 {
 		return 0

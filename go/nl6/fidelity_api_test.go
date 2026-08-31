@@ -586,7 +586,7 @@ func TestFidelityToggle_MidScenarioDoesNotDisturbTheRun(t *testing.T) {
 		c := newScenarioController(sm, nil)
 		spec := &Scenario{
 			Participants: []string{"10.42.0.1"}, Protocol: "syslog",
-			Rate: 20, Window: 2 * time.Second, Drain: 200 * time.Millisecond, Seed: 42,
+			Rate: 20, Window: 2 * time.Second, Seed: 42,
 		}
 		if err := c.Submit(spec, "s-000042"); err != nil {
 			t.Fatal(err)
@@ -604,7 +604,7 @@ func TestFidelityToggle_MidScenarioDoesNotDisturbTheRun(t *testing.T) {
 			t.Fatalf("mid-scenario toggle: got %d", w.Code)
 		}
 
-		time.Sleep(spec.Window + spec.drainOrDefault() + 100*time.Millisecond)
+		time.Sleep(spec.Window + 200*time.Millisecond)
 		synctest.Wait()
 
 		res := c.Result()

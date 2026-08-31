@@ -26,7 +26,7 @@ func TestScenarioAbort_ReportArtifact(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		router := scenarioAPIManager(t, 2)
 		// Long window so only the abort finalizes (never the auto-close).
-		id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"10s","drain":"500ms","seed":7}`)
+		id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"10s","seed":7}`)
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 

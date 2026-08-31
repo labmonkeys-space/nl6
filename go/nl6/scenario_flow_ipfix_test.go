@@ -80,7 +80,7 @@ func TestScenarioIPFIX_GatedArmingAndSequence(t *testing.T) {
 	}
 
 	// In-window: data records emitted, counted, decode clean.
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 3, t0.Add(time.Minute))
 	win := tick(t0.Add(time.Minute))
 	if win == nil || win.Header.Version != 10 || len(win.Records) != 3 {
@@ -161,7 +161,7 @@ func TestScenarioIPFIX_CadenceAdaptationDeterministic(t *testing.T) {
 			sm.flowBufPool.New = func() any { b := make([]byte, 1500); return &b }
 			c := newScenarioController(sm, time.Now)
 			// rate 5 → scenario flow tick every 200ms; 2s window → ~10 ticks.
-			spec := &Scenario{Participants: []string{"10.42.0.1"}, Protocol: "ipfix", Rate: 5, Window: 2 * time.Second, Drain: 200 * time.Millisecond, Seed: 1}
+			spec := &Scenario{Participants: []string{"10.42.0.1"}, Protocol: "ipfix", Rate: 5, Window: 2 * time.Second, Seed: 1}
 			if err := c.Submit(spec, "s-000001"); err != nil {
 				t.Fatal(err)
 			}

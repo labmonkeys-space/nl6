@@ -17,7 +17,6 @@ REQUEST='{
   "protocol": "syslog",
   "rate": 10,
   "window": "2s",
-  "drain": "500ms",
   "seed": 42
 }'
 
@@ -40,7 +39,8 @@ echo "==> start"
 curl -sf -X POST "${NL6}/api/v1/scenarios/${ID}/start" | jq -c '{phase}'
 
 echo "==> running the 2 s window ..."
-sleep 3   # window (2s) + drain (0.5s) + margin; the scenario self-closes at T1
+sleep 3   # window (2s) + margin; the scenario self-closes at T1 and the drain
+          # barrier returns as soon as the in-flight writes do
 
 echo "==> stop / fetch report"
 REPORT=$(curl -sf -X POST "${NL6}/api/v1/scenarios/${ID}/stop")

@@ -76,7 +76,6 @@ Request body:
   "protocol": "syslog",
   "rate": 10,
   "window": "2s",
-  "drain": "500ms",
   "seed": 42
 }
 ```
@@ -96,13 +95,22 @@ For `gnmi-dialout`, `rate` does **not** control emission — the stream runs at 
 
 Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
-| `drain` | `string` | no | Grace period after `T1` for in-flight sends to complete (bucketed `drain`). `≥ 0`; omitted/`0` selects the 2 s default. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
 | `expect_participants` | `number` | no | Declared participant cardinality: how many devices you expect the selectors to resolve to. **Exact** — start is refused when the participating count differs in *either* direction, because a silently different denominator is what makes a run incomparable to its baseline. Must be between `1` and **100,000**; an explicit `0` is a `400` (use omission to mean "no expectation", so a caller that computes this number and hits a zero-length bug cannot silently lose the guard). Without `participants_cidr` it must also be `<=` the number of declared `participants`, since the armed set cannot exceed the list — a larger value is unsatisfiable by construction and is refused at submit rather than deferred to a `409` at start. Also checked when scheduling an absolute `T0`, so a doomed schedule is refused immediately instead of at fire time. Fingerprinted in `config_sha256` — it is declared intent. Don't know the number yet? Submit without it, arm, read `participants_armed`, then re-submit with it. |
 | `abort_predicate` | `object` | no | Self-abort a runaway run when a mid-run ledger metric crosses a threshold (see below). |
 
 ¹ At least one of `participants` / `participants_cidr` must be non-empty; both empty is a `400`.
+
+##### Removed request fields
+
+A removed request field is a **breaking change for a harness**: the submit that worked before the upgrade now returns a `400`. The submit config carries no version of its own, so it moves with `nl6_version` and removals are listed here with the release that made them.
+
+| Field | Refused since | Why |
+|-------|---------------|-----|
+| `drain` | **v0.28.0** ([nl6#500]) | It configured nothing. The post-window phase is a **barrier, not a duration**: at `T1` no new fire initiates, and finalize waits for the work already admitted to return from its write — milliseconds on a healthy run. The refusal keys on the key's *presence*, so `""`, `null`, `0s` and a non-string value are all `400` with the same message; the fix is to delete the key. The `drain` ledger bucket and the `drain_end` timestamp are **unaffected** — both are observed, not configured. |
+
+[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 
 #### Abort predicate — `abort_predicate`
 

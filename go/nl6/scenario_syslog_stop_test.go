@@ -41,7 +41,6 @@ func TestScenarioSyslogFinalize_LedgerIdentityUnderLoad(t *testing.T) {
 			Protocol:     "syslog",
 			Rate:         200, // per device; well above what 2ms writes sustain
 			Window:       2 * time.Second,
-			Drain:        200 * time.Millisecond,
 			Seed:         int64(round + 1),
 		}
 		if err := c.Submit(spec, "s-00041"+string(rune('0'+round))); err != nil {

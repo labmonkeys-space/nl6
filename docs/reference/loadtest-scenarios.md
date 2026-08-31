@@ -21,7 +21,7 @@ NL6=http://localhost:8080
 # 1. Submit — validate + fingerprint. Returns the scenario id.
 ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
-  "protocol": "syslog", "rate": 10, "window": "30s", "drain": "2s", "seed": 42
+  "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42
 }' | jq -r .id)
 
 # 2. Arm — resolve participants; check the excluded list before starting.
@@ -281,9 +281,17 @@ block is the trusted-sender ground truth for per-application traffic: total
    flow durations run up to 300 s). Per-bucket series will never line up —
    `sub_window_bytes` is a sanity curve, not a reconciliation target.
 2. **Pad the collector-side query window** to
-   `[t0 − max profile flow duration, t1 + drain]` so interpolated bytes that
-   the collector attributes before `t0` are captured. Filter by the
-   scenario's exporter IPs (the `counters[].source_ip` set).
+   `[t0 − max profile flow duration, drain_end + slack]` so interpolated bytes
+   that the collector attributes before `t0` are captured, and so the tail is
+   not cut off. Generation stops at `t1`, but you are reconciling against
+   `sent = in_window + drain`, and a `drain` record is *by definition* one whose
+   write returned at or after `t1` — bounding the query at exactly `t1` would
+   drop it from the collector side while the report still counts it, inventing a
+   loss in the number this step exists to reconcile. `metadata.drain_end` is the
+   honest upper bound (milliseconds past `t1` on a healthy run); add a slack of
+   a second or two for collector-side timestamping and clock skew. There is
+   nothing beyond it: no fire initiates after `t1`. Filter by the scenario's
+   exporter IPs (the `counters[].source_ip` set).
 3. **Join on `(l4_proto, dst_port)`, not on names.** Collector classification
    is user-configurable; `app_hint` is a convenience label only. Generated
    source ports sit in the IANA dynamic range (≥ 49152), so a collector rule
@@ -451,7 +459,19 @@ than against a predicted total.
 
 A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the
 run. The shutdown path aborts the scenario through the same drain-and-finalize
-pipeline a normal stop uses (bounded by the drain grace), so:
+pipeline a normal stop uses, so:
+
+**How long that takes.** The abort publishes the terminal gate — no new fire
+initiates — and then waits for the fires already admitted to return from their
+writes. There is **no timeout and no configurable grace** ([nl6#500] removed a
+`drain` duration that never bounded anything). On a healthy run the wait is
+milliseconds. The worst case an operator can observe is set by the slowest
+transport in the run: a UDP write parks only while the socket buffer is full,
+while a syslog **TCP/TLS** device bounds one write at 2 s and serialises the
+fires queued behind it, so a stalled collector can hold shutdown for 2 s × those
+queued fires. A transport with no write deadline at all would hold it
+indefinitely; that gap is tracked as [nl6#567], and the barrier logs a warning
+every 30 s while it waits so a hang is visible in the log rather than silent.
 
 - The report is **finalized and marked `phase: "aborted"`**, with `metadata.t0`
   and a `metadata.t1` equal to the **abort instant** (the window that actually
@@ -490,3 +510,6 @@ Persistence is a deliberate non-goal for this subsystem: a fidelity check is a
 short, operator-driven experiment whose result is consumed immediately (diffed
 against a monitor), not an audit log. Capture the report JSON yourself if you
 need to keep it.
+
+[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
+[nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567

@@ -150,7 +150,7 @@ func TestScenarioAppTraffic_FailedWriteExcluded(t *testing.T) {
 	part := &scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now, countApps: true}
 	fe.scenPart.Store(part)
 	t0 := time.Unix(1_700_000_000, 0)
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 
 	injectExpiredFlowsTo(fe, 4, t0.Add(time.Minute), 6, 443, 1000, 10)
 	tickWithEncoder(fe, t0.Add(time.Minute), NetFlow9Encoder{}, conn, badAddr, testPool())
@@ -173,7 +173,7 @@ func TestScenarioAppTraffic_DrainBytes(t *testing.T) {
 	part := &scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now, countApps: true}
 	t0 := time.Unix(1_700_000_000, 0)
 	t1 := t0.Add(10 * time.Second)
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: t1.Add(time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 
 	inWin := []FlowRecord{{Protocol: 6, DstPort: 443, Bytes: 100, Packets: 1}}
 	drain := []FlowRecord{{Protocol: 6, DstPort: 443, Bytes: 40, Packets: 1}}
@@ -249,7 +249,7 @@ func TestScenarioAppTraffic_SflowExcluded(t *testing.T) {
 
 	led := part.ledger
 	t0 := time.Unix(1_700_000_000, 0)
-	part.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	part.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 
 	injectExpiredFlowsTo(fe, 3, t0.Add(time.Minute), 6, 443, 1000, 10)
 	tickWithEncoder(fe, t0.Add(time.Minute), SFlowEncoder{}, conn, addr, testPool())

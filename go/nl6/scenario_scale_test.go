@@ -81,7 +81,7 @@ func TestScenarioScale_ConcurrentIncrementRace(t *testing.T) {
 	// Publish a running gate directly (skip the scheduler): the window is
 	// wide open so every worker fire in it is admitted and counted.
 	now := c.now()
-	c.gate.Store(&gateState{phase: phaseRunning, t0: now, t1: now.Add(time.Hour), drainEnd: now.Add(time.Hour + time.Second)})
+	c.gate.Store(&gateState{phase: phaseRunning, t0: now, t1: now.Add(time.Hour)})
 
 	// For EVERY device, fire all four sources as four concurrent goroutines
 	// hitting the SAME exporter + ledger at once — this is what forces the
@@ -169,7 +169,7 @@ func TestScenarioScale_LedgerEqualsWire(t *testing.T) {
 	}()
 
 	c := newScenarioController(sm, nil)
-	spec := &Scenario{Participants: ips, Protocol: "syslog", Rate: 10, Window: 300 * time.Millisecond, Drain: 100 * time.Millisecond, Seed: 5}
+	spec := &Scenario{Participants: ips, Protocol: "syslog", Rate: 10, Window: 300 * time.Millisecond, Seed: 5}
 	if err := c.Submit(spec, "s-000001"); err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +179,19 @@ func TestScenarioScale_LedgerEqualsWire(t *testing.T) {
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(spec.Window + spec.Drain + 50*time.Millisecond)
+	// 200ms of real-time slack on a 300ms window (see the note in
+	// TestScenarioAcceptance_SentEqualsReceived): wall-clock test, loaded CI.
+	time.Sleep(spec.Window + 200*time.Millisecond)
 	res, err := c.Stop()
 	if err != nil {
 		if res = c.Result(); res == nil {
 			t.Fatalf("Stop: %v", err)
 		}
 	}
+
+	// Same drain-tail assertion as the acceptance test, at 50 devices
+	// (nl6#500): a transport parking writes past T1 would show up here first.
+	assertDrainTailIsBounded(t, res)
 
 	var sent uint64
 	for _, snap := range res.PerDevice {

@@ -638,7 +638,9 @@ func (sm *SimulatorManager) Shutdown() error {
 	// D7: abort a running load-test scenario FIRST — before the export
 	// subsystems tear down — so the scenario finalizes its report while
 	// participant exporters still exist, and the fleet freeze is released.
-	// Bounded by the drain grace, so shutdown cannot hang.
+	// The drain barrier has no timeout; see abortActiveScenario for the bound
+	// that holds per transport, and nl6#567 for the two cases it does not
+	// cover.
 	sm.abortActiveScenario()
 
 	// Stop the flow ticker goroutine and close every pooled shared socket.

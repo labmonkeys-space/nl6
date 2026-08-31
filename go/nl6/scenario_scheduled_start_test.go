@@ -24,7 +24,7 @@ import (
 func TestScenarioScheduledStart_FiresAtT0(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		router := scenarioAPIManager(t, 2)
-		id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"1s","drain":"200ms","seed":9}`)
+		id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"1s","seed":9}`)
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 
 		at := time.Now().Add(2 * time.Second).Format(time.RFC3339)

@@ -49,7 +49,7 @@ const scenarioParticipantWireBytes = 18
 // and the cap follows — instead of a comment that can rot.
 //
 // The 64 KiB addend is the envelope budget for every non-participant field
-// (protocol, rate, window, drain, seed, rate_profile, abort_predicate): the
+// (protocol, rate, window, seed, rate_profile, abort_predicate): the
 // entire allowance of the previous cap, which was copied from createDevices
 // where the body size does not scale with the fleet. It is a SHARED budget —
 // a ceiling-sized list plus a 70 KiB abort_predicate still exceeds the cap.
@@ -73,30 +73,69 @@ type scenarioRequest struct {
 	// ExpectParticipants is declared intent, so it is fingerprinted. A pointer
 	// so an explicit 0 reaches Validate (and is refused) instead of decoding
 	// indistinguishably from an omitted field.
-	ExpectParticipants *int                `json:"expect_participants,omitempty"`
-	Protocol           string              `json:"protocol"`
-	Rate               float64             `json:"rate"`
-	Window             string              `json:"window"`
-	Drain              string              `json:"drain,omitempty"`
-	Seed               int64               `json:"seed,omitempty"`
-	RateProfile        *RateProfileSpec    `json:"rate_profile,omitempty"`
-	AbortPredicate     *AbortPredicateSpec `json:"abort_predicate,omitempty"`
+	ExpectParticipants *int    `json:"expect_participants,omitempty"`
+	Protocol           string  `json:"protocol"`
+	Rate               float64 `json:"rate"`
+	Window             string  `json:"window"`
+	// Drain is retained on the DTO for one purpose only: to REJECT it with a
+	// message that names the mechanism (nl6#500). It configured nothing — the
+	// post-T1 phase is a barrier, not a duration, so the value was accepted,
+	// echoed in the submit fingerprint, and never read. Dropping the field
+	// instead would answer with the decoder's generic "unknown field \"drain\""
+	// (DisallowUnknownFields), which tells an operator the key is misspelled
+	// rather than that their grace period never existed.
+	//
+	// RawMessage rather than string, for two reasons that both come down to
+	// keying the refusal on the KEY's presence and never on its value:
+	//
+	//   - `{"drain":""}` and `{"drain":null}` are the accepted-and-ignored
+	//     shape nl6#445 forbids. A `string` cannot see either (both decode to
+	//     ""), and a `*string` cannot see `null` (it decodes to nil, exactly
+	//     like an absent key). RawMessage holds the literal bytes, so presence
+	//     is len() > 0 for every spelling. Same reasoning as
+	//     ExpectParticipants being a pointer, one step further.
+	//   - a non-string value (`{"drain":30}`) would fail in the DECODER with
+	//     "cannot unmarshal number into … of type string", so the actionable
+	//     message would be unreachable for a plausible spelling. RawMessage
+	//     accepts any JSON value and lets toScenario answer.
+	//
+	// omitempty is load-bearing for the fingerprint: an absent drain is absent
+	// from the canonical form, so config_sha256 for every body that omits it is
+	// byte-identical to what it was before this field stopped being honoured.
+	// (A nil RawMessage is len 0, so omitempty drops it — same as the string.)
+	Drain          json.RawMessage     `json:"drain,omitempty"`
+	Seed           int64               `json:"seed,omitempty"`
+	RateProfile    *RateProfileSpec    `json:"rate_profile,omitempty"`
+	AbortPredicate *AbortPredicateSpec `json:"abort_predicate,omitempty"`
 }
 
 // toScenario maps the wire DTO into the internal Scenario, parsing the
 // duration strings. The returned field names the offending JSON key on
 // error (for the {"error","field"} 400 body).
 func (req *scenarioRequest) toScenario() (spec *Scenario, field string, err error) {
+	// The engine cannot honour a drain grace: the post-window phase is a
+	// BARRIER, not a duration. At T1 the terminal gate is published, so no new
+	// fire initiates, and finalize then waits for the fires already admitted to
+	// return from their writes — measured on syslog at T1 + 9ms with a 30s
+	// drain configured (nl6#500). Rejecting at the door rather than
+	// storing-and-ignoring, because an API that echoes a value it does not use
+	// actively confirms a wrong belief — the operator's natural check is to read
+	// the value back. The in-tree precedent is the per-device trap/flow interval,
+	// refused with a 400 rather than silently dropped (nl6#445).
+	//
+	// FIRST, before the window parses: a body carrying both a bad window and a
+	// drain would otherwise report only the window, so the operator fixes the
+	// duration, resubmits, and only THEN learns the field is gone. A schema
+	// change outranks a value error in what the caller needs to hear.
+	if len(req.Drain) > 0 {
+		return nil, "drain", fmt.Errorf("drain is not supported — the post-window " +
+			"drain barrier is automatic: at T1 no new fire initiates and finalize " +
+			"waits for the already-admitted writes to return, so there is no grace " +
+			"period to configure; remove the field")
+	}
 	window, err := time.ParseDuration(req.Window)
 	if err != nil {
 		return nil, "window", fmt.Errorf("invalid window %q: %v (use a Go duration like \"30s\")", req.Window, err)
-	}
-	var drain time.Duration
-	if req.Drain != "" {
-		drain, err = time.ParseDuration(req.Drain)
-		if err != nil {
-			return nil, "drain", fmt.Errorf("invalid drain %q: %v (use a Go duration like \"2s\")", req.Drain, err)
-		}
 	}
 	return &Scenario{
 		Participants:       req.Participants,
@@ -105,7 +144,6 @@ func (req *scenarioRequest) toScenario() (spec *Scenario, field string, err erro
 		Protocol:           req.Protocol,
 		Rate:               req.Rate,
 		Window:             window,
-		Drain:              drain,
 		Seed:               req.Seed,
 		RateProfile:        req.RateProfile,
 		AbortPredicate:     req.AbortPredicate,

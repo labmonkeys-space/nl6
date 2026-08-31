@@ -83,7 +83,7 @@ func TestScenarioSFlow_GatedRawSamplesAndKeepalive(t *testing.T) {
 	}
 
 	// --- RUNNING / in-window: flow_sample counted on RAW sample counts ---
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 3, t0.Add(time.Minute))
 	tickWithEncoder(fe, t0.Add(time.Minute), SFlowEncoder{}, conn, addr, testPool())
 	flow, _, ver := sflowSamples(t, drainAll())
@@ -99,7 +99,7 @@ func TestScenarioSFlow_GatedRawSamplesAndKeepalive(t *testing.T) {
 	}
 
 	// --- STOPPED / post-window: data suppressed; keepalive still flows ---
-	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 2, t0.Add(2*time.Hour))
 	tickWithEncoder(fe, t0.Add(2*time.Hour), SFlowEncoder{}, conn, addr, testPool())
 	flow, counters, _ = sflowSamples(t, drainAll())

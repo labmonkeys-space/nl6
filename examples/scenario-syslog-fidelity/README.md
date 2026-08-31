@@ -36,7 +36,7 @@ docker compose up -d --build
 ```json
 {
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
-  "protocol": "syslog", "rate": 10, "window": "2s", "drain": "500ms", "seed": 42
+  "protocol": "syslog", "rate": 10, "window": "2s", "seed": 42
 }
 ```
 

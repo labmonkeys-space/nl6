@@ -23,7 +23,7 @@ func TestScenarioDrain_UndoToDropped(t *testing.T) {
 	t0 := time.Unix(1_700_000_000, 0)
 	t1 := t0.Add(time.Second)
 	gate := &atomic.Pointer[gateState]{}
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: t1})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 	led := &ledgerEntry{}
 	d := &drainGate{}
 	now := func() time.Time { return t0.Add(100 * time.Millisecond) }
@@ -62,7 +62,7 @@ func TestScenarioDrain_BarrierWaitsForInflight(t *testing.T) {
 		t0 := time.Now()
 		t1 := t0.Add(time.Second)
 		gate := &atomic.Pointer[gateState]{}
-		gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: t1.Add(500 * time.Millisecond)})
+		gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 		led := &ledgerEntry{}
 		d := &drainGate{}
 

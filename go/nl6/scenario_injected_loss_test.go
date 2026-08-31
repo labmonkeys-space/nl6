@@ -93,7 +93,7 @@ func TestScenarioInjectedLoss_ReconciliationAccuracy(t *testing.T) {
 				// 10 devices × 100/s × 10 s half-open window = 10,000 records.
 				sm, ips, sink := lossyManager(t, 10, tc.dropEveryN)
 				c := newScenarioController(sm, nil)
-				spec := &Scenario{Participants: ips, Protocol: "syslog", Rate: 100, Window: 10 * time.Second, Drain: time.Second, Seed: 42}
+				spec := &Scenario{Participants: ips, Protocol: "syslog", Rate: 100, Window: 10 * time.Second, Seed: 42}
 				if err := c.Submit(spec, "s-000001"); err != nil {
 					t.Fatal(err)
 				}

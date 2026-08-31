@@ -42,7 +42,7 @@ func TestScenarioFleet_MixedProducerRace(t *testing.T) {
 
 	const N = 2000
 	t0 := time.Unix(1_700_000_000, 0)
-	running := &gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)}
+	running := &gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)}
 
 	type part struct {
 		trap    *TrapExporter

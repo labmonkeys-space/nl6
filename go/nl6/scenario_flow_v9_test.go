@@ -87,7 +87,7 @@ func TestScenarioFlowV9_GatedArmingAndCounting(t *testing.T) {
 	preSeq := fe.seqNo
 
 	// --- RUNNING / in-window: data emitted + counted ---
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 3, t0.Add(time.Minute))
 	win := tick(t0.Add(time.Minute))
 	if win == nil || len(win.Records) != 3 {
@@ -106,7 +106,7 @@ func TestScenarioFlowV9_GatedArmingAndCounting(t *testing.T) {
 	}
 
 	// --- STOPPED / post-window: data suppressed again ---
-	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 2, t0.Add(2*time.Hour))
 	post := tick(t0.Add(2 * time.Hour))
 	if post != nil && len(post.Records) != 0 {
@@ -211,7 +211,7 @@ func TestScenarioFlowV9_WriteFailureBucket(t *testing.T) {
 	part := &scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now}
 	fe.scenPart.Store(part)
 	t0 := time.Unix(1_700_000_000, 0)
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 
 	injectExpiredFlows(fe, 4, t0.Add(time.Minute))
 	tickWithEncoder(fe, t0.Add(time.Minute), NetFlow9Encoder{}, conn, badAddr, testPool())

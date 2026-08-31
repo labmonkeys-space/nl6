@@ -57,7 +57,7 @@ func TestScenarioAbortPredicate_Triggers(t *testing.T) {
 		sm, ips := failingSyslogManager(t, 2)
 		c := newScenarioController(sm, nil)
 		spec := &Scenario{
-			Participants: ips, Protocol: "syslog", Rate: 10, Window: 30 * time.Second, Drain: time.Second, Seed: 1,
+			Participants: ips, Protocol: "syslog", Rate: 10, Window: 30 * time.Second, Seed: 1,
 			// 20 failures/s (2 devices × 10/s) crosses 20 within ~1–2s; abort 3s later.
 			AbortPredicate: &AbortPredicateSpec{Metric: "send_failures", Threshold: 20, Grace: "3s"},
 		}
@@ -101,7 +101,7 @@ func TestScenarioAbortPredicate_DoesNotTrigger(t *testing.T) {
 		sm, ips := failingSyslogManager(t, 2)
 		c := newScenarioController(sm, nil)
 		spec := &Scenario{
-			Participants: ips, Protocol: "syslog", Rate: 10, Window: 2 * time.Second, Drain: 200 * time.Millisecond, Seed: 1,
+			Participants: ips, Protocol: "syslog", Rate: 10, Window: 2 * time.Second, Seed: 1,
 			AbortPredicate: &AbortPredicateSpec{Metric: "send_failures", Threshold: 1_000_000, Grace: "1s"},
 		}
 		if err := c.Submit(spec, "s-000001"); err != nil {

@@ -69,7 +69,7 @@ func TestScenarioTrap_GateCountingAllSources(t *testing.T) {
 	// RUNNING / in-window: scenario + state-driven counted + on the wire;
 	// background still suppressed.
 	now := time.Now()
-	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour), drainEnd: now.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour)})
 	e.fireScenario(entry, nil)
 	e.FireForInterface(entry, 3)
 	e.fireBackground(entry, nil)
@@ -105,7 +105,7 @@ func TestScenarioTrap_ScenarioStragglerAfterDetach(t *testing.T) {
 	now := time.Now()
 	gate := &atomic.Pointer[gateState]{}
 	led := &ledgerEntry{}
-	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour), drainEnd: now.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour)})
 	e.scenPart.Store(&scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now})
 	e.scenPart.Store(nil) // finalize nil-swapped it while this fire was in flight
 
@@ -136,7 +136,7 @@ func TestScenarioTrap_InformOriginationAndAck(t *testing.T) {
 	gate := &atomic.Pointer[gateState]{}
 	led := &ledgerEntry{}
 	part := &scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now}
-	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour), drainEnd: now.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour)})
 	e.scenPart.Store(part)
 
 	for i := 0; i < 3; i++ {
