@@ -226,15 +226,23 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		return 0, fmt.Errorf("root privileges required to create TUN interfaces")
 	}
 
-	// Initialize with a write lock, then release it for the loop. The two
-	// pre-allocation fields are snapshotted in the SAME critical section
-	// (nl6#556): they belong to sm.mu, and reading them bare here raced a
-	// concurrent batch's reservePreAllocBatch.
+	// Rewind the allocation cursor to the batch start under the write lock,
+	// then release it for the loop.
+	//
+	// This UNDOES the currentIP half of reservePreAllocBatch, deliberately and
+	// necessarily: the pre-allocated interfaces are addressed startIP..startIP+
+	// count-1, so device creation has to walk that same range or every device
+	// misses the pool. The consequence is that IP allocation is a shared cursor
+	// rather than a reserved range, and two overlapping batches can still
+	// overlap on device IPs (nl6#556 review R4) — the reservation closes TUN
+	// NAMING only.
 	sm.mu.Lock()
 	sm.currentIP = ip
-	poolSize := sm.tunPoolSize
-	poolWorkers := sm.maxWorkers
 	sm.mu.Unlock()
+
+	// Both pre-allocation settings read as one pair under the lock that owns
+	// them; reading them bare here raced a concurrent batch's reservation.
+	poolSize, poolWorkers := sm.preAllocSnapshot()
 
 	successCount := 0
 
@@ -559,13 +567,14 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 // `seed` is propagated verbatim to every worker; each worker passes it into
 // `createSingleDevice` which copies per-device.
 func (sm *SimulatorManager) createDevicesParallel(count int, netmask string, resourceFile string, resources *DeviceResources, v3Config *SNMPv3Config, successCount *int, roundRobin bool, roundRobinResources []*DeviceResources, roundRobinResourceFiles []string, snmpPort int, seed *ExportSeed) {
-	// Get the starting IP and the worker count with one read lock: maxWorkers
-	// is an sm.mu field too, and sizing the semaphore from a bare read raced a
-	// concurrent batch's reservation (nl6#556).
+	// maxWorkers is an sm.mu field too, and sizing the semaphore from a bare
+	// read raced a concurrent batch's reservation (nl6#556).
+	_, workers := sm.preAllocSnapshot()
+
+	// Get starting IP with read lock
 	sm.mu.RLock()
 	startingIP := make(net.IP, len(sm.currentIP))
 	copy(startingIP, sm.currentIP)
-	workers := sm.maxWorkers
 	sm.mu.RUnlock()
 
 	// Worker pool for parallel device creation

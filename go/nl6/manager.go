@@ -151,6 +151,10 @@ func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *S
 	return sm
 }
 
+// getNextTunName returns the next on-demand TUN interface name and advances the
+// shared index. CALLERS HOLD sm.mu (like incrementIP) — nextTunIndex is the
+// source of interface names, and an unlocked increment here races every
+// pre-allocation batch's reservation (nl6#556).
 func (sm *SimulatorManager) getNextTunName() string {
 	name := fmt.Sprintf("%s%d", TUN_DEVICE_PREFIX, sm.nextTunIndex)
 	sm.nextTunIndex++
@@ -349,7 +353,7 @@ func (sm *SimulatorManager) GetStatus() ManagerStatus {
 
 	return ManagerStatus{
 		IsPreAllocating:      sm.isPreAllocating.Load().(bool),
-		PreAllocProgress:     int(sm.preAllocProgress.Load()),
+		PreAllocProgress:     preAllocProgressFor(sm.preAllocProgress.Load(), sm.preAllocProgressBase.Load()),
 		PreAllocTotal:        sm.tunPoolSize,
 		IsCreatingDevices:    sm.isCreatingDevices.Load().(bool),
 		DeviceCreateProgress: sm.deviceCreateProgress.Load().(int),
