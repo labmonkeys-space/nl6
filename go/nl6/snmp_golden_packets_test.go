@@ -194,8 +194,9 @@ func TestGoldenPackets_ParseIncomingRequest(t *testing.T) {
 			// Check the community bytes on the wire for every response path.
 			wantWire := append([]byte{0x02, 0x01, 0x01}, encodeOctetString(tt.wantCommunity)...)
 			responses := map[string][]byte{
-				"createSNMPResponse":    s.createSNMPResponse(tt.wantOID, "x", tt.packet),
-				"createVarbindResponse": s.createVarbindResponse([]string{tt.wantOID}, []string{"x"}, tt.packet, overflowTooBig),
+				"createSNMPResponse": s.createSNMPResponse(tt.wantOID, "x", tt.packet),
+				"createVarbindResponse": s.createVarbindResponse([]string{tt.wantOID}, []string{"x"}, tt.packet,
+					varbindResponseRules{overflow: overflowTooBig, v1Diversion: v1DivertSentinelAndCounter64}),
 				"createGetBulkResponse": s.createGetBulkResponse([]string{tt.wantOID}, []string{"x"}, tt.packet),
 			}
 			for name, resp := range responses {

@@ -134,7 +134,10 @@ func (s *SNMPServer) handleSingleRequest(requestData []byte, clientAddr *net.UDP
 }
 
 // maxCounter64SkipSteps bounds the SNMPv1 Counter64 skip loop. The real run is
-// (8 HC columns x interfaces), so this is far above any legitimate walk.
+// (8 HC columns x interfaces) — 288 on the widest shipped profile, a figure
+// TestLongestCounter64RunAcrossShippedProfiles recomputes from the shipped set
+// rather than trusting this comment (nl6#542) — so this is three orders of
+// magnitude above any legitimate walk.
 //
 // It does NOT exist to catch a non-advancing oidNextMap: the non-advance check
 // in the loop already does that, and a strictly increasing sequence over a
@@ -148,8 +151,6 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 	// Parse SNMP request to get OID and request type
 	req := s.parseIncomingRequest(requestData)
 	oid := req.OID
-	var response string
-	var responseOID string
 
 	// Determine PDU type from request data
 	pduType := s.getPDUType(requestData)
@@ -158,87 +159,44 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 	if pduType == ASN1_GET_NEXT {
 		// A variable-bindings list that is not a valid ASN.1 encoding makes
 		// the PDU malformed, and the datagram is discarded (nl6#537; see the
-		// GET branch below). GETNEXT needs its own gate because it answers
-		// from req.OID, and parseIncomingRequest leaves that at its sysDescr.0
+		// GET branch below). GETNEXT needs its own gate because it falls back
+		// to req.OID, and parseIncomingRequest leaves that at its sysDescr.0
 		// DEFAULT when the name fails to decode, so without this a malformed
 		// GETNEXT was answered as a walk restart from an OID nobody sent.
-		if _, ok := s.parseAllOIDsFromRequest(requestData); !ok {
+		oids, ok := s.parseAllOIDsFromRequest(requestData)
+		if !ok {
 			s.logFirstMalformedList(pduType)
 			return nil
 		}
+		if len(oids) == 0 {
+			// (nil, true): the envelope before the list was unreadable, or the
+			// list is empty. Distinct from the malformed case above, and still
+			// covered by the single OID parseIncomingRequest carries.
+			oids = []string{oid}
+		}
 
-		// Handle GetNext request for SNMP walk. The LLDP served-OID snapshot
-		// is taken ONCE here (generation-cached, so this is a pointer load in
-		// steady state) and shared with the v1 Counter64 skip loop below, so
-		// the first step and the skip run see the same ifAlias/LLDP view even
-		// if the topology generation changes mid-request.
+		// RFC 3416 §4.2.2 defines GETNEXT over the WHOLE variable-bindings
+		// list: each binding is answered with the successor of ITS OWN name,
+		// in request order. Answering only the first (nl6#542, pre-existing)
+		// left a walker that fetches several columns per round trip with one
+		// column and no signal that the rest were dropped.
+		//
+		// The LLDP served-OID snapshot is taken ONCE for the whole request
+		// (generation-cached, so this is a pointer load in steady state) and
+		// shared with every binding AND with the v1 Counter64 skip run inside
+		// each, so no two steps of one request can straddle a topology
+		// generation bump (the nl6#524 invariant).
 		served := s.lldpServedOIDs()
-		responseOID, response = s.findNextOIDWithServed(oid, served)
-
-		// SNMPv1 has no Counter64, and RFC 3584 §4.2.2.1 wants a GETNEXT to
-		// SKIP such an object and carry on to the next lexicographic
-		// successor. That is the opposite of the GET path, which answers noSuchName
-		// (createVarbindResponse). The asymmetry is the point: a GETNEXT names
-		// a position rather than an object, so erroring would stop a v1 walk
-		// dead at the first ifHC* column and truncate the table with no signal.
-		//
-		// Walk order is column-major, so the Counter64 columns form one
-		// contiguous run of (HC columns x interfaces). The ONE served-OID
-		// snapshot taken above covers the first step and the whole run via
-		// findNextOIDWithServed, because calling findNextOID per step rebuilds
-		// the device's whole LLDP/ifAlias view each time, the O(steps x links)
-		// hot path that function exists to avoid.
-		//
-		// Coverage is bounded by oidTypeTable, which lists exactly the eight
-		// ifXTable ifHC* columns. A 64-bit counter served from a resource file
-		// under any other OID (a vendor HC column, ipIfStatsHC*, dot3HC*) is
-		// absent from that table, so snmpTypeTag does not report Counter64 and
-		// v1 still receives tag 0x46 for it. The table is hand-maintained.
-		//
-		// The version test comes FIRST and is free: req was already parsed at
-		// the top of this function. snmpTypeTag is NOT cheap, it is a linear
-		// scan of the ~50-row type table that concatenates a string per row,
-		// so a v2c fleet must never reach it here. Reversing these two
-		// operands puts that scan on every GETNEXT of every version, on the
-		// walk path this repo already has a CPU incident on.
-		//
-		// The loop is bounded twice over. It relies on findNextOIDWithServed
-		// returning a strictly greater OID or "", an invariant driven by
-		// operator-supplied resource files via oidNextMap, and this loop runs
-		// INLINE in the shared UDP handler with no recover() on the path: a
-		// non-advancing entry would wedge every device, where before this
-		// change it was only the manager's problem. So a non-advance ends the
-		// walk, and a step cap backs that up. Either exit is a data defect, so
-		// it is logged once per device (the manager only sees a walk that
-		// ends early, indistinguishable from a short table) and answered as
-		// end-of-MIB. compareOIDs is the comparator the walk itself orders by.
-		if req.Version == snmpVersion1 && responseOID != "" &&
-			snmpTypeTag(responseOID) == ASN1_COUNTER64 {
-			for steps := 0; responseOID != "" && snmpTypeTag(responseOID) == ASN1_COUNTER64; steps++ {
-				if steps >= maxCounter64SkipSteps {
-					s.logFirstSkipAbort("step cap reached", responseOID)
-					responseOID = ""
-					break
-				}
-				prev := responseOID
-				responseOID, response = s.findNextOIDWithServed(responseOID, served)
-				if responseOID != "" && compareOIDs(responseOID, prev) <= 0 {
-					s.logFirstSkipAbort("successor "+responseOID+" does not advance", prev)
-					responseOID = ""
-					break
-				}
-			}
+		respOIDs := make([]string, len(oids))
+		respVals := make([]string, len(oids))
+		for i, requested := range oids {
+			respOIDs[i], respVals[i] = s.getNextBinding(requested, served, req.Version)
 		}
 
-		if responseOID == "" {
-			// End of MIB view - use a special response. Under v1 the sentinel
-			// is diverted to noSuchName by createSNMPResponse, which is also
-			// where a v1 walk that skipped its way past the last non-Counter64
-			// OID terminates.
-			responseOID = oid
-			response = valueEndOfMibView
-		}
-		// log.Printf("SNMP %s: GetNext %s -> %s = %s", s.device.ID, oid, responseOID, response)
+		// The request's own names are passed separately: they are what a v1
+		// noSuchName echo must carry (RFC 1157 §4.1.3), while respOIDs are the
+		// successors found for them.
+		return s.createGetNextResponse(oids, respOIDs, respVals, requestData)
 	} else if pduType == ASN1_GET_BULK {
 		// Handle GetBulk request - return multiple OIDs
 		// log.Printf("SNMP %s: Processing GetBulk request for OID: %s", s.device.ID, oid)
@@ -272,11 +230,82 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		}
 		return s.handleGetRequestVarbinds(oids, requestData)
 	}
+}
 
-	// GETNEXT: single next-OID per request.
-	responseBytes := s.createSNMPResponse(responseOID, response, requestData)
-	// log.Printf("SNMP %s: Created response for %s, length: %d bytes", s.device.ID, responseOID, len(responseBytes))
-	return responseBytes
+// getNextBinding answers ONE variable binding of a GETNEXT: the lexicographic
+// successor of `requested`, or (requested, endOfMibView) when nothing follows
+// it. Called once per binding of the request (RFC 3416 §4.2.2).
+//
+// `served` is the caller's single LLDP served-OID snapshot, shared across every
+// binding of the request and every step of the skip run below: calling
+// findNextOID per step instead rebuilds the device's whole LLDP/ifAlias view
+// each time (the O(steps × links) hot path findNextOIDWithServed exists to
+// avoid), and two snapshots could straddle a topology generation bump.
+//
+// SNMPv1 has no Counter64, and RFC 3584 §4.2.2.1 wants a GETNEXT to SKIP such
+// an object and carry on to the next lexicographic successor. That is the
+// opposite of the GET path, which answers noSuchName (createVarbindResponse,
+// v1DivertSentinelAndCounter64). The asymmetry is the point: a GETNEXT names a
+// position rather than an object, so erroring would stop a v1 walk dead at the
+// first ifHC* column and truncate the table with no signal.
+//
+// Walk order is column-major, so the Counter64 columns form one contiguous run
+// of (HC columns × interfaces). TestLongestCounter64RunAcrossShippedProfiles
+// pins the width of the widest shipped one, which is what sizes the step cap.
+//
+// Coverage is bounded by oidTypeTable, which lists exactly the eight ifXTable
+// ifHC* columns. A 64-bit counter served from a resource file under any other
+// OID (a vendor HC column, ipIfStatsHC*, dot3HC*) is absent from that table, so
+// snmpTypeTag does not report Counter64 and v1 still receives tag 0x46 for it.
+// The table is hand-maintained.
+//
+// The VERSION test comes FIRST and is free: it is an integer compare on an
+// already-parsed field. snmpTypeTag is NOT cheap — it is a linear scan of the
+// ~50-row type table that concatenates a string per row — so a v2c fleet must
+// never reach it here. Reversing these two operands puts that scan on every
+// GETNEXT of every version, on the walk path this repo already has a CPU
+// incident on.
+//
+// The loop is bounded twice over. It relies on findNextOIDWithServed returning
+// a strictly greater OID or "", an invariant driven by operator-supplied
+// resource files via oidNextMap, and this loop runs INLINE in the shared UDP
+// handler with no recover() on the path: a non-advancing entry would wedge
+// every device, where before nl6#524 it was only the manager's problem. So a
+// non-advance ends the walk, and a step cap backs that up. Either exit is a
+// data defect, so it is logged once per device (the manager only sees a walk
+// that ends early, indistinguishable from a short table) and answered as
+// end-of-MIB. compareOIDs is the comparator the walk itself orders by.
+func (s *SNMPServer) getNextBinding(requested string, served []kvOID, version int) (string, string) {
+	responseOID, response := s.findNextOIDWithServed(requested, served)
+
+	if version == snmpVersion1 && responseOID != "" &&
+		snmpTypeTag(responseOID) == ASN1_COUNTER64 {
+		for steps := 0; responseOID != "" && snmpTypeTag(responseOID) == ASN1_COUNTER64; steps++ {
+			if steps >= maxCounter64SkipSteps {
+				s.logFirstSkipAbort("step cap reached", responseOID)
+				responseOID = ""
+				break
+			}
+			prev := responseOID
+			responseOID, response = s.findNextOIDWithServed(responseOID, served)
+			if responseOID != "" && compareOIDs(responseOID, prev) <= 0 {
+				s.logFirstSkipAbort("successor "+responseOID+" does not advance", prev)
+				responseOID = ""
+				break
+			}
+		}
+	}
+
+	if responseOID == "" {
+		// End of MIB view. The binding is named with the OID that was ASKED
+		// FOR, not with a successor that does not exist — under v2c that is
+		// what RFC 3416 §4.2.2 requires, and under v1 createGetNextResponse
+		// diverts the sentinel to noSuchName with this name echoed. It is also
+		// where a v1 walk that skipped its way past the last non-Counter64 OID
+		// terminates.
+		return requested, valueEndOfMibView
+	}
+	return responseOID, response
 }
 
 // logFirstSkipAbort emits at most one log line per device when the SNMPv1

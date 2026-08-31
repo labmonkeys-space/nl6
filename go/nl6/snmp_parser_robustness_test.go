@@ -2424,21 +2424,36 @@ func readFuzzCorpus(t *testing.T, dir string) [][]byte {
 // readable, and deliberately NOT fuzz-derived: the acceptance criterion is
 // about the datagrams real managers send, and a corpus of mutated bytes would
 // bury three deliberate changes on malformed input under noise.
-func wellFormedMinimalCorpus() [][]byte {
+//
+// Each entry carries its PDU tag and binding count, because nl6#542 made
+// GETNEXT answer every binding: a multi-binding GETNEXT is the one shape in
+// this corpus whose response legitimately changed, and the digest below has to
+// be able to leave exactly that shape out without hand-listing datagrams.
+type wellFormedDatagram struct {
+	data  []byte
+	tag   byte
+	names int
+}
+
+func wellFormedMinimalCorpus() []wellFormedDatagram {
 	names := []string{
 		".1.3.6.1.2.1.1.1.0",
 		".1.3.6.1.2.1.2.2.1.2.1",
 		".1.3.6.1.2.1.2.2.1.5.3",
 		".1.3.6.1.2.1.31.1.1.1.6.7",
 	}
-	var out [][]byte
+	var out []wellFormedDatagram
 	for _, tag := range []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK} {
 		for _, ver := range []int{snmpVersion1, snmpVersion2c} {
 			for _, comm := range []string{"public", "", "a-very-long-community-string-past-the-usual"} {
 				for _, rid := range []int{1, 42, 65536, 2147483647} {
 					for n := 1; n <= len(names); n++ {
-						out = append(out, buildV2cRequestForRoundTrip(
-							tag, ver, comm, rid, names[:n], 0, 10, 0))
+						out = append(out, wellFormedDatagram{
+							data: buildV2cRequestForRoundTrip(
+								tag, ver, comm, rid, names[:n], 0, 10, 0),
+							tag:   tag,
+							names: n,
+						})
 					}
 				}
 			}
@@ -2467,49 +2482,73 @@ func wellFormedMinimalCorpus() [][]byte {
 // and the reproducer seeds instead.
 //
 // %d responses, %s over the corpus. A single changed byte in any response
-// moves the digest, and the failure message names the first datagram whose
-// response length changed, which is the cheapest usable pointer into a digest
-// mismatch.
+// moves the digest.
+//
+// nl6#542 EXCLUDED one shape and re-derived the digest rather than updating it
+// in place. A multi-binding GETNEXT now answers every binding, so its response
+// changed by design; every other shape in this corpus — GET and GETBULK at any
+// binding count, and the SINGLE-binding GETNEXT that is essentially all real
+// GETNEXT traffic — must still be byte-identical, and that is the regression
+// this test exists for. The digest was re-derived by checking the nl6#542
+// baseline (5f3ca99) production files out over this test file and reading back
+// the digest it reported, so it is still a PRE-change measurement and not the
+// new code agreeing with itself.
 func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
-	const wantDigest = "b0983dbe24394884f7cae37e5513c35eb3ff5a01bf2562f4bd7a596e5e8c0d22"
+	const wantDigest = "adb8350ebaa6965fed21ed868f9fceac9745fc87f92eb390a805b1cee6f24105"
+
+	// Pinned so a corpus that silently shrank — or an exclusion filter that
+	// grew — fails here instead of passing over a smaller digest. 288 total,
+	// of which 72 are multi-binding GETNEXT (2 versions x 3 communities x
+	// 4 request-ids x 3 binding counts above one).
+	const wantTotal, wantHashed = 288, 216
 
 	s := newTestServer(fuzzFixtureOIDs(20))
 	corpus := wellFormedMinimalCorpus()
-	if len(corpus) == 0 {
-		t.Fatal("empty corpus")
+	if len(corpus) != wantTotal {
+		t.Fatalf("corpus has %d datagrams, want %d", len(corpus), wantTotal)
 	}
 
-	h := sha256.New()
-	for _, data := range corpus {
-		resp := s.handleSNMPv2cRequest(data)
-		h.Write(data)
-		h.Write([]byte{0})
-		h.Write(resp)
-		h.Write([]byte{0})
+	// unchangedShape reports whether this datagram's response is one nl6#542
+	// promised not to move.
+	unchangedShape := func(d wellFormedDatagram) bool {
+		return d.tag != ASN1_GET_NEXT || d.names == 1
 	}
-	got := hex.EncodeToString(h.Sum(nil))
+
+	digest := func() (string, int) {
+		h := sha256.New()
+		n := 0
+		for _, d := range corpus {
+			if !unchangedShape(d) {
+				continue
+			}
+			resp := s.handleSNMPv2cRequest(d.data)
+			h.Write(d.data)
+			h.Write([]byte{0})
+			h.Write(resp)
+			h.Write([]byte{0})
+			n++
+		}
+		return hex.EncodeToString(h.Sum(nil)), n
+	}
+
+	got, hashed := digest()
+	if hashed != wantHashed {
+		t.Fatalf("hashed %d datagrams, want %d: the exclusion filter has moved", hashed, wantHashed)
+	}
 
 	// Determinism first: a digest over responses that vary run to run would
 	// fail for a reason that has nothing to do with the wire format, and the
 	// next reader would delete the test rather than the non-determinism.
-	h2 := sha256.New()
-	for _, data := range corpus {
-		resp := s.handleSNMPv2cRequest(data)
-		h2.Write(data)
-		h2.Write([]byte{0})
-		h2.Write(resp)
-		h2.Write([]byte{0})
-	}
-	if got2 := hex.EncodeToString(h2.Sum(nil)); got2 != got {
+	if got2, _ := digest(); got2 != got {
 		t.Fatalf("the corpus is not deterministic within one run: %s then %s — a response "+
 			"carries a live counter or a timestamp and this test cannot pin it", got, got2)
 	}
 
 	if got != wantDigest {
 		t.Errorf("responses over %d well-formed minimal datagrams digest to %s, want %s.\n"+
-			"This change may only alter the answer for NON-minimal or malformed encodings; a "+
-			"mismatch here means a datagram a real manager sends is answered differently.",
-			len(corpus), got, wantDigest)
+			"Only a NON-minimal or malformed encoding, or a multi-binding GETNEXT, may be "+
+			"answered differently; a mismatch here means a datagram a real manager sends is "+
+			"answered differently.", hashed, got, wantDigest)
 	}
 }
 

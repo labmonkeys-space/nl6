@@ -241,9 +241,29 @@ The column count itself has no explicit cap.
 The repeater walk is bounded regardless, since the clamp divides by the column count, but the non-repeater loop is one walk step per column, and what bounds that is the 1024-byte read buffer.
 The coupling is asserted in a test so a larger buffer has to acknowledge it.
 
-### Known limitations
+### A GETNEXT answers every variable binding
 
-**A GETNEXT processes only its first variable binding.** The v1/v2c GETNEXT dispatcher reads one OID from the request and answers one successor. A multi-binding GETNEXT (as some walkers send to fetch several columns per round trip) gets an answer for the first binding only. Pre-existing; the SNMPv1 Counter64 skip inherits it.
+RFC 3416 §4.2.2 defines GETNEXT over the whole variable-bindings list, and nl6 answers it that way (nl6#542).
+Each binding carries the lexicographic successor of its own name, in request order.
+A binding with nothing after it carries `endOfMibView` named with the OID that was asked for, so a walker fetching several columns per round trip can tell which column ended.
+Until nl6#542 the dispatcher read one OID and answered one binding, so such a walker got the first column and no signal that the rest had been dropped.
+
+Three behaviours are deliberately different from each other, and the SNMPv1 Counter64 rule is the one that matters most.
+
+| Case | SNMPv1 | SNMPv2c |
+|---|---|---|
+| The successor is a Counter64 object | that binding SKIPS it and continues to the next successor (RFC 3584 §4.2.2.1) | returned normally |
+| Nothing follows the requested OID | the response diverts to `noSuchName` with `error-index` at the first such binding, and the request's own names echoed with NULL values | `endOfMibView`, named with the requested OID |
+| The response will not fit the datagram | `tooBig` with an empty binding list | the same |
+
+A GETNEXT names a position, not an object, so diverting on a Counter64 successor would stop a v1 walk dead at the first `ifHC*` column and truncate the table with no signal.
+A GET does divert there, because it names the object.
+The two rules share one response encoder, so which one applies is an explicit argument at the call site (`v1DiversionRule`) rather than something the encoder infers.
+Overflow is `tooBig` rather than truncation for the same reason it is on a GET: the manager named N positions and has no resume point for a binding a shorter response would drop.
+
+The whole request takes ONE LLDP served-OID snapshot, shared across every binding and every step of a Counter64 skip run, so no two steps of one request can straddle a topology generation bump.
+
+### Known limitations
 
 **SNMPv3 GETBULK is bounded by measurement, not arithmetic** (nl6#535). The v2c path computes its response length from fixed prefixes, which it can because its envelope is fixed. A v3 message cannot: its `msgGlobalData` and `msgSecurityParameters` sizes depend on the engine ID, the user name and the privacy parameters, and under privacy the scoped PDU is encrypted and PADDED to a cipher block. So the GETBULK builder assembles the candidate response through the real encoder and measures it, dropping bindings from the end until it fits. RFC 3416 §4.2.3 makes that correct: a truncated GETBULK is resumable, since the walker continues from the last OID returned. As on the v2c path, at least one binding is always emitted even when it does not fit, because an empty binding list with no error stalls a walk forever with no signal.
 
@@ -343,7 +363,10 @@ What did produce them is nl6's own fuzzer, and the two committed corpora had bee
 All five reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
 The nine fuzz targets that read a v1/v2c datagram were then run live for 180 seconds each, 43.5 million executions in total, with no find.
 The campaign before nl6#562 was fixed had been recorded as clean and was not: one target failed an agreement assertion 33 seconds in, on an input that then failed deterministically on replay, and two shorter runs had missed it.
-`TestWellFormedResponsesUnchangedOnTheWire` pins the other side: responses to 288 well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
+`TestWellFormedResponsesUnchangedOnTheWire` pins the other side: responses to well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
+The corpus is 288 datagrams; the digest covers 216 of them, because nl6#542 made a multi-binding GETNEXT answer every binding and its response changed by design.
+That shape is excluded and the digest was re-derived against the nl6#542 baseline rather than updated in place, so it is still a pre-change measurement.
+Everything else — GET and GETBULK at any binding count, and the single-binding GETNEXT that is essentially all real GETNEXT traffic — is still byte-identical.
 
 ## OID lookup internals
 

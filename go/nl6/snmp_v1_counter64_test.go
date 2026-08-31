@@ -435,9 +435,12 @@ func TestV2cGetCounter64Unchanged(t *testing.T) {
 	}
 }
 
-// TestV1GetBulkStillReturnsCounter64 pins the ONE conjunct keeping the new
-// divert off the GETBULK path: `rule == overflowTooBig`. Deleting it must fail
-// a test, not merely be caught in review.
+// TestV1GetBulkStillReturnsCounter64 pins the ONE rule keeping the divert off
+// the GETBULK path: v1DivertNothing. Changing it must fail a test, not merely
+// be caught in review. (Before nl6#542 the same property was carried by the
+// `rule == overflowTooBig` conjunct, which stopped being GET-only the moment
+// GETNEXT also took the tooBig overflow rule — which is why the diversion now
+// has a rule of its own.)
 //
 // nl6 does answer a version-0 GETBULK even though SNMPv1 has no such PDU, and
 // it is deliberately left alone here for the same reason the sentinel diversion
@@ -449,7 +452,8 @@ func TestV1GetBulkStillReturnsCounter64(t *testing.T) {
 	oids := []string{c64InOctets, c64OutOctets}
 	responses := []string{"9876543210", "9876543210"}
 	resp := s.createVarbindResponse(oids, responses,
-		snmpRequestAt(ASN1_GET_BULK, snmpVersion1, []string{c64InOctets}), overflowTruncate)
+		snmpRequestAt(ASN1_GET_BULK, snmpVersion1, []string{c64InOctets}),
+		varbindResponseRules{overflow: overflowTruncate, v1Diversion: v1DivertNothing})
 
 	hdr := decodeResponseHeader(t, resp)
 	if hdr.errStatus != 0 {
@@ -466,7 +470,8 @@ func TestV2cGetBulkCounter64Unchanged(t *testing.T) {
 	oids := []string{c64InOctets, c64OutOctets}
 	responses := []string{"9876543210", "9876543210"}
 	resp := s.createVarbindResponse(oids, responses,
-		snmpRequestAt(ASN1_GET_BULK, snmpVersion2c, []string{c64InOctets}), overflowTruncate)
+		snmpRequestAt(ASN1_GET_BULK, snmpVersion2c, []string{c64InOctets}),
+		varbindResponseRules{overflow: overflowTruncate, v1Diversion: v1DivertNothing})
 
 	hdr := decodeResponseHeader(t, resp)
 	if hdr.errStatus != 0 || !containsTagAtVarbindValue(hdr.varbinds, ASN1_COUNTER64) {
