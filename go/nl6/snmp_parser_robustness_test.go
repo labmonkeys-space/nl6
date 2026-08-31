@@ -207,6 +207,45 @@ func addGoldenV2cSeeds(f *testing.F) {
 	f.Add(goldenNetSNMPLongCommunity)
 }
 
+// addMultiBindingGetNextSeeds registers multi-binding GETNEXT datagrams.
+//
+// nl6#542 turned GETNEXT from a one-binding path into an N-binding one, adding a
+// per-binding walk, a shared Counter64 skip budget and a binding-count clamp to
+// a PDU type these targets already reach — and no seed exercised that shape, so
+// the committed corpora replayed the single-binding path only (nl6#542 review
+// R14). Every shape the new code branches on gets a seed: several ordinary
+// names, a name whose successor starts the Counter64 run (the v1 skip), a
+// past-the-end name (endOfMibView, and the v1 divert), and a binding count over
+// the fit clamp (the tooBig short-circuit).
+func addMultiBindingGetNextSeeds(f *testing.F) {
+	const (
+		plain   = ".1.3.6.1.2.1.1.1.0"
+		ifDescr = ".1.3.6.1.2.1.2.2.1.2.1"
+		beforeC = ".1.3.6.1.2.1.31.1.1.1.5.1" // successor is a Counter64
+		hcCol   = ".1.3.6.1.2.1.31.1.1.1.6.7" // inside the Counter64 run
+		pastEnd = ".1.3.6.1.4.1.99999.1.1"    // nothing follows
+	)
+	lists := [][]string{
+		{plain, ifDescr},
+		{plain, ifDescr, beforeC},
+		{beforeC, hcCol, pastEnd},
+		{pastEnd, pastEnd},
+		{plain, pastEnd, ifDescr, hcCol},
+	}
+	// One over the fit clamp, so the count short-circuit is replayed too.
+	over := make([]string, maxSNMPResponseSize/minVarbindSize+1)
+	for i := range over {
+		over[i] = plain
+	}
+	lists = append(lists, over)
+
+	for _, names := range lists {
+		for _, ver := range []int{snmpVersion1, snmpVersion2c} {
+			f.Add(snmpRequestAt(ASN1_GET_NEXT, ver, names))
+		}
+	}
+}
+
 // addMalformedVarbindSeeds registers datagrams whose varbind LIST is present
 // but not a valid ASN.1 encoding, so the nl6#537 discard branch (and the
 // GETNEXT gate that feeds it) is replayed on every ordinary go test rather
@@ -714,6 +753,7 @@ func FuzzHandleSingleRequest(f *testing.F) {
 	addValidV3Seeds(f)
 	addGoldenV2cSeeds(f)
 	addMalformedVarbindSeeds(f)
+	addMultiBindingGetNextSeeds(f)
 	addAgreementSeeds(f)
 	f.Fuzz(func(t *testing.T, data []byte) {
 		s := fuzzTestServer(50)
@@ -2442,6 +2482,17 @@ func wellFormedMinimalCorpus() []wellFormedDatagram {
 		".1.3.6.1.2.1.2.2.1.5.3",
 		".1.3.6.1.2.1.31.1.1.1.6.7",
 	}
+	// SINGLE-binding rows get their own name list, because `names[:n]` at n == 1
+	// is always names[0] — a plain successor — so the single-binding corners
+	// that nl6#542 touched were absent from the digest that claims to pin
+	// essentially all real GETNEXT traffic (nl6#542 review R9):
+	//
+	//	the Counter64 column, whose v1 GETNEXT skips and v1 GET diverts
+	//	a past-the-end name, whose v1 GETNEXT is noSuchName and v2c endOfMibView
+	singleOnly := []string{
+		".1.3.6.1.2.1.31.1.1.1.6.7", // Counter64: the skip / divert corner
+		".1.3.6.1.4.1.99999.1.1",    // past the end: the endOfMibView corner
+	}
 	var out []wellFormedDatagram
 	for _, tag := range []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK} {
 		for _, ver := range []int{snmpVersion1, snmpVersion2c} {
@@ -2453,6 +2504,14 @@ func wellFormedMinimalCorpus() []wellFormedDatagram {
 								tag, ver, comm, rid, names[:n], 0, 10, 0),
 							tag:   tag,
 							names: n,
+						})
+					}
+					for _, only := range singleOnly {
+						out = append(out, wellFormedDatagram{
+							data: buildV2cRequestForRoundTrip(
+								tag, ver, comm, rid, []string{only}, 0, 10, 0),
+							tag:   tag,
+							names: 1,
 						})
 					}
 				}
@@ -2493,14 +2552,24 @@ func wellFormedMinimalCorpus() []wellFormedDatagram {
 // baseline (5f3ca99) production files out over this test file and reading back
 // the digest it reported, so it is still a PRE-change measurement and not the
 // new code agreeing with itself.
+//
+// The excluded 72 are pinned separately by
+// TestMultiBindingGetNextResponsesArePinned, so nothing in the corpus is
+// unexecuted (nl6#542 review R10).
+//
+// The single-binding rows deliberately include a Counter64 column and a
+// past-the-end name as well as the plain successor `names[:1]` gives, because
+// those are the corners nl6#542 touched — the v1 skip, the v1 noSuchName
+// divert and the v2c endOfMibView — and without them this digest pinned only
+// the easy case while claiming to pin essentially all real GETNEXT traffic
+// (nl6#542 review R9). Verified: the baseline produces the same digest over the
+// widened corpus, so those corners are byte-identical too.
 func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
-	const wantDigest = "adb8350ebaa6965fed21ed868f9fceac9745fc87f92eb390a805b1cee6f24105"
+	const wantDigest = "8e0d79acfa981f5725be13d19be8540c8f4325f4c56147d95687a719677914e1"
 
 	// Pinned so a corpus that silently shrank — or an exclusion filter that
-	// grew — fails here instead of passing over a smaller digest. 288 total,
-	// of which 72 are multi-binding GETNEXT (2 versions x 3 communities x
-	// 4 request-ids x 3 binding counts above one).
-	const wantTotal, wantHashed = 288, 216
+	// grew — fails here instead of passing over a smaller digest.
+	const wantTotal, wantHashed = 432, 360
 
 	s := newTestServer(fuzzFixtureOIDs(20))
 	corpus := wellFormedMinimalCorpus()
@@ -2508,30 +2577,7 @@ func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
 		t.Fatalf("corpus has %d datagrams, want %d", len(corpus), wantTotal)
 	}
 
-	// unchangedShape reports whether this datagram's response is one nl6#542
-	// promised not to move.
-	unchangedShape := func(d wellFormedDatagram) bool {
-		return d.tag != ASN1_GET_NEXT || d.names == 1
-	}
-
-	digest := func() (string, int) {
-		h := sha256.New()
-		n := 0
-		for _, d := range corpus {
-			if !unchangedShape(d) {
-				continue
-			}
-			resp := s.handleSNMPv2cRequest(d.data)
-			h.Write(d.data)
-			h.Write([]byte{0})
-			h.Write(resp)
-			h.Write([]byte{0})
-			n++
-		}
-		return hex.EncodeToString(h.Sum(nil)), n
-	}
-
-	got, hashed := digest()
+	got, hashed := digestCorpus(s, corpus, shapeUnchangedByGetNextChange)
 	if hashed != wantHashed {
 		t.Fatalf("hashed %d datagrams, want %d: the exclusion filter has moved", hashed, wantHashed)
 	}
@@ -2539,7 +2585,7 @@ func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
 	// Determinism first: a digest over responses that vary run to run would
 	// fail for a reason that has nothing to do with the wire format, and the
 	// next reader would delete the test rather than the non-determinism.
-	if got2, _ := digest(); got2 != got {
+	if got2, _ := digestCorpus(s, corpus, shapeUnchangedByGetNextChange); got2 != got {
 		t.Fatalf("the corpus is not deterministic within one run: %s then %s — a response "+
 			"carries a live counter or a timestamp and this test cannot pin it", got, got2)
 	}
@@ -2549,6 +2595,88 @@ func TestWellFormedResponsesUnchangedOnTheWire(t *testing.T) {
 			"Only a NON-minimal or malformed encoding, or a multi-binding GETNEXT, may be "+
 			"answered differently; a mismatch here means a datagram a real manager sends is "+
 			"answered differently.", hashed, got, wantDigest)
+	}
+}
+
+// shapeUnchangedByGetNextChange reports whether a datagram's response is one
+// nl6#542 promised not to move: everything except a multi-binding GETNEXT.
+func shapeUnchangedByGetNextChange(d wellFormedDatagram) bool {
+	return d.tag != ASN1_GET_NEXT || d.names == 1
+}
+
+// digestCorpus hashes (request, response) pairs over the entries `include`
+// selects, and returns the digest and how many it covered.
+func digestCorpus(s *SNMPServer, corpus []wellFormedDatagram,
+	include func(wellFormedDatagram) bool) (string, int) {
+	h := sha256.New()
+	n := 0
+	for _, d := range corpus {
+		if !include(d) {
+			continue
+		}
+		resp := s.handleSNMPv2cRequest(d.data)
+		h.Write(d.data)
+		h.Write([]byte{0})
+		h.Write(resp)
+		h.Write([]byte{0})
+		n++
+	}
+	return hex.EncodeToString(h.Sum(nil)), n
+}
+
+// TestMultiBindingGetNextResponsesArePinned freezes the shape nl6#542
+// deliberately MOVED (nl6#542 review R10).
+//
+// Its 72 datagrams were merely EXCLUDED from the digest above, which left them
+// executed by nothing at all — not even for crash exposure — and the Design
+// Note asked for the corpus to be extended rather than reduced. So they get
+// their own digest, over exactly the complement of the filter.
+//
+// Unlike the digest above, this one is NECESSARILY derived from the new code:
+// there is no pre-change answer for a multi-binding GETNEXT to be compared with,
+// which is the whole point of the change. It is a freeze, not a regression
+// oracle — its job is to make any FURTHER movement of this shape deliberate.
+// The behavioural claims about these datagrams live in
+// snmp_getnext_multibind_test.go, where they are readable.
+func TestMultiBindingGetNextResponsesArePinned(t *testing.T) {
+	const wantDigest = "f8e08e330568b6f50fa2ec9951cdd4045d309393f4507efa8ac1255302298a2c"
+	const wantHashed = 72
+
+	s := newTestServer(fuzzFixtureOIDs(20))
+	corpus := wellFormedMinimalCorpus()
+
+	multiBindingGetNext := func(d wellFormedDatagram) bool {
+		return !shapeUnchangedByGetNextChange(d)
+	}
+	got, hashed := digestCorpus(s, corpus, multiBindingGetNext)
+	if hashed != wantHashed {
+		t.Fatalf("hashed %d multi-binding GETNEXT datagrams, want %d", hashed, wantHashed)
+	}
+	if got2, _ := digestCorpus(s, corpus, multiBindingGetNext); got2 != got {
+		t.Fatalf("not deterministic within one run: %s then %s", got, got2)
+	}
+
+	// Not vacuous: every one of these must actually carry as many bindings as
+	// it asked for, which is the property the change added. A digest alone
+	// would be satisfied by a stable wrong answer.
+	for _, d := range corpus {
+		if !multiBindingGetNext(d) {
+			continue
+		}
+		resp := s.handleSNMPv2cRequest(d.data)
+		if len(resp) == 0 {
+			t.Fatalf("a multi-binding GETNEXT was discarded: % x", d.data)
+		}
+		if n := countVarbinds(t, resp); n != d.names {
+			t.Fatalf("a %d-binding GETNEXT was answered with %d bindings: % x",
+				d.names, n, d.data)
+		}
+	}
+
+	if got != wantDigest {
+		t.Errorf("responses over %d multi-binding GETNEXT datagrams digest to %s, want %s.\n"+
+			"This shape was frozen by nl6#542; moving it again should be a deliberate "+
+			"change with its own reasoning, not a side effect.", hashed, got, wantDigest)
 	}
 }
 

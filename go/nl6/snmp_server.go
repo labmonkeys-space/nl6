@@ -133,18 +133,127 @@ func (s *SNMPServer) handleSingleRequest(requestData []byte, clientAddr *net.UDP
 	}
 }
 
-// maxCounter64SkipSteps bounds the SNMPv1 Counter64 skip loop. The real run is
-// (8 HC columns x interfaces) — 288 on the widest shipped profile, a figure
-// TestLongestCounter64RunAcrossShippedProfiles recomputes from the shipped set
-// rather than trusting this comment (nl6#542) — so this is three orders of
-// magnitude above any legitimate walk.
+// longestShippedCounter64Run is the widest contiguous run of Counter64 objects
+// A WALK crosses, across the shipped profiles: cisco_crs_x, 8 ifXTable ifHC*
+// columns x 144 interfaces.
 //
-// It does NOT exist to catch a non-advancing oidNextMap: the non-advance check
-// in the loop already does that, and a strictly increasing sequence over a
-// finite map cannot run forever. It backs up the comparison itself, so a defect
-// in compareOIDs (or a successor that is neither greater nor "") still cannot
-// wedge the shared UDP handler.
-const maxCounter64SkipSteps = 100000
+// MEASURED THROUGH findNextOIDWithServed, not over the static resource index,
+// and that distinction is the whole value of the number. The first version of
+// this figure was 288, taken by scanning DeviceResources.sortedOIDs — but the
+// walk also offers ifCycler.NextDynamicOID as a candidate, precisely because
+// columns IfCounterCycler serves analytically have no static JSON rows.
+// cisco_crs_x ships static rows for ifXTable columns 1, 6, 10, 15 and 18 only,
+// so `.6.*` + `.10.*` is 288 statically while `.7`-`.9` and `.11`-`.13` add 144
+// steps each to the real walk and zero to sortedOIDs. Every device has the
+// cycler (both creation paths call InitIfCountersWithScenario), so 288 was 4x
+// too small and the test that pinned it shared the blind spot it existed to
+// remove (nl6#542 review A1).
+//
+// TestLongestCounter64RunAcrossShippedProfiles recomputes this by walking, so a
+// profile change — or a column moving between static and analytic service —
+// fails a build instead of making a comment quietly wrong.
+const longestShippedCounter64Run = 1152
+
+// maxGetNextBindings is the most variable bindings a GETNEXT response could
+// ever fit, and therefore the most the dispatcher will walk for: above it the
+// tooBig answer is already decided (see createTooBigResponse).
+//
+// A function, not a const, because maxSNMPResponseSize tracks `-datagram-mtu`.
+// minVarbindSize is deliberately an UNDER-estimate of a real binding, so this
+// is a safe over-estimate of the count.
+func maxGetNextBindings() int {
+	return maxSNMPResponseSize / minVarbindSize
+}
+
+// counter64SkipBudgetSteps is one GETNEXT datagram's whole allowance of
+// Counter64 skip steps.
+//
+// DERIVED, not hand-set. It is exactly what the widest legitimate request can
+// need — maxGetNextBindings bindings, each crossing the widest shipped
+// Counter64 run — so it can never truncate legitimate traffic BY
+// CONSTRUCTION, and it re-derives itself when a profile grows or the MTU
+// changes. It replaced a literal 100000, which was a magic number that happened
+// to sit 1.28x above the real requirement once longestShippedCounter64Run was
+// measured correctly: a profile with ~200 interfaces would have started
+// truncating v1 tables while every test still passed.
+//
+// At the default MTU this is 98 x 1152 = 112,896 steps. That is a large number
+// and it is the honest one: the work is what a correct answer costs, and what
+// actually bounds the CPU per datagram is the BINDING COUNT, not this. See
+// TestGetNextWalkWorkPerDatagramIsBounded for the measured latency that follows
+// from it.
+//
+// The one case it does not cover is an OPERATOR resource file whose Counter64
+// run is wider than any shipped profile's. That request is truncated and logged
+// once per device (logFirstSkipAbort); no pin over the shipped set can see it.
+func counter64SkipBudgetSteps() int {
+	return maxGetNextBindings() * longestShippedCounter64Run
+}
+
+// counter64SkipBudget is one GETNEXT request's whole allowance of Counter64
+// skip steps, shared across every binding of that request.
+//
+// SHARED, not per binding, and that is the point. nl6#542 made GETNEXT answer
+// every binding, and a per-binding cap MULTIPLIES by the binding count where
+// nl6#535 faced the identical shape and made clampBulkWalk DIVIDE so that its
+// ceiling bounds the TOTAL. Nothing caps the binding count in the PDU itself,
+// so a per-binding cap multiplied by the binding count.
+//
+// The numbers, MEASURED on cisco_crs_x with a live counter cycler — a v1
+// GETNEXT repeating one name just before the HC block, timed through
+// handleSNMPv2cRequest:
+//
+//	 1 binding     2.9 ms   (44 B request)
+//	10 bindings   27.2 ms   (209 B)
+//	40 bindings  104.3 ms   (752 B)
+//	68 bindings  176.8 ms   (1256 B, over the 1024 B read buffer)
+//
+// Inline on the shared UDP handler, with no recover(), on the walk path this
+// repo has a documented CPU incident on. A 752-byte datagram is not a
+// pathological input, and before nl6#542 the same datagram cost one binding's
+// worth (nl6#542 review A3).
+//
+// What the shared budget buys is that this is BOUNDED and does not scale with a
+// per-binding allowance: one datagram costs at most counter64SkipBudgetSteps()
+// however many bindings it names. What actually keeps the number small is the
+// BINDING COUNT, so the dispatcher also refuses — WITHOUT WALKING — a request
+// naming more bindings than could ever fit a response (maxGetNextBindings),
+// which is the backstop that stops a larger read buffer from raising this work
+// linearly (nl6#542 review R1/R3). The residual cost above is inherent to
+// answering a multi-binding v1 GETNEXT on a wide profile and is documented in
+// docs/reference/snmp.md rather than hidden behind a guard that cannot remove
+// it.
+//
+// A struct with a pointer receiver rather than a plain int, because "shared"
+// means every binding draws from the SAME counter: passing an int by value
+// silently restores the per-binding cap, and no assertion about a response
+// could see that — the guard is a performance bound, so the binding count is
+// identical with or without it (the nl6#535 argument for clampBulkWalk being a
+// function of its own).
+type counter64SkipBudget struct {
+	remaining int
+}
+
+// newCounter64SkipBudget returns the per-REQUEST budget.
+func newCounter64SkipBudget() *counter64SkipBudget {
+	return &counter64SkipBudget{remaining: counter64SkipBudgetSteps()}
+}
+
+// take draws one step, reporting false once the request's whole allowance is
+// spent.
+// A nil budget reports EXHAUSTED rather than unbounded. Every caller supplies
+// one, so nil is unreachable; if it ever happens the consequence of this choice
+// is a v1 manager receiving a Counter64 tag, which every test in
+// snmp_v1_counter64_test.go catches at once, whereas the other default is
+// unbounded work inline in the shared UDP handler — the fleet-wide outage this
+// budget exists to prevent. Fail toward the loud, local fault.
+func (b *counter64SkipBudget) take() bool {
+	if b == nil || b.remaining <= 0 {
+		return false
+	}
+	b.remaining--
+	return true
+}
 
 // handleSNMPv2cRequest handles traditional SNMP v1/v2c requests
 func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
@@ -181,17 +290,30 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// left a walker that fetches several columns per round trip with one
 		// column and no signal that the rest were dropped.
 		//
+		// A request naming more bindings than a response could ever carry is
+		// answered tooBig WITHOUT WALKING (nl6#542 review R3). minVarbindSize
+		// is a floor on what one binding encodes to, so above this count the
+		// tooBig below is already decided and every walk step would be work
+		// done to build a response that is then discarded — ~300 names, each
+		// costing an LLDP-scanning step, is what the read buffer admits. This
+		// is a short-circuit and not a heuristic: the answer is identical to
+		// the one createGetNextResponse would reach.
+		if len(oids) > maxGetNextBindings() {
+			return s.createTooBigResponse(requestData)
+		}
+
 		// The LLDP served-OID snapshot is taken ONCE for the whole request
 		// (generation-cached, so this is a pointer load in steady state) and
 		// shared with every binding AND with the v1 Counter64 skip run inside
 		// each, so no two steps of one request can straddle a topology
 		// generation bump (the nl6#524 invariant).
+		//
+		// The Counter64 skip budget is shared the same way, and for a harder
+		// reason: per binding it would MULTIPLY by the binding count. See
+		// counter64SkipBudget.
 		served := s.lldpServedOIDs()
-		respOIDs := make([]string, len(oids))
-		respVals := make([]string, len(oids))
-		for i, requested := range oids {
-			respOIDs[i], respVals[i] = s.getNextBinding(requested, served, req.Version)
-		}
+		respOIDs, respVals := s.getNextBindingsForRequest(oids, served, req.Version,
+			newCounter64SkipBudget())
 
 		// The request's own names are passed separately: they are what a v1
 		// noSuchName echo must carry (RFC 1157 §4.1.3), while respOIDs are the
@@ -250,8 +372,9 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 // first ifHC* column and truncate the table with no signal.
 //
 // Walk order is column-major, so the Counter64 columns form one contiguous run
-// of (HC columns × interfaces). TestLongestCounter64RunAcrossShippedProfiles
-// pins the width of the widest shipped one, which is what sizes the step cap.
+// of (HC columns × interfaces): longestShippedCounter64Run, which
+// TestLongestCounter64RunAcrossShippedProfiles recomputes from the shipped set
+// and which is what sizes maxCounter64SkipSteps.
 //
 // Coverage is bounded by oidTypeTable, which lists exactly the eight ifXTable
 // ifHC* columns. A 64-bit counter served from a resource file under any other
@@ -266,23 +389,56 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 // GETNEXT of every version, on the walk path this repo already has a CPU
 // incident on.
 //
+// The test is `== snmpVersion1`, so ANY OTHER version integer is served with
+// v2c semantics — including values that are neither 0 nor 1, which since
+// nl6#559/#562 reach here at any declared BER width. That is nl6's stated
+// choice and it matches the rest of this path: parseIncomingRequest defaults to
+// v2c, and getPDUType documents the same leniency. The alternative, discarding
+// an unknown version per RFC 3412 §7.2, is a new silent-drop behaviour on a
+// simulator whose job is to answer pollers, so it is deliberately NOT taken;
+// TestUnknownVersionIsServedAsV2c pins the choice so it cannot change by
+// accident (nl6#542 review R13).
+//
 // The loop is bounded twice over. It relies on findNextOIDWithServed returning
 // a strictly greater OID or "", an invariant driven by operator-supplied
 // resource files via oidNextMap, and this loop runs INLINE in the shared UDP
 // handler with no recover() on the path: a non-advancing entry would wedge
 // every device, where before nl6#524 it was only the manager's problem. So a
-// non-advance ends the walk, and a step cap backs that up. Either exit is a
-// data defect, so it is logged once per device (the manager only sees a walk
-// that ends early, indistinguishable from a short table) and answered as
-// end-of-MIB. compareOIDs is the comparator the walk itself orders by.
-func (s *SNMPServer) getNextBinding(requested string, served []kvOID, version int) (string, string) {
+// non-advance ends the walk, and the request's shared skip budget backs that
+// up. Either exit is a data defect, so it is logged once per device (the
+// manager only sees a walk that ends early, indistinguishable from a short
+// table) and answered as end-of-MIB. compareOIDs is the comparator the walk
+// itself orders by.
+//
+// `budget` spans the WHOLE REQUEST, not this binding. See counter64SkipBudget:
+// a per-binding cap multiplies by the binding count, which is the amplification
+// nl6#535 solved in the other direction.
+// getNextBindingsForRequest answers every binding of one GETNEXT, sharing the
+// served-OID snapshot and the Counter64 skip budget across all of them.
+//
+// Split out from the dispatcher so a test can supply a small budget and observe
+// that it is shared: the guard is a performance bound, so the RESPONSE is
+// identical whether the budget is shared or per binding, and only calling this
+// directly can tell the two apart (the nl6#535 argument for clampBulkWalk).
+func (s *SNMPServer) getNextBindingsForRequest(oids []string, served []kvOID, version int,
+	budget *counter64SkipBudget) ([]string, []string) {
+	respOIDs := make([]string, len(oids))
+	respVals := make([]string, len(oids))
+	for i, requested := range oids {
+		respOIDs[i], respVals[i] = s.getNextBinding(requested, served, version, budget)
+	}
+	return respOIDs, respVals
+}
+
+func (s *SNMPServer) getNextBinding(requested string, served []kvOID, version int,
+	budget *counter64SkipBudget) (string, string) {
 	responseOID, response := s.findNextOIDWithServed(requested, served)
 
 	if version == snmpVersion1 && responseOID != "" &&
 		snmpTypeTag(responseOID) == ASN1_COUNTER64 {
-		for steps := 0; responseOID != "" && snmpTypeTag(responseOID) == ASN1_COUNTER64; steps++ {
-			if steps >= maxCounter64SkipSteps {
-				s.logFirstSkipAbort("step cap reached", responseOID)
+		for responseOID != "" && snmpTypeTag(responseOID) == ASN1_COUNTER64 {
+			if !budget.take() {
+				s.logFirstSkipAbort("request skip budget exhausted", responseOID)
 				responseOID = ""
 				break
 			}
@@ -317,6 +473,24 @@ func (s *SNMPServer) logFirstSkipAbort(why, at string) {
 	s.firstSkipAbort.Do(func() {
 		log.Printf("SNMP %s: v1 Counter64 skip aborted at %s (%s); answering end-of-MIB (further aborts suppressed for this device)",
 			s.device.ID, at, why)
+	})
+}
+
+// logFirstRulesBug emits at most one line per device when createVarbindResponse
+// is handed a varbindResponseRules value that cannot have come from one of its
+// three constructors — a rule field left at its zero value, or an echoNames
+// slice whose length does not match the binding count.
+//
+// Both are programming errors at a call site rather than anything a manager can
+// provoke, so they are unreachable today; they are logged rather than ignored
+// because the fallbacks are silent by construction (a strictest-rules answer,
+// and an empty echo), and an unreachable branch with no trace is how a future
+// call site's mistake would ship unnoticed. Gated like logFirstSkipAbort:
+// a wrong call site is wrong on every request.
+func (s *SNMPServer) logFirstRulesBug(what string) {
+	s.firstRulesBug.Do(func() {
+		log.Printf("SNMP %s: %s; answering under the strictest rules (further reports suppressed for this device)",
+			s.device.ID, what)
 	})
 }
 

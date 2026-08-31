@@ -320,16 +320,20 @@ func appendOID(dst []byte, oid string) []byte {
 
 // appendOIDComponent appends one base-128 varint OID component.
 //
-// tmp is 10 bytes, which is enough for any int, but nothing that reaches here
-// needs more than FIVE chunks: since nl6#532 every caller has already bounded
-// the arc at maxOIDSubIdentifier (2^32-1), individually from index 2 up and
-// through legalOIDArcPair on the combined first pair, so ceil(32/7) = 5 is the
-// real width. The comment here used to justify the array with a 63-bit arc
-// arriving from a REST varbindOverrides value as a full-width int; that path is
-// gone — an over-wide arc is now refused by appendOID before this function is
-// called, and the request fails rather than encoding (nl6#542 item 5). The
-// slack is kept because it costs nothing and removes the need to re-derive the
-// bound if the arc limit ever moves.
+// tmp is 10 bytes, which is enough for any int, but at most FIVE chunks are
+// ever written: since nl6#529/#532 appendOID bounds every arc at
+// maxOIDSubIdentifier (2^32-1) — individually from index 2 up, and through
+// legalOIDArcPair on the combined first pair — and it does so BEFORE reaching
+// this function, so ceil(32/7) = 5 is the real width.
+//
+// The comment here used to justify the array with a 63-bit arc arriving from a
+// REST varbindOverrides value as a full-width int. That path is gone
+// (nl6#542 item 5, comment only — the behaviour changed in nl6#529/#532, not
+// here). Note what appendOID actually does with an over-wide arc: it does not
+// "refuse" it, it returns the degenerate encoding `06 00`, which its callers
+// then reject per nl6#540 rather than shipping an empty NAME. The array keeps
+// its slack deliberately — 10 bytes of stack costs nothing, and sizing it to
+// exactly 5 would couple it to an arc limit that has already moved once.
 func appendOIDComponent(dst []byte, value int) []byte {
 	if value < 0x80 {
 		return append(dst, byte(value))

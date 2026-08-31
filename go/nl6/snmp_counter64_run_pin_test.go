@@ -11,15 +11,174 @@ import (
 	"testing"
 )
 
-// longestCounter64Run returns the length of the longest run of CONSECUTIVE
-// entries in walk order whose declared type is Counter64, and the OID the run
-// starts at.
+// longestCounter64RunThroughWalk returns the length of the longest run of
+// CONSECUTIVE Counter64 objects a WALK crosses on this device, and the OID the
+// run starts at.
 //
-// Walk order is what matters, not the count of Counter64 OIDs: the skip loop in
-// getNextBinding steps once per consecutive Counter64 successor, so a profile
-// with 500 HC columns scattered between Counter32 ones costs one step per
-// binding, while 288 adjacent ones cost 288 on one binding. sortedOIDs is the
-// order findNextOID walks, so it is the order this counts in.
+// It walks findNextOIDWithServed — the function the skip loop itself calls — and
+// NOT DeviceResources.sortedOIDs. That distinction is the entire point of this
+// helper (nl6#542 review A1). The static index holds only the columns a
+// profile's JSON ships rows for; the walk also offers
+// ifCycler.NextDynamicOID, because IfCounterCycler serves the rest of ifXTable
+// analytically. Measuring the index therefore under-counts the run by whatever
+// share of the HC columns is analytic — 4x on cisco_crs_x — and the first
+// version of this pin did exactly that, agreeing with the hand measurement it
+// was written to check.
+//
+// Walk order is what matters, not the count of Counter64 OIDs: the skip loop
+// steps once per CONSECUTIVE Counter64 successor, so 500 scattered ones cost
+// one step each while 1152 adjacent ones cost 1152 on a single binding.
+//
+// steps is returned so a caller can assert the walk actually went somewhere; a
+// walk that stopped immediately would report a run of 0 and look like a profile
+// with no HC columns.
+func longestCounter64RunThroughWalk(s *SNMPServer, maxSteps int) (run int, at string, steps int) {
+	served := s.lldpServedOIDs()
+	cur := ""
+	cnt, cntAt := 0, ""
+	for steps < maxSteps {
+		next, _ := s.findNextOIDWithServed(cur, served)
+		// Same termination conditions the walk itself uses: no successor, or one
+		// that does not advance (a corrupt oidNextMap).
+		if next == "" || (cur != "" && compareOIDs(next, cur) <= 0) {
+			break
+		}
+		steps++
+		if snmpTypeTag(next) == ASN1_COUNTER64 {
+			if cnt == 0 {
+				cntAt = next
+			}
+			cnt++
+			if cnt > run {
+				run, at = cnt, cntAt
+			}
+		} else {
+			cnt, cntAt = 0, ""
+		}
+		cur = next
+	}
+	return run, at, steps
+}
+
+// deviceForProfile builds a device the way both production creation paths do:
+// resources plus an initialised IfCounterCycler. Without the cycler the walk
+// omits every analytically-served ifXTable column, which is the blind spot A1
+// found.
+func deviceForProfile(t *testing.T, profile string) *SNMPServer {
+	t.Helper()
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources(profile)
+	if err != nil {
+		t.Fatalf("LoadSpecificResources(%s): %v", profile, err)
+	}
+	mc := &MetricsCycler{}
+	mc.InitIfCounters(res, 1)
+	return &SNMPServer{device: &DeviceSimulator{
+		ID:            "pin",
+		resources:     res,
+		resourceFile:  profile,
+		metricsCycler: mc,
+	}}
+}
+
+// TestLongestCounter64RunAcrossShippedProfiles pins the figure that sizes
+// nl6#524's Counter64 skip work (nl6#542 item 4).
+//
+// The value has ONE home, the production const longestShippedCounter64Run,
+// which this test recomputes by WALKING every shipped profile on a device with
+// a live counter cycler. Reading the const rather than restating it is
+// deliberate (review R12): a test with its own copy of the number can only
+// check itself.
+//
+// Same shape and same reason as TestShippedResourcesLoadClean: every directory
+// under resources/ except the _-prefixed ones, and the totals are asserted
+// non-zero so a decode regression could not make it pass vacuously.
+//
+// It is an EQUALITY, not an upper bound. A run that got SHORTER is also a stale
+// document, and since nl6#542 review A1 the const is the NUMERATOR of the skip
+// budget (counter64SkipBudgetSteps), so a shorter run means an oversized budget
+// and a longer one means legitimate v1 tables truncate.
+func TestLongestCounter64RunAcrossShippedProfiles(t *testing.T) {
+	// Read from production, never restated here.
+	const documentedRun = longestShippedCounter64Run
+
+	entries, err := os.ReadDir("resources")
+	if err != nil {
+		t.Fatalf("read resources dir: %v", err)
+	}
+
+	dirs, totalSteps := 0, 0
+	worst, worstProfile, worstAt := 0, "", ""
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
+			continue
+		}
+		profile := e.Name() + ".json"
+		s := deviceForProfile(t, profile)
+		dirs++
+
+		// Generous cap: the widest shipped profile walks ~6.5k steps.
+		run, at, steps := longestCounter64RunThroughWalk(s, 400000)
+		totalSteps += steps
+		if steps == 0 {
+			t.Errorf("%s: the walk returned nothing, so its measurement is vacuous", profile)
+		}
+		if run > worst {
+			worst, worstProfile, worstAt = run, profile, at
+		}
+	}
+
+	if dirs == 0 {
+		t.Fatal("no resource directories loaded. Is the test running from go/nl6?")
+	}
+	if totalSteps == 0 {
+		t.Fatalf("walked %d profiles and took zero steps", dirs)
+	}
+
+	if worst != documentedRun {
+		t.Errorf("longest contiguous Counter64 run a WALK crosses, across %d shipped "+
+			"profiles, is %d (%s, starting at %s), but longestShippedCounter64Run is %d.\n"+
+			"A v1 GETNEXT skips this many steps on ONE binding, inline in the shared UDP "+
+			"handler, and the const is the numerator of counter64SkipBudgetSteps(). Set the "+
+			"const to %d (one edit, in snmp_server.go) or explain the new width.",
+			dirs, worst, worstProfile, worstAt, documentedRun, worst)
+	}
+	t.Logf("%d profiles, %d walk steps total; longest contiguous Counter64 run %d (%s at %s)",
+		dirs, totalSteps, worst, worstProfile, worstAt)
+}
+
+// TestStaticIndexUnderCountsTheCounter64Run is the regression test for the blind
+// spot itself (nl6#542 review A1).
+//
+// It asserts that the static index and the walk DISAGREE on cisco_crs_x, which
+// is what makes measuring the index the wrong method. If a future change made
+// every ifXTable column statically present the two would converge and this
+// would fail — at which point the pin above could be simplified, deliberately,
+// rather than by a measurement quietly starting to agree again.
+func TestStaticIndexUnderCountsTheCounter64Run(t *testing.T) {
+	const profile = "cisco_crs_x.json"
+	s := deviceForProfile(t, profile)
+
+	staticRun, _ := longestCounter64Run(s.device.resources.sortedOIDs)
+	walkRun, _, steps := longestCounter64RunThroughWalk(s, 400000)
+	if steps == 0 {
+		t.Fatal("the walk took no steps")
+	}
+	if staticRun >= walkRun {
+		t.Errorf("the static index reports a run of %d and the walk %d on %s.\n"+
+			"They are expected to DIFFER: the walk also offers ifCycler.NextDynamicOID for "+
+			"the ifXTable columns this profile serves analytically. If they now agree, "+
+			"longestCounter64RunThroughWalk can be simplified — but make that an explicit "+
+			"decision, since a measurement agreeing with itself is what made 288 wrong.",
+			staticRun, walkRun, profile)
+	}
+	t.Logf("%s: static index %d, walk %d (ratio %.1fx)", profile, staticRun, walkRun,
+		float64(walkRun)/float64(staticRun))
+}
+
+// longestCounter64Run is the STATIC counterpart, kept only so
+// TestStaticIndexUnderCountsTheCounter64Run can show the two disagreeing, and
+// so the adjacency property below has a pure function to test.
 func longestCounter64Run(sorted []string) (int, string) {
 	best, bestAt := 0, ""
 	cur, curAt := 0, ""
@@ -39,92 +198,20 @@ func longestCounter64Run(sorted []string) (int, string) {
 	return best, bestAt
 }
 
-// TestLongestCounter64RunAcrossShippedProfiles pins the figure that sizes
-// nl6#524's Counter64 skip loop (nl6#542 item 4).
+// TestLongestCounter64RunCountsAdjacencyOnly tests the run counter directly,
+// because no shipped profile can distinguish it from a total.
 //
-// CLAUDE.md and getNextBinding both cite the width of the widest contiguous
-// Counter64 run across the shipped profiles. It was measured once by hand and
-// re-checked by nothing, so a resource edit that widened it — another interface
-// on cisco_crs_x, a ninth ifHC* column added to oidTypeTable — made the
-// documented number stale silently. This recomputes it from the shipped set
-// through the real loader and the real type table.
-//
-// Same shape and same reason as TestShippedResourcesLoadClean: every directory
-// under resources/ except the _-prefixed ones, and the totals are asserted
-// non-zero so a decode regression could not make it pass vacuously.
-//
-// It is deliberately an EQUALITY, not an upper bound. A run that got SHORTER is
-// also a stale document, and the step cap is 100000 — three orders of magnitude
-// above this — so an inequality would never fire for the reason the figure
-// exists.
-func TestLongestCounter64RunAcrossShippedProfiles(t *testing.T) {
-	// The figure carried in CLAUDE.md and in getNextBinding's comment.
-	const documentedRun = 288
-
-	entries, err := os.ReadDir("resources")
-	if err != nil {
-		t.Fatalf("read resources dir: %v", err)
-	}
-
-	dirs, seenC64 := 0, 0
-	worst, worstProfile, worstAt := 0, "", ""
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
-			continue
-		}
-		name := e.Name() + ".json"
-		sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
-		res, err := sm.LoadSpecificResources(name)
-		if err != nil {
-			t.Errorf("LoadSpecificResources(%s): %v", name, err)
-			continue
-		}
-		dirs++
-		for _, oid := range res.sortedOIDs {
-			if snmpTypeTag(oid) == ASN1_COUNTER64 {
-				seenC64++
-			}
-		}
-		if run, at := longestCounter64Run(res.sortedOIDs); run > worst {
-			worst, worstProfile, worstAt = run, name, at
-		}
-	}
-
-	if dirs == 0 {
-		t.Fatal("no resource directories loaded. Is the test running from go/nl6?")
-	}
-	if seenC64 == 0 {
-		t.Fatalf("loaded %d directories and found no Counter64 OID at all, so the "+
-			"measurement would be vacuous: snmpTypeTag or the resource loader has changed", dirs)
-	}
-
-	if worst != documentedRun {
-		t.Errorf("longest contiguous Counter64 run across %d shipped profiles is %d "+
-			"(%s, starting at %s), but %d is documented in CLAUDE.md and in "+
-			"getNextBinding's comment.\n"+
-			"A v1 GETNEXT skips this many steps on one binding, inline in the shared UDP "+
-			"handler. Update both places to %d, or explain the new width.",
-			dirs, worst, worstProfile, worstAt, documentedRun, worst)
-	}
-	t.Logf("%d profiles, %d Counter64 OIDs, longest contiguous run %d (%s at %s)",
-		dirs, seenC64, worst, worstProfile, worstAt)
-}
-
-// TestLongestCounter64RunCountsAdjacencyOnly tests longestCounter64Run directly,
-// because the shipped set cannot distinguish it from a total.
-//
-// cisco_crs_x's Counter64 OIDs happen to be ONE contiguous block, and no other
-// shipped profile has more Counter64 OIDs in total than that block is long, so
-// deleting the run reset above leaves the measurement over the shipped set
-// unchanged at 288. Adjacency is the whole point of the figure — the skip loop
-// costs one step per CONSECUTIVE Counter64 successor — so it is asserted here on
-// synthetic input where the two answers differ.
+// cisco_crs_x's Counter64 OIDs are ONE contiguous block, and no other shipped
+// profile has more Counter64 OIDs in total than that block is long, so deleting
+// the run reset leaves the measurement over the shipped set unchanged.
+// Adjacency is the whole point of the figure — the skip loop costs one step per
+// CONSECUTIVE Counter64 successor — so it is asserted here on synthetic input
+// where the two answers differ.
 //
 // The OIDs are real ifXTable columns, since snmpTypeTag decides the type and a
 // made-up OID would report the wrong one. Precondition-checked, so a change to
 // oidTypeTable fails loudly instead of making every row read "not a Counter64".
 func TestLongestCounter64RunCountsAdjacencyOnly(t *testing.T) {
-	// Two Counter64 columns and two that are not (Counter32 / Gauge32).
 	c64a, c64b := ".1.3.6.1.2.1.31.1.1.1.6.1", ".1.3.6.1.2.1.31.1.1.1.10.1"
 	plain, plain2 := ".1.3.6.1.2.1.31.1.1.1.5.1", ".1.3.6.1.2.1.31.1.1.1.15.1"
 	for _, o := range []string{c64a, c64b} {

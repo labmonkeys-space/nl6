@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"log"
 	"strings"
 	"testing"
 )
@@ -38,6 +40,12 @@ type varbindPair struct {
 // pairs. A structural problem FAILS rather than returning a short list: a
 // silently-short list is what lets a per-binding assertion pass over a response
 // nobody could decode, which is the vacuous pass this file exists to avoid.
+//
+// It reads each value's LENGTH as well as its tag and requires the value TLV to
+// end exactly on the binding boundary — the same rule parseAllOIDsFromRequest
+// enforces on the way in (nl6#537). Reading only the tag made this helper LAXER
+// than the production parser it inspects, so a binding with a trailing extra
+// TLV decoded as valid here (nl6#542 review R14).
 func decodeVarbindPairs(t *testing.T, varbinds []byte) []varbindPair {
 	t.Helper()
 	var out []varbindPair
@@ -63,6 +71,12 @@ func decodeVarbindPairs(t *testing.T, varbinds []byte) []varbindPair {
 		if vpos >= len(body) {
 			t.Fatalf("binding at %d has a name but no value in % x", pos, varbinds)
 		}
+		valLen, afterValLen := parseLength(body, vpos+1)
+		if valLen < 0 || afterValLen+valLen != len(body) {
+			t.Fatalf("binding at %d does not end exactly on one value TLV "+
+				"(value length %d, %d bytes of binding left) in % x",
+				pos, valLen, len(body)-afterValLen, varbinds)
+		}
 		out = append(out, varbindPair{oid: name, tag: body[vpos]})
 		pos = next + vbLen
 	}
@@ -72,6 +86,13 @@ func decodeVarbindPairs(t *testing.T, varbinds []byte) []varbindPair {
 // assertBindings checks the decoded names against `want`, positionally. Count
 // first, because a length mismatch makes every index assertion below it
 // misleading.
+//
+// Comparison is EXACT after normalising the leading dot, not the dot-lenient
+// containsOID membership test this used at first: a membership test written for
+// one element reads as if order did not matter, when order is precisely what
+// these rows assert (nl6#542 review R14). decodeOID always emits the leading
+// dot, so the normalisation only tolerates a `want` constant spelled without
+// one.
 func assertBindings(t *testing.T, got []varbindPair, want []string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -82,8 +103,14 @@ func assertBindings(t *testing.T, got []varbindPair, want []string) {
 		t.Fatalf("response carries %d bindings %v, want %d %v",
 			len(got), names, len(want), want)
 	}
+	dotted := func(o string) string {
+		if strings.HasPrefix(o, ".") {
+			return o
+		}
+		return "." + o
+	}
 	for i := range want {
-		if !containsOID([]string{got[i].oid}, want[i]) {
+		if dotted(got[i].oid) != dotted(want[i]) {
 			t.Errorf("binding %d is %s, want %s (bindings must be in request order, "+
 				"each the successor of its OWN name)", i+1, got[i].oid, want[i])
 		}
@@ -400,8 +427,14 @@ func TestGetNextBuilderNeverDivertsOnCounter64(t *testing.T) {
 // TestV1GetBulkThroughDispatcherStillReturnsCounter64 is the WIRING half of
 // TestV1GetBulkStillReturnsCounter64. That one calls createVarbindResponse with
 // hand-built rules, so it cannot see createGetBulkResponse handing over the
-// wrong ones — changing GETBULK's rule to v1DivertSentinelAndCounter64 left the
-// whole suite green until this was added.
+// wrong ones.
+//
+// The claim is narrow, deliberately (nl6#542 review A4): changing GETBULK's
+// rule to v1DivertSentinel ALREADY failed TestGetBulkResponse_SNMPv1NotDiverted
+// and TestWellFormedResponsesUnchangedOnTheWire, so the SENTINEL half of that
+// wiring was pinned before this test existed. What was NOT pinned is the
+// COUNTER64 half — v1DivertSentinelAndCounter64 at that call site — which is
+// what this adds.
 func TestV1GetBulkThroughDispatcherStillReturnsCounter64(t *testing.T) {
 	s := newTestServer(counter64Fixture())
 
@@ -419,4 +452,227 @@ func TestV1GetBulkThroughDispatcherStillReturnsCounter64(t *testing.T) {
 		t.Errorf("v1 GETBULK through the dispatcher no longer carries tag 0x46; the divert " +
 			"has escaped into createGetBulkResponse")
 	}
+}
+
+// TestGetNextEmptyListFallbackFeedsTheEcho covers the new interaction R14
+// names: since nl6#542 the nl6#537 `(nil, true)` fallback — an envelope that
+// could not be read as far as a variable-bindings list, or an empty list —
+// supplies `echoNames` as well as the walk, because both now come from the same
+// slice.
+//
+// `(nil, true)` means "answer from the single OID parseIncomingRequest carries",
+// which is parseIncomingRequest's sysDescr.0 default here. So the response must
+// carry exactly one binding, and under v1 an exhausted walk must echo THAT
+// name — not an empty list, and not a successor.
+func TestGetNextEmptyListFallbackFeedsTheEcho(t *testing.T) {
+	const defaultOID = ".1.3.6.1.2.1.1.1.0" // parseIncomingRequest's fallback
+
+	// An EMPTY variable-bindings list: well-formed BER, so not the nl6#537
+	// discard, and the (nil, true) case by construction.
+	emptyList := func(version int) []byte {
+		var pduBody []byte
+		pduBody = append(pduBody, encodeInteger(42)...)
+		pduBody = append(pduBody, encodeInteger(0)...)
+		pduBody = append(pduBody, encodeInteger(0)...)
+		pduBody = append(pduBody, encodeSequence(nil)...) // zero bindings
+		pdu := []byte{ASN1_GET_NEXT}
+		pdu = append(pdu, encodeLength(len(pduBody))...)
+		pdu = append(pdu, pduBody...)
+		var msg []byte
+		msg = append(msg, encodeInteger(version)...)
+		msg = append(msg, encodeOctetString("public")...)
+		msg = append(msg, pdu...)
+		return encodeSequence(msg)
+	}
+
+	t.Run("v2c answers the single fallback OID", func(t *testing.T) {
+		s := newTestServer(map[string]string{
+			defaultOID:    "a device",
+			plainIfDescr:  "Gi0/1",
+			plainIfDescr2: "Gi0/2",
+		})
+		resp := s.handleSNMPv2cRequest(emptyList(snmpVersion2c))
+		if len(resp) == 0 {
+			t.Fatal("an EMPTY varbind list was discarded; nl6#537 keeps that distinct " +
+				"from a MALFORMED one and answers it from the single parsed OID")
+		}
+		hdr := decodeResponseHeader(t, resp)
+		if hdr.errStatus != snmpErrNoError {
+			t.Fatalf("error-status=%d, want noError", hdr.errStatus)
+		}
+		pairs := decodeVarbindPairs(t, hdr.varbinds)
+		if len(pairs) != 1 {
+			t.Fatalf("response carries %d bindings, want exactly 1 (the fallback OID)", len(pairs))
+		}
+	})
+
+	t.Run("v1 answers one binding and logs no rules bug", func(t *testing.T) {
+		// The v1 ECHO cannot be reached through this route, and the reason is
+		// worth recording rather than working around: findNextOID always
+		// injects sysName.0 and sysLocation.0 as walk candidates (see
+		// newTestServer), so the fallback sysDescr.0 always HAS a successor and
+		// never reaches end of MIB. The echo itself is pinned by
+		// TestGetNextAllEndOfMibV1.
+		//
+		// What this row does pin is the interaction R14 named: the fallback
+		// slice feeds BOTH the walk and echoNames, so the two are the same
+		// length by construction and createVarbindResponse must not report a
+		// mis-sized echo.
+		s := newTestServer(map[string]string{defaultOID: "a device"})
+
+		var buf bytes.Buffer
+		prev := log.Writer()
+		log.SetOutput(&buf)
+		t.Cleanup(func() { log.SetOutput(prev) })
+
+		hdr := decodeResponseHeader(t, s.handleSNMPv2cRequest(emptyList(snmpVersion1)))
+		if hdr.errStatus != snmpErrNoError {
+			t.Fatalf("error-status=%d, want noError: sysDescr.0's successor is the injected "+
+				"sysName.0, so this walk does not end", hdr.errStatus)
+		}
+		if pairs := decodeVarbindPairs(t, hdr.varbinds); len(pairs) != 1 {
+			t.Fatalf("response carries %d bindings, want exactly 1", len(pairs))
+		}
+		if strings.Contains(buf.String(), "echoNames length") {
+			t.Errorf("the fallback produced a mis-sized echo:\n%s", buf.String())
+		}
+	})
+}
+
+// TestGetNextSingleBindingOverflowIsTooBig is the case the multi-binding
+// overflow row above cannot reach: ONE binding whose VALUE alone exceeds the
+// datagram budget (nl6#542 review A5).
+//
+// This is where the behaviour change nl6#542 introduced actually bites. Before
+// it, a single-binding GETNEXT went through createSNMPResponse, which applied no
+// size bound at all and emitted an over-budget datagram; it now goes through
+// createVarbindResponse and answers tooBig. Better, and required by the
+// diversion table, but it IS a change to a shape the acceptance criteria called
+// frozen — so it gets its own test rather than a line in a commit message.
+//
+// Not reachable with shipped resources: no shipped value approaches the budget.
+// Reachable with an operator resource file, which is why the fixture builds one.
+func TestGetNextSingleBindingOverflowIsTooBig(t *testing.T) {
+	const pred, long = ".1.3.6.1.2.1.2.2.1.2.8", ".1.3.6.1.2.1.2.2.1.2.9"
+	s := newTestServer(map[string]string{
+		pred: "predecessor",
+		long: strings.Repeat("x", 1600), // one value, past the 1472 B budget
+	})
+
+	for _, ver := range []int{snmpVersion1, snmpVersion2c} {
+		resp := s.handleSNMPv2cRequest(snmpRequestAt(ASN1_GET_NEXT, ver, []string{pred}))
+		hdr := decodeResponseHeader(t, resp)
+		if hdr.errStatus != snmpErrTooBig {
+			t.Errorf("version %d: error-status=%d, want tooBig(%d) for a single binding whose "+
+				"value alone exceeds the budget", ver, hdr.errStatus, snmpErrTooBig)
+		}
+		if len(hdr.varbinds) != 0 {
+			t.Errorf("version %d: tooBig carries %d bytes of bindings, want an empty list",
+				ver, len(hdr.varbinds))
+		}
+		if len(resp) > maxSNMPResponseSize {
+			t.Errorf("version %d: the response is %d B, over the %d B budget — which is the "+
+				"pre-nl6#542 behaviour this change replaced", ver, len(resp), maxSNMPResponseSize)
+		}
+	}
+}
+
+// ── on a device with a live counter cycler ──────────────────────────────────
+
+// TestGetNextMultiBindingOnALiveCyclerDevice covers what every other test in
+// this file cannot: newTestServer has no metricsCycler, so its walk sees only
+// the static resource index (nl6#542 review A2).
+//
+// That matters twice over. A real fleet's ifTable/ifXTable walk mostly returns
+// ANALYTICALLY served rows, and those are exactly the OIDs the Counter64 skip
+// run steps through — the reason the 288 figure was 4x too small. So the
+// multi-binding path is exercised here against a real shipped profile with the
+// cycler initialised the way both production creation paths do.
+func TestGetNextMultiBindingOnALiveCyclerDevice(t *testing.T) {
+	s := deviceForProfile(t, "cisco_crs_x.json")
+
+	// An ifXTable position whose successor is analytically served, so the walk
+	// must consult the cycler rather than the static index.
+	const beforeHC = ".1.3.6.1.2.1.31.1.1.1.6.99999"
+	next, _ := s.findNextOID(beforeHC)
+	if snmpTypeTag(next) != ASN1_COUNTER64 {
+		t.Fatalf("precondition failed: successor of %s is %s, expected a Counter64", beforeHC, next)
+	}
+	if _, ok := s.device.resources.oidIndex.Load(next); ok {
+		t.Fatalf("precondition failed: %s is statically served, so this test would not "+
+			"exercise the cycler at all", next)
+	}
+
+	t.Run("v2c returns the analytic Counter64 for every binding", func(t *testing.T) {
+		req := []string{beforeHC, beforeHC, ".1.3.6.1.2.1.2.2.1.2.1"}
+		hdr := decodeResponseHeader(t, s.handleSNMPv2cRequest(
+			snmpRequestAt(ASN1_GET_NEXT, snmpVersion2c, req)))
+		if hdr.errStatus != snmpErrNoError {
+			t.Fatalf("error-status=%d, want noError", hdr.errStatus)
+		}
+		pairs := decodeVarbindPairs(t, hdr.varbinds)
+		if len(pairs) != len(req) {
+			t.Fatalf("response carries %d bindings, want %d", len(pairs), len(req))
+		}
+		for i := 0; i < 2; i++ {
+			if pairs[i].tag != ASN1_COUNTER64 {
+				t.Errorf("binding %d value tag = 0x%02x, want Counter64 0x46", i+1, pairs[i].tag)
+			}
+			if pairs[i].oid != next {
+				t.Errorf("binding %d is %s, want the analytic successor %s", i+1, pairs[i].oid, next)
+			}
+		}
+	})
+
+	t.Run("v1 skips the whole analytic run on every binding", func(t *testing.T) {
+		req := []string{beforeHC, beforeHC, beforeHC}
+		hdr := decodeResponseHeader(t, s.handleSNMPv2cRequest(
+			snmpRequestAt(ASN1_GET_NEXT, snmpVersion1, req)))
+		if hdr.errStatus != snmpErrNoError {
+			t.Fatalf("error-status=%d, want noError: a v1 GETNEXT SKIPS a Counter64", hdr.errStatus)
+		}
+		pairs := decodeVarbindPairs(t, hdr.varbinds)
+		if len(pairs) != len(req) {
+			t.Fatalf("response carries %d bindings, want %d", len(pairs), len(req))
+		}
+		for i, p := range pairs {
+			if p.tag == ASN1_COUNTER64 {
+				t.Errorf("binding %d carries tag 0x46, which does not exist in SNMPv1", i+1)
+			}
+			if p.oid == next {
+				t.Errorf("binding %d returned the Counter64 OID %s itself", i+1, p.oid)
+			}
+		}
+		// Every binding must land on the SAME successor: the skip is a pure
+		// function of the walk, so three identical names cannot disagree.
+		if pairs[0].oid != pairs[1].oid || pairs[1].oid != pairs[2].oid {
+			t.Errorf("three identical names produced %s, %s, %s",
+				pairs[0].oid, pairs[1].oid, pairs[2].oid)
+		}
+		t.Logf("v1 skipped the analytic Counter64 run and landed on %s", pairs[0].oid)
+	})
+
+	t.Run("the shared budget bounds the real profile", func(t *testing.T) {
+		// The measured amplification, as an upper bound rather than a timing
+		// assertion: the walk work of N identical bindings must stay inside ONE
+		// datagram's budget, which is what the shared budget guarantees.
+		req := make([]string, 40)
+		for i := range req {
+			req[i] = beforeHC
+		}
+		budget := newCounter64SkipBudget()
+		served := s.lldpServedOIDs()
+		s.getNextBindingsForRequest(req, served, snmpVersion1, budget)
+		spent := counter64SkipBudgetSteps() - budget.remaining
+		if spent > counter64SkipBudgetSteps() {
+			t.Fatalf("spent %d steps against a %d budget", spent, counter64SkipBudgetSteps())
+		}
+		if spent < len(req)*longestShippedCounter64Run/2 {
+			t.Errorf("40 bindings spent only %d steps; the profile's run is %d, so the skip "+
+				"did not actually happen and this bound is vacuous",
+				spent, longestShippedCounter64Run)
+		}
+		t.Logf("40 bindings spent %d of %d budgeted skip steps on the widest shipped profile",
+			spent, counter64SkipBudgetSteps())
+	})
 }
