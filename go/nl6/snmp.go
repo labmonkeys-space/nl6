@@ -16,6 +16,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -283,6 +284,126 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 	}
 
 	return oid, pduType, nil
+}
+
+// errV3VarBindListMalformed is the fault a v3 GETBULK reports when its
+// variable-bindings list, or a container length on the way to it, is not a
+// valid ASN.1 encoding.
+//
+// A package-level sentinel rather than an inline fmt.Errorf so a test can
+// assert WHICH fault occurred with errors.Is instead of grepping the log line
+// the dispatcher wraps it in.
+var errV3VarBindListMalformed = errors.New("GETBULK variable-bindings list is not a valid ASN.1 encoding")
+
+// parseAllOIDsFromScopedPDU extracts every variable-binding NAME from an
+// SNMPv3 scoped PDU in CONTENTS form (contextEngineID, contextName, PDU), the
+// shape parseSNMPv3Message and handleSNMPv3Request supply.
+//
+// It is the v3 sibling of parseAllOIDsFromRequest and carries the SAME
+// two-zero-case contract, because the callers must behave the same way:
+//
+//	(nil, false)  a declared length overruns its container, or the
+//	              variable-bindings list is not a valid ASN.1 encoding. RFC
+//	              1157 §4.1 step 1 and RFC 3412 §7.2 discard the datagram; the
+//	              caller sends nothing (nl6#537).
+//	(nil, true)   the envelope before the list was never reached — a tag that
+//	              is not the expected one, a field that ends the buffer, or a
+//	              length parseLength cannot read at all — or the list is empty.
+//	              The single OID extractOIDAndTypeFromScopedPDU already
+//	              validated still covers that case.
+//
+// Collapsing the two would either drop requests this server used to answer or
+// answer ones RFC 3412 requires it to discard, which is why the bool exists
+// rather than an empty slice standing for both.
+//
+// **A CONTAINER LENGTH THAT OVERRUNS IS MALFORMED, NOT ABSENT.** That
+// distinction is the whole of nl6#535's review finding R1: the PDU's declared
+// length used to fall into the absent case, so adding 8 to one length byte of
+// a well-formed 3-column GETBULK made this function report "no list here", the
+// handler fall back to the single dispatcher OID, and the response carry ten
+// bindings from the first column — the nl6#535 defect restored verbatim by a
+// one-byte lie, with no discard and no log line. Shortening the same byte was
+// already treated as malformed, so the two directions of one lie had opposite
+// verdicts. Every container length is now checked the same way.
+//
+// extractOIDAndTypeFromScopedPDU validates the FIRST binding's name and the
+// PDU type before this runs, so this function never relaxes the nl6#547
+// discard: it can only add discards, for a list whose LATER bindings are
+// malformed — the same widening nl6#537 made on the v1/v2c side.
+//
+// Every length is compared as `n > len(buf)-pos` rather than `pos+n >
+// len(buf)`: parseLength accepts a four-octet long form, which on a 32-bit
+// build can carry a value whose ADDITION to pos wraps negative and slips
+// through an upper-bound test, sending a slice expression into a panic on a
+// serve path with no recover() (nl6#513's trap 1, one level up).
+func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
+	pos := 0
+
+	// contextEngineID and contextName, both OCTET STRING.
+	for i := 0; i < 2; i++ {
+		if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OCTET_STRING {
+			return nil, true
+		}
+		pos++
+		n, newPos := parseLength(scopedPDU, pos)
+		if n < 0 {
+			return nil, true
+		}
+		if n > len(scopedPDU)-newPos {
+			return nil, false
+		}
+		pos = newPos + n
+	}
+
+	// The PDU. Any tag: the caller has already rejected the types this server
+	// does not serve, and the varbind list sits in the same place in all of
+	// them.
+	if pos >= len(scopedPDU) {
+		return nil, true
+	}
+	pos++
+	pduLen, newPos := parseLength(scopedPDU, pos)
+	if pduLen < 0 {
+		return nil, true
+	}
+	if pduLen > len(scopedPDU)-newPos {
+		return nil, false
+	}
+	pos = newPos
+	end := newPos + pduLen
+
+	// request-id, then error-status/non-repeaters and error-index/
+	// max-repetitions. All three are skipped here; parseSNMPv3GetBulkParams
+	// reads the two that matter.
+	for i := 0; i < 3; i++ {
+		if pos >= end || scopedPDU[pos] != ASN1_INTEGER {
+			return nil, true
+		}
+		pos++
+		n, newPos := parseLength(scopedPDU, pos)
+		if n < 0 {
+			return nil, true
+		}
+		if n > end-newPos {
+			return nil, false
+		}
+		pos = newPos + n
+	}
+
+	// The list must END exactly on the PDU boundary. Bytes between the end of
+	// the variable-bindings list and the end of the PDU are not the SEQUENCE
+	// RFC 1157 defines, and the same nl6#537 rule that refuses them after a
+	// VarBind's value refuses them here.
+	if pos < end && scopedPDU[pos] == ASN1_SEQUENCE {
+		listLen, afterLen := parseLength(scopedPDU, pos+1)
+		if listLen >= 0 && (listLen > end-afterLen || afterLen+listLen != end) {
+			return nil, false
+		}
+	}
+
+	// Slicing to `end` is what bounds the list by its PDU rather than by the
+	// datagram.
+	return parseVarBindNames(scopedPDU[:end], pos)
 }
 
 // usmStats OIDs a Report can name (RFC 3414 §5). The whole subtree is typed

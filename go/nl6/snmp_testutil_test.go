@@ -150,3 +150,64 @@ func countVarbinds(t *testing.T, resp []byte) int {
 	}
 	return count
 }
+
+// decodeV2cVarbinds decodes every binding of a v2c GetResponse. v2cFirstVarbind
+// stops at the first, which cannot see an interleave.
+//
+// It lives here, not beside its first caller, because CLAUDE.md names this file
+// as the home for shared SNMP test helpers: a helper defined in one of the
+// //go:build linux test files is invisible to the untagged suites, which is how
+// the exception suite ended up with its own copy of the server constructor
+// (nl6#525). This is already the third varbind decoder in the package
+// (v3Varbind's own, v2cFirstVarbind, this); a fourth belongs here too
+// (nl6#535 review R14).
+func decodeV2cVarbinds(t *testing.T, resp []byte) []v3Varbind {
+	t.Helper()
+	body := expectSeq(t, resp, "v2c message")
+	pos := skipTLV(t, body, 0, "version")
+	pos = skipTLV(t, body, pos, "community")
+	if pos >= len(body) {
+		t.Fatal("no PDU")
+	}
+	n, after := parseLength(body, pos+1)
+	if n < 0 || after+n > len(body) {
+		t.Fatal("bad PDU length")
+	}
+	pdu := body[after : after+n]
+
+	pp := 0
+	_, pp = expectInt(t, pdu, pp, "request-id")
+	_, pp = expectInt(t, pdu, pp, "error-status")
+	_, pp = expectInt(t, pdu, pp, "error-index")
+
+	vbl := expectSeq(t, pdu[pp:], "variable-bindings")
+	var out []v3Varbind
+	for vp := 0; vp < len(vbl); {
+		vb := expectSeq(t, vbl[vp:], "varbind")
+		l, a := parseLength(vbl, vp+1)
+		if l < 0 || a+l > len(vbl) {
+			t.Fatal("bad varbind length")
+		}
+		vp = a + l
+
+		if len(vb) == 0 || vb[0] != ASN1_OID {
+			t.Fatalf("varbind does not start with an OBJECT IDENTIFIER: % x", vb)
+		}
+		nameLen, afterName := parseLength(vb, 1)
+		if nameLen < 0 || afterName+nameLen > len(vb) {
+			t.Fatal("bad varbind name length")
+		}
+		v := v3Varbind{oid: decodeOID(vb[afterName : afterName+nameLen])}
+		vpos := afterName + nameLen
+		if vpos >= len(vb) {
+			t.Fatal("varbind has a name but no value")
+		}
+		v.valueTag = vb[vpos]
+		vlen, afterV := parseLength(vb, vpos+1)
+		if vlen >= 0 && afterV+vlen <= len(vb) {
+			v.value = vb[afterV : afterV+vlen]
+		}
+		out = append(out, v)
+	}
+	return out
+}

@@ -546,7 +546,7 @@ func TestV3GetBulkThroughDispatcher(t *testing.T) {
 // non-repeaters 0 and max-repetitions 10.
 func buildV3GetBulkRequest(t *testing.T, s *SNMPServer, oid string, reqID int) []byte {
 	t.Helper()
-	return buildV3GetBulkRequestWith(t, s, oid, reqID, 0, 10)
+	return buildV3GetBulkRequestWith(t, s, []string{oid}, reqID, 0, 10)
 }
 
 // TestV3GetBulkRespectsTheDatagramBudget covers the bound nl6#535 added. The
@@ -949,9 +949,12 @@ func TestV3GetBulkMaxRepetitionsAbove127(t *testing.T) {
 }
 
 // TestV3GetBulkNonRepeatersMakesItAGetNext pins RFC 3416's non-repeaters split
-// as it applies to this single-column handler: a column counted as a
-// non-repeater gets exactly ONE successor, not max-repetitions of them. The
+// as it applies to a request naming ONE column: that column is a non-repeater,
+// so it gets exactly one successor and there is no repeater section left. The
 // rule is non-repeaters > 0, not == 1, and it wins over max-repetitions = 0.
+//
+// The handler is no longer single-column (nl6#535), but N = min(non-repeaters,
+// column count) makes this the same assertion it always was.
 func TestV3GetBulkNonRepeatersMakesItAGetNext(t *testing.T) {
 	s := v3TestServer(wideBulkFixture(50))
 	const start = ".1.3.6.1.2.1.1.1.0"
@@ -1086,13 +1089,24 @@ func TestV3GetBulkNegativeParamsRejected(t *testing.T) {
 }
 
 // buildV3GetBulkRequestWith is buildV3GetBulkRequest with the two GETBULK
-// integers exposed. Every dispatcher-level test used to send 10, which is also
-// the parser's fallback, so a parser handed the wrong buffer at the dispatcher
-// (the wrapped decrypt, say) returned (0, 10) and nothing noticed.
-func buildV3GetBulkRequestWith(t *testing.T, s *SNMPServer, oid string, reqID, nonRepeaters, maxRepetitions int) []byte {
+// integers and the COLUMN LIST exposed. Every dispatcher-level test used to
+// send 10, which is also the parser's fallback, so a parser handed the wrong
+// buffer at the dispatcher (the wrapped decrypt, say) returned (0, 10) and
+// nothing noticed.
+//
+// It takes several columns because that same seam swallows the multi-column
+// fix: hand parseAllOIDsFromScopedPDU the WRAPPED scoped PDU and it reports
+// "no list here", the handler falls back to the single dispatcher OID, and the
+// response carries the first column only — silently, with every direct-call
+// test still green. That is nl6#527's failure shape on the same
+// decrypt-unwrap seam (nl6#535 review R2).
+func buildV3GetBulkRequestWith(t *testing.T, s *SNMPServer, oids []string, reqID, nonRepeaters, maxRepetitions int) []byte {
 	t.Helper()
 
-	vb := encodeSequence(append(encodeOID(oid), encodeNull()...))
+	var vb []byte
+	for _, oid := range oids {
+		vb = append(vb, encodeSequence(append(encodeOID(oid), encodeNull()...))...)
+	}
 	var pduBody []byte
 	pduBody = append(pduBody, encodeInteger(reqID)...)
 	pduBody = append(pduBody, encodeInteger(nonRepeaters)...)
@@ -1146,23 +1160,40 @@ func TestV3GetBulkParamsSurviveTheDispatcher(t *testing.T) {
 		{"des", SNMPV3_PRIV_DES},
 		{"aes128", SNMPV3_PRIV_AES128},
 	}
-	params := []struct{ nonRep, maxRep, want int }{
-		{0, 3, 3},
-		{0, 25, 25},
-		{1, 10, 1},
+	// cols nil means "the single start column". The multi-column rows are the
+	// only ones that can see a parser handed the wrapped scoped PDU: with one
+	// column the fallback returns the same answer as the fix (review R2).
+	multi := []string{".1.3.6.1.2.1.2.2.1.2", ".1.3.6.1.2.1.31.1.1.1.1", ".1.3.6.1.2.1.1.9.1.3"}
+	params := []struct {
+		nonRep, maxRep, want int
+		cols                 []string
+	}{
+		{nonRep: 0, maxRep: 3, want: 3},
+		{nonRep: 0, maxRep: 25, want: 25},
+		{nonRep: 1, maxRep: 10, want: 1},
+		{nonRep: 0, maxRep: 4, want: 12, cols: multi},
+		{nonRep: 1, maxRep: 3, want: 7, cols: multi},
 	}
 
 	for _, priv := range privs {
 		for _, p := range params {
-			t.Run(fmt.Sprintf("%s/nr=%d,mr=%d", priv.name, p.nonRep, p.maxRep), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/nr=%d,mr=%d,cols=%d", priv.name, p.nonRep, p.maxRep, max(len(p.cols), 1)), func(t *testing.T) {
 				s := v3TestServer(wideBulkFixture(60))
+				cols := p.cols
+				if cols == nil {
+					cols = []string{start}
+				} else {
+					// The multi-column rows need every column populated, which
+					// wideBulkFixture does not do.
+					s = v3TestServer(multiColFixture(20))
+				}
 				var req []byte
 				if priv.proto == SNMPV3_PRIV_NONE {
-					req = buildV3GetBulkRequestWith(t, s, start, 4242, p.nonRep, p.maxRep)
+					req = buildV3GetBulkRequestWith(t, s, cols, 4242, p.nonRep, p.maxRep)
 				} else {
 					s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
 					s.v3Config.PrivProtocol = priv.proto
-					plain, err := s.parseSNMPv3Message(buildV3GetBulkRequestWith(t, s, start, 4242, p.nonRep, p.maxRep))
+					plain, err := s.parseSNMPv3Message(buildV3GetBulkRequestWith(t, s, cols, 4242, p.nonRep, p.maxRep))
 					if err != nil {
 						t.Fatalf("parse plaintext: %v", err)
 					}
@@ -1184,6 +1215,26 @@ func TestV3GetBulkParamsSurviveTheDispatcher(t *testing.T) {
 				if len(r.varbinds) != p.want {
 					t.Errorf("got %d bindings, want %d: the value the dispatcher handed the "+
 						"parser was not the one the manager sent (10 is the fallback)", len(r.varbinds), p.want)
+				}
+				if len(p.cols) > 1 {
+					// EVERY column must be represented. A dispatcher that hands
+					// the parser the wrapped scoped PDU answers the first column
+					// only, and the binding COUNT alone cannot see that.
+					seen := map[string]bool{}
+					for _, vb := range r.varbinds {
+						for _, c := range p.cols {
+							if strings.HasPrefix(vb.oid, c+".") {
+								seen[c] = true
+							}
+						}
+					}
+					for _, c := range p.cols {
+						if !seen[c] {
+							t.Errorf("no binding from column %s: the scoped PDU the dispatcher "+
+								"handed the multi-column parser was not the CONTENTS form, so "+
+								"the walk fell back to the first column", c)
+						}
+					}
 				}
 			})
 		}
@@ -1259,16 +1310,46 @@ func TestClampBulkWalkBoundsTheWalk(t *testing.T) {
 	ceiling := maxSNMPResponseSize/minVarbindSize + 1
 
 	for _, in := range []int{100000, 1 << 20, ceiling + 1} {
-		if got := clampBulkWalk(in); got != ceiling {
-			t.Errorf("clampBulkWalk(%d) = %d, want the %d ceiling: without it the device performs "+
+		if got := clampBulkWalk(in, 1); got != ceiling {
+			t.Errorf("clampBulkWalk(%d, 1) = %d, want the %d ceiling: without it the device performs "+
 				"that many findNextOID steps before the encode bound discards them", in, got, ceiling)
 		}
 	}
 	// Values at or below the ceiling pass through untouched, or the clamp would
 	// silently reduce what a reasonable manager asked for.
 	for _, in := range []int{0, 1, 10, ceiling} {
-		if got := clampBulkWalk(in); got != in {
-			t.Errorf("clampBulkWalk(%d) = %d, want it unchanged", in, got)
+		if got := clampBulkWalk(in, 1); got != in {
+			t.Errorf("clampBulkWalk(%d, 1) = %d, want it unchanged", in, got)
 		}
+	}
+}
+
+// TestClampBulkWalkDividesByColumns pins the decision nl6#535 had to make: a
+// repetition costs one walk step PER COLUMN, so the ceiling is divided by the
+// column count and the guard bounds the TOTAL work — what it bounded when
+// there was only ever one column.
+//
+// Left undivided the clamp is C times looser, which is the amplification it
+// exists to stop; applied to the total it is C times tighter and silently
+// truncates a reasonable request. Both mistakes pass every response-level
+// assertion, because the encode bound trims to the same bindings either way.
+func TestClampBulkWalkDividesByColumns(t *testing.T) {
+	for _, cols := range []int{1, 2, 5, 30} {
+		want := maxSNMPResponseSize/minVarbindSize/cols + 1
+		if got := clampBulkWalk(1<<20, cols); got != want {
+			t.Errorf("clampBulkWalk(1<<20, %d) = %d, want %d: the ceiling must divide by the "+
+				"column count, since the walk is columns × repetitions", cols, got, want)
+		}
+		// Total work stays within the single-column ceiling, which is the
+		// property the division buys.
+		if total := clampBulkWalk(1<<20, cols) * cols; total > maxSNMPResponseSize/minVarbindSize+cols {
+			t.Errorf("%d columns walk %d steps in total, above the single-column ceiling", cols, total)
+		}
+	}
+	// A column count of zero cannot reach the handler (the repeater section
+	// returns early), but a divisor of zero panics on the serve path where
+	// there is no recover(), so it is guarded rather than assumed.
+	if got := clampBulkWalk(5, 0); got != 5 {
+		t.Errorf("clampBulkWalk(5, 0) = %d, want 5: a zero column count must not divide by zero", got)
 	}
 }

@@ -340,85 +340,253 @@ func (s *SNMPServer) validateSNMPv3Credentials(msg *SNMPv3Message) bool {
 	return true
 }
 
-// handleSNMPv3GetBulk processes SNMPv3 GetBulk requests
+// handleSNMPv3GetBulk processes SNMPv3 GetBulk requests.
+//
+// It serves EVERY column the request names (nl6#535). It used to walk from a
+// single start OID — the first variable binding, the only one
+// extractOIDAndTypeFromScopedPDU validates — so a manager bundling
+// ifDescr/ifName/ifAlias/ifSpeed in one v3 GETBULK got successors of the first
+// column and nothing at all for the rest. That is a wrong answer under RFC
+// 3416 §4.2.3, not merely a small one, and it also forced non-repeaters to be
+// collapsed into "max-repetitions = 1", which is not what the field means.
+//
+// The order and the per-column end-of-MIB padding match handleGetBulk, the
+// v2c reference: N non-repeater successors, then max-repetitions repetitions
+// each carrying one binding per remaining column, interleaved column by
+// column. Everything downstream is reused rather than rebuilt — the measured
+// bound in createSNMPv3GetBulkResponse, the walk clamp, the end-of-MIB naming.
+//
+// A MULTI-COLUMN request is byte-identical to v2c, tail included: an exhausted
+// column is padded for every remaining repetition, exactly as handleGetBulk
+// pads. An earlier cut of this change stopped the loop once every column was
+// exhausted and reported the difference as an unavoidable divergence. It was
+// not unavoidable: nl6#526 constrains the SINGLE-column loop only, and the
+// spec keys its two padding rules on LOOP SHAPE rather than on version — "the
+// two rules govern different loops and SHALL NOT be applied to each other".
+// The stated rationale did not hold either, since a multi-column response
+// already carries exception pads after real bindings inside every mixed
+// repetition.
+//
+// The SINGLE-column loop keeps nl6#526's contract and stops instead of
+// padding: a v3 walk that runs out mid-response ships what it collected, and
+// the NEXT request, collecting nothing, gets the exception on its own
+// (TestV3GetBulkShipsEveryCollectedBinding, TestV3BulkWalkTerminates). A first
+// repetition that produced nothing is still emitted, so a single column
+// already past the end of the MIB is answered with its own OID and
+// endOfMibView rather than an empty list.
+//
+// What still differs from v2c, and only on DEFECTIVE data: bulkStep ends a
+// column on the endOfMibView SENTINEL and on a non-advancing successor as well
+// as on an absent one, and names that binding with the REQUESTED OID, where
+// v2c's non-repeater loop tests only for an absent successor. Both extra exits
+// are nl6#526/#524 properties that a shared walk must not lose, and neither is
+// reachable on data that loads (validateSNMPResourceValues rejects the
+// sentinel; a non-advancing oidNextMap is a resource-file defect).
 func (s *SNMPServer) handleSNMPv3GetBulk(startOID string, msg *SNMPv3Message, scopedPDU []byte) []byte {
 	nonRepeaters, maxRepetitions := s.parseSNMPv3GetBulkParams(scopedPDU)
-
-	// This handler serves ONE column (startOID), so RFC 3416's non-repeaters
-	// split reduces to a single question: is that column a non-repeater? If it
-	// is, it gets exactly one successor, which is GETNEXT semantics. Ignoring
-	// non-repeaters would over-answer a manager that asked for one binding.
-	if nonRepeaters > 0 {
-		maxRepetitions = 1
+	// Defence in depth, as on the v2c path: the parser already rejects
+	// negatives, but one slipping through is a negative loop bound or a
+	// negative slice index inline on the serve path, where there is no
+	// recover().
+	if nonRepeaters < 0 {
+		nonRepeaters = 0
+	}
+	if maxRepetitions < 0 {
+		maxRepetitions = 0
 	}
 
-	maxRepetitions = clampBulkWalk(maxRepetitions)
-
-	// RFC 3416 §4.2.3 with N = 0 and M = 0 is a response with NO bindings, not
-	// an end-of-MIB exception. The collection loop below would gather nothing
-	// and the builder would answer {startOID, endOfMibView}, which a walker
-	// reads as the end of the MIB when nothing about the MIB was asked.
-	// Unreachable while max-repetitions was a hardcoded 10; reachable now. The
-	// v2c handler makes the same distinction (handleGetBulk).
-	if maxRepetitions == 0 {
-		return s.createSNMPv3EmptyGetBulkResponse(msg)
+	allOIDs, ok := parseAllOIDsFromScopedPDU(scopedPDU)
+	if !ok {
+		// A variable-bindings list that is not a valid ASN.1 encoding makes
+		// the PDU malformed; RFC 3412 §7.2 discards it. Returning nothing
+		// means handleSingleRequest sends no datagram (nl6#537/#547).
+		s.logFirstMalformedV3List(errV3VarBindListMalformed)
+		return []byte{}
+	}
+	if len(allOIDs) == 0 {
+		// The envelope before the list was unreadable, or the list is empty.
+		// The OID the dispatcher already validated still covers that, exactly
+		// as the v2c handler falls back to its single parsed OID.
+		allOIDs = []string{startOID}
 	}
 
-	// Collect multiple OIDs starting from startOID
-	var oids []string
-	var responses []string
+	// One LLDP served-OID snapshot for the whole request, as the v2c handler
+	// takes: rebuilding the device's entire LLDP/ifAlias view per walk step is
+	// what turned a fabric-wide Enlinkd walk into O(steps × links), and two
+	// snapshots could straddle a topology generation bump.
+	lldpServed := s.lldpServedOIDs()
 
-	currentOID := startOID
-	count := 0
+	// The exact upper bound is known before any walking: one binding per
+	// non-repeater column plus columns × repetitions. Sizing here keeps the
+	// shared UDP serve path from regrowing these slices per repetition.
+	oids := make([]string, 0, len(allOIDs))
+	responses := make([]string, 0, len(allOIDs))
 
-	// Collect up to maxRepetitions OIDs.
-	//
-	// An empty collection is answered as the endOfMibView exception, named with
-	// startOID, by createSNMPv3GetBulkResponse (nl6#526). The sentinel is not
-	// appended to oids here: the builder ships every binding collected, so
-	// appending it would put the exception after real bindings mid-walk and
-	// make the walker stop early. The NEXT request, starting from the last
-	// OID returned, collects nothing and gets the exception on its own.
-	//
-	// The three break conditions are NOT the same thing, and the difference
-	// matters because each ends the walk with a well-formed exception that a
-	// manager cannot distinguish from a genuine end of MIB:
-	//
-	//   nextOID == ""          genuine end of the MIB view.
-	//   response == sentinel   a RESOURCE VALUE that is literally the string
-	//                          "endOfMibView". That truncates the walk early
-	//                          and undetectably. validateSNMPResourceValues
-	//                          (nl6#523) rejects such a file at load, which is
-	//                          the mitigation; this is the consequence if one
-	//                          ever gets past it.
-	//   non-advancing          an oidNextMap that maps an OID to itself or to a
-	//                          smaller one. Without this check the loop would
-	//                          hand back a non-increasing OID with no
-	//                          exception, which is EXACTLY the symptom nl6#526
-	//                          set out to remove, arriving by a different
-	//                          route. The v1/v2c GETNEXT path grew the same
-	//                          bound in nl6#524.
-	for count < maxRepetitions {
-		nextOID, response := s.findNextOID(currentOID)
-		if nextOID == "" || response == valueEndOfMibView {
-			break
+	// ── Non-repeater section (GETNEXT semantics) ──────────────────────────
+	// RFC 3416 §4.2.3: N = min(non-repeaters, number of bindings), so a
+	// non-repeaters larger than the column count simply makes every column a
+	// non-repeater and leaves no repeater loop.
+	nonRep := nonRepeaters
+	if nonRep > len(allOIDs) {
+		nonRep = len(allOIDs)
+	}
+	for i := 0; i < nonRep; i++ {
+		nextOID, nextVal, advanced := s.bulkStep(allOIDs[i], lldpServed)
+		if !advanced {
+			nextOID, nextVal = allOIDs[i], valueEndOfMibView
 		}
-		if compareOIDsLexicographically(nextOID, currentOID) <= 0 {
-			// A data defect, so log it once per device (same gate as the v1
-			// skip loop): without a line here the manager sees a walk that
-			// ends early, indistinguishable from a short MIB.
-			s.logFirstBulkAbort(nextOID, currentOID)
-			break
-		}
-
 		oids = append(oids, nextOID)
-		responses = append(responses, response)
-		currentOID = nextOID
-		count++
+		responses = append(responses, nextVal)
 	}
 
-	// Create SNMPv3 GetBulk response
-	return s.createSNMPv3GetBulkResponse(startOID, oids, responses, msg)
+	// ── Repeater section (multi-column GETNEXT × max-repetitions) ─────────
+	repeaterCols := allOIDs[nonRep:]
+	if len(repeaterCols) == 0 || maxRepetitions == 0 {
+		if len(oids) == 0 {
+			// RFC 3416 §4.2.3 with N = 0 and M = 0 is a response with NO
+			// bindings, not an end-of-MIB exception: the builder's empty
+			// branch means the walk found nothing, which tells a walker the
+			// MIB ended when nothing about the MIB was asked.
+			return s.createSNMPv3EmptyGetBulkResponse(msg)
+		}
+		// M = 0 WITH non-repeaters is neither of those: the non-repeater
+		// bindings are the whole legitimate answer. The old single-column
+		// collapse hid this row entirely.
+		return s.createSNMPv3GetBulkResponse(allOIDs[0], oids, responses, msg)
+	}
+
+	// The clamp bounds the TOTAL walk, not each column: the work is columns ×
+	// repetitions, so dividing the ceiling by the column count is what keeps
+	// the guard's meaning constant as columns are added. Per-column it would
+	// be C times looser — 30 columns × 98 repetitions is precisely the
+	// amplification the v2c guard exists to stop — and applying the undivided
+	// ceiling to the total would be C times tighter, silently truncating what
+	// a reasonable manager asked for. handleGetBulk calls the same function.
+	//
+	// The COLUMN count itself is not clamped here, and what bounds it is
+	// implicit: the read buffer (snmpBufPool, snmpReadBufferBytes) caps a
+	// request at 1024 bytes, and the smallest encodable VarBind is
+	// minVarbindSize, so a datagram cannot name more than a few hundred
+	// columns. The repeater walk is bounded regardless — the division above
+	// makes columns × repetitions a constant — but the non-repeater loop above
+	// is one step PER COLUMN with no other bound, so raising the read buffer
+	// raises that work linearly. TestReadBufferBoundsTheColumnCount pins the
+	// coupling so a buffer change has to acknowledge it (nl6#535 review R12).
+	maxRepetitions = clampBulkWalk(maxRepetitions, len(repeaterCols))
+
+	// currentOIDs tracks the cursor in each column; endOfMib[i] latches once
+	// column i has exhausted its MIB view.
+	currentOIDs := make([]string, len(repeaterCols))
+	copy(currentOIDs, repeaterCols)
+	endOfMib := make([]bool, len(repeaterCols))
+	repOIDs := make([]string, 0, len(repeaterCols))
+	repVals := make([]string, 0, len(repeaterCols))
+
+	// Grow the collection to its full bound once, rather than per repetition.
+	if total := len(oids) + len(repeaterCols)*maxRepetitions; cap(oids) < total {
+		oids = append(make([]string, 0, total), oids...)
+		responses = append(make([]string, 0, total), responses...)
+	}
+
+	// singleColumn selects nl6#526's stop-instead-of-pad rule, which applies
+	// to the single-column loop ONLY. Keyed on the loop's shape, not on the
+	// protocol version: the multi-column loop pads exactly as v2c does.
+	singleColumn := len(repeaterCols) == 1
+
+	for rep := 0; rep < maxRepetitions; rep++ {
+		// A repetition is assembled before it is committed, because under the
+		// single-column rule whether it is emitted at all depends on whether
+		// the column produced a real binding in it. Reused across repetitions:
+		// this runs inline on the shared UDP handler, and a fresh pair of
+		// slices per repetition is up to ~99 allocations per request.
+		repOIDs = repOIDs[:0]
+		repVals = repVals[:0]
+		produced := false
+
+		for col, startCol := range repeaterCols {
+			if endOfMib[col] {
+				// RFC 3416: pad with the column's ORIGINAL requested OID and
+				// the exception, so the interleave stays aligned and a manager
+				// can still tell which column the slot belongs to.
+				repOIDs = append(repOIDs, startCol)
+				repVals = append(repVals, valueEndOfMibView)
+				continue
+			}
+			nextOID, nextVal, advanced := s.bulkStep(currentOIDs[col], lldpServed)
+			if !advanced {
+				endOfMib[col] = true
+				repOIDs = append(repOIDs, startCol)
+				repVals = append(repVals, valueEndOfMibView)
+				continue
+			}
+			repOIDs = append(repOIDs, nextOID)
+			repVals = append(repVals, nextVal)
+			currentOIDs[col] = nextOID
+			produced = true
+		}
+
+		if !produced && rep > 0 && singleColumn {
+			// nl6#526, single-column loop: the column is exhausted and earlier
+			// repetitions carried real bindings, so this response ends here
+			// and the next request — collecting nothing — receives the
+			// exception on its own. A multi-column loop does NOT take this
+			// exit; it pads, like v2c, so the interleave stays aligned to the
+			// last repetition.
+			break
+		}
+
+		oids = append(oids, repOIDs...)
+		responses = append(responses, repVals...)
+
+		if !produced && singleColumn {
+			// A single column that was already past the end of its MIB view.
+			// It has now been answered once, with its own OID and the
+			// exception, which is the whole answer.
+			break
+		}
+	}
+
+	// allOIDs[0] names the binding only in the builder's empty-collection
+	// branch, which the padding above makes unreachable from here; it is kept
+	// as the defensive naming for an internal invariant violation, and the
+	// first requested column is the right OID for it (nl6#526).
+	return s.createSNMPv3GetBulkResponse(allOIDs[0], oids, responses, msg)
+}
+
+// bulkStep is one GETNEXT step of a GETBULK column. advanced is false when the
+// column has reached the end of its MIB view, by any of three routes that are
+// NOT the same thing but take the same answer — each ends the walk with a
+// well-formed exception a manager cannot distinguish from a genuine end of MIB:
+//
+//	nextOID == ""          genuine end of the MIB view.
+//	response == sentinel   a RESOURCE VALUE that is literally the string
+//	                       "endOfMibView". That truncates the walk early and
+//	                       undetectably. validateSNMPResourceValues (nl6#523)
+//	                       rejects such a file at load, which is the
+//	                       mitigation; this is the consequence if one gets past
+//	                       it.
+//	non-advancing          an oidNextMap that maps an OID to itself or to a
+//	                       smaller one. Without this the loop hands back a
+//	                       non-increasing OID with no exception, which is
+//	                       EXACTLY the symptom nl6#526 set out to remove,
+//	                       arriving by a different route. The v1/v2c GETNEXT
+//	                       path grew the same bound in nl6#524.
+//
+// The v2c reference tests only the first two; the non-advance guard is a v3
+// property (nl6#526) and is kept per column rather than dropped for symmetry.
+func (s *SNMPServer) bulkStep(currentOID string, lldpServed []kvOID) (string, string, bool) {
+	nextOID, response := s.findNextOIDWithServed(currentOID, lldpServed)
+	if nextOID == "" || response == valueEndOfMibView {
+		return "", "", false
+	}
+	if compareOIDsLexicographically(nextOID, currentOID) <= 0 {
+		// A data defect, so log it once per device (same gate as the v1 skip
+		// loop): without a line here the manager sees a walk that ends early,
+		// indistinguishable from a short MIB.
+		s.logFirstBulkAbort(nextOID, currentOID)
+		return "", "", false
+	}
+	return nextOID, response, true
 }
 
 // logFirstBulkAbort emits at most one log line per device when the SNMPv3
@@ -452,8 +620,20 @@ func (s *SNMPServer) logFirstBulkAbort(next, at string) {
 // budget/minVarbindSize is a hard ceiling on how many could ever fit. The +1
 // keeps it from ever under-walking; the encode bound trims the remainder, so
 // being generous here costs nothing while being tight would under-fill.
-func clampBulkWalk(maxRepetitions int) int {
-	if ceiling := maxSNMPResponseSize/minVarbindSize + 1; maxRepetitions > ceiling {
+//
+// columns is the number of REPEATER columns, and the ceiling is divided by it
+// because a repetition costs one walk step PER COLUMN: the guard bounds the
+// total work, which is what it bounded when there was only ever one column
+// (nl6#535). Leaving it undivided would make it C times looser — 30 columns ×
+// 98 repetitions still walks 2940 steps to emit the ~60 bindings that fit,
+// which is the amplification it exists to stop — and applying the undivided
+// ceiling to the total instead would be C times tighter, truncating what a
+// reasonable manager asked for. handleGetBulk divides identically.
+func clampBulkWalk(maxRepetitions, columns int) int {
+	if columns < 1 {
+		columns = 1
+	}
+	if ceiling := maxSNMPResponseSize/minVarbindSize/columns + 1; maxRepetitions > ceiling {
 		return ceiling
 	}
 	return maxRepetitions

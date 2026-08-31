@@ -578,6 +578,18 @@ func FuzzHandleSNMPv3GetBulkScoped(f *testing.F) {
 	engineID := fuzzTestServer(1).v3Config.EngineID
 	f.Add(v3BulkScopedPDUBytes(engineID, ".1.3.6.1.2.1.1.1.0", 0, 5))
 	f.Add(v3BulkScopedPDUBytes(engineID, ".1.3.6.1.2.1.1.1.0", 1, 200))
+	// MULTI-COLUMN seeds. Every GETBULK seed above names ONE column, so the
+	// list walk nl6#535 added — the loop over VarBinds after the first, and
+	// the padding it drives — was reached by live fuzzing only, which is the
+	// exact omission recorded two comments up. These make CI replay it on
+	// every ordinary `go test` (nl6#535 review R8).
+	f.Add(v3BulkScopedPDUCols(engineID, 0, 4,
+		[]string{".1.3.6.1.2.1.2.2.1.2", ".1.3.6.1.2.1.31.1.1.1.1", ".1.3.6.1.2.1.1.9.1.3"}))
+	f.Add(v3BulkScopedPDUCols(engineID, 2, 3,
+		[]string{".1.3.6.1.2.1.1.1.0", ".1.3.6.1.2.1.2.2.1.2", ".1.3.6.1.9.9.9.1"}))
+	for _, seed := range brokenMultiColumnScopedPDUs(engineID) {
+		f.Add(seed)
+	}
 	for _, seed := range brokenBulkScopedPDUs(engineID) {
 		f.Add(seed)
 	}
