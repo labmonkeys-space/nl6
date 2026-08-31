@@ -132,7 +132,8 @@ If the skip runs into a resource-file defect (a successor that does not advance,
 Two limitations are worth stating plainly:
 
 - **GETBULK is deliberately untouched.** SNMPv1 has no GETBULK, but nl6 answers a version-0 GETBULK anyway, and it will hand a v1 manager raw `0x46` tags. This is the same decision the exception mapping makes above: a GETBULK's bindings are walked OIDs rather than the request's names, so the RFC 1157 echo does not apply to them.
-- **Coverage is bounded by the type table.** The eight `ifXTable` HC columns are the Counter64 objects nl6 recognises. A 64-bit counter served from a resource file under any other OID (a vendor HC column, `ipIfStatsHC*`, `dot3HC*`) is not recognised as Counter64, so a v1 request for it still returns `0x46`.
+- **Coverage is bounded by the type table.** nl6#541 widened it: the Counter64 objects nl6 recognises are now the eight `ifXTable` HC columns, the fourteen HC columns of each of the two RFC 4293 IP statistics tables (`ipSystemStatsTable`, `ipIfStatsTable`) and all six columns of the RFC 3635 `dot3HCStatsTable` — 42 columns in total. The column numbers were read out of the shipped IP-MIB and EtherLike-MIB with `snmptranslate`, not recalled. A 64-bit counter served under any OID still outside that set — a **vendor** HC column above all — is not recognised as Counter64, and a v1 request for it is answered with a value rather than diverted.
+  Widening a type table changes what goes on the wire for every OID matching a new row, so it was measured rather than argued: `TestShippedTagsUnchangedByTableWidening` hashes the (OID, emitted tag) pairs of all 27,318 shipped resource entries, and the digest taken before the widening still matches after it. No shipped profile serves any of the newly typed columns.
 
 ### A GETNEXT answers every variable binding
 
@@ -185,7 +186,35 @@ This runs inline on the shared UDP handler. Two bounds contain it, and neither r
 `longestShippedCounter64Run` is 1152 — eight `ifHC*` columns across 144 interfaces on `cisco_crs_x` — and it is measured by WALKING, not by scanning the static resource index.
 The distinction is worth 4x: that profile ships static rows for `ifXTable` columns 1, 6, 10, 15 and 18 only, and `IfCounterCycler` serves the rest analytically, so the static index reports 288 while the walk crosses 1152.
 
-### A resource value that collides with a sentinel is rejected at load
+### Resource values are validated at load
+
+`validateSNMPResourceValues` runs three rules over the `snmp` array of every resource file, in the order `encodeTypedValue` itself applies them, so the first diagnosis to fire is the one that matches what the wire would do.
+Every rule decides by **calling the encoder** and inspecting what it emits, never by a second predicate that re-derives the encoder's rules — that is how `trap_catalog.go`'s `validateDottedOID` drifted from `encodeOID` in both directions (nl6#539).
+
+| Rule | What it refuses | Decided by |
+|---|---|---|
+| 1. Sentinel (nl6#523) | a response exactly equal to `noSuchObject` or `endOfMibView` | `isSNMPExceptionValue`, the same exact test the encoder uses |
+| 2. OID-typed value (nl6#529) | a value on an `OBJECT IDENTIFIER` leaf that `encodeOID` cannot represent | calling `encodeOID` and testing for the degenerate `06 00` |
+| 3. Typed class (nl6#541) | a value on any leaf the type table types that does not encode at that type | calling `encodeTypedValue` and comparing the emitted tag with the declared one |
+
+Rule 2 cannot be folded into rule 3: the degenerate `06 00` carries the **declared** tag, so a tag comparison is blind to it.
+
+Rule 3 is the class that actually shipped a bug (nl6#515): a `freeMem` entry carrying the device's own name went out as an OCTET STRING, and OpenNMS, which types that OID as a gauge, logged a conversion error on every poll of every device for as long as the fleet ran.
+It covers `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` and `IpAddress` leaves, and it inherits the encoder's asymmetries rather than tidying them up:
+
+- A negative on a `Counter32`, `Gauge32` or `TimeTicks` **loads**: the encoder parses it at 32-bit width and wrap-casts, so `-1` goes out as `0xFFFFFFFF` at the declared tag. Several resource files use `-1` as a "not measured" placeholder.
+- The same `-1` on a `Counter64` is **refused**, because that branch has no signed fallback and degrades to an OCTET STRING.
+- Surrounding whitespace is **refused** (`" 42"`, `"42 "`), because `strconv` does not trim.
+- A value carrying units (`"42 packets"`), hex (`"0x2a"`), a decimal fraction, or anything past the type's width is **refused**.
+- An `ipAdEntAddr` or other `IpAddress` leaf needs a dotted-quad IPv4 address; `"host"`, `"1"`, `"10.0.0.256"` and `"::1"` are all refused.
+
+Rules 2 and 3 reach only leaves the type table types.
+A leaf it does not type takes the encoder's default branch, where INTEGER for a number and OCTET STRING for anything else are both legitimate, so there is nothing to compare against.
+Numeric leaves outside the table — the `OLD-CISCO-SYSTEM-MIB` INTEGER leaves, for instance — are covered instead by a test over the shipped profiles (`resource_numeric_oids_test.go`), which operator-supplied files never reach.
+
+Applying rule 3 to the shipped set for the first time found 45 entries of exactly the nl6#515 class, all corrected in the same change: a bare `ipRouteDest` column OID valued `1` in 14 profiles (deleted — a column OID with no instance is not a legal varbind name), 30 `ifInOctets`/`ifOutOctets` entries in the three NVIDIA profiles whose values overflowed Counter32, and one `asr9k` `sysUpTime` past the TimeTicks wrap (both wrapped modulo 2^32, which is what the real counter does).
+
+The remainder of this section is about rule 1.
 
 `validateSNMPResourceValues` rejects a resource entry whose response is exactly `noSuchObject` or `endOfMibView`.
 The error names the file, the OID and the value, because fixing it means editing one line of one file.
@@ -198,7 +227,11 @@ SSH, API and optical entries never reach `encodeTypedValue`, and the trap and sy
 In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
 
 It closes the resource-file route, not every route.
-`sysName` and `sysLocation` are served outside the resource map, and `sysLocation` comes from the operator-supplied worldcities CSV, so a sentinel-valued entry there is still served as an exception.
+`sysName` and `sysLocation` are served outside the resource map, so neither reaches this guard.
+`sysLocation` comes from the operator-supplied worldcities CSV, and since nl6#541 it is covered at `getRandomLocation` instead — the single funnel every served location passes through, whatever its source: a name equal to a sentinel is replaced with the coordinate-less `Unknown Location` the empty-dataset branch already uses, and the substitution is logged.
+The CSV loader carries the same check on the row, so a defective dataset row is named with its file, but that check cannot fire today: the display string is always composed as `city, country` or `city, admin, country`, so it always contains `", "` and no sentinel does.
+It is an invariant guard for a future change to that composition, and `TestWorldCitiesLocationCannotComposeToASentinel` is what fails if the composition changes.
+`sysName` is derived from the device rather than from operator data, so there is nothing there to validate.
 
 Where a rejection surfaces matters.
 Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call in the middle of a run, not only a refusal at startup.
@@ -210,11 +243,18 @@ The no-path guarantee covers these classified rejections only — an unclassifie
 The full path is logged server-side on every rejection, so base-naming the body loses nothing.
 Full detail, including the response envelope, is in [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 
-The same guard carries a second rule (nl6#529): a value on an OID-typed leaf, today only `sysObjectID`, must be an OID the encoder can represent.
+Rule 2 (nl6#529) covers a value on an OID-typed leaf, today only `sysObjectID`: it must be an OID the encoder can represent.
 Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire; see [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
 The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
-OID keys are not checked.
-A non-numeric `Counter32`, `Gauge32` or `TimeTicks` value, or an unparseable `ipAdEntAddr`, is likewise still accepted at load and degrades to an OCTET STRING when served.
+
+What remains uncovered, stated in one place:
+
+- **OID keys.** Only values are checked; a malformed `oid` key is not.
+- **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
+- **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
+- **`sysName`.** Derived from the device, not operator data.
+- **Non-`snmp` sections.** SSH, API and optical entries never reach `encodeTypedValue`; the trap and syslog catalogs have their own validation.
+- **Version-0 GETBULK.** Answered as-is, `0x46` tags included, by decision (see above).
 
 ## Response size, `max-repetitions` and truncation
 

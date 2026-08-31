@@ -138,6 +138,34 @@ func processCSVFile(filePath string, uniqueLocations map[string]WorldCity) error
 			location = fmt.Sprintf("%s, %s", city, country)
 		}
 
+		// nl6#541 part 3: sysLocation is served through encodeTypedValue, and
+		// the RFC 3416 exceptions travel to that encoder as strings in the
+		// VALUE space, so a display string exactly equal to one of them would
+		// be answered as an exception tag rather than as the string it is —
+		// the hazard validateSNMPResourceValues refuses for resource files,
+		// reaching the wire by a different route.
+		//
+		// The ROW is rejected rather than the file, unlike the resource-file
+		// guard: this dataset is tens of thousands of operator-supplied rows
+		// that the loader already skips individually when they are malformed,
+		// and one unusable city name is not a reason to leave a fleet with no
+		// locations at all. The skip is logged, because a silently dropped row
+		// is indistinguishable from a city the dataset never had.
+		//
+		// Not reachable with today's composition: every display string above
+		// embeds ", ", so no row can compose to a sentinel
+		// (TestWorldCitiesLocationCannotComposeToASentinel pins that, and is
+		// the reason this is an invariant guard rather than a live fix). The
+		// enforcement point a served value actually passes through is
+		// getRandomLocation; this check exists so the diagnosis names the file
+		// and the row if the composition ever changes.
+		if isSNMPExceptionValue(location) {
+			log.Printf("Warning: %s: skipping city row %q: the name collides with an SNMP "+
+				"exception sentinel and would be served as an RFC 3416 exception instead of "+
+				"a sysLocation string", filePath, location)
+			continue
+		}
+
 		// Only add if we haven't seen this exact location before
 		if _, seen := uniqueLocations[location]; !seen {
 			uniqueLocations[location] = WorldCity{Name: location, Latitude: lat, Longitude: lng}
@@ -164,5 +192,19 @@ func getRandomLocation() WorldCity {
 		return WorldCity{Name: unknownLocationName}
 	}
 
-	return worldCities[mathrand.Intn(len(worldCities))]
+	// The single funnel every served sysLocation passes through, and therefore
+	// where the sentinel rule is ENFORCED (nl6#541 part 3): it covers the CSV
+	// dataset, the compiled-in fallback list above, and any location source
+	// added later, none of which reach validateSNMPResourceValues. A name
+	// equal to an RFC 3416 sentinel would be encoded as an exception tag
+	// instead of a string, so it is answered with the coordinate-less
+	// "Unknown Location" the empty-dataset branch already uses rather than
+	// being served.
+	city := worldCities[mathrand.Intn(len(worldCities))]
+	if isSNMPExceptionValue(city.Name) {
+		log.Printf("Warning: location %q collides with an SNMP exception sentinel and cannot be "+
+			"served as sysLocation; using %q instead", city.Name, unknownLocationName)
+		return WorldCity{Name: unknownLocationName}
+	}
+	return city
 }

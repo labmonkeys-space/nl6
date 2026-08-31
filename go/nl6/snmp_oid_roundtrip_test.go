@@ -256,7 +256,16 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // current code proves nothing about "before"; an earlier draft of this file did
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
-const shippedOIDEncodingDigest = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
+//
+// RE-PINNED once, by nl6#541, from 8156ddae1118381de67c2bb88121eeab4c13489a186
+// f721dc62da6966b717b91 (the 09546c3 value) to the constant below. The cause is
+// a CORPUS change, not an encoding change: nl6#541 deleted the bare column OID
+// 1.3.6.1.2.1.4.21.1.1 ("ipRouteDest" with no instance, valued "1") from the 14
+// profiles carrying it, so the corpus lost one distinct OID. That was MEASURED
+// rather than assumed — re-inserting that single OID into the corpus reproduces
+// the 09546c3 digest byte for byte, which is only possible if every other
+// shipped OID still encodes exactly as it did then.
+const shippedOIDEncodingDigest = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

@@ -75,6 +75,7 @@ If you actually want an OID to answer `noSuchObject`, omit the entry: an absent 
 
 The rule covers the `snmp` array only.
 `ssh`, `api` and `optical` entries are not checked, because they never reach the SNMP encoder.
+Values on typed leaves carry a second requirement, described under [Typed values](#typed-values) below.
 
 Where the rejection surfaces matters:
 
@@ -118,11 +119,31 @@ If you have hand-written resource files or scripts, check for these before upgra
 | A device-type directory that cannot be stat'd (permissions) | Treated as absent, so round-robin skipped it | Invalid content |
 | A `round_robin` request with a `category` matching nothing | Loaded every device type instead | `400` |
 
-This and the OID-typed value rule below are the only rules on `snmp` values enforced at load, and they cover resource files only.
+Three rules are enforced on `snmp` values at load, and they cover resource files only.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
-`sysName` and `sysLocation` are served from elsewhere (`sysLocation` from the worldcities CSV) and are not checked.
-A malformed OID key, and a non-numeric `Counter32`/`Gauge32`/`TimeTicks` or unparseable `ipAdEntAddr` value, are still accepted, and degrade silently when served.
-See [SNMP reference → A resource value that collides with a sentinel is rejected at load](snmp.md#a-resource-value-that-collides-with-a-sentinel-is-rejected-at-load).
+See [SNMP reference → Resource values are validated at load](snmp.md#resource-values-are-validated-at-load) for the canonical description of all three, including what each covers and what stays uncovered.
+
+| Rule | What it refuses |
+|---|---|
+| Sentinel (nl6#523) | a response exactly equal to `noSuchObject` or `endOfMibView` |
+| OID-typed value (nl6#529) | a value on an `OBJECT IDENTIFIER` leaf that the encoder cannot represent |
+| Typed class (nl6#541) | a value on a `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` or `IpAddress` leaf that does not encode at that type |
+
+Every rule is decided by calling the SNMP encoder and looking at what it emits, so the loader cannot drift from the wire.
+
+### Typed values
+
+A leaf the encoder's type table types must carry a value that type can hold, or the file is rejected with the file, the OID, the declared type and the value named (nl6#541).
+This is the class that shipped nl6#515: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB — OpenNMS does, as a gauge — logged a conversion error on every poll of every device.
+
+- `Counter32`, `Gauge32`, `TimeTicks`: an unsigned decimal that fits 32 bits. A negative loads (the encoder wrap-casts, so `-1` is served as `0xFFFFFFFF`), but anything the encoder cannot parse does not.
+- `Counter64`: an unsigned decimal that fits 64 bits. `-1` is **refused** here, unlike the 32-bit types, because that branch of the encoder has no signed fallback.
+- `IpAddress`: a dotted-quad IPv4 address. `1`, `host`, `10.0.0.256` and `::1` are all refused.
+- No surrounding whitespace, no units, no hex, no fractions: `strconv` does not trim or interpret, so `" 42"` and `"42 packets"` would go on the wire as strings.
+
+A leaf the table does **not** type is not checked, because its default encoding — INTEGER for a number, OCTET STRING for anything else — is legitimate either way.
+`sysName` and `sysLocation` are served from elsewhere and are not checked here; `sysLocation` is guarded where it is drawn instead, and `sysName` is derived from the device rather than from operator data.
+A malformed OID **key** is still accepted.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
 The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.

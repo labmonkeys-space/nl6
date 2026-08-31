@@ -514,9 +514,12 @@ func normaliseResourceOID(oid string) string {
 // one of them is encoded as the exception tag instead of the OCTET STRING it
 // asked for, and a v1 manager gets error-status noSuchName. Removing the
 // hazard at the root means a typed value rather than a string, which is the
-// larger fix #523 defers. This closes the RESOURCE-FILE route to it; sysName
-// and sysLocation are served outside the resource map (sysLocation comes from
-// the operator-supplied worldcities CSV) and are NOT covered.
+// larger fix #523 defers. This closes the RESOURCE-FILE route to it.
+// sysName and sysLocation are served outside the resource map and never reach
+// this guard: sysLocation comes from the operator-supplied worldcities CSV and
+// is covered instead at getRandomLocation, the single funnel a served location
+// passes through (nl6#541 part 3); sysName is derived from the device, not
+// operator data, so there is nothing to validate.
 //
 // The test is isSNMPExceptionValue, which is EXACT: "noSuchObject seen",
 // "NoSuchObject" and " noSuchObject" are ordinary data and load.
@@ -532,20 +535,47 @@ func normaliseResourceOID(oid string) string {
 // writes compiled-in constants and is deliberately not guarded: no input can
 // make that check fire.
 //
-// Two rules. The sentinel rule above (nl6#523), checked FIRST because
-// encodeTypedValue tests the sentinel before the type tag, so it is the
-// diagnosis that matches what the wire would do. Then the OID-typed value rule
-// (nl6#529): a value on a leaf whose snmpTypeTag is ASN1_OBJECT_ID must be one
-// encodeOID can represent, decided by asking the encoder (encodableAsOID).
-// Before nl6#529 such a value was encoded anyway, as a different and
-// valid-looking OID; since the encoder fix it becomes the degenerate 06 00.
-// Coverage is bounded by oidTypeTable, which today carries one OBJECT
-// IDENTIFIER row (sysObjectID).
+// THREE rules, in encodeTypedValue's own order, because the first diagnosis to
+// fire must be the one that matches what the wire would do:
+//
+//  1. Sentinel (nl6#523), first: encodeTypedValue tests the sentinel before the
+//     type tag, and only this message carries the "omit the entry" remedy.
+//  2. OID-typed value (nl6#529): a value on a leaf whose snmpTypeTag is
+//     ASN1_OBJECT_ID must be one encodeOID can represent, decided by asking the
+//     encoder (encodableAsOID). Before nl6#529 such a value was encoded anyway,
+//     as a different and valid-looking OID; since the encoder fix it becomes the
+//     degenerate 06 00. This rule cannot be folded into rule 3: 06 00 carries
+//     the DECLARED tag, so a tag comparison is blind to it.
+//  3. Typed class (nl6#541): a value on any leaf oidTypeTable types must encode
+//     AT that type. Decided by calling encodeTypedValue and comparing the
+//     emitted tag with the declared one — the numeric and address branches fall
+//     through to encodeOctetString when strconv or net.ParseIP fails, which is
+//     the silent degradation that shipped nl6#515.
+//
+// Every rule asks the ENCODER rather than re-deriving its rules. A second
+// predicate that agrees on the day it is written is exactly how
+// trap_catalog.go's validateDottedOID drifted from encodeOID (nl6#539).
+//
+// Rule 3 inherits the encoder's asymmetries rather than tidying them up, and
+// two are worth naming: a negative on a Counter32/Gauge32/TimeTicks LOADS
+// (the encoder parses at 32-bit width and wrap-casts, so -1 goes out as
+// 0xFFFFFFFF at the declared tag; several resource files use it as a "not
+// measured" placeholder), while the same value on a Counter64 is REFUSED
+// (that branch has no signed fallback). Surrounding whitespace is refused,
+// because strconv does not trim and the value would degrade on the wire.
+//
+// Coverage of rules 2 and 3 is bounded by oidTypeTable: a leaf the table does
+// not type takes encodeTypedValue's default branch, where INTEGER for a number
+// and OCTET STRING for anything else are both legitimate, so there is nothing
+// to compare against. resource_numeric_oids_test.go remains the (test-time)
+// coverage for numeric leaves the table does not type.
 func validateSNMPResourceValues(resourceFile string, resources *DeviceResources) error {
 	if resources == nil {
 		return nil
 	}
 	for _, r := range resources.SNMP {
+		oid := normaliseResourceOID(r.OID)
+
 		if isSNMPExceptionValue(r.Response) {
 			return invalidResource(resourceFile,
 				"OID %s has value %q, which collides with an SNMP exception "+
@@ -556,7 +586,9 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 				r.OID, r.Response)
 		}
 
-		if snmpTypeTag(normaliseResourceOID(r.OID)) == ASN1_OBJECT_ID && !encodableAsOID(r.Response) {
+		declared := snmpTypeTag(oid)
+
+		if declared == ASN1_OBJECT_ID && !encodableAsOID(r.Response) {
 			return invalidResource(resourceFile,
 				"OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
 					"is not an OID this encoder can represent. It needs at least two dot-separated "+
@@ -564,6 +596,32 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 					"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes. "+
 					"Correct the value; served as-is it would go out as the degenerate encoding 06 00",
 				r.OID, r.Response)
+		}
+
+		// Third rule (nl6#541): a value on a leaf the table types must be one
+		// the encoder can carry AT THAT TYPE. Decided by CALLING the encoder
+		// and comparing the emitted tag to the declared one — never by a
+		// second predicate, which is how validateDottedOID drifted from
+		// encodeOID (nl6#539). A degradation is always the same shape: the
+		// numeric or address branch fails to parse and falls through to
+		// encodeOctetString, so the emitted tag is not the declared one.
+		//
+		// An OID-typed leaf can never trip this rule: encodeOID answers an
+		// unrepresentable value with the degenerate 06 00, whose tag IS the
+		// declared one. That is why the rule above exists and must stay.
+		if declared != 0 {
+			if emitted := encodeTypedValue(oid, r.Response); len(emitted) == 0 || emitted[0] != declared {
+				return invalidResource(resourceFile,
+					"OID %s is typed %s in the MIB but its value %q does not encode as one: "+
+						"the encoder falls back to OCTET STRING, and a collector that types the "+
+						"OID per its MIB cannot convert the answer and drops the metric on every "+
+						"poll of every device (nl6#515). Give the OID a value the type can carry — "+
+						"an unsigned decimal for Counter32/Gauge32/TimeTicks/Counter64 (no sign for "+
+						"Counter64, no surrounding whitespace, no units), or a dotted-quad IPv4 "+
+						"address for IpAddress. To make the OID answer noSuchObject instead, omit "+
+						"the entry entirely",
+					r.OID, snmpTypeName(declared), r.Response)
+			}
 		}
 	}
 	return nil
