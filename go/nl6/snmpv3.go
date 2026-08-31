@@ -45,16 +45,19 @@ func (s *SNMPServer) parseSNMPv3Message(data []byte) (*SNMPv3Message, error) {
 	}
 	pos++
 	versionLen, newPos := parseLength(data, pos)
-	if versionLen != 1 {
+	if versionLen < 0 {
 		return nil, fmt.Errorf("invalid version length")
 	}
 	pos = newPos
-	// A declared length is not a delivered byte: the datagram can end here.
-	if pos >= len(data) {
+	// The declared width, not one octet (nl6#559's assumption, third site).
+	// parseBERInt bounds the read against the datagram, so it also answers the
+	// case this replaces: a declared length is not a delivered byte.
+	v, ok := parseBERInt(data, pos, versionLen)
+	if !ok {
 		return nil, fmt.Errorf("unexpected end of data when parsing version")
 	}
-	msg.Version = int(data[pos])
-	pos++
+	msg.Version = v
+	pos += versionLen
 
 	if msg.Version != SNMPV3_VERSION {
 		return nil, fmt.Errorf("unsupported SNMP version: %d", msg.Version)
@@ -292,20 +295,26 @@ func isSNMPv3Request(data []byte) bool {
 	}
 	pos++
 	versionLen, newPos := parseLength(data, pos)
-	if versionLen != 1 {
+	if versionLen < 0 {
 		return false
 	}
 	pos = newPos
 
-	// A datagram may declare a one-byte version and then end. This is the
-	// classifier every request passes through before dispatch, so an
-	// unguarded read here takes down the whole fleet, not one device.
-	if pos >= len(data) {
-		return false
-	}
-
-	version := int(data[pos])
-	return version == SNMPV3_VERSION
+	// Read the version at its DECLARED width, the same as every other
+	// envelope reader since nl6#559. `versionLen != 1` was the identical
+	// one-octet assumption: a BER-legal `02 02 00 03` was classified
+	// not-v3 and fell through to the v2c path, which then read msgGlobalData
+	// where it expects a community. parseSNMPv3Message carries the same fix,
+	// so the classifier and the parser still agree — which matters more than
+	// either answer on its own, because this is the gate every request passes
+	// through and a v3 datagram admitted here that the parser then rejects is
+	// a discard, not a wrong answer.
+	//
+	// parseBERInt bounds its own read against the datagram, so the explicit
+	// end-of-data guard this replaces is subsumed: a declared length is not a
+	// delivered byte, and this classifier runs for the whole fleet.
+	v, ok := parseBERInt(data, pos, versionLen)
+	return ok && v == SNMPV3_VERSION
 }
 
 // validateSNMPv3Credentials validates SNMPv3 user credentials

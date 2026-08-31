@@ -281,42 +281,69 @@ The fuzz targets in `snmp_parser_robustness_test.go` hold the guarantee instead,
 `go test` replays every seed on an ordinary run, so a regression fails the normal suite rather than only a fuzzing session.
 
 That guarantee was measured rather than assumed ([nl6#513](https://github.com/labmonkeys-space/nl6/issues/513)).
-Twenty-one targets execute all 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, so an ordinary `go test` reaches every one of them.
+The spike's figures were 21 targets over all 57 `parseLength` / `skipLength` call sites on seed replay alone, up from five, so an ordinary `go test` reaches every one of them.
+Both numbers have since moved and are kept as the spike's historical record rather than as current counts: the census is 68 call sites and the package defines 24 targets, re-counted mechanically (`grep -h "^func Fuzz" *_test.go | wc -l`, and occurrences of `\b(parseLength|skipLength)\(` in the non-test files less the two definitions).
 The nl6#527 unwrap added a 58th site on the decrypt branch, reachable only with privacy configured; a twenty-second target, `FuzzHandleSNMPv3RequestPriv`, seeds it with a genuinely encrypted GET per privacy protocol and a ciphertext whose plaintext carries a bad SEQUENCE length.
 55 minutes of fuzzing across 80.6 million executions produced no panic.
 That includes the INFORM acknowledgement parser, which had never been fuzzed and which any host that can reach a device's per-device UDP socket can feed: `readerLoop` does not check the source address, so no collector-address spoofing is needed.
 The fuzz corpus those runs built is committed under `testdata/fuzz/`, so CI replays it too.
 
-The no-`recover()` position above rests on that null result, and the result is **provisional**: the pre-registered rule asked for ten minutes of fuzzing per target, and 5 of the 21 targets got that budget.
+The no-`recover()` position above rests on that null result, and the result is **provisional**: the pre-registered rule asked for ten minutes of fuzzing per target, and 5 of the targets that existed then got that budget.
 The verdict is strongest for the request path, the INFORM-ack path and the v3 scoped-PDU path, which are the five, and rests on seed replay alone for the other sixteen.
 
 `parseLength` keeps its `-1` failure sentinel on the same evidence: 22.3 million executions confirmed it returns `-1` and never any other negative value, so screening for `< 0` at a call site is sufficient as well as necessary.
-
-### The two envelope-parser defects
-
-Panics are not the only failure a parser has.
-A silent mis-parse has no oracle, so the fuzz targets also assert that the four readers of the v1/v2c envelope agree with one another ([nl6#534](https://github.com/labmonkeys-space/nl6/issues/534)).
-`getPDUType`, `parseIncomingRequest`, `parseAllOIDsFromRequest` and `parseGetBulkParams` each walk the same version and community fields with their own code, so when two of them disagree at least one is wrong and no reference implementation is needed to say so.
-Those assertions found two real defects, both fixed here.
-
-[nl6#559](https://github.com/labmonkeys-space/nl6/issues/559) was served.
-`getPDUType` stepped over the version INTEGER as a length skip plus a bare `pos++`, which assumes exactly one content octet.
-SNMP is BER, not DER, so `02 02 00 01` is a legal encoding of version 1 and `02 00` is a legal zero-content INTEGER.
-On the first the cursor landed one octet short and the byte read as the PDU tag was the version's own content octet `0x01`; on the second it landed one too far, on the community string's length octet `0x06`.
-`handleSNMPv2cRequest` dispatches on that byte, so a GETNEXT or a GETBULK carrying a non-minimally encoded version was answered from the GET branch while every other parser read the datagram correctly.
-It now reads the declared length, in the same shape `parseIncomingRequest` uses.
-
-[nl6#560](https://github.com/labmonkeys-space/nl6/issues/560) is the `-1` trap above, in the `parseGetBulkParams` envelope walk.
-Three declared lengths were added to the cursor with no `< 0` arm, so a failed length read moved it BACKWARD onto a byte already consumed.
-On the reproducer that byte is a community length octet of `0xa5`, which is also the GETBULK tag, and the function reported non-repeaters 12336 for a datagram that carries no GETBULK PDU at all.
-All seven of its length reads now bail to the documented defaults instead, and the two unguarded skips in `extractRequestIDFromScopedPDU` were fixed with them.
-
-Both reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
 
 Two traps this parser family has fallen into, both worth knowing before editing it:
 
 - **`parseLength` signals failure with `-1`, and `-1` passes an upper-bound check.** `if pos+n > len(buf)` is false when `n` is `-1`, so the guard admits the value and the slice expression that follows panics on an inverted range. Length checks need the `n < 0` arm as well.
 - **A short-circuiting guard does not short-circuit its own error message.** `if pos >= len(data) || data[pos] != tag { return fmt.Errorf("... got 0x%02X", data[pos]) }` evaluates `data[pos]` whenever the branch is taken — including on the out-of-range case the check exists to catch.
+
+### The envelope-parser defects
+
+Panics are not the only failure a parser has.
+A silent mis-parse has no oracle, so the fuzz targets also assert that the four readers of the v1/v2c envelope agree with one another ([nl6#534](https://github.com/labmonkeys-space/nl6/issues/534)).
+`getPDUType`, `parseIncomingRequest`, `parseAllOIDsFromRequest` and `parseGetBulkParams` each walk the same version and community fields with their own code, so when two of them disagree at least one is wrong and no reference implementation is needed to say so.
+Those assertions found three defects, all fixed here, and a fourth site was found by auditing for the same root assumption.
+The assumption in every case is the same one: that the encoder was minimal.
+
+[nl6#559](https://github.com/labmonkeys-space/nl6/issues/559) was served.
+`getPDUType` stepped over the version INTEGER as a length skip plus a bare `pos++`, which assumes exactly one content octet.
+SNMP is BER, not DER, so `02 02 00 01` is a legal encoding of version 1.
+The cursor landed one octet short, the byte read as the PDU tag was the version's own content octet `0x01`, and `handleSNMPv2cRequest` dispatches on that byte — so a GETNEXT or a GETBULK carrying a non-minimally encoded version was answered from the GET branch while every other parser read the datagram correctly.
+It now reads the declared length, in the same shape `parseIncomingRequest` uses.
+
+The same assumption stood in three more places, and each was fixed with it.
+The version VALUE was assigned only at `versionLen == 1`, so a padded v1 request parsed as v2c and silently lost every v1-specific behaviour: the Counter64 GET-divert and GETNEXT-skip (nl6#524) and the `noSuchName` sentinel diversion (nl6#517).
+`isSNMPv3Request` and `parseSNMPv3Message` required the same one octet, so a padded v3 message was classified as v2c and read with `msgGlobalData` where a community belongs.
+And the COMMUNITY length was read differently by the two readers: `getPDUType` bailed on an unreadable one while `parseIncomingRequest` stepped over it and carried on, which reproduced nl6#559's symptom one field later — a GETNEXT with real varbind names, dispatched from the GET branch.
+All four now read each envelope field the same way, which is the rule this family is held to rather than any single fix.
+
+[nl6#562](https://github.com/labmonkeys-space/nl6/issues/562) is the same assumption on the request-id, and it was found by the live-fuzz campaign these fixes exist to unblock.
+`parseIncomingRequest` documented a 1..4 content-octet bound and did not advance past a wider field, and a padded five-octet request-id is legal BER and is what an encoder emits for any value at or above 2^31.
+The cost is not the request-id: every field after it is read from the wrong offset, and on the datagram the fuzzer found that decodes an OBJECT IDENTIFIER sitting inside the PDU as the first varbind name.
+It is now read with `parseBERInt` at any width, which also makes it signed, as RFC 3416's Integer32 requires.
+
+[nl6#560](https://github.com/labmonkeys-space/nl6/issues/560) is the `-1` trap above, in the `parseGetBulkParams` envelope walk.
+Three declared lengths were added to the cursor with no `< 0` arm, so a failed length read moved it BACKWARD onto a byte already consumed.
+On the reproducer that byte is a community length octet of `0xa5`, which is also the GETBULK tag, and the function reported non-repeaters 12336 for a datagram that carries no GETBULK PDU at all.
+All seven of its length reads now test the sign, the two container lengths additionally BOUND the walk to what they declare (the nl6#537 rule), and the same fault one message layer up in `extractRequestIDFromScopedPDU` was fixed with them.
+
+Three of those seven guards have a behavioural witness and four do not, and the reason is structural rather than a missing test.
+On a failed read `parseLength` leaves the cursor on the offending length octet, so for the next branch to misfire that octet must both fail `parseLength` and equal the tag the branch expects.
+That is possible only at the community field, whose next branch tests for `0xA5` — a byte that declares 37 length octets and is also the GETBULK tag, which is exactly why the defect was found there.
+`TestParseGetBulkParamsBailsOnEveryUnreadableLength` states this per guard; the four without a witness are defence-in-depth and are kept so the rule needs no exceptions.
+
+A note on `02 00`, a version INTEGER with no content octets: it is NOT legal BER (X.690 §8.3.1 requires one or more content octets).
+It is served anyway, leniently, because all four readers step over zero octets and agree on where the PDU begins; discarding it under RFC 3412 §7.2 would also be defensible.
+The consequence is that no version value is read, so such a request is answered as v2c.
+
+Exposure is hardening rather than a field report: net-snmp and snmp4j both emit minimal versions and request-ids below 2^31, so no shipped manager is known to produce any of these encodings.
+What did produce them is nl6's own fuzzer, and the two committed corpora had been replaying instances of nl6#560 on every CI run without noticing, because the targets measured panics only.
+
+All five reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
+The nine fuzz targets that read a v1/v2c datagram were then run live for 180 seconds each, 43.5 million executions in total, with no find.
+The campaign before nl6#562 was fixed had been recorded as clean and was not: one target failed an agreement assertion 33 seconds in, on an input that then failed deterministically on replay, and two shorter runs had missed it.
+`TestWellFormedResponsesUnchangedOnTheWire` pins the other side: responses to 288 well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
 
 ## OID lookup internals
 

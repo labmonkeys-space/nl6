@@ -186,12 +186,14 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 
 	pos := 0
 
-	// Skip contextEngineID (OCTET STRING). Both skips test parseLength's -1
-	// failure signal before moving the cursor: `pos = newPos + (-1)` walks it
+	// Skip contextEngineID (OCTET STRING). Every length read in this function
+	// — both skips AND the PDU length below — tests parseLength's -1 failure
+	// signal before it is used: `pos = newPos + (-1)` walks the cursor
 	// BACKWARD onto a byte already consumed, which is the nl6#560 defect one
-	// message layer up. There is no envelope left to resynchronise against, so
-	// an unreadable length takes the same default fallback as every other
-	// unparseable shape here.
+	// message layer up, and reading a request id out of a PDU whose own length
+	// is unreadable is the same fault without the cursor movement. There is no
+	// envelope left to resynchronise against, so an unreadable length takes
+	// the same default fallback as every other unparseable shape here.
 	if pos < len(scopedPDU) && scopedPDU[pos] == ASN1_OCTET_STRING {
 		pos++
 		engineIDLen, newPos := parseLength(scopedPDU, pos)
@@ -211,15 +213,22 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 		pos = newPos + contextNameLen
 	}
 
-	// Parse PDU to get request ID
+	// Parse PDU to get request ID. The PDU's declared length BOUNDS the
+	// request-id read (the nl6#537 rule: bounded by the PDU's own length, not
+	// by the datagram), so a length that over-declares takes the fallback
+	// rather than reading an INTEGER out of whatever follows.
 	if pos < len(scopedPDU) && (scopedPDU[pos] == ASN1_GET_REQUEST || scopedPDU[pos] == ASN1_GET_NEXT || scopedPDU[pos] == ASN1_GET_BULK) {
-		pos++                                    // Skip PDU type
-		_, newPos := parseLength(scopedPDU, pos) // Skip PDU length
+		pos++ // Skip PDU type
+		pduLen, newPos := parseLength(scopedPDU, pos)
+		if pduLen < 0 || newPos+pduLen > len(scopedPDU) {
+			return 1
+		}
 		pos = newPos
+		end := pos + pduLen
 
 		// Parse request ID (first INTEGER in PDU)
-		if pos < len(scopedPDU) && scopedPDU[pos] == ASN1_INTEGER {
-			requestID, _, err := parseInteger(scopedPDU, pos)
+		if pos < end && scopedPDU[pos] == ASN1_INTEGER {
+			requestID, _, err := parseInteger(scopedPDU[:end], pos)
 			if err == nil {
 				return requestID
 			}

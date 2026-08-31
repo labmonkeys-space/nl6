@@ -765,11 +765,18 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	// datagram getPDUType correctly declines. A failed length read means the
 	// envelope is not readable, so the answer is the documented defaults —
 	// exactly what every sibling guard in this function already returns.
+	//
+	// The two CONTAINER lengths (this one and the PDU's) do more than pass a
+	// sign test: each reslices the buffer to what it declares, so every read
+	// after it is bounded by the container it sits in rather than by the
+	// datagram (the nl6#537 rule). A guard that reads a length only to check
+	// its sign invites the next reader to assume a bound that is not there.
 	outerLen, newPos := parseLength(data, pos)
-	if outerLen < 0 {
+	if outerLen < 0 || newPos+outerLen > len(data) {
 		return nonRepeaters, maxRepetitions
 	}
 	pos = newPos
+	data = data[:newPos+outerLen]
 
 	// Skip version
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {
@@ -799,10 +806,15 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	pduLen, newPos := parseLength(data, pos)
-	if pduLen < 0 {
+	if pduLen < 0 || newPos+pduLen > len(data) {
 		return nonRepeaters, maxRepetitions
 	}
 	pos = newPos
+	// The three parameter INTEGERs below belong to THIS PDU. Bounding them by
+	// the datagram instead would read a request-id, a non-repeaters or a
+	// max-repetitions out of bytes that follow the PDU, which is the same
+	// read-past-the-container fault nl6#537 fixed one level up.
+	data = data[:newPos+pduLen]
 
 	// Skip request-id
 	if pos >= len(data) || data[pos] != ASN1_INTEGER {

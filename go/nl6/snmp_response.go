@@ -52,16 +52,38 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		return req
 	}
 	pos++
-	lengthSkip := s.skipLength(data[pos:])
-	pos += lengthSkip
+	// parseLength, not skipLength: skipLength answers a malformed long-form
+	// length with `1 + lengthBytes`, a plausible skip computed from a length
+	// it could not read, and it has no failure signal to distinguish that from
+	// a good one. All three envelope readers stop here instead (nl6#559
+	// review R11).
+	outerLen, newPos := parseLength(data, pos)
+	if outerLen < 0 {
+		return req
+	}
+	pos = newPos
 
-	// Parse version
+	// Parse version at its DECLARED width.
+	//
+	// `versionLen == 1` was the same one-octet assumption nl6#559 fixed in the
+	// OFFSET, left standing in the VALUE: `02 02 00 00` is a legal BER v1 and
+	// used to leave req.Version at the snmpVersion2c default, silently
+	// disabling every v1-specific behaviour this repo documents — the
+	// Counter64 GET-divert and GETNEXT-skip (nl6#524) and the noSuchName
+	// sentinel diversion (nl6#517). parseBERInt reads any width, strips the
+	// leading padding an encoder may have added and refuses more than 8
+	// significant octets, which is the convention nl6#489/#535 already
+	// established at every other parse site in this family.
+	//
+	// A zero-length version (`02 00`, illegal per X.690 §8.3.1) makes
+	// parseBERInt report !ok, so the default stands and the request is
+	// answered as v2c. That is the lenient choice, stated in getPDUType.
 	if pos < len(data) && data[pos] == ASN1_INTEGER {
 		pos++
 		versionLen, newPos := parseLength(data, pos)
 		pos = newPos
-		if versionLen == 1 && pos < len(data) {
-			req.Version = int(data[pos])
+		if v, ok := parseBERInt(data, pos, versionLen); ok {
+			req.Version = v
 		}
 		if versionLen > 0 {
 			pos += versionLen
@@ -91,19 +113,41 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 	// Parse PDU (GetRequest = 0xa0, GetNext = 0xa1, GetBulk = 0xa5)
 	if pos < len(data) && (data[pos] == 0xa0 || data[pos] == 0xa1 || data[pos] == 0xa5) {
 		pos++
-		pduLengthSkip := s.skipLength(data[pos:])
-		pos += pduLengthSkip
+		pduLen, newPos := parseLength(data, pos)
+		if pduLen < 0 {
+			return req
+		}
+		pos = newPos
 
-		// Parse request ID
+		// Parse request ID at its DECLARED width (nl6#562).
+		//
+		// The old bound was `reqIDLen > 0 && reqIDLen <= 4`, and outside it the
+		// parser did not advance — which is the third instance of nl6#559's
+		// root assumption, that the encoder was minimal. A padded five-octet
+		// request-id (`02 05 00 7f ff ff fd`) is legal BER and is what an
+		// encoder emits for any value at or above 2^31, and leaving the cursor
+		// on it does NOT merely cost the request-id: every field after it is
+		// read from the wrong offset. Live fuzzing found the datagram where
+		// that decodes the `06 01 30` sitting INSIDE the PDU as the first
+		// varbind name, so the parser reported a name nobody sent and CLAIM 2
+		// fired on a shape none of its three documented skips covers.
+		//
+		// parseBERInt is the same reader the GETBULK parameters use: any
+		// width, leading padding stripped, more than 8 significant octets
+		// refused. It is SIGNED, where the old assembly was unsigned, so a
+		// four-octet request-id with the high bit set now reads as the
+		// negative Integer32 RFC 3416 says it is instead of as a value above
+		// 2^31 that nl6 would then echo back as a request-id the manager never
+		// sent. No shipped manager emits one: net-snmp and snmp4j both draw
+		// request-ids from 0..2^31-1.
 		if pos < len(data) && data[pos] == ASN1_INTEGER {
 			pos++
 			reqIDLen, newPos := parseLength(data, pos)
 			pos = newPos
-			if reqIDLen > 0 && reqIDLen <= 4 && pos+reqIDLen <= len(data) {
-				req.RequestID = 0
-				for i := 0; i < reqIDLen; i++ {
-					req.RequestID = (req.RequestID << 8) | int(data[pos+i])
-				}
+			if v, ok := parseBERInt(data, pos, reqIDLen); ok {
+				req.RequestID = v
+			}
+			if reqIDLen > 0 {
 				pos += reqIDLen
 			}
 		}
