@@ -265,6 +265,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		// body, so without this line the second rendering was the only one
 		// ever emitted and the path reached nobody.
 		logCreateDevicesFailure(err, status)
+		// "Retry once it finishes" is machine-actionable advice, so say it in a
+		// header a client can act on without parsing prose (nl6#565 review R10).
+		// A fixed, deliberately short interval: the remaining work is not known
+		// to this handler (the running batch's requested count is not its rate),
+		// and a poller can read create_batch_in_progress from
+		// GET /api/v1/status instead of guessing.
+		if status == http.StatusConflict {
+			w.Header().Set("Retry-After", createConflictRetryAfterSeconds)
+		}
 		sendErrorResponse(w, msg, status)
 		return
 	}
@@ -730,6 +739,10 @@ func setupRoutes() *mux.Router {
 func logCreateDevicesFailure(err error, status int) {
 	log.Printf("create devices: rejected with %d: %v", status, err)
 }
+
+// createConflictRetryAfterSeconds is the Retry-After value on the 409 a
+// concurrent creation batch gets. Seconds, per RFC 9110 §10.2.3.
+const createConflictRetryAfterSeconds = "5"
 
 func createDevicesErrorResponse(err error) (string, int) {
 	// The concurrency refusal comes first, and it is neither of the other two

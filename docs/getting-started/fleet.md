@@ -78,8 +78,18 @@ spanning many of the 29 device types nl6 ships with.
 
 ## Behavior and limits
 
-- **Fail-fast.** The first failed POST aborts the run. A 409 on a
-  duplicate IP halts immediately so partial imports are obvious.
+- **Fail-fast, except on 409.** The first failed POST aborts the run, so
+  a partial import is obvious. The one exception is `409 Conflict`, which
+  means another creation batch holds the simulator's one-batch-at-a-time
+  gate, not that anything is wrong with the request: `import` waits and
+  retries that entry (`RETRY_409_LIMIT`, default 60 attempts;
+  `RETRY_409_DELAY`, default 5s — 5 minutes in total). Aborting there
+  would be worse than waiting, because it is reachable on a normal boot:
+  with `-auto-start-ip` the startup batch holds the gate while the
+  container is already healthy, which is exactly when `compose up` runs
+  this import. Raise `RETRY_409_LIMIT` if your startup batch takes longer
+  than five minutes. A duplicate IP is **not** a 409 — the simulator
+  absorbs an already-present address as a success.
 - **Sequential POSTs.** Each device or batch is POSTed in series,
   no parallelism. For very large fleets prefer the batch-manifest
   shape — one POST can create many devices via `device_count`.

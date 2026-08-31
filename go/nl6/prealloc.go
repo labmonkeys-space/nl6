@@ -232,8 +232,12 @@ func (sm *SimulatorManager) PreAllocateTunInterfaces(poolSize int, maxWorkers in
 // in the batch's range). The IP is a shared cursor that this batch's caller
 // rewinds — see the note at the end of PreAllocateTunInterfaces.
 //
-// tunPoolSize and maxWorkers are last-writer-wins across concurrent batches;
-// per-field locking makes them race-free, not correct. See the CLAUDE.md note.
+// tunPoolSize and maxWorkers WERE last-writer-wins across concurrent batches;
+// per-field locking made them race-free, not correct. nl6#565's createBatchGate
+// removes the concurrent BATCH, so within that scope they are correct now — but
+// only that scope: a detached straggler from a timed-out batch, a delete-all and
+// shutdown all move creation state without taking the gate. See the CLAUDE.md
+// note.
 //
 // The lock covers the FIELD ACCESSES ONLY. No interface is created and no exec
 // runs under it — the 500-worker pre-allocator depends on that.

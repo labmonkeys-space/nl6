@@ -351,15 +351,23 @@ func (sm *SimulatorManager) GetStatus() ManagerStatus {
 		}
 	}
 
+	batch := sm.createBatch.Load()
+	batchRequested := 0
+	if batch != nil {
+		batchRequested = batch.count
+	}
+
 	return ManagerStatus{
-		IsPreAllocating:      sm.isPreAllocating.Load().(bool),
-		PreAllocProgress:     preAllocProgressFor(sm.preAllocProgress.Load(), sm.preAllocProgressBase.Load()),
-		PreAllocTotal:        sm.tunPoolSize,
-		IsCreatingDevices:    sm.isCreatingDevices.Load().(bool),
-		DeviceCreateProgress: sm.deviceCreateProgress.Load().(int),
-		DeviceCreateTotal:    sm.deviceCreateTotal.Load().(int),
-		TotalDevices:         totalDevices,
-		RunningDevices:       runningDevices,
+		CreateBatchInProgress: batch != nil,
+		CreateBatchRequested:  batchRequested,
+		IsPreAllocating:       sm.isPreAllocating.Load().(bool),
+		PreAllocProgress:      preAllocProgressFor(sm.preAllocProgress.Load(), sm.preAllocProgressBase.Load()),
+		PreAllocTotal:         sm.tunPoolSize,
+		IsCreatingDevices:     sm.isCreatingDevices.Load().(bool),
+		DeviceCreateProgress:  sm.deviceCreateProgress.Load().(int),
+		DeviceCreateTotal:     sm.deviceCreateTotal.Load().(int),
+		TotalDevices:          totalDevices,
+		RunningDevices:        runningDevices,
 	}
 }
 
