@@ -1159,8 +1159,7 @@ func (c *ScenarioController) startLocked(ctx context.Context) error {
 
 	t0 := c.now()
 	t1 := t0.Add(c.spec.Window)
-	drainEnd := t1.Add(c.spec.drainOrDefault())
-	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
+	c.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 
 	schedCtx, cancel := context.WithCancel(ctx)
 	c.schedStop = cancel
@@ -1314,7 +1313,9 @@ func (c *ScenarioController) Stop() (*ScenarioResult, error) {
 }
 
 // Abort is the graceful-shutdown path (D7): same drain→finalize pipeline
-// with phase aborted. Bounded by the drain grace so shutdown cannot hang.
+// with phase aborted. The barrier has no timeout, so what bounds shutdown is
+// what an already-admitted write can block on — see abortActiveScenario for
+// the bound that actually holds and the transport case where it does not.
 func (c *ScenarioController) Abort() (*ScenarioResult, error) {
 	return c.finish(phaseAborted)
 }
@@ -1352,7 +1353,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	}
 	// Publish the terminal gate FIRST so no new fire initiates; the drain
 	// barrier (below) then outlasts every already-admitted in-flight fire.
-	c.gate.Store(&gateState{phase: to, t0: t0, t1: plannedT1, drainEnd: prev.drainEnd})
+	c.gate.Store(&gateState{phase: to, t0: t0, t1: plannedT1})
 
 	if c.schedStop != nil {
 		c.schedStop()

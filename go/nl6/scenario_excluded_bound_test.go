@@ -123,7 +123,7 @@ func TestScenarioExcluded_ReportCountIsTheTrueTotal(t *testing.T) {
 		participants = append(participants, excludedIP(i))
 	}
 	spec := &Scenario{Participants: participants, Protocol: "syslog",
-		Rate: 1, Window: 50 * time.Millisecond, Drain: 10 * time.Millisecond, Seed: 3}
+		Rate: 1, Window: 50 * time.Millisecond, Seed: 3}
 	if err := c.Submit(spec, "s-000300"); err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestScenarioExcluded_StartPhaseRowsSurviveAFullArmBudget(t *testing.T) {
 
 	c := newScenarioController(sm, nil)
 	spec := &Scenario{Participants: participants, Protocol: "syslog",
-		Rate: 1, Window: 50 * time.Millisecond, Drain: 10 * time.Millisecond, Seed: 5}
+		Rate: 1, Window: 50 * time.Millisecond, Seed: 5}
 	if err := c.Submit(spec, "s-000500"); err != nil {
 		t.Fatal(err)
 	}

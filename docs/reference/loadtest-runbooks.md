@@ -51,7 +51,7 @@ sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 3 -syslog-collector 10.0.0.9:514
 
 ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
-  "protocol": "syslog", "rate": 10, "window": "30s", "drain": "2s", "seed": 42
+  "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42
 }' | jq -r .id)
 curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm | jq   # check excluded[] is empty
 curl -sf -X POST $NL6/api/v1/scenarios/$ID/start
@@ -73,7 +73,7 @@ sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5 \
 
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
-  "protocol": "netflow9", "rate": 4, "window": "1m", "drain": "5s", "seed": 7
+  "protocol": "netflow9", "rate": 4, "window": "1m", "seed": 7
 }'
 ```
 
@@ -173,7 +173,7 @@ sudo ./nl6 -fidelity -auto-start-ip 10.42.0.1 -auto-count 5 \
 
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3","10.42.0.4","10.42.0.5"],
-  "protocol": "ipfix", "rate": 4, "window": "1m", "drain": "5s", "seed": 7
+  "protocol": "ipfix", "rate": 4, "window": "1m", "seed": 7
 }'
 ```
 
@@ -213,11 +213,12 @@ active slot is free):
 ```bash
 run() { # $1=protocol  $2=participants-csv
   ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d "{
-    \"participants\": [$2], \"protocol\": \"$1\", \"rate\": 20, \"window\": \"1m\", \"drain\": \"5s\", \"seed\": 7
+    \"participants\": [$2], \"protocol\": \"$1\", \"rate\": 20, \"window\": \"1m\", \"seed\": 7
   }" | jq -r .id)
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm   >/dev/null
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/start >/dev/null
-  sleep 66   # window + drain
+  sleep 66   # the window, plus margin: the run self-closes at T1 and the
+             # drain barrier returns as soon as the in-flight writes do
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop > "report-$1.json"
 }
 run netflow5 '"10.0.2.1","10.0.2.2"'

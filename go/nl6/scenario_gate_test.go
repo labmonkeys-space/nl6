@@ -73,7 +73,6 @@ func TestScenarioGate_CountingMatrix(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	t0 := base.Add(1 * time.Minute)
 	t1 := t0.Add(5 * time.Minute)
-	drainEnd := t1.Add(2 * time.Second)
 
 	h := newGateHarness(t)
 
@@ -96,7 +95,7 @@ func TestScenarioGate_CountingMatrix(t *testing.T) {
 	}
 
 	// --- In-window (running) ---
-	h.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: drainEnd})
+	h.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 	h.setClock(t0, 1*time.Second)
 	_ = h.exp.fireScenario(entry, nil)   // allowed → sent (in_window)
 	_ = h.exp.FireForInterface(entry, 3) // in-window state-driven → sent (in_window)
@@ -112,9 +111,9 @@ func TestScenarioGate_CountingMatrix(t *testing.T) {
 		t.Errorf("background_suppressed = %d, want 2 (still suppressed in-window)", got)
 	}
 
-	// --- Post-T1 within drain (stopped) ---
-	h.gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t1, drainEnd: drainEnd})
-	h.setClock(t1, 1*time.Second)      // within drain grace
+	// --- Post-T1, inside the drain barrier (stopped) ---
+	h.gate.Store(&gateState{phase: phaseStopped, t0: t0, t1: t1})
+	h.setClock(t1, 1*time.Second)      // inside the barrier, past T1
 	_ = h.exp.fireScenario(entry, nil) // stopped → decide() suppresses new initiation
 
 	if got := h.ledger.drain.Load(); got != 0 {
@@ -135,7 +134,7 @@ func TestScenarioGate_WriteFailureBucket(t *testing.T) {
 	t0 := time.Unix(1_700_000_000, 0)
 	t1 := t0.Add(time.Minute)
 	h := newGateHarness(t)
-	h.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: t1.Add(time.Second)})
+	h.gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 	h.setClock(t0, time.Second)
 	h.failWrites.Store(true)
 

@@ -50,7 +50,7 @@ func TestScenarioReport_MetadataFingerprint(t *testing.T) {
 // (protocol, source_ip, collector).
 func TestScenarioReport_CSVProjection(t *testing.T) {
 	router := scenarioAPIManager(t, 2)
-	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":5,"window":"40ms","drain":"10ms","seed":1}`)
+	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":5,"window":"40ms","seed":1}`)
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 	time.Sleep(120 * time.Millisecond)
@@ -90,7 +90,7 @@ func TestScenarioReport_CSVProjection(t *testing.T) {
 // source_ip strings) as HTML.
 func TestScenarioReport_NoSniff(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
-	id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"40ms","drain":"10ms","seed":1}`)
+	id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"40ms","seed":1}`)
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 	time.Sleep(120 * time.Millisecond)
@@ -118,7 +118,7 @@ func runReportViaAPI(t *testing.T, seed int) scenarioReport {
 	var out scenarioReport
 	synctest.Test(t, func(t *testing.T) {
 		router := scenarioAPIManager(t, 2)
-		body := fmt.Sprintf(`{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"1s","drain":"500ms","seed":%d}`, seed)
+		body := fmt.Sprintf(`{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":10,"window":"1s","seed":%d}`, seed)
 		id := submitOK(t, router, body)
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/start")

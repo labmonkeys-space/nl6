@@ -50,11 +50,14 @@ const (
 // bounds published together — a torn phase/T0 read is impossible by
 // construction). Published via atomic.Pointer by the single-writer
 // controller; read once per fire by producer sites.
+//
+// There is deliberately no drain-end field: the post-T1 phase is a barrier,
+// not a duration (nl6#500), so decide() has nothing to compare a drain
+// deadline against and nothing may store one here.
 type gateState struct {
-	phase    scenarioPhase
-	t0       time.Time
-	t1       time.Time
-	drainEnd time.Time
+	phase scenarioPhase
+	t0    time.Time
+	t1    time.Time
 }
 
 // gateDecision is the outcome of the pre-generation gate check.
@@ -151,7 +154,8 @@ func (p *scenarioPart) decide(src fireSource, t time.Time) gateDecision {
 }
 
 // bucketFor classifies a SINGLE successful fire by its FRESH write-return
-// time: t < T1 → in_window (localized to its sub-window), else drain. The
+// time: t < T1 → in_window (localized to its sub-window), else drain (the
+// barrier's tail — bounded by one in-flight write, not by any grace). The
 // caller Add(1)s the returned counter — multi-record batches must use
 // bucketFlowBatch instead, or sub_windows undercounts against in_window.
 func (p *scenarioPart) bucketFor(t time.Time) *atomic.Uint64 {

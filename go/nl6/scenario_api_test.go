@@ -48,7 +48,7 @@ func submitOK(t *testing.T, router http.Handler, body string) string {
 	return resp.ID
 }
 
-const validScenarioBody = `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"60ms","drain":"10ms","seed":42}`
+const validScenarioBody = `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"60ms","seed":42}`
 
 // TestScenarioAPI_SubmitValidation is the fail-fast 400 contract: every bad
 // submit returns 400 with an {"error"} body (and "field" where attributable).
@@ -63,7 +63,9 @@ func TestScenarioAPI_SubmitValidation(t *testing.T) {
 		{"rate_over_cap", `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5000,"window":"1s"}`, ""},
 		{"zero_rate", `{"participants":["10.42.0.1"],"protocol":"syslog","rate":0,"window":"1s"}`, ""},
 		{"bad_window", `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"nope"}`, "window"},
-		{"bad_drain", `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"1s","drain":"xx"}`, "drain"},
+		// drain is refused outright (nl6#500) — its value is never parsed.
+		// The message contract is TestScenarioAPI_DrainIsRejected.
+		{"drain_refused", `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"1s","drain":"2s"}`, "drain"},
 		{"empty_participants", `{"participants":[],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
 		{"bad_ip", `{"participants":["not-an-ip"],"protocol":"syslog","rate":5,"window":"1s"}`, ""},
 		{"malformed_json", `{`, ""},
@@ -179,7 +181,7 @@ func TestScenarioAPI_HappyPathReport(t *testing.T) {
 	router := scenarioAPIManager(t, 1)
 	// Long window so only the explicit stop below finalizes — the T1
 	// auto-close timer must not race the test.
-	id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"30s","drain":"10ms","seed":42}`)
+	id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":5,"window":"30s","seed":42}`)
 
 	if w := doReq(t, router, http.MethodPost, "/api/v1/scenarios/"+id+"/arm", ""); w.Code != http.StatusOK {
 		t.Fatalf("arm = %d, want 200", w.Code)

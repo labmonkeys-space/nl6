@@ -209,7 +209,7 @@ func TestScheduleRelease_FiredButWithdrawnDoesNotRun(t *testing.T) {
 func TestScheduleRelease_FinishStopsPendingTimer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		router := scenarioAPIManager(t, 1)
-		id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":10,"window":"1s","drain":"100ms","seed":13}`)
+		id := submitOK(t, router, `{"participants":["10.42.0.1"],"protocol":"syslog","rate":10,"window":"1s","seed":13}`)
 		mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 		ctrl, err := manager.scenarioByID(id)
 		if err != nil {

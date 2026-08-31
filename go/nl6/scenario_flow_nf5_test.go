@@ -62,7 +62,7 @@ func TestScenarioNF5_GatedCountedAndCap(t *testing.T) {
 	}
 
 	// In-window: 5 records counted, one datagram, golden-byte v5.
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour), drainEnd: t0.Add(time.Hour + time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t0.Add(time.Hour)})
 	injectExpiredFlows(fe, 5, t0.Add(time.Minute))
 	if r, _ := tickRecords(t0.Add(time.Minute)); r != 5 {
 		t.Fatalf("in-window records = %d, want 5", r)

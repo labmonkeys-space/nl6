@@ -104,34 +104,41 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `nl6_version` | string | Simulator version that produced the report — reproduction is guaranteed only on the same version. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
-| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. |
+| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. **Observed, not configured**: the barrier returns as soon as the writes admitted before `T1` return, typically single-digit milliseconds after `t1`. |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
-| `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only** and is therefore biased low by a window-length-sensitive amount. See [Why `achieved_per_device` reads low](#why-achieved_per_device-reads-low). |
+| `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
 | `rate_cap` | object | **Shared-cap disclosure**, present only when this run's protocol has a fleet-wide ceiling in force (`{per_second, shared_with}`). Rate limiters are **per protocol** — syslog and SNMP trap each own one, flow protocols and gNMI dial-out have none — so only *same-protocol* runs contend. `shared_with` names the same-protocol *scenarios* whose windows overlapped this one, sequence-ordered. An empty list means no peer scenario overlapped — **not** that the bucket was uncontended: the scenario scheduler shares the fleet limiter, and background firing spends a token per pop even for fires the scenario gate suppresses, so on a busy non-`-fidelity` fleet a solo run is still throttled by background traffic. The cap is the one in force when the run **began**, not when the report was fetched. Currently emitted for `syslog` only — it is the one protocol whose scenario emission provably passes through the fleet limiter; `-trap-global-cap` governs background trap firing, which the scenario trap path does not go through. A run that shared its bucket did not measure what it would have measured alone, and this is what makes that visible in the artifact instead of silently changing the numbers. Overlaps are recorded as they begin, not reconstructed at finalize, so a peer stopped and deleted before this run finishes is still named. |
 | `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
-#### Why `achieved_per_device` reads low
+#### `achieved_per_device` is an in-window rate
 
 ```
 achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
 ```
 
-Both halves of that are deliberate, and together they make the figure read **below** what a packet capture counts leaving the same devices over the same run.
+Both halves of that are deliberate. `in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window. Nothing else belongs in either half.
 
-`in_window` excludes records that were produced during the window but written after it. Those are counted under the drain instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and the shortfall it produces is a property of the definition rather than a counting error.
+`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch a write already in flight at the `T1` instant. Measured, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0 ([nl6#500]).
 
-**The consequence is that the bias scales with `drain / window`, not with the rate.** A 5s drain is 4.2 % of a 120s window and 0.42 % of a 1200s one. Measured against `tcpdump` on the emitting node, five participants, netflow9:
+**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the drain tail is bounded by one in-flight write, so it cannot move a 120 s window by percent, and the `drain` duration is no longer a configurable field at all ([nl6#500] — submitting one is now a 400).
 
-| window | `achieved_per_device` vs wire |
+An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by the drain's share of the window — exactly the error the paragraph claimed to remove. On a 120 s window with a 5 s drain that was 4.2 % of pure, self-inflicted error.
+
+[nl6#463] resolved what the gap actually was, on a capture and report taken together on the same clock: **2349 wire records against 2349 ledger records, in-window, zero ledger error.** The apparent shortfall in the earlier runs decomposed into three measurement-side terms, none of them the ledger:
+
+| term | contribution at rate 8 |
 |---|---|
-| 120s | −3 % to −8 % |
-| 1200s | −1.2 % to −2.1 % |
+| template FlowSets counted as data records ("phantoms") | 10 records (0.23 %) |
+| emission after the window, counted as wire | 320 records (7.4 %) |
+| capture span used as the denominator instead of the window | 1.2 s of 121.2 s |
+| **ledger error** | **0** |
 
-Drain exclusion accounts for most of the short-window gap and well under half of the long-window one, so it is the dominant term rather than the only one ([nl6#463]).
+The post-window burst is not drain. It is traffic emitted after the scenario stopped and the gate came off, which the ledger never counts and should not: it belongs to no window.
 
-**What this means in practice.** Do not compare `achieved_per_device` across runs whose `window` or `drain` differ: the same true emission rate reports differently, and the difference is the definition rather than the simulator. For an absolute rate, measure on the wire or divide `sent` by `window + drain`. For "did pacing hit its target", the figure is fine as long as the runs being compared share a window.
+**What this means in practice.** `achieved_per_device` is safe to compare across runs that share a window length, and it answers "did pacing hit its target" directly. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
+[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 [nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
 
 #### Reproducing `resolved_participants_sha256`
@@ -176,7 +183,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `emitted` | Records **generated**: gate-passed fires + emission-suppressed pre-window fires. |
 | `sent` | `in_window + drain` — the **loss denominator** for reconciliation (convenience; derived). |
 | `in_window` | Records sent (write returned success) with the write-return timestamp in `[T0, T1)`. |
-| `drain` | Records sent during the post-`T1` drain grace. |
+| `drain` | Records whose write returned at or after `T1` — the drain barrier's tail. Bounded by the writes already in flight at `T1`, so on a healthy run it is 0; it is not a configurable grace period ([nl6#500]). |
 | `suppressed_pre_window` | State-driven / on-demand fires that occurred before `T0` — counted but not emitted on the wire. |
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
 | `dropped` | Records generated but never confirmed on the wire (straggler past the drain barrier, or a shutdown-race socket drop). |

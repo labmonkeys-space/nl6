@@ -21,7 +21,7 @@ NL6=http://localhost:8080
 # 1. Submit — validate + fingerprint. Returns the scenario id.
 ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
-  "protocol": "syslog", "rate": 10, "window": "30s", "drain": "2s", "seed": 42
+  "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42
 }' | jq -r .id)
 
 # 2. Arm — resolve participants; check the excluded list before starting.
@@ -281,8 +281,10 @@ block is the trusted-sender ground truth for per-application traffic: total
    flow durations run up to 300 s). Per-bucket series will never line up —
    `sub_window_bytes` is a sanity curve, not a reconciliation target.
 2. **Pad the collector-side query window** to
-   `[t0 − max profile flow duration, t1 + drain]` so interpolated bytes that
-   the collector attributes before `t0` are captured. Filter by the
+   `[t0 − max profile flow duration, t1]` so interpolated bytes that
+   the collector attributes before `t0` are captured. Nothing is emitted after
+   `t1` — generation stops there and the drain barrier only lets the writes
+   already in flight return — so the upper end needs no padding. Filter by the
    scenario's exporter IPs (the `counters[].source_ip` set).
 3. **Join on `(l4_proto, dst_port)`, not on names.** Collector classification
    is user-configurable; `app_hint` is a convenience label only. Generated
@@ -451,7 +453,7 @@ than against a predicted total.
 
 A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the
 run. The shutdown path aborts the scenario through the same drain-and-finalize
-pipeline a normal stop uses (bounded by the drain grace), so:
+pipeline a normal stop uses, so:
 
 - The report is **finalized and marked `phase: "aborted"`**, with `metadata.t0`
   and a `metadata.t1` equal to the **abort instant** (the window that actually

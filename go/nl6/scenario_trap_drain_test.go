@@ -78,7 +78,6 @@ func TestScenarioTrapFinalize_LedgerIdentityUnderSaturation(t *testing.T) {
 			Protocol:     "snmp-trap",
 			Rate:         500, // per device: 1500 fires/s demand across the fleet
 			Window:       2 * time.Second,
-			Drain:        200 * time.Millisecond,
 			Seed:         int64(round + 1),
 		}
 		if err := c.Submit(spec, "s-00040"+string(rune('0'+round))); err != nil {

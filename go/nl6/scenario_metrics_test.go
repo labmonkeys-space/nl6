@@ -63,7 +63,7 @@ func sumFamily(t *testing.T, body, name string) uint64 {
 // per-participant sent_total counters that sum to the report's summary totals.
 func TestScenarioMetrics_ReproducesReportTotals(t *testing.T) {
 	router := scenarioAPIManager(t, 2)
-	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":200,"window":"250ms","drain":"50ms","seed":9}`)
+	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":200,"window":"250ms","seed":9}`)
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 

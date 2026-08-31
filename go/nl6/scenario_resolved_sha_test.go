@@ -109,7 +109,7 @@ func TestResolvedParticipantsSHA_Membership(t *testing.T) {
 // live devices produce the same digest, so a baseline stays comparable to a
 // re-declared repeat of it.
 func TestResolvedParticipantsSHA_DeclarationIndependent(t *testing.T) {
-	const tail = `,"protocol":"syslog","rate":5,"window":"40ms","drain":"10ms"}`
+	const tail = `,"protocol":"syslog","rate":5,"window":"40ms"}`
 
 	router := scenarioAPIManager(t, 3)
 	byList := runScenarioReport(t, router,
@@ -149,7 +149,6 @@ func TestResolvedParticipantsSHA_ExcludesGapLoss(t *testing.T) {
 		Protocol:         "syslog",
 		Rate:             5,
 		Window:           40 * time.Millisecond,
-		Drain:            10 * time.Millisecond,
 	}, "s-000001"); err != nil {
 		t.Fatal(err)
 	}

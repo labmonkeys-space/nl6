@@ -19,7 +19,7 @@ func BenchmarkScenarioGateDecide(b *testing.B) {
 	t0 := time.Unix(1_700_000_000, 0)
 	t1 := t0.Add(time.Hour)
 	gate := &atomic.Pointer[gateState]{}
-	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1, drainEnd: t1.Add(time.Second)})
+	gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
 	p := &scenarioPart{
 		gate: gate, ledger: &ledgerEntry{}, drain: &drainGate{},
 		now: func() time.Time { return t0.Add(time.Minute) },

@@ -20,7 +20,7 @@ import (
 // protocol, window, actual T0/T1, elapsed/remaining, and a live counts block.
 func TestScenarioStatus_LiveWindowAndCounts(t *testing.T) {
 	router := scenarioAPIManager(t, 2)
-	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":50,"window":"30s","drain":"1s","seed":7}`)
+	id := submitOK(t, router, `{"participants":["10.42.0.1","10.42.0.2"],"protocol":"syslog","rate":50,"window":"30s","seed":7}`)
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/arm")
 	mustPost(t, router, "/api/v1/scenarios/"+id+"/start")
 

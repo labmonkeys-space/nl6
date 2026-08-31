@@ -203,8 +203,16 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 }
 
 // abortActiveScenario aborts a running load-test scenario as part of
-// graceful shutdown (D7). Abort()'s drain barrier is bounded by the drain
-// grace, so shutdown cannot hang. No-op when no scenario is running; the
+// graceful shutdown (D7). Abort()'s drain barrier has NO timeout — it is a bare
+// wg.Wait (scenario_drain.go) — so what bounds shutdown is what an
+// already-admitted write can still block on, not any configured grace (there is
+// none: nl6#500). In practice that is a UDP write, which parks only while the
+// socket buffer is full, or a syslog TCP/TLS write, which carries a 2s
+// syslogTCPWriteTimeout deadline; gNMI dial-out holds the barrier across an
+// enqueue into a bounded drop-oldest channel and never across the async Send.
+// The gap this leaves is named rather than papered over: a stream transport
+// whose write sets no deadline would extend shutdown for as long as it blocks,
+// and nothing here would cut it short. No-op when no scenario is running; the
 // finalized report stays queryable (via the still-live controller) until
 // the process exits. Called at the top of Shutdown, before the export
 // subsystems tear down, so participant exporters still exist during drain.

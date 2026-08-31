@@ -66,7 +66,6 @@ func TestScenarioController_FixedRateExactCount(t *testing.T) {
 				Protocol:     "syslog",
 				Rate:         10, // 10/s → 100ms interval
 				Window:       time.Second,
-				Drain:        500 * time.Millisecond,
 				Seed:         42,
 			}
 			if err := c.Submit(spec, "s-000001"); err != nil {
@@ -83,7 +82,7 @@ func TestScenarioController_FixedRateExactCount(t *testing.T) {
 			// drain; synctest advances fake time while the scheduler
 			// goroutine sleeps between fires, then the auto-stop timer fires
 			// and finalizes. Do NOT call Stop() — that would double-stop.
-			time.Sleep(spec.Window + spec.drainOrDefault() + 100*time.Millisecond)
+			time.Sleep(spec.Window + 200*time.Millisecond)
 			synctest.Wait()
 			res := c.Result()
 			if res == nil {

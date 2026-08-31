@@ -92,7 +92,7 @@ func TestFidelity_ScenarioStillEmits(t *testing.T) {
 		c := newScenarioController(sm, nil)
 		spec := &Scenario{
 			Participants: []string{"10.42.0.1"}, Protocol: "syslog",
-			Rate: 20, Window: 2 * time.Second, Drain: 200 * time.Millisecond, Seed: 42,
+			Rate: 20, Window: 2 * time.Second, Seed: 42,
 		}
 		if err := c.Submit(spec, "s-000001"); err != nil {
 			t.Fatal(err)
@@ -103,7 +103,7 @@ func TestFidelity_ScenarioStillEmits(t *testing.T) {
 		if err := c.Start(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(spec.Window + spec.drainOrDefault() + 100*time.Millisecond)
+		time.Sleep(spec.Window + 200*time.Millisecond)
 		synctest.Wait()
 
 		res := c.Result()

@@ -46,6 +46,11 @@ func (d *drainGate) leave() { d.wg.Done() }
 
 // closeAndWait stops admitting new fires and blocks until every admitted
 // fire has left. Idempotent-safe to call once per scenario at finalize.
+//
+// There is NO timeout, and no configurable grace bounds it (nl6#500 removed the
+// inert `drain` knob that was once claimed to). What bounds it is what an
+// admitted write can block on — see abortActiveScenario for the per-transport
+// bound and the case where it does not hold.
 func (d *drainGate) closeAndWait() {
 	d.mu.Lock()
 	d.closed.Store(true)

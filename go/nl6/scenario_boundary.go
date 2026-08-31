@@ -20,7 +20,8 @@ package main
 //
 //  2. The measurement window is half-open [T0, T1). A record whose write
 //     returns at time t with T0 <= t < T1 buckets `in_window`; a write
-//     completing at t >= T1 within the drain grace buckets `drain`. Bucket
+//     completing at t >= T1, i.e. inside the drain barrier, buckets `drain`
+//     (the barrier is not a configurable duration — nl6#500). Bucket
 //     classification always uses a FRESH clock read taken after the write
 //     returns — never the fire-decision timestamp.
 const (
