@@ -67,6 +67,12 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // emitted tag of no OID any shipped profile serves. It is a measurement, not an
 // argument, and it was NOT re-derived from the widened code.
 //
+// RE-PINNED once, by nl6#570, which deleted the 1322 shipped ifTable .10 / .16
+// entries the cycler now serves. That is a CORPUS change, not an encoding
+// change: no surviving OID moved its tag. The claim is re-derived rather than
+// asserted here — TestOctetShadowDeletionReproducesTheParentCorpus restores the
+// deleted rows and requires the value this constant held before, byte for byte.
+//
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
 // is the review evidence for doing so. Re-pinning it to silence a failure
@@ -75,7 +81,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "e29712b12dacffa0106f615ad637d6145140ee8b54eb23a0fe3745291fa62237"
+const shippedTagDigest = "cfe569609d6cf99f777d764b306b039183d728056889d419094096e53480db8c"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

@@ -57,9 +57,11 @@ const (
 	colIfAdminStatus  = 7
 	colIfOperStatus   = 8
 	colIfLastChange   = 9
+	colIfInOctets     = 10
 	colIfInUcastPkts  = 11
 	colIfInDiscards   = 13
 	colIfInErrors     = 14
+	colIfOutOctets    = 16
 	colIfOutUcastPkts = 17
 	colIfOutDiscards  = 19
 	colIfOutErrors    = 20
@@ -77,9 +79,11 @@ var ifCyclerColumns = []struct {
 	{ifTablePrefix, colIfAdminStatus},         // .7  (state engine)
 	{ifTablePrefix, colIfOperStatus},          // .8  (state engine)
 	{ifTablePrefix, colIfLastChange},          // .9  (state engine)
+	{ifTablePrefix, colIfInOctets},            // .10 (shadow of ifXTable .6)
 	{ifTablePrefix, colIfInUcastPkts},         // .11
 	{ifTablePrefix, colIfInDiscards},          // .13
 	{ifTablePrefix, colIfInErrors},            // .14
+	{ifTablePrefix, colIfOutOctets},           // .16 (shadow of ifXTable .10)
 	{ifTablePrefix, colIfOutUcastPkts},        // .17
 	{ifTablePrefix, colIfOutDiscards},         // .19
 	{ifTablePrefix, colIfOutErrors},           // .20
@@ -211,9 +215,11 @@ func scenarioBand(s IfErrorScenario) (errLo, errHi, discLo, discHi uint32) {
 //
 // Counter32 columns (ifTable):
 //
+//	.10 ifInOctets            = low-32 of HC .6   (RFC 2863 shadow)
 //	.11 ifInUcastPkts         = low-32 of HC .7
 //	.13 ifInDiscards          = base + totalInPkts  × discPpmIn  / 1e6
 //	.14 ifInErrors            = base + totalInPkts  × errPpmIn   / 1e6
+//	.16 ifOutOctets           = low-32 of HC .10  (RFC 2863 shadow)
 //	.17 ifOutUcastPkts        = low-32 of HC .11
 //	.19 ifOutDiscards         = base + totalOutPkts × discPpmOut / 1e6
 //	.20 ifOutErrors           = base + totalOutPkts × errPpmOut  / 1e6
@@ -465,6 +471,15 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	}
 	// ifTable
 	switch col {
+	// Counter32 shadows of the two Counter64 HC octet columns. RFC 2863
+	// defines ifInOctets as the low 32 bits of ifHCInOctets (likewise
+	// out), so both are DERIVED here from the same delta the HC column
+	// uses at the same t — never stored, never recomputed from a second
+	// clock read. That is what makes the identity hold byte-for-byte.
+	case colIfInOctets:
+		return fmtU32(uint32((ic.baseInOctets[slot] + inDelta) & 0xFFFFFFFF))
+	case colIfOutOctets:
+		return fmtU32(uint32((ic.baseOutOctets[slot] + outDelta) & 0xFFFFFFFF))
 	case colIfInUcastPkts:
 		return fmtU32(uint32(ic.packets(slot, inDelta, true, false, false, true) & 0xFFFFFFFF))
 	case colIfOutUcastPkts:

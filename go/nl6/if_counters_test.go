@@ -500,7 +500,10 @@ func TestIfCounterCycler_NextDynamicOID_WalksStateColumns(t *testing.T) {
 	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := c.ifCounters.Load()
 
-	// From the table prefix, walk should hit .7.1 → .7.2 → .8.1 → .8.2 → .9.1 → .9.2 → .11.1 ...
+	// From the table prefix, walk should hit .7.1 → .7.2 → .8.1 → .8.2 → .9.1
+	// → .9.2 → .10.1 → .10.2 → .11.1 ... The .10 pair is the ifInOctets shadow
+	// nl6#570 added; it sits between .9 and .11 in MIB lex order, and a walk
+	// that emitted it anywhere else would be non-increasing (nl6#526's class).
 	want := []string{
 		".1.3.6.1.2.1.2.2.1.7.1",
 		".1.3.6.1.2.1.2.2.1.7.2",
@@ -508,6 +511,8 @@ func TestIfCounterCycler_NextDynamicOID_WalksStateColumns(t *testing.T) {
 		".1.3.6.1.2.1.2.2.1.8.2",
 		".1.3.6.1.2.1.2.2.1.9.1",
 		".1.3.6.1.2.1.2.2.1.9.2",
+		".1.3.6.1.2.1.2.2.1.10.1",
+		".1.3.6.1.2.1.2.2.1.10.2",
 		".1.3.6.1.2.1.2.2.1.11.1",
 	}
 	cur := ".1.3.6.1.2.1.2.2.1"
@@ -733,10 +738,12 @@ func TestIfCounterCycler_NextDynamicOID_StateNilSkipsStateCols(t *testing.T) {
 	if got := ic.GetDynamic(".1.3.6.1.2.1.2.2.1.7.1"); got != "" {
 		t.Errorf("state-nil GetDynamic(.7.1): got %q, want \"\"", got)
 	}
-	// Walk from table prefix should skip state cols and land at .11.1.
+	// Walk from table prefix should skip the state cols and land on the first
+	// non-state ifTable column the cycler owns, which is .10 (ifInOctets) since
+	// nl6#570.
 	got, _ := ic.NextDynamicOID(".1.3.6.1.2.1.2.2.1")
-	if got != ".1.3.6.1.2.1.2.2.1.11.1" {
-		t.Errorf("state-nil walk from table prefix: got %q, want .11.1", got)
+	if got != ".1.3.6.1.2.1.2.2.1.10.1" {
+		t.Errorf("state-nil walk from table prefix: got %q, want .10.1", got)
 	}
 }
 

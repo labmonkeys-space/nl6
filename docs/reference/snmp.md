@@ -215,6 +215,8 @@ A leaf it does not type takes the encoder's default branch, where INTEGER for a 
 Numeric leaves outside the table — the `OLD-CISCO-SYSTEM-MIB` INTEGER leaves, for instance — are covered instead by a test over the shipped profiles (`resource_numeric_oids_test.go`), which operator-supplied files never reach.
 
 Applying rule 3 to the shipped set for the first time found 45 entries of exactly the nl6#515 class, all corrected in the same change: a bare `ipRouteDest` column OID valued `1` in 14 profiles (deleted, because that column is `IpAddress`-typed and `1` is not an address), 30 `ifInOctets`/`ifOutOctets` entries in the three NVIDIA profiles whose values overflowed `Counter32`, and one `asr9k` `sysUpTime` past the `TimeTicks` wrap (both wrapped modulo 2^32, which is what the real counter does).
+Those 30 rewrapped values are moot as of nl6#570: they are among the 1322 static `ifInOctets`/`ifOutOctets` entries deleted when the cycler took both columns over, so nothing serves them any more.
+The reversal chains rather than being replaced — `snmp_shipped_data_ledger_test.go` restores nl6#570's ledger first, reconstructing the tree nl6#541 left, and only then reverses its own three tables.
 
 Sixteen further values were edited that rule 3 **never saw**, and it is worth naming the mechanism that did, because that is the one a reader will rely on next time. All sixteen sit on leaves the type table does not type, so all were and remain INTEGER on the wire:
 
@@ -495,12 +497,22 @@ Every per-interface counter listed below is generated dynamically by
 
 | Column | OID column | Derivation |
 |--------|-----------|------------|
+| `ifInOctets` | `.10` | shadow of `ifHCInOctets` (ifXTable `.6`) |
 | `ifInUcastPkts` | `.11` | shadow of `ifHCInUcastPkts` (`.7`) |
 | `ifInDiscards` | `.13` | `baseInDisc + inDeltaPkts × discPpmIn / 1e6` |
 | `ifInErrors` | `.14` | `baseInErr + inDeltaPkts × errPpmIn / 1e6` |
+| `ifOutOctets` | `.16` | shadow of `ifHCOutOctets` (ifXTable `.10`) |
 | `ifOutUcastPkts` | `.17` | shadow of `ifHCOutUcastPkts` (`.11`) |
 | `ifOutDiscards` | `.19` | `baseOutDisc + outDeltaPkts × discPpmOut / 1e6` |
 | `ifOutErrors` | `.20` | `baseOutErr + outDeltaPkts × errPpmOut / 1e6` |
+
+`ifInOctets` and `ifOutOctets` became cycler-driven in nl6#570.
+Before that they were the only IF-MIB counter columns served from the profile JSON, frozen, while their HC columns climbed from `ifSpeed` — so a rate computed from them was 0 bps forever, and the RFC 2863 shadow relationship this page states was false for exactly those two.
+The 1322 static entries the cycler now shadows (661 `ifInOctets` + 661 `ifOutOctets`, across 20 profiles) were deleted in the same change, because `findResponse` consults the cycler before the static map and an unreachable entry that looks authoritative is what let the defect survive.
+`snmp_shipped_octet_shadow_ledger_test.go` records every deleted row and reverses it to reproduce the parent corpus digest.
+
+Both are shadows in the strict sense: they are derived at read time from the same captured evaluation instant as their HC column, never stored.
+At 400 Gbps a `Counter32` wraps in about 86 ms, so RFC 2863's own advice — poll the HC columns above 20 Mbps — still applies; what changed is that the 32-bit column no longer contradicts the 64-bit one.
 
 Properties common to every dynamic counter:
 
