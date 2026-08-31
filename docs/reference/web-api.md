@@ -277,6 +277,44 @@ Only `failing` crosses the SD-FEC threshold, so
 [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
 BER table.
 
+### `resource_file` failures
+
+`resource_file` names the device type to load, and a request naming one the
+simulator cannot use is answered **`400`** (nl6#538), not `500`.
+
+Response:
+
+| Status | Body | When |
+|--------|------|------|
+| `400 Bad Request` | `{"success": false, "message": "resource <base-name>: <what is wrong>"}` | The file name is not a device-type slug; no such device type is shipped (including a `round_robin` batch in which none of the requested types is, or a `category` matching none); or the file's content is invalid — JSON that does not parse, a document that is literally `null`, anything trailing the document, no entries at all, a device-type directory with no JSON part or whose parts hold no entries between them, an SNMP value the load-time guard rejects, or an optical inventory disagreeing with the type's channel count. |
+| `500 Internal Server Error` | `{"success": false, "message": "<raw error>"}` | The loader could not classify the failure: a file it cannot open, a directory it cannot list. The raw message may contain a full path. |
+
+The `message` field carries the diagnosis. It names the file's **base name**,
+and for a fault attributable to one entry the OID and the value as well:
+
+```json
+{
+  "success": false,
+  "message": "resource restbad_snmp.json: OID 1.3.6.1.2.1.1.1.0 has value \"noSuchObject\", which collides with an SNMP exception sentinel and would be encoded as an RFC 3416 exception instead of a string. There is no escaping form: change the value. To make the OID answer noSuchObject on purpose, omit the entry entirely, since an absent OID already answers with the exception"
+}
+```
+
+A parse failure, a `null` document, an empty file or directory, an optical
+mismatch and a rejected file name have no single entry to name, so they carry
+neither OID nor value.
+
+The `400` body never contains a directory path — not in the file name, and not
+inside an interpolated cause such as a failed read — control characters and
+bidi formatting runes are stripped from it, and it is length-capped. The full
+path goes to the **server log** instead. That guarantee covers the `400` class
+only; the `500` class returns the raw error.
+
+`resource_file` is validated **before** TUN pre-allocation and before the
+privilege check, so a request naming a bad device type gets this `400` without
+allocating anything, whether or not the simulator runs as root. A request
+naming a good one proceeds, and without root gets the pre-existing `500`
+`root privileges required to create TUN interfaces`.
+
 ### Per-device export blocks
 
 `POST /api/v1/devices` accepts four optional top-level blocks —

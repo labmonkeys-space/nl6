@@ -16,6 +16,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -39,6 +40,99 @@ func makeDeviceID(ip net.IP, typeSlug string) string {
 func (sm *SimulatorManager) CreateDevices(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, roundRobin bool, category string, snmpPort int, seed *ExportSeed) error {
 	_, err := sm.CreateDevicesWithOptions(startIP, count, netmask, resourceFile, v3Config, true, 0, roundRobin, category, snmpPort, seed)
 	return err
+}
+
+// resolveCreateResources loads the resource set(s) a create-devices call needs:
+// every round-robin device type when roundRobin is set, otherwise the single
+// named file (or the manager's default set when none is named).
+//
+// It is a function rather than inline code in CreateDevicesWithOptions so the
+// nl6#538 classification decisions it makes are reachable from a test:
+// CreateDevicesWithOptions refuses to run without root, which puts the whole
+// block behind a privilege check on a developer machine.
+//
+// The rule it enforces: an ABSENT round-robin device type is skipped, an
+// INVALID one fails the call.
+func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, resourceFile string) (
+	resources *DeviceResources, roundRobinResources []*DeviceResources, roundRobinResourceFiles []string, err error) {
+
+	if roundRobin {
+		// Filter device types by category if specified
+		rrTypes := RoundRobinDeviceTypes
+		if category != "" {
+			var filtered []string
+			for _, rrFile := range RoundRobinDeviceTypes {
+				name := strings.TrimSuffix(rrFile, ".json")
+				if getDeviceCategoryFromName(name) == category {
+					filtered = append(filtered, rrFile)
+				}
+			}
+			// A category matching nothing is caller data that is wrong, and it
+			// is REJECTED. Falling through to the unfiltered list built the
+			// batch from every device type in the fleet — the same "silently
+			// changes the device-type mix the caller asked for" failure that
+			// makes an invalid type abort — and the log line then printed the
+			// requested category beside the unfiltered count, so the
+			// substitution was invisible there too.
+			if len(filtered) == 0 {
+				return nil, nil, nil, invalidResource("category",
+					"no round robin device type belongs to category %q", category)
+			}
+			rrTypes = filtered
+			log.Printf("Round Robin mode enabled for category %q - %d device types", category, len(rrTypes))
+		} else {
+			log.Printf("Round Robin mode enabled - loading %d device type resources...", len(rrTypes))
+		}
+		for _, rrFile := range rrTypes {
+			res, loadErr := sm.LoadSpecificResources(rrFile)
+			if loadErr != nil {
+				// Skipping is for an ABSENT device type ONLY (nl6#538): a
+				// tree that ships some types but not all is ordinary, and a
+				// batch-wide round-robin request must still work on it.
+				//
+				// EVERY other failure aborts the batch, not just an invalid
+				// one: an unreadable file or an unlistable directory is not
+				// evidence that the type is unshipped, and continuing past it
+				// silently changes the device-type MIX the caller asked for.
+				// That is a deliberate widening — such a fault used to warn
+				// and skip.
+				if !errors.Is(loadErr, errResourceNotFound) {
+					return nil, nil, nil, fmt.Errorf("failed to load round robin resource %s: %w", rrFile, loadErr)
+				}
+				log.Printf("WARNING: Failed to load round robin resource %s: %v", rrFile, loadErr)
+				continue
+			}
+			roundRobinResources = append(roundRobinResources, res)
+			roundRobinResourceFiles = append(roundRobinResourceFiles, rrFile)
+		}
+		if len(roundRobinResources) == 0 {
+			// Classified, not bare. Each INDIVIDUAL absent type is a
+			// not-found fault the REST boundary answers 400; a batch in which
+			// they are ALL absent — a trimmed resource tree, or a category
+			// matching only unshipped types — is the same fault, and answering
+			// it 500 with an opaque message told the caller the server broke.
+			return nil, nil, nil, notFoundResource("round robin",
+				"none of the %d requested round robin device type(s) is shipped; "+
+					"no resource directory or file exists for any of them", len(rrTypes))
+		}
+		log.Printf("Loaded %d round robin device types", len(roundRobinResources))
+		return nil, roundRobinResources, roundRobinResourceFiles, nil
+	}
+
+	// Load the specified resource file if provided (for non-round-robin mode)
+	if resourceFile != "" {
+		res, loadErr := sm.LoadSpecificResources(resourceFile)
+		if loadErr != nil {
+			// %w, not %v: this is the non-round-robin REST path and so the
+			// most likely route to a 400. %v flattens the chain and
+			// errors.As at the handler silently returns false.
+			return nil, nil, nil, fmt.Errorf("failed to load resource file %s: %w", resourceFile, loadErr)
+		}
+		return res, nil, nil, nil
+	}
+
+	// Use default resources
+	return sm.deviceResources, nil, nil, nil
 }
 
 // CreateDevicesWithOptions creates devices with optional pre-allocation control.
@@ -71,32 +165,46 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		return 0, err
 	}
 
+	// EVERY caller-data check runs before ANY resource is committed (nl6#538).
+	//
+	// Both of these used to sit below pre-allocation, so a request for 10+
+	// devices naming a bad resource_file allocated the whole TUN pool and only
+	// then answered 400 — and never released it, leaving sm.tunPoolSize
+	// non-zero for the next call. A malformed start_ip had the same shape.
+	// There is no ordering dependency the other way: resolveCreateResources
+	// reads only the filesystem and the resource cache.
+	ip := net.ParseIP(startIP)
+	if ip == nil {
+		return 0, fmt.Errorf("invalid start IP address: %s", startIP)
+	}
+
+	resources, roundRobinResources, roundRobinResourceFiles, err := sm.resolveCreateResources(roundRobin, category, resourceFile)
+	if err != nil {
+		return 0, err
+	}
+
 	// Automatically pre-allocate TUN interfaces if creating many devices
 	// Pre-allocate by default for 10+ devices unless explicitly disabled
 	shouldPreAllocate := preAllocate && count >= 10
 
 	if shouldPreAllocate {
-		ip := net.ParseIP(startIP)
-		if ip != nil {
-			// Use provided maxWorkers or determine optimal count based on device
-			// count. <= 0 (not just == 0) selects the defaults so a negative
-			// value can never size a channel (CodeQL go/uncontrolled-allocation-size).
-			if maxWorkers <= 0 {
-				if count >= 1000 {
-					maxWorkers = 200
-				} else if count >= 500 {
-					maxWorkers = 150
-				} else {
-					maxWorkers = 100
-				}
+		// Use provided maxWorkers or determine optimal count based on device
+		// count. <= 0 (not just == 0) selects the defaults so a negative
+		// value can never size a channel (CodeQL go/uncontrolled-allocation-size).
+		if maxWorkers <= 0 {
+			if count >= 1000 {
+				maxWorkers = 200
+			} else if count >= 500 {
+				maxWorkers = 150
+			} else {
+				maxWorkers = 100
 			}
+		}
 
-			log.Printf("Pre-allocating %d TUN interfaces with %d workers for faster device creation...", count, maxWorkers)
-			err := sm.PreAllocateTunInterfaces(count, maxWorkers, ip, netmask)
-			if err != nil {
-				log.Printf("WARNING: Pre-allocation failed: %v. Falling back to on-demand creation.", err)
-				// Continue with device creation even if pre-allocation fails
-			}
+		log.Printf("Pre-allocating %d TUN interfaces with %d workers for faster device creation...", count, maxWorkers)
+		if err := sm.PreAllocateTunInterfaces(count, maxWorkers, ip, netmask); err != nil {
+			log.Printf("WARNING: Pre-allocation failed: %v. Falling back to on-demand creation.", err)
+			// Continue with device creation even if pre-allocation fails
 		}
 	}
 
@@ -118,68 +226,12 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		return 0, fmt.Errorf("root privileges required to create TUN interfaces")
 	}
 
-	ip := net.ParseIP(startIP)
-	if ip == nil {
-		return 0, fmt.Errorf("invalid start IP address: %s", startIP)
-	}
-
 	// Initialize with a write lock, then release it for the loop
 	sm.mu.Lock()
 	sm.currentIP = ip
 	sm.mu.Unlock()
 
 	successCount := 0
-
-	// Pre-load round robin resource files if round robin is enabled
-	var roundRobinResources []*DeviceResources
-	var roundRobinResourceFiles []string
-	if roundRobin {
-		// Filter device types by category if specified
-		rrTypes := RoundRobinDeviceTypes
-		if category != "" {
-			var filtered []string
-			for _, rrFile := range RoundRobinDeviceTypes {
-				name := strings.TrimSuffix(rrFile, ".json")
-				if getDeviceCategoryFromName(name) == category {
-					filtered = append(filtered, rrFile)
-				}
-			}
-			if len(filtered) > 0 {
-				rrTypes = filtered
-			}
-			log.Printf("Round Robin mode enabled for category %q - %d device types", category, len(rrTypes))
-		} else {
-			log.Printf("Round Robin mode enabled - loading %d device type resources...", len(rrTypes))
-		}
-		for _, rrFile := range rrTypes {
-			res, err := sm.LoadSpecificResources(rrFile)
-			if err != nil {
-				log.Printf("WARNING: Failed to load round robin resource %s: %v", rrFile, err)
-				continue
-			}
-			roundRobinResources = append(roundRobinResources, res)
-			roundRobinResourceFiles = append(roundRobinResourceFiles, rrFile)
-		}
-		if len(roundRobinResources) == 0 {
-			return 0, fmt.Errorf("failed to load any round robin resource files")
-		}
-		log.Printf("Loaded %d round robin device types", len(roundRobinResources))
-	}
-
-	// Load the specified resource file if provided (for non-round-robin mode)
-	var resources *DeviceResources
-	if !roundRobin {
-		if resourceFile != "" {
-			var err error
-			resources, err = sm.LoadSpecificResources(resourceFile)
-			if err != nil {
-				return 0, fmt.Errorf("failed to load resource file %s: %v", resourceFile, err)
-			}
-		} else {
-			// Use default resources
-			resources = sm.deviceResources
-		}
-	}
 
 	if sm.tunPoolSize > 0 {
 		// Pre-allocation was done - create devices in parallel

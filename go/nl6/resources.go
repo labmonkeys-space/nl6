@@ -17,28 +17,290 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
+
+// Resource-load faults come in exactly two kinds, and callers must be able to
+// tell them apart (nl6#538).
+//
+//   - errResourceInvalid — the file exists and its CONTENT is wrong: JSON that
+//     does not parse, a document that decodes to null, an empty device-type
+//     directory, a value the SNMP guard rejects, an optical inventory that
+//     disagrees with its profile, a resource file NAME that is not a device
+//     type slug. This is caller data that is wrong, so it is FATAL at startup
+//     and 400 at REST. It is never downgraded to a log line and never
+//     substituted for another device type: serving a silently substituted
+//     profile is a wrong answer that no collector can detect.
+//   - errResourceNotFound — the file or directory is simply absent. This is
+//     the ordinary case on a tree that ships only some device types, so a
+//     caller may still carry on (the round-robin skip).
+//
+// Classifying a JSON parse failure as INVALID rather than as a third kind is
+// deliberate: it is the same "the operator wrote a bad file" fault as a
+// sentinel value.
+//
+// The two sentinels are NOT redundant even though the REST boundary answers
+// both 400 (an unknown device type is an unsatisfiable request, not server
+// state): they have a second consumer each, and those disagree. Round-robin
+// device creation SKIPS a not-found type and FAILS on an invalid one. Collapse
+// the sentinels and that distinction goes with them.
+//
+// Every error a caller must classify travels with %w. A bare %v at any link
+// flattens the chain and makes errors.Is at the handler silently return false.
+var (
+	errResourceInvalid  = errors.New("invalid resource content")
+	errResourceNotFound = errors.New("resource not found")
+)
+
+// resourceFileError is a classified fault about one resource file or
+// directory. Both kinds use it, distinguished by kind, so the REST boundary
+// needs one errors.As to reach the safe rendering of either.
+//
+// Two renderings are needed and neither can be derived from the other by
+// string surgery, because the file name sits mid-sentence: Error() names the
+// path as the loader resolved it (that is what belongs in a log), while
+// PublicMessage names only the base name (that is what belongs in an HTTP 400
+// body, which must not disclose a server-side directory layout).
+//
+// The fields are File, Msg, kind and cause and NOTHING ELSE. An earlier cut
+// carried OID and Value too; nothing read them, because a per-entry fault
+// interpolates both into Msg anyway, and a field no rendering reads is a field
+// that silently goes stale.
+type resourceFileError struct {
+	File  string // path as resolved by the loader
+	Msg   string // the explanation, with no file prefix of its own
+	kind  error  // errResourceInvalid or errResourceNotFound
+	cause error  // the underlying error, when there is one; may be nil
+}
+
+// Error names the path as the loader resolved it, which is what a log line
+// needs. It sanitises both halves: this string reaches log.Printf, and BOTH
+// the file name (a REST field) and the message (which quotes file CONTENT) are
+// attacker-influenced, so an embedded newline would forge a log line. It is
+// deliberately NOT length-capped — a log may carry the whole diagnosis.
+func (e *resourceFileError) Error() string {
+	return "resource " + sanitiseResourceName(e.File) + ": " + sanitiseForMessage(e.Msg)
+}
+
+// PublicMessage renders the same fault for an HTTP body: the file's base name
+// only, control characters stripped, and the whole thing length-capped.
+//
+// Both defences matter because File comes from a REST field and Msg quotes
+// file CONTENT. Without them a device_type of "a\nFATAL: everything is fine"
+// forges log lines, and a multi-megabyte value in a resource file becomes a
+// multi-megabyte error body.
+func (e *resourceFileError) PublicMessage() string {
+	return truncateForMessage("resource "+sanitiseResourceName(filepath.Base(e.File))+": "+
+		redactPathsForMessage(sanitiseForMessage(e.Msg)), maxResourceMessageBytes)
+}
+
+// Unwrap returns BOTH the classification sentinel and the underlying cause, so
+// errors.Is(err, errResourceInvalid) and errors.As(err, &jsonSyntaxErr) each
+// work. Returning only the sentinel made the cause unrecoverable.
+func (e *resourceFileError) Unwrap() []error {
+	if e.cause == nil {
+		return []error{e.kind}
+	}
+	return []error{e.kind, e.cause}
+}
+
+// maxResourceMessageBytes caps a message rendered into an HTTP body.
+//
+// 2048, not 512. The guard messages put the quoted OID and value EARLY and the
+// remediation ("change the value", "omit the entry entirely") LAST, and the
+// sentinel message measures 427 bytes with a short file name and a short
+// value — so at 512 a realistic part name plus a ~90-character bad value cut
+// off the half of the message that says how to fix it. The cap exists to stop
+// a multi-megabyte resource value becoming a multi-megabyte body, and 2048
+// still does that by three orders of magnitude.
+const maxResourceMessageBytes = 2048
+
+// sanitiseResourceName makes a file name safe to put in a log line or an HTTP
+// body: control characters (newlines above all) become "_", and an empty name
+// gets a placeholder rather than filepath.Base's bare ".".
+func sanitiseResourceName(name string) string {
+	if name == "" {
+		return "<unnamed>"
+	}
+	clean := sanitiseForMessage(name)
+	if clean == "." || clean == "" {
+		return "<unnamed>"
+	}
+	return clean
+}
+
+// sanitiseForMessage replaces with "_" every rune that can restructure the
+// line it is rendered into: C0 and DEL, the C1 range U+0080-U+009F (which
+// carries NEL and CSI), the Unicode line separators U+2028/U+2029 (which break
+// lines in JS-consuming log viewers), and the bidi/zero-width FORMATTING runes.
+//
+// The last group is not cosmetic. U+202E RIGHT-TO-LEFT OVERRIDE and friends
+// reorder the VISIBLE text without changing the bytes, so a crafted file name
+// can make a rendered log line or 400 body read as something other than what
+// it says — the operator sees a different filename from the one that failed.
+func sanitiseForMessage(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return '_'
+		case r == '\u2028', r == '\u2029':
+			return '_'
+		case r == '\u200b', r == '\u200c', r == '\u200d', r == '\ufeff': // zero-width
+			return '_'
+		case r == '\u200e', r == '\u200f': // LRM / RLM
+			return '_'
+		case r >= '\u202a' && r <= '\u202e': // embedding / override
+			return '_'
+		case r >= '\u2066' && r <= '\u2069': // isolates
+			return '_'
+		}
+		return r
+	}, s)
+}
+
+// redactPathsForMessage base-names every path-shaped token in a message.
+//
+// Base-naming e.File alone is not enough, and the guarantee has to live at the
+// RENDERING rather than at each call site. Messages interpolate causes:
+// json.Decoder.Decode hands back the underlying read error unwrapped, so an
+// I/O fault mid-document reaches Msg as "read resources/x/y.json: input/output
+// error", and the startup fallback interpolates an *os.PathError the same way.
+// Enforcing this per call site means every future one is a new chance to leak.
+//
+// A token is path-shaped when it contains a separator and is not purely
+// dotted-numeric — an OID like 1.3.6.1.2.1.1.1.0 has no separator and survives,
+// which matters because the guard messages quote OIDs. The trailing punctuation
+// a path picks up inside a sentence is preserved.
+func redactPathsForMessage(msg string) string {
+	fields := strings.Fields(msg)
+	for i, f := range fields {
+		trimmed := strings.TrimRight(f, ".,;:")
+		suffix := f[len(trimmed):]
+		if trimmed == "" || !strings.ContainsRune(trimmed, os.PathSeparator) {
+			continue
+		}
+		// Strip a quote so `"resources/x.json"` renders as `"x.json"`.
+		prefix := ""
+		if len(trimmed) > 0 && (trimmed[0] == '"' || trimmed[0] == '\'') {
+			prefix = trimmed[:1]
+			trimmed = trimmed[1:]
+		}
+		fields[i] = prefix + filepath.Base(trimmed) + suffix
+	}
+	return strings.Join(fields, " ")
+}
+
+// truncateForMessage caps a rendered message, marking that it was cut. The
+// cut backs up to a rune boundary so the capped body stays valid UTF-8.
+func truncateForMessage(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "… (truncated)"
+}
+
+// checkSingleDocument rejects bytes after the first JSON document in a
+// resource file. json.Decoder reads one value and stops, so without this a
+// half-broken file loads silently as whatever its first value happens to be.
+//
+// FOUR outcomes, and the original code collapsed them into one by testing
+// `err != io.EOF`:
+//
+//   - io.EOF — the good one, exactly one document and nothing after it.
+//   - a token that reads successfully — real trailing data (a second document),
+//     which is caller content: fatal at startup, 400 at REST.
+//   - a *json.SyntaxError or io.ErrUnexpectedEOF — trailing BYTES that are not
+//     valid JSON (a stray `]`). Also caller content, and the cause is carried
+//     so errors.As can reach it, matching the decode failure at every call site.
+//   - anything else — a read FAILURE on the underlying file. Neither of the
+//     above: reporting it as trailing data points the operator at content that
+//     is fine, and classifying it invalid makes a transient I/O fault fatal at
+//     startup. Returned unclassified so it takes the 500 a failed read deserves.
+func checkSingleDocument(file string, dec *json.Decoder) error {
+	_, err := dec.Token()
+	switch {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err == nil:
+		return invalidResource(file, "trailing data after the JSON document")
+	}
+
+	var syn *json.SyntaxError
+	if errors.As(err, &syn) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return invalidResourceCause(file, err, "trailing data after the JSON document: %v", err)
+	}
+	return fmt.Errorf("failed to read %s after the JSON document: %w", file, err)
+}
+
+// resourceEntryCount is the total across the four entry arrays.
+func resourceEntryCount(r *DeviceResources) int {
+	return len(r.SNMP) + len(r.SSH) + len(r.API) + len(r.Optical)
+}
+
+// invalidResource builds an invalid-CONTENT fault.
+func invalidResource(file, format string, args ...interface{}) error {
+	return &resourceFileError{File: file, Msg: fmt.Sprintf(format, args...), kind: errResourceInvalid}
+}
+
+// invalidResourceCause is invalidResource for a fault with an underlying error
+// worth keeping reachable (a *json.SyntaxError, an *os.PathError). The cause is
+// NOT printed by Error(); the caller still formats whatever it wants into the
+// message. It exists so errors.As can reach it.
+func invalidResourceCause(file string, cause error, format string, args ...interface{}) error {
+	return &resourceFileError{File: file, Msg: fmt.Sprintf(format, args...), kind: errResourceInvalid, cause: cause}
+}
+
+// notFoundResource builds an ABSENT-file fault. The round-robin loader carries
+// on past one; the REST boundary answers it 400, because the caller named a
+// device type that does not exist.
+func notFoundResource(file, format string, args ...interface{}) error {
+	return &resourceFileError{File: file, Msg: fmt.Sprintf(format, args...), kind: errResourceNotFound}
+}
 
 func (sm *SimulatorManager) LoadResources(filename string) error {
 	// Extract directory name from filename (e.g., "resources/asr9k.json" -> "resources/asr9k")
 	dirPath := strings.TrimSuffix(filename, ".json")
 
-	// Check if directory exists (new structure)
-	if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
+	// Check if directory exists (new structure). Same rule as
+	// LoadSpecificResources: a stat error other than "does not exist" is a
+	// content-side fault, not evidence the type is unshipped.
+	info, statErr := os.Stat(dirPath)
+	switch {
+	case statErr == nil && info.IsDir():
 		return sm.loadResourcesFromDir(dirPath)
+	case statErr != nil && !os.IsNotExist(statErr):
+		return invalidResourceCause(dirPath, statErr, "cannot stat the device-type directory: %v", statErr)
 	}
 
 	// Fallback to old single-file format for backwards compatibility
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		log.Printf("Resources file %s not found, creating default resources...", filename)
-		return sm.createDefaultResources(filename)
+		if err := sm.createDefaultResources(filename); err != nil {
+			// Absent, and the synthesised default could not be written
+			// either. Still an ABSENT-file fault, not a content one, so a
+			// caller may fall back. The cause stays reachable via errors.As.
+			return &resourceFileError{
+				File:  filename,
+				Msg:   fmt.Sprintf("not found, and default resources could not be created: %v", err),
+				kind:  errResourceNotFound,
+				cause: err,
+			}
+		}
+		return nil
 	}
 
 	file, err := os.Open(filename)
@@ -47,18 +309,45 @@ func (sm *SimulatorManager) LoadResources(filename string) error {
 	}
 	defer file.Close()
 
-	if err := json.NewDecoder(file).Decode(&sm.deviceResources); err != nil {
+	// Decoded into a LOCAL, published to sm.deviceResources only once it has
+	// validated: a failed load must leave the previous set in place rather
+	// than a partial or unindexed one.
+	//
+	// The local is a *DeviceResources rather than a value because this is the
+	// one decode in the package that targets a pointer, and a file containing
+	// the literal `null` therefore leaves it nil. validateSNMPResourceValues
+	// returns nil for nil input, so before this check buildResourceIndexes
+	// dereferenced it and PANICKED.
+	var resources *DeviceResources
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(&resources); err != nil {
+		return invalidResourceCause(filename, err, "failed to parse: %v", err)
+	}
+	if resources == nil {
+		return invalidResource(filename, "decoded to JSON null; expected an object with "+
+			"\"snmp\", \"ssh\", \"api\" and/or \"optical\" arrays")
+	}
+	if err := checkSingleDocument(filename, dec); err != nil {
 		return err
 	}
+	// A zero-entry single file is the `{}` sibling of the null document: it
+	// publishes a set from which every device answers no OID at all. Directory
+	// parts stay exempt — a part legitimately carries only some sections.
+	if resourceEntryCount(resources) == 0 {
+		return invalidResource(filename, "contains no resource entries; a single-file resource "+
+			"needs at least one entry in \"snmp\", \"ssh\", \"api\" or \"optical\"")
+	}
 
-	if err := validateSNMPResourceValues(filename, sm.deviceResources); err != nil {
+	if err := validateSNMPResourceValues(filename, resources); err != nil {
 		return err
 	}
 
 	// Build indexes for loaded default resources
-	sm.buildResourceIndexes(sm.deviceResources)
+	sm.buildResourceIndexes(resources)
 
-	log.Printf("Loaded %d SNMP and %d SSH resources with indexes", len(sm.deviceResources.SNMP), len(sm.deviceResources.SSH))
+	sm.deviceResources = resources
+
+	log.Printf("Loaded %d SNMP and %d SSH resources with indexes", len(resources.SNMP), len(resources.SSH))
 	return nil
 }
 
@@ -66,16 +355,20 @@ func (sm *SimulatorManager) LoadResources(filename string) error {
 func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return fmt.Errorf("failed to read directory %s: %v", dirPath, err)
+		return fmt.Errorf("failed to read directory %s: %w", dirPath, err)
 	}
 
-	sm.deviceResources = &DeviceResources{
+	// Merged into a LOCAL. Assigning sm.deviceResources up front and returning
+	// mid-loop on a bad part published a partial, unindexed set onto the
+	// manager and destroyed the previously loaded one.
+	resources := &DeviceResources{
 		SNMP:    make([]SNMPResource, 0),
 		SSH:     make([]SSHResource, 0),
 		API:     make([]APIResource, 0),
 		Optical: make([]OpticalChannel, 0),
 	}
 
+	parts := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -84,13 +377,21 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 		filePath := fmt.Sprintf("%s/%s", dirPath, entry.Name())
 		file, err := os.Open(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to open %s: %v", filePath, err)
+			return fmt.Errorf("failed to open %s: %w", filePath, err)
 		}
 
+		// A value, not a pointer, so a part containing `null` decodes to an
+		// empty part rather than to nil. Only LoadResources' single-file
+		// decode targets a pointer.
 		var partResources DeviceResources
-		if err := json.NewDecoder(file).Decode(&partResources); err != nil {
+		dec := json.NewDecoder(file)
+		if err := dec.Decode(&partResources); err != nil {
 			file.Close()
-			return fmt.Errorf("failed to parse %s: %v", filePath, err)
+			return invalidResourceCause(filePath, err, "failed to parse: %v", err)
+		}
+		if err := checkSingleDocument(filePath, dec); err != nil {
+			file.Close()
+			return err
 		}
 		file.Close()
 
@@ -100,21 +401,42 @@ func (sm *SimulatorManager) loadResourcesFromDir(dirPath string) error {
 			return err
 		}
 
-		sm.deviceResources.SNMP = append(sm.deviceResources.SNMP, partResources.SNMP...)
-		sm.deviceResources.SSH = append(sm.deviceResources.SSH, partResources.SSH...)
-		sm.deviceResources.API = append(sm.deviceResources.API, partResources.API...)
-		sm.deviceResources.Optical = append(sm.deviceResources.Optical, partResources.Optical...)
+		resources.SNMP = append(resources.SNMP, partResources.SNMP...)
+		resources.SSH = append(resources.SSH, partResources.SSH...)
+		resources.API = append(resources.API, partResources.API...)
+		resources.Optical = append(resources.Optical, partResources.Optical...)
+		parts++
 	}
 
-	if err := validateOpticalInventory(resourceFileForDir(dirPath), sm.deviceResources); err != nil {
+	// Two distinct emptinesses, and BOTH publish a set from which every device
+	// answers no OID at all. A directory with no .json part in it is the first;
+	// a directory whose parts are all `{}` or `{"snmp":[]}` is the second, and
+	// it reaches here with parts > 0. Counting FILES alone left that second
+	// route open — the very outcome the single-file rule exists to prevent —
+	// so the merged set is counted too, exactly as a single file is.
+	//
+	// The messages stay distinct because the remedies are: one directory needs
+	// a part, the other needs entries in the parts it has.
+	if parts == 0 {
+		return invalidResource(dirPath, "device-type directory contains no .json resource part")
+	}
+	if resourceEntryCount(resources) == 0 {
+		return invalidResource(dirPath, "device-type directory has %d .json part(s) but they "+
+			"contain no resource entries between them; at least one entry is needed in "+
+			"\"snmp\", \"ssh\", \"api\" or \"optical\"", parts)
+	}
+
+	if err := validateOpticalInventory(resourceFileForDir(dirPath), resources); err != nil {
 		return err
 	}
 
 	// Build indexes for loaded default resources
-	sm.buildResourceIndexes(sm.deviceResources)
+	sm.buildResourceIndexes(resources)
+
+	sm.deviceResources = resources
 
 	log.Printf("Loaded %d SNMP and %d SSH resources from directory %s",
-		len(sm.deviceResources.SNMP), len(sm.deviceResources.SSH), dirPath)
+		len(resources.SNMP), len(resources.SSH), dirPath)
 	return nil
 }
 
@@ -145,29 +467,29 @@ func validateOpticalInventory(resourceFile string, resources *DeviceResources) e
 		return nil
 	}
 	if resources == nil || len(resources.Optical) == 0 {
-		return fmt.Errorf("optical device type %s loaded no optical channels: expected an inventory part "+
+		return invalidResource(resourceFile, "optical device type loaded no optical channels: expected an inventory part "+
 			"with an %q array of %d channel(s); note the resource decoder is not strict, so a part whose "+
 			"key or shape is wrong is discarded silently — check the JSON structure",
-			resourceFile, "optical", prof.ChannelCount)
+			"optical", prof.ChannelCount)
 	}
 	seen := make(map[string]struct{}, len(resources.Optical))
 	for i, ch := range resources.Optical {
 		if ch.Name == "" {
-			return fmt.Errorf("optical device type %s: channel at index %d has an empty name; "+
-				"the OCH component name is the per-channel discovery key and is required", resourceFile, i)
+			return invalidResource(resourceFile, "optical device type: channel at index %d has an empty name; "+
+				"the OCH component name is the per-channel discovery key and is required", i)
 		}
 		if _, dup := seen[ch.Name]; dup {
-			return fmt.Errorf("optical device type %s: duplicate optical channel name %q; "+
-				"component names must be unique", resourceFile, ch.Name)
+			return invalidResource(resourceFile, "optical device type: duplicate optical channel name %q; "+
+				"component names must be unique", ch.Name)
 		}
 		seen[ch.Name] = struct{}{}
 	}
 	// Checked last: a malformed channel is a more precise diagnosis than a
 	// count mismatch, and both would otherwise be true at once.
 	if prof.ChannelCount > 0 && len(resources.Optical) != prof.ChannelCount {
-		return fmt.Errorf("optical device type %s declares %d optical channel(s) in its device profile "+
+		return invalidResource(resourceFile, "optical device type declares %d optical channel(s) in its device profile "+
 			"but its inventory loaded %d; profile and inventory must agree, or one of them is stale",
-			resourceFile, prof.ChannelCount, len(resources.Optical))
+			prof.ChannelCount, len(resources.Optical))
 	}
 	return nil
 }
@@ -225,21 +547,23 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 	}
 	for _, r := range resources.SNMP {
 		if isSNMPExceptionValue(r.Response) {
-			return fmt.Errorf("resource %s: OID %s has value %q, which collides with an SNMP exception "+
-				"sentinel and would be encoded as an RFC 3416 exception instead of a string. "+
-				"There is no escaping form: change the value. To make the OID answer "+
-				"noSuchObject on purpose, omit the entry entirely, since an absent OID "+
-				"already answers with the exception",
-				resourceFile, r.OID, r.Response)
+			return invalidResource(resourceFile,
+				"OID %s has value %q, which collides with an SNMP exception "+
+					"sentinel and would be encoded as an RFC 3416 exception instead of a string. "+
+					"There is no escaping form: change the value. To make the OID answer "+
+					"noSuchObject on purpose, omit the entry entirely, since an absent OID "+
+					"already answers with the exception",
+				r.OID, r.Response)
 		}
 
 		if snmpTypeTag(normaliseResourceOID(r.OID)) == ASN1_OBJECT_ID && !encodableAsOID(r.Response) {
-			return fmt.Errorf("resource %s: OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
-				"is not an OID this encoder can represent. It needs at least two dot-separated "+
-				"numbers, a first arc of 0, 1 or 2, a second arc no greater than 39 when the first "+
-				"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes. "+
-				"Correct the value; served as-is it would go out as the degenerate encoding 06 00",
-				resourceFile, r.OID, r.Response)
+			return invalidResource(resourceFile,
+				"OID %s is OID-typed (OBJECT IDENTIFIER) but its value %q "+
+					"is not an OID this encoder can represent. It needs at least two dot-separated "+
+					"numbers, a first arc of 0, 1 or 2, a second arc no greater than 39 when the first "+
+					"is 0 or 1, every arc within 4294967295, and an encoded body under 65536 bytes. "+
+					"Correct the value; served as-is it would go out as the degenerate encoding 06 00",
+				r.OID, r.Response)
 		}
 	}
 	return nil
@@ -323,7 +647,11 @@ var resourceFilenameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+\.json$`)
 // LoadSpecificResources loads resources from a directory in the resources folder
 func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResources, error) {
 	if !resourceFilenameRe.MatchString(filename) {
-		return nil, fmt.Errorf("invalid resource file name %q (expected <device-type>.json)", filename)
+		// Caller data that is wrong, so it is classified with the content
+		// faults and takes the same 400 at REST. filepath.Base keeps a name
+		// with separators in it out of the response body.
+		return nil, invalidResource(filename, "invalid resource file name (expected <device-type>.json, "+
+			"a slug of letters, digits, underscores and hyphens)")
 	}
 
 	// Check cache first
@@ -335,46 +663,80 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 	dirName := strings.TrimSuffix(filename, ".json")
 	dirPath := fmt.Sprintf("resources/%s", dirName)
 
-	// Check if directory exists (new structure)
-	if info, err := os.Stat(dirPath); err == nil && info.IsDir() {
+	// Check if directory exists (new structure).
+	//
+	// A stat error that is NOT "does not exist" — permission denied, above
+	// all — must not fall through to the single-file branch, where it ends as
+	// not-found and makes round-robin SKIP the type. An unreadable directory
+	// is not evidence that the device type is unshipped, and skipping it
+	// changes the device mix silently.
+	info, err := os.Stat(dirPath)
+	switch {
+	case err == nil && info.IsDir():
 		return sm.loadSpecificResourcesFromDir(dirPath, filename)
+	case err != nil && !os.IsNotExist(err):
+		return nil, invalidResourceCause(dirPath, err, "cannot stat the device-type directory: %v", err)
 	}
 
 	// Fallback to old single-file format for backwards compatibility
 	resourcePath := fmt.Sprintf("resources/%s", filename)
 	if _, err := os.Stat(resourcePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("resource directory or file %s not found", filename)
+		return nil, notFoundResource(filename, "no such device type %q: no resource directory "+
+			"or single-file resource is shipped for it", strings.TrimSuffix(filename, ".json"))
 	}
 
 	file, err := os.Open(resourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open resource file %s: %v", resourcePath, err)
+		return nil, fmt.Errorf("failed to open resource file %s: %w", resourcePath, err)
 	}
 	defer file.Close()
 
-	var resources DeviceResources
-	if err := json.NewDecoder(file).Decode(&resources); err != nil {
-		return nil, fmt.Errorf("failed to parse resource file %s: %v", resourcePath, err)
+	// Decoded into a POINTER so a document that is literally `null` is
+	// DISTINGUISHABLE from an empty object (nl6#538). Into a value it decoded
+	// to a zero DeviceResources, passed the guard, was cached, and produced
+	// devices that answer no OID at all — no error and no warning. A
+	// single-file resource that says nothing is invalid content on every
+	// loader, not just the startup one.
+	//
+	// Directory PARTS keep decoding into a value: a part legitimately carries
+	// only some sections, so an empty one is ordinary there.
+	var resources *DeviceResources
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(&resources); err != nil {
+		return nil, invalidResourceCause(resourcePath, err, "failed to parse: %v", err)
+	}
+	if resources == nil {
+		return nil, invalidResource(resourcePath, "decoded to JSON null; expected an object with "+
+			"\"snmp\", \"ssh\", \"api\" and/or \"optical\" arrays")
+	}
+	if err := checkSingleDocument(resourcePath, dec); err != nil {
+		return nil, err
+	}
+	// Same rule as LoadResources: a zero-entry single file would be CACHED as
+	// a device type from which every device answers no OID at all.
+	if resourceEntryCount(resources) == 0 {
+		return nil, invalidResource(resourcePath, "contains no resource entries; a single-file resource "+
+			"needs at least one entry in \"snmp\", \"ssh\", \"api\" or \"optical\"")
 	}
 
-	if err := validateSNMPResourceValues(resourcePath, &resources); err != nil {
+	if err := validateSNMPResourceValues(resourcePath, resources); err != nil {
 		return nil, err
 	}
 
 	// Build performance indexes for fast lookups (also sorts by OID after normalizing)
-	sm.buildResourceIndexes(&resources)
+	sm.buildResourceIndexes(resources)
 
 	// Cache the loaded resources with indexes
-	sm.resourcesCache[filename] = &resources
+	sm.resourcesCache[filename] = resources
 
-	return &resources, nil
+	return resources, nil
 }
 
 // loadSpecificResourcesFromDir loads and merges all JSON files from a resource directory
 func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKey string) (*DeviceResources, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory %s: %v", dirPath, err)
+		return nil, fmt.Errorf("failed to read directory %s: %w", dirPath, err)
 	}
 
 	resources := &DeviceResources{
@@ -384,6 +746,7 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 		Optical: make([]OpticalChannel, 0),
 	}
 
+	parts := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -392,13 +755,18 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 		filePath := fmt.Sprintf("%s/%s", dirPath, entry.Name())
 		file, err := os.Open(filePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open %s: %v", filePath, err)
+			return nil, fmt.Errorf("failed to open %s: %w", filePath, err)
 		}
 
 		var partResources DeviceResources
-		if err := json.NewDecoder(file).Decode(&partResources); err != nil {
+		dec := json.NewDecoder(file)
+		if err := dec.Decode(&partResources); err != nil {
 			file.Close()
-			return nil, fmt.Errorf("failed to parse %s: %v", filePath, err)
+			return nil, invalidResourceCause(filePath, err, "failed to parse: %v", err)
+		}
+		if err := checkSingleDocument(filePath, dec); err != nil {
+			file.Close()
+			return nil, err
 		}
 		file.Close()
 
@@ -411,6 +779,18 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 		resources.SSH = append(resources.SSH, partResources.SSH...)
 		resources.API = append(resources.API, partResources.API...)
 		resources.Optical = append(resources.Optical, partResources.Optical...)
+		parts++
+	}
+
+	// Same two rules as loadResourcesFromDir, and here an empty result would
+	// additionally be CACHED as a device type answering no OID at all.
+	if parts == 0 {
+		return nil, invalidResource(dirPath, "device-type directory contains no .json resource part")
+	}
+	if resourceEntryCount(resources) == 0 {
+		return nil, invalidResource(dirPath, "device-type directory has %d .json part(s) but they "+
+			"contain no resource entries between them; at least one entry is needed in "+
+			"\"snmp\", \"ssh\", \"api\" or \"optical\"", parts)
 	}
 
 	if err := validateOpticalInventory(resourceFileForDir(dirPath), resources); err != nil {
