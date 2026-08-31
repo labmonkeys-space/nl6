@@ -1,0 +1,39 @@
+# EtherLike-MIB (RFC 3635) dot3HCStatsTable, columns 1..12 (only 1..6 are assigned)
+#
+# MIB facts EXTRACTED with net-snmp, not hand-written. This file is the
+# independent side of TestOidTypeTableAgreesWithTheMIBs. oidTypeTable and its
+# test-side column lists were written in the same change from the same reading
+# of the same MIBs, so a misreading shared by both would pass every assertion
+# in the package; this fixture is what catches it. It is not independent of
+# net-snmp, but it IS independent of the hand-written table, and a misread
+# column number is the actual risk.
+#
+# The test READS this file. It does not shell out to snmptranslate: no CI
+# workflow installs net-snmp, so a tool-dependent test would t.Skip in CI and
+# assert nothing.
+#
+# Regenerate (needs net-snmp and its MIBs; run from go/nl6):
+#   for c in $(seq 1 12); do
+#     snmptranslate -Td -m ALL -M /usr/share/snmp/mibs .1.3.6.1.2.1.10.7.11.1.$c
+#   done
+#
+# Extracted with: snmptranslate: illegal option -- -
+# MIB path:       /usr/share/snmp/mibs
+# Extracted on:   2026-08-31
+#
+# Format: oid<TAB>mib-name<TAB>syntax
+# A row the extraction set cannot resolve carries '-' in both fields. Such
+# rows are COUNTED by the test, never silently skipped.
+# 12 rows, 6 resolved
+.1.3.6.1.2.1.10.7.11.1.1	EtherLike-MIB::dot3HCStatsAlignmentErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.2	EtherLike-MIB::dot3HCStatsFCSErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.3	EtherLike-MIB::dot3HCStatsInternalMacTransmitErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.4	EtherLike-MIB::dot3HCStatsFrameTooLongs	Counter64
+.1.3.6.1.2.1.10.7.11.1.5	EtherLike-MIB::dot3HCStatsInternalMacReceiveErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.6	EtherLike-MIB::dot3HCStatsSymbolErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.7	-	-
+.1.3.6.1.2.1.10.7.11.1.8	-	-
+.1.3.6.1.2.1.10.7.11.1.9	-	-
+.1.3.6.1.2.1.10.7.11.1.10	-	-
+.1.3.6.1.2.1.10.7.11.1.11	-	-
+.1.3.6.1.2.1.10.7.11.1.12	-	-

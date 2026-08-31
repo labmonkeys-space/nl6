@@ -1,0 +1,111 @@
+# Every oidTypeTable prefix, resolved against the extraction set
+#
+# MIB facts EXTRACTED with net-snmp, not hand-written. This file is the
+# independent side of TestOidTypeTableAgreesWithTheMIBs. oidTypeTable and its
+# test-side column lists were written in the same change from the same reading
+# of the same MIBs, so a misreading shared by both would pass every assertion
+# in the package; this fixture is what catches it. It is not independent of
+# net-snmp, but it IS independent of the hand-written table, and a misread
+# column number is the actual risk.
+#
+# The test READS this file. It does not shell out to snmptranslate: no CI
+# workflow installs net-snmp, so a tool-dependent test would t.Skip in CI and
+# assert nothing.
+#
+# Regenerate (needs net-snmp and its MIBs; run from go/nl6):
+#   grep -oE '\{"\.[0-9.]+", ASN1_[A-Z0-9_]+\}' snmp_encoding.go |
+#     sed -E 's/\{"([^"]+)".*/\1/' | while read -r p; do
+#     snmptranslate -Td -m ALL -M /usr/share/snmp/mibs "$p"
+#   done
+#
+# Extracted with: snmptranslate: illegal option -- -
+# MIB path:       /usr/share/snmp/mibs
+# Extracted on:   2026-08-31
+#
+# Format: oid<TAB>mib-name<TAB>syntax
+# A row the extraction set cannot resolve carries '-' in both fields. Such
+# rows are COUNTED by the test, never silently skipped.
+# 83 rows, 71 resolved
+.1.3.6.1.2.1.1.2	SNMPv2-MIB::sysObjectID	OBJECT IDENTIFIER
+.1.3.6.1.2.1.1.3	SNMPv2-MIB::sysUpTime	TimeTicks
+.1.3.6.1.2.1.2.2.1.5	IF-MIB::ifSpeed	Gauge32
+.1.3.6.1.2.1.2.2.1.9	IF-MIB::ifLastChange	TimeTicks
+.1.3.6.1.2.1.2.2.1.10	IF-MIB::ifInOctets	Counter32
+.1.3.6.1.2.1.2.2.1.11	IF-MIB::ifInUcastPkts	Counter32
+.1.3.6.1.2.1.2.2.1.12	IF-MIB::ifInNUcastPkts	Counter32
+.1.3.6.1.2.1.2.2.1.13	IF-MIB::ifInDiscards	Counter32
+.1.3.6.1.2.1.2.2.1.14	IF-MIB::ifInErrors	Counter32
+.1.3.6.1.2.1.2.2.1.15	IF-MIB::ifInUnknownProtos	Counter32
+.1.3.6.1.2.1.2.2.1.16	IF-MIB::ifOutOctets	Counter32
+.1.3.6.1.2.1.2.2.1.17	IF-MIB::ifOutUcastPkts	Counter32
+.1.3.6.1.2.1.2.2.1.18	IF-MIB::ifOutNUcastPkts	Counter32
+.1.3.6.1.2.1.2.2.1.19	IF-MIB::ifOutDiscards	Counter32
+.1.3.6.1.2.1.2.2.1.20	IF-MIB::ifOutErrors	Counter32
+.1.3.6.1.2.1.2.2.1.21	IF-MIB::ifOutQLen	Gauge32
+.1.3.6.1.2.1.31.1.1.1.2	IF-MIB::ifInMulticastPkts	Counter32
+.1.3.6.1.2.1.31.1.1.1.3	IF-MIB::ifInBroadcastPkts	Counter32
+.1.3.6.1.2.1.31.1.1.1.4	IF-MIB::ifOutMulticastPkts	Counter32
+.1.3.6.1.2.1.31.1.1.1.5	IF-MIB::ifOutBroadcastPkts	Counter32
+.1.3.6.1.2.1.31.1.1.1.6	IF-MIB::ifHCInOctets	Counter64
+.1.3.6.1.2.1.31.1.1.1.7	IF-MIB::ifHCInUcastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.8	IF-MIB::ifHCInMulticastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.9	IF-MIB::ifHCInBroadcastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.10	IF-MIB::ifHCOutOctets	Counter64
+.1.3.6.1.2.1.31.1.1.1.11	IF-MIB::ifHCOutUcastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.12	IF-MIB::ifHCOutMulticastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.13	IF-MIB::ifHCOutBroadcastPkts	Counter64
+.1.3.6.1.2.1.31.1.1.1.15	IF-MIB::ifHighSpeed	Gauge32
+.1.3.6.1.2.1.31.1.1.1.19	IF-MIB::ifCounterDiscontinuityTime	TimeTicks
+.1.3.6.1.2.1.4.31.1.1.4	IP-MIB::ipSystemStatsHCInReceives	Counter64
+.1.3.6.1.2.1.4.31.1.1.6	IP-MIB::ipSystemStatsHCInOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.13	IP-MIB::ipSystemStatsHCInForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.1.1.19	IP-MIB::ipSystemStatsHCInDelivers	Counter64
+.1.3.6.1.2.1.4.31.1.1.21	IP-MIB::ipSystemStatsHCOutRequests	Counter64
+.1.3.6.1.2.1.4.31.1.1.24	IP-MIB::ipSystemStatsHCOutForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.1.1.31	IP-MIB::ipSystemStatsHCOutTransmits	Counter64
+.1.3.6.1.2.1.4.31.1.1.33	IP-MIB::ipSystemStatsHCOutOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.35	IP-MIB::ipSystemStatsHCInMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.37	IP-MIB::ipSystemStatsHCInMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.39	IP-MIB::ipSystemStatsHCOutMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.41	IP-MIB::ipSystemStatsHCOutMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.43	IP-MIB::ipSystemStatsHCInBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.45	IP-MIB::ipSystemStatsHCOutBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.4	IP-MIB::ipIfStatsHCInReceives	Counter64
+.1.3.6.1.2.1.4.31.3.1.6	IP-MIB::ipIfStatsHCInOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.13	IP-MIB::ipIfStatsHCInForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.3.1.19	IP-MIB::ipIfStatsHCInDelivers	Counter64
+.1.3.6.1.2.1.4.31.3.1.21	IP-MIB::ipIfStatsHCOutRequests	Counter64
+.1.3.6.1.2.1.4.31.3.1.24	IP-MIB::ipIfStatsHCOutForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.3.1.31	IP-MIB::ipIfStatsHCOutTransmits	Counter64
+.1.3.6.1.2.1.4.31.3.1.33	IP-MIB::ipIfStatsHCOutOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.35	IP-MIB::ipIfStatsHCInMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.37	IP-MIB::ipIfStatsHCInMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.39	IP-MIB::ipIfStatsHCOutMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.41	IP-MIB::ipIfStatsHCOutMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.43	IP-MIB::ipIfStatsHCInBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.45	IP-MIB::ipIfStatsHCOutBcastPkts	Counter64
+.1.3.6.1.2.1.10.7.11.1.1	EtherLike-MIB::dot3HCStatsAlignmentErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.2	EtherLike-MIB::dot3HCStatsFCSErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.3	EtherLike-MIB::dot3HCStatsInternalMacTransmitErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.4	EtherLike-MIB::dot3HCStatsFrameTooLongs	Counter64
+.1.3.6.1.2.1.10.7.11.1.5	EtherLike-MIB::dot3HCStatsInternalMacReceiveErrors	Counter64
+.1.3.6.1.2.1.10.7.11.1.6	EtherLike-MIB::dot3HCStatsSymbolErrors	Counter64
+.1.3.6.1.2.1.4.20.1.1	IP-MIB::ipAdEntAddr	IpAddress
+.1.3.6.1.2.1.4.20.1.3	IP-MIB::ipAdEntNetMask	IpAddress
+.1.3.6.1.2.1.4.21.1.1	RFC1213-MIB::ipRouteDest	IpAddress
+.1.3.6.1.2.1.4.21.1.7	RFC1213-MIB::ipRouteNextHop	IpAddress
+.1.3.6.1.2.1.4.21.1.11	RFC1213-MIB::ipRouteMask	IpAddress
+.1.3.6.1.2.1.4.22.1.3	IP-MIB::ipNetToMediaNetAddress	IpAddress
+.1.3.6.1.2.1.31.1.1.1.18	IF-MIB::ifAlias	OCTET STRING (0..64)
+.1.3.6.1.6.3.15.1.1	-	-
+.1.3.6.1.4.1.9.2.1.8	-	-
+.1.0.8802.1.1.2.1.3.2	-	-
+.1.0.8802.1.1.2.1.3.3	-	-
+.1.0.8802.1.1.2.1.3.4	-	-
+.1.0.8802.1.1.2.1.3.7.1.3	-	-
+.1.0.8802.1.1.2.1.3.7.1.4	-	-
+.1.0.8802.1.1.2.1.4.1.1.5	-	-
+.1.0.8802.1.1.2.1.4.1.1.7	-	-
+.1.0.8802.1.1.2.1.4.1.1.8	-	-
+.1.0.8802.1.1.2.1.4.1.1.9	-	-
+.1.0.8802.1.1.2.1.4.1.1.10	-	-

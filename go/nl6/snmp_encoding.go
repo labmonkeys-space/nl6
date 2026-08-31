@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -411,11 +412,12 @@ type oidTypeEntry struct {
 
 // oidTypeTable maps standard MIB OID column prefixes to their RFC-mandated
 // ASN.1 application type tags. snmpTypeTag() matches a leaf OID against each
-// entry using HasPrefix(oid, prefix+".") OR exact equality (oid == prefix),
-// so both ".1.3.6.1.2.1.1.2.0" and the bare ".1.3.6.1.2.1.1.2" match the
-// sysObjectID entry. The trailing "." in the HasPrefix check prevents
-// digit-extension false matches (e.g. prefix "...1" cannot match "...10.*"),
-// so ordering within the table is irrelevant for correctness.
+// entry on the prefix followed by a sub-identifier boundary, OR on exact
+// equality, so both ".1.3.6.1.2.1.1.2.0" and the bare ".1.3.6.1.2.1.1.2" match
+// the sysObjectID entry. Requiring the "." boundary prevents digit-extension
+// false matches (prefix "...1" cannot match "...10.*"), so ordering within the
+// table is irrelevant for correctness — see snmpTypeTag for the comparison, and
+// TestOidTypeTableHasNoShadowedRows for the assertion that no row is inert.
 var oidTypeTable = []oidTypeEntry{
 	// MIB-II system group
 	{".1.3.6.1.2.1.1.2", ASN1_OBJECT_ID}, // sysObjectID
@@ -452,6 +454,61 @@ var oidTypeTable = []oidTypeEntry{
 	{".1.3.6.1.2.1.31.1.1.1.13", ASN1_COUNTER64}, // ifHCOutBroadcastPkts
 	{".1.3.6.1.2.1.31.1.1.1.15", ASN1_GAUGE32},   // ifHighSpeed
 	{".1.3.6.1.2.1.31.1.1.1.19", ASN1_TIMETICKS}, // ifCounterDiscontinuityTime
+
+	// IP-MIB ipSystemStatsTable HC columns — RFC 4293. The 64-bit halves of
+	// this table, and nothing else: every other column is a Counter32, an
+	// INTEGER enum, a TimeTicks or an Unsigned32, and declaring one of those
+	// Counter64 would be a wire defect rather than a validation improvement.
+	// The column numbers were read out of the shipped IP-MIB with
+	// snmptranslate, not from memory — a hand-recalled list was wrong in this
+	// very table on the first attempt (nl6#541).
+	{".1.3.6.1.2.1.4.31.1.1.4", ASN1_COUNTER64},  // ipSystemStatsHCInReceives
+	{".1.3.6.1.2.1.4.31.1.1.6", ASN1_COUNTER64},  // ipSystemStatsHCInOctets
+	{".1.3.6.1.2.1.4.31.1.1.13", ASN1_COUNTER64}, // ipSystemStatsHCInForwDatagrams
+	{".1.3.6.1.2.1.4.31.1.1.19", ASN1_COUNTER64}, // ipSystemStatsHCInDelivers
+	{".1.3.6.1.2.1.4.31.1.1.21", ASN1_COUNTER64}, // ipSystemStatsHCOutRequests
+	{".1.3.6.1.2.1.4.31.1.1.24", ASN1_COUNTER64}, // ipSystemStatsHCOutForwDatagrams
+	{".1.3.6.1.2.1.4.31.1.1.31", ASN1_COUNTER64}, // ipSystemStatsHCOutTransmits
+	{".1.3.6.1.2.1.4.31.1.1.33", ASN1_COUNTER64}, // ipSystemStatsHCOutOctets
+	{".1.3.6.1.2.1.4.31.1.1.35", ASN1_COUNTER64}, // ipSystemStatsHCInMcastPkts
+	{".1.3.6.1.2.1.4.31.1.1.37", ASN1_COUNTER64}, // ipSystemStatsHCInMcastOctets
+	{".1.3.6.1.2.1.4.31.1.1.39", ASN1_COUNTER64}, // ipSystemStatsHCOutMcastPkts
+	{".1.3.6.1.2.1.4.31.1.1.41", ASN1_COUNTER64}, // ipSystemStatsHCOutMcastOctets
+	{".1.3.6.1.2.1.4.31.1.1.43", ASN1_COUNTER64}, // ipSystemStatsHCInBcastPkts
+	{".1.3.6.1.2.1.4.31.1.1.45", ASN1_COUNTER64}, // ipSystemStatsHCOutBcastPkts
+
+	// IP-MIB ipIfStatsTable HC columns — RFC 4293. The two tables share their
+	// column layout for every HC column; where they differ is column 2, which
+	// is ipSystemStatsEntry's unassigned slot and ipIfStatsIfIndex here. (An
+	// earlier version of this comment said "column 22", which is
+	// ipSystemStatsOutNoRoutes — assigned, Counter32. The mistake was inside
+	// the sentence claiming provenance, which is the sentence that licenses
+	// these 34 rows, so it is corrected in the open rather than quietly.)
+	{".1.3.6.1.2.1.4.31.3.1.4", ASN1_COUNTER64},  // ipIfStatsHCInReceives
+	{".1.3.6.1.2.1.4.31.3.1.6", ASN1_COUNTER64},  // ipIfStatsHCInOctets
+	{".1.3.6.1.2.1.4.31.3.1.13", ASN1_COUNTER64}, // ipIfStatsHCInForwDatagrams
+	{".1.3.6.1.2.1.4.31.3.1.19", ASN1_COUNTER64}, // ipIfStatsHCInDelivers
+	{".1.3.6.1.2.1.4.31.3.1.21", ASN1_COUNTER64}, // ipIfStatsHCOutRequests
+	{".1.3.6.1.2.1.4.31.3.1.24", ASN1_COUNTER64}, // ipIfStatsHCOutForwDatagrams
+	{".1.3.6.1.2.1.4.31.3.1.31", ASN1_COUNTER64}, // ipIfStatsHCOutTransmits
+	{".1.3.6.1.2.1.4.31.3.1.33", ASN1_COUNTER64}, // ipIfStatsHCOutOctets
+	{".1.3.6.1.2.1.4.31.3.1.35", ASN1_COUNTER64}, // ipIfStatsHCInMcastPkts
+	{".1.3.6.1.2.1.4.31.3.1.37", ASN1_COUNTER64}, // ipIfStatsHCInMcastOctets
+	{".1.3.6.1.2.1.4.31.3.1.39", ASN1_COUNTER64}, // ipIfStatsHCOutMcastPkts
+	{".1.3.6.1.2.1.4.31.3.1.41", ASN1_COUNTER64}, // ipIfStatsHCOutMcastOctets
+	{".1.3.6.1.2.1.4.31.3.1.43", ASN1_COUNTER64}, // ipIfStatsHCInBcastPkts
+	{".1.3.6.1.2.1.4.31.3.1.45", ASN1_COUNTER64}, // ipIfStatsHCOutBcastPkts
+
+	// EtherLike-MIB dot3HCStatsTable — RFC 3635. Every assigned column of
+	// this table is a Counter64; it exists only to carry the 64-bit halves of
+	// dot3StatsTable. Listed per column rather than as one table-wide prefix
+	// so a future column cannot inherit a type nobody checked.
+	{".1.3.6.1.2.1.10.7.11.1.1", ASN1_COUNTER64}, // dot3HCStatsAlignmentErrors
+	{".1.3.6.1.2.1.10.7.11.1.2", ASN1_COUNTER64}, // dot3HCStatsFCSErrors
+	{".1.3.6.1.2.1.10.7.11.1.3", ASN1_COUNTER64}, // dot3HCStatsInternalMacTransmitErrors
+	{".1.3.6.1.2.1.10.7.11.1.4", ASN1_COUNTER64}, // dot3HCStatsFrameTooLongs
+	{".1.3.6.1.2.1.10.7.11.1.5", ASN1_COUNTER64}, // dot3HCStatsInternalMacReceiveErrors
+	{".1.3.6.1.2.1.10.7.11.1.6", ASN1_COUNTER64}, // dot3HCStatsSymbolErrors
 
 	// ipAddrTable — RFC 4293
 	{".1.3.6.1.2.1.4.20.1.1", ASN1_IPADDRESS}, // ipAdEntAddr
@@ -500,11 +557,51 @@ var oidTypeTable = []oidTypeEntry{
 // if the OID is not in the well-known type table (use INTEGER / OCTET_STRING).
 func snmpTypeTag(oid string) byte {
 	for _, e := range oidTypeTable {
-		if strings.HasPrefix(oid, e.prefix+".") || oid == e.prefix {
+		// Allocation-free equivalent of `HasPrefix(oid, e.prefix+".") ||
+		// oid == e.prefix`. The concatenated form allocated a string PER ROW
+		// PER CALL, and this runs once per encoded value on every SNMP response
+		// of every version, plus once per step of a v1 GETNEXT skip run.
+		//
+		// The number is the committed A/B, not a remembered one:
+		// BenchmarkSnmpTypeTagAB runs both forms over the SAME table, so the
+		// difference is the comparison and nothing else, and
+		// TestSnmpTypeTagMatchesTheConcatenatingForm plus
+		// FuzzSnmpTypeTagFormsAgree pin that they answer identically. On an
+		// M1 Max at -benchtime=200000x a full scan (the `miss` case) measures
+		// ~1170 ns concatenating and ~197 ns here. Run it rather than trusting
+		// this line: absolute figures do not travel between machines, and the
+		// first version of this comment carried a ~55 ns that corresponded to
+		// no measurement of a full scan at all.
+		if len(oid) >= len(e.prefix) && oid[:len(e.prefix)] == e.prefix &&
+			(len(oid) == len(e.prefix) || oid[len(e.prefix)] == '.') {
 			return e.tag
 		}
 	}
 	return 0
+}
+
+// snmpTypeName names the SNMP application type carried by a tag, for use in
+// operator-facing diagnostics. It covers the tags oidTypeTable can declare;
+// anything else is reported by its hex value rather than guessed at.
+func snmpTypeName(tag byte) string {
+	switch tag {
+	case ASN1_OCTET_STRING:
+		return "OCTET STRING"
+	case ASN1_OBJECT_ID:
+		return "OBJECT IDENTIFIER"
+	case ASN1_IPADDRESS:
+		return "IpAddress"
+	case ASN1_COUNTER32:
+		return "Counter32"
+	case ASN1_GAUGE32:
+		return "Gauge32"
+	case ASN1_TIMETICKS:
+		return "TimeTicks"
+	case ASN1_COUNTER64:
+		return "Counter64"
+	default:
+		return fmt.Sprintf("tag 0x%02X", tag)
+	}
 }
 
 // encodeTypedValue encodes an SNMP value using the correct ASN.1 type tag for
@@ -545,7 +642,20 @@ func encodeTypedValue(oid, value string) []byte {
 		return []byte{0x80, 0x00} // noSuchObject   [0] IMPLICIT NULL
 	}
 
-	tag := snmpTypeTag(oid)
+	return encodeTypedValueAtTag(oid, value, snmpTypeTag(oid))
+}
+
+// encodeTypedValueAtTag is encodeTypedValue's type dispatch, split out so a
+// caller that has already resolved the tag does not pay for the linear
+// oidTypeTable scan twice. It is the SAME code the wire takes, deliberately:
+// validateSNMPResourceValues' typed-class rule (nl6#541) decides degradation by
+// calling this and comparing the emitted tag with the declared one, and it must
+// be the encoder that answers, never a predicate that agrees with it today.
+//
+// The sentinel test lives in encodeTypedValue above rather than here, because it
+// precedes the tag: a caller reaching this function has already decided that the
+// value is data.
+func encodeTypedValueAtTag(oid, value string, tag byte) []byte {
 	switch tag {
 	case ASN1_OCTET_STRING:
 		// Force OCTET STRING even when the value parses as an integer

@@ -33,6 +33,15 @@ import (
 // Width follows the MIB SYNTAX and the encoder (`encodeTypedValue`): a Gauge
 // leaf must be in the `oidTypeTable` and parses as uint32; an INTEGER leaf
 // takes the default branch and must fit int32.
+//
+// STILL NEEDED after nl6#541 added the load-time typed-class rule, and this is
+// the decision the spec asked for: the load guard can only compare against a
+// type oidTypeTable declares, and four of the five leaves below (writeMem,
+// busyPer, avgBusy1, avgBusy5) are INTEGER leaves the table does not type. For
+// those, encodeTypedValue's default branch emits INTEGER for a number and OCTET
+// STRING for anything else, and both are legal encodings, so there is nothing
+// for the guard to refuse — this test is their only coverage. freeMem, the leaf
+// that shipped nl6#515, is now covered twice: here, and at load by rule 3.
 var numericLeafOIDs = []struct {
 	oid      string
 	name     string

@@ -256,7 +256,16 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // current code proves nothing about "before"; an earlier draft of this file did
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
-const shippedOIDEncodingDigest = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
+//
+// RE-PINNED once, by nl6#541, from the 09546c3 value below to the constant
+// after it. The cause is a CORPUS change, not an encoding change: nl6#541
+// deleted the bare column OID 1.3.6.1.2.1.4.21.1.1 ("ipRouteDest" with no
+// instance, valued "1") from the 14 profiles carrying it, so the corpus lost one
+// distinct OID. That is not asserted here as a comment — see
+// TestRePinIsOnlyTheDeletedOID, which puts the OID back and requires the
+// 09546c3 digest, byte for byte.
+const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
+const shippedOIDEncodingDigest = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -611,4 +620,44 @@ func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
 	if fast := appendOID(nil, over); !bytes.Equal(fast, degenerate) {
 		t.Fatalf("appendOID accepted a body of %d bytes: % x...", maxOIDBodyBytes+1, fast[:4])
 	}
+}
+
+// TestRePinIsOnlyTheDeletedOID makes the re-pin above self-proving rather than
+// a claim in a comment. This repo's rule is that the number is the evidence, so
+// the "only cause is one deleted OID" statement is re-derived here: put
+// 1.3.6.1.2.1.4.21.1.1 back into the corpus and the 09546c3 digest must return
+// exactly. It can only return if every other shipped OID still encodes to the
+// same bytes it did then, which is the compatibility claim the re-pin rests on.
+func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
+	const deleted = "1.3.6.1.2.1.4.21.1.1"
+
+	oids := collectShippedOIDs(t)
+	for _, o := range oids {
+		if o == deleted {
+			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+
+				"09546c3 digest or explain the new corpus", deleted)
+		}
+	}
+	restored := append(append([]string{}, oids...), deleted)
+	sort.Strings(restored)
+
+	h := sha256.New()
+	checked := 0
+	for _, oid := range restored {
+		if strings.Contains(oid, "{{") {
+			continue
+		}
+		checked++
+		// hash.Hash.Write never returns an error, but errcheck cannot know that.
+		_, _ = fmt.Fprintf(h, "%s=%x\n", oid, encodeOID(oid))
+	}
+	got := fmt.Sprintf("%x", h.Sum(nil))
+
+	if got != shippedOIDEncodingDigestAt09546c3 {
+		t.Errorf("restoring %s gives digest %s, want the 09546c3 value %s over %d OIDs.\n"+
+			"So the re-pin of shippedOIDEncodingDigest is NOT explained by that deletion alone: "+
+			"something else about what a shipped OID puts on the wire has changed.",
+			deleted, got, shippedOIDEncodingDigestAt09546c3, checked)
+	}
+	t.Logf("%d OIDs with %s restored reproduce the 09546c3 digest", checked, deleted)
 }

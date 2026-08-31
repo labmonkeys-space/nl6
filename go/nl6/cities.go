@@ -41,6 +41,24 @@ const unknownLocationName = "Unknown Location"
 // Global list of world cities loaded from CSV file
 var worldCities []WorldCity
 
+// fallbackCities is the small compiled-in set served when no worldcities
+// dataset is present. It is a package-level var rather than a literal inside
+// loadWorldCities because it is DATA, and data belongs out of control flow —
+// which has the useful side effect of making the load path's sentinel filter
+// testable: no CSV row can compose to a sentinel (every display string embeds
+// ", "), so this is the only input a test can drive one through.
+var fallbackCities = []WorldCity{
+	{"Tokyo, Japan", 35.6870, 139.7495},
+	{"New York, NY, USA", 40.6943, -73.9249},
+	{"London, England, UK", 51.5072, -0.1275},
+	{"Paris, France", 48.8566, 2.3522},
+	{"Sydney, Australia", -33.8678, 151.2100},
+	{"Berlin, Germany", 52.5167, 13.3833},
+	{"Singapore, Singapore", 1.3000, 103.8000},
+	{"Mumbai, India", 19.0758, 72.8775},
+	{"São Paulo, Brazil", -23.5500, -46.6333},
+}
+
 // loadWorldCities loads cities from worldcities directory (split CSV files)
 func loadWorldCities() error {
 	dirPath := "worldcities"
@@ -49,17 +67,16 @@ func loadWorldCities() error {
 	info, err := os.Stat(dirPath)
 	if err != nil || !info.IsDir() {
 		log.Printf("Failed to open worldcities directory, using fallback cities: %v", err)
-		// Fallback to a smaller set of cities if directory is not available
-		worldCities = []WorldCity{
-			{"Tokyo, Japan", 35.6870, 139.7495},
-			{"New York, NY, USA", 40.6943, -73.9249},
-			{"London, England, UK", 51.5072, -0.1275},
-			{"Paris, France", 48.8566, 2.3522},
-			{"Sydney, Australia", -33.8678, 151.2100},
-			{"Berlin, Germany", 52.5167, 13.3833},
-			{"Singapore, Singapore", 1.3000, 103.8000},
-			{"Mumbai, India", 19.0758, 72.8775},
-			{"São Paulo, Brazil", -23.5500, -46.6333},
+		// A COPY, so the filter below cannot shrink the compiled-in set for the
+		// rest of the process (and so a test that swaps fallbackCities sees its
+		// own slice untouched).
+		worldCities = append([]WorldCity(nil), fallbackCities...)
+		// The shipped fallback is compiled-in constants, so this cannot fire for
+		// it. Running the filter on BOTH branches is what makes the invariant
+		// hold of the published slice rather than of one source.
+		if dropped := dropSentinelLocations(); dropped > 0 {
+			log.Printf("Warning: dropped %d fallback city name(s) colliding with an SNMP "+
+				"exception sentinel", dropped)
 		}
 		return nil
 	}
@@ -89,9 +106,43 @@ func loadWorldCities() error {
 	for _, city := range uniqueLocations {
 		worldCities = append(worldCities, city)
 	}
+	dropped := dropSentinelLocations()
 
 	log.Printf("Loaded %d cities from worldcities directory (%d files)", len(worldCities), len(files))
+	if dropped > 0 {
+		log.Printf("Warning: dropped %d city name(s) colliding with an SNMP exception sentinel", dropped)
+	}
 	return nil
+}
+
+// dropSentinelLocations removes any loaded location whose display string is
+// exactly an RFC 3416 exception sentinel, and returns how many it removed.
+//
+// This is the ONE place the rule costs anything: it runs once per load, over the
+// whole dataset, rather than on the per-device draw. The first cut of nl6#541
+// put the check in getRandomLocation only, which is a per-device path — up to
+// 30,000 log lines at fleet start, one per draw, with the offending row still in
+// the slice to be drawn again. Filtering here also keeps the drawn city's
+// COORDINATES: diverting at draw time returned the coordinate-less "Unknown
+// Location", so one bad row silently cost a device its lat/lng.
+//
+// It covers both branches of loadWorldCities — the CSV dataset and the
+// compiled-in fallback list — because both feed the same slice.
+func dropSentinelLocations() int {
+	kept := worldCities[:0]
+	dropped := 0
+	for _, c := range worldCities {
+		if isSNMPExceptionValue(c.Name) {
+			log.Printf("Warning: dropping location %q: the name collides with an SNMP exception "+
+				"sentinel and would be served as an RFC 3416 exception instead of a sysLocation "+
+				"string", c.Name)
+			dropped++
+			continue
+		}
+		kept = append(kept, c)
+	}
+	worldCities = kept
+	return dropped
 }
 
 // processCSVFile reads a single CSV file and adds cities to the uniqueLocations map
@@ -138,6 +189,34 @@ func processCSVFile(filePath string, uniqueLocations map[string]WorldCity) error
 			location = fmt.Sprintf("%s, %s", city, country)
 		}
 
+		// nl6#541 part 3: sysLocation is served through encodeTypedValue, and
+		// the RFC 3416 exceptions travel to that encoder as strings in the
+		// VALUE space, so a display string exactly equal to one of them would
+		// be answered as an exception tag rather than as the string it is —
+		// the hazard validateSNMPResourceValues refuses for resource files,
+		// reaching the wire by a different route.
+		//
+		// The ROW is rejected rather than the file, unlike the resource-file
+		// guard: this dataset is tens of thousands of operator-supplied rows
+		// that the loader already skips individually when they are malformed,
+		// and one unusable city name is not a reason to leave a fleet with no
+		// locations at all. The skip is logged, because a silently dropped row
+		// is indistinguishable from a city the dataset never had.
+		//
+		// Not reachable with today's composition: every display string above
+		// embeds ", ", so no row can compose to a sentinel
+		// (TestWorldCitiesLocationCannotComposeToASentinel pins that, and is
+		// the reason this is an invariant guard rather than a live fix). The
+		// enforcement point a served value actually passes through is
+		// getRandomLocation; this check exists so the diagnosis names the file
+		// and the row if the composition ever changes.
+		if isSNMPExceptionValue(location) {
+			log.Printf("Warning: %s: skipping city row %q: the name collides with an SNMP "+
+				"exception sentinel and would be served as an RFC 3416 exception instead of "+
+				"a sysLocation string", filePath, location)
+			continue
+		}
+
 		// Only add if we haven't seen this exact location before
 		if _, seen := uniqueLocations[location]; !seen {
 			uniqueLocations[location] = WorldCity{Name: location, Latitude: lat, Longitude: lng}
@@ -164,5 +243,23 @@ func getRandomLocation() WorldCity {
 		return WorldCity{Name: unknownLocationName}
 	}
 
-	return worldCities[mathrand.Intn(len(worldCities))]
+	// The rule is ENFORCED at load (dropSentinelLocations), so by here the slice
+	// cannot hold a sentinel. This is the last-line assertion on the single
+	// funnel every served sysLocation passes through — cheap, because it is one
+	// string comparison per device rather than a scan, and silent, because a
+	// per-draw log line on a 30,000-device path is a worse failure than the one
+	// it reports.
+	//
+	// It RE-DRAWS rather than substituting "Unknown Location": that name carries
+	// no coordinates (manager.go omits lat/lng for it), so substituting would
+	// cost the device its position over an unrelated row's defect. The bounded
+	// retry then falls back, since a slice of nothing but sentinels has no
+	// answer to give.
+	for attempt := 0; attempt < 8; attempt++ {
+		city := worldCities[mathrand.Intn(len(worldCities))]
+		if !isSNMPExceptionValue(city.Name) {
+			return city
+		}
+	}
+	return WorldCity{Name: unknownLocationName}
 }

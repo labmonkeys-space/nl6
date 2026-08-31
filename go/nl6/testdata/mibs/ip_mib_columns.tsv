@@ -1,0 +1,121 @@
+# IP-MIB (RFC 4293) ipSystemStatsTable and ipIfStatsTable, columns 1..47 of each
+#
+# MIB facts EXTRACTED with net-snmp, not hand-written. This file is the
+# independent side of TestOidTypeTableAgreesWithTheMIBs. oidTypeTable and its
+# test-side column lists were written in the same change from the same reading
+# of the same MIBs, so a misreading shared by both would pass every assertion
+# in the package; this fixture is what catches it. It is not independent of
+# net-snmp, but it IS independent of the hand-written table, and a misread
+# column number is the actual risk.
+#
+# The test READS this file. It does not shell out to snmptranslate: no CI
+# workflow installs net-snmp, so a tool-dependent test would t.Skip in CI and
+# assert nothing.
+#
+# Regenerate (needs net-snmp and its MIBs; run from go/nl6):
+#   for t in 1 3; do for c in $(seq 1 47); do
+#     snmptranslate -Td -m ALL -M /usr/share/snmp/mibs .1.3.6.1.2.1.4.31.$t.1.$c
+#   done; done   # line 1 is the mib-name, the SYNTAX line is the syntax
+#
+# Extracted with: snmptranslate: illegal option -- -
+# MIB path:       /usr/share/snmp/mibs
+# Extracted on:   2026-08-31
+#
+# Format: oid<TAB>mib-name<TAB>syntax
+# A row the extraction set cannot resolve carries '-' in both fields. Such
+# rows are COUNTED by the test, never silently skipped.
+# 94 rows, 92 resolved
+.1.3.6.1.2.1.4.31.1.1.1	IP-MIB::ipSystemStatsIPVersion	INTEGER {unknown(0), ipv4(1), ipv6(2)}
+.1.3.6.1.2.1.4.31.1.1.2	-	-
+.1.3.6.1.2.1.4.31.1.1.3	IP-MIB::ipSystemStatsInReceives	Counter32
+.1.3.6.1.2.1.4.31.1.1.4	IP-MIB::ipSystemStatsHCInReceives	Counter64
+.1.3.6.1.2.1.4.31.1.1.5	IP-MIB::ipSystemStatsInOctets	Counter32
+.1.3.6.1.2.1.4.31.1.1.6	IP-MIB::ipSystemStatsHCInOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.7	IP-MIB::ipSystemStatsInHdrErrors	Counter32
+.1.3.6.1.2.1.4.31.1.1.8	IP-MIB::ipSystemStatsInNoRoutes	Counter32
+.1.3.6.1.2.1.4.31.1.1.9	IP-MIB::ipSystemStatsInAddrErrors	Counter32
+.1.3.6.1.2.1.4.31.1.1.10	IP-MIB::ipSystemStatsInUnknownProtos	Counter32
+.1.3.6.1.2.1.4.31.1.1.11	IP-MIB::ipSystemStatsInTruncatedPkts	Counter32
+.1.3.6.1.2.1.4.31.1.1.12	IP-MIB::ipSystemStatsInForwDatagrams	Counter32
+.1.3.6.1.2.1.4.31.1.1.13	IP-MIB::ipSystemStatsHCInForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.1.1.14	IP-MIB::ipSystemStatsReasmReqds	Counter32
+.1.3.6.1.2.1.4.31.1.1.15	IP-MIB::ipSystemStatsReasmOKs	Counter32
+.1.3.6.1.2.1.4.31.1.1.16	IP-MIB::ipSystemStatsReasmFails	Counter32
+.1.3.6.1.2.1.4.31.1.1.17	IP-MIB::ipSystemStatsInDiscards	Counter32
+.1.3.6.1.2.1.4.31.1.1.18	IP-MIB::ipSystemStatsInDelivers	Counter32
+.1.3.6.1.2.1.4.31.1.1.19	IP-MIB::ipSystemStatsHCInDelivers	Counter64
+.1.3.6.1.2.1.4.31.1.1.20	IP-MIB::ipSystemStatsOutRequests	Counter32
+.1.3.6.1.2.1.4.31.1.1.21	IP-MIB::ipSystemStatsHCOutRequests	Counter64
+.1.3.6.1.2.1.4.31.1.1.22	IP-MIB::ipSystemStatsOutNoRoutes	Counter32
+.1.3.6.1.2.1.4.31.1.1.23	IP-MIB::ipSystemStatsOutForwDatagrams	Counter32
+.1.3.6.1.2.1.4.31.1.1.24	IP-MIB::ipSystemStatsHCOutForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.1.1.25	IP-MIB::ipSystemStatsOutDiscards	Counter32
+.1.3.6.1.2.1.4.31.1.1.26	IP-MIB::ipSystemStatsOutFragReqds	Counter32
+.1.3.6.1.2.1.4.31.1.1.27	IP-MIB::ipSystemStatsOutFragOKs	Counter32
+.1.3.6.1.2.1.4.31.1.1.28	IP-MIB::ipSystemStatsOutFragFails	Counter32
+.1.3.6.1.2.1.4.31.1.1.29	IP-MIB::ipSystemStatsOutFragCreates	Counter32
+.1.3.6.1.2.1.4.31.1.1.30	IP-MIB::ipSystemStatsOutTransmits	Counter32
+.1.3.6.1.2.1.4.31.1.1.31	IP-MIB::ipSystemStatsHCOutTransmits	Counter64
+.1.3.6.1.2.1.4.31.1.1.32	IP-MIB::ipSystemStatsOutOctets	Counter32
+.1.3.6.1.2.1.4.31.1.1.33	IP-MIB::ipSystemStatsHCOutOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.34	IP-MIB::ipSystemStatsInMcastPkts	Counter32
+.1.3.6.1.2.1.4.31.1.1.35	IP-MIB::ipSystemStatsHCInMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.36	IP-MIB::ipSystemStatsInMcastOctets	Counter32
+.1.3.6.1.2.1.4.31.1.1.37	IP-MIB::ipSystemStatsHCInMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.38	IP-MIB::ipSystemStatsOutMcastPkts	Counter32
+.1.3.6.1.2.1.4.31.1.1.39	IP-MIB::ipSystemStatsHCOutMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.40	IP-MIB::ipSystemStatsOutMcastOctets	Counter32
+.1.3.6.1.2.1.4.31.1.1.41	IP-MIB::ipSystemStatsHCOutMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.1.1.42	IP-MIB::ipSystemStatsInBcastPkts	Counter32
+.1.3.6.1.2.1.4.31.1.1.43	IP-MIB::ipSystemStatsHCInBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.44	IP-MIB::ipSystemStatsOutBcastPkts	Counter32
+.1.3.6.1.2.1.4.31.1.1.45	IP-MIB::ipSystemStatsHCOutBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.1.1.46	IP-MIB::ipSystemStatsDiscontinuityTime	TimeTicks
+.1.3.6.1.2.1.4.31.1.1.47	IP-MIB::ipSystemStatsRefreshRate	Unsigned32
+.1.3.6.1.2.1.4.31.3.1.1	IP-MIB::ipIfStatsIPVersion	INTEGER {unknown(0), ipv4(1), ipv6(2)}
+.1.3.6.1.2.1.4.31.3.1.2	IP-MIB::ipIfStatsIfIndex	Integer32 (1..2147483647)
+.1.3.6.1.2.1.4.31.3.1.3	IP-MIB::ipIfStatsInReceives	Counter32
+.1.3.6.1.2.1.4.31.3.1.4	IP-MIB::ipIfStatsHCInReceives	Counter64
+.1.3.6.1.2.1.4.31.3.1.5	IP-MIB::ipIfStatsInOctets	Counter32
+.1.3.6.1.2.1.4.31.3.1.6	IP-MIB::ipIfStatsHCInOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.7	IP-MIB::ipIfStatsInHdrErrors	Counter32
+.1.3.6.1.2.1.4.31.3.1.8	IP-MIB::ipIfStatsInNoRoutes	Counter32
+.1.3.6.1.2.1.4.31.3.1.9	IP-MIB::ipIfStatsInAddrErrors	Counter32
+.1.3.6.1.2.1.4.31.3.1.10	IP-MIB::ipIfStatsInUnknownProtos	Counter32
+.1.3.6.1.2.1.4.31.3.1.11	IP-MIB::ipIfStatsInTruncatedPkts	Counter32
+.1.3.6.1.2.1.4.31.3.1.12	IP-MIB::ipIfStatsInForwDatagrams	Counter32
+.1.3.6.1.2.1.4.31.3.1.13	IP-MIB::ipIfStatsHCInForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.3.1.14	IP-MIB::ipIfStatsReasmReqds	Counter32
+.1.3.6.1.2.1.4.31.3.1.15	IP-MIB::ipIfStatsReasmOKs	Counter32
+.1.3.6.1.2.1.4.31.3.1.16	IP-MIB::ipIfStatsReasmFails	Counter32
+.1.3.6.1.2.1.4.31.3.1.17	IP-MIB::ipIfStatsInDiscards	Counter32
+.1.3.6.1.2.1.4.31.3.1.18	IP-MIB::ipIfStatsInDelivers	Counter32
+.1.3.6.1.2.1.4.31.3.1.19	IP-MIB::ipIfStatsHCInDelivers	Counter64
+.1.3.6.1.2.1.4.31.3.1.20	IP-MIB::ipIfStatsOutRequests	Counter32
+.1.3.6.1.2.1.4.31.3.1.21	IP-MIB::ipIfStatsHCOutRequests	Counter64
+.1.3.6.1.2.1.4.31.3.1.22	-	-
+.1.3.6.1.2.1.4.31.3.1.23	IP-MIB::ipIfStatsOutForwDatagrams	Counter32
+.1.3.6.1.2.1.4.31.3.1.24	IP-MIB::ipIfStatsHCOutForwDatagrams	Counter64
+.1.3.6.1.2.1.4.31.3.1.25	IP-MIB::ipIfStatsOutDiscards	Counter32
+.1.3.6.1.2.1.4.31.3.1.26	IP-MIB::ipIfStatsOutFragReqds	Counter32
+.1.3.6.1.2.1.4.31.3.1.27	IP-MIB::ipIfStatsOutFragOKs	Counter32
+.1.3.6.1.2.1.4.31.3.1.28	IP-MIB::ipIfStatsOutFragFails	Counter32
+.1.3.6.1.2.1.4.31.3.1.29	IP-MIB::ipIfStatsOutFragCreates	Counter32
+.1.3.6.1.2.1.4.31.3.1.30	IP-MIB::ipIfStatsOutTransmits	Counter32
+.1.3.6.1.2.1.4.31.3.1.31	IP-MIB::ipIfStatsHCOutTransmits	Counter64
+.1.3.6.1.2.1.4.31.3.1.32	IP-MIB::ipIfStatsOutOctets	Counter32
+.1.3.6.1.2.1.4.31.3.1.33	IP-MIB::ipIfStatsHCOutOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.34	IP-MIB::ipIfStatsInMcastPkts	Counter32
+.1.3.6.1.2.1.4.31.3.1.35	IP-MIB::ipIfStatsHCInMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.36	IP-MIB::ipIfStatsInMcastOctets	Counter32
+.1.3.6.1.2.1.4.31.3.1.37	IP-MIB::ipIfStatsHCInMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.38	IP-MIB::ipIfStatsOutMcastPkts	Counter32
+.1.3.6.1.2.1.4.31.3.1.39	IP-MIB::ipIfStatsHCOutMcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.40	IP-MIB::ipIfStatsOutMcastOctets	Counter32
+.1.3.6.1.2.1.4.31.3.1.41	IP-MIB::ipIfStatsHCOutMcastOctets	Counter64
+.1.3.6.1.2.1.4.31.3.1.42	IP-MIB::ipIfStatsInBcastPkts	Counter32
+.1.3.6.1.2.1.4.31.3.1.43	IP-MIB::ipIfStatsHCInBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.44	IP-MIB::ipIfStatsOutBcastPkts	Counter32
+.1.3.6.1.2.1.4.31.3.1.45	IP-MIB::ipIfStatsHCOutBcastPkts	Counter64
+.1.3.6.1.2.1.4.31.3.1.46	IP-MIB::ipIfStatsDiscontinuityTime	TimeTicks
+.1.3.6.1.2.1.4.31.3.1.47	IP-MIB::ipIfStatsRefreshRate	Unsigned32
