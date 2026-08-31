@@ -9,6 +9,14 @@
 
 set -eu
 
+# POST /api/v1/devices answers 409 while another creation batch holds the
+# simulator's one-batch-at-a-time gate (nl6#565). import waits it out instead of
+# aborting. The default delay matches the server's Retry-After; the default
+# budget (60 x 5s = 5 minutes) covers a large auto-start batch at boot. Raise
+# RETRY_409_LIMIT for a fleet whose startup batch takes longer.
+RETRY_409_LIMIT="${RETRY_409_LIMIT:-60}"
+RETRY_409_DELAY="${RETRY_409_DELAY:-5}"
+
 usage() {
     cat >&2 <<EOF
 Usage:
@@ -133,26 +141,47 @@ case "$cmd" in
         while IFS= read -r payload; do
             i=$((i + 1))
             label="$(printf '%s' "$payload" | jq -r '.start_ip // "?"')"
-            tmp="$(mktemp)"
-            http_code="$(curl -sS -o "$tmp" -w '%{http_code}' \
-                -X POST -H 'Content-Type: application/json' \
-                -d "$payload" \
-                "$URL/api/v1/devices")"
-            body="$(cat "$tmp")"
-            rm -f "$tmp"
-            ok="$(printf '%s' "$body" | jq -r 'try .success catch false')"
-            case "$http_code" in
-                2*)
-                    if [ "$ok" != "true" ]; then
-                        echo "  [$i/$TOTAL] FAIL $label (HTTP $http_code, success=$ok): $body" >&2
+            attempt=1
+            while : ; do
+                tmp="$(mktemp)"
+                http_code="$(curl -sS -o "$tmp" -w '%{http_code}' \
+                    -X POST -H 'Content-Type: application/json' \
+                    -d "$payload" \
+                    "$URL/api/v1/devices")"
+                body="$(cat "$tmp")"
+                rm -f "$tmp"
+                ok="$(printf '%s' "$body" | jq -r 'try .success catch false')"
+                case "$http_code" in
+                    2*)
+                        if [ "$ok" != "true" ]; then
+                            echo "  [$i/$TOTAL] FAIL $label (HTTP $http_code, success=$ok): $body" >&2
+                            exit 1
+                        fi
+                        ;;
+                    409)
+                        # The simulator runs ONE creation batch at a time and
+                        # refuses a concurrent one (nl6#565). This is a wait, not
+                        # a failure, and it is reachable on a normal boot: the
+                        # `-auto-start-ip` batch holds the gate while
+                        # GET /api/v1/status already answers 200, so `compose up`
+                        # starts this import mid-batch and aborting here would
+                        # leave a partially imported fleet.
+                        if [ "$attempt" -ge "$RETRY_409_LIMIT" ]; then
+                            echo "  [$i/$TOTAL] FAIL $label (HTTP 409 after $attempt attempts): $body" >&2
+                            exit 1
+                        fi
+                        echo "  [$i/$TOTAL] BUSY $label — another creation batch is running; retrying in ${RETRY_409_DELAY}s (attempt $attempt/$RETRY_409_LIMIT)" >&2
+                        attempt=$((attempt + 1))
+                        sleep "$RETRY_409_DELAY"
+                        continue
+                        ;;
+                    *)
+                        echo "  [$i/$TOTAL] FAIL $label (HTTP $http_code): $body" >&2
                         exit 1
-                    fi
-                    ;;
-                *)
-                    echo "  [$i/$TOTAL] FAIL $label (HTTP $http_code): $body" >&2
-                    exit 1
-                    ;;
-            esac
+                        ;;
+                esac
+                break
+            done
         done <<HEREDOC
 $PAYLOADS
 HEREDOC

@@ -9,7 +9,7 @@ management web UI at `/`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/devices` | POST | Create devices (bulk, round-robin, category-based). |
+| `/api/v1/devices` | POST | Create devices (bulk, round-robin, category-based). One batch at a time: a concurrent create is refused `409`. |
 | `/api/v1/devices` | GET | List all devices. |
 | `/api/v1/devices/{id}` | DELETE | Delete a specific device. |
 | `/api/v1/devices` | DELETE | Delete all devices. |
@@ -276,6 +276,51 @@ Only `failing` crosses the SD-FEC threshold, so
 `degraded` shows an elevated `pre-fec-ber` that FEC still corrects. See
 [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
 BER table.
+
+### One creation batch at a time (`409`)
+
+**Behaviour change in nl6#565.** Only one device-creation batch runs at a time.
+A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
+Two such requests used to interleave.
+
+The response carries `Retry-After: 5`, and a body naming the batch in the way:
+
+```json
+{
+  "success": false,
+  "message": "device creation already in progress: batch #7 (2000 devices, started 1.482s ago) is running; retry once it finishes. Device IP allocation is a shared cursor, so a second concurrent batch would hand out overlapping addresses and silently create fewer devices than requested (nl6#565)"
+}
+```
+
+The refusal is fail-fast, not a queue.
+A large batch would otherwise make a small one wait minutes with no feedback, and an HTTP client that times out mid-wait cannot tell whether its batch ran.
+
+**How to wait properly.** `GET /api/v1/status` reports `create_batch_in_progress` (and `create_batch_requested`, the running batch's requested device count).
+That field IS the gate: poll it until it is false, then retry.
+`is_creating_devices` is a proxy, not the gate — it is published just after the gate is taken and cleared just before it is released, so it can read `false` while a create would still be refused.
+`Retry-After` is a fixed, deliberately short 5 seconds; the handler has no way to estimate the remaining work of a batch whose rate it does not know.
+
+Why the refusal is needed: device IPs come from a shared cursor, not a reservation.
+A batch rewinds that cursor to its own start address after pre-allocating TUN interfaces, because the devices have to land on the addresses the pool carries.
+Two overlapping batches therefore walked overlapping address ranges, the duplicate IPs were absorbed as "already exists", and the second batch silently created fewer devices than requested while reporting success.
+
+**The auto-start batch counts as a batch.** `-auto-start-ip` runs on the same code path alongside the HTTP server, so a REST create issued during fleet startup gets the `409` until the startup batch completes.
+That is intended (the fleet is mid-construction), and it is reachable on a normal boot: the container is healthy and `GET /api/v1/status` answers `200` while the startup batch still holds the gate.
+The shipped clients behave as follows, and a client of your own should do the first:
+
+- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). This is what keeps `compose up`'s bootstrapper working with `-auto-start-ip` set.
+- The web console's Clos-fabric wizard does **not** retry. Its per-tier POSTs are sequential, so it never conflicts with itself, but a `409` from another batch (an auto-start batch, another operator, a script) aborts it and leaves a **half-built fabric** — the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe: existing addresses are absorbed as successes.
+
+**What "one batch at a time" does and does not cover.** It excludes one creation batch from another creation batch, and nothing more.
+Three paths still mutate creation state without holding the gate, all pre-existing: a previous batch's **detached pre-allocation workers** (the pre-allocator's 5-minute timeout returns while its workers keep writing the interface pool), `DELETE /api/v1/devices` (which clears the device and interface maps), and shutdown.
+So a create that overlaps a delete-all, or that follows a batch which timed out in pre-allocation, is not protected by this gate.
+
+The gate sits above every other check in the batch, the `resource_file` validation below and the privilege check included: a concurrency verdict must not depend on caller data.
+When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
+
+**One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](loadtest-scenarios.md) documents it as a `409`.
+That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
+Today `409` on this endpoint means a concurrent creation batch and nothing else.
 
 ### `resource_file` failures
 

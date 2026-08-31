@@ -265,6 +265,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		// body, so without this line the second rendering was the only one
 		// ever emitted and the path reached nobody.
 		logCreateDevicesFailure(err, status)
+		// "Retry once it finishes" is machine-actionable advice, so say it in a
+		// header a client can act on without parsing prose (nl6#565 review R10).
+		// A fixed, deliberately short interval: the remaining work is not known
+		// to this handler (the running batch's requested count is not its rate),
+		// and a poller can read create_batch_in_progress from
+		// GET /api/v1/status instead of guessing.
+		if status == http.StatusConflict {
+			w.Header().Set("Retry-After", createConflictRetryAfterSeconds)
+		}
 		sendErrorResponse(w, msg, status)
 		return
 	}
@@ -731,7 +740,23 @@ func logCreateDevicesFailure(err error, status int) {
 	log.Printf("create devices: rejected with %d: %v", status, err)
 }
 
+// createConflictRetryAfterSeconds is the Retry-After value on the 409 a
+// concurrent creation batch gets. Seconds, per RFC 9110 §10.2.3.
+const createConflictRetryAfterSeconds = "5"
+
 func createDevicesErrorResponse(err error) (string, int) {
+	// The concurrency refusal comes first, and it is neither of the other two
+	// answers (nl6#565): a second concurrent batch is not caller data that is
+	// wrong (400) and not a server fault (500) — it is a transient conflict the
+	// caller fixes by retrying, so 409. errors.Is and not errors.As, because the
+	// sentinel is wrapped with %w to carry the in-progress batch's numbers.
+	//
+	// The message is returned verbatim: it is composed from a constant and two
+	// integers, so it embeds no path and the nl6#538 non-disclosure limit does
+	// not apply to it.
+	if errors.Is(err, errCreateBatchInProgress) {
+		return err.Error(), http.StatusConflict
+	}
 	var rerr *resourceFileError
 	if errors.As(err, &rerr) {
 		return rerr.PublicMessage(), http.StatusBadRequest

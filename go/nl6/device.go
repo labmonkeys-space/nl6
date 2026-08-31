@@ -135,6 +135,122 @@ func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, re
 	return sm.deviceResources, nil, nil, nil
 }
 
+// errCreateBatchInProgress is the sentinel a concurrent device-creation batch is
+// refused with. Same shape as errResourceInvalid (nl6#538): a package-level
+// sentinel, wrapped with %w so the message can carry the in-progress batch's
+// numbers, and tested with errors.Is at the REST boundary. That is what keeps
+// the refusal a 409 and stops it being confused with the 400 a bad request gets
+// or the 500 an unclassified fault gets.
+var errCreateBatchInProgress = errors.New("device creation already in progress")
+
+// createBatchInfo identifies the batch holding createBatchGate. Immutable once
+// published; the holder publishes it before it proceeds and clears it before it
+// unlocks, so a refusal either sees the batch that is actually in the way or
+// sees nothing at all — never a previous batch's numbers (review R7).
+type createBatchInfo struct {
+	id      int64
+	count   int
+	started time.Time
+}
+
+// geteuid is os.Geteuid, indirected for ONE reason: the privilege check sits
+// ABOVE the currentIP rewind and the IP walk, so on an unprivileged host a batch
+// returns before it reaches the half of the window nl6#565 is about. A test that
+// has to observe the gate there fakes this, in both directions — it also fakes
+// NON-root, so the privilege-rejection path is exercised on a root CI container
+// instead of skipping (review R5). Never reassigned outside tests.
+var geteuid = os.Geteuid
+
+// createBatchStage names a point inside the gated body at which a test may
+// observe the gate. The three that matter are entry, the far side of the
+// pre-allocation reservation, and the instant before the IP walk — which is the
+// one that separates nl6#565 from nl6#556: the reservation reserves the TUN
+// index, but currentIP is consumed by the WALK.
+type createBatchStage int
+
+const (
+	stageBatchEntered createBatchStage = iota
+	stageAfterReservation
+	stageBeforeIPWalk
+)
+
+func (s createBatchStage) String() string {
+	switch s {
+	case stageBatchEntered:
+		return "entered"
+	case stageAfterReservation:
+		return "after-reservation"
+	case stageBeforeIPWalk:
+		return "before-ip-walk"
+	}
+	return "unknown"
+}
+
+// createBatchStageProbe is nil in production and set only by a test, before a
+// batch starts. A non-nil error from it ABORTS the batch through the ordinary
+// error return, so the deferred release still runs.
+//
+// This seam exists because the alternative is no coverage: reaching the IP walk
+// needs root AND a Linux TUN device, and every test that "verified" the gate
+// without it was verifying a mirror of the code rather than the code (review R1,
+// R2). It is the smallest seam that lets a test stand at a named point inside a
+// real batch and ask whether the gate is held.
+var createBatchStageProbe func(createBatchStage) error
+
+func probeCreateBatchStage(stage createBatchStage) error {
+	if createBatchStageProbe == nil {
+		return nil
+	}
+	return createBatchStageProbe(stage)
+}
+
+// tryEnterCreateBatch takes the one-batch-at-a-time gate WITHOUT blocking, and
+// returns the release func on success.
+//
+// Fail fast rather than queue (nl6#565, the maintainer's decision): a
+// 30k-device batch would make a small create wait minutes with no feedback, and
+// an HTTP client that times out mid-wait turns a clean queue into an ambiguous
+// failure — did the batch run or not?
+//
+// The refusal names the batch that is in the way from createBatchInfo, never
+// from deviceCreateTotal / deviceCreateProgress: those are written inside the
+// batch and never reset, so reading them could report a FINISHED batch's numbers
+// as a running batch's (review R7).
+//
+// Two properties of the returned func, both from review R8: it is idempotent (a
+// second Unlock of a sync.Mutex is `fatal error: unlock of unlocked mutex`,
+// which no recover() catches and which would take the whole simulator down), and
+// the REFUSAL path returns a no-op rather than nil, so a caller that ignores the
+// error and calls it does not nil-panic.
+func (sm *SimulatorManager) tryEnterCreateBatch(count int) (func(), error) {
+	if sm.createBatchGate.TryLock() {
+		info := &createBatchInfo{id: sm.createBatchSeq.Add(1), count: count, started: time.Now()}
+		sm.createBatch.Store(info)
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				// Clear BEFORE the unlock: after it, the info belongs to
+				// whichever batch got in next.
+				sm.createBatch.Store(nil)
+				sm.createBatchGate.Unlock()
+			})
+		}, nil
+	}
+
+	const remedy = "retry once it finishes. Device IP allocation is a shared cursor, so a second " +
+		"concurrent batch would hand out overlapping addresses and silently create fewer devices " +
+		"than requested (nl6#565)"
+	// nil is reachable and is not an error: the holder is between its TryLock
+	// and its Store, or between its clear and its Unlock. Say less rather than
+	// inventing numbers.
+	if running := sm.createBatch.Load(); running != nil {
+		return func() {}, fmt.Errorf("%w: batch #%d (%d devices, started %s ago) is running; %s",
+			errCreateBatchInProgress, running.id, running.count,
+			time.Since(running.started).Round(time.Millisecond), remedy)
+	}
+	return func() {}, fmt.Errorf("%w: another batch is running; %s", errCreateBatchInProgress, remedy)
+}
+
 // CreateDevicesWithOptions creates devices with optional pre-allocation control.
 // `seed`, when non-nil, populates every created device's `flowConfig` /
 // `trapConfig` / `syslogConfig` pointer fields with a copy of the seed's
@@ -144,7 +260,45 @@ func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, re
 // listener bind error under resource pressure at scale). Callers that care
 // about partial failure — notably the REST handler — should compare the
 // returned count against the requested `count`.
+//
+// ONE BATCH AT A TIME (nl6#565). This wrapper exists only to hold
+// createBatchGate across the ENTIRE batch: the reservation and the IP walk are
+// both inside createDevicesWithOptionsLocked, so there is no point at which an
+// early release could be written. `defer` and not a tail call, so the gate is
+// released on a panic too.
+//
+// NOT REENTRANT. It is a try-lock, so a batch that reached this function again
+// from inside itself would refuse ITSELF with a 409-shaped error rather than
+// deadlocking or failing loudly. There is no such caller today (the two are the
+// REST handler and CreateDevices), and the batch info token threaded into the
+// locked body is what keeps a future one from bypassing the wrapper by accident.
+//
+// The gate sits ABOVE everything, the freeze check and the nl6#538 resource
+// resolution included, deliberately: a concurrency verdict must not depend on
+// caller data, and a caller who fires two creates in parallel needs to hear
+// about the collision first. It does not reorder the FR35/FR38 interlock — the
+// isCreatingDevices publish still precedes the freeze check inside.
 func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) (int, error) {
+	release, err := sm.tryEnterCreateBatch(count)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+
+	return sm.createDevicesWithOptionsLocked(sm.createBatch.Load(), startIP, count, netmask, resourceFile, v3Config, preAllocate, maxWorkers, roundRobin, category, snmpPort, seed)
+}
+
+// createDevicesWithOptionsLocked is CreateDevicesWithOptions' body, run with
+// createBatchGate held for its whole duration.
+//
+// `batch` is the token the wrapper obtained from tryEnterCreateBatch. It carries
+// the gate requirement in the signature — nothing else can produce one — and
+// names the batch in the log so two batches in one log file are separable.
+func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInfo, startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) (int, error) {
+	if err := probeCreateBatchStage(stageBatchEntered); err != nil {
+		return 0, err
+	}
+
 	if snmpPort == 0 {
 		snmpPort = DEFAULT_SNMP_PORT
 	}
@@ -208,7 +362,11 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 		}
 	}
 
-	log.Printf("DEVICE STARTUP TEST: Creating %d devices starting from %s/%s", count, startIP, netmask)
+	if err := probeCreateBatchStage(stageAfterReservation); err != nil {
+		return 0, err
+	}
+
+	log.Printf("DEVICE STARTUP TEST: Creating %d devices starting from %s/%s (batch #%d)", count, startIP, netmask, batchIDOf(batch))
 	log.Printf("Device Creation Parameters:")
 	log.Printf("   - Device Count: %d", count)
 	log.Printf("   - Start IP: %s/%s", startIP, netmask)
@@ -221,8 +379,11 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 	deviceStartTime := time.Now()
 	log.Printf("DEVICE CREATION START TIME: %v", deviceStartTime.Format("15:04:05.000"))
 
-	// Check for root privileges for TUN interface creation
-	if os.Geteuid() != 0 {
+	// Check for root privileges for TUN interface creation. Through `geteuid`,
+	// not os.Geteuid directly, so a test can drive a batch past this point on an
+	// unprivileged host and observe the gate at the rewind and the walk below —
+	// the half of the window nl6#565 is about (review R1/R2/R5).
+	if geteuid() != 0 {
 		return 0, fmt.Errorf("root privileges required to create TUN interfaces")
 	}
 
@@ -233,12 +394,21 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 	// necessarily: the pre-allocated interfaces are addressed startIP..startIP+
 	// count-1, so device creation has to walk that same range or every device
 	// misses the pool. The consequence is that IP allocation is a shared cursor
-	// rather than a reserved range, and two overlapping batches can still
-	// overlap on device IPs (nl6#556 review R4) — the reservation closes TUN
-	// NAMING only.
+	// rather than a reserved range (nl6#556 review R4) — the reservation closes
+	// TUN NAMING only. What keeps two batches off the cursor is
+	// createBatchGate, held by the caller of this function for the whole batch
+	// (nl6#565); do not "fix" the rewind, and do not release that gate before
+	// the IP walk below finishes.
 	sm.mu.Lock()
 	sm.currentIP = ip
 	sm.mu.Unlock()
+
+	// The gate MUST still be held here. This is the instant that separates
+	// nl6#565 from nl6#556: the reservation above reserved the TUN index, and
+	// the cursor this rewind just wrote is consumed by the walk below.
+	if err := probeCreateBatchStage(stageBeforeIPWalk); err != nil {
+		return 0, err
+	}
 
 	// Both pre-allocation settings read as one pair under the lock that owns
 	// them; reading them bare here raced a concurrent batch's reservation.
@@ -1130,4 +1300,13 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		d.tunIface.destroy() // Close FD only, no ip link delete
 	}
 	d.running = false
+}
+
+// batchIDOf renders a batch token's id for a log line, tolerating a nil token so
+// a direct call from a test cannot panic a log statement.
+func batchIDOf(batch *createBatchInfo) int64 {
+	if batch == nil {
+		return 0
+	}
+	return batch.id
 }

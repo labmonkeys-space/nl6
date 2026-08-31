@@ -309,15 +309,18 @@ type SimulatorManager struct {
 	// PreAllocateTunInterfaces therefore commits its whole slice of both in a
 	// single critical section (reservePreAllocBatch) BEFORE its workers start,
 	// and passes the reserved index base into the workers rather than letting
-	// them read the field. Nothing excludes two concurrent batches from each
-	// other — isCreatingDevices is a UI status flag, not a mutex.
+	// them read the field. What excludes two concurrent batches from each other
+	// is createBatchGate below — NOT isCreatingDevices, which is a status flag
+	// and not a mutex.
 	//
 	// Only nextTunIndex is genuinely RESERVED by a batch. currentIP remains a
 	// SHARED CURSOR: CreateDevicesWithOptions rewinds it to the batch start
 	// after pre-allocation (the devices must land on the addresses the pool was
-	// created with), so two overlapping batches can still hand out overlapping
-	// device IPs. That is the residual defect nl6#556 does not close; closing
-	// it needs one-batch-at-a-time exclusion, which is a behaviour change.
+	// created with), so two OVERLAPPING batches would still hand out overlapping
+	// device IPs. nl6#565 closes that by refusing the overlap instead of making
+	// the cursor a reservation: createBatchGate admits one batch at a time, held
+	// across the reservation AND the IP walk, and a second concurrent
+	// POST /api/v1/devices is answered 409 Conflict.
 	currentIP       net.IP
 	nextTunIndex    int
 	deviceResources *DeviceResources
@@ -389,7 +392,41 @@ type SimulatorManager struct {
 	// the field — several test files construct one that way.
 	preAllocProgress     atomic.Int64
 	preAllocProgressBase atomic.Int64
-	isCreatingDevices    atomic.Value // bool - true when device creation is in progress
+	// createBatchGate is THE MUTEX of the device-creation path; isCreatingDevices
+	// right below is THE STATUS FLAG. The two have been confused once already
+	// (nl6#556 reported it, nl6#565 fixes it), so which is which is stated here
+	// and at both fields.
+	//
+	// createBatch is the running batch's identity, published by
+	// tryEnterCreateBatch BEFORE the holder proceeds and cleared by its release
+	// func BEFORE the unlock. It is what a refusal reports, and what
+	// GET /api/v1/status reports as create_batch_in_progress. It exists because
+	// deviceCreateTotal / deviceCreateProgress are stored INSIDE the batch and
+	// never reset, so a refusal that read them could state the PREVIOUS batch's
+	// numbers — or zero, on the first batch — as fact, in a message whose whole
+	// justification is being actionable (nl6#565 review R7).
+	//
+	// Exactly one device-creation batch runs at a time: CreateDevicesWithOptions
+	// TryLocks this at entry and refuses with errCreateBatchInProgress — 409
+	// Conflict at the REST boundary — rather than queueing behind it. It is held
+	// for the WHOLE batch, the pre-allocation reservation AND the IP walk that
+	// consumes currentIP, because currentIP is a shared cursor the batch rewinds
+	// (see the currentIP comment above); gating only the reservation leaves the
+	// walk unprotected, which is the nl6#565 defect itself.
+	//
+	// Never check-then-set isCreatingDevices in its place: it is published AFTER
+	// entry, so two batches can both observe false. The gate sits ABOVE the
+	// freeze check and does not reorder the FR35/FR38 interlock.
+	// SCOPE, stated because the docs claimed more than this once: the gate
+	// excludes one BATCH from another batch. It does NOT exclude a batch from
+	// the paths that mutate the same state outside it — a previous batch's
+	// DETACHED pre-allocation stragglers (prealloc.go's 5-minute timeout returns
+	// while its workers keep writing tunInterfacePool), DeleteAllDevices, and
+	// Shutdown / CleanupPreAllocatedInterfaces. See the CLAUDE.md paragraph.
+	createBatchGate      sync.Mutex
+	createBatchSeq       atomic.Int64
+	createBatch          atomic.Pointer[createBatchInfo]
+	isCreatingDevices    atomic.Value // bool - STATUS FLAG (UI + freeze interlock), never an exclusion primitive; see createBatchGate
 	deviceCreateProgress atomic.Value // int - number of devices created so far
 	deviceCreateTotal    atomic.Value // int - total number of devices to create
 
@@ -788,14 +825,22 @@ type RejectedRequestData struct {
 }
 
 type ManagerStatus struct {
-	IsPreAllocating      bool `json:"is_pre_allocating"`
-	PreAllocProgress     int  `json:"pre_alloc_progress"`
-	PreAllocTotal        int  `json:"pre_alloc_total"`
-	IsCreatingDevices    bool `json:"is_creating_devices"`
-	DeviceCreateProgress int  `json:"device_create_progress"`
-	DeviceCreateTotal    int  `json:"device_create_total"`
-	TotalDevices         int  `json:"total_devices"`
-	RunningDevices       int  `json:"running_devices"`
+	// CreateBatchInProgress is THE GATE (nl6#565): true exactly while a batch
+	// holds createBatchGate, so it is the signal to poll before retrying a
+	// create that was answered 409. IsCreatingDevices below is NOT the same
+	// thing — it is published after the gate is taken and cleared before it is
+	// released, so it is a proxy that can read false while the gate is held.
+	// CreateBatchRequested is that batch's requested device count, 0 when idle.
+	CreateBatchInProgress bool `json:"create_batch_in_progress"`
+	CreateBatchRequested  int  `json:"create_batch_requested"`
+	IsPreAllocating       bool `json:"is_pre_allocating"`
+	PreAllocProgress      int  `json:"pre_alloc_progress"`
+	PreAllocTotal         int  `json:"pre_alloc_total"`
+	IsCreatingDevices     bool `json:"is_creating_devices"`
+	DeviceCreateProgress  int  `json:"device_create_progress"`
+	DeviceCreateTotal     int  `json:"device_create_total"`
+	TotalDevices          int  `json:"total_devices"`
+	RunningDevices        int  `json:"running_devices"`
 }
 
 // FlowStatus is the JSON body returned by GET /api/v1/flows/status.
