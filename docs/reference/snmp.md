@@ -58,7 +58,7 @@ The mapping applies to GET and GETNEXT only.
 GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
 
 **SNMPv3 GET and GETNEXT are covered.** Since nl6#518 the v3 encoder (`createScopedPDU`) goes through `encodeTypedValue` as well, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
-The v3 GETBULK handler reaches the same encoder through `createScopedPDUMulti`, so its bindings carry the same tags. It honours `max-repetitions` and `non-repeaters` as sent; a request for zero repetitions is answered with an empty binding list, not an `endOfMibView`. What it still lacks is the multi-column case, see the known limitations below.
+The v3 GETBULK handler reaches the same encoder through `createScopedPDUMulti`, so its bindings carry the same tags. It honours `max-repetitions` and `non-repeaters` as sent, and it answers every column the request names; a request for zero repetitions is answered with an empty binding list, not an `endOfMibView`.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
 That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception, and a v1 manager would get `noSuchName` for a value that is simply a string.
@@ -203,11 +203,28 @@ Both versions encode a value through `encodeTypedValue`, so the same OID carries
 That was not always true: the v3 scoped-PDU builder used to branch on `strconv.Atoi` and emit only INTEGER or OCTET STRING, which meant v3 had no Counter32/Gauge32/TimeTicks/IpAddress typing and sent `endOfMibView` as literal text rather than as an exception, so a GETNEXT-driven v3 walk did not terminate where the protocol says it should (nl6#518).
 **Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it.** The wire types differ.
 
+### SNMPv3 GETBULK answers every column
+
+`handleSNMPv3GetBulk` parses every variable-binding name from the scoped PDU and applies the RFC 3416 §4.2.3 split: the first `non-repeaters` columns get one successor each, and the rest are walked `max-repetitions` times, interleaved one binding per column per repetition.
+It used to serve a single starting OID: the first binding, and the only one `extractOIDAndTypeFromScopedPDU` validates.
+A manager bundling `ifDescr`/`ifName`/`ifAlias` in one GETBULK therefore got successors of `ifDescr` and nothing at all for the rest, a wrong answer rather than merely a small one (nl6#535).
+That single-column shape also forced `non-repeaters` to collapse into `max-repetitions = 1`, which is not what the field means: with non-repeaters present and `max-repetitions` zero, the non-repeater bindings are now returned rather than an empty list.
+
+A column that reaches the end of its MIB view is padded with its OWN requested OID and `endOfMibView` for as long as other columns keep producing, so the interleave stays aligned and a manager can still tell which column a slot belongs to.
+The order and the padding match the v2c `handleGetBulk`, and the two paths are pinned against each other rather than each being separately plausible (`TestV3GetBulkOrderMatchesV2c`).
+
+**One deliberate divergence, in the tail only.** Once EVERY column is exhausted, v2c keeps padding for each remaining repetition while v3 stops.
+The bindings the two emit are identical up to that point, and stopping is what preserves the single-column contract nl6#526 established: a v3 walk that runs out mid-response ships what it collected, and the next request receives the exception on its own.
+The one case that is still emitted is a FIRST repetition in which no column produced anything: each column is then answered once with its own OID and `endOfMibView`, rather than the whole response collapsing to a single binding.
+Neither shape is wrong under RFC 3416: the padded slots carry the right names and the right exception.
+The divergence is recorded and pinned (`TestV3GetBulkTailDivergesFromV2cOnlyWhenExhausted`) rather than resolved by changing the v2c reference.
+
+The walk clamp divides its ceiling by the repeater-column count, because a repetition costs one walk step per column and the guard bounds the TOTAL work, which is what it bounded when there was only ever one column.
+A malformed variable-bindings list discards the datagram exactly as on the v1/v2c path; the multi-column parse can only add discards (a LATER binding being the malformed one), never relax the nl6#547 rule.
+
 ### Known limitations
 
 **A GETNEXT processes only its first variable binding.** The v1/v2c GETNEXT dispatcher reads one OID from the request and answers one successor. A multi-binding GETNEXT (as some walkers send to fetch several columns per round trip) gets an answer for the first binding only. Pre-existing; the SNMPv1 Counter64 skip inherits it.
-
-**SNMPv3 GETBULK answers a multi-column request with the first column only** (nl6#535). `handleSNMPv3GetBulk` serves a single starting OID, so a manager bundling several columns in one GETBULK gets successors of the first and nothing for the rest. That is a wrong answer under RFC 3416 rather than merely a small one. `max-repetitions` and `non-repeaters` themselves are now read from the request at any BER width, bounded, and honoured.
 
 **SNMPv3 GETBULK is bounded by measurement, not arithmetic** (nl6#535). The v2c path computes its response length from fixed prefixes, which it can because its envelope is fixed. A v3 message cannot: its `msgGlobalData` and `msgSecurityParameters` sizes depend on the engine ID, the user name and the privacy parameters, and under privacy the scoped PDU is encrypted and PADDED to a cipher block. So the GETBULK builder assembles the candidate response through the real encoder and measures it, dropping bindings from the end until it fits. RFC 3416 §4.2.3 makes that correct: a truncated GETBULK is resumable, since the walker continues from the last OID returned. As on the v2c path, at least one binding is always emitted even when it does not fit, because an empty binding list with no error stalls a walk forever with no signal.
 

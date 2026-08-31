@@ -636,7 +636,27 @@ func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) ([]string, bool) {
 	}
 	pos = newPos + f2Len
 
-	// VarBindList (SEQUENCE)
+	// VarBindList (SEQUENCE). The walk of the list itself is shared with the
+	// SNMPv3 scoped-PDU sibling (parseAllOIDsFromScopedPDU): the two PDUs
+	// differ only in the envelope that precedes the list, and a second copy of
+	// this loop is exactly the drift this package has paid for twice
+	// (nl6#529's encodeOID/appendOID, nl6#539's validateDottedOID).
+	return parseVarBindNames(data, pos)
+}
+
+// parseVarBindNames walks a variable-bindings list, starting at the offset of
+// its SEQUENCE tag, and returns every binding NAME in order.
+//
+// The bool carries parseAllOIDsFromRequest's contract, which is documented
+// there: false means the list is malformed and the datagram is discarded;
+// (nil, true) means the list header was never reached (or the list is empty),
+// which the caller's single parsed OID still covers.
+//
+// `data` must already be bounded by the container the list sits in — for v3
+// that is the PDU, not the datagram (the nl6#537 rule).
+func parseVarBindNames(data []byte, pos int) ([]string, bool) {
+	var oids []string
+
 	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
 		return oids, true
 	}

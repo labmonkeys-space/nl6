@@ -1259,16 +1259,46 @@ func TestClampBulkWalkBoundsTheWalk(t *testing.T) {
 	ceiling := maxSNMPResponseSize/minVarbindSize + 1
 
 	for _, in := range []int{100000, 1 << 20, ceiling + 1} {
-		if got := clampBulkWalk(in); got != ceiling {
-			t.Errorf("clampBulkWalk(%d) = %d, want the %d ceiling: without it the device performs "+
+		if got := clampBulkWalk(in, 1); got != ceiling {
+			t.Errorf("clampBulkWalk(%d, 1) = %d, want the %d ceiling: without it the device performs "+
 				"that many findNextOID steps before the encode bound discards them", in, got, ceiling)
 		}
 	}
 	// Values at or below the ceiling pass through untouched, or the clamp would
 	// silently reduce what a reasonable manager asked for.
 	for _, in := range []int{0, 1, 10, ceiling} {
-		if got := clampBulkWalk(in); got != in {
-			t.Errorf("clampBulkWalk(%d) = %d, want it unchanged", in, got)
+		if got := clampBulkWalk(in, 1); got != in {
+			t.Errorf("clampBulkWalk(%d, 1) = %d, want it unchanged", in, got)
 		}
+	}
+}
+
+// TestClampBulkWalkDividesByColumns pins the decision nl6#535 had to make: a
+// repetition costs one walk step PER COLUMN, so the ceiling is divided by the
+// column count and the guard bounds the TOTAL work — what it bounded when
+// there was only ever one column.
+//
+// Left undivided the clamp is C times looser, which is the amplification it
+// exists to stop; applied to the total it is C times tighter and silently
+// truncates a reasonable request. Both mistakes pass every response-level
+// assertion, because the encode bound trims to the same bindings either way.
+func TestClampBulkWalkDividesByColumns(t *testing.T) {
+	for _, cols := range []int{1, 2, 5, 30} {
+		want := maxSNMPResponseSize/minVarbindSize/cols + 1
+		if got := clampBulkWalk(1<<20, cols); got != want {
+			t.Errorf("clampBulkWalk(1<<20, %d) = %d, want %d: the ceiling must divide by the "+
+				"column count, since the walk is columns × repetitions", cols, got, want)
+		}
+		// Total work stays within the single-column ceiling, which is the
+		// property the division buys.
+		if total := clampBulkWalk(1<<20, cols) * cols; total > maxSNMPResponseSize/minVarbindSize+cols {
+			t.Errorf("%d columns walk %d steps in total, above the single-column ceiling", cols, total)
+		}
+	}
+	// A column count of zero cannot reach the handler (the repeater section
+	// returns early), but a divisor of zero panics on the serve path where
+	// there is no recover(), so it is guarded rather than assumed.
+	if got := clampBulkWalk(5, 0); got != 5 {
+		t.Errorf("clampBulkWalk(5, 0) = %d, want 5: a zero column count must not divide by zero", got)
 	}
 }
