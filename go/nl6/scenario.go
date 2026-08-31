@@ -227,6 +227,14 @@ func (s *Scenario) Validate() error {
 	if s.Window > scenarioMaxWindow {
 		return fmt.Errorf("scenario: window %s exceeds the %s cap", s.Window, scenarioMaxWindow)
 	}
+	// There is deliberately NO drain check here, and nothing for it to check:
+	// nl6#500 removed the field from this struct, so a caller building a
+	// Scenario directly (a second submit path, a test) cannot express one. The
+	// wire refusal in scenarioRequest.toScenario is therefore the only site
+	// that CAN reject a drain, and it is not a bypassable validation gap — a
+	// reintroduced grace would have to add a field here first, which
+	// TestScenarioDrainEnd_IsTheReleaseInstantNotADeadline catches by
+	// BEHAVIOUR (whatever the field is called) rather than by name.
 	// Rate profile (FR5): structural validation now so a bad profile is a
 	// submit-time 400, not a Start-time failure. The built profile is
 	// discarded here (rebuilt at Start); validation is the only goal.

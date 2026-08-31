@@ -1315,7 +1315,7 @@ func (c *ScenarioController) Stop() (*ScenarioResult, error) {
 // Abort is the graceful-shutdown path (D7): same drain→finalize pipeline
 // with phase aborted. The barrier has no timeout, so what bounds shutdown is
 // what an already-admitted write can block on — see abortActiveScenario for
-// the bound that actually holds and the transport case where it does not.
+// the per-transport bound, and nl6#567 for the cases it does not cover.
 func (c *ScenarioController) Abort() (*ScenarioResult, error) {
 	return c.finish(phaseAborted)
 }

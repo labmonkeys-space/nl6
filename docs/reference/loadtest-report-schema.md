@@ -86,6 +86,11 @@ The reproducibility fingerprint plus the timestamps the run actually observed.
 Copy the `(config_sha256, seed)` back into a resubmit on the same
 `nl6_version` to re-run a scenario exactly.
 
+**Resubmitting a body archived before v0.28.0:** if it carries a `drain` key,
+strip it. That field is refused with a `400` since v0.28.0 ([nl6#500]) — it
+configured nothing. A body that never carried one hashes to the same
+`config_sha256` as it always did, so baselines stay comparable.
+
 Two fingerprints appear here and they answer **different questions**.
 `config_sha256` pins what you *declared* — it is the submit-time idempotency key.
 `resolved_participants_sha256` pins what actually *ran*.
@@ -119,24 +124,31 @@ achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
 
 Both halves of that are deliberate. `in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window. Nothing else belongs in either half.
 
-`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch a write already in flight at the `T1` instant. Measured, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0 ([nl6#500]).
+`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`). On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0 ([nl6#500]).
 
-**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the drain tail is bounded by one in-flight write, so it cannot move a 120 s window by percent, and the `drain` duration is no longer a configurable field at all ([nl6#500] — submitting one is now a 400).
+**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and the `drain` duration is no longer a configurable field at all ([nl6#500] — submitting one is now a 400).
 
-An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by the drain's share of the window — exactly the error the paragraph claimed to remove. On a 120 s window with a 5 s drain that was 4.2 % of pure, self-inflicted error.
+An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`. On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error. (The superseded sentence quoted 4.2 %, which is 5/120 — the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
 
-[nl6#463] resolved what the gap actually was, on a capture and report taken together on the same clock: **2349 wire records against 2349 ledger records, in-window, zero ledger error.** The apparent shortfall in the earlier runs decomposed into three measurement-side terms, none of them the ledger:
+[nl6#463] resolved what the gap actually was. Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled). Template FlowSets subtracted, non-first fragments skipped.
 
-| term | contribution at rate 8 |
-|---|---|
-| template FlowSets counted as data records ("phantoms") | 10 records (0.23 %) |
-| emission after the window, counted as wire | 320 records (7.4 %) |
-| capture span used as the denominator instead of the window | 1.2 s of 121.2 s |
-| **ledger error** | **0** |
+Part one, at rate 4/device, seed 42, with capture and report taken on the same clock — **2349 wire data records against 2349 ledger records in `[t0, t1)`, zero ledger error**, with 0 records in `[t1, drain_end)` and 0 after it.
+
+Part two re-analysed the four original cells that had produced the −3 % to −8 % figures. Every one of them lands on its published `achieved_per_device` at published precision once three measurement-side terms are removed. Taking the rate-8 cell, whose capture holds **4327 data records** — the denominator for both percentages below:
+
+| term | records | share of the 4327 captured |
+|---|---|---|
+| template FlowSets counted as data records ("phantoms") | 10 | 0.23 % |
+| emission after the window, counted as wire¹ | 320 | 7.4 % |
+| **ledger error** | **0** | **0 %** |
+
+¹ Those 320 were separated by a rule fixed before the comparison — records after the largest inter-datagram gap past 80 % of the window — because these older captures have no report JSON alongside them, so `t1` is inferred rather than read. Four independent cells landing on four different published values is what carries the conclusion, not the rule.
+
+The third term is not a record count and so is not a row above: the capture *span* was used as the denominator instead of the window — 121.2 s against 120 s, a further 1 % deflation.
 
 The post-window burst is not drain. It is traffic emitted after the scenario stopped and the gate came off, which the ledger never counts and should not: it belongs to no window.
 
-**What this means in practice.** `achieved_per_device` is safe to compare across runs that share a window length, and it answers "did pacing hit its target" directly. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
+**What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length. What a short window still costs is precision, not bias — fewer records, so first-fire alignment and scheduler jitter are a larger share of the total. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
 [nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 [nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
@@ -186,7 +198,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `drain` | Records whose write returned at or after `T1` — the drain barrier's tail. Bounded by the writes already in flight at `T1`, so on a healthy run it is 0; it is not a configurable grace period ([nl6#500]). |
 | `suppressed_pre_window` | State-driven / on-demand fires that occurred before `T0` — counted but not emitted on the wire. |
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
-| `dropped` | Records generated but never confirmed on the wire (straggler past the drain barrier, or a shutdown-race socket drop). |
+| `dropped` | Records generated but never confirmed on the wire. The barrier waits for every fire it admitted, so this is not a "slow write" bucket: the real causes are a fire that reached the barrier *after* it closed (the detach/teardown race) and a shutdown-race socket drop. |
 | `informational.background_suppressed` | **Informational, quarantined in its own sub-object** — background-cadence fires the gate suppressed for this participant during the scenario. Deliberately **not** a flat sibling of the identity buckets and **not** part of the ledger identity. |
 | `informational.informs_acked` / `informs_pending` | SNMP **INFORM** ack settlement (best-effort, collector-side). An origination counts `sent` at first-transmit; `informs_pending = originations − acked` at report time (still-awaiting-ack). Zero for fire-and-forget traps and non-trap protocols. Outside the identity. |
 | `informational.requested` | Scheduler **demand** — every fire the scenario scheduler popped (pre-limiter). `requested = sent + deferred + send_failures + dropped`. |
@@ -226,7 +238,7 @@ Additive block per the evolution policy below.
 | `records` | number | Sent flow records for this application (`sent` basis: in-window + drain). For a pure flow scenario, `Σ applications[].records == summary.sent`. |
 | `bytes` | number | Sum of the records' flow byte counters — exactly what a conforming collector sums for the same window. |
 | `packets` | number | Sum of the records' flow packet counters. |
-| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here — the denominator excludes drain time, so including them would inflate the rate. In-window bytes = `Σ sub_window_bytes`. |
+| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here — the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span — [nl6#500].) In-window bytes = `Σ sub_window_bytes`. |
 | `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded — same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
 
 `sflow` scenarios are excluded by design: an sFlow collector derives byte
@@ -264,6 +276,12 @@ The report is a versioned contract. Consumers should tolerate unknown fields.
   version that ships these fields.
 - `config_sha256` covers only the **submit config**, not the report shape; the
   report contract is tracked by `nl6_version`.
+- The **submit config** has no separate version of its own; it moves with
+  `nl6_version` too, and a removed request field is a breaking change for
+  harnesses. Removals are listed in the API reference's [Removed request
+  fields](./loadtest-api.md#removed-request-fields) with the release that
+  removed them, so a reader on an older binary can tell which one changed.
+  So far: `drain`, refused with a `400` since v0.28.0 ([nl6#500]).
 
 Future projections (additional protocols in `counters`, richer
 loss-localization blocks) are **additive** under this policy.

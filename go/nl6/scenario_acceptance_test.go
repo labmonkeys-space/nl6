@@ -123,8 +123,11 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Real time: let the window run, then finalize.
-	time.Sleep(spec.Window + 50*time.Millisecond)
+	// Real time: let the window run, then finalize. The margin is 150ms, not
+	// the 50ms a mechanical `+ spec.Drain` removal would leave: this test is
+	// NOT under synctest, so the slack absorbs scheduler jitter on a loaded CI
+	// box. Removing an inert config term must not tighten a real deadline.
+	time.Sleep(spec.Window + 150*time.Millisecond)
 	res, err := c.Stop()
 	if err != nil {
 		// Auto-close may have finalized already — that's fine, read the result.
@@ -132,6 +135,9 @@ func TestScenarioAcceptance_SentEqualsReceived(t *testing.T) {
 			t.Fatalf("Stop: %v", err)
 		}
 	}
+	// The drain tail is the mechanism four documents now rest on, so pin it on
+	// a real run (nl6#500): it ends when the admitted writes return.
+	assertDrainTailIsBounded(t, res)
 	sent := res.PerDevice["10.42.0.1"].InWindow + res.PerDevice["10.42.0.1"].Drain
 
 	// Give the collector's read loop time to drain any in-flight datagrams.

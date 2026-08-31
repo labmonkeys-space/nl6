@@ -179,13 +179,19 @@ func TestScenarioScale_LedgerEqualsWire(t *testing.T) {
 	if err := c.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(spec.Window + 50*time.Millisecond)
+	// 200ms of real-time slack on a 300ms window (see the note in
+	// TestScenarioAcceptance_SentEqualsReceived): wall-clock test, loaded CI.
+	time.Sleep(spec.Window + 200*time.Millisecond)
 	res, err := c.Stop()
 	if err != nil {
 		if res = c.Result(); res == nil {
 			t.Fatalf("Stop: %v", err)
 		}
 	}
+
+	// Same drain-tail assertion as the acceptance test, at 50 devices
+	// (nl6#500): a transport parking writes past T1 would show up here first.
+	assertDrainTailIsBounded(t, res)
 
 	var sent uint64
 	for _, snap := range res.PerDevice {

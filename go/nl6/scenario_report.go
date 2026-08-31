@@ -598,9 +598,12 @@ func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
 //
 // This is an IN-WINDOW rate, and that is the whole of its definition (nl6#463).
 // Comparing it against a packet capture therefore means bounding the capture to
-// [T0, T1) — not correcting the figure by a drain, which was never the term: the
-// drain tail is bounded by one in-flight write (measured at T1 + 9ms), so it is
-// arithmetically incapable of moving a 120s window by percent (nl6#500). The
+// [T0, T1) — not correcting the figure by a drain, which was never the term. The
+// drain tail is bounded by the work admitted before T1, not by a duration: one
+// write on the syslog path, where drain_end was measured at T1 + 9ms with a 30s
+// drain configured, and a whole paginated batch on the flow path, which admits
+// around Tick. Either way it is orders of magnitude short of moving a 120s
+// window by percent (nl6#500). The
 // gap nl6#463 chased was measurement-side — template phantoms, post-window
 // emission, and a span-versus-window denominator — with zero ledger error.
 // Documented in docs/reference/loadtest-report-schema.md; do not "fix" it by

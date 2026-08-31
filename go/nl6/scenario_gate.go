@@ -155,7 +155,9 @@ func (p *scenarioPart) decide(src fireSource, t time.Time) gateDecision {
 
 // bucketFor classifies a SINGLE successful fire by its FRESH write-return
 // time: t < T1 → in_window (localized to its sub-window), else drain (the
-// barrier's tail — bounded by one in-flight write, not by any grace). The
+// barrier's tail — bounded by the work admitted before T1, not by any grace:
+// one write on the syslog/trap path, a whole paginated batch on the flow path,
+// which admits around Tick rather than around each WriteTo). The
 // caller Add(1)s the returned counter — multi-record batches must use
 // bucketFlowBatch instead, or sub_windows undercounts against in_window.
 func (p *scenarioPart) bucketFor(t time.Time) *atomic.Uint64 {
