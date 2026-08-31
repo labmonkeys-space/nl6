@@ -8,7 +8,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -52,6 +54,28 @@ func writeResourceFile(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// assertNoPathDisclosure is the single definition of the no-path guarantee.
+//
+// Checking for the literal "resources/" prefix was too weak twice over: the
+// fixtures live under t.TempDir(), so an absolute /var/folders/... leak went
+// undetected, and any path spelling other than that one prefix passed. This
+// asserts on the separator itself plus the absolute fixture root.
+func assertNoPathDisclosure(t *testing.T, body string) {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	// The JSON envelope has no separators of its own; any that appear came
+	// from a rendered path.
+	if strings.Contains(body, "/") || strings.Contains(body, `\/`) {
+		t.Errorf("body %q discloses a path separator", body)
+	}
+	if strings.Contains(body, cwd) {
+		t.Errorf("body %q discloses the absolute fixture root %q", body, cwd)
 	}
 }
 
@@ -464,9 +488,7 @@ func TestCreateDevicesHandlerRejectsBadResourceFile(t *testing.T) {
 				t.Errorf("body %q does not mention %q", body, want)
 			}
 		}
-		if strings.Contains(body, "resources/") || strings.Contains(body, `resources\/`) {
-			t.Errorf("body %q discloses a server-side directory path", body)
-		}
+		assertNoPathDisclosure(t, body)
 	})
 
 	t.Run("absent-device-type-is-400", func(t *testing.T) {
@@ -480,19 +502,27 @@ func TestCreateDevicesHandlerRejectsBadResourceFile(t *testing.T) {
 		}
 		// The docs promise the 400 body never contains a directory path; the
 		// original not-found message interpolated resources/<slug> twice.
-		if strings.Contains(body, "resources/") || strings.Contains(body, `resources\/`) {
-			t.Errorf("body %q discloses a server-side directory path", body)
-		}
+		assertNoPathDisclosure(t, body)
 	})
 
 	t.Run("bad-file-name-is-400-without-a-path", func(t *testing.T) {
-		rr := post(`{"start_ip":"10.42.0.1","device_count":1,"netmask":"16","resource_file":"../../etc/passwd"}`)
+		const submitted = "../../etc/passwd"
+		rr := post(`{"start_ip":"10.42.0.1","device_count":1,"netmask":"16","resource_file":"` + submitted + `"}`)
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body.String())
 		}
-		if body := rr.Body.String(); strings.Contains(body, "/") && strings.Contains(body, "..") {
-			t.Errorf("body %q echoes the traversal path back", body)
+		body := rr.Body.String()
+		// Positive, not a conjunction of absences: `!(has "/" && has "..")`
+		// passed for a body echoing the traversal with either character
+		// dropped. The submitted string must not survive at all, and the base
+		// name must be what identifies the fault.
+		if strings.Contains(body, submitted) {
+			t.Errorf("body %q echoes the submitted traversal path back", body)
 		}
+		if !strings.Contains(body, "passwd") {
+			t.Errorf("body %q does not name the base name of the rejected file", body)
+		}
+		assertNoPathDisclosure(t, body)
 	})
 
 	// A VALID resource file gets past resolution and hits the root check,
@@ -535,9 +565,7 @@ func TestRESTRejectionIs400WithBaseNameOnly(t *testing.T) {
 			t.Errorf("400 body %q does not mention %q", msg, want)
 		}
 	}
-	if strings.Contains(msg, string(os.PathSeparator)) {
-		t.Errorf("400 body %q discloses a server-side directory path", msg)
-	}
+	assertNoPathDisclosure(t, msg)
 	if !strings.Contains(err.Error(), dir) {
 		t.Errorf("error %q lost the full path; the log needs it", err)
 	}
@@ -680,10 +708,12 @@ func TestResourceFileErrorSanitisesHostileInput(t *testing.T) {
 	})
 
 	t.Run("truncation-lands-on-a-rune-boundary", func(t *testing.T) {
-		// The prefix "resource a.json: " is 17 bytes, so the 512-byte cap
-		// falls an odd number of bytes into a run of 2-byte runes — exactly
-		// the mid-rune cut a byte-slicing truncation ships as invalid UTF-8.
-		e := &resourceFileError{File: "a.json", Msg: strings.Repeat("ü", 400), kind: errResourceInvalid}
+		// The prefix "resource a.json: " is 17 bytes, so the cap falls an odd
+		// number of bytes into a run of 2-byte runes — exactly the mid-rune
+		// cut a byte-slicing truncation ships as invalid UTF-8. Sized from
+		// the constant, not from a literal, so raising the cap cannot make
+		// this silently stop exercising truncation at all.
+		e := &resourceFileError{File: "a.json", Msg: strings.Repeat("ü", maxResourceMessageBytes), kind: errResourceInvalid}
 		got := e.PublicMessage()
 		if !utf8.ValidString(got) {
 			t.Errorf("PublicMessage() is not valid UTF-8: %q", got)
@@ -810,5 +840,512 @@ func TestTrailingDataIsInvalid(t *testing.T) {
 				_ = assertInvalid(t, sm2.LoadResources(filepath.Join("resources", "trailing.json")))
 			})
 		}
+	}
+}
+
+// ── R1: the zero-entry rule is a property of the SET, not of the layout ────
+
+// The directory twin of TestZeroEntrySingleFileIsInvalid. Counting .json FILES
+// left this open: a directory whose only part is `{}` reaches parts == 1,
+// passes that guard, and publishes or caches a set from which every device
+// answers no OID at all — verbatim the outcome the single-file rule exists to
+// prevent. A part that is individually empty is still fine; what is refused is
+// a merged set with nothing in it.
+func TestZeroEntryDirectoryIsInvalid(t *testing.T) {
+	for _, shape := range []struct {
+		name  string
+		parts []string
+	}{
+		{"one-empty-part", []string{`{}`}},
+		{"empty-arrays", []string{`{"snmp":[],"ssh":[]}`}},
+		{"several-empty-parts", []string{`{}`, `{"snmp":[]}`, `null`}},
+	} {
+		write := func(t *testing.T) {
+			t.Helper()
+			for i, body := range shape.parts {
+				writeResourceFile(t, filepath.Join("resources", "hollowdir",
+					fmt.Sprintf("p%d_snmp.json", i)), body)
+			}
+		}
+
+		t.Run(shape.name+"/LoadResources", func(t *testing.T) {
+			sm := classifyFixture(t)
+			before := &DeviceResources{SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.1.1.0", Response: "previous"}}}
+			sm.deviceResources = before
+			write(t)
+
+			err := sm.LoadResources(filepath.Join("resources", "hollowdir.json"))
+			_ = assertInvalid(t, err)
+			if sm.deviceResources != before {
+				t.Errorf("a zero-entry directory replaced the loaded set with %d entries",
+					len(sm.deviceResources.SNMP))
+			}
+		})
+
+		t.Run(shape.name+"/LoadSpecificResources", func(t *testing.T) {
+			sm := classifyFixture(t)
+			write(t)
+
+			res, err := sm.LoadSpecificResources("hollowdir.json")
+			if err == nil {
+				t.Fatalf("a zero-entry directory loaded and would be cached: %+v", res)
+			}
+			_ = assertInvalid(t, err)
+			if _, cached := sm.resourcesCache["hollowdir.json"]; cached {
+				t.Error("a zero-entry directory was cached")
+			}
+		})
+	}
+
+	// The two emptinesses keep distinct messages, because the remedies differ:
+	// one directory needs a part, the other needs entries in the parts it has.
+	t.Run("messages-are-distinct", func(t *testing.T) {
+		sm := classifyFixture(t)
+		if err := os.MkdirAll(filepath.Join("resources", "nopart"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		writeResourceFile(t, filepath.Join("resources", "noentry", "p_snmp.json"), `{}`)
+
+		_, noPart := sm.LoadSpecificResources("nopart.json")
+		_, noEntry := sm.LoadSpecificResources("noentry.json")
+		if noPart == nil || noEntry == nil {
+			t.Fatalf("both must fail: %v / %v", noPart, noEntry)
+		}
+		if noPart.Error() == noEntry.Error() {
+			t.Fatalf("both emptinesses report the same message %q", noPart)
+		}
+		if !strings.Contains(noPart.Error(), "no .json resource part") {
+			t.Errorf("no-part message %q does not say a part is missing", noPart)
+		}
+		if !strings.Contains(noEntry.Error(), "no resource entries") {
+			t.Errorf("no-entry message %q does not say entries are missing", noEntry)
+		}
+	})
+}
+
+// ── R11: positive controls ─────────────────────────────────────────────────
+
+// Three tests assert the cache is ABSENT after a rejection, and a loader that
+// stopped caching entirely would pass all three. This is the control: a good
+// single file IS cached, and the second call is served from that cache.
+//
+// It doubles as the single-file happy path the four refusals above need. Every
+// other positive control in this package uses the DIRECTORY layout (the
+// shipped tree has no single-file device type), so a regression that rejected
+// every valid single file would otherwise go unnoticed.
+func TestValidSingleFileLoadsAndIsCached(t *testing.T) {
+	sm := classifyFixture(t)
+	writeResourceFile(t, filepath.Join("resources", "goodsingle.json"),
+		`{"snmp":[`+cleanEntry+`],"ssh":[{"command":"show version","response":"ok"}]}`)
+
+	res, err := sm.LoadSpecificResources("goodsingle.json")
+	if err != nil {
+		t.Fatalf("a valid single-file resource was rejected: %v", err)
+	}
+	if len(res.SNMP) != 1 || len(res.SSH) != 1 {
+		t.Fatalf("loaded %d SNMP and %d SSH entries, want 1 and 1", len(res.SNMP), len(res.SSH))
+	}
+	cached, ok := sm.resourcesCache["goodsingle.json"]
+	if !ok {
+		t.Fatal("a valid single file was NOT cached; the no-cache assertions " +
+			"elsewhere would pass on a loader that never caches")
+	}
+	if cached != res {
+		t.Error("the cached pointer is not the returned one")
+	}
+	if again, err := sm.LoadSpecificResources("goodsingle.json"); err != nil || again != res {
+		t.Errorf("second call did not come from the cache: %v / %p vs %p", err, again, res)
+	}
+
+	// The startup loader accepts it too, and publishes it.
+	sm2 := classifyFixture(t)
+	writeResourceFile(t, filepath.Join("resources", "goodsingle.json"),
+		`{"snmp":[`+cleanEntry+`]}`)
+	if err := sm2.LoadResources(filepath.Join("resources", "goodsingle.json")); err != nil {
+		t.Fatalf("LoadResources rejected a valid single file: %v", err)
+	}
+	if sm2.deviceResources == nil || len(sm2.deviceResources.SNMP) != 1 {
+		t.Fatalf("LoadResources published %+v", sm2.deviceResources)
+	}
+}
+
+// ── R2: an all-absent round-robin batch ────────────────────────────────────
+
+// Every INDIVIDUAL absent type is a not-found fault the REST boundary answers
+// 400. A batch in which they are ALL absent — a trimmed resource tree, or a
+// category matching only unshipped types — is the same fault and must get the
+// same status; it used to return a bare fmt.Errorf that errors.As missed, so
+// the caller got an opaque 500. TestRoundRobinSkipsAbsentType always leaves
+// one type present, so nothing covered this.
+func TestRoundRobinAllAbsentIsClassifiedNotFound(t *testing.T) {
+	sm := classifyFixture(t)
+	withRoundRobinTypes(t, []string{"rrgone1.json", "rrgone2.json"})
+
+	_, _, _, err := sm.resolveCreateResources(true, "", "")
+	_ = assertNotFound(t, err)
+
+	msg, status := createDevicesErrorResponse(err)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 — the same status a single absent type gets", status)
+	}
+	assertNoPathDisclosure(t, msg)
+}
+
+// ── R6: an unknown category must not substitute the full type list ─────────
+
+// `if len(filtered) > 0 { rrTypes = filtered }` meant a typo'd category built
+// the batch from EVERY device type in the fleet, and the log line printed the
+// requested category beside the unfiltered count, so the substitution was
+// invisible there too. That is the same "silently changes the device-type mix
+// the caller asked for" failure that makes an invalid type abort.
+func TestUnknownCategoryIsRejectedNotSubstituted(t *testing.T) {
+	sm := classifyFixture(t)
+	withRoundRobinTypes(t, []string{"rrgood.json"})
+	writeResourceFile(t, filepath.Join("resources", "rrgood.json"), `{"snmp":[`+cleanEntry+`]}`)
+
+	_, rrRes, _, err := sm.resolveCreateResources(true, "No Such Category", "")
+	if err == nil {
+		t.Fatalf("an unknown category loaded %d device type(s) instead of being rejected", len(rrRes))
+	}
+	_ = assertInvalid(t, err)
+	if !strings.Contains(err.Error(), "No Such Category") {
+		t.Errorf("error %q does not name the rejected category", err)
+	}
+	if _, status := createDevicesErrorResponse(err); status != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", status)
+	}
+
+	// Positive control: a category that DOES match still filters.
+	sm2 := classifyFixture(t)
+	real := RoundRobinDeviceTypes
+	if len(real) == 0 {
+		t.Skip("no shipped round-robin types")
+	}
+	cat := getDeviceCategoryFromName(strings.TrimSuffix(real[0], ".json"))
+	if cat == "" {
+		t.Skip("first round-robin type has no category")
+	}
+	if _, _, _, err := sm2.resolveCreateResources(true, cat, ""); err == nil {
+		t.Errorf("expected the empty fixture tree to fail, but a real category was rejected outright")
+	} else if !errors.Is(err, errResourceNotFound) {
+		t.Errorf("a matching category failed as %v; want the not-found "+
+			"all-absent fault, proving the filter itself matched", err)
+	}
+}
+
+// ── R3: the full path must reach the log ───────────────────────────────────
+
+// The spec's Always clause is that the 400 body names the base name and the
+// full path stays in the error "and therefore in logs". sendErrorResponse
+// writes only the HTTP body, so before this the error rendered twice and only
+// the public rendering was ever emitted: the path reached nobody.
+func TestRejectionLogsTheFullPath(t *testing.T) {
+	sm := classifyFixture(t)
+	t.Cleanup(swapGlobalManager(sm))
+	router := setupRoutes()
+
+	dir := filepath.Join("resources", "logbad")
+	writeResourceFile(t, filepath.Join(dir, "logbad_snmp.json"), `{"snmp":[`+rejectedEntry+`]}`)
+
+	var logged strings.Builder
+	restore := captureLogOutput(t, &logged)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices",
+		strings.NewReader(`{"start_ip":"10.42.0.1","device_count":1,"netmask":"16","resource_file":"logbad.json"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	restore()
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", rr.Code, rr.Body.String())
+	}
+	want := filepath.Join(dir, "logbad_snmp.json")
+	if !strings.Contains(logged.String(), want) {
+		t.Fatalf("the server log does not contain the full path %q.\nlog was: %s", want, logged.String())
+	}
+	// And the body still does not.
+	assertNoPathDisclosure(t, rr.Body.String())
+}
+
+// captureLogOutput redirects the standard logger for the duration of a call.
+func captureLogOutput(t *testing.T, into *strings.Builder) (restore func()) {
+	t.Helper()
+	prevOut, prevFlags := log.Writer(), log.Flags()
+	log.SetOutput(into)
+	log.SetFlags(0)
+	done := false
+	restore = func() {
+		if done {
+			return
+		}
+		done = true
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}
+	t.Cleanup(restore)
+	return restore
+}
+
+// ── R5: a path reaching the body through Msg ───────────────────────────────
+
+// PublicMessage base-names e.File, but messages INTERPOLATE causes:
+// json.Decoder.Decode returns the underlying read error unwrapped, and the
+// startup fallback interpolates an *os.PathError. The guarantee therefore has
+// to be enforced at the rendering, not per call site.
+func TestPublicMessageRedactsPathsInsideTheMessage(t *testing.T) {
+	for _, tc := range []struct{ name, msg, wantAbsent, wantPresent string }{
+		{
+			name:        "unwrapped-read-error",
+			msg:         "failed to parse: read resources/cisco_ios/snmp_system.json: input/output error",
+			wantAbsent:  "resources/cisco_ios",
+			wantPresent: "snmp_system.json",
+		},
+		{
+			name:        "os-PathError",
+			msg:         `not found, and default resources could not be created: open resources/asr9k.json: permission denied`,
+			wantAbsent:  "resources/asr9k.json",
+			wantPresent: "asr9k.json",
+		},
+		{
+			name:        "absolute-path",
+			msg:         "failed to parse: read /var/folders/xy/T/abc/resources/p.json: bad file descriptor",
+			wantAbsent:  "/var/folders",
+			wantPresent: "p.json",
+		},
+		{
+			name:        "quoted-path",
+			msg:         `cannot stat "resources/some_type": permission denied`,
+			wantAbsent:  "resources/some_type",
+			wantPresent: "some_type",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &resourceFileError{File: "x.json", Msg: tc.msg, kind: errResourceInvalid}
+			got := e.PublicMessage()
+			if strings.Contains(got, tc.wantAbsent) {
+				t.Errorf("PublicMessage() = %q still contains the path %q", got, tc.wantAbsent)
+			}
+			if !strings.Contains(got, tc.wantPresent) {
+				t.Errorf("PublicMessage() = %q dropped the base name %q", got, tc.wantPresent)
+			}
+			// Error() keeps the whole thing, for the log.
+			if !strings.Contains(e.Error(), tc.wantAbsent) {
+				t.Errorf("Error() = %q lost the full path; the log needs it", e.Error())
+			}
+		})
+	}
+
+	// An OID is dotted-numeric with no separator and must survive intact — the
+	// guard messages quote OIDs, and redaction that ate them would destroy the
+	// diagnosis this whole feature exists to deliver.
+	t.Run("an-OID-is-not-a-path", func(t *testing.T) {
+		e := &resourceFileError{
+			File: "x.json",
+			Msg:  `OID 1.3.6.1.2.1.1.1.0 has value "noSuchObject", which collides`,
+			kind: errResourceInvalid,
+		}
+		if !strings.Contains(e.PublicMessage(), "1.3.6.1.2.1.1.1.0") {
+			t.Errorf("PublicMessage() = %q mangled the OID", e.PublicMessage())
+		}
+	})
+}
+
+// ── R12: an unreadable device-type directory ───────────────────────────────
+
+// os.Stat failing with permission-denied rather than IsNotExist used to fall
+// through to the single-file branch and end as not-found, so round-robin
+// SKIPPED the type and the device mix changed silently.
+func TestUnreadableDirectoryIsInvalidNotNotFound(t *testing.T) {
+	sm := classifyFixture(t)
+	// A directory that cannot be stat'd: put it under a parent with no
+	// execute permission.
+	parent := filepath.Join("resources", "locked")
+	if err := os.MkdirAll(filepath.Join(parent, "inner"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	if _, err := os.Stat(filepath.Join(parent, "inner")); err == nil || os.IsNotExist(err) {
+		t.Skip("cannot stage an unstattable directory (running as root?)")
+	}
+
+	// LoadResources takes the same branch.
+	err := sm.LoadResources(filepath.Join(parent, "inner.json"))
+	if err == nil {
+		t.Fatal("an unstattable device-type directory loaded")
+	}
+	if errors.Is(err, errResourceNotFound) {
+		t.Errorf("error %q is classified not-found; round-robin would SKIP the "+
+			"type and change the device mix silently", err)
+	}
+	_ = assertInvalid(t, err)
+
+	// And the REST-reachable loader, which is the one round-robin calls. It
+	// resolves resources/<slug> itself, so the unstattable directory has to be
+	// staged by making resources/ non-traversable.
+	t.Run("LoadSpecificResources", func(t *testing.T) {
+		sm2 := classifyFixture(t)
+		if err := os.MkdirAll(filepath.Join("resources", "inner"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.Chmod("resources", 0o000); err != nil {
+			t.Fatalf("chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod("resources", 0o755) })
+		if _, err := os.Stat(filepath.Join("resources", "inner")); err == nil || os.IsNotExist(err) {
+			t.Skip("cannot stage an unstattable directory (running as root?)")
+		}
+
+		_, err := sm2.LoadSpecificResources("inner.json")
+		if err == nil {
+			t.Fatal("an unstattable device-type directory loaded")
+		}
+		if errors.Is(err, errResourceNotFound) {
+			t.Fatalf("error %q is classified not-found, so resolveCreateResources "+
+				"would SKIP this type in a round-robin batch and change the "+
+				"device mix silently", err)
+		}
+		_ = assertInvalid(t, err)
+	})
+}
+
+// ── R4: checkSingleDocument must not call an I/O fault "trailing data" ─────
+
+// Testing `err != io.EOF` collapsed four outcomes into two: any non-EOF result,
+// INCLUDING a read failure on the underlying file, was reported to the operator
+// as trailing data — pointing at content that is fine — and classified as
+// caller data, which is fatal at startup and 400 at REST. That is exactly the
+// classification distinction this work exists to draw.
+//
+// Driven directly, because a real mid-read I/O fault cannot be staged portably.
+func TestCheckSingleDocumentSeparatesIOFromTrailingData(t *testing.T) {
+	readErr := errors.New("simulated disk failure")
+
+	t.Run("io-fault-is-not-classified", func(t *testing.T) {
+		dec := json.NewDecoder(io.MultiReader(
+			strings.NewReader(`{"snmp":[]} `),
+			&errReader{err: readErr},
+		))
+		var v map[string]any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("the document itself must decode: %v", err)
+		}
+
+		err := checkSingleDocument("resources/x.json", dec)
+		if err == nil {
+			t.Fatal("a read failure after the document was ignored")
+		}
+		if !errors.Is(err, readErr) {
+			t.Errorf("error %q does not carry the underlying read error", err)
+		}
+		if errors.Is(err, errResourceInvalid) {
+			t.Errorf("a read FAILURE was classified as invalid content (%q); it would "+
+				"be fatal at startup and 400 at REST, and would blame content "+
+				"that is fine", err)
+		}
+		if strings.Contains(err.Error(), "trailing data") {
+			t.Errorf("error %q calls a read failure trailing data", err)
+		}
+	})
+
+	// The controls: both genuine trailing-data shapes stay invalid content.
+	t.Run("a-second-document-is-invalid-content", func(t *testing.T) {
+		dec := json.NewDecoder(strings.NewReader(`{"snmp":[]} {"snmp":[]}`))
+		var v map[string]any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		_ = assertInvalid(t, checkSingleDocument("resources/x.json", dec))
+	})
+
+	t.Run("trailing-garbage-is-invalid-content", func(t *testing.T) {
+		dec := json.NewDecoder(strings.NewReader(`{"snmp":[]} ]`))
+		var v map[string]any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		err := checkSingleDocument("resources/x.json", dec)
+		_ = assertInvalid(t, err)
+		var syn *json.SyntaxError
+		if !errors.As(err, &syn) {
+			t.Errorf("error %q does not carry the syntax error as its cause", err)
+		}
+	})
+
+	t.Run("a-clean-document-passes", func(t *testing.T) {
+		dec := json.NewDecoder(strings.NewReader(`{"snmp":[]}`))
+		var v map[string]any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if err := checkSingleDocument("resources/x.json", dec); err != nil {
+			t.Errorf("a single clean document was rejected: %v", err)
+		}
+	})
+}
+
+// errReader fails every read with a fixed error, standing in for a mid-file
+// I/O fault that cannot be staged portably.
+type errReader struct{ err error }
+
+func (r *errReader) Read([]byte) (int, error) { return 0, r.err }
+
+// ── R13: bidi and zero-width runes, and the raised cap ─────────────────────
+
+func TestSanitiseStripsBidiAndZeroWidthRunes(t *testing.T) {
+	// Every rune that can restructure a rendered line without changing what
+	// the bytes say. U+202E RIGHT-TO-LEFT OVERRIDE is the sharp one: it
+	// reorders the VISIBLE text, so a crafted file name makes a log line or a
+	// 400 body read as a different file from the one that failed.
+	formatting := []rune{
+		'\u200b', '\u200c', '\u200d', '\ufeff', // zero-width
+		'\u200e', '\u200f', // LRM / RLM
+		'\u202a', '\u202b', '\u202c', '\u202d', '\u202e', // embedding / override
+		'\u2066', '\u2067', '\u2068', '\u2069', // isolates
+	}
+	var hostile strings.Builder
+	hostile.WriteString("a")
+	for _, r := range formatting {
+		hostile.WriteRune(r)
+		hostile.WriteString("b")
+	}
+
+	e := &resourceFileError{File: hostile.String() + ".json", Msg: "bad" + hostile.String() + "value", kind: errResourceInvalid}
+	for name, got := range map[string]string{"Error()": e.Error(), "PublicMessage()": e.PublicMessage()} {
+		for _, r := range formatting {
+			if strings.ContainsRune(got, r) {
+				t.Errorf("%s = %q still contains formatting rune %U", name, got, r)
+			}
+		}
+	}
+	// Positive control: ordinary non-ASCII text is NOT mangled, so the
+	// stripping cannot be a blanket "drop everything above 0x7f".
+	keep := &resourceFileError{File: "ciena-wavelänge.json", Msg: "naïve", kind: errResourceInvalid}
+	if !strings.Contains(keep.PublicMessage(), "wavelänge") || !strings.Contains(keep.PublicMessage(), "naïve") {
+		t.Errorf("PublicMessage() = %q mangled ordinary non-ASCII text", keep.PublicMessage())
+	}
+}
+
+// The cap must not cut the remediation off a realistic guard message. The
+// sentinel message puts the quoted value early and "change the value" last.
+func TestRealisticGuardMessageSurvivesTheCap(t *testing.T) {
+	sm := classifyFixture(t)
+	longValue := strings.Repeat("x", 90)
+	dir := filepath.Join("resources", "capcheck")
+	writeResourceFile(t, filepath.Join(dir, "capcheck_snmp_interfaces_and_more.json"),
+		`{"snmp":[{"oid":"1.3.6.1.2.1.1.2.0","response":"`+longValue+`"}]}`)
+
+	_, err := sm.LoadSpecificResources("capcheck.json")
+	rerr := assertInvalid(t, err)
+	msg := rerr.PublicMessage()
+	if strings.Contains(msg, "(truncated)") {
+		t.Errorf("a realistic guard message was truncated at %d bytes: %q", maxResourceMessageBytes, msg)
+	}
+	// The remediation is the tail, and it is the half that says how to fix it.
+	if !strings.Contains(msg, "Correct the value") {
+		t.Errorf("message %q lost its remediation tail", msg)
 	}
 }

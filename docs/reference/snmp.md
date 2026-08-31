@@ -156,6 +156,8 @@ A rejection is never downgraded to a log line (nl6#538).
 The startup load exits rather than substituting another profile, and round-robin device creation fails the call rather than skipping the offending device type.
 An absent file is a different kind of fault: round-robin still skips it, while over REST it is also a 400, because naming a device type that does not exist is an unsatisfiable request rather than a server fault.
 The no-path guarantee covers these classified rejections only — an unclassified loader failure still answers 500 with the raw error text.
+The full path is logged server-side on every rejection, so base-naming the body loses nothing.
+Full detail, including the response envelope, is in [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 
 The same guard carries a second rule (nl6#529): a value on an OID-typed leaf, today only `sysObjectID`, must be an OID the encoder can represent.
 Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire; see [The first OID sub-identifier is a varint](#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.

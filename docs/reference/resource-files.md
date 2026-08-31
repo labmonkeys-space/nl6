@@ -82,7 +82,8 @@ Where the rejection surfaces matters:
   It answers **HTTP 400**.
   The body names the file's base name; for a fault attributable to one entry it also names the OID and the value.
   A parse failure, a `null` document, an empty directory, an optical-inventory mismatch and a rejected file name have no single entry to name, so they carry neither.
-- The 400 body never contains a directory path, and control characters in it are stripped and its length capped.
+- The 400 body never contains a directory path — not in the file name, and not inside an interpolated cause such as a failed read — and control characters and bidi formatting runes in it are stripped and its length capped.
+  The full path is written to the **server log** instead, so it is not lost.
   That guarantee covers the classified rejections above only.
   Faults the loader does not classify — a file it cannot open, a directory it cannot list — still answer 500 with the raw error, and some of those embed the full path.
 - In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
@@ -93,12 +94,29 @@ Where the rejection surfaces matters:
 - A file that is simply **absent** is a different kind of fault.
   Round-robin still skips a device type that is not shipped, with a warning, and the other types still load.
   Over REST an absent file is also a 400: `resource_file` is your field, and naming a device type that does not exist is a request that cannot be satisfied, not a server fault.
+  A round-robin batch in which **every** requested type is absent gets that same 400, not a 500.
 - At startup, a missing `resources/asr9k.json` is **not** a fallback to `cisco_ios`.
   The simulator writes a synthesised default profile of about 30 compiled-in OIDs to that path and serves it.
   The `cisco_ios` fallback runs only when that file cannot be written, for example into a read-only `resources/` directory.
-- A file containing the literal `null`, a file whose JSON does not parse, a file with data trailing the JSON document, a single file with no resource entries at all, and a device-type directory containing no JSON part at all are treated as invalid content and take the same route.
-  A `null` **part** inside a device-type directory is fine: a part legitimately carries only some sections.
+- A file containing the literal `null`, a file whose JSON does not parse, a file with data trailing the JSON document, a single file with no resource entries at all, and a device-type directory that has no JSON part **or whose parts hold no entries between them** are treated as invalid content and take the same route.
+  The directory rule is a property of the merged set, not of the file count: a directory whose only part is `{}` produces a device type that answers no OID at all, which is exactly what the single-file rule refuses.
+  A `null` or otherwise empty **part** inside a directory that has entries elsewhere is fine: a part legitimately carries only some sections.
 - A failed load never replaces the resource set already in memory, not even partially.
+- A `category` that matches no device type is rejected with a 400.
+  It used to fall through and build the batch from **every** device type in the fleet.
+
+### Behaviour change
+
+Five file or request shapes that previously loaded are now refused — fatal at startup, `400` at REST.
+If you have hand-written resource files or scripts, check for these before upgrading:
+
+| Shape | Previously | Now |
+|-------|-----------|-----|
+| A single file with no entries (`{}`, or only empty arrays) | Loaded; every device answered no OID | Invalid content |
+| A device-type directory whose parts hold no entries between them | Loaded and cached the same way | Invalid content |
+| Anything after the first JSON document in a file | The trailing bytes were ignored silently | Invalid content |
+| A device-type directory that cannot be stat'd (permissions) | Treated as absent, so round-robin skipped it | Invalid content |
+| A `round_robin` request with a `category` matching nothing | Loaded every device type instead | `400` |
 
 This and the OID-typed value rule below are the only rules on `snmp` values enforced at load, and they cover resource files only.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.

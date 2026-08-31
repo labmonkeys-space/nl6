@@ -279,29 +279,41 @@ BER table.
 
 ### `resource_file` failures
 
-`resource_file` names the device type to load, and a request that names one the
+`resource_file` names the device type to load, and a request naming one the
 simulator cannot use is answered **`400`** (nl6#538), not `500`.
-Four cases take it:
 
-- the file name is not a device-type slug (`../../etc/passwd`, `a b.json`);
-- no such device type exists — neither `resources/<slug>/` nor `resources/<slug>.json`;
-- the file or one of its directory parts is invalid content: JSON that does not parse, a document that is literally `null`, a single file with no resource entries at all, trailing data after the JSON document, a directory with no JSON part in it, an SNMP value the load-time guard rejects, or an optical inventory that disagrees with the device type's channel count;
-- a round-robin batch in which a device type is invalid content as above (an absent type is skipped with a warning instead; any other failure — an unreadable file, an unlistable directory — aborts the batch and answers `500`, because the server, not the request, is at fault).
+Response:
 
-The `message` names the file's base name, and the offending OID and value when
-the fault is attributable to one entry.
-It never contains a directory path, control characters are stripped from it,
-and it is length-capped.
-That guarantee covers the four cases above.
-Anything else that fails the load — a file the process cannot open, a directory
-it cannot list — still answers `500` with the raw error, which may contain a
-path.
+| Status | Body | When |
+|--------|------|------|
+| `400 Bad Request` | `{"success": false, "message": "resource <base-name>: <what is wrong>"}` | The file name is not a device-type slug; no such device type is shipped (including a `round_robin` batch in which none of the requested types is, or a `category` matching none); or the file's content is invalid — JSON that does not parse, a document that is literally `null`, anything trailing the document, no entries at all, a device-type directory with no JSON part or whose parts hold no entries between them, an SNMP value the load-time guard rejects, or an optical inventory disagreeing with the type's channel count. |
+| `500 Internal Server Error` | `{"success": false, "message": "<raw error>"}` | The loader could not classify the failure: a file it cannot open, a directory it cannot list. The raw message may contain a full path. |
 
-`resource_file` is validated **before** the privilege check, so a request
-naming a bad device type gets this `400` whether or not the simulator is
-running as root.
-A request naming a good one proceeds, and without root gets the pre-existing
-`500` `root privileges required to create TUN interfaces`.
+The `message` field carries the diagnosis. It names the file's **base name**,
+and for a fault attributable to one entry the OID and the value as well:
+
+```json
+{
+  "success": false,
+  "message": "resource restbad_snmp.json: OID 1.3.6.1.2.1.1.1.0 has value \"noSuchObject\", which collides with an SNMP exception sentinel and would be encoded as an RFC 3416 exception instead of a string. There is no escaping form: change the value. To make the OID answer noSuchObject on purpose, omit the entry entirely, since an absent OID already answers with the exception"
+}
+```
+
+A parse failure, a `null` document, an empty file or directory, an optical
+mismatch and a rejected file name have no single entry to name, so they carry
+neither OID nor value.
+
+The `400` body never contains a directory path — not in the file name, and not
+inside an interpolated cause such as a failed read — control characters and
+bidi formatting runes are stripped from it, and it is length-capped. The full
+path goes to the **server log** instead. That guarantee covers the `400` class
+only; the `500` class returns the raw error.
+
+`resource_file` is validated **before** TUN pre-allocation and before the
+privilege check, so a request naming a bad device type gets this `400` without
+allocating anything, whether or not the simulator runs as root. A request
+naming a good one proceeds, and without root gets the pre-existing `500`
+`root privileges required to create TUN interfaces`.
 
 ### Per-device export blocks
 
