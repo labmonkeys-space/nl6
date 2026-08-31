@@ -216,24 +216,55 @@ func addMalformedVarbindSeeds(f *testing.F) {
 	}
 }
 
+// addAgreementSeeds registers datagrams the nl6#534 agreement assertions need
+// in order to be REACHABLE by an ordinary `go test` seed replay.
+//
+// Every GETBULK seed this file had before nl6#534 carries non-repeaters=0 and
+// max-repetitions=10 — which are exactly parseGetBulkParams' defaults, so its
+// return value cannot distinguish "read the PDU" from "never found it" and
+// CLAIM 1 is guarded off on every one of them. An assertion no committed seed
+// can reach is an assertion CI does not run, which is the failure mode this
+// change exists to avoid.
+func addAgreementSeeds(f *testing.F) {
+	f.Add(buildGetBulkPDUForFuzz(2, 200, ".1.3.6.1.2.1.2.2.1.2"))
+	f.Add(buildGetBulkPDUForFuzz(0, 60000, ".1.3.6.1.2.1.1.1.0"))
+	f.Add(snmpRequestAt(ASN1_GET_REQUEST, snmpVersion2c,
+		[]string{".1.3.6.1.2.1.2.2.1.2.1", ".1.3.6.1.2.1.31.1.1.1.6.7", ".1.3.6.1.4.1.9.9.999.1.2.3"}))
+}
+
 func FuzzGetPDUType(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	f.Add([]byte{0x30, 0x05, 0x02, 0x01, 0x00, 0x04})
 	addGoldenV2cSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().getPDUType(data) })
+	addAgreementSeeds(f)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := robustnessTestServer()
+		s.getPDUType(data)
+		assertV2cParserAgreement(t, s, data)
+	})
 }
 
 func FuzzParseIncomingRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	addGoldenV2cSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) { robustnessTestServer().parseIncomingRequest(data) })
+	addAgreementSeeds(f)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := robustnessTestServer()
+		s.parseIncomingRequest(data)
+		assertV2cParserAgreement(t, s, data)
+	})
 }
 
 func FuzzParseAllOIDsFromRequest(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	addGoldenV2cSeeds(f)
 	addMalformedVarbindSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) { _, _ = robustnessTestServer().parseAllOIDsFromRequest(data) })
+	addAgreementSeeds(f)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := robustnessTestServer()
+		_, _ = s.parseAllOIDsFromRequest(data)
+		assertV2cParserAgreement(t, s, data)
+	})
 }
 
 func FuzzIsSNMPv3Request(f *testing.F) {
@@ -305,8 +336,13 @@ func FuzzParseGetBulkParams(f *testing.F) {
 	f.Add(crasherGetPDUType)
 	f.Add(buildGetBulkPDUForFuzz(0, 10, ".1.3.6.1.2.1.1.1.0"))
 	addGoldenV2cSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		_, _ = (&SNMPServer{}).parseGetBulkParams(data)
+	addAgreementSeeds(f)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// A zero-value receiver is enough: every parser the agreement helper
+		// drives reaches only s.skipLength, which touches no field.
+		s := &SNMPServer{}
+		_, _ = s.parseGetBulkParams(data)
+		assertV2cParserAgreement(t, s, data)
 	})
 }
 
@@ -668,8 +704,15 @@ func FuzzHandleSingleRequest(f *testing.F) {
 	addValidV3Seeds(f)
 	addGoldenV2cSeeds(f)
 	addMalformedVarbindSeeds(f)
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		fuzzTestServer(50).handleSingleRequest(data, nil)
+	addAgreementSeeds(f)
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := fuzzTestServer(50)
+		s.handleSingleRequest(data, nil)
+		// The agreement assertions belong here above all: this is the target
+		// nl6#513 measured as 6-8x more productive than the leaf ones, so it
+		// is where a disagreement is most likely to be reached first.
+		assertV2cParserAgreement(t, s, data)
+		assertMalformedListIsDiscarded(t, s, data)
 	})
 }
 
@@ -722,4 +765,338 @@ func fuzzPrivTestServer(n, privProto int) *SNMPServer {
 	s.v3Config.PrivProtocol = privProto
 	s.v3Config.PrivPassword = "s3cretpassword"
 	return s
+}
+
+// ── nl6#534: self-differential parser agreement ──────────────────────────────
+//
+// nl6#513 established that the SNMP parsers are TOTAL — no input panics. That
+// says nothing about a silent MIS-parse, which is the nl6#514 class: a
+// zero-length community read as absent, answered with a community the caller
+// never sent. A panic has an oracle (the process died); a wrong answer does
+// not.
+//
+// Several parsers read the SAME v1/v2c datagram independently — getPDUType,
+// parseIncomingRequest, parseAllOIDsFromRequest and parseGetBulkParams each
+// walk the outer SEQUENCE / version / community / PDU envelope with their own
+// code. When two of them disagree about the same datagram, at least one is
+// wrong, and no oracle is needed to say so. That is what the assertions below
+// check, on every execution of every target that sees a raw datagram.
+//
+// The trap this file must not fall into: an assertion that CANNOT fail. Two
+// parsers with legitimately different contracts do not satisfy naive equality,
+// and an assertion relaxed until it stops firing pins nothing while making the
+// suite look stronger. So each claim below is written as the RELATIONSHIP the
+// contracts actually establish, is one-directional where the contracts are
+// one-directional, and is demonstrated by mutating the parser it constrains
+// (recorded in _bmad-output/implementation-artifacts/findings-gh-534-parser-agreement.md).
+//
+// What these assertions still cannot see: a fault both parsers share. Two
+// readers that walk the envelope the same wrong way agree perfectly. The
+// round-trip target below covers part of that gap, and states its own bound.
+
+const (
+	// The defaults parseIncomingRequest returns when a field is absent or
+	// unreadable. They are values, not sentinels, so a parser that reads them
+	// off the wire is indistinguishable from one that never got there — which
+	// is why the guards below SKIP on a default rather than assert against it.
+	defaultParsedOID     = ".1.3.6.1.2.1.1.1.0"
+	defaultBulkNonRepeat = 0
+	defaultBulkMaxRepeat = 10
+)
+
+// assertV2cParserAgreement is the self-differential core: it drives every
+// parser that reads a v1/v2c request envelope over the same bytes and fails
+// when two of them disagree in a way their contracts forbid.
+//
+// It is called from the entry-point target AND from each leaf target that sees
+// a raw datagram, so a regression confined to one parser is caught by the leaf
+// target that names it as well as by the end-to-end one.
+//
+// SNMPv3 datagrams are excluded, and that is a contract statement rather than
+// a convenience: these four parsers describe the v1/v2c envelope, which a v3
+// message does not have (RFC 3412 §6 puts msgGlobalData where v2c puts the
+// community). Running them over v3 bytes compares four parsers' behaviour on a
+// structure none of them claims to read.
+func assertV2cParserAgreement(t *testing.T, s *SNMPServer, data []byte) {
+	t.Helper()
+	if isSNMPv3Request(data) {
+		return
+	}
+
+	req := s.parseIncomingRequest(data)
+	pduTag := s.getPDUType(data)
+	oids, listOK := s.parseAllOIDsFromRequest(data)
+	nonRep, maxRep := s.parseGetBulkParams(data)
+
+	// CLAIM 1 — getPDUType and parseGetBulkParams agree on where the PDU
+	// starts.
+	//
+	// One-directional, deliberately. parseGetBulkParams returns (0, 10) both
+	// when it never found a GETBULK PDU and when it found one carrying exactly
+	// those values, so "getPDUType says GETBULK => parseGetBulkParams read
+	// something" is not a claim the return values can support. The other
+	// direction is: parseGetBulkParams cannot report a non-default pair unless
+	// it walked the envelope and found ASN1_GET_BULK at the end of it, so
+	// getPDUType — which walks the same envelope for the same purpose — must
+	// find that same tag byte.
+	//
+	// Writing this as an equality in both directions is exactly the assertion
+	// that has to be relaxed until it is silent.
+	//
+	// KNOWN OPEN FINDINGS. This claim currently FIRES on live fuzzing, within
+	// about ten seconds of FuzzGetPDUType, on two independent defects recorded
+	// in _bmad-output/implementation-artifacts/findings-gh-534-parser-agreement.md.
+	// Neither is fixed here: nl6#534 is the test change, and a parser fix is a
+	// separate change with its own review. Committed seed replay stays green —
+	// no reproducer for either is committed as a seed, deliberately, because
+	// that would fail an ordinary `go test` for a defect this change is not
+	// allowed to repair.
+	if (nonRep != defaultBulkNonRepeat || maxRep != defaultBulkMaxRepeat) && pduTag != ASN1_GET_BULK {
+		t.Fatalf("PDU-offset disagreement: parseGetBulkParams read a GETBULK PDU "+
+			"(non-repeaters=%d, max-repetitions=%d, defaults are %d/%d) but getPDUType reports tag 0x%02X, "+
+			"not GETBULK (0x%02X). The two disagree about where the PDU begins.\ndatagram: % x",
+			nonRep, maxRep, defaultBulkNonRepeat, defaultBulkMaxRepeat, pduTag, ASN1_GET_BULK, data)
+	}
+
+	// CLAIM 2 — the two name readers agree on the first varbind name.
+	//
+	// Guarded on BOTH parsers having actually read a name:
+	//
+	//   listOK == false      the list is malformed and the datagram is
+	//                        discarded (nl6#537). No agreement claim is made:
+	//                        parseIncomingRequest is documented to keep going
+	//                        and return its default, so the two are SUPPOSED
+	//                        to differ. The dispatcher-side claim for this
+	//                        case is assertMalformedListIsDiscarded.
+	//   len(oids) == 0       (nil, true): the walk never reached a list, or
+	//                        the list is empty.
+	//   req.OID == default   parseIncomingRequest never decoded a name — or
+	//                        decoded one that happens to equal the default,
+	//                        which its return value cannot distinguish.
+	//
+	// The guard deliberately does NOT involve getPDUType. Routing it through a
+	// third parser would let a getPDUType defect silence this claim, which is
+	// how an agreement assertion quietly stops being able to fail.
+	if listOK && len(oids) > 0 && req.OID != defaultParsedOID && req.OID != oids[0] {
+		t.Fatalf("varbind-name disagreement: parseAllOIDsFromRequest reads the first name as %q "+
+			"but parseIncomingRequest reads it as %q (list: %q)\ndatagram: % x",
+			oids[0], req.OID, oids, data)
+	}
+
+	// NOT ASSERTED — the absent-list case, (nil, true) => req.OID is the
+	// default.
+	//
+	// It does not hold, and the divergence is legitimate rather than a bug.
+	// parseAllOIDsFromRequest returns early on any envelope field it cannot
+	// read; parseIncomingRequest is lenient and SKIPS such a field without
+	// advancing, so a PDU carrying no request-id INTEGER but a well-formed
+	// variable-bindings list gives (nil, true) from one and a real decoded OID
+	// from the other. Both behave as documented. Per the nl6#534 rule an
+	// assertion that fires there would be a finding about the contract, not a
+	// test — so the contract is recorded here and the assertion is not made.
+}
+
+// assertMalformedListIsDiscarded is the dispatcher-side half of CLAIM 2's
+// skipped case: where the agreement helper makes no claim about a malformed
+// list, this one asserts what nl6#537 requires the SERVER to do about it.
+//
+// Contract: parseAllOIDsFromRequest reporting false means the variable-bindings
+// list is not a valid ASN.1 encoding, which RFC 1157 §4.1 step 1 and RFC 3412
+// §7.2 answer by discarding the datagram. All three v1/v2c dispatch sites gate
+// on it, so the claim needs no PDU-type guard: whatever branch is taken, a
+// false verdict must produce no response bytes at all.
+//
+// This one needs a device (the discard logs once per device), so it is driven
+// only from the targets that have a fixture.
+func assertMalformedListIsDiscarded(t *testing.T, s *SNMPServer, data []byte) {
+	t.Helper()
+	if isSNMPv3Request(data) {
+		return
+	}
+	if _, ok := s.parseAllOIDsFromRequest(data); ok {
+		return
+	}
+	if resp := s.handleSNMPv2cRequest(data); len(resp) != 0 {
+		t.Fatalf("discard disagreement: parseAllOIDsFromRequest reports the variable-bindings list "+
+			"malformed, but the dispatcher answered with %d bytes instead of discarding (nl6#537)"+
+			"\ndatagram: % x\nresponse: % x", len(resp), data, resp)
+	}
+}
+
+// roundTripOIDs are the names the round-trip target draws from. They are fixed
+// rather than fuzzed because encodeOID/decodeOID agreement is already pinned by
+// FuzzOIDRoundTrip (nl6#529); what varies here is the SHAPE of the request
+// around them — how many bindings, which PDU tag, how long the community is.
+var roundTripOIDs = []string{
+	".1.3.6.1.2.1.1.1.0",
+	".1.3.6.1.2.1.2.2.1.2.1",
+	".1.3.6.1.2.1.31.1.1.1.6.7",
+	".1.3.6.1.4.1.9.9.999.1.2.3",
+	".1.0.8802.1.1.2.1.3.7.1.3.1",
+}
+
+// buildV2cRequestForRoundTrip encodes a v1/v2c request from field values, using
+// only the package's own encoders. Returns the datagram and the names it
+// carries.
+func buildV2cRequestForRoundTrip(pduTag byte, version int, community string, reqID int,
+	oids []string, int1, int2 int) []byte {
+	var varbinds []byte
+	for _, oid := range oids {
+		varbinds = append(varbinds, encodeVarBind(oid, encodeNull())...)
+	}
+
+	var pduBody []byte
+	pduBody = append(pduBody, encodeInteger(reqID)...)
+	// For GETBULK these are non-repeaters and max-repetitions (RFC 3416
+	// §4.2.3); for GET/GETNEXT they are error-status and error-index.
+	pduBody = append(pduBody, encodeInteger(int1)...)
+	pduBody = append(pduBody, encodeInteger(int2)...)
+	pduBody = append(pduBody, encodeSequence(varbinds)...)
+
+	pdu := append([]byte{pduTag}, append(encodeLength(len(pduBody)), pduBody...)...)
+
+	var msg []byte
+	msg = append(msg, encodeInteger(version)...)
+	msg = append(msg, encodeOctetString(community)...)
+	msg = append(msg, pdu...)
+	return encodeSequence(msg)
+}
+
+// FuzzV2cRequestRoundTrip is the encoder half of nl6#534.
+//
+// The claim is `parser ≡ encoder⁻¹` and NOT `parser ≡ spec`: the ground truth
+// is what this package's own encoders were handed, so a convention the encoder
+// and the parser share — a wrong one included — round-trips perfectly and is
+// invisible here. What it does catch is a parser that loses or corrupts a field
+// the encoder wrote, which is the nl6#514 shape (a zero-length community
+// written as `04 00` and read back as absent).
+//
+// It is the only place the version, community and request-id claims can be
+// made at all: exactly one production parser reads each of those out of a
+// request, so there is no second reader to differ from, and asserting the
+// server's ECHO of a field against the parser that produced the echo is an
+// assertion that cannot fail. Driving the echo from the value the ENCODER was
+// given, as the last block does, is what restores its ability to fail.
+//
+// The fuzzed inputs are constrained to what the encoders can express, and each
+// constraint is a documented parser bound rather than a convenience:
+//   - version 0..127, because parseIncomingRequest reads the version only when
+//     it encodes in a single content octet;
+//   - request-id 0..2^31-1, because it reads 1..4 content octets as UNSIGNED,
+//     so a wider or negative id is out of the parser's stated range.
+//
+// Both bounds are real limitations of parseIncomingRequest; the non-minimal
+// version encoding that falls outside the first one is the subject of the
+// nl6#534 finding recorded in the findings note.
+func FuzzV2cRequestRoundTrip(f *testing.F) {
+	f.Add([]byte("public"), uint8(1), uint32(42), uint8(0), uint8(1), uint16(0), uint16(10))
+	// nl6#514: a zero-length community must come back present-and-empty.
+	f.Add([]byte(""), uint8(1), uint32(0), uint8(1), uint8(3), uint16(2), uint16(200))
+	// A community past the 127-byte short-form boundary, plus a GETBULK whose
+	// max-repetitions needs two content octets (the nl6#489 ceiling).
+	f.Add(bytes.Repeat([]byte("c"), 200), uint8(0), uint32(2147483647), uint8(2), uint8(4), uint16(3), uint16(60000))
+	f.Add([]byte{0x00, 0xff, 0x0a}, uint8(1), uint32(65536), uint8(2), uint8(0), uint16(0), uint16(0))
+
+	f.Fuzz(func(t *testing.T, community []byte, version uint8, reqID uint32, pduSel uint8,
+		nVarbinds uint8, int1, int2 uint16) {
+		pduTags := []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK}
+		pduTag := pduTags[int(pduSel)%len(pduTags)]
+		ver := int(version & 0x7f)
+		rid := int(reqID & 0x7fffffff)
+		comm := string(community)
+
+		oids := make([]string, 0, int(nVarbinds)%6)
+		for i := 0; i < int(nVarbinds)%6; i++ {
+			oids = append(oids, roundTripOIDs[i%len(roundTripOIDs)])
+		}
+
+		data := buildV2cRequestForRoundTrip(pduTag, ver, comm, rid, oids, int(int1), int(int2))
+		s := fuzzTestServer(50)
+
+		// Every self-differential claim must also hold on a datagram this
+		// package built. A disagreement here is strictly worse than one on
+		// mutated bytes: it means the parsers cannot agree about nl6's own
+		// output.
+		assertV2cParserAgreement(t, s, data)
+
+		req := s.parseIncomingRequest(data)
+		if req.Community != comm {
+			t.Fatalf("community round-trip: encoded %q (%d bytes), parsed %q — "+
+				"a zero-length community read as absent is nl6#514\ndatagram: % x",
+				comm, len(comm), req.Community, data)
+		}
+		if req.Version != ver {
+			t.Fatalf("version round-trip: encoded %d, parsed %d\ndatagram: % x", ver, req.Version, data)
+		}
+		if req.RequestID != rid {
+			t.Fatalf("request-id round-trip: encoded %d, parsed %d\ndatagram: % x", rid, req.RequestID, data)
+		}
+		if got := s.getPDUType(data); got != pduTag {
+			t.Fatalf("PDU-type round-trip: encoded 0x%02X, getPDUType reports 0x%02X\ndatagram: % x",
+				pduTag, got, data)
+		}
+
+		gotOIDs, ok := s.parseAllOIDsFromRequest(data)
+		if !ok {
+			t.Fatalf("parseAllOIDsFromRequest calls this package's own encoding malformed\ndatagram: % x", data)
+		}
+		if len(gotOIDs) != len(oids) {
+			t.Fatalf("varbind-count round-trip: encoded %d names %q, parsed %d %q\ndatagram: % x",
+				len(oids), oids, len(gotOIDs), gotOIDs, data)
+		}
+		for i := range oids {
+			if gotOIDs[i] != oids[i] {
+				t.Fatalf("varbind-name round-trip at %d: encoded %q, parsed %q\ndatagram: % x",
+					i, oids[i], gotOIDs[i], data)
+			}
+		}
+		wantFirst := defaultParsedOID
+		if len(oids) > 0 {
+			wantFirst = oids[0]
+		}
+		if req.OID != wantFirst {
+			t.Fatalf("first-name round-trip: encoded %q, parseIncomingRequest reports %q\ndatagram: % x",
+				wantFirst, req.OID, data)
+		}
+
+		// GETBULK parameters. For GET/GETNEXT the same two integers are
+		// error-status and error-index, and parseGetBulkParams must NOT read
+		// them: it is gated on the PDU tag, and a parser that ignored the gate
+		// would report a manager's error-index as a repetition count.
+		gotNonRep, gotMaxRep := s.parseGetBulkParams(data)
+		if pduTag == ASN1_GET_BULK {
+			if gotNonRep != int(int1) || gotMaxRep != int(int2) {
+				t.Fatalf("GETBULK params round-trip: encoded non-repeaters=%d max-repetitions=%d, "+
+					"parsed %d/%d (BER width is the nl6#489 defect: anything >= 128 used to become 10)"+
+					"\ndatagram: % x", int1, int2, gotNonRep, gotMaxRep, data)
+			}
+		} else if gotNonRep != defaultBulkNonRepeat || gotMaxRep != defaultBulkMaxRepeat {
+			t.Fatalf("parseGetBulkParams read the error-status/error-index of a 0x%02X PDU as "+
+				"non-repeaters=%d max-repetitions=%d instead of keeping its defaults %d/%d"+
+				"\ndatagram: % x", pduTag, gotNonRep, gotMaxRep, defaultBulkNonRepeat, defaultBulkMaxRepeat, data)
+		}
+
+		// End-to-end: the request-id the server echoes, read back by a
+		// DIFFERENT parser (parseV2cAck, the INFORM-ack reader — a GetResponse
+		// is a GetResponse whichever subsystem produced it) and compared
+		// against the value the ENCODER was given. Comparing it against
+		// parseIncomingRequest's output instead would compare the parser with
+		// itself, since the echo is built from exactly that value.
+		//
+		// v2c only: parseV2cAck requires version == 1 (RFC 3416 informs are
+		// v2c), so a v1 or v3-numbered request is out of its stated range.
+		if ver == snmpVersion2c {
+			resp := s.handleSNMPv2cRequest(data)
+			if len(resp) > 0 {
+				gotID, _, err := parseV2cAck(resp)
+				if err != nil {
+					t.Fatalf("the server's own GetResponse does not parse as one: %v\nresponse: % x", err, resp)
+				}
+				if int(gotID) != rid {
+					t.Fatalf("request-id echo: encoded %d, the response carries %d\ndatagram: % x\nresponse: % x",
+						rid, gotID, data, resp)
+				}
+			}
+		}
+	})
 }
