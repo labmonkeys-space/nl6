@@ -57,9 +57,11 @@ const (
 	colIfAdminStatus  = 7
 	colIfOperStatus   = 8
 	colIfLastChange   = 9
+	colIfInOctets     = 10
 	colIfInUcastPkts  = 11
 	colIfInDiscards   = 13
 	colIfInErrors     = 14
+	colIfOutOctets    = 16
 	colIfOutUcastPkts = 17
 	colIfOutDiscards  = 19
 	colIfOutErrors    = 20
@@ -77,9 +79,11 @@ var ifCyclerColumns = []struct {
 	{ifTablePrefix, colIfAdminStatus},         // .7  (state engine)
 	{ifTablePrefix, colIfOperStatus},          // .8  (state engine)
 	{ifTablePrefix, colIfLastChange},          // .9  (state engine)
+	{ifTablePrefix, colIfInOctets},            // .10 (shadow of ifXTable .6)
 	{ifTablePrefix, colIfInUcastPkts},         // .11
 	{ifTablePrefix, colIfInDiscards},          // .13
 	{ifTablePrefix, colIfInErrors},            // .14
+	{ifTablePrefix, colIfOutOctets},           // .16 (shadow of ifXTable .10)
 	{ifTablePrefix, colIfOutUcastPkts},        // .17
 	{ifTablePrefix, colIfOutDiscards},         // .19
 	{ifTablePrefix, colIfOutErrors},           // .20
@@ -211,9 +215,11 @@ func scenarioBand(s IfErrorScenario) (errLo, errHi, discLo, discHi uint32) {
 //
 // Counter32 columns (ifTable):
 //
+//	.10 ifInOctets            = low-32 of HC .6   (de-facto shadow, nl6#570)
 //	.11 ifInUcastPkts         = low-32 of HC .7
 //	.13 ifInDiscards          = base + totalInPkts  × discPpmIn  / 1e6
 //	.14 ifInErrors            = base + totalInPkts  × errPpmIn   / 1e6
+//	.16 ifOutOctets           = low-32 of HC .10  (de-facto shadow, nl6#570)
 //	.17 ifOutUcastPkts        = low-32 of HC .11
 //	.19 ifOutDiscards         = base + totalOutPkts × discPpmOut / 1e6
 //	.20 ifOutErrors           = base + totalOutPkts × errPpmOut  / 1e6
@@ -465,6 +471,36 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	}
 	// ifTable
 	switch col {
+	// Counter32 shadows of the two Counter64 HC octet columns
+	// (nl6#570).
+	//
+	// RFC 2863 does NOT mandate the low-32 equality, and an earlier
+	// version of this comment said it did. What the RFC says: the
+	// ifXTable DESCRIPTION of ifHCInOctets calls it "a 64-bit version
+	// of ifInOctets", and §3.1.6 mandates only which WIDTH to serve at
+	// which speed (32-bit octet counters at or below 20 Mb/s, 64-bit
+	// above). A conforming agent may hold the two counters
+	// independently. Deriving one from the other is nl6's deliberate
+	// choice, matching the de-facto convention every agent this
+	// simulator stands in for follows, and it is what makes the two
+	// columns impossible to contradict each other.
+	//
+	// Both are computed from the SAME inDelta / outDelta the HC column
+	// uses — one evaluation of the dial at the caller's t, never stored
+	// and never a second call to deltaOctetsAt. The identity therefore
+	// holds exactly for a caller that passes ONE t across both columns
+	// (GetDynamicAt: sFlow counter_sample, gNMI). It does NOT hold
+	// across two GetDynamic calls, which read the clock separately —
+	// see GetDynamic's own doc comment, and the caveat in
+	// docs/reference/snmp.md about the per-OID SNMP path.
+	//
+	// The & 0xFFFFFFFF is redundant under the uint32 conversion and is
+	// kept only to match the neighbouring shadow columns; the
+	// conversion is what implements the wrap.
+	case colIfInOctets:
+		return fmtU32(uint32((ic.baseInOctets[slot] + inDelta) & 0xFFFFFFFF))
+	case colIfOutOctets:
+		return fmtU32(uint32((ic.baseOutOctets[slot] + outDelta) & 0xFFFFFFFF))
 	case colIfInUcastPkts:
 		return fmtU32(uint32(ic.packets(slot, inDelta, true, false, false, true) & 0xFFFFFFFF))
 	case colIfOutUcastPkts:
@@ -601,11 +637,44 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 	var (
 		col, ifIndex int
 		haveCol      bool
+		// pastCol means currentOID sits inside a column the cycler owns but
+		// NOT at a row that can be ordered against that column's rows. The
+		// successor must then be the next COLUMN: any row inside this one
+		// might sort below currentOID, which is the nl6#526 class (a
+		// non-increasing walk, which snmp4j reports as "OID not increasing"
+		// or hangs on). Cheaper to skip a column than to emit below.
+		pastCol bool
 	)
 	if dot := strings.IndexByte(suffix, '.'); dot > 0 {
 		if c, err := strconv.Atoi(suffix[:dot]); err == nil {
 			col, haveCol = c, true
-			if idx, err := strconv.Atoi(suffix[dot+1:]); err == nil {
+			inst := suffix[dot+1:]
+			// A request may name MORE sub-identifiers than the column's INDEX
+			// needs — ".10.5.7" is a well-formed varbind name and reaches here
+			// from the wire. It sits inside row .10.5, and the successor must be
+			// strictly greater than ".10.5.7", so taking the FIRST component and
+			// searching for ifIndex+1 is both correct and exactly what the
+			// single-component case already does. Parsing "5.7" whole fails, and
+			// a failed parse used to leave ifIndex at 0, which emitted .10.1 —
+			// below currentOID.
+			if extra := strings.IndexByte(inst, '.'); extra >= 0 {
+				inst = inst[:extra]
+			}
+			switch idx, err := strconv.Atoi(inst); {
+			case inst == "":
+				// "<col>." — no instance at all. ifIndex stays 0, so the
+				// successor search lands on the first owned row, which is
+				// greater than the bare column prefix.
+			case err != nil:
+				// A non-numeric instance cannot be positioned among numeric
+				// rows. Not reachable from the wire (decodeOID emits digits
+				// only) but reachable from in-package callers.
+				pastCol = true
+			case idx < 0:
+				// Likewise unorderable, and likewise unreachable from the wire:
+				// decodeOID refuses a negative arc (nl6#529).
+				pastCol = true
+			default:
 				ifIndex = idx
 			}
 		}
@@ -668,6 +737,14 @@ func (ic *IfCounterCycler) NextDynamicOID(currentOID string) (string, string) {
 		// state cols so the right (col, ifIndex) pair is emitted.
 		if stateNil && isStateCol(chosen.col, chosen.prefix) {
 			return emitFromColumn(colIdx, ic.sortedIfIndexes[0])
+		}
+		if pastCol {
+			// currentOID is inside this column at an unorderable row, so no row
+			// of this column is provably greater. The next column is.
+			if colIdx+1 >= len(ifCyclerColumns) {
+				return "", ""
+			}
+			return emitFromColumn(colIdx+1, ic.sortedIfIndexes[0])
 		}
 		// Same column as currentOID — find the successor ifIndex.
 		pos := sort.SearchInts(ic.sortedIfIndexes, ifIndex+1)

@@ -159,12 +159,27 @@ func (s *InterfaceCounterSource) Snapshot(t time.Time) []CounterRecord {
 //
 // ifInUnknownProtos and ifPromiscuousMode are emitted as 0 — the
 // simulator does not model them.
+// Byte offsets into the generic-interface-counters body, and its fixed size.
+// They exist so a reader of the encoded bytes (a test, a decoder) names the
+// same field the encoder wrote rather than a hard-coded number that a field
+// INSERTION would silently re-point at a different counter (nl6#570 review).
+// Only the two octet fields are named: they are the ones read back outside
+// this file. Nothing here can enforce agreement on its own, so
+// TestSFlowOctetOffsetsMatchTheEncoder pins each constant against the encoder
+// with a sentinel value — a runtime panic on the sFlow tick goroutine would be
+// a worse failure mode than a failing test.
+const (
+	sflowIfCountersBodyLen  = 88
+	sflowIfCountersInOctets = 24 // u64, after ifIndex/ifType/ifSpeed/direction/status
+	sflowIfCountersOutOctet = 56 // u64, after the six inbound Counter32 fields
+)
+
 func encodeIfCountersBody(
 	ifIndex uint32, speedBps, inOctets uint64,
 	inUcast, inMcast, inBcast, inDisc, inErr uint32,
 	outOctets uint64, outUcast, outMcast, outBcast, outDisc, outErr uint32,
 ) []byte {
-	body := make([]byte, 88)
+	body := make([]byte, sflowIfCountersBodyLen)
 	pos := 0
 	binary.BigEndian.PutUint32(body[pos:], ifIndex)
 	pos += 4

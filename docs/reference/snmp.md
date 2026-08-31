@@ -215,6 +215,8 @@ A leaf it does not type takes the encoder's default branch, where INTEGER for a 
 Numeric leaves outside the table — the `OLD-CISCO-SYSTEM-MIB` INTEGER leaves, for instance — are covered instead by a test over the shipped profiles (`resource_numeric_oids_test.go`), which operator-supplied files never reach.
 
 Applying rule 3 to the shipped set for the first time found 45 entries of exactly the nl6#515 class, all corrected in the same change: a bare `ipRouteDest` column OID valued `1` in 14 profiles (deleted, because that column is `IpAddress`-typed and `1` is not an address), 30 `ifInOctets`/`ifOutOctets` entries in the three NVIDIA profiles whose values overflowed `Counter32`, and one `asr9k` `sysUpTime` past the `TimeTicks` wrap (both wrapped modulo 2^32, which is what the real counter does).
+Those 30 rewrapped values are moot as of nl6#570: they are among the 1322 static `ifInOctets`/`ifOutOctets` entries deleted when the cycler took both columns over, so nothing serves them any more.
+The reversal chains rather than being replaced — `snmp_shipped_data_ledger_test.go` restores nl6#570's ledger first, reconstructing the tree nl6#541 left, and only then reverses its own three tables.
 
 Sixteen further values were edited that rule 3 **never saw**, and it is worth naming the mechanism that did, because that is the one a reader will rely on next time. All sixteen sit on leaves the type table does not type, so all were and remain INTEGER on the wire:
 
@@ -495,12 +497,48 @@ Every per-interface counter listed below is generated dynamically by
 
 | Column | OID column | Derivation |
 |--------|-----------|------------|
+| `ifInOctets` | `.10` | shadow of `ifHCInOctets` (ifXTable `.6`) |
 | `ifInUcastPkts` | `.11` | shadow of `ifHCInUcastPkts` (`.7`) |
 | `ifInDiscards` | `.13` | `baseInDisc + inDeltaPkts × discPpmIn / 1e6` |
 | `ifInErrors` | `.14` | `baseInErr + inDeltaPkts × errPpmIn / 1e6` |
+| `ifOutOctets` | `.16` | shadow of `ifHCOutOctets` (ifXTable `.10`) |
 | `ifOutUcastPkts` | `.17` | shadow of `ifHCOutUcastPkts` (`.11`) |
 | `ifOutDiscards` | `.19` | `baseOutDisc + outDeltaPkts × discPpmOut / 1e6` |
 | `ifOutErrors` | `.20` | `baseOutErr + outDeltaPkts × errPpmOut / 1e6` |
+
+`ifInOctets` and `ifOutOctets` became cycler-driven in nl6#570.
+Before that they were the only IF-MIB counter columns served from the profile JSON, frozen, while their HC columns climbed from `ifSpeed` — so a rate computed from them was 0 bps forever, and they contradicted the 64-bit columns on the same interface.
+The 1322 static entries the cycler now shadows (661 `ifInOctets` + 661 `ifOutOctets`, across 20 profiles) were deleted in the same change, because `findResponse` consults the cycler before the static map and an unreachable entry that looks authoritative is what let the defect survive.
+`snmp_shipped_octet_shadow_ledger_test.go` records every deleted row and reverses it to reproduce the parent corpus digest.
+
+**What the RFC actually says, and what is nl6's choice.**
+RFC 2863 does not define `ifInOctets` as the low 32 bits of `ifHCInOctets`, and an earlier version of this page said it did.
+The ifXTable DESCRIPTION of `ifHCInOctets` calls it "a 64-bit version of `ifInOctets`", and §3.1.6 mandates only which *width* an agent must serve at which speed: 32-bit octet counters at or below 20 Mb/s, 64-bit octet counters above it, and 64-bit packet counters at or above 650 Mb/s.
+A conforming agent may hold the two counters independently.
+Deriving one from the other is nl6's deliberate choice — it is the de-facto convention real agents follow, and it makes the two columns unable to contradict each other, which is what a collector cross-checking them assumes.
+
+**The identity is exact for a shared evaluation instant, and only then.**
+`IfCounterCycler.GetDynamicAt(oid, t)` takes the instant from the caller, so a caller that passes one `t` across several columns gets values that satisfy `shadow == uint32(HC & 0xFFFFFFFF)` byte for byte.
+The sFlow `counter_sample` path and gNMI both do that.
+The per-OID SNMP path does **not**: `findResponse` calls `GetDynamic`, which reads the clock itself, and `NextDynamicOID` re-reads it per walk step.
+So a multi-varbind GET, or a GETNEXT/GETBULK spanning `ifInOctets` and `ifHCInOctets`, evaluates the dial once per varbind and the two values differ by whatever accrued in between — at 400 Gb/s roughly 5×10⁷ octets per millisecond of drift.
+That is a property of the read API, not of the derivation.
+Capturing one instant per SNMP request would remove it and is a larger change than nl6#570 took on; the scope is stated here rather than claimed away.
+
+**The compiled-in fallback profile.**
+`createDefaultResources` is written whenever a named resource file is absent, and it used to ship static `ifInOctets.1` / `ifOutOctets.1` with no `ifHCInOctets` row — so no cycler was published for it and both values were served frozen, the defect this change removes, on a production path the corpus guard cannot see because it reads only `resources/`.
+It now ships `ifHCInOctets.1` / `ifHCOutOctets.1` instead and derives all four octet columns.
+Do not add a static `.10` / `.16` row back to that set: with the HC rows present it would be unreachable.
+
+**What fires if a profile loses the columns.**
+`TestEveryInterfaceAnswersBothOctetColumns` walks every shipped profile, builds a device with a live cycler, and requires the serve path to answer both columns for every ifIndex the profile describes via `ifDescr` — 1774 instances today (the 1322 formerly static rows plus the 452 newly served).
+The cycler's ifIndex set comes only from `ifHCInOctets` rows, so a profile edit that adds interfaces without one drops both columns for those interfaces.
+That test names the missing `ifHCInOctets.<N>` row; the corpus digests would only tell you to re-pin them, which would absorb the regression.
+
+**Fleet-visible surface change.**
+28 profiles ship `ifHCInOctets` rows but only 20 shipped static `ifInOctets`/`ifOutOctets`, so 8 profiles *gain* two columns per interface — **452 OIDs that no profile served before**: `cisco_catalyst_9500` +96, `cisco_nexus_9500` +128, `juniper_mx960` +160, `palo_alto_pa3220` +32, `dell_emc_unity` +10, `netapp_ontap` +10, `pure_storage_flasharray` +10, `linux_server` +6.
+On the other 20 the columns moved from static to dynamic with no change in count, because every one of them shipped exactly one static row per HC row — so an `ifTable` walk of `cisco_crs_x`, the widest profile at 144 interfaces, returns the same number of OIDs as before and walk-step and SNMP-walk CPU figures taken on it stay comparable.
+Figures taken on any of the 8 profiles above do not (nl6#517's convention).
 
 Properties common to every dynamic counter:
 
@@ -521,14 +559,26 @@ Properties common to every dynamic counter:
   full counter family slows together — matching how real hardware
   behaves under reduced traffic.
 - **SNMP ↔ sFlow agreement.** Both read paths resolve the same
-  `IfCounterCycler` dispatcher, so concurrent SNMP GETs and sFlow
-  `counter_sample` bodies carry matching values at the same instant.
+  `IfCounterCycler` dispatcher, so an sFlow `counter_sample` and an SNMP
+  GET evaluated at the same instant carry the same values. "The same
+  instant" is exact for the sFlow path, which captures one `t` and passes
+  it to every column; the SNMP path reads the clock per OID, so two
+  varbinds in one response are two instants (see above).
 - **Zero-goroutine cost.** Every counter is computed on-demand from
   the current time against analytic formulas — no per-interface
   goroutine, no polling loop.
 - Values are visible on both `GET` and `GETNEXT` / `GETBULK`.
 
-**Counter32 wrap guidance.** At 10 Gbps / 80 % util / 500 B avg
+**Counter32 wrap guidance.** The fastest-wrapping objects on the device are the
+two octet columns, and they are the first a collector trips over: `ifInOctets` /
+`ifOutOctets` cover 2³² octets in about **3.4 s at 10 Gb/s** and about **86 ms at
+400 Gb/s** (line rate; the dial's 60–100 % duty cycle stretches that by at most
+two thirds). No poll interval makes a 32-bit octet counter usable at those
+speeds, which is exactly why RFC 2863 §3.1.6 requires the 64-bit octet counters
+above 20 Mb/s — poll `ifHCInOctets` / `ifHCOutOctets` instead. nl6 serves the
+32-bit columns for fidelity, not because they are useful there.
+
+The packet columns wrap more slowly: at 10 Gbps / 80 % util / 500 B avg
 packet size, `ifInUcastPkts` wraps every ~26 minutes. At 100 Gbps
 the same column wraps every ~2.6 minutes. Collectors handle the wrap
 via the existing delta-modulo convention; but when your link is
@@ -558,8 +608,9 @@ See [CLI flags reference](cli-flags.md#interface-state-scenarios) and
 # Walk ifXTable — covers all HC counters, Counter32 shadows, and ifHighSpeed
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.31.1.1
 
-# Walk ifTable — covers ifInUcastPkts, ifInDiscards, ifInErrors,
-# ifOutUcastPkts, ifOutDiscards, ifOutErrors
+# Walk ifTable — covers ifInOctets, ifInUcastPkts, ifInDiscards, ifInErrors,
+# ifOutOctets, ifOutUcastPkts, ifOutDiscards, ifOutErrors
+# (.10 and .16 are cycler-driven since nl6#570; before that they were frozen)
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 
 # Fetch HC in/out for interface 1 directly

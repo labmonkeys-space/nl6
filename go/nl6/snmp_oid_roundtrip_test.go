@@ -257,7 +257,18 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED once, by nl6#541, from the 09546c3 value below to the constant
+// RE-PINNED TWICE. Both re-pins are CORPUS changes, not encoding changes, and
+// each is re-derived by a test rather than asserted here.
+//
+// The second re-pin is nl6#570, which deleted every shipped ifTable .10 / .16
+// entry (1322 rows across 20 profiles) once the cycler began serving those two
+// columns. The corpus lost the distinct OIDs those rows named; nothing about
+// what any surviving OID encodes to moved.
+// TestOctetShadowRePinIsOnlyTheDeletedOIDs puts them back and requires the
+// digest below it, and TestRePinIsOnlyTheDeletedOID then continues back to
+// 09546c3, so the chain is unbroken at both ends.
+//
+// The first re-pin was nl6#541, from the 09546c3 value below to the constant
 // after it. The cause is a CORPUS change, not an encoding change: nl6#541
 // deleted the bare column OID 1.3.6.1.2.1.4.21.1.1 ("ipRouteDest" with no
 // instance, valued "1") from the 14 profiles carrying it, so the corpus lost one
@@ -265,7 +276,8 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // TestRePinIsOnlyTheDeletedOID, which puts the OID back and requires the
 // 09546c3 digest, byte for byte.
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
-const shippedOIDEncodingDigest = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
+const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
+const shippedOIDEncodingDigest = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -638,7 +650,12 @@ func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 				"09546c3 digest or explain the new corpus", deleted)
 		}
 	}
-	restored := append(append([]string{}, oids...), deleted)
+	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, so
+	// reaching 09546c3 means undoing BOTH. Its own stage is pinned separately by
+	// TestOctetShadowRePinIsOnlyTheDeletedOIDs; this test walks the whole way
+	// back, which is what keeps the chain from being provable only in halves.
+	restored := append(append([]string{}, oids...), nl6570DeletedOctetOIDs()...)
+	restored = append(restored, deleted)
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -654,10 +671,11 @@ func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	got := fmt.Sprintf("%x", h.Sum(nil))
 
 	if got != shippedOIDEncodingDigestAt09546c3 {
-		t.Errorf("restoring %s gives digest %s, want the 09546c3 value %s over %d OIDs.\n"+
+		t.Errorf("restoring %s and nl6#570's octet columns gives digest %s, want the 09546c3 value %s over %d OIDs.\n"+
 			"So the re-pin of shippedOIDEncodingDigest is NOT explained by that deletion alone: "+
 			"something else about what a shipped OID puts on the wire has changed.",
 			deleted, got, shippedOIDEncodingDigestAt09546c3, checked)
 	}
-	t.Logf("%d OIDs with %s restored reproduce the 09546c3 digest", checked, deleted)
+	t.Logf("%d OIDs with %s and nl6#570's octet columns restored reproduce the 09546c3 digest",
+		checked, deleted)
 }
