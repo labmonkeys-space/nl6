@@ -160,7 +160,7 @@ func TestNullResourceFileRejectedByRESTLoader(t *testing.T) {
 	if !strings.Contains(rerr.Error(), "nullprof.json") {
 		t.Errorf("error %q does not name the offending file", err)
 	}
-	if _, cached := sm.resourcesCache["nullprof.json"]; cached {
+	if _, cached := sm.cachedResources("nullprof.json"); cached {
 		t.Error("a rejected resource file was cached")
 	}
 }
@@ -281,7 +281,7 @@ func TestEmptyDeviceTypeDirectoryIsInvalid(t *testing.T) {
 			t.Fatalf("an empty directory loaded and would be cached as a device type: %+v", res)
 		}
 		_ = assertInvalid(t, err)
-		if _, cached := sm.resourcesCache["emptytype.json"]; cached {
+		if _, cached := sm.cachedResources("emptytype.json"); cached {
 			t.Error("an empty directory was cached")
 		}
 	})
@@ -799,7 +799,7 @@ func TestZeroEntrySingleFileIsInvalid(t *testing.T) {
 					t.Fatalf("a zero-entry file loaded and would be cached: %+v", res)
 				}
 				_ = assertInvalid(t, err)
-				if _, cached := sm.resourcesCache["hollow.json"]; cached {
+				if _, cached := sm.cachedResources("hollow.json"); cached {
 					t.Error("a zero-entry file was cached")
 				}
 			})
@@ -891,7 +891,7 @@ func TestZeroEntryDirectoryIsInvalid(t *testing.T) {
 				t.Fatalf("a zero-entry directory loaded and would be cached: %+v", res)
 			}
 			_ = assertInvalid(t, err)
-			if _, cached := sm.resourcesCache["hollowdir.json"]; cached {
+			if _, cached := sm.cachedResources("hollowdir.json"); cached {
 				t.Error("a zero-entry directory was cached")
 			}
 		})
@@ -945,7 +945,7 @@ func TestValidSingleFileLoadsAndIsCached(t *testing.T) {
 	if len(res.SNMP) != 1 || len(res.SSH) != 1 {
 		t.Fatalf("loaded %d SNMP and %d SSH entries, want 1 and 1", len(res.SNMP), len(res.SSH))
 	}
-	cached, ok := sm.resourcesCache["goodsingle.json"]
+	cached, ok := sm.cachedResources("goodsingle.json")
 	if !ok {
 		t.Fatal("a valid single file was NOT cached; the no-cache assertions " +
 			"elsewhere would pass on a loader that never caches")
@@ -955,6 +955,20 @@ func TestValidSingleFileLoadsAndIsCached(t *testing.T) {
 	}
 	if again, err := sm.LoadSpecificResources("goodsingle.json"); err != nil || again != res {
 		t.Errorf("second call did not come from the cache: %v / %p vs %p", err, again, res)
+	}
+
+	// ...and it is a cache hit in the strong sense: no disk is touched. Proved
+	// by deleting the file first — a loader that re-read would now fail
+	// not-found. This also pins that the guarded read in cachedResources still
+	// SERVES from the cache rather than falling through, which a mis-scoped
+	// lock could break without any race detector noticing (nl6#555).
+	if err := os.Remove(filepath.Join("resources", "goodsingle.json")); err != nil {
+		t.Fatalf("remove fixture: %v", err)
+	}
+	if afterDelete, err := sm.LoadSpecificResources("goodsingle.json"); err != nil {
+		t.Errorf("a cache hit re-read the disk instead of the cache: %v", err)
+	} else if afterDelete != res {
+		t.Errorf("cache hit returned %p, want the cached %p", afterDelete, res)
 	}
 
 	// The startup loader accepts it too, and publishes it.

@@ -644,6 +644,53 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 // before any os.Stat/Open/ReadDir sees it (CodeQL go/path-injection).
 var resourceFilenameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+\.json$`)
 
+// cachedResources reads the resource cache under resourcesCacheMu. It is a
+// method rather than three inline lines so the unlock can be deferred (a
+// panic between Lock and Unlock would otherwise wedge every later load into
+// a permanent block — net/http recovers the handler goroutine, so the mutex
+// would stay held with nobody left to release it).
+//
+// The returned pointer escapes the lock, which is sound ONLY because a
+// *DeviceResources is immutable once buildResourceIndexes has returned:
+// publish-then-freeze. Nothing mutates a published set — the OID sync.Map,
+// the sorted SNMP slice and every other index are built before the pointer
+// reaches the cache and are read-only afterwards. If anything ever mutated a
+// published set in place, this unlocked sharing would become a data race
+// against every device already serving from it, and against every concurrent
+// SNMP handler reading the same indexes; such a mutation would need its own
+// lock inside DeviceResources, not a wider hold here.
+func (sm *SimulatorManager) cachedResources(key string) (*DeviceResources, bool) {
+	sm.resourcesCacheMu.RLock()
+	defer sm.resourcesCacheMu.RUnlock()
+	cached, exists := sm.resourcesCache[key]
+	return cached, exists
+}
+
+// publishResources caches a freshly built resource set and returns the set
+// that callers should use for this device type.
+//
+// The lock is taken only here, after every read, decode, validation and index
+// build has finished — see resourcesCacheMu in types.go for why the load
+// itself runs unlocked.
+//
+// Because the load runs unlocked, two goroutines can miss the cache for the
+// same type and both build a full set. The re-check under the write lock is
+// what stops both from SURVIVING: without it the loser was still returned to
+// its caller and attached to that batch's devices, so the fleet retained two
+// complete sets per type (two OID sync.Maps plus a sorted OID slice, thousands
+// of entries on the wide profiles) and two devices of the same type served
+// from different objects. The duplicate LOAD is accepted; the duplicate
+// RETENTION is not.
+func (sm *SimulatorManager) publishResources(key string, loaded *DeviceResources) *DeviceResources {
+	sm.resourcesCacheMu.Lock()
+	defer sm.resourcesCacheMu.Unlock()
+	if winner, exists := sm.resourcesCache[key]; exists {
+		return winner
+	}
+	sm.resourcesCache[key] = loaded
+	return loaded
+}
+
 // LoadSpecificResources loads resources from a directory in the resources folder
 func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResources, error) {
 	if !resourceFilenameRe.MatchString(filename) {
@@ -654,8 +701,10 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 			"a slug of letters, digits, underscores and hyphens)")
 	}
 
-	// Check cache first
-	if cached, exists := sm.resourcesCache[filename]; exists {
+	// Check cache first. See resourcesCacheMu in types.go for the locking
+	// rule; cachedResources releases the lock before returning, so no I/O
+	// below this point runs under it.
+	if cached, exists := sm.cachedResources(filename); exists {
 		return cached, nil
 	}
 
@@ -726,10 +775,11 @@ func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResou
 	// Build performance indexes for fast lookups (also sorts by OID after normalizing)
 	sm.buildResourceIndexes(resources)
 
-	// Cache the loaded resources with indexes
-	sm.resourcesCache[filename] = resources
-
-	return resources, nil
+	// Publish. Taken after the decode, validation and index build, so the
+	// lock never covers I/O. publishResources may hand back a set another
+	// goroutine cached first; returning ITS pointer rather than ours is what
+	// keeps one object per device type alive.
+	return sm.publishResources(filename, resources), nil
 }
 
 // loadSpecificResourcesFromDir loads and merges all JSON files from a resource directory
@@ -800,10 +850,10 @@ func (sm *SimulatorManager) loadSpecificResourcesFromDir(dirPath string, cacheKe
 	// Build performance indexes for fast lookups (also sorts by OID after normalizing)
 	sm.buildResourceIndexes(resources)
 
-	// Cache the loaded resources with indexes
-	sm.resourcesCache[cacheKey] = resources
-
-	return resources, nil
+	// Publish. Same rule as the single-file path: the lock is taken after
+	// every read, validation and index build, and the winner's pointer is
+	// what goes back to the caller.
+	return sm.publishResources(cacheKey, resources), nil
 }
 
 // buildResourceIndexes builds performance optimization indexes for fast OID lookups

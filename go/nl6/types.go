@@ -283,9 +283,41 @@ type SimulatorManager struct {
 	currentIP       net.IP
 	nextTunIndex    int
 	deviceResources *DeviceResources
-	resourcesCache  map[string]*DeviceResources // Cache for loaded resource files
-	sharedSSHSigner ssh.Signer                  // Shared SSH host key for all devices
-	sharedTLSCert   *tls.Certificate            // Shared TLS certificate for all API servers
+	// resourcesCache is read and written by LoadSpecificResources, which runs
+	// on the net/http handler goroutine via resolveCreateResources — two
+	// concurrent POST /api/v1/devices naming different device types are a
+	// concurrent map write, and the runtime answers that with throw(), which
+	// recover() cannot catch: it kills the process, not the request (nl6#555).
+	//
+	// CANONICAL LOCKING RULE for this field. resourcesCacheMu is held around
+	// the map operations ONLY, in cachedResources and publishResources, both
+	// of which defer the unlock. It is never held across os.Stat, os.ReadDir,
+	// os.Open, json.Decode, checkSingleDocument, validateSNMPResourceValues,
+	// validateOpticalInventory or buildResourceIndexes.
+	//
+	// Not for throughput: a round-robin batch already loads its types in a
+	// sequential loop in resolveCreateResources, and each type loads once per
+	// process lifetime, so there is no parallel batch to preserve. The reason
+	// is the principle — a cold-path lock has no business covering filesystem
+	// work, and holding one across an operation that can block on I/O (a slow
+	// or hung mount) would stall every other device creation behind it.
+	//
+	// The consequence is that two goroutines can both miss and both load the
+	// same type: harmless, at the cost of one redundant load. publishResources
+	// re-checks under the write lock so only one built set is retained.
+	//
+	// An RWMutex beside the field (the house pattern) rather than a sync.Map
+	// because this is a cold path — once per device type, then a hit — where
+	// sync.Map's advantages do not apply, and because the cache size is
+	// asserted with len(), which sync.Map cannot answer without a Range. Not
+	// sm.mu, the fleet lock: this keeps filesystem-adjacent work off the lock
+	// that device creation, listing and status all contend. LoadSpecificResources
+	// takes no other lock, so there is no lock ordering to violate — a future
+	// caller that holds sm.mu across it would create one.
+	resourcesCacheMu sync.RWMutex
+	resourcesCache   map[string]*DeviceResources // Cache for loaded resource files
+	sharedSSHSigner  ssh.Signer                  // Shared SSH host key for all devices
+	sharedTLSCert    *tls.Certificate            // Shared TLS certificate for all API servers
 
 	// Network namespace for device isolation (prevents systemd-networkd overhead)
 	netNamespace *NetNamespace // Network namespace for all simulated devices
