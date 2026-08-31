@@ -9,7 +9,7 @@ management web UI at `/`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/devices` | POST | Create devices (bulk, round-robin, category-based). |
+| `/api/v1/devices` | POST | Create devices (bulk, round-robin, category-based). One batch at a time: a concurrent create is refused `409`. |
 | `/api/v1/devices` | GET | List all devices. |
 | `/api/v1/devices/{id}` | DELETE | Delete a specific device. |
 | `/api/v1/devices` | DELETE | Delete all devices. |
@@ -276,6 +276,33 @@ Only `failing` crosses the SD-FEC threshold, so
 `degraded` shows an elevated `pre-fec-ber` that FEC still corrects. See
 [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
 BER table.
+
+### One creation batch at a time (`409`)
+
+**Behaviour change in nl6#565.** Only one device-creation batch runs at a time.
+A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
+Two such requests used to interleave.
+
+```json
+{
+  "success": false,
+  "message": "device creation already in progress: a batch of 2000 devices is running (417 created so far); retry once it finishes. Device IP allocation is a shared cursor, so a second concurrent batch would hand out overlapping addresses and silently create fewer devices than requested (nl6#565)"
+}
+```
+
+The refusal is fail-fast, not a queue.
+A large batch would otherwise make a small one wait minutes with no feedback, and an HTTP client that times out mid-wait cannot tell whether its batch ran.
+Retry after the in-progress batch finishes; the two counters in the message are the same ones `GET /api/v1/status` reports as `device_create_total` and `device_create_progress`.
+
+Why the refusal is needed: device IPs come from a shared cursor, not a reservation.
+A batch rewinds that cursor to its own start address after pre-allocating TUN interfaces, because the devices have to land on the addresses the pool carries.
+Two overlapping batches therefore walked overlapping address ranges, the duplicate IPs were absorbed as "already exists", and the second batch silently created fewer devices than requested while reporting success.
+
+**The auto-start batch counts as a batch.** `-auto-start-ip` runs on the same code path alongside the HTTP server, so a REST create issued during fleet startup gets the `409` until the startup batch completes.
+That is intended (the fleet is mid-construction), but it is reachable on a normal boot, so expect it in any script that creates devices right after the simulator starts.
+
+The gate sits above every other check in the batch, the `resource_file` validation below and the root-privileges check included: a concurrency verdict must not depend on caller data.
+When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
 
 ### `resource_file` failures
 

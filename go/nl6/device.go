@@ -135,6 +135,38 @@ func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, re
 	return sm.deviceResources, nil, nil, nil
 }
 
+// errCreateBatchInProgress is the sentinel a concurrent device-creation batch is
+// refused with. Same shape as errResourceInvalid (nl6#538): a package-level
+// sentinel, wrapped with %w so the message can carry the in-progress batch's
+// numbers, and tested with errors.Is at the REST boundary. That is what keeps
+// the refusal a 409 and stops it being confused with the 400 a bad request gets
+// or the 500 an unclassified fault gets.
+var errCreateBatchInProgress = errors.New("device creation already in progress")
+
+// tryEnterCreateBatch takes the one-batch-at-a-time gate WITHOUT blocking, and
+// returns the release func on success.
+//
+// Fail fast rather than queue (nl6#565, the maintainer's decision): a
+// 30k-device batch would make a small create wait minutes with no feedback, and
+// an HTTP client that times out mid-wait turns a clean queue into an ambiguous
+// failure — did the batch run or not?
+//
+// The refusal names the batch that is in the way, using the same two counters
+// GET /api/v1/status reports, so an operator can tell a fleet boot from a stuck
+// batch. Both are read defensively: a directly-constructed manager (several
+// tests) never stores them.
+func (sm *SimulatorManager) tryEnterCreateBatch() (func(), error) {
+	if sm.createBatchGate.TryLock() {
+		return sm.createBatchGate.Unlock, nil
+	}
+	total, _ := sm.deviceCreateTotal.Load().(int)
+	done, _ := sm.deviceCreateProgress.Load().(int)
+	return nil, fmt.Errorf("%w: a batch of %d devices is running (%d created so far); retry once it finishes. "+
+		"Device IP allocation is a shared cursor, so a second concurrent batch would hand out overlapping "+
+		"addresses and silently create fewer devices than requested (nl6#565)",
+		errCreateBatchInProgress, total, done)
+}
+
 // CreateDevicesWithOptions creates devices with optional pre-allocation control.
 // `seed`, when non-nil, populates every created device's `flowConfig` /
 // `trapConfig` / `syslogConfig` pointer fields with a copy of the seed's
@@ -144,7 +176,31 @@ func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, re
 // listener bind error under resource pressure at scale). Callers that care
 // about partial failure — notably the REST handler — should compare the
 // returned count against the requested `count`.
+//
+// ONE BATCH AT A TIME (nl6#565). This wrapper exists only to hold
+// createBatchGate across the ENTIRE batch: the reservation and the IP walk are
+// both inside createDevicesWithOptionsLocked, so there is no point at which an
+// early release could be written. `defer` and not a tail call, so the gate is
+// released on a panic too.
+//
+// The gate sits ABOVE everything, the freeze check and the nl6#538 resource
+// resolution included, deliberately: a concurrency verdict must not depend on
+// caller data, and a caller who fires two creates in parallel needs to hear
+// about the collision first. It does not reorder the FR35/FR38 interlock — the
+// isCreatingDevices publish still precedes the freeze check inside.
 func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) (int, error) {
+	release, err := sm.tryEnterCreateBatch()
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+
+	return sm.createDevicesWithOptionsLocked(startIP, count, netmask, resourceFile, v3Config, preAllocate, maxWorkers, roundRobin, category, snmpPort, seed)
+}
+
+// createDevicesWithOptionsLocked is CreateDevicesWithOptions' body, run with
+// createBatchGate held for its whole duration. Do not call it directly.
+func (sm *SimulatorManager) createDevicesWithOptionsLocked(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, preAllocate bool, maxWorkers int, roundRobin bool, category string, snmpPort int, seed *ExportSeed) (int, error) {
 	if snmpPort == 0 {
 		snmpPort = DEFAULT_SNMP_PORT
 	}
@@ -233,9 +289,11 @@ func (sm *SimulatorManager) CreateDevicesWithOptions(startIP string, count int, 
 	// necessarily: the pre-allocated interfaces are addressed startIP..startIP+
 	// count-1, so device creation has to walk that same range or every device
 	// misses the pool. The consequence is that IP allocation is a shared cursor
-	// rather than a reserved range, and two overlapping batches can still
-	// overlap on device IPs (nl6#556 review R4) — the reservation closes TUN
-	// NAMING only.
+	// rather than a reserved range (nl6#556 review R4) — the reservation closes
+	// TUN NAMING only. What keeps two batches off the cursor is
+	// createBatchGate, held by the caller of this function for the whole batch
+	// (nl6#565); do not "fix" the rewind, and do not release that gate before
+	// the IP walk below finishes.
 	sm.mu.Lock()
 	sm.currentIP = ip
 	sm.mu.Unlock()

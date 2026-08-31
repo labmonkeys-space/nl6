@@ -732,6 +732,18 @@ func logCreateDevicesFailure(err error, status int) {
 }
 
 func createDevicesErrorResponse(err error) (string, int) {
+	// The concurrency refusal comes first, and it is neither of the other two
+	// answers (nl6#565): a second concurrent batch is not caller data that is
+	// wrong (400) and not a server fault (500) — it is a transient conflict the
+	// caller fixes by retrying, so 409. errors.Is and not errors.As, because the
+	// sentinel is wrapped with %w to carry the in-progress batch's numbers.
+	//
+	// The message is returned verbatim: it is composed from a constant and two
+	// integers, so it embeds no path and the nl6#538 non-disclosure limit does
+	// not apply to it.
+	if errors.Is(err, errCreateBatchInProgress) {
+		return err.Error(), http.StatusConflict
+	}
 	var rerr *resourceFileError
 	if errors.As(err, &rerr) {
 		return rerr.PublicMessage(), http.StatusBadRequest
