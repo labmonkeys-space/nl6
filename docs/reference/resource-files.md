@@ -159,7 +159,7 @@ A malformed OID **key** is still accepted, and so is a value that encodes cleanl
 
 Two whole classes of wrong data therefore load without a word, and both were swept by hand rather than by a rule:
 
-- **An OID that is a table column with no instance sub-identifier.** A walk emits it as a varbind name, which is not legal. nl6#571 deleted 57 such entries; four remain by decision. See [SNMP reference → Bare column OIDs](snmp.md#bare-column-oids).
+- **An OID that is a table column with no instance sub-identifier.** A walk emits it as a varbind name, which is not legal. nl6#571 deleted all 61 such entries, four of which were the only `hrStorageTable` row their profile had — those profiles now model no storage, which is the intended outcome rather than a gap to fill. See [SNMP reference → Bare column OIDs](snmp.md#bare-column-oids).
 - **A value of the wrong semantic kind on a real vendor OID.** nl6#569 found 8 of 11 Palo Alto enterprise OIDs wrong or invalid, all passing every rule. Only that profile has been audited. See [SNMP reference → Semantic faithfulness](snmp.md#semantic-faithfulness).
 
 **A static entry on an OID the cycler serves is dead, not authoritative.**

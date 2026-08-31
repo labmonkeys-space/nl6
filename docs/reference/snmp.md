@@ -262,7 +262,7 @@ The sentinel rule is checked first, matching the order the encoder applies them,
 What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
-- **Bare table columns.** No rule sees them, and the sweep is done rather than pending: nl6#571 deleted **57 bare-column entries across 14 distinct OIDs and 13 profiles**. See [Bare column OIDs](#bare-column-oids) below for what remains and why the census had to be widened to find them.
+- **Bare table columns.** No rule sees them, but the class is now closed for the shipped set: nl6#571 deleted **61 bare-column entries across 15 distinct OIDs and 13 profiles**, and the census reads zero. See [Bare column OIDs](#bare-column-oids) below, in particular why the census had to be widened before the sweep could find 20 of them.
 - **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched, and the other 28 profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
@@ -276,23 +276,30 @@ A table column is not an instance.
 `1.3.6.1.2.1.25.2.3.1.4` names the `hrStorageAllocationUnits` *column*; a value lives at `…1.4.<index>`.
 An entry keyed on the bare column makes a walk emit a varbind whose name is not a legal instance OID, ahead of the real rows of that column, and no load guard can see it: the OIDs are well formed and the values encode cleanly at their declared types.
 
-nl6#571 deleted 57 such entries across 14 distinct OIDs and 13 profiles — bare `entPhysicalTable` columns, bare `ifDescr`/`ifMtu`/`ifSpeed`/`ifOperStatus`, a Cisco environment column, a Juniper `jnxOperatingTemp` column carried by four *Cisco* profiles, and a Palo Alto column carried by twelve *non-Palo-Alto* profiles.
+nl6#571 deleted 61 such entries across 15 distinct OIDs and 13 profiles — bare `entPhysicalTable` columns, bare `ifDescr`/`ifMtu`/`ifSpeed`/`ifOperStatus`, a Cisco environment column, a Juniper `jnxOperatingTemp` column carried by four *Cisco* profiles, a Palo Alto column carried by twelve *non-Palo-Alto* profiles, and a bare `hrStorageAllocationUnits` column.
+The census reads **zero** and the class is closed for the shipped set.
 The 14 `ipRouteDest` entries nl6#541 removed are the precedent, but that change removed them because the typed-class rule refused the value, not as a sweep of the class.
 
-**The census had to be widened before the sweep could find them.**
+**The census had to be widened before the sweep could find them, and this is the part worth remembering.**
 `TestBareColumnCensusHasNotGrown` looked for an extending sibling within the *same* profile and reported 41.
-The other 20 were bare columns whose instantiated sibling happened to live in a different profile, and the per-profile scan was structurally unable to see them.
-Legality is a property of the OID, not of which profile carries it, so the scan is now corpus-wide.
+Twenty further entries were bare columns whose instantiated sibling lived in a **different** profile, and the per-profile scan was structurally unable to see any of them: deleting only the 41 would have driven the pinned constant to 0 while 20 bare columns still shipped, with a green suite over a half-finished sweep.
+Legality is a property of the OID, not of which profile carries it.
+The scan is now **corpus-wide**, in both the census and the walk test — the same family of mistake as the `resources/*/*.json` glob nl6#541 fixed, a guard whose blind spot is invisible from inside the guard.
+Do not narrow it back to one profile.
 
-**Four remain, by decision.**
-The bare `hrStorageAllocationUnits` entry in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` is, in each of those four profiles, the *only* `hrStorageTable` row of any column.
-Deleting it therefore removes the table rather than a duplicate, which is a fidelity decision — model `hrStorageTable` properly, or drop it — and not a cleanup, so it is reported rather than taken.
-They are tabled by `(profile, OID)` in `nl6571KeptBareColumns` and carved out of `TestNoShippedWalkEmitsABareColumnOID` there, so a fifth bare column, or the same OID in a fifth profile, fails rather than being absorbed.
+**Four of the 61 emptied a table, and deleting them was still right.**
+The bare `hrStorageAllocationUnits` entry in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` was, in each of those profiles, the *only* `hrStorageTable` row of any column — no index, no descriptor, no size.
+So deleting it removes the table rather than a duplicate, which is why nl6#571 raised it as a decision rather than taking it silently.
+The decision is **delete**: the choice was between a collector getting nothing and a collector getting one binding whose name is not a legal instance OID, and an illegal varbind name is worse than an absent table.
+**Those four profiles now model no storage, and that is the correct outcome.**
+Do not restore the row to make `hrStorageTable` non-empty — a profile that models no storage should answer nothing for it.
+Modelling the table properly (index, descriptor, size, used, allocation units, per row) is a separate piece of fidelity work, not a repair of this one.
 
 **What fires on the defect.**
 `TestNoShippedWalkEmitsABareColumnOID` walks every shipped profile through `findNextOIDWithServed` and requires that no emitted OID is extended by any shipped profile's walk.
 That is the symptom test; the census reads the JSON, so it says what the corpus *contains*, not what a walk *emits*.
-Neither can see a bare column that nothing in the corpus extends — a column no profile instantiates anywhere is indistinguishable from a scalar without a MIB.
+Because it now asserts a count of zero, it carries a positive control — the detector is first run over a synthetic set with a planted column — so a detector broken to find nothing cannot pass it.
+Neither test can see a bare column that nothing in the corpus extends: without a MIB, a column no profile instantiates anywhere is indistinguishable from a scalar.
 
 ## Semantic faithfulness
 

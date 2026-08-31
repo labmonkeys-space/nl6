@@ -33,10 +33,11 @@ import (
 //     unreachable — the same argument nl6#570 used for its 1322 .10 / .16 rows.
 //     ifTable .7 / .8 are NOT here: InitIfCountersWithScenario reads both to
 //     seed the interface-state engine, so those are live input.
-//   - nl6#571 — 57 entries whose OID is a table COLUMN with no instance
-//     sub-identifier, across 14 distinct OIDs and 13 profiles. A column OID is
+//   - nl6#571 — 61 entries whose OID is a table COLUMN with no instance
+//     sub-identifier, across 15 distinct OIDs and 13 profiles. A column OID is
 //     not a legal varbind name, so a walk emitted a phantom binding named with
-//     one. Four more remain by decision, see nl6571KeptBareColumns.
+//     one. None remain: the class is closed for the shipped set, and
+//     TestNoShippedWalkEmitsABareColumnOID asserts zero rather than a carve-out.
 //   - nl6#569 — 5 semantic value corrections and 3 deleted OIDs in the
 //     palo_alto_pa3220 PAN subtree, resolved against PAN-COMMON-MIB. One of the
 //     three deletions (.4.1.3) is counted under nl6#571 above, since it is a
@@ -798,17 +799,36 @@ var nl6574DeletedDeadRows = []struct{ profile, oid, oldValue string }{
 // OID that is an INTERIOR node of the shipped tree, i.e. some shipped OID has it
 // as a proper prefix, which makes it a table column rather than an instance.
 //
-// The census is taken corpus-wide rather than per profile, and that is not a
-// detail: 20 of these 57 are interior only when the whole corpus is considered
-// (a bare hrStorage / jnxOperatingTemp / PAN column whose instantiated sibling
-// lives in a DIFFERENT profile). TestBareColumnCensusHasNotGrown scanned per
-// profile and therefore counted 41 of them, which is the number nl6#571 quotes.
+// THE CENSUS IS TAKEN CORPUS-WIDE, AND THAT IS THE MOST IMPORTANT THING IN THIS
+// CHANGE. 20 of these 61 are interior only when the WHOLE corpus is considered:
+// a bare hrStorageAllocationUnits column, a bare Juniper jnxOperatingTemp column
+// carried by four CISCO profiles, and a bare PAN column carried by twelve
+// NON-PAN profiles — in every case the instantiated sibling lives in a DIFFERENT
+// profile. TestBareColumnCensusHasNotGrown scanned per profile and therefore saw
+// only 41, the number nl6#571 quotes, and those 20 were STRUCTURALLY invisible
+// to it: deleting just the 41 would have driven the constant to 0 while 20 bare
+// columns still shipped, and every test would have been green.
+//
+// Legality is a property of the OID, not of which profile carries it. The
+// per-profile form of the scan was simply wrong, in the same way the nl6#541
+// resources/*/*.json glob was wrong: a guard whose blind spot is invisible from
+// inside the guard.
+//
+// Four of these 61 are the entries nl6#571's Block If reported rather than
+// deleted — the bare hrStorageAllocationUnits column in cisco_catalyst_9500,
+// cisco_nexus_9500, juniper_mx960 and palo_alto_pa3220, which in each of those
+// profiles is the ONLY hrStorageTable row of any column. The decision taken is
+// to DELETE: the choice was between a collector getting nothing (honest — those
+// device types model no storage) and a collector getting one binding whose name
+// is not a legal instance OID, and an illegal varbind name is worse than an
+// absent table. Do not "restore" the row to make the table non-empty.
 var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"arista_7280r3.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.2.2.1.2", "GigabitEthernet0/0/1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.2.2.1.4", "1500"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.2.2.1.5", "1000000000"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.2.2.1.8", "1"},
+	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.25.2.3.1.4", "1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.2", "Main Chassis"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.3", "1"},
 	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.4", "42"},
@@ -825,6 +845,7 @@ var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"cisco_ios.json", ".1.3.6.1.4.1.9.9.25.1.1.1.2.2", "15.1(04)S"},
 	{"cisco_ios.json", ".1.3.6.1.4.1.2636.3.1.13.1.8", "35"},
 	{"cisco_ios.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
+	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.25.2.3.1.4", "1"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.2", "Main Chassis"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.3", "1"},
 	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.47.1.1.1.1.4", "39"},
@@ -840,6 +861,7 @@ var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"hpe_proliant_dl380.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
 	{"huawei_ne8000.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
 	{"juniper_mx240.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.3", "1"},
+	{"juniper_mx960.json", ".1.3.6.1.2.1.25.2.3.1.4", "1"},
 	{"juniper_mx960.json", ".1.3.6.1.2.1.47.1.1.1.1.2", "Main Chassis"},
 	{"juniper_mx960.json", ".1.3.6.1.2.1.47.1.1.1.1.3", "1"},
 	{"juniper_mx960.json", ".1.3.6.1.2.1.47.1.1.1.1.4", "41"},
@@ -853,6 +875,7 @@ var nl6571DeletedBareColumns = []struct{ profile, oid, oldValue string }{
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.2.2.1.4", "1500"},
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.2.2.1.5", "1000000000"},
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.2.2.1.8", "1"},
+	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.25.2.3.1.4", "1"},
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.47.1.1.1.1.2", "Main Chassis"},
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.47.1.1.1.1.3", "1"},
 	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.47.1.1.1.1.4", "55"},
@@ -887,26 +910,6 @@ var nl6569ValueCorrections = []struct {
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.2.1.0", "127", "PA-3220", ASN1_INTEGER, ASN1_OCTET_STRING},
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.0", "4194304", "connected", ASN1_INTEGER, ASN1_OCTET_STRING},
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.2.0", "DDR4", "connected", ASN1_OCTET_STRING, ASN1_OCTET_STRING},
-}
-
-// nl6571KeptBareColumns is the BLOCK IF this change hit and did not decide.
-//
-// The four bare hrStorageAllocationUnits entries have ZERO instantiated
-// siblings: in all four profiles this entry is the ONLY hrStorageTable row of
-// any column, so deleting it does not remove a duplicate the way nl6#541's 14
-// bare ipRouteDest deletions did — it removes hrStorageTable from those profiles
-// entirely. That is a fidelity decision (either the table is not modelled and
-// should go, or it should be instantiated properly), not a cleanup, so it is
-// reported rather than taken.
-//
-// Keeping them means the "no walk emits a bare column OID" property is not yet
-// unconditional, and TestNoShippedWalkEmitsABareColumnOID carves out exactly
-// these four by (profile, OID) so the exception cannot silently widen.
-var nl6571KeptBareColumns = []struct{ profile, oid string }{
-	{"cisco_catalyst_9500.json", ".1.3.6.1.2.1.25.2.3.1.4"},
-	{"cisco_nexus_9500.json", ".1.3.6.1.2.1.25.2.3.1.4"},
-	{"juniper_mx960.json", ".1.3.6.1.2.1.25.2.3.1.4"},
-	{"palo_alto_pa3220.json", ".1.3.6.1.2.1.25.2.3.1.4"},
 }
 
 // shippedTagDigestBeforeResourceDataDefects is the (profile, OID, emitted tag)
@@ -958,10 +961,10 @@ func restoreNl6574ResourceDefectEntries(t *testing.T, cur map[[2]string]string) 
 // What it does NOT pin, measured rather than assumed: the digest hashes
 // (profile, OID, first encoded byte), so a recorded oldValue is visible only
 // through its tag. Two of the five nl6#569 corrections are tag-neutral
-// (OCTET STRING both sides) and every one of the 801 deleted rows is restored
+// (OCTET STRING both sides) and every one of the 805 deleted rows is restored
 // only as a tag here.
 // TestResourceDataDefectLedgerValuesMatchTheParentRevision closes that for all
-// 806 recorded values.
+// 810 recorded values.
 func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 	cur := map[[2]string]string{}
 	for _, e := range shippedSNMPEntries(t) {
@@ -1022,10 +1025,9 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 		want int
 	}{
 		{"nl6#574 dead ifTable rows", len(nl6574DeletedDeadRows), 742},
-		{"nl6#571 bare columns", len(nl6571DeletedBareColumns), 57},
+		{"nl6#571 bare columns", len(nl6571DeletedBareColumns), 61},
 		{"nl6#569 invalid OIDs", len(nl6569DeletedInvalidOIDs), 2},
 		{"nl6#569 value corrections", len(nl6569ValueCorrections), 5},
-		{"nl6#571 kept bare columns (Block If)", len(nl6571KeptBareColumns), 4},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s: ledger has %d rows, want %d — the counts are the census quoted in the "+
@@ -1148,8 +1150,8 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 				d.profile, d.oid)
 		}
 	}
-	if len(bareOIDs) != 14 || len(bareProfiles) != 13 {
-		t.Errorf("bare-column ledger spans %d distinct OIDs across %d profiles, want 14 and 13",
+	if len(bareOIDs) != 15 || len(bareProfiles) != 13 {
+		t.Errorf("bare-column ledger spans %d distinct OIDs across %d profiles, want 15 and 13",
 			len(bareOIDs), len(bareProfiles))
 	}
 
@@ -1189,11 +1191,11 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 // (`git show ec4700f:<path>`), not from the ledger table, so comparing the table
 // against it is a comparison with the tree as it actually was. A digest derived
 // from the table would only prove the table equals itself.
-const nl6574ValueDigestAtEc4700f = "be5e18491219de999eb987636682528b041e2554f1ced0442608522c5bcf2a76"
+const nl6574ValueDigestAtEc4700f = "b480b09f388d70aa7b57b83afe7140954211caf2dce567307ac760517802cae9"
 
 // TestResourceDataDefectLedgerValuesMatchTheParentRevision pins the ledger's
 // VALUES, which the tag digest cannot see. Without it the recorded oldValues are
-// unfalsifiable for the 801 deleted rows: the deletion removed them from the
+// unfalsifiable for the 805 deleted rows: the deletion removed them from the
 // tree, so nothing else in the package has anything left to compare against.
 //
 // If it fails after an edit to the tables, the tables are wrong — the parent
@@ -1260,11 +1262,11 @@ func nl6574DeletedOIDNames() []string {
 //
 // The five nl6#569 value corrections do not appear here at all, which is the
 // point of doing it this way: they change values, not OID names, so the OID
-// digest must be explained by the 256 deleted names alone.
+// digest must be explained by the 257 deleted names alone.
 func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	deleted := nl6574DeletedOIDNames()
-	if len(deleted) != 256 {
-		t.Errorf("the ledger yields %d distinct deleted OID names, want 256", len(deleted))
+	if len(deleted) != 257 {
+		t.Errorf("the ledger yields %d distinct deleted OID names, want 257", len(deleted))
 	}
 
 	oids := collectShippedOIDs(t)
@@ -1327,13 +1329,35 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 // .25.2.3.1.4 to be a column. Legality is a property of the OID, not of which
 // profile carries it — the same correction TestBareColumnCensusHasNotGrown needed.
 //
-// The four nl6571KeptBareColumns entries are carved out BY (profile, OID), not by
-// prefix and not by count, so a fifth bare column — or the same OID appearing in
-// a fifth profile — fails here rather than being absorbed.
+// There is no carve-out and no allowance: the count must be ZERO. nl6#571's
+// Block If — the four bare hrStorageAllocationUnits entries whose profiles ship
+// no other hrStorageTable row — was decided as DELETE, because a collector
+// getting nothing is honest about a device type that models no storage, while a
+// collector getting one binding named with a column OID is being handed an
+// illegal varbind name. Those four profiles now model no storage, and that is
+// the correct outcome: do not restore the row to make the table non-empty.
+//
+// A test that requires zero of something has to prove it can still count, so
+// columnNodesIn is exercised on a synthetic set with a planted column first.
+// Without that, a detector broken to return nothing would pass here forever.
 func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
 	// A generous per-profile bound: the widest shipped profile walks a few tens
 	// of thousands of OIDs, and a runaway walk is a defect in its own right.
 	const maxSteps = 200000
+	// A floor on the total, so a walk that stopped early cannot pass by emitting
+	// nothing to find a column in. Today it is 42155.
+	const walkedFloor = 40000
+
+	// Positive control for the detector itself.
+	control := columnNodesIn(map[string]struct{}{
+		".1.3.6.1.2.1.25.2.3.1.4":   {}, // a column
+		".1.3.6.1.2.1.25.2.3.1.4.1": {}, // its instance
+		".1.3.6.1.2.1.1.1.0":        {}, // an ordinary leaf
+	})
+	if len(control) != 1 {
+		t.Fatalf("columnNodesIn found %v in a set with exactly one planted column; the detector "+
+			"is broken, so the zero it reports below would mean nothing", control)
+	}
 
 	profiles := shippedProfileNames(t)
 	emitted := map[string]map[string]struct{}{} // profile -> emitted OIDs
@@ -1366,51 +1390,48 @@ func TestNoShippedWalkEmitsABareColumnOID(t *testing.T) {
 		totalSteps += len(set)
 		emitted[profile] = set
 	}
-
-	kept := map[[2]string]bool{}
-	for _, k := range nl6571KeptBareColumns {
-		kept[[2]string{k.profile, k.oid}] = true
+	if totalSteps < walkedFloor {
+		t.Errorf("the walks emitted %d OIDs in total, want at least %d: too few to conclude "+
+			"anything about what a walk names", totalSteps, walkedFloor)
 	}
 
-	// Only the OIDs that some walk extends can be columns, so compute that set
-	// once instead of scanning the union per emitted OID (42k x 42k otherwise).
-	columns := map[string]struct{}{}
-	for oid := range union {
-		for i := len(oid) - 1; i > 0; i-- {
-			if oid[i] != '.' {
-				continue
-			}
-			if _, ok := union[oid[:i]]; ok {
-				columns[oid[:i]] = struct{}{}
-			}
-		}
-	}
-
-	keptSeen := 0
+	columns := columnNodesIn(union)
 	for _, profile := range profiles {
 		for oid := range emitted[profile] {
 			if _, isColumn := columns[oid]; !isColumn {
 				continue
 			}
-			if kept[[2]string{profile, oid}] {
-				keptSeen++
-				continue
-			}
 			t.Errorf("%s: a walk emits a binding named %s, which some shipped profile's walk "+
 				"extends — so it is a table column with no instance sub-identifier, which is not "+
-				"a legal varbind name. Give the entry an instance suffix or delete it; do not add "+
-				"it to nl6571KeptBareColumns without a Block-If-grade reason", profile, oid)
+				"a legal varbind name. Give the entry an instance suffix, or delete it. Deleting "+
+				"is what nl6#571 did in all 61 cases, including the four where it emptied a "+
+				"table", profile, oid)
 		}
 	}
-
-	if keptSeen != len(nl6571KeptBareColumns) {
-		t.Errorf("the walk met %d of the %d carved-out bare columns. If one is no longer emitted "+
-			"the Block If has been decided, so remove it from nl6571KeptBareColumns and lower "+
-			"bareColumnEntriesShipped", keptSeen, len(nl6571KeptBareColumns))
+	if len(columns) != 0 {
+		t.Errorf("%d OIDs the walks emit are column nodes: %v", len(columns), columns)
 	}
-	t.Logf("%d OIDs walked across %d profiles, %d of them column nodes; the only bare columns "+
-		"emitted are the %d carved-out hrStorageAllocationUnits entries",
-		totalSteps, len(profiles), len(columns), keptSeen)
+	t.Logf("%d OIDs walked across %d profiles; none of them is a column node",
+		totalSteps, len(profiles))
+}
+
+// columnNodesIn returns the members of set that some OTHER member extends — the
+// table columns. Split out of the test so the test can prove it still detects
+// one, and written as a walk over each OID's own prefixes rather than a pairwise
+// scan, which at 42k OIDs is the difference between instant and 1.8e9 compares.
+func columnNodesIn(set map[string]struct{}) map[string]struct{} {
+	out := map[string]struct{}{}
+	for oid := range set {
+		for i := len(oid) - 1; i > 0; i-- {
+			if oid[i] != '.' {
+				continue
+			}
+			if _, ok := set[oid[:i]]; ok {
+				out[oid[:i]] = struct{}{}
+			}
+		}
+	}
+	return out
 }
 
 // TestEveryDeletedDeadRowIsAnsweredByTheCycler fires on the DEFECT rather than

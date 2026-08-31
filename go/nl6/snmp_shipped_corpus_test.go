@@ -265,35 +265,44 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 //
 // nl6#541 deleted 14 of these (a bare ipRouteDest valued "1"), but only because
 // the typed-class rule REFUSED them — that column is IpAddress-typed and "1" is
-// not an address — not as a sweep of the class. nl6#571 swept the rest: 57
-// entries across 14 distinct OIDs and 13 profiles (bare entPhysicalTable
+// not an address — not as a sweep of the class. nl6#571 swept the rest: 61
+// entries across 15 distinct OIDs and 13 profiles (bare entPhysicalTable
 // columns, bare ifDescr / ifMtu / ifSpeed / ifOperStatus, a Cisco environment
-// column, a Juniper jnxOperatingTemp column and a PAN column), recorded in
-// snmp_shipped_resource_defect_ledger_test.go.
+// column, a Juniper jnxOperatingTemp column, a PAN column and a bare
+// hrStorageAllocationUnits column), recorded in
+// snmp_shipped_resource_defect_ledger_test.go. The class is now CLOSED for the
+// shipped set, which is why the number is zero rather than small.
 //
-// THE SCAN IS NOW CORPUS-WIDE, AND THAT IS THE FIX TO THE GUARD ITSELF. It used
-// to look for an extending sibling in the SAME profile only, and reported 41 —
-// the number nl6#571 quotes. 20 further entries were bare columns whose
-// instantiated sibling happened to live in a different profile (bare
-// hrStorageAllocationUnits, a bare Juniper temperature column carried by four
-// Cisco profiles, a bare PAN column carried by twelve non-PAN profiles), and the
-// per-profile scan could not see any of them. Legality is a property of the OID,
-// not of which profile carries it.
+// THE SCAN HAD TO BECOME CORPUS-WIDE BEFORE THE SWEEP COULD FIND THEM, AND THAT
+// IS THE FIX TO THE GUARD ITSELF. It used to look for an extending sibling in
+// the SAME profile only, and reported 41 — the number nl6#571 quotes. 20 further
+// entries were bare columns whose instantiated sibling happened to live in a
+// DIFFERENT profile: the bare hrStorageAllocationUnits column, a bare Juniper
+// jnxOperatingTemp column carried by four CISCO profiles, and a bare PAN column
+// carried by twelve NON-PAN profiles. The per-profile scan was structurally
+// unable to see any of them, so deleting only the 41 would have driven this
+// constant to 0 while 20 bare columns still shipped — a green suite over a
+// half-done sweep.
 //
-// FOUR REMAIN, BY DECISION, NOT BY OVERSIGHT: the bare hrStorageAllocationUnits
-// entry in cisco_catalyst_9500, cisco_nexus_9500, juniper_mx960 and
-// palo_alto_pa3220. In all four the entry is the ONLY hrStorageTable row of any
-// column, so deleting it removes the table rather than a duplicate. That is a
-// fidelity decision (model the table properly, or drop it) rather than a
-// cleanup, so nl6#571's Block If reported it instead of taking it. They are
-// tabled by (profile, OID) in nl6571KeptBareColumns and carved out of
-// TestNoShippedWalkEmitsABareColumnOID there, so the exception cannot widen
-// quietly.
+// Legality is a property of the OID, not of which profile carries it. The
+// per-profile form was simply the wrong question, in the same family as the
+// nl6#541 resources/*/*.json glob: a guard whose blind spot is invisible from
+// inside the guard. Do not narrow this scan back to one profile.
 //
-// The count is pinned rather than left as prose so the class cannot grow while
-// that decision is pending. Lowering it is always welcome; raising it needs a
-// reason.
-const bareColumnEntriesShipped = 4
+// The four bare hrStorageAllocationUnits entries were nl6#571's Block If — in
+// each of those profiles the entry was the ONLY hrStorageTable row of any column,
+// so deleting it empties the table rather than removing a duplicate. Decided as
+// DELETE: a collector getting nothing is honest about a device type that models
+// no storage, while a collector getting a binding named with a column OID is
+// handed a name that is not a legal instance. Those profiles model no storage now
+// and that is correct — do not restore the row to make the table non-empty.
+//
+// What this scan still cannot see: a bare column that NOTHING in the corpus
+// extends. Without a MIB it is indistinguishable from a scalar.
+//
+// The count is pinned rather than left as prose so the class cannot re-open.
+// Raising it needs a reason.
+const bareColumnEntriesShipped = 0
 
 // TestBareColumnCensusHasNotGrown pins the size of an ACKNOWLEDGED gap. It is
 // not a fix and does not pretend to be one — the framing this replaces read as

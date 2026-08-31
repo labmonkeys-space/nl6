@@ -75,8 +75,8 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // TestOctetShadowDeletionReproducesTheParentCorpus restores the deleted rows and
 // requires the value this constant held before, byte for byte.
 //
-// The second is nl6#574 / nl6#571 / nl6#569, which deleted 801 entries (742 dead
-// ifTable .9 / .11 / .17 rows, 57 bare column OIDs, 2 invalid PAN OIDs) and
+// The second is nl6#574 / nl6#571 / nl6#569, which deleted 805 entries (742 dead
+// ifTable .9 / .11 / .17 rows, 61 bare column OIDs, 2 invalid PAN OIDs) and
 // corrected 5 PAN values, 3 of which DO move a tag — a number where a
 // DisplayString belongs was the defect.
 // TestResourceDataDefectsReproduceTheParentCorpus reverses all of it and
@@ -90,7 +90,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "c520d2ddad3665e95ddcd21c16f5d0814be44da2f72afe58882c6596069eda44"
+const shippedTagDigest = "669cd66ec2adc5f399c5565d1d0d4443e9d717c43fc84d0c891cda5c9f026572"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
