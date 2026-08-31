@@ -362,32 +362,37 @@ func TestOctetShadowWithoutCyclerIsUnchanged(t *testing.T) {
 // class is wider than that (review R10). The three cases are different and the
 // difference is the point:
 //
-//   - .10 / .16 — the columns this change took over. ZERO may remain: the
-//     cycler answers them, so a static entry is unreachable.
+//   - .10 / .16 — the columns nl6#570 took over. ZERO may remain: the cycler
+//     answers them, so a static entry is unreachable.
 //   - .7 ifAdminStatus / .8 ifOperStatus — LIVE data despite being
 //     cycler-served. InitIfCountersWithScenario reads both out of oidIndex to
 //     SEED the interface-state engine (if_counters.go, `ic.state.Seed`), so
 //     deleting them would change every device's initial state. They are a
-//     carve-out on evidence, not on assumption.
-//   - .9 ifLastChange / .11 ifInUcastPkts / .17 ifOutUcastPkts — unreachable by
-//     exactly this change's argument, and NOT fixed here (the change's Never
-//     clause forbids touching the other shadows). .9 is not read by the seed
-//     loop, which only looks at .7 and .8. Filed as follow-up; the numbers are
-//     pinned so the class cannot grow while that is pending.
+//     carve-out on evidence, not on assumption, and they are the reason this
+//     census exists as a map rather than a single "must be zero" rule.
+//   - .9 ifLastChange / .11 ifInUcastPkts / .17 ifOutUcastPkts — dead by exactly
+//     nl6#570's argument, left in place by its Never clause and DELETED by
+//     nl6#574: 646 + 48 + 48 = 742 rows, recorded in
+//     snmp_shipped_resource_defect_ledger_test.go. They must stay 0 for the same
+//     reason .10 / .16 must.
 //
-// Two further BARE `.8` entries (a column OID with no instance) ship as well.
-// They are not counted here because they are not rows; they belong to
-// bareColumnEntriesShipped and TestBareColumnCensusHasNotGrown.
+// So every cycler-owned ifTable column is now either zero or one of the two
+// state-seed columns. The remaining non-zero rows are the carve-out, not a
+// backlog.
+//
+// Two further BARE `.8` entries (a column OID with no instance) shipped as well
+// and were deleted by nl6#571; they were never counted here, because they are
+// not rows. See bareColumnEntriesShipped.
 var staticRowsOnCyclerOwnedIfTableColumns = map[int]int{
 	colIfAdminStatus:  887, // live: seeds the state engine
 	colIfOperStatus:   887, // live: seeds the state engine
-	colIfLastChange:   646, // dead, out of scope, filed
+	colIfLastChange:   0,   // nl6#574: must stay 0
 	colIfInOctets:     0,   // nl6#570: must stay 0
-	colIfInUcastPkts:  48,  // dead, out of scope, filed (asr9k)
+	colIfInUcastPkts:  0,   // nl6#574: must stay 0
 	colIfInDiscards:   0,
 	colIfInErrors:     0,
-	colIfOutOctets:    0,  // nl6#570: must stay 0
-	colIfOutUcastPkts: 48, // dead, out of scope, filed (asr9k)
+	colIfOutOctets:    0, // nl6#570: must stay 0
+	colIfOutUcastPkts: 0, // nl6#574: must stay 0
 	colIfOutDiscards:  0,
 	colIfOutErrors:    0,
 }

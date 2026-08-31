@@ -247,9 +247,18 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 }
 
 // shippedOIDEncodingDigest is the SHA-256 of every shipped OID paired with its
-// encoding, taken on main at 09546c3 BEFORE the varint change. It is the
+// encoding, taken on main BEFORE the nl6#529 varint change. It is the
 // compatibility proof: if the digest still matches, no deployed profile changed
 // what it puts on the wire.
+//
+// A NOTE ON "09546c3", which appears in the constant name below and in three
+// comments: it is the short hash of the pre-varint revision as it was named when
+// nl6#529 landed, and it does NOT resolve in this checkout — the branch that
+// carried it was squash-merged. The digest itself is still meaningful and still
+// re-derived by TestRePinIsOnlyTheDeletedOID; read the name as "the pre-varint
+// corpus" rather than as a revision you can check out. Renaming the constant is
+// a separate, mechanical change and is deliberately not bundled with a data
+// transition (nl6#571 review B2).
 //
 // Recompute deliberately (and only deliberately) by logging the value this test
 // prints when it fails. A test that merely re-derives both sides from the
@@ -257,8 +266,19 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED TWICE. Both re-pins are CORPUS changes, not encoding changes, and
-// each is re-derived by a test rather than asserted here.
+// RE-PINNED THREE TIMES. Every re-pin is a CORPUS change, not an encoding
+// change, and each is re-derived by a test rather than asserted here.
+//
+// The third re-pin is nl6#574 / nl6#571 / nl6#569, which deleted 829 entries
+// naming 259 distinct OIDs, 258 of which left the corpus entirely: the dead
+// ifTable .9 / .11 / .17 rows, the bare column OIDs (a column with no instance
+// sub-identifier is not a legal varbind name), four over-specified instances, a
+// Palo Alto subtree served by twelve non-Palo-Alto profiles, and two invalid PAN
+// OIDs. The one name that survives is panChassisType, which the Palo Alto profile
+// still serves. TestResourceDataDefectRePinIsOnlyTheDeletedOIDs puts
+// those names back and requires the constant below it, and
+// TestOctetShadowRePinIsOnlyTheDeletedOIDs then continues back to nl6#570's
+// value, so the chain is unbroken at every link.
 //
 // The second re-pin is nl6#570, which deleted every shipped ifTable .10 / .16
 // entry (1322 rows across 20 profiles) once the cycler began serving those two
@@ -277,7 +297,8 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // 09546c3 digest, byte for byte.
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
-const shippedOIDEncodingDigest = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
+const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
+const shippedOIDEncodingDigest = "4dabe3fe5bdec217f4d76da0c4f0a187897435a33538ddbc25adc173c3baa801"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -650,11 +671,13 @@ func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 				"09546c3 digest or explain the new corpus", deleted)
 		}
 	}
-	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, so
-	// reaching 09546c3 means undoing BOTH. Its own stage is pinned separately by
-	// TestOctetShadowRePinIsOnlyTheDeletedOIDs; this test walks the whole way
-	// back, which is what keeps the chain from being provable only in halves.
-	restored := append(append([]string{}, oids...), nl6570DeletedOctetOIDs()...)
+	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, and
+	// nl6#574 / nl6#571 / nl6#569 a third, so reaching 09546c3 means undoing all
+	// THREE. Each stage is pinned separately (TestOctetShadowRePinIsOnlyTheDeletedOIDs,
+	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs); this test walks the whole
+	// way back, which is what keeps the chain from being provable only in pieces.
+	restored := append(append([]string{}, oids...), nl6574RestorableOIDNames(t)...)
+	restored = append(restored, nl6570DeletedOctetOIDs()...)
 	restored = append(restored, deleted)
 	sort.Strings(restored)
 

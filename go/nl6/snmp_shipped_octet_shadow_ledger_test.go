@@ -1410,6 +1410,10 @@ func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
+	// nl6#574 / nl6#571 / nl6#569 edited shipped data AFTER this change, so the
+	// reversal chains: undo those three transitions first, which reconstructs the
+	// tree nl6#570 left, and only then put this change's octet rows back.
+	restoreNl6574ResourceDefectEntries(t, cur)
 	restoreNl6570OctetEntries(t, cur)
 
 	// Same line shape and hash as shippedTypedCorpus, over the distinct
@@ -1638,7 +1642,12 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		}
 	}
 
-	restored := append(append([]string{}, oids...), deleted...)
+	// nl6#574 / nl6#571 / nl6#569 deleted a further 256 OID names after this
+	// change, so reaching the pre-octet-shadow digest means undoing both stages.
+	// This change's own stage is pinned separately by
+	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs.
+	restored := append(append([]string{}, oids...), nl6574RestorableOIDNames(t)...)
+	restored = append(restored, deleted...)
 	sort.Strings(restored)
 
 	h := sha256.New()

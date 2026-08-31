@@ -67,7 +67,7 @@ for a representative example.
 
 The resource decoder is not strict, so a key it does not recognise is dropped silently.
 That is a hazard for a typo'd `snmp` array — an optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check — and it is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments.
-`palo_alto_pa3220_snmp_4.json` uses one to record an unresolved question about a vendor OID subtree (nl6#569).
+`palo_alto_pa3220_snmp_4.json` carried one recording an unresolved question about a vendor OID subtree; nl6#569 resolved it and the note is gone, so no shipped part uses the key today.
 Such a key changes nothing that loads, and `TestUnknownTopLevelKeysAreInert` pins that, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
 
 ## Load-time validation
@@ -156,6 +156,16 @@ One bound still applies to it: an untyped numeric value must fit `Integer32`, si
 `sysLocation` is filtered once at load, where the city dataset is assembled, so a sentinel-valued row never reaches a device.
 `sysName` is generated, but it does carry the operator's `resource_file` slug; it cannot compose to a sentinel because every pattern embeds `-` and the result is lower-cased while both sentinels are camelCase.
 A malformed OID **key** is still accepted, and so is a value that encodes cleanly but names an object the MIB does not define there — these rules check encodability, not faithfulness to the MIB.
+
+Two whole classes of wrong data therefore load without a word, and both were swept by hand rather than by a rule:
+
+- **An OID with the wrong number of instance sub-identifiers** — a bare table column (too few) or an over-specified instance (too many). Neither is a legal varbind name. nl6#571 deleted 61 such entries: 57 bare columns, four of which were the only `hrStorageTable` row their profile had (those profiles now model no storage, which is the intended outcome rather than a gap to fill), plus 4 over-specified `ciscoImageString` instances. Deciding which of a prefix/extension pair is the legal one needs the table's INDEX arity, so it needs the MIB — the guards flag candidates, not verdicts. See [SNMP reference → Bare column OIDs](snmp.md#bare-column-oids).
+- **A value of the wrong semantic kind on a real vendor OID, or a whole vendor subtree on the wrong vendor's device.** nl6#569 found 8 of 11 Palo Alto enterprise OIDs wrong or invalid in `palo_alto_pa3220`, all passing every rule, and twelve profiles that are not Palo Alto devices serving that subtree as well. Only that vendor arc has been audited. See [SNMP reference → Semantic faithfulness](snmp.md#semantic-faithfulness).
+
+**A static entry on an OID the cycler serves is dead, not authoritative.**
+`findResponse` consults the dynamic cyclers before the static map, so an entry on any `ifTable`/`ifXTable` column in `ifCyclerColumns` is unreachable — writing one is a silent no-op, and reading a profile's JSON to learn what a device answers will mislead you.
+nl6#570 and nl6#574 deleted 2064 such rows between them for exactly that reason.
+The two exceptions are `ifAdminStatus` (`.7`) and `ifOperStatus` (`.8`), whose static rows *seed* the interface-state engine and are load-bearing.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
 The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
