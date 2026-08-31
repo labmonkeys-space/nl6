@@ -67,11 +67,20 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // emitted tag of no OID any shipped profile serves. It is a measurement, not an
 // argument, and it was NOT re-derived from the widened code.
 //
-// RE-PINNED once, by nl6#570, which deleted the 1322 shipped ifTable .10 / .16
-// entries the cycler now serves. That is a CORPUS change, not an encoding
-// change: no surviving OID moved its tag. The claim is re-derived rather than
-// asserted here — TestOctetShadowDeletionReproducesTheParentCorpus restores the
-// deleted rows and requires the value this constant held before, byte for byte.
+// RE-PINNED TWICE. Both re-pins are CORPUS changes, and each is re-derived by a
+// test rather than asserted here.
+//
+// The first was nl6#570, which deleted the 1322 shipped ifTable .10 / .16
+// entries the cycler now serves. No surviving OID moved its tag;
+// TestOctetShadowDeletionReproducesTheParentCorpus restores the deleted rows and
+// requires the value this constant held before, byte for byte.
+//
+// The second is nl6#574 / nl6#571 / nl6#569, which deleted 801 entries (742 dead
+// ifTable .9 / .11 / .17 rows, 57 bare column OIDs, 2 invalid PAN OIDs) and
+// corrected 5 PAN values, 3 of which DO move a tag — a number where a
+// DisplayString belongs was the defect.
+// TestResourceDataDefectsReproduceTheParentCorpus reverses all of it and
+// requires the value this constant held at ec4700f.
 //
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
@@ -81,7 +90,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "cfe569609d6cf99f777d764b306b039183d728056889d419094096e53480db8c"
+const shippedTagDigest = "c520d2ddad3665e95ddcd21c16f5d0814be44da2f72afe58882c6596069eda44"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

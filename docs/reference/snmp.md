@@ -262,13 +262,67 @@ The sentinel rule is checked first, matching the order the encoder applies them,
 What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
-- **Bare table columns.** The 14 deleted `ipRouteDest` entries were removed because rule 3 refused them, not as a sweep of the class: **41 bare-column entries still ship across 6 profiles** (bare `entPhysicalTable` columns, bare `ifDescr`/`ifMtu`/`ifSpeed`/`ifOperStatus`, a Cisco environment column, and four `hrStorageAllocationUnits` columns with no instantiated siblings). A walk emits a binding named with a column OID, which is not a legal varbind name. `TestBareColumnCensusHasNotGrown` pins the count so the class cannot grow while the sweep is pending.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree is the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and it passes all three rules (filed as nl6#569).
+- **Bare table columns.** No rule sees them, and the sweep is done rather than pending: nl6#571 deleted **57 bare-column entries across 14 distinct OIDs and 13 profiles**. See [Bare column OIDs](#bare-column-oids) below for what remains and why the census had to be widened to find them.
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched, and the other 28 profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
 - **`sysName`.** Derived from the device, not operator data.
 - **Non-`snmp` sections.** SSH, API and optical entries never reach `encodeTypedValue`; the trap and syslog catalogs have their own validation.
 - **Version-0 GETBULK.** Answered as-is, `0x46` tags included, by decision (see above).
+
+## Bare column OIDs
+
+A table column is not an instance.
+`1.3.6.1.2.1.25.2.3.1.4` names the `hrStorageAllocationUnits` *column*; a value lives at `…1.4.<index>`.
+An entry keyed on the bare column makes a walk emit a varbind whose name is not a legal instance OID, ahead of the real rows of that column, and no load guard can see it: the OIDs are well formed and the values encode cleanly at their declared types.
+
+nl6#571 deleted 57 such entries across 14 distinct OIDs and 13 profiles — bare `entPhysicalTable` columns, bare `ifDescr`/`ifMtu`/`ifSpeed`/`ifOperStatus`, a Cisco environment column, a Juniper `jnxOperatingTemp` column carried by four *Cisco* profiles, and a Palo Alto column carried by twelve *non-Palo-Alto* profiles.
+The 14 `ipRouteDest` entries nl6#541 removed are the precedent, but that change removed them because the typed-class rule refused the value, not as a sweep of the class.
+
+**The census had to be widened before the sweep could find them.**
+`TestBareColumnCensusHasNotGrown` looked for an extending sibling within the *same* profile and reported 41.
+The other 20 were bare columns whose instantiated sibling happened to live in a different profile, and the per-profile scan was structurally unable to see them.
+Legality is a property of the OID, not of which profile carries it, so the scan is now corpus-wide.
+
+**Four remain, by decision.**
+The bare `hrStorageAllocationUnits` entry in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` is, in each of those four profiles, the *only* `hrStorageTable` row of any column.
+Deleting it therefore removes the table rather than a duplicate, which is a fidelity decision — model `hrStorageTable` properly, or drop it — and not a cleanup, so it is reported rather than taken.
+They are tabled by `(profile, OID)` in `nl6571KeptBareColumns` and carved out of `TestNoShippedWalkEmitsABareColumnOID` there, so a fifth bare column, or the same OID in a fifth profile, fails rather than being absorbed.
+
+**What fires on the defect.**
+`TestNoShippedWalkEmitsABareColumnOID` walks every shipped profile through `findNextOIDWithServed` and requires that no emitted OID is extended by any shipped profile's walk.
+That is the symptom test; the census reads the JSON, so it says what the corpus *contains*, not what a walk *emits*.
+Neither can see a bare column that nothing in the corpus extends — a column no profile instantiates anywhere is indistinguishable from a scalar without a MIB.
+
+## Semantic faithfulness
+
+The three load rules answer "will nl6 put a mistyped BER value on the wire", never "is this profile faithful to the MIB".
+nl6#569 is the worked example, and it is worth reading as a calibration of how much the guards prove.
+
+Of the 11 Palo Alto enterprise OIDs `palo_alto_pa3220` served, 3 were correct, 5 answered a value of the wrong *kind*, and 3 were not valid OIDs at all — and the whole table passed rules 1 to 3.
+A collector with a PAN-COMMON-MIB rule keyed on `panMgmtPanoramaConnected` got `4194304` where a real PA-3220 answers `connected`; one keyed on `panChassisType` got `127`.
+The rule appears to work and validates nothing, which is the failure mode a simulator has to avoid above all others.
+
+| OID | was | now | object |
+|---|---|---|---|
+| `…2.1.2.1.6.0` | `55` | `5.2.10` | `panSysVpnClientVersion`, a DisplayString version (`0.0.0` if not installed) |
+| `…2.1.2.1.17.0` | `PA3220-001` | `790286-4437636` | `panSysWildfireVersion`, a content version — the old value was a hostname |
+| `…2.1.2.2.1.0` | `127` | `PA-3220` | `panChassisType`, a DisplayString |
+| `…2.1.2.4.1.0` | `4194304` | `connected` | `panMgmtPanoramaConnected` |
+| `…2.1.2.4.2.0` | `DDR4` | `connected` | `panMgmtPanorama2Connected` |
+| `…2.1.2.4.1.3` | `1` | *deleted* | nothing — under a leaf scalar |
+| `…2.1.2.4.1.3.1` | `1` | *deleted* | nothing — under a leaf scalar |
+| `…2.1.2.5.1.0` | `500` | *deleted* | `panGPGatewayUtilization` is an OBJECT-IDENTITY container, not a leaf |
+
+`panCommonObjs 4` is `panMgmt` and holds exactly two `DisplayString` scalars, so the "management-plane memory" subtree the old data modelled (a byte size at `.4.1.0`, `DDR4` at `.4.2.0`, rows under `.4.1.3`) does not exist at all.
+The units question that triggered the audit — 4 GiB versus 4 MiB at `.4.1.0` — is moot: the object is a string, and both numbers were equally wrong.
+
+The three real children of `panGPGatewayUtilization` were **not** added in place of `.5.1.0`.
+Their names are known (`panGPGWUtilizationPct`, `…MaxTunnels`, `…ActiveTunnels`) but their sub-identifiers were not resolved out of the MIB in that change, and inventing them is exactly the guessing the fix exists to undo.
+
+`TestPaloAltoPANSubtreeMatchesTheMIB` pins the eight surviving values and the three absences.
+It is a record of a reading, not a verification: nothing in CI compares nl6 against PAN-COMMON-MIB.
+**Only this profile was audited.** The other 28 carry vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason to treat that as outstanding work rather than an assumption.
 
 ## Response size, `max-repetitions` and truncation
 
@@ -510,6 +564,18 @@ Every per-interface counter listed below is generated dynamically by
 Before that they were the only IF-MIB counter columns served from the profile JSON, frozen, while their HC columns climbed from `ifSpeed` — so a rate computed from them was 0 bps forever, and they contradicted the 64-bit columns on the same interface.
 The 1322 static entries the cycler now shadows (661 `ifInOctets` + 661 `ifOutOctets`, across 20 profiles) were deleted in the same change, because `findResponse` consults the cycler before the static map and an unreachable entry that looks authoritative is what let the defect survive.
 `snmp_shipped_octet_shadow_ledger_test.go` records every deleted row and reverses it to reproduce the parent corpus digest.
+
+**The dead-data rule now covers every cycler-owned `ifTable` column.**
+nl6#570 applied it to `.10`/`.16` only, because its own scope forbade touching the other shadows, and nl6#574 finished the sweep: **742 further static rows deleted** — `ifLastChange` `.9` (646 rows, 17 profiles), `ifInUcastPkts` `.11` (48, `asr9k`) and `ifOutUcastPkts` `.17` (48, `asr9k`).
+`findResponse` consults the cycler first, so all 742 were unreachable.
+`staticRowsOnCyclerOwnedIfTableColumns` now reads zero for every cycler-owned column except the two carve-outs below, so a non-zero entry is a regression rather than a backlog.
+
+**`ifAdminStatus` `.7` and `ifOperStatus` `.8` are NOT dead and must not be deleted.**
+They look exactly like the other shadows — the cycler answers both — but `InitIfCountersWithScenario` reads them out of `oidIndex` to *seed* the interface-state engine, so they are live input and deleting them would change every device's initial state.
+887 rows each, across 28 profiles, and the census carries them as a named carve-out rather than a magic number.
+
+`TestEveryDeletedDeadRowIsAnsweredByTheCycler` builds a real device per profile and requires `findResponse` to answer all 742 deleted OIDs.
+That is the test that fires on the defect; the corpus digests would only say "re-pin", which is how an unreachable column would become an unanswered one.
 
 **What the RFC actually says, and what is nl6's choice.**
 RFC 2863 does not define `ifInOctets` as the low 32 bits of `ifHCInOctets`, and an earlier version of this page said it did.

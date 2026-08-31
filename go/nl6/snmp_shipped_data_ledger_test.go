@@ -81,8 +81,9 @@ var nl6541TagChanges = []struct {
 
 // nl6541RemovedEntries are the entries this change DELETED: a bare ipRouteDest
 // column OID with no instance, valued "1", in 14 profiles. Rule 3 refused it
-// because that column is IpAddress-typed; see the note in the docs about the
-// other bare-column entries, which this change did NOT sweep.
+// because that column is IpAddress-typed, so these went as a side effect of
+// validation rather than as a sweep of the class; nl6#571 swept the remaining 57
+// (snmp_shipped_resource_defect_ledger_test.go), which is a class no rule sees.
 var nl6541RemovedEntries = []struct{ profile, oid, oldValue string }{
 	{"arista_7280r3.json", ".1.3.6.1.2.1.4.21.1.1", "1"},
 	{"asr9k.json", ".1.3.6.1.2.1.4.21.1.1", "1"},
@@ -156,10 +157,14 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 	// which reconstructs the tree nl6#541 left, and only then reverse nl6#541's
 	// own edits. Without this step the tag-change loop below reports 30 rows as
 	// "no longer shipped" and the digest cannot come back.
+	// nl6#574 / nl6#571 / nl6#569 then edited shipped data again, including the
+	// PAN OID .25461.2.1.2.4.1.0 that nl6541TagChanges also records, so its
+	// reversal has to run first of all.
 	nl6570 := map[[2]string]string{}
 	for k, v := range cur {
 		nl6570[[2]string{k.profile, k.oid}] = v
 	}
+	restoreNl6574ResourceDefectEntries(t, nl6570)
 	restoreNl6570OctetEntries(t, nl6570)
 	for k, v := range nl6570 {
 		cur[key{k[0], k[1]}] = v

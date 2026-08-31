@@ -258,45 +258,65 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 }
 
 // bareColumnEntriesShipped is the number of shipped entries whose OID is an
-// INTERIOR node of its own profile's served tree — that is, another entry in the
-// same profile has it as a proper prefix. A table column with no instance is not
-// a legal varbind name, so such an entry makes a walk emit a binding named with
-// a column OID.
+// INTERIOR node of the served tree — that is, some shipped OID has it as a
+// proper prefix, which makes it a table column rather than an instance. A column
+// with no instance sub-identifier is not a legal varbind name, so such an entry
+// makes a walk emit a binding named with a column OID.
 //
-// nl6#541 deleted 14 of these (a bare ipRouteDest valued "1"), but it did so
-// because the typed-class rule REFUSED them — that column is IpAddress-typed and
-// "1" is not an address — not as a sweep of the class. 41 remain, across 6
-// profiles, and they are NOT fixed here: bare entPhysicalTable columns, bare
-// ifDescr / ifMtu / ifSpeed / ifOperStatus, and a Cisco environment column.
+// nl6#541 deleted 14 of these (a bare ipRouteDest valued "1"), but only because
+// the typed-class rule REFUSED them — that column is IpAddress-typed and "1" is
+// not an address — not as a sweep of the class. nl6#571 swept the rest: 57
+// entries across 14 distinct OIDs and 13 profiles (bare entPhysicalTable
+// columns, bare ifDescr / ifMtu / ifSpeed / ifOperStatus, a Cisco environment
+// column, a Juniper jnxOperatingTemp column and a PAN column), recorded in
+// snmp_shipped_resource_defect_ledger_test.go.
+//
+// THE SCAN IS NOW CORPUS-WIDE, AND THAT IS THE FIX TO THE GUARD ITSELF. It used
+// to look for an extending sibling in the SAME profile only, and reported 41 —
+// the number nl6#571 quotes. 20 further entries were bare columns whose
+// instantiated sibling happened to live in a different profile (bare
+// hrStorageAllocationUnits, a bare Juniper temperature column carried by four
+// Cisco profiles, a bare PAN column carried by twelve non-PAN profiles), and the
+// per-profile scan could not see any of them. Legality is a property of the OID,
+// not of which profile carries it.
+//
+// FOUR REMAIN, BY DECISION, NOT BY OVERSIGHT: the bare hrStorageAllocationUnits
+// entry in cisco_catalyst_9500, cisco_nexus_9500, juniper_mx960 and
+// palo_alto_pa3220. In all four the entry is the ONLY hrStorageTable row of any
+// column, so deleting it removes the table rather than a duplicate. That is a
+// fidelity decision (model the table properly, or drop it) rather than a
+// cleanup, so nl6#571's Block If reported it instead of taking it. They are
+// tabled by (profile, OID) in nl6571KeptBareColumns and carved out of
+// TestNoShippedWalkEmitsABareColumnOID there, so the exception cannot widen
+// quietly.
 //
 // The count is pinned rather than left as prose so the class cannot grow while
-// the sweep is pending. Lowering it is always welcome; raising it needs a
+// that decision is pending. Lowering it is always welcome; raising it needs a
 // reason.
-const bareColumnEntriesShipped = 41
+const bareColumnEntriesShipped = 4
 
 // TestBareColumnCensusHasNotGrown pins the size of an ACKNOWLEDGED gap. It is
 // not a fix and does not pretend to be one — the framing this replaces read as
 // though bare columns were now impossible, which they are not.
 func TestBareColumnCensusHasNotGrown(t *testing.T) {
-	byProfile := map[string]map[string]string{} // profile -> oid -> part
+	all := map[string]struct{}{}
+	byProfile := map[[2]string]string{} // (profile, oid) -> part
 	for _, e := range shippedSNMPEntries(t) {
-		if byProfile[e.Profile] == nil {
-			byProfile[e.Profile] = map[string]string{}
-		}
-		byProfile[e.Profile][e.OID] = e.Part
+		all[e.OID] = struct{}{}
+		byProfile[[2]string{e.Profile, e.OID}] = e.Part
 	}
 
 	interior := 0
 	profiles := map[string]struct{}{}
-	for profile, oids := range byProfile {
-		for oid, part := range oids {
-			for other := range oids {
-				if other != oid && strings.HasPrefix(other, oid+".") {
-					interior++
-					profiles[profile] = struct{}{}
-					t.Logf("bare column: %s serves %s, which is a prefix of another entry", part, oid)
-					break
-				}
+	for k, part := range byProfile {
+		e := shippedSNMPEntry{Profile: k[0], Part: part, OID: k[1]}
+		for other := range all {
+			if other != e.OID && strings.HasPrefix(other, e.OID+".") {
+				interior++
+				profiles[e.Profile] = struct{}{}
+				t.Logf("bare column: %s serves %s, which is a prefix of another shipped entry",
+					e.Part, e.OID)
+				break
 			}
 		}
 	}

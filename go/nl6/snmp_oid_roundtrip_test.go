@@ -257,8 +257,16 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED TWICE. Both re-pins are CORPUS changes, not encoding changes, and
-// each is re-derived by a test rather than asserted here.
+// RE-PINNED THREE TIMES. Every re-pin is a CORPUS change, not an encoding
+// change, and each is re-derived by a test rather than asserted here.
+//
+// The third re-pin is nl6#574 / nl6#571 / nl6#569, which deleted 801 entries
+// naming 256 distinct OIDs: the dead ifTable .9 / .11 / .17 rows, the bare column
+// OIDs (a column with no instance sub-identifier is not a legal varbind name),
+// and two invalid PAN OIDs. TestResourceDataDefectRePinIsOnlyTheDeletedOIDs puts
+// those names back and requires the constant below it, and
+// TestOctetShadowRePinIsOnlyTheDeletedOIDs then continues back to nl6#570's
+// value, so the chain is unbroken at every link.
 //
 // The second re-pin is nl6#570, which deleted every shipped ifTable .10 / .16
 // entry (1322 rows across 20 profiles) once the cycler began serving those two
@@ -277,7 +285,8 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // 09546c3 digest, byte for byte.
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
-const shippedOIDEncodingDigest = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
+const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
+const shippedOIDEncodingDigest = "eedbb275e7bd0958535ed5f5b873ddc9e5b16557b8b86d9362e8ce010904b36c"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -650,11 +659,13 @@ func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 				"09546c3 digest or explain the new corpus", deleted)
 		}
 	}
-	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, so
-	// reaching 09546c3 means undoing BOTH. Its own stage is pinned separately by
-	// TestOctetShadowRePinIsOnlyTheDeletedOIDs; this test walks the whole way
-	// back, which is what keeps the chain from being provable only in halves.
-	restored := append(append([]string{}, oids...), nl6570DeletedOctetOIDs()...)
+	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, and
+	// nl6#574 / nl6#571 / nl6#569 a third, so reaching 09546c3 means undoing all
+	// THREE. Each stage is pinned separately (TestOctetShadowRePinIsOnlyTheDeletedOIDs,
+	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs); this test walks the whole
+	// way back, which is what keeps the chain from being provable only in pieces.
+	restored := append(append([]string{}, oids...), nl6574DeletedOIDNames()...)
+	restored = append(restored, nl6570DeletedOctetOIDs()...)
 	restored = append(restored, deleted)
 	sort.Strings(restored)
 
