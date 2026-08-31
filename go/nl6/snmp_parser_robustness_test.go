@@ -555,20 +555,18 @@ func FuzzHandleGetBulk(f *testing.F) {
 	f.Add(buildGetBulkPDUForFuzz(0, 10, ".1.3.6.1.2.1.1.1.0"))
 	addGoldenV2cSeeds(f)
 	addAgreementSeeds(f)
-	// NOT WIRED to assertV2cParserAgreement, and the reason is measured rather
-	// than assumed: 21 of this target's 205 COMMITTED corpus entries already
-	// violate CLAIM 1, every one of them an instance of nl6#560 (the negative
-	// community length that walks parseGetBulkParams' cursor backwards onto a
-	// 0xa5 byte). Wiring the helper here today turns an ordinary `go test`
-	// red for a defect nl6#534 is not permitted to repair.
-	//
-	// That the corpus was already full of the defect while a panic-only
-	// fuzzer replayed it on every CI run is the clearest statement of what
-	// nl6#513 could not see. TestGetBulkCorpusIsBlockedOnNl6560 pins the
-	// blockage and starts FAILING once nl6#560 lands, which is the prompt to
-	// wire this target (nl6#534 review R5).
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		_ = fuzzTestServer(50).handleGetBulk(".1.3.6.1.2.1.1.1.0", data)
+	// WIRED to assertV2cParserAgreement as of nl6#560. It was the one
+	// raw-datagram target left out, and the reason was measured rather than
+	// assumed: 21 of its 205 COMMITTED corpus entries violated CLAIM 1, every
+	// one of them the negative community length that walked
+	// parseGetBulkParams' cursor backwards onto a 0xa5 byte. That a panic-only
+	// fuzzer had been replaying the defect on every CI run without noticing is
+	// the sharpest available statement of what nl6#513 could not see.
+	// TestGetBulkCorpusAgrees now pins the whole corpus as agreeing.
+	f.Fuzz(func(t *testing.T, data []byte) {
+		s := fuzzTestServer(50)
+		_ = s.handleGetBulk(".1.3.6.1.2.1.1.1.0", data)
+		assertV2cParserAgreement(t, s, data)
 	})
 }
 
@@ -880,10 +878,41 @@ func assertV2cParserAgreement(t fatalfTB, s *SNMPServer, data []byte) {
 		return
 	}
 
-	req := s.parseIncomingRequest(data)
-	pduTag := s.getPDUType(data)
 	oids, listOK := s.parseAllOIDsFromRequest(data)
 	nonRep, maxRep := s.parseGetBulkParams(data)
+	checkV2cParserAgreement(t, v2cParseResults{
+		req:    s.parseIncomingRequest(data),
+		pduTag: s.getPDUType(data),
+		oids:   oids,
+		listOK: listOK,
+		nonRep: nonRep,
+		maxRep: maxRep,
+	}, data)
+}
+
+// v2cParseResults is what the four envelope readers made of one datagram.
+//
+// It exists so the CLAIMS can be driven over results the parsers did not
+// produce. Every line of checkV2cParserAgreement runs only as an assertion, so
+// its ability to FIRE has to be demonstrated by something — and until nl6#559
+// and nl6#560 were fixed that something was the defects themselves, which are
+// now gone. Feeding the pre-fix results in directly keeps each claim's
+// firing half under test without keeping a defect in the parsers to supply it.
+type v2cParseResults struct {
+	req    SNMPRequest
+	pduTag byte
+	oids   []string
+	listOK bool
+	nonRep int
+	maxRep int
+}
+
+// checkV2cParserAgreement holds the claims themselves. See
+// assertV2cParserAgreement above for what they mean; this split is a
+// testability seam and nothing else.
+func checkV2cParserAgreement(t fatalfTB, r v2cParseResults, data []byte) {
+	t.Helper()
+	req, pduTag, oids, listOK, nonRep, maxRep := r.req, r.pduTag, r.oids, r.listOK, r.nonRep, r.maxRep
 
 	// CLAIM 1 — getPDUType and parseGetBulkParams agree on where the PDU
 	// starts.
@@ -900,15 +929,12 @@ func assertV2cParserAgreement(t fatalfTB, s *SNMPServer, data []byte) {
 	// Writing this as an equality in both directions is exactly the assertion
 	// that has to be relaxed until it is silent.
 	//
-	// KNOWN OPEN DEFECTS — this claim FIRES on live fuzzing, within about ten
-	// seconds of FuzzGetPDUType, on nl6#560 (parseGetBulkParams has no `< 0`
-	// guard on three declared lengths) and on nl6#559 (getPDUType assumes a
-	// one-octet version). Neither is fixed here: nl6#534 is the test change
-	// and a parser fix is a separate change with its own review. Their
-	// reproducers are repro560NegativeLengthWalksBackwards and
-	// repro559NonMinimalVersion below, deliberately NOT committed as fuzz
-	// seeds — a seed would fail an ordinary `go test` for a defect this change
-	// is not allowed to repair.
+	// This claim FOUND nl6#560 (parseGetBulkParams read three declared lengths
+	// with no `< 0` arm, so parseLength's -1 walked its cursor backward and it
+	// parsed a GETBULK out of bytes that were not one) and, with CLAIM 3,
+	// nl6#559 (getPDUType assumed a one-octet version). Both are fixed, and
+	// their reproducers are committed as fuzz seeds by addAgreementSeeds — an
+	// ordinary `go test` replays them, so a regression fails the suite.
 	if (nonRep != defaultBulkNonRepeat || maxRep != defaultBulkMaxRepeat) && pduTag != ASN1_GET_BULK {
 		t.Fatalf("PDU-offset disagreement: parseGetBulkParams read a GETBULK PDU "+
 			"(non-repeaters=%d, max-repetitions=%d, defaults are %d/%d) but getPDUType reports tag 0x%02X, "+
@@ -1034,27 +1060,25 @@ func assertMalformedListIsDiscarded(t fatalfTB, s *SNMPServer, data []byte) {
 	}
 }
 
-// ── nl6#559 / nl6#560: the two disagreements this change FOUND ───────────────
+// ── nl6#559 / nl6#560: the two disagreements nl6#534 FOUND, now fixed ────────
 //
-// Both are recorded here as named variables rather than as fuzz seeds. A seed
-// would fail an ordinary `go test` for a defect nl6#534 is not permitted to
-// repair (a parser fix is a separate change with its own review), so these are
-// driven only by TestAgreementHelperCatchesADisagreement, which asserts the
-// helper NOTICES them through a recorder instead of failing the suite.
-//
-// When nl6#559 and nl6#560 land, each of these belongs in addAgreementSeeds.
+// nl6#534 recorded these as named variables and deliberately kept them OUT of
+// the seed corpus: a seed would have failed an ordinary `go test` for a defect
+// that change was not permitted to repair. Both parsers are fixed here, so all
+// four are now committed seeds through addAgreementSeeds and an ordinary
+// `go test` replays them — a regression in either envelope reader fails the
+// suite rather than waiting for a fuzz campaign to rediscover it.
 
 // repro560NegativeLengthWalksBackwards is nl6#560, found by FuzzGetPDUType
-// after 445,685 executions.
+// after 445,685 executions and fixed by the `< 0` arms parseGetBulkParams now
+// carries on all seven of its declared-length reads.
 //
-// parseGetBulkParams reads the community length with parseLength and then does
+// parseGetBulkParams read the community length with parseLength and then did
 // `pos = newPos + commLen` with NO `commLen < 0` test. parseLength signals
-// failure with -1, so the cursor moves BACKWARD onto the community length byte
-// 0xa5 — which is also ASN1_GET_BULK — and it parses a GETBULK PDU out of
-// bytes that are not one, reporting non-repeaters 12336. getPDUType, which
-// does guard, answers its ASN1_GET_REQUEST bail. Three sites in that one
-// function lack the guard (verLen, commLen, reqIdLen) plus `pos += nonRepLen`;
-// every sibling parser guards all of them.
+// failure with -1, so the cursor moved BACKWARD onto the community length byte
+// 0xa5 — which is also ASN1_GET_BULK — and it parsed a GETBULK PDU out of
+// bytes that are not one, reporting non-repeaters 12336. getPDUType, which did
+// guard, answered its ASN1_GET_REQUEST bail.
 var repro560NegativeLengthWalksBackwards = []byte{
 	0x30, 0x30, 0x02, 0x01, 0x30, 0x04, 0xa5, 0x30, 0x02, 0x04,
 	0x30, 0x30, 0x30, 0x30, 0x02, 0x02, 0x30, 0x30,
@@ -1062,8 +1086,9 @@ var repro560NegativeLengthWalksBackwards = []byte{
 
 // nonMinimalVersionRequest builds a v2c request whose version INTEGER is
 // encoded in TWO content octets (`02 02 00 01`). BER — which SNMP uses, not
-// DER — permits it, and every parser in the package reads it correctly except
-// getPDUType, which skips the version as skipLength plus a bare `pos++`.
+// DER — permits it, and every parser in the package read it correctly except
+// getPDUType, which skipped the version as skipLength plus a bare `pos++` and
+// so reported the version's own second content octet (0x01) as the PDU tag.
 func nonMinimalVersionRequest(pduTag byte, oids []string) []byte {
 	var varbinds []byte
 	for _, oid := range oids {
@@ -1085,7 +1110,8 @@ func nonMinimalVersionRequest(pduTag byte, oids []string) []byte {
 
 // zeroLengthVersionRequest builds a v1/v2c request whose version INTEGER has
 // ZERO content octets (`02 00`). The same getPDUType defect as nl6#559 in the
-// other direction: its bare `pos++` steps one octet too FAR.
+// other direction: its bare `pos++` stepped one octet too FAR, landing on the
+// community string's length octet and reporting 0x06 as the PDU tag.
 func zeroLengthVersionRequest(pduTag byte, oids []string) []byte {
 	var varbinds []byte
 	for _, oid := range oids {
@@ -1115,6 +1141,38 @@ var (
 	// The zero-content-octet instance of nl6#559.
 	repro559ZeroLengthVersion = zeroLengthVersionRequest(ASN1_GET_NEXT, []string{".1.3.6.1.2.1.2.2.1.2.1"})
 )
+
+// TestExtractRequestIDGuardsNegativeLengths is nl6#560's second site, one
+// message layer up.
+//
+// extractRequestIDFromScopedPDU skipped contextEngineID and contextName with
+// `pos = newPos + n` and no `n < 0` arm, so parseLength's -1 walked the cursor
+// BACKWARD onto the offending length octet. That octet is then re-read as a
+// tag, and 0xA0 is both a length byte parseLength refuses (32 length octets,
+// past its 4-octet ceiling) and ASN1_GET_REQUEST — so the function walked into
+// a PDU that is not there and returned a request id nobody sent. A v3 response
+// carrying it is answered to a request the manager cannot match.
+//
+// The witness is exact rather than "not 12345": the guarded value is the
+// documented fallback of 1, and the unguarded one is the 12345 encoded below.
+// No agreement assertion covers this function — the four self-differential
+// readers describe the v1/v2c envelope, and a scoped PDU has no second reader
+// here — so the guard needs its own subject or reverting it is silent.
+func TestExtractRequestIDGuardsNegativeLengths(t *testing.T) {
+	s := robustnessTestServer()
+
+	scopedPDU := []byte{
+		0x04, 0xa0, // contextEngineID OCTET STRING, unreadable length 0xA0
+		0x06,                   // what the unguarded walk re-reads as a PDU length
+		0x02, 0x02, 0x30, 0x39, // INTEGER 12345 — the invented request id
+		0x05, 0x00, 0x00, 0x00, // padding to clear the 10-byte floor
+	}
+	if got := s.extractRequestIDFromScopedPDU(scopedPDU); got != 1 {
+		t.Errorf("extractRequestIDFromScopedPDU = %d, want the fallback 1: the cursor walked "+
+			"backward onto the 0xA0 length octet and read a request id out of bytes that are "+
+			"not a PDU (nl6#560)\nscoped PDU: % x", got, scopedPDU)
+	}
+}
 
 // recordingTB is a fatalfTB that records instead of aborting.
 //
@@ -1149,10 +1207,17 @@ func (r *recordingTB) fired(phrase string) bool {
 // independently (the two defects nl6#534 found) and over the well-formed
 // agreement seeds, and asserts which claims fire and which stay silent.
 //
-// CLAIM 2 has no data-only witness, and that absence IS its property: two
-// correct name readers cannot be made to disagree by choosing bytes. It is
-// demonstrated by mutation (drop a byte from parseIncomingRequest's name
-// decode) and is asserted SILENT here, which is the half a data test can pin.
+// Until nl6#559 and nl6#560 were fixed, the FIRING half of that subject came
+// from the defects themselves: four reproducers whose verdict was known
+// independently. Fixing the parsers removed every datagram that can make a
+// correct parser set disagree — by construction, since agreement is now the
+// property — so the firing half is driven through checkV2cParserAgreement with
+// the results the PRE-FIX parsers actually returned. The reproducer datagrams
+// stay, as the silent regression rows that pin the fixes.
+//
+// CLAIM 2 had no witness of either kind before: two correct name readers
+// cannot be made to disagree by choosing bytes. Synthetic results give it its
+// firing half, and it keeps its silent half over the real datagrams.
 func TestAgreementHelperCatchesADisagreement(t *testing.T) {
 	s := newTestServer(fuzzFixtureOIDs(20))
 
@@ -1162,35 +1227,108 @@ func TestAgreementHelperCatchesADisagreement(t *testing.T) {
 		claim3 = "PDU-tag disagreement"
 	)
 
+	// The firing half: parse results no correct parser set produces any more.
+	// The first three are what the pre-fix parsers returned for the three
+	// reproducer datagrams — nl6#560's cursor-walked-backwards GETBULK read of
+	// non-repeaters 12336 against getPDUType's bail, and nl6#559's version
+	// desync reporting the version's own content octet (0x01) or the community
+	// length octet (0x06) as the PDU tag. A committed corpus can no longer
+	// carry them, so they are stated as values.
+	synthetic := []struct {
+		name   string
+		res    v2cParseResults
+		fires  []string
+		silent []string
+	}{
+		{
+			name: "pre-fix nl6#560: parseGetBulkParams invents a GETBULK, getPDUType bails",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: defaultParsedOID},
+				pduTag: ASN1_GET_REQUEST,
+				nonRep: 12336,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim1},
+			silent: []string{claim2, claim3},
+		},
+		{
+			name: "pre-fix nl6#559: getPDUType reports the version content octet 0x01",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: 0x01,
+				oids:   []string{roundTripOIDs[0]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: 7,
+			},
+			fires:  []string{claim1, claim3},
+			silent: []string{claim2},
+		},
+		{
+			name: "pre-fix nl6#559: zero-length version, getPDUType reports 0x06",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: 0x06,
+				oids:   []string{roundTripOIDs[0]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim3},
+			silent: []string{claim1, claim2},
+		},
+		{
+			name: "two name readers disagree about the first varbind name",
+			res: v2cParseResults{
+				req:    SNMPRequest{OID: roundTripOIDs[0]},
+				pduTag: ASN1_GET_REQUEST,
+				oids:   []string{roundTripOIDs[1]},
+				listOK: true,
+				nonRep: defaultBulkNonRepeat,
+				maxRep: defaultBulkMaxRepeat,
+			},
+			fires:  []string{claim2},
+			silent: []string{claim1, claim3},
+		},
+	}
+	for _, tt := range synthetic {
+		t.Run("synthetic: "+tt.name, func(t *testing.T) {
+			var rec recordingTB
+			checkV2cParserAgreement(&rec, tt.res, nil)
+			for _, want := range tt.fires {
+				if !rec.fired(want) {
+					t.Errorf("%q did not fire; the helper reported %d message(s): %q",
+						want, len(rec.msgs), rec.msgs)
+				}
+			}
+			for _, notWant := range tt.silent {
+				if rec.fired(notWant) {
+					t.Errorf("%q fired but must not; messages: %q", notWant, rec.msgs)
+				}
+			}
+		})
+	}
+
 	tests := []struct {
 		name   string
 		data   []byte
 		fires  []string
 		silent []string
-	}{
-		{
-			name:   "nl6#560 negative community length walks the cursor backwards",
-			data:   repro560NegativeLengthWalksBackwards,
-			fires:  []string{claim1},
-			silent: []string{claim2, claim3},
-		},
-		{
-			name:  "nl6#559 non-minimal version, GETBULK",
-			data:  repro559NonMinimalVersion,
-			fires: []string{claim1, claim3},
-		},
-		{
-			name:   "nl6#559 non-minimal version, GETNEXT",
-			data:   repro559NonMinimalVersionGetNext,
-			fires:  []string{claim3},
-			silent: []string{claim1, claim2},
-		},
-		{
-			name:   "nl6#559 zero-length version INTEGER",
-			data:   repro559ZeroLengthVersion,
-			fires:  []string{claim3},
-			silent: []string{claim1, claim2},
-		},
+	}{}
+	// The silent half: the four reproducers, which the two envelope fixes
+	// turned from disagreements into ordinary datagrams, plus the well-formed
+	// controls.
+	for _, d := range envelopeReproDatagrams() {
+		tests = append(tests, struct {
+			name   string
+			data   []byte
+			fires  []string
+			silent []string
+		}{
+			name:   "regression: " + d.name,
+			data:   d.data,
+			silent: []string{claim1, claim2, claim3},
+		})
 	}
 	for _, d := range agreementSeedDatagrams() {
 		tests = append(tests, struct {
@@ -1289,6 +1427,32 @@ func TestParserDefaultsMatchTheTestConstants(t *testing.T) {
 	}
 }
 
+// envelopeReproDatagrams is the nl6#559 / nl6#560 half of what
+// addAgreementSeeds registers: the four datagrams whose parse the two envelope
+// fixes CHANGED.
+//
+// They are kept apart from agreementSeedDatagrams because the two lists answer
+// different questions. Those are well-formed datagrams chosen so each claim's
+// GUARD is satisfied by a committed seed; these are the mis-parsed shapes, and
+// their property is that every claim is now SILENT on them. Mixing them would
+// make TestAgreementSeedsReachEveryGuard's "seed satisfies the guard but
+// violates the claim" check read as a contradiction on a malformed input it
+// was never about.
+func envelopeReproDatagrams() []struct {
+	name string
+	data []byte
+} {
+	return []struct {
+		name string
+		data []byte
+	}{
+		{"nl6#560 negative community length", repro560NegativeLengthWalksBackwards},
+		{"nl6#559 non-minimal version, GETBULK", repro559NonMinimalVersion},
+		{"nl6#559 non-minimal version, GETNEXT", repro559NonMinimalVersionGetNext},
+		{"nl6#559 zero-length version INTEGER", repro559ZeroLengthVersion},
+	}
+}
+
 // agreementSeedDatagrams is the single definition of the datagrams
 // addAgreementSeeds registers, so the seeds and the reachability test cannot
 // drift apart.
@@ -1323,6 +1487,13 @@ func agreementSeedDatagrams() []struct {
 // claim.
 func addAgreementSeeds(f *testing.F) {
 	for _, d := range agreementSeedDatagrams() {
+		f.Add(d.data)
+	}
+	// The nl6#559 / nl6#560 reproducers, committed as seeds now that the
+	// parsers they mis-parsed are fixed. Every target that calls
+	// assertV2cParserAgreement therefore replays both defects on an ordinary
+	// `go test` run.
+	for _, d := range envelopeReproDatagrams() {
 		f.Add(d.data)
 	}
 }
@@ -1572,6 +1743,12 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 	// Long-form community length on a short community: legal BER, and the only
 	// non-minimal style that no parser mishandles today, so it is safe to seed.
 	f.Add([]byte("public"), uint8(1), uint32(11), uint8(0), uint8(2), uint32(0), uint32(0), uint8(rtStyleCommunityLong))
+	// A request-id whose padded spelling needs FIVE content octets, which is
+	// outside the 1..4 range parseIncomingRequest documents: it stops there,
+	// so neither the request-id nor the first varbind name comes back. Found
+	// by live fuzzing once nl6#559/#560 unblocked this target, and seeded so
+	// the two guards above are exercised by an ordinary `go test`.
+	f.Add([]byte("public"), uint8(1), uint32(0x7ffffffd), uint8(2), uint8(4), uint32(0), uint32(10), uint8(rtStyleRequestIDPadded))
 
 	f.Fuzz(func(t *testing.T, community []byte, version uint8, reqID uint32, pduSel uint8,
 		nVarbinds uint8, int1, int2 uint32, style uint8) {
@@ -1608,10 +1785,26 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 			t.Fatalf("version round-trip: encoded %d, parsed %d\ndatagram: % x", ver, req.Version, data)
 		}
 
+		// requestIDInRange is parseIncomingRequest's documented 1..4 content-octet
+		// range for the request-id INTEGER. Outside it the parser does not
+		// advance past the field, so BOTH the request-id claim and the
+		// first-name claim below are outside its stated bound — the cursor
+		// never reaches the variable-bindings list, and req.OID stays at the
+		// default. Guarding only the first of the two states a claim the
+		// parser never promised: live fuzzing found exactly that shape
+		// (`02 05 00 7f ff ff fd`, seeded below) within a second of the
+		// nl6#559/#560 fixes unblocking this target, and it is the same
+		// out-of-bound case the agreement helper already records as NOT
+		// ASSERTED. Whether that bound should be WIDENED is a production
+		// question about parseIncomingRequest, filed rather than answered
+		// here: a padded request-id currently costs the whole varbind list, so
+		// such a request is answered with sysDescr.0 and request-id 123.
+		requestIDInRange := st&rtStyleRequestIDPadded == 0 || berContentLen(encodeIntegerPadded(rid)) <= 4
+
 		if readsPDU {
 			// Skipped only when a padding octet pushes the content past the
 			// 1..4 range parseIncomingRequest documents.
-			if berContentLen(encodeIntegerPadded(rid)) <= 4 || st&rtStyleRequestIDPadded == 0 {
+			if requestIDInRange {
 				if req.RequestID != rid {
 					t.Fatalf("request-id round-trip: encoded %d, parsed %d\ndatagram: % x",
 						rid, req.RequestID, data)
@@ -1641,7 +1834,7 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 					i, oids[i], gotOIDs[i], gotOIDs, data)
 			}
 		}
-		if readsPDU {
+		if readsPDU && requestIDInRange {
 			wantFirst := defaultParsedOID
 			if len(oids) > 0 {
 				wantFirst = oids[0]
@@ -1702,7 +1895,12 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 				t.Fatalf("the server's own GetResponse does not parse as one: %v\nresponse: % x", err, resp)
 			}
 			wantID := rid
-			if !readsPDU {
+			// Same two out-of-bound cases as above, and the echo is where the
+			// consequence is visible: a PDU tag the parser does not walk into,
+			// or a request-id wider than the 1..4 octets it documents, both
+			// leave it at the default and the server echoes THAT to a manager
+			// that sent something else.
+			if !readsPDU || !requestIDInRange {
 				wantID = defaultParsedRequestID
 			}
 			if int(gotID) != wantID {
@@ -1757,41 +1955,29 @@ func readFuzzCorpus(t *testing.T, dir string) [][]byte {
 	return out
 }
 
-// TestGetBulkCorpusIsBlockedOnNl6560 records, as an executable fact rather
-// than a comment, why FuzzHandleGetBulk is the one raw-datagram target that
-// does NOT call assertV2cParserAgreement.
+// TestGetBulkCorpusAgrees is the tripwire nl6#534 left here, discharged.
 //
-// Its committed corpus already contains inputs that violate CLAIM 1 — all of
-// them nl6#560, the missing `< 0` guard in parseGetBulkParams — so wiring the
-// helper would turn an ordinary `go test` red for a defect nl6#534 may not
-// repair. That a panic-only fuzz corpus had been replaying the defect on every
-// CI run without noticing is the sharpest available statement of what nl6#513
-// could not see.
-//
-// This test FAILS once nl6#560 is fixed. That is the design: the failure is
-// the prompt to wire FuzzHandleGetBulk (and to promote
-// repro560NegativeLengthWalksBackwards into addAgreementSeeds) and then delete
-// this test.
-func TestGetBulkCorpusIsBlockedOnNl6560(t *testing.T) {
+// It replaced TestGetBulkCorpusIsBlockedOnNl6560, which asserted that at least
+// one committed FuzzHandleGetBulk corpus entry still violated CLAIM 1 and was
+// written to FAIL the moment nl6#560 landed. It did fail, exactly here, and
+// the prompt it carried is discharged in full: FuzzHandleGetBulk is wired to
+// assertV2cParserAgreement, repro560NegativeLengthWalksBackwards is a
+// committed seed, and the negative assertion is replaced by this positive one
+// rather than deleted. Deleting it outright would have retired the only
+// standing check that this corpus — 21 of whose entries were instances of the
+// defect — agrees.
+func TestGetBulkCorpusAgrees(t *testing.T) {
 	s := newTestServer(fuzzFixtureOIDs(20))
 	corpus := readFuzzCorpus(t, "FuzzHandleGetBulk")
 
-	violating := 0
-	for _, data := range corpus {
+	for i, data := range corpus {
 		var rec recordingTB
 		assertV2cParserAgreement(&rec, s, data)
-		if rec.fired("PDU-offset disagreement") {
-			violating++
+		if len(rec.msgs) != 0 {
+			t.Errorf("corpus entry %d disagrees: %q\ndatagram: % x", i, rec.msgs, data)
 		}
 	}
-	if violating == 0 {
-		t.Fatalf("no entry in the %d-entry FuzzHandleGetBulk corpus violates CLAIM 1 any more. "+
-			"If nl6#560 is fixed, wire assertV2cParserAgreement into FuzzHandleGetBulk, move "+
-			"repro560NegativeLengthWalksBackwards into addAgreementSeeds, and delete this test.",
-			len(corpus))
-	}
-	t.Logf("%d of %d committed FuzzHandleGetBulk corpus entries violate CLAIM 1 (all nl6#560)",
-		violating, len(corpus))
+	t.Logf("%d committed FuzzHandleGetBulk corpus entries, no disagreement", len(corpus))
 }
 
 // TestEntryPointCorpusAgrees is the positive control for the target that IS

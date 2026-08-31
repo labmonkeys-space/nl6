@@ -186,10 +186,18 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 
 	pos := 0
 
-	// Skip contextEngineID (OCTET STRING)
+	// Skip contextEngineID (OCTET STRING). Both skips test parseLength's -1
+	// failure signal before moving the cursor: `pos = newPos + (-1)` walks it
+	// BACKWARD onto a byte already consumed, which is the nl6#560 defect one
+	// message layer up. There is no envelope left to resynchronise against, so
+	// an unreadable length takes the same default fallback as every other
+	// unparseable shape here.
 	if pos < len(scopedPDU) && scopedPDU[pos] == ASN1_OCTET_STRING {
 		pos++
 		engineIDLen, newPos := parseLength(scopedPDU, pos)
+		if engineIDLen < 0 {
+			return 1
+		}
 		pos = newPos + engineIDLen
 	}
 
@@ -197,6 +205,9 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 	if pos < len(scopedPDU) && scopedPDU[pos] == ASN1_OCTET_STRING {
 		pos++
 		contextNameLen, newPos := parseLength(scopedPDU, pos)
+		if contextNameLen < 0 {
+			return 1
+		}
 		pos = newPos + contextNameLen
 	}
 

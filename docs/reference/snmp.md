@@ -292,6 +292,27 @@ The verdict is strongest for the request path, the INFORM-ack path and the v3 sc
 
 `parseLength` keeps its `-1` failure sentinel on the same evidence: 22.3 million executions confirmed it returns `-1` and never any other negative value, so screening for `< 0` at a call site is sufficient as well as necessary.
 
+### The two envelope-parser defects
+
+Panics are not the only failure a parser has.
+A silent mis-parse has no oracle, so the fuzz targets also assert that the four readers of the v1/v2c envelope agree with one another ([nl6#534](https://github.com/labmonkeys-space/nl6/issues/534)).
+`getPDUType`, `parseIncomingRequest`, `parseAllOIDsFromRequest` and `parseGetBulkParams` each walk the same version and community fields with their own code, so when two of them disagree at least one is wrong and no reference implementation is needed to say so.
+Those assertions found two real defects, both fixed here.
+
+[nl6#559](https://github.com/labmonkeys-space/nl6/issues/559) was served.
+`getPDUType` stepped over the version INTEGER as a length skip plus a bare `pos++`, which assumes exactly one content octet.
+SNMP is BER, not DER, so `02 02 00 01` is a legal encoding of version 1 and `02 00` is a legal zero-content INTEGER.
+On the first the cursor landed one octet short and the byte read as the PDU tag was the version's own content octet `0x01`; on the second it landed one too far, on the community string's length octet `0x06`.
+`handleSNMPv2cRequest` dispatches on that byte, so a GETNEXT or a GETBULK carrying a non-minimally encoded version was answered from the GET branch while every other parser read the datagram correctly.
+It now reads the declared length, in the same shape `parseIncomingRequest` uses.
+
+[nl6#560](https://github.com/labmonkeys-space/nl6/issues/560) is the `-1` trap above, in the `parseGetBulkParams` envelope walk.
+Three declared lengths were added to the cursor with no `< 0` arm, so a failed length read moved it BACKWARD onto a byte already consumed.
+On the reproducer that byte is a community length octet of `0xa5`, which is also the GETBULK tag, and the function reported non-repeaters 12336 for a datagram that carries no GETBULK PDU at all.
+All seven of its length reads now bail to the documented defaults instead, and the two unguarded skips in `extractRequestIDFromScopedPDU` were fixed with them.
+
+Both reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
+
 Two traps this parser family has fallen into, both worth knowing before editing it:
 
 - **`parseLength` signals failure with `-1`, and `-1` passes an upper-bound check.** `if pos+n > len(buf)` is false when `n` is `-1`, so the guard admits the value and the slice expression that follows panics on an inverted range. Length checks need the `n < 0` arm as well.

@@ -346,11 +346,28 @@ func (s *SNMPServer) getPDUType(data []byte) byte {
 	pos++
 	pos += s.skipLength(data[pos:])
 
-	// Skip version
+	// Skip version. Step over the number of content octets the INTEGER
+	// DECLARES, not one: SNMP is BER, not DER, so `02 02 00 01` is a legal
+	// encoding of version 1 and `02 00` is a legal (if useless) zero-content
+	// INTEGER. The bare `pos++` this replaces assumed exactly one content
+	// octet, so a non-minimal version left the cursor SHORT and a zero-length
+	// one left it one octet too far; either way the byte read as the PDU tag
+	// was not the PDU tag, and handleSNMPv2cRequest dispatches on it — a
+	// GETNEXT or GETBULK answered from the GET branch (nl6#559).
+	//
+	// The `versionLen > 0` arm is both halves of the fix: it advances by the
+	// declared length, and it is the `n < 0` guard parseLength's -1 failure
+	// signal requires (nl6#513) — `pos += -1` would walk the cursor backward.
+	// It is deliberately byte-for-byte the shape parseIncomingRequest uses at
+	// snmp_response.go, because these two must agree about where the PDU
+	// begins and the cheapest way to guarantee that is to read it the same way.
 	if pos < len(data) && data[pos] == ASN1_INTEGER {
 		pos++
-		pos += s.skipLength(data[pos:])
-		pos++ // skip version value
+		versionLen, newPos := parseLength(data, pos)
+		pos = newPos
+		if versionLen > 0 {
+			pos += versionLen
+		}
 	}
 
 	// Skip community. Read the length through parseLength rather than as a

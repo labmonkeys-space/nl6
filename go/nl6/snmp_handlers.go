@@ -756,7 +756,19 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
-	_, newPos := parseLength(data, pos)
+	// Every declared length below is tested for parseLength's -1 failure
+	// signal before it moves the cursor. Without that arm `pos = newPos + n`
+	// with n == -1 walks the cursor BACKWARD onto a byte already consumed, and
+	// this function then parses a GETBULK PDU out of bytes that are not one:
+	// the nl6#560 reproducer lands the cursor on a community length octet of
+	// 0xa5, which is also ASN1_GET_BULK, and reports non-repeaters 12336 for a
+	// datagram getPDUType correctly declines. A failed length read means the
+	// envelope is not readable, so the answer is the documented defaults —
+	// exactly what every sibling guard in this function already returns.
+	outerLen, newPos := parseLength(data, pos)
+	if outerLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos
 
 	// Skip version
@@ -765,6 +777,9 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	verLen, newPos := parseLength(data, pos)
+	if verLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos + verLen
 
 	// Skip community
@@ -773,6 +788,9 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	commLen, newPos := parseLength(data, pos)
+	if commLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos + commLen
 
 	// Now we're at the GetBulk PDU
@@ -780,7 +798,10 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 		return nonRepeaters, maxRepetitions
 	}
 	pos++
-	_, newPos = parseLength(data, pos)
+	pduLen, newPos := parseLength(data, pos)
+	if pduLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos
 
 	// Skip request-id
@@ -789,6 +810,9 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	reqIdLen, newPos := parseLength(data, pos)
+	if reqIdLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos + reqIdLen
 
 	// Parse non-repeaters
@@ -797,6 +821,9 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	nonRepLen, newPos := parseLength(data, pos)
+	if nonRepLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos
 	if v, ok := parseBERInt(data, pos, nonRepLen); ok && v >= 0 {
 		// Clamped HERE, not after the parse: six early returns follow, and a
@@ -813,6 +840,9 @@ func (s *SNMPServer) parseGetBulkParams(data []byte) (int, int) {
 	}
 	pos++
 	maxRepLen, newPos := parseLength(data, pos)
+	if maxRepLen < 0 {
+		return nonRepeaters, maxRepetitions
+	}
 	pos = newPos
 	// RFC 3416 §4.2.3 defines max-repetitions as non-negative; a negative value
 	// is rejected at the parse site for the same reason as non-repeaters above.
