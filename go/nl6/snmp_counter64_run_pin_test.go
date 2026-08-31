@@ -6,8 +6,6 @@
 package main
 
 import (
-	"os"
-	"strings"
 	"testing"
 )
 
@@ -102,18 +100,14 @@ func TestLongestCounter64RunAcrossShippedProfiles(t *testing.T) {
 	// Read from production, never restated here.
 	const documentedRun = longestShippedCounter64Run
 
-	entries, err := os.ReadDir("resources")
-	if err != nil {
-		t.Fatalf("read resources dir: %v", err)
-	}
-
+	// Both layouts, via the shared enumeration. This test matters most for the
+	// single-file layout the old os.ReadDir loop could not see: the const below
+	// is the numerator of counter64SkipBudgetSteps(), so an unmeasured long HC
+	// run in a resources/<slug>.json profile under-sizes a serve-path budget
+	// and truncates v1 tables.
 	dirs, totalSteps := 0, 0
 	worst, worstProfile, worstAt := 0, "", ""
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
-			continue
-		}
-		profile := e.Name() + ".json"
+	for _, profile := range shippedProfileNames(t) {
 		s := deviceForProfile(t, profile)
 		dirs++
 
@@ -129,7 +123,7 @@ func TestLongestCounter64RunAcrossShippedProfiles(t *testing.T) {
 	}
 
 	if dirs == 0 {
-		t.Fatal("no resource directories loaded. Is the test running from go/nl6?")
+		t.Fatal("no resource profiles loaded. Is the test running from go/nl6?")
 	}
 	if totalSteps == 0 {
 		t.Fatalf("walked %d profiles and took zero steps", dirs)

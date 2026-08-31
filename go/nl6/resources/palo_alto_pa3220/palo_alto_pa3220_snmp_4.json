@@ -1,4 +1,5 @@
 {
+  "_comment": "1.3.6.1.4.1.25461.2.1.2.4 is panMgmt and .4.1 is panMgmtPanoramaConnected, a DisplayString (\"connected\" / \"not-connected\"). The numeric value served here is wrong whatever its units, and .4.1.3 / .4.1.3.1 sit under a leaf scalar and are not valid OIDs. Tracked in nl6#569 with the full audit of this profile's PAN OIDs; not fixed by nl6#541, which validates encodability rather than semantics.",
   "snmp": [
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.7.1006",

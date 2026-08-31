@@ -8,53 +8,44 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// shippedTypedCorpus walks every shipped resource part and returns the
-// distinct (normalised OID, emitted tag) pairs the fleet would put on the wire,
-// as sorted "oid\ttag" lines, plus the number of entries inspected.
+// shippedTypedCorpus returns the distinct (profile, OID, emitted tag) triples
+// the fleet would put on the wire, as sorted "profile\toid\ttag" lines, plus
+// the number of entries inspected.
 //
 // The tag is the FIRST BYTE encodeTypedValue actually emits, not the tag
 // oidTypeTable declares: this is a measurement of the wire, so it must come
 // from the encoder.
+//
+// Keyed on the PROFILE as well as the OID (nl6#541 review). Keyed on the OID
+// alone, a change that flips one profile's value is invisible whenever another
+// profile already produces that (OID, tag) pair — measured: the 31 tag changes
+// this very change made to shipped data show up as only 12 lost pairs in the
+// fleet-wide view, and would vanish entirely if keyed by OID.
+//
+// What it remains blind to, deliberately: it hashes TAGS, not encoded bytes, so
+// a value change within one type (42 -> 43 on a Counter32) does not move it.
+// That is what keeps it stable across ordinary data edits, which is the whole
+// point of a golden digest here; TestShippedOIDsUnchangedOnTheWire is the
+// byte-level pin, for OIDs.
 func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 	t.Helper()
-	files, err := filepath.Glob("resources/*/*.json")
-	if err != nil {
-		t.Fatalf("glob resources: %v", err)
-	}
-	if len(files) == 0 {
-		t.Fatal("no resource files found — has the layout changed?")
-	}
-	sort.Strings(files)
 
 	seen := make(map[string]struct{})
-	for _, f := range files {
-		raw, err := os.ReadFile(f) // #nosec G304 -- test-only, path from a repo glob
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
+	for _, e := range shippedSNMPEntries(t) {
+		emitted := encodeTypedValue(e.OID, e.Value)
+		if len(emitted) == 0 {
+			t.Fatalf("%s: encodeTypedValue(%s, %q) emitted nothing", e.Part, e.OID, e.Value)
 		}
-		var doc DeviceResources
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			t.Fatalf("%s: does not decode as a resource file: %v", f, err)
-		}
-		for _, r := range doc.SNMP {
-			oid := normaliseResourceOID(r.OID)
-			emitted := encodeTypedValue(oid, r.Response)
-			if len(emitted) == 0 {
-				t.Fatalf("%s: encodeTypedValue(%s, %q) emitted nothing", f, oid, r.Response)
-			}
-			seen[fmt.Sprintf("%s\t%02X", oid, emitted[0])] = struct{}{}
-			entries++
-		}
+		seen[fmt.Sprintf("%s\t%s\t%02X", e.Profile, e.OID, emitted[0])] = struct{}{}
+		entries++
 	}
 	lines = make([]string, 0, len(seen))
 	for l := range seen {
@@ -64,21 +55,27 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 	return lines, entries
 }
 
-// shippedTagDigest is a SHA-256 over the sorted, distinct (OID, emitted tag)
-// pairs of the whole shipped resource corpus.
+// shippedTagDigest is a SHA-256 over the sorted, distinct (profile, OID,
+// emitted tag) triples of the whole shipped resource corpus.
 //
 // It was computed on the working tree of this change with the oidTypeTable
-// widening of nl6#541 NOT YET APPLIED (but with the resource-data corrections
-// of the same change already in place, since those precede it), and then
-// re-run with the widening applied. Both runs produce this digest, which is
-// the measurement behind the spec's Block If: widening the table changed the
-// emitted tag of no OID any shipped profile serves. It is a measurement, not
-// an argument, and it was NOT re-derived from the widened code.
+// widening of nl6#541 NOT YET APPLIED (the resource-data corrections of the
+// same change already in place — those are pinned separately, and from the
+// PARENT revision, by TestShippedDataEditsReproduceTheParentCorpus), and then
+// re-run with the widening applied. Both runs produce this digest, which is the
+// measurement behind the spec's Block If: widening the table changed the
+// emitted tag of no OID any shipped profile serves. It is a measurement, not an
+// argument, and it was NOT re-derived from the widened code.
 //
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
-// is the review evidence for doing so.
-const shippedTagDigest = "7fe75d4a8f4cbc3aa1b00c87ce5ab4676aeccca50267f09fb03fe91c432138f5"
+// is the review evidence for doing so. Re-pinning it to silence a failure
+// caused by a new profile's own defect is the failure mode to watch for: it is
+// how a Counter64 column on an untyped leaf would be absorbed rather than
+// fixed. TestShippedBigValuesSitOnCounter64Leaves and
+// TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
+// digest, and exist so that re-pinning is never the only route out.
+const shippedTagDigest = "e29712b12dacffa0106f615ad637d6145140ee8b54eb23a0fe3745291fa62237"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
@@ -94,7 +91,7 @@ func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	for _, l := range lines {
 		tags[l[strings.LastIndexByte(l, '\t')+1:]]++
 	}
-	t.Logf("%d SNMP entries inspected, %d distinct (OID, tag) pairs; tag histogram: %v",
+	t.Logf("%d SNMP entries inspected, %d distinct (profile, OID, tag) triples; tag histogram: %v",
 		entries, len(lines), tags)
 
 	if got != shippedTagDigest {
@@ -117,6 +114,14 @@ func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 // below are pinned against the non-HC columns too — an off-by-one row would
 // declare Counter64 on a Counter32 column and change that column's tag on the
 // wire.
+//
+// This list is an independent RESTATEMENT of oidTypeTable's rows, which is the
+// right shape for catching an edit to one side. It is NOT independent
+// VERIFICATION: both were written in the same change from the same reading of
+// the same MIB, so a misreading shared by the two would pass. The check that
+// would catch that is re-running snmptranslate against the MIB, which no test
+// here does (it would need the MIBs vendored) — the same limitation
+// TestOpticalPathManifest documents for the OpenConfig leaf set.
 var ipStatsC64Columns = []int{4, 6, 13, 19, 21, 24, 31, 33, 35, 37, 39, 41, 43, 45}
 
 const ipStatsColumnCount = 47
@@ -141,8 +146,12 @@ func TestWidenedTableDeclaresTheHCColumns(t *testing.T) {
 		{"ipIfStatsTable", ".1.3.6.1.2.1.4.31.3.1"},
 	} {
 		for col := 1; col <= ipStatsColumnCount; col++ {
-			// A real instance OID: these tables are indexed by address family
-			// (and ifIndex, in ipIfStatsTable).
+			// An instance suffix, not necessarily THE index: ipSystemStatsTable
+			// is indexed by ipSystemStatsIPVersion alone, ipIfStatsTable by
+			// (IPVersion, ifIndex), so ".1.7" is one sub-identifier too long
+			// for the first. Harmless for a prefix match, and both are probed
+			// with the same suffix on purpose — what is being asserted is the
+			// TYPE the table declares for the column, not the index shape.
 			oid := fmt.Sprintf("%s.%d.1.7", tbl.prefix, col)
 			got := snmpTypeTag(oid)
 			if c64[col] && got != ASN1_COUNTER64 {
@@ -178,43 +187,36 @@ func TestWidenedTableDeclaresTheHCColumns(t *testing.T) {
 // A profile adding a vendor or standard HC column must therefore either be
 // covered by oidTypeTable or fail this test — which is exactly the point: the
 // table is hand-maintained, so the failure is the reminder.
+//
+// Leaves the table declares OCTET STRING are exempt: a numeric serial number or
+// a numeric ifAlias is a STRING on the wire whatever its magnitude, so the
+// 64-bit question does not arise for them.
 func TestShippedBigValuesSitOnCounter64Leaves(t *testing.T) {
-	files, err := filepath.Glob("resources/*/*.json")
-	if err != nil {
-		t.Fatalf("glob resources: %v", err)
-	}
-	sort.Strings(files)
-
-	big, offending := 0, 0
-	for _, f := range files {
-		raw, err := os.ReadFile(f) // #nosec G304 -- test-only, path from a repo glob
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
+	big, offending, exempt := 0, 0, 0
+	for _, e := range shippedSNMPEntries(t) {
+		v, perr := strconv.ParseUint(e.Value, 10, 64)
+		if perr != nil || v <= 0xFFFFFFFF {
+			continue
 		}
-		var doc DeviceResources
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			t.Fatalf("%s: does not decode as a resource file: %v", f, err)
+		declared := snmpTypeTag(e.OID)
+		if declared == ASN1_OCTET_STRING {
+			exempt++
+			continue
 		}
-		for _, r := range doc.SNMP {
-			v, perr := strconv.ParseUint(r.Response, 10, 64)
-			if perr != nil || v <= 0xFFFFFFFF {
-				continue
-			}
-			big++
-			oid := normaliseResourceOID(r.OID)
-			if snmpTypeTag(oid) != ASN1_COUNTER64 {
-				offending++
-				t.Errorf("%s: %s = %s needs 64 bits but its leaf is declared %s. Either the leaf is a "+
-					"64-bit counter and oidTypeTable needs the row (then re-pin shippedTagDigest), or "+
-					"the value is wrong for the leaf's real MIB type and belongs in 32 bits",
-					f, oid, r.Response, snmpTypeName(snmpTypeTag(oid)))
-			}
+		big++
+		if declared != ASN1_COUNTER64 {
+			offending++
+			t.Errorf("%s: %s = %s needs 64 bits but its leaf is %s. Either the leaf is a 64-bit "+
+				"counter and oidTypeTable needs the row (then re-pin shippedTagDigest), or the "+
+				"value is wrong for the leaf's real MIB type and belongs in 32 bits",
+				e.Part, e.OID, e.Value, declaredTypeForMessage(declared))
 		}
 	}
 	if big == 0 {
 		t.Fatal("no shipped value needs more than 32 bits, so this test asserted nothing about the corpus")
 	}
-	t.Logf("%d shipped values need more than 32 bits, %d of them off a Counter64 leaf", big, offending)
+	t.Logf("%d shipped values need more than 32 bits, %d of them off a Counter64 leaf (%d string-typed, exempt)",
+		big, offending, exempt)
 
 	// Positive control: the corpus being clean must not be mistaken for a test
 	// that cannot fail. A vendor HC column with a 64-bit value is exactly the
@@ -223,25 +225,170 @@ func TestShippedBigValuesSitOnCounter64Leaves(t *testing.T) {
 	if snmpTypeTag(vendorHC) == ASN1_COUNTER64 {
 		t.Fatalf("control fixture %s is typed by the table, so it no longer exercises the check", vendorHC)
 	}
-	if got := encodeTypedValue(vendorHC, "9876543210"); got[0] == ASN1_COUNTER64 {
+	if got := encodeTypedValue(vendorHC, "9876543210"); len(got) == 0 || got[0] == ASN1_COUNTER64 {
 		t.Errorf("premise changed: an untyped vendor HC column now encodes as Counter64 (% x)", got)
 	}
 }
 
-// BenchmarkSnmpTypeTag measures the linear scan nl6#524 deliberately put
-// AFTER the SNMP version compare on the v1 GETNEXT path. The widening of
-// nl6#541 lengthens the table, so the cost of the scan is measured rather than
-// left implicit: `hit-early` and `miss` bracket it (a miss walks every row).
-func BenchmarkSnmpTypeTag(b *testing.B) {
-	for _, tc := range []struct{ name, oid string }{
+// TestShippedUntypedValuesFitInteger32 closes the gap the test above leaves
+// open, and it is the test that would have caught the defect it was written for:
+// an untyped leaf carrying 2147483648 — exactly one over Integer32's ceiling —
+// shipped in two profiles, one row above an edit made in the same change, and
+// the >2^32 threshold above walked straight past it.
+//
+// A leaf oidTypeTable does not type takes encodeTypedValue's default branch,
+// which emits INTEGER via strconv.Atoi at the host's int width. RFC 2578 makes
+// every SMI INTEGER an Integer32, so a value outside -2^31..2^31-1 is legal BER
+// and illegal SMI: a manager parsing it into an Integer32 does not get the
+// number the profile intended. Typed leaves are excluded because Counter32,
+// Gauge32 and Counter64 legitimately exceed Integer32 — that is what they are
+// for.
+func TestShippedUntypedValuesFitInteger32(t *testing.T) {
+	inspected, offending := 0, 0
+	for _, e := range shippedSNMPEntries(t) {
+		if snmpTypeTag(e.OID) != 0 {
+			continue // typed leaves have their own width, checked by the load guard
+		}
+		v, perr := strconv.ParseInt(e.Value, 10, 64)
+		if perr != nil {
+			continue // not a number: the default branch emits an OCTET STRING
+		}
+		inspected++
+		if v > math.MaxInt32 || v < math.MinInt32 {
+			offending++
+			t.Errorf("%s: %s = %s is on a leaf oidTypeTable does not type, so it is served as an "+
+				"INTEGER, and RFC 2578 bounds an SMI INTEGER to Integer32 (%d..%d). Either the "+
+				"value belongs in 32 bits — rescale its units, as hrStorageAllocationUnits exists "+
+				"to allow — or the leaf is a 64-bit object and needs an oidTypeTable row",
+				e.Part, e.OID, e.Value, math.MinInt32, math.MaxInt32)
+		}
+	}
+	if inspected == 0 {
+		t.Fatal("no untyped numeric value inspected, so this test asserted nothing")
+	}
+	t.Logf("%d untyped numeric values inspected, %d outside Integer32", inspected, offending)
+
+	// Positive control, for the same reason as above: the check must be shown to
+	// fire, since a clean corpus proves nothing about the assertion.
+	const untyped = ".1.3.6.1.4.1.9999.2.1.0"
+	if snmpTypeTag(untyped) != 0 {
+		t.Fatalf("control fixture %s is typed, so it no longer exercises the check", untyped)
+	}
+	got := encodeTypedValue(untyped, "2147483648")
+	if len(got) == 0 || got[0] != ASN1_INTEGER {
+		t.Fatalf("premise changed: an untyped 2^31 value encodes as % x, not INTEGER", got)
+	}
+	if len(got) != 7 {
+		t.Errorf("2147483648 encodes as % x (%d bytes); the point of the check is that it needs "+
+			"5 content bytes and cannot be an Integer32", got, len(got))
+	}
+}
+
+// declaredTypeForMessage names a declared tag for an operator-facing message,
+// distinguishing "not in oidTypeTable" from a tag, because the remedy differs:
+// an untyped leaf needs a table row or a smaller value, not a corrected type.
+func declaredTypeForMessage(tag byte) string {
+	if tag == 0 {
+		return "not in oidTypeTable (served as INTEGER)"
+	}
+	return "declared " + snmpTypeName(tag)
+}
+
+// snmpTypeTagConcat is the form snmpTypeTag had before nl6#541: it concatenated
+// prefix+"." for every row of every call. It is kept HERE, in the test file, so
+// the A/B is reproducible (BenchmarkSnmpTypeTagAB) and the equivalence is
+// pinned (TestSnmpTypeTagMatchesTheConcatenatingForm) without leaving a second
+// implementation in production code.
+func snmpTypeTagConcat(oid string) byte {
+	for _, e := range oidTypeTable {
+		if strings.HasPrefix(oid, e.prefix+".") || oid == e.prefix {
+			return e.tag
+		}
+	}
+	return 0
+}
+
+// TestSnmpTypeTagMatchesTheConcatenatingForm is the durable evidence for the
+// rewrite. snmpTypeTag runs once per encoded value on every SNMP response of
+// every version, so "algebraically equivalent" is not a claim to leave in a
+// commit message: it is asserted here over generated input, in the shape this
+// package already uses for encoder equivalence (FuzzOIDRoundTrip,
+// TestOIDEncodingMatchesEncodingASN1).
+//
+// The generated set is built AROUND the table's own prefixes, because that is
+// where the two forms could differ: at the boundary character, at exact
+// equality, and on a digit-extension near-miss (".1" must not match ".10").
+func TestSnmpTypeTagMatchesTheConcatenatingForm(t *testing.T) {
+	var probes []string
+	for _, e := range oidTypeTable {
+		probes = append(probes,
+			e.prefix,                          // exact equality
+			e.prefix+".",                      // trailing separator, no instance
+			e.prefix+".1",                     // ordinary instance
+			e.prefix+".1.2.3",                 // deep instance
+			e.prefix+"0",                      // digit extension: must NOT match
+			e.prefix+"0.1",                    // digit extension with an instance
+			e.prefix+"9.9",                    // ditto
+			e.prefix+"x",                      // non-digit extension
+			e.prefix[:len(e.prefix)-1],        // one character short
+			strings.TrimPrefix(e.prefix, "."), // undotted spelling
+		)
+	}
+	probes = append(probes,
+		"", ".", "..", ".1", ".1.3", ".1.3.6.1.2.1", ".1.3.6.1.4.1.9999.1.2.3",
+		".1.0.8802.1.1.2.1.3", "1.3.6.1.2.1.2.2.1.10.1", ".1.3.6.1.2.1.2.2.1.100.1",
+	)
+
+	for _, oid := range probes {
+		if got, want := snmpTypeTag(oid), snmpTypeTagConcat(oid); got != want {
+			t.Errorf("snmpTypeTag(%q) = 0x%02X, the concatenating form gives 0x%02X", oid, got, want)
+		}
+	}
+	t.Logf("%d probes agree between the allocation-free and concatenating forms", len(probes))
+}
+
+// FuzzSnmpTypeTagFormsAgree extends the same property to arbitrary input, which
+// is what makes it evidence rather than a table of cases the author thought of.
+func FuzzSnmpTypeTagFormsAgree(f *testing.F) {
+	for _, seed := range []string{
+		"", ".", ".1.3.6.1.2.1.1.3.0", ".1.3.6.1.2.1.2.2.1.10", ".1.3.6.1.2.1.2.2.1.100",
+		".1.3.6.1.2.1.4.31.3.1.6.1.4", ".1.3.6.1.2.1.10.7.11.1.2.3", ".1.0.8802.1.1.2.1.4.1.1.10",
+		"1.3.6.1.2.1.1.2", ".1.3.6.1.2.1.1.20",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, oid string) {
+		if got, want := snmpTypeTag(oid), snmpTypeTagConcat(oid); got != want {
+			t.Fatalf("snmpTypeTag(%q) = 0x%02X, concatenating form gives 0x%02X", oid, got, want)
+		}
+	})
+}
+
+// BenchmarkSnmpTypeTagAB is the A/B behind the claim that the rewrite paid for
+// the widening. "new" is the shipped allocation-free comparison, "concat" the
+// form it replaced, over the SAME (widened) table — so the difference is the
+// comparison and nothing else. `miss` walks every row and is the number to
+// quote; `hit-early` returns on row 2 and measures almost nothing.
+//
+// nl6#524 put this scan on the v1 GETNEXT path deliberately after a version
+// compare, but that is not the only caller: encodeTypedValue calls it once per
+// encoded value on every response of every version.
+func BenchmarkSnmpTypeTagAB(b *testing.B) {
+	cases := []struct{ name, oid string }{
 		{"hit-early", ".1.3.6.1.2.1.1.3.0"},              // sysUpTime, row 2
 		{"hit-widened", ".1.3.6.1.2.1.4.31.3.1.6.1.4"},   // ipIfStatsHCInOctets
 		{"hit-late", ".1.0.8802.1.1.2.1.4.1.1.10.1.1.1"}, // lldpRemSysDesc, last row
 		{"miss", ".1.3.6.1.4.1.9999.1.2.3.4.5"},          // walks the whole table
-	} {
-		b.Run(tc.name, func(b *testing.B) {
+	}
+	for _, tc := range cases {
+		b.Run("new/"+tc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_ = snmpTypeTag(tc.oid)
+			}
+		})
+		b.Run("concat/"+tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = snmpTypeTagConcat(tc.oid)
 			}
 		})
 	}
@@ -364,4 +511,31 @@ func TestV1GetBulkWidenedCounter64Unchanged(t *testing.T) {
 	if !containsTagAtVarbindValue(hdr.varbinds, ASN1_COUNTER64) {
 		t.Errorf("v1 GETBULK no longer carries tag 0x46 for a widened column")
 	}
+}
+
+// TestOidTypeTableHasNoShadowedRows pins that every row of oidTypeTable can
+// actually be reached. snmpTypeTag returns the FIRST match, so a row whose
+// prefix is covered by an earlier row is inert: it looks like a declaration and
+// declares nothing. That is a silent way to believe a column is typed when it is
+// not, and this change added 34 rows in one go.
+//
+// A row is shadowed when an EARLIER row's prefix is a prefix of it (at a
+// sub-identifier boundary), which is exactly the match snmpTypeTag performs.
+func TestOidTypeTableHasNoShadowedRows(t *testing.T) {
+	for i, e := range oidTypeTable {
+		for j := 0; j < i; j++ {
+			p := oidTypeTable[j].prefix
+			if e.prefix == p || (strings.HasPrefix(e.prefix, p) && e.prefix[len(p)] == '.') {
+				t.Errorf("row %d (%s -> %s) is shadowed by row %d (%s -> %s): snmpTypeTag returns "+
+					"the first match, so the later row never applies",
+					i, e.prefix, snmpTypeName(e.tag), j, p, snmpTypeName(oidTypeTable[j].tag))
+			}
+		}
+		// And every row must be reachable through the real function.
+		if got := snmpTypeTag(e.prefix + ".1"); got != e.tag {
+			t.Errorf("row %d (%s -> %s) is not reachable: snmpTypeTag(%s.1) = 0x%02X",
+				i, e.prefix, snmpTypeName(e.tag), e.prefix, got)
+		}
+	}
+	t.Logf("%d oidTypeTable rows, all reachable", len(oidTypeTable))
 }

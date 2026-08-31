@@ -108,7 +108,7 @@ Where the rejection surfaces matters:
 
 ### Behaviour change
 
-Five file or request shapes that previously loaded are now refused — fatal at startup, `400` at REST.
+Six file or request shapes that previously loaded are now refused — fatal at startup, `400` at REST.
 If you have hand-written resource files or scripts, check for these before upgrading:
 
 | Shape | Previously | Now |
@@ -118,8 +118,10 @@ If you have hand-written resource files or scripts, check for these before upgra
 | Anything after the first JSON document in a file | The trailing bytes were ignored silently | Invalid content |
 | A device-type directory that cannot be stat'd (permissions) | Treated as absent, so round-robin skipped it | Invalid content |
 | A `round_robin` request with a `category` matching nothing | Loaded every device type instead | `400` |
+| A value that does not encode at its leaf's declared type (a non-numeric `Counter32`, an unparseable `IpAddress`, a `Counter64` with a sign, a numeric value with surrounding whitespace or units) | Served as an OCTET STRING, and a collector typing the OID per its MIB dropped the metric on every poll | Invalid content |
 
 Three rules are enforced on `snmp` values at load, and they cover resource files only.
+The typed-class rule is the most likely of the three to break a hand-written file: nl6's own shipped set carried 45 violations of it, and it is fatal at startup and a `400` over REST.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
 See [SNMP reference → Resource values are validated at load](snmp.md#resource-values-are-validated-at-load) for the canonical description of all three, including what each covers and what stays uncovered.
 
@@ -136,14 +138,17 @@ Every rule is decided by calling the SNMP encoder and looking at what it emits, 
 A leaf the encoder's type table types must carry a value that type can hold, or the file is rejected with the file, the OID, the declared type and the value named (nl6#541).
 This is the class that shipped nl6#515: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB — OpenNMS does, as a gauge — logged a conversion error on every poll of every device.
 
-- `Counter32`, `Gauge32`, `TimeTicks`: an unsigned decimal that fits 32 bits. A negative loads (the encoder wrap-casts, so `-1` is served as `0xFFFFFFFF`), but anything the encoder cannot parse does not.
+- `Counter32`, `Gauge32`, `TimeTicks`: an unsigned decimal that fits 32 bits. A negative loads with a warning (the encoder wrap-casts, so `-1` is served as `4294967295` under the declared tag), but anything the encoder cannot parse does not.
 - `Counter64`: an unsigned decimal that fits 64 bits. `-1` is **refused** here, unlike the 32-bit types, because that branch of the encoder has no signed fallback.
 - `IpAddress`: a dotted-quad IPv4 address. `1`, `host`, `10.0.0.256` and `::1` are all refused.
 - No surrounding whitespace, no units, no hex, no fractions: `strconv` does not trim or interpret, so `" 42"` and `"42 packets"` would go on the wire as strings.
 
 A leaf the table does **not** type is not checked, because its default encoding — INTEGER for a number, OCTET STRING for anything else — is legitimate either way.
-`sysName` and `sysLocation` are served from elsewhere and are not checked here; `sysLocation` is guarded where it is drawn instead, and `sysName` is derived from the device rather than from operator data.
-A malformed OID **key** is still accepted.
+One bound still applies to it: an untyped numeric value must fit `Integer32`, since that is what RFC 2578 makes an SMI INTEGER, and a value outside it is legal BER that no manager can represent. That is asserted over the shipped set rather than at load.
+`sysName` and `sysLocation` are served from elsewhere and are not checked here.
+`sysLocation` is filtered once at load, where the city dataset is assembled, so a sentinel-valued row never reaches a device.
+`sysName` is generated, but it does carry the operator's `resource_file` slug; it cannot compose to a sentinel because every pattern embeds `-` and the result is lower-cased while both sentinels are camelCase.
+A malformed OID **key** is still accepted, and so is a value that encodes cleanly but names an object the MIB does not define there — these rules check encodability, not faithfulness to the MIB.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
 The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.

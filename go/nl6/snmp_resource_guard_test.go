@@ -8,8 +8,10 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -337,18 +339,11 @@ func snmpCount(res *DeviceResources) int {
 // The entry count is asserted non-zero so a decode regression that silently
 // produced empty resources could not make this pass vacuously.
 func TestShippedResourcesLoadClean(t *testing.T) {
-	entries, err := os.ReadDir("resources")
-	if err != nil {
-		t.Fatalf("read resources dir: %v", err)
-	}
+	// shippedProfileNames covers BOTH layouts (a directory of parts, and a bare
+	// resources/<slug>.json). The old os.ReadDir loop skipped every
+	// non-directory, so a single-file profile was never load-tested at all.
 	dirs, inspected := 0, 0
-	for _, e := range entries {
-		// _-prefixed directories are not device types: _common holds the
-		// shared trap/syslog catalogs and has no snmp part.
-		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
-			continue
-		}
-		name := e.Name() + ".json"
+	for _, name := range shippedProfileNames(t) {
 		sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 		res, err := sm.LoadSpecificResources(name)
 		if err != nil {
@@ -359,12 +354,12 @@ func TestShippedResourcesLoadClean(t *testing.T) {
 		inspected += len(res.SNMP)
 	}
 	if dirs == 0 {
-		t.Fatal("no resource directories loaded. Is the test running from go/nl6?")
+		t.Fatal("no resource profiles loaded. Is the test running from go/nl6?")
 	}
 	if inspected == 0 {
-		t.Fatalf("loaded %d directories but zero SNMP entries, so the assertion would be vacuous", dirs)
+		t.Fatalf("loaded %d profiles but zero SNMP entries, so the assertion would be vacuous", dirs)
 	}
-	t.Logf("loaded %d resource directories, %d SNMP entries inspected", dirs, inspected)
+	t.Logf("loaded %d resource profiles, %d SNMP entries inspected", dirs, inspected)
 }
 
 // ── nl6#529: OID-typed values ───────────────────────────────────────────────
@@ -539,7 +534,7 @@ var typedClassCases = []typedClassCase{
 	{".1.3.6.1.2.1.2.2.1.10.1", "0", "zero"},
 	{".1.3.6.1.2.1.2.2.1.10.1", "4294967295", "the 32-bit maximum"},
 	{".1.3.6.1.2.1.2.2.1.10.1", "4294967296", "one past the 32-bit maximum"},
-	{".1.3.6.1.2.1.2.2.1.10.1", "-1", "the placeholder some resource files use"},
+	{".1.3.6.1.2.1.2.2.1.10.1", "-1", "negative on an unsigned 32-bit type: loads, warns"},
 	{".1.3.6.1.2.1.2.2.1.10.1", "-2147483649", "one past the negative 32-bit bound"},
 	{".1.3.6.1.2.1.2.2.1.10.1", " 42", "leading whitespace"},
 	{".1.3.6.1.2.1.2.2.1.10.1", "42 ", "trailing whitespace"},
@@ -633,8 +628,9 @@ func TestTypedClassRuleDecidedCases(t *testing.T) {
 		// Decided: a negative on Counter32/Gauge32/TimeTicks LOADS. The
 		// encoder parses it at 32-bit width and wrap-casts, so -1 goes out as
 		// 0xFFFFFFFF at the declared tag — mistyped data, but not the
-		// OCTET-STRING degradation this rule is about, and several resource
-		// files use -1 as a "not measured" placeholder.
+		// OCTET-STRING degradation this rule is about. No shipped profile does
+		// this (TestNegativesOnUnsignedLeavesAreAbsent), so the reason to allow
+		// it is only that the encoder encodes it; it draws a warning.
 		{"negative on Counter32 is clamped by the encoder, so it loads", ".1.3.6.1.2.1.2.2.1.10.1", "-1", false},
 		// Decided: the same value on a Counter64 is REFUSED, because
 		// encodeTypedValue has no signed fallback on that branch and degrades
@@ -725,5 +721,143 @@ func TestTypedClassRuleNeverFiresOnAnOIDTypedLeaf(t *testing.T) {
 		if !strings.Contains(err.Error(), "OID-typed") {
 			t.Errorf("value %q must be diagnosed by the OID rule, got: %v", bad, err)
 		}
+	}
+}
+
+// TestTypedClassSkippedBranchesCannotDegrade pins the two declared types rule 3
+// skips for cost. The skip is only safe while those branches always emit the
+// declared tag, and "always" is a claim about the encoder, so it is asserted
+// against the encoder rather than left in a comment.
+//
+// The OCTET STRING branch must never degrade, over adversarial values. The
+// OBJECT IDENTIFIER branch must emit the declared tag EVEN for a value it
+// cannot represent — that is why it needs a rule of its own (nl6#529), and if
+// this ever stops being true, rule 3 covers it and rule 2 can be reconsidered.
+func TestTypedClassSkippedBranchesCannotDegrade(t *testing.T) {
+	adversarial := []string{
+		"", " ", "42", "-1", "0x2a", "n/a", "noSuchObject seen",
+		"1.3.6.1.4.1.9.1.1", "3.40.1", strings.Repeat("x", 4096), "\x00\x01",
+	}
+
+	stringLeaves := []string{".1.3.6.1.2.1.31.1.1.1.18.1", ".1.0.8802.1.1.2.1.3.3"}
+	for _, oid := range stringLeaves {
+		if snmpTypeTag(oid) != ASN1_OCTET_STRING {
+			t.Fatalf("fixture error: %s is not OCTET STRING-typed", oid)
+		}
+		for _, v := range adversarial {
+			got := encodeTypedValue(oid, v)
+			if len(got) == 0 || got[0] != ASN1_OCTET_STRING {
+				t.Errorf("encodeTypedValue(%s, %q) = % x: the OCTET STRING branch CAN degrade, so "+
+					"rule 3 must stop skipping it", oid, v, got[:min(len(got), 8)])
+			}
+		}
+	}
+
+	const sysObjectID = ".1.3.6.1.2.1.1.2.0"
+	for _, v := range adversarial {
+		got := encodeTypedValue(sysObjectID, v)
+		if len(got) == 0 || got[0] != ASN1_OBJECT_ID {
+			t.Errorf("encodeTypedValue(%s, %q) = % x: the OID branch now emits a different tag, so "+
+				"rule 3 would catch what rule 2 exists for", sysObjectID, v, got[:min(len(got), 8)])
+		}
+	}
+}
+
+// TestTypedClassRuleUsesTheSameEncoderAsTheWire pins the seam introduced for
+// cost: the guard calls encodeTypedValueAtTag with a tag it already has, and
+// that must be the same answer encodeTypedValue gives. A divergence here is the
+// nl6#539 failure by another route — a second entry point rather than a second
+// predicate.
+func TestTypedClassRuleUsesTheSameEncoderAsTheWire(t *testing.T) {
+	for _, tc := range typedClassCases {
+		wire := encodeTypedValue(tc.oid, tc.value)
+		seam := encodeTypedValueAtTag(tc.oid, tc.value, snmpTypeTag(tc.oid))
+		if !bytes.Equal(wire, seam) {
+			t.Errorf("%s = %q: encodeTypedValue gives % x, encodeTypedValueAtTag gives % x",
+				tc.oid, tc.value, wire, seam)
+		}
+	}
+	// And the sentinel, which is the one thing the seam does NOT handle: it sits
+	// above the tag in encodeTypedValue, which is why rule 1 runs first.
+	if got := encodeTypedValueAtTag(".1.3.6.1.2.1.1.1.0", valueNoSuchObject, 0); got[0] == 0x80 {
+		t.Error("encodeTypedValueAtTag handles the sentinel; if it does, rule ordering in " +
+			"validateSNMPResourceValues no longer matters and the comment there is wrong")
+	}
+}
+
+// TestNegativesOnUnsignedLeavesAreAbsent pins the corpus fact that replaced a
+// fabricated justification. The first cut of nl6#541 said in four places that
+// "several resource files use -1 as a not-measured placeholder" on the unsigned
+// 32-bit types. They do not: all 116 negative values in the shipped set are -1
+// on ipRouteMetric1/2/3/5, which oidTypeTable does not type (RFC 1213 gives -1
+// as "not used" there, so they are correct data on an INTEGER leaf).
+//
+// So the Counter32-loads / Counter64-refuses asymmetry has no shipped
+// motivation. It is inherited from encodeTypedValue, and that is the honest
+// reason — which this test keeps honest.
+func TestNegativesOnUnsignedLeavesAreAbsent(t *testing.T) {
+	negatives, onUnsigned, onUntyped := 0, 0, 0
+	for _, e := range shippedSNMPEntries(t) {
+		if !strings.HasPrefix(e.Value, "-") {
+			continue
+		}
+		if _, err := strconv.ParseInt(e.Value, 10, 64); err != nil {
+			continue
+		}
+		negatives++
+		switch snmpTypeTag(e.OID) {
+		case ASN1_COUNTER32, ASN1_GAUGE32, ASN1_TIMETICKS:
+			onUnsigned++
+			t.Errorf("%s: %s = %s sits on an unsigned 32-bit leaf. The encoder wrap-casts it, so "+
+				"it is served as a plausible-looking large number rather than being refused. If "+
+				"this is intentional, the docs' claim that no shipped profile does this must change",
+				e.Part, e.OID, e.Value)
+		case 0:
+			onUntyped++
+		}
+	}
+	if negatives == 0 {
+		t.Fatal("no negative shipped value found, so this test asserted nothing")
+	}
+	t.Logf("%d negative shipped values: %d on unsigned 32-bit leaves, %d on untyped leaves",
+		negatives, onUnsigned, onUntyped)
+}
+
+// TestNegativeOnUnsignedLeafLoadsWithAWarning pins the DECISION: a negative on
+// an unsigned 32-bit leaf is not refused, because the encoder encodes it at the
+// declared tag and the guard's verdict is the encoder's. What it gets instead is
+// a log line, since a wrapped 4294967295 is invisible to a collector in a way a
+// dropped metric is not.
+func TestNegativeOnUnsignedLeafLoadsWithAWarning(t *testing.T) {
+	var logged bytes.Buffer
+	restore := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(restore) })
+
+	res := guardResources([2]string{".1.3.6.1.2.1.2.2.1.10.1", "-1"})
+	if err := validateSNMPResourceValues("neg.json", res); err != nil {
+		t.Fatalf("a negative on a Counter32 must LOAD (the encoder wrap-casts it), got: %v", err)
+	}
+	out := logged.String()
+	for _, want := range []string{"neg.json", "1.3.6.1.2.1.2.2.1.10.1", "Counter32", "-1", "4294967295"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("warning %q does not mention %q", out, want)
+		}
+	}
+
+	// And it is the WIRE it describes.
+	if got := encodeTypedValue(".1.3.6.1.2.1.2.2.1.10.1", "-1"); !bytes.Equal(got, []byte{ASN1_COUNTER32, 0x04, 0xFF, 0xFF, 0xFF, 0xFF}) {
+		t.Errorf("encodeTypedValue(ifInOctets.1, -1) = % x, so the warning's 4294967295 is wrong", got)
+	}
+
+	// A negative on a Counter64 is a different answer: refused, because that
+	// branch degrades. No warning, because there is nothing to warn about.
+	logged.Reset()
+	res = guardResources([2]string{".1.3.6.1.2.1.31.1.1.1.6.1", "-1"})
+	if err := validateSNMPResourceValues("neg.json", res); err == nil {
+		t.Error("a negative on a Counter64 must be REFUSED: the encoder degrades it to an OCTET STRING")
+	}
+	if strings.Contains(logged.String(), "wrap-casts") {
+		t.Error("a refused value must not also be warned about")
 	}
 }

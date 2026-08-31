@@ -19,15 +19,56 @@ func cityRow(city, admin, country, lat, lng string) string {
 	return fmt.Sprintf("%s,%s,%s,%s,%s,XX,XXX,%s\n", city, city, lat, lng, country, admin)
 }
 
-// TestGetRandomLocationNeverServesASentinel is the enforcement point of
-// nl6#541 part 3. sysLocation is served outside the resource map, so
-// validateSNMPResourceValues cannot see it; getRandomLocation is the single
-// funnel every served location passes through, whatever its source.
+// TestSentinelLocationsAreDroppedAtLoad is the enforcement point of nl6#541
+// part 3. sysLocation is served outside the resource map, so
+// validateSNMPResourceValues cannot see it; the rule is applied once, at load,
+// over the assembled slice — which covers the CSV dataset, the compiled-in
+// fallback and any source added later, and costs nothing per device.
+func TestSentinelLocationsAreDroppedAtLoad(t *testing.T) {
+	saved := worldCities
+	t.Cleanup(func() { worldCities = saved })
+
+	keep := WorldCity{Name: "Amsterdam, Netherlands", Latitude: 52.3676, Longitude: 4.9041}
+	worldCities = []WorldCity{
+		{Name: valueNoSuchObject, Latitude: 1, Longitude: 2},
+		keep,
+		{Name: valueEndOfMibView, Latitude: 3, Longitude: 4},
+		{Name: "noSuchObject seen, Atlantis", Latitude: 5, Longitude: 6},
+	}
+	if dropped := dropSentinelLocations(); dropped != 2 {
+		t.Errorf("dropSentinelLocations() = %d, want 2", dropped)
+	}
+	if len(worldCities) != 2 {
+		t.Fatalf("worldCities has %d entries after the filter, want 2: %+v", len(worldCities), worldCities)
+	}
+	for _, c := range worldCities {
+		if isSNMPExceptionValue(c.Name) {
+			t.Errorf("city %q survived the filter", c.Name)
+		}
+	}
+	// The near-miss form is ordinary data and must survive, and the ordinary
+	// city must keep its COORDINATES — the reason the rule filters at load
+	// rather than diverting a draw to the coordinate-less "Unknown Location".
+	var found bool
+	for _, c := range worldCities {
+		if c == keep {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the ordinary city lost its coordinates or was dropped: %+v", worldCities)
+	}
+}
+
+// TestGetRandomLocationNeverServesASentinel pins the funnel assertion that
+// backs the load-time filter: getRandomLocation is the single path every served
+// sysLocation takes, so even a slice populated by some future route cannot get a
+// sentinel onto the wire through it.
 func TestGetRandomLocationNeverServesASentinel(t *testing.T) {
 	saved := worldCities
 	t.Cleanup(func() { worldCities = saved })
 
-	// Only sentinels in the list: every draw must be diverted, so the test
+	// Only sentinels: the bounded retry must give up and fall back, so the test
 	// does not depend on which index the RNG picks.
 	worldCities = []WorldCity{
 		{Name: valueNoSuchObject, Latitude: 1, Longitude: 2},
@@ -44,23 +85,55 @@ func TestGetRandomLocationNeverServesASentinel(t *testing.T) {
 		}
 	}
 
-	// Positive control: an ordinary name is served untouched, coordinates and
-	// all, so the diversion above is not a blanket rewrite.
+	// One good row among sentinels: the draw must RE-DRAW to it rather than
+	// substituting the coordinate-less fallback, since that would cost a device
+	// its position over an unrelated row. The retry is BOUNDED (8 attempts), so
+	// the assertion is that the good row dominates and that a sentinel never
+	// escapes — not that the fallback is unreachable. With one good row in three
+	// the bound is missed about (2/3)^8 = 3.9% of the time, so 200 draws expect
+	// ~8 fallbacks and the floor below has a wide margin.
 	want := WorldCity{Name: "Amsterdam, Netherlands", Latitude: 52.3676, Longitude: 4.9041}
+	worldCities = []WorldCity{
+		{Name: valueNoSuchObject}, want, {Name: valueEndOfMibView},
+	}
+	redrawn, fellBack := 0, 0
+	for i := 0; i < 200; i++ {
+		switch got := getRandomLocation(); {
+		case got == want:
+			redrawn++
+		case got.Name == unknownLocationName:
+			fellBack++
+		default:
+			t.Fatalf("getRandomLocation() = %+v, want either %+v or the %q fallback",
+				got, want, unknownLocationName)
+		}
+	}
+	if redrawn < 150 {
+		t.Errorf("only %d of 200 draws re-drew to the one good row (%d fell back); a bounded retry "+
+			"should reach it about 96%% of the time, so this looks like no retry at all",
+			redrawn, fellBack)
+	}
+	t.Logf("200 draws with 1 good row in 3: %d re-drew, %d fell back to %q",
+		redrawn, fellBack, unknownLocationName)
+
+	// Positive control: an ordinary name is served untouched.
 	worldCities = []WorldCity{want}
 	if got := getRandomLocation(); got != want {
 		t.Errorf("getRandomLocation() = %+v, want %+v", got, want)
 	}
 }
 
-// TestWorldCitiesRejectsSentinelRows covers the CSV loader's own row skip. It
-// drives processCSVFile with a row whose CITY and COUNTRY fields are both a
-// sentinel, and asserts what actually happens: the composed display string is
-// "noSuchObject, noSuchObject", which is NOT a sentinel, so the row loads. That
-// is the documented state of part 3 — see
-// TestWorldCitiesLocationCannotComposeToASentinel for why, and
-// TestGetRandomLocationNeverServesASentinel for where the rule bites.
-func TestWorldCitiesRejectsSentinelRows(t *testing.T) {
+// TestWorldCitiesCSVRowsWithSentinelFieldsStillLoad says what it does, which the
+// name TestWorldCitiesRejectsSentinelRows did not: nothing is rejected here. A
+// row whose CITY and COUNTRY fields are both a sentinel composes to
+// "noSuchObject, noSuchObject", which is not a sentinel, so it loads as ordinary
+// data — and that is correct, because it IS ordinary data on the wire.
+//
+// The rule bites at load over the assembled slice (dropSentinelLocations) and is
+// asserted by TestSentinelLocationsAreDroppedAtLoad;
+// TestWorldCitiesLocationCannotComposeToASentinel explains why no CSV row can
+// reach it.
+func TestWorldCitiesCSVRowsWithSentinelFieldsStillLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "1.csv")
 
@@ -192,4 +265,93 @@ func loadWorldCitiesFromMissingDir(t *testing.T) error {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	return loadWorldCities()
+}
+
+// TestSysNameCannotComposeToASentinel is the symmetric test for the other value
+// served outside the resource map. The first cut of nl6#541 dismissed sysName as
+// "derived from the device, not operator data" — not quite true: the device-name
+// generator appends typeSlug, which comes from the caller's `resource_file`.
+//
+// It is still safe, for two independent structural reasons, and this pins BOTH
+// so that losing one is not silently survivable:
+//
+//  1. Every pattern embeds "-", and no sentinel contains one — the same property
+//     TestWorldCitiesLocationCannotComposeToASentinel pins for locations.
+//  2. The result is lower-cased, and both sentinels are camelCase, so the
+//     strings cannot be equal whatever the slug is.
+func TestSysNameCannotComposeToASentinel(t *testing.T) {
+	// Adversarial slugs, including the sentinels themselves and the forms a
+	// resource_file could legitimately carry.
+	slugs := []string{
+		"", "cisco_ios", valueNoSuchObject, valueEndOfMibView,
+		"nosuchobject", "endofmibview", "NOSUCHOBJECT",
+	}
+
+	sawHyphen, sawLower := 0, 0
+	for _, slug := range slugs {
+		for i := 0; i < 400; i++ {
+			name := getRandomDeviceName(slug)
+			if isSNMPExceptionValue(name) {
+				t.Fatalf("getRandomDeviceName(%q) = %q, which would be served as an RFC 3416 "+
+					"exception instead of a sysName string", slug, name)
+			}
+			if strings.Contains(name, "-") {
+				sawHyphen++
+			}
+			if name == strings.ToLower(name) {
+				sawLower++
+			}
+		}
+	}
+	want := len(slugs) * 400
+	if sawHyphen != want {
+		t.Errorf("%d of %d generated names contain no \"-\"; property 1 no longer holds, so the "+
+			"only thing keeping a sysName off the exception path is the lower-casing", want-sawHyphen, want)
+	}
+	if sawLower != want {
+		t.Errorf("%d of %d generated names are not lower-cased; property 2 no longer holds", want-sawLower, want)
+	}
+
+	// Property 2 stated directly: a sentinel is not lower-case, so no
+	// lower-cased string can equal it.
+	for _, s := range []string{valueNoSuchObject, valueEndOfMibView} {
+		if s == strings.ToLower(s) {
+			t.Errorf("sentinel %q is lower-case, so the lower-casing in getRandomDeviceName no "+
+				"longer separates it from a device name", s)
+		}
+	}
+}
+
+// TestLoadWorldCitiesPublishesNoSentinel pins the POST-CONDITION of the load
+// path over the real shipped dataset: nothing in worldCities may be a sentinel
+// after a load.
+//
+// An honest limitation, recorded because a mutation test found it: deleting the
+// dropSentinelLocations CALL from loadWorldCities fails NO test, and cannot,
+// because no input the loader accepts composes to a sentinel — every display
+// string embeds ", " (TestWorldCitiesLocationCannotComposeToASentinel) and the
+// fallback list is compiled-in constants. So the load-time filter is
+// defence-in-depth for a future source or composition, and the enforcement that
+// IS pinned is the funnel assertion in getRandomLocation, which
+// TestGetRandomLocationNeverServesASentinel fails without.
+//
+// What this test does add: if the shipped dataset ever gains a row that DOES
+// compose to a sentinel, it fails here rather than at a device's sysLocation.
+func TestLoadWorldCitiesPublishesNoSentinel(t *testing.T) {
+	saved := worldCities
+	t.Cleanup(func() { worldCities = saved })
+
+	worldCities = nil
+	if err := loadWorldCities(); err != nil {
+		t.Fatalf("loadWorldCities: %v", err)
+	}
+	if len(worldCities) == 0 {
+		t.Fatal("loadWorldCities published nothing, so the post-condition is vacuous")
+	}
+	for _, c := range worldCities {
+		if isSNMPExceptionValue(c.Name) {
+			t.Errorf("loadWorldCities published %q, which encodes as an RFC 3416 exception", c.Name)
+		}
+	}
+	t.Logf("%d locations published, none a sentinel", len(worldCities))
 }

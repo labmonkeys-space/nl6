@@ -412,11 +412,12 @@ type oidTypeEntry struct {
 
 // oidTypeTable maps standard MIB OID column prefixes to their RFC-mandated
 // ASN.1 application type tags. snmpTypeTag() matches a leaf OID against each
-// entry using HasPrefix(oid, prefix+".") OR exact equality (oid == prefix),
-// so both ".1.3.6.1.2.1.1.2.0" and the bare ".1.3.6.1.2.1.1.2" match the
-// sysObjectID entry. The trailing "." in the HasPrefix check prevents
-// digit-extension false matches (e.g. prefix "...1" cannot match "...10.*"),
-// so ordering within the table is irrelevant for correctness.
+// entry on the prefix followed by a sub-identifier boundary, OR on exact
+// equality, so both ".1.3.6.1.2.1.1.2.0" and the bare ".1.3.6.1.2.1.1.2" match
+// the sysObjectID entry. Requiring the "." boundary prevents digit-extension
+// false matches (prefix "...1" cannot match "...10.*"), so ordering within the
+// table is irrelevant for correctness — see snmpTypeTag for the comparison, and
+// TestOidTypeTableHasNoShadowedRows for the assertion that no row is inert.
 var oidTypeTable = []oidTypeEntry{
 	// MIB-II system group
 	{".1.3.6.1.2.1.1.2", ASN1_OBJECT_ID}, // sysObjectID
@@ -476,9 +477,13 @@ var oidTypeTable = []oidTypeEntry{
 	{".1.3.6.1.2.1.4.31.1.1.43", ASN1_COUNTER64}, // ipSystemStatsHCInBcastPkts
 	{".1.3.6.1.2.1.4.31.1.1.45", ASN1_COUNTER64}, // ipSystemStatsHCOutBcastPkts
 
-	// IP-MIB ipIfStatsTable HC columns — RFC 4293, same column layout as
-	// ipSystemStatsTable above (column 22 is unassigned there, and is not an
-	// HC column in either).
+	// IP-MIB ipIfStatsTable HC columns — RFC 4293. The two tables share their
+	// column layout for every HC column; where they differ is column 2, which
+	// is ipSystemStatsEntry's unassigned slot and ipIfStatsIfIndex here. (An
+	// earlier version of this comment said "column 22", which is
+	// ipSystemStatsOutNoRoutes — assigned, Counter32. The mistake was inside
+	// the sentence claiming provenance, which is the sentence that licenses
+	// these 34 rows, so it is corrected in the open rather than quietly.)
 	{".1.3.6.1.2.1.4.31.3.1.4", ASN1_COUNTER64},  // ipIfStatsHCInReceives
 	{".1.3.6.1.2.1.4.31.3.1.6", ASN1_COUNTER64},  // ipIfStatsHCInOctets
 	{".1.3.6.1.2.1.4.31.3.1.13", ASN1_COUNTER64}, // ipIfStatsHCInForwDatagrams
@@ -554,10 +559,19 @@ func snmpTypeTag(oid string) byte {
 	for _, e := range oidTypeTable {
 		// Allocation-free equivalent of `HasPrefix(oid, e.prefix+".") ||
 		// oid == e.prefix`. The concatenated form allocated a string PER ROW
-		// PER CALL, and snmpTypeTag runs once per encoded value on every SNMP
-		// response of every version, plus once per step of a v1 GETNEXT skip
-		// run. Widening the table for nl6#541 took a full scan from ~720 ns to
-		// ~1170 ns with the concatenation; without it the same scan is ~55 ns.
+		// PER CALL, and this runs once per encoded value on every SNMP response
+		// of every version, plus once per step of a v1 GETNEXT skip run.
+		//
+		// The number is the committed A/B, not a remembered one:
+		// BenchmarkSnmpTypeTagAB runs both forms over the SAME table, so the
+		// difference is the comparison and nothing else, and
+		// TestSnmpTypeTagMatchesTheConcatenatingForm plus
+		// FuzzSnmpTypeTagFormsAgree pin that they answer identically. On an
+		// M1 Max at -benchtime=200000x a full scan (the `miss` case) measures
+		// ~1170 ns concatenating and ~197 ns here. Run it rather than trusting
+		// this line: absolute figures do not travel between machines, and the
+		// first version of this comment carried a ~55 ns that corresponded to
+		// no measurement of a full scan at all.
 		if len(oid) >= len(e.prefix) && oid[:len(e.prefix)] == e.prefix &&
 			(len(oid) == len(e.prefix) || oid[len(e.prefix)] == '.') {
 			return e.tag
@@ -628,7 +642,20 @@ func encodeTypedValue(oid, value string) []byte {
 		return []byte{0x80, 0x00} // noSuchObject   [0] IMPLICIT NULL
 	}
 
-	tag := snmpTypeTag(oid)
+	return encodeTypedValueAtTag(oid, value, snmpTypeTag(oid))
+}
+
+// encodeTypedValueAtTag is encodeTypedValue's type dispatch, split out so a
+// caller that has already resolved the tag does not pay for the linear
+// oidTypeTable scan twice. It is the SAME code the wire takes, deliberately:
+// validateSNMPResourceValues' typed-class rule (nl6#541) decides degradation by
+// calling this and comparing the emitted tag with the declared one, and it must
+// be the encoder that answers, never a predicate that agrees with it today.
+//
+// The sentinel test lives in encodeTypedValue above rather than here, because it
+// precedes the tag: a caller reaching this function has already decided that the
+// value is data.
+func encodeTypedValueAtTag(oid, value string, tag byte) []byte {
 	switch tag {
 	case ASN1_OCTET_STRING:
 		// Force OCTET STRING even when the value parses as an integer

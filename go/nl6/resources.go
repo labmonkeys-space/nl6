@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -557,12 +558,19 @@ func normaliseResourceOID(oid string) string {
 // trap_catalog.go's validateDottedOID drifted from encodeOID (nl6#539).
 //
 // Rule 3 inherits the encoder's asymmetries rather than tidying them up, and
-// two are worth naming: a negative on a Counter32/Gauge32/TimeTicks LOADS
-// (the encoder parses at 32-bit width and wrap-casts, so -1 goes out as
-// 0xFFFFFFFF at the declared tag; several resource files use it as a "not
-// measured" placeholder), while the same value on a Counter64 is REFUSED
-// (that branch has no signed fallback). Surrounding whitespace is refused,
-// because strconv does not trim and the value would degrade on the wire.
+// two are worth naming: a negative on a Counter32/Gauge32/TimeTicks LOADS (the
+// encoder parses at 32-bit width and wrap-casts, so -1 goes out as 0xFFFFFFFF
+// at the declared tag), while the same value on a Counter64 is REFUSED (that
+// branch has no signed fallback). Surrounding whitespace is refused, because
+// strconv does not trim and the value would degrade on the wire.
+//
+// The asymmetry has NO shipped motivation, and saying otherwise was a
+// fabrication in the first draft of this comment: all 116 negative values in
+// the shipped set are -1 on ipRouteMetric1/2/3/5, which oidTypeTable does not
+// type and where RFC 1213 gives -1 as "not used". None sits on an unsigned
+// 32-bit leaf (TestNegativesOnUnsignedLeavesAreAbsent). The reason to keep the
+// asymmetry is that the encoder has it and the guard's verdict is the
+// encoder's; warnNegativeOnUnsignedLeaf is what makes the loaded case findable.
 //
 // Coverage of rules 2 and 3 is bounded by oidTypeTable: a leaf the table does
 // not type takes encodeTypedValue's default branch, where INTEGER for a number
@@ -606,25 +614,79 @@ func validateSNMPResourceValues(resourceFile string, resources *DeviceResources)
 		// numeric or address branch fails to parse and falls through to
 		// encodeOctetString, so the emitted tag is not the declared one.
 		//
-		// An OID-typed leaf can never trip this rule: encodeOID answers an
-		// unrepresentable value with the degenerate 06 00, whose tag IS the
-		// declared one. That is why the rule above exists and must stay.
-		if declared != 0 {
-			if emitted := encodeTypedValue(oid, r.Response); len(emitted) == 0 || emitted[0] != declared {
+		// Two declared types are skipped, because their branches CANNOT
+		// degrade and this loop runs over every entry of every profile on
+		// every load, including per REST device-creation request:
+		//
+		//   - ASN1_OCTET_STRING: encodeOctetString accepts any string, so the
+		//     emitted tag is always the declared one. Skipping it avoids an
+		//     encode (and a copy of the value) for roughly half the corpus.
+		//   - ASN1_OBJECT_ID: encodeOID answers an unrepresentable value with
+		//     the degenerate 06 00, whose tag IS the declared one, so a tag
+		//     comparison is blind to it. That is what the rule above is for.
+		//
+		// TestTypedClassSkippedBranchesCannotDegrade pins both claims against
+		// the encoder, so neither skip can quietly become a hole.
+		if declared != 0 && declared != ASN1_OCTET_STRING && declared != ASN1_OBJECT_ID {
+			// encodeTypedValueAtTag rather than encodeTypedValue: same code the
+			// wire takes, without a second oidTypeTable scan for a tag already
+			// in hand.
+			//
+			// The type names in the message below are COMMA-separated, never
+			// slash-separated: redactPathsForMessage base-names any
+			// whitespace-delimited token containing a path separator, so
+			// "Counter32/Gauge32/TimeTicks/Counter64" rendered as "Counter64"
+			// in every HTTP body and lost three of the four
+			// (TestTypedClassRejectionTakesTheClassifiedRoute pins this).
+			if emitted := encodeTypedValueAtTag(oid, r.Response, declared); len(emitted) == 0 || emitted[0] != declared {
 				return invalidResource(resourceFile,
 					"OID %s is typed %s in the MIB but its value %q does not encode as one: "+
 						"the encoder falls back to OCTET STRING, and a collector that types the "+
 						"OID per its MIB cannot convert the answer and drops the metric on every "+
-						"poll of every device (nl6#515). Give the OID a value the type can carry — "+
-						"an unsigned decimal for Counter32/Gauge32/TimeTicks/Counter64 (no sign for "+
-						"Counter64, no surrounding whitespace, no units), or a dotted-quad IPv4 "+
-						"address for IpAddress. To make the OID answer noSuchObject instead, omit "+
-						"the entry entirely",
+						"poll of every device (nl6#515). Give the OID a value the type can carry: "+
+						"an unsigned decimal for Counter32, Gauge32, TimeTicks or Counter64 "+
+						"(Counter64 takes no sign), with no surrounding whitespace and no units, "+
+						"or a dotted-quad IPv4 address for IpAddress. To make the OID answer "+
+						"noSuchObject instead, omit the entry entirely",
 					r.OID, snmpTypeName(declared), r.Response)
 			}
+			warnNegativeOnUnsignedLeaf(resourceFile, r.OID, r.Response, declared)
 		}
 	}
 	return nil
+}
+
+// warnNegativeOnUnsignedLeaf logs a negative value on an unsigned 32-bit leaf.
+//
+// It is a WARNING and not a refusal, deliberately: encodeTypedValue parses such
+// a value at 32-bit width and wrap-casts it, so it goes out at the DECLARED tag
+// and the rule above — which asks the encoder — accepts it. Refusing here would
+// mean the guard no longer agreed with the encoder, which is the property that
+// keeps the two from drifting.
+//
+// It is worth a line anyway because the two failure modes are not equally
+// visible. A degraded value is a dropped metric, which a collector logs; a
+// Counter32 of -1 is a plausible-looking 4294967295 that nothing flags, and on
+// a gauge it is simply wrong data. The shipped set has no such value, so this is
+// silent for every profile nl6 ships (TestNegativesOnUnsignedLeavesAreAbsent).
+func warnNegativeOnUnsignedLeaf(resourceFile, oid, value string, declared byte) {
+	switch declared {
+	case ASN1_COUNTER32, ASN1_GAUGE32, ASN1_TIMETICKS:
+	default:
+		return
+	}
+	if !strings.HasPrefix(value, "-") {
+		return
+	}
+	n, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return // not a 32-bit negative: the rule above already refused it
+	}
+	log.Printf("Warning: resource %s: OID %s is typed %s (unsigned) but its value is %s; "+
+		"the encoder wrap-casts it, so it is served as %d at the declared tag rather than "+
+		"being refused. Nothing on the collector side can tell that apart from a real "+
+		"reading — use a non-negative value, or omit the entry to answer noSuchObject",
+		resourceFile, oid, snmpTypeName(declared), value, uint32(int32(n)))
 }
 
 func (sm *SimulatorManager) createDefaultResources(filename string) error {

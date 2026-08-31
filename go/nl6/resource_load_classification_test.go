@@ -1363,3 +1363,143 @@ func TestRealisticGuardMessageSurvivesTheCap(t *testing.T) {
 		t.Errorf("message %q lost its remediation tail", msg)
 	}
 }
+
+// TestTypedClassRejectionTakesTheClassifiedRoute pins the nl6#538 taxonomy for
+// rule 3 (nl6#541), at both loaders reachable mid-run: the rejection must be
+// classified errResourceInvalid — so round-robin fails the call rather than
+// skipping the type, and REST answers 400 rather than 500 — and the body must
+// name the part base-named, never a directory path.
+func TestTypedClassRejectionTakesTheClassifiedRoute(t *testing.T) {
+	// A slash-free bad value: redactPathsForMessage base-names any token holding
+	// a path separator, so "n/a" renders as "a" in a public message. That is
+	// pre-existing nl6#538 behaviour for VALUES of all three rules, pinned
+	// below rather than changed here.
+	const badEntry = `{"oid":"1.3.6.1.2.1.2.2.1.10.1","response":"nope"}`
+
+	t.Run("directory", func(t *testing.T) {
+		sm := classifyFixture(t)
+		dir := filepath.Join("resources", "typedclass")
+		writeResourceFile(t, filepath.Join(dir, "typedclass_snmp_interfaces.json"), `{"snmp":[`+badEntry+`]}`)
+
+		_, err := sm.LoadSpecificResources("typedclass.json")
+		rerr := assertInvalid(t, err)
+		msg := rerr.PublicMessage()
+		assertNoPathDisclosure(t, msg)
+		for _, want := range []string{"typedclass_snmp_interfaces.json", "1.3.6.1.2.1.2.2.1.10.1", "Counter32", "nope"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("public message %q does not name %q", msg, want)
+			}
+		}
+		// Every reachable type name must SURVIVE redactPathsForMessage. This is
+		// not hypothetical: the first cut wrote the list as
+		// "Counter32/Gauge32/TimeTicks/Counter64", and the redactor base-names
+		// any whitespace-delimited token containing a path separator, so the
+		// rendered body said "an unsigned decimal for Counter64" and lost three
+		// of the four types.
+		for _, name := range []string{"Counter32", "Gauge32", "TimeTicks", "Counter64", "IpAddress"} {
+			if !strings.Contains(msg, name) {
+				t.Errorf("public message lost the type name %q to redaction; do not join type "+
+					"names with slashes: %q", name, msg)
+			}
+		}
+	})
+
+	t.Run("single-file", func(t *testing.T) {
+		sm := classifyFixture(t)
+		writeResourceFile(t, filepath.Join("resources", "typedclass.json"), `{"snmp":[`+badEntry+`]}`)
+
+		_, err := sm.LoadSpecificResources("typedclass.json")
+		rerr := assertInvalid(t, err)
+		assertNoPathDisclosure(t, rerr.PublicMessage())
+	})
+
+	// Pre-existing behaviour, pinned so it is discoverable rather than
+	// surprising: a bad VALUE containing a path separator is base-named in the
+	// public message, so an operator sees "a" for a value of "n/a". The full
+	// value is in the error itself (and so in the server log), which is what
+	// nl6#538 traded the body detail for. Not changed by nl6#541.
+	t.Run("value-with-a-slash-is-base-named-in-the-body", func(t *testing.T) {
+		sm := classifyFixture(t)
+		writeResourceFile(t, filepath.Join("resources", "slashy.json"),
+			`{"snmp":[{"oid":"1.3.6.1.2.1.2.2.1.10.1","response":"n/a"}]}`)
+
+		_, err := sm.LoadSpecificResources("slashy.json")
+		rerr := assertInvalid(t, err)
+		if !strings.Contains(rerr.Error(), `"n/a"`) {
+			t.Errorf("the error itself must carry the full value: %v", rerr)
+		}
+		if strings.Contains(rerr.PublicMessage(), `"n/a"`) {
+			t.Log("note: a slash-containing value now survives into the public message; " +
+				"redactPathsForMessage used to base-name it")
+		}
+	})
+}
+
+// TestTypedClassMessageSurvivesTheCap is the nl6#538 length check for the new
+// message, which is the longest of the three guard messages: a realistic part
+// name plus a 90-character bad value must not push the remediation tail past
+// maxResourceMessageBytes, because the tail is the half that says what to do.
+func TestTypedClassMessageSurvivesTheCap(t *testing.T) {
+	sm := classifyFixture(t)
+	longValue := strings.Repeat("x", 90)
+	dir := filepath.Join("resources", "capcheck2")
+	writeResourceFile(t, filepath.Join(dir, "capcheck2_snmp_interfaces_and_more.json"),
+		`{"snmp":[{"oid":"1.3.6.1.2.1.31.1.1.1.6.1","response":"`+longValue+`"}]}`)
+
+	_, err := sm.LoadSpecificResources("capcheck2.json")
+	rerr := assertInvalid(t, err)
+	msg := rerr.PublicMessage()
+	if strings.Contains(msg, "(truncated)") {
+		t.Errorf("a realistic typed-class message was truncated at %d bytes (%d bytes rendered): %q",
+			maxResourceMessageBytes, len(msg), msg)
+	}
+	if !strings.Contains(msg, "omit the entry entirely") {
+		t.Errorf("message %q lost its remediation tail", msg)
+	}
+	t.Logf("typed-class message renders to %d bytes of the %d-byte cap", len(msg), maxResourceMessageBytes)
+}
+
+// TestTypedClassMessageCoversEveryReachableType pins that the remedy text is
+// complete rather than merely plausible. The message enumerates the numeric and
+// address types only; that is correct BECAUSE rule 3 skips OCTET STRING and
+// OBJECT IDENTIFIER, so no other declared type can reach it. If a row with a new
+// tag is added to oidTypeTable, this fails and the text has to grow with it.
+func TestTypedClassMessageCoversEveryReachableType(t *testing.T) {
+	reachable := map[byte]bool{}
+	for _, e := range oidTypeTable {
+		if e.tag != ASN1_OCTET_STRING && e.tag != ASN1_OBJECT_ID {
+			reachable[e.tag] = true
+		}
+	}
+	want := map[byte]string{
+		ASN1_COUNTER32: "Counter32",
+		ASN1_GAUGE32:   "Gauge32",
+		ASN1_TIMETICKS: "TimeTicks",
+		ASN1_COUNTER64: "Counter64",
+		ASN1_IPADDRESS: "IpAddress",
+	}
+	for tag := range reachable {
+		if _, ok := want[tag]; !ok {
+			t.Errorf("oidTypeTable declares tag 0x%02X (%s), which rule 3 can reach but the "+
+				"rejection's remedy text does not mention", tag, snmpTypeName(tag))
+		}
+	}
+	for tag, name := range want {
+		if !reachable[tag] {
+			t.Errorf("the remedy text mentions %s but no oidTypeTable row declares it any more; "+
+				"the message promises a type nl6 does not type", name)
+		}
+	}
+
+	// The text itself, from a real rejection.
+	res := &DeviceResources{SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.2.2.1.10.1", Response: "n/a"}}}
+	err := validateSNMPResourceValues("probe.json", res)
+	if err == nil {
+		t.Fatal("fixture accepted")
+	}
+	for _, name := range want {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("rejection message does not mention the reachable type %s: %v", name, err)
+		}
+	}
+}

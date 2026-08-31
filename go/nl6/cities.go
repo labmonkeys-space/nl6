@@ -61,6 +61,10 @@ func loadWorldCities() error {
 			{"Mumbai, India", 19.0758, 72.8775},
 			{"São Paulo, Brazil", -23.5500, -46.6333},
 		}
+		// Compiled-in constants, so this can never fire — but the filter is
+		// applied to the slice rather than to a source, and running it on both
+		// branches is what makes that true of every branch.
+		dropSentinelLocations()
 		return nil
 	}
 
@@ -89,9 +93,43 @@ func loadWorldCities() error {
 	for _, city := range uniqueLocations {
 		worldCities = append(worldCities, city)
 	}
+	dropped := dropSentinelLocations()
 
 	log.Printf("Loaded %d cities from worldcities directory (%d files)", len(worldCities), len(files))
+	if dropped > 0 {
+		log.Printf("Warning: dropped %d city name(s) colliding with an SNMP exception sentinel", dropped)
+	}
 	return nil
+}
+
+// dropSentinelLocations removes any loaded location whose display string is
+// exactly an RFC 3416 exception sentinel, and returns how many it removed.
+//
+// This is the ONE place the rule costs anything: it runs once per load, over the
+// whole dataset, rather than on the per-device draw. The first cut of nl6#541
+// put the check in getRandomLocation only, which is a per-device path — up to
+// 30,000 log lines at fleet start, one per draw, with the offending row still in
+// the slice to be drawn again. Filtering here also keeps the drawn city's
+// COORDINATES: diverting at draw time returned the coordinate-less "Unknown
+// Location", so one bad row silently cost a device its lat/lng.
+//
+// It covers both branches of loadWorldCities — the CSV dataset and the
+// compiled-in fallback list — because both feed the same slice.
+func dropSentinelLocations() int {
+	kept := worldCities[:0]
+	dropped := 0
+	for _, c := range worldCities {
+		if isSNMPExceptionValue(c.Name) {
+			log.Printf("Warning: dropping location %q: the name collides with an SNMP exception "+
+				"sentinel and would be served as an RFC 3416 exception instead of a sysLocation "+
+				"string", c.Name)
+			dropped++
+			continue
+		}
+		kept = append(kept, c)
+	}
+	worldCities = kept
+	return dropped
 }
 
 // processCSVFile reads a single CSV file and adds cities to the uniqueLocations map
@@ -192,19 +230,23 @@ func getRandomLocation() WorldCity {
 		return WorldCity{Name: unknownLocationName}
 	}
 
-	// The single funnel every served sysLocation passes through, and therefore
-	// where the sentinel rule is ENFORCED (nl6#541 part 3): it covers the CSV
-	// dataset, the compiled-in fallback list above, and any location source
-	// added later, none of which reach validateSNMPResourceValues. A name
-	// equal to an RFC 3416 sentinel would be encoded as an exception tag
-	// instead of a string, so it is answered with the coordinate-less
-	// "Unknown Location" the empty-dataset branch already uses rather than
-	// being served.
-	city := worldCities[mathrand.Intn(len(worldCities))]
-	if isSNMPExceptionValue(city.Name) {
-		log.Printf("Warning: location %q collides with an SNMP exception sentinel and cannot be "+
-			"served as sysLocation; using %q instead", city.Name, unknownLocationName)
-		return WorldCity{Name: unknownLocationName}
+	// The rule is ENFORCED at load (dropSentinelLocations), so by here the slice
+	// cannot hold a sentinel. This is the last-line assertion on the single
+	// funnel every served sysLocation passes through — cheap, because it is one
+	// string comparison per device rather than a scan, and silent, because a
+	// per-draw log line on a 30,000-device path is a worse failure than the one
+	// it reports.
+	//
+	// It RE-DRAWS rather than substituting "Unknown Location": that name carries
+	// no coordinates (manager.go omits lat/lng for it), so substituting would
+	// cost the device its position over an unrelated row's defect. The bounded
+	// retry then falls back, since a slice of nothing but sentinels has no
+	// answer to give.
+	for attempt := 0; attempt < 8; attempt++ {
+		city := worldCities[mathrand.Intn(len(worldCities))]
+		if !isSNMPExceptionValue(city.Name) {
+			return city
+		}
 	}
-	return city
+	return WorldCity{Name: unknownLocationName}
 }
