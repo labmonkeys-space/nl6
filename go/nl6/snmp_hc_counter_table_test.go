@@ -145,7 +145,12 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "0a75f790fa90a6dd2df2dfe0ee841978ea99de1c873727ba728593015692af70"
+// Re-pinned by nl6#602's Juniper arc audit. The pre-change value lives in
+// snmp_shipped_juniper_arc_ledger_test.go as
+// shippedTagDigestBeforeJuniperArcAudit, and
+// TestJuniperArcAuditReproducesTheParentCorpus reverses the ledger against this
+// tree and requires it back byte for byte.
+const shippedTagDigest = "17e2773527d4329fd50c1fc323488eb809e11e899689a04c0c6cbf752a765da2"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

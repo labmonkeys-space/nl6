@@ -261,8 +261,19 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // from an invented product OID to aristaDCS7280CR332P4M. Both are under Arista's
 // own PEN, so the guard has nothing to say about either — a correct arc is all it
 // checks, and "resolves to a real product" is not something it can see.
+//
+// nl6#602's Juniper arc audit moved the NAME count again, 328 to 316: it deleted
+// twelve entries across juniper_mx240 and juniper_mx960 (a not-accessible table
+// served with a .0, four EX-series Virtual Chassis objects on MX routers, and
+// three under-specified jnxOperatingTable instances). The three RENAMED
+// jnxOperating rows keep the count, since a rename is one name out and one in.
+// The VALUE count is unchanged for the third time running, and again that is the
+// stronger statement: the same change corrected juniper_mx960's sysObjectID.0
+// from jnxProductNameMX480 to jnxProductNameMX960. Both are under Juniper's own
+// PEN, so this guard has nothing to say about either, and "resolves to the RIGHT
+// product" is even further outside what it can see than "resolves at all" was.
 const (
-	ownVendorArcNamesShipped  = 328
+	ownVendorArcNamesShipped  = 316
 	ownVendorArcValuesShipped = 28
 )
 
