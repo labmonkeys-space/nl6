@@ -233,8 +233,14 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // They are pinned so the zero this guard asserts cannot become vacuous by the
 // corpus losing its enterprise arcs: a scan that found nothing would report no
 // violations either. Raising or lowering them needs a reason in the commit.
+//
+// The name count fell from 343 to 335 in nl6#590, the first vendor-arc MIB audit:
+// eight Cisco entries were deleted because the objects they named do not hold
+// what the profile put in them (see snmp_shipped_cisco_arc_ledger_test.go). The
+// VALUE count is unchanged, which is the half that matters here — no profile
+// stopped identifying itself.
 const (
-	ownVendorArcNamesShipped  = 343
+	ownVendorArcNamesShipped  = 335
 	ownVendorArcValuesShipped = 28
 )
 

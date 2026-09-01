@@ -67,8 +67,8 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // emitted tag of no OID any shipped profile serves. It is a measurement, not an
 // argument, and it was NOT re-derived from the widened code.
 //
-// RE-PINNED TWICE. Both re-pins are CORPUS changes, and each is re-derived by a
-// test rather than asserted here.
+// RE-PINNED FOUR TIMES. Every re-pin is a CORPUS change, and each is re-derived
+// by a test rather than asserted here.
 //
 // The first was nl6#570, which deleted the 1322 shipped ifTable .10 / .16
 // entries the cycler now serves. No surviving OID moved its tag;
@@ -94,6 +94,19 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // of this constant (shippedTagDigestBeforeNvidiaArcRehome) all live in
 // snmp_shipped_nvidia_arc_ledger_test.go rather than beside this line.
 //
+// The fourth is nl6#590, the first vendor-arc MIB audit: eight Cisco enterprise
+// entries were deleted (four ciscoEnvMonFanStatusTable rows describing modules
+// rather than fans, two ciscoMemoryPoolAlternate rows carrying a PSU part number
+// on an Integer32 leaf, and two ciscoEnvMonTemperatureStatusValue rows that a GET
+// never reached but a WALK returned) and ten were corrected, NINE of which move a
+// tag. All nine are one defect: a bare number on a DisplayString leaf, which
+// encodeTypedValue emits as an INTEGER — "1100" on ciscoMemoryPoolName, "1" on
+// ciscoEnvMonFanStatusDescr and ciscoEnvMonSupplyStatusDescr.
+// TestCiscoArcAuditReproducesTheParentCorpus reverses the 18 recorded rows and
+// requires the value this constant held at 5bded6c. That ledger, its tables and
+// the pre-change value of this constant (shippedTagDigestBeforeCiscoArcAudit) all
+// live in snmp_shipped_cisco_arc_ledger_test.go rather than beside this line.
+//
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
 // is the review evidence for doing so. Re-pinning it to silence a failure
@@ -102,7 +115,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "fa776c654f5b88fd1e429d1bcd0d2758613273ee80a22f0239d2c4097ac24bb2"
+const shippedTagDigest = "0ef1159118874de4fae3f89766d28034996775d7f10c91c1d1bc20ddaabd9e52"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
