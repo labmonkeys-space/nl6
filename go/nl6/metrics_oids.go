@@ -136,11 +136,20 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	},
 
 	// --- SonicWall ---
+	//
+	// 8741 is SonicWALL, Inc.'s IANA PEN. These four OIDs were 8714 until
+	// nl6#588 — a DIGIT TRANSPOSITION, and 8714 is allocated to iNOC, Inc., an
+	// unrelated company. It was live: findResponse(".1.3.6.1.4.1.8714.2.1.3.1.1.0")
+	// answered a real CPU reading and all four were enumerated into every walk of
+	// this device type, while the profile's own resource files used 8741
+	// throughout, so one device served two vendors' arcs. Every sub-identifier
+	// below the PEN is preserved. TestEveryCodeServedVendorOIDIsItsOwnVendorArc
+	// is what stops it recurring.
 	"sonicwall_nsa6700.json": {
-		".1.3.6.1.4.1.8714.2.1.3.1.1.0": MetricCPUPercent,
-		".1.3.6.1.4.1.8714.2.1.3.1.2.0": MetricMemFree,
-		".1.3.6.1.4.1.8714.2.1.3.1.3.0": MetricMemTotal,
-		".1.3.6.1.4.1.8714.2.1.3.1.4.0": MetricTemperature, // sonicTemperature
+		".1.3.6.1.4.1.8741.2.1.3.1.1.0": MetricCPUPercent,
+		".1.3.6.1.4.1.8741.2.1.3.1.2.0": MetricMemFree,
+		".1.3.6.1.4.1.8741.2.1.3.1.3.0": MetricMemTotal,
+		".1.3.6.1.4.1.8741.2.1.3.1.4.0": MetricTemperature, // sonicTemperature
 	},
 
 	// --- Dell iDRAC ---

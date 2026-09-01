@@ -1,4 +1,5 @@
 {
+  "_comment": "sysObjectID sits under 1.3.6.1.4.1.32473, RFC 5612's Example Enterprise Number for Documentation Use, which IANA holds itself (nl6#588, re-homed from 1.3.6.1.4.1.9999, which IANA allocates to Zerna, Koepper & Partner, a German engineering firm unrelated to Amazon or to storage). The documentation PEN was chosen over Amazon's real numbers (4843 Amazon.com Inc., 60099 Amazon Web Services Inc) DELIBERATELY: this profile models a CATEGORY, an S3-compatible object storage gateway, which MinIO, Ceph RGW and others implement, and AWS's own S3 is an HTTP service with no SNMP surface at all. Naming Amazon would trade one misattribution for a more plausible one. Vendor detection therefore resolves this device to no manufacturer, which is the honest answer for a device that has none. The .1.1 suffix is nl6's own assignment; 32473 is documentation space, so it names no published object. Do not make 32473 generally allowed for other profiles: every other shipped profile serves its own vendor's PEN and TestEveryProfileServesOnlyItsOwnVendorArc enforces that per profile.",
   "snmp": [
     {
       "oid": "1.3.6.1.2.1.1.1.0",
@@ -6,7 +7,7 @@
     },
     {
       "oid": "1.3.6.1.2.1.1.2.0",
-      "response": "1.3.6.1.4.1.9999"
+      "response": "1.3.6.1.4.1.32473.1.1"
     },
     {
       "oid": "1.3.6.1.2.1.1.5.0",

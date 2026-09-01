@@ -1632,9 +1632,10 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Fatal("the ledger yielded no OID names")
 	}
 
-	// nl6#576 re-homed the NVIDIA GPU arc after this change; un-rename before
-	// comparing against a digest taken when it was still under 53246.
-	oids := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
+	// nl6#588 re-homed aws_s3_storage's sysObjectID value and nl6#576 re-homed the
+	// NVIDIA GPU arc, both after this change; undo them newest-first before
+	// comparing against a digest taken when neither had happened.
+	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
 	shipped := map[string]struct{}{}
 	for _, o := range oids {
 		shipped[o] = struct{}{}

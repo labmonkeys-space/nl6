@@ -1439,9 +1439,10 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Errorf("the ledger yields %d distinct deleted OID names, want 259", len(deleted))
 	}
 
-	// nl6#576 re-homed the NVIDIA GPU arc after this change, so the names the
-	// corpus ships today are not the names ec4700f shipped. Un-rename first.
-	oids := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
+	// nl6#588 re-homed aws_s3_storage's sysObjectID value and nl6#576 the NVIDIA
+	// GPU arc, both after this change, so the names the corpus ships today are not
+	// the names ec4700f shipped. Undo them newest-first.
+	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
 	toRestore := nl6574RestorableOIDNames(t)
 
 	restored := append(append([]string{}, oids...), toRestore...)

@@ -350,8 +350,55 @@ Both are a record of a reading, not a verification: nothing in CI compares nl6 a
 
 nl6#576 closed one more instance of the class and not the class itself.
 The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.; the arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and `TestNoNvidiaOIDsShipUnderMailteck` keeps that one arc clean in both the OID-name and the OID-typed-value positions.
-The general per-profile own-vendor-enterprise-OID guard was deliberately not built there: it needs an allowlist decision, and it would fail against the corpus as it stood.
-So the wider cross-vendor contamination audit, including the bare Juniper `jnxOperatingCPU` column that four Cisco profiles carry, is still open.
+The general per-profile own-vendor-enterprise-OID guard was deliberately not built there: it needs an allowlist decision, and it would have failed against the corpus as it stood.
+
+### Every profile serves its own vendor's PEN and no other
+
+nl6#588 built that guard and closed the class.
+`TestEveryProfileServesOnlyItsOwnVendorArc` walks every shipped profile and requires each enterprise OID it serves — in an OID **name** or an OID-typed **value** — to sit under the one IANA private enterprise number that profile's device type belongs to.
+
+It covers **three** surfaces, each with its own test and its own positive control, all running one rule over one curated map:
+
+| surface | what it is | test |
+|---|---|---|
+| resource files | the `snmp` arrays of every shipped profile | `TestEveryProfileServesOnlyItsOwnVendorArc` |
+| `vendorOIDs` | dynamic metric OIDs served from Go code (`metrics_oids.go`), answered by `getMetricValue` and enumerated into walks by `GetSortedMetricOIDs` | `TestEveryCodeServedVendorOIDIsItsOwnVendorArc` |
+| `createDefaultResources` | the compiled-in fallback a device gets when its named resource file is absent | `TestDefaultResourcesServeNoForeignVendorArc` |
+
+The second and third surfaces each held a live defect, which is why they are covered rather than excluded.
+
+`vendorOIDs` served `sonicwall_nsa6700` four OIDs under `1.3.6.1.4.1.8714` — **iNOC, Inc.** — where SonicWALL is **8741**.
+A digit transposition, and no test in the package had ever read that map.
+It was live: `findResponse(".1.3.6.1.4.1.8714.2.1.3.1.1.0")` answered a real CPU reading, all four were enumerated into every walk of that device type, and the profile's own resource files used 8741 throughout — so one simulated device served two vendors' arcs at once.
+Fixed to 8741 with every sub-identifier preserved.
+It moves no golden digest, because `collectShippedOIDs` walks resource files and these OIDs live in Go code — which is itself the reason this surface needed a guard of its own.
+
+`createDefaultResources` answered `sysObjectID.0` with `1.3.6.1.4.1.9.1.1`, ciscoSystems.
+That is a production path — any device whose resource file is missing lands on it — so an unprofiled device identified itself as Cisco hardware.
+It now answers the documentation PEN, for the same reason `aws_s3_storage` does.
+`sysDescr` still reads "Cisco IOS Software": that is a DisplayString a human reads, not an identity a collector keys rules on, and changing it is a separate behaviour change.
+
+The data fix in the resource files was one row.
+`aws_s3_storage` answered `sysObjectID.0` with `1.3.6.1.4.1.9999`, which the registry allocates to **Zerna, Koepper & Partner**, a German engineering firm with no connection to Amazon or to storage — the same shape of defect as 53246/Mailteck, and the last foreign arc in the corpus.
+It now answers `1.3.6.1.4.1.32473.1.1`, RFC 5612's *Example Enterprise Number for Documentation Use*, which IANA holds itself.
+That was chosen over Amazon's real numbers (4843 `Amazon.com Inc.`, 60099 `Amazon Web Services Inc`) deliberately: "AWS S3 Compatible Object Storage Gateway" names a **category** that MinIO, Ceph RGW and others implement, not a manufacturer, and AWS's own S3 is an HTTP service with no SNMP surface.
+Naming Amazon would trade one misattribution for a more plausible one.
+The cost is real and accepted — vendor detection now resolves this profile to nobody — and `32473` is allowed for **this profile only**, never generally, or a future profile could dodge the guard by claiming to be documentation.
+
+Four properties of the guard are load-bearing, and each is a defect this repo has already shipped:
+
+- **It reads OID-typed values, not just names.** `sysObjectID.0` is a *response*, and it is the field a collector reads for vendor detection. A name-only scan is structurally blind to it; that blind spot hid this very defect from the research census that informed nl6#587, and from nl6#587's own first-cut guard. There is one scan of the two positions in the package and both this guard and `TestNoNvidiaOIDsShipUnderMailteck` go through it.
+- **Its positive control plants across profiles.** A Juniper OID name in `cisco_ios`, an NVIDIA `sysObjectID` value in `linux_server`, a Huawei OID name in `ibm_power_s922`. A control that plants and detects inside one profile survives a narrowing of the scan, which is the regression nl6#571's review demonstrated with a green suite.
+- **The slug-to-PEN map is curated, never derived from name matching.** Six shipped pairs share no word with their slug and are all correct: `hpe_proliant_dl380` → 232 (Compaq), `dell_emc_unity` → 1139 (EMC Corp), `nokia_7750_sr12` → 6527 (Nokia, formerly Alcatel-Lucent), `netapp_ontap` → 789 (Network Appliance Corporation), `arista_7280r3` → 30065 (formerly Arastra), `ibm_power_s922` → 2 (IBM). Every number is looked up in `go/nl6/testdata/iana/enterprise_numbers.tsv`, the checked-in registry extract, and every row carries a written reason.
+- **The PEN is matched on a sub-identifier boundary.** PEN 2 is a string prefix of 2011 (Huawei), 2620 (Check Point), 2636 (Juniper) and 25461 (Palo Alto), and all five ship, so a `HasPrefix` match reports four vendors as IBM.
+
+What the guard does **not** cover, and what remains outstanding:
+
+- **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
+- **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
+- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean. This profile's audit found 8 of 11 wrong; the other 28 have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention.
+- A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
+- The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for nl6#588 and are clean; scanning them was considered and deliberately not added.
 
 ## Response size, `max-repetitions` and truncation
 
