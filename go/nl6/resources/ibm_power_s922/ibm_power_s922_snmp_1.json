@@ -1,4 +1,5 @@
 {
+  "_comment": "UNAUDITED-ARC(2): the objects under 1.3.6.1.4.1.2 in this part have not been read against any IBM MIB. The arc itself IS checked: TestEveryProfileServesOnlyItsOwnVendorArc (nl6#588, PR nl6#589) requires ibm_power_s922.json to serve PEN 2 and no other vendor's number, so the identity claim directly below 1.3.6.1.4.1 is enforced. Everything under it is unverified. Nobody has checked that these objects are defined, that each value is of the kind its SYNTAX declares, or that the object is readable at all. Nothing in this repository reads these OIDs. nl6#590's scope measurement cross-referenced every enterprise arc the corpus serves against the published polling rules, the trap catalogs and the docs, and found no consumer for this one, which is why it carries a label instead of an audit. Calibrate with the arcs that were audited, counting distinct OIDs found wrong: Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1, Juniper 13 of 15. Read this arc as unchecked data under a checked number, not as fidelity. Refs nl6#590.",
   "snmp": [
     {
       "oid": "1.3.6.1.2.1.1.1.0",

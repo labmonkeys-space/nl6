@@ -251,11 +251,14 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 	// about live data rather than a hypothetical. The count came from the REAL
 	// corpus above; it is asserted rather than only logged, because CLAUDE.md
 	// quotes it.
-	const wantShippedComments = 7
+	const wantShippedComments = 26
 	if shippedWithComment != wantShippedComments {
-		t.Errorf("%d shipped parts carry a _comment key, want %d (the _snmp_gpu and _snmp_system "+
-			"parts of the three nvidia_* profiles from nl6#576, plus aws_s3_storage from nl6#588). "+
-			"CLAUDE.md quotes this number, so move them together",
+		t.Errorf("%d shipped parts carry a _comment key, want %d: the _snmp_gpu and _snmp_system "+
+			"parts of the three nvidia_* profiles from nl6#576, aws_s3_storage from nl6#588, and the "+
+			"19 parts nl6#590 labelled with UNAUDITED-ARC(...). Fourteen PROFILES carry an unaudited "+
+			"arc and they carry it in NINETEEN parts, which is the figure to get right here. "+
+			"CLAUDE.md quotes this number, so move them together, and note that the 19 are pinned "+
+			"independently by TestNoStaleUnauditedArcLabel",
 			shippedWithComment, wantShippedComments)
 	}
 	t.Logf("%d shipped parts carry a _comment key", shippedWithComment)
