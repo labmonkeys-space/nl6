@@ -152,6 +152,11 @@ var nl6591DeletedWriteOnlyEntries = []struct{ profile, oid, oldValue string }{
 // Both live constants carry a comment naming this file and these two tests, so
 // the chain can be followed from either end.
 
+// writeMemParentRevision is the revision this change forked from and the one its
+// two golden digests below were taken at. It is spelled once and read by both the
+// tests here and this change's entry in newestFirstReversals.
+const writeMemParentRevision = "f47c85d"
+
 // shippedTagDigestBeforeWriteMemRemoval is the (profile, OID, emitted tag) digest
 // of the corpus at f47c85d — the value shippedTagDigest held before this change,
 // NOT re-derived from the edited tree.
@@ -218,11 +223,16 @@ func nl6591VanishedOIDNames() []string {
 
 // nl6591OIDNamesBeforeWriteMemRemoval maps a list of shipped OID NAMES back to
 // the set f47c85d shipped. It is the name-view counterpart of
-// restoreNl6591WriteMem, and every reversal of shippedOIDEncodingDigest now
-// begins with it — this change is the newest link, so it is undone FIRST
-// (innermost in the call chain).
-func nl6591OIDNamesBeforeWriteMemRemoval(names []string) []string {
-	return append(append([]string{}, names...), nl6591VanishedOIDNames()...)
+// restoreNl6591WriteMem, registered as this change's link in
+// newestFirstReversals; no caller chains it by hand any more.
+//
+// It takes a *testing.T and is FATAL on disagreement, matching the value view. It
+// used to be a t-less pure append, which meant a ledger that stopped yielding a
+// vanished name, or a name the corpus started shipping again, degraded it to a
+// silent no-op whose only symptom was a digest mismatch somewhere else.
+func nl6591OIDNamesBeforeWriteMemRemoval(t *testing.T, names []string) []string {
+	t.Helper()
+	return appendVanishedOIDNames(t, "nl6#591 writeMem removal", names, nl6591VanishedOIDNames())
 }
 
 // TestWriteMemRemovalReproducesTheParentCorpus is the before/after pin for the
@@ -240,8 +250,7 @@ func TestWriteMemRemovalReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	restoreNl6590AristaArc(t, cur)
-	restoreNl6591WriteMem(t, cur)
+	restoreCorpusValuesTo(t, cur, writeMemParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
@@ -285,7 +294,7 @@ func TestWriteMemRePinIsOnlyTheRemoval(t *testing.T) {
 		t.Fatal("the ledger yielded no vanished OID names")
 	}
 
-	restored := nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t)))
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), writeMemParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()

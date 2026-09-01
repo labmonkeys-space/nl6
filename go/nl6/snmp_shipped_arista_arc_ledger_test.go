@@ -371,6 +371,12 @@ var nl6590aristaSSHCorrections = []struct{ profile, command, oldText, newText, w
 // a digest and is re-derived from the corpus by its own test; it carries a
 // comment naming this change too.
 
+// aristaArcParentRevision is the revision this change forked from and the one its
+// two golden digests below were taken at. It is spelled once and read by both the
+// tests here and this change's entry in newestFirstReversals, so the chain and the
+// digests cannot come to disagree about which corpus is being reconstructed.
+const aristaArcParentRevision = "2e16f91"
+
 // shippedTagDigestBeforeAristaArcAudit is the (profile, OID, emitted tag) digest
 // of the corpus at 2e16f91 — the value shippedTagDigest held before this change,
 // NOT re-derived from the audited tree.
@@ -477,8 +483,8 @@ func nl6590aristaOIDTypedCorrections() []struct {
 
 // nl6590aristaOIDNamesBeforeAudit maps a list of shipped OID NAMES back to the
 // set 2e16f91 shipped. It is the name-view counterpart of restoreNl6590AristaArc,
-// and every reversal of shippedOIDEncodingDigest now begins with it — this change
-// is the newest link, so it is undone FIRST (innermost in the call chain).
+// registered as this change's link in newestFirstReversals — the newest one, so
+// every name-view walk begins with it.
 //
 // IT IS NOT A PURE APPEND, and that is the one structural difference from
 // nl6#590's Cisco version and nl6#591's. collectShippedOIDs gathers OID-typed
@@ -490,7 +496,9 @@ func nl6590aristaOIDTypedCorrections() []struct {
 // IT TAKES A *testing.T AND IS FATAL ON EVERY DISAGREEMENT, matching
 // restoreNl6590AristaArc. It used to be a t-less pure function, which meant a
 // gate that stopped matching, or a drop that matched nothing, degraded it to a
-// silent no-op — the asymmetry the value view was deliberately written to avoid.
+// silent no-op. It was the first name view to take the t, and the only one, which
+// made its signature the odd one out; every name view takes it now, so the
+// registry can hold them in one field.
 //
 // collectShippedOIDs DEDUPLICATES, which is why the drop is a SINGLE-entry drop
 // and why the "exactly one owner" question it raises cannot be answered from that
@@ -549,7 +557,10 @@ func TestAristaArcAuditReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	restoreNl6590AristaArc(t, cur)
+	// This change is the newest link, so the walk applies its reversal and stops.
+	// The chain lives in snmp_shipped_corpus_reversals_test.go; nothing here has
+	// to know what landed after it, because nothing has.
+	restoreCorpusValuesTo(t, cur, aristaArcParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
@@ -595,7 +606,7 @@ func TestAristaArcRePinIsOnlyTheAudit(t *testing.T) {
 		t.Fatal("the ledger yielded no vanished OID names")
 	}
 
-	restored := nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), aristaArcParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()

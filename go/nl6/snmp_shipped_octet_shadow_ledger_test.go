@@ -1362,6 +1362,11 @@ var nl6570DeletedOctetEntries = []struct{ profile, oid, oldValue string }{
 	{"sonicwall_nsa6700.json", ".1.3.6.1.2.1.2.2.1.16.16", "1077777776"},
 }
 
+// octetShadowParentRevision is the revision this change forked from and the one
+// its golden digests were taken at. It is spelled once and read by both the tests
+// here and this change's entry in newestFirstReversals.
+const octetShadowParentRevision = "3a69927"
+
 // shippedTagDigestBeforeOctetShadowDeletion is the (profile, OID, emitted tag)
 // digest of the resource corpus at 3a69927, the revision this branch forked
 // from, in exactly the form shippedTypedCorpus produces. It is the value
@@ -1410,16 +1415,11 @@ func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#591, nl6#590, nl6#576 and then nl6#574 / nl6#571 / nl6#569 edited shipped
-	// data AFTER this change, so the reversal chains: undo those transitions
-	// newest-first, which reconstructs the tree nl6#570 left, and only then put
-	// this change's octet rows back.
-	restoreNl6590AristaArc(t, cur)
-	restoreNl6591WriteMem(t, cur)
-	restoreNl6590CiscoArc(t, cur)
-	restoreNl6576NvidiaArc(t, cur)
-	restoreNl6574ResourceDefectEntries(t, cur)
-	restoreNl6570OctetEntries(t, cur)
+	// Several changes edited shipped data AFTER this one, so the reversal chains:
+	// undo those transitions newest-first, which reconstructs the tree nl6#570
+	// left, and only then put this change's octet rows back. The walk does both,
+	// this link included.
+	restoreCorpusValuesTo(t, cur, octetShadowParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus, over the distinct
 	// (profile, OID, emitted tag) triples.
@@ -1624,6 +1624,16 @@ func nl6570DeletedOctetOIDs() []string {
 	return out
 }
 
+// nl6570OIDNamesBeforeOctetShadowDeletion is the name-view counterpart of
+// restoreNl6570OctetEntries, registered as this change's link in
+// newestFirstReversals. Putting the deleted names back is the whole reversal:
+// every one of them left the corpus entirely, which appendVanishedOIDNames
+// re-checks on the list it is handed.
+func nl6570OIDNamesBeforeOctetShadowDeletion(t *testing.T, names []string) []string {
+	t.Helper()
+	return appendVanishedOIDNames(t, "nl6#570 octet-shadow deletion", names, nl6570DeletedOctetOIDs())
+}
+
 // TestOctetShadowRePinIsOnlyTheDeletedOIDs makes the nl6#570 re-pin of
 // shippedOIDEncodingDigest self-proving instead of a claim in a comment: put the
 // deleted OID names back and the pre-deletion digest must return exactly. It can
@@ -1635,30 +1645,13 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Fatal("the ledger yielded no OID names")
 	}
 
-	// nl6#591 deleted writeMem, nl6#590 five Cisco names, nl6#588 re-homed
-	// aws_s3_storage's sysObjectID value and nl6#576 re-homed the NVIDIA GPU arc,
-	// all after this change; undo them newest-first before comparing against a
-	// digest taken when none of them had happened.
-	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
-	shipped := map[string]struct{}{}
-	for _, o := range oids {
-		shipped[o] = struct{}{}
-	}
-	for _, o := range deleted {
-		if _, ok := shipped[o]; ok {
-			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+
-				"pre-deletion digest or explain the new corpus", o)
-		}
-	}
-
-	// nl6#574 / nl6#571 / nl6#569 deleted a further 256 OID names after this
-	// change, so reaching the pre-octet-shadow digest means undoing both stages.
-	// This change's own stage is pinned separately by
+	// Several changes deleted or re-homed OID names after this one; undo them
+	// newest-first before comparing against a digest taken when none of them had
+	// happened, then put this change's own names back. The walk does all of it,
+	// and it is fatal if any of them is shipped again — the re-pin's premise.
+	// The nl6#574 / nl6#571 / nl6#569 stage is pinned separately by
 	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs.
-	restored := append(append([]string{}, oids...), nl6574RestorableOIDNames(t)...)
-	restored = append(restored, deleted...)
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), octetShadowParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()

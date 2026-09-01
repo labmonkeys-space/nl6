@@ -239,6 +239,11 @@ var nl6590SurvivingDeletedNames = map[string]string{
 // Both live constants carry a comment naming this file and these two tests, so
 // the chain can be followed from either end.
 
+// ciscoArcParentRevision is the revision this change forked from and the one its
+// two golden digests below were taken at. It is spelled once and read by both the
+// tests here and this change's entry in newestFirstReversals.
+const ciscoArcParentRevision = "5bded6c"
+
 // shippedTagDigestBeforeCiscoArcAudit is the (profile, OID, emitted tag) digest
 // of the corpus at 5bded6c — the value shippedTagDigest held before this change,
 // NOT re-derived from the audited tree.
@@ -316,12 +321,17 @@ func nl6590VanishedCiscoOIDNames() []string {
 }
 
 // nl6590OIDNamesBeforeAudit maps a list of shipped OID NAMES back to the set
-// 5bded6c shipped. It is the name-view counterpart of restoreNl6590CiscoArc, and
-// every reversal of shippedOIDEncodingDigest passes through it. It is no longer
-// the innermost call: nl6#591 landed after this change, so
-// nl6591OIDNamesBeforeWriteMemRemoval is undone first and this one wraps it.
-func nl6590OIDNamesBeforeAudit(names []string) []string {
-	return append(append([]string{}, names...), nl6590VanishedCiscoOIDNames()...)
+// 5bded6c shipped. It is the name-view counterpart of restoreNl6590CiscoArc,
+// registered as this change's link in newestFirstReversals; no caller chains it
+// by hand any more.
+//
+// It takes a *testing.T and is FATAL on disagreement, matching the value view. It
+// used to be a t-less pure append, which meant a ledger that stopped yielding a
+// vanished name, or a name the corpus started shipping again, degraded it to a
+// silent no-op whose only symptom was a digest mismatch somewhere else.
+func nl6590OIDNamesBeforeAudit(t *testing.T, names []string) []string {
+	t.Helper()
+	return appendVanishedOIDNames(t, "nl6#590 Cisco arc", names, nl6590VanishedCiscoOIDNames())
 }
 
 // TestCiscoArcAuditReproducesTheParentCorpus is the before/after pin for the TAG
@@ -339,11 +349,7 @@ func TestCiscoArcAuditReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#591 deleted the two writeMem entries after this change, so it is the
-	// newest link of all and is undone first.
-	restoreNl6590AristaArc(t, cur)
-	restoreNl6591WriteMem(t, cur)
-	restoreNl6590CiscoArc(t, cur)
+	restoreCorpusValuesTo(t, cur, ciscoArcParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
@@ -388,9 +394,7 @@ func TestCiscoArcRePinIsOnlyTheAudit(t *testing.T) {
 		t.Fatal("the ledger yielded no vanished OID names")
 	}
 
-	// nl6#591 removed one more name after this change, so it is undone first.
-	restored := nl6590OIDNamesBeforeAudit(
-		nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), ciscoArcParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -564,12 +568,9 @@ func TestCiscoArcCensusMatchesTheCorpus(t *testing.T) {
 	for _, e := range shippedSNMPEntries(t) {
 		parent[[2]string{e.Profile, e.OID}] = e.Value
 	}
-	// nl6#591 deleted the two writeMem entries after this change, so it is the
-	// newest link of all and is undone first. Without it the census below counts a
-	// corpus that is neither today's nor 5bded6c's.
-	restoreNl6590AristaArc(t, parent)
-	restoreNl6591WriteMem(t, parent)
-	restoreNl6590CiscoArc(t, parent)
+	// Without the newer links the census below counts a corpus that is neither
+	// today's nor 5bded6c's.
+	restoreCorpusValuesTo(t, parent, ciscoArcParentRevision)
 
 	distinct, audited := map[string]struct{}{}, map[string]struct{}{}
 	entries, auditedEntries := 0, 0

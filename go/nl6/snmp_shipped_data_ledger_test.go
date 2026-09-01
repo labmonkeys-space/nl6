@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -127,6 +128,13 @@ var nl6541RescaledEntries = []struct{ profile, oid, oldValue, newValue string }{
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.1.0", "4294967296", "4194304"},
 }
 
+// dataEditsParentRevision is the revision this change forked from and the one its
+// golden digest was taken at. It is the far end of the whole reversal chain —
+// nothing in the package reconstructs anything older — and it is spelled once and
+// read by the tests here, by this change's entry in newestFirstReversals, and by
+// that file's corpusOldestRevision.
+const dataEditsParentRevision = "44ef67f"
+
 // shippedTagDigestBeforeDataEdits is the (profile, OID, emitted tag) digest of
 // the resource corpus at 44ef67f, the revision this branch forked from, computed with
 // TODAY's encoder so that the data edits are isolated from the table widening.
@@ -134,64 +142,25 @@ var nl6541RescaledEntries = []struct{ profile, oid, oldValue, newValue string }{
 // makes that isolation sound.
 const shippedTagDigestBeforeDataEdits = "b0d282b46d8e0b661a20467e0ffda089b650040caca24d48fe5349b308700eef"
 
-// TestShippedDataEditsReproduceTheParentCorpus is the before/after pin for the
-// data half of nl6#541. It reverses all three tables against today's corpus and
-// requires the parent digest, so the ledger cannot drift from the tree in either
-// direction: a missing row, a wrong old value, or an edit made to shipped data
-// without recording it here all fail.
-func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
-	type key struct{ profile, oid string }
+// restoreNl6541DataEdits reverses all three tables against a (profile, OID) ->
+// value map, so the map afterwards is the corpus as 44ef67f shipped it. It is the
+// oldest link of the chain in snmp_shipped_corpus_reversals_test.go — nothing
+// walks back past it.
+//
+// Disagreement is reported with t.Errorf and the row skipped, not t.Fatalf: this
+// is the end of the chain, so there is no older reversal to be misled by a
+// half-reconstructed corpus, and reporting every bad row at once is more useful
+// than the first.
+//
+// THIS LEDGER HAS ONLY A VALUE-VIEW REVERSAL, the mirror image of the AWS PEN
+// ledger's name-only one, and it is deliberate rather than a missed call site:
+// nl6#541 reverses shippedTagDigest, and its name view — the one OID name it
+// removed from the corpus — is nl6541OIDNamesBeforeDataEdits below.
+func restoreNl6541DataEdits(t *testing.T, cur map[[2]string]string) {
+	t.Helper()
 
-	cur := map[key]string{}
-	for _, e := range shippedSNMPEntries(t) {
-		k := key{e.Profile, e.OID}
-		if prev, dup := cur[k]; dup && prev != e.Value {
-			t.Fatalf("%s serves %s twice with different values (%q, %q); the reconstruction "+
-				"cannot be unambiguous", e.Profile, e.OID, prev, e.Value)
-		}
-		cur[k] = e.Value
-	}
-
-	// nl6#570 deleted every shipped ifTable .10 / .16 entry, 30 of which are
-	// nl6541TagChanges rows. So the reversal chains: put those rows back first,
-	// which reconstructs the tree nl6#541 left, and only then reverse nl6#541's
-	// own edits. Without this step the tag-change loop below reports 30 rows as
-	// "no longer shipped" and the digest cannot come back.
-	// nl6#574 / nl6#571 / nl6#569 then edited shipped data again, including the
-	// PAN OID .25461.2.1.2.4.1.0 that nl6541TagChanges also records, so its
-	// reversal has to run first of all.
-	nl6570 := map[[2]string]string{}
-	for k, v := range cur {
-		nl6570[[2]string{k.profile, k.oid}] = v
-	}
-	// nl6#591 deleted the two writeMem entries after nl6#590, so it is the
-	// newest link of all and is undone first; nl6#590's Cisco-arc audit follows.
-	// nl6#590's Arista arc is newer than both and is undone before either.
-	//
-	// THIS LEDGER HAS ONLY A VALUE-VIEW REVERSAL, the mirror image of the AWS PEN
-	// ledger's name-only one, and it is deliberate rather than a missed call site:
-	// nl6#541 reverses shippedTagDigest and nothing here reconstructs the OID-NAME
-	// set, so there is no place for nl6590aristaOIDNamesBeforeAudit to be called.
-	restoreNl6590AristaArc(t, nl6570)
-	restoreNl6591WriteMem(t, nl6570)
-	restoreNl6590CiscoArc(t, nl6570)
-	// nl6#576 then re-homed the NVIDIA GPU arc, which RENAMES keys rather than
-	// only changing values, so it has to be undone before anything keyed on an
-	// OID string runs — including the nvidia_* rescale rows below.
-	restoreNl6576NvidiaArc(t, nl6570)
-	restoreNl6574ResourceDefectEntries(t, nl6570)
-	restoreNl6570OctetEntries(t, nl6570)
-	// REBUILT, not merged. nl6#576's reversal is a RENAME, so it deletes keys as
-	// well as adding them; merging back over the old map would leave both
-	// spellings in the corpus and 222 phantom triples in the digest.
-	cur = make(map[key]string, len(nl6570))
-	for k, v := range nl6570 {
-		cur[key{k[0], k[1]}] = v
-	}
-
-	// Reverse the edits.
 	for _, c := range nl6541TagChanges {
-		k := key{c.profile, c.oid}
+		k := [2]string{c.profile, c.oid}
 		got, ok := cur[k]
 		if !ok {
 			t.Errorf("%s %s is in the tag-change ledger but no longer shipped", c.profile, c.oid)
@@ -218,7 +187,7 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 		cur[k] = c.oldValue
 	}
 	for _, r := range nl6541RescaledEntries {
-		k := key{r.profile, r.oid}
+		k := [2]string{r.profile, r.oid}
 		got, ok := cur[k]
 		if !ok {
 			t.Errorf("%s %s is in the rescale ledger but no longer shipped", r.profile, r.oid)
@@ -236,21 +205,75 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 		cur[k] = r.oldValue
 	}
 	for _, d := range nl6541RemovedEntries {
-		k := key{d.profile, d.oid}
+		k := [2]string{d.profile, d.oid}
 		if got, ok := cur[k]; ok {
 			t.Errorf("%s %s is in the removal ledger but still ships, valued %q", d.profile, d.oid, got)
 			continue
 		}
 		cur[k] = d.oldValue
 	}
+}
+
+// nl6541DeletedOIDNames is the one OID NAME this change removed from the corpus
+// entirely: the bare ipRouteDest column, deleted from fourteen profiles. Derived
+// from the removal ledger rather than tabled a second time, in the undotted
+// spelling collectShippedOIDs gathers.
+func nl6541DeletedOIDNames() []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, d := range nl6541RemovedEntries {
+		o := strings.TrimPrefix(d.oid, ".")
+		if _, dup := seen[o]; dup {
+			continue
+		}
+		seen[o] = struct{}{}
+		out = append(out, o)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nl6541OIDNamesBeforeDataEdits is the name-view counterpart of
+// restoreNl6541DataEdits, registered as this change's link in
+// newestFirstReversals. It is the oldest link on that view too: reaching
+// shippedOIDEncodingDigestAt09546c3 means walking all the way through it.
+func nl6541OIDNamesBeforeDataEdits(t *testing.T, names []string) []string {
+	t.Helper()
+	return appendVanishedOIDNames(t, "nl6#541 typed-class data edits", names, nl6541DeletedOIDNames())
+}
+
+// TestShippedDataEditsReproduceTheParentCorpus is the before/after pin for the
+// data half of nl6#541. It reverses all three tables against today's corpus and
+// requires the parent digest, so the ledger cannot drift from the tree in either
+// direction: a missing row, a wrong old value, or an edit made to shipped data
+// without recording it here all fail.
+func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
+	cur := map[[2]string]string{}
+	for _, e := range shippedSNMPEntries(t) {
+		k := [2]string{e.Profile, e.OID}
+		if prev, dup := cur[k]; dup && prev != e.Value {
+			t.Fatalf("%s serves %s twice with different values (%q, %q); the reconstruction "+
+				"cannot be unambiguous", e.Profile, e.OID, prev, e.Value)
+		}
+		cur[k] = e.Value
+	}
+
+	// Everything that edited shipped data after this change is undone first,
+	// newest first, and then this change's own edits — all of it through the one
+	// registered chain, this link included. Two of the later links matter here in
+	// particular: nl6#570 deleted every shipped ifTable .10 / .16 entry, 30 of
+	// which are nl6541TagChanges rows, and nl6#576's NVIDIA re-homing RENAMES keys
+	// rather than only changing values, so anything keyed on an OID string (the
+	// nvidia_* rescale rows) needs it undone first.
+	restoreCorpusValuesTo(t, cur, dataEditsParentRevision)
 
 	lines := make([]string, 0, len(cur))
 	for k, v := range cur {
-		enc := encodeTypedValue(k.oid, v)
+		enc := encodeTypedValue(k[1], v)
 		if len(enc) == 0 {
-			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k.profile, k.oid, v)
+			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}
-		lines = append(lines, fmt.Sprintf("%s\t%s\t%02X", k.profile, k.oid, enc[0]))
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%02X", k[0], k[1], enc[0]))
 	}
 	sort.Strings(lines)
 

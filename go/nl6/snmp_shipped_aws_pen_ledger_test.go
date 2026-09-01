@@ -113,6 +113,11 @@ const zernaArcPrefix = ".1.3.6.1.4.1.9999"
 // reports nothing when the table is the thing that moved.
 const documentationArcPrefix = ".1.3.6.1.4.1.32473"
 
+// awsPENParentRevision is the revision this change forked from and the one its
+// golden digest below was taken at. It is spelled once and read by both the tests
+// here and this change's entry in newestFirstReversals.
+const awsPENParentRevision = "87c642d"
+
 // shippedOIDEncodingDigestBeforeAWSPENRehome is the OID-name-to-encoding digest
 // of the corpus at 87c642d — the value shippedOIDEncodingDigest held before this
 // change, NOT re-derived from the re-homed tree.
@@ -149,17 +154,31 @@ const nl6588ValueDigestAtParent = "be5f333460dd04e5c7136da4d4d15fa80dc7cbc4c7e19
 //
 // Names here carry no leading dot: that is the spelling collectShippedOIDs
 // gathers, since it reads the raw JSON strings.
-func nl6588OIDNamesBeforeRehome(names []string) []string {
+//
+// It takes a *testing.T and is FATAL when a recorded row does not match, matching
+// the convention every value view already followed. It used to be a t-less pure
+// swap, so a row whose new spelling had left the corpus made it a silent no-op and
+// the only symptom was a digest mismatch in whichever ledger chained onto it.
+func nl6588OIDNamesBeforeRehome(t *testing.T, names []string) []string {
+	t.Helper()
+
 	back := map[string]string{}
 	for _, r := range nl6588RehomedSysObjectIDs {
 		back[r.newValue] = r.oldValue
 	}
 	out := make([]string, 0, len(names))
+	swapped := 0
 	for _, n := range names {
 		if old, ok := back[n]; ok {
 			n = old
+			swapped++
 		}
 		out = append(out, n)
+	}
+	if swapped != len(back) {
+		t.Fatalf("the nl6#588 name-view reversal swapped %d names but the ledger records %d "+
+			"re-homed sysObjectID values. A row whose new spelling is no longer in the shipped "+
+			"OID set reverses nothing, so the reconstruction is not 87c642d's set", swapped, len(back))
 	}
 	return out
 }
@@ -169,17 +188,15 @@ func nl6588OIDNamesBeforeRehome(names []string) []string {
 // come back byte for byte. It can only come back if nothing else about what a
 // shipped OID puts on the wire has changed.
 func TestAWSPENRePinIsOnlyTheRehoming(t *testing.T) {
-	// nl6#591 deleted writeMem and nl6#590's Cisco-arc audit deleted five OID
-	// names, both after this change, so they are the newer links and are undone
-	// first, newest first. nl6#590's Arista arc is newer still and goes innermost.
-	//
 	// THIS LEDGER HAS ONLY A NAME-VIEW REVERSAL, and that asymmetry is deliberate
 	// rather than a missed call site: nl6#588 changed one OID-typed VALUE and no
-	// OID key and no tag, so shippedTagDigest did not move and there is nothing
-	// here for restoreNl6590AristaArc to be called from. The claim is checked, not
-	// asserted — see the shippedTagDigest discussion in this file's header.
-	restored := nl6588OIDNamesBeforeRehome(nl6590OIDNamesBeforeAudit(
-		nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t)))))
+	// OID key and no tag, so shippedTagDigest did not move and there is no value
+	// view to register. It is recorded as such — newestFirstReversals carries a
+	// valuesAbsentReason for this entry and TestCorpusReversalAbsentViewsAreExplained
+	// requires one, so "absent because it does not apply" cannot be confused with
+	// "absent because someone forgot". The claim is checked, not asserted — see the
+	// shippedTagDigest discussion in this file's header.
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), awsPENParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -318,7 +335,7 @@ func TestAWSPENLedgerIsNotVacuous(t *testing.T) {
 	// the guard's arcPENOf enforces — a ledger that measures the transition it
 	// records must not measure it more loosely than the guard reads it.
 	moved := 0
-	for i, back := range nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)) {
+	for i, back := range nl6588OIDNamesBeforeRehome(t, collectShippedOIDs(t)) {
 		if underArc(normaliseOIDKey(back), zernaArcPrefix) {
 			moved++
 		}

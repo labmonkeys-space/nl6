@@ -988,6 +988,11 @@ var nl6569ValueCorrections = []struct {
 	{"palo_alto_pa3220.json", ".1.3.6.1.4.1.25461.2.1.2.4.2.0", "DDR4", "not-connected", ASN1_OCTET_STRING, ASN1_OCTET_STRING},
 }
 
+// resourceDefectParentRevision is the revision this change forked from and the
+// one its golden digests were taken at. It is spelled once and read by both the
+// tests here and this change's entry in newestFirstReversals.
+const resourceDefectParentRevision = "ec4700f"
+
 // shippedTagDigestBeforeResourceDataDefects is the (profile, OID, emitted tag)
 // digest of the resource corpus at ec4700f. It is the value shippedTagDigest
 // held before this change and was NOT re-derived from the new corpus.
@@ -1060,17 +1065,10 @@ func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#591 deleted the two writeMem entries and nl6#590 audited the Cisco arc,
-	// both after nl6#576, so their reversals run first of all, newest first.
-	restoreNl6590AristaArc(t, cur)
-	restoreNl6591WriteMem(t, cur)
-	restoreNl6590CiscoArc(t, cur)
-	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703 after
-	// this change, so today's corpus spells 225 entries differently from ec4700f.
-	// Undo that first, or the digest cannot come back — the reversal is a rename,
-	// so it moves keys rather than only values and nothing below would notice.
-	restoreNl6576NvidiaArc(t, cur)
-	restoreNl6574ResourceDefectEntries(t, cur)
+	// Every change that landed after this one is undone first, newest first. That
+	// includes nl6#576's NVIDIA rename, which moves KEYS rather than only values,
+	// so nothing further down the chain would notice a missed link.
+	restoreCorpusValuesTo(t, cur, resourceDefectParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus, over the distinct
 	// (profile, OID, emitted tag) triples.
@@ -1438,22 +1436,28 @@ func nl6574RestorableOIDNames(t *testing.T) []string {
 	return toRestore
 }
 
+// nl6574OIDNamesBeforeDefectSweep is the name-view counterpart of
+// restoreNl6574ResourceDefectEntries, registered as this change's link in
+// newestFirstReversals. It puts the vanished names back; the partition between
+// vanished and still-shipped is nl6574RestorableOIDNames' job and is asserted
+// there.
+func nl6574OIDNamesBeforeDefectSweep(t *testing.T, names []string) []string {
+	t.Helper()
+	return appendVanishedOIDNames(t, "nl6#574 / nl6#571 / nl6#569 resource-data defects",
+		names, nl6574RestorableOIDNames(t))
+}
+
 func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	deleted := nl6574DeletedOIDNames()
 	if len(deleted) != 259 {
 		t.Errorf("the ledger yields %d distinct deleted OID names, want 259", len(deleted))
 	}
 
-	// nl6#591 deleted writeMem, nl6#590 five Cisco names, nl6#588 re-homed
-	// aws_s3_storage's sysObjectID value and nl6#576 the NVIDIA GPU arc, all after
-	// this change, so the names the corpus ships today are not the names ec4700f
-	// shipped. Undo them newest-first.
-	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
+	// Every change that landed after this one is undone first, newest first, and
+	// then this change's own deleted names go back — all of it through the one
+	// registered chain, this link included.
 	toRestore := nl6574RestorableOIDNames(t)
-
-	restored := append(append([]string{}, oids...), toRestore...)
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), resourceDefectParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()

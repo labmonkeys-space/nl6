@@ -345,6 +345,11 @@ const nl6576StaticArcOIDsPerProfile = 74
 // Both live constants carry a comment naming this file and these two tests, so
 // the chain can be followed from either end.
 
+// nvidiaArcParentRevision is the revision this change forked from and the one its
+// two golden digests below were taken at. It is spelled once and read by both the
+// tests here and this change's entry in newestFirstReversals.
+const nvidiaArcParentRevision = "1bca8e8"
+
 // shippedTagDigestBeforeNvidiaArcRehome is the (profile, OID, emitted tag)
 // digest of the corpus at 1bca8e8 — the value shippedTagDigest held before this
 // change, NOT re-derived from the re-homed tree.
@@ -426,16 +431,31 @@ func restoreNl6576NvidiaArc(t *testing.T, cur map[[2]string]string) {
 //
 // Names here carry no leading dot: that is the spelling collectShippedOIDs
 // gathers, since it reads the raw JSON strings.
-func nl6576OIDNamesBeforeRehome(names []string) []string {
+//
+// It takes a *testing.T and is FATAL when the prefix matches nothing, matching
+// the convention every value view already followed. It used to be a t-less pure
+// rewrite, so a corpus that had stopped shipping the 5703 arc made it a silent
+// no-op and the only symptom was a digest mismatch in whichever ledger chained
+// onto it.
+func nl6576OIDNamesBeforeRehome(t *testing.T, names []string) []string {
+	t.Helper()
+
 	const oldUndotted = "1.3.6.1.4.1.53246."
 	const newUndotted = "1.3.6.1.4.1.5703."
 
 	out := make([]string, 0, len(names))
+	rewritten := 0
 	for _, n := range names {
 		if strings.HasPrefix(n, newUndotted) {
 			n = oldUndotted + n[len(newUndotted):]
+			rewritten++
 		}
 		out = append(out, n)
+	}
+	if rewritten == 0 {
+		t.Fatalf("the nl6#576 name-view reversal rewrote no name: nothing in the list it was given "+
+			"is under %s, so it reverses nothing and the reconstruction is not 1bca8e8's set",
+			newUndotted)
 	}
 	return out
 }
@@ -460,13 +480,7 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#591 deleted two write-only writeMem entries and nl6#590 audited the
-	// Cisco arc, both after this change; undo them newest-first or the digest
-	// cannot come back.
-	restoreNl6590AristaArc(t, cur)
-	restoreNl6591WriteMem(t, cur)
-	restoreNl6590CiscoArc(t, cur)
-	restoreNl6576NvidiaArc(t, cur)
+	restoreCorpusValuesTo(t, cur, nvidiaArcParentRevision)
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
@@ -506,13 +520,7 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 // name that changed to a DIFFERENT name encoding to the same tag is invisible to
 // it. Here every distinct shipped name is paired with its actual BER encoding.
 func TestNvidiaArcRePinIsOnlyTheRename(t *testing.T) {
-	// nl6#591's writeMem removal, nl6#590's Cisco-arc audit and nl6#588's
-	// aws_s3_storage sysObjectID re-homing all landed after this change, so the
-	// strings the corpus ships today are not the strings 1bca8e8 shipped. Undo them
-	// newest-first.
-	restored := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), nvidiaArcParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -786,7 +794,7 @@ func TestArcRewriteSeesEveryShippedSpelling(t *testing.T) {
 	// matches this spelling" a claim about the function rather than about a
 	// constant that happens to sit next to it.
 	moved := 0
-	for i, back := range nl6576OIDNamesBeforeRehome(collectShippedOIDs(t)) {
+	for i, back := range nl6576OIDNamesBeforeRehome(t, collectShippedOIDs(t)) {
 		if strings.HasPrefix(back, bareMailteck+".") {
 			moved++
 		}
