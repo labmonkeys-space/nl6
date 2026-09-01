@@ -263,7 +263,7 @@ What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
 - **Bare table columns.** No rule sees them. nl6#571 deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Three arcs have since been audited by reading a MIB, and every one was mostly or entirely wrong — Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6 — while the remaining profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Four arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6 and Ciena 0 of 1. The remaining profiles' vendor subtrees have had no equivalent review. The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
 - **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. nl6#591 deleted the one confirmed instance (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
@@ -609,6 +609,112 @@ This is the nl6#588 / nl6#541 provenance convention applied to a file that canno
 
 All five carry a MODULE-IDENTITY, so unlike nl6#591's SMIv1 OLD-CISCO-SYSTEM-MIB there is a revision string to quote for each.
 Arista's header asserts copyright and grants nothing, so `TestAristaArcMatchesTheMIB` is a record of that reading, never a live check.
+
+### The Ciena arc audited against its MIBs
+
+nl6#590's third arc, and **the first one that found nothing wrong: 1 enterprise-arc fact checked, 0 of 1 wrong.**
+
+That is the headline, and the contrast with the other three is the finding rather than a footnote to it.
+
+| arc | audited in | checked | wrong |
+|---|---|---|---|
+| Palo Alto | nl6#569 | 11 | 8 |
+| Cisco | nl6#592 | 13 | 11 |
+| Arista | nl6#599 | 6 | 6 |
+| **Ciena** | **nl6#601** | **1** | **0** |
+
+**There is no data change here, no ledger and no registry entry.**
+The deliverable is a pinned reading, `go/nl6/snmp_shipped_ciena_arc_reading_test.go`, and it is deliberately not named `*_ledger_test.go`: nl6#600's `TestCorpusReversalRegistryCoversEveryLedgerFile` requires every ledger file to contribute exactly one reversal to the chain, and a change that reverses nothing has nothing to register.
+No golden digest moves and no resource file changes.
+
+**nl6#601's own expectation was wrong, and correcting it is the point.**
+The issue said "Set expectations from the base rate, not from hope: Palo Alto 8 of 11 wrong, Cisco 11 of 13, Arista 6 of 6. There is no reason to think this arc is better", and told the implementer to plan for deletions.
+There *was* a reason, and it was visible before the audit started: this is the only one of the four arcs whose data somebody had already read a MIB for.
+`resources/ciena_waveserver5/traps.json` carries a `comment` citing the module, its `LAST-UPDATED`, the non-contiguous severity enum and a self-contradiction inside the MIB.
+Every one of those claims re-checks out.
+So the conclusion worth writing down is not "the corpus is fabricated" but something narrower and more useful: **the parts someone read a MIB for are right, and the parts nobody did are mostly wrong.**
+
+**The arc, resolved out of CIENA-WS-MIB rather than assumed.**
+The module is 72 lines and defines no `OBJECT-TYPE` at all.
+It is pure structure:
+
+| node | OID | what it is |
+|---|---|---|
+| `ciena` | `1.3.6.1.4.1.1271` | the `MODULE-IDENTITY`, `{ enterprises 1271 }` |
+| `waveserver` | `…1271.3` | "Root identifier for Ciena's Waveserver product." |
+| `cienaWsConfigV1` | `…1271.3.1` | configuration for the Waveserver 1.0 / 1.1 releases |
+| `cienaWsNotifications` | `…1271.3.2` | notifications |
+| `cienaWsStatistics` | `…1271.3.3` | statistics, `STATUS obsolete` |
+| `cienaWsConfig` | `…1271.3.4` | root object for the Waveserver API in 1.2 and beyond |
+| `cienaWsPlatformConfig` | `…1271.3.5` | root object for the Waveserver **platform** API in 1.2 and beyond |
+
+**Every child of `waveserver` is a functional area, and the module defines no model-specific product OID.**
+There is no `waveserver5` node and no product registry.
+Nothing anywhere in the module distinguishes a Waveserver 5 from a Waveserver Ai.
+So `waveserver` itself is the most specific identifier available, and `sysObjectID.0 = 1.3.6.1.4.1.1271.3` is right rather than lazy.
+
+**The near miss is the trap, and it is pinned by name.**
+`waveserver 5` is `cienaWsPlatformConfig`.
+It is not "Waveserver 5 the product".
+The profile slug is `ciena_waveserver5` and the arc's fifth child is `5`, and those two facts have nothing to do with each other.
+"Correcting" `sysObjectID` to `1.3.6.1.4.1.1271.3.5` to make it look more specific would point a collector's vendor detection at a *configuration subtree*.
+That is the same shape of plausible-looking invention nl6#599 found in Arista's `sysObjectID`, where `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4` was well formed, under the right PEN, under the right `sysObjectID` root, and not a product.
+`TestCienaArcMatchesTheMIB` rejects `1271.3.5` by name and says what it is.
+
+**One fact, because the dual-position scan says so.**
+`ciena_waveserver5` serves 86 SNMP entries, **zero** OID names under `1.3.6.1.4.1.1271` and **one** OID-typed value.
+Reading names only would have reported this arc as absent from the corpus entirely.
+That is the blind spot that hid the AWS defect in nl6#588 and the first cut of nl6#587's guard.
+It is also why `TestCienaArcIsExactlyOneFactInTheValuePosition` gates the value position through `snmpTypeTag` rather than by string shape.
+The empty *name* half is asserted as a walk from the PEN root with a positive control, for exactly the reason nl6#599's is: end of MIB is an empty successor, so "the successor is not under the arc" is also satisfied by a walk that sees nothing.
+
+**The trap catalog was audited too, and its reasoning is now pinned.**
+nl6#601 put this arc ahead of the other fifteen on consumer coupling: `1.3.6.1.4.1.1271` carries **165 references from the trap catalogs**, against Juniper's 31 and Cisco's 29, and every other unaudited arc has zero.
+Every claim in `traps.json`'s `comment` was re-verified against CIENA-WS-NOTIFICATION-MIB `201611140000Z`:
+
+- `wsLinkStateAlarmNotification` exists, at `{ cienaWsNotifications 12 }` = `1.3.6.1.4.1.1271.3.2.12`. (The module identity `cienaWsNotificationMIB` is `{ cienaWsNotifications 3 }`, a *sibling* of the notifications rather than their parent.)
+- The severity enum is non-contiguous: `cleared(1) critical(3) major(4) minor(5) warning(6) info(8)`. 2 and 7 are not members, and renumbering to a contiguous 1..6 would look like cleanup while changing what every shipped optical trap tells a collector.
+- **The MIB contradicts itself.** `wsLinkStateAlarmNotification`'s `OBJECTS` clause names `wsLinkStateAlarmNotificationEthEBer` and `…EthPcsLol`, neither of which is defined as an `OBJECT-TYPE`, while `…EthPcsHighBer` and `…EthPmaSool` *are* defined and appear in no `OBJECTS` clause. The catalog took the `OBJECT-TYPE` definitions as source of truth and recorded why.
+
+That choice was the only one available, which the catalog's comment implies and the reading test now states: a name with no definition has no sub-identifier, so following the clause would have meant inventing two numbers.
+The consequence is visible on the wire.
+The Ethernet defect block is emitted in numeric order `.11.1` … `.11.8`.
+Following the clause would have given 7, ?, 5, 6, 3, 2, ?, 4.
+
+Two more transcription facts are pinned because they are the kind a tidy-up erases:
+
+- **`.6` does not exist on this notification.** The definitions run `.1 .2 .3 .4 .5` and jump to `.7`. The `TableId` at `.6` belongs to `wsAlarmNotification`, the sibling notification at `{ cienaWsNotifications 11 }`; borrowing it would put one notification's object into another's varbind list.
+- **39 body varbinds**, one per object in the `OBJECTS` clause. That is 9 scalars + 4 Ptp + 8 Eth + 8 Otu + 10 Odu, derived from the reading's own tables rather than asserted, so editing a table moves the census.
+
+`TestOpticalTrapOverlayMatchesTheMIB` (shipped with the profile) already pins the four entries' severities and condition flags; the reading test adds the structure those values sit in and does not restate them.
+
+**nl6#593's class was checked explicitly and the answer is zero overlap.**
+With 165 trap references against one profile's polled data, this is where a trap declaring a type that disagrees with what a GET answers is most likely.
+`cisco_ios` demonstrably violated it, declaring `ciscoEnvMonSupplyStatusDescr` as `octet-string` in a trap while a GET answered INTEGER.
+Here the polled entries are entirely mib-2 and every trap varbind is under `wsLinkStateAlarmNotification`, so there is no shared OID and nothing to disagree about.
+`TestCienaTrapAndPolledDataAgreeOnEveryOID` asserts the disjointness as a **measurement** and says, in its failure message, that the remedy for a future overlap is to compare the types rather than relax the assertion.
+
+**What this audit did not close.**
+
+- Semantic faithfulness of the profile's 85 mib-2 rows. The arc audits are scoped to enterprise arcs by construction.
+- The optical values themselves. They come from `optical_cycler.go`, not from a resource file, and no Ciena MIB governs them. The served model is OpenConfig.
+- Whether the mirrored modules are what Ciena ships. See the provenance note below.
+
+**Provenance, since no MIB file is checked in.**
+Both modules were fetched anonymously on 2026-09-01 and are cited by `LAST-UPDATED` and by the SHA-256 of the file read, per the nl6#599 convention.
+
+| module | LAST-UPDATED | SHA-256 | source |
+|---|---|---|---|
+| CIENA-WS-MIB | `201804270000Z` | `c7fe97de741c4334f23c4cf29644f604dd4bbedbac0bd51686c9ff2fa396ae78` | `raw.githubusercontent.com/librenms/librenms/master/mibs/ciena/CIENA-WS-MIB` |
+| CIENA-WS-NOTIFICATION-MIB | `201611140000Z` | `821b50a6ebc7883e3ec3bbf9ababf9efb7e0970a0c774821c8acb38027a8af53` | `raw.githubusercontent.com/kcsinclair/mibs/master/CIENA-WS-NOTIFICATION-MIB.mib` |
+
+**Both copies are third-party mirrors and their provenance is unestablished.**
+Ciena serves its MIBs from the gated myCiena portal, which was not tested.
+Neither mirrored file carries a copyright header at all.
+`CIENA-WS-MIB` opens straight into `CIENA-WS-MIB DEFINITIONS ::= BEGIN`.
+That may be how Ciena ships them, or a header may have been stripped in transit.
+Nothing here can tell, so the reading is qualified by mirror as well as by revision.
+The trap catalog's own comment names the same kcsinclair mirror, so this is a *re-reading* of the source that catalog was transcribed from, not an independent second source.
 
 ### Access modes are not modelled
 
