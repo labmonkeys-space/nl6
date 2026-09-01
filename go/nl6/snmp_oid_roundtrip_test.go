@@ -741,28 +741,15 @@ func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
 func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	const deleted = "1.3.6.1.2.1.4.21.1.1"
 
-	// nl6#591 deleted writeMem, nl6#590 five Cisco enterprise names in its MIB
-	// audit, nl6#588 re-homed aws_s3_storage's sysObjectID value off
-	// 1.3.6.1.4.1.9999, and nl6#576 before it re-homed the NVIDIA GPU arc from
-	// 1.3.6.1.4.1.53246 to 5703, which renames 77 distinct shipped names. Undo all
-	// four, newest first, before walking back further.
-	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
-	for _, o := range oids {
-		if o == deleted {
-			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+
-				"09546c3 digest or explain the new corpus", deleted)
-		}
-	}
-	// nl6#570 deleted a second set of OIDs after nl6#541 deleted this one, and
-	// nl6#574 / nl6#571 / nl6#569 a third, so reaching 09546c3 means undoing all
-	// THREE. Each stage is pinned separately (TestOctetShadowRePinIsOnlyTheDeletedOIDs,
-	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs); this test walks the whole
-	// way back, which is what keeps the chain from being provable only in pieces.
-	restored := append(append([]string{}, oids...), nl6574RestorableOIDNames(t)...)
-	restored = append(restored, nl6570DeletedOctetOIDs()...)
-	restored = append(restored, deleted)
+	// This walks the WHOLE chain: every corpus-editing change since 09546c3 is
+	// undone, newest first, including nl6#541's own deletion of the OID above.
+	// Each stage is pinned separately by its own ledger
+	// (TestOctetShadowRePinIsOnlyTheDeletedOIDs,
+	// TestResourceDataDefectRePinIsOnlyTheDeletedOIDs, …); this test walks the
+	// whole way back, which is what keeps the chain from being provable only in
+	// pieces. The walk is fatal if any restored name is shipped again, which is
+	// the re-pin's premise.
+	restored := restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), dataEditsParentRevision)
 	sort.Strings(restored)
 
 	h := sha256.New()
