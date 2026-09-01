@@ -220,6 +220,14 @@ func TestShippedCorpusViewsAgree(t *testing.T) {
 // becomes strict, this fails and points at the profiles carrying such a key,
 // instead of every one of them failing to load with no explanation.
 func TestUnknownTopLevelKeysAreInert(t *testing.T) {
+	// THE REAL CORPUS IS COUNTED FIRST, BEFORE THE t.Chdir BELOW. It used to be
+	// counted after, so the walk ran against the temp directory holding only the
+	// synthetic fixture and the test logged "1 shipped parts carry a _comment
+	// key" no matter what the corpus held — while CLAUDE.md cited that number as
+	// the corpus census. A log line that reads the same on every tree is not
+	// evidence (nl6#588 review, P5).
+	shippedWithComment := countShippedPartsWithComment(t)
+
 	t.Chdir(t.TempDir())
 	if err := os.MkdirAll(filepath.Join("resources", "zzcomment"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -239,8 +247,26 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 		t.Errorf("loaded %d SNMP entries, want 1: the comment key must not affect the data", len(res.SNMP))
 	}
 
-	// And the shipped profile that uses it really does carry one, so this test
-	// is about live data rather than a hypothetical.
+	// And the shipped profiles that use it really do carry one, so this test is
+	// about live data rather than a hypothetical. The count came from the REAL
+	// corpus above; it is asserted rather than only logged, because CLAUDE.md
+	// quotes it.
+	const wantShippedComments = 7
+	if shippedWithComment != wantShippedComments {
+		t.Errorf("%d shipped parts carry a _comment key, want %d (the _snmp_gpu and _snmp_system "+
+			"parts of the three nvidia_* profiles from nl6#576, plus aws_s3_storage from nl6#588). "+
+			"CLAUDE.md quotes this number, so move them together",
+			shippedWithComment, wantShippedComments)
+	}
+	t.Logf("%d shipped parts carry a _comment key", shippedWithComment)
+}
+
+// countShippedPartsWithComment counts the real corpus's _comment keys. It is a
+// helper so the count is taken BEFORE its caller changes directory — the whole
+// point of nl6#588's P5 fix.
+func countShippedPartsWithComment(t *testing.T) int {
+	t.Helper()
+
 	found := 0
 	for _, part := range shippedResourceParts(t) {
 		raw, err := os.ReadFile(part) // #nosec G304 -- test-only, path from a repo walk
@@ -255,7 +281,7 @@ func TestUnknownTopLevelKeysAreInert(t *testing.T) {
 			found++
 		}
 	}
-	t.Logf("%d shipped parts carry a _comment key", found)
+	return found
 }
 
 // bareColumnEntriesShipped is the number of shipped entries whose OID is an

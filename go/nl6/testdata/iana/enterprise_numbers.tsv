@@ -1,4 +1,4 @@
-# IANA Private Enterprise Numbers — the two entries nl6#576 turns on.
+# IANA Private Enterprise Numbers — every PEN the shipped corpus depends on.
 #
 # THIS FIXTURE EXISTS BECAUSE THE PREMISE OF nl6#576 WAS THE ONE CLAIM IN IT THAT
 # NOTHING COULD CHECK. Every other assertion in that change is mechanical: the
@@ -9,6 +9,20 @@
 # another. nl6#541 set the precedent for this (testdata/mibs/*.tsv): extracted
 # registry or tool output, checked in, with the command that produced it.
 #
+# nl6#588 WIDENED IT FROM TWO ROWS TO EVERY SHIPPED VENDOR, because the guard it
+# adds — every profile may serve its OWN vendor's arc and no other — needs a
+# slug-to-PEN map, and that map must be CURATED, never derived from string
+# similarity between a slug and an organisation name. Six shipped pairs defeat
+# name matching outright and are correct anyway (see the role column and
+# ownVendorPENs' per-profile reasons): hpe_proliant_dl380 is Compaq's 232,
+# dell_emc_unity is EMC Corp's 1139, nokia_7750_sr12 is 6527 ("Nokia (formerly
+# 'Alcatel-Lucent')"), netapp_ontap is "Network Appliance Corporation"'s 789,
+# arista_7280r3 is 30065 ("formerly 'Arastra, Inc.'"), and ibm_power_s922 is the
+# bare numeric 2 — which is a PREFIX of 2011 (Huawei), 2620 (Check Point), 2636
+# (Juniper) and 25461 (Palo Alto), all four of which also ship. A guard matching
+# PEN strings by prefix rather than on a sub-identifier boundary reports those
+# four vendors as IBM. PEN 9 (ciscoSystems) is likewise a prefix of 9999.
+#
 # The test READS this file. It does NOT fetch from iana.org: a network-dependent
 # test fails closed in CI, or worse, silently skips and asserts nothing.
 #
@@ -17,26 +31,130 @@
 # Registry self-dated: (last updated 2026-08-28) — line 3 of the source file
 # SHA-256 of the fetched file: e2f3c717975007e6110350014a17e359a01540c131bbf9e60b39ab2b050182fe
 #
-# Regenerate (from any machine with network access):
+# The nl6#588 fetch reproduces the nl6#576 SHA-256 byte for byte and the registry
+# self-date is unchanged, so the rows below and the two rows nl6#576 added come
+# from the same registry snapshot.
+#
+# Regenerate, WHOLE FILE, from any machine with network access. Every row below —
+# its organisation, its contact domain and its source line number — comes out of
+# this and nothing is hand-typed:
+#
 #   curl -sS -o /tmp/iana-pen.txt \
 #     https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
-#   grep -n "^5703$"  -A 3 /tmp/iana-pen.txt
-#   grep -n "^53246$" -A 3 /tmp/iana-pen.txt
+#   shasum -a 256 /tmp/iana-pen.txt   # must match the SHA-256 above
+#   sed -n '3p' /tmp/iana-pen.txt     # the registry self-date
+#
+#   for pen in 0 2 9 119 171 232 674 789 1139 1271 1916 2011 2620 2636 5703 \
+#              6527 8714 8741 9999 12356 25461 30065 32473 40482 53246; do
+#     awk -v pen="$pen" '
+#       $0 == pen && $0 !~ /^[ \t]/ {
+#         printf "# Line %d of the source file:\n", NR
+#         getline org;  sub(/^[ \t]+/, "", org)
+#         getline name
+#         getline mail; sub(/^[ \t]+/, "", mail)
+#         sub(/^.*&/, "", mail)                 # registry writes "@" as "&"
+#         printf "%s\t%s\t%s\tROLE\n", pen, org, mail
+#         exit
+#       }' /tmp/iana-pen.txt
+#   done
+#
+# That emits every row in file order with ROLE as a placeholder; the role column
+# is nl6's own annotation (see below) and is the only field a human supplies. Two
+# rows need a manual note afterwards: PENs 171 and 232 carry the registry's
+# literal "---none---" instead of an email, so the sub() leaves it unchanged, and
+# that is correct.
 #
 # The registry format is four lines per entry: the number, the organisation, the
 # contact name, then the contact email with "@" written as "&". Reproduced
 # verbatim below as TSV, minus the contact NAME, which is a private individual and
-# has no bearing on any assertion here. The email DOMAIN is kept because it is the
-# corroborating evidence: an entry claiming to be NVIDIA with a contact at
-# nvidia.com is a much stronger reading than the organisation string alone.
+# has no bearing on any assertion here.
 #
 # Columns: pen<TAB>organisation<TAB>contact_email_domain<TAB>role
 #
-# "role" is nl6's own annotation, not IANA's:
-#   nvidia   — the arc nl6 serves GPU telemetry under, as of nl6#576
-#   mailteck — the arc it used to serve it under, and must never serve again
+# The email DOMAIN is kept because for the two rows nl6#576 turns on it is the
+# corroborating evidence: an entry claiming to be NVIDIA with a contact at
+# nvidia.com is a much stronger reading than the organisation string alone. IT IS
+# WEAK OR ABSENT FOR SEVERAL OTHER ROWS and nothing asserts on those: two rows
+# carry the registry's literal "---none---", NEC's is a 1990s bang path whose
+# final domain is uunet.uu.net, and PALO ALTO NETWORKS registered a gmail.com
+# address. Only TestArcPrefixesMatchTheIANARegistry checks this column, and only
+# for the nvidia and mailteck rows.
 #
+# "role" is nl6's own annotation, not IANA's. It names the registry row, not a
+# profile: PEN 9 covers five Cisco profiles and 5703 covers three NVIDIA ones.
+# The profile-to-PEN direction lives in ownVendorPENs (snmp_own_vendor_pen_test.go)
+# and is looked up here BY PEN. Five roles are not shipped vendors at all:
+#   mailteck  — the arc nl6 used to serve GPU telemetry under, and must never
+#               serve again (nl6#576)
+#   zerna     — the arc aws_s3_storage used to answer sysObjectID with, and must
+#               never serve again (nl6#588)
+#   inoc      — iNOC, Inc., PEN 8714. metrics_oids.go served four SonicWALL
+#               metric OIDs under it until nl6#588: a DIGIT TRANSPOSITION of
+#               SonicWALL's 8741, live on the wire and enumerated into every walk
+#               of that device type. The row is here so "8714 is not SonicWALL"
+#               is checked-in data rather than a claim in a commit message —
+#               8714 and 8741 are two lines apart in this file for exactly the
+#               reason they were confusable in the first place.
+#   iana-doc  — RFC 5612's documentation PEN, registered to IANA itself, which
+#               aws_s3_storage and the compiled-in fallback profile now answer
+#               with (nl6#588). It is allowed for THOSE TWO ONLY; it is
+#               deliberately not globally permitted, or it would be a way for any
+#               future profile to dodge the guard.
+#   reserved  — PEN 0, "Reserved", held by IANA. 208 shipped
+#               entPhysicalVendorType responses answer 1.3.6.1.4.1.0.0, which
+#               resolves to no vendor at all. Not a misattribution — nobody owns
+#               it — but not a vendor type either, and counted rather than
+#               ignored (assertEntPhysicalVendorTypeIsNotCrossVendor).
+#
+# Line numbers are into the fetched source file.
+#
+# Line 16 of the source file:
+0	Reserved	iana.org	reserved
+# Line 24 of the source file:
+2	IBM (https://w3.ibm.com/standards )	us.ibm.com	ibm
+# Line 52 of the source file:
+9	ciscoSystems	cisco.com	cisco
+# Line 492 of the source file:
+119	NEC Corporation	uunet.uu.net	nec
+# Line 700 of the source file:
+171	D-Link Systems, Inc.	---none---	dlink
+# Line 944 of the source file:
+232	Compaq	---none---	compaq
+# Line 2712 of the source file:
+674	Dell Inc.	dell.com	dell
+# Line 3172 of the source file:
+789	Network Appliance Corporation	netapp.com	netapp
+# Line 4572 of the source file:
+1139	EMC Corp	emc.com	emc
+# Line 5100 of the source file:
+1271	Ciena Corporation	ciena.com	ciena
+# Line 7680 of the source file:
+1916	Extreme Networks	extremenetworks.com	extreme
+# Line 8060 of the source file:
+2011	HUAWEI Technology Co.,Ltd	writeme.com	huawei
+# Line 10496 of the source file:
+2620	Check Point Software Technologies Ltd	CheckPoint.com	checkpoint
+# Line 10560 of the source file:
+2636	Juniper Networks, Inc.	juniper.net	juniper
 # Line 22828 of the source file:
 5703	NVIDIA Corporation	nvidia.com	nvidia
+# Line 26124 of the source file:
+6527	Nokia (formerly 'Alcatel-Lucent')	nokia.com	nokia
+# Line 34872 of the source file:
+8714	iNOC, Inc.	internetnoc.com	inoc
+# Line 34980 of the source file:
+8741	SonicWALL, Inc.	sonicwall.com	sonicwall
+# Line 40012 of the source file:
+9999	Zerna, Koepper & Partner	zkp.de	zerna
+# Line 49440 of the source file:
+12356	Fortinet, Inc.	fortinet.com	fortinet
+# Line 101860 of the source file:
+25461	PALO ALTO NETWORKS	gmail.com	paloalto
+# Line 120276 of the source file:
+30065	Arista Networks, Inc. (formerly 'Arastra, Inc.')	aristanetworks.com	arista
+# Line 129908 of the source file:
+32473	Example Enterprise Number for Documentation Use	iana.org	iana-doc
+# Line 161944 of the source file:
+40482	Pure Storage	purestorage.com	purestorage
 # Line 213000 of the source file:
 53246	Mailteck, S.A.	mailteck.com	mailteck

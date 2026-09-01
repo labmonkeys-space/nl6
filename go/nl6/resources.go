@@ -693,7 +693,24 @@ func (sm *SimulatorManager) createDefaultResources(filename string) error {
 	defaultResources := &DeviceResources{
 		SNMP: []SNMPResource{
 			{OID: "1.3.6.1.2.1.1.1.0", Response: "Cisco IOS Software, Router Version 15.1"},
-			{OID: "1.3.6.1.2.1.1.2.0", Response: "1.3.6.1.4.1.9.1.1"},
+			// sysObjectID.0. 1.3.6.1.4.1.32473 is RFC 5612's Example Enterprise
+			// Number for Documentation Use, held by IANA.
+			//
+			// It was 1.3.6.1.4.1.9.1.1 — ciscoSystems — until nl6#588, and this is
+			// a PRODUCTION path: createDefaultResources is what a device gets
+			// whenever its named resource file is absent, so a device with no
+			// profile at all identified itself as Cisco hardware to every
+			// collector doing vendor detection. Same class as the aws_s3_storage
+			// re-homing in the same change, and the same reasoning: a generic
+			// fallback models no manufacturer, so the honest answer is the
+			// documentation PEN rather than a real company's number.
+			//
+			// sysDescr deliberately still says "Cisco IOS Software": it is a
+			// DisplayString a human reads, not an identity a collector keys rules
+			// on, and changing it is a behaviour change this issue did not ask
+			// for. TestDefaultResourcesServeNoForeignVendorArc pins the
+			// sysObjectID; nothing pins sysDescr.
+			{OID: "1.3.6.1.2.1.1.2.0", Response: "1.3.6.1.4.1.32473.1.1"},
 			{OID: "1.3.6.1.2.1.1.3.0", Response: "123456789"},
 			{OID: "1.3.6.1.2.1.1.4.0", Response: "Network Administrator"},
 			{OID: "1.3.6.1.2.1.1.5.0", Response: "Router-Simulator"},

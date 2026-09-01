@@ -266,8 +266,21 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED FOUR TIMES. Every re-pin is a CORPUS change, not an encoding
+// RE-PINNED FIVE TIMES. Every re-pin is a CORPUS change, not an encoding
 // change, and each is re-derived by a test rather than asserted here.
+//
+// The fifth re-pin is nl6#588, and it is the smallest: ONE OID-typed VALUE.
+// aws_s3_storage answered sysObjectID.0 with 1.3.6.1.4.1.9999, which IANA
+// allocates to Zerna, Koepper & Partner, a German engineering firm unrelated to
+// Amazon or to storage; it now answers 1.3.6.1.4.1.32473.1.1, RFC 5612's
+// documentation PEN. No OID KEY changed and no tag changed, so this re-pin moves
+// THIS digest and NOT shippedTagDigest — measured, not assumed.
+// TestAWSPENRePinIsOnlyTheRehoming un-rehomes it and requires the constant below
+// it; the four older reversals each now begin with the same un-rehoming, so the
+// chain is unbroken at every link. As with nl6#576, that link's "before" value
+// is NOT declared here: it lives with its ledger, as
+// shippedOIDEncodingDigestBeforeAWSPENRehome in snmp_shipped_aws_pen_ledger_test.go,
+// and equals the value of shippedOIDEncodingDigest at the revision before it.
 //
 // The fourth re-pin is nl6#576, and it is the only one that is a RENAME rather
 // than a deletion: the NVIDIA GPU telemetry arc moved from 1.3.6.1.4.1.53246
@@ -312,7 +325,7 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
-const shippedOIDEncodingDigest = "40e4b72d4b5563f70dd7eb9d668ba4b2e49cdc762ddd4cb6ea1b19f5111537a4"
+const shippedOIDEncodingDigest = "dd5e1327b5f8dab9d30ca089bfe7309b903f53c4b02789e47ee85f6b56bedcbd"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -678,9 +691,11 @@ func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
 func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	const deleted = "1.3.6.1.2.1.4.21.1.1"
 
-	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703, which
-	// renames 77 distinct shipped names. Un-rename before walking back further.
-	oids := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
+	// nl6#588 re-homed aws_s3_storage's sysObjectID value off 1.3.6.1.4.1.9999,
+	// and nl6#576 before it re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to
+	// 5703, which renames 77 distinct shipped names. Undo both, newest first,
+	// before walking back further.
+	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
 	for _, o := range oids {
 		if o == deleted {
 			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+

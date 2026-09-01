@@ -500,7 +500,10 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 // name that changed to a DIFFERENT name encoding to the same tag is invisible to
 // it. Here every distinct shipped name is paired with its actual BER encoding.
 func TestNvidiaArcRePinIsOnlyTheRename(t *testing.T) {
-	restored := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
+	// nl6#588 re-homed aws_s3_storage's sysObjectID VALUE after this change, so
+	// the strings the corpus ships today are not the strings 1bca8e8 shipped.
+	// Un-rehome that first; it is the newer link.
+	restored := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -908,16 +911,28 @@ type arcHit struct {
 // while an OID key does once normalised.
 func entriesTouchingArc(t *testing.T, arc string) []arcHit {
 	t.Helper()
+	return scanArcPositions(t, func(dotted string) bool { return underArc(dotted, arc) })
+}
+
+// scanArcPositions is the scan itself, with the arc test as a parameter. It was
+// split out of entriesTouchingArc by nl6#588, whose own-vendor guard asks a
+// different question of the SAME two positions — "which PEN is this under", not
+// "is this under one named arc" — and a second walk would be a second place for
+// the value half to go missing. There is ONE scan of the two positions in this
+// package and both guards go through it, so narrowing it to names-only fails
+// both controls at once.
+func scanArcPositions(t *testing.T, keep func(dottedOID string) bool) []arcHit {
+	t.Helper()
 
 	var out []arcHit
 	for _, e := range shippedSNMPEntries(t) {
-		if underArc(e.OID, arc) {
+		if keep(e.OID) {
 			out = append(out, arcHit{e.Profile, e.OID, e.Part, "name", e.OID})
 		}
 		if snmpTypeTag(normaliseOIDKey(e.OID)) != ASN1_OBJECT_ID {
 			continue
 		}
-		if underArc(normaliseOIDKey(e.Value), arc) {
+		if keep(normaliseOIDKey(e.Value)) {
 			out = append(out, arcHit{e.Profile, e.OID, e.Part, "value", e.Value})
 		}
 	}
@@ -954,6 +969,15 @@ type ianaPENEntry struct {
 // readIANAPENFixture parses the checked-in registry extract. It reads a FILE and
 // never the network, for the reason testdata/mibs/*.tsv gives: a test that
 // depends on iana.org either fails closed in CI or skips and asserts nothing.
+//
+// IT REJECTS A DUPLICATE pen OR role HERE, in the reader, rather than leaving
+// each caller to check. Every caller indexes these rows into a map — byRole in
+// the two premise tests, byPEN in the own-vendor guard — and a Go map assignment
+// silently keeps the LAST duplicate, so a second row for the same role would make
+// a premise test assert against the wrong registry entry and pass. That is the
+// one failure mode a premise pin cannot survive: it exists precisely to be the
+// thing nothing else can falsify. The fixture grew from 2 rows to 23 in nl6#588,
+// which is where this stopped being hypothetical.
 func readIANAPENFixture(t *testing.T) []ianaPENEntry {
 	t.Helper()
 
@@ -961,7 +985,13 @@ func readIANAPENFixture(t *testing.T) []ianaPENEntry {
 	if err != nil {
 		t.Fatalf("read %s: %v", ianaPENFixture, err)
 	}
+	type seenAt struct {
+		line int
+		pen  string
+	}
 	var out []ianaPENEntry
+	penLine := map[string]int{}
+	roleLine := map[string]seenAt{}
 	for i, line := range strings.Split(string(raw), "\n") {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -970,7 +1000,21 @@ func readIANAPENFixture(t *testing.T) []ianaPENEntry {
 		if len(f) != 4 {
 			t.Fatalf("%s:%d: %d tab-separated fields, want 4: %q", ianaPENFixture, i+1, len(f), line)
 		}
-		out = append(out, ianaPENEntry{f[0], f[1], f[2], f[3]})
+		e := ianaPENEntry{f[0], f[1], f[2], f[3]}
+		if prev, dup := penLine[e.pen]; dup {
+			t.Fatalf("%s: PEN %s appears twice, at lines %d and %d. Every reader indexes these rows "+
+				"by pen or by role into a map, and a map keeps the LAST duplicate silently — so a "+
+				"second row would make a premise assertion compare against the wrong registry entry "+
+				"and pass", ianaPENFixture, e.pen, prev, i+1)
+		}
+		if prev, dup := roleLine[e.role]; dup {
+			t.Fatalf("%s: role %q appears twice, at lines %d and %d (PENs %s and %s). A role names "+
+				"ONE registry row; two rows sharing one make the premise pins assert against "+
+				"whichever came last", ianaPENFixture, e.role, prev.line, i+1, prev.pen, e.pen)
+		}
+		penLine[e.pen] = i + 1
+		roleLine[e.role] = seenAt{i + 1, e.pen}
+		out = append(out, e)
 	}
 	if len(out) == 0 {
 		t.Fatalf("%s holds no entries", ianaPENFixture)
