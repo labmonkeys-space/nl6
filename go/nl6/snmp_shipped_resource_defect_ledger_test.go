@@ -1062,6 +1062,7 @@ func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 
 	// nl6#591 deleted the two writeMem entries and nl6#590 audited the Cisco arc,
 	// both after nl6#576, so their reversals run first of all, newest first.
+	restoreNl6590AristaArc(t, cur)
 	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703 after
@@ -1449,7 +1450,7 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	// shipped. Undo them newest-first.
 	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
 		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
+			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
 	toRestore := nl6574RestorableOIDNames(t)
 
 	restored := append(append([]string{}, oids...), toRestore...)

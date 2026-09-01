@@ -3,7 +3,7 @@
   "ssh": [
     {
       "command": "show version",
-      "response": "Arista DCS-7280R3-32P4-M\nHardware version: 11.02\nSerial number: AR-7280R3-001\nHardware MAC address: 001c.7305.1234\nSystem MAC address: 001c.7305.1234\n\nSoftware image version: 4.29.2F\nArchitecture: i686\nInternal build version: 4.29.2F-29226602.4292F\nInternal build ID: 4292F-29226602\n\nUptime: 76 days, 19 hours, 41 minutes\nTotal memory: 8097512 kB\nFree memory: 3421676 kB"
+      "response": "Arista DCS-7280CR3-32P4-M\nHardware version: 11.02\nSerial number: AR-7280CR3-001\nHardware MAC address: 001c.7305.1234\nSystem MAC address: 001c.7305.1234\n\nSoftware image version: 4.29.2F\nArchitecture: i686\nInternal build version: 4.29.2F-29226602.4292F\nInternal build ID: 4292F-29226602\n\nUptime: 76 days, 19 hours, 41 minutes\nTotal memory: 8097512 kB\nFree memory: 3421676 kB"
     },
     {
       "command": "show interfaces status",
@@ -15,7 +15,7 @@
     },
     {
       "command": "show running-config",
-      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280R3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Management1\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
+      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280CR3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Management1\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
     },
     {
       "command": "show environment all",

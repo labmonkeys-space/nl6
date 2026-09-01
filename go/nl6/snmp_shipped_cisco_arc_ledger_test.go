@@ -341,6 +341,7 @@ func TestCiscoArcAuditReproducesTheParentCorpus(t *testing.T) {
 
 	// nl6#591 deleted the two writeMem entries after this change, so it is the
 	// newest link of all and is undone first.
+	restoreNl6590AristaArc(t, cur)
 	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 
@@ -389,7 +390,7 @@ func TestCiscoArcRePinIsOnlyTheAudit(t *testing.T) {
 
 	// nl6#591 removed one more name after this change, so it is undone first.
 	restored := nl6590OIDNamesBeforeAudit(
-		nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))
+		nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -566,6 +567,7 @@ func TestCiscoArcCensusMatchesTheCorpus(t *testing.T) {
 	// nl6#591 deleted the two writeMem entries after this change, so it is the
 	// newest link of all and is undone first. Without it the census below counts a
 	// corpus that is neither today's nor 5bded6c's.
+	restoreNl6590AristaArc(t, parent)
 	restoreNl6591WriteMem(t, parent)
 	restoreNl6590CiscoArc(t, parent)
 

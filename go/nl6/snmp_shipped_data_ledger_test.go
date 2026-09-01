@@ -166,6 +166,13 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 	}
 	// nl6#591 deleted the two writeMem entries after nl6#590, so it is the
 	// newest link of all and is undone first; nl6#590's Cisco-arc audit follows.
+	// nl6#590's Arista arc is newer than both and is undone before either.
+	//
+	// THIS LEDGER HAS ONLY A VALUE-VIEW REVERSAL, the mirror image of the AWS PEN
+	// ledger's name-only one, and it is deliberate rather than a missed call site:
+	// nl6#541 reverses shippedTagDigest and nothing here reconstructs the OID-NAME
+	// set, so there is no place for nl6590aristaOIDNamesBeforeAudit to be called.
+	restoreNl6590AristaArc(t, nl6570)
 	restoreNl6591WriteMem(t, nl6570)
 	restoreNl6590CiscoArc(t, nl6570)
 	// nl6#576 then re-homed the NVIDIA GPU arc, which RENAMES keys rather than

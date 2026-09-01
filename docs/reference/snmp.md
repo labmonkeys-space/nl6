@@ -263,7 +263,7 @@ What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
 - **Bare table columns.** No rule sees them. nl6#571 deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched, and the other 28 profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Three arcs have since been audited by reading a MIB, and every one was mostly or entirely wrong — Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6 — while the remaining profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
 - **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. nl6#591 deleted the one confirmed instance (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
@@ -397,7 +397,8 @@ What the guard does **not** cover, and what remains outstanding:
 
 - **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
 - **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
-- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Two profiles' arcs have now been audited (nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco, with 8 Cisco OIDs still unaudited at that point); the rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
+- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Three arcs have now been audited and every one of them was mostly or entirely wrong: nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco (with 8 Cisco OIDs still unaudited at that point, since reduced to 7 by nl6#591) and **6 of 6 wrong on Arista** — see [The Cisco arc audited against its MIBs](#the-cisco-arc-audited-against-its-mibs) and [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs). The rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
+- **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it; rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep — see [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
 - The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for nl6#588 and are clean; scanning them was considered and deliberately not added.
 - **Agreement between a trap catalog and the resource data for the same OID.** The two surfaces are validated by entirely separate code paths and nothing compares them, so a trap may declare an OID one type while a GET of that same OID answers another. nl6#590 found the worked example by hand: `cisco_ios` fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. No load rule, no PEN guard and no reading test can see this class. Filed separately.
@@ -489,6 +490,125 @@ The modules read for this audit were CISCO-ENVMON-MIB `201803210000Z`, CISCO-MEM
 Like the Palo Alto test it is a record of a reading: nothing in CI compares nl6 against a Cisco MIB, and the claim it supports is "this profile matches those revisions of those modules", never "this profile is correct".
 
 One of those eight has since been resolved: nl6#591 read `…9.2.1.54.0` and deleted it, leaving seven unaudited on the OLD-CISCO arcs.
+
+### The Arista arc audited against its MIBs
+
+nl6#590's second arc, and **the worst result of the three audited so far: 6 enterprise-arc facts checked, 6 of 6 wrong.**
+
+The count is 6 because that is what there was to check: the 5 OIDs `arista_7280r3` served under `1.3.6.1.4.1.30065` plus the `sysObjectID.0` value, which points into that arc without being an OID *name* in it.
+All five OIDs are deleted and the `sysObjectID` value is corrected, so **6 of 6 were wrong**.
+This document quotes every audit as a *miss* rate for exactly this reason: mixing "3 correct" with "8 wrong" about the same eleven OIDs is the miscount the Cisco section already had to correct once.
+Against nl6#569's 8 of 11 wrong on Palo Alto and nl6#590's 11 of 13 on Cisco, the trend is the finding: **all three arcs were audited only because someone read a MIB, and all three were mostly or entirely wrong.**
+`TestAristaArcLedgerIsNotVacuous` derives both the numerator and the denominator from the ledger, so this arithmetic is checkable rather than asserted.
+
+The arc, resolved out of ARISTA-SMI-MIB rather than assumed:
+
+| node | OID | what it is |
+|---|---|---|
+| `arista` | `1.3.6.1.4.1.30065` | assigned by IANA |
+| `aristaProducts` | `…30065.1` | "the root object identifier from which **sysObjectID values** are assigned" — and nothing else |
+| `aristaMibs` | `…30065.3` | the root for management MIBs |
+| `aristaSwIpForwardingMIB` | `…30065.3.1` | `{ aristaMibs 1 }` |
+| `aristaSwFwdIp` | `…30065.3.1.1` | its only child is `aristaSwFwdIpStatsTable` at `.1` |
+
+`ARISTA-ENTITY-SENSOR-MIB` sits at `{ aristaMibs 12 }` and `ARISTA-GENERAL-MIB` at `{ aristaMibs 24 }`, so nothing else in the modules read claims `30065.3.1`.
+
+| OID | was | now | object, and why |
+|---|---|---|---|
+| `…30065.1.3.1.1.0` | `4.29.2F` | *deleted* | nothing. `aristaProducts` holds sysObjectID values only, and no ARISTA-PRODUCTS-MIB assignment has `3` as its first sub-identifier |
+| `…30065.3.1.1.1.0` | `AR-7280R3-001` | *deleted* | `aristaSwFwdIpStatsTable` with a bogus `.0`. A table object is `MAX-ACCESS not-accessible`, and a hostname is not an IP-forwarding statistic |
+| `…30065.3.1.1.2.0` | `31` | *deleted* | nothing — `aristaSwFwdIp.2` is not defined |
+| `…30065.3.1.1.3.0` | `48` | *deleted* | nothing — `aristaSwFwdIp.3` is not defined |
+| `…30065.3.1.1.13.0` | `38` | *deleted* | nothing — `aristaSwFwdIp.13` is not defined |
+| `1.3.6.1.2.1.1.2.0` | `…30065.1.3011.7280.3282.32.4` | `…30065.1.3011.7280.2727.3.32.2129.4.972` | `sysObjectID`. The old value is shaped like a product OID and is not one |
+
+**Deletion, not correction, for all five.**
+Four of them name objects that do not exist and the fifth names one that cannot be read, so there is no correct value to supply.
+Inventing one for an object the MIB does not define is nl6#569's defect with the guessing turned up.
+That leaves `arista_7280r3` serving **no object at all** under its own vendor's arc, and `TestAristaArcMatchesTheMIB` asserts it as a **walk** from the PEN root rather than as five named absences, so a sixth invented Arista object fails instead of arriving unguarded.
+
+That walk needs a positive control, and finding out why is worth recording.
+OIDs sort as strings, so `1.3.6.1.4.1.30065` sorts *above* every mib-2 OID the profile serves; once the five Arista rows are gone the arc root has **no successor at all**, and `findNextOIDWithServed` answers with an empty string.
+A check written as "the successor is not under the arc" is therefore satisfied by the empty answer *and* by a walk that aborted, which is a guard that cannot fail.
+Requiring a non-empty successor instead — the obvious fix — fails on a healthy tree, because the empty answer is the correct verdict here.
+So the vacuity is closed the way this repo closes it everywhere else: a positive control plants an object at `…30065.3.1.1.99.0` and requires the walk to reach it, which is what makes the empty answer mean "the arc is empty" rather than "this assertion sees nothing".
+
+**What was actually observed about `aristaProducts`, stated as observed.**
+Every one of ARISTA-PRODUCTS-MIB's 373 assignments names a subtree rooted at `aristaProducts` whose *first* sub-identifier is one of sixteen values — 138, 447, 1082, 1362, 1470, 1788, 2546, 2682, 2759, 3011, 3413, 3806, 7289, 7358, 7368, 7388 — and `3` is not among them.
+The assignments themselves run several sub-identifiers deep; the correction below is eight deep.
+The observation is about the *first* sub-identifier, which is what settles whether `30065.1.3` is a node at all.
+
+**The `sysObjectID` value is the one a collector actually reads.**
+`1.3.6.1.4.1.30065.1.3011.7280.3282.32.4` is well formed, under the right PEN and under the right sysObjectID root — and no assignment in ARISTA-PRODUCTS-MIB `202603030000Z` uses `3011 7280 3282`.
+The module mentions `3011 7280` on 109 lines and the third sub-identifier observed there is one of 312, 877, 1347, 1359, 1964, 2655, 2727, 2899, 2972, 3101, 3232, 3714, 3735 or 3977, never 3282.
+`3282` *is* a real Arista sub-identifier — it appears under 7124, 7148, 7050 and, at a different depth, under `7280 2727 3 1810 32 2129 4` — which is exactly why the invented OID looks right.
+It now answers `aristaDCS7280CR332P4M`, assigned as `{ aristaProducts 3011 7280 2727 3 32 2129 4 972 }`.
+
+**The product's name is `DCS-7280CR3-32P4-M`, and the first cut of this audit got that wrong.**
+`aristaDCS7280CR332P4M` is the ASN.1 *identifier*, which strips punctuation from every product name in that module.
+The name is in the comment immediately above the assignment — `-- DCS-7280CR3-32P4-M 32x100GbE (QSFP100) & 4x400GbE (OSFP) Ethernet Switch with SSD` — and again in the module's own revision note ("Revised to include DCS-7280CR3-32P4-M and DCS-7280CR3-32D4-M").
+Reading the identifier as the name is exactly the wrong-MIB-reading class this audit exists to eliminate, committed inside the change that exists to eliminate it.
+`TestAristaArcMatchesTheMIB` now requires the MIB's spelling and rejects the hyphenless one by name.
+
+**The model-identity rule is profile-wide, not a `sysDescr` rule**, and the first cut got *that* wrong too.
+`grep -c 7280R3 ARISTA-PRODUCTS-MIB` returns 0, so the profile was **already** split between two products that do not exist: `DCS-7280R3-32P4-M` in `sysDescr` and the SSH outputs, `DCS-7280R3-48C6` in the entity table.
+(The real 48C6 products are `DCS-7280SR-48C6`, `DCS-7280TR-48C6`, `DCS-7280SRA-48C6` and `DCS-7280TRA-48C6` — SR / TR series, not R3.)
+Correcting only `sysDescr` replaced a fake-versus-fake split with a real-versus-fake contradiction across surfaces, which is worse than either.
+
+| where | object / command | was | now |
+|---|---|---|---|
+| `arista_7280r3_snmp_1.json` | `sysDescr.0` | `…DCS-7280R3-32P4-M` | `…DCS-7280CR3-32P4-M` |
+| `arista_7280r3_snmp_6.json` | `entPhysicalDescr.1` | `Arista Networks DCS-7280R3-48C6` | `Arista Networks DCS-7280CR3-32P4-M` |
+| `arista_7280r3_snmp_6.json` | `entPhysicalModelName.1` | `DCS-7280R3-48C6` | `DCS-7280CR3-32P4-M` |
+| `arista_7280r3_snmp_6.json` | `entPhysicalModelName.2` | `7280R3-48C6` | `7280CR3-32P4-M` |
+| `arista_7280r3_snmp_11.json` | `entPhysicalName.1` | `ARISTA-7280R3-CHASSIS-01` | `ARISTA-7280CR3-CHASSIS-01` |
+| `arista_7280r3_ssh_1.json` | `show version` | `Arista DCS-7280R3-32P4-M`, serial `AR-7280R3-001` | `Arista DCS-7280CR3-32P4-M`, serial `AR-7280CR3-001` |
+| `arista_7280r3_ssh_1.json` | `show running-config` | `(DCS-7280R3-32P4-M, …)` | `(DCS-7280CR3-32P4-M, …)` |
+
+The SSH serial is the same string this audit deleted from `…30065.3.1.1.1.0` as a bogus answer, so renaming it keeps the profile from carrying, on a second surface, the exact value the audit removed from the first.
+`TestAristaProfileNamesNoFakeModel` scans every part of the profile — SNMP entries through the shared corpus walker, SSH responses read directly, since no walker gathers those — and requires no response to contain `7280R3`.
+It carries a positive control and fails if it finds no SSH responses at all, because SSH output is covered by no golden digest and an absence test over an empty set proves nothing.
+
+**One weak call, recorded rather than smoothed over.**
+`entPhysicalModelName.2` is the model name of "Module 1", a modelled line card.
+The other six rows name the *chassis*, which the `sysObjectID` settles; nothing says a module has that model name, and `DCS-7280CR3-32P4-M` is a fixed-configuration switch with no pluggable line cards at all.
+So the honest residual is that the profile models a module the product does not have — a fidelity question about the **entity table**, not about the Arista arc, left open rather than closed by deleting rows this audit read no MIB about.
+Same shape as the fan-versus-supply asymmetry in the Cisco section: the stronger call is settled by evidence, the weaker rests on consistency, and both are written down.
+
+**The EOS version `4.29.2F` is deliberately untouched**, and the reading test asserts it so that changing it becomes a decision rather than a side effect of editing the model name in the same string.
+It is plausible and it is not checkable against any Arista MIB — no module publishes a software-version registry — so editing it would be exactly the unbacked change this audit exists to undo.
+
+**The `arista_7280r3` profile directory is not renamed.**
+The slug is an nl6 identifier, not a claim about hardware, and renaming it would churn every corpus test for no fidelity gain.
+
+**Fleet-visible surface change.**
+Stated with counts, per the nl6#570 / nl6#574 convention, because this changes what a collector sees on every `arista_7280r3` device in a running fleet:
+
+- `sysObjectID.0` and `sysDescr.0` both change, so **vendor detection and asset inventory resolve the node differently**. `sysObjectID` was unresolvable and now resolves to a real Arista product; that is the point of the change, not a side effect.
+- a walk of the profile returns **five fewer OIDs** (25152 → 25147 shipped SNMP entries corpus-wide), and the five that left were the profile's only objects under its own vendor's arc.
+- four ENTITY-MIB responses and two SSH command outputs change their model string. No OID is added or removed by those, and no tag moves.
+- no other profile is touched: every edit is in `resources/arista_7280r3/`.
+
+**One defect of the same class is recorded and not fixed.**
+`entPhysicalVendorType.1` answers `1.3.6.1.4.1.30065.1.3082.7280.3714.3`, and `3082` is not among the sixteen first sub-identifiers either — the same unresolvable-product-OID defect, in the value slot of a different object.
+It is a **subclass this audit newly surfaced**: an OID-typed value under a *correct* PEN that resolves to no assignment, which nl6#587/#589's guards pass by construction and no load rule can see.
+It is left alone because it is an ENTITY-MIB question rather than an Arista-arc one: 224 shipped values sit in that column across the corpus, 208 of them the reserved-PEN placeholder, and correcting one profile's while the class goes unexamined would be arbitrary.
+`TestAristaArcMatchesTheMIB` asserts its current value as a **presence**, so a later fix has to edit that assertion deliberately.
+
+**Provenance, since no MIB file is checked in.**
+The five modules were fetched anonymously from `https://www.arista.com/assets/data/docs/MIBS/<NAME>.txt` on 2026-09-01 and are cited by LAST-UPDATED **and by the SHA-256 of the file read** — a revision string alone does not let a second reader confirm they read the same bytes, and ARISTA-PRODUCTS-MIB in particular gains products continuously.
+This is the nl6#588 / nl6#541 provenance convention applied to a file that cannot be checked in: licensing blocks the bytes, not their digest.
+
+| module | LAST-UPDATED | SHA-256 |
+|---|---|---|
+| ARISTA-SMI-MIB | `201408150000Z` | `3db704a6a977bbad3f5e54b23b5ab6b1a03ebcc7d5049d66c59648a0d71770c0` |
+| ARISTA-PRODUCTS-MIB | `202603030000Z` | `f1dff8458987cc9d83327232f850c8e6a77a46c927944dcc06d1f5ce719be409` |
+| ARISTA-SW-IP-FORWARDING-MIB | `201408150000Z` | `ba196b5d2e424cf030686b8d76529dd258fa9f69e5468571ec64a7aac80da607` |
+| ARISTA-GENERAL-MIB | `201711060000Z` | `49d1f7803683053d01118d28fc54f59c7b7fa21f66dc45b4da943fb984ba55c3` |
+| ARISTA-ENTITY-SENSOR-MIB | `202302100000Z` | `c879299d934dea06b4b31f72d815a1b4c2ba5e42fd9c35cabeef1117d0ed1236` |
+
+All five carry a MODULE-IDENTITY, so unlike nl6#591's SMIv1 OLD-CISCO-SYSTEM-MIB there is a revision string to quote for each.
+Arista's header asserts copyright and grants nothing, so `TestAristaArcMatchesTheMIB` is a record of that reading, never a live check.
 
 ### Access modes are not modelled
 

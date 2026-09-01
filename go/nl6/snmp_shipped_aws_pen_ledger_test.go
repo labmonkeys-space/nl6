@@ -171,9 +171,15 @@ func nl6588OIDNamesBeforeRehome(names []string) []string {
 func TestAWSPENRePinIsOnlyTheRehoming(t *testing.T) {
 	// nl6#591 deleted writeMem and nl6#590's Cisco-arc audit deleted five OID
 	// names, both after this change, so they are the newer links and are undone
-	// first, newest first.
+	// first, newest first. nl6#590's Arista arc is newer still and goes innermost.
+	//
+	// THIS LEDGER HAS ONLY A NAME-VIEW REVERSAL, and that asymmetry is deliberate
+	// rather than a missed call site: nl6#588 changed one OID-typed VALUE and no
+	// OID key and no tag, so shippedTagDigest did not move and there is nothing
+	// here for restoreNl6590AristaArc to be called from. The claim is checked, not
+	// asserted — see the shippedTagDigest discussion in this file's header.
 	restored := nl6588OIDNamesBeforeRehome(nl6590OIDNamesBeforeAudit(
-		nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t))))
+		nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t)))))
 	sort.Strings(restored)
 
 	h := sha256.New()

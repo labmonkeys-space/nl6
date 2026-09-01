@@ -463,6 +463,7 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 	// nl6#591 deleted two write-only writeMem entries and nl6#590 audited the
 	// Cisco arc, both after this change; undo them newest-first or the digest
 	// cannot come back.
+	restoreNl6590AristaArc(t, cur)
 	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 	restoreNl6576NvidiaArc(t, cur)
@@ -511,7 +512,7 @@ func TestNvidiaArcRePinIsOnlyTheRename(t *testing.T) {
 	// newest-first.
 	restored := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
 		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
+			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
 	sort.Strings(restored)
 
 	h := sha256.New()
