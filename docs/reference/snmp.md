@@ -264,6 +264,7 @@ What remains uncovered, stated in one place:
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
 - **Bare table columns.** No rule sees them. nl6#571 deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
 - **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched, and the other 28 profiles' vendor subtrees have had no equivalent review. See [Semantic faithfulness](#semantic-faithfulness).
+- **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. nl6#591 deleted the one confirmed instance (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
 - **`sysName`.** Derived from the device, not operator data.
@@ -396,7 +397,7 @@ What the guard does **not** cover, and what remains outstanding:
 
 - **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
 - **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
-- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean. Two profiles' arcs have now been audited (nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco, with 8 Cisco OIDs still unaudited); the rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention.
+- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Two profiles' arcs have now been audited (nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco, with 8 Cisco OIDs still unaudited at that point); the rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
 - The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for nl6#588 and are clean; scanning them was considered and deliberately not added.
 - **Agreement between a trap catalog and the resource data for the same OID.** The two surfaces are validated by entirely separate code paths and nothing compares them, so a trap may declare an OID one type while a GET of that same OID answers another. nl6#590 found the worked example by hand: `cisco_ios` fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. No load rule, no PEN guard and no reading test can see this class. Filed separately.
@@ -474,7 +475,7 @@ An earlier version of this section attributed all eight to `OLD-CISCO-CHASSIS-MI
 |---|---|
 | `…9.3.6.3.0`, `…9.3.6.1.1.4.1.2.1`, `…9.5.1.2.2.1.0`, `…9.5.1.3.1.1.5.1` | genuinely unresolvable here — OLD-CISCO-CHASSIS-MIB was not obtainable |
 | `…9.2.1.56.0`, `…9.2.1.58.0` | resolvable and not audited: `busyPer` and `avgBusy5` in OLD-CISCO-CPU-MIB, which *was* obtained. Both ship plausible percentages; neither was checked further |
-| `…9.2.1.54.0` | resolvable, and it looks like a live defect: `writeMem` in OLD-CISCO-SYSTEM-MIB, `ACCESS write-only`, an action object that saves the running configuration. nl6 answers it with a large number. Filed as nl6#591 |
+| `…9.2.1.54.0` | resolvable, and it was a live defect: `writeMem` in OLD-CISCO-SYSTEM-MIB, `ACCESS write-only`, an action object that saves the running configuration. nl6 answered it with a large number. Filed as nl6#591 and **closed there** — see [Access modes are not modelled](#access-modes-are-not-modelled) |
 | `…9.2.1.8.0` | not defined in the OLD-CISCO-SYSTEM-MIB copy obtained (a v2 conversion that drops the deprecated memory objects) |
 
 **No MIB file or extracted fixture is checked in, and that is a decision.**
@@ -486,6 +487,52 @@ The asymmetry is the point: if the licensing question later resolves permissivel
 The modules read for this audit were CISCO-ENVMON-MIB `201803210000Z`, CISCO-MEMORY-POOL-MIB `201309180000Z`, CISCO-IMAGE-MIB `9508150000Z` and CISCO-SYSTEM-EXT-MIB `201606140000Z`, with `ciscoMgmt = 1.3.6.1.4.1.9.9` resolved out of CISCO-SMI.
 `TestCiscoEnvMonAndMemoryPoolMatchTheMIB` pins the surviving values and the deletions as absences.
 Like the Palo Alto test it is a record of a reading: nothing in CI compares nl6 against a Cisco MIB, and the claim it supports is "this profile matches those revisions of those modules", never "this profile is correct".
+
+One of those eight has since been resolved: nl6#591 read `…9.2.1.54.0` and deleted it, leaving seven unaudited on the OLD-CISCO arcs.
+
+### Access modes are not modelled
+
+**No nl6 rule models MAX-ACCESS.**
+The three load rules check encodability, the PEN guards check vendor identity, and nl6#590's reading tests check names, types and values.
+None of them models access, and none of them can: an access mode is a property of the MIB, and nl6 has no MIB.
+
+nl6#591 is the first defect of the class, and it is a different class from everything above rather than one more wrong value.
+`1.3.6.1.4.1.9.2.1.54.0` is `writeMem` in OLD-CISCO-SYSTEM-MIB:
+
+```text
+writeMem OBJECT-TYPE
+    SYNTAX  INTEGER
+    ACCESS  write-only
+    STATUS  mandatory
+    DESCRIPTION
+            "Write configuration into non-volatile memory
+            / erase config memory if 0."
+    ::= { lsystem 54 }
+```
+
+The object exists, the arc is right, the instance sub-identifier is right, and the value even encoded as the declared INTEGER — which is exactly why every guard passed it.
+What was wrong is that the object is not readable at all.
+It is also a *command* rather than a datum: writing to it saves the running configuration, and writing `0` erases config memory.
+A collector that discovers it as a readable integer has learned something false about the device in a way that is worse than a wrong number.
+
+| profile | OID | was | now |
+|---|---|---|---|
+| `cisco_catalyst_9500` | `1.3.6.1.4.1.9.2.1.54.0` | `393084300` | *deleted* |
+| `cisco_crs_x` | `1.3.6.1.4.1.9.2.1.54.0` | `1451548800` | *deleted* |
+
+**Deleted, not corrected**: a write-only object has no correct readable value, so correction is not available — the same reasoning that deleted 3 of 11 OIDs in nl6#569 and the fan rows in nl6#590.
+`TestCiscoWriteOnlyObjectsAreAbsent` pins both absences, and extends the assertion across every Cisco profile to the other write-only objects in the same group (`netConfigSet`, `hostConfigSet`, `writeNet`), none of which ships today.
+It also pins the neighbours this change deliberately left alone as *presences*, so the scope boundary is a measurement rather than a sentence.
+
+The reading is cited by **name and form, not by revision**, and the difference is not pedantry: OLD-CISCO-SYSTEM-MIB is SMIv1 — it imports `OBJECT-TYPE` from RFC-1212 and spells access as `ACCESS`, not `MAX-ACCESS` — so it carries no `MODULE-IDENTITY` and therefore no `LAST-UPDATED` to quote.
+The only date in the copy read is its header, `Copyright (c) 1994-1995 by cisco Systems, Inc.`
+The arc was resolved rather than assumed: CISCO-SMI `201601150000Z` puts `cisco` at `{ enterprises 9 }` and `local` at `{ cisco 2 }`, OLD-CISCO-SYSTEM-MIB puts `lsystem` at `{ local 1 }` and `writeMem` at `{ lsystem 54 }`.
+As with every audit on this page, no MIB file or extracted fixture is checked in, and the test is a pinned reading rather than a live check.
+
+**`not-accessible` is the larger half of the class, and it is unswept.**
+Every SMIv2 table INDEX column is `not-accessible`, so a profile shipping an index column as a readable row makes the same mistake in the commonest possible place.
+Nothing sweeps it, and nothing can sweep it generically: deciding it needs the table's definition, which needs the arc's MIB, which has been read for Cisco (partially) and Palo Alto only.
+The access-mode class therefore advances **with** nl6#590's per-arc audit rather than being closed by nl6#591 — an arc becomes sweepable for access modes at the same moment it becomes sweepable for wrong INDEX arity, and for the same reason.
 
 ## Response size, `max-repetitions` and truncation
 

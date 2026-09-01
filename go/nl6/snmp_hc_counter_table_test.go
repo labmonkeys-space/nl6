@@ -67,7 +67,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // emitted tag of no OID any shipped profile serves. It is a measurement, not an
 // argument, and it was NOT re-derived from the widened code.
 //
-// RE-PINNED FOUR TIMES. Every re-pin is a CORPUS change, and each is re-derived
+// RE-PINNED FIVE TIMES. Every re-pin is a CORPUS change, and each is re-derived
 // by a test rather than asserted here.
 //
 // The first was nl6#570, which deleted the 1322 shipped ifTable .10 / .16
@@ -107,6 +107,18 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // the pre-change value of this constant (shippedTagDigestBeforeCiscoArcAudit) all
 // live in snmp_shipped_cisco_arc_ledger_test.go rather than beside this line.
 //
+// The fifth is nl6#591, and it is the first ACCESS-MODE defect rather than a
+// value, type, name-shape or vendor-arc one: two entries answering
+// 1.3.6.1.4.1.9.2.1.54.0, which is writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS
+// write-only. Both encoded correctly as the declared INTEGER — that is what makes
+// the class new and what makes every load rule blind to it — and both were
+// deleted, because a write-only object has no correct readable value.
+// TestWriteMemRemovalReproducesTheParentCorpus reverses the two recorded rows and
+// requires the value this constant held at f47c85d. That ledger, its table and
+// the pre-change value of this constant (shippedTagDigestBeforeWriteMemRemoval)
+// all live in snmp_shipped_cisco_writeonly_ledger_test.go rather than beside this
+// line.
+//
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
 // is the review evidence for doing so. Re-pinning it to silence a failure
@@ -115,7 +127,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "0ef1159118874de4fae3f89766d28034996775d7f10c91c1d1bc20ddaabd9e52"
+const shippedTagDigest = "bc89ec8bd0e7f12bacf4f9d6653b75159b333146b05a4dfeadc5acce04923b8b"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

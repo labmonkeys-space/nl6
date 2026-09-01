@@ -1060,8 +1060,9 @@ func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#590 audited the Cisco arc after nl6#576, so its reversal runs first of
-	// all: it is the newest link in the chain.
+	// nl6#591 deleted the two writeMem entries and nl6#590 audited the Cisco arc,
+	// both after nl6#576, so their reversals run first of all, newest first.
+	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703 after
 	// this change, so today's corpus spells 225 entries differently from ec4700f.
@@ -1442,12 +1443,13 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Errorf("the ledger yields %d distinct deleted OID names, want 259", len(deleted))
 	}
 
-	// nl6#590 deleted five Cisco names, nl6#588 re-homed aws_s3_storage's
-	// sysObjectID value and nl6#576 the NVIDIA GPU arc, all after this change, so
-	// the names the corpus ships today are not the names ec4700f shipped. Undo them
-	// newest-first.
+	// nl6#591 deleted writeMem, nl6#590 five Cisco names, nl6#588 re-homed
+	// aws_s3_storage's sysObjectID value and nl6#576 the NVIDIA GPU arc, all after
+	// this change, so the names the corpus ships today are not the names ec4700f
+	// shipped. Undo them newest-first.
 	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(collectShippedOIDs(t))))
+		nl6590OIDNamesBeforeAudit(
+			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
 	toRestore := nl6574RestorableOIDNames(t)
 
 	restored := append(append([]string{}, oids...), toRestore...)

@@ -164,7 +164,9 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 	for k, v := range cur {
 		nl6570[[2]string{k.profile, k.oid}] = v
 	}
-	// nl6#590's Cisco-arc audit is the newest link and is undone first of all.
+	// nl6#591 deleted the two writeMem entries after nl6#590, so it is the
+	// newest link of all and is undone first; nl6#590's Cisco-arc audit follows.
+	restoreNl6591WriteMem(t, nl6570)
 	restoreNl6590CiscoArc(t, nl6570)
 	// nl6#576 then re-homed the NVIDIA GPU arc, which RENAMES keys rather than
 	// only changing values, so it has to be undone before anything keyed on an
