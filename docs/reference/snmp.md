@@ -263,7 +263,7 @@ What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
 - **Bare table columns.** No rule sees them. nl6#571 deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Four arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6 and Ciena 0 of 1. The remaining profiles' vendor subtrees have had no equivalent review. The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Five arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1 and Juniper 13 of 15. The remaining profiles' vendor subtrees have had no equivalent review. The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
 - **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. nl6#591 deleted the one confirmed instance (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
@@ -311,7 +311,7 @@ Modelling the table properly (index, descriptor, size, used, allocation units, p
 
 - **A bare column that nothing in the corpus extends.** Without a MIB it is indistinguishable from a scalar.
 - **An over-specified instance whose legal prefix is absent.** Same reason, mirrored: `…1.2.2.1` alone looks like an ordinary leaf.
-- **Any wrong INDEX arity**, which is the general form of both. A tranche of under-specified `jnxOperating` instances is known to ship and is filed separately.
+- **Any wrong INDEX arity**, which is the general form of both. The under-specified `jnxOperating` tranche this bullet used to file as open was closed by nl6#602, which read the four-column INDEX clause out of JUNIPER-MIB and corrected or deleted all six rows: see [The Juniper arc audited against its MIBs](#the-juniper-arc-audited-against-its-mibs). The class is still open everywhere else, and deciding any instance needs the arc's MIB.
 
 So "the census reads zero" means *no entry is an interior node of the shipped set*. It does not mean every shipped name is a legal instance, and this page should not be read as claiming that.
 
@@ -716,6 +716,202 @@ That may be how Ciena ships them, or a header may have been stripped in transit.
 Nothing here can tell, so the reading is qualified by mirror as well as by revision.
 The trap catalog's own comment names the same kcsinclair mirror, so this is a *re-reading* of the source that catalog was transcribed from, not an independent second source.
 
+### The Juniper arc audited against its MIBs
+
+nl6#590's fourth arc, PEN `1.3.6.1.4.1.2636`, across `juniper_mx240` and `juniper_mx960`.
+
+**The result, quoted in both units, because a per-OID rate and a per-entry rate answer different questions.**
+The corpus served **13 distinct OID names** under 2636 plus **2 distinct OID-typed values** pointing into it, so 15 distinct facts.
+By entry the same surface is **20 name-position entries plus 2 value-position ones**, so 22.
+
+| arc | audited in | distinct facts checked | wrong |
+|---|---|---|---|
+| Palo Alto | nl6#569 | 11 | 8 |
+| Cisco | nl6#592 | 13 | 11 |
+| Arista | nl6#599 | 6 | 6 |
+| Ciena | nl6#601 | 1 | 0 |
+| **Juniper** | **nl6#602** | **15** | **13** |
+
+By entry: **19 of 22 wrong**.
+`TestJuniperArcIsMeasuredInBothPositions` computes both denominators from the corpus by reversing the ledger, so the rate is a measurement rather than a claim about whichever OIDs were looked at.
+The two survivors are `jnxBoxSerialNo` and `juniper_mx240`'s `sysObjectID` value.
+One of the 13 misses is a **weak call** and is named below, so the strong-call rate is 12 of 15.
+
+**The value-position denominator is 2, not 3, and the missing one is a known coverage gap.**
+`juniper_mx240` answers `entPhysicalVendorType.1` with a Juniper product OID too.
+The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` has exactly one OBJECT IDENTIFIER row (`sysObjectID`), so that value goes out as an OCTET STRING and sits outside every OID-position measurement in the package.
+nl6#588 recorded the same gap and closed it separately.
+The value is pinned anyway, because it was already right.
+
+#### The finding that matters most to a collector
+
+`juniper_mx960` answered `sysObjectID.0` with `1.3.6.1.4.1.2636.1.1.1.2.25`.
+That is `jnxProductNameMX480`.
+The profile is an MX960, its `sysDescr` says "mx960 internet router", and its own vendor-detection surface identified it as a different chassis in the same family.
+
+**This is a subtler shape than nl6#599's Arista `sysObjectID`, and it is worse.**
+The Arista value was well formed, under the right PEN, under the right registry, and resolved to nothing, so vendor detection failed loudly.
+This one resolves, to a real Juniper product nl6 does not model, so vendor detection succeeds and is wrong.
+Nothing downstream can tell.
+It now answers `1.3.6.1.4.1.2636.1.1.1.2.21`, `jnxProductNameMX960`.
+
+`juniper_mx240` answers `.29`, `jnxProductNameMX240`, and that was already correct.
+
+**nl6#602 expected this to be unauditable and it was not.**
+The issue told the implementer to record both `sysObjectID` values as UNAUDITED if JUNIPER-CHASSIS-DEFINES-MIB could not be obtained, since it 404s from the LibreNMS mirror.
+A copy was obtained from `netdisco/netdisco-mibs`, and reading it is what found this.
+An UNAUDITED verdict recorded without trying the second mirror would have shipped the defect.
+
+#### Wrong platform inside the right vendor
+
+**Four entries on `juniper_mx240` and one on `juniper_mx960` served `jnxExMibRoot`, the EX-series switch MIB root, from MX-series routers.**
+
+JUNIPER-SMI assigns `jnxExMibRoot ::= { jnxMibs 40 }`, between `jnxJsMibRoot` (39) and `jnxWxMibRoot` (41), so `2636.3.40` is the EX branch by construction.
+JUNIPER-EX-SMI puts `jnxExVirtualChassis` at `{ jnxExSwitching 4 }` and JUNIPER-VIRTUALCHASSIS-MIB puts `jnxVirtualChassisMemberTable` under it.
+
+**This is a subclass no guard sees, and it is the reason a per-arc audit is not the same as a PEN check.**
+nl6#589's own-vendor rule passes these by construction: 2636 really is Juniper's.
+What is wrong is the platform, one level below the vendor.
+
+| OID | was | object |
+|---|---|---|
+| `…2636.3.40.1.4.1.1.1.1.0` | `AMCC PowerPC 8544E` | `jnxVirtualChassisMemberId`, `INTEGER (0..31)`, the table's INDEX and therefore `not-accessible` |
+| `…2636.3.40.1.4.1.1.1.2.0` | `6` | `jnxVirtualChassisMemberSerialnumber` |
+| `…2636.3.40.1.4.1.1.1.3.0` | `3200` | `jnxVirtualChassisMemberRole`, `INTEGER { master(1), backup(2), linecard(3) }` |
+| `…2636.3.40.1.4.1.1.1.5` | `21.4R3-S2.3` / `21.2R3-S4.9` | `jnxVirtualChassisMemberSWVersion`, served as a **bare column** with no instance sub-identifier |
+
+The four read as CPU model, core count, clock MHz and software version, which is what the author meant them to be.
+No obtainable Juniper module defines a CPU-model object for an MX, so there is nowhere to move them to and **deletion is the only honest answer**.
+The `SWVersion` row is the one whose value suits its column, which is exactly why it survived: it looks right.
+nl6#571's bare-column census could not see it, because its heuristic is "some other shipped OID extends it" and nothing extended it.
+
+#### A table served with a scalar instance, again
+
+`2636.3.1.8.0` on **both** profiles is `jnxContentsTable` with a `.0` appended.
+Two independent faults, either one fatal: a table object is `MAX-ACCESS not-accessible` so no GET of it can succeed at any name, and `.0` is not a legal instance of a table in the first place.
+
+This is the `aristaSwFwdIpStatsTable.0` defect of nl6#599 repeated verbatim on another vendor.
+That is the argument for auditing every arc rather than generalising from one.
+
+#### The `jnxOperating` INDEX arity, closed
+
+`jnxOperatingEntry`'s INDEX clause is `{ jnxOperatingContentsIndex, jnxOperatingL1Index, jnxOperatingL2Index, jnxOperatingL3Index }`: **four** sub-identifiers.
+(nl6#602's own issue text named the first column `jnxContainersIndex`. The arity is four either way, but a reading is worth what its accuracy is worth.)
+
+**Both shipped spellings were wrong, not one of them.**
+The issue observed that most rows used `.5.0.0` while two used `.1.1.0` and `.1.2.0`, and asked which was right.
+Neither: every one is three sub-identifiers where the clause requires four.
+
+**What settled the row is nl6's own code, not a guess.**
+The corpus already held three spellings of the same table in three surfaces, and only the resource files were wrong:
+
+| surface | instance | legal |
+|---|---|---|
+| resource files | `5.0.0`, `1.1.0`, `1.2.0` | no, three sub-identifiers |
+| `metrics_oids.go` `vendorOIDs` | `9.1.0.0` | yes, and served as **live cycling values** |
+| `juniper_mx240/traps.json` | `9.1.1.0`, `4.1.1.0`, `7.1.1.0`, `2.1.1.0` | yes |
+
+**Two columns are deleted rather than renamed, and the reason is nl6#570's.**
+`findResponse` consults the metrics cycler *before* the static `oidIndex`, so a static `jnxOperatingCPU` row at `9.1.0.0` would never be answered.
+It would be dead data that looks authoritative.
+`jnxOperatingCPU` and `jnxOperatingBuffer` are cycler-owned on both profiles, so those rows go.
+`jnxOperatingDescr`, `jnxOperating1MinLoadAvg` and `jnxOperating5MinLoadAvg` are not, so those are renamed onto the same row and keep answering.
+
+| profile | was | now | object |
+|---|---|---|---|
+| both | `…13.1.5.5.0.0` = `67` / `34` | `…13.1.5.9.1.0.0` = `Routing Engine 0` | `jnxOperatingDescr` |
+| both | `…13.1.8.5.0.0` = `67` / `34` | *deleted* | `jnxOperatingCPU`, already served live at `9.1.0.0` |
+| both | `…13.1.11.5.0.0` = `78` / `56` | *deleted* | `jnxOperatingBuffer`, already served live at `9.1.0.0` |
+| mx240 | `…13.1.20.5.0.0` = `45` | `…13.1.20.9.1.0.0` = `45` | `jnxOperating1MinLoadAvg` |
+| mx240 | `…13.1.21.1.1.0` = `2500` | *deleted* | `jnxOperating5MinLoadAvg`; the MIB says the object is shown as a percentage, which 2500 is not |
+| mx240 | `…13.1.21.1.2.0` = `48` | `…13.1.21.9.1.0.0` = `48` | `jnxOperating5MinLoadAvg` |
+
+**The residual, stated rather than glossed.**
+Contents index 9 is nl6's own convention and no obtainable module says a Routing Engine lives there.
+What the MIB settles is the **arity**.
+The row is inherited from code that already shipped, which is the least inventive option available, and it is not a MIB fact.
+The same applies to the new `jnxOperatingDescr` value: the MIB says only "The name or detailed description of this subject", and the profile's own trap catalog already calls the `9.x` row a Routing Engine.
+`jnxOperatingContentsIndex` points into `jnxContentsTable`, whose contents are a property of a device rather than of a module, and neither profile ships a single `jnxContentsTable` or `jnxContainersTable` row to resolve it against.
+
+`TestJuniperChassisTableInstancesHaveTheIndexArity` is the guard this leaves behind.
+It scans **all three surfaces**, which is the point: a scan of resource files alone would have reported the defect without the evidence that settled it, and the two surfaces that were already right are also the two no golden digest covers.
+
+#### A number on a DisplayString, and the weak call
+
+`2636.3.1.13.1.5.5.0.0` is `jnxOperatingDescr`, `DisplayString (SIZE (0..255))`, and it answered `67` on `juniper_mx240` and `34` on `juniper_mx960`.
+`encodeTypedValue` emits a bare numeric string as tag `0x02` INTEGER, so a collector typing the object per the MIB got an INTEGER where a DisplayString belongs.
+That is the nine-row defect nl6#592 corrected on Cisco, and it is also semantically empty: a descriptor that says `67` describes nothing.
+The correction is asserted **through the encoder**, because seven of nl6#592's rows survived a first cut that asserted the string and not the tag.
+
+**`jnxBoxDescr` is the weak call, and it is recorded as one.**
+It answered `JNP-MX240-002` and `JNP-MX960-001`.
+Both are legal DisplayStrings and both encode as OCTET STRINGs, so nothing about them is a wire defect.
+The MIB's DESCRIPTION is "The name, model, or detailed description of the box, indicating which product the box is about, for example 'M40'", and an asset tag with an instance suffix indicates which *unit* the box is, not which *product*.
+The values now name the product each profile's `sysObjectID` identifies, which is nl6#599's model-identity rule.
+A device can be configured to answer anything here; what is not arguable is that the previous value did not indicate a product.
+This is the same disposition nl6#599 gave `entPhysicalModelName.2` and nl6#590 its fan half.
+
+#### The trap catalog, and nl6#593's cross-surface check
+
+**nl6#593's class was checked and both shared OIDs agree.**
+The Juniper trap catalog and the two profiles' polled data share exactly two OIDs, `jnxBoxDescr` and `jnxBoxSerialNo`, and the type a trap declares matches the tag a GET emits for each.
+nl6#601's Ciena version could only assert *disjointness*, because that profile shared no OID at all; here there was something to compare, so `TestJuniperTrapAndPolledDataAgreeOnEveryOID` compares it and pins the shared count so a new shared OID has to be looked at rather than absorbed.
+
+**Two further findings are recorded and neither is fixed.**
+All seven `snmpTrapOID` values resolve to real NOTIFICATION-TYPEs under `jnxChassisTraps`, and every varbind uses a legal four-sub-identifier instance.
+But:
+
+1. **Not one of the seven emits the varbind list its own OBJECTS clause names.** The clauses run 5 to 10 objects each and the catalog emits 2 or 3, none of them an index column. The catalog says in its own comment that it is Class-1-vocabulary only, so making it follow the clauses is a rewrite of all seven entries and a Class 2 template epic, not an arc audit.
+2. **One varbind declares a type the MIB contradicts.** `jnxFruFailed` carries `2636.3.1.15.1.9.4.1.1.0` as `timeticks`. `{ jnxFruEntry 9 }` is `jnxFruTemp`, `SYNTAX Gauge32`. The author wanted `jnxFruLastPowerOff` (`{ jnxFruEntry 11 }`, `TimeStamp`) or `jnxFruLastPowerOn` (12), neither of which is in `jnxFruFailed`'s OBJECTS clause either. Retyping it would leave it wrong and deleting it opens finding 1 for all seven entries, so it is recorded as a **presence**: a later change that fixes it has to edit the assertion deliberately rather than watch a test go quietly green.
+
+**The provenance difference predicted the result.**
+`juniper_mx240/traps.json`'s comment says its OIDs were "verified against oidref.com and Observium's JUNIPER-MIB mirror", which are aggregators rather than the module.
+nl6#601's Ciena catalog cited the module, its `LAST-UPDATED`, the severity enum and an internal contradiction in the MIB, and every one of those claims re-checked out.
+The polled data here carries no provenance claim at all.
+The catalog's seven notification OIDs all resolve; the polled data missed 13 of 15.
+`TestJuniperTrapCatalogVarbindsAgainstTheMIB` pins the comment's aggregator citation rather than letting it be tidied away, because that difference is the finding.
+
+#### Fleet-visible surface change
+
+- `juniper_mx960`'s `sysObjectID.0` changes, so vendor detection and asset inventory resolve the node differently. It resolved to an MX480 and now resolves to an MX960. `juniper_mx240`'s is unchanged and was already right.
+- A walk of the two profiles returns **12 fewer OIDs** (25152 to 25140 shipped SNMP entries corpus-wide) and **3 OIDs change name**. An mx240 walk loses eight names and renames three; an mx960 walk loses four and renames one.
+- `ownVendorArcNamesShipped` falls from 328 to 316. `ownVendorArcValuesShipped` stays 28, because the mx960 correction moves its value *within* 2636 and a value count that fell would mean a profile had stopped identifying itself.
+- Four values change without changing a name: two `jnxBoxDescr` and one `jnxOperatingDescr` per profile.
+- No other profile is touched and no SSH response changes.
+
+#### What this audit did not close
+
+- **The trap catalog's OBJECTS-clause fidelity**, and the one misdeclared varbind type. Both are recorded as measurements above.
+- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123` and `entPhysicalVendorType.1` with `1`, neither of which is under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done; nl6#599 left the same class open for the same reason.
+- **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
+- **Whether the mirrored modules are what Juniper ships.** See the provenance note below.
+
+#### Provenance, since no MIB file is checked in
+
+Five modules, fetched anonymously on 2026-09-01, cited by `LAST-UPDATED` and by the SHA-256 of the file read, per the nl6#599 convention.
+
+| module | LAST-UPDATED | SHA-256 | source |
+|---|---|---|---|
+| JUNIPER-SMI | `200910290000Z` | `67fab3465f8e2bf1148df7d06361e1246591de9ceb8211bd9dce59becc0285ef` | `raw.githubusercontent.com/librenms/librenms-mibs/master/JUNIPER-SMI` |
+| JUNIPER-MIB | `201010220000Z` | `d4c4f40c7a881f7e125c49fa706df973030f2687fd041e8d9fc22d7032bb88ad` | `raw.githubusercontent.com/librenms/librenms-mibs/master/JUNIPER-MIB` |
+| JUNIPER-EX-SMI | none | `f2fb4576bd65f1ced716f7f2b2a35ba04add2025f634a4253946d902309ec006` | `raw.githubusercontent.com/librenms/librenms/master/mibs/juniper/junos/JUNIPER-EX-SMI` |
+| JUNIPER-VIRTUALCHASSIS-MIB | `201403180000Z` | `5214043efe7412493d5b1581a0502b375752747611b743673db895421bae91f2` | `raw.githubusercontent.com/librenms/librenms/master/mibs/juniper/junos/JUNIPER-VIRTUALCHASSIS-MIB` |
+| JUNIPER-CHASSIS-DEFINES-MIB | `201706230000Z` | `d503b145ab01665b1ceacb120f2a607a381db32f9044bd07750e1d540e536aab` | `raw.githubusercontent.com/netdisco/netdisco-mibs/master/juniper/mib-jnx-chas-defines.txt` |
+
+**All five copies are third-party mirrors and their provenance is unestablished.**
+Juniper's own entry point is `apps.juniper.net/mib-explorer/`, a JavaScript shell with no server-rendered content, and nl6#602 recorded two secondary sources that contradict each other on whether a login is required.
+Nothing here tested that wall.
+Three of the five carry a Juniper copyright header and none grants redistribution, so the reading is qualified by mirror as well as by revision.
+
+**That qualification matters more here than it did for Ciena.**
+The Ciena catalog had already been transcribed from a reading, and nl6#601's job was to re-check somebody else's work.
+Nobody had read these modules before.
+
+**Two provenance oddities are recorded rather than smoothed over.**
+JUNIPER-CHASSIS-DEFINES-MIB declares `LAST-UPDATED 201706230000Z` while its own REVISION list runs on to `201711220000Z`, so the module's stated revision is five months behind its newest recorded change.
+JUNIPER-EX-SMI has no `MODULE-IDENTITY` at all, only OBJECT IDENTIFIER assignments and a copyright range, so it has no revision string to quote and is cited by digest alone.
+That is the same situation nl6#591 hit with SMIv1 OLD-CISCO-SYSTEM-MIB.
+
 ### Access modes are not modelled
 
 **No nl6 rule models MAX-ACCESS.**
@@ -757,8 +953,9 @@ As with every audit on this page, no MIB file or extracted fixture is checked in
 
 **`not-accessible` is the larger half of the class, and it is unswept.**
 Every SMIv2 table INDEX column is `not-accessible`, so a profile shipping an index column as a readable row makes the same mistake in the commonest possible place.
-Nothing sweeps it, and nothing can sweep it generically: deciding it needs the table's definition, which needs the arc's MIB, which has been read for Cisco (partially) and Palo Alto only.
+Nothing sweeps it, and nothing can sweep it generically: deciding it needs the table's definition, which needs the arc's MIB, which has been read for Palo Alto, Cisco (partially), Arista, Ciena and Juniper only.
 The access-mode class therefore advances **with** nl6#590's per-arc audit rather than being closed by nl6#591 — an arc becomes sweepable for access modes at the same moment it becomes sweepable for wrong INDEX arity, and for the same reason.
+nl6#602 is the demonstration: reading JUNIPER-MIB for the arity question found two `not-accessible` objects in the same pass, `jnxContentsTable` served with a `.0` on both Juniper profiles and `jnxVirtualChassisMemberId`, which is an INDEX column.
 
 ## Response size, `max-repetitions` and truncation
 

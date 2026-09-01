@@ -1226,6 +1226,18 @@ func TestResourceDataDefectLedgerIsNotVacuous(t *testing.T) {
 			parent[d.oid] = struct{}{}
 		}
 	}
+	// THE RECONSTRUCTION HAS TO WALK THE WHOLE CHAIN, not only this ledger's own
+	// removals, and nl6#602 is what made the difference bite. The two loops above
+	// are today's entries plus the rows THIS change deleted; every LATER
+	// corpus-editing change is missing from them. 2636.3.1.13.1.8.5.0.0 was the
+	// only OID in the corpus extending the bare 2636.3.1.13.1.8 column that four
+	// CISCO profiles shipped, so once nl6#602 deleted it from the two Juniper
+	// profiles this test could no longer show that nl6#571 classified that column
+	// correctly. Walking the nl6#600 registry back to ec4700f is complete by
+	// construction, which the hand-rolled union never was.
+	for _, o := range restoreCorpusOIDNamesTo(t, collectShippedOIDs(t), "ec4700f") {
+		parent["."+strings.TrimPrefix(o, ".")] = struct{}{}
+	}
 	bareProfiles := map[string]struct{}{}
 	bareOIDs := map[string]struct{}{}
 	for _, d := range nl6571DeletedBareColumns {

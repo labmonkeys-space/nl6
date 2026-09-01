@@ -375,7 +375,14 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
-const shippedOIDEncodingDigest = "2c714eef349b5752ad5a3a208c5932b649fc8df6262da1050b0bd239bbbc7c44"
+
+// Re-pinned by nl6#602's Juniper arc audit, which removed eight distinct OID
+// names, renamed three onto their legal instance arity and swapped one
+// OID-typed sysObjectID value for another. The pre-change value lives in
+// snmp_shipped_juniper_arc_ledger_test.go as
+// shippedOIDEncodingDigestBeforeJuniperArcAudit, and
+// TestJuniperArcRePinIsOnlyTheAudit reverses the ledger and requires it back.
+const shippedOIDEncodingDigest = "be01d6c675b2cf2950bfc00c3e02c37c878467e5c918a9ccb6f1b2c39b4aca56"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
