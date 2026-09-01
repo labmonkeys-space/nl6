@@ -266,8 +266,22 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED THREE TIMES. Every re-pin is a CORPUS change, not an encoding
+// RE-PINNED FOUR TIMES. Every re-pin is a CORPUS change, not an encoding
 // change, and each is re-derived by a test rather than asserted here.
+//
+// The fourth re-pin is nl6#576, and it is the only one that is a RENAME rather
+// than a deletion: the NVIDIA GPU telemetry arc moved from 1.3.6.1.4.1.53246
+// (IANA: Mailteck, S.A.) to 1.3.6.1.4.1.5703 (NVIDIA Corporation), changing 74
+// OID names per profile plus the three sysObjectID VALUES, which this digest also
+// covers because an OID-typed response reaches encodeOID. No name was added or
+// dropped and every sub-identifier below the PEN was preserved.
+// TestNvidiaArcRePinIsOnlyTheRename un-renames the arc and requires the constant
+// below it; the three older reversals each begin with the same un-rename, so the
+// chain is unbroken at every link. Unlike the three constants below, that link's
+// "before" value is NOT declared here: it lives with its ledger, as
+// shippedOIDEncodingDigestBeforeNvidiaArcRehome in
+// snmp_shipped_nvidia_arc_ledger_test.go, and equals the current value of
+// shippedOIDEncodingDigest at the revision before this change.
 //
 // The third re-pin is nl6#574 / nl6#571 / nl6#569, which deleted 829 entries
 // naming 259 distinct OIDs, 258 of which left the corpus entirely: the dead
@@ -298,7 +312,7 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
-const shippedOIDEncodingDigest = "4dabe3fe5bdec217f4d76da0c4f0a187897435a33538ddbc25adc173c3baa801"
+const shippedOIDEncodingDigest = "40e4b72d4b5563f70dd7eb9d668ba4b2e49cdc762ddd4cb6ea1b19f5111537a4"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -664,7 +678,9 @@ func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
 func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	const deleted = "1.3.6.1.2.1.4.21.1.1"
 
-	oids := collectShippedOIDs(t)
+	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703, which
+	// renames 77 distinct shipped names. Un-rename before walking back further.
+	oids := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
 	for _, o := range oids {
 		if o == deleted {
 			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+

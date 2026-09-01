@@ -164,8 +164,16 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 	for k, v := range cur {
 		nl6570[[2]string{k.profile, k.oid}] = v
 	}
+	// nl6#576 then re-homed the NVIDIA GPU arc, which RENAMES keys rather than
+	// only changing values, so it has to be undone before anything keyed on an
+	// OID string runs — including the nvidia_* rescale rows below.
+	restoreNl6576NvidiaArc(t, nl6570)
 	restoreNl6574ResourceDefectEntries(t, nl6570)
 	restoreNl6570OctetEntries(t, nl6570)
+	// REBUILT, not merged. nl6#576's reversal is a RENAME, so it deletes keys as
+	// well as adding them; merging back over the old map would leave both
+	// spellings in the corpus and 222 phantom triples in the digest.
+	cur = make(map[key]string, len(nl6570))
 	for k, v := range nl6570 {
 		cur[key{k[0], k[1]}] = v
 	}

@@ -1,0 +1,42 @@
+# IANA Private Enterprise Numbers — the two entries nl6#576 turns on.
+#
+# THIS FIXTURE EXISTS BECAUSE THE PREMISE OF nl6#576 WAS THE ONE CLAIM IN IT THAT
+# NOTHING COULD CHECK. Every other assertion in that change is mechanical: the
+# ledger reverses against a digest, the census counts the corpus, the serve-path
+# tests read values back through findResponse. "53246 is Mailteck's and 5703 is
+# NVIDIA's" was prose in a commit message, and it is the fact the whole re-homing
+# rests on — get it backwards and the change moves the arc from one wrong owner to
+# another. nl6#541 set the precedent for this (testdata/mibs/*.tsv): extracted
+# registry or tool output, checked in, with the command that produced it.
+#
+# The test READS this file. It does NOT fetch from iana.org: a network-dependent
+# test fails closed in CI, or worse, silently skips and asserts nothing.
+#
+# Source:  https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
+# Fetched: 2026-09-01
+# Registry self-dated: (last updated 2026-08-28) — line 3 of the source file
+# SHA-256 of the fetched file: e2f3c717975007e6110350014a17e359a01540c131bbf9e60b39ab2b050182fe
+#
+# Regenerate (from any machine with network access):
+#   curl -sS -o /tmp/iana-pen.txt \
+#     https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
+#   grep -n "^5703$"  -A 3 /tmp/iana-pen.txt
+#   grep -n "^53246$" -A 3 /tmp/iana-pen.txt
+#
+# The registry format is four lines per entry: the number, the organisation, the
+# contact name, then the contact email with "@" written as "&". Reproduced
+# verbatim below as TSV, minus the contact NAME, which is a private individual and
+# has no bearing on any assertion here. The email DOMAIN is kept because it is the
+# corroborating evidence: an entry claiming to be NVIDIA with a contact at
+# nvidia.com is a much stronger reading than the organisation string alone.
+#
+# Columns: pen<TAB>organisation<TAB>contact_email_domain<TAB>role
+#
+# "role" is nl6's own annotation, not IANA's:
+#   nvidia   — the arc nl6 serves GPU telemetry under, as of nl6#576
+#   mailteck — the arc it used to serve it under, and must never serve again
+#
+# Line 22828 of the source file:
+5703	NVIDIA Corporation	nvidia.com	nvidia
+# Line 213000 of the source file:
+53246	Mailteck, S.A.	mailteck.com	mailteck

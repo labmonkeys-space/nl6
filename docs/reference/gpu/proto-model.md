@@ -29,10 +29,15 @@ The opensim GPU simulator exposes data via three protocols. This model must repr
 
 | Source | Data | Model Location |
 |--------|------|----------------|
-| SNMP OID `53246.1.1.1.1.5-12.{gpu}` | Per-GPU utilization, memory, temp, power, fan, clocks | `Gpu` message fields |
+| SNMP OID `5703.1.1.1.1.5-12.{gpu}` | Per-GPU utilization, memory, temp, power, fan, clocks | `Gpu` message fields |
 | SNMP Host Resources MIB | Host CPU, system memory, storage | `GpuDeviceSystem` fields |
 | SSH commands (`nvidia-smi`, `dcgm-diag`) | GPU details, topology, health | `Gpu`, `GpuTopology`, `GpuHealthCheck` |
 | REST API (`/api/v1/gpu/*`) | GPU inventory, metrics, health | All fields |
+
+`5703` is NVIDIA Corporation's IANA-registered Private Enterprise Number.
+It used to be `53246`, which IANA allocates to an unrelated company.
+nl6#576 re-homed the arc and preserved every sub-identifier below the PEN.
+See [GPU pollaris and parsing rules](./pollaris.mdx) for the migration note.
 
 ## Protobuf Messages
 
