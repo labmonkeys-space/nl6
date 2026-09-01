@@ -12,6 +12,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # github/codeql-action/{init,autobuild,analyze} must run at the SAME
+      # version inside one job: init writes a config file stamped with its
+      # version and analyze refuses to load a config from a different one
+      # ("Loaded a configuration file for version 'X', but running version
+      # 'Y'"). Ungrouped, Dependabot opens one PR per sub-action and every
+      # one of them fails CI on its own, so none can merge. Collapse them
+      # into a single PR that moves all the pins together.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Base image in the repo-root Dockerfile.
   - package-ecosystem: docker
