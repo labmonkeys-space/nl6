@@ -195,14 +195,31 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 	},
 }
 
+// nvidiaGPUMetricPrefix is the per-GPU dynamic metric branch of the NVIDIA
+// telemetry arc. This one string drives 64 OIDs per device (8 metrics x 8 GPUs)
+// on all three nvidia_* profiles, so a second literal for the same branch would
+// be a second thing to drift. The static half of the arc lives in the nvidia_*
+// resource JSON; nothing in Go carries it.
+//
+// 1.3.6.1.4.1.5703 is NVIDIA Corporation's IANA-registered PEN. nl6#576 re-homed
+// the arc here from 1.3.6.1.4.1.53246, which IANA allocates to Mailteck, S.A. —
+// an unrelated company a collector would have resolved a simulated DGX as. Every
+// sub-identifier below the PEN was preserved exactly.
+//
+// The objects BELOW the PEN remain nl6's own invention: NVIDIA publishes no SNMP
+// GPU MIB, so there is nothing to converge on and nothing here resolves against a
+// real one. That is recorded in the resource parts' _comment as well, because the
+// re-homing makes the fabrication attributable to NVIDIA where before it was
+// unattributed.
+const nvidiaGPUMetricPrefix = ".1.3.6.1.4.1.5703.1.1.1.1"
+
 // nvidiaGPUOIDs builds per-GPU dynamic metric OID mappings for NVIDIA DCGM devices.
-// OID schema: .1.3.6.1.4.1.53246.1.1.1.1.{metric}.{gpuIndex}
+// OID schema: nvidiaGPUMetricPrefix.{metric}.{gpuIndex}
 //
 //	metric 5=GPUUtil, 6=GPUMemUsed, 7=GPUMemTotal, 8=GPUTemp,
 //	9=GPUPower, 10=GPUFanSpeed, 11=GPUClockSM, 12=GPUClockMem
 //	gpuIndex 0-7
 func nvidiaGPUOIDs(gpuCount int) map[string]MetricOIDType {
-	prefix := ".1.3.6.1.4.1.53246.1.1.1.1"
 	metrics := []struct {
 		suffix int
 		typ    MetricOIDType
@@ -219,7 +236,7 @@ func nvidiaGPUOIDs(gpuCount int) map[string]MetricOIDType {
 	m := make(map[string]MetricOIDType, gpuCount*len(metrics))
 	for gpu := 0; gpu < gpuCount; gpu++ {
 		for _, mt := range metrics {
-			oid := fmt.Sprintf("%s.%d.%d", prefix, mt.suffix, gpu)
+			oid := fmt.Sprintf("%s.%d.%d", nvidiaGPUMetricPrefix, mt.suffix, gpu)
 			m[oid] = mt.typ
 		}
 	}

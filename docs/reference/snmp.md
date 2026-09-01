@@ -346,7 +346,12 @@ A vendor enterprise subtree is an identity claim, not an approximation.
 
 `TestPaloAltoPANSubtreeMatchesTheMIB` pins the eight surviving values and the three absences; `TestNoForeignPANOIDsShip` is the corpus-wide half, since the first test builds one device from one profile and 24 foreign entries were invisible to it.
 Both are a record of a reading, not a verification: nothing in CI compares nl6 against PAN-COMMON-MIB.
-**Only this profile was audited.** The other 28 carry vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason to treat that as outstanding work rather than an assumption. The wider cross-vendor contamination audit is nl6#576.
+**Only this profile was audited.** The other 28 carry vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason to treat that as outstanding work rather than an assumption.
+
+nl6#576 closed one more instance of the class and not the class itself.
+The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.; the arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and `TestNoNvidiaOIDsShipUnderMailteck` keeps that one arc clean in both the OID-name and the OID-typed-value positions.
+The general per-profile own-vendor-enterprise-OID guard was deliberately not built there: it needs an allowlist decision, and it would fail against the corpus as it stood.
+So the wider cross-vendor contamination audit, including the bare Juniper `jnxOperatingCPU` column that four Cisco profiles carry, is still open.
 
 ## Response size, `max-repetitions` and truncation
 

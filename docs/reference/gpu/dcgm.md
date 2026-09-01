@@ -32,9 +32,35 @@ NVIDIA DCGM provides:
 - **Process/job info** (running PIDs, memory per process)
 
 These are accessible via:
-1. **SNMP**: NVIDIA enterprise OIDs under `1.3.6.1.4.1.53246` (NVIDIA PEN)
+1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number
 2. **SSH**: `nvidia-smi` command variants (e.g., `nvidia-smi`, `nvidia-smi -q`, `nvidia-smi dmon`, `dcgmi diag`, `dcgmi health`)
 3. **REST API**: DCGM exporter HTTP endpoints (`/api/v1/gpu/status`, `/api/v1/gpu/{id}/metrics`, etc.)
+
+:::warning[The objects below the PEN are nl6's own invention]
+
+`1.3.6.1.4.1.5703` is NVIDIA Corporation's real PEN, so `sysObjectID` correctly identifies a simulated DGX as an NVIDIA system.
+Nothing *below* the PEN is published by NVIDIA.
+**NVIDIA ships no SNMP GPU MIB at all.**
+Its own GPU telemetry story is DCGM and Prometheus, not SNMP.
+So `1.3.6.1.4.1.5703.1.1.1.*` names no registered object and cannot be resolved against a real MIB.
+Treat the layout as nl6's own contract with its collectors, never as a vendor specification.
+
+**Migration (nl6#576).** This arc used to be `1.3.6.1.4.1.53246`, which the IANA enterprise-numbers registry allocates to Mailteck, S.A., a company unrelated to NVIDIA.
+A collector doing vendor detection resolved a simulated DGX as Mailteck.
+Every sub-identifier below the PEN was preserved exactly, so a downstream pollaris rule, `oid_base`, or vendor-detection prefix needs only `53246` replaced with `5703`.
+No object was added, removed, or renumbered, and no OID's value or type changed.
+
+Two things did change, and both are the point of the exercise rather than side effects.
+Every OID **name** under the arc moved.
+So did the three per-model `sysObjectID` **values**, from `…53246.1.2.{1,2,3}` to `…5703.1.2.{1,2,3}`, which is the string a collector reads to identify the vendor.
+The suffixes stayed distinct and in the same order, so the three models are still told apart.
+
+The old arc is no longer served at all.
+An SNMPv2c or v3 GET under `1.3.6.1.4.1.53246` answers the RFC 3416 `noSuchObject` exception.
+An SNMPv1 manager gets `error-status = noSuchName` with the requested names echoed instead, since v1 has no exceptions (RFC 3584 §4.2.2.2.1).
+Either way the response carries no value, so an unmigrated rule collects nothing rather than collecting stale data.
+
+:::
 
 ## Scope
 
@@ -72,17 +98,17 @@ MetricGPUClockSM                                // GPU SM clock (MHz)
 MetricGPUClockMem                               // GPU memory clock (MHz)
 ```
 
-Add `vendorOIDs` entries for each NVIDIA resource file, using NVIDIA's enterprise OID prefix `1.3.6.1.4.1.53246`. Each GPU (0-7) gets its own OID suffix. Example for GPU 0:
+Add `vendorOIDs` entries for each NVIDIA resource file, using NVIDIA's enterprise OID prefix `1.3.6.1.4.1.5703`. Each GPU (0-7) gets its own OID suffix. Example for GPU 0:
 
 ```
-1.3.6.1.4.1.53246.1.1.1.1.5.0  → MetricGPUUtil       (GPU 0 utilization)
-1.3.6.1.4.1.53246.1.1.1.1.6.0  → MetricGPUMemUsed    (GPU 0 memory used)
-1.3.6.1.4.1.53246.1.1.1.1.7.0  → MetricGPUMemTotal   (GPU 0 memory total)
-1.3.6.1.4.1.53246.1.1.1.1.8.0  → MetricGPUTemp       (GPU 0 temperature)
-1.3.6.1.4.1.53246.1.1.1.1.9.0  → MetricGPUPower      (GPU 0 power draw)
-1.3.6.1.4.1.53246.1.1.1.1.10.0 → MetricGPUFanSpeed   (GPU 0 fan speed)
+1.3.6.1.4.1.5703.1.1.1.1.5.0  → MetricGPUUtil       (GPU 0 utilization)
+1.3.6.1.4.1.5703.1.1.1.1.6.0  → MetricGPUMemUsed    (GPU 0 memory used)
+1.3.6.1.4.1.5703.1.1.1.1.7.0  → MetricGPUMemTotal   (GPU 0 memory total)
+1.3.6.1.4.1.5703.1.1.1.1.8.0  → MetricGPUTemp       (GPU 0 temperature)
+1.3.6.1.4.1.5703.1.1.1.1.9.0  → MetricGPUPower      (GPU 0 power draw)
+1.3.6.1.4.1.5703.1.1.1.1.10.0 → MetricGPUFanSpeed   (GPU 0 fan speed)
 ...
-1.3.6.1.4.1.53246.1.1.1.1.5.7  → MetricGPUUtil       (GPU 7 utilization)
+1.3.6.1.4.1.5703.1.1.1.1.5.7  → MetricGPUUtil       (GPU 7 utilization)
 ```
 
 That's 6 metric OIDs × 8 GPUs = 48 dynamic metric OIDs per device, plus the existing CPU/memory/temperature host metrics.
@@ -248,16 +274,17 @@ Standard MIB-II system group OIDs with GPU-server-appropriate values:
 | OID | Description | Example (DGX H100) |
 |---|---|---|
 | `1.3.6.1.2.1.1.1.0` | sysDescr | `NVIDIA DGX H100 - DCGM 3.3.0, Driver 535.129.03, CUDA 12.2` |
-| `1.3.6.1.2.1.1.2.0` | sysObjectID | `1.3.6.1.4.1.53246.1.2.2` |
+| `1.3.6.1.2.1.1.2.0` | sysObjectID | `1.3.6.1.4.1.5703.1.2.2` |
 | `1.3.6.1.2.1.1.3.0` | sysUpTime | `234567800` |
 | `1.3.6.1.2.1.1.4.0` | sysContact | `GPU Infrastructure Team` |
 | `1.3.6.1.2.1.1.7.0` | sysServices | `72` |
 
 Plus IF-MIB interfaces (management NIC, InfiniBand/RoCE ports), Host Resources MIB entries (CPU, memory, storage).
 
-### 2.3 SNMP GPU MIB (NVIDIA enterprise OIDs)
+### 2.3 SNMP GPU objects (nl6's own layout under NVIDIA's PEN)
 
-Static OIDs under `1.3.6.1.4.1.53246` for per-GPU identity info:
+Static OIDs under `1.3.6.1.4.1.5703` for per-GPU identity info.
+These object definitions are nl6's, not NVIDIA's: see the note at the top of this page.
 
 | OID Pattern | Description | Example |
 |---|---|---|

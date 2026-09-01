@@ -43,20 +43,44 @@ can be tested end-to-end.
 
 ### SNMP OID inventory (from opensim mock data)
 
-**NVIDIA enterprise OID prefix:** `1.3.6.1.4.1.53246`
+**NVIDIA enterprise OID prefix:** `1.3.6.1.4.1.5703` (NVIDIA Corporation's IANA-registered PEN)
 
-- **sysObjectID:** `1.3.6.1.4.1.53246.1.2.1` (used for vendor detection).
+- **sysObjectID:** `1.3.6.1.4.1.5703.1.2.1` (used for vendor detection).
+
+:::warning[Prefix migration: `53246` is now `5703` (nl6#576)]
+
+Every OID on this page used to sit under `1.3.6.1.4.1.53246`.
+The IANA enterprise-numbers registry allocates that number to Mailteck, S.A., a company unrelated to NVIDIA, so vendor detection against it resolved a simulated DGX as Mailteck.
+nl6 re-homed the whole arc to NVIDIA's real PEN, `1.3.6.1.4.1.5703`.
+
+**Every sub-identifier below the PEN is unchanged**, so the migration is a textual prefix swap in `oid_base`, in the vendor-detection prefix test, and in each rule's OID.
+No object was added, removed, or renumbered.
+The `sysObjectID` values moved with the rest, from `…53246.1.2.{1,2,3}` to `…5703.1.2.{1,2,3}`, keeping their per-model suffixes.
+
+nl6 no longer serves the old arc at all.
+An SNMPv2c or v3 GET under `1.3.6.1.4.1.53246` answers the RFC 3416 `noSuchObject` exception; an SNMPv1 manager gets `error-status = noSuchName` with the requested names echoed, since v1 has no exceptions (RFC 3584 §4.2.2.2.1).
+Neither carries a value, so a rule that has not been migrated collects nothing rather than collecting stale data.
+
+**Anchor vendor detection on the full dotted prefix**, `.1.3.6.1.4.1.5703.`, exactly as `isNvidiaOid` below does.
+Do not match the bare digits as a substring.
+`5703` is four digits and occurs inside `15703`, `45703` and `57031`, as well as inside any instance identifier that happens to contain them, so a substring rule can claim an unrelated device is an NVIDIA GPU server.
+The old `53246` was five digits and already too loose; shortening the number widens the hole, which is why the rule is stated as a prefix test here and in the Go snippet.
+
+The objects *below* the PEN remain nl6's own invention.
+NVIDIA publishes no SNMP GPU MIB, so nothing here resolves against a vendor MIB.
+
+:::
 
 #### Module-level (singleton)
 
 | OID | Field |
 |-----|-------|
-| `53246.1.1.1.0.1.0` | GPU Count |
-| `53246.1.1.1.0.2.0` | DCGM Version |
+| `5703.1.1.1.0.1.0` | GPU Count |
+| `5703.1.1.1.0.2.0` | DCGM Version |
 
 #### Per-GPU static info (index 0-7)
 
-| OID Pattern `53246.1.1.1.1.{X}.{gpu}` | X | Field |
+| OID Pattern `5703.1.1.1.1.{X}.{gpu}` | X | Field |
 |---|---|---|
 | `.1.{gpu}` | 1 | Device Name |
 | `.2.{gpu}` | 2 | UUID |
@@ -107,7 +131,7 @@ hardcoded for `NetworkDevice`. We need a new rule that:
 
 - **Name:** `"SnmpGpuTable"`
 - **Params:**
-  - `oid_base` — base OID prefix (e.g. `1.3.6.1.4.1.53246.1.1.1.1`).
+  - `oid_base` — base OID prefix (e.g. `1.3.6.1.4.1.5703.1.1.1.1`).
   - `mapping` — comma-separated `oidSuffix:propertyName:type` triples
     (e.g. `1:devicename:set,2:deviceuuid:set,5:gpuutilizationpercent:ts`).
 - **Logic:** iterate CMap keys, extract `{metric_id}` and `{gpu_index}` from
@@ -137,7 +161,7 @@ Groups: ["nvidia", "nvidia-gpu"]
 - **Cadence:** DEFAULT_CADENCE
 - **Attributes:**
   - `gpudevice.deviceinfo.hostname` ← Set from `.1.3.6.1.2.1.1.5.0` (sysName)
-  - `gpudevice.deviceinfo.vendor` ← Contains "53246" → "NVIDIA"
+  - `gpudevice.deviceinfo.vendor` ← `sysObjectID` has prefix `.1.3.6.1.4.1.5703.` → "NVIDIA" (anchor on the full dotted prefix, **not** a `Contains "5703"` substring match: see the migration note above)
   - `gpudevice.deviceinfo.location` ← Set from `.1.3.6.1.2.1.1.6.0` (sysLocation)
   - `gpudevice.deviceinfo.uptime` ← Set from `.1.3.6.1.2.1.1.3.0` (sysUpTime)
   - `gpudevice.deviceinfo.devicestatus` ← MapToDeviceStatus
@@ -149,19 +173,19 @@ Groups: ["nvidia", "nvidia-gpu"]
 
 **GPU count & DCGM version**
 
-- **What:** `.1.3.6.1.4.1.53246.1.1.1.0` (NVIDIA module)
+- **What:** `.1.3.6.1.4.1.5703.1.1.1.0` (NVIDIA module)
 - **Operation:** `L8C_Map`
 - **Cadence:** DEFAULT_CADENCE
 - **Attributes:**
-  - `gpudevice.deviceinfo.gpucount` ← Set from `.1.3.6.1.4.1.53246.1.1.1.0.1.0`
-  - `gpudevice.deviceinfo.dcgmversion` ← Set from `.1.3.6.1.4.1.53246.1.1.1.0.2.0`
+  - `gpudevice.deviceinfo.gpucount` ← Set from `.1.3.6.1.4.1.5703.1.1.1.0.1.0`
+  - `gpudevice.deviceinfo.dcgmversion` ← Set from `.1.3.6.1.4.1.5703.1.1.1.0.2.0`
 
 </TabItem>
 <TabItem value="poll3" label="Poll 3: nvidiaGpuInfo">
 
 **Per-GPU static info**
 
-- **What:** `.1.3.6.1.4.1.53246.1.1.1.1` (NVIDIA GPU table)
+- **What:** `.1.3.6.1.4.1.5703.1.1.1.1` (NVIDIA GPU table)
 - **Operation:** `L8C_Map`
 - **Cadence:** DEFAULT_CADENCE
 - **Attributes:** single attribute using `SnmpGpuTable` with static mapping:
@@ -172,7 +196,7 @@ Groups: ["nvidia", "nvidia-gpu"]
 
 **Per-GPU dynamic metrics**
 
-- **What:** `.1.3.6.1.4.1.53246.1.1.1.1` (same table, different cadence)
+- **What:** `.1.3.6.1.4.1.5703.1.1.1.1` (same table, different cadence)
 - **Operation:** `L8C_Map`
 - **Cadence:** EVERY_5_MINUTES_ALWAYS (metrics need frequent polling)
 - **Attributes:** single attribute using `SnmpGpuTable` with time-series mapping:
@@ -217,7 +241,7 @@ func isNvidiaOid(sysOid string) bool {
     if !strings.HasPrefix(normalizedOid, ".") {
         normalizedOid = "." + sysOid
     }
-    return strings.HasPrefix(normalizedOid, ".1.3.6.1.4.1.53246.")
+    return strings.HasPrefix(normalizedOid, ".1.3.6.1.4.1.5703.")
 }
 ```
 
@@ -269,7 +293,7 @@ p.rules[snmpGpuTable.Name()] = snmpGpuTable
 1. `cd l8parser && go build ./...` — verify compilation.
 2. `go vet ./...` — verify no issues.
 3. Verify `GetAllPolarisModels()` includes the NVIDIA pollaris.
-4. Verify `GetPollarisByOid("1.3.6.1.4.1.53246.1.2.1")` returns the NVIDIA
+4. Verify `GetPollarisByOid("1.3.6.1.4.1.5703.1.2.1")` returns the NVIDIA
    pollaris.
 5. End-to-end test requires the `GpuDevice` proto model to be implemented
    first.
@@ -290,7 +314,7 @@ rules.
 
 **Data sources (from opensim mock data):**
 
-- SNMP: OIDs under `1.3.6.1.4.1.53246.*` + standard MIBs.
+- SNMP: OIDs under `1.3.6.1.4.1.5703.*` + standard MIBs.
 - SSH: 10 commands (`nvidia-smi`, `nvidia-smi -q -d *`, `dcgmi *`,
   `show version`, `lscpu`).
 - REST: 7 endpoints (`/api/v1/gpu/*`, `/api/v1/dcgm/*`, `/api/v1/system/*`).
@@ -305,7 +329,7 @@ rules.
 | serial_number | SSH | SSH | `dmidecode -s system-serial-number` or from `show version` |
 | ip_address | — | — | Set by collector (not polled) |
 | kernel_version | SSH | SSH | `uname -a` → parse kernel version |
-| cuda_version | SNMP | SNMPV2 | OID `.53246.1.1.1.1.14.0` (GPU 0, already in table but not at device level) |
+| cuda_version | SNMP | SNMPV2 | OID `.5703.1.1.1.1.14.0` (GPU 0, already in table but not at device level) |
 | last_seen | — | — | Set by collector timestamp |
 | latitude/longitude | — | — | Manual config (not polled) |
 
@@ -364,7 +388,7 @@ rules.
 Add to existing polls:
 
 1. **`nvidiaGpuModule` poll** — add `cuda_version` from GPU 0:
-   - `gpudevice.deviceinfo.cudaversion` ← Set from `.1.3.6.1.4.1.53246.1.1.1.1.14.0`.
+   - `gpudevice.deviceinfo.cudaversion` ← Set from `.1.3.6.1.4.1.5703.1.1.1.1.14.0`.
 2. **`nvidiaHostResources` poll** — add memory used:
    - `gpudevice.system.memoryusedbytes` ← SetTimeSeries from
      `.1.3.6.1.2.1.25.2.3.1.6.1` (Physical Memory used).

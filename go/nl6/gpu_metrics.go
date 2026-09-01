@@ -205,7 +205,7 @@ func (c *MetricsCycler) GetGPUClockMem(gpuIndex int) string {
 }
 
 // parseGPUIndexFromOID extracts the GPU index from the last component of an NVIDIA OID.
-// OID format: 1.3.6.1.4.1.53246.1.1.1.1.{metric}.{gpuIndex}
+// OID format: 1.3.6.1.4.1.5703.1.1.1.1.{metric}.{gpuIndex} (nvidiaGPUMetricPrefix)
 func parseGPUIndexFromOID(oid string) int {
 	parts := strings.Split(oid, ".")
 	if len(parts) == 0 {

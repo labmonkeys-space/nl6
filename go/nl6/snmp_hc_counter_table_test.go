@@ -83,6 +83,17 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // TestResourceDataDefectsReproduceTheParentCorpus reverses all of it and
 // requires the value this constant held at ec4700f.
 //
+// The third is nl6#576, which re-homed the NVIDIA GPU telemetry arc from
+// 1.3.6.1.4.1.53246 (IANA: Mailteck, S.A.) to 1.3.6.1.4.1.5703 (NVIDIA
+// Corporation). No tag moved and no entry was added or removed — this digest is
+// keyed on the OID STRING as well as the tag, which is the only reason a pure
+// rename moves it. TestNvidiaArcRehomeReproducesTheParentCorpus reverses the 225
+// recorded rows and requires the value this constant held at 1bca8e8, which is
+// what makes the re-pin below a measurement rather than an acceptance of
+// whatever the new code emits. That ledger, its tables and the pre-change value
+// of this constant (shippedTagDigestBeforeNvidiaArcRehome) all live in
+// snmp_shipped_nvidia_arc_ledger_test.go rather than beside this line.
+//
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
 // is the review evidence for doing so. Re-pinning it to silence a failure
@@ -91,7 +102,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "ba6e97223bbad5132bac6301b7a106950eb15552fded701a445e01074d5e99cf"
+const shippedTagDigest = "fa776c654f5b88fd1e429d1bcd0d2758613273ee80a22f0239d2c4097ac24bb2"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

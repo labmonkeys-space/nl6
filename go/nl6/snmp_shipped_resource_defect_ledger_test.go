@@ -1060,6 +1060,11 @@ func TestResourceDataDefectsReproduceTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
+	// nl6#576 re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703 after
+	// this change, so today's corpus spells 225 entries differently from ec4700f.
+	// Undo that first, or the digest cannot come back — the reversal is a rename,
+	// so it moves keys rather than only values and nothing below would notice.
+	restoreNl6576NvidiaArc(t, cur)
 	restoreNl6574ResourceDefectEntries(t, cur)
 
 	// Same line shape and hash as shippedTypedCorpus, over the distinct
@@ -1434,7 +1439,9 @@ func TestResourceDataDefectRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Errorf("the ledger yields %d distinct deleted OID names, want 259", len(deleted))
 	}
 
-	oids := collectShippedOIDs(t)
+	// nl6#576 re-homed the NVIDIA GPU arc after this change, so the names the
+	// corpus ships today are not the names ec4700f shipped. Un-rename first.
+	oids := nl6576OIDNamesBeforeRehome(collectShippedOIDs(t))
 	toRestore := nl6574RestorableOIDNames(t)
 
 	restored := append(append([]string{}, oids...), toRestore...)
