@@ -460,6 +460,9 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
+	// nl6#590 audited the Cisco arc after this change, deleting eight entries and
+	// correcting three; undo that first or the digest cannot come back.
+	restoreNl6590CiscoArc(t, cur)
 	restoreNl6576NvidiaArc(t, cur)
 
 	// Same line shape and hash as shippedTypedCorpus.
@@ -500,10 +503,11 @@ func TestNvidiaArcRehomeReproducesTheParentCorpus(t *testing.T) {
 // name that changed to a DIFFERENT name encoding to the same tag is invisible to
 // it. Here every distinct shipped name is paired with its actual BER encoding.
 func TestNvidiaArcRePinIsOnlyTheRename(t *testing.T) {
-	// nl6#588 re-homed aws_s3_storage's sysObjectID VALUE after this change, so
-	// the strings the corpus ships today are not the strings 1bca8e8 shipped.
-	// Un-rehome that first; it is the newer link.
-	restored := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
+	// nl6#590's Cisco-arc audit and nl6#588's aws_s3_storage sysObjectID re-homing
+	// both landed after this change, so the strings the corpus ships today are not
+	// the strings 1bca8e8 shipped. Undo them newest-first.
+	restored := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
+		nl6590OIDNamesBeforeAudit(collectShippedOIDs(t))))
 	sort.Strings(restored)
 
 	h := sha256.New()

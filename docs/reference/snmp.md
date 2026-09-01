@@ -396,9 +396,96 @@ What the guard does **not** cover, and what remains outstanding:
 
 - **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
 - **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
-- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean. This profile's audit found 8 of 11 wrong; the other 28 have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention.
+- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean. Two profiles' arcs have now been audited (nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco, with 8 Cisco OIDs still unaudited); the rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention.
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
 - The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for nl6#588 and are clean; scanning them was considered and deliberately not added.
+- **Agreement between a trap catalog and the resource data for the same OID.** The two surfaces are validated by entirely separate code paths and nothing compares them, so a trap may declare an OID one type while a GET of that same OID answers another. nl6#590 found the worked example by hand: `cisco_ios` fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. No load rule, no PEN guard and no reading test can see this class. Filed separately.
+
+### The Cisco arc audited against its MIBs
+
+nl6#590 is the first audit of the class the two guards above cannot see, and it took the Cisco arc because it is the largest (39 shipped entries across five profiles) and the only one whose MIBs are obtainable anonymously from the vendor's own repository, `github.com/cisco/cisco-mibs`.
+
+**The arithmetic is given in two views, because mixing them is how this audit first got it wrong.**
+A first cut quoted "3 of 13" while counting `ciscoEnvMonFanStatusDescr.1` twice: once as a deleted OID (it was deleted from `cisco_catalyst_9500`) and once as a kept entry (it survives in three other profiles).
+`TestCiscoArcCensusMatchesTheCorpus` recomputes both views from the corpus and the ledger, so the numbers below are checkable rather than asserted.
+
+- **Distinct OIDs.** The parent revision shipped 21 distinct Cisco OID keys. 13 sit under `ciscoMgmt` and were audited; 8 sit on the OLD-CISCO arcs and were not. Of the 13, **2 were right as shipped and 11 were wrong** (5 corrected, 6 deleted; `ciscoEnvMonFanStatusDescr.1` counts once, under corrected). Against nl6#569's 8 of 11 on the Palo Alto subtree that is like for like, both counting distinct OIDs on audited arcs.
+- **Entries.** 39 entries name a Cisco OID and 23 of them sit on the 13 audited OIDs: **8 deleted, 10 corrected, 5 left exactly as shipped** (the four `ciscoImageString` rows and the one `cseSysCPUUtilization` row).
+
+| OID | was | now | object, and why |
+|---|---|---|---|
+| `…9.9.13.1.3.1.2.1` | `Catalyst 9500 Switch` | `Chassis Inlet Temp Sensor` | `ciscoEnvMonTemperatureStatusDescr`, `DisplayString (SIZE (0..32))`. It describes the sensor, not the chassis |
+| `…9.9.48.1.1.1.2.1` | `1100` | `Processor` | `ciscoMemoryPoolName`, `DisplayString`. The INDEX is `ciscoMemoryPoolType`: 1 is processor memory |
+| `…9.9.48.1.1.1.2.2` | `1100` | `I/O` | same object, index 2 is i/o memory. The old value was a PSU wattage |
+| `…9.9.13.1.4.1.2.1` | `1` (×3 profiles) | `Fan 1` | `ciscoEnvMonFanStatusDescr`, `DisplayString (SIZE (0..32))`. A bare `1` encodes as an INTEGER |
+| `…9.9.13.1.5.1.2.1` | `1` (×4 profiles) | `Power Supply 1` | `ciscoEnvMonSupplyStatusDescr`, same type, same defect |
+| `…9.9.13.1.4.1.2.1` | `C9300-SUP-1` | *deleted* | `ciscoEnvMonFanStatusDescr` in `cisco_catalyst_9500`. A supervisor part number is not a fan |
+| `…9.9.13.1.4.1.2.2` | `C9300-48T` | *deleted* | same object. A line card is not a fan |
+| `…9.9.13.1.4.1.3.1` | `Supervisor Module` | *deleted* | `ciscoEnvMonFanState`, SYNTAX `CiscoEnvMonState`, an INTEGER enum (`normal(1)`, `warning(2)`, …). A DisplayString here is a type error |
+| `…9.9.13.1.4.1.3.2` | `48-Port Gigabit Line Card` | *deleted* | same object |
+| `…9.9.48.1.1.1.3.1` | `PWR-C1-1100WAC` | *deleted* | `ciscoMemoryPoolAlternate`, SYNTAX `Integer32 (0..65535)`. A part number on an integer leaf |
+| `…9.9.48.1.1.1.3.2` | `PWR-C1-1100WAC` | *deleted* | same object |
+| `…9.9.13.1.3.1.3.1` | `CAT9500-001`, `39` | *deleted* | `ciscoEnvMonTemperatureStatusValue`, `Gauge32`, degrees Celsius. See the walk note below |
+
+Every deletion is in `cisco_catalyst_9500` except the second `…13.1.3.1.3.1` row, which is `cisco_nexus_9500`.
+
+**Nine of the ten corrections move the emitted tag, and all nine are one defect: a bare number on a `DisplayString` leaf.**
+`encodeTypedValue` emits `1100` and `1` as tag `0x02` INTEGER, so those rows put an INTEGER on a leaf the MIB declares a `DisplayString`.
+The seven `1` rows survived the first cut of this audit, which recorded them as "weak but a legal DisplayString" and left them alone.
+They are not legal, and the reason the mistake was invisible is instructive: judging a value by whether it *looks like* a description passes a bare `1`, and the one row in the pinned reading with no tag assertion was exactly the row that carried it.
+Every case in that test now asserts the tag.
+
+**The supply correction is settled by evidence inside the profile; the fan correction is not, and the difference is recorded rather than smoothed over.**
+`resources/cisco_ios/traps.json` fires `ciscoEnvMonSupplyStatusChangeNotif` carrying `1.3.6.1.4.1.9.9.13.1.5.1.2.1` as an `octet-string` valued `PWR-{{.Serial}}`, with `…13.1.5.1.3.1` as an `integer` beside it.
+So one profile modelled one OID as two types, depending on whether you polled it or received its trap.
+Deleting the static row would have left a device sending a trap that names an object it refuses to answer when polled, which is worse than either state; correcting it is what makes poll and trap agree.
+No trap references any fan object, so nothing independent says what `ciscoEnvMonFanStatusDescr` should hold: that correction rests on consistency alone, two sibling columns of the same MIB family both declared `DisplayString` and both valued `1`, where a split would need a principle and there is none.
+
+The replacements are generic positional descriptions on purpose, since inventing a part number would be nl6#569's defect in the other direction.
+The trap's own `PWR-{{.Serial}}` is that profile's convention for the same object, and a positional description agrees with it in *type* without copying a templated serial into static data.
+
+**Both tables ship a description column and no state column, and that is recorded rather than fixed.**
+After this change no profile serves `ciscoEnvMonFanState` (`…13.1.4.1.3.x`), `ciscoEnvMonSupplyState` (`…13.1.5.1.3.x`) or `ciscoEnvMonTemperatureState` (`…13.1.3.1.6.x`), so a collector can discover that a fan or a supply exists and never read its health.
+That is a real gap, lesser than the wire-type error, and it must not be closed by inventing state values: `TestCiscoEnvMonAndMemoryPoolMatchTheMIB` asserts those three columns as absences so completing the tables has to argue with a reading.
+The trap catalog fires two of the three.
+
+**Deleting the four fan rows empties that table**, exactly as nl6#571's `hrStorageTable` deletions did for four profiles, and for the same reason.
+A collector that gets nothing learns the truth about a profile that models no fans; a collector that gets `C9300-SUP-1` from `ciscoEnvMonFanStatusDescr` is told a supervisor module is a fan.
+Do not restore a row to make the table non-empty.
+
+**The two `ciscoEnvMonTemperatureStatusValue` rows were reachable, and the walk is the path this change moved.**
+An earlier version of this section called them dead data and unreachable. That was drawn from the GET path alone and it was wrong.
+`vendorOIDs` maps the OID to `MetricTemperature` for all five Cisco profiles and `findResponse` consults `getMetricValue` before the static `oidIndex`, so a **GET** was already answered by the cycler and did not change.
+A **walk** is a different path: `findNextOIDWithServed` collects candidates and takes the lexicographically smallest with a strict less-than, so when a static row and a metric OID are the same OID the first candidate wins, and the static one is appended first from `precomputedNextOID`.
+Measured on a device with a live cycler at the parent revision, `findNextOID` from `…13.1.3.1.2.1` returned `…13.1.3.1.3.1 = "CAT9500-001"` on `cisco_catalyst_9500` and `"39"` on `cisco_nexus_9500`, while `findResponse` on the same devices returned `30` and `31`.
+So a GETNEXT or GETBULK across that table returned a chassis name, as an OCTET STRING, on a `Gauge32` leaf.
+The deletion is still right, because the static values were wrong on any path, but what it changed is the walk.
+`TestCiscoTemperatureStatusValueIsServedByTheCycler` now drives `findNextOIDWithServed` and requires a numeric, INTEGER-tagged answer; before that, nothing in the package walked a Cisco profile at all, so a change to `GetSortedMetricOIDs`' ordering could drop the column from every Cisco walk with only the NVIDIA arc's walk test firing.
+
+**`ciscoEnvMonTemperatureStatusValue` is `STATUS deprecated`** in the revision consulted, superseded by `ciscoEnvMonTemperatureStatusValueRev1` (`ciscoEnvMonTemperatureStatusEntry 7`, `Integer32`, which also carries negative temperatures).
+That does not change the deletion, but a collector written against the current MIB polls `…13.1.3.1.7.x`, which nl6 answers with `noSuchObject` because no profile serves it.
+
+**Two OIDs were correct and were left alone**: `ciscoImageString` (a `DisplayString` holding an image-characteristic string, so a version is the right kind of value, with a one-sub-identifier INDEX that `…1.2.2` satisfies) and `cseSysCPUUtilization` (`Gauge32 (0..100)`, answering 28).
+
+**Eight Cisco OIDs are unaudited, and the reason differs per OID.**
+An earlier version of this section attributed all eight to `OLD-CISCO-CHASSIS-MIB` being unobtainable, which was wrong: that module is genuinely unobtainable, but it does not define four of them.
+
+| OID | status |
+|---|---|
+| `…9.3.6.3.0`, `…9.3.6.1.1.4.1.2.1`, `…9.5.1.2.2.1.0`, `…9.5.1.3.1.1.5.1` | genuinely unresolvable here — OLD-CISCO-CHASSIS-MIB was not obtainable |
+| `…9.2.1.56.0`, `…9.2.1.58.0` | resolvable and not audited: `busyPer` and `avgBusy5` in OLD-CISCO-CPU-MIB, which *was* obtained. Both ship plausible percentages; neither was checked further |
+| `…9.2.1.54.0` | resolvable, and it looks like a live defect: `writeMem` in OLD-CISCO-SYSTEM-MIB, `ACCESS write-only`, an action object that saves the running configuration. nl6 answers it with a large number. Filed as nl6#591 |
+| `…9.2.1.8.0` | not defined in the OLD-CISCO-SYSTEM-MIB copy obtained (a v2 conversion that drops the deprecated memory objects) |
+
+**No MIB file or extracted fixture is checked in, and that is a decision.**
+nl6#541's `go/nl6/testdata/mibs/` fixtures are IETF standards-track modules; a vendor MIB is a different legal object.
+The nl6#590 obtainability research found no published redistribution grant for any of nineteen vendors (Cisco's own header asserts copyright and grants nothing), and LibreNMS, which has shipped vendor MIBs for years, classifies its own MIB tree as a GPL-non-compliant component rather than claiming the right.
+So each audit is recorded as a **pinned reading** citing the module and revision consulted, never as a live check.
+The asymmetry is the point: if the licensing question later resolves permissively a fixture can be added, and if it resolves restrictively nothing has to be removed.
+
+The modules read for this audit were CISCO-ENVMON-MIB `201803210000Z`, CISCO-MEMORY-POOL-MIB `201309180000Z`, CISCO-IMAGE-MIB `9508150000Z` and CISCO-SYSTEM-EXT-MIB `201606140000Z`, with `ciscoMgmt = 1.3.6.1.4.1.9.9` resolved out of CISCO-SMI.
+`TestCiscoEnvMonAndMemoryPoolMatchTheMIB` pins the surviving values and the deletions as absences.
+Like the Palo Alto test it is a record of a reading: nothing in CI compares nl6 against a Cisco MIB, and the claim it supports is "this profile matches those revisions of those modules", never "this profile is correct".
 
 ## Response size, `max-repetitions` and truncation
 

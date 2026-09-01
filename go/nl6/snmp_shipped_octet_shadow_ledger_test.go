@@ -1410,10 +1410,11 @@ func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
-	// nl6#576 and then nl6#574 / nl6#571 / nl6#569 edited shipped data AFTER this
-	// change, so the reversal chains: undo those transitions newest-first, which
-	// reconstructs the tree nl6#570 left, and only then put this change's octet
-	// rows back.
+	// nl6#590, nl6#576 and then nl6#574 / nl6#571 / nl6#569 edited shipped data
+	// AFTER this change, so the reversal chains: undo those transitions
+	// newest-first, which reconstructs the tree nl6#570 left, and only then put
+	// this change's octet rows back.
+	restoreNl6590CiscoArc(t, cur)
 	restoreNl6576NvidiaArc(t, cur)
 	restoreNl6574ResourceDefectEntries(t, cur)
 	restoreNl6570OctetEntries(t, cur)
@@ -1632,10 +1633,12 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 		t.Fatal("the ledger yielded no OID names")
 	}
 
-	// nl6#588 re-homed aws_s3_storage's sysObjectID value and nl6#576 re-homed the
-	// NVIDIA GPU arc, both after this change; undo them newest-first before
-	// comparing against a digest taken when neither had happened.
-	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(collectShippedOIDs(t)))
+	// nl6#590 deleted five Cisco names, nl6#588 re-homed aws_s3_storage's
+	// sysObjectID value and nl6#576 re-homed the NVIDIA GPU arc, all after this
+	// change; undo them newest-first before comparing against a digest taken when
+	// none of them had happened.
+	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
+		nl6590OIDNamesBeforeAudit(collectShippedOIDs(t))))
 	shipped := map[string]struct{}{}
 	for _, o := range oids {
 		shipped[o] = struct{}{}
