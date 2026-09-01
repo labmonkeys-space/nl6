@@ -156,6 +156,36 @@ const (
 	TrapVTIPAddress   TrapVarbindType = "ipaddress"
 )
 
+// trapVarbindTypes is THE enumeration of the vocabulary, and the single place
+// the accept-set is written down. compileEntry validates against it through
+// validTrapVarbindType, and every consumer that needs to iterate the vocabulary
+// — today snmp_trap_poll_type_agreement_test.go's probe table — drives off it
+// too, rather than restating the list.
+//
+// It used to be an inline `case` list in compileEntry, which meant a second
+// enumeration elsewhere agreed with it only on the day it was written. That is
+// exactly how validateDottedOID drifted from encodeOID (nl6#539), and here the
+// consequence is quieter: a ninth type added to the loader alone leaves the
+// nl6#593 guard's probe table short, and every varbind of that type is reported
+// as an encoder failure instead of being compared.
+var trapVarbindTypes = []TrapVarbindType{
+	TrapVTInteger, TrapVTOctetString, TrapVTOID, TrapVTCounter32,
+	TrapVTGauge32, TrapVTTimeTicks, TrapVTCounter64, TrapVTIPAddress,
+}
+
+// validTrapVarbindType reports whether the catalog loader accepts this type.
+// encodeVarbindTyped must have a case for every type it admits; that pairing is
+// pinned by TestEveryTrapVarbindTypeIsProbeable, which drives off this table
+// and requires each entry to encode at a distinct tag.
+func validTrapVarbindType(t TrapVarbindType) bool {
+	for _, v := range trapVarbindTypes {
+		if v == t {
+			return true
+		}
+	}
+	return false
+}
+
 // trapVarbindJSON is the on-disk shape of a single catalog varbind entry.
 // Templates in `oid` and `value` are resolved per-fire.
 type trapVarbindJSON struct {
@@ -749,12 +779,7 @@ func compileEntry(raw catalogEntryJSON, source string, idx int) (*CatalogEntry, 
 		if vb.Type == "" {
 			return nil, fmt.Errorf("trap catalog: %s entry %q varbind %d: type is required", source, raw.Name, j)
 		}
-		switch vb.Type {
-		case TrapVTInteger, TrapVTOctetString, TrapVTOID,
-			TrapVTCounter32, TrapVTGauge32, TrapVTTimeTicks,
-			TrapVTCounter64, TrapVTIPAddress:
-			// ok
-		default:
+		if !validTrapVarbindType(vb.Type) {
 			return nil, fmt.Errorf("trap catalog: %s entry %q varbind %d: unknown type %q",
 				source, raw.Name, j, vb.Type)
 		}
