@@ -67,32 +67,38 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // emitted tag of no OID any shipped profile serves. It is a measurement, not an
 // argument, and it was NOT re-derived from the widened code.
 //
-// RE-PINNED FIVE TIMES. Every re-pin is a CORPUS change, and each is re-derived
+// RE-PINNED SIX TIMES. Every re-pin is a CORPUS change, and each is re-derived
 // by a test rather than asserted here.
 //
-// The first was nl6#570, which deleted the 1322 shipped ifTable .10 / .16
-// entries the cycler now serves. No surviving OID moved its tag;
-// TestOctetShadowDeletionReproducesTheParentCorpus restores the deleted rows and
-// requires the value this constant held before, byte for byte.
+// THE ORDER IS NEWEST FIRST, matching snmp_oid_roundtrip_test.go's account of
+// the same history. The two files used to run in opposite directions, which made
+// "the sixth re-pin" mean a different change depending on which one you were
+// reading.
 //
-// The second is nl6#574 / nl6#571 / nl6#569, which deleted 829 entries (742 dead
-// ifTable .9 / .11 / .17 rows, 57 bare column OIDs, 4 over-specified instances,
-// 24 Palo Alto OIDs served by profiles that are not Palo Alto devices, and 2
-// invalid PAN OIDs) and corrected 5 PAN values, 3 of which DO move a tag — a
-// number where a DisplayString belongs was the defect.
-// TestResourceDataDefectsReproduceTheParentCorpus reverses all of it and
-// requires the value this constant held at ec4700f.
+// The sixth re-pin is nl6#590's SECOND ARC, Arista: five entries were deleted and
+// six were corrected, and NO CORRECTION MOVES A TAG. That is worth stating
+// because nine of the ten Cisco corrections did — this constant moves for the
+// five DELETIONS alone. sysDescr and the four ENTITY-MIB model strings stay OCTET
+// STRINGs and sysObjectID stays an OBJECT IDENTIFIER; the sysObjectID correction
+// is visible only to shippedOIDEncodingDigest, which hashes OID-typed VALUES too.
+// Three further SSH edits move nothing at all, since shippedSNMPEntries reads
+// doc.SNMP only. TestAristaArcAuditReproducesTheParentCorpus reverses the eleven
+// SNMP rows and requires the value this constant held at 2e16f91. That ledger,
+// its tables and the pre-change value of this constant
+// (shippedTagDigestBeforeAristaArcAudit) all live in
+// snmp_shipped_arista_arc_ledger_test.go rather than beside this line.
 //
-// The third is nl6#576, which re-homed the NVIDIA GPU telemetry arc from
-// 1.3.6.1.4.1.53246 (IANA: Mailteck, S.A.) to 1.3.6.1.4.1.5703 (NVIDIA
-// Corporation). No tag moved and no entry was added or removed — this digest is
-// keyed on the OID STRING as well as the tag, which is the only reason a pure
-// rename moves it. TestNvidiaArcRehomeReproducesTheParentCorpus reverses the 225
-// recorded rows and requires the value this constant held at 1bca8e8, which is
-// what makes the re-pin below a measurement rather than an acceptance of
-// whatever the new code emits. That ledger, its tables and the pre-change value
-// of this constant (shippedTagDigestBeforeNvidiaArcRehome) all live in
-// snmp_shipped_nvidia_arc_ledger_test.go rather than beside this line.
+// The fifth is nl6#591, and it is the first ACCESS-MODE defect rather than a
+// value, type, name-shape or vendor-arc one: two entries answering
+// 1.3.6.1.4.1.9.2.1.54.0, which is writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS
+// write-only. Both encoded correctly as the declared INTEGER — that is what makes
+// the class new and what makes every load rule blind to it — and both were
+// deleted, because a write-only object has no correct readable value.
+// TestWriteMemRemovalReproducesTheParentCorpus reverses the two recorded rows and
+// requires the value this constant held at f47c85d. That ledger, its table and
+// the pre-change value of this constant (shippedTagDigestBeforeWriteMemRemoval)
+// all live in snmp_shipped_cisco_writeonly_ledger_test.go rather than beside this
+// line.
 //
 // The fourth is nl6#590, the first vendor-arc MIB audit: eight Cisco enterprise
 // entries were deleted (four ciscoEnvMonFanStatusTable rows describing modules
@@ -107,17 +113,29 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // the pre-change value of this constant (shippedTagDigestBeforeCiscoArcAudit) all
 // live in snmp_shipped_cisco_arc_ledger_test.go rather than beside this line.
 //
-// The fifth is nl6#591, and it is the first ACCESS-MODE defect rather than a
-// value, type, name-shape or vendor-arc one: two entries answering
-// 1.3.6.1.4.1.9.2.1.54.0, which is writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS
-// write-only. Both encoded correctly as the declared INTEGER — that is what makes
-// the class new and what makes every load rule blind to it — and both were
-// deleted, because a write-only object has no correct readable value.
-// TestWriteMemRemovalReproducesTheParentCorpus reverses the two recorded rows and
-// requires the value this constant held at f47c85d. That ledger, its table and
-// the pre-change value of this constant (shippedTagDigestBeforeWriteMemRemoval)
-// all live in snmp_shipped_cisco_writeonly_ledger_test.go rather than beside this
-// line.
+// The third is nl6#576, which re-homed the NVIDIA GPU telemetry arc from
+// 1.3.6.1.4.1.53246 (IANA: Mailteck, S.A.) to 1.3.6.1.4.1.5703 (NVIDIA
+// Corporation). No tag moved and no entry was added or removed — this digest is
+// keyed on the OID STRING as well as the tag, which is the only reason a pure
+// rename moves it. TestNvidiaArcRehomeReproducesTheParentCorpus reverses the 225
+// recorded rows and requires the value this constant held at 1bca8e8, which is
+// what makes that re-pin a measurement rather than an acceptance of whatever the
+// new code emits. That ledger, its tables and the pre-change value of this
+// constant (shippedTagDigestBeforeNvidiaArcRehome) all live in
+// snmp_shipped_nvidia_arc_ledger_test.go rather than beside this line.
+//
+// The second is nl6#574 / nl6#571 / nl6#569, which deleted 829 entries (742 dead
+// ifTable .9 / .11 / .17 rows, 57 bare column OIDs, 4 over-specified instances,
+// 24 Palo Alto OIDs served by profiles that are not Palo Alto devices, and 2
+// invalid PAN OIDs) and corrected 5 PAN values, 3 of which DO move a tag — a
+// number where a DisplayString belongs was the defect.
+// TestResourceDataDefectsReproduceTheParentCorpus reverses all of it and
+// requires the value this constant held at ec4700f.
+//
+// The first was nl6#570, which deleted the 1322 shipped ifTable .10 / .16
+// entries the cycler now serves. No surviving OID moved its tag;
+// TestOctetShadowDeletionReproducesTheParentCorpus restores the deleted rows and
+// requires the value this constant held before, byte for byte.
 //
 // If a resource edit legitimately adds an OID or changes a value's TYPE, this
 // digest must be re-pinned in the same commit, and the diff the failure prints
@@ -127,7 +145,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // fixed. TestShippedBigValuesSitOnCounter64Leaves and
 // TestShippedUntypedValuesFitInteger32 fire on the DEFECT rather than on the
 // digest, and exist so that re-pinning is never the only route out.
-const shippedTagDigest = "bc89ec8bd0e7f12bacf4f9d6653b75159b333146b05a4dfeadc5acce04923b8b"
+const shippedTagDigest = "0a75f790fa90a6dd2df2dfe0ee841978ea99de1c873727ba728593015692af70"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

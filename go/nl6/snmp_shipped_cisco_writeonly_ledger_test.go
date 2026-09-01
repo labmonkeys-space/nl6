@@ -240,6 +240,7 @@ func TestWriteMemRemovalReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
+	restoreNl6590AristaArc(t, cur)
 	restoreNl6591WriteMem(t, cur)
 
 	// Same line shape and hash as shippedTypedCorpus.
@@ -284,7 +285,7 @@ func TestWriteMemRePinIsOnlyTheRemoval(t *testing.T) {
 		t.Fatal("the ledger yielded no vanished OID names")
 	}
 
-	restored := nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t))
+	restored := nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t)))
 	sort.Strings(restored)
 
 	h := sha256.New()

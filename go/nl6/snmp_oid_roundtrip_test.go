@@ -266,8 +266,29 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED SEVEN TIMES. Every re-pin is a CORPUS change, not an encoding
+// RE-PINNED EIGHT TIMES. Every re-pin is a CORPUS change, not an encoding
 // change, and each is re-derived by a test rather than asserted here.
+//
+// THE ORDER IS NEWEST FIRST, and snmp_hc_counter_table_test.go's account of the
+// same history now runs the same way. The two used to run in opposite
+// directions, which made an ordinal mean a different change depending on which
+// file you were reading.
+//
+// The eighth re-pin is nl6#590's SECOND ARC, Arista, and it is the only one that
+// moves this digest in BOTH directions at once. Five OID NAMES left the corpus
+// (they named objects ARISTA-SMI-MIB / ARISTA-SW-IP-FORWARDING-MIB do not define,
+// or the not-accessible aristaSwFwdIpStatsTable), AND one OID-typed VALUE was
+// replaced: sysObjectID.0 answered 1.3.6.1.4.1.30065.1.3011.7280.3282.32.4, which
+// is shaped like an Arista product OID and is not one, and now answers
+// aristaDCS7280CR332P4M. This digest covers OID-typed values as well as names, so
+// its reversal is a drop-and-add rather than the pure append every earlier link
+// uses — see nl6590aristaOIDNamesBeforeAudit.
+// TestAristaArcRePinIsOnlyTheAudit performs it and requires the constant below
+// it; the seven older reversals each now begin with the same step, so the chain
+// is unbroken at every link. As with nl6#591, that link's "before" value is NOT
+// declared here: it lives with its ledger, as
+// shippedOIDEncodingDigestBeforeAristaArcAudit in
+// snmp_shipped_arista_arc_ledger_test.go.
 //
 // The seventh re-pin is nl6#591, the first ACCESS-MODE defect: 1.3.6.1.4.1.9.2.1.54.0
 // is writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS write-only, and cisco_catalyst_9500
@@ -354,7 +375,7 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
-const shippedOIDEncodingDigest = "009a63f6ac3597515da42543ca3e61354f408940cb3ef02b79ce635f44b13604"
+const shippedOIDEncodingDigest = "2c714eef349b5752ad5a3a208c5932b649fc8df6262da1050b0bd239bbbc7c44"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -727,7 +748,7 @@ func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	// four, newest first, before walking back further.
 	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
 		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
+			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
 	for _, o := range oids {
 		if o == deleted {
 			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+

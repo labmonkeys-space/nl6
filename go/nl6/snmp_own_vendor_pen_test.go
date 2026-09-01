@@ -246,8 +246,23 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // (see snmp_shipped_cisco_writeonly_ledger_test.go). Both are still under their
 // OWN vendor's PEN, so this guard never had anything to say about them — a
 // correct arc is all it checks — and the VALUE count is again unchanged.
+//
+// It fell a third time, from 333 to 328, in nl6#590's SECOND ARC, Arista:
+// arista_7280r3 stopped serving all five of its 1.3.6.1.4.1.30065 objects,
+// because four of them are not defined in ARISTA-SMI-MIB 201408150000Z /
+// ARISTA-SW-IP-FORWARDING-MIB 201408150000Z and the fifth is
+// aristaSwFwdIpStatsTable, MAX-ACCESS not-accessible (see
+// snmp_shipped_arista_arc_ledger_test.go). The profile now serves NO name under
+// its own arc — the per-profile census below logs names=0 for it — which is a
+// state this guard permits and the value count is what keeps it honest.
+//
+// The VALUE count is unchanged AGAIN, and here that is a slightly stronger
+// statement than in the two rows above: the same change CORRECTED sysObjectID.0
+// from an invented product OID to aristaDCS7280CR332P4M. Both are under Arista's
+// own PEN, so the guard has nothing to say about either — a correct arc is all it
+// checks, and "resolves to a real product" is not something it can see.
 const (
-	ownVendorArcNamesShipped  = 333
+	ownVendorArcNamesShipped  = 328
 	ownVendorArcValuesShipped = 28
 )
 

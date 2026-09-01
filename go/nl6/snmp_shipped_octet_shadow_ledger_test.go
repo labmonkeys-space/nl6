@@ -1414,6 +1414,7 @@ func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 	// data AFTER this change, so the reversal chains: undo those transitions
 	// newest-first, which reconstructs the tree nl6#570 left, and only then put
 	// this change's octet rows back.
+	restoreNl6590AristaArc(t, cur)
 	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 	restoreNl6576NvidiaArc(t, cur)
@@ -1640,7 +1641,7 @@ func TestOctetShadowRePinIsOnlyTheDeletedOIDs(t *testing.T) {
 	// digest taken when none of them had happened.
 	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
 		nl6590OIDNamesBeforeAudit(
-			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
+			nl6591OIDNamesBeforeWriteMemRemoval(nl6590aristaOIDNamesBeforeAudit(t, collectShippedOIDs(t))))))
 	shipped := map[string]struct{}{}
 	for _, o := range oids {
 		shipped[o] = struct{}{}
