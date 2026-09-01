@@ -81,10 +81,11 @@ import (
 // that, so the table cannot be "fixed" into agreeing with itself. That is the
 // nl6#573 lesson.
 //
-// nl6#590's Cisco-arc audit has since taken over as the newest link, so this one
-// begins by undoing that: the chain reads
-// today -> 5bded6c -> 87c642d -> 1bca8e8 -> ec4700f -> 3a69927 -> 44ef67f, and
-// every reversal starts from today's corpus and walks back along it.
+// nl6#590's Cisco-arc audit and then nl6#591's writeMem removal have since taken
+// over as the newest links, so this one begins by undoing both, newest first: the
+// chain reads
+// today -> f47c85d -> 5bded6c -> 87c642d -> 1bca8e8 -> ec4700f -> 3a69927 -> 44ef67f,
+// and every reversal starts from today's corpus and walks back along it.
 
 // nl6588RehomedSysObjectIDs is the whole transition: one row.
 //
@@ -168,9 +169,11 @@ func nl6588OIDNamesBeforeRehome(names []string) []string {
 // come back byte for byte. It can only come back if nothing else about what a
 // shipped OID puts on the wire has changed.
 func TestAWSPENRePinIsOnlyTheRehoming(t *testing.T) {
-	// nl6#590's Cisco-arc audit deleted five OID names after this change, so it is
-	// the newer link and is undone first.
-	restored := nl6588OIDNamesBeforeRehome(nl6590OIDNamesBeforeAudit(collectShippedOIDs(t)))
+	// nl6#591 deleted writeMem and nl6#590's Cisco-arc audit deleted five OID
+	// names, both after this change, so they are the newer links and are undone
+	// first, newest first.
+	restored := nl6588OIDNamesBeforeRehome(nl6590OIDNamesBeforeAudit(
+		nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t))))
 	sort.Strings(restored)
 
 	h := sha256.New()

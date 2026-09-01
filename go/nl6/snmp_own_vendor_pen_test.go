@@ -239,8 +239,15 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // what the profile put in them (see snmp_shipped_cisco_arc_ledger_test.go). The
 // VALUE count is unchanged, which is the half that matters here — no profile
 // stopped identifying itself.
+//
+// It fell again, from 335 to 333, in nl6#591: cisco_catalyst_9500 and cisco_crs_x
+// each stopped serving 1.3.6.1.4.1.9.2.1.54.0, which is writeMem in
+// OLD-CISCO-SYSTEM-MIB and ACCESS write-only, so no readable value is correct
+// (see snmp_shipped_cisco_writeonly_ledger_test.go). Both are still under their
+// OWN vendor's PEN, so this guard never had anything to say about them — a
+// correct arc is all it checks — and the VALUE count is again unchanged.
 const (
-	ownVendorArcNamesShipped  = 335
+	ownVendorArcNamesShipped  = 333
 	ownVendorArcValuesShipped = 28
 )
 

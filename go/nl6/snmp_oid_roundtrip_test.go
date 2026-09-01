@@ -266,8 +266,23 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 // exactly that while the docs claimed a hash comparison, which is the kind of
 // unbacked claim this whole change exists to stop making.
 //
-// RE-PINNED SIX TIMES. Every re-pin is a CORPUS change, not an encoding
+// RE-PINNED SEVEN TIMES. Every re-pin is a CORPUS change, not an encoding
 // change, and each is re-derived by a test rather than asserted here.
+//
+// The seventh re-pin is nl6#591, the first ACCESS-MODE defect: 1.3.6.1.4.1.9.2.1.54.0
+// is writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS write-only, and cisco_catalyst_9500
+// and cisco_crs_x both answered it with a readable integer. Both entries were
+// deleted — a write-only object has no correct readable value — and unlike
+// nl6#590 the NAME left the corpus entirely: no third profile served it and no
+// trap catalog names it. That is measured by TestWriteMemNameLeftTheCorpus rather
+// than reasoned about, because nl6#590's own seven-deleted / five-vanished split
+// is what a two-row table makes easy to get wrong.
+// TestWriteMemRePinIsOnlyTheRemoval restores the one name and requires the
+// constant below it; the six older reversals each now begin with the same
+// restoration, so the chain is unbroken at every link. As with nl6#590, that
+// link's "before" value is NOT declared here: it lives with its ledger, as
+// shippedOIDEncodingDigestBeforeWriteMemRemoval in
+// snmp_shipped_cisco_writeonly_ledger_test.go.
 //
 // The sixth re-pin is nl6#590, the first vendor-arc MIB audit: seven Cisco
 // enterprise OID names were deleted from the corpus and FIVE of them left it
@@ -339,7 +354,7 @@ func TestDecodeOIDNeverReturnsNegativeArc(t *testing.T) {
 const shippedOIDEncodingDigestAt09546c3 = "8156ddae1118381de67c2bb88121eeab4c13489a186f721dc62da6966b717b91"
 const shippedOIDEncodingDigestBeforeOctetShadowDeletion = "cda00c701606d63f494d8d85780079609b277e91ce528fa6bffabde3073745a1"
 const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b4ba91b4a959b31df7473fef500a0eb9b98cb2e03a76"
-const shippedOIDEncodingDigest = "73ec7b1d6ec84991a4458b9e984ee1a33b3cf1f7c09d62334dee7bca9cc7f4ca"
+const shippedOIDEncodingDigest = "009a63f6ac3597515da42543ca3e61354f408940cb3ef02b79ce635f44b13604"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -705,13 +720,14 @@ func TestOIDBodyBoundIsSharedByBothEncoders(t *testing.T) {
 func TestRePinIsOnlyTheDeletedOID(t *testing.T) {
 	const deleted = "1.3.6.1.2.1.4.21.1.1"
 
-	// nl6#590 deleted five Cisco enterprise names in its MIB audit, nl6#588
-	// re-homed aws_s3_storage's sysObjectID value off 1.3.6.1.4.1.9999, and nl6#576
-	// before it re-homed the NVIDIA GPU arc from 1.3.6.1.4.1.53246 to 5703, which
-	// renames 77 distinct shipped names. Undo all three, newest first, before
-	// walking back further.
+	// nl6#591 deleted writeMem, nl6#590 five Cisco enterprise names in its MIB
+	// audit, nl6#588 re-homed aws_s3_storage's sysObjectID value off
+	// 1.3.6.1.4.1.9999, and nl6#576 before it re-homed the NVIDIA GPU arc from
+	// 1.3.6.1.4.1.53246 to 5703, which renames 77 distinct shipped names. Undo all
+	// four, newest first, before walking back further.
 	oids := nl6576OIDNamesBeforeRehome(nl6588OIDNamesBeforeRehome(
-		nl6590OIDNamesBeforeAudit(collectShippedOIDs(t))))
+		nl6590OIDNamesBeforeAudit(
+			nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))))
 	for _, o := range oids {
 		if o == deleted {
 			t.Fatalf("%s is shipped again, so the re-pin's premise is gone: either restore the "+

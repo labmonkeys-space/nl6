@@ -42,6 +42,13 @@ import (
 // STRING for anything else, and both are legal encodings, so there is nothing
 // for the guard to refuse — this test is their only coverage. freeMem, the leaf
 // that shipped nl6#515, is now covered twice: here, and at load by rule 3.
+// writeMem is a special case since nl6#591 and the row below is now a backstop
+// rather than its coverage: the object is ACCESS write-only, so the question this
+// test asks — does it hold a NUMBER — is the wrong one for it. No profile may
+// serve it AT ALL, which TestCiscoWriteOnlyObjectsAreAbsent pins. The row stays
+// because a re-added entry should fail here too if it is also non-numeric, and
+// because removing it would silently shrink the guarded set; it must never be
+// read as licence to ship writeMem with a numeric value.
 var numericLeafOIDs = []struct {
 	oid      string
 	name     string

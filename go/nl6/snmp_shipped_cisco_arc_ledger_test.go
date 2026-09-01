@@ -75,10 +75,13 @@ import (
 //   - 1.3.6.1.4.1.9.2.1.56.0 and .58.0: RESOLVABLE and not audited. They are
 //     busyPer and avgBusy5 in OLD-CISCO-CPU-MIB, which WAS obtained; both ship
 //     plausible percentages and neither was checked further.
-//   - 1.3.6.1.4.1.9.2.1.54.0: RESOLVABLE, and it looks like a live defect. It is
+//   - 1.3.6.1.4.1.9.2.1.54.0: RESOLVABLE, and it was a live defect. It is
 //     writeMem in OLD-CISCO-SYSTEM-MIB, ACCESS write-only — an action object that
-//     saves the running configuration — and nl6 answers it with a large number.
-//     Filed as nl6#591 rather than fixed here.
+//     saves the running configuration — and nl6 answered it with a large number.
+//     Filed as nl6#591 rather than fixed here, and CLOSED there: both entries are
+//     deleted and the reading lives in
+//     snmp_shipped_cisco_writeonly_ledger_test.go. It is a different defect CLASS
+//     from anything this ledger records, which is why it is a separate change.
 //   - 1.3.6.1.4.1.9.2.1.8.0: not defined in the OLD-CISCO-SYSTEM-MIB copy
 //     obtained (a v2 conversion that drops the deprecated memory objects).
 //
@@ -109,10 +112,12 @@ import (
 // TestCiscoArcLedgerValuesMatchTheParentRevision pins that, so the table cannot
 // be "fixed" into agreeing with itself. That is the nl6#573 lesson.
 //
-// This ledger is the NEWEST link in the chain. Every older ledger reverses to its
-// own parent starting from today's corpus, so each of them now begins by undoing
-// this change: the chain reads
-// today -> 5bded6c -> 87c642d -> 1bca8e8 -> ec4700f -> 3a69927 -> 44ef67f.
+// This ledger WAS the newest link in the chain; nl6#591's writeMem removal
+// (snmp_shipped_cisco_writeonly_ledger_test.go) has since taken that place, so
+// every reversal here now begins by undoing THAT change first. Every older
+// ledger reverses to its own parent starting from today's corpus, so each of them
+// begins by undoing nl6#591 and then this change: the chain reads
+// today -> f47c85d -> 5bded6c -> 87c642d -> 1bca8e8 -> ec4700f -> 3a69927 -> 44ef67f.
 
 // nl6590DeletedCiscoEntries are the eight shipped entries this change removed.
 // Seven distinct OIDs; ciscoEnvMonTemperatureStatusValue.1 was served by two
@@ -312,8 +317,9 @@ func nl6590VanishedCiscoOIDNames() []string {
 
 // nl6590OIDNamesBeforeAudit maps a list of shipped OID NAMES back to the set
 // 5bded6c shipped. It is the name-view counterpart of restoreNl6590CiscoArc, and
-// every reversal of shippedOIDEncodingDigest now begins with it — this change is
-// the newest link, so it is undone FIRST (innermost in the call chain).
+// every reversal of shippedOIDEncodingDigest passes through it. It is no longer
+// the innermost call: nl6#591 landed after this change, so
+// nl6591OIDNamesBeforeWriteMemRemoval is undone first and this one wraps it.
 func nl6590OIDNamesBeforeAudit(names []string) []string {
 	return append(append([]string{}, names...), nl6590VanishedCiscoOIDNames()...)
 }
@@ -333,6 +339,9 @@ func TestCiscoArcAuditReproducesTheParentCorpus(t *testing.T) {
 		cur[k] = e.Value
 	}
 
+	// nl6#591 deleted the two writeMem entries after this change, so it is the
+	// newest link of all and is undone first.
+	restoreNl6591WriteMem(t, cur)
 	restoreNl6590CiscoArc(t, cur)
 
 	// Same line shape and hash as shippedTypedCorpus.
@@ -378,7 +387,9 @@ func TestCiscoArcRePinIsOnlyTheAudit(t *testing.T) {
 		t.Fatal("the ledger yielded no vanished OID names")
 	}
 
-	restored := nl6590OIDNamesBeforeAudit(collectShippedOIDs(t))
+	// nl6#591 removed one more name after this change, so it is undone first.
+	restored := nl6590OIDNamesBeforeAudit(
+		nl6591OIDNamesBeforeWriteMemRemoval(collectShippedOIDs(t)))
 	sort.Strings(restored)
 
 	h := sha256.New()
@@ -552,6 +563,10 @@ func TestCiscoArcCensusMatchesTheCorpus(t *testing.T) {
 	for _, e := range shippedSNMPEntries(t) {
 		parent[[2]string{e.Profile, e.OID}] = e.Value
 	}
+	// nl6#591 deleted the two writeMem entries after this change, so it is the
+	// newest link of all and is undone first. Without it the census below counts a
+	// corpus that is neither today's nor 5bded6c's.
+	restoreNl6591WriteMem(t, parent)
 	restoreNl6590CiscoArc(t, parent)
 
 	distinct, audited := map[string]struct{}{}, map[string]struct{}{}
