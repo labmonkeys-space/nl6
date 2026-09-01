@@ -263,7 +263,7 @@ What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
 - **Bare table columns.** No rule sees them. nl6#571 deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Five arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1 and Juniper 13 of 15. The remaining profiles' vendor subtrees have had no equivalent review. The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. nl6#569 corrected that profile by hand against PAN-COMMON-MIB; the *class* is untouched. Five arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1 and Juniper 13 of 15. The remaining fourteen arcs have had no equivalent review and each now carries an `UNAUDITED-ARC(<pen>)` label saying so in the file, because nothing in this repository reads them; an arc is audited, deliberately labelled, or explicitly excluded, and a new one must be one of the three (see [Every arc is audited, labelled, or explicitly excluded](#every-arc-is-audited-labelled-or-explicitly-excluded)). The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
 - **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. nl6#591 deleted the one confirmed instance (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. `TestShippedBigValuesSitOnCounter64Leaves` fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
@@ -347,7 +347,7 @@ A vendor enterprise subtree is an identity claim, not an approximation.
 
 `TestPaloAltoPANSubtreeMatchesTheMIB` pins the eight surviving values and the three absences; `TestNoForeignPANOIDsShip` is the corpus-wide half, since the first test builds one device from one profile and 24 foreign entries were invisible to it.
 Both are a record of a reading, not a verification: nothing in CI compares nl6 against PAN-COMMON-MIB.
-**Only this profile was audited.** The other 28 carry vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason to treat that as outstanding work rather than an assumption.
+**Only this profile was audited.** The other 28 carried vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason that was treated as outstanding work rather than an assumption. Four more arcs have been audited since, and the fourteen that remain are labelled rather than assumed correct.
 
 nl6#576 closed one more instance of the class and not the class itself.
 The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.; the arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and `TestNoNvidiaOIDsShipUnderMailteck` keeps that one arc clean in both the OID-name and the OID-typed-value positions.
@@ -397,7 +397,7 @@ What the guard does **not** cover, and what remains outstanding:
 
 - **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
 - **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
-- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Three arcs have now been audited and every one of them was mostly or entirely wrong: nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco (with 8 Cisco OIDs still unaudited at that point, since reduced to 7 by nl6#591) and **6 of 6 wrong on Arista** — see [The Cisco arc audited against its MIBs](#the-cisco-arc-audited-against-its-mibs) and [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs). The rest have had no equivalent review, and all three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
+- Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Three arcs have now been audited and every one of them was mostly or entirely wrong: nl6#569 found 8 of 11 distinct OIDs wrong on Palo Alto, nl6#590 found 11 of 13 wrong on Cisco (with 8 Cisco OIDs still unaudited at that point, since reduced to 7 by nl6#591) and **6 of 6 wrong on Arista** — see [The Cisco arc audited against its MIBs](#the-cisco-arc-audited-against-its-mibs) and [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs). Five arcs are audited now, and the remaining fourteen were closed by decision rather than by audit: each is labelled `UNAUDITED-ARC(<pen>)` in the parts that carry it, and `TestEveryVendorArcIsAuditedLabelledOrExcluded` fails by name on any arc that is neither audited, labelled nor explicitly excluded, so a new device type cannot regrow the problem quietly. All three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
 - **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it; rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep — see [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
 - The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for nl6#588 and are clean; scanning them was considered and deliberately not added.
@@ -911,6 +911,76 @@ Nobody had read these modules before.
 JUNIPER-CHASSIS-DEFINES-MIB declares `LAST-UPDATED 201706230000Z` while its own REVISION list runs on to `201711220000Z`, so the module's stated revision is five months behind its newest recorded change.
 JUNIPER-EX-SMI has no `MODULE-IDENTITY` at all, only OBJECT IDENTIFIER assignments and a copyright range, so it has no revision string to quote and is cited by digest alone.
 That is the same situation nl6#591 hit with SMIv1 OLD-CISCO-SYSTEM-MIB.
+
+### Every arc is audited, labelled, or explicitly excluded
+
+**The policy, and it is enforced rather than stated.**
+Every enterprise arc a shipped profile serves is exactly one of three things, and `TestEveryVendorArcIsAuditedLabelledOrExcluded` fails by name on any pair that is none of them.
+
+| disposition | what it means | how a reader sees it |
+|---|---|---|
+| **audited** | somebody read the vendor's MIB | the PEN is in `auditedArcPENs`, whose every row names the reading test that pins it |
+| **labelled** | nobody has read a MIB for it, and the file says so | every part of the profile carrying an entry under that PEN has `UNAUDITED-ARC(<pen>)` in its `_comment` |
+| **excluded** | the arc is not a vendor claim at all | the `(profile, PEN)` pair is in `excludedArcPairs` with a written reason |
+
+A new device type that serves a vendor subtree and does none of the three fails the suite, which is the durable half of this change.
+Nothing previously stopped the corpus regrowing the problem, and that is how it got here.
+
+**Fourteen arcs were closed by decision rather than by audit, and that is the honest call rather than a shortcut.**
+nl6#590's scope measurement cross-referenced every enterprise arc the corpus serves, in both the OID-name and the OID-typed-value positions, against every consumer in this repository: the polling rules published in `pollaris.mdx`, the trap catalogs (`_common` plus per-type overlays), and the docs.
+Of the arcs served, only four have any consumer at all, and all four are now audited or were already correct.
+**The remaining arcs are read by nothing here.** No polling rule, no trap varbind, no doc keys on any of them.
+
+At the observed hit rate, auditing them is weeks of work whose main output is deletions of data nothing reads.
+A label costs minutes per profile and is **more honest than silence**: today a reader who opens one of those files sees a vendor subtree and reasonably infers that somebody checked it, and nobody did.
+So the label states what is known and nothing more, and it says so in the file, next to the data, where the inference is made.
+
+The fourteen, one arc each: `check_point_15600` (2620), `dell_emc_unity` (1139), `dell_poweredge_r750` (674), `dlink_dgs3630` (171), `extreme_vsp4450` (1916), `fortinet_fortigate_600e` (12356), `hpe_proliant_dl380` (232), `huawei_ne8000` (2011), `ibm_power_s922` (2), `nec_ix3315` (119), `netapp_ontap` (789), `nokia_7750_sr12` (6527), `pure_storage_flasharray` (40482), `sonicwall_nsa6700` (8741).
+
+**Fourteen profiles, nineteen parts.**
+Five of them carry their arc in two parts, and in each of those five the second part holds a single vendor serial-number object among a page of standard MIB rows.
+The marker is therefore **per part**, not per profile: a per-profile marker leaves that second file looking checked, and the label's entire value is that a reader who opens the file sees it.
+
+Each label states five things and claims nothing else:
+
+- the objects under this PEN have not been read against any of the vendor's MIBs;
+- the PEN itself **is** checked, by `TestEveryProfileServesOnlyItsOwnVendorArc` (nl6#588, PR nl6#589), so what is unverified is what sits below the number rather than the number;
+- what "unverified" covers: whether each object is defined, whether the value is of the kind its SYNTAX declares, and whether the object is readable at all;
+- that nothing in this repository reads the arc, per the scope measurement, which is why it was labelled and not audited;
+- the miss rates from the arcs that *were* audited, counting distinct OIDs: Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1, Juniper 13 of 15.
+
+No per-vendor detail beyond that is written down, deliberately.
+An obtainability survey exists for all nineteen vendors and is summarised in nl6#590, but the point of the label is that it claims only what is known about *this* data.
+
+**The marker is a sentinel, not prose, and it carries the PEN.**
+`UNAUDITED-ARC(2620)` is a literal substring the guard looks for; a prose match would fail on a rewording and pass on a label that says nothing.
+Binding it to the number is what stops a profile that later gains a **second** arc inheriting the first one's label, so a labelled 2620 does not excuse an unlabelled 1234 in the same file.
+It is also what `git grep UNAUDITED-ARC` finds.
+
+**Three exclusions, each for its own reason.**
+
+- `aws_s3_storage` / **32473** is RFC 5612's documentation PEN, chosen deliberately by nl6#588 and already documented in that profile's own `_comment`. There is no vendor MIB to audit it against and no vendor claim to label as unchecked.
+- **PEN 0** on `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` is the `1.3.6.1.4.1.0.0` `entPhysicalVendorType` placeholder, 208 responses in total. PEN 0 is `Reserved` in the registry and held by IANA, so it is not a vendor subtree.
+- **NVIDIA's 5703** is in the audited set rather than the labelled one, and the reason is that its existing `_comment` says something *stronger* than a label would. NVIDIA publishes no SNMP GPU MIB at all, so nl6#576 and nl6#587 recorded that every object below the PEN is nl6's own invention and unresolvable against any published module. There is nothing to audit it against, so `UNAUDITED-ARC` would understate what is known.
+
+The four PEN-0 rows carry `scanVisible: false`, and that flag is checked **both ways**.
+`oidTypeTable` does not type `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OCTET STRINGs and never reports them; they are covered instead by `assertEntPhysicalVendorTypeIsNotCrossVendor`.
+If `oidTypeTable` ever gains that row the four flip to visible, `TestUnauditedArcRegistriesAreCurated` says so, and the disposition has to be decided again rather than inherited.
+A stale exclusion that describes nothing fails the same test.
+
+**What the guard cannot do: check that a label is true.**
+A label claims that nobody read a MIB, and no test can read a MIB.
+What it can do, and does, is refuse the fourth state: a vendor subtree that reads as checked because nothing says otherwise.
+`TestNoStaleUnauditedArcLabel` is the mirror, since the guard says every arc is accounted for and something has to say that every account describes something: a marker naming a PEN its own part serves no entry under is reported, and so is a marker on an arc that has since been audited, because after an audit the label tells a reader the opposite of the truth.
+
+**No shipped OID data changed.**
+`_comment` is a top-level key the production decoder ignores (`TestUnknownTopLevelKeysAreInert`), and `shippedSNMPEntries` reads `doc.SNMP` only, so no golden digest moves and there is no ledger to reverse.
+That is also why the guard's own file is deliberately **not** named `*_ledger_test.go`: nl6#600's registry requires every ledger file to contribute exactly one reversal, and a change that reverses nothing has nothing to register.
+This is the nl6#601 disposition applied a second time.
+
+**The scope measurement's two caveats stand.**
+Absence of a consumer *in this repository* is not absence in the world, and `pollaris.mdx` is simply the only contract nl6 publishes: if an operator reports keying on one of the fourteen, that arc moves up.
+And the four arcs that do have a consumer are consumed by nl6 *emitting* those OIDs in a trap, not by a collector keying on them, which is what makes disagreement between the two surfaces possible there and nowhere else.
 
 ### Access modes are not modelled
 
