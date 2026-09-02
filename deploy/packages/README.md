@@ -181,9 +181,68 @@ stored; everything else comes from `cache.nixos.org`.
 ### Maintaining `vendorHash` and `version`
 
 [`nix/package.nix`](nix/package.nix) pins a concrete `vendorHash` for the
-vendored Go modules, so a clean checkout builds without extra steps. **Recompute
-it whenever `go.mod` / `go.sum` changes**: set `vendorHash = lib.fakeHash`, run
-`nix build`, and copy the printed `got:` value back in.
+vendored Go modules, so a clean checkout builds without extra steps. **It has to
+be recomputed whenever `go.mod` / `go.sum` changes.** A stale hash makes Nix
+substitute the previously cached vendor tree and fail with "inconsistent
+vendoring", and both legs of the `Nix Cache` build, `Build & push
+(x86_64-linux)` and `Build & push (aarch64-linux)`, are required status checks
+on `main`. A stale hash therefore blocks the merge outright; it is not a warning.
+
+Four ways to get the new value. All of them read it out of a build's own
+output rather than computing it by hand:
+
+- **`make nix-vendor-hash`**, the local path. Runs Nix inside Docker, so no
+  local Nix install is needed; copy the printed `got:` value into `package.nix`.
+- **The `Nix Cache` PR gate.** It reports on every PR and builds on the ones
+  that touch `go/go.mod`, `go/go.sum` or the Nix packaging. On failure it
+  annotates `package.nix` with the exact `vendorHash = "…"` line to paste in.
+- **Automatically, on Dependabot Go-module PRs.**
+  [`dependabot-vendorhash.yml`](../../.github/workflows/dependabot-vendorhash.yml)
+  sweeps open Dependabot `go_modules` PRs every ~6 hours, computes the hash the
+  same way, and pushes the corrected `package.nix` onto the branch. Dispatch it
+  with a PR number to repair one bump immediately instead of waiting for the
+  cron, or with `dry_run` to see the diff it would make without committing
+  anything. It is a no-op when the hash is already right. See the setup and
+  caveats below.
+- **By hand, without any of the above.** Set `vendorHash = lib.fakeHash`, run
+  `nix build`, and copy the printed `got:` value back in.
+
+#### The automated sweep: setup and caveats
+
+The sweep needs a **GitHub App**, not a PAT: an installation token is scoped to
+the repositories the app is installed on, lives about an hour, is minted fresh
+on each run so it cannot expire silently, and its pushes still start workflow
+runs (which `GITHUB_TOKEN` pushes deliberately do not, and that is the whole
+reason a second credential is needed at all).
+
+1. **Settings → Developer settings → GitHub Apps → New GitHub App.** No callback
+   URL, no webhook. Repository permissions: `Contents` = *Read and write*.
+   Nothing else.
+2. **Install it on this repository only.**
+3. Generate a private key, then add two repository secrets under
+   Settings → Secrets and variables → Actions:
+   - `VENDORHASH_APP_ID`, the app's numeric App ID.
+   - `VENDORHASH_APP_PRIVATE_KEY`, the whole downloaded `.pem`, verbatim.
+
+Without both secrets the job logs a notice and skips, and the manual paths above
+remain the answer.
+
+Two consequences of pushing onto a Dependabot branch, both inherent and neither
+avoidable from this side:
+
+- **Dependabot stops rebasing a PR** once anyone else has committed to its
+  branch. After a repair the bump no longer auto-rebases onto `main`, so a
+  long-lived one can go stale against the base branch and needs
+  `@dependabot rebase` by hand.
+- **`@dependabot rebase` drops the repair commit**, because it recreates the
+  branch from the bump alone. The hash goes stale again and the next sweep puts
+  it back. That costs a cycle; it loses nothing.
+
+And one deliberate limit. The sweep requires **every** commit on the branch to
+be Dependabot's, or one of its own earlier repairs. Once a human commits to a
+bump's branch the sweep stops touching it, on the reasoning that somebody has
+already taken the branch over. Finish it by hand from there
+(`make nix-vendor-hash`).
 
 Bump the `version` argument in `package.nix` on each release so `nl6 -version`
 and the store path track the tag.

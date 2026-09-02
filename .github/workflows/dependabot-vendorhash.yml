@@ -1,0 +1,628 @@
+name: Dependabot vendorHash
+
+# Refresh the Nix `vendorHash` on open Dependabot Go-module PRs.
+#
+# Why this exists: `deploy/packages/nix/package.nix` pins the hash of the
+# vendored Go module set. Any go.mod/go.sum change invalidates it, and Nix then
+# substitutes the previously cached vendor tree and fails with "inconsistent
+# vendoring". Both legs of that build, `Build & push (x86_64-linux)` and
+# `Build & push (aarch64-linux)`, are REQUIRED status checks on main, so a
+# stale hash blocks the merge outright. Dependabot has no post-update hook
+# (Renovate's `postUpgradeTasks` is the feature it lacks), so the refresh has
+# to come from a workflow. See nl6#598, nl6#581.
+#
+# Why `schedule` and not `pull_request_target`: a scheduled run executes the
+# workflow file from the DEFAULT branch with the repository's own token and
+# never runs PR-authored workflow code, so it adds no privilege-escalation
+# surface to a repo that SHA-pins every action and gates on zizmor. The cost
+# is latency, which the `pr` input below exists to bypass.
+#
+# Detection is NOT rebuilt here: `nix-cache.yml` remains the PR gate that turns
+# a stale hash red and prints the correct value, and `make nix-vendor-hash`
+# remains the local path. This job only automates the copy-paste.
+#
+# TWO INTERACTIONS WITH DEPENDABOT, both inherent to pushing onto its branch:
+#
+#   1. Dependabot stops rebasing a PR once someone else has pushed to the
+#      branch. That is Dependabot's own conflict-avoidance rule, not something
+#      this job can opt out of. After a repair the PR no longer auto-rebases
+#      onto main, so a long-lived bump can go stale against the base branch and
+#      needs `@dependabot rebase` by hand.
+#   2. `@dependabot rebase` recreates the branch from the bump alone, which
+#      DROPS the repair commit. The hash goes stale again and the next sweep
+#      (or a dispatch with the PR number) puts it back. This costs a cycle, it
+#      does not lose anything.
+on:
+  schedule:
+    # Every 6 hours. Dependabot opens gomod PRs weekly, so the repair lag this
+    # bounds (~6h worst case) is cheap next to the update cadence, and four
+    # runs a day is a defensible spend for a job that builds a Go vendor set.
+    # Minute :17 rather than :00 because scheduled runs queue hardest at the
+    # top of the hour. Note: GitHub disables scheduled workflows in a repo
+    # after 60 days without commits. If the sweep goes quiet, that is why.
+    - cron: '17 0,6,12,18 * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to repair now (empty = sweep every open Dependabot gomod PR)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Run the guards and the hash probe, print the diff, commit and push nothing'
+        required: false
+        default: false
+        type: boolean
+
+# Deny by default; the one job below opts in to exactly what it calls.
+permissions: {}
+
+concurrency:
+  # Never two sweeps at once: they would race on the same PR branches. Keyed on
+  # the `pr` input so a single-PR dispatch, whose whole purpose is to skip the
+  # wait, does not queue behind a running multi-minute sweep. Two dispatches for
+  # the same PR still serialise, which is the case that actually races.
+  group: dependabot-vendorhash-${{ inputs.pr || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Refresh vendorHash on Dependabot gomod PRs
+    runs-on: ubuntu-24.04
+    # One Nix vendor build per candidate PR. The candidate list is filtered to
+    # the gomod ecosystem before any work happens, so the set is bounded by
+    # Dependabot's gomod `open-pull-requests-limit` of 10, not by the union of
+    # all four ecosystem limits. A slow PR cannot eat the whole budget either
+    # (NIX_TIMEOUT below), and any candidate the budget does not reach is
+    # simply picked up by the next cron.
+    timeout-minutes: 90
+    permissions:
+      # The GITHUB_TOKEN stays READ-ONLY here; git transport uses short-lived
+      # GitHub App installation tokens minted below. Each entry is the minimum
+      # for one specific call this job makes:
+      contents: read       # actions/checkout of the default branch
+      pull-requests: read  # list and inspect the open Dependabot PRs
+      checks: read         # skip a PR whose Nix build is already green
+    steps:
+      # Mirrors nix-cache.yml's "Gate on Cachix being configured": the feature
+      # is a no-op with a notice until the secrets exist, rather than a red run.
+      #
+      # WHY A SEPARATE CREDENTIAL AT ALL: GitHub does not start workflow runs
+      # for push events made with the GITHUB_TOKEN (recursion guard). Pushing
+      # the repair commit with it would leave the new head SHA with NO check
+      # runs at all, including the required `gates / Build & Test`,
+      # `gates / Code Quality` and both `Build & push` legs, which blocks the
+      # merge permanently. That is strictly worse than the manual edit this job
+      # replaces.
+      #
+      # WHY A GITHUB APP AND NOT A PAT: an installation token is scoped to the
+      # repositories the app is installed on rather than to everything the
+      # granting account can reach, lives about an hour rather than up to a
+      # year, is minted fresh each run so it cannot expire silently at 3am on a
+      # Sunday, and its pushes DO start workflow runs, which is the only
+      # property this design needs from "not the GITHUB_TOKEN".
+      #
+      # PROVISION (one time, by a maintainer):
+      #   1. Settings -> Developer settings -> GitHub Apps -> New GitHub App.
+      #      Name it whatever you like, no callback URL, no webhook.
+      #      Repository permissions: Contents = Read and write. Nothing else.
+      #   2. Install it on THIS repository only.
+      #   3. Generate a private key, then add two repository secrets:
+      #        VENDORHASH_APP_ID           the app's numeric App ID
+      #        VENDORHASH_APP_PRIVATE_KEY  the whole downloaded .pem, verbatim
+      #   4. If the app is ever uninstalled or the key revoked, this job fails
+      #      loudly on the first push rather than going quiet (see the auth
+      #      handling in the script).
+      - name: Gate on the GitHub App being configured
+        id: cfg
+        env:
+          APP_ID: ${{ secrets.VENDORHASH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.VENDORHASH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::VENDORHASH_APP_ID / VENDORHASH_APP_PRIVATE_KEY not set, skipping. Dependabot gomod PRs need 'make nix-vendor-hash' by hand until the app is configured."
+          fi
+
+      # Two tokens, not one. The fetch reads a branch and has no business
+      # holding a credential that can write to it; separating them means the
+      # only step that can move a ref is the push.
+      - name: Mint a read-only app token
+        id: read-token
+        if: steps.cfg.outputs.ready == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.VENDORHASH_APP_ID }}
+          private-key: ${{ secrets.VENDORHASH_APP_PRIVATE_KEY }}
+          permission-contents: read
+
+      # Not minted at all on a dry run: the run cannot then push even by
+      # mistake, which is the point of having the input.
+      - name: Mint a write app token
+        id: write-token
+        if: steps.cfg.outputs.ready == 'true' && inputs.dry_run != true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.VENDORHASH_APP_ID }}
+          private-key: ${{ secrets.VENDORHASH_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Checkout
+        if: steps.cfg.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # No credentials in .git/config: the fetch and push below authenticate
+          # through GIT_ASKPASS, so nothing is left behind for a later step (or
+          # a Nix build) to pick up.
+          persist-credentials: false
+
+      - name: Install Nix
+        if: steps.cfg.outputs.ready == 'true'
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24  # v31.11.1
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Repair stale vendorHash
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          # GITHUB_TOKEN is read-only (see the job permissions) and is what gh
+          # authenticates with. The two app tokens are used for git transport
+          # only, and never appear in a command line (see GIT_ASKPASS below).
+          GH_TOKEN: ${{ github.token }}
+          READ_TOKEN: ${{ steps.read-token.outputs.token }}
+          WRITE_TOKEN: ${{ steps.write-token.outputs.token }}
+          # Never interpolate a workflow input directly into the script.
+          INPUT_PR: ${{ inputs.pr }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          BOT_NAME: 'github-actions[bot]'
+          BOT_EMAIL: '41898282+github-actions[bot]@users.noreply.github.com'
+          BOT_LOGIN: 'github-actions[bot]'
+          # One definition, used to write the commit AND to recognise this
+          # job's own earlier commits in the author guard.
+          COMMIT_SUBJECT: 'build(nix): refresh vendorHash for the bumped Go modules'
+          # Per-PR ceiling on the Nix probe. One dependency whose vendor build
+          # hangs must not consume the job budget and starve the rest.
+          NIX_TIMEOUT: '15m'
+        run: |
+          set -euo pipefail
+
+          REPO="$GITHUB_REPOSITORY"
+          PKG='deploy/packages/nix/package.nix'
+          # Same probe nix-cache.yml and `make nix-vendor-hash` use: a
+          # deliberately wrong hash forces the fixed-output vendor derivation
+          # to run and report the real one after "got:".
+          FAKE='sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+          # No credential in this URL. The username is a literal; git asks for
+          # the password and GIT_ASKPASS answers from the environment, so the
+          # token never reaches /proc/<pid>/cmdline, which is world-readable on
+          # the runner. (An env var is readable only by the same uid.)
+          GIT_URL="https://x-access-token@github.com/${REPO}.git"
+
+          ASKPASS="$RUNNER_TEMP/vendorhash-askpass.sh"
+          # shellcheck disable=SC2016  # The single quotes are the point. The
+          # name GIT_TOKEN has to reach the generated script literally and be
+          # expanded THERE, by the shell git runs, out of the environment git
+          # hands it. Expanding it here would write the token into a file on
+          # disk, which is one of the two leaks this mechanism exists to avoid.
+          printf '%s\n' '#!/bin/sh' 'exec printf "%s\n" "$GIT_TOKEN"' > "$ASKPASS"
+          chmod 700 "$ASKPASS"
+          export GIT_ASKPASS="$ASKPASS"
+          export GIT_TERMINAL_PROMPT=0
+
+          dry_run=false
+          if [ "${DRY_RUN:-}" = 'true' ]; then
+            dry_run=true
+          fi
+          if [ "$dry_run" = 'true' ]; then
+            echo "DRY RUN: guards and hash probe only, nothing will be committed or pushed."
+          fi
+
+          repaired=0
+          unchanged=0
+          skipped=0
+          failed=0
+          auth_failed=0
+
+          summary() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; }
+
+          # A 401/403 from the git remote means the app is gone, uninstalled or
+          # missing Contents: write. That must not read as "the branch moved",
+          # because a dead credential would then be invisible for as long as
+          # nobody reads the logs.
+          is_auth_error() {
+            # Covers what git actually prints: "Authentication failed for ..."
+            # on a 401, "The requested URL returned error: 403" plus
+            # "remote: Permission to <repo> denied to <app>" on a 403, and the
+            # no-credential-at-all case.
+            grep -qiE 'authentication failed|error: 40[13]|HTTP (401|403)|remote: Permission to .* denied|could not read Username|invalid username or (password|token)' "$1"
+          }
+
+          # --- vendorHash read/write -------------------------------------
+          # ONE anchored form on both sides. The read used to be anchored and
+          # the write greedy and unanchored, which meant they could disagree
+          # about which text they were talking about.
+          read_vendor_hash() {
+            sed -n 's/^[[:space:]]*vendorHash = "\([^"]*\)";[[:space:]]*$/\1/p' "$PKG"
+          }
+          write_vendor_hash() {
+            sed -i "s|^\\([[:space:]]*\\)vendorHash = \"[^\"]*\";[[:space:]]*\$|\\1vendorHash = \"$1\";|" "$PKG"
+          }
+
+          # --- Candidate PRs ---------------------------------------------
+          # The list comes from the API, never from a ref glob: a branch that
+          # merely looks like a Dependabot branch is not one, and only an
+          # OPEN PR authored by dependabot[bot] is ever a target. The ecosystem
+          # filter is applied HERE rather than per PR so a sweep does not pull
+          # in every open github-actions, docker and npm bump just to reject it.
+          if [ -n "${INPUT_PR:-}" ]; then
+            case "$INPUT_PR" in
+              ''|*[!0-9]*)
+                echo "::error::workflow_dispatch input 'pr' must be a number (got '$INPUT_PR')"
+                exit 1
+                ;;
+            esac
+            candidates="$INPUT_PR"
+            echo "Manual dispatch: considering PR #$INPUT_PR only."
+          else
+            candidates=$(gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
+              --jq '.[]
+                    | select(.user.login == "dependabot[bot]")
+                    | select(.head.ref | startswith("dependabot/go_modules/"))
+                    | .number')
+          fi
+
+          summary '## Dependabot vendorHash sweep'
+          summary ''
+          if [ "$dry_run" = 'true' ]; then
+            summary '_Dry run: no commit and no push._'
+            summary ''
+          fi
+
+          if [ -z "$candidates" ]; then
+            echo "No open Dependabot go_modules PRs."
+            summary 'No open Dependabot go_modules PRs.'
+            exit 0
+          fi
+
+          # --- Per-PR repair ---------------------------------------------
+          # Everything below runs inside a function invoked as `if repair_pr`,
+          # which SUPPRESSES errexit for the whole body, so every fallible
+          # command is guarded explicitly and returns non-zero itself.
+          #
+          # Return codes, so the caller can report the four outcomes apart. A
+          # sweep that rejected every candidate used to look identical to one
+          # that found nothing to do:
+          #   0  repaired and pushed (or, on a dry run, would have been)
+          #   1  failed, with $fail_reason set
+          #   2  no change, the vendorHash was already correct
+          #   3  skipped by a guard
+          repair_pr() {
+            n="$1"
+            # Set immediately before every `return 1`; the caller turns it into
+            # the summary row, so no failure path can report a stale cause.
+            fail_reason='see the log'
+
+            # RESET FIRST. A previous iteration that failed after rewriting the
+            # hash but before or during the commit leaves package.nix dirty,
+            # and the `git checkout -B` below then refuses to run. One bad PR
+            # would deny the service to every later PR in the sweep, which is
+            # exactly what the failure policy says must not happen.
+            git reset --quiet --hard || {
+              fail_reason='could not reset the work tree'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            }
+
+            pr=$(gh api "repos/$REPO/pulls/$n") || {
+              fail_reason='cannot read the pull request'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            }
+
+            state=$(printf '%s' "$pr"   | jq -r '.state')
+            login=$(printf '%s' "$pr"   | jq -r '.user.login')
+            headrepo=$(printf '%s' "$pr"| jq -r '.head.repo.full_name // ""')
+            branch=$(printf '%s' "$pr"  | jq -r '.head.ref')
+            sha=$(printf '%s' "$pr"     | jq -r '.head.sha')
+
+            # Guards. All four must hold before this job touches a branch, and
+            # all four read API facts rather than `github.actor`, so a manual
+            # dispatch by a human cannot widen the target set.
+            ok=yes
+            [ "$state" = 'open' ]              || ok=no   # not a closed/merged PR
+            [ "$login" = 'dependabot[bot]' ]   || ok=no   # opened by Dependabot
+            [ "$headrepo" = "$REPO" ]          || ok=no   # in-repo branch, not a fork
+            case "$branch" in
+              dependabot/go_modules/*) ;;
+              *) ok=no ;;                                 # the gomod ecosystem
+            esac
+            if [ "$ok" != 'yes' ]; then
+              echo "PR #$n ($branch): not an open in-repo Dependabot go_modules PR, skipping."
+              summary "- PR #$n: skipped (not an open in-repo Dependabot go_modules PR)"
+              return 3
+            fi
+
+            # WHO OPENED THE PR IS NOT WHO WROTE THE COMMITS. Dependabot opens
+            # it; anyone with push access can then add a commit to the same
+            # branch, and this job is about to evaluate that branch's Nix
+            # expressions with an installation token in the environment. So
+            # every commit author has to be Dependabot, with one allowance:
+            # this job's own earlier repair commits, recognised by BOTH the
+            # committing identity and the exact subject line it writes.
+            authors=$(gh api --paginate "repos/$REPO/pulls/$n/commits?per_page=100" \
+              --jq '.[] | "\(.author.login // "<unlinked>")\t\(.commit.message | split("\n")[0])"') || {
+              fail_reason='cannot list the branch commits'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            }
+            if [ -z "$authors" ]; then
+              fail_reason='the pull request reports no commits'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            fi
+            foreign=''
+            while IFS=$'\t' read -r a subj; do
+              [ -n "$a" ] || continue
+              if [ "$a" = 'dependabot[bot]' ]; then
+                continue
+              fi
+              if [ "$a" = "$BOT_LOGIN" ] && [ "$subj" = "$COMMIT_SUBJECT" ]; then
+                continue
+              fi
+              foreign="$a"
+              break
+            done <<< "$authors"
+            if [ -n "$foreign" ]; then
+              echo "PR #$n: branch carries a commit authored by '$foreign', skipping."
+              summary "- PR #$n: skipped (branch carries a non-Dependabot commit by \`$foreign\`)"
+              return 3
+            fi
+
+            # A gomod bump changes go.mod/go.sum and nothing else; package.nix
+            # is allowed because a previous run of THIS job may already have
+            # touched it. Anything else means the branch is not what it claims.
+            # This stays as defence in depth behind the author guard: a commit
+            # that spoofed an allowed author identity could still only move
+            # these three files.
+            files=$(gh api --paginate "repos/$REPO/pulls/$n/files?per_page=100" --jq '.[].filename') || {
+              fail_reason='cannot list changed files'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            }
+            allowed='go/go\.mod|go/go\.sum|deploy/packages/nix/package\.nix'
+            unexpected=$(printf '%s\n' "$files" | grep -vxE "$allowed" || true)
+            if [ -n "$unexpected" ]; then
+              echo "PR #$n: touches files outside the gomod allow-list, skipping:"
+              printf '%s\n' "$unexpected" | sed 's/^/  /'
+              summary "- PR #$n: skipped (changes files outside go.mod/go.sum/package.nix)"
+              return 3
+            fi
+            if ! printf '%s\n' "$files" | grep -qxE 'go/go\.mod|go/go\.sum'; then
+              echo "PR #$n: touches neither go.mod nor go.sum, skipping."
+              summary "- PR #$n: skipped (no go.mod/go.sum change)"
+              return 3
+            fi
+
+            # Cheap pre-filter. A vendor build costs minutes, so ask the head
+            # SHA's check runs first. --paginate because a busy head SHA can
+            # carry more than one page of check runs, and a truncated first
+            # page would silently answer "green" for a stale hash.
+            #
+            # A queued or in-progress run has conclusion null, which is neither
+            # success nor failure. Treating null as failure made this job race
+            # the very gate it reads: a freshly opened PR looked broken and got
+            # a repair push before its own build had said anything.
+            conclusions=$(gh api --paginate "repos/$REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '.check_runs[] | select(.name | startswith("Build & push")) | .conclusion // "pending"') || {
+              fail_reason='cannot list the head check runs'
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            }
+            seen=$(printf '%s\n' "$conclusions" | grep -c . || true)
+            pending=$(printf '%s\n' "$conclusions" | grep -cx 'pending' || true)
+            bad=$(printf '%s\n' "$conclusions" | grep -vx 'success' | grep -vx 'pending' | grep -c . || true)
+            if [ "$seen" -gt 0 ] && [ "$pending" -gt 0 ]; then
+              echo "PR #$n: Nix build still running on $sha, leaving it alone this sweep."
+              summary "- PR #$n: skipped (Nix build still running)"
+              return 3
+            fi
+            if [ "$seen" -gt 0 ] && [ "$bad" -eq 0 ]; then
+              echo "PR #$n: Nix build already green on $sha, skipping."
+              summary "- PR #$n: skipped (Nix build already green)"
+              return 3
+            fi
+
+            perr=$(mktemp)
+            if ! GIT_TOKEN="$READ_TOKEN" git fetch --quiet --depth=1 "$GIT_URL" "$branch" 2>"$perr"; then
+              if is_auth_error "$perr"; then
+                auth_failed=1
+                fail_reason='the app token was refused on fetch (401/403): check the installation and its Contents permission'
+              else
+                fail_reason="cannot fetch $branch"
+              fi
+              echo "::warning::PR #$n: $fail_reason"
+              sed 's/^/  /' "$perr"
+              rm -f "$perr"
+              return 1
+            fi
+            rm -f "$perr"
+
+            fail_reason='cannot check out the fetched head'
+            git checkout --quiet -B vendorhash-repair FETCH_HEAD || return 1
+
+            # The API read and the fetch are not atomic. If Dependabot
+            # force-pushed in between, the tree just checked out is not the one
+            # the guards were evaluated against: bail and pick it up next
+            # sweep rather than commit onto a moved branch.
+            got=$(git rev-parse HEAD) || {
+              fail_reason='cannot resolve the checked-out head'
+              return 1
+            }
+            if [ "$got" != "$sha" ]; then
+              fail_reason='head moved between the API read and the fetch'
+              echo "::warning::PR #$n: head moved ($sha -> $got), skipping this sweep"
+              return 1
+            fi
+
+            current=$(read_vendor_hash)
+            lines=$(printf '%s\n' "$current" | grep -c . || true)
+            if [ "$lines" -ne 1 ]; then
+              fail_reason="expected exactly one vendorHash line in $PKG, found $lines"
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            fi
+
+            # Probe. The app tokens are stripped from the build's environment:
+            # this evaluates Nix expressions that came from the PR branch, and
+            # even behind the guards above it has no business seeing them.
+            write_vendor_hash "$FAKE"
+            # Distinct from the caller's `rc`: this function's variables are
+            # global, and reusing that name made a successful repair report the
+            # Nix exit status instead of its own return code.
+            nixrc=0
+            out=$(env -u READ_TOKEN -u WRITE_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
+                  timeout --signal=TERM --kill-after=1m "$NIX_TIMEOUT" \
+                  nix build "path:$PWD?dir=deploy/packages/nix#nl6" --no-link 2>&1) || nixrc=$?
+            git checkout --quiet -- "$PKG"
+            if [ "$nixrc" -eq 124 ] || [ "$nixrc" -eq 137 ]; then
+              fail_reason="the Nix vendor build did not finish within $NIX_TIMEOUT"
+              echo "::warning::PR #$n: $fail_reason"
+              printf '%s\n' "$out" | tail -20
+              return 1
+            fi
+
+            # Take the `got:` that belongs to OUR probe. A Nix log can carry
+            # more than one fixed-output mismatch, and the first `got:` in it
+            # is then some other derivation's hash. Anchor on the `specified:`
+            # line carrying the fake value and read the `got:` after it.
+            want=$(printf '%s\n' "$out" | awk -v fake="$FAKE" '
+              $1 == "specified:" && $2 == fake { found = 1; next }
+              found && $1 == "got:" { print $2; exit }
+            ')
+            # Validate the whole SRI shape, not just the prefix. This value is
+            # about to be interpolated into a `sed` replacement, where a `|`
+            # or a `&` would corrupt the substitution rather than fail it.
+            if ! printf '%s' "$want" | grep -qE '^sha256-[A-Za-z0-9+/]{43}=$'; then
+              fail_reason='could not compute the hash (the Nix build failed before the vendor step?)'
+              echo "::warning::PR #$n: could not determine the expected vendorHash, leaving the branch alone."
+              printf '%s\n' "$out" | tail -20
+              return 1
+            fi
+
+            if [ "$want" = "$current" ]; then
+              echo "PR #$n: vendorHash is already correct, nothing to do."
+              summary "- PR #$n: no change (vendorHash already correct)"
+              return 2
+            fi
+
+            write_vendor_hash "$want"
+            # Read it back through the same anchored form. A substitution that
+            # silently matched nothing, or wrote something other than what was
+            # asked for, is caught here rather than committed.
+            if [ "$(read_vendor_hash)" != "$want" ]; then
+              fail_reason="the substitution did not write the expected hash into $PKG"
+              echo "::warning::PR #$n: $fail_reason"
+              git checkout --quiet -- "$PKG" || true
+              return 1
+            fi
+            if git diff --quiet -- "$PKG"; then
+              fail_reason="the substitution changed nothing in $PKG"
+              echo "::warning::PR #$n: $fail_reason"
+              return 1
+            fi
+
+            if [ "$dry_run" = 'true' ]; then
+              echo "PR #$n (dry run): vendorHash $current -> $want. Diff that would be committed:"
+              git --no-pager diff -- "$PKG"
+              summary "- PR #$n: **would repair** (\`$want\`), dry run"
+              return 0
+            fi
+
+            # -F rather than repeated -m: git does not wrap -m text, and the
+            # repo's commit bodies wrap at ~72. Built with printf rather than a
+            # heredoc so the message body does not depend on this file's YAML
+            # block indentation.
+            fail_reason='could not build the commit message'
+            msg=$(mktemp) || return 1
+            {
+              printf '%s\n\n' "$COMMIT_SUBJECT"
+              printf '%s\n' 'This PR changes go.mod/go.sum, so the vendored Go module set changes'
+              printf '%s\n' 'with it and the hash pinned in deploy/packages/nix/package.nix no'
+              printf '%s\n' 'longer matches. Nix then substitutes the previously cached vendor'
+              printf '%s\n\n' 'tree and the build fails with "inconsistent vendoring".'
+              printf '%s\n' "The value below came from the build's own output: package.nix was"
+              printf '%s\n' 'rebuilt with a deliberately wrong hash and the value Nix reported'
+              printf '%s\n\n' 'after "got:" was written back verbatim. It was not hand-computed.'
+              printf '  vendorHash = "%s"\n\n' "$want"
+              printf '%s\n' 'Automated by .github/workflows/dependabot-vendorhash.yml (refs #598).'
+            } > "$msg"
+
+            # -s so the DCO gate passes; the sign-off identity is the author
+            # and committer identity set on the same command line.
+            fail_reason='could not create the commit'
+            git -c "user.name=$BOT_NAME" -c "user.email=$BOT_EMAIL" \
+              commit --quiet -s -F "$msg" -- "$PKG" || { rm -f "$msg"; return 1; }
+            rm -f "$msg"
+
+            # Plain push, deliberately: a non-fast-forward means the branch
+            # moved and the rejection is the correct outcome.
+            perr=$(mktemp)
+            if ! GIT_TOKEN="$WRITE_TOKEN" git push --quiet "$GIT_URL" "HEAD:refs/heads/$branch" 2>"$perr"; then
+              if is_auth_error "$perr"; then
+                auth_failed=1
+                fail_reason='the app token was refused on push (401/403): check the installation and its Contents: write permission'
+              else
+                fail_reason="push to $branch was rejected (did the branch move?)"
+              fi
+              echo "::warning::PR #$n: $fail_reason"
+              sed 's/^/  /' "$perr"
+              rm -f "$perr"
+              return 1
+            fi
+            rm -f "$perr"
+
+            echo "PR #$n: vendorHash $current -> $want, pushed to $branch."
+            summary "- PR #$n: **repaired** (\`$want\`)"
+            return 0
+          }
+
+          while IFS= read -r n; do
+            [ -n "$n" ] || continue
+            rc=0
+            repair_pr "$n" || rc=$?
+            case "$rc" in
+              0) repaired=$((repaired + 1)) ;;
+              2) unchanged=$((unchanged + 1)) ;;
+              3) skipped=$((skipped + 1)) ;;
+              *)
+                # Report and continue. A repair job exists to unblock as many
+                # PRs as it can; one bump whose hash cannot be computed (a
+                # genuinely broken dependency, a moved branch) must not deny
+                # the service to the others. The run still exits 0 for those:
+                # the per-PR failure is already reported where it belongs, red
+                # on the PR's own Nix Cache check, and a sweep that goes red
+                # every 6h for a PR nobody is looking at trains maintainers to
+                # ignore it. A STRUCTURAL failure (gh unavailable, Nix
+                # uninstallable) still fails the run, because those abort
+                # outside this function, and so does a dead credential.
+                summary "- PR #$n: **failed** ($fail_reason)"
+                failed=$((failed + 1))
+                ;;
+            esac
+          done <<< "$candidates"
+
+          echo "repaired=$repaired unchanged=$unchanged skipped=$skipped failed=$failed"
+          summary ''
+          summary "Repaired **$repaired**, no change **$unchanged**, skipped **$skipped**, failed **$failed**."
+
+          # A credential that no longer works is the one failure this job must
+          # not absorb into a per-PR row: it means the feature is dead until
+          # someone reinstalls the app, and nothing else would ever say so.
+          if [ "$auth_failed" -ne 0 ]; then
+            summary ''
+            summary 'The GitHub App credential was refused. The sweep cannot push until it is fixed.'
+            echo "::error::The GitHub App credential was refused (401/403). Check that the app is still installed on $REPO and still has Contents: Read and write."
+            exit 1
+          fi

@@ -72,7 +72,7 @@ UNAME_S := $(shell uname -s)
 .PHONY: all build reconcile run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
-        tools-quality fmt-check lint vuln sec lint-actions quality
+        tools-quality fmt-check lint vuln sec lint-actions check-check-run-names quality
 
 all: build
 
@@ -408,8 +408,28 @@ sec: check-go
 ACTIONLINT_VERSION ?= v1.7.12
 ZIZMOR_VERSION     ?= 1.28.0
 
+# dependabot-vendorhash.yml picks the Nix Cache check runs out of a head SHA
+# by a literal name prefix, and that prefix is nix-cache.yml's job `name:`
+# before matrix expansion. Nothing in either file references the other, so
+# renaming the job would leave the sweep matching zero check runs. It would
+# then treat "no build has reported" as "not green", rebuild every candidate,
+# and push onto branches whose build was already fine, with no error anywhere.
+# Cheap to assert, invisible otherwise.
+CHECK_RUN_NAME ?= Build & push
+
+## check-check-run-names: Assert nix-cache.yml's job name still matches what dependabot-vendorhash.yml filters on
+check-check-run-names:
+	@grep -qF 'name: $(CHECK_RUN_NAME) (' .github/workflows/nix-cache.yml || { \
+	  echo "lint: nix-cache.yml no longer defines a job named '$(CHECK_RUN_NAME) (...)'."; \
+	  echo "      dependabot-vendorhash.yml selects its check runs by that prefix; update both."; \
+	  exit 1; }
+	@grep -qF 'startswith("$(CHECK_RUN_NAME)")' .github/workflows/dependabot-vendorhash.yml || { \
+	  echo "lint: dependabot-vendorhash.yml no longer filters check runs on '$(CHECK_RUN_NAME)'."; \
+	  echo "      That prefix is nix-cache.yml's job name; update both."; \
+	  exit 1; }
+
 ## lint-actions: Lint the GitHub Actions workflows (actionlint + zizmor)
-lint-actions: check-go
+lint-actions: check-go check-check-run-names
 	GOBIN=$(GOBIN_DIR) go install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 	$(GOBIN_DIR)/actionlint
 	pipx run zizmor==$(ZIZMOR_VERSION) --persona=regular --config .github/zizmor.yml .github/workflows/
