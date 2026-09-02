@@ -291,6 +291,12 @@ type ScenarioResult struct {
 	// reach the collector, so calling it dropped would assert an outcome nothing
 	// observed.
 	DrainStragglers int64
+	// IncompleteJoins names the finalize waits that did not complete within
+	// finalizeBudget (nl6#618): the scheduler and the trap/flow tickers, which
+	// run AHEAD of the drain barrier. Empty on every healthy run. A non-empty
+	// value means those goroutines were still running when PerDevice below was
+	// snapshotted, so it carries the same caveat as DrainStragglers.
+	IncompleteJoins []string
 	PerDevice       map[string]ledgerSnapshot
 	// Apps is the fleet-wide per-application flow-traffic fold
 	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
@@ -1366,19 +1372,34 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	// barrier (below) then outlasts every already-admitted in-flight fire.
 	c.gate.Store(&gateState{phase: to, t0: t0, t1: plannedT1})
 
+	// ONE budget for the whole waiting phase (nl6#618). Every wait below was a
+	// bare channel receive, and three of them sit AHEAD of the drain barrier, so
+	// nl6#567's ceiling was never armed for a stalled scheduler-driven write.
+	// A shared deadline rather than a ceiling each: four ceilings would bound
+	// finalize at four times the number an operator was told, and the property
+	// worth having is a single one.
+	//
+	// Whatever did not finish is recorded and reported. Giving up does not stop
+	// those goroutines, so like a drain straggler they can still move counters
+	// after the snapshot; see joinWithin.
+	deadline := c.now().Add(finalizeBudget)
+	var incompleteJoins []string
+
 	if c.schedStop != nil {
 		c.schedStop()
 	}
 	if c.sched != nil {
-		c.sched.Stop()
+		if !joinWithin(c.id, "syslog scheduler", c.sched.StopAsync(), deadline) {
+			incompleteJoins = append(incompleteJoins, "syslog-scheduler")
+		}
 	}
 	// snmp-trap scenarios: wait for the emission pool to drain its queued
 	// tail (#409). Queued fires mutate ledger counters (suppressed/emitted)
 	// even post-terminal-gate, so snapshotting before this join races them.
 	// Bounded: the ticker exits on the schedCtx cancel above, its dispatch
 	// select carries ctx.Done, and worker fires never block indefinitely.
-	if c.trapTickerDone != nil {
-		<-c.trapTickerDone
+	if !joinWithin(c.id, "trap emission ticker", c.trapTickerDone, deadline) {
+		incompleteJoins = append(incompleteJoins, "trap-ticker")
 	}
 	// flow scenarios: join the scenario-owned flow ticker. Cancelling it above
 	// is not the same as it having stopped, and the difference is observable in
@@ -1399,14 +1420,14 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	// that to ONE exporter instead of a fleet-sized pass, so it is load-bearing
 	// for this reason and not merely a promptness optimisation: do not remove
 	// it. (The trap join above has the same shape.)
-	if c.flowTickerDone != nil {
-		<-c.flowTickerDone
+	if !joinWithin(c.id, "flow ticker", c.flowTickerDone, deadline) {
+		incompleteJoins = append(incompleteJoins, "flow-ticker")
 	}
 	// Admission closes, then this outlasts every in-flight fire OR gives up at
 	// drainBarrierTimeout (nl6#567). stragglers is 0 on every healthy run; a
 	// non-zero value means the snapshot below was taken while that many sends
 	// were still moving, so it rides into the result and out into the report.
-	stragglers := c.drain.closeAndWait(c.id)
+	stragglers := c.drain.closeAndWaitUntil(c.id, deadline)
 	// From here this scenario can no longer consume shared limiter tokens, so
 	// it stops counting as contention for a peer starting now.
 	c.emitting.Store(false)
@@ -1445,6 +1466,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 		Excluded: c.excluded, ExcludedTotal: sumReasonCounts(c.excludedByReason),
 		ExcludedByReason: maps.Clone(c.excludedByReason),
 		DrainStragglers:  stragglers,
+		IncompleteJoins:  incompleteJoins,
 		PerDevice:        perDevice, Apps: apps,
 	}
 	return c.result, nil

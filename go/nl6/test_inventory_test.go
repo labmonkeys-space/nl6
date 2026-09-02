@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1418
+const minimumTestFunctions = 1421
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -291,6 +291,14 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
 			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
 			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
+	{"TestFinalizeIsBoundedWhenTheSchedulerStalls", "scenario_finalize_join_test.go",
+		"nl6#618. The COMMON stalled-write case. The syslog scheduler fires inline, so a stalled " +
+			"write parks its run loop and finish() blocks joining it, with nl6#567's barrier ceiling " +
+			"never armed. Without the bound this test hangs rather than fails"},
+	{"TestFinalizeIsBoundedWhenAFlowTickStalls", "scenario_finalize_join_test.go",
+		"nl6#618. The flow ticker join runs under c.mu, so a parked Tick write blocked Phase, Result " +
+			"and LiveCounts as well as finalize. Untestable before this change added a write seam to " +
+			"FlowExporter"},
 	{"TestScenarioDrain_CeilingCountsEveryStraggler", "scenario_drain_ceiling_test.go",
 		"nl6#567. Pins the straggler count AS A COUNT. Review demonstrated that replacing it with " +
 			"the constant 1 left the whole package green, because every give-up test admitted one " +

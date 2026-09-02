@@ -251,6 +251,25 @@ type FlowExporter struct {
 	// during [T0,T1)); flipped false at finalize. During ARM it stays false so
 	// the fleet ticker still emits arming templates.
 	scenDriven atomic.Bool
+
+	// writeOverride, when non-nil, replaces the datagram WriteTo. TEST-ONLY,
+	// mirroring SyslogExporter.writeOverride, and added for nl6#618: the flow
+	// ticker join sits ahead of the drain barrier in finish(), so a parked flow
+	// write is the case that proves finalize is bounded — and with no seam here
+	// no test could park one. Read on the Tick path with no synchronisation, so
+	// set it before the exporter is driven and never while it is running.
+	writeOverride func(pdu []byte) error
+}
+
+// writeDatagram sends one encoded datagram, honouring the test-only
+// writeOverride seam. Every flow write goes through here so the seam cannot
+// cover some paths and miss others.
+func (fe *FlowExporter) writeDatagram(writeConn *net.UDPConn, pdu []byte, addr *net.UDPAddr) error {
+	if fe.writeOverride != nil {
+		return fe.writeOverride(pdu)
+	}
+	_, err := writeConn.WriteTo(pdu, addr)
+	return err
 }
 
 // flowOptionIface is one interface's option-record identity: its ifIndex and
@@ -740,7 +759,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		}
 
 		writeErr := false
-		if _, err := writeConn.WriteTo(buf[:n], collectorAddr); err != nil {
+		if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 			fe.logFirstWriteErr(err)
 			writeErr = true
 		}
@@ -817,7 +836,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			if err != nil || n == 0 {
 				break
 			}
-			if _, err := writeConn.WriteTo(buf[:n], collectorAddr); err != nil {
+			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 				fe.logFirstWriteErr(err)
 			}
 			stats.PacketsSent++
@@ -853,7 +872,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			if n == 0 || consumed == 0 {
 				break
 			}
-			if _, err := writeConn.WriteTo(buf[:n], collectorAddr); err != nil {
+			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 				fe.logFirstWriteErr(err)
 			}
 			stats.PacketsSent++

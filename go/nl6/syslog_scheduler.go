@@ -516,12 +516,27 @@ func (s *SyslogScheduler) limiterRef() *rate.Limiter { return s.limiter }
 // wait; Run sees the closed stopCh at its first iteration and exits, closing
 // runDone anyway) or started is true and every Run exit path closes runDone.
 func (s *SyslogScheduler) Stop() {
+	if done := s.StopAsync(); done != nil {
+		<-done
+	}
+}
+
+// StopAsync signals the run loop to stop and returns the channel that closes
+// when it has exited, or nil when it never started. Split out of Stop for
+// nl6#618 so finalize can JOIN that exit against a deadline: this scheduler
+// fires inline, so a stalled write parks the run loop, and a bare `<-runDone`
+// held finalize open with nothing able to cut it short.
+//
+// Signalling is still unconditional and idempotent; only the waiting moved to
+// the caller.
+func (s *SyslogScheduler) StopAsync() <-chan struct{} {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
 	})
-	if s.started.Load() {
-		<-s.runDone
+	if !s.started.Load() {
+		return nil
 	}
+	return s.runDone
 }
 
 // nudge signals the Run goroutine that the heap has changed. Non-blocking:

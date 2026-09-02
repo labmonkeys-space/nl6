@@ -100,7 +100,7 @@ func buildReportHTMLData(rep *scenarioReport) reportHTMLData {
 	// arm overwrites it. Without this the page shows a green pill, unwarned cards
 	// and every participant row tagged "clean" for a run the schema doc calls
 	// unsettled, with the only contrary signal one <dt> row (nl6#567 review).
-	if s.Metadata.DrainStragglers > 0 {
+	if s.Metadata.DrainStragglers > 0 || len(s.Metadata.IncompleteJoins) > 0 {
 		d.PhaseClass = "warn"
 	}
 
@@ -260,6 +260,16 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
     </div>
     {{end}}
   </section>
+
+  {{if .R.Summary.Metadata.IncompleteJoins}}
+  <section>
+    <p class="truncated-banner"><strong>Finalize did not complete every join.</strong>
+    These ran past the budget and were left running:
+    {{range .R.Summary.Metadata.IncompleteJoins}}<code>{{.}}</code> {{end}}.
+    They are not cancelled, so they may have moved counters after this report was
+    taken, and <strong>the totals below are a lower bound</strong>.</p>
+  </section>
+  {{end}}
 
   {{if gt .R.Summary.Metadata.DrainStragglers 0}}
   <section>
