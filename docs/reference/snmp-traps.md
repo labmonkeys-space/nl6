@@ -64,6 +64,49 @@ The PDU envelope is one of three ASN.1 tags:
 | `0xA7` | SNMPv2-Trap-PDU | simulator → collector | `-trap-mode trap` |
 | `0xA6` | InformRequest-PDU | simulator → collector | `-trap-mode inform` |
 | `0xA2` | GetResponse-PDU | collector → simulator | INFORM acknowledgement |
+| `0xA4` | Trap-PDU (SNMPv1) | simulator → collector | `-trap-snmp-version v1` |
+
+## SNMPv1 traps
+
+`-trap-snmp-version v1` switches the whole fleet to the RFC 1157 Trap-PDU, for
+exercising a collector's v1 path (OpenNMS `trapd` handles both).
+The default is `v2c` and is unchanged.
+
+The v1 message carries `version` `0` and a differently shaped PDU: `enterprise`
+(OBJECT IDENTIFIER), `agent-addr` (IpAddress, the device's own IPv4),
+`generic-trap` and `specific-trap` (INTEGER), `time-stamp` (TimeTicks), then the
+variable-bindings.
+
+**The v1 identity is derived, not configured.** nl6 maps each existing catalog
+entry per [RFC 3584] §3.2, so no `traps.json` needs new fields:
+
+| `snmpTrapOID` | `generic-trap` | `specific-trap` | `enterprise` |
+|---|---|---|---|
+| one of the six standard traps | `0`–`5` to match | `0` | the entry's `snmpTrapEnterprise` if it declares one, else `snmpTraps` (`1.3.6.1.6.3.1.1.5`) |
+| anything else | `6` (enterpriseSpecific) | the OID's last sub-identifier | the OID with its last **two** sub-identifiers removed when the next-to-last is `0`, else its last **one** |
+
+**A declared `snmpTrapEnterprise` is not an override.** RFC 3584 honours it only
+for a standard trap. Across the shipped catalogs that means it is used by the v1
+path in *zero* cases: the five standard entries declare none, and every vendor
+entry is enterprise-specific and therefore derives. It is still emitted as a
+varbind under v2c, which is unchanged.
+
+**A v1 trap carries none of the three varbinds v2c prepends.** `sysUpTime.0`
+becomes `time-stamp`, `snmpTrapOID.0` becomes the identity above, and
+`snmpTrapEnterprise.0` becomes `enterprise`. Only the entry's body varbinds
+appear in the variable-bindings list.
+
+**There is no v1 INFORM.** RFC 1157 defines no acknowledged notification, so
+`-trap-snmp-version v1` with `-trap-mode inform` is refused at startup rather
+than silently downgraded. A device that requests `inform` over REST while the
+fleet runs v1 is refused at attach for the same reason.
+
+One consequence worth expecting: several catalog entries can collapse to one v1
+identity. `ciena_waveserver5`'s four optical alarm entries share a trap OID, so
+under v1 they differ only in their varbinds. That is how v1 works and what the
+real device does; it is not a mapping defect.
+
+[RFC 3584]: https://www.rfc-editor.org/rfc/rfc3584.txt
 
 Inside each PDU: `request-id` (INTEGER), `error-status` (INTEGER, always 0
 on emission), `error-index` (INTEGER, always 0), and a variable-bindings

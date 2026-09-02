@@ -523,6 +523,7 @@ type SimulatorManager struct {
 	trapCatalogsByType  map[string]*Catalog
 	trapScheduler       atomic.Pointer[TrapScheduler] // lock-free read so device.Stop can deregister without taking sm.mu
 	trapEncoder         TrapEncoder
+	trapSNMPVersion     TrapSNMPVersion
 	trapLimiter         *rate.Limiter // shared global cap (nil = unlimited)
 	trapConns           sync.Map      // key: string collector, value: *net.UDPConn (shared-socket fallback pool, TRAP mode only)
 	trapAggregates      sync.Map      // key: trapAggKey, value: *trapCollectorAggregate — monotonic counters surviving device delete

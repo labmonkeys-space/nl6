@@ -33,6 +33,57 @@ import (
 // ParseTrapMode converts a case-insensitive string to TrapMode. Empty defaults
 // to TrapModeTrap so operators that pass -trap-collector without -trap-mode
 // get the common case.
+// TrapSNMPVersion selects the notification wire format (nl6#97). The fleet
+// picks one; nl6#97 puts mixing v1 and v2c in a single run out of scope.
+type TrapSNMPVersion int
+
+const (
+	TrapSNMPv2c TrapSNMPVersion = iota
+	TrapSNMPv1
+)
+
+func (v TrapSNMPVersion) String() string {
+	if v == TrapSNMPv1 {
+		return "v1"
+	}
+	return "v2c"
+}
+
+// ParseTrapSNMPVersion maps the -trap-snmp-version flag. Empty is v2c, which
+// keeps every existing deployment on the format it has today.
+func ParseTrapSNMPVersion(s string) (TrapSNMPVersion, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "v2c", "2c":
+		return TrapSNMPv2c, nil
+	case "v1", "1":
+		return TrapSNMPv1, nil
+	default:
+		return 0, fmt.Errorf("invalid -trap-snmp-version %q (valid: v1, v2c)", s)
+	}
+}
+
+// trapVersionModeConflict reports the one unsatisfiable flag pair: SNMPv1 with
+// an acknowledged notification mode (nl6#97).
+//
+// Extracted from main() rather than left inline so it can be tested. The
+// startup path exits on the root check well before it, so an integration run as
+// an unprivileged user never reaches the guard and would have verified nothing.
+func trapVersionModeConflict(version TrapSNMPVersion, mode string) error {
+	if version != TrapSNMPv1 {
+		return nil
+	}
+	m, err := ParseTrapMode(mode)
+	if err != nil {
+		return nil // a bad -trap-mode is ParseTrapMode's error to report, not this one's
+	}
+	if m != TrapModeInform {
+		return nil
+	}
+	return fmt.Errorf("-trap-snmp-version=v1 cannot be combined with -trap-mode=inform: SNMPv1 " +
+		"defines no InformRequest-PDU (RFC 1157), so there is nothing for a collector to " +
+		"acknowledge. Use -trap-mode=trap, or -trap-snmp-version=v2c")
+}
+
 func ParseTrapMode(s string) (TrapMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "trap":
@@ -108,7 +159,10 @@ type CatalogSourceInfo struct {
 // knobs (collector / mode / community / interval / inform-*) live on
 // each `DeviceTrapConfig`.
 type TrapSubsystemConfig struct {
-	CatalogPath     string
+	CatalogPath string
+	// SNMPVersion selects the notification wire format for the whole fleet
+	// (nl6#97). Zero value is v2c, so an unset field keeps existing behaviour.
+	SNMPVersion     TrapSNMPVersion
 	GlobalCap       int  // 0 = unlimited
 	SourcePerDevice bool // bind per-device UDP socket in nl6sim ns
 	// MeanSchedulerInterval seeds the scheduler's Poisson draw when no
@@ -204,6 +258,12 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 	sm.mu.Lock()
 	sm.trapCatalog = catalog
 	sm.trapCatalogsByType = catalogsByType
+	// v2c stays a shared zero-size value; v1 needs the per-device agent address
+	// so its encoder is built at ATTACH time instead (nl6#97). Leaving this nil
+	// for v1 would make a missed attach-site branch a nil-pointer panic on the
+	// fire path, so it holds the v2c encoder as a safe stand-in that the attach
+	// site always replaces.
+	sm.trapSNMPVersion = cfg.SNMPVersion
 	sm.trapEncoder = SNMPv2cEncoder{}
 	sm.trapLimiter = limiter
 	sm.trapGlobalCap = cfg.GlobalCap
@@ -443,6 +503,7 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	scheduler := sm.trapScheduler.Load()
 	sourcePerDevice := sm.trapSourcePerDevice
 	encoder := sm.trapEncoder
+	snmpVersion := sm.trapSNMPVersion
 	limiter := sm.trapLimiter
 	deviceIPStr := device.IP.String()
 	modelLabel := modelLabelForSlug(sm.deviceTypesByIP[deviceIPStr])
@@ -453,6 +514,19 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	}
 	if mode == TrapModeInform && !sourcePerDevice {
 		return fmt.Errorf("trap export: INFORM mode requires -trap-source-per-device=true")
+	}
+	// RFC 1157 defines no acknowledged notification, so the combination is
+	// unsatisfiable rather than degraded (nl6#97). Startup refuses the seed
+	// flags; this catches a device that asks for inform over REST while the
+	// fleet is running v1.
+	if snmpVersion == TrapSNMPv1 && mode == TrapModeInform {
+		return fmt.Errorf("trap export: SNMPv1 has no InformRequest-PDU, so mode=inform cannot be " +
+			"served while -trap-snmp-version=v1")
+	}
+	// agent-addr is the originating device's own IP, which is why the v1
+	// encoder is per device where the v2c one is shared.
+	if snmpVersion == TrapSNMPv1 {
+		encoder = SNMPv1Encoder{AgentAddr: deviceIPStr}
 	}
 
 	collectorAddr, err := net.ResolveUDPAddr("udp4", cfg.Collector)
