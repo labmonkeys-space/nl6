@@ -34,7 +34,7 @@ Omit the engine-id flag to run in v2c-only mode.
 | Flag | Values | Default | Purpose |
 |------|--------|---------|---------|
 | `-snmpv3-engine-id` | string | — | Enable SNMPv3 with the specified engine ID (e.g. `0x80001234`). |
-| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 auth protocol. |
+| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 auth protocol. **Accepted and stored, but not yet implemented** ([nl6#624]): nl6 emits a zero `msgAuthenticationParameters`, so a peer that verifies the digest rejects an `authNoPriv`/`authPriv` message. The value is not read by any code today. |
 | `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. |
 
 See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
@@ -335,8 +335,9 @@ sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 100 -port 9090
 # Non-privileged SNMP port (no CAP_NET_BIND_SERVICE needed)
 sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 10 -snmp-port 1161
 
-# SNMPv3 with MD5 auth and AES128 privacy
-sudo ./nl6 -snmpv3-engine-id 0x80001234 -snmpv3-auth md5 -snmpv3-priv aes128
+# SNMPv3 with AES128 privacy. -snmpv3-auth is accepted but not implemented
+# (nl6#624), so poll with -l noAuthNoPriv.
+sudo ./nl6 -snmpv3-engine-id 0x80001234 -snmpv3-priv aes128
 
 # Disable network namespace isolation
 sudo ./nl6 -no-namespace -auto-start-ip 192.168.100.1 -auto-count 10
@@ -351,3 +352,5 @@ sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 -if-scenario 3
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 \
     -if-scenario 4 -if-failure-pct 30
 ```
+
+[nl6#624]: https://github.com/labmonkeys-space/nl6/issues/624

@@ -11,19 +11,38 @@ stack is implemented in `go/nl6/snmp*.go` — see
   table. Community string is `public` by default.
 - **SNMPv3** — enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags).
   Auth protocols: `none`, `md5`, `sha1`. Privacy protocols: `none`, `des`,
-  `aes128`. Auth and priv are implemented in `snmpv3.go` / `snmpv3_crypto.go`.
+  `aes128`. The message framing and privacy live in `snmpv3.go` /
+  `snmpv3_crypto.go`; **authentication does not, see below.**
 
 ### SNMPv3 auth / priv matrix
 
-| Auth  | Priv    | Security level  |
-|-------|---------|-----------------|
-| none  | none    | `noAuthNoPriv`  |
-| md5   | none    | `authNoPriv`    |
-| sha1  | none    | `authNoPriv`    |
-| md5   | des     | `authPriv`      |
-| md5   | aes128  | `authPriv`      |
-| sha1  | des     | `authPriv`      |
-| sha1  | aes128  | `authPriv`      |
+:::warning[Authentication is not implemented]
+
+The auth protocols below are **accepted and stored but never used**
+([nl6#624]). nl6 emits a zero `msgAuthenticationParameters` and computes no
+HMAC, so any peer that verifies the digest rejects an `authNoPriv` or
+`authPriv` message. `AuthProtocol` is not read by any code.
+
+Privacy is affected too: the AES key is derived with SHA1 regardless of the
+configured auth protocol, where RFC 3414 §2.6 uses the auth protocol's hash,
+and from the auth password rather than `priv_password`. So `authPriv` rows
+work only where those defaults happen to coincide with the peer's derivation.
+
+**`noAuthNoPriv` is the row that works today.**
+
+:::
+
+| Auth  | Priv    | Security level  | Status |
+|-------|---------|-----------------|--------|
+| none  | none    | `noAuthNoPriv`  | works |
+| md5   | none    | `authNoPriv`    | digest not computed ([nl6#624]) |
+| sha1  | none    | `authNoPriv`    | digest not computed ([nl6#624]) |
+| md5   | des     | `authPriv`      | digest not computed; priv key derivation differs from RFC 3414 |
+| md5   | aes128  | `authPriv`      | digest not computed; priv key derivation differs from RFC 3414 |
+| sha1  | des     | `authPriv`      | digest not computed ([nl6#624]) |
+| sha1  | aes128  | `authPriv`      | digest not computed ([nl6#624]) |
+
+[nl6#624]: https://github.com/labmonkeys-space/nl6/issues/624
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).

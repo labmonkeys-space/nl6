@@ -949,9 +949,10 @@ ssh simadmin@192.168.100.1     # password: simadmin
 snmpget  -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 
-# SNMP v3 (when enabled)
-snmpget -v3 -l authPriv -u admin -a MD5 -A authpass123 -x AES -X privpass123 \
-  -e 0x80001234 192.168.100.1 1.3.6.1.2.1.1.1.0
+# SNMP v3 (when enabled). Use -l noAuthNoPriv: authentication is accepted but
+# not implemented, so an authPriv poll fails digest verification (nl6#624).
+snmpget -v3 -l noAuthNoPriv -u admin -e 0x80001234 \
+  192.168.100.1 1.3.6.1.2.1.1.1.0
 ```
 
 See [SNMP reference](snmp.md) for the OID coverage, including the dynamic HC
