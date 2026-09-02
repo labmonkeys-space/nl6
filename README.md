@@ -67,7 +67,10 @@ network namespaces.
 
 ## Status & scale
 
-**Stable** — SNMP v2c/v3, SSH, HTTPS REST (storage APIs), NetFlow v5/v9 and
+**Stable** — SNMP v2c, SNMP v3 at `noAuthNoPriv` only (USM authentication is
+not implemented and privacy is not reachable; see
+[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)), SSH, HTTPS REST
+(storage APIs), NetFlow v5/v9 and
 IPFIX, TUN-per-device scaling with `nl6sim` network-namespace isolation,
 web UI, REST control plane.
 

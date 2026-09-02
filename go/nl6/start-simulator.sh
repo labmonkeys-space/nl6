@@ -1,2 +1,5 @@
 sudo ls -lt
-sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 1 -snmpv3-engine-id 800000090300AABBCCDD -snmpv3-auth sha1 -snmpv3-priv aes128 &
+# -snmpv3-auth/-snmpv3-priv are omitted deliberately: authentication is not
+# implemented and privacy needs authPriv, so only noAuthNoPriv is reachable
+# (nl6#624). Poll with: snmpget -v3 -l noAuthNoPriv -u simadmin -e 800000090300AABBCCDD
+sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 1 -snmpv3-engine-id 800000090300AABBCCDD &
