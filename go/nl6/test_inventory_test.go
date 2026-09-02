@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1404
+const minimumTestFunctions = 1405
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -287,6 +287,10 @@ var loadBearingGuards = []loadBearingGuard{
 	{"TestTrapAndPollAgreeOnType", "snmp_trap_poll_type_agreement_test.go",
 		"nl6#606. One OID must not answer with one type when polled and another when it arrives as a " +
 			"trap varbind. Nothing else compares the two encoders"},
+	{"TestTrapCatalogDoesNotContradictItself", "snmp_trap_poll_type_agreement_test.go",
+		"nl6#607. The same one-object-two-types defect, found without any resource data. It is the " +
+			"ONLY check that reaches ciena_waveserver5's catalog, which joins nothing at all, and the " +
+			"only one that reaches a templated varbind, which is not joinable by construction"},
 
 	// Capability and contract completeness.
 	{"TestFlowCapabilityCompleteness", "flow_capability_completeness_test.go",

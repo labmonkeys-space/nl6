@@ -327,14 +327,14 @@ One object, one profile, two types.
 It was found by hand during nl6#592's Juniper audit and fixed there; nl6#593 closed the class.
 
 `TestTrapAndPollAgreeOnType` joins the two surfaces on the OID, per profile, and requires the tag each **production encoder** emits to match.
-Five properties are load-bearing:
+Six properties are load-bearing:
 
 - **Both tags come from the encoders**, `encodeVarbindTyped` on the trap side and `encodeTypedValue` on the poll side. A hand-written type map would record today's agreement and then rot silently, which is how `validateDottedOID` drifted from `encodeOID` in nl6#539. The trap side reads the tag back out of the encoded varbind rather than mirroring the encoder's switch, so a new case there is picked up for free. The catalog's type *vocabulary* is shared for the same reason: `trapVarbindTypes` is the loader's own accept-set and the probe table is driven off it, so a ninth type added to `compileEntry` fails a test instead of silently landing every varbind of that type in the encoder-failure bucket.
 - **A templated value is encoded with a probe, and only a templated value.** The tag a trap varbind puts on the wire is a function of its declared type alone, so any value that type accepts resolves it — but falling back to a probe on *any* encode error would launder real defects into agreement. An `integer` varbind whose literal value is `up` fails at every fire, and the catalog loader's dry render disables the whole entry for an unrenderable one. The gate is the value containing `{{`, nothing else, and such a varbind is reported as an encoder failure.
 - **`_common/traps.json` is applied to every profile**, because it is merged into every device type's effective catalog. The merge is done by the production resolver (`ScanPerTypeTrapCatalogs` plus the universal fallback), not by re-reading the files, so overlay precedence and `extends` are whatever the fleet gets. **This arm is pinned by the control, not by the counts**, and the difference was measured rather than assumed: a join narrowed to `entry.fromOverlay` — never examining a universal varbind at all — leaves every count in the file unchanged and the package green, because all six real `_common` varbinds are templated and contribute no occurrences. So the control substitutes a *synthetic* universal catalog whose varbind carries a literal OID the planted profiles serve. The same reason the entry comparison is on each universal entry's **varbind set** and not its name: `MergeOverlay` replaces a same-named entry wholesale.
 - **The poll side has to be the production poll side.** Two ways it might not be, and both ship. `buildResourceIndexes` calls `oidIndex.Store` in sorted order, so a **duplicated OID** resolves last-wins — and after a non-stable `sort.Slice`, so which of several equal keys wins is unspecified; 111 `(profile, OID)` pairs are duplicated today (64 in `cisco_nexus_9500`, 32 in `juniper_mx960`, 5 in each `nvidia_*`, all `ifHighSpeed` rows carrying identical values, so none diverges yet). And `findResponse` answers **ahead of** `oidIndex` from `sysName.0`/`sysLocation.0` (which `buildResourceIndexes` does not even store), `getMetricValue`, `IfCounterCycler`, the interface-state override and the LLDP/`ifAlias` provider, so a resource entry for one of those is dead data. Both are reported rather than resolved silently: there is no single polled value to compare against.
 - **A varbind naming an OID the profile does not serve is normal, not a finding.** 182 of the 185 examined varbinds are in that bucket. The claim is only that **the profile serves no resource entry for them** — this guard cannot read a MIB, so it cannot say they are notification-only objects, however likely that is. They are counted so the number is visible when it moves, and never flagged; flagging them would turn an agreement rule into a coverage rule, which is a different question.
-- **The positive control has six arms.** A planted disagreeing pair must be reported; a planted *agreeing* pair must be silent; a planted unencodable literal must surface as an encoder failure; a planted duplicate entry must be reported; a planted shadowed OID must be reported as shadowed, and its declared type deliberately *agrees* with its resource value so that a rule which stopped honouring shadowing falls silent rather than reporting a different kind; and a planted overlay that keeps a universal entry's name while swapping its varbinds must be reported as drift. A test asserting zero findings cannot fail on its own, and the silent arm is what stops a rule that reports every joined pair from passing all the others.
+- **The positive control has eight arms.** A planted disagreeing pair must be reported; a planted *agreeing* pair must be silent; a planted unencodable literal must surface as an encoder failure; a planted duplicate entry must be reported; a planted shadowed OID must be reported as shadowed, and its declared type deliberately *agrees* with its resource value so that a rule which stopped honouring shadowing falls silent rather than reporting a different kind; a planted overlay that keeps a universal entry's name while swapping its varbinds must be reported as drift; and nl6#607 added a pair for the typed-leaf rule below, one declaring the wrong type on a leaf `oidTypeTable` types and one declaring the right one. A test asserting zero findings cannot fail on its own, and the silent arms are what stop a rule that reports every joined pair from passing all the others.
 
 The corpus is clean, and every number below is re-derived on each run and pinned to a named constant, because a rule that finds nothing to join reports no findings either:
 
@@ -344,6 +344,7 @@ The corpus is clean, and every number below is re-derived on each run and pinned
 | `trapVarbindsWithTemplatedOID` | 6 | of those, naming no fixed object — all of `_common`'s |
 | `trapPollJoinOccurrences` | 185 | `(profile, varbind)` pairs the join examines |
 | `trapPollUnservedVarbinds` | 182 | of those, with no resource entry in that profile |
+| `trapPollTypedUnservedVarbinds` | 0 | of *those*, the ones `oidTypeTable` types and so compares anyway |
 | `trapPollJoinedPairsShipped` | 3 rows | the joined pairs **by identity**, not by count |
 | `trapPollPerCatalogCensus` | 4 rows | the `{templated, examined, joined}` breakdown per catalog file |
 | `trapCatalogProfiles` / `trapProfilesCarryingUniversal` | 29 / 29 | device types, and how many carry the universal entries unchanged |
@@ -362,7 +363,52 @@ That is coverage of a surface the catalog does not control, not a near-miss.
 
 - **It does not compare either side against a MIB.** Whether nl6 agrees with the *vendor* is nl6#590's question; this asks only whether nl6 contradicts *itself*. `jnxFruFailed` is the worked example: it declares `{ jnxFruEntry 9 }` — `jnxFruTemp`, `SYNTAX Gauge32` — as `timeticks`. That is a catalog-versus-MIB disagreement, no profile serves that OID, so the join can never reach it. It is recorded under [The trap catalog, and nl6#593's cross-surface check](#the-trap-catalog-and-nl6593s-cross-surface-check).
 - **It joins against static resource data only.** An OID served analytically has no `snmp` entry at all, so a varbind naming one lands in the unserved bucket; one that has *both* a resource entry and a dynamic answer is reported as shadowed rather than compared. Today the first case is moot: every varbind naming an `ifTable` column is templated on `{{.IfIndex}}`.
-- **A templated OID is not joinable at all.** The six `_common` link-trap varbinds name `…2.2.1.7.{{.IfIndex}}`; the OID exists only at fire time. They are counted in their own bucket rather than swept into "unserved", because a template appearing where a literal used to be is a change worth seeing.
+- **A templated OID is not joinable at all.** The six `_common` link-trap varbinds name `…2.2.1.7.{{.IfIndex}}`; the OID exists only at fire time. They are counted in their own bucket rather than swept into "unserved", because a template appearing where a literal used to be is a change worth seeing. They are not entirely unchecked, though: the catalog self-consistency rule below reads them, because it needs no resource data.
+
+### Two widenings that need no new data source
+
+nl6#607 added two rules to the same file.
+Neither found a defect.
+Both increase what is comparable without reading anything new.
+
+**A typed leaf is comparable without a served value.**
+`oidTypeTable` types the *leaf*, so for any OID in it the poll-side tag is knowable with no resource entry at all: `encodeTypedValue` dispatches on `snmpTypeTag(oid)`, and the typed-class rule refuses at load any value that would not encode at that tag.
+Such a varbind is therefore compared rather than left in the unserved bucket.
+The comparison changes shape and the two kinds stay distinguishable in the output: the original rule is *declared type versus the tag the served value emits*, this one is *declared type versus the tag the leaf's declared type emits*, which is a step closer to a MIB check while still being entirely inside nl6.
+
+`trapPollTypedUnservedVarbinds` is **0**, and zero is the expected value.
+`oidTypeTable` types standard mib-2 leaves while trap varbinds name vendor notification objects, so the two sets do not currently intersect.
+This is a tripwire for a future catalog that declares `octet-string` on an `ifHC*` column, not a rule that found something.
+A test asserting zero cannot fail on its own, so what makes it able to fail at all is the control's arm for it.
+
+**A catalog must not contradict itself.**
+Two varbinds of one **effective** catalog naming the same OID at different declared types are the same one-object-two-types defect, and the join above cannot see it unless the OID also happens to be served.
+`TestTrapCatalogDoesNotContradictItself` needs no resource data, which is why it reaches two surfaces nothing else did.
+`ciena_waveserver5` is 156 of the 185 examined occurrences and joins **zero**, so its catalog had no internal check of any kind; its four entries share one trap OID by design, one notification differing only in severity and which condition flag is set, which makes a same-OID-different-type slip both plausible and previously undetectable.
+And the universal catalog's entire comparison surface is templated, so the join can never reach any of it.
+
+Three properties are load-bearing:
+
+- **The effective catalog, not the overlay file.** `MergeOverlay` replaces a same-named entry wholesale, and an overlay entry that contradicts a *universal* varbind sits in an overlay file that is internally consistent on its own. The control's third arm plants exactly that, so a rule that read the overlay file passes every other arm and reports nothing here while the device fires both types.
+- **Per distinct effective catalog, not per profile.** 26 profiles carry the universal catalog unchanged, so a defect in it is one fact; reporting it 26 times would bury the three overlay catalogs' findings underneath it.
+- **The tag comes from the declared type, through the probe.** What a trap varbind puts in the value slot is a function of its declared type alone, so resolving through the type keeps the rule answering the question it asks. Resolving through the varbind's own value would make an unencodable literal or a templated value into an encoder failure here, which is the join's finding to report and not this one's, and would leave the rule unable to see the universal catalog at all.
+
+`trapCatalogSelfCensus` pins `{entries, distinct varbind OIDs, OIDs carried by more than one varbind}` per effective catalog:
+
+| Effective catalog | Entries | Distinct OIDs | Carried by >1 varbind |
+|---|---|---|---|
+| the universal one, as 26 profiles carry it | 5 | 3 | 3 |
+| `resources/ciena_waveserver5/traps.json` | 9 | 42 | 42 |
+| `resources/cisco_ios/traps.json` | 12 | 17 | 3 |
+| `resources/juniper_mx240/traps.json` | 12 | 16 | 5 |
+
+The third column is the only one the rule uses.
+An OID carried by a single varbind cannot disagree with itself, so that column alone says how much of each catalog is actually under comparison.
+A change that collapsed the grouping would drive it to zero while every finding count stayed at zero too, and the guard would be silently worthless.
+That is the failure the census exists to make visible.
+
+Neither widening changes what the guard can say about a **MIB**.
+`jnxFruFailed` declaring a `Gauge32` object as `timeticks` stays out of reach of both, because no profile serves that OID and the disagreement is with the vendor rather than within nl6.
 
 ## Semantic faithfulness
 
