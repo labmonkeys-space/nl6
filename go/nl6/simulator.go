@@ -132,6 +132,7 @@ func main() {
 		trapGlobalCap       = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
 		trapCatalog         = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
 		trapCommunity       = flag.String("trap-community", "public", "SNMPv2c community string for trap/INFORM PDUs")
+		trapSNMPVersion     = flag.String("trap-snmp-version", "v2c", "SNMP notification wire format: v2c (default) or v1 (RFC 1157 Trap-PDU). One per fleet; v1 cannot serve -trap-mode inform")
 		trapSourcePerDevice = flag.Bool("trap-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so trap packets use the device IP as source (required in -trap-mode inform)")
 		trapInformTimeout   = flag.Duration("trap-inform-timeout", 5*time.Second, "Per-retry timeout in INFORM mode (default 5s)")
 		trapInformRetries   = flag.Int("trap-inform-retries", 2, "Maximum retransmissions per INFORM before declaring it failed (default 2)")
@@ -338,8 +339,19 @@ func main() {
 	// (catalog, global cap, per-device-source, scheduler mean interval)
 	// live on the manager; per-device knobs (collector, mode, community,
 	// interval, inform-*) live on each DeviceTrapConfig.
+	trapVersion, err := ParseTrapSNMPVersion(*trapSNMPVersion)
+	if err != nil {
+		log.Fatalf("trap export: %v", err)
+	}
+	// RFC 1157 has no acknowledged notification, so this pair is unsatisfiable
+	// rather than degradable (nl6#97). Refused here so it fails at startup like
+	// every other bad flag pair, not per fire.
+	if err := trapVersionModeConflict(trapVersion, *trapMode); err != nil {
+		log.Fatalf("trap export: %v", err)
+	}
 	if err := manager.StartTrapSubsystem(TrapSubsystemConfig{
 		CatalogPath:           *trapCatalog,
+		SNMPVersion:           trapVersion,
 		GlobalCap:             *trapGlobalCap,
 		SourcePerDevice:       *trapSourcePerDevice,
 		MeanSchedulerInterval: *trapInterval,

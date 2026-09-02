@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1428
+const minimumTestFunctions = 1437
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -291,6 +291,16 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
 			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
 			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
+	{"TestV1MappingEnterpriseSpecificIgnoresTheDeclaredEnterprise", "trap_v1_test.go",
+		"nl6#97. RFC 3584 3.2 honours a declared snmpTrapEnterprise ONLY for a standard trap; a " +
+			"non-standard one always derives it from snmpTrapOID. The spec had this backwards, and " +
+			"honouring the declared value would put an enterprise on the wire no proxy produces"},
+	{"TestV1DropsTheV2cPrependedVarbinds", "trap_v1_test.go",
+		"nl6#97. sysUpTime.0, snmpTrapOID.0 and snmpTrapEnterprise.0 became PDU fields in v1; " +
+			"emitting them as varbinds produces a trap no real agent sends"},
+	{"TestV2cOutputUnchangedByV1Encoder", "trap_v1_test.go",
+		"nl6#97. Adding a second encoder must not perturb the first. Digest over every shipped " +
+			"catalog entry, verified equal at the baseline commit rather than merely recorded"},
 	{"TestInterfaceStateInjectedClockIsUsedEverywhere", "interface_state_clock_test.go",
 		"nl6#575. All THREE of the engine's clock reads must move together: a boot time from the real " +
 			"clock and transitions from an injected one subtract a real timestamp from a fake one. " +

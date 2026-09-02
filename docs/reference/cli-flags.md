@@ -228,6 +228,7 @@ prerequisites and `snmptrapd` smoke-test, and
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-trap-community` | string | `public` | **seed** | SNMPv2c community string. |
+| `-trap-snmp-version` | `v2c` \| `v1` | `v2c` | **seed** | Notification wire format. `v1` emits RFC 1157 Trap-PDUs (tag `0xA4`) with the identity derived per RFC 3584 §3.2. One per fleet; cannot be combined with `-trap-mode inform`, which SNMPv1 does not define. |
 | `-trap-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. **Required** when a device is configured `mode=inform` — enforced at device-attach time: the attach fails per-device and the device's `trapConfig` is cleared. |
 | `-trap-inform-timeout` | duration | `5s` | **seed** | Per-retry timeout in INFORM mode. |
 | `-trap-inform-retries` | int | `2` | **seed** | Maximum retransmissions per INFORM before it's declared failed. |
