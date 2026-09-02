@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -544,7 +545,26 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 	c := &MetricsCycler{}
 	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := c.ifCounters.Load()
+
+	// A strictly-increasing injected clock, so the lastChange assertion below
+	// holds BY CONSTRUCTION (nl6#575). It used to read the wall clock, which
+	// the engine explicitly does not promise is monotonic: UnixNano strips the
+	// monotonic reading and wallRelNs carries a rewind sentinel for the
+	// backwards step that follows, so the assertion could fail on any NTP step.
+	//
+	// The goroutines and the real 100ms window below are UNCHANGED and must
+	// stay that way: the torn-read assertions are the half that needs genuine
+	// parallelism, and a synctest bubble would serialise exactly what they
+	// exist to exercise.
 	state := ic.State()
+	// ANCHORED TO THE ENGINE'S OWN BOOT TIME, not to zero. bootTimeUnixNs is
+	// the origin every relative lastChange is measured from, so a clock that
+	// started at zero would read earlier than boot on every transition and
+	// wallRelNs would return the rewind sentinel every time, turning the
+	// assertion below into a permanent failure.
+	base := int64(state.bootTimeUnixNs)
+	var tick atomic.Int64
+	state.now = func() time.Time { return time.Unix(0, base+tick.Add(1000)) }
 
 	stop := make(chan struct{})
 	errCh := make(chan error, 1)
@@ -589,11 +609,13 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 					return
 				}
 				// lastChange must be non-decreasing across reads (or
-				// equal — same write seen twice). Sentinel rewind is
-				// possible if the wall clock steps but unlikely in a
-				// 100ms test window; treat it as a failure if observed.
+				// equal — same write seen twice). With the injected clock
+				// this is a property of the engine's packing and CAS
+				// ordering alone; nothing here depends on the wall clock,
+				// so a rewind sentinel now means a real defect rather than
+				// an NTP step (nl6#575).
 				if lc == LastChangeRewindSentinel {
-					failure("unexpected clock-rewind sentinel during test")
+					failure("unexpected clock-rewind sentinel with a strictly-increasing clock")
 					return
 				}
 				if lc < prevLast {

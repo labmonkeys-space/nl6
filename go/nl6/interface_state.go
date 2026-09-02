@@ -96,6 +96,18 @@ type InterfaceState struct {
 	maxIfIndex     int             // upper bound; slots has length maxIfIndex
 	bootTimeUnixNs uint64          // captured at construction; used to derive wall-relative lastChange
 
+	// now is the engine's clock, nil in production (meaning time.Now). It
+	// exists because lastChange is derived from the WALL clock: time.Now()'s
+	// monotonic reading is stripped by UnixNano, and wallRelNs has a whole
+	// rewind sentinel for the backwards step that follows. A test asserting
+	// lastChange is non-decreasing was therefore asserting something the engine
+	// does not promise, and could fail on any NTP step (nl6#575).
+	//
+	// Read through nowUnixNs, never directly, and set only before the engine is
+	// published: it carries no synchronisation, and every reader of it runs on
+	// the mutation path of a live engine.
+	now func() time.Time
+
 	// Listener channels for ON_CHANGE fan-out. Keys are `chan StateChange`,
 	// values are unused (sync.Map used as a concurrent set).
 	listeners sync.Map
@@ -122,14 +134,28 @@ type InterfaceState struct {
 // a zero-sized engine permanently no-ops every getter/setter and is
 // always a caller bug.
 func NewInterfaceState(maxIfIndex int, emitted, dropped *uint64) *InterfaceState {
+	return newInterfaceStateWithClock(maxIfIndex, emitted, dropped, nil)
+}
+
+// newInterfaceStateWithClock is NewInterfaceState against an injectable clock;
+// nil means time.Now and is what every production caller gets (nl6#575).
+//
+// The clock is taken HERE as well as at the setters, and that is the whole
+// point rather than an incidental extra. bootTimeUnixNs is the origin every
+// relative lastChange is measured from, so an engine whose boot time came from
+// the real clock and whose transitions come from an injected one subtracts a
+// real timestamp from a fake one: the result is a garbage 58-bit value, or a
+// spurious rewind sentinel when the fake clock reads earlier.
+func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock func() time.Time) *InterfaceState {
 	if maxIfIndex < 1 {
 		panic("NewInterfaceState: maxIfIndex must be ≥ 1")
 	}
 	s := &InterfaceState{
-		slots:          make([]atomic.Uint64, maxIfIndex),
-		maxIfIndex:     maxIfIndex,
-		bootTimeUnixNs: uint64(time.Now().UnixNano()),
+		slots:      make([]atomic.Uint64, maxIfIndex),
+		maxIfIndex: maxIfIndex,
+		now:        clock,
 	}
+	s.bootTimeUnixNs = uint64(s.nowUnixNs())
 	if emitted != nil {
 		s.eventsEmitted.Store(emitted)
 	}
@@ -279,11 +305,16 @@ func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 // The caller is responsible for calling Broadcast(evt) to fan the event
 // out to listeners.
 //
-// `time.Now()` and `wallRelNs` are sampled INSIDE the CAS loop so that
+// `s.nowTime()` and `wallRelNs` are sampled INSIDE the CAS loop so that
 // retries on contention record the timestamp of the winning CAS, not
 // the timestamp at function entry — this preserves the monotonic
 // ordering of LastChangeNs across concurrent transitions on the same
 // ifIndex.
+//
+// The clock is `s.nowTime()` rather than `time.Now()` directly since nl6#575,
+// and the placement above is unchanged by that: the seam exposes WHICH clock is
+// read, never WHERE it is read. Moving the sample out of the loop would be a
+// behaviour change wearing a refactor's clothes.
 func (s *InterfaceState) SetOperStatus(ifIndex int, newVal uint8) (bool, StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -298,7 +329,7 @@ func (s *InterfaceState) SetOperStatus(ifIndex int, newVal uint8) (bool, StateCh
 		if curOper == newVal {
 			return false, StateChange{}
 		}
-		nowAbs := time.Now()
+		nowAbs := s.nowTime()
 		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
 		next := packState(newVal, curAdmin, relNs)
 		if s.slots[slot].CompareAndSwap(cur, next) {
@@ -336,7 +367,7 @@ func (s *InterfaceState) SetAdminStatus(ifIndex int, newVal uint8) (bool, StateC
 		if curAdmin == newVal {
 			return false, StateChange{}
 		}
-		nowAbs := time.Now()
+		nowAbs := s.nowTime()
 		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
 		next := packState(curOper, newVal, relNs)
 		if s.slots[slot].CompareAndSwap(cur, next) {
@@ -562,3 +593,21 @@ func unpackState(w uint64) (oper, admin uint8, lastChangeNs uint64) {
 	lastChangeNs = (w >> lastChangeShift) & lastChangeMask
 	return
 }
+
+// nowTime is the engine's clock. Production leaves `now` nil and gets
+// time.Now; a test can inject a strictly-increasing counter so an assertion
+// about lastChange holds by construction rather than most of the time
+// (nl6#575).
+//
+// Called INSIDE the CAS loop by both setters, which is deliberate and is
+// documented at SetOperStatus: the timestamp must belong to the attempt that
+// wins the CAS, not to the attempt that started the loop.
+func (s *InterfaceState) nowTime() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+// nowUnixNs is nowTime as the wall-clock nanosecond count the packing uses.
+func (s *InterfaceState) nowUnixNs() int64 { return s.nowTime().UnixNano() }
