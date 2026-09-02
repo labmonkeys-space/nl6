@@ -108,3 +108,57 @@ func TestReportHTML_Escaping(t *testing.T) {
 		t.Error("expected the collector value to be HTML-escaped")
 	}
 }
+
+// TestReportHTML_TruncatedRun pins the truncation surface, which review
+// demonstrated was unpinned: deleting the whole banner block from the template
+// left the entire package green, because every other HTML test renders a
+// sampleReport() whose DrainStragglers is zero.
+//
+// The HTML view is the only operator-facing surface where a truncated finalize
+// is visible without reading raw JSON, so "a truncated finalize must not be
+// indistinguishable from a clean one" fails here first if it fails anywhere.
+func TestReportHTML_TruncatedRun(t *testing.T) {
+	clean := string(reportHTML(sampleReport()))
+	for _, unwanted := range []string{"drain stragglers", `class="truncated-banner"`, "Finalized with stragglers"} {
+		if strings.Contains(clean, unwanted) {
+			t.Errorf("a clean run's report carries %q. The truncation surface must be absent when "+
+				"nothing was truncated, or it stops meaning anything", unwanted)
+		}
+	}
+	if !strings.Contains(clean, `class="pill pill-ok"`) {
+		t.Error("a clean stopped run does not render an ok phase pill, so the truncated arm below " +
+			"cannot show that truncation changes it")
+	}
+
+	rep := sampleReport()
+	rep.Summary.Metadata.DrainStragglers = 3
+	html := string(reportHTML(rep))
+
+	for _, want := range []string{
+		"drain stragglers",          // the metadata row
+		"truncated-banner",          // the visible banner, not a tooltip
+		"Finalized with stragglers", // its headline
+		"every total on this page is a lower bound",
+		"upper bound", // the count is not exact
+		">3<",         // the count itself is rendered
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("the report of a truncated run does not carry %q", want)
+		}
+	}
+
+	// The caveat must not live only in a title= attribute: that is invisible in
+	// print and PDF export, to keyboard users, and to anyone scanning the totals
+	// it applies to.
+	if strings.Contains(html, `title="The drain barrier gave up`) {
+		t.Error("the truncation caveat is a tooltip. It must be visible body text next to the totals " +
+			"it invalidates")
+	}
+
+	// And the page must not read as clean: a green phase pill on a run whose
+	// totals are a lower bound is the exact confusion the banner exists to stop.
+	if strings.Contains(html, `class="pill pill-ok"`) {
+		t.Error("a truncated run renders an ok phase pill. Its totals are a lower bound, so the " +
+			"page must not present it as a clean run")
+	}
+}

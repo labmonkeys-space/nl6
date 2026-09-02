@@ -125,7 +125,7 @@ const drainBarrierTimeout = 60 * time.Second
 // itself bound shutdown: finish() joins the scenario-owned trap and flow tickers
 // BEFORE it reaches here, and those joins are unbounded, so a parked flow Tick
 // write still holds finalize without the ceiling ever being armed. See
-// abortActiveScenario.
+// abortActiveScenario, and nl6#618 for the fix.
 //
 // No configurable grace bounds it (nl6#500 removed the inert `drain` knob that
 // was once claimed to) and none should: this is an internal ceiling, not a
@@ -174,11 +174,16 @@ func (d *drainGate) closeAndWait(id string) int64 {
 			}
 			// At least one fire has not called wg.Done(), or `done` would be
 			// closed and the check above would have returned. So the count is at
-			// least 1 by construction, and flooring it is a statement of that
-			// invariant rather than a fudge: leave() decrements the shadow after
-			// wg.Done(), so a concurrent completion can only make this read LOW.
-			// Reporting 0 here would drop the field via omitempty and make a
-			// truncated finalize indistinguishable from a clean one.
+			// least 1 by construction, and the floor states that invariant.
+			//
+			// THE READ IS AN UPPER BOUND, NOT AN EXACT COUNT. No admit() can run
+			// once closed is set, so leave() is the only mutator during the wait,
+			// and it decrements the shadow AFTER wg.Done(): a fire that completes
+			// while this branch runs is still counted. The floor is therefore
+			// belt-and-braces against a future reordering rather than a live
+			// hazard, and `drain_stragglers` should be read as "no more than this
+			// many were outstanding". An earlier comment here claimed the read
+			// could only be LOW, which was backwards and contradicted leave().
 			stragglers := max(d.inflight.Load(), 1)
 			log.Printf("WARNING: [scenario %s] drain barrier gave up after %s with %d in-flight send(s) "+
 				"still outstanding; the scenario is finalized WITH STRAGGLERS and its report says so. "+
@@ -197,9 +202,10 @@ func (d *drainGate) closeAndWait(id string) int64 {
 			if time.Since(started) >= drainBarrierTimeout {
 				continue
 			}
-			// Repeats deliberately: the operator needs to know it is STILL
-			// stuck, and one line at the 30s mark reads like a blip that
-			// resolved.
+			// The loop is written to repeat, but at the shipped constants
+			// (30s cadence, 60s ceiling) exactly ONE line can be emitted before
+			// the give-up, since the 60s tick is suppressed above. It repeats
+			// only if the cadence is lowered or the ceiling raised.
 			log.Printf("WARNING: [scenario %s] drain barrier still waiting after %s for in-flight sends "+
 				"to return; finalize is blocked until they return or the %s ceiling expires (nl6#567)",
 				id, time.Since(started).Round(time.Second), drainBarrierTimeout)

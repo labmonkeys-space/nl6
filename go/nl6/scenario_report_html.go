@@ -95,6 +95,14 @@ func buildReportHTMLData(rep *scenarioReport) reportHTMLData {
 	default:
 		d.PhaseClass = "neutral"
 	}
+	// A truncated finalize is never "ok", whatever phase it reached, because its
+	// totals are a lower bound. Applied AFTER the phase switch, or the `default`
+	// arm overwrites it. Without this the page shows a green pill, unwarned cards
+	// and every participant row tagged "clean" for a run the schema doc calls
+	// unsettled, with the only contrary signal one <dt> row (nl6#567 review).
+	if s.Metadata.DrainStragglers > 0 {
+		d.PhaseClass = "warn"
+	}
 
 	d.Cards = []htmlStatCard{
 		{Label: "Participants", Value: itoa(s.ParticipantsArmed), Sub: plural(s.ParticipantsExcluded, "exclusion", "exclusions")},
@@ -183,6 +191,8 @@ h2{font-family:var(--mono);font-weight:500;font-size:14px;text-transform:upperca
   color:var(--fg-dim);margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--hair)}
 section{margin-top:44px}
 .mono{font-family:var(--mono)}
+.truncated-banner{border-left:3px solid var(--red);background:var(--red-soft);
+  padding:12px 16px;margin:0;border-radius:var(--radius)}
 .muted{color:var(--fg-mute)}
 .brand-head{display:flex;align-items:center;gap:14px;margin-bottom:12px}
 .brand-logo{display:block}
@@ -251,14 +261,27 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
     {{end}}
   </section>
 
+  {{if gt .R.Summary.Metadata.DrainStragglers 0}}
+  <section>
+    <p class="truncated-banner"><strong>Finalized with stragglers.</strong>
+    The drain barrier gave up at its ceiling with up to
+    {{.R.Summary.Metadata.DrainStragglers}} send(s) still in flight. Those sends were
+    not cancelled and kept moving counters after this report was taken, so
+    <strong>every total on this page is a lower bound</strong>, and an unidentified
+    subset of participants may not satisfy the ledger identity. The count is an upper
+    bound on outstanding admissions, and one admission is a whole paginated batch on
+    the flow paths.</p>
+  </section>
+  {{end}}
+
   <section>
     <h2>Window &amp; fingerprint</h2>
     <dl class="kv">
       <dt>T0</dt><dd>{{.R.Summary.Metadata.T0}}</dd>
       <dt>T1</dt><dd>{{.R.Summary.Metadata.T1}}</dd>
       <dt>drain end</dt><dd>{{.R.Summary.Metadata.DrainEnd}}</dd>
-      {{if .R.Summary.Metadata.DrainStragglers}}
-      <dt title="The drain barrier gave up at its ceiling with sends still in flight. Those sends were not cancelled and kept moving ledger counters after this report was snapshotted, so the totals below are a lower bound and the affected participants may not satisfy the ledger identity.">drain stragglers</dt><dd><strong>{{.R.Summary.Metadata.DrainStragglers}} &mdash; finalized with stragglers; totals are a lower bound</strong></dd>
+      {{if gt .R.Summary.Metadata.DrainStragglers 0}}
+      <dt>drain stragglers</dt><dd><strong>{{.R.Summary.Metadata.DrainStragglers}}</strong> (upper bound)</dd>
       {{end}}
       <dt>seed</dt><dd>{{.R.Summary.Metadata.Seed}}</dd>
       <dt>nl6 version</dt><dd>{{.R.Summary.Metadata.Nl6Version}}</dd>

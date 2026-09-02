@@ -207,7 +207,7 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 // drainBarrierTimeout since nl6#567, so the BARRIER is bounded. What is not
 // bounded is finalize as a whole: finish() joins the scheduler and the trap and
 // flow tickers before it reaches the barrier, and none of those joins has a
-// ceiling. No configured grace bounds any of it either (there is none:
+// ceiling (nl6#618). No configured grace bounds any of it either (there is none:
 // nl6#500). What a write can block on, per transport:
 //
 //   - UDP parks only while the socket send buffer is full.

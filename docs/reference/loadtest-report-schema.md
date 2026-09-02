@@ -110,7 +110,7 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
 | `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. **Observed, not configured**: the barrier returns as soon as the writes admitted before `T1` return, typically single-digit milliseconds after `t1`. It is also **bounded**: if those writes have not returned within the ceiling, the barrier gives up and `drain_end` is the give-up instant. See `drain_stragglers`. |
-| `drain_stragglers` | number | **Absent on a healthy run.** Present only when the drain barrier hit its ceiling and gave up, and then it counts the sends that were still in flight at that moment. A run that reports it was **finalized while its counters were still moving**, so the affected participants may not satisfy the ledger identity and the totals are a lower bound rather than a settled figure. Deliberately its own field and never folded into `dropped`: a straggler was admitted and may still have reached the collector, so calling it dropped would assert an outcome nothing observed. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
+| `drain_stragglers` | number | **Absent on a healthy run.** Present only when the drain barrier hit its ceiling and gave up, and then it is an **upper bound** on the sends still in flight at that moment (a send completing while the barrier reads the counter is still counted). One unit is one **admission**, not one record: the syslog and trap paths admit a single write, while the flow paths admit a whole paginated `Tick` batch, so one flow straggler can stand for hundreds of records. A run that reports it was **finalized while its counters were still moving**, so the totals are a lower bound rather than a settled figure and an **unidentified subset** of participants may not satisfy the ledger identity. The count is fleet-wide and carries no attribution, so the report cannot say which participants those are. Deliberately its own field and never folded into `dropped`: a straggler was admitted and may still have reached the collector, so calling it dropped would assert an outcome nothing observed. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
 | `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
@@ -144,10 +144,10 @@ A per-transport write deadline cannot see it, and it could not bound the total a
 Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and none of those joins is bounded.
 The syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parks finalize ahead of the barrier and the ceiling is never armed.
 What the ceiling reaches is a send admitted outside the scheduler, such as a REST on-demand fire or a state-driven link notification.
-So `drain_stragglers` appearing tells you a run was truncated; its absence does not by itself prove finalize was never blocked.
+So `drain_stragglers` appearing tells you a run was truncated; its absence does not by itself prove finalize was never blocked ([nl6#618]).
 
 The barrier now gives up after a fixed ceiling of **60 s** and records how many sends were still outstanding in `drain_stragglers`.
-A `drain_end` exactly 60 s past `t1` is the signature of a give-up rather than a slow drain.
+**The presence of that field is the only reliable signature of a give-up.** A `drain_end` 60 s past `t1` is neither necessary nor sufficient: the ceiling is armed only once finalize reaches the barrier, which is after the unbounded joins described below, so on a truncated run `drain_end` is at least 60 s past `t1` and can be arbitrarily further.
 **The stragglers are not cancelled**, because nothing can interrupt a write parked in the kernel.
 They keep running and keep moving ledger counters after the report was snapshotted.
 
@@ -180,6 +180,7 @@ The post-window burst is not drain. It is traffic emitted after the scenario sto
 
 [nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 [nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567
+[nl6#618]: https://github.com/labmonkeys-space/nl6/issues/618
 [nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
 
 #### Reproducing `resolved_participants_sha256`

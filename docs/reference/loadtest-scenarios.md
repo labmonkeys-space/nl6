@@ -479,8 +479,11 @@ stalled collector can hold shutdown for 2 s × those queued fires.
 
 **The drain barrier itself is bounded**, at 60 s ([nl6#567]): past that it gives
 up, reports how many sends were still outstanding in `drain_stragglers`, and
-lets finalize proceed. It logs a warning every 30 s while it waits, and again at
-the give-up.
+lets finalize proceed. At the shipped constants it logs exactly one warning, at
+the 30 s mark, and then the give-up line at 60 s. The reported count is an upper
+bound on outstanding **admissions**, not on records: the syslog and trap paths
+admit one write, while the flow paths admit a whole paginated batch, so one flow
+straggler can stand for hundreds of records.
 
 **That ceiling does not bound the abort as a whole, and the distinction
 matters.** Finalize joins the scenario's scheduler and its trap and flow tickers
@@ -489,7 +492,7 @@ syslog and trap schedulers fire inline, so a stalled **scheduler-driven** write
 parks finalize ahead of the barrier and the ceiling is never armed. What the
 ceiling reaches is a send admitted outside the scheduler: a REST on-demand fire
 or a state-driven link notification. A transport with no write deadline at all,
-on a scheduler path, still holds shutdown indefinitely.
+on a scheduler path, still holds shutdown indefinitely ([nl6#618]).
 
 Note also that 60 s exceeds `docker stop`'s default 10 s grace, so on a
 containerised deployment the process may be killed before the ceiling fires and
@@ -536,3 +539,4 @@ need to keep it.
 
 [nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 [nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567
+[nl6#618]: https://github.com/labmonkeys-space/nl6/issues/618

@@ -6,13 +6,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -43,7 +48,12 @@ import (
 // stalled SCHEDULER-DRIVEN write parks finalize ahead of the ceiling and the
 // ceiling is never armed. What it reaches is a fire admitted outside the
 // scheduler: REST on-demand and state-driven link notifications. Do not read
-// these tests as saying shutdown is bounded in general.
+// these tests as saying shutdown is bounded in general. Fix filed as nl6#618.
+
+// outOfBandMarker is rendered into the one fire a controller-driven test parks,
+// so the write override can recognise it rather than blocking whichever write
+// happens to arrive first (which the inline scheduler can win).
+const outOfBandMarker = "ZZ-OUT-OF-BAND-STRAGGLER"
 
 // TestScenarioDrain_CeilingBoundsAStalledWrite is the defect nl6#567 names: a
 // transport write that never returns must not outlast the BARRIER.
@@ -125,13 +135,28 @@ func TestScenarioDrain_CeilingBoundsAStalledWrite(t *testing.T) {
 		})
 	})
 
+	// The id argument exists so an operator with several controllers can tell
+	// which run truncated. Nothing referenced it, so removing it from either
+	// log.Printf failed no test.
+	if !strings.Contains(out, "[scenario test]") {
+		t.Errorf("the log lines do not name the scenario. A fleet can hold several controllers and "+
+			"\"which run truncated\" is the first question.\nlog:\n%s", out)
+	}
 	if !strings.Contains(out, "gave up") {
 		t.Errorf("the give-up was not logged. An operator whose shutdown was truncated has no other "+
 			"signal at the moment it happens.\nlog:\n%s", out)
 	}
-	if !strings.Contains(out, "still waiting") {
-		t.Errorf("the watchdog line did not precede the give-up. The ceiling sits above the watchdog "+
-			"cadence so the log reads as an escalation rather than a surprise.\nlog:\n%s", out)
+	// EXACTLY once, not merely present. The ticker and the ceiling both fire at
+	// the ceiling instant and select picks between them at random: measured, that
+	// emitted a second "still waiting" line in 21 of 60 runs, telling the operator
+	// finalize was blocked "until the ceiling expires" at the instant it expired.
+	// A Contains check is satisfied by one occurrence or two, so deleting the
+	// suppression guard in closeAndWait left the whole package green.
+	if n := strings.Count(out, "still waiting"); n != 1 {
+		t.Errorf("the log carries %d \"still waiting\" lines, want exactly 1.\nAt the shipped "+
+			"constants the 30s tick is the only one that may speak; the 60s tick lands at the "+
+			"ceiling instant and must be suppressed, or the operator is told finalize is still "+
+			"waiting at the moment it gave up.\nlog:\n%s", n, out)
 	}
 }
 
@@ -286,14 +311,16 @@ func TestScenarioFinishCarriesTheStragglerCount(t *testing.T) {
 		dev := sm.devicesByIP["10.42.0.1"]
 		dev.syslogConfig = &DeviceSyslogConfig{Collector: "10.0.0.9:514"}
 
-		// Blocks only once armed, so the scheduler's own fires complete and
-		// c.sched.Stop() can join. Only the out-of-band fire below is parked.
-		var blocking atomic.Bool
+		// Blocks on a MARKER in the rendered message, never on "the first write".
+		// A blocking.Load()+sync.Once gate looks equivalent and is not: the syslog
+		// scheduler fires inline, so a scheduler-driven fire can win the Once,
+		// park the scheduler goroutine, and hang c.sched.Stop() ahead of the
+		// barrier. That is a package-timeout hang rather than a diagnosis, and it
+		// is how the join ordering was discovered in the first place (nl6#618).
 		release := make(chan struct{})
-		var once sync.Once
-		dev.syslogExporter.writeOverride = func([]byte) error {
-			if blocking.Load() {
-				once.Do(func() { <-release })
+		dev.syslogExporter.writeOverride = func(pdu []byte) error {
+			if bytes.Contains(pdu, []byte(outOfBandMarker)) {
+				<-release
 			}
 			return nil
 		}
@@ -315,9 +342,11 @@ func TestScenarioFinishCarriesTheStragglerCount(t *testing.T) {
 		synctest.Wait()
 
 		// An out-of-band fire, admitted to the controller's real drain gate but
-		// owned by no scheduler, parked from here on.
-		blocking.Store(true)
-		go func() { _ = dev.syslogExporter.fireScenario(mustEntry(t), nil) }()
+		// owned by no scheduler, carrying the marker so only it is parked.
+		go func() {
+			_ = dev.syslogExporter.fireScenario(mustEntry(t),
+				map[string]string{"IfName": outOfBandMarker})
+		}()
 		synctest.Wait()
 
 		time.Sleep(spec.Window) // T1: finalize begins
@@ -356,56 +385,99 @@ func TestScenarioFinishCarriesTheStragglerCount(t *testing.T) {
 	})
 }
 
-// TestScenarioDrain_BelowTheCeilingReportsNoStragglers covers the whole interval
-// the two ceiling tests skip. They park a write forever and the barrier test
-// releases immediately, so nothing exercised a write that takes a long time and
-// still returns in good order.
+// TestScenarioDrain_CeilingCountsEveryStraggler pins the count AS A COUNT.
+//
+// Review demonstrated the gap: replacing `max(d.inflight.Load(), 1)` with the
+// constant `int64(1)` left the whole package green, because every give-up test
+// admitted exactly one fire, where the real load and the floor are
+// indistinguishable. A barrier that gave up with a dozen outstanding could
+// report 1, and that number is what sizes the uncertainty in every total.
+func TestScenarioDrain_CeilingCountsEveryStraggler(t *testing.T) {
+	const fires = 4
+
+	synctest.Test(t, func(t *testing.T) {
+		entry := mustEntry(t)
+		t0 := time.Now()
+		t1 := t0.Add(time.Second)
+		gate := &atomic.Pointer[gateState]{}
+		gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
+		d := &drainGate{}
+
+		blockWrite := make(chan struct{})
+		for i := range fires {
+			led := &ledgerEntry{}
+			exp := newSinkExporter(t, net.IPv4(10, 42, 1, byte(i+1)),
+				func(_ []byte) error { <-blockWrite; return nil })
+			exp.scenPart.Store(&scenarioPart{gate: gate, ledger: led, drain: d, now: time.Now})
+			go func() { _ = exp.fireScenario(entry, nil) }()
+		}
+		synctest.Wait()
+
+		if got := d.inflight.Load(); got != fires {
+			t.Fatalf("inflight = %d after %d admitted fires, want %d", got, fires, fires)
+		}
+
+		var stragglers int64
+		returned := make(chan struct{})
+		go func() { stragglers = d.closeAndWait("test"); close(returned) }()
+		<-returned
+
+		if stragglers != fires {
+			t.Errorf("closeAndWait reported %d stragglers, want %d.\nThe count is not a flag: it "+
+				"sizes the uncertainty in every total on the report, and a give-up with %d sends "+
+				"outstanding that reports 1 understates it by %d", stragglers, fires, fires, fires-1)
+		}
+
+		close(blockWrite)
+		synctest.Wait()
+	})
+}
+
+// TestScenarioDrain_BelowTheCeilingReportsNoStragglers covers the interval the
+// two give-up tests skip: a write that is slow but returns in good order.
+//
+// It drives the BARRIER directly rather than a controller. An earlier cut used
+// the controller and was vacuous: its writeOverride parked the scheduler's own
+// fire, so c.sched.Stop() blocked ahead of the barrier and the ceiling was never
+// armed, leaving `DrainStragglers == 0` trivially true for a run in which the
+// barrier had nothing to wait for.
 func TestScenarioDrain_BelowTheCeilingReportsNoStragglers(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		sm, _ := scenarioTestManager(t, 1)
-		dev := sm.devicesByIP["10.42.0.1"]
-		dev.syslogConfig = &DeviceSyslogConfig{Collector: "10.0.0.9:514"}
+		entry := mustEntry(t)
+		t0 := time.Now()
+		t1 := t0.Add(time.Second)
+		gate := &atomic.Pointer[gateState]{}
+		gate.Store(&gateState{phase: phaseRunning, t0: t0, t1: t1})
+		led := &ledgerEntry{}
+		d := &drainGate{}
 
-		release := make(chan struct{})
-		var once sync.Once
-		dev.syslogExporter.writeOverride = func([]byte) error {
-			once.Do(func() { <-release })
-			return nil
-		}
+		blockWrite := make(chan struct{})
+		exp := newSinkExporter(t, net.IPv4(10, 42, 0, 4), func(_ []byte) error { <-blockWrite; return nil })
+		exp.scenPart.Store(&scenarioPart{gate: gate, ledger: led, drain: d, now: time.Now})
 
-		c := newScenarioController(sm, nil)
-		spec := &Scenario{
-			Participants: []string{"10.42.0.1"}, Protocol: "syslog",
-			Rate: 1, Window: time.Second, Seed: 1,
-		}
-		if err := c.Submit(spec, "s-000567b"); err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := c.Arm(); err != nil {
-			t.Fatal(err)
-		}
-		if err := c.Start(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+		go func() { _ = exp.fireScenario(entry, nil) }()
 		synctest.Wait()
 
-		time.Sleep(spec.Window)
+		started := time.Now()
+		var stragglers int64
+		returned := make(chan struct{})
+		go func() { stragglers = d.closeAndWait("test"); close(returned) }()
 		synctest.Wait()
 
-		// A write that is slow but returns with a second to spare must finalize
-		// exactly as a fast one does.
-		time.Sleep(drainBarrierTimeout - time.Second)
-		close(release)
-		synctest.Wait()
+		// Released with a second to spare. The barrier must wait for it, and must
+		// not count it.
+		const held = drainBarrierTimeout - time.Second
+		time.Sleep(held)
+		close(blockWrite)
+		<-returned
 
-		res := c.Result()
-		if res == nil {
-			t.Fatal("no result after the write returned below the ceiling")
+		if elapsed := time.Since(started); elapsed != held {
+			t.Errorf("barrier returned after %s, want exactly %s. It must outlast a slow write that "+
+				"returns, and return the moment it does rather than at the ceiling", elapsed, held)
 		}
-		if res.DrainStragglers != 0 {
-			t.Errorf("DrainStragglers = %d, want 0. A write that returns before the ceiling is not a "+
-				"straggler however long it took, or the field reports slowness rather than truncation",
-				res.DrainStragglers)
+		if stragglers != 0 {
+			t.Errorf("a write that returned below the ceiling was reported as %d straggler(s). "+
+				"However long it took, it is not outstanding", stragglers)
 		}
 	})
 }
@@ -441,44 +513,94 @@ func TestDrainBarrierCeilingClearsItsInputs(t *testing.T) {
 // truncated finalize is SAFE because production never checks the ledger
 // identity: a straggler can leave a participant's buckets not adding up, and
 // nothing fails. That is true today, and nothing kept it true. A future
-// production caller of identityHolds would turn every truncated finalize into a
-// live failure, which is exactly the kind of prose-only claim this repo pins
-// with a scan rather than trusting.
+// production caller would turn every truncated finalize into a live failure.
+//
+// It parses rather than greps, and it carries a POSITIVE CONTROL. The first cut
+// did neither: it matched the substring `identityHolds(` line by line, so it
+// missed a method VALUE (`f := led.identityHolds`) and a call split across
+// lines, and it excluded the declaration by matching the receiver name, so
+// renaming `l` would have reported the declaration itself as an offender. A
+// guard asserting ZERO of something cannot fail on its own; the control is what
+// makes it able to.
 func TestIdentityHoldsIsAssertedOnlyInTests(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("read package dir: %v", err)
+	if got := identityHoldsProductionUses(t, "."); len(got) != 0 {
+		t.Errorf("identityHolds is referenced from production code:\n  %s\n\nThe nl6#567 straggler "+
+			"design argues a truncated finalize cannot fail a live simulator BECAUSE only tests "+
+			"assert the identity. A production reference makes every give-up a runtime failure and "+
+			"invalidates that reasoning in closeAndWait's comment, CLAUDE.md and the report schema doc",
+			strings.Join(got, "\n  "))
 	}
-	var offenders []string
+
+	// The control: plant a production file that both CALLS it and takes it as a
+	// method value, and require both to be reported. Without this the assertion
+	// above passes just as happily against a scan that looks at nothing.
+	dir := t.TempDir()
+	plant := "package main\n\nfunc zzControlCall(l *ledgerEntry) bool { return l.identityHolds() }\n" +
+		"func zzControlValue(l *ledgerEntry) func() bool { return l.identityHolds }\n"
+	if err := os.WriteFile(filepath.Join(dir, "zz_control.go"), []byte(plant), 0o644); err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+	// And a test file in the same directory, which must NOT be reported.
+	if err := os.WriteFile(filepath.Join(dir, "zz_control_test.go"),
+		[]byte("package main\n\nfunc zzInTest(l *ledgerEntry) bool { return l.identityHolds() }\n"), 0o644); err != nil {
+		t.Fatalf("plant test: %v", err)
+	}
+	got := identityHoldsProductionUses(t, dir)
+	if len(got) != 2 {
+		t.Errorf("the control planted a call AND a method value in a production file and the scan "+
+			"reported %d reference(s): %v.\nA scan that misses the method value would let a "+
+			"production use of the predicate slip past the guard that exists to forbid it", len(got), got)
+	}
+	for _, g := range got {
+		if strings.Contains(g, "_test.go") {
+			t.Errorf("the scan reported a reference in a _test.go file (%s); every legitimate call "+
+				"site is a test, so a scan that flags them reports the whole corpus and means nothing", g)
+		}
+	}
+}
+
+// identityHoldsProductionUses returns every reference to identityHolds in the
+// non-test Go files of dir, as "file:line" strings. It walks the AST, so a
+// method value counts and a comment or string literal does not, and it skips the
+// declaration by node type rather than by matching the receiver's name.
+func identityHoldsProductionUses(t *testing.T, dir string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	fset := token.NewFileSet()
+	var out []string
 	scanned := 0
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		scanned++
-		src, err := os.ReadFile(name)
+		// ParseFile per entry rather than the deprecated parser.ParseDir, which
+		// staticcheck rejects (SA1019) and which ignores build tags anyway.
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
 		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+			t.Fatalf("parse %s: %v", name, err)
 		}
-		for i, line := range strings.Split(string(src), "\n") {
-			// The declaration itself is not a call site.
-			if strings.Contains(line, "identityHolds(") && !strings.Contains(line, "func (l *ledgerEntry)") {
-				offenders = append(offenders, fmt.Sprintf("%s:%d: %s", name, i+1, strings.TrimSpace(line)))
+		scanned++
+		ast.Inspect(file, func(n ast.Node) bool {
+			// The declaration is not a reference to itself.
+			if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == "identityHolds" && fn.Recv != nil {
+				return false
 			}
-		}
+			if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "identityHolds" {
+				out = append(out, fmt.Sprintf("%s:%d", name, fset.Position(sel.Pos()).Line))
+			}
+			return true
+		})
 	}
 	if scanned == 0 {
-		t.Fatal("scanned no production files, so this guard proves nothing")
+		t.Fatalf("scanned no production files in %s, so this guard proves nothing", dir)
 	}
-	if len(offenders) != 0 {
-		t.Errorf("identityHolds is called from production code:\n  %s\n\nThe nl6#567 straggler design "+
-			"argues a truncated finalize cannot fail a live simulator BECAUSE only tests assert the "+
-			"identity. A production caller makes every give-up a runtime failure and invalidates that "+
-			"reasoning in closeAndWait's comment, CLAUDE.md and the report schema doc",
-			strings.Join(offenders, "\n  "))
-	}
-	t.Logf("scanned %d production files; identityHolds has no production call site", scanned)
+	sort.Strings(out)
+	return out
 }
 
 // TestScenarioDrain_StragglerMovesCountersAfterTheSnapshot demonstrates the
@@ -516,6 +638,17 @@ func TestScenarioDrain_StragglerMovesCountersAfterTheSnapshot(t *testing.T) {
 			t.Fatal("the straggler was not counted as emitted at the give-up, so this test cannot " +
 				"demonstrate the drift it exists to demonstrate")
 		}
+		// Evaluated HERE, while the straggler is still parked. identityHolds()
+		// reads the LIVE ledger, so calling it after the release below would ask
+		// about a settled ledger and always pass. It is the production predicate
+		// rather than a hand-copied restatement of its terms, because a copy
+		// drifts silently the day a term is added, and the neighbouring test in
+		// this file exists precisely to protect claims about that predicate.
+		if led.identityHolds() {
+			t.Error("the ledger satisfied the identity at the give-up, so the documented hazard did " +
+				"not occur here. emitted is incremented at GENERATION and sent at the write's RETURN, " +
+				"so a straggler must sit between the two")
+		}
 
 		close(blockWrite) // the straggler completes AFTER the snapshot
 		synctest.Wait()
@@ -526,11 +659,11 @@ func TestScenarioDrain_StragglerMovesCountersAfterTheSnapshot(t *testing.T) {
 				"drain_stragglers says a truncated report is a lower bound over a still-moving set; " +
 				"if nothing moves, that caveat is wrong and should be deleted rather than documented")
 		}
-		if atGiveUp.Emitted == atGiveUp.InWindow+atGiveUp.Drain+atGiveUp.SendFailures+
-			atGiveUp.Dropped+atGiveUp.SuppressedPreWindow {
-			t.Error("the give-up snapshot satisfied the ledger identity, so the documented hazard did " +
-				"not occur here. emitted is incremented at GENERATION and sent at the write's RETURN, " +
-				"so a straggler must sit between the two")
+		// And the identity is restored once it lands, which is what makes the
+		// give-up-instant failure above a statement about TIMING rather than
+		// about the ledger being broken.
+		if !led.identityHolds() {
+			t.Errorf("the identity did not recover after the straggler completed: %+v", led.snapshot())
 		}
 	})
 }
