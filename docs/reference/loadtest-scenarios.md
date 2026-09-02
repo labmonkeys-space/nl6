@@ -485,14 +485,23 @@ bound on outstanding **admissions**, not on records: the syslog and trap paths
 admit one write, while the flow paths admit a whole paginated batch, so one flow
 straggler can stand for hundreds of records.
 
-**That ceiling does not bound the abort as a whole, and the distinction
-matters.** Finalize joins the scenario's scheduler and its trap and flow tickers
-*before* it reaches the barrier, and none of those joins has a ceiling. The
-syslog and trap schedulers fire inline, so a stalled **scheduler-driven** write
-parks finalize ahead of the barrier and the ceiling is never armed. What the
-ceiling reaches is a send admitted outside the scheduler: a REST on-demand fire
-or a state-driven link notification. A transport with no write deadline at all,
-on a scheduler path, still holds shutdown indefinitely ([nl6#618]).
+**Finalize as a whole is bounded by one budget** ([nl6#618]). Before it, only
+the barrier was: finalize joins the scenario's scheduler and its trap and flow
+tickers *before* it reaches the barrier, every one of those was an unbounded
+channel receive, and the syslog and trap schedulers fire inline, so a stalled
+**scheduler-driven** write parked finalize with the barrier ceiling never armed.
+That was the common case, which meant the ceiling reached only sends admitted
+outside the scheduler.
+
+All four waits now share a single 60 s budget, so the number an operator is told
+is the number finalize can actually take, rather than one ceiling per wait
+summing to four times it. Whatever did not finish is named in
+`metadata.incomplete_joins`.
+
+**Nothing is cancelled.** A goroutine parked in a write cannot be interrupted,
+so an abandoned join keeps running and can still move counters after the report
+is taken, exactly as a drain straggler can. A report carrying either
+`incomplete_joins` or `drain_stragglers` should be read as a lower bound.
 
 Note also that 60 s exceeds `docker stop`'s default 10 s grace, so on a
 containerised deployment the process may be killed before the ceiling fires and

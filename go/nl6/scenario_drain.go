@@ -109,6 +109,16 @@ const drainWatchdogInterval = 30 * time.Second
 // value if a truncated report matters more than a fast stop.
 const drainBarrierTimeout = 60 * time.Second
 
+// finalizeBudget is the TOTAL wall-clock budget for finish()'s waiting phase
+// (nl6#618): the scheduler join, the trap and flow ticker joins, and the drain
+// barrier, together. It is what makes "finalize returns in bounded time" a
+// single number an operator can reason about, rather than four ceilings that
+// sum to four times what anyone was told.
+//
+// Equal to drainBarrierTimeout because the barrier is the last and by far the
+// likeliest consumer; the joins ahead of it normally cost microseconds.
+const finalizeBudget = drainBarrierTimeout
+
 // closeAndWait stops admitting new fires and waits for every admitted fire to
 // leave, giving up after drainBarrierTimeout. It returns the number of fires
 // STILL IN FLIGHT when it returned: 0 on every healthy run, at least 1 when the
@@ -141,6 +151,15 @@ const drainBarrierTimeout = 60 * time.Second
 // rather than swallowed. Production never asserts that identity (every
 // identityHolds call site is a test), so nothing fails on a live simulator.
 func (d *drainGate) closeAndWait(id string) int64 {
+	return d.closeAndWaitUntil(id, time.Now().Add(drainBarrierTimeout))
+}
+
+// closeAndWaitUntil is closeAndWait against a caller-supplied deadline, so
+// finish() can give the whole waiting phase ONE budget rather than letting each
+// wait spend a fresh ceiling (nl6#618). A deadline already past still publishes
+// the terminal gate and returns immediately, which is what makes the budget a
+// real total rather than a per-wait allowance.
+func (d *drainGate) closeAndWaitUntil(id string, deadline time.Time) int64 {
 	d.mu.Lock()
 	d.closed.Store(true)
 	d.mu.Unlock()
@@ -156,7 +175,7 @@ func (d *drainGate) closeAndWait(id string) int64 {
 	// A timer rather than a deadline loop: it arms once, and under synctest it
 	// is what lets the fake clock reach the give-up instead of the bubble
 	// blocking forever on a write that will never return.
-	ceiling := time.NewTimer(drainBarrierTimeout)
+	ceiling := time.NewTimer(time.Until(deadline))
 	defer ceiling.Stop()
 	for {
 		select {
@@ -199,7 +218,7 @@ func (d *drainGate) closeAndWait(id string) int64 {
 			// ceiling expires" at the instant it had expired. Suppressing it
 			// here is deterministic, where relying on the constants not being
 			// multiples would be an accident waiting to be undone.
-			if time.Since(started) >= drainBarrierTimeout {
+			if !time.Now().Before(deadline) {
 				continue
 			}
 			// The loop is written to repeat, but at the shipped constants
@@ -207,8 +226,49 @@ func (d *drainGate) closeAndWait(id string) int64 {
 			// the give-up, since the 60s tick is suppressed above. It repeats
 			// only if the cadence is lowered or the ceiling raised.
 			log.Printf("WARNING: [scenario %s] drain barrier still waiting after %s for in-flight sends "+
-				"to return; finalize is blocked until they return or the %s ceiling expires (nl6#567)",
-				id, time.Since(started).Round(time.Second), drainBarrierTimeout)
+				"to return; finalize is blocked until they return or the budget expires in %s (nl6#567)",
+				id, time.Since(started).Round(time.Second), time.Until(deadline).Round(time.Second))
 		}
+	}
+}
+
+// joinWithin waits for a finalize join to complete, giving up at the deadline.
+// Reports whether it completed.
+//
+// nl6#618. finish() joins the scenario scheduler and the trap and flow tickers
+// BEFORE the drain barrier, and every one of those was a bare channel receive.
+// The syslog and trap schedulers fire INLINE, so a stalled scheduler-driven
+// write parked the scheduler goroutine and finish() blocked joining it, which
+// meant nl6#567's barrier ceiling was never armed for the commonest case.
+//
+// GIVING UP DOES NOT STOP THE GOROUTINE, and cannot: it is parked in a write.
+// What it does is let finalize proceed. Two consequences, both real and both
+// reported rather than hidden. A straggler ticker pass can still move ledger
+// counters after the snapshot, exactly as a drain straggler can. And a flow
+// ticker pass that resumes after the barrier could, in the window before
+// detachScenPart runs, still load this scenario's handle; once per-device
+// overlap lets a SUCCESSOR claim the device, that is the hazard the join was
+// added to close (#409's shape, one scenario over). The window is small and the
+// alternative is an unbounded shutdown, so it is accepted and named.
+func joinWithin(id, what string, done <-chan struct{}, deadline time.Time) bool {
+	if done == nil {
+		return true
+	}
+	select {
+	case <-done:
+		return true
+	default:
+	}
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		log.Printf("WARNING: [scenario %s] finalize gave up joining the %s after its budget expired; "+
+			"that goroutine is still running and is NOT cancelled, so it may move ledger counters "+
+			"after this report is taken. Finalize proceeds so shutdown is not held open (nl6#618)",
+			id, what)
+		return false
 	}
 }

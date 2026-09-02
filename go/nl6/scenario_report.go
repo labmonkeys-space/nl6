@@ -124,6 +124,13 @@ type reportMetadata struct {
 	// its own field rather than part of any participant's `dropped`, because a
 	// straggler's outcome is unknown: it may still have reached the collector.
 	DrainStragglers int64 `json:"drain_stragglers,omitempty"`
+	// IncompleteJoins names the finalize waits that did not complete within the
+	// budget (nl6#618): the scenario scheduler and the trap/flow tickers, which
+	// run AHEAD of the drain barrier. Absent on a healthy run. Present means
+	// those goroutines were still running when this report was taken, so it
+	// carries the same lower-bound caveat as drain_stragglers, for the same
+	// reason: nothing cancels them.
+	IncompleteJoins []string `json:"incomplete_joins,omitempty"`
 	// SubWindowCount / SubWindowDuration describe the loss-localization
 	// granularity (FR28): the PLANNED window [T0,T1) is sliced into
 	// SubWindowCount equal buckets, each SubWindowDuration wide (planned
@@ -332,6 +339,7 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 				T1:              res.T1Actual.Format(rfc3339ms),
 				DrainEnd:        res.DrainEnd.Format(rfc3339ms),
 				DrainStragglers: res.DrainStragglers,
+				IncompleteJoins: res.IncompleteJoins,
 				SubWindowCount:  scenarioSubWindowCount,
 				// Bucket width is over the PLANNED window (spec.Window), matching
 				// what recordSubWindow used at fire time (the gate keeps the
