@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1421
+const minimumTestFunctions = 1428
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -291,6 +291,21 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
 			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
 			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
+	{"TestInterfaceStateInjectedClockIsUsedEverywhere", "interface_state_clock_test.go",
+		"nl6#575. All THREE of the engine's clock reads must move together: a boot time from the real " +
+			"clock and transitions from an injected one subtract a real timestamp from a fake one. " +
+			"Asserts MAGNITUDE as well as ordering, because without that the SetOperStatus mutation " +
+			"is caught only by clock granularity and survives on a ns-resolution Linux clock"},
+	{"TestInterfaceStateClockSampleStaysInsideTheCASLoop", "interface_state_clock_test.go",
+		"nl6#575. The clock is sampled inside the CAS loop so a retry stamps the winning attempt. " +
+			"Hoisting it reads as a refactor and makes ifLastChange go backwards under contention; " +
+			"review demonstrated the whole package stayed green with it hoisted"},
+	{"TestInterfaceStateInjectedClockCanStepBackwards", "interface_state_clock_test.go",
+		"nl6#575. The only exercise of the rewind sentinel in the package. The flap test could reach " +
+			"it by luck before this change and cannot by construction after it"},
+	{"TestInterfaceStateClockDefaultsToWallClock", "interface_state_clock_test.go",
+		"nl6#575. The only pin that production stays on the real wall clock: the seam must expose " +
+			"which clock is read without changing what an un-injected engine does"},
 	{"TestFinalizeIsBoundedWhenTheSchedulerStalls", "scenario_finalize_join_test.go",
 		"nl6#618. The COMMON stalled-write case. The syslog scheduler fires inline, so a stalled " +
 			"write parks its run loop and finish() blocks joining it, with nl6#567's barrier ceiling " +
