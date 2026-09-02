@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-race test-web tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         tools-quality fmt-check lint vuln sec lint-actions quality
@@ -231,8 +231,42 @@ check-sbom-coverage: check-go
 	fi; \
 	echo "check-sbom-coverage: reconcile module set is a subset of the nl6 binary set"
 
+## check-guard-file: Assert nl6#577's anti-test-deletion guard still exists
+# go/nl6/test_inventory_test.go carries the test-count floor, the load-bearing
+# guard manifest and the build-constraint census. It is the only thing that
+# notices when a test disappears, and deleting the FILE removes all three plus
+# its own four tests, with nothing left in the package to fail. That is nl6#577's
+# asymmetry one level up, so the anchor has to sit outside the package.
+#
+# The Makefile was chosen over a CI-only grep because CI invokes Makefile targets
+# here, so this runs identically on a laptop; and over CODEOWNERS because that
+# asks a human to notice rather than failing. It runs on every platform, which
+# matters: `make test` skips the Go suite entirely off Linux.
+check-guard-file:
+	@f=$(GO_DIR)/nl6/test_inventory_test.go; \
+	if [ ! -f "$$f" ]; then \
+	  echo "check-guard-file: $$f is gone."; \
+	  echo "  It is nl6#577's guard against silent test loss: the count floor, the"; \
+	  echo "  load-bearing guard manifest and the build-constraint census. Deleting it"; \
+	  echo "  removes every signal that a test has disappeared, and nothing inside the"; \
+	  echo "  package can notice, which is why this check lives here. Restore it, or"; \
+	  echo "  remove this target in the same commit and say what replaces it."; \
+	  exit 1; \
+	fi; \
+	missing=""; \
+	for t in TestPackageTestInventoryHasNotShrunk TestLoadBearingGuardsArePresent \
+	         TestBuildConstrainedTestFilesAreTheCommittedSet TestGuardManifestIsCurated; do \
+	  grep -q "^func $$t(" "$$f" || missing="$$missing $$t"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+	  echo "check-guard-file: $$f exists but no longer declares:$$missing"; \
+	  echo "  The file's own guards are as deletable as the ones they protect."; \
+	  exit 1; \
+	fi; \
+	echo "check-guard-file: nl6#577 guard present with all four checks"
+
 ## test: Run the web JS unit tests (all platforms) + Go tests (nl6 package requires Linux)
-test: check-go test-web
+test: check-go check-guard-file test-web
 ifneq ($(UNAME_S),Linux)
 	@echo "Note: 'make test' runs Go tests on Linux only (CI parity). The suite"
 	@echo "      itself passes on $(UNAME_S) — run 'cd $(GO_DIR) && go test ./...'"
@@ -243,7 +277,7 @@ else
 endif
 
 ## test-race: Run the Go tests under the race detector (Linux; CI gate — see gates.yml)
-test-race: check-go
+test-race: check-go check-guard-file
 ifneq ($(UNAME_S),Linux)
 	@echo "Note: 'make test-race' runs on Linux only (CI parity). The suite"
 	@echo "      itself passes on $(UNAME_S) — run 'cd $(GO_DIR) && go test -race ./...'"
