@@ -34,7 +34,10 @@ buildGo127Module {
   # `make nix-vendor-hash` (works via Docker, no local Nix needed), or set
   # this to lib.fakeHash, run `nix build`, and copy the printed "got:" value.
   # The Nix Cache workflow also prints the expected hash when its PR build
-  # fails for this reason.
+  # fails for this reason, and both its legs are required status checks on
+  # main, so a stale hash blocks the merge. On a Dependabot go_modules PR the
+  # Dependabot vendorHash workflow pushes the corrected value onto the branch
+  # by itself.
   vendorHash = "sha256-BLIjCsQZABDLl5xD9om8xiTTrDpXhOKvcie83GaWyXA=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];

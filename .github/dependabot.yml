@@ -1,6 +1,22 @@
 version: 2
 
 updates:
+  # A gomod bump invalidates the `vendorHash` pinned in
+  # deploy/packages/nix/package.nix, which Dependabot has no way to update
+  # (it has no post-update hook, and package.nix is outside its ecosystem
+  # model). The Nix Cache workflow turns that stale hash red on the PR, and
+  # both its legs, `Build & push (x86_64-linux)` and
+  # `Build & push (aarch64-linux)`, are REQUIRED status checks on main: the
+  # bump cannot merge until the hash is refreshed.
+  # .github/workflows/dependabot-vendorhash.yml sweeps every ~6h and pushes
+  # the corrected hash onto the branch, so the bump reaches a mergeable state
+  # without a hand edit. To unblock one bump immediately instead of waiting
+  # for the sweep, dispatch that workflow with the PR number. The manual path
+  # (`make nix-vendor-hash`) stays valid and is the fallback if the sweep's
+  # GitHub App credential is not configured. One consequence of that push:
+  # Dependabot stops rebasing a PR once someone else has committed to its
+  # branch, and an `@dependabot rebase` drops the repair commit, which the
+  # next sweep then puts back.
   - package-ecosystem: gomod
     directory: /go
     schedule:

@@ -159,6 +159,12 @@ jobs:
       # nix-vendor-hash` locally).
       - name: Print expected vendorHash on failure
         if: failure() && steps.relevant.outputs.run == 'true'
+        env:
+          # The automated repair only ever touches Dependabot go_modules
+          # branches (see dependabot-vendorhash.yml's guards). Telling a human
+          # PR author that a sweep will fix their branch would be false, and
+          # they would wait for something that is never coming.
+          SWEEP_APPLIES: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && startsWith(github.event.pull_request.head.ref, 'dependabot/go_modules/') }}
         run: |
           sed -i 's|vendorHash = ".*"|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' deploy/packages/nix/package.nix
           # path: (unlike git+file:) reads the dirty work tree, so the sed
@@ -166,4 +172,8 @@ jobs:
           out=$(nix build "path:$PWD?dir=deploy/packages/nix#nl6" --no-link 2>&1 || true)
           echo "$out" | grep -E 'specified:|got:' || { echo "$out" | tail -20; exit 0; }
           want=$(echo "$out" | grep 'got:' | awk '{print $2}')
-          echo "::error file=deploy/packages/nix/package.nix::vendorHash is stale for the current go.mod/go.sum. Set vendorHash = \"$want\" (or run 'make nix-vendor-hash')."
+          hint=''
+          if [ "$SWEEP_APPLIES" = 'true' ]; then
+            hint=" You can also leave it: the Dependabot vendorHash workflow sweeps every ~6h and pushes this value onto the branch. Dispatch it with the PR number to skip the wait."
+          fi
+          echo "::error file=deploy/packages/nix/package.nix::vendorHash is stale for the current go.mod/go.sum. Set vendorHash = \"$want\" (or run 'make nix-vendor-hash').$hint"
