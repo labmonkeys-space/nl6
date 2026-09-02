@@ -257,6 +257,9 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
       <dt>T0</dt><dd>{{.R.Summary.Metadata.T0}}</dd>
       <dt>T1</dt><dd>{{.R.Summary.Metadata.T1}}</dd>
       <dt>drain end</dt><dd>{{.R.Summary.Metadata.DrainEnd}}</dd>
+      {{if .R.Summary.Metadata.DrainStragglers}}
+      <dt title="The drain barrier gave up at its ceiling with sends still in flight. Those sends were not cancelled and kept moving ledger counters after this report was snapshotted, so the totals below are a lower bound and the affected participants may not satisfy the ledger identity.">drain stragglers</dt><dd><strong>{{.R.Summary.Metadata.DrainStragglers}} &mdash; finalized with stragglers; totals are a lower bound</strong></dd>
+      {{end}}
       <dt>seed</dt><dd>{{.R.Summary.Metadata.Seed}}</dd>
       <dt>nl6 version</dt><dd>{{.R.Summary.Metadata.Nl6Version}}</dd>
       <dt>config sha256</dt><dd>{{.R.Summary.Metadata.ConfigSHA256}}</dd>

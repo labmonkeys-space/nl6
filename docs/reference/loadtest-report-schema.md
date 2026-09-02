@@ -109,7 +109,8 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `nl6_version` | string | Simulator version that produced the report — reproduction is guaranteed only on the same version. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close — the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
-| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. **Observed, not configured**: the barrier returns as soon as the writes admitted before `T1` return, typically single-digit milliseconds after `t1`. |
+| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. **Observed, not configured**: the barrier returns as soon as the writes admitted before `T1` return, typically single-digit milliseconds after `t1`. It is also **bounded**: if those writes have not returned within the ceiling, the barrier gives up and `drain_end` is the give-up instant. See `drain_stragglers`. |
+| `drain_stragglers` | number | **Absent on a healthy run.** Present only when the drain barrier hit its ceiling and gave up, and then it counts the sends that were still in flight at that moment. A run that reports it was **finalized while its counters were still moving**, so the affected participants may not satisfy the ledger identity and the totals are a lower bound rather than a settled figure. Deliberately its own field and never folded into `dropped`: a straggler was admitted and may still have reached the collector, so calling it dropped would assert an outcome nothing observed. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
 | `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
@@ -127,6 +128,33 @@ Both halves of that are deliberate. `in_window` counts the records whose socket 
 `in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`). On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0 ([nl6#500]).
 
 **To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and the `drain` duration is no longer a configurable field at all ([nl6#500] — submitting one is now a 400).
+
+### The drain barrier is bounded
+
+The barrier that produces `drain_end` waits for every send admitted before `T1` to return.
+Until [nl6#567] nothing capped that wait, and the shutdown path runs it: one admitted send that never returned held shutdown open indefinitely.
+Two cases reach that state.
+A stream transport whose write sets no deadline blocks for as long as it blocks.
+And an admitted send that never completes at all, because its write path panicked or a callback was dropped, would never return no matter what deadline the transport carried.
+
+That second case is why the **barrier** is bounded rather than the transports.
+A per-transport write deadline cannot see it, and it could not bound the total anyway: syslog TCP serialises behind a per-connection mutex, so a device's worst case is its own 2 s write timeout times the sends queued behind it.
+
+**The ceiling bounds the barrier, not finalize as a whole.**
+Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and none of those joins is bounded.
+The syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parks finalize ahead of the barrier and the ceiling is never armed.
+What the ceiling reaches is a send admitted outside the scheduler, such as a REST on-demand fire or a state-driven link notification.
+So `drain_stragglers` appearing tells you a run was truncated; its absence does not by itself prove finalize was never blocked.
+
+The barrier now gives up after a fixed ceiling of **60 s** and records how many sends were still outstanding in `drain_stragglers`.
+A `drain_end` exactly 60 s past `t1` is the signature of a give-up rather than a slow drain.
+**The stragglers are not cancelled**, because nothing can interrupt a write parked in the kernel.
+They keep running and keep moving ledger counters after the report was snapshotted.
+
+So a report carrying `drain_stragglers` should be read as a **lower bound taken over a set that was still moving**, not as a settled measurement.
+The counters are atomics, so nothing is corrupted and no participant's row is invalid on its own; what is lost is the guarantee that a participant's buckets add up, because `emitted` is incremented when a record is generated and `sent` only when its write returns.
+A straggler sits between those two increments at the instant of the snapshot.
+On a healthy run the field is absent and none of this applies.
 
 An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`. On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error. (The superseded sentence quoted 4.2 %, which is 5/120 — the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
 
@@ -151,6 +179,7 @@ The post-window burst is not drain. It is traffic emitted after the scenario sto
 **What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length. What a short window still costs is precision, not bias — fewer records, so first-fire alignment and scheduler jitter are a larger share of the total. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
 [nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
+[nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567
 [nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
 
 #### Reproducing `resolved_participants_sha256`

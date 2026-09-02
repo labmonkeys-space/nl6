@@ -292,6 +292,13 @@ block is the trusted-sender ground truth for per-application traffic: total
    a second or two for collector-side timestamping and clock skew. There is
    nothing beyond it: no fire initiates after `t1`. Filter by the scenario's
    exporter IPs (the `counters[].source_ip` set).
+
+   **The exception is a report carrying `drain_stragglers`.** There, `drain_end`
+   is the instant the barrier gave up rather than the instant the last write
+   returned, and the uncancelled sends land *after* it. `drain_end` is then not
+   an upper bound at all, and a query bounded by it invents exactly the loss this
+   step exists to rule out. Reconcile such a run only for what it can support, or
+   re-run it.
 3. **Join on `(l4_proto, dst_port)`, not on names.** Collector classification
    is user-configurable; `app_hint` is a convenience label only. Generated
    source ports sit in the IANA dynamic range (≥ 49152), so a collector rule
@@ -463,15 +470,31 @@ pipeline a normal stop uses, so:
 
 **How long that takes.** The abort publishes the terminal gate — no new fire
 initiates — and then waits for the fires already admitted to return from their
-writes. There is **no timeout and no configurable grace** ([nl6#500] removed a
-`drain` duration that never bounded anything). On a healthy run the wait is
-milliseconds. The worst case an operator can observe is set by the slowest
-transport in the run: a UDP write parks only while the socket buffer is full,
-while a syslog **TCP/TLS** device bounds one write at 2 s and serialises the
-fires queued behind it, so a stalled collector can hold shutdown for 2 s × those
-queued fires. A transport with no write deadline at all would hold it
-indefinitely; that gap is tracked as [nl6#567], and the barrier logs a warning
-every 30 s while it waits so a hang is visible in the log rather than silent.
+writes. There is **no configurable grace** ([nl6#500] removed a `drain` duration
+that never bounded anything). On a healthy run the wait is milliseconds. The
+worst case an operator can observe is set by the slowest transport in the run: a
+UDP write parks only while the socket buffer is full, while a syslog **TCP/TLS**
+device bounds one write at 2 s and serialises the fires queued behind it, so a
+stalled collector can hold shutdown for 2 s × those queued fires.
+
+**The drain barrier itself is bounded**, at 60 s ([nl6#567]): past that it gives
+up, reports how many sends were still outstanding in `drain_stragglers`, and
+lets finalize proceed. It logs a warning every 30 s while it waits, and again at
+the give-up.
+
+**That ceiling does not bound the abort as a whole, and the distinction
+matters.** Finalize joins the scenario's scheduler and its trap and flow tickers
+*before* it reaches the barrier, and none of those joins has a ceiling. The
+syslog and trap schedulers fire inline, so a stalled **scheduler-driven** write
+parks finalize ahead of the barrier and the ceiling is never armed. What the
+ceiling reaches is a send admitted outside the scheduler: a REST on-demand fire
+or a state-driven link notification. A transport with no write deadline at all,
+on a scheduler path, still holds shutdown indefinitely.
+
+Note also that 60 s exceeds `docker stop`'s default 10 s grace, so on a
+containerised deployment the process may be killed before the ceiling fires and
+no report is written. Raise `stop_grace_period` if a truncated report is worth
+more to you than a fast stop.
 
 - The report is **finalized and marked `phase: "aborted"`**, with `metadata.t0`
   and a `metadata.t1` equal to the **abort instant** (the window that actually

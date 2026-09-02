@@ -280,7 +280,18 @@ type ScenarioResult struct {
 	// len(Excluded), or capping the rows would understate the count.
 	ExcludedTotal    int
 	ExcludedByReason map[string]int
-	PerDevice        map[string]ledgerSnapshot
+	// DrainStragglers is how many admitted sends were still in flight when the
+	// drain barrier gave up at drainBarrierTimeout (nl6#567). 0 on every healthy
+	// run, which is every run in which the barrier drained normally.
+	//
+	// Non-zero means PerDevice below was snapshotted while that many sends were
+	// still moving, so the affected participants' counters may not satisfy the
+	// ledger identity. Deliberately its own term and NOT folded into a
+	// participant's `dropped`: a straggler's outcome is unknown and it may still
+	// reach the collector, so calling it dropped would assert an outcome nothing
+	// observed.
+	DrainStragglers int64
+	PerDevice       map[string]ledgerSnapshot
 	// Apps is the fleet-wide per-application flow-traffic fold
 	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
 	// port), folded across participants at finalize. Empty for non-flow
@@ -1313,9 +1324,9 @@ func (c *ScenarioController) Stop() (*ScenarioResult, error) {
 }
 
 // Abort is the graceful-shutdown path (D7): same drain→finalize pipeline
-// with phase aborted. The barrier has no timeout, so what bounds shutdown is
-// what an already-admitted write can block on — see abortActiveScenario for
-// the per-transport bound, and nl6#567 for the cases it does not cover.
+// with phase aborted. The drain barrier is bounded (drainBarrierTimeout,
+// nl6#567) but the joins ahead of it in finish() are not, so a stalled
+// scheduler-driven write still holds this call. See abortActiveScenario.
 func (c *ScenarioController) Abort() (*ScenarioResult, error) {
 	return c.finish(phaseAborted)
 }
@@ -1391,7 +1402,11 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 	if c.flowTickerDone != nil {
 		<-c.flowTickerDone
 	}
-	c.drain.closeAndWait() // admission closes; outlasts every in-flight fire
+	// Admission closes, then this outlasts every in-flight fire OR gives up at
+	// drainBarrierTimeout (nl6#567). stragglers is 0 on every healthy run; a
+	// non-zero value means the snapshot below was taken while that many sends
+	// were still moving, so it rides into the result and out into the report.
+	stragglers := c.drain.closeAndWait(c.id)
 	// From here this scenario can no longer consume shared limiter tokens, so
 	// it stops counting as contention for a peer starting now.
 	c.emitting.Store(false)
@@ -1429,6 +1444,7 @@ func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
 		Excluded: c.excluded, ExcludedTotal: sumReasonCounts(c.excludedByReason),
 		ExcludedByReason: maps.Clone(c.excludedByReason),
+		DrainStragglers:  stragglers,
 		PerDevice:        perDevice, Apps: apps,
 	}
 	return c.result, nil

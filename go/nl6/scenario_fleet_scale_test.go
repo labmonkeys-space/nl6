@@ -98,7 +98,7 @@ func TestScenarioFleet_MixedProducerRace(t *testing.T) {
 	wg.Wait()
 
 	for i, p := range parts {
-		p.drain.closeAndWait()
+		p.drain.closeAndWait("test")
 		if !p.ledger.identityHolds() {
 			t.Fatalf("ledger[%d] identity violated: %+v", i, p.ledger.snapshot())
 		}
