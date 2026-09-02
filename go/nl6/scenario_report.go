@@ -114,6 +114,16 @@ type reportMetadata struct {
 	T0                         string `json:"t0"`
 	T1                         string `json:"t1"`
 	DrainEnd                   string `json:"drain_end"`
+	// DrainStragglers is how many admitted sends were still in flight when the
+	// drain barrier gave up at its ceiling (nl6#567). Omitted on every healthy
+	// run, which keeps the common report byte-identical to before the ceiling
+	// existed; present and non-zero ONLY when finalize was truncated.
+	//
+	// When it is present, this report was snapshotted while that many sends were
+	// still moving, so the affected participants' counters may not add up. It is
+	// its own field rather than part of any participant's `dropped`, because a
+	// straggler's outcome is unknown: it may still have reached the collector.
+	DrainStragglers int64 `json:"drain_stragglers,omitempty"`
 	// SubWindowCount / SubWindowDuration describe the loss-localization
 	// granularity (FR28): the PLANNED window [T0,T1) is sliced into
 	// SubWindowCount equal buckets, each SubWindowDuration wide (planned
@@ -315,13 +325,14 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 			Phase:    string(res.Phase),
 			Protocol: c.spec.Protocol,
 			Metadata: reportMetadata{
-				ConfigSHA256:   c.configSHA,
-				Seed:           c.spec.Seed,
-				Nl6Version:     Version,
-				T0:             res.T0Actual.Format(rfc3339ms),
-				T1:             res.T1Actual.Format(rfc3339ms),
-				DrainEnd:       res.DrainEnd.Format(rfc3339ms),
-				SubWindowCount: scenarioSubWindowCount,
+				ConfigSHA256:    c.configSHA,
+				Seed:            c.spec.Seed,
+				Nl6Version:      Version,
+				T0:              res.T0Actual.Format(rfc3339ms),
+				T1:              res.T1Actual.Format(rfc3339ms),
+				DrainEnd:        res.DrainEnd.Format(rfc3339ms),
+				DrainStragglers: res.DrainStragglers,
+				SubWindowCount:  scenarioSubWindowCount,
 				// Bucket width is over the PLANNED window (spec.Window), matching
 				// what recordSubWindow used at fire time (the gate keeps the
 				// planned t1 even after an early abort). Reporting the actual
@@ -603,7 +614,14 @@ func buildRateCapDisclosure(c *ScenarioController) *rateCapDisclosure {
 // write on the syslog path, where drain_end was measured at T1 + 9ms with a 30s
 // drain configured, and a whole paginated batch on the flow path, which admits
 // around Tick. Either way it is orders of magnitude short of moving a 120s
-// window by percent (nl6#500). The
+// window by percent (nl6#500).
+//
+// Since nl6#567 the tail also has a hard ceiling, drainBarrierTimeout, after
+// which the barrier gives up and drain_stragglers records how many sends were
+// still outstanding. That path does not lengthen the tail; it is what stops one
+// stalled write lengthening it without limit. On such a run the numbers above
+// are a snapshot of a set that was still moving, which is exactly what the field
+// is there to tell the reader. The
 // gap nl6#463 chased was measurement-side — template phantoms, post-window
 // emission, and a span-versus-window denominator — with zero ledger error.
 // Documented in docs/reference/loadtest-report-schema.md; do not "fix" it by

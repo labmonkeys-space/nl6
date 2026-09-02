@@ -203,10 +203,12 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 }
 
 // abortActiveScenario aborts a running load-test scenario as part of
-// graceful shutdown (D7). Abort()'s drain barrier has NO timeout — it is a bare
-// wg.Wait (scenario_drain.go) — so what bounds shutdown is what an
-// already-admitted write can still block on, not any configured grace (there is
-// none: nl6#500). Per transport:
+// graceful shutdown (D7). Abort()'s drain barrier gives up at
+// drainBarrierTimeout since nl6#567, so the BARRIER is bounded. What is not
+// bounded is finalize as a whole: finish() joins the scheduler and the trap and
+// flow tickers before it reaches the barrier, and none of those joins has a
+// ceiling (nl6#618). No configured grace bounds any of it either (there is none:
+// nl6#500). What a write can block on, per transport:
 //
 //   - UDP parks only while the socket send buffer is full.
 //   - syslog TCP/TLS bounds ONE write at syslogTCPWriteTimeout (2s), but
@@ -216,11 +218,16 @@ func (sm *SimulatorManager) deleteScenario(id string) error {
 //   - gNMI dial-out holds the barrier across an enqueue into a bounded
 //     drop-oldest channel, never across the async Send.
 //
-// Two gaps are named rather than papered over, and both are nl6#567: a stream
-// transport whose write sets no deadline extends shutdown for as long as it
-// blocks, and an admitted fire that never calls leave() blocks it forever.
-// Neither is bounded here; closeAndWait's watchdog logs every
-// drainWatchdogInterval so the hang is visible in the log instead of silent.
+// Those are the transports that exist, not a guarantee, and two cases fall
+// outside them: a stream transport whose write sets no deadline blocks for as
+// long as it blocks, and an admitted fire that never calls leave() (a panic on
+// a write path, a dropped callback) would never complete at all. No write
+// deadline can fix the second, which is why nl6#567 bounded the BARRIER rather
+// than the transports: closeAndWait gives up at drainBarrierTimeout, reports
+// how many sends were still outstanding, and lets shutdown proceed. The
+// stragglers are not cancelled, so a truncated finalize says so in the report
+// (drain_stragglers) instead of quietly publishing counters that were still
+// moving when they were read.
 // No-op when no scenario is running; the
 // finalized report stays queryable (via the still-live controller) until
 // the process exits. Called at the top of Shutdown, before the export

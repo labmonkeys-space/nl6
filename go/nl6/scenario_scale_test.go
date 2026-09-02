@@ -114,7 +114,7 @@ func TestScenarioScale_ConcurrentIncrementRace(t *testing.T) {
 	wg.Wait()
 
 	// Close admission and drain, then assert every ledger identity holds.
-	c.drain.closeAndWait()
+	c.drain.closeAndWait("test")
 	for ip, led := range c.ledgers {
 		if !led.identityHolds() {
 			t.Fatalf("ledger identity violated for %s: %+v", ip, led.snapshot())

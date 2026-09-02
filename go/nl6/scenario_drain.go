@@ -28,6 +28,16 @@ type drainGate struct {
 	mu     sync.RWMutex
 	closed atomic.Bool
 	wg     sync.WaitGroup
+
+	// inflight shadows wg's counter, because a sync.WaitGroup cannot be read.
+	// Since nl6#567 closeAndWait can give up while fires are still running, and
+	// a report that says "finalized with stragglers" has to say how many. Moved
+	// under the same read lock as wg.Add, so it cannot be incremented after
+	// closeAndWait has taken the write lock; the decrement in leave() is
+	// deliberately NOT locked, matching wg.Done, since a straggler decrements
+	// long after the gate closed and taking the lock there would serialise
+	// every completion against finalize for no gain.
+	inflight atomic.Int64
 }
 
 // admit registers one in-flight fire. Returns false if the gate has closed
@@ -40,39 +50,97 @@ func (d *drainGate) admit() bool {
 		return false
 	}
 	d.wg.Add(1)
+	d.inflight.Add(1)
 	return true
 }
 
 // leave marks one admitted fire complete.
-func (d *drainGate) leave() { d.wg.Done() }
+//
+// wg.Done() FIRST, then the shadow counter. The order matters at exactly one
+// instant: the ceiling firing between the two. Decrementing inflight first left
+// a window in which the LAST fire had taken the count to 0 while `done` was not
+// yet closed, so a give-up in that window logged "gave up with 0 in-flight
+// send(s)" and returned 0 — which omitempty then drops, making a truncated
+// finalize byte-identical to a clean one. This order inverts the error: the
+// count can transiently read one HIGH, and closeAndWait prefers a closed `done`
+// over the ceiling, so the high read is never the one that gets reported.
+func (d *drainGate) leave() {
+	d.wg.Done()
+	d.inflight.Add(-1)
+}
 
 // drainWatchdogInterval is how long the barrier waits before it starts saying
-// so. It is a LOG cadence, not a timeout: the wait is still unbounded (see
-// nl6#567). Without it, an admitted fire that never calls leave() — a panic on
-// a write path, a dropped callback — hangs finalize and shutdown with no line
-// anywhere, which is indistinguishable from a deadlock in the controller. The
-// interval is far longer than any legitimate write can take (the longest bound
-// in the tree is syslog TCP's 2s per write) so a healthy run never logs.
+// so. It is a LOG cadence, not the ceiling: the ceiling is drainBarrierTimeout
+// below. Without it, an admitted fire that never calls leave(), because of a
+// panic on a write path or a dropped callback, would hold finalize with no line
+// anywhere until the ceiling expired. The interval is far longer than any
+// legitimate write can take (the longest bound in the tree is syslog TCP's 2s
+// per write) so a healthy run never logs.
 const drainWatchdogInterval = 30 * time.Second
 
-// maxDrainWatchdogReports caps how many times the watchdog speaks. The cap is
-// not politeness: an endlessly-armed timer keeps a `synctest` bubble live, so a
-// deadlock in a test that finalizes a scenario would advance the fake clock
-// forever instead of failing as the deadlock it is. Ten reports (five minutes)
-// is long past any legitimate write and short enough that the bubble goes back
-// to a plain, deadlock-detectable wait afterwards.
-const maxDrainWatchdogReports = 10
-
-// closeAndWait stops admitting new fires and blocks until every admitted
-// fire has left. Idempotent-safe to call once per scenario at finalize.
+// drainBarrierTimeout is the ceiling on the barrier (nl6#567). Before it the
+// wait was a bare wg.Wait(), so a single admitted fire that never returned held
+// finalize open forever: abortActiveScenario runs closeAndWait on the
+// graceful-shutdown path.
 //
-// There is NO timeout, and no configurable grace bounds it (nl6#500 removed the
-// inert `drain` knob that was once claimed to). What bounds it in practice is
-// what an admitted write can block on — see abortActiveScenario for the
-// per-transport bound and the cases where it does not hold. Bounding it for
-// real is nl6#567; until then the watchdog below makes the pathological case
-// visible instead of silent.
-func (d *drainGate) closeAndWait() {
+// PRIMARY, not derived. An earlier cut wrote it as 2*drainWatchdogInterval,
+// which coupled the two in the wrong direction: lowering the watchdog to see
+// the log sooner would silently shorten the CEILING, and at a 5s watchdog it
+// would fall to 10s, below the worst case the next paragraph computes.
+// TestDrainBarrierCeilingClearsItsInputs asserts the relationships instead, so
+// they cannot drift without a test saying so.
+//
+// What it has to clear: the longest legitimate single write in the tree is
+// syslog TCP/TLS at syslogTCPWriteTimeout (2s), and tcpTransport.Send holds
+// writeMu across it, so a device's worst case is 2s times the fires queued
+// behind that mutex before T1. 60s therefore covers roughly 30 queued syslog
+// TCP fires on one device. It is NOT an unconditional margin: a device with a
+// deeper queue than that has its legitimate writes counted and reported as
+// stragglers. Stated as a number rather than as "wide" because the same
+// paragraph computes an unbounded quantity, so "wide" would be self-refuting.
+//
+// It also replaced a maxDrainWatchdogReports cap that existed only to stop an
+// endlessly-armed ticker keeping a `synctest` bubble live. A real ceiling does
+// that job properly, so the cap went rather than sitting beside it.
+//
+// OPERATIONAL CAVEAT: 60s is longer than `docker stop`'s default 10s grace, so
+// on a containerised deployment the process may be SIGKILLed before the ceiling
+// fires and no report is written at all. Raise `stop_grace_period` above this
+// value if a truncated report matters more than a fast stop.
+const drainBarrierTimeout = 60 * time.Second
+
+// closeAndWait stops admitting new fires and waits for every admitted fire to
+// leave, giving up after drainBarrierTimeout. It returns the number of fires
+// STILL IN FLIGHT when it returned: 0 on every healthy run, at least 1 when the
+// ceiling expired. id names the scenario in the log lines, because a fleet can
+// hold more than one controller and "which run truncated" is the operator's
+// first question.
+//
+// Call it ONCE per scenario, at finalize. A second call with a live straggler
+// arms a second ceiling and parks a second waiter, so the residual below is per
+// call rather than per scenario; production has exactly one call site, inside
+// the phase transition, so that does not arise.
+//
+// WHAT THIS BOUNDS, AND WHAT IT DOES NOT. It bounds the BARRIER. It does not by
+// itself bound shutdown: finish() joins the scenario-owned trap and flow tickers
+// BEFORE it reaches here, and those joins are unbounded, so a parked flow Tick
+// write still holds finalize without the ceiling ever being armed. See
+// abortActiveScenario, and nl6#618 for the fix.
+//
+// No configurable grace bounds it (nl6#500 removed the inert `drain` knob that
+// was once claimed to) and none should: this is an internal ceiling, not a
+// scenario field. What normally ends the wait is the work itself returning; see
+// abortActiveScenario for the per-transport bounds.
+//
+// THE STRAGGLERS ARE NOT CANCELLED, and cannot be. Nothing here can interrupt a
+// write parked in the kernel. They keep running, keep holding their
+// *scenarioPart, and keep moving ledger counters after the caller has
+// snapshotted them. Those counters are atomics, so there is no data race; the
+// cost is that a report finalized with stragglers may not satisfy the ledger
+// identity for the affected participants, which is why the count is reported
+// rather than swallowed. Production never asserts that identity (every
+// identityHolds call site is a test), so nothing fails on a live simulator.
+func (d *drainGate) closeAndWait(id string) int64 {
 	d.mu.Lock()
 	d.closed.Store(true)
 	d.mu.Unlock()
@@ -85,18 +153,62 @@ func (d *drainGate) closeAndWait() {
 	started := time.Now()
 	tick := time.NewTicker(drainWatchdogInterval)
 	defer tick.Stop()
-	for reports := 0; reports < maxDrainWatchdogReports; reports++ {
+	// A timer rather than a deadline loop: it arms once, and under synctest it
+	// is what lets the fake clock reach the give-up instead of the bubble
+	// blocking forever on a write that will never return.
+	ceiling := time.NewTimer(drainBarrierTimeout)
+	defer ceiling.Stop()
+	for {
 		select {
 		case <-done:
-			return
+			return 0
+		case <-ceiling.C:
+			// PREFER A COMPLETED DRAIN. select chooses uniformly at random among
+			// ready cases, so a drain that finished at the very instant the
+			// ceiling fired would otherwise be reported as a give-up: a WARNING
+			// line and a straggler count describing a run that actually drained.
+			select {
+			case <-done:
+				return 0
+			default:
+			}
+			// At least one fire has not called wg.Done(), or `done` would be
+			// closed and the check above would have returned. So the count is at
+			// least 1 by construction, and the floor states that invariant.
+			//
+			// THE READ IS AN UPPER BOUND, NOT AN EXACT COUNT. No admit() can run
+			// once closed is set, so leave() is the only mutator during the wait,
+			// and it decrements the shadow AFTER wg.Done(): a fire that completes
+			// while this branch runs is still counted. The floor is therefore
+			// belt-and-braces against a future reordering rather than a live
+			// hazard, and `drain_stragglers` should be read as "no more than this
+			// many were outstanding". An earlier comment here claimed the read
+			// could only be LOW, which was backwards and contradicted leave().
+			stragglers := max(d.inflight.Load(), 1)
+			log.Printf("WARNING: [scenario %s] drain barrier gave up after %s with %d in-flight send(s) "+
+				"still outstanding; the scenario is finalized WITH STRAGGLERS and its report says so. "+
+				"Those sends are not cancelled and may still move ledger counters, so the affected "+
+				"participants' counters may not add up (nl6#567)",
+				id, time.Since(started).Round(time.Second), stragglers)
+			return stragglers
 		case <-tick.C:
-			// Repeats deliberately: the operator needs to know it is STILL
-			// stuck, and one line at the 30s mark of an hour-long hang reads
-			// like a blip that resolved.
-			log.Printf("WARNING: scenario drain barrier still waiting after %s for in-flight sends to return; "+
-				"shutdown is blocked until they do (nl6#567)", time.Since(started).Round(time.Second))
+			// The ticker and the ceiling both fire at the ceiling instant when
+			// one is a multiple of the other, and select picks between them at
+			// random: measured, that emitted a second "still waiting" line in 21
+			// of 60 runs, telling the operator finalize was blocked "until the
+			// ceiling expires" at the instant it had expired. Suppressing it
+			// here is deterministic, where relying on the constants not being
+			// multiples would be an accident waiting to be undone.
+			if time.Since(started) >= drainBarrierTimeout {
+				continue
+			}
+			// The loop is written to repeat, but at the shipped constants
+			// (30s cadence, 60s ceiling) exactly ONE line can be emitted before
+			// the give-up, since the 60s tick is suppressed above. It repeats
+			// only if the cadence is lowered or the ceiling raised.
+			log.Printf("WARNING: [scenario %s] drain barrier still waiting after %s for in-flight sends "+
+				"to return; finalize is blocked until they return or the %s ceiling expires (nl6#567)",
+				id, time.Since(started).Round(time.Second), drainBarrierTimeout)
 		}
 	}
-	tick.Stop()
-	<-done
 }

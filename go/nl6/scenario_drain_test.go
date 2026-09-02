@@ -34,7 +34,7 @@ func TestScenarioDrain_UndoToDropped(t *testing.T) {
 		t.Fatal("decide() must proceed while running in-window")
 	}
 	// ...but finalize has already closed the barrier.
-	d.closeAndWait()
+	d.closeAndWait("test")
 	if p.drain.admit() {
 		t.Fatal("admit() must fail after the barrier closed")
 	}
@@ -74,7 +74,7 @@ func TestScenarioDrain_BarrierWaitsForInflight(t *testing.T) {
 		synctest.Wait() // fire admitted into the barrier, blocked on write
 
 		waitReturned := make(chan struct{})
-		go func() { d.closeAndWait(); close(waitReturned) }()
+		go func() { d.closeAndWait("test"); close(waitReturned) }()
 		synctest.Wait()
 		select {
 		case <-waitReturned:
@@ -131,7 +131,7 @@ func TestDrainGate_AdmitBeforeAndAfterClose(t *testing.T) {
 		t.Fatal("admit before close must succeed")
 	}
 	d.leave()
-	d.closeAndWait() // no in-flight → returns immediately
+	d.closeAndWait("test") // no in-flight → returns immediately
 	if d.admit() {
 		t.Fatal("admit after close must fail")
 	}

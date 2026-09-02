@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1405
+const minimumTestFunctions = 1418
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -287,6 +287,22 @@ var loadBearingGuards = []loadBearingGuard{
 	{"TestTrapAndPollAgreeOnType", "snmp_trap_poll_type_agreement_test.go",
 		"nl6#606. One OID must not answer with one type when polled and another when it arrives as a " +
 			"trap varbind. Nothing else compares the two encoders"},
+	{"TestScenarioDrain_CeilingBoundsAStalledWrite", "scenario_drain_ceiling_test.go",
+		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
+			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
+			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
+	{"TestScenarioDrain_CeilingCountsEveryStraggler", "scenario_drain_ceiling_test.go",
+		"nl6#567. Pins the straggler count AS A COUNT. Review demonstrated that replacing it with " +
+			"the constant 1 left the whole package green, because every give-up test admitted one " +
+			"fire; the number sizes the uncertainty in every total on the report"},
+	{"TestReportHTML_TruncatedRun", "scenario_report_html_test.go",
+		"nl6#567. The HTML view is the only operator-facing surface showing a truncated finalize " +
+			"without reading raw JSON. Review demonstrated that deleting the banner left the package " +
+			"green, since every other HTML test renders a report with no stragglers"},
+	{"TestScenarioFinishCarriesTheStragglerCount", "scenario_drain_ceiling_test.go",
+		"nl6#567. finish() is the only production site turning closeAndWait's count into report " +
+			"data. Discarding it left the whole package green while a truncated finalize reported " +
+			"as clean, which review demonstrated by mutation"},
 	{"TestTrapCatalogDoesNotContradictItself", "snmp_trap_poll_type_agreement_test.go",
 		"nl6#607. The same one-object-two-types defect, found without any resource data. It is the " +
 			"ONLY check that reaches ciena_waveserver5's catalog, which joins nothing at all, and the " +
