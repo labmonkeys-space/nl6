@@ -15,13 +15,28 @@ on:
       - 'deploy/packages/**'
       - 'Makefile'
       - '.github/workflows/packages.yml'
+  # The smoke matrix is the ONLY guard this repo has against upstream base-image
+  # drift, and the paths above mean it runs only when someone touches packaging.
+  # That is the wrong trigger for the thing it actually catches: the images move
+  # on their own schedule, not ours. nl6#610 is the worked example. CentOS
+  # Stream 10 was republished with an OCI image layout in place of a root
+  # filesystem, nothing here changed, and the break was discovered days later as
+  # a red X on an unrelated pull request, where it blocked work that had nothing
+  # to do with packaging. A weekly run turns that into an isolated signal that
+  # names the broken image and blocks nobody. Off the hour on purpose: GitHub
+  # drops scheduled runs it cannot place during the load spike at :00.
+  schedule:
+    - cron: '23 5 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# The event is part of the group because `schedule` and `push` to main share a
+# ref, so without it a cron run and a real push to main cancel each other and
+# whichever lost leaves no result. Pull requests already carry a distinct ref.
 concurrency:
-  group: packages-${{ github.ref }}
+  group: packages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

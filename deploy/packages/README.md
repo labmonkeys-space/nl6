@@ -64,11 +64,19 @@ make smoke SMOKE_DEB_IMAGES="debian:12" SMOKE_RPM_IMAGES="rockylinux:9"
 ```
 
 Default matrix: `debian:13`, `ubuntu:26.04` (deb) and
-`quay.io/rockylinux/rockylinux:10`, `almalinux:10`,
-`quay.io/centos/centos:stream10` (rpm). The
+`quay.io/rockylinux/rockylinux:10`, `almalinux:10` (rpm). The
 [`smoke-test.sh`](smoke-test.sh) helper can also be run against a single
 package + image directly. CI runs `make smoke` (amd64) via
-`.github/workflows/packages.yml` on packaging changes.
+`.github/workflows/packages.yml` on packaging changes, and again every Monday
+on a schedule.
+
+The weekly run is not redundant. These images move on their own schedule, so a
+broken or reshaped base image is not something a packaging change would reveal.
+`quay.io/centos/centos:stream10` is absent from the matrix for exactly that
+reason (nl6#610): it was republished with an OCI image layout where its root
+filesystem should be, leaving the container with no shell at all. The Makefile
+records how to check before restoring it. EL10 stays covered by Rocky and
+AlmaLinux in the meantime.
 
 > The smoke test covers **installation**, not a full simulator run — nl6 needs
 > root + TUN + network namespaces, which a throwaway container does not provide.
