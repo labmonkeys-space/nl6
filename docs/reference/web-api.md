@@ -119,8 +119,8 @@ curl -X POST http://localhost:8080/api/v1/devices \
       "engine_id": "0x80001234",
       "username": "admin",
       "password": "authpass123",
-      "auth_protocol": "md5",
-      "priv_protocol": "aes128"
+      "auth_protocol": 1,
+      "priv_protocol": 2
     }
   }'
 
@@ -142,7 +142,12 @@ has no defined result for an empty one, so the block is checked at creation
 rather than at the first encrypted request — a 201 followed by every encrypted
 poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when
-both are set.
+both are set **on the DES path only**. The AES128 path ignores `priv_password`
+and always derives from `password`
+([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)), so a device
+configured with two distinct passwords and `"priv_protocol": 2` encrypts under
+a key no RFC 3414 manager derives. `Validate` accepts the configuration
+regardless.
 
 The `if_error_scenario` field controls the per-device ppm bands used to
 derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards`
@@ -949,9 +954,10 @@ ssh simadmin@192.168.100.1     # password: simadmin
 snmpget  -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 
-# SNMP v3 (when enabled)
-snmpget -v3 -l authPriv -u admin -a MD5 -A authpass123 -x AES -X privpass123 \
-  -e 0x80001234 192.168.100.1 1.3.6.1.2.1.1.1.0
+# SNMP v3 (when enabled). Use -l noAuthNoPriv: authentication is accepted but
+# not implemented, so an authPriv poll fails digest verification (nl6#624).
+snmpget -v3 -l noAuthNoPriv -u simadmin -e 800000090300AABBCCDD \
+  192.168.100.1 1.3.6.1.2.1.1.1.0
 ```
 
 See [SNMP reference](snmp.md) for the OID coverage, including the dynamic HC

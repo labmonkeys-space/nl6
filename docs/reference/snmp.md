@@ -11,19 +11,67 @@ stack is implemented in `go/nl6/snmp*.go` — see
   table. Community string is `public` by default.
 - **SNMPv3** — enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags).
   Auth protocols: `none`, `md5`, `sha1`. Privacy protocols: `none`, `des`,
-  `aes128`. Auth and priv are implemented in `snmpv3.go` / `snmpv3_crypto.go`.
+  `aes128`. The message framing lives in `snmpv3.go` / `snmpv3_crypto.go`;
+  **authentication is not implemented and privacy is not conformant, see
+  below.**
 
 ### SNMPv3 auth / priv matrix
 
-| Auth  | Priv    | Security level  |
-|-------|---------|-----------------|
-| none  | none    | `noAuthNoPriv`  |
-| md5   | none    | `authNoPriv`    |
-| sha1  | none    | `authNoPriv`    |
-| md5   | des     | `authPriv`      |
-| md5   | aes128  | `authPriv`      |
-| sha1  | des     | `authPriv`      |
-| sha1  | aes128  | `authPriv`      |
+:::warning[USM is not RFC-conformant: authentication is absent and privacy is unreachable]
+
+**Authentication is not implemented.** nl6 computes no HMAC anywhere and emits a
+12-byte all-zero `msgAuthenticationParameters` on every GetResponse
+([nl6#624]). `AuthProtocol` is read by no production code, so `-snmpv3-auth`
+and `auth_protocol` change nothing.
+
+**Privacy cannot be reached by a conforming manager.** USM defines no
+privacy-without-authentication security level, so a standards-compliant manager
+sets the PRIV flag only at `authPriv`, which the missing digest blocks. nl6's
+own tests set that flag directly, which is why the code paths are exercised in
+CI and still unreachable in practice.
+
+**Privacy is also non-conformant on the wire**, independently of the above.
+`encryptDES` emits one random 8-byte value as both the CBC IV and `privParams`,
+where RFC 3414 §8.1.1.1 requires `IV = salt XOR pre-IV`; the localized key is
+only 8 bytes, so no pre-IV exists. `encryptAES128` hardcodes the IV's
+boots/time prefix while the response advertises a different
+`msgAuthoritativeEngineTime`, so a peer building the IV per RFC 3826 §3.1.2.1
+from nl6's own advertised values decrypts garbage.
+
+**Inbound requests are not authenticated either.** `validateSNMPv3Credentials`
+checks the username and nothing else, and the RFC 3414 §3.2 time window is
+deliberately skipped. nl6 answers a request carrying any digest and any auth
+password, so **you cannot use nl6 to test a collector's wrong-credential or
+replay handling**, and a "successful" `authNoPriv` exchange against nl6 proves
+nothing about the collector's USM configuration.
+
+**`noAuthNoPriv` is the level nl6 can serve**, and note it still emits those 12
+zero bytes where RFC 3414 §6.3.1 wants a zero-*length* field. This assessment is
+a reading of the source pinned by `snmpv3_usm_unimplemented_test.go`; **no v3
+exchange in this repository has been verified against net-snmp or snmp4j**, so
+treat "serves" as "nl6 answers", not "a real manager accepts".
+
+:::
+
+The table records what nl6 does with each combination. The `Priv key` column is
+the defect specific to that row: `generateDESKey` hardcodes **MD5** and
+`generateAESKey` hardcodes **SHA1**, so which rows happen to match RFC 3414's
+"derive with the auth protocol's hash" rule runs in opposite directions.
+
+| Auth  | Priv    | Security level  | Auth digest | Priv key |
+|-------|---------|-----------------|-------------|----------|
+| none  | none    | `noAuthNoPriv`  | n/a         | n/a |
+| md5   | none    | `authNoPriv`    | not computed | n/a |
+| sha1  | none    | `authNoPriv`    | not computed | n/a |
+| md5   | des     | `authPriv`      | not computed | hash matches (MD5); honours `priv_password` |
+| sha1  | des     | `authPriv`      | not computed | **hash differs**: MD5 used for a SHA1 user |
+| md5   | aes128  | `authPriv`      | not computed | **hash differs** (SHA1 used); **derives from `password`, not `priv_password`** |
+| sha1  | aes128  | `authPriv`      | not computed | hash matches (SHA1); **derives from `password`, not `priv_password`** |
+
+Every `authPriv` row additionally carries the IV defects described above, so no
+row of this table interoperates with a conforming manager today.
+
+[nl6#624]: https://github.com/labmonkeys-space/nl6/issues/624
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
@@ -95,6 +143,17 @@ A non-minimal sub-identifier, one whose leading octet is `0x80` (X.690 §8.19.2)
 Nothing that ships with nl6 changes on the wire: all 5,676 distinct OIDs across the resource files and trap catalogs encode to exactly the same bytes as before.
 
 ### SNMPv3 authPriv requests are served (fixed in nl6#527)
+
+:::note[What "served" means here]
+
+nl6 *processes* an authPriv request correctly since nl6#527. That is a
+different question from whether a conforming manager can send one: it cannot,
+because USM authentication is unimplemented and privacy is unreachable without
+it. See [the auth/priv matrix](#snmpv3-auth--priv-matrix) and
+[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624). The tests
+covering this section build the PRIV flag byte themselves.
+
+:::
 
 Until nl6#527 an SNMPv3 request sent with privacy was answered with `sysDescr.0`, whatever OID it asked for and whatever PDU type it used, carrying request-id 1.
 

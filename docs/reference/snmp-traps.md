@@ -12,9 +12,10 @@ JSON shape. For enabling the feature, CLI flags, and troubleshooting see
 
 Traps are always emitted as **SNMPv2c** regardless of whether the
 simulator's polling side is configured with `-snmpv3-engine-id` — the
-two paths are independent. An operator running v3-authenticated polls
-against the simulator still sees v2c community-authenticated traps on
-port 162.
+two paths are independent. An operator polling the simulator over SNMPv3
+still sees v2c community-authenticated traps on port 162. (Those polls are
+not authenticated either: nl6's USM authentication is unimplemented, see
+[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624).)
 
 The SNMPv2c community string (`-trap-community`, default `public`) rides
 in the clear on every trap and inform. This is a property of SNMPv2c

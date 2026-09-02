@@ -24,8 +24,9 @@ network namespaces.
 - **29 device types across 9 categories** (core / edge routers, DC and
   campus switches, firewalls, servers, NVIDIA DGX/HGX GPU servers,
   enterprise storage, and Ciena Waveserver 5 optical transport) — see [Device types](https://labmonkeys-space.github.io/nl6/reference/device-types/).
-- **Multi-protocol per device:** SNMP v2c/v3 (MD5/SHA1 auth, DES/AES128
-  privacy), SSH with VT100 terminal emulation, and HTTPS REST — see
+- **Multi-protocol per device:** SNMP v2c/v3 (DES/AES128 privacy; the MD5/SHA1
+  auth protocols are accepted but not yet implemented), SSH with VT100 terminal
+  emulation, and HTTPS REST — see
   [SNMP reference](https://labmonkeys-space.github.io/nl6/reference/snmp/)
   and [Web API](https://labmonkeys-space.github.io/nl6/reference/web-api/).
 - **Realistic dynamic metrics:** CPU / memory / temperature on 100-point
@@ -66,7 +67,10 @@ network namespaces.
 
 ## Status & scale
 
-**Stable** — SNMP v2c/v3, SSH, HTTPS REST (storage APIs), NetFlow v5/v9 and
+**Stable** — SNMP v2c, SNMP v3 at `noAuthNoPriv` only (USM authentication is
+not implemented and privacy is not reachable; see
+[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)), SSH, HTTPS REST
+(storage APIs), NetFlow v5/v9 and
 IPFIX, TUN-per-device scaling with `nl6sim` network-namespace isolation,
 web UI, REST control plane.
 
