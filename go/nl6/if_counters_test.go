@@ -610,10 +610,14 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 				}
 				// lastChange must be non-decreasing across reads (or
 				// equal — same write seen twice). With the injected clock
-				// this is a property of the engine's packing and CAS
-				// ordering alone; nothing here depends on the wall clock,
-				// so a rewind sentinel now means a real defect rather than
-				// an NTP step (nl6#575).
+				// this is a property of the engine's packing alone;
+				// nothing here depends on the wall clock (nl6#575).
+				//
+				// The sentinel branch below is UNREACHABLE with this clock
+				// (strictly increasing, anchored at boot) and is kept only
+				// as a tripwire for a future edit to the clock, not as an
+				// assertion this test earns. The reachable coverage of the
+				// rewind path is TestInterfaceStateInjectedClockCanStepBackwards.
 				if lc == LastChangeRewindSentinel {
 					failure("unexpected clock-rewind sentinel with a strictly-increasing clock")
 					return
