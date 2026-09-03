@@ -34,8 +34,8 @@ Omit the engine-id flag to run in v2c-only mode.
 | Flag | Values | Default | Purpose |
 |------|--------|---------|---------|
 | `-snmpv3-engine-id` | string | — | Enable SNMPv3 with the specified engine ID (e.g. `0x80001234`). |
-| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 auth protocol. **Accepted and stored, but not yet implemented** ([nl6#624]): nl6 emits a zero `msgAuthenticationParameters`, so a peer that verifies the digest rejects an `authNoPriv`/`authPriv` message. The value is not read by any code today. |
-| `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. **Not reachable by a conforming manager** ([nl6#624]): USM defines no privacy-without-authentication level, and authentication is unimplemented. Both the DES and AES IV constructions are also non-conformant. |
+| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 authentication protocol (RFC 3414 USM). Implemented in [nl6#624] and verified against net-snmp: the key is derived by §A.2 password-to-key plus localization, and the HMAC is truncated to 12 octets. It also selects the hash used to localize the **privacy** key (§2.6). Inbound messages are verified, so a wrong password is answered with a `usmStatsWrongDigests` Report. |
+| `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. Requires `-snmpv3-auth`, since USM defines no privacy-without-authentication level. The key comes from `-snmpv3-priv-password` (falling back to the auth password); DES builds `IV = salt XOR pre-IV` (RFC 3414 §8.1.1.1) and AES128 builds its IV from the advertised engine boots and time (RFC 3826 §3.1.2.1). Both conformant as of [nl6#624]. |
 
 See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 

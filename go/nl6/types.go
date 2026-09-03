@@ -198,12 +198,15 @@ type SNMPv3SecurityParams struct {
 }
 
 type SNMPServer struct {
-	device       *DeviceSimulator
-	listener     *net.UDPConn
-	running      bool
-	v3Config     *SNMPv3Config
-	cachedDESKey []byte // cached result of generateDESKey()
-	cachedAESKey []byte // cached result of generateAESKey()
+	device   *DeviceSimulator
+	listener *net.UDPConn
+	running  bool
+	v3Config *SNMPv3Config
+
+	// usm holds the RFC 3414 material derived once per server (nl6#624): the
+	// engine ID octets that go on the wire and into localization, the localized
+	// auth and privacy keys, and the instant engine time counts from.
+	usm usmServerState
 
 	// lldpServedCache memoises this device's sorted LLDP served-OID set
 	// (see lldpServedOIDs). The set is rebuilt only when the topology

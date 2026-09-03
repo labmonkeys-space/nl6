@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1442
+const minimumTestFunctions = 1451
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -291,14 +291,25 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
 			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
 			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
-	{"TestAuthProtocolIsNeverReadInProduction", "snmpv3_usm_unimplemented_test.go",
-		"nl6#624. nl6 documented MD5/SHA1 auth in six places and implements none of it. Five documents " +
-			"asserted that with nothing enforcing it; this fails the day someone wires the flag up, " +
-			"naming the files whose claims have gone stale"},
-	{"TestInboundV3RequestsAreNotAuthenticated", "snmpv3_usm_unimplemented_test.go",
-		"nl6#624. nl6 answers a v3 request carrying any digest, so a collector's wrong-credential and " +
-			"replay handling cannot be tested against it. The first draft of the docs missed this half " +
-			"entirely and framed the gap only as 'the peer rejects nl6'"},
+	{"TestAuthProtocolReachesEveryDerivation", "snmpv3_usm_conformance_test.go",
+		"nl6#624. -snmpv3-auth was parsed, stored and consulted by nothing, and the two privacy " +
+			"derivations hardcoded OPPOSITE hashes, so md5+des happened to match RFC 3414 while " +
+			"sha1+des did not. Asserted through derived KEYS, not through an AST scan for reads: a " +
+			"scan proves the identifier appears, only the keys prove it changes anything"},
+	{"TestInboundV3RequestsAreAuthenticated", "snmpv3_usm_conformance_test.go",
+		"nl6#624. nl6 answered a v3 request carrying any digest, so a collector's wrong-credential " +
+			"and replay handling could not be tested against it. Driven through the DISPATCHER and " +
+			"asserting the usmStats OID per row, because a verifier returning false is worth nothing " +
+			"if nothing calls it, and a rejection for the wrong reason misdirects the operator"},
+	{"TestEveryEmitterAgreesOnTheEngineIdentity", "snmpv3_usm_conformance_test.go",
+		"nl6#624. FOUR paths emit msgAuthoritativeEngineID and the first cut corrected one, leaving " +
+			"three sending the hex SPELLING and a UNIX epoch. A manager discovers the engine from one " +
+			"and authenticates against another, so it derived a different key and rejected everything " +
+			"— with the whole package green. Found by net-snmp, not by any in-package test"},
+	{"TestUSMKeyDerivationMatchesRFC3414Vectors", "snmpv3_usm_test.go",
+		"nl6#624. The ONLY check here that does not read nl6's output with nl6's own parser: the four " +
+			"localized keys are compared against RFC 3414 A.3's published values, parsed from a " +
+			"checked-in extract of the RFC. A shared misunderstanding passes every other v3 test"},
 	{"TestV1MappingEnterpriseSpecificIgnoresTheDeclaredEnterprise", "trap_v1_test.go",
 		"nl6#97. RFC 3584 3.2 honours a declared snmpTrapEnterprise ONLY for a standard trap; a " +
 			"non-standard one always derives it from snmpTrapOID. The spec had this backwards, and " +

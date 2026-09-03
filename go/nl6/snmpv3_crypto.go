@@ -20,9 +20,7 @@ import (
 	"crypto/cipher"
 	"crypto/des"
 	"crypto/rand"
-	"crypto/sha1"
 	"fmt"
-	"time"
 )
 
 // Validate rejects an SNMPv3 config that cannot derive a privacy key.
@@ -83,21 +81,32 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 		}
 	}
 
-	// Create USM security parameters for response
+	// Create USM security parameters for response.
+	//
+	// The engine ID goes on the wire as OCTETS (nl6#624). It used to be the
+	// ASCII of its hex spelling, while key localization used the decoded bytes,
+	// so nl6 advertised one engine identity and keyed on another and no manager
+	// could ever have derived the same key.
+	//
+	// Engine time is seconds since this engine booted (RFC 3414 §2.2), not a
+	// Unix epoch: a manager applying the §3.2 window rejects an epoch outright.
+	usm := s.usmState()
+	authenticating := usm.newHash != nil && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_AUTH) != 0
 	secParams := SNMPv3SecurityParams{
-		AuthoritativeEngineID:    s.v3Config.EngineID,
-		AuthoritativeEngineBoots: 1,
-		AuthoritativeEngineTime:  int(time.Now().Unix()),
+		AuthoritativeEngineID:    string(usm.engineID),
+		AuthoritativeEngineBoots: usm.engineBoots,
+		AuthoritativeEngineTime:  usm.engineTimeSeconds(),
 		UserName:                 requestMsg.SecurityParams.UserName,
-		AuthParams:               make([]byte, 12), // Will be filled by authentication
-		PrivParams:               privParams,
+		// Zeroed placeholder: RFC 3414 §6.3.1 computes the digest over the
+		// whole message with this field present and zero-filled, so it can only
+		// be filled after assembly.
+		AuthParams: usmZeroedAuthParams(),
+		PrivParams: privParams,
 	}
-
-	// For basic simulation, don't require actual HMAC validation
-	// Copy the request's auth params if present (simplified approach)
-	if len(requestMsg.SecurityParams.AuthParams) > 0 {
-		// log.Printf("SNMPv3: Using simplified auth params for response")
-		secParams.AuthParams = make([]byte, 12) // Standard 12-byte auth params
+	if !authenticating {
+		// noAuthNoPriv sends a zero-LENGTH field, per §6.3.1. nl6 sent twelve
+		// zero octets at every level before nl6#624.
+		secParams.AuthParams = []byte{}
 	}
 
 	// Encode USM parameters
@@ -124,10 +133,20 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 		return nil, fmt.Errorf("failed to encode SNMPv3 message: %v", err)
 	}
 
-	// Simulation deliberately skips HMAC authentication — proper RFC 3414
-	// key derivation is out of scope for the simulator. A production agent
-	// would authenticate here when AuthProtocol != NONE and the message
-	// AUTH flag is set.
+	// Authenticate: digest over the assembled message carrying its own zeroed
+	// auth field, then substituted in place (RFC 3414 §6.3.1).
+	if authenticating {
+		digest := usmAuthDigest(msgBytes, usm.authKey, usm.newHash)
+		if digest == nil {
+			return nil, fmt.Errorf("SNMPv3 authentication is configured but no key could be derived; " +
+				"check that a password is set")
+		}
+		signed, err := substituteAuthParams(msgBytes, digest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert msgAuthenticationParameters: %w", err)
+		}
+		msgBytes = signed
+	}
 
 	return msgBytes, nil
 }
@@ -166,7 +185,7 @@ func (s *SNMPServer) createScopedPDUMulti(oids, values []string, requestMsg *SNM
 	pdu = append(pdu, pduContents...)
 
 	var scopedContents []byte
-	scopedContents = append(scopedContents, encodeOctetString(s.v3Config.EngineID)...)
+	scopedContents = append(scopedContents, encodeOctetString(string(s.usmState().engineID))...)
 	scopedContents = append(scopedContents, encodeOctetString("")...)
 	scopedContents = append(scopedContents, pdu...)
 
@@ -253,15 +272,30 @@ func (s *SNMPServer) encryptScopedPDU(scopedPDU []byte, requestMsg *SNMPv3Messag
 
 // encryptDES encrypts data using DES
 func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
-	// Use cached DES key from privacy password
-	key := s.getDESKey()
+	// RFC 3414 §8.1.1.1: the localized privacy key is 16 octets. The first 8
+	// are the DES key; the last 8 are the PRE-IV, and the IV is salt XOR
+	// pre-IV with the salt sent as privParams.
+	//
+	// Before nl6#624 one random value was used as both the IV and privParams,
+	// and the key was 8 octets so no pre-IV existed at all. A conforming peer
+	// XORs the salt it received against its own pre-IV and gets a different IV.
+	usm := s.usmState()
+	if len(usm.privKey) < 16 {
+		return nil, nil, fmt.Errorf("SNMPv3 privacy is configured but no localized key is available; " +
+			"check that a password or priv_password is set")
+	}
+	key, preIV := usm.privKey[:8], usm.privKey[8:16]
 
-	// Generate random IV (8 bytes for DES). `crypto/rand.Read` only
-	// errors on a misconfigured kernel entropy source — fail loudly
-	// since a non-random IV would be a real SNMPv3 privacy break.
+	// The salt is what goes on the wire. `crypto/rand.Read` only errors on a
+	// misconfigured kernel entropy source; a predictable salt is a real
+	// SNMPv3 privacy break, so fail loudly.
+	salt := make([]byte, 8)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate DES salt: %w", err)
+	}
 	iv := make([]byte, 8)
-	if _, err := rand.Read(iv); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate DES IV: %w", err)
+	for i := range iv {
+		iv[i] = salt[i] ^ preIV[i]
 	}
 
 	// Pad data to block size
@@ -280,22 +314,23 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 
-	return encrypted, iv, nil
-}
-
-// getAESKey returns the cached AES key, computing and caching it on first call
-func (s *SNMPServer) getAESKey() []byte {
-	if s.cachedAESKey != nil {
-		return s.cachedAESKey
-	}
-	s.cachedAESKey = s.generateAESKey(s.v3Config.Password)
-	return s.cachedAESKey
+	// privParams carries the SALT, not the IV.
+	return encrypted, salt, nil
 }
 
 // encryptAES128 encrypts data using AES-128-CFB
 func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
-	// Use cached AES key from password
-	aesKey := s.getAESKey()
+	// The localized PRIVACY key, derived with the AUTH protocol's hash from the
+	// privacy password (nl6#624). It was the auth password hashed with SHA1
+	// whatever the configuration said, so a conforming manager derived a
+	// different key and decryption never had a chance.
+	usm := s.usmState()
+	aesKey := usm.privKey
+	if len(aesKey) < 16 {
+		return nil, nil, fmt.Errorf("SNMPv3 privacy is configured but no localized key is available; " +
+			"check that a password or priv_password is set")
+	}
+	aesKey = aesKey[:16]
 
 	// Create AES cipher
 	block, err := aes.NewCipher(aesKey)
@@ -306,9 +341,13 @@ func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
 	// For SNMPv3 AES, create IV from engine boots/time + salt
 	iv := make([]byte, aes.BlockSize)
 
-	// First 8 bytes: engine boots (4) + engine time (4)
-	copy(iv[0:4], []byte{0x00, 0x00, 0x00, 0x01}) // engine boots = 1
-	copy(iv[4:8], []byte{0x68, 0xa9, 0x48, 0xcf}) // simplified engine time
+	// First 8 bytes: the engine boots and engine time this message ADVERTISES
+	// (RFC 3826 §3.1.2.1). Both were hardcoded before nl6#624, against a
+	// msgAuthoritativeEngineTime that said something else, so a peer building
+	// the IV from the values nl6 itself sent decrypted garbage.
+	boots, engineTime := usm.engineBoots, usm.engineTimeSeconds()
+	iv[0], iv[1], iv[2], iv[3] = byte(boots>>24), byte(boots>>16), byte(boots>>8), byte(boots)
+	iv[4], iv[5], iv[6], iv[7] = byte(engineTime>>24), byte(engineTime>>16), byte(engineTime>>8), byte(engineTime)
 
 	// Last 8 bytes: random salt (privacy parameters)
 	salt := make([]byte, 8)
@@ -334,8 +373,15 @@ func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
 	return encrypted, salt, nil // Return only the 8-byte salt, not full IV
 }
 
-// decryptAES128 decrypts data using AES-128-CFB
-func (s *SNMPServer) decryptAES128(encrypted []byte, privParams []byte) ([]byte, error) {
+// decryptAES128At decrypts against the engine boots and time the SENDER
+// declared, which is what RFC 3826 §3.1.2.1 builds the IV from.
+//
+// The declared values are used rather than this engine's own because a manager
+// keeps its own estimate of our engine time and the two drift by seconds. An IV
+// is an exact input, not a windowed one, so decrypting with our current reading
+// fails as soon as they differ. nl6 hardcoded the prefix entirely before
+// nl6#624, which made the question moot and the result wrong.
+func (s *SNMPServer) decryptAES128At(encrypted, privParams []byte, boots, engineTime int) ([]byte, error) {
 	if len(privParams) != 8 {
 		return nil, fmt.Errorf("invalid AES salt length: expected 8, got %d", len(privParams))
 	}
@@ -345,18 +391,17 @@ func (s *SNMPServer) decryptAES128(encrypted []byte, privParams []byte) ([]byte,
 	// - Last 8 bytes: privacy parameters (salt)
 	iv := make([]byte, aes.BlockSize)
 
-	// Use engine boots and time for first 8 bytes (simplified for simulation)
-	copy(iv[0:4], []byte{0x00, 0x00, 0x00, 0x01}) // engine boots = 1
-	copy(iv[4:8], []byte{0x68, 0xa9, 0x48, 0xcf}) // simplified engine time
+	iv[0], iv[1], iv[2], iv[3] = byte(boots>>24), byte(boots>>16), byte(boots>>8), byte(boots)
+	iv[4], iv[5], iv[6], iv[7] = byte(engineTime>>24), byte(engineTime>>16), byte(engineTime>>8), byte(engineTime)
 
 	// Privacy parameters for last 8 bytes
 	copy(iv[8:16], privParams)
 
-	// Use cached AES key from password
-	aesKey := s.getAESKey()
-
-	// Create AES cipher
-	block, err := aes.NewCipher(aesKey)
+	usm := s.usmState()
+	if len(usm.privKey) < 16 {
+		return nil, fmt.Errorf("SNMPv3 privacy is configured but no localized key is available")
+	}
+	block, err := aes.NewCipher(usm.privKey[:16])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
 	}
@@ -369,47 +414,6 @@ func (s *SNMPServer) decryptAES128(encrypted []byte, privParams []byte) ([]byte,
 	stream.XORKeyStream(decrypted, encrypted)
 
 	return decrypted, nil
-}
-
-// generateAESKey generates a 16-byte AES key from password using RFC 3414 algorithm
-func (s *SNMPServer) generateAESKey(password string) []byte {
-	// RFC 3414 key localization algorithm for AES
-	// Create 1MB buffer from password
-	passwordBytes := []byte(password)
-	// See generateDESKey: an empty password divides by zero in the modulo
-	// below. nil fails cleanly through aes.NewCipher's KeySizeError; a
-	// zero-filled key of the right length would not fail at all.
-	if len(passwordBytes) == 0 {
-		return nil
-	}
-	buffer := make([]byte, 1048576) // 1MB
-
-	for i := 0; i < len(buffer); i++ {
-		buffer[i] = passwordBytes[i%len(passwordBytes)]
-	}
-
-	// Hash the buffer with SHA1 (for AES we typically use SHA1)
-	hasher := sha1.New()
-	hasher.Write(buffer)
-	hash := hasher.Sum(nil)
-
-	// Localize the key with engine ID
-	engineIDBytes, err := s.parseHexEngineID(s.v3Config.EngineID)
-	if err != nil {
-		engineIDBytes = []byte("default")
-	}
-
-	localizer := sha1.New()
-	localizer.Write(hash)
-	localizer.Write(engineIDBytes)
-	localizer.Write(hash)
-	localKey := localizer.Sum(nil)
-
-	// Return first 16 bytes for AES-128
-	aesKey := make([]byte, 16)
-	copy(aesKey, localKey[:16])
-
-	return aesKey
 }
 
 // padData pads data to the specified block size

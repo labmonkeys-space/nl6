@@ -71,3 +71,8 @@ const (
 
 // Global manager instance
 var manager *SimulatorManager
+
+// v3ReportPDUTag is the SNMPv3 Report-PDU's implicit context tag, [8]
+// (RFC 3412 §6). It carries a usmStats counter naming why a message was
+// refused; nl6#624 added the wrong-digest and time-window reasons.
+const v3ReportPDUTag = 0xA8

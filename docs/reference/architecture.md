@@ -71,7 +71,7 @@ certs) → `device.go` (per-device startup, protocol server lifecycle).
 `snmp_server.go` → `snmp.go` (request handling) → `snmp_handlers.go` (OID
 lookup via `sync.Map`) → `snmp_response.go` (response building) →
 `snmp_encoding.go` (ASN.1 BER/DER). SNMPv3 is handled separately in
-`snmpv3.go` + `snmpv3_crypto.go` (message framing and DES / AES128 privacy; the MD5 / SHA1 auth protocols are accepted but not implemented, see [nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)).
+`snmpv3.go` + `snmpv3_crypto.go` (message framing, DES / AES128 privacy) and `snmpv3_usm.go` (RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96, and inbound verification; implemented in [nl6#624](https://github.com/labmonkeys-space/nl6/issues/624) and verified against net-snmp).
 
 ### Metrics engine
 

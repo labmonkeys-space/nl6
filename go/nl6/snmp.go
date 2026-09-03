@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 )
 
 // handleSNMPv3Request handles SNMPv3 requests with USM authentication
@@ -53,6 +52,13 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		return s.createSNMPv3DiscoveryResponse(v3Msg)
 	}
 
+	// RFC 3414 §3.2 steps 6-7: authenticate BEFORE decrypting. A message whose
+	// digest does not verify must not have its ciphertext fed to a cipher, and
+	// its declared engine time must not be trusted for the IV.
+	if reportOID, ok := s.authenticateInbound(requestData, v3Msg); !ok {
+		return s.createSNMPv3ReportResponse(reportOID, v3Msg)
+	}
+
 	// log.Printf("SNMPv3: Authenticated user: %s, flags: 0x%02X",
 	//	v3Msg.SecurityParams.UserName, v3Msg.GlobalData.MsgFlags)
 
@@ -69,7 +75,8 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		if s.v3Config.PrivProtocol == SNMPV3_PRIV_NONE {
 			return s.createSNMPv3ReportResponse(oidUsmStatsUnsupportedSecLevels, v3Msg)
 		}
-		decryptedPDU, err := s.decryptScopedPDU(v3Msg.ScopedPDU, v3Msg.SecurityParams.PrivParams)
+		decryptedPDU, err := s.decryptScopedPDUAt(v3Msg.ScopedPDU, v3Msg.SecurityParams.PrivParams,
+			v3Msg.SecurityParams.AuthoritativeEngineBoots, v3Msg.SecurityParams.AuthoritativeEngineTime)
 		if err != nil {
 			// A hard error: bad privParams length, ciphertext not a multiple
 			// of the block size, no usable key.
@@ -410,7 +417,9 @@ func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
 // Counter32 in oidTypeTable, so encodeTypedValue gives them the right tag.
 const (
 	oidUsmStatsUnsupportedSecLevels = ".1.3.6.1.6.3.15.1.1.1.0"
+	oidUsmStatsNotInTimeWindows     = ".1.3.6.1.6.3.15.1.1.2.0"
 	oidUsmStatsUnknownEngineIDs     = ".1.3.6.1.6.3.15.1.1.4.0"
+	oidUsmStatsWrongDigests         = ".1.3.6.1.6.3.15.1.1.5.0"
 	oidUsmStatsDecryptionErrors     = ".1.3.6.1.6.3.15.1.1.6.0"
 )
 
@@ -447,10 +456,18 @@ func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SN
 	}
 
 	// Create USM security parameters for discovery response
+	// THE SAME OCTETS AND THE SAME CLOCK AS EVERY OTHER EMITTER (nl6#624). This
+	// builder used to send the engine ID's hex SPELLING and a UNIX EPOCH while
+	// wrapScopedPDUInV3Message sent the decoded octets and seconds since boot.
+	// A manager discovers the engine HERE and then localizes its key with what
+	// it received, so the two disagreeing meant every authenticated exchange
+	// failed — with the whole in-package suite green, because nothing in it
+	// compared the discovery response against the data response.
+	u := s.usmState()
 	secParams := SNMPv3SecurityParams{
-		AuthoritativeEngineID:    s.v3Config.EngineID,
-		AuthoritativeEngineBoots: 1,
-		AuthoritativeEngineTime:  int(time.Now().Unix()),
+		AuthoritativeEngineID:    string(u.engineID),
+		AuthoritativeEngineBoots: u.engineBoots,
+		AuthoritativeEngineTime:  u.engineTimeSeconds(),
 		UserName:                 "", // Empty for discovery
 		AuthParams:               []byte{},
 		PrivParams:               []byte{},
@@ -507,12 +524,12 @@ func (s *SNMPServer) createDiscoveryScopedPDU(oid, value string) ([]byte, error)
 	pduContents = append(pduContents, varBindList...)      // variable-bindings
 
 	// Report PDU
-	pdu := []byte{0xA8} // Report PDU type
+	pdu := []byte{v3ReportPDUTag}
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
 	// Scoped PDU: contextEngineID + contextName + data
-	contextEngineID := encodeOctetString(s.v3Config.EngineID)
+	contextEngineID := encodeOctetString(string(s.usmState().engineID))
 	contextName := encodeOctetString("") // Default context
 
 	scopedContents := []byte{}

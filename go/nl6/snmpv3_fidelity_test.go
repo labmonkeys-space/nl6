@@ -323,7 +323,17 @@ func buildV3EncryptedRequest(tb testing.TB, s *SNMPServer, cipherText, privParam
 // assembleV3 wraps a scopedPduData field (already encoded as SEQUENCE or
 // OCTET STRING) into a full SNMPv3 message.
 func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool) []byte {
-	flags := byte(SNMPV3_MSG_FLAG_AUTH)
+	// The AUTH flag is set only when this server actually authenticates.
+	// It used to be set unconditionally, which claimed a security level a
+	// noAuthNoPriv device does not support — accepted while nothing verified
+	// inbound messages, answered with a usmStatsUnsupportedSecLevels Report
+	// since nl6#624, and never something a real manager would send.
+	st := s.usmState()
+	authenticates := st.newHash != nil && len(st.authKey) > 0
+	var flags byte
+	if authenticates {
+		flags |= SNMPV3_MSG_FLAG_AUTH
+	}
 	if priv {
 		flags |= SNMPV3_MSG_FLAG_PRIV
 	}
@@ -333,12 +343,23 @@ func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool)
 	global = append(global, encodeOctetString(string([]byte{flags}))...)
 	global = append(global, encodeInteger(3)...)
 
+	// A REAL MANAGER'S MESSAGE, not a hand-waved one (nl6#624). Before inbound
+	// verification existed, this builder could send an empty
+	// msgAuthenticationParameters with the AUTH flag set and the dispatcher
+	// accepted it. It no longer does, and it should not: every request these
+	// tests drive through the dispatcher is now authenticated the way a manager
+	// authenticates one, which makes the whole v3 test surface a round-trip
+	// proof of the digest rather than a proof that nothing checked it.
+	//
+	// The engine boots and time come from the engine itself, which is what a
+	// manager learns by discovery. Sending zeros would now fail the RFC 3414
+	// §3.2 time window.
 	var usm []byte
-	usm = append(usm, encodeOctetString(s.v3Config.EngineID)...)
-	usm = append(usm, encodeInteger(0)...)
-	usm = append(usm, encodeInteger(0)...)
+	usm = append(usm, encodeOctetString(string(st.engineID))...)
+	usm = append(usm, encodeInteger(st.engineBoots)...)
+	usm = append(usm, encodeInteger(st.engineTimeSeconds())...)
 	usm = append(usm, encodeOctetString(s.v3Config.Username)...)
-	usm = append(usm, encodeOctetString("")...)
+	usm = append(usm, encodeOctetString(string(usmZeroedAuthParams()))...)
 	usm = append(usm, encodeOctetString(string(privParams))...)
 
 	var msg []byte
@@ -346,7 +367,16 @@ func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool)
 	msg = append(msg, encodeSequence(global)...)
 	msg = append(msg, encodeOctetString(string(encodeSequence(usm)))...)
 	msg = append(msg, scopedField...)
-	return encodeSequence(msg)
+	whole := encodeSequence(msg)
+
+	if !authenticates {
+		return whole
+	}
+	signed, err := substituteAuthParams(whole, usmAuthDigest(whole, st.authKey, st.newHash))
+	if err != nil {
+		panic("assembleV3: cannot sign the request: " + err.Error())
+	}
+	return signed
 }
 
 // decodeV3ResponsePossiblyEncrypted decodes a v3 response, decrypting the

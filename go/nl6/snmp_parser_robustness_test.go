@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"  // #nosec G501 -- RFC 3414 USM test vector
+	"crypto/sha1" // #nosec G505 -- RFC 3414 USM test vector
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -187,13 +189,24 @@ func TestPrivacyKeyDerivation_EmptyPasswordYieldsNoKey(t *testing.T) {
 	// nil is the correct answer: aes.NewCipher and des.NewCipher reject it
 	// with a KeySizeError the callers already handle, whereas a zero-filled
 	// key of the right length would encrypt under a key nobody configured.
-	s := &SNMPServer{v3Config: &SNMPv3Config{Enabled: true, PrivProtocol: SNMPV3_PRIV_AES128}}
-
-	if key := s.generateAESKey(""); key != nil {
-		t.Errorf("generateAESKey(\"\") = %v, want nil", key)
+	// nl6#624 replaced the two hardcoded derivations with usmPasswordToKey, so
+	// the property is now asserted once at the single place that expands a
+	// password rather than twice at two copies of it.
+	if key := usmPasswordToKey("", md5.New); key != nil {
+		t.Errorf("usmPasswordToKey(\"\", md5) = %v, want nil", key)
 	}
-	if key := s.generateDESKey(); key != nil {
-		t.Errorf("generateDESKey() with empty passwords = %v, want nil", key)
+	if key := usmPasswordToKey("", sha1.New); key != nil {
+		t.Errorf("usmPasswordToKey(\"\", sha1) = %v, want nil", key)
+	}
+
+	// And the whole engine derives nothing when no password is configured, which
+	// is the behaviour the callers depend on: a cipher rejects a nil key rather
+	// than encrypting under a key nobody chose.
+	s := &SNMPServer{v3Config: &SNMPv3Config{
+		Enabled: true, AuthProtocol: SNMPV3_AUTH_MD5, PrivProtocol: SNMPV3_PRIV_AES128,
+	}}
+	if u := s.usmState(); u.authKey != nil || u.privKey != nil {
+		t.Errorf("usmState with no passwords derived authKey=%v privKey=%v, want both nil", u.authKey, u.privKey)
 	}
 }
 
