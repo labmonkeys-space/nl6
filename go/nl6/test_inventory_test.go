@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1459
+const minimumTestFunctions = 1471
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -348,6 +348,27 @@ var loadBearingGuards = []loadBearingGuard{
 	{"TestV2cOutputUnchangedByV1Encoder", "trap_v1_test.go",
 		"nl6#97. Adding a second encoder must not perturb the first. Digest over every shipped " +
 			"catalog entry, verified equal at the baseline commit rather than merely recorded"},
+	// nl6#98's four unchanged-output digests. Same admission criterion as the
+	// nl6#97 row above them: each is measured at the baseline commit in a
+	// worktree, so deleting one removes the only evidence that a seam lifted out
+	// of a shipped encoder changed no byte, and the extraction becomes
+	// unfalsifiable rather than merely unproven.
+	{"TestV2cNotificationOutputUnchangedByPDUExtraction", "trap_pdu_extraction_test.go",
+		"nl6#98. The SNMPv2c reference encoder's output over every effective shipped catalog, TRAP " +
+			"and INFORM. encodeNotificationPDU was lifted out of encodeV2cNotification underneath it"},
+	{"TestFastV2cNotificationOutputUnchangedByPDUExtraction", "trap_pdu_extraction_test.go",
+		"nl6#98. The fast encoder is READ-ONLY in that change, so a move here is a shared primitive " +
+			"moving beneath it. Parity with the reference is not enough on its own: both sides moving " +
+			"together keeps parity green, and only the pair of pinned digests rules that out"},
+	{"TestV1NotificationOutputUnchangedByPDUExtraction", "trap_pdu_extraction_test.go",
+		"nl6#98. The v1 encoder builds its own PDU and calls none of the lifted code, but shares " +
+			"encodeVarbindTyped and the OID encoder with it"},
+	{"TestV3PollOutputUnchangedByEnvelopeExtraction", "trap_pdu_extraction_test.go",
+		"nl6#98. The riskiest digest: wrapInScopedPDU and wrapScopedPDUInV3MessageWith sit directly " +
+			"on the shipped poll path. It is also the SOLE guard that the Report path's scoped PDU " +
+			"still agrees with the response path's — the two drifted once already (nl6#624, the " +
+			"engine ID's hex spelling against its octets) with the whole package green"},
+
 	{"TestInterfaceStateInjectedClockIsUsedEverywhere", "interface_state_clock_test.go",
 		"nl6#575. All THREE of the engine's clock reads must move together: a boot time from the real " +
 			"clock and transitions from an injected one subtract a real timestamp from a fake one. " +

@@ -23,6 +23,21 @@ import (
 	"fmt"
 )
 
+// usmPrivSaltRead fills the USM privacy salt. It IS crypto/rand.Read in
+// production and the indirection changes nothing a peer sees.
+//
+// It exists because an authPriv message is non-deterministic by construction —
+// the salt is random, the IV is built from it, and the auth digest covers the
+// resulting ciphertext — so there is no way to prove such a message is
+// byte-identical to what an earlier commit emitted without pinning that one
+// input. A test fixes it and restores it. Same seam convention as
+// FlowExporter.writeOverride and createBatchStageProbe: a var whose production
+// value is the real thing.
+//
+// NEVER set it outside a test. A predictable salt is a real SNMPv3 privacy
+// break.
+var usmPrivSaltRead = rand.Read
+
 // Validate rejects an SNMPv3 config that cannot derive a privacy key.
 //
 // Both AES and DES localise the key by repeating the password to fill a 1 MB
@@ -82,7 +97,40 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 // (nl6#529's encodeOID/appendOID, nl6#539's validateDottedOID), so the
 // GETBULK builder measures its candidate through this function rather than
 // predicting what it would produce.
+//
+// RESPONSE-SHAPED READS ARE EXACTLY THREE — the two flag tests, the user name
+// and the echoed msgID — so this is a thin adapter over
+// wrapScopedPDUInV3MessageWith, which takes those three directly. Everything
+// else the envelope carries is engine-authoritative and was never read off the
+// request. A notification originator (nl6#98) has no request to echo: it
+// supplies its own msgID, its own flag byte and its own user, and must reach
+// the SAME envelope rather than a second one that can drift from it.
 func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMPv3Message) ([]byte, error) {
+	return s.wrapScopedPDUInV3MessageWith(scopedPDU,
+		requestMsg.GlobalData.MsgID,
+		requestMsg.GlobalData.MsgFlags,
+		requestMsg.SecurityParams.UserName)
+}
+
+// wrapScopedPDUInV3MessageWith is wrapScopedPDUInV3Message with the three
+// response-shaped inputs supplied explicitly.
+//
+// msgFlags is the security level ASKED FOR: privacy and authentication are
+// applied when its PRIV / AUTH bits are set, and the emitted msgFlags is this
+// byte with the reportable bit cleared. Passing a request's own msgFlags
+// therefore reproduces the adapter exactly; an originator passes the level it
+// intends to send at.
+//
+// IT VALIDATES NONE OF ITS THREE INPUTS, deliberately and for now: msgID is not
+// range-checked against RFC 3412's 0..2^31-1, userName is not length-checked,
+// and PRIV without AUTH is not refused here (the poll path refuses it inbound in
+// authenticateInbound, and Validate refuses the CONFIGURATION, but this function
+// would encrypt an unauthenticated message if asked). Today its only caller is
+// the adapter, which sources all three from a request the dispatcher already
+// parsed. Deciding what an ORIGINATOR may pass is nl6#98's, not this
+// extraction's — do not read the absence of checks as a statement that none are
+// needed.
+func (s *SNMPServer) wrapScopedPDUInV3MessageWith(scopedPDU []byte, msgID int, msgFlags byte, userName string) ([]byte, error) {
 	if s.v3Config == nil || !s.v3Config.Enabled {
 		return nil, fmt.Errorf("SNMPv3 not configured")
 	}
@@ -96,7 +144,7 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 
 	// Encrypt scoped PDU if privacy is enabled
 	encryptedPDU, privParams := scopedPDU, []byte{}
-	if s.v3Config.PrivProtocol != SNMPV3_PRIV_NONE && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV) != 0 {
+	if s.v3Config.PrivProtocol != SNMPV3_PRIV_NONE && (msgFlags&SNMPV3_MSG_FLAG_PRIV) != 0 {
 		var err error
 		encryptedPDU, privParams, err = s.encryptScopedPDUAt(scopedPDU, boots, engineTime)
 		if err != nil {
@@ -113,12 +161,12 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 	//
 	// Engine time is seconds since this engine booted (RFC 3414 §2.2), not a
 	// Unix epoch: a manager applying the §3.2 window rejects an epoch outright.
-	authenticating := usm.newHash != nil && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_AUTH) != 0
+	authenticating := usm.newHash != nil && (msgFlags&SNMPV3_MSG_FLAG_AUTH) != 0
 	secParams := SNMPv3SecurityParams{
 		AuthoritativeEngineID:    string(usm.engineID),
 		AuthoritativeEngineBoots: boots,
 		AuthoritativeEngineTime:  engineTime,
-		UserName:                 requestMsg.SecurityParams.UserName,
+		UserName:                 userName,
 		// Zeroed placeholder: RFC 3414 §6.3.1 computes the digest over the
 		// whole message with this field present and zero-filled, so it can only
 		// be filled after assembly.
@@ -141,9 +189,9 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 	responseMsg := SNMPv3Message{
 		Version: SNMPV3_VERSION,
 		GlobalData: SNMPv3GlobalData{
-			MsgID:            requestMsg.GlobalData.MsgID,
-			MsgMaxSize:       65507,                                                          // Standard max UDP payload
-			MsgFlags:         requestMsg.GlobalData.MsgFlags &^ byte(SNMPV3_MSG_FLAG_REPORT), // Clear report flag
+			MsgID:            msgID,
+			MsgMaxSize:       65507,                                    // Standard max UDP payload
+			MsgFlags:         msgFlags &^ byte(SNMPV3_MSG_FLAG_REPORT), // Clear report flag
 			MsgSecurityModel: SNMPV3_SECURITY_MODEL_USM,
 		},
 		ScopedPDU: encryptedPDU,
@@ -206,12 +254,33 @@ func (s *SNMPServer) createScopedPDUMulti(oids, values []string, requestMsg *SNM
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
+	return wrapInScopedPDU(s.usmState().engineID, "", pdu), nil
+}
+
+// wrapInScopedPDU builds the RFC 3412 §6 ScopedPDU envelope around an
+// ALREADY-ENCODED PDU:
+//
+//	ScopedPDU ::= SEQUENCE { contextEngineID OCTET STRING,
+//	                         contextName     OCTET STRING,
+//	                         data            ANY }
+//
+// Free and PDU-AGNOSTIC on purpose. The notification path (nl6#98) has to wrap
+// an SNMPv2-Trap-PDU (0xA7), and createScopedPDUMulti structurally cannot carry
+// one: it hardcodes ASN1_GET_RESPONSE, derives its request-id from an inbound
+// PDU, and types its values by OID prefix rather than by Varbind.Type. So the
+// envelope is lifted out rather than the builder generalised, and the pdu bytes
+// are carried through UNTOUCHED — this function encodes no PDU of its own and
+// inspects none of the bytes it is handed.
+//
+// engineID is the raw engine ID OCTETS, never its hex spelling — the nl6#624
+// distinction, which is invisible locally and fatal on the wire.
+func wrapInScopedPDU(engineID []byte, contextName string, pdu []byte) []byte {
 	var scopedContents []byte
-	scopedContents = append(scopedContents, encodeOctetString(string(s.usmState().engineID))...)
-	scopedContents = append(scopedContents, encodeOctetString("")...)
+	scopedContents = append(scopedContents, encodeOctetString(string(engineID))...)
+	scopedContents = append(scopedContents, encodeOctetString(contextName)...)
 	scopedContents = append(scopedContents, pdu...)
 
-	return encodeSequence(scopedContents), nil
+	return encodeSequence(scopedContents)
 }
 
 // createScopedPDU creates the scoped PDU carrying one variable binding.
@@ -325,11 +394,12 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	}
 	key, preIV := usm.privKey[:8], usm.privKey[8:16]
 
-	// The salt is what goes on the wire. `crypto/rand.Read` only errors on a
-	// misconfigured kernel entropy source; a predictable salt is a real
-	// SNMPv3 privacy break, so fail loudly.
+	// The salt is what goes on the wire. usmPrivSaltRead is `crypto/rand.Read`
+	// in production, which only errors on a misconfigured kernel entropy
+	// source; a predictable salt is a real SNMPv3 privacy break, so fail
+	// loudly.
 	salt := make([]byte, 8)
-	if _, err := rand.Read(salt); err != nil {
+	if _, err := usmPrivSaltRead(salt); err != nil {
 		return nil, nil, fmt.Errorf("failed to generate DES salt: %w", err)
 	}
 	iv := make([]byte, 8)
@@ -346,9 +416,9 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	}
 
 	// The IV is filled by crypto/rand above; gosec's flow analysis
-	// doesn't trace the rand.Read fill, so the slice literal here
+	// doesn't trace the usmPrivSaltRead fill, so the slice literal here
 	// trips G407 as if it were hardcoded.
-	// #nosec G407 -- IV is random (see rand.Read above)
+	// #nosec G407 -- IV is random (see usmPrivSaltRead above)
 	mode := cipher.NewCBCEncrypter(block, iv)
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
@@ -390,7 +460,7 @@ func (s *SNMPServer) encryptAES128At(data []byte, boots, engineTime int) ([]byte
 
 	// Last 8 bytes: random salt (privacy parameters)
 	salt := make([]byte, 8)
-	if _, err := rand.Read(salt); err != nil {
+	if _, err := usmPrivSaltRead(salt); err != nil {
 		return nil, nil, fmt.Errorf("failed to generate salt: %v", err)
 	}
 	copy(iv[8:16], salt)
