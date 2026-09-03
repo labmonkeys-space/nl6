@@ -323,6 +323,19 @@ func buildV3EncryptedRequest(tb testing.TB, s *SNMPServer, cipherText, privParam
 // assembleV3 wraps a scopedPduData field (already encoded as SEQUENCE or
 // OCTET STRING) into a full SNMPv3 message.
 func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool) []byte {
+	st := s.usmState()
+	return assembleV3At(s, scopedField, privParams, priv, st.engineBoots, st.engineTimeSeconds())
+}
+
+// assembleV3At declares the boots and time the caller passes in.
+//
+// A caller that ENCRYPTS must use this and pass the same pair to both, because
+// the AES IV is built from the declared values: sampling the clock once for the
+// ciphertext and again for the envelope makes them disagree whenever the two
+// calls straddle a second boundary, and the request then fails to decrypt. That
+// is the same defect nl6#624 fixed in the response path, and it is just as easy
+// to write in a test helper.
+func assembleV3At(s *SNMPServer, scopedField []byte, privParams []byte, priv bool, boots, engineTime int) []byte {
 	// The AUTH flag is set only when this server actually authenticates.
 	// It used to be set unconditionally, which claimed a security level a
 	// noAuthNoPriv device does not support — accepted while nothing verified
@@ -356,8 +369,8 @@ func assembleV3(s *SNMPServer, scopedField []byte, privParams []byte, priv bool)
 	// §3.2 time window.
 	var usm []byte
 	usm = append(usm, encodeOctetString(string(st.engineID))...)
-	usm = append(usm, encodeInteger(st.engineBoots)...)
-	usm = append(usm, encodeInteger(st.engineTimeSeconds())...)
+	usm = append(usm, encodeInteger(boots)...)
+	usm = append(usm, encodeInteger(engineTime)...)
 	usm = append(usm, encodeOctetString(s.v3Config.Username)...)
 	usm = append(usm, encodeOctetString(string(usmZeroedAuthParams()))...)
 	usm = append(usm, encodeOctetString(string(privParams))...)
@@ -395,7 +408,15 @@ func decodeV3ResponsePossiblyEncrypted(t *testing.T, s *SNMPServer, resp []byte,
 	}
 	scoped := msg.ScopedPDU
 	if encrypted {
-		dec, err := s.decryptScopedPDU(scoped, msg.SecurityParams.PrivParams)
+		// DECRYPT WITH WHAT THE RESPONSE ADVERTISES, which is all a real manager
+		// has (RFC 3826 §3.1.2.1). This used to call decryptScopedPDU, which
+		// reads the server's own live clock — so both sides sampled
+		// independently and agreed by accident, and an IV built from a
+		// different engine time than the message advertised was invisible to
+		// every authPriv test in the package. With the advertised values, each
+		// of those rows becomes an assertion that the two agree.
+		dec, err := s.decryptScopedPDUAt(scoped, msg.SecurityParams.PrivParams,
+			msg.SecurityParams.AuthoritativeEngineBoots, msg.SecurityParams.AuthoritativeEngineTime)
 		if err != nil {
 			t.Fatalf("decrypt response: %v", err)
 		}
@@ -502,11 +523,14 @@ func v3RequestWithMalformedOID(t *testing.T, s *SNMPServer) []byte {
 // key material and wraps them as an authPriv request.
 func v3PrivRequestFromScoped(t *testing.T, s *SNMPServer, scoped []byte) []byte {
 	t.Helper()
-	cipherText, privParams, err := s.encryptScopedPDU(encodeSequence(scoped), v3PrivSeed(s))
+	// ONE sample for the ciphertext and the envelope; see assembleV3At.
+	st := s.usmState()
+	boots, engineTime := st.engineBoots, st.engineTimeSeconds()
+	cipherText, privParams, err := s.encryptScopedPDUAt(encodeSequence(scoped), boots, engineTime)
 	if err != nil {
-		t.Fatalf("encryptScopedPDU: %v", err)
+		t.Fatalf("encryptScopedPDUAt: %v", err)
 	}
-	return buildV3EncryptedRequest(t, s, cipherText, privParams)
+	return assembleV3At(s, encodeOctetString(string(cipherText)), privParams, true, boots, engineTime)
 }
 
 // TestV3MalformedOIDIsDiscarded drives a malformed name through the

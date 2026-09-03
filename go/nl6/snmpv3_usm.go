@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -37,9 +38,10 @@ import (
 // they had to be fixed together: a manager localizes its key with the engine ID
 // it RECEIVED, so correcting the digest alone would still have failed.
 
-// usmAuthKeyLen is the digest length each auth protocol localizes to, and
-// usmAuthParamsLen the truncation RFC 3414 puts on the wire. Both HMAC-MD5-96
-// and HMAC-SHA-96 truncate to 12 octets; only the key length differs.
+// usmAuthParamsLen is the truncation RFC 3414 puts on the wire. Both
+// HMAC-MD5-96 and HMAC-SHA-96 truncate to 12 octets; only the localized key
+// length differs (16 for MD5, 20 for SHA1), and that is read from the hash
+// rather than named by a constant.
 const usmAuthParamsLen = 12
 
 // usmHashFor returns the hash constructor for an auth protocol, and whether the
@@ -70,6 +72,26 @@ func usmPasswordToKey(password string, newHash func() hash.Hash) []byte {
 	if password == "" || newHash == nil {
 		return nil
 	}
+	// SHARED ACROSS DEVICES, which is the reason this step is split from
+	// localization at all. Ku depends only on the password and the hash, and
+	// the expansion is a megabyte of hashing — measured at ~2.1 ms/op. Held
+	// per device it ran once per SNMPServer, twice when privacy is on, so a
+	// 30,000-device v3 fleet spent roughly two CPU-minutes on an intermediate
+	// that is identical for every one of them, inline on the shared UDP
+	// handler at each device's first poll. The comment above this function
+	// already claimed a fleet computed it once; now that is true.
+	//
+	// Keyed on the hash's OUTPUT SIZE as well as the password: two protocols
+	// with one password must not share an entry, and size distinguishes the
+	// two RFC 3414 protocols without needing a name.
+	type kuKey struct {
+		password string
+		hashSize int
+	}
+	key := kuKey{password, newHash().Size()}
+	if cached, ok := usmKuCache.Load(key); ok {
+		return append([]byte(nil), cached.([]byte)...)
+	}
 	const expandTo = 1048576 // RFC 3414 §A.2: exactly 2^20 octets
 	pw := []byte(password)
 	h := newHash()
@@ -80,8 +102,17 @@ func usmPasswordToKey(password string, newHash func() hash.Hash) []byte {
 		}
 		h.Write(buf)
 	}
-	return h.Sum(nil)
+	ku := h.Sum(nil)
+	// A copy is stored and a copy is returned, so a caller that localizes in
+	// place cannot corrupt the shared entry.
+	usmKuCache.Store(key, append([]byte(nil), ku...))
+	return ku
 }
+
+// usmKuCache holds the password-to-key intermediates. Unbounded, which is safe
+// because the key space is the set of CONFIGURED passwords: a fleet has a
+// handful, and nothing an SNMP peer sends can add an entry.
+var usmKuCache sync.Map
 
 // usmLocalizeKey is RFC 3414 §A.2's localization: H(Ku || engineID || Ku).
 //
@@ -119,43 +150,108 @@ func usmAuthDigest(wholeMessage, localizedAuthKey []byte, newHash func() hash.Ha
 // be computed over a message of final length.
 func usmZeroedAuthParams() []byte { return make([]byte, usmAuthParamsLen) }
 
-// substituteAuthParams overwrites the zeroed auth field in an assembled message
-// with the computed digest.
+// locateAuthParams finds msgAuthenticationParameters in an assembled SNMPv3
+// message by WALKING ITS STRUCTURE, returning the offset and length of the
+// field's content.
 //
-// It locates the field by searching for its zeroed form rather than tracking an
-// offset through the encoder, and REFUSES when the pattern is not unique. An
-// offset threaded through four encoding layers is the kind of thing that goes
-// silently wrong on an unrelated edit; an ambiguous match here means the
-// message shape changed and the caller must not ship a message whose digest
-// might cover the wrong bytes.
+// IT USED TO BE A BYTE SEARCH, AND THAT WAS A REACHABLE DEFECT rather than a
+// theoretical one. The needle `04 0C` followed by twelve zeros is exactly how
+// an OCTET STRING value of twelve zero bytes encodes, so a device serving such
+// a value made the search ambiguous, made substitution refuse, and made the
+// whole response fail to assemble: an authNoPriv GET of that OID returned
+// NOTHING. The comment that argued a search was safer than tracking an offset
+// had the trade backwards — an offset can go stale, but a search can be
+// defeated by the message's own data, and only one of those is reachable by
+// an operator's resource file.
+//
+// A structural walk has neither problem. Nothing here depends on the message's
+// byte content, only on its shape:
+//
+//	SEQUENCE { version INTEGER, msgGlobalData SEQUENCE,
+//	           msgSecurityParameters OCTET STRING {
+//	               SEQUENCE { engineID OCTET STRING, boots INTEGER,
+//	                          time INTEGER, userName OCTET STRING,
+//	                          msgAuthenticationParameters OCTET STRING, ... } }, ... }
+func locateAuthParams(message []byte) (offset, length int, ok bool) {
+	// readTLV returns the content bounds of the TLV at pos and the position
+	// just past it. Every bound is written `n > len(buf)-start` rather than
+	// `start+n > len(buf)` because parseLength accepts a four-octet long form
+	// whose addition can wrap on a 32-bit build (the nl6#537 rule).
+	readTLV := func(buf []byte, pos int) (tag byte, start, end, next int, ok bool) {
+		if pos < 0 || pos >= len(buf) {
+			return 0, 0, 0, 0, false
+		}
+		tag = buf[pos]
+		n, contentStart := parseLength(buf, pos+1)
+		if n < 0 || contentStart < 0 || contentStart > len(buf) || n > len(buf)-contentStart {
+			return 0, 0, 0, 0, false
+		}
+		return tag, contentStart, contentStart + n, contentStart + n, true
+	}
+
+	_, start, end, _, ok := readTLV(message, 0)
+	if !ok {
+		return 0, 0, false
+	}
+	pos := start
+	// version INTEGER, then msgGlobalData SEQUENCE.
+	for i := 0; i < 2; i++ {
+		_, _, _, next, ok := readTLV(message[:end], pos)
+		if !ok {
+			return 0, 0, false
+		}
+		pos = next
+	}
+	// msgSecurityParameters OCTET STRING, whose content is the USM SEQUENCE.
+	_, secStart, secEnd, _, ok := readTLV(message[:end], pos)
+	if !ok {
+		return 0, 0, false
+	}
+	_, usmStart, usmEnd, _, ok := readTLV(message[:secEnd], secStart)
+	if !ok {
+		return 0, 0, false
+	}
+	// engineID, boots, time, userName — then the auth field.
+	pos = usmStart
+	for i := 0; i < 4; i++ {
+		_, _, _, next, ok := readTLV(message[:usmEnd], pos)
+		if !ok {
+			return 0, 0, false
+		}
+		pos = next
+	}
+	tag, authStart, authEnd, _, ok := readTLV(message[:usmEnd], pos)
+	if !ok || tag != ASN1_OCTET_STRING {
+		return 0, 0, false
+	}
+	return authStart, authEnd - authStart, true
+}
+
+// substituteAuthParams overwrites the auth field in an assembled message with
+// the computed digest, leaving every other octet untouched.
 func substituteAuthParams(message, digest []byte) ([]byte, error) {
 	if len(digest) != usmAuthParamsLen {
 		return nil, fmt.Errorf("auth digest is %d octets, want %d", len(digest), usmAuthParamsLen)
 	}
-	// The field as encodeOctetString writes it: tag, length, then the zeros.
-	needle := append([]byte{0x04, usmAuthParamsLen}, usmZeroedAuthParams()...)
-	first := bytes.Index(message, needle)
-	if first < 0 {
-		return nil, fmt.Errorf("zeroed msgAuthenticationParameters not found in the assembled message")
+	off, n, ok := locateAuthParams(message)
+	if !ok {
+		return nil, fmt.Errorf("could not locate msgAuthenticationParameters in the assembled message")
 	}
-	if bytes.Contains(message[first+1:], needle) {
-		return nil, fmt.Errorf("zeroed msgAuthenticationParameters is ambiguous: the pattern occurs " +
-			"more than once, so the digest could cover the wrong octets")
+	if n != usmAuthParamsLen {
+		return nil, fmt.Errorf("msgAuthenticationParameters is %d octets, want %d: the placeholder must "+
+			"be written at its final length so the digest covers a message of the right size", n, usmAuthParamsLen)
 	}
 	out := make([]byte, len(message))
 	copy(out, message)
-	copy(out[first+2:], digest)
+	copy(out[off:], digest)
 	return out, nil
 }
 
 // usmVerifyAuthDigest checks an inbound message's digest by recomputing it over
 // the message with the auth field re-zeroed.
 //
-// The field is located by the CLAIMED digest, never by searching for zeros: an
-// authenticated inbound message carries a real digest there, so a zero-pattern
-// search would match some other twelve zero octets in the message and verify a
-// digest over the wrong bytes. An ambiguous claimed value is refused for the
-// same reason substituteAuthParams refuses one.
+// The field is located STRUCTURALLY, not by searching for the claimed value,
+// for the reason locateAuthParams documents.
 //
 // Constant-time compare, because a timing oracle on a digest comparison is the
 // classic USM implementation mistake even where the simulator's threat model is
@@ -164,14 +260,19 @@ func usmVerifyAuthDigest(wholeMessage, claimed, localizedAuthKey []byte, newHash
 	if len(claimed) != usmAuthParamsLen || len(localizedAuthKey) == 0 || newHash == nil {
 		return false
 	}
-	needle := append([]byte{0x04, usmAuthParamsLen}, claimed...)
-	idx := bytes.Index(wholeMessage, needle)
-	if idx < 0 || bytes.Contains(wholeMessage[idx+1:], needle) {
+	off, n, ok := locateAuthParams(wholeMessage)
+	if !ok || n != usmAuthParamsLen {
+		return false
+	}
+	// The located field must BE the claimed value, so a message that carries
+	// its digest somewhere else is refused rather than verified against bytes
+	// the caller never saw.
+	if !bytes.Equal(wholeMessage[off:off+n], claimed) {
 		return false
 	}
 	zeroed := make([]byte, len(wholeMessage))
 	copy(zeroed, wholeMessage)
-	copy(zeroed[idx+2:], usmZeroedAuthParams())
+	copy(zeroed[off:], usmZeroedAuthParams())
 
 	want := usmAuthDigest(zeroed, localizedAuthKey, newHash)
 	return want != nil && hmac.Equal(want, claimed)
@@ -197,7 +298,11 @@ func parseEngineIDOctets(configured string) []byte {
 	if b, err := hex.DecodeString(s); err == nil {
 		return b
 	}
-	return []byte(configured)
+	// Not hex at all: use the trimmed literal. Returning the ORIGINAL string
+	// here put back the "0x" prefix and the surrounding whitespace this
+	// function had just removed, so the octets depended on formatting that was
+	// meant to be insignificant.
+	return []byte(strings.TrimSpace(configured))
 }
 
 // ── per-server USM state ────────────────────────────────────────────────────
@@ -233,6 +338,18 @@ func (s *SNMPServer) usmState() *usmServerState {
 			return
 		}
 		s.usm.engineID = parseEngineIDOctets(s.v3Config.EngineID)
+		if len(s.usm.engineID) == 0 {
+			// A zero-length msgAuthoritativeEngineID is not a legal engine
+			// identity (RFC 3411 wants 5-32 octets) and, worse, it is what
+			// a manager keys its localized key on — so discovery would
+			// hand out an identity that cannot be localized against.
+			// nl6 substitutes its documented default rather than emitting
+			// nothing. Lengths outside 5..32 are left alone: nl6's own
+			// fixtures use shorter ones and refusing them would break
+			// working configurations for a conformance point no manager
+			// enforces.
+			s.usm.engineID = parseEngineIDOctets(defaultSNMPv3EngineID)
+		}
 		newHash, authenticates := usmHashFor(s.v3Config.AuthProtocol)
 		if !authenticates {
 			return
@@ -272,6 +389,14 @@ func (u *usmServerState) withinTimeWindow(boots, engineTime int) bool {
 	if boots != u.engineBoots {
 		return false
 	}
+	// RANGE-CHECK BEFORE NEGATING. msgAuthoritativeEngineTime is an unsigned
+	// 32-bit value in RFC 3414 §2.2, so anything outside that range is not a
+	// time at all — and negating math.MinInt is a no-op, so a declared
+	// MinInt sailed through the |delta| <= 150 test below on a value that is
+	// as far from the window as an integer can be.
+	if engineTime < 0 || engineTime > math.MaxUint32 {
+		return false
+	}
 	delta := engineTime - u.engineTimeSeconds()
 	if delta < 0 {
 		delta = -delta
@@ -296,6 +421,12 @@ func (u *usmServerState) withinTimeWindow(boots, engineTime int) bool {
 // device would be nl6 inventing a policy the RFC does not state.
 func (s *SNMPServer) authenticateInbound(requestData []byte, msg *SNMPv3Message) (string, bool) {
 	if msg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_AUTH == 0 {
+		// PRIVACY WITHOUT AUTHENTICATION IS NOT A SECURITY LEVEL (RFC 3414
+		// §3.2 step 5). Letting it through would decrypt using boots and time
+		// this engine has not verified, which is the input to the AES IV.
+		if msg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV != 0 {
+			return oidUsmStatsUnsupportedSecLevels, false
+		}
 		return "", true
 	}
 	usm := s.usmState()

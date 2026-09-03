@@ -42,8 +42,12 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 
 	// Validate credentials (discovery requests are allowed through)
 	if !s.validateSNMPv3Credentials(v3Msg) {
-		// log.Printf("SNMPv3 authentication failed")
-		return []byte{}
+		// RFC 3414 §3.2 step 4. This used to be a silent drop, which made a
+		// wrong USER indistinguishable from an unreachable device while a
+		// wrong DIGEST got a Report — so a collector's wrong-credential
+		// handling could only be half tested. The Report is unauthenticated:
+		// there is no user, so there is no key to sign with.
+		return s.createSNMPv3ReportResponse(oidUsmStatsUnknownUserNames, v3Msg)
 	}
 
 	if isDiscovery {
@@ -56,7 +60,17 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 	// digest does not verify must not have its ciphertext fed to a cipher, and
 	// its declared engine time must not be trusted for the IV.
 	if reportOID, ok := s.authenticateInbound(requestData, v3Msg); !ok {
-		return s.createSNMPv3ReportResponse(reportOID, v3Msg)
+		// A notInTimeWindows Report is SIGNED, and that is what makes engine
+		// time recoverable: the manager's key is right and only its clock
+		// estimate is stale, so RFC 3414 §3.2 step 7 has this Report generated
+		// at authNoPriv precisely so the manager can trust the (boots, time) it
+		// carries and retry. Unauthenticated, a strict manager discards it and
+		// the device is permanently unreachable to it rather than transiently.
+		//
+		// A wrongDigests Report is NOT signed, deliberately: the peer's key
+		// disagrees with ours, so a signature it cannot verify adds nothing.
+		return s.createSNMPv3ReportResponseSigned(reportOID, v3Msg,
+			reportOID == oidUsmStatsNotInTimeWindows)
 	}
 
 	// log.Printf("SNMPv3: Authenticated user: %s, flags: 0x%02X",
@@ -418,6 +432,7 @@ func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
 const (
 	oidUsmStatsUnsupportedSecLevels = ".1.3.6.1.6.3.15.1.1.1.0"
 	oidUsmStatsNotInTimeWindows     = ".1.3.6.1.6.3.15.1.1.2.0"
+	oidUsmStatsUnknownUserNames     = ".1.3.6.1.6.3.15.1.1.3.0"
 	oidUsmStatsUnknownEngineIDs     = ".1.3.6.1.6.3.15.1.1.4.0"
 	oidUsmStatsWrongDigests         = ".1.3.6.1.6.3.15.1.1.5.0"
 	oidUsmStatsDecryptionErrors     = ".1.3.6.1.6.3.15.1.1.6.0"
@@ -445,6 +460,13 @@ func (s *SNMPServer) createSNMPv3DiscoveryResponse(requestMsg *SNMPv3Message) []
 // failure the real one is inside the ciphertext. msgID is echoed, which is
 // what RFC 3412 §7.2 matches a Report on.
 func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SNMPv3Message) []byte {
+	return s.createSNMPv3ReportResponseSigned(reportOID, requestMsg, false)
+}
+
+// createSNMPv3ReportResponseSigned builds a Report, optionally authenticated.
+//
+// See the notInTimeWindows call site for why only that one is signed.
+func (s *SNMPServer) createSNMPv3ReportResponseSigned(reportOID string, requestMsg *SNMPv3Message, sign bool) []byte {
 	if s.v3Config == nil || !s.v3Config.Enabled {
 		return []byte{}
 	}
@@ -472,6 +494,14 @@ func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SN
 		AuthParams:               []byte{},
 		PrivParams:               []byte{},
 	}
+	sign = sign && u.newHash != nil && len(u.authKey) > 0
+	if sign {
+		// The signed Report names the user it answers, since a manager matches
+		// it against the request it sent, and carries the zeroed placeholder at
+		// its final length so the digest covers a message of the right size.
+		secParams.UserName = requestMsg.SecurityParams.UserName
+		secParams.AuthParams = usmZeroedAuthParams()
+	}
 
 	// Encode USM parameters
 	usmParams, err := s.encodeUSMSecurityParameters(&secParams)
@@ -486,7 +516,7 @@ func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SN
 		GlobalData: SNMPv3GlobalData{
 			MsgID:            requestMsg.GlobalData.MsgID,
 			MsgMaxSize:       65507,
-			MsgFlags:         SNMPV3_MSG_FLAG_REPORT, // Set report flag
+			MsgFlags:         reportFlags(sign),
 			MsgSecurityModel: SNMPV3_SECURITY_MODEL_USM,
 		},
 		ScopedPDU: scopedPDU,
@@ -499,7 +529,24 @@ func (s *SNMPServer) createSNMPv3ReportResponse(reportOID string, requestMsg *SN
 		return []byte{}
 	}
 
+	if sign {
+		signed, err := substituteAuthParams(msgBytes, usmAuthDigest(msgBytes, u.authKey, u.newHash))
+		if err != nil {
+			return []byte{}
+		}
+		msgBytes = signed
+	}
+
 	return msgBytes
+}
+
+// reportFlags is the msgFlags of a Report: reportable is never set on one, and
+// the auth bit is set only when the Report is actually signed.
+func reportFlags(sign bool) byte {
+	if sign {
+		return SNMPV3_MSG_FLAG_REPORT | SNMPV3_MSG_FLAG_AUTH
+	}
+	return SNMPV3_MSG_FLAG_REPORT
 }
 
 // createDiscoveryScopedPDU creates a scoped PDU for discovery responses

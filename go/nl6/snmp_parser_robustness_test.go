@@ -170,9 +170,15 @@ func TestSNMPv3Config_Validate(t *testing.T) {
 		{"nil config", nil, false},
 		{"disabled", &SNMPv3Config{Enabled: false}, false},
 		{"privacy off, no password", &SNMPv3Config{Enabled: true, PrivProtocol: SNMPV3_PRIV_NONE}, false},
-		{"privacy on, priv password", &SNMPv3Config{Enabled: true, PrivProtocol: SNMPV3_PRIV_AES128, PrivPassword: "s3cret"}, false},
-		{"privacy on, auth password only", &SNMPv3Config{Enabled: true, PrivProtocol: SNMPV3_PRIV_DES, Password: "s3cret"}, false},
-		{"privacy on, no password", &SNMPv3Config{Enabled: true, PrivProtocol: SNMPV3_PRIV_AES128}, true},
+		{"privacy on, priv password", &SNMPv3Config{Enabled: true, AuthProtocol: SNMPV3_AUTH_MD5, PrivProtocol: SNMPV3_PRIV_AES128, PrivPassword: "s3cret"}, false},
+		{"privacy on, auth password only", &SNMPv3Config{Enabled: true, AuthProtocol: SNMPV3_AUTH_SHA1, PrivProtocol: SNMPV3_PRIV_DES, Password: "s3cret"}, false},
+		{"privacy on, no password", &SNMPv3Config{Enabled: true, AuthProtocol: SNMPV3_AUTH_MD5, PrivProtocol: SNMPV3_PRIV_AES128}, true},
+		// nl6#624: USM defines no privacy-without-authentication level, and the
+		// privacy key is localized with the auth protocol's hash — so with no
+		// auth protocol there is no key. This used to be accepted at startup
+		// and then fail on every request with "no localized key is available",
+		// which tells the operator nothing about what to change.
+		{"privacy on, no auth protocol", &SNMPv3Config{Enabled: true, AuthProtocol: SNMPV3_AUTH_NONE, PrivProtocol: SNMPV3_PRIV_DES, Password: "s3cret"}, true},
 	}
 
 	for _, tt := range tests {

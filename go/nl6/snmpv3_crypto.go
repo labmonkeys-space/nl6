@@ -36,9 +36,25 @@ func (c *SNMPv3Config) Validate() error {
 		return nil
 	}
 
-	// Mirror generateDESKey's fallback: PrivPassword when set, else Password.
-	// Checking only PrivPassword would reject the common config that carries
-	// one password for both auth and privacy.
+	// PRIVACY REQUIRES AUTHENTICATION, and this is a real behaviour change
+	// (nl6#624). USM defines no privacy-without-authentication security level,
+	// and since nl6#624 the privacy key is localized with the AUTH protocol's
+	// hash, so with no auth protocol there is no hash and no key. That
+	// combination used to be accepted and to encrypt under a key derived with
+	// a hardcoded hash; it would now be accepted at startup and then fail on
+	// every single request with "no localized key is available", which is the
+	// worst of both. Refusing it here turns a per-request runtime failure into
+	// one startup message that says what to change.
+	if c.AuthProtocol == SNMPV3_AUTH_NONE {
+		return fmt.Errorf("snmpv3: privacy protocol %d requires an authentication protocol "+
+			"(set -snmpv3-auth md5|sha1, or \"auth_protocol\"): USM defines no "+
+			"privacy-without-authentication security level, and the privacy key is derived "+
+			"with the authentication protocol's hash (RFC 3414 §2.6)", c.PrivProtocol)
+	}
+
+	// The privacy password falls back to the auth password, so checking only
+	// PrivPassword would reject the common config that carries one password
+	// for both. usmState applies the same fallback.
 	if c.PrivPassword == "" && c.Password == "" {
 		return fmt.Errorf("snmpv3: privacy protocol %d requires a non-empty password (set \"password\" or \"priv_password\")", c.PrivProtocol)
 	}
@@ -71,11 +87,18 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 		return nil, fmt.Errorf("SNMPv3 not configured")
 	}
 
+	// ONE clock sample for the whole message. The IV and the advertised
+	// msgAuthoritativeEngineTime must be the same value, and reading the clock
+	// on each side made them differ whenever assembly crossed a second
+	// boundary — see encryptScopedPDUAt.
+	usm := s.usmState()
+	boots, engineTime := usm.engineBoots, usm.engineTimeSeconds()
+
 	// Encrypt scoped PDU if privacy is enabled
 	encryptedPDU, privParams := scopedPDU, []byte{}
 	if s.v3Config.PrivProtocol != SNMPV3_PRIV_NONE && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_PRIV) != 0 {
 		var err error
-		encryptedPDU, privParams, err = s.encryptScopedPDU(scopedPDU, requestMsg)
+		encryptedPDU, privParams, err = s.encryptScopedPDUAt(scopedPDU, boots, engineTime)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt scoped PDU: %v", err)
 		}
@@ -90,12 +113,11 @@ func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMP
 	//
 	// Engine time is seconds since this engine booted (RFC 3414 §2.2), not a
 	// Unix epoch: a manager applying the §3.2 window rejects an epoch outright.
-	usm := s.usmState()
 	authenticating := usm.newHash != nil && (requestMsg.GlobalData.MsgFlags&SNMPV3_MSG_FLAG_AUTH) != 0
 	secParams := SNMPv3SecurityParams{
 		AuthoritativeEngineID:    string(usm.engineID),
-		AuthoritativeEngineBoots: usm.engineBoots,
-		AuthoritativeEngineTime:  usm.engineTimeSeconds(),
+		AuthoritativeEngineBoots: boots,
+		AuthoritativeEngineTime:  engineTime,
 		UserName:                 requestMsg.SecurityParams.UserName,
 		// Zeroed placeholder: RFC 3414 §6.3.1 computes the digest over the
 		// whole message with this field present and zero-filled, so it can only
@@ -259,12 +281,29 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 
 // encryptScopedPDU encrypts the scoped PDU using the configured privacy protocol
 func (s *SNMPServer) encryptScopedPDU(scopedPDU []byte, requestMsg *SNMPv3Message) ([]byte, []byte, error) {
+	u := s.usmState()
+	return s.encryptScopedPDUAt(scopedPDU, u.engineBoots, u.engineTimeSeconds())
+}
+
+// encryptScopedPDUAt encrypts against the engine boots and time the message
+// WILL ADVERTISE, which the caller passes in rather than each side reading the
+// clock for itself.
+//
+// THE TWO READS HAD TO BECOME ONE. engineTimeSeconds() truncates to whole
+// seconds, so when a response straddled a second boundary between the
+// encryption and the assembly of msgSecurityParameters, the IV was built from
+// T while the message advertised T+1. A peer building the IV per RFC 3826
+// §3.1.2.1 from the values nl6 itself sent then decrypted garbage —
+// intermittently, at a rate set by how long assembly takes. That is the exact
+// defect class nl6#624 exists to remove, so leaving two reads in place would
+// have reintroduced it in a form far harder to see than the original.
+func (s *SNMPServer) encryptScopedPDUAt(scopedPDU []byte, boots, engineTime int) ([]byte, []byte, error) {
 	// Encrypt based on the configured privacy protocol
 	switch s.v3Config.PrivProtocol {
 	case SNMPV3_PRIV_DES:
 		return s.encryptDES(scopedPDU)
 	case SNMPV3_PRIV_AES128:
-		return s.encryptAES128(scopedPDU)
+		return s.encryptAES128At(scopedPDU, boots, engineTime)
 	default:
 		return nil, nil, fmt.Errorf("unsupported privacy protocol: %d", s.v3Config.PrivProtocol)
 	}
@@ -318,8 +357,9 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	return encrypted, salt, nil
 }
 
-// encryptAES128 encrypts data using AES-128-CFB
-func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
+// encryptAES128At builds the RFC 3826 §3.1.2.1 IV from the boots and time the
+// message advertises. See encryptScopedPDUAt for why they are passed in.
+func (s *SNMPServer) encryptAES128At(data []byte, boots, engineTime int) ([]byte, []byte, error) {
 	// The localized PRIVACY key, derived with the AUTH protocol's hash from the
 	// privacy password (nl6#624). It was the auth password hashed with SHA1
 	// whatever the configuration said, so a conforming manager derived a
@@ -345,7 +385,6 @@ func (s *SNMPServer) encryptAES128(data []byte) ([]byte, []byte, error) {
 	// (RFC 3826 §3.1.2.1). Both were hardcoded before nl6#624, against a
 	// msgAuthoritativeEngineTime that said something else, so a peer building
 	// the IV from the values nl6 itself sent decrypted garbage.
-	boots, engineTime := usm.engineBoots, usm.engineTimeSeconds()
 	iv[0], iv[1], iv[2], iv[3] = byte(boots>>24), byte(boots>>16), byte(boots>>8), byte(boots)
 	iv[4], iv[5], iv[6], iv[7] = byte(engineTime>>24), byte(engineTime>>16), byte(engineTime>>8), byte(engineTime)
 

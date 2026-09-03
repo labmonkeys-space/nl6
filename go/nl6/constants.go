@@ -76,3 +76,10 @@ var manager *SimulatorManager
 // (RFC 3412 §6). It carries a usmStats counter naming why a message was
 // refused; nl6#624 added the wrong-digest and time-window reasons.
 const v3ReportPDUTag = 0xA8
+
+// defaultSNMPv3EngineID is the engine identity nl6 substitutes when one is
+// configured empty (nl6#624). RFC 3411 requires 5-32 octets, and a zero-length
+// msgAuthoritativeEngineID is what a manager would localize its key against —
+// so emitting nothing makes every authenticated exchange fail. It is the value
+// the flag help and the docs already use as their example.
+const defaultSNMPv3EngineID = "800000090300AABBCCDD"

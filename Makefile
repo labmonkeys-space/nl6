@@ -297,6 +297,22 @@ else
 	cd $(GO_DIR) && go test -race ./...
 endif
 
+## test-interop: Poll nl6's SNMPv3 stack with net-snmp (needs snmpget on PATH)
+##
+## THE ONLY CHECK THAT IS NOT nl6 READING ITS OWN OUTPUT. Every other SNMPv3
+## test in the package parses nl6's bytes with nl6's parser, so a shared
+## misunderstanding of RFC 3414 passes all of them — which is exactly how a v3
+## stack that computed no digest stayed green for years (nl6#624/#625).
+## net-snmp derives its own key, verifies our digest and builds its own IV.
+test-interop: check-go
+	@command -v snmpget >/dev/null 2>&1 || { \
+	  echo "snmpget not found. Install net-snmp:"; \
+	  echo "  Debian/Ubuntu: sudo apt-get install -y snmp"; \
+	  echo "  macOS:         it ships with the system, or 'brew install net-snmp'"; \
+	  exit 1; }
+	@snmpget --version 2>&1 | head -1
+	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ -run TestUSMInterop -count=1 -v
+
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime
 	cd $(WEB_DIR) && for t in *.test.js; do \

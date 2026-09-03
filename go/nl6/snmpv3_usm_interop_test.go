@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -37,11 +38,19 @@ import (
 // NL6_SNMP_INTEROP=1 makes the skip an explicit choice rather than a silent one.
 // Run it with:
 //
-//	NL6_SNMP_INTEROP=1 go test ./nl6/ -run TestUSMInteropWithNetSNMP -v
+//	NL6_SNMP_INTEROP=1 go test ./nl6/ -run TestUSMInterop -v
 //
-// RECORDED RESULT (2026-09-03, net-snmp 5.6.2.1, darwin/arm64): all six rows
+// TestUSMInterop, not TestUSMInteropWithNetSNMP: the shorter pattern also runs
+// the wrong-password control, without which six successful polls prove
+// reachability rather than authentication.
+//
+// RECORDED RESULT (2026-09-03, net-snmp 5.6.2.1, darwin/arm64): all SEVEN rows
 // pass — noAuthNoPriv, authNoPriv under MD5 and SHA1, and authPriv under
-// MD5+DES, MD5+AES128 and SHA1+AES128 — plus the wrong-password control.
+// MD5+DES, SHA1+DES, MD5+AES128 and SHA1+AES128 — plus the wrong-password
+// control. Every combination of the two auth protocols with the two privacy
+// protocols is covered, which matters because the localized privacy key is 16
+// octets under MD5 and 20 under SHA1 while both consumers slice it at fixed
+// indices.
 //
 // ITS FIRST RUN FAILED ALL SIX WITH THE REST OF THE PACKAGE GREEN, which is the
 // whole argument for the file. nl6#624 corrected the engine ID in
@@ -59,8 +68,10 @@ import (
 // It is the dispatcher under test, reached the way a real manager reaches it,
 // rather than a helper that calls the encoder directly: the seam nl6#527 broke
 // was exactly a dispatcher-versus-direct-call difference.
-func v3InteropListener(t *testing.T, s *SNMPServer) (port int, stop func()) {
+func v3InteropListener(t *testing.T, s *SNMPServer) (port int, stop func(), lastResponse func() []byte) {
 	t.Helper()
+	var mu sync.Mutex
+	var last []byte
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -87,14 +98,21 @@ func v3InteropListener(t *testing.T, s *SNMPServer) (port int, stop func()) {
 			}
 			req := append([]byte(nil), buf[:n]...)
 			if resp := s.handleSNMPv3Request(req); len(resp) > 0 {
+				mu.Lock()
+				last = append([]byte(nil), resp...)
+				mu.Unlock()
 				_, _ = conn.WriteToUDP(resp, addr)
 			}
 		}
 	}()
 	return conn.LocalAddr().(*net.UDPAddr).Port, func() {
-		_ = conn.Close()
-		<-done
-	}
+			_ = conn.Close()
+			<-done
+		}, func() []byte {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]byte(nil), last...)
+		}
 }
 
 func TestUSMInteropWithNetSNMP(t *testing.T) {
@@ -110,18 +128,19 @@ func TestUSMInteropWithNetSNMP(t *testing.T) {
 	const probeValue = "nl6 usm interop probe"
 
 	rows := []struct {
-		name      string
-		level     string
-		auth      int
-		authName  string
-		priv      int
-		privName  string
-		expectErr bool
+		name     string
+		level    string
+		auth     int
+		authName string
+		priv     int
+		privName string
 	}{
 		{name: "noAuthNoPriv", level: "noAuthNoPriv"},
 		{name: "authNoPriv/md5", level: "authNoPriv", auth: SNMPV3_AUTH_MD5, authName: "MD5"},
 		{name: "authNoPriv/sha1", level: "authNoPriv", auth: SNMPV3_AUTH_SHA1, authName: "SHA"},
 		{name: "authPriv/md5+des", level: "authPriv", auth: SNMPV3_AUTH_MD5, authName: "MD5",
+			priv: SNMPV3_PRIV_DES, privName: "DES"},
+		{name: "authPriv/sha1+des", level: "authPriv", auth: SNMPV3_AUTH_SHA1, authName: "SHA",
 			priv: SNMPV3_PRIV_DES, privName: "DES"},
 		{name: "authPriv/md5+aes", level: "authPriv", auth: SNMPV3_AUTH_MD5, authName: "MD5",
 			priv: SNMPV3_PRIV_AES128, privName: "AES"},
@@ -137,7 +156,7 @@ func TestUSMInteropWithNetSNMP(t *testing.T) {
 			s.v3Config.Password = "authpassword"
 			s.v3Config.PrivPassword = "privpassword"
 
-			port, stop := v3InteropListener(t, s)
+			port, stop, _ := v3InteropListener(t, s)
 			defer stop()
 
 			args := []string{"-v3", "-l", r.level, "-u", s.v3Config.Username, "-t", "3", "-r", "0"}
@@ -184,7 +203,7 @@ func TestUSMInteropRejectsAWrongPassword(t *testing.T) {
 	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
 	s.v3Config.Password = "authpassword"
 
-	port, stop := v3InteropListener(t, s)
+	port, stop, lastResponse := v3InteropListener(t, s)
 	defer stop()
 
 	out, err := exec.Command(snmpget, "-v3", "-l", "authNoPriv", "-u", s.v3Config.Username,
@@ -194,8 +213,22 @@ func TestUSMInteropRejectsAWrongPassword(t *testing.T) {
 		t.Fatalf("snmpget SUCCEEDED with the wrong password, so nl6 is not verifying inbound "+
 			"authentication.\noutput: %s", strings.TrimSpace(string(out)))
 	}
-	if got := strings.TrimSpace(string(out)); !strings.Contains(strings.ToLower(got), "authentication") &&
-		!strings.Contains(strings.ToLower(got), "digest") {
-		t.Logf("rejected, but the diagnosis net-snmp printed is not about authentication: %s", got)
+
+	// A NON-ZERO EXIT IS NOT THE PROPERTY. snmpget also exits non-zero on a
+	// timeout, which is what nl6 does when it drops a datagram — so "it
+	// failed" is satisfied by nl6 saying nothing at all, and this control
+	// would pass against an agent that had no USM in it. What distinguishes
+	// rejection from silence is that nl6 ANSWERED, with a Report naming
+	// usmStatsWrongDigests.
+	resp := lastResponse()
+	if len(resp) == 0 {
+		t.Fatalf("nl6 sent no response at all: the wrong password was met with silence, which a "+
+			"collector cannot tell from an unreachable device.\nsnmpget said: %s",
+			strings.TrimSpace(string(out)))
+	}
+	if got := reportOIDOf(t, s, resp); got != strings.TrimPrefix(oidUsmStatsWrongDigests, ".") &&
+		got != oidUsmStatsWrongDigests {
+		t.Errorf("nl6 answered the wrong password with %q, want a Report naming usmStatsWrongDigests "+
+			"(%s).\nsnmpget said: %s", got, oidUsmStatsWrongDigests, strings.TrimSpace(string(out)))
 	}
 }

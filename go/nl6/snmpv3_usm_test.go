@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/md5"  // #nosec G501 -- test vectors for RFC 3414's mandated HMAC-MD5-96
 	"crypto/sha1" // #nosec G505 -- test vectors for RFC 3414's mandated HMAC-SHA-96
 	"encoding/hex"
@@ -137,56 +138,113 @@ func TestUSMLocalizationUsesEngineIDOctets(t *testing.T) {
 // a message containing its own zeroed field, so a verifier must reproduce that
 // exact byte sequence or nothing ever matches.
 func TestUSMAuthDigestRoundTrips(t *testing.T) {
-	v := loadRFC3414Vectors(t)
-	key := v.kulMD5
-
-	// A message shaped like the real one: the auth field is an OCTET STRING of
-	// twelve zeros somewhere inside other content.
-	msg := append([]byte{0x30, 0x20, 0x02, 0x01, 0x03}, append([]byte{0x04, usmAuthParamsLen},
-		append(usmZeroedAuthParams(), 0x04, 0x03, 'a', 'b', 'c')...)...)
-
-	digest := usmAuthDigest(msg, key, md5.New)
-	if len(digest) != usmAuthParamsLen {
-		t.Fatalf("digest is %d octets, want %d", len(digest), usmAuthParamsLen)
+	// Built by the PRODUCTION assembler, not by hand. The field is located
+	// structurally now (locateAuthParams), so a hand-rolled blob that merely
+	// contains the pattern is not the thing under test — and a test that used
+	// one would keep passing while the real message stopped being locatable.
+	s := authTestServer(t, SNMPV3_AUTH_MD5, SNMPV3_PRIV_NONE)
+	req := &SNMPv3Message{
+		GlobalData:     SNMPv3GlobalData{MsgID: 11, MsgFlags: SNMPV3_MSG_FLAG_AUTH},
+		SecurityParams: SNMPv3SecurityParams{UserName: "testuser"},
 	}
-	signed, err := substituteAuthParams(msg, digest)
+	scoped, err := s.createScopedPDU(".1.3.6.1.4.1.99999.1.0", "probe", req)
 	if err != nil {
-		t.Fatalf("substituteAuthParams: %v", err)
+		t.Fatalf("createScopedPDU: %v", err)
 	}
-	if string(signed) == string(msg) {
-		t.Fatal("substitution changed nothing")
+	signed, err := s.wrapScopedPDUInV3Message(scoped, req)
+	if err != nil {
+		t.Fatalf("wrapScopedPDUInV3Message: %v", err)
 	}
-	if len(signed) != len(msg) {
-		t.Fatalf("substitution changed the message length (%d -> %d)", len(msg), len(signed))
-	}
+	u := s.usmState()
 
-	if !usmVerifyAuthDigest(signed, digest, key, md5.New) {
+	off, n, ok := locateAuthParams(signed)
+	if !ok || n != usmAuthParamsLen {
+		t.Fatalf("locateAuthParams on a real message: ok=%v len=%d", ok, n)
+	}
+	digest := append([]byte(nil), signed[off:off+n]...)
+
+	if !usmVerifyAuthDigest(signed, digest, u.authKey, u.newHash) {
 		t.Error("a message signed with this key does not verify against it")
 	}
-	if usmVerifyAuthDigest(signed, digest, v.kulSHA1, md5.New) {
+	if usmVerifyAuthDigest(signed, digest, loadRFC3414Vectors(t).kulSHA1, u.newHash) {
 		t.Error("a message verified against the WRONG key; the digest is not being checked")
 	}
 	tampered := append([]byte(nil), signed...)
 	tampered[len(tampered)-1] ^= 0xFF
-	if usmVerifyAuthDigest(tampered, digest, key, md5.New) {
+	if usmVerifyAuthDigest(tampered, digest, u.authKey, u.newHash) {
 		t.Error("a tampered message still verified; the digest does not cover the whole message")
 	}
 }
 
-// TestSubstituteAuthParamsRefusesAmbiguity pins the safety valve. The field is
-// located by pattern rather than by an offset threaded through four encoding
-// layers; the cost of that choice is that a second identical pattern would make
-// the target ambiguous, and signing the wrong octets silently is worse than
-// failing.
-func TestSubstituteAuthParamsRefusesAmbiguity(t *testing.T) {
-	field := append([]byte{0x04, usmAuthParamsLen}, usmZeroedAuthParams()...)
-	twice := append(append([]byte{0x30, 0x30}, field...), field...)
+// TestTwelveZeroByteValueDoesNotBreakSigning is a REGRESSION TEST FOR A DEFECT
+// THIS CHANGE SHIPPED AND REVIEW CAUGHT.
+//
+// substituteAuthParams originally located the auth field by searching for its
+// zeroed form, `04 0C` followed by twelve zero octets. That is byte-for-byte
+// how an OCTET STRING value of twelve zero bytes encodes, so a device serving
+// such a value made the pattern ambiguous, made substitution refuse, and made
+// the entire response fail to assemble — an authNoPriv GET of that OID returned
+// NOTHING AT ALL, with no log line. Reachable from an ordinary operator
+// resource file.
+//
+// The comment defending the search argued that an offset threaded through four
+// encoding layers was the riskier choice. It had the trade backwards: an offset
+// can go stale, but a search can be defeated by the message's own data, and
+// only one of those is reachable by data nl6 does not control. Both are avoided
+// by walking the structure.
+//
+// The value is asserted to survive the round trip, not merely for a response to
+// exist: a fix that located the field correctly but clobbered the varbind would
+// also produce a response.
+func TestTwelveZeroByteValueDoesNotBreakSigning(t *testing.T) {
+	const probeOID = ".1.3.6.1.4.1.99999.1.0"
+	value := strings.Repeat("\x00", usmAuthParamsLen)
 
-	if _, err := substituteAuthParams(twice, make([]byte, usmAuthParamsLen)); err == nil {
-		t.Error("two candidate fields were accepted. The digest would cover octets chosen by " +
-			"whichever matched first, which is not something to guess at")
+	s := v3TestServer(map[string]string{probeOID: value})
+	s.v3Config.AuthProtocol = SNMPV3_AUTH_MD5
+	s.v3Config.Password = "authpassword"
+
+	resp := s.handleSNMPv3Request(buildV3RequestAt(t, s, ASN1_GET_REQUEST, probeOID, 1))
+	if len(resp) == 0 {
+		t.Fatal("an authNoPriv GET of a twelve-zero-byte value produced NO RESPONSE. The auth field " +
+			"is being located by a pattern the message's own data can match.")
 	}
-	if _, err := substituteAuthParams([]byte{0x30, 0x00}, make([]byte, usmAuthParamsLen)); err == nil {
-		t.Error("a message with no auth field was accepted")
+
+	// The response must still verify, and must still carry the value.
+	msg, err := s.parseSNMPv3Message(resp)
+	if err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	u := s.usmState()
+	if !usmVerifyAuthDigest(resp, msg.SecurityParams.AuthParams, u.authKey, u.newHash) {
+		t.Error("the response does not verify: the digest was written over the wrong octets")
+	}
+	if !bytes.Contains(resp, append([]byte{0x04, usmAuthParamsLen}, make([]byte, usmAuthParamsLen)...)) {
+		t.Error("the twelve-zero-byte VALUE is no longer in the response; signing clobbered the varbind")
+	}
+}
+
+// TestLocateAuthParamsRefusesAMalformedMessage pins the failure side. A message
+// that is not shaped like an SNMPv3 message has no auth field to find, and
+// guessing at one would mean signing octets chosen by accident.
+func TestLocateAuthParamsRefusesAMalformedMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  []byte
+	}{
+		{"empty", nil},
+		{"bare sequence", []byte{0x30, 0x00}},
+		{"truncated after version", []byte{0x30, 0x03, 0x02, 0x01, 0x03}},
+		{"length overruns the buffer", []byte{0x30, 0x7F, 0x02, 0x01, 0x03}},
+		{"pattern present but not structural", append([]byte{0x04, usmAuthParamsLen}, usmZeroedAuthParams()...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, ok := locateAuthParams(tc.msg); ok {
+				t.Error("located an auth field in a message that has none")
+			}
+			if _, err := substituteAuthParams(tc.msg, make([]byte, usmAuthParamsLen)); err == nil {
+				t.Error("substituted into a message with no locatable auth field")
+			}
+		})
 	}
 }

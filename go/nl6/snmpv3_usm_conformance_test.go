@@ -401,8 +401,10 @@ func reportOIDOf(t *testing.T, s *SNMPServer, resp []byte) string {
 		}
 		scoped = dec
 	}
-	// A Report PDU is tag 0xA8. Its absence means this is an ordinary response.
-	if !bytes.Contains(scoped, []byte{v3ReportPDUTag}) {
+	// A Report PDU is tag 0xA8 AT THE PDU'S POSITION. Scanning the whole scoped
+	// PDU for the byte matched it inside a value, a length or a digest, so an
+	// ordinary response could be reported as a Report.
+	if !scopedPDUHasTag(scoped, v3ReportPDUTag) {
 		return ""
 	}
 	oids, ok := parseAllOIDsFromScopedPDU(scoped)
@@ -481,4 +483,33 @@ func TestEveryEmitterAgreesOnTheEngineIdentity(t *testing.T) {
 	if !bytes.Contains(scoped, append([]byte{0x04, byte(len(want))}, want...)) {
 		t.Errorf("the scoped PDU's contextEngineID is not % x.\nRe-check: %s", want, docsToUpdate())
 	}
+}
+
+// scopedPDUHasTag reports whether the PDU inside a scoped PDU carries tag.
+//
+// It walks to the PDU rather than scanning for the byte: contextEngineID and
+// contextName come first, and either can contain any byte at all.
+func scopedPDUHasTag(scoped []byte, tag byte) bool {
+	buf := scoped
+	// Accept both forms: the wrapped SEQUENCE and the contents the parser
+	// stores for a plaintext request.
+	if len(buf) > 0 && buf[0] == ASN1_SEQUENCE {
+		n, start := parseLength(buf, 1)
+		if n < 0 || start < 0 || start > len(buf) || n > len(buf)-start {
+			return false
+		}
+		buf = buf[start : start+n]
+	}
+	pos := 0
+	for i := 0; i < 2; i++ { // contextEngineID, contextName
+		if pos >= len(buf) {
+			return false
+		}
+		n, start := parseLength(buf, pos+1)
+		if n < 0 || start < 0 || start > len(buf) || n > len(buf)-start {
+			return false
+		}
+		pos = start + n
+	}
+	return pos < len(buf) && buf[pos] == tag
 }

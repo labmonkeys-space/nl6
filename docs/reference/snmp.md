@@ -21,11 +21,11 @@ stack is implemented in `go/nl6/snmp*.go` — see
 Every security level below was polled with `snmpget` from net-snmp, which
 discovers the engine, derives its own key from the password and the engine ID it
 received, verifies nl6's digest, and builds its own decryption IV.
-That check is opt-in — no workflow in this repo installs net-snmp — and lives in
-`go/nl6/snmpv3_usm_interop_test.go`:
+That check runs in CI (the `Build & Test` gate installs net-snmp) and lives in
+`go/nl6/snmpv3_usm_interop_test.go`. To run it yourself:
 
 ```
-NL6_SNMP_INTEROP=1 go test ./nl6/ -run TestUSMInterop -v
+make test-interop
 ```
 
 It matters more than the rest of the suite put together.
@@ -37,6 +37,8 @@ Its first run after the fix still failed all six rows, because three of the four
 paths that emit `msgAuthoritativeEngineID` had been missed.
 
 :::
+
+### SNMPv3 USM conformance
 
 USM is implemented per RFC 3414 as of [nl6#624]:
 
@@ -69,7 +71,8 @@ SHA-2 auth protocols and AES-192/256 privacy of RFC 7860 / RFC 3826 §3.1.2.2.
 
 ### SNMPv3 auth / priv matrix
 
-Every row below was verified with net-snmp on 2026-09-03.
+"Verified" means a real `snmpget` from net-snmp completed against nl6. Every row
+is polled on every CI run.
 
 | Auth  | Priv    | Security level  | Status |
 |-------|---------|-----------------|--------|
@@ -77,9 +80,36 @@ Every row below was verified with net-snmp on 2026-09-03.
 | md5   | none    | `authNoPriv`    | verified |
 | sha1  | none    | `authNoPriv`    | verified |
 | md5   | des     | `authPriv`      | verified |
-| sha1  | des     | `authPriv`      | conformant; not in the interop row set |
+| sha1  | des     | `authPriv`      | verified |
 | md5   | aes128  | `authPriv`      | verified |
 | sha1  | aes128  | `authPriv`      | verified |
+
+Both hashes are polled against both privacy protocols deliberately: the
+localized privacy key is 16 octets under MD5 and 20 under SHA1, and the DES and
+AES paths slice it at fixed indices, so a mistake there is invisible under one
+hash and fatal under the other.
+
+`-snmpv3-priv` requires `-snmpv3-auth`. USM defines no
+privacy-without-authentication level, and since the privacy key is localized
+with the authentication protocol's hash there is no key to derive without one;
+the combination is refused at startup rather than failing on every request.
+
+### Two engine-identity limitations
+
+Neither affects a single-device poll, and both are worth knowing before pointing
+a manager at a large fleet.
+
+- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the
+  same value, while `msgAuthoritativeEngineBoots` and
+  `msgAuthoritativeEngineTime` are per device. RFC 3411 wants the engine ID
+  unique per engine, so a manager that caches `(boots, time)` keyed on engine ID
+  will see its estimate move as it polls devices started at different instants.
+- **`msgAuthoritativeEngineBoots` is always 1 and is not persisted.** After a
+  restart nl6 advertises `boots=1` again with the time back near zero, where RFC
+  3414 §2.2.3 would increment boots. A manager holding a cached estimate sees
+  time move backwards under unchanged boots and has to rediscover. The
+  `usmStatsNotInTimeWindows` Report nl6 sends is authenticated precisely so that
+  recovery is possible.
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
