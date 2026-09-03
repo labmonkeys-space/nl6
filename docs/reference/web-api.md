@@ -954,9 +954,18 @@ ssh simadmin@192.168.100.1     # password: simadmin
 snmpget  -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 
-# SNMP v3 (when enabled). Use -l noAuthNoPriv: authentication is accepted but
-# not implemented, so an authPriv poll fails digest verification (nl6#624).
-snmpget -v3 -l noAuthNoPriv -u simadmin -e 800000090300AABBCCDD \
+# SNMP v3 (when enabled). RFC 3414 USM, verified against net-snmp (nl6#624).
+# A CLI-started fleet uses simadmin for the user and for both passwords, and
+# defaults to -snmpv3-auth md5 with privacy off, so the level you can poll
+# follows the flags the simulator was started with.
+snmpget -v3 -l noAuthNoPriv -u simadmin 192.168.100.1 1.3.6.1.2.1.1.1.0
+
+# started with -snmpv3-auth md5 (the default)
+snmpget -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin \
+  192.168.100.1 1.3.6.1.2.1.1.1.0
+
+# started with -snmpv3-auth sha1 -snmpv3-priv aes128
+snmpget -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
   192.168.100.1 1.3.6.1.2.1.1.1.0
 ```
 

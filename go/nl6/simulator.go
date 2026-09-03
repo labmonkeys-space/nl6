@@ -99,7 +99,7 @@ func main() {
 		autoCount       = flag.Int("auto-count", 0, "Number of devices to auto-create (requires -auto-start-ip)")
 		autoNetmask     = flag.String("auto-netmask", "16", "Netmask for auto-created devices: the fleet is a flat /16 management plane (default: 16)")
 		snmpv3EngineID  = flag.String("snmpv3-engine-id", "", "Enable SNMPv3 with specified engine ID (e.g., 800000090300AABBCCDD)")
-		snmpv3AuthProto = flag.String("snmpv3-auth", "md5", "SNMPv3 authentication protocol: none, md5, sha1. ACCEPTED BUT NOT IMPLEMENTED (nl6#624): no HMAC is computed and this value is never read, so every level behaves as noAuthNoPriv")
+		snmpv3AuthProto = flag.String("snmpv3-auth", "md5", "SNMPv3 authentication protocol: none, md5, sha1. RFC 3414 USM, verified against net-snmp (nl6#624). Also selects the hash used to localize the privacy key")
 		snmpv3PrivProto = flag.String("snmpv3-priv", "none", "SNMPv3 privacy protocol: none, des, aes128 (default: none)")
 		port            = flag.String("port", "8080", "Server port (default: 8080)")
 		snmpPort        = flag.Int("snmp-port", DEFAULT_SNMP_PORT, "UDP port for SNMP listener on each device (default: 161)")
@@ -237,7 +237,7 @@ func main() {
 		fmt.Printf("  %s -auto-start-ip 192.168.100.1 -auto-count 30000      # 30K devices (uses namespace)\n", os.Args[0])
 		fmt.Printf("  %s -auto-start-ip 192.168.100.1 -auto-count 100 -no-namespace  # Disable namespace\n", os.Args[0])
 		fmt.Printf("  %s -auto-start-ip 192.168.100.1 -auto-count 2 \\      # SNMPv3 with MD5 auth\n", os.Args[0])
-		fmt.Printf("    -snmpv3-engine-id 800000090300AABBCCDD    # only noAuthNoPriv is reachable (nl6#624)\n")
+		fmt.Printf("    -snmpv3-engine-id 800000090300AABBCCDD    # noAuthNoPriv / authNoPriv / authPriv (nl6#624)\n")
 		fmt.Println()
 		return
 	}

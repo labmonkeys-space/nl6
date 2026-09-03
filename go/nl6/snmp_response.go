@@ -18,7 +18,6 @@ package main
 import (
 	"crypto/cipher"
 	"crypto/des"
-	"crypto/md5"
 	"fmt"
 )
 
@@ -699,6 +698,14 @@ func (s *SNMPServer) encodeGetResponseAt(req SNMPRequest, varBindList []byte, er
 
 // decryptScopedPDU decrypts an encrypted scoped PDU
 func (s *SNMPServer) decryptScopedPDU(encryptedPDU []byte, privParams []byte) ([]byte, error) {
+	u := s.usmState()
+	return s.decryptScopedPDUAt(encryptedPDU, privParams, u.engineBoots, u.engineTimeSeconds())
+}
+
+// decryptScopedPDUAt decrypts against the engine boots and time the SENDER
+// declared. Only AES reads them (RFC 3826 §3.1.2.1 builds its IV from them);
+// DES derives its IV from the salt and the key alone (RFC 3414 §8.1.1.1).
+func (s *SNMPServer) decryptScopedPDUAt(encryptedPDU, privParams []byte, boots, engineTime int) ([]byte, error) {
 	if s.v3Config.PrivProtocol == SNMPV3_PRIV_NONE {
 		return encryptedPDU, nil
 	}
@@ -712,146 +719,37 @@ func (s *SNMPServer) decryptScopedPDU(encryptedPDU []byte, privParams []byte) ([
 		return s.decryptDES(encryptedPDU, privParams)
 	case SNMPV3_PRIV_AES128:
 		// log.Printf("SNMPv3: Using AES128 decryption")
-		return s.decryptAES128(encryptedPDU, privParams)
+		return s.decryptAES128At(encryptedPDU, privParams, boots, engineTime)
 	default:
 		return nil, fmt.Errorf("unsupported privacy protocol: %d", s.v3Config.PrivProtocol)
 	}
 }
 
-// generateDESKey generates a DES key from the privacy password using RFC 3414 method
-func (s *SNMPServer) generateDESKey() []byte {
-	// RFC 3414 compatible key derivation for SNMPv3 privacy
-	// This is a simplified version that should work with standard SNMP clients
-
-	// Step 1: Create auth key from password using MD5
-	password := s.v3Config.PrivPassword
-	if len(password) == 0 {
-		password = s.v3Config.Password // Fallback to main password
-	}
-
-	// Create 1MB buffer with repeated password (RFC 3414)
-	passwordBytes := []byte(password)
-	// RFC 3414 §A.2.1 derives the key by repeating the password to fill the
-	// buffer, which has no meaning for an empty password — and the modulo
-	// below divides by zero. Return nil rather than a zero-filled key of the
-	// right length: des.NewCipher rejects nil with a KeySizeError the caller
-	// already handles, whereas a plausible-looking all-zero key would encrypt
-	// successfully under a key the config never asked for. Configs reaching
-	// here empty are rejected at device creation (SNMPv3Config.Validate); this
-	// is the backstop for any path that bypasses it.
-	if len(passwordBytes) == 0 {
-		return nil
-	}
-	keyBuffer := make([]byte, 1048576) // 1MB
-	for i := 0; i < len(keyBuffer); i++ {
-		keyBuffer[i] = passwordBytes[i%len(passwordBytes)]
-	}
-
-	// Hash the 1MB buffer with MD5
-	authKey := md5.Sum(keyBuffer)
-
-	// Step 2: Localize the key with engine ID
-	engineID := s.v3Config.EngineID
-	if len(engineID) == 0 {
-		engineID = "800000090300AABBCCDD" // Default engine ID
-	}
-
-	// Convert hex engine ID to bytes
-	engineIDBytes, _ := s.parseHexEngineID(engineID)
-
-	// Localize: MD5(authKey + engineID + authKey)
-	localizeInput := append(append(authKey[:], engineIDBytes...), authKey[:]...)
-	localizedKey := md5.Sum(localizeInput)
-
-	// Step 3: For privacy key, derive from localized auth key
-	// Privacy key = first 8 bytes of localized key for DES
-	return localizedKey[:8]
-}
-
-// parseHexEngineID converts hex engine ID string to bytes
-func (s *SNMPServer) parseHexEngineID(hexEngineID string) ([]byte, error) {
-	// Remove any spaces or colons
-	clean := ""
-	for _, c := range hexEngineID {
-		if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f') {
-			clean += string(c)
-		}
-	}
-
-	// Convert hex pairs to bytes
-	if len(clean)%2 != 0 {
-		return nil, fmt.Errorf("invalid hex engine ID length")
-	}
-
-	result := make([]byte, len(clean)/2)
-	for i := 0; i < len(clean); i += 2 {
-		var b byte
-		for j := 0; j < 2; j++ {
-			c := clean[i+j]
-			b <<= 4
-			if c >= '0' && c <= '9' {
-				b |= c - '0'
-			} else if c >= 'A' && c <= 'F' {
-				b |= c - 'A' + 10
-			} else if c >= 'a' && c <= 'f' {
-				b |= c - 'a' + 10
-			}
-		}
-		result[i/2] = b
-	}
-
-	return result, nil
-}
-
-// getDESKey returns the cached DES key, computing and caching it on first call
-func (s *SNMPServer) getDESKey() []byte {
-	if s.cachedDESKey != nil {
-		return s.cachedDESKey
-	}
-	s.cachedDESKey = s.generateDESKey()
-	return s.cachedDESKey
-}
-
 // decryptDES performs basic DES decryption (simplified for simulation)
 func (s *SNMPServer) decryptDES(encryptedData []byte, privParams []byte) ([]byte, error) {
-	if len(privParams) < 8 {
-		return nil, fmt.Errorf("invalid DES privacy parameters length: %d", len(privParams))
+	// RFC 3414 §8.1.1.1: privParams carries the SALT, and the IV is
+	// salt XOR pre-IV, where the pre-IV is the last 8 octets of the 16-octet
+	// localized privacy key (nl6#624).
+	if len(privParams) != 8 {
+		return nil, fmt.Errorf("invalid DES salt length: expected 8, got %d", len(privParams))
 	}
-
-	// Use cached DES key derived from privacy password using RFC 3414 method
-	key := s.getDESKey()
-	iv := privParams[:8] // Use privacy parameters as IV
-
-	// log.Printf("SNMPv3: DES decryption - key: %d bytes, IV: %d bytes, data: %d bytes",
-	//	len(key), len(iv), len(encryptedData))
-
-	// For simulation purposes, implement basic DES-CBC decryption
-	// In a real implementation, you'd need proper key derivation from the password
-
-	// Create DES cipher
-	block, err := des.NewCipher(key)
+	usm := s.usmState()
+	if len(usm.privKey) < 16 {
+		return nil, fmt.Errorf("SNMPv3 privacy is configured but no localized key is available")
+	}
+	key, preIV := usm.privKey[:8], usm.privKey[8:16]
+	iv := make([]byte, 8)
+	for i := range iv {
+		iv[i] = privParams[i] ^ preIV[i]
+	}
+	if len(encryptedData) == 0 || len(encryptedData)%8 != 0 {
+		return nil, fmt.Errorf("DES ciphertext is %d bytes, not a positive multiple of the 8-byte block", len(encryptedData))
+	}
+	block, err := des.NewCipher(key) // #nosec G405 -- RFC 3414 mandates DES-CBC for usmDESPrivProtocol
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DES cipher: %v", err)
+		return nil, err
 	}
-
-	if len(encryptedData)%8 != 0 {
-		return nil, fmt.Errorf("encrypted data length must be multiple of 8 bytes")
-	}
-
-	// Decrypt using CBC mode
-	mode := cipher.NewCBCDecrypter(block, iv)
-	decrypted := make([]byte, len(encryptedData))
-	mode.CryptBlocks(decrypted, encryptedData)
-
-	// Remove PKCS padding (simplified)
-	if len(decrypted) > 0 {
-		paddingLen := int(decrypted[len(decrypted)-1])
-		if paddingLen <= len(decrypted) && paddingLen <= 8 {
-			decrypted = decrypted[:len(decrypted)-paddingLen]
-		}
-	}
-
-	// log.Printf("SNMPv3: DES decryption completed - result: %d bytes", len(decrypted))
-
-	return decrypted, nil
+	out := make([]byte, len(encryptedData))
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(out, encryptedData)
+	return out, nil
 }

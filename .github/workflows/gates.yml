@@ -101,6 +101,17 @@ jobs:
       - name: Test (race detector)
         run: make test-race
 
+      # The interop gate. Everything above reads nl6's output with nl6's own
+      # parser; this is the only step in which an independent implementation
+      # decides whether nl6 is right (nl6#624). It was opt-in and unrun when it
+      # landed, and its first manual run failed every row with the suite green,
+      # so leaving it out of CI would retire the one check with detection power.
+      - name: Install net-snmp
+        run: sudo apt-get update && sudo apt-get install -y snmp
+
+      - name: Test (SNMPv3 interop with net-snmp)
+        run: make test-interop
+
   quality:
     name: Code Quality
     runs-on: ubuntu-24.04

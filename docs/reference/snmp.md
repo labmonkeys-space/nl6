@@ -11,67 +11,105 @@ stack is implemented in `go/nl6/snmp*.go` — see
   table. Community string is `public` by default.
 - **SNMPv3** — enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags).
   Auth protocols: `none`, `md5`, `sha1`. Privacy protocols: `none`, `des`,
-  `aes128`. The message framing lives in `snmpv3.go` / `snmpv3_crypto.go`;
-  **authentication is not implemented and privacy is not conformant, see
-  below.**
+  `aes128`. The message framing lives in `snmpv3.go` / `snmpv3_crypto.go`, the
+  USM primitives in `snmpv3_usm.go`. Verified against net-snmp, see below.
 
 ### SNMPv3 auth / priv matrix
 
-:::warning[USM is not RFC-conformant: authentication is absent and privacy is unreachable]
+:::note[Verified against net-snmp 5.6.2.1, not only against nl6's own parser]
 
-**Authentication is not implemented.** nl6 computes no HMAC anywhere and emits a
-12-byte all-zero `msgAuthenticationParameters` on every GetResponse
-([nl6#624]). `AuthProtocol` is read by no production code, so `-snmpv3-auth`
-and `auth_protocol` change nothing.
+Every security level below was polled with `snmpget` from net-snmp, which
+discovers the engine, derives its own key from the password and the engine ID it
+received, verifies nl6's digest, and builds its own decryption IV.
+That check runs in CI (the `Build & Test` gate installs net-snmp) and lives in
+`go/nl6/snmpv3_usm_interop_test.go`. To run it yourself:
 
-**Privacy cannot be reached by a conforming manager.** USM defines no
-privacy-without-authentication security level, so a standards-compliant manager
-sets the PRIV flag only at `authPriv`, which the missing digest blocks. nl6's
-own tests set that flag directly, which is why the code paths are exercised in
-CI and still unreachable in practice.
+```
+make test-interop
+```
 
-**Privacy is also non-conformant on the wire**, independently of the above.
-`encryptDES` emits one random 8-byte value as both the CBC IV and `privParams`,
-where RFC 3414 §8.1.1.1 requires `IV = salt XOR pre-IV`; the localized key is
-only 8 bytes, so no pre-IV exists. `encryptAES128` hardcodes the IV's
-boots/time prefix while the response advertises a different
-`msgAuthoritativeEngineTime`, so a peer building the IV per RFC 3826 §3.1.2.1
-from nl6's own advertised values decrypts garbage.
-
-**Inbound requests are not authenticated either.** `validateSNMPv3Credentials`
-checks the username and nothing else, and the RFC 3414 §3.2 time window is
-deliberately skipped. nl6 answers a request carrying any digest and any auth
-password, so **you cannot use nl6 to test a collector's wrong-credential or
-replay handling**, and a "successful" `authNoPriv` exchange against nl6 proves
-nothing about the collector's USM configuration.
-
-**`noAuthNoPriv` is the level nl6 can serve**, and note it still emits those 12
-zero bytes where RFC 3414 §6.3.1 wants a zero-*length* field. This assessment is
-a reading of the source pinned by `snmpv3_usm_unimplemented_test.go`; **no v3
-exchange in this repository has been verified against net-snmp or snmp4j**, so
-treat "serves" as "nl6 answers", not "a real manager accepts".
+It matters more than the rest of the suite put together.
+nl6 shipped a v3 stack for years that computed no digest, sent a UNIX epoch as
+`msgAuthoritativeEngineTime` and localized keys against the wrong bytes — and
+every in-package test was green, because all of them read nl6's output with
+nl6's own parser ([nl6#625]).
+Its first run after the fix still failed all six rows, because three of the four
+paths that emit `msgAuthoritativeEngineID` had been missed.
 
 :::
 
-The table records what nl6 does with each combination. The `Priv key` column is
-the defect specific to that row: `generateDESKey` hardcodes **MD5** and
-`generateAESKey` hardcodes **SHA1**, so which rows happen to match RFC 3414's
-"derive with the auth protocol's hash" rule runs in opposite directions.
+### SNMPv3 USM conformance
 
-| Auth  | Priv    | Security level  | Auth digest | Priv key |
-|-------|---------|-----------------|-------------|----------|
-| none  | none    | `noAuthNoPriv`  | n/a         | n/a |
-| md5   | none    | `authNoPriv`    | not computed | n/a |
-| sha1  | none    | `authNoPriv`    | not computed | n/a |
-| md5   | des     | `authPriv`      | not computed | hash matches (MD5); honours `priv_password` |
-| sha1  | des     | `authPriv`      | not computed | **hash differs**: MD5 used for a SHA1 user |
-| md5   | aes128  | `authPriv`      | not computed | **hash differs** (SHA1 used); **derives from `password`, not `priv_password`** |
-| sha1  | aes128  | `authPriv`      | not computed | hash matches (SHA1); **derives from `password`, not `priv_password`** |
+USM is implemented per RFC 3414 as of [nl6#624]:
 
-Every `authPriv` row additionally carries the IV defects described above, so no
-row of this table interoperates with a conforming manager today.
+- **Key derivation** is §A.2's password-to-key followed by localization
+  `H(Ku || engineID || Ku)`, against the raw engine-ID **octets**.
+  The four RFC 3414 Appendix A.3 vectors are asserted from a checked-in extract
+  of the RFC (`go/nl6/testdata/rfc/`), not from nl6's own output.
+- **Authentication** is HMAC-MD5-96 or HMAC-SHA-96 over the whole message with
+  `msgAuthenticationParameters` zero-filled, truncated to 12 octets (§6.3.1).
+  A `noAuthNoPriv` message carries a zero-**length** field.
+- **Privacy keys** are derived from `priv_password`, falling back to `password`,
+  and localized with the **authentication protocol's** hash (§2.6).
+- **DES** builds `IV = salt XOR pre-IV` from the last 8 octets of the 16-octet
+  localized key (§8.1.1.1); **AES128** builds its IV from the engine boots and
+  time carried in the message (RFC 3826 §3.1.2.1).
+- **Inbound messages are verified**: a wrong digest is answered with a Report
+  naming `usmStatsWrongDigests`, a stale one with `usmStatsNotInTimeWindows`
+  (the §3.2 150-second window), and an authenticated request to a device
+  configured without auth with `usmStatsUnsupportedSecLevels`.
 
+So nl6 **can** be used to test a collector's wrong-credential handling, which it
+could not before.
+
+**What is still not implemented:** SNMPv3 traps and informs ([nl6#98]), and the
+SHA-2 auth protocols and AES-192/256 privacy of RFC 7860 / RFC 3826 §3.1.2.2.
+
+[nl6#98]: https://github.com/labmonkeys-space/nl6/issues/98
 [nl6#624]: https://github.com/labmonkeys-space/nl6/issues/624
+[nl6#625]: https://github.com/labmonkeys-space/nl6/issues/625
+
+### SNMPv3 auth / priv matrix
+
+"Verified" means a real `snmpget` from net-snmp completed against nl6. Every row
+is polled on every CI run.
+
+| Auth  | Priv    | Security level  | Status |
+|-------|---------|-----------------|--------|
+| none  | none    | `noAuthNoPriv`  | verified |
+| md5   | none    | `authNoPriv`    | verified |
+| sha1  | none    | `authNoPriv`    | verified |
+| md5   | des     | `authPriv`      | verified |
+| sha1  | des     | `authPriv`      | verified |
+| md5   | aes128  | `authPriv`      | verified |
+| sha1  | aes128  | `authPriv`      | verified |
+
+Both hashes are polled against both privacy protocols deliberately: the
+localized privacy key is 16 octets under MD5 and 20 under SHA1, and the DES and
+AES paths slice it at fixed indices, so a mistake there is invisible under one
+hash and fatal under the other.
+
+`-snmpv3-priv` requires `-snmpv3-auth`. USM defines no
+privacy-without-authentication level, and since the privacy key is localized
+with the authentication protocol's hash there is no key to derive without one;
+the combination is refused at startup rather than failing on every request.
+
+### Two engine-identity limitations
+
+Neither affects a single-device poll, and both are worth knowing before pointing
+a manager at a large fleet.
+
+- **`snmpEngineID` is fleet-wide.** `-snmpv3-engine-id` gives every device the
+  same value, while `msgAuthoritativeEngineBoots` and
+  `msgAuthoritativeEngineTime` are per device. RFC 3411 wants the engine ID
+  unique per engine, so a manager that caches `(boots, time)` keyed on engine ID
+  will see its estimate move as it polls devices started at different instants.
+- **`msgAuthoritativeEngineBoots` is always 1 and is not persisted.** After a
+  restart nl6 advertises `boots=1` again with the time back near zero, where RFC
+  3414 §2.2.3 would increment boots. A manager holding a cached estimate sees
+  time move backwards under unchanged boots and has to rediscover. The
+  `usmStatsNotInTimeWindows` Report nl6 sends is authenticated precisely so that
+  recovery is possible.
 
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
@@ -146,12 +184,12 @@ Nothing that ships with nl6 changes on the wire: all 5,676 distinct OIDs across 
 
 :::note[What "served" means here]
 
-nl6 *processes* an authPriv request correctly since nl6#527. That is a
-different question from whether a conforming manager can send one: it cannot,
-because USM authentication is unimplemented and privacy is unreachable without
-it. See [the auth/priv matrix](#snmpv3-auth--priv-matrix) and
-[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624). The tests
-covering this section build the PRIV flag byte themselves.
+nl6 *processes* an authPriv request correctly since nl6#527. Whether a
+conforming manager can send one was a separate question until nl6#624: USM
+authentication was unimplemented, and USM defines no privacy-without-auth level,
+so the tests covering this section built the PRIV flag byte themselves. Both
+halves work now and net-snmp drives the authPriv rows end to end — see
+[the auth/priv matrix](#snmpv3-auth--priv-matrix).
 
 :::
 

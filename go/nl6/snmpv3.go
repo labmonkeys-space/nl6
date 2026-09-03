@@ -335,17 +335,17 @@ func (s *SNMPServer) validateSNMPv3Credentials(msg *SNMPv3Message) bool {
 		return false
 	}
 
-	// For simulation/testing purposes, we use simplified validation
-	// In a production implementation, we would:
-	// - Validate authentication parameters (HMAC-MD5/SHA1)
-	// - Check timing parameters for replay protection
-	// - Verify engine boots and time values
-	// - Use proper RFC 3414 key derivation functions
-
-	// Simulation deliberately skips the SNMPv3 150-second engine-time
-	// window check — operators using nl6 may have intentionally skewed
-	// clocks. Production agents MUST enforce RFC 3414 §3.2.
-
+	// THIS FUNCTION CHECKS THE USER NAME ONLY, DELIBERATELY. Everything
+	// cryptographic — the HMAC, the RFC 3414 §3.2 time window, the security
+	// level — is authenticateInbound's, which runs next and answers with the
+	// usmStats Report the RFC prescribes rather than a bare true/false.
+	//
+	// It used to carry a comment saying the digest and the window were skipped
+	// "for simulation purposes", and that operators may have "intentionally
+	// skewed clocks". Both are gone with nl6#624. The clock argument in
+	// particular was an artefact of the defect beside it: engine time was a
+	// UNIX epoch, which really is at the mercy of wall-clock skew, where
+	// seconds-since-boot is a value the manager learns from us.
 	return true
 }
 

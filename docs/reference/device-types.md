@@ -119,7 +119,7 @@ for where the simulation stops.
   per-interface phase offsets. See [SNMP reference](snmp.md).
 - **GPU metrics via NVIDIA DCGM OIDs** — per-GPU utilization, VRAM,
   temperature, power, fan, and clocks. See [GPU simulation](gpu/index.md).
-- **SNMPv3 support** — engine ID and DES/AES128 privacy; the MD5/SHA1 auth protocols are accepted but not implemented ([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)). See
+- **SNMPv3 support** — engine ID, MD5/SHA1 authentication and DES/AES128 privacy, RFC 3414 USM, verified against net-snmp ([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)). See
   [SNMP reference](snmp.md).
 - **Per-category baselines** — CPU / memory / temperature ranges and spike
   amplitudes are driven by per-category device profiles.

@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1442
+const minimumTestFunctions = 1459
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -291,14 +291,53 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#567. A stalled transport write must not outlast the drain BARRIER, which runs on the " +
 			"graceful-shutdown path. Deliberately not phrased as bounding shutdown: finish() joins " +
 			"the scheduler and tickers ahead of the barrier and those joins are unbounded"},
-	{"TestAuthProtocolIsNeverReadInProduction", "snmpv3_usm_unimplemented_test.go",
-		"nl6#624. nl6 documented MD5/SHA1 auth in six places and implements none of it. Five documents " +
-			"asserted that with nothing enforcing it; this fails the day someone wires the flag up, " +
-			"naming the files whose claims have gone stale"},
-	{"TestInboundV3RequestsAreNotAuthenticated", "snmpv3_usm_unimplemented_test.go",
-		"nl6#624. nl6 answers a v3 request carrying any digest, so a collector's wrong-credential and " +
-			"replay handling cannot be tested against it. The first draft of the docs missed this half " +
-			"entirely and framed the gap only as 'the peer rejects nl6'"},
+	{"TestAuthProtocolReachesEveryDerivation", "snmpv3_usm_conformance_test.go",
+		"nl6#624. -snmpv3-auth was parsed, stored and consulted by nothing, and the two privacy " +
+			"derivations hardcoded OPPOSITE hashes, so md5+des happened to match RFC 3414 while " +
+			"sha1+des did not. Asserted through derived KEYS, not through an AST scan for reads: a " +
+			"scan proves the identifier appears, only the keys prove it changes anything"},
+	{"TestInboundV3RequestsAreAuthenticated", "snmpv3_usm_conformance_test.go",
+		"nl6#624. nl6 answered a v3 request carrying any digest, so a collector's wrong-credential " +
+			"and replay handling could not be tested against it. Driven through the DISPATCHER and " +
+			"asserting the usmStats OID per row, because a verifier returning false is worth nothing " +
+			"if nothing calls it, and a rejection for the wrong reason misdirects the operator"},
+	{"TestAESIVIsBuiltFromTheAdvertisedEngineTime", "snmpv3_usm_wire_test.go",
+		"nl6#624. Decrypts with the standard library using ONLY what the response carries, because " +
+			"every round trip in the package encrypts and decrypts with nl6's own code and an IV " +
+			"that is wrong but SYMMETRIC passes all of them. Advertising a time 1000s from the one " +
+			"the IV was built from left the whole suite green until this landed"},
+	{"TestDESIVIsSaltXorPreIV", "snmpv3_usm_wire_test.go",
+		"nl6#624. RFC 3414 §8.1.1.1. nl6 emitted one random value as BOTH the CBC IV and privParams. " +
+			"Runs under MD5 and SHA1 because the localized key is 16 octets under one and 20 under " +
+			"the other while the pre-IV is sliced at a fixed index, so 'the last 8 octets' is right " +
+			"for MD5 and wrong for SHA1 — and sha1+des was exercised by nothing at all"},
+	{"TestNoAuthNoPrivWireDeltaIsRecorded", "snmpv3_usm_wire_test.go",
+		"nl6#624's one explicit proof obligation was that noAuthNoPriv stay byte-identical, and it " +
+			"CANNOT be met: three of the defects are in the envelope every security level shares. " +
+			"This records the three fields that moved instead of asserting an identity that would " +
+			"require keeping the defects"},
+	{"TestUnknownUserIsAnsweredNotIgnored", "snmpv3_usm_wire_test.go",
+		"nl6#624. RFC 3414 §3.2 step 4. A wrong USER was a silent drop while a wrong DIGEST got a " +
+			"Report, so a collector could not tell an unknown user from an unreachable device"},
+	{"TestTimeWindowReportIsSignedAndWrongDigestReportIsNot", "snmpv3_usm_wire_test.go",
+		"nl6#624. The asymmetry that makes engine time recoverable: §3.2 step 7 signs the " +
+			"notInTimeWindows Report so a manager can trust the (boots, time) it carries, while a " +
+			"wrongDigests Report is deliberately unsigned because the peer's key disagrees with ours"},
+	{"TestTwelveZeroByteValueDoesNotBreakSigning", "snmpv3_usm_test.go",
+		"nl6#624. A REGRESSION FOR A DEFECT THIS CHANGE SHIPPED. substituteAuthParams located the " +
+			"auth field by searching for `04 0C` plus twelve zeros — byte-for-byte how an OCTET " +
+			"STRING value of twelve zero bytes encodes — so a device serving one made the pattern " +
+			"ambiguous and the whole response failed to assemble, returning NOTHING with no log " +
+			"line, reachable from an ordinary operator resource file. Now located structurally"},
+	{"TestEveryEmitterAgreesOnTheEngineIdentity", "snmpv3_usm_conformance_test.go",
+		"nl6#624. FOUR paths emit msgAuthoritativeEngineID and the first cut corrected one, leaving " +
+			"three sending the hex SPELLING and a UNIX epoch. A manager discovers the engine from one " +
+			"and authenticates against another, so it derived a different key and rejected everything " +
+			"— with the whole package green. Found by net-snmp, not by any in-package test"},
+	{"TestUSMKeyDerivationMatchesRFC3414Vectors", "snmpv3_usm_test.go",
+		"nl6#624. The ONLY check here that does not read nl6's output with nl6's own parser: the four " +
+			"localized keys are compared against RFC 3414 A.3's published values, parsed from a " +
+			"checked-in extract of the RFC. A shared misunderstanding passes every other v3 test"},
 	{"TestV1MappingEnterpriseSpecificIgnoresTheDeclaredEnterprise", "trap_v1_test.go",
 		"nl6#97. RFC 3584 3.2 honours a declared snmpTrapEnterprise ONLY for a standard trap; a " +
 			"non-standard one always derives it from snmpTrapOID. The spec had this backwards, and " +
