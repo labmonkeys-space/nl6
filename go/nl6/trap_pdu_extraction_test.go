@@ -1079,6 +1079,17 @@ func TestExtractedSeamsHaveExactlyOneImplementation(t *testing.T) {
 			"the request-derived form must be a thin adapter, not a second envelope"},
 		{"encodeV2cNotification", "encodeNotificationPDU",
 			"the notification PDU body is identical under v2c and v3 and must not exist twice"},
+		{"SNMPv3TrapEncoder.EncodeTrap", "encodeNotificationPDU",
+			"nl6#98. The v3 originator must ASSEMBLE the three seams, not re-implement any of them. " +
+				"Inlining the varbind assembly here is reported by nothing else: the reimplementation " +
+				"scan below allows this function by name (it selects the TRAP tag), and no digest can " +
+				"see a call site replaced by an exact local copy"},
+		{"SNMPv3TrapEncoder.EncodeTrap", "wrapInScopedPDU",
+			"nl6#98. The scoped-PDU envelope exists once. A local copy here would put the engine ID " +
+				"on the wire from a second place, which is the nl6#624 defect's exact shape"},
+		{"SNMPv3TrapEncoder.EncodeTrap", "wrapScopedPDUInV3MessageWith",
+			"nl6#98. The USM envelope exists once. A second one would drift from the poll path's, " +
+				"which is what nl6#529 and nl6#539 each cost"},
 	} {
 		f, ok := byName[tc.caller]
 		if !ok {
@@ -1117,7 +1128,13 @@ func pduExtractionReimplementers(funcs []pduExtractionFunc) map[string]string {
 		"SNMPv2cEncoder.EncodeInform": "selects the INFORM tag for the reference encoder",
 		"SNMPv2cEncoder.EncodeNotificationFast": "selects the tag for the fast encoder, which keeps its " +
 			"own PDU region by decision (see encodeV2cNotification)",
-		"Catalog.ApplySizeBudget": "dry-renders each entry at the TRAP tag to size it",
+		"SNMPv3TrapEncoder.EncodeTrap": "selects the TRAP tag for the SNMPv3 originator (nl6#98). It " +
+			"names the tag and NOTHING else about the PDU: the body comes from encodeNotificationPDU, " +
+			"the scoped PDU from wrapInScopedPDU and the envelope from wrapScopedPDUInV3MessageWith, " +
+			"which is why it is not caught by either of the other two rules",
+		"v2cDryRenderSizer": "IS the v2c load-time measurement, lifted out of Catalog.ApplySizeBudget " +
+			"when the budget became version-aware (nl6#98). It dry-renders each entry at the TRAP tag " +
+			"to size it, and it is what SNMPv1 is sized with too",
 	}
 
 	out := map[string]string{}

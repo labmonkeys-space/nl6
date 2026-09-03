@@ -106,8 +106,13 @@ jobs:
       # decides whether nl6 is right (nl6#624). It was opt-in and unrun when it
       # landed, and its first manual run failed every row with the suite green,
       # so leaving it out of CI would retire the one check with detection power.
+      # snmp gives snmpget (the POLL half, nl6#624); snmptrapd is a SEPARATE
+      # Debian/Ubuntu package and is the RECEIVE half (nl6#98), which snmpget
+      # structurally cannot cover — nothing polls a trap. make test-interop
+      # FAILS rather than skips when either is missing, so installing only
+      # `snmp` would break the gate rather than silently halve it.
       - name: Install net-snmp
-        run: sudo apt-get update && sudo apt-get install -y snmp
+        run: sudo apt-get update && sudo apt-get install -y snmp snmptrapd
 
       - name: Test (SNMPv3 interop with net-snmp)
         run: make test-interop

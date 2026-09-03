@@ -1,10 +1,14 @@
 # SNMP trap / INFORM export (operator guide)
 
-nl6 can emit SNMPv2c notifications — both fire-and-forget **TRAP**s (PDU
-`0xA7`) and acknowledged **INFORM**s (PDU `0xA6`) — from every simulated device
-to a single collector such as `snmptrapd` or an NMS trap daemon. Each device
-generates its own notifications with its own IP as the UDP source, so
-collectors that key on the agent source IP attribute correctly without extra
+nl6 emits notifications from every simulated device to a single collector such
+as `snmptrapd` or an NMS trap daemon, in whichever SNMP version
+`-trap-snmp-version` selects — **v2c** (the default), **v1** RFC 1157 Trap-PDUs,
+or **v3** with RFC 3414 USM authentication and privacy. One version per fleet.
+Both fire-and-forget **TRAP**s (PDU `0xA7`) and acknowledged **INFORM**s (PDU
+`0xA6`) are available under v2c; INFORM is v2c only.
+
+Each device generates its own notifications with its own IP as the UDP source,
+so collectors that key on the agent source IP attribute correctly without extra
 work.
 
 This page is the operator-facing setup guide. For the CLI flags see
@@ -15,7 +19,8 @@ for wire format, catalog JSON, and HTTP endpoints see
 ## Enabling trap export
 
 The feature is off by default. Pass `-trap-collector <host:port>` to enable
-it; the other eight flags have sensible defaults for common trap collectors.
+it; every other `-trap-*` flag has a sensible default for common trap
+collectors.
 
 ```bash
 # 100 devices firing a random catalog trap every ~30s (Poisson-distributed)
@@ -129,6 +134,54 @@ device IP as the sender and an OID from the universal catalog
 (`linkDown` / `linkUp` dominate; `coldStart` / `warmStart` /
 `authenticationFailure` appear less often).
 
+### SNMPv3 notifications
+
+`-trap-snmp-version v3` needs a USM user, and the receiver needs to be told
+which **engine** to expect — a trap carries no discovery exchange, so
+`snmptrapd` cannot learn the engine ID by asking.
+
+Each device's engine ID is **derived from its IPv4 address** and is not
+configurable: `80007ed9` (IANA's documentation PEN 32473) + `03` (RFC 3411 §5
+MAC format) + `0242` + the address in hex. `10.42.0.9` is therefore
+`0x80007ed90302420a2a0009`. You do not have to compute it —
+`GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every
+exporting device.
+
+```bash
+# 1. A scratch persistent dir. net-snmp MOVES each createUser line into its own
+#    store on first read and DELETES it from your file, so a second run with a
+#    corrected password silently keeps the stale user.
+export SNMP_PERSISTENT_DIR=/tmp/nl6-trapd
+rm -rf "$SNMP_PERSISTENT_DIR" && mkdir -p "$SNMP_PERSISTENT_DIR"
+
+# 2. One createUser per device engine ID, then the receiver.
+cat > /tmp/nl6-trapd.conf <<'CONF'
+disableAuthorization yes
+createUser -e 0x80007ed903024201000001 trapuser SHA "authpass" AES "privpass"
+authUser log trapuser priv
+CONF
+snmptrapd -f -Lo -On -C -c /tmp/nl6-trapd.conf udp:127.0.0.1:1162
+
+# 3. The simulator, in another terminal.
+sudo ./nl6 -auto-start-ip 1.0.0.1 -auto-count 1 \
+  -trap-collector 127.0.0.1:1162 -trap-interval 2s \
+  -trap-snmp-version v3 -trap-snmpv3-user trapuser \
+  -trap-snmpv3-auth sha1 -trap-snmpv3-password authpass \
+  -trap-snmpv3-priv aes128 -trap-snmpv3-priv-password privpass
+```
+
+`-C -c` makes `snmptrapd` read only that file, so a host
+`/etc/snmp/snmptrapd.conf` cannot change the result; `-On` prints numeric OIDs
+so no MIBs need to be installed.
+
+:::danger The USM passwords are visible in `ps`
+
+`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the only secrets
+nl6 takes on the command line. They are readable by every user on the host via
+`ps` and `/proc/<pid>/cmdline`, land in shell history, and are echoed by
+`docker inspect`. Use lab credentials only.
+:::
+
 For vendor-flavoured content (e.g., Cisco `ciscoConfigManEvent` or
 Juniper `jnxPowerSupplyFailure`), select a device type with a per-type
 overlay — see
@@ -159,6 +212,11 @@ for the full request / response shape.
 | `informs_failed` climbing, `informs_acked` flat | Collector not ack'ing (down, firewall, misconfigured) | Verify collector ingest; relax `rp_filter`; check collector logs |
 | `informs_dropped` climbing | Per-device pending cap (100) exhausted — collector unreachable long enough that old entries are being aged out | Collector-side issue; fix there. Simulator is doing the right thing |
 | Startup error about INFORM + per-device binding | `-trap-mode inform` with `-trap-source-per-device=false` | Remove the `-trap-source-per-device` override; INFORM requires per-device sockets |
+| Startup error naming `-trap-snmp-version` and `-trap-mode` together | `inform` asked for under `v1` or `v3` | SNMPv1 defines no InformRequest; an SNMPv3 one is receiver-authoritative and needs engine discovery nl6 does not implement. Use `-trap-mode trap`, or `v2c` |
+| `WARNING: -trap-snmpv3-* set but IGNORED` at startup | The credentials were passed without `-trap-snmp-version=v3` | Add it. The fleet is otherwise emitting **unauthenticated** v2c |
+| v3 fleet, `sent` climbing, `snmptrapd` logs nothing | The receiver's `createUser` engine ID does not match the device's, or a stale user survived in `SNMP_PERSISTENT_DIR` | Take the engine ID from `snmpv3.engine_ids_by_device` in `/api/v1/traps/status`; clear the persistent dir and restart the receiver |
+| v3 fleet stopped being accepted after an nl6 restart | `msgAuthoritativeEngineBoots` is always 1 and engine time restarts at 0, and a trap has no discovery, so the receiver's cached `(boots, time)` puts the new traps outside RFC 3414 §3.2's 150-second window | Clear the receiver's persistent USM state and restart it, or wait the window out |
+| Optical alarms went quiet after lowering `-datagram-mtu` on a v3 fleet | The USM envelope adds ~91 bytes, so the Ciena 39-varbind entries cross the budget ~91 B sooner under v3 | The startup log names each disabled entry with its size and the MTU that would admit it; raise `-datagram-mtu` |
 
 For generic bring-up failures (TUN module missing, `sudo` required, port
 conflicts) see [Troubleshooting](troubleshooting.md).

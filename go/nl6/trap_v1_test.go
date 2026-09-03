@@ -288,6 +288,11 @@ func TestParseTrapSNMPVersion(t *testing.T) {
 	for in, want := range map[string]TrapSNMPVersion{
 		"": TrapSNMPv2c, "v2c": TrapSNMPv2c, "2c": TrapSNMPv2c, "V2C": TrapSNMPv2c,
 		"v1": TrapSNMPv1, "1": TrapSNMPv1, " V1 ": TrapSNMPv1,
+		// nl6#98 added v3. This row used to assert v3 was REFUSED, with the
+		// message "SNMPv3 trap support is nl6#98, not this change" — so it is
+		// updated here rather than deleted, which is the change it was written
+		// to anticipate.
+		"v3": TrapSNMPv3, "3": TrapSNMPv3, " V3 ": TrapSNMPv3,
 	} {
 		got, err := ParseTrapSNMPVersion(in)
 		if err != nil {
@@ -298,8 +303,9 @@ func TestParseTrapSNMPVersion(t *testing.T) {
 			t.Errorf("ParseTrapSNMPVersion(%q) = %v, want %v", in, got, want)
 		}
 	}
-	if _, err := ParseTrapSNMPVersion("v3"); err == nil {
-		t.Error("ParseTrapSNMPVersion accepted v3; SNMPv3 trap support is nl6#98, not this change")
+	if _, err := ParseTrapSNMPVersion("v2"); err == nil {
+		t.Error("ParseTrapSNMPVersion accepted v2; there is no SNMPv2 (non-c) notification format " +
+			"in nl6, and accepting it would silently select v2c")
 	}
 }
 
