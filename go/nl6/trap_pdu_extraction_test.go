@@ -37,9 +37,14 @@ import (
 //
 //	git worktree add /tmp/nl6-baseline-98 449280dd022424ea88258af1025286780823aac8
 //	# in the worktree: add `var usmPrivSaltRead = rand.Read` to snmpv3_crypto.go
-//	# and point the two `rand.Read(salt)` calls at it, then copy this file
-//	# truncated to the digest half (everything above the "seam properties"
-//	# banner), which is the part that compiles against the baseline.
+//	# and point the two `rand.Read(salt)` calls at it, then copy this file in
+//	# and DELETE FROM THE "seam properties" BANNER DOWN — the digest half above
+//	# it is the part that compiles against the baseline.
+//	# Then run goimports -w on the copy. Six imports (errors, go/ast, go/parser,
+//	# go/token, os, path/filepath) are used ONLY below the banner, so a copy
+//	# truncated without fixing them does not compile and the baseline cannot be
+//	# measured at all. Keep: bytes, crypto/sha256, encoding/hex, fmt, sort,
+//	# strings, testing, time.
 //	cd /tmp/nl6-baseline-98/go && go test ./nl6/ \
 //	    -run 'UnchangedBy(PDU|Envelope)Extraction' -count=1 -v
 //
@@ -90,9 +95,15 @@ type notificationRow struct {
 //
 // nl6#540 is the defect they stand in for: an OID the encoder cannot represent
 // used to go out as the degenerate `06 00` — a binding no manager can match,
-// with no log line and no counter. Each of the three positions that check for
-// it gets a row, because a refusal that moved from one position to another
-// would otherwise be invisible.
+// with no log line and no counter. encodeNotificationPDU refuses at FOUR
+// positions — trapOID, enterpriseOID, the varbind OID and encodeVarbindTyped —
+// and each gets a row, because a refusal that moved from one position to
+// another would otherwise be invisible.
+//
+// THE ENTERPRISE ROW WAS MISSING and its absence was not visible from either
+// side: the other three all carry a valid enterprise, so that branch
+// contributed to no digest and reached no fault-parity arm, while the comment
+// here said "each of the three positions" and read as complete.
 //
 // A single-arc OID is the trigger: encodeOID answers `06 00` for it, which is
 // exactly what encodableAsOID tests for.
@@ -101,6 +112,18 @@ var syntheticRefusalRows = []notificationRow{
 		label:      "_synthetic/unencodable-trapOID",
 		trapOID:    "1",
 		enterprise: "1.3.6.1.4.1.9",
+		varbinds:   []Varbind{{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "sim-9"}},
+		mustRefuse: true,
+	},
+	{
+		// The trapOID is a STANDARD trap deliberately. RFC 3584 §3.2 honours a
+		// declared snmpTrapEnterprise only for a standard trap, so this is the
+		// one shape in which the enterprise reaches the v1 encoder as well as
+		// the two v2c ones — a vendor trapOID would derive its enterprise from
+		// itself and leave the v1 row silently unexercised.
+		label:      "_synthetic/unencodable-enterprise-OID",
+		trapOID:    "1.3.6.1.6.3.1.1.5.3",
+		enterprise: "1",
 		varbinds:   []Varbind{{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "sim-9"}},
 		mustRefuse: true,
 	},
@@ -119,6 +142,28 @@ var syntheticRefusalRows = []notificationRow{
 		mustRefuse: true,
 	},
 }
+
+// shippedNotificationRows is how many effective catalog entries the corpus walk
+// resolves: the embedded universal plus every per-type overlay, merged the way
+// production merges them.
+//
+// ASSERTED EXACTLY, NOT FLOORED, and the reason is what the three catalog
+// digests SAY when they fail. Each of them names a cause — "lifting
+// encodeNotificationPDU must not move one byte" — and that sentence is false if
+// what actually moved was a catalog DATA edit: a new vendor entry, a reworded
+// template, an entry removed. A floor cannot tell the two apart, so a data edit
+// would present as an encoder regression and be re-pinned as one. With the
+// census exact, a data edit fails HERE first, with a message that says so, and
+// the digests below stay a statement about the encoders.
+//
+// Raise or lower it when the shipped catalogs change, in the same commit, and
+// re-measure the three digests at the baseline the header names.
+const shippedNotificationRows = 38
+
+// syntheticNotificationRows is the refusal set's size, pinned separately so a
+// deleted synthetic row cannot be absorbed by a catalog gaining an entry. It is
+// also what wantRefusals must equal on every pass.
+const syntheticNotificationRows = 4
 
 // notificationCorpus is every shipped catalog entry plus the synthetic
 // refusals.
@@ -178,10 +223,18 @@ func notificationCorpus(t *testing.T) []notificationRow {
 			})
 		}
 	}
-	// Floored so a collapse of the walk cannot pass by encoding nothing, which
-	// is how a digest test quietly stops testing.
-	if len(rows) < 20 {
-		t.Fatalf("only %d shipped entries resolved; the corpus walk collapsed", len(rows))
+	if len(rows) != shippedNotificationRows {
+		t.Fatalf("the corpus walk resolved %d shipped catalog entries, want %d.\n"+
+			"THIS IS A CATALOG DATA CHANGE, NOT AN ENCODER CHANGE. The three digests below will "+
+			"move too, and their failure messages blame the extraction — which would be the wrong "+
+			"diagnosis. Update shippedNotificationRows and re-measure those digests at the baseline "+
+			"commit named in this file's header, in a worktree, against the NEW catalogs",
+			len(rows), shippedNotificationRows)
+	}
+	if len(syntheticRefusalRows) != syntheticNotificationRows {
+		t.Fatalf("%d synthetic refusal rows, want %d; encodeNotificationPDU refuses at four "+
+			"positions and each needs one, or a branch contributes to no digest",
+			len(syntheticRefusalRows), syntheticNotificationRows)
 	}
 	return append(rows, syntheticRefusalRows...)
 }
@@ -246,12 +299,13 @@ func TestV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 			refused, want)
 	}
 
-	const want = "a7bac69aff08ea1b53fea42817fa2e10690adc81d51b10806809a586172c0b0a"
+	const want = "788e75e09e93dbcb6f5615269004d0d4924ba1034f1b6a28e1701202077cf79b"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv2c encoding of %d shipped notifications (%d refusals) digests to %s, "+
-			"measured at the baseline commit as %s.\nLifting encodeNotificationPDU out of "+
-			"encodeV2cNotification must not move one byte of v2c output. If this moved deliberately, "+
-			"say which v2c behaviour changed and why", encoded, refused, got, want)
+			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
+			"catalog DATA edit, so a failure here is the ENCODERS: lifting encodeNotificationPDU out "+
+			"of encodeV2cNotification must not move one byte of v2c output. If this moved "+
+			"deliberately, say which v2c behaviour changed and why", encoded, refused, got, want)
 	}
 }
 
@@ -321,11 +375,12 @@ func TestFastV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d; the fault-parity arm is not being exercised", refused, want)
 	}
 
-	const want = "cf7d8141547eab0a88bdadbaa8e20a98a04e4f7de8bae035f8608353df6f773b"
+	const want = "9153d4cfa67073f4f7027a805585943261cffbbfc88156973ab2ef8842bb3233"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the fast encoder's output over %d shipped notifications digests to %s, measured at "+
-			"the baseline commit as %s.\nencodeV2cNotificationFast is untouched by this change, so a "+
-			"move here is a shared primitive moving underneath it", encoded, got, want)
+			"the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a catalog DATA "+
+			"edit, so a failure here is the encoders: encodeV2cNotificationFast is untouched by this "+
+			"change, and a move is a shared primitive moving underneath it", encoded, got, want)
 	}
 }
 
@@ -365,10 +420,12 @@ func TestV1NotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d", refused, want)
 	}
 
-	const want = "38dcd7b9e0e8aea07b3829be8686b1b6122fc6bd02580bc1ba8294b589eb3202"
+	const want = "19f91e2e7df38b63e1148c2cc8836d232fb3211321e513805650b72735fe7a34"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv1 encoding of %d shipped notifications (%d refusals) digests to %s, "+
-			"measured at the baseline commit as %s", encoded, refused, got, want)
+			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
+			"catalog DATA edit, so a failure here is encodeVarbindTyped or the OID encoder moving "+
+			"beneath a path that builds its own PDU", encoded, refused, got, want)
 	}
 }
 
@@ -410,24 +467,40 @@ func v3ExtractionServer(t *testing.T, auth, priv int) *SNMPServer {
 	return s
 }
 
-// pinPrivSalt fixes the USM privacy salt for the duration of one test.
+// pinPrivSalt substitutes the USM privacy salt source for the duration of one
+// test and restores it afterwards.
 //
-// NOTHING IN THIS FILE MAY CALL t.Parallel(). This mutates a package-level var,
-// and a parallel test overlapping one that pinned it would not fail — it would
-// hand an authPriv encode a DIFFERENT salt and change the digest, or worse, hand
-// a test that meant to use the real generator a fixed one and quietly turn an
-// entropy assertion into a tautology. The whole-package `-race` run is clean
-// today precisely because every test here is sequential; keep it that way.
-func pinPrivSalt(t *testing.T) {
+// THE CONSTRAINT IS PACKAGE-WIDE, NOT FILE-WIDE. usmPrivSaltRead is PRODUCTION
+// state at package scope, so what must not overlap this is any test ANYWHERE in
+// the package that reaches an authPriv encode — not merely the ones in this
+// file. A parallel test overlapping one that pinned it would not fail: it would
+// hand an authPriv encode a DIFFERENT salt and change a digest, or worse, hand a
+// test that meant to use the real generator a fixed one and quietly turn an
+// entropy assertion into a tautology (TestPrivSaltDefaultsToCryptoRand is
+// exactly such a test, and it lives here). No test in this package calls
+// t.Parallel() today and the whole-package `-race` run is clean because of it;
+// keep it that way.
+//
+// EVERY MUTATION OF usmPrivSaltRead GOES THROUGH HERE, which is why it takes the
+// filler rather than hardcoding one. The failure test used to save and restore
+// the var inline, so two places mutated production state and only one of them
+// carried this warning.
+func pinPrivSalt(t *testing.T, read func([]byte) (int, error)) {
 	t.Helper()
 	saved := usmPrivSaltRead
-	usmPrivSaltRead = func(b []byte) (int, error) {
-		for i := range b {
-			b[i] = byte(0x5A + i)
-		}
-		return len(b), nil
-	}
+	usmPrivSaltRead = read
 	t.Cleanup(func() { usmPrivSaltRead = saved })
+}
+
+// fixedSalt is the reproducible filler every digest below pins the salt with.
+// Its bytes are arbitrary; what matters is that they are the same on both sides
+// of the baseline comparison, since an authPriv message is random by
+// construction and could not otherwise be compared across commits at all.
+func fixedSalt(b []byte) (int, error) {
+	for i := range b {
+		b[i] = byte(0x5A + i)
+	}
+	return len(b), nil
 }
 
 // v3ExtractionLevels is the matrix's v3 row expanded: noAuthNoPriv, authNoPriv
@@ -500,7 +573,7 @@ const v3ExtractionWritesPerRequest = 5
 // own copy of the scoped-PDU envelope drifted from this one once already
 // (nl6#624: the hex spelling of the engine ID against its octets).
 func TestV3PollOutputUnchangedByEnvelopeExtraction(t *testing.T) {
-	pinPrivSalt(t)
+	pinPrivSalt(t, fixedSalt)
 
 	h := sha256.New()
 	writes := 0
@@ -583,56 +656,74 @@ func TestV3PollOutputUnchangedByEnvelopeExtraction(t *testing.T) {
 // far side byte for byte, at an arbitrary engine ID and an arbitrary context
 // name.
 //
+// BOTH NOTIFICATION TAGS ARE SWEPT. "An arbitrary pre-encoded PDU" was asserted
+// over 0xA7 alone, which proves nothing about arbitrariness — an implementation
+// that special-cased that one tag would pass. The deferred nl6#98 half needs
+// 0xA6 as well, since an SNMPv3 INFORM is a notification the originator retries
+// against an ack.
+//
 // The emptyEngineID case pins TODAY'S PERMISSIVE BEHAVIOUR and nothing more.
 // Whether a notification ORIGINATOR may send a zero-length
 // contextEngineID/msgAuthoritativeEngineID is an nl6#98 question — RFC 3411
 // wants 5-32 octets, and usmState already substitutes a default rather than
 // emit nothing — and it is deliberately not decided here.
 func TestWrapInScopedPDUCarriesANotificationPDU(t *testing.T) {
-	pdu, err := encodeNotificationPDU(ASN1_TRAP_V2C, 42, "1.3.6.1.6.3.1.1.5.3", "1.3.6.1.4.1.9",
-		123456, []Varbind{
-			{OID: "1.3.6.1.2.1.2.2.1.1.7", Type: TrapVTInteger, Value: "7"},
-			{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "sim-9"},
-		})
-	if err != nil {
-		t.Fatalf("encodeNotificationPDU: %v", err)
-	}
-	if pdu[0] != ASN1_TRAP_V2C {
-		t.Fatalf("encodeNotificationPDU emitted tag 0x%02X, want 0x%02X", pdu[0], ASN1_TRAP_V2C)
-	}
-
-	for _, tc := range []struct {
-		name        string
-		engineID    []byte
-		contextName string
+	for _, pt := range []struct {
+		name string
+		tag  byte
 	}{
-		{"defaultContext", []byte{0x80, 0x00, 0x12, 0x34, 0x01, 0x02, 0x03, 0x04}, ""},
-		{"namedContext", []byte{0x80, 0x00, 0xFF, 0xFF}, "vrf-red"},
-		{"emptyEngineID", nil, ""},
+		{"trap", ASN1_TRAP_V2C},
+		{"inform", ASN1_INFORM_REQUEST},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			scoped := wrapInScopedPDU(tc.engineID, tc.contextName, pdu)
+		t.Run(pt.name, func(t *testing.T) {
+			pdu, err := encodeNotificationPDU(pt.tag, 42, "1.3.6.1.6.3.1.1.5.3", "1.3.6.1.4.1.9",
+				123456, []Varbind{
+					{OID: "1.3.6.1.2.1.2.2.1.1.7", Type: TrapVTInteger, Value: "7"},
+					{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "sim-9"},
+				})
+			if err != nil {
+				t.Fatalf("encodeNotificationPDU: %v", err)
+			}
+			if pdu[0] != pt.tag {
+				t.Fatalf("encodeNotificationPDU emitted tag 0x%02X, want 0x%02X", pdu[0], pt.tag)
+			}
 
-			// Decoded with the independent BER reader from trap_v1_test.go, not
-			// with nl6's own parser: a reader that shares code with the encoder
-			// lets one misreading satisfy both sides.
-			body, rest := v1TLV(t, scoped, ASN1_SEQUENCE, "scoped PDU")
-			if len(rest) != 0 {
-				t.Fatalf("trailing bytes after the scoped PDU: % x", rest)
-			}
-			gotEngine, body := v1OctetString(t, body, "contextEngineID")
-			if gotEngine != string(tc.engineID) {
-				t.Errorf("contextEngineID = % x, want % x. It goes on the wire as OCTETS, never as its "+
-					"hex spelling (nl6#624)", gotEngine, tc.engineID)
-			}
-			gotContext, body := v1OctetString(t, body, "contextName")
-			if gotContext != tc.contextName {
-				t.Errorf("contextName = %q, want %q", gotContext, tc.contextName)
-			}
-			if !bytes.Equal(body, pdu) {
-				t.Errorf("the wrapped PDU is not the PDU handed in.\ngot:  % x\nwant: % x\n"+
-					"wrapInScopedPDU must carry an arbitrary PDU — including the 0xA7 the nl6#98 trap "+
-					"encoder will hand it — through untouched", body, pdu)
+			for _, tc := range []struct {
+				name        string
+				engineID    []byte
+				contextName string
+			}{
+				{"defaultContext", []byte{0x80, 0x00, 0x12, 0x34, 0x01, 0x02, 0x03, 0x04}, ""},
+				{"namedContext", []byte{0x80, 0x00, 0xFF, 0xFF}, "vrf-red"},
+				{"emptyEngineID", nil, ""},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					scoped := wrapInScopedPDU(tc.engineID, tc.contextName, pdu)
+
+					// Decoded with the independent BER reader from
+					// trap_v1_test.go, not with nl6's own parser: a reader that
+					// shares code with the encoder lets one misreading satisfy
+					// both sides.
+					body, rest := v1TLV(t, scoped, ASN1_SEQUENCE, "scoped PDU")
+					if len(rest) != 0 {
+						t.Fatalf("trailing bytes after the scoped PDU: % x", rest)
+					}
+					gotEngine, body := v1OctetString(t, body, "contextEngineID")
+					if gotEngine != string(tc.engineID) {
+						t.Errorf("contextEngineID = % x, want % x. It goes on the wire as OCTETS, never "+
+							"as its hex spelling (nl6#624)", gotEngine, tc.engineID)
+					}
+					gotContext, body := v1OctetString(t, body, "contextName")
+					if gotContext != tc.contextName {
+						t.Errorf("contextName = %q, want %q", gotContext, tc.contextName)
+					}
+					if !bytes.Equal(body, pdu) {
+						t.Errorf("the wrapped PDU is not the PDU handed in.\ngot:  % x\nwant: % x\n"+
+							"wrapInScopedPDU must carry an arbitrary PDU — including the 0x%02X the "+
+							"nl6#98 notification encoder will hand it — through untouched",
+							body, pdu, pt.tag)
+					}
+				})
 			}
 		})
 	}
@@ -646,7 +737,7 @@ func TestWrapInScopedPDUCarriesANotificationPDU(t *testing.T) {
 // request-derived form produces. Byte equality at every security level, with the
 // salt pinned so authPriv is comparable at all.
 func TestInnerEnvelopeFormReproducesTheAdapter(t *testing.T) {
-	pinPrivSalt(t)
+	pinPrivSalt(t, fixedSalt)
 
 	for _, lvl := range v3ExtractionLevels {
 		t.Run(lvl.name, func(t *testing.T) {
@@ -1016,7 +1107,9 @@ func pduExtractionReimplementers(funcs []pduExtractionFunc) map[string]string {
 	v3Envelope := map[string]string{
 		"SNMPServer.wrapScopedPDUInV3MessageWith": "IS the envelope",
 		"SNMPServer.createSNMPv3ReportResponseSigned": "a Report is a deliberately different envelope: " +
-			"empty user name for discovery, its own msgFlags rule, never encrypted",
+			"its own msgFlags rule (reportFlags), never encrypted, and a user name that depends on " +
+			"whether it is signed — empty for an unsigned discovery Report, the REQUEST'S user name " +
+			"for a signed one, which a manager matches against the request it sent",
 	}
 	notificationTags := map[string]string{
 		"encodeNotificationPDU":       "IS the notification PDU builder, and validates the tag",
@@ -1276,10 +1369,8 @@ func TestPrivSaltDefaultsToCryptoRand(t *testing.T) {
 // that it fails LOUDLY: encryption under a zero or partial salt would produce a
 // predictable IV, which is worse than sending nothing.
 func TestPrivSaltFailureIsFatalToTheMessage(t *testing.T) {
-	saved := usmPrivSaltRead
-	t.Cleanup(func() { usmPrivSaltRead = saved })
 	sentinel := errors.New("entropy source unavailable")
-	usmPrivSaltRead = func(b []byte) (int, error) { return 0, sentinel }
+	pinPrivSalt(t, func(_ []byte) (int, error) { return 0, sentinel })
 
 	plaintext := []byte("scoped pdu stand-in, padded by the cipher")
 	for _, priv := range []struct {
@@ -1294,8 +1385,12 @@ func TestPrivSaltFailureIsFatalToTheMessage(t *testing.T) {
 				t.Fatalf("encryption succeeded with no entropy; it emitted %d ciphertext bytes under a "+
 					"predictable IV", len(ct))
 			}
-			if !errors.Is(err, sentinel) && !strings.Contains(err.Error(), sentinel.Error()) {
-				t.Errorf("the error does not carry the entropy failure: %v", err)
+			// errors.Is ALONE. Both salt sites wrap with %w, so a substring
+			// fallback would accept a %v that formats the cause away and
+			// discards the chain — which is the state the AES site was in
+			// until this change, and a fallback is what made that invisible.
+			if !errors.Is(err, sentinel) {
+				t.Errorf("the error does not WRAP the entropy failure (errors.Is is false): %v", err)
 			}
 			if ct != nil || salt != nil {
 				t.Errorf("ciphertext/salt returned alongside the error: % x / % x", ct, salt)
