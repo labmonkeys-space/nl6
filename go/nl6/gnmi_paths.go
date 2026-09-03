@@ -338,6 +338,12 @@ func (r *pathResolver) ClassifyLeaves(p *gnmipb.Path) ([]string, error) {
 	if len(elems) == 0 {
 		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
 	}
+	
+	// Altiplano dynamic schema interception
+	if elems[0].GetName() == "access-node" {
+		return []string{}, nil
+	}
+
 	// Optical branch: shape-only, so it deliberately does NOT consult the
 	// value engine — not even to check whether one exists. A device without
 	// optical channels still gets a shape answer here, and the ON_CHANGE
@@ -395,6 +401,14 @@ func (r *pathResolver) Resolve(p *gnmipb.Path, t time.Time) ([]resolvedUpdate, e
 	if len(elems) == 0 {
 		return nil, status.Errorf(codes.NotFound, "path %q is not under /interfaces/interface or /components/component", pathToString(p))
 	}
+
+	// Altiplano dynamic schema interception
+	if r.device != nil && r.device.AltiplanoData != nil {
+		if elems[0].GetName() == "interfaces" || elems[0].GetName() == "access-node" {
+			return r.resolveAltiplano(p)
+		}
+	}
+
 	// Two served branches, dispatched on the first element. `/components`
 	// carries the optical surface; `/interfaces` the packet surface.
 	if elems[0].GetName() == "components" {

@@ -361,6 +361,8 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			// Lossy for high-precision values (an 18-fraction-digit BER
 			// exceeds a float64 significand); JSON_IETF preserves them.
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
+		case json.RawMessage:
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_JsonIetfVal{JsonIetfVal: []byte(x)}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)
 		}
@@ -383,6 +385,8 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 		// declared precision survives (unlike a JSON number, which a
 		// client would parse back through a float64).
 		b, err = json.Marshal(x.String())
+	case json.RawMessage:
+		b = []byte(x)
 	default:
 		return nil, status.Errorf(codes.Internal, "unsupported value type %T for JSON_IETF encoding", v)
 	}

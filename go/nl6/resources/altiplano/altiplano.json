@@ -1,0 +1,11 @@
+{
+  "api": [
+    {
+      "path": "/",
+      "method": "GET",
+      "body": "{\"status\":\"ok\"}",
+      "headers": {"Content-Type": "application/json"},
+      "status": 200
+    }
+  ]
+}

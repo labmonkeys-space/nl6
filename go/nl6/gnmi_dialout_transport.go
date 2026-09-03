@@ -60,6 +60,8 @@ func buildDialoutTransport(flavor string) (DialoutTransport, string, error) {
 	switch strings.ToLower(strings.TrimSpace(flavor)) {
 	case "", "gnmireverse":
 		return gnmiReverseTransport{}, "gnmireverse", nil
+	case "altiplano":
+		return gnmiReverseTransport{}, "altiplano", nil
 	default:
 		return nil, "", fmt.Errorf("unknown gnmi dial-out flavor %q (supported: gnmireverse)", flavor)
 	}

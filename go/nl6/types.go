@@ -20,6 +20,8 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
+
+	"github.com/labmonkeys-space/nl6/go/nl6/resources/altiplano"
 	"sync/atomic"
 	"time"
 
@@ -92,6 +94,8 @@ type DeviceResources struct {
 	oidIndex   *sync.Map `json:"-"` // Lock-free OID -> Response mapping for O(1) lookups
 	sortedOIDs []string  `json:"-"` // Pre-sorted OID list for GetNext operations
 	oidNextMap *sync.Map `json:"-"` // Pre-computed next OID mapping for walks
+
+
 }
 
 // Device simulator represents a single simulated device
@@ -108,7 +112,9 @@ type DeviceSimulator struct {
 	resources    *DeviceResources
 	resourceFile string // Track which resource file was used
 	sysLocation  string // Dynamic sysLocation for this device
-	sysName      string // Dynamic sysName for this device
+	sysName      string
+
+	AltiplanoData *altiplano.Device `json:"-"` 
 	// Cached frequently accessed values (lock-free)
 	cachedSysName     atomic.Value    // Stores string
 	cachedSysLocation atomic.Value    // Stores string

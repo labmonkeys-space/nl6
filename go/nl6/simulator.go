@@ -98,6 +98,7 @@ func main() {
 		autoStartIP     = flag.String("auto-start-ip", "", "Auto-create devices starting from this IP address (e.g., 192.168.100.1)")
 		autoCount       = flag.Int("auto-count", 0, "Number of devices to auto-create (requires -auto-start-ip)")
 		autoNetmask     = flag.String("auto-netmask", "16", "Netmask for auto-created devices: the fleet is a flat /16 management plane (default: 16)")
+		autoProfile     = flag.String("auto-profile", "", "Device profile to load for the auto-start batch (e.g. resources/altiplano.json). If empty, defaults to asr9k/cisco_ios")
 		snmpv3EngineID  = flag.String("snmpv3-engine-id", "", "Enable SNMPv3 with specified engine ID (e.g., 800000090300AABBCCDD)")
 		snmpv3AuthProto = flag.String("snmpv3-auth", "md5", "SNMPv3 authentication protocol: none, md5, sha1. RFC 3414 USM, verified against net-snmp (nl6#624). Also selects the hash used to localize the privacy key")
 		snmpv3PrivProto = flag.String("snmpv3-priv", "none", "SNMPv3 privacy protocol: none, des, aes128 (default: none)")
@@ -252,7 +253,7 @@ func main() {
 		log.Fatalf("Invalid -datagram-mtu: %v", err)
 	}
 
-	log.Printf("simulator %s starting (pid=%d)", Version, os.Getpid())
+	log.Printf("simulator %s starting (Altiplano compatible) (pid=%d)", Version, os.Getpid())
 
 	// Check if running as root
 	if os.Geteuid() != 0 {
@@ -646,7 +647,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, *autoProfile, v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

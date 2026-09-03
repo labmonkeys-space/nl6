@@ -524,6 +524,7 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			// Initialize per-device metrics cycler for dynamic CPU/memory values
 			profile := GetDeviceProfile(deviceResourceFile)
 			device.metricsCycler = NewMetricsCycler(int64(i), profile)
+			device.initAltiplanoData()
 			device.metricsCycler.InitGPUMetrics(int64(i), profile.GPU)
 
 			// Apply the batch-level export seed BEFORE InitIfCounters so
@@ -890,6 +891,7 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 
 	// Initialize per-device metrics cycler for dynamic CPU/memory values
 	profile := GetDeviceProfile(resourceFile)
+	device.initAltiplanoData()
 	device.metricsCycler = NewMetricsCycler(int64(deviceIndex), profile)
 	device.metricsCycler.InitGPUMetrics(int64(deviceIndex), profile.GPU)
 

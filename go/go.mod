@@ -15,6 +15,12 @@ require (
 )
 
 require (
+	github.com/golang/glog v1.2.5 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/openconfig/goyang v1.6.3 // indirect
+	github.com/openconfig/ygot v0.35.0 // indirect
+	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

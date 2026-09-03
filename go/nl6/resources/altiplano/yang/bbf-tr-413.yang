@@ -1,0 +1,13 @@
+module bbf-tr-413 {
+  yang-version "1";
+  namespace "urn:bbf:yang:bbf-tr-413";
+  prefix "bbf-tr413";
+
+  container access-node {
+    container state {
+      config false;
+      leaf software-version { type string; }
+      leaf uptime { type uint64; }
+    }
+  }
+}
