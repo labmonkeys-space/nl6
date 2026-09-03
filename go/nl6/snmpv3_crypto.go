@@ -106,6 +106,15 @@ func (s *SNMPServer) createSNMPv3Response(oid, value string, requestMsg *SNMPv3M
 // supplies its own msgID, its own flag byte and its own user, and must reach
 // the SAME envelope rather than a second one that can drift from it.
 func (s *SNMPServer) wrapScopedPDUInV3Message(scopedPDU []byte, requestMsg *SNMPv3Message) ([]byte, error) {
+	// The configured check runs BEFORE requestMsg is read. Splitting the
+	// function moved the deref ahead of the guard the original ran first, so a
+	// nil requestMsg with v3 unconfigured turned an error return into a panic.
+	// No caller can reach it today — all three pass a message the dispatcher
+	// already parsed — but the ordering was an unintended consequence of the
+	// split, not a decision.
+	if s.v3Config == nil || !s.v3Config.Enabled {
+		return nil, fmt.Errorf("SNMPv3 not configured")
+	}
 	return s.wrapScopedPDUInV3MessageWith(scopedPDU,
 		requestMsg.GlobalData.MsgID,
 		requestMsg.GlobalData.MsgFlags,
@@ -394,13 +403,18 @@ func (s *SNMPServer) encryptDES(data []byte) ([]byte, []byte, error) {
 	}
 	key, preIV := usm.privKey[:8], usm.privKey[8:16]
 
-	// The salt is what goes on the wire. usmPrivSaltRead is `crypto/rand.Read`
-	// in production, which only errors on a misconfigured kernel entropy
-	// source; a predictable salt is a real SNMPv3 privacy break, so fail
-	// loudly.
+	// The salt is what goes on the wire, and a predictable one is a real
+	// SNMPv3 privacy break, so this fails loudly rather than proceeding.
+	//
+	// IN PRODUCTION NEITHER BRANCH CAN BE TAKEN. Since Go 1.24 crypto/rand.Read
+	// always fills the buffer and never returns an error — it crashes the
+	// program irrecoverably instead — so the checks exist for the SEAM, which
+	// is the only way a short or failing read becomes expressible. n is checked
+	// as well as err because a substituted reader can return (4, nil), which
+	// would leave half the salt zero and the IV partly predictable.
 	salt := make([]byte, 8)
-	if _, err := usmPrivSaltRead(salt); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate DES salt: %w", err)
+	if n, err := usmPrivSaltRead(salt); err != nil || n != len(salt) {
+		return nil, nil, fmt.Errorf("failed to generate DES salt (%d of %d octets): %w", n, len(salt), err)
 	}
 	iv := make([]byte, 8)
 	for i := range iv {
@@ -458,10 +472,12 @@ func (s *SNMPServer) encryptAES128At(data []byte, boots, engineTime int) ([]byte
 	iv[0], iv[1], iv[2], iv[3] = byte(boots>>24), byte(boots>>16), byte(boots>>8), byte(boots)
 	iv[4], iv[5], iv[6], iv[7] = byte(engineTime>>24), byte(engineTime>>16), byte(engineTime>>8), byte(engineTime)
 
-	// Last 8 bytes: random salt (privacy parameters)
+	// Last 8 bytes: random salt (privacy parameters). Same reasoning as
+	// encryptDES: unreachable in production, checked for the seam, and %w so
+	// the cause survives for errors.Is.
 	salt := make([]byte, 8)
-	if _, err := usmPrivSaltRead(salt); err != nil {
-		return nil, nil, fmt.Errorf("failed to generate salt: %v", err)
+	if n, err := usmPrivSaltRead(salt); err != nil || n != len(salt) {
+		return nil, nil, fmt.Errorf("failed to generate AES salt (%d of %d octets): %w", n, len(salt), err)
 	}
 	copy(iv[8:16], salt)
 

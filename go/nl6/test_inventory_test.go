@@ -368,7 +368,33 @@ var loadBearingGuards = []loadBearingGuard{
 			"on the shipped poll path. It is also the SOLE guard that the Report path's scoped PDU " +
 			"still agrees with the response path's — the two drifted once already (nl6#624, the " +
 			"engine ID's hex spelling against its octets) with the whole package green"},
-
+	// nl6#98's structural and seam guards. A byte digest CANNOT see a call site
+	// reverted to an exact local copy — the copy emits the same bytes, every
+	// digest above stays green, and it becomes visible only the day one of the
+	// two drifts, which is the day it is a defect rather than the day it was
+	// introduced. These are the only cover for that class.
+	{"TestExtractedSeamsHaveExactlyOneImplementation", "trap_pdu_extraction_test.go",
+		"nl6#98, the forward half: the four named callers still CALL the lifted helpers. Deleting it " +
+			"lets encodeV2cNotification, createScopedPDUMulti, createDiscoveryScopedPDU or " +
+			"wrapScopedPDUInV3Message grow a private copy of the seam back, with all four digests " +
+			"green, and the nl6#98 notification encoder then builds on a second implementation"},
+	{"TestNothingReimplementsTheExtractedSeams", "trap_pdu_extraction_test.go",
+		"nl6#98, the complementary half, and it exists because the forward scan MISSED A LIVE " +
+			"re-implementation: createDiscoveryScopedPDU hand-built the scoped-PDU envelope while " +
+			"not being a named caller. Its rule is STRUCTURAL rather than by name because a reviewer " +
+			"defeated the by-name version with a complete second copy whose local was called `eid`, " +
+			"and both scans stayed green. Deleting it re-opens both holes"},
+	{"TestPrivSaltSeamIsInitialisedFromCryptoRand", "trap_pdu_extraction_test.go",
+		"nl6#98. The ONLY pin that the SNMPv3 privacy salt is crypto/rand in production. Pointing " +
+			"usmPrivSaltRead at ONE seeded math/rand generator left the ENTIRE package green — every " +
+			"digest (they all pin the salt and overwrite the default first), the race suite, the " +
+			"net-snmp interop gate, and the behavioural test below — while the DES IV became " +
+			"predictable and identical plaintext encrypted identically. gosec cannot cover it either: " +
+			"the repo excludes G404 on the written rationale that crypto/rand is used where it matters"},
+	{"TestPrivSaltDefaultsToCryptoRand", "trap_pdu_extraction_test.go",
+		"nl6#98, the behavioural half of the same seam. A reviewer replaced the default with a " +
+			"zero-filler and the whole package stayed green, because every authPriv digest pins the " +
+			"salt itself and none of them can see the default at all"},
 	{"TestInterfaceStateInjectedClockIsUsedEverywhere", "interface_state_clock_test.go",
 		"nl6#575. All THREE of the engine's clock reads must move together: a boot time from the real " +
 			"clock and transitions from an injected one subtract a real timestamp from a fake one. " +
