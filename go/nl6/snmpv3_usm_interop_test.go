@@ -44,7 +44,14 @@ import (
 // the wrong-password control, without which six successful polls prove
 // reachability rather than authentication.
 //
-// RECORDED RESULT (2026-09-03, net-snmp 5.6.2.1, darwin/arm64): all SEVEN rows
+// IT RUNS IN CI. The Build & Test gate installs net-snmp and calls
+// `make test-interop`, so every push polls nl6 with net-snmp 5.9.4 on Linux.
+// It was opt-in when it landed, which would have retired the one check here
+// with detection power: nothing else in the package can see a disagreement
+// between nl6 and a real manager.
+//
+// RECORDED RESULT (2026-09-03, net-snmp 5.6.2.1 on darwin/arm64 and 5.9.4 in
+// CI on linux/amd64): all SEVEN rows
 // pass — noAuthNoPriv, authNoPriv under MD5 and SHA1, and authPriv under
 // MD5+DES, SHA1+DES, MD5+AES128 and SHA1+AES128 — plus the wrong-password
 // control. Every combination of the two auth protocols with the two privacy
