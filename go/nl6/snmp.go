@@ -575,14 +575,14 @@ func (s *SNMPServer) createDiscoveryScopedPDU(oid, value string) ([]byte, error)
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
-	// Scoped PDU: contextEngineID + contextName + data
-	contextEngineID := encodeOctetString(string(s.usmState().engineID))
-	contextName := encodeOctetString("") // Default context
-
-	scopedContents := []byte{}
-	scopedContents = append(scopedContents, contextEngineID...)
-	scopedContents = append(scopedContents, contextName...)
-	scopedContents = append(scopedContents, pdu...)
-
-	return encodeSequence(scopedContents), nil
+	// Scoped PDU: contextEngineID + contextName + data.
+	//
+	// THROUGH THE SHARED WRAPPER (nl6#98). This used to hand-build the same
+	// three appends, which is the second copy of an envelope whose FIRST copy
+	// already drifted once: before nl6#624 this builder sent the engine ID's hex
+	// SPELLING and a Unix epoch while wrapScopedPDUInV3Message sent the decoded
+	// octets and seconds since boot, and a manager that discovered the engine
+	// here then failed every authenticated exchange. One implementation is what
+	// stops that returning.
+	return wrapInScopedPDU(s.usmState().engineID, "", pdu), nil
 }

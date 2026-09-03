@@ -123,6 +123,73 @@ func (SNMPv2cEncoder) ParseAck(pkt []byte) (uint32, bool, error) {
 // only difference between TRAP and INFORM on the wire is the PDU tag byte.
 func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID, enterpriseOID string,
 	uptimeHundredths uint32, varbinds []Varbind, buf []byte) (int, error) {
+	pdu, err := encodeNotificationPDU(pduTag, reqID, trapOID, enterpriseOID, uptimeHundredths, varbinds)
+	if err != nil {
+		return 0, err
+	}
+
+	// Outer message SEQUENCE: version INTEGER + community OCTET STRING + PDU.
+	// The only community-bearing code in THIS encoder, which is why the PDU
+	// above is built separately: SNMPv3 (nl6#98) carries the identical PDU
+	// inside a scoped PDU and a USM envelope, with no community anywhere.
+	//
+	// encodeV2cNotificationFast (trap_encode_fast.go) appends its own community
+	// and has NOT had the same split — its PDU region is entangled with the
+	// outer beginTLV mark and the maxTrapPDU check, and restructuring it was
+	// deliberately out of scope. It stays a v2c-only encoder until someone does
+	// that work; TestFastEncoderMatchesLegacy_* is what holds the two together
+	// meanwhile.
+	outer := make([]byte, 0, len(pdu)+16+len(community))
+	outer = append(outer, encodeInteger(1)...) // v2c = 1
+	outer = append(outer, encodeOctetString(community)...)
+	outer = append(outer, pdu...)
+	envelope := encodeSequence(outer)
+
+	if len(envelope) > len(buf) {
+		return 0, fmt.Errorf("encoded PDU (%d bytes) exceeds buffer (%d)", len(envelope), len(buf))
+	}
+	n := copy(buf, envelope)
+	return n, nil
+}
+
+// encodeNotificationPDU builds one complete SNMPv2-Trap-PDU (0xA7) or
+// InformRequest-PDU (0xA6) — tag, length and contents.
+//
+// IT PREPENDS UP TO THREE VARBINDS, not two: sysUpTime.0 and snmpTrapOID.0 are
+// the mandatory pair (RFC 3416 §4.2.6), and snmpTrapEnterprise.0 follows them
+// whenever enterpriseOID is non-empty, in the position RFC 3584 §4.1 pins.
+// Catalog authors supply only body varbinds; the loader rejects an entry that
+// lists any of the three explicitly.
+//
+// VERSION-INDEPENDENT BY CONSTRUCTION. RFC 3416 §4.2.6 defines this PDU once,
+// and v2c and v3 differ only in what wraps it: a community envelope here, a
+// scoped PDU and a USM envelope on the v3 path (nl6#98). Two copies of it would
+// be two chances to disagree about the prepends, the RFC 3584 §4.1 position of
+// snmpTrapEnterprise.0, or which OIDs are refused — the pair-of-encoders defect
+// this package has shipped twice already (nl6#529, nl6#539).
+//
+// IT ENFORCES NO SIZE BUDGET, which matters now that it is package-wide rather
+// than an inner block of the v2c encoder. Every existing bound sits OUTSIDE it:
+// ApplySizeBudget dry-renders at catalog load, encodeV2cNotificationFast checks
+// maxTrapPDU on the assembled message, and encodeV2cNotification is bounded by
+// the caller's buffer. A future caller that assembles a PDU here and wraps it
+// itself gets none of those and must bring its own.
+//
+// pduTag is a parameter rather than a mode, because the tag is the ONLY
+// difference between a TRAP and an INFORM on the wire — and for that reason it
+// is CHECKED. A byte parameter that lands verbatim in the tag position accepts
+// 254 values that are not notifications, and the two that matter here are
+// 0xA0/0xA1: a GetRequest or GetNextRequest assembled by this builder is a
+// well-formed message asking a collector to answer, emitted from a device that
+// will never read the reply. Nothing calls it that way today; this is what
+// keeps a future caller from being able to.
+func encodeNotificationPDU(pduTag byte, reqID uint32, trapOID, enterpriseOID string,
+	uptimeHundredths uint32, varbinds []Varbind) ([]byte, error) {
+	if pduTag != ASN1_TRAP_V2C && pduTag != ASN1_INFORM_REQUEST {
+		return nil, fmt.Errorf("PDU tag 0x%02X is not a notification: want 0x%02X (SNMPv2-Trap-PDU) "+
+			"or 0x%02X (InformRequest-PDU)", pduTag, ASN1_TRAP_V2C, ASN1_INFORM_REQUEST)
+	}
+
 	// Build the PDU inner SEQUENCE contents:
 	//   request-id / error-status / error-index / variable-bindings
 	pduContents := make([]byte, 0, 128+len(varbinds)*32)
@@ -149,10 +216,10 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 	// only the fast path was changed. (It compares which inputs error, not
 	// the error text; the shared wording is a courtesy, not test-enforced.)
 	if !encodableAsOID(trapOID) {
-		return 0, fmt.Errorf("snmpTrapOID %q is not one the encoder can represent", trapOID)
+		return nil, fmt.Errorf("snmpTrapOID %q is not one the encoder can represent", trapOID)
 	}
 	if enterpriseOID != "" && !encodableAsOID(enterpriseOID) {
-		return 0, fmt.Errorf("snmpTrapEnterprise %q is not one the encoder can represent", enterpriseOID)
+		return nil, fmt.Errorf("snmpTrapEnterprise %q is not one the encoder can represent", enterpriseOID)
 	}
 
 	vbContents := make([]byte, 0, 64+len(varbinds)*32)
@@ -163,12 +230,12 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 	}
 	for i, vb := range varbinds {
 		if !encodableAsOID(vb.OID) {
-			return 0, fmt.Errorf("varbind %d: OID %q is not one the encoder can represent "+
+			return nil, fmt.Errorf("varbind %d: OID %q is not one the encoder can represent "+
 				"(rendered from a templated catalog OID or a REST override)", i, vb.OID)
 		}
 		enc, err := encodeVarbindTyped(vb)
 		if err != nil {
-			return 0, fmt.Errorf("varbind %d (%s): %w", i, vb.OID, err)
+			return nil, fmt.Errorf("varbind %d (%s): %w", i, vb.OID, err)
 		}
 		vbContents = append(vbContents, enc...)
 	}
@@ -180,18 +247,7 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
-	// Outer message SEQUENCE: version INTEGER + community OCTET STRING + PDU.
-	outer := make([]byte, 0, len(pdu)+16+len(community))
-	outer = append(outer, encodeInteger(1)...) // v2c = 1
-	outer = append(outer, encodeOctetString(community)...)
-	outer = append(outer, pdu...)
-	envelope := encodeSequence(outer)
-
-	if len(envelope) > len(buf) {
-		return 0, fmt.Errorf("encoded PDU (%d bytes) exceeds buffer (%d)", len(envelope), len(buf))
-	}
-	n := copy(buf, envelope)
-	return n, nil
+	return pdu, nil
 }
 
 // encodeVarbindTimeTicks builds one VarBind of type TimeTicks (tag 0x43).
