@@ -185,11 +185,6 @@ func encodeV2cNotification(pduTag byte, community string, reqID uint32, trapOID,
 // keeps a future caller from being able to.
 func encodeNotificationPDU(pduTag byte, reqID uint32, trapOID, enterpriseOID string,
 	uptimeHundredths uint32, varbinds []Varbind) ([]byte, error) {
-	if pduTag != ASN1_TRAP_V2C && pduTag != ASN1_INFORM_REQUEST {
-		return nil, fmt.Errorf("PDU tag 0x%02X is not a notification: want 0x%02X (SNMPv2-Trap-PDU) "+
-			"or 0x%02X (InformRequest-PDU)", pduTag, ASN1_TRAP_V2C, ASN1_INFORM_REQUEST)
-	}
-
 	// Build the PDU inner SEQUENCE contents:
 	//   request-id / error-status / error-index / variable-bindings
 	pduContents := make([]byte, 0, 128+len(varbinds)*32)

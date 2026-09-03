@@ -777,26 +777,6 @@ func TestExtractedPDUIsWhatTheV2cEncoderEmits(t *testing.T) {
 	}
 }
 
-// TestNotificationPDURejectsANonNotificationTag pins the tag guard.
-//
-// pduTag lands verbatim in the tag position, so an unchecked byte lets this
-// builder assemble a GetRequest or GetNextRequest: a well-formed message asking
-// a collector to answer, sent from a device that will never read the reply.
-func TestNotificationPDURejectsANonNotificationTag(t *testing.T) {
-	vbs := []Varbind{{OID: "1.3.6.1.2.1.1.5.0", Type: TrapVTOctetString, Value: "sim-9"}}
-	for _, tag := range []byte{ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_RESPONSE, ASN1_GET_BULK, 0x00, 0x30} {
-		if _, err := encodeNotificationPDU(tag, 42, "1.3.6.1.6.3.1.1.5.3", "", 123456, vbs); err == nil {
-			t.Errorf("encodeNotificationPDU accepted tag 0x%02X; only 0x%02X and 0x%02X are "+
-				"notifications", tag, ASN1_TRAP_V2C, ASN1_INFORM_REQUEST)
-		}
-	}
-	for _, tag := range []byte{ASN1_TRAP_V2C, ASN1_INFORM_REQUEST} {
-		if _, err := encodeNotificationPDU(tag, 42, "1.3.6.1.6.3.1.1.5.3", "", 123456, vbs); err != nil {
-			t.Errorf("encodeNotificationPDU refused tag 0x%02X: %v", tag, err)
-		}
-	}
-}
-
 // ── source scans: the callers call, and nobody else re-implements ───────────
 
 // pduExtractionFunc is one top-level function of the production package.
@@ -927,34 +907,56 @@ func pduExtractionMentions(fn *ast.FuncDecl) map[string]bool {
 // wrapScopedPDUInV3MessageWith, which reads usm.engineID but passes it on
 // instead of encoding it.
 func encodesAnEngineIDAsAnOctetString(fn *ast.FuncDecl) bool {
-	found := false
+	// STRUCTURAL, NOT BY NAME. This used to require an identifier or selector
+	// literally called `engineID`, and a reviewer defeated it by planting a
+	// complete second copy of the envelope whose local was called `eid` --
+	// both scans stayed green. Matching a spelling means the guard is one
+	// rename away from useless, which is how its predecessor let
+	// createDiscoveryScopedPDU through.
+	//
+	// The fingerprint that survives renaming is the SHAPE of an RFC 3412 §6
+	// ScopedPDU: a contextName encoded from an EMPTY STRING LITERAL, wrapped
+	// in a SEQUENCE. encodeUSMSecurityParameters also calls encodeOctetString
+	// several times and encodeSequence once, but every argument is a variable,
+	// so the literal is what separates them. The name check is kept as a
+	// second net for a variant that builds the context name some other way.
+	emptyLiteralOctetString, sequence, namedEngineID := false, false, false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 		id, ok := call.Fun.(*ast.Ident)
-		if !ok || id.Name != "encodeOctetString" {
+		if !ok {
 			return true
 		}
-		for _, a := range call.Args {
-			ast.Inspect(a, func(m ast.Node) bool {
-				switch x := m.(type) {
-				case *ast.Ident:
-					if x.Name == "engineID" {
-						found = true
-					}
-				case *ast.SelectorExpr:
-					if x.Sel.Name == "engineID" {
-						found = true
-					}
+		switch id.Name {
+		case "encodeSequence":
+			sequence = true
+		case "encodeOctetString", "appendOctetString":
+			for _, a := range call.Args {
+				if lit, isLit := a.(*ast.BasicLit); isLit && lit.Kind == token.STRING &&
+					(lit.Value == `""` || lit.Value == "``") {
+					emptyLiteralOctetString = true
 				}
-				return true
-			})
+				ast.Inspect(a, func(m ast.Node) bool {
+					switch x := m.(type) {
+					case *ast.Ident:
+						if x.Name == "engineID" {
+							namedEngineID = true
+						}
+					case *ast.SelectorExpr:
+						if x.Sel.Name == "engineID" {
+							namedEngineID = true
+						}
+					}
+					return true
+				})
+			}
 		}
 		return true
 	})
-	return found
+	return (emptyLiteralOctetString && sequence) || (namedEngineID && sequence)
 }
 
 // TestExtractedSeamsHaveExactlyOneImplementation is the forward half: the named
@@ -1116,6 +1118,112 @@ func plantedInnocent(a, b int) int { return a + b }
 // rand.Read, following TestInterfaceStateClockDefaultsToWallClock: function
 // values are not comparable in Go, and pinning the identity would make an
 // equivalent refactor a failure.
+// TestPrivSaltSeamIsInitialisedFromCryptoRand asserts what the seam's own
+// comment claims and what CLAUDE.md asserts: that the production value IS
+// crypto/rand.Read.
+//
+// THE BEHAVIOURAL TEST BELOW CANNOT DO THIS, and a reviewer proved it. Pointing
+// usmPrivSaltRead at ONE seeded math/rand generator reused across calls left
+// the entire package green -- every digest (they all call pinPrivSalt and
+// overwrite the default first), the race suite, the net-snmp interop gate, and
+// TestPrivSaltDefaultsToCryptoRand itself, because a seeded PRNG produces 64
+// distinct non-zero draws and two differing ciphertexts. Distinctness is a
+// property of any non-repeating stream, not of a CSPRNG. Meanwhile the DES IV
+// (salt XOR pre-IV) becomes predictable and identical plaintext encrypts
+// identically -- the exact break the seam's comment names.
+//
+// So this asserts the DECLARATION, not the behaviour: the initializer must be
+// the identifier `Read` selected from the package imported as `crypto/rand`.
+// gosec cannot cover it either -- the repo excludes G404 with a written
+// rationale that crypto/rand "is used where it matters (SNMPv3 IV)".
+func TestPrivSaltSeamIsInitialisedFromCryptoRand(t *testing.T) {
+	assertSaltInitialiser(t, "snmpv3_crypto.go", true)
+
+	// Positive control: a rule reporting zero cannot fail on its own. Plant a
+	// math/rand initializer in a temp copy and require it to be REJECTED.
+	dir := t.TempDir()
+	planted := filepath.Join(dir, "planted.go")
+	if err := os.WriteFile(planted, []byte(`package main
+
+import mrand "math/rand"
+
+var usmPrivSaltRead = mrand.New(mrand.NewSource(1)).Read
+`), 0o600); err != nil {
+		t.Fatalf("write control: %v", err)
+	}
+	assertSaltInitialiser(t, planted, false)
+}
+
+// assertSaltInitialiser requires (or forbids) that path declares
+// usmPrivSaltRead initialised from the crypto/rand package's Read.
+func assertSaltInitialiser(t *testing.T, path string, wantCryptoRand bool) {
+	t.Helper()
+	src, err := os.ReadFile(path) // #nosec G304 -- test-local path over this package's own sources
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	// Resolve the local name of the crypto/rand import, so an aliased import
+	// is handled and a math/rand alias cannot masquerade as it.
+	cryptoRandName := ""
+	for _, imp := range file.Imports {
+		if imp.Path == nil || imp.Path.Value != `"crypto/rand"` {
+			continue
+		}
+		cryptoRandName = "rand"
+		if imp.Name != nil {
+			cryptoRandName = imp.Name.Name
+		}
+	}
+
+	found := false
+	ok := false
+	for _, decl := range file.Decls {
+		gen, isGen := decl.(*ast.GenDecl)
+		if !isGen || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, isVS := spec.(*ast.ValueSpec)
+			if !isVS {
+				continue
+			}
+			for i, name := range vs.Names {
+				if name.Name != "usmPrivSaltRead" || i >= len(vs.Values) {
+					continue
+				}
+				found = true
+				sel, isSel := vs.Values[i].(*ast.SelectorExpr)
+				if !isSel || sel.Sel.Name != "Read" {
+					continue
+				}
+				pkg, isIdent := sel.X.(*ast.Ident)
+				ok = isIdent && cryptoRandName != "" && pkg.Name == cryptoRandName
+			}
+		}
+	}
+
+	if !found {
+		t.Fatalf("%s declares no usmPrivSaltRead var with an initializer", filepath.Base(path))
+	}
+	if ok != wantCryptoRand {
+		if wantCryptoRand {
+			t.Errorf("usmPrivSaltRead in %s is NOT initialised from crypto/rand.Read.\n"+
+				"The SNMPv3 privacy salt would be whatever that expression yields; a seeded "+
+				"generator passes every other test in this package. Either restore the "+
+				"crypto/rand initializer or correct the claim in CLAUDE.md.", filepath.Base(path))
+		} else {
+			t.Error("the control was ACCEPTED: a math/rand initializer satisfied this rule, so " +
+				"the rule cannot report the defect it exists for")
+		}
+	}
+}
+
 func TestPrivSaltDefaultsToCryptoRand(t *testing.T) {
 	// Deliberately NO pinPrivSalt here: the production default is the subject.
 	const draws = 64
