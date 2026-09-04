@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	runtimepprof "runtime/pprof"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,8 +26,10 @@ import (
 
 // profiling.go — continuous profiling behind ONE gate, off by default (nl6#635).
 //
-// Two things live here and nowhere else, so the whole feature is one file,
-// one go.mod line, and deletable in one commit:
+// Two things live here and in profiling_api.go and nowhere else, so the whole
+// feature is two files, three go.mod lines (pyroscope-go, its godeltaprof
+// submodule, and klauspost/compress as their indirect), and deletable in one
+// commit:
 //
 //   - the gate. `enabled` is the switch; `server_address` (flag or POST body)
 //     decides whether the pyroscope-go SDK PUSHES as well. With the gate
@@ -122,10 +125,16 @@ var (
 // page's "Follow-ups" section.
 const profilingForceGCDefault = true
 
-// profilingUploadTimeout bounds one profile upload, and therefore how long an
-// off POST, the revert callback or Shutdown can spend flushing the last
-// upload against a dead collector. A profile is ~100 KB; 10 s is generous.
+// profilingUploadTimeout bounds one profile upload. A profile is ~100 KB;
+// 10 s is generous.
 const profilingUploadTimeout = 10 * time.Second
+
+// profilingFlushBound is how long a stop waits for the SDK to flush its last
+// profiles before abandoning the flush: two upload timeouts, because a flush
+// is a final CPU/heap snapshot followed by the queued uploads, and one timeout
+// covers one upload. This is the ceiling on an off POST, the revert callback
+// and Shutdown against a dead collector.
+const profilingFlushBound = 2 * profilingUploadTimeout
 
 // profilingAdhocEnv is the environment variable the SDK reads in
 // pyroscope.Start to REPLACE ServerAddress silently. nl6 refuses to run with
@@ -138,6 +147,42 @@ const profilingAdhocEnv = "PYROSCOPE_ADHOC_SERVER_ADDRESS"
 // pattern), so a Start failure can be driven in a test without depending on
 // the SDK's deprecated cloud-token check.
 var pyroscopeStart = pyroscope.Start
+
+// subsystemContexts holds one labelled context per shipped subsystem name,
+// built once: SetGoroutineLabels needs only the pointer, so a per-device
+// goroutine labelling itself at birth allocates nothing.
+var subsystemContexts = func() map[string]context.Context {
+	m := make(map[string]context.Context)
+	for _, name := range []string{subsystemSNMP, subsystemTrap, subsystemSyslog, subsystemFlow,
+		subsystemGNMI, subsystemGNMIDialout, subsystemScenario} {
+		m[name] = runtimepprof.WithLabels(context.Background(), runtimepprof.Labels(subsystemLabelKey, name))
+	}
+	return m
+}()
+
+// parseProfilingBasicAuth splits -profiling-pyroscope-basic-auth. BOTH halves
+// must be non-empty: the SDK sends Basic auth only when both are set, so
+// `user:` would push unauthenticated while looking configured.
+func parseProfilingBasicAuth(s string) (user, pass string, err error) {
+	user, pass, ok := strings.Cut(s, ":")
+	if !ok || user == "" || pass == "" {
+		return "", "", errors.New("-profiling-pyroscope-basic-auth must be user:pass with both parts " +
+			"non-empty (the SDK sends no Authorization header when either is empty)")
+	}
+	return user, pass, nil
+}
+
+// normaliseProfilingAddress reduces an already-validated push URL to the form
+// two spellings of one collector share: lowercased scheme and host, path with
+// its trailing slash trimmed. So http://P:4040/ and http://p:4040 are the same
+// address for the credential binding.
+func normaliseProfilingAddress(addr string) string {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return addr
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimSuffix(u.Path, "/")
+}
 
 // profilingTarget is a (gate, push address) pair: the unit the revert timer
 // restores. An address is meaningful only with the gate open; a closed gate
@@ -194,24 +239,25 @@ var profiling struct {
 // under the lock (the fidelitySnapshot rule: handlers must not re-read the
 // globals, a concurrent toggle would produce a composite of two states).
 type profilingSnapshot struct {
-	enabled        bool
-	addr           string
-	pushing        bool
-	lastError      string
-	uploadFailures uint64
-	pending        bool
-	deadline       time.Time
-	revertTo       profilingTarget
+	enabled   bool
+	addr      string
+	pushing   bool
+	lastError string
+	sdkErrors uint64
+	pending   bool
+	deadline  time.Time
+	revertTo  profilingTarget
 }
 
 // profilerLogger is the SDK's Logger for one push. pyroscope.Start never
 // touches the network, so a collector that is down, answers 401, or rejects
 // the tenant is invisible to Start: the SDK reports it through Errorf from
 // its upload goroutines, and with the no-op logger it reported it to nobody.
-// Errorf counts every failure, keeps the latest message for GET, and logs the
-// FIRST one per push (the logFirstEncodeErr convention: ungated, a dead
-// collector is one line per profile type per upload interval, forever).
-// Infof and Debugf are discarded.
+// Errorf counts every error the SDK reports (a failed upload, a refused CPU
+// collector, a full upload queue), keeps the latest message for GET, and logs
+// the FIRST one per push (the logFirstEncodeErr convention: ungated, a dead
+// collector is one line per profile type per upload interval, forever). Infof
+// and Debugf are discarded.
 //
 // Lock-free on purpose: Errorf runs on SDK goroutines, and the one place nl6
 // calls into the SDK under profiling.mu is Start, so a logger that took that
@@ -231,7 +277,7 @@ func (l *profilerLogger) Errorf(format string, args ...interface{}) {
 	l.last.Store(msg)
 	l.once.Do(func() {
 		log.Printf("[profiling] push to %s failing: %s (first occurrence; later ones are counted in "+
-			"upload_failures on GET /api/v1/profiling, not logged)", l.addr, msg)
+			"sdk_errors on GET /api/v1/profiling, not logged)", l.addr, msg)
 	})
 }
 
@@ -263,6 +309,11 @@ func validateProfilingAddress(addr string) error {
 	if u.User != nil {
 		return fmt.Errorf("%q must not embed credentials; use -profiling-pyroscope-basic-auth", u.Redacted())
 	}
+	// The SDK appends /ingest?... to the address; a query or fragment would
+	// be silently mangled.
+	if u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("%q must not carry a query or fragment (the SDK appends /ingest to it)", addr)
+	}
 	return nil
 }
 
@@ -287,7 +338,7 @@ func profilingCredentialsFor(addr string) (user, pass, tenant string, withheld b
 		return "", "", "", false
 	}
 	flag, _ := profilingStartupFlag.Load().(string)
-	if flag == "" || addr != flag {
+	if flag == "" || normaliseProfilingAddress(addr) != normaliseProfilingAddress(flag) {
 		return "", "", "", true
 	}
 	return profilingBasicAuthUser, profilingBasicAuthPassword, profilingTenantID, false
@@ -299,7 +350,10 @@ func profilingCredentialsFor(addr string) (user, pass, tenant string, withheld b
 // the file comment). DisableGCRuns follows -profiling-force-gc. Credentials
 // follow profilingCredentialsFor.
 func newProfilerConfig(addr string) pyroscope.Config {
-	host, _ := os.Hostname()
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown"
+	}
 	user, pass, tenant, _ := profilingCredentialsFor(addr)
 	return pyroscope.Config{
 		ApplicationName: profilingApplicationName,
@@ -324,18 +378,26 @@ func newProfilerConfig(addr string) pyroscope.Config {
 }
 
 // newProfilerTransport is the transport the profiler uploads through. It is
-// ours rather than the SDK's so a stop can close its idle connections; the
-// settings otherwise mirror the SDK's own (5 upload threads, redirects not
-// followed so basic-auth is not stripped), with the bounded upload timeout.
+// ours rather than the SDK's so a stop can close its idle connections. The
+// connection caps mirror the SDK's five upload threads (idle matched to max,
+// so a burst does not churn connections); the timeout and the no-redirect
+// rule live on the http.Client in startProfilerLocked.
 func newProfilerTransport() *http.Transport {
 	return &http.Transport{
-		MaxConnsPerHost: 5,
-		IdleConnTimeout: 30 * time.Second,
+		MaxConnsPerHost:     5,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     30 * time.Second,
 	}
 }
 
 // startProfilerLocked starts a push to addr. Caller holds profiling.mu.
 func startProfilerLocked(addr string) error {
+	// The SDK would replace addr from this variable inside Start, silently.
+	// Refused HERE rather than only at boot, so a process that never enables
+	// profiling is not stopped by an unrelated tool's environment.
+	if err := validateProfilingEnvironment(os.LookupEnv); err != nil {
+		return err
+	}
 	cfg := newProfilerConfig(addr)
 	tr := newProfilerTransport()
 	cfg.HTTPClient = &http.Client{
@@ -370,11 +432,27 @@ func detachProfilerLocked() func() {
 		return func() {}
 	}
 	return func() {
-		if err := p.Stop(); err != nil {
-			log.Printf("[profiling] stop: %v", err)
-		}
-		if tr != nil {
-			tr.CloseIdleConnections()
+		// Profiler.Stop alone does NOT flush: session.Stop takes the stopCh
+		// path (stops the CPU collector, uploads nothing) and Remote.Stop
+		// closes `done`, after which handleJobs may drop a queued job. So
+		// Flush(true) first, which takes a final snapshot and waits for the
+		// uploads, then Stop. Bounded, because Flush against a dead
+		// collector waits through the upload timeout per queued job.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			p.Flush(true)
+			if err := p.Stop(); err != nil {
+				log.Printf("[profiling] stop: %v", err)
+			}
+			if tr != nil {
+				tr.CloseIdleConnections()
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(profilingFlushBound):
+			log.Printf("[profiling] flush abandoned after %s; the last profiles may not have reached the collector", profilingFlushBound)
 		}
 	}
 }
@@ -485,7 +563,7 @@ func snapshotLocked() profilingSnapshot {
 		revertTo:  profiling.restore,
 	}
 	if u := profiling.uploads; u != nil {
-		snap.uploadFailures = u.failures.Load()
+		snap.sdkErrors = u.failures.Load()
 		if snap.lastError == "" {
 			snap.lastError = u.lastMessage()
 		}
@@ -502,11 +580,15 @@ func profilingSnapshotNow() profilingSnapshot {
 }
 
 // setProfiling applies a gate value and, when d > 0, arms a revert. addr is
-// the push address to use when enabling; empty means "the startup flag's
-// address, or pull-only when there is none". Returns the state as committed,
+// the push address to use when enabling: nil (omitted) keeps the address in
+// force if one is, else the startup flag's, else pull-only, so a bare
+// `{"enabled":true,"duration":"30m"}` on a pushing process keeps pushing; an
+// explicit "" is pull-only even when the flag is set, which is the only way
+// to reach pull-only once a flag was given. Returns the state as committed,
 // plus the Start error if the push could not begin. Any push it stopped has
-// finished flushing by the time it returns.
-func setProfiling(enabled bool, addr string, d time.Duration) (profilingSnapshot, error) {
+// finished flushing (or been abandoned after profilingFlushBound) by the time
+// it returns.
+func setProfiling(enabled bool, addr *string, d time.Duration) (profilingSnapshot, error) {
 	profilingLifecycle.Lock()
 	defer profilingLifecycle.Unlock()
 	profiling.mu.Lock()
@@ -524,8 +606,12 @@ func setProfiling(enabled bool, addr string, d time.Duration) (profilingSnapshot
 
 	to := profilingTarget{enabled: enabled}
 	if enabled {
-		to.addr = addr
-		if to.addr == "" {
+		switch {
+		case addr != nil:
+			to.addr = *addr
+		case profiling.enabled && profiling.serverAddress != "":
+			to.addr = profiling.serverAddress
+		default:
 			to.addr, _ = profilingStartupFlag.Load().(string)
 		}
 	}
@@ -598,7 +684,7 @@ func startProfilingFromFlag(addr string) {
 	if addr == "" {
 		return
 	}
-	if _, err := setProfiling(true, addr, 0); err != nil {
+	if _, err := setProfiling(true, &addr, 0); err != nil {
 		log.Printf("[profiling] -profiling-pyroscope %s: push not started: %v", addr, err)
 	}
 }
@@ -606,7 +692,7 @@ func startProfilingFromFlag(addr string) {
 // errProfilingOff is the gate's refusal, worded so the operator knows what to
 // do next rather than what went wrong.
 var errProfilingOff = errors.New("profiling is off; enable it with POST /api/v1/profiling " +
-	`{"enabled":true} (add "server_address" to push to Pyroscope, omit it for scrape-only), ` +
+	`{"enabled":true} (add "server_address" to push to Pyroscope, set it to "" for scrape-only), ` +
 	"or boot with -profiling-pyroscope")
 
 // profilingGate refuses every request while the gate is closed. It wraps the
@@ -662,7 +748,10 @@ func newPprofHandler() http.Handler {
 // tickFlowExporter takes a context and why the scenario ticker hands it its
 // birth context (pinned by TestProfilingLabel_BirthLabelSurvivesAFunnel).
 func labelSubsystem(name string) context.Context {
-	ctx := runtimepprof.WithLabels(context.Background(), runtimepprof.Labels(subsystemLabelKey, name))
+	ctx, ok := subsystemContexts[name]
+	if !ok {
+		ctx = runtimepprof.WithLabels(context.Background(), runtimepprof.Labels(subsystemLabelKey, name))
+	}
 	runtimepprof.SetGoroutineLabels(ctx)
 	return ctx
 }
@@ -677,9 +766,17 @@ func labelSubsystem(name string) context.Context {
 // A label merely INHERITED by a goroutine (spawned while its parent ran under
 // a funnel, as the scenario scheduler is under startLocked) does not survive
 // a trap or syslog funnel, by design: those fires are trap and syslog work.
+//
+// A context that ALREADY carries this label (the fleet flow ticker calling
+// the flow funnel once per exporter per tick) runs fn directly: pprof.Do
+// would allocate a label map to set what is already set.
 func withSubsystem(ctx context.Context, name string, fn func(context.Context)) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if v, ok := runtimepprof.Label(ctx, subsystemLabelKey); ok && v == name {
+		fn(ctx)
+		return
 	}
 	runtimepprof.Do(ctx, runtimepprof.Labels(subsystemLabelKey, name), fn)
 }

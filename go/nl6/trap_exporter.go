@@ -642,6 +642,7 @@ func (e *TrapExporter) uptimeHundredths() uint32 {
 // on net.ErrClosed (Close) or on repeated unknown errors.
 func (e *TrapExporter) readerLoop() {
 	defer e.loopsWG.Done()
+	labelSubsystem(subsystemTrap) // once per goroutine (nl6#635)
 	conn := e.conn.Load()
 	if conn == nil {
 		return
@@ -694,6 +695,7 @@ func (e *TrapExporter) resolveAck(reqID uint32) {
 // and fails records that exhausted retry budget.
 func (e *TrapExporter) retryLoop(ctx context.Context) {
 	defer e.loopsWG.Done()
+	labelSubsystem(subsystemTrap) // once per goroutine (nl6#635)
 	// Tick at half the timeout so pending checks happen with reasonable
 	// resolution without burning CPU.
 	tickInterval := e.informTimeout / 2

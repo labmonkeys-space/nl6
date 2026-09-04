@@ -32,8 +32,9 @@ curl -sf "${NL6}/api/v1/profiling" | jq -c .data
 
 if docker compose ps --services --filter status=running 2>/dev/null | grep -qx alloy; then
   echo "==> alloy profile active: switching nl6 to pull-only so Alloy can take the CPU profile"
+  # An explicit empty server_address: omitting it would KEEP the push.
   curl -sf -X POST "${NL6}/api/v1/profiling" -H 'Content-Type: application/json' \
-    -d '{"enabled": true}' | jq -c .data
+    -d '{"enabled": true, "server_address": ""}' | jq -c .data
   SERVICE='nl6-interop-scrape'
 else
   SERVICE='nl6'
@@ -51,12 +52,20 @@ if [ "${N}" -eq 0 ]; then
   echo "    FAIL: no CPU profile for service_name=${SERVICE}"; exit 1
 fi
 
-if [ "${SERVICE}" = nl6 ]; then
-  echo "==> subsystem label (SNMP read loops are labelled at birth)"
-  S=$(ticks '{service_name="nl6",subsystem="snmp"}')
-  Z=$(ticks '{service_name="nl6",subsystem="no-such-subsystem"}')
-  echo "    subsystem=snmp: ${S}   subsystem=no-such-subsystem: ${Z}"
-  if [ "${Z}" -ne 0 ]; then echo "    FAIL: an absent label matched"; exit 1; fi
+echo "==> subsystem label (SNMP read loops are labelled at birth; a label is a sample label, so it survives a scrape too)"
+S=0
+for _ in $(seq 1 30); do
+  S=$(ticks "{service_name=\"${SERVICE}\",subsystem=\"snmp\"}")
+  [ "${S}" -gt 0 ] && break
+  sleep 2
+done
+Z=$(ticks "{service_name=\"${SERVICE}\",subsystem=\"no-such-subsystem\"}")
+echo "    subsystem=snmp: ${S}   subsystem=no-such-subsystem: ${Z}"
+if [ "${Z}" -ne 0 ]; then echo "    FAIL: an absent label matched"; exit 1; fi
+if [ "${S}" -eq 0 ]; then
+  echo "    FAIL: no CPU samples under subsystem=snmp; the SNMP read loops only burn CPU when polled."
+  echo "          Poll the fleet (e.g. snmpwalk -v2c -c public 10.42.0.1 system) and re-run."
+  exit 1
 fi
 
 echo "    PASS: open ${PYRO} and filter by subsystem"

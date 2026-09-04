@@ -81,8 +81,8 @@ The full reference, including the one-CPU-profile-at-a-time rule and the subsyst
   "startup_flag": "http://pyroscope:4040",      // what -profiling-pyroscope was at launch ("" when unset)
   "server_address": "http://pyroscope:4040",    // push destination in force; "" = pull-only or off
   "pushing": true,                              // the SDK is RUNNING (false with enabled:true = pull-only, or a failed start); says nothing about upload success
-  "upload_failures": 3,                         // failed uploads of the CURRENT push; omitted while zero
-  "last_error": "...",                          // the Start failure, or the latest upload failure of the current push
+  "sdk_errors": 3,                              // every error the SDK reported for the CURRENT push (failed upload, refused CPU collector, full queue); omitted while zero
+  "last_error": "...",                          // the Start failure, or the latest SDK error of the current push
   "pprof_path": "/debug/pprof/",
   "revert_pending": true,
   "revert_at": "2026-09-04T12:00:00Z",
@@ -95,18 +95,20 @@ The full reference, including the one-CPU-profile-at-a-time rule and the subsyst
 curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
   -d '{"enabled": true, "server_address": "http://pyroscope:4040"}'   # push
 curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
-  -d '{"enabled": true}'                                              # pull-only (Alloy scrape), or the flag's address if one was given
+  -d '{"enabled": true, "server_address": ""}'                        # pull-only (Alloy scrape); an OMITTED server_address keeps a running push, else uses the flag's address
 curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
   -d '{"enabled": true, "server_address": "http://pyroscope:4040", "duration": "30m"}'   # auto-off after 30m, 24h cap
 curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
-  -d '{"enabled": false}'                                             # off; the last upload is flushed before 200
+  -d '{"enabled": false}'                                             # off; the last profiles are flushed (bounded, 20 s) before 200
 ```
 
-`enabled` is **required**; a body without it is rejected with `400`, as is an unknown field, a non-positive or over-cap `duration`, a `server_address` that is not an `http://` or `https://` URL or embeds credentials, or a `server_address` on an `enabled:false` request.
+`enabled` is **required**; a body without it is rejected with `400`, as is an unknown field, a non-positive or over-cap `duration`, a `server_address` that is not an `http://` or `https://` URL or embeds credentials or a query or fragment, or a `server_address` on an `enabled:false` request.
+`server_address` has three shapes: omitted keeps the address in force if a push is running, else uses the startup flag's, else is pull-only; an explicit `""` is pull-only even when the flag is set; a value re-targets.
 The same address twice is a no-op; a different address re-targets the push in one transition.
 A push the SDK refuses to start answers `500` with the state attached (`enabled:true`, `pushing:false`, `last_error`); the pull surface serves regardless.
-`pushing` means the SDK is running; a collector that is down or rejecting shows in `upload_failures` and `last_error`, since `pyroscope.Start` never touches the network.
-`{"enabled":false}` flushes the last upload before answering, bounded by the 10 s upload timeout; `GET` does not wait behind that flush.
+`pushing` means the SDK is running; a collector that is down or rejecting shows in `sdk_errors` and `last_error`, since `pyroscope.Start` never touches the network.
+`{"enabled":false}` asks the SDK to flush (a final snapshot plus the queued uploads) and then stops it, bounded by two upload timeouts (20 s) after which the flush is abandoned and logged; `GET` does not wait behind that flush.
+`/debug/pprof/profile?seconds=N` and `trace?seconds=N` are refused by `net/http/pprof` once `N` reaches the server's 30 s write timeout.
 Auto-revert follows the fidelity chain rule above and restores the whole (gate, address) pair; `revert_to_address` reports the address.
 Basic auth and the tenant ID are flag-only (`-profiling-pyroscope-basic-auth`, `-profiling-pyroscope-tenant`), because this endpoint echoes everything REST can set, and they are sent only to the flag's own address: a differing `server_address` is pushed to without them.
 

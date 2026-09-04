@@ -23,10 +23,11 @@ type ProfilingRequest struct {
 	// (the FidelityRequest.Silent lesson: `{"duration":"5m"}` must be a 400,
 	// not a silent off).
 	Enabled *bool `json:"enabled"`
-	// ServerAddress is the Pyroscope push URL. Empty means "the startup
-	// flag's address, or pull-only when there is none". Ignored when
-	// disabling.
-	ServerAddress string `json:"server_address,omitempty"`
+	// ServerAddress is the Pyroscope push URL, a POINTER so three cases are
+	// distinguishable: omitted keeps the address in force (else the flag's,
+	// else pull-only), an explicit "" means pull-only even when the flag is
+	// set, and a value re-targets. Refused when disabling.
+	ServerAddress *string `json:"server_address,omitempty"`
 	// Duration, when set, restores the pre-chain state after it elapses.
 	// Capped at maxRevertAfter, shared with fidelity and interface state.
 	Duration string `json:"duration,omitempty"`
@@ -51,11 +52,12 @@ type ProfilingStatus struct {
 	// here. It can be false with Enabled true: pull-only mode, or a push whose
 	// Start failed (see LastError).
 	Pushing bool `json:"pushing"`
-	// UploadFailures counts the CURRENT push's failed uploads (reset when a
-	// push starts). Omitted while zero.
-	UploadFailures uint64 `json:"upload_failures,omitempty"`
+	// SDKErrors counts every error the SDK reported for the CURRENT push
+	// (reset when a push starts): a failed upload, a refused CPU collector, a
+	// full upload queue. Omitted while zero.
+	SDKErrors uint64 `json:"sdk_errors,omitempty"`
 	// LastError is the most recent Start failure or, when Start succeeded,
-	// the most recent upload failure of the current push. Omitted when none.
+	// the most recent SDK error of the current push. Omitted when none.
 	LastError string `json:"last_error,omitempty"`
 	// PprofPath is where the gated pull surface lives, so a client need not
 	// know it.
@@ -76,14 +78,14 @@ type ProfilingStatus struct {
 func profilingStatusFrom(snap profilingSnapshot) ProfilingStatus {
 	flag, _ := profilingStartupFlag.Load().(string)
 	st := ProfilingStatus{
-		Enabled:        snap.enabled,
-		StartupFlag:    flag,
-		ServerAddress:  snap.addr,
-		Pushing:        snap.pushing,
-		UploadFailures: snap.uploadFailures,
-		LastError:      snap.lastError,
-		PprofPath:      profilingPprofPath,
-		RevertPending:  snap.pending,
+		Enabled:       snap.enabled,
+		StartupFlag:   flag,
+		ServerAddress: snap.addr,
+		Pushing:       snap.pushing,
+		SDKErrors:     snap.sdkErrors,
+		LastError:     snap.lastError,
+		PprofPath:     profilingPprofPath,
+		RevertPending: snap.pending,
 	}
 	if snap.pending {
 		st.RevertAt = snap.deadline.UTC().Format(time.RFC3339)
@@ -121,16 +123,18 @@ func profilingToggleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ServerAddress != "" {
+	if req.ServerAddress != nil {
 		// Validated-then-ignored is the nl6#445 family; an address on an off
 		// request would be exactly that.
 		if !*req.Enabled {
 			sendErrorResponse(w, "server_address is only meaningful with enabled:true", http.StatusBadRequest)
 			return
 		}
-		if err := validateProfilingAddress(req.ServerAddress); err != nil {
-			sendErrorResponse(w, "server_address: "+err.Error(), http.StatusBadRequest)
-			return
+		if *req.ServerAddress != "" {
+			if err := validateProfilingAddress(*req.ServerAddress); err != nil {
+				sendErrorResponse(w, "server_address: "+err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 

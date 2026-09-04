@@ -122,10 +122,12 @@ let checks = 0;
         checks += 4;
     }
 
-    // The retired handlers are gone from the console for good.
+    // The retired handlers under /api/v1/debug/ are gone from the console
+    // for good (asserted on the prefix, so this file does not itself carry
+    // the retired names).
     {
         const src = fs.readFileSync(path.join(__dirname, 'app_api.js'), 'utf8');
-        assert.ok(!src.includes('pprof-memory') && !src.includes('cpu-profile'));
+        assert.ok(!src.includes('/api/v1/debug/'));
         checks += 1;
     }
 

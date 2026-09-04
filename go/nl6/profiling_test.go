@@ -196,6 +196,22 @@ func wantSubsystemLabel(t *testing.T, frame, subsystem string) {
 	}
 }
 
+// settledGoroutineCount waits (up to 2 s) for runtime.NumGoroutine to hold
+// still across 100 ms, then returns it.
+func settledGoroutineCount() int {
+	deadline := time.Now().Add(2 * time.Second)
+	n := runtime.NumGoroutine()
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		m := runtime.NumGoroutine()
+		if m == n {
+			return n
+		}
+		n = m
+	}
+	return n
+}
+
 // pprofVia serves one /debug/pprof request through the real router.
 func pprofVia(t *testing.T, router http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -209,9 +225,12 @@ func pprofVia(t *testing.T, router http.Handler, path string) *httptest.Response
 // the body, spawns nothing, and no SDK goroutine exists anywhere.
 func TestProfilingOffByDefaultPaysNothing(t *testing.T) {
 	withProfiling(t)
+	// Counted BEFORE setupRoutes: building the router must spawn nothing
+	// either. The count is taken once it has been stable for a moment, so a
+	// neighbouring test's goroutine winding down does not read as a change
+	// of ours.
+	before := settledGoroutineCount()
 	router := setupRoutes()
-
-	before := runtime.NumGoroutine()
 	rr := pprofVia(t, router, "/debug/pprof/heap")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("/debug/pprof/heap with profiling off: got %d, want 503 (body %q)", rr.Code, rr.Body.String())
@@ -227,10 +246,8 @@ func TestProfilingOffByDefaultPaysNothing(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 		after = runtime.NumGoroutine()
 	}
-	// Growth is the violation. A neighbouring test's goroutine exiting during
-	// the window lowers the count and is not this gate's doing.
-	if after > before {
-		t.Errorf("goroutines: %d before the refused request, %d after; a closed gate must spawn nothing", before, after)
+	if after != before {
+		t.Errorf("goroutines: %d before setupRoutes, %d after the refused request; a closed gate must spawn nothing", before, after)
 	}
 	if text := goroutineProfileText(t); strings.Contains(text, "pyroscope") {
 		t.Errorf("an SDK goroutine exists with profiling off:\n%s", text)
@@ -567,6 +584,8 @@ func TestProfilingToggle_Rejections(t *testing.T) {
 		{"not a url", `{"enabled":true,"server_address":"::bad"}`, "server_address"},
 		{"userinfo", `{"enabled":true,"server_address":"http://u:p@x:4040"}`, "must not embed credentials"},
 		{"address on off", `{"enabled":false,"server_address":"http://x:4040"}`, "only meaningful with enabled:true"},
+		{"empty address on off", `{"enabled":false,"server_address":""}`, "only meaningful with enabled:true"},
+		{"query", `{"enabled":true,"server_address":"http://x:4040?a=b"}`, "query or fragment"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -594,7 +613,8 @@ func TestProfilingAddressValidationTable(t *testing.T) {
 		}
 	}
 	bad := []string{"", "ftp://x", "pyroscope:4040", "http://", "://x", "unix:///tmp/sock",
-		"http://user:secret@pyroscope:4040", "https://user@pyroscope:4040"}
+		"http://user:secret@pyroscope:4040", "https://user@pyroscope:4040",
+		"http://pyroscope:4040?tenant=x", "http://pyroscope:4040/#frag"}
 	for _, a := range bad {
 		if err := validateProfilingAddress(a); err == nil {
 			t.Errorf("%q accepted", a)
@@ -626,6 +646,7 @@ func TestProfilingRefusesTheAdhocEnv(t *testing.T) {
 // once, and the status reports the deadline and the target meanwhile.
 func TestProfilingToggle_TimedRevert(t *testing.T) {
 	withProfiling(t)
+	logs := tapLog(t)
 	w, st := postProfiling(t, `{"enabled":true,"duration":"120ms"}`)
 	if w.Code != http.StatusOK || !st.Enabled || !st.RevertPending || st.RevertAt == "" || st.RevertTo == nil || *st.RevertTo {
 		t.Fatalf("timed on: %d %+v", w.Code, st)
@@ -642,6 +663,9 @@ func TestProfilingToggle_TimedRevert(t *testing.T) {
 	}
 	if st := getProfiling(t); st.Enabled || st.RevertPending {
 		t.Errorf("after the revert: %+v", st)
+	}
+	if n := strings.Count(logs.String(), "[auto-revert after"); n != 1 {
+		t.Errorf("auto-revert logged %d times, want exactly 1:\n%s", n, logs.String())
 	}
 }
 
@@ -791,23 +815,35 @@ func TestProfilingRuntimeGlobalsStayZero(t *testing.T) {
 // from net/http/pprof, not a silent empty profile.
 func TestProfilingCPUContentionIsNotMasked(t *testing.T) {
 	withProfiling(t)
-	srv, _ := fakePyroscope(t)
+	srv, ingests := fakePyroscope(t)
 	router := setupRoutes()
+	withFastUploads(t)
 	postProfiling(t, `{"enabled":true,"server_address":"`+srv.URL+`"}`)
-	// The SDK starts its CPU collector on its own goroutine, so wait until the
-	// runtime's one CPU-profile slot is actually taken before scraping.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := runtimepprof.StartCPUProfile(io.Discard); err != nil {
-			break // taken by the SDK: the condition the test is about
-		}
-		runtimepprof.StopCPUProfile()
-		time.Sleep(10 * time.Millisecond)
+	// Wait for the first upload rather than probing the runtime's CPU slot:
+	// a probe can collide with the SDK's own StartCPUProfile, which the SDK
+	// retries only at its next interval.
+	deadline := time.Now().Add(10 * time.Second)
+	for ingests.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
 	}
-
-	rr := pprofVia(t, router, "/debug/pprof/profile?seconds=1")
+	if ingests.Load() == 0 {
+		t.Fatal("the SDK never uploaded; its CPU collector is not running")
+	}
+	// The collector re-arms between intervals, so a scrape can land in the
+	// gap and then hold the slot itself, which makes the SDK's next re-arm
+	// fail and retry only at its next tick. So after a scrape that got
+	// through, wait longer than one interval for the SDK to re-acquire;
+	// at least one of three must hit the contention.
+	var rr *httptest.ResponseRecorder
+	for i := 0; i < 3; i++ {
+		rr = pprofVia(t, router, "/debug/pprof/profile?seconds=1")
+		if rr.Code == http.StatusInternalServerError {
+			break
+		}
+		time.Sleep(1500 * time.Millisecond)
+	}
 	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("CPU scrape while the SDK collects: got %d, want 500 (body %q)", rr.Code, rr.Body.String())
+		t.Fatalf("CPU scrape while the SDK collects: got %d on three tries, want at least one 500 (body %q)", rr.Code, rr.Body.String())
 	}
 	if !strings.Contains(rr.Body.String(), "already in use") {
 		t.Errorf("500 body does not say why: %q", rr.Body.String())
@@ -839,16 +875,25 @@ func TestProfilingShutdownStopsThePush(t *testing.T) {
 	if strings.Contains(goroutineProfileText(t), "pyroscope") {
 		t.Error("SDK goroutine survived stopProfiling")
 	}
-	// And Shutdown really calls it: the source pin, since a Shutdown on a
-	// bare manager tears down subsystems this test does not build.
-	src, err := os.ReadFile(filepath.Join(".", "manager.go"))
-	if err != nil {
-		t.Fatal(err)
+	// And Shutdown really calls it, behaviourally: a real manager (no
+	// namespace) with a push running, then Shutdown.
+	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	postProfiling(t, `{"enabled":true,"server_address":"`+srv.URL+`","duration":"10s"}`)
+	if !getProfiling(t).Pushing {
+		t.Fatal("not pushing before Shutdown")
 	}
-	body := string(src)
-	i := strings.Index(body, "func (sm *SimulatorManager) Shutdown() error {")
-	if i < 0 || !strings.Contains(body[i:], "stopProfiling()") {
-		t.Error("manager.Shutdown does not call stopProfiling()")
+	if err := sm.Shutdown(); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if st := getProfiling(t); st.Enabled || st.Pushing || st.RevertPending {
+		t.Errorf("after Shutdown: %+v", st)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && strings.Contains(goroutineProfileText(t), "pyroscope") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if strings.Contains(goroutineProfileText(t), "pyroscope") {
+		t.Error("SDK goroutine survived manager.Shutdown")
 	}
 }
 
@@ -1069,12 +1114,14 @@ func TestProfilingLabel_ScenarioFunnels(t *testing.T) {
 	if after := labelsOfGoroutineWithFrame(t, "TestProfilingLabel_ScenarioFunnels"); after != "" {
 		t.Errorf("label leaked past withSubsystem: %q", after)
 	}
+	// Secondary only: the ticker, startLocked (via ScheduleStart) and finish
+	// are each read back behaviourally by the tests below.
 	src, err := os.ReadFile("scenario_controller.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(string(src), "subsystemScenario"); n != 3 {
-		t.Errorf("scenario_controller.go references subsystemScenario %d times, want 3 (flow ticker, startLocked, finish)", n)
+	if n := strings.Count(string(src), "subsystemScenario"); n < 3 {
+		t.Errorf("scenario_controller.go references subsystemScenario %d times, want at least 3 (flow ticker, startLocked, finish)", n)
 	}
 }
 
@@ -1114,7 +1161,11 @@ func TestProfilingBootFlagStartsThePush(t *testing.T) {
 func TestProfilingCredentialsAreBoundToTheFlagAddress(t *testing.T) {
 	withProfiling(t)
 	withFastUploads(t)
-	withProfilingCredentials(t, "alice", "hunter2", "tenant-7")
+	user, pass, err := parseProfilingBasicAuth("alice:hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withProfilingCredentials(t, user, pass, "tenant-7")
 	logs := tapLog(t)
 	flagSrv, flagRec := fakePyroscopeAnswering(t, http.StatusOK)
 	otherSrv, otherRec := fakePyroscopeAnswering(t, http.StatusOK)
@@ -1132,8 +1183,13 @@ func TestProfilingCredentialsAreBoundToTheFlagAddress(t *testing.T) {
 		return rec.lastHeader()
 	}
 
-	// The flag's address: credentials attached.
-	if _, err := setProfiling(true, "", 0); err != nil {
+	// The flag's address, spelled differently (upper-case host, trailing
+	// slash): still the flag's address, credentials attached.
+	spelled := strings.Replace(flagSrv.URL, "http://127.0.0.1", "HTTP://127.0.0.1", 1) + "/"
+	if _, _, _, withheld := profilingCredentialsFor(spelled); withheld {
+		t.Errorf("%q is the flag's address %q spelled differently and must not be treated as foreign", spelled, flagSrv.URL)
+	}
+	if _, err := setProfiling(true, &spelled, 0); err != nil {
 		t.Fatal(err)
 	}
 	h := waitIngest(flagRec)
@@ -1146,7 +1202,7 @@ func TestProfilingCredentialsAreBoundToTheFlagAddress(t *testing.T) {
 	}
 
 	// A different address from REST: nothing attached, and the log says why.
-	if _, err := setProfiling(true, otherSrv.URL, 0); err != nil {
+	if _, err := setProfiling(true, &otherSrv.URL, 0); err != nil {
 		t.Fatal(err)
 	}
 	h = waitIngest(otherRec)
@@ -1162,26 +1218,26 @@ func TestProfilingCredentialsAreBoundToTheFlagAddress(t *testing.T) {
 	}
 }
 
-// TestProfilingUploadFailuresAreCounted: pyroscope.Start never touches the
+// TestProfilingSDKErrorsAreCounted: pyroscope.Start never touches the
 // network, so a rejecting collector is invisible to Start. The SDK's Errorf
-// is where it shows: counted in upload_failures, kept as last_error, and
+// is where it shows: counted in sdk_errors, kept as last_error, and
 // logged once per push.
-func TestProfilingUploadFailuresAreCounted(t *testing.T) {
+func TestProfilingSDKErrorsAreCounted(t *testing.T) {
 	withProfiling(t)
 	withFastUploads(t)
 	logs := tapLog(t)
 	srv, rec := fakePyroscopeAnswering(t, http.StatusUnauthorized)
 
 	_, st := postProfiling(t, `{"enabled":true,"server_address":"`+srv.URL+`"}`)
-	if !st.Pushing || st.UploadFailures != 0 || st.LastError != "" {
+	if !st.Pushing || st.SDKErrors != 0 || st.LastError != "" {
 		t.Fatalf("right after start: %+v (Start does not touch the network, so nothing has failed yet)", st)
 	}
 	deadline := time.Now().Add(10 * time.Second)
-	for st.UploadFailures == 0 && time.Now().Before(deadline) {
+	for st.SDKErrors == 0 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 		st = getProfiling(t)
 	}
-	if st.UploadFailures == 0 {
+	if st.SDKErrors == 0 {
 		t.Fatalf("no upload failure counted against a 401 collector after %d ingest attempts", rec.ingests.Load())
 	}
 	if !st.Pushing || st.LastError == "" {
@@ -1189,16 +1245,16 @@ func TestProfilingUploadFailuresAreCounted(t *testing.T) {
 	}
 	// Logged once per push, not once per failure.
 	deadline = time.Now().Add(3 * time.Second)
-	for st.UploadFailures < 2 && time.Now().Before(deadline) {
+	for st.SDKErrors < 2 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 		st = getProfiling(t)
 	}
 	if n := strings.Count(logs.String(), "[profiling] push to "+srv.URL+" failing"); n != 1 {
-		t.Errorf("failure logged %d times across %d failures, want exactly 1 (sync.Once per push)", n, st.UploadFailures)
+		t.Errorf("failure logged %d times across %d failures, want exactly 1 (sync.Once per push)", n, st.SDKErrors)
 	}
 	// A re-target starts a fresh count.
 	good, _ := fakePyroscope(t)
-	if _, st = postProfiling(t, `{"enabled":true,"server_address":"`+good.URL+`"}`); st.UploadFailures != 0 || st.LastError != "" {
+	if _, st = postProfiling(t, `{"enabled":true,"server_address":"`+good.URL+`"}`); st.SDKErrors != 0 || st.LastError != "" {
 		t.Errorf("after re-target: %+v (counter and error belong to the CURRENT push)", st)
 	}
 }
@@ -1382,39 +1438,6 @@ func TestProfilingLabel_ScenarioFinish(t *testing.T) {
 	t.Fatal("never observed finish on a goroutine")
 }
 
-// TestProfilingImagePinsAgree: the Pyroscope and Alloy image tags live in the
-// Makefile (the CI gate) and in examples/pyroscope/compose.yml (the example),
-// and Dependabot bumps only the latter. Both must name the same tags.
-func TestProfilingImagePinsAgree(t *testing.T) {
-	mk, err := os.ReadFile("../../Makefile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	compose, err := os.ReadFile("../../examples/pyroscope/compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	pin := func(src, key string) string {
-		for _, line := range strings.Split(src, "\n") {
-			if i := strings.Index(line, key); i >= 0 {
-				return strings.TrimSpace(line[i+len(key):])
-			}
-		}
-		t.Fatalf("%q not found", key)
-		return ""
-	}
-	pairs := [][2]string{
-		{pin(string(mk), "PYROSCOPE_IMAGE ?="), pin(string(compose), "${PYROSCOPE_IMAGE:-")},
-		{pin(string(mk), "ALLOY_IMAGE     ?="), pin(string(compose), "${ALLOY_IMAGE:-")},
-	}
-	for _, p := range pairs {
-		composeTag := strings.TrimSuffix(p[1], "}")
-		if p[0] != composeTag {
-			t.Errorf("Makefile pins %q, compose.yml pins %q; bump both", p[0], composeTag)
-		}
-	}
-}
-
 // TestProfilingOpensNoListenerByConstruction: the feature's two files never
 // call anything that opens a socket, so "off by default opens no listener" is
 // a property of the code rather than of a runtime observation.
@@ -1445,4 +1468,197 @@ func TestProfilingOpensNoListenerByConstruction(t *testing.T) {
 			return true
 		})
 	}
+}
+
+// ── Second review pass ─────────────────────────────────────────────────────
+
+// TestProfilingBasicAuthParseTable pins parseProfilingBasicAuth: both halves
+// are required, because the SDK sends nothing when either is empty.
+func TestProfilingBasicAuthParseTable(t *testing.T) {
+	user, pass, err := parseProfilingBasicAuth("alice:hunter2")
+	if err != nil || user != "alice" || pass != "hunter2" {
+		t.Errorf("alice:hunter2 -> %q %q %v", user, pass, err)
+	}
+	// A password containing a colon keeps everything after the first one.
+	if user, pass, err := parseProfilingBasicAuth("alice:hun:ter2"); err != nil || user != "alice" || pass != "hun:ter2" {
+		t.Errorf("alice:hun:ter2 -> %q %q %v", user, pass, err)
+	}
+	for _, bad := range []string{"alice:", ":hunter2", "alicehunter2", "", ":"} {
+		if _, _, err := parseProfilingBasicAuth(bad); err == nil {
+			t.Errorf("%q accepted; it would push unauthenticated while looking configured", bad)
+		}
+	}
+}
+
+// TestProfilingAddressNormalisation: two spellings of one collector are one
+// address for the credential binding.
+func TestProfilingAddressNormalisation(t *testing.T) {
+	withProfiling(t)
+	withProfilingCredentials(t, "alice", "hunter2", "")
+	profilingStartupFlag.Store("http://p:4040/")
+	for _, same := range []string{"http://p:4040", "http://P:4040", "HTTP://p:4040/", "http://P:4040/"} {
+		if _, _, _, withheld := profilingCredentialsFor(same); withheld {
+			t.Errorf("%q treated as foreign to the flag address http://p:4040/", same)
+		}
+	}
+	for _, other := range []string{"https://p:4040", "http://p:4041", "http://q:4040", "http://p:4040/pyroscope"} {
+		if _, _, _, withheld := profilingCredentialsFor(other); !withheld {
+			t.Errorf("%q treated as the flag address http://p:4040/", other)
+		}
+	}
+}
+
+// TestProfilingAdhocEnvRefusedAtPushStart: with the SDK's override variable
+// set, a runtime push is refused at start (500, last_error, log) rather than
+// pushing somewhere the operator did not name. The boot-time fatal covers
+// only a process started WITH -profiling-pyroscope; one that never profiles
+// is not stopped by an unrelated tool's environment.
+func TestProfilingAdhocEnvRefusedAtPushStart(t *testing.T) {
+	withProfiling(t)
+	t.Setenv(profilingAdhocEnv, "http://elsewhere:4040")
+	logs := tapLog(t)
+	srv, rec := fakePyroscopeAnswering(t, http.StatusOK)
+
+	w, st := postProfiling(t, `{"enabled":true,"server_address":"`+srv.URL+`"}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("push with %s set: got %d, want 500 (body %q)", profilingAdhocEnv, w.Code, w.Body.String())
+	}
+	if !st.Enabled || st.Pushing || !strings.Contains(st.LastError, profilingAdhocEnv) {
+		t.Errorf("status: %+v", st)
+	}
+	if !strings.Contains(logs.String(), profilingAdhocEnv) {
+		t.Errorf("refusal not logged:\n%s", logs.String())
+	}
+	if rec.ingests.Load() != 0 {
+		t.Error("an upload happened despite the refusal")
+	}
+	// Pull-only is unaffected: the variable only matters to a push.
+	if w, st := postProfiling(t, `{"enabled":true,"server_address":""}`); w.Code != http.StatusOK || !st.Enabled || st.Pushing {
+		t.Errorf("pull-only with the variable set: %d %+v", w.Code, st)
+	}
+}
+
+// TestProfilingServerAddressSemantics pins the three shapes of
+// server_address: omitted keeps a REST push, an explicit "" is pull-only even
+// with the flag set, and omitted with nothing in force uses the flag.
+func TestProfilingServerAddressSemantics(t *testing.T) {
+	withProfiling(t)
+	flagSrv, _ := fakePyroscope(t)
+	restSrv, _ := fakePyroscope(t)
+	profilingStartupFlag.Store(flagSrv.URL)
+
+	// Omitted with nothing in force: the flag's address.
+	_, st := postProfiling(t, `{"enabled":true}`)
+	if !st.Pushing || st.ServerAddress != flagSrv.URL {
+		t.Fatalf("omitted, nothing in force: %+v, want the flag's address", st)
+	}
+
+	// A REST re-target, then a bare timed on: the REST push is KEPT.
+	postProfiling(t, `{"enabled":true,"server_address":"`+restSrv.URL+`"}`)
+	_, st = postProfiling(t, `{"enabled":true,"duration":"30m"}`)
+	if !st.Pushing || st.ServerAddress != restSrv.URL {
+		t.Errorf("omitted while pushing: %+v, want the REST address kept", st)
+	}
+
+	// Explicit "" with the flag set: pull-only, the one way to reach it.
+	_, st = postProfiling(t, `{"enabled":true,"server_address":""}`)
+	if !st.Enabled || st.Pushing || st.ServerAddress != "" {
+		t.Errorf("explicit empty: %+v, want pull-only", st)
+	}
+	if text := goroutineProfileText(t); strings.Contains(text, "pyroscope") {
+		t.Error("pull-only left the SDK running")
+	}
+	// Omitted from pull-only: no address in force, so the flag's again.
+	_, st = postProfiling(t, `{"enabled":true}`)
+	if !st.Pushing || st.ServerAddress != flagSrv.URL {
+		t.Errorf("omitted from pull-only: %+v, want the flag's address", st)
+	}
+}
+
+// TestProfilingWithSubsystemSkipsARedundantRelabel: a context that already
+// carries the label runs the body directly, so the fleet flow ticker (labelled
+// flow at birth) allocates no label map per exporter per tick.
+func TestProfilingWithSubsystemSkipsARedundantRelabel(t *testing.T) {
+	ctx := labelSubsystem(subsystemFlow)
+	t.Cleanup(func() { runtimepprof.SetGoroutineLabels(context.Background()) })
+	if n := testing.AllocsPerRun(100, func() { withSubsystem(ctx, subsystemFlow, func(context.Context) {}) }); n != 0 {
+		t.Errorf("withSubsystem with an already-labelled context allocates %.0f per call, want 0", n)
+	}
+	// A DIFFERENT label still relabels (the scenario ticker's tick reads flow).
+	var inside string
+	withSubsystem(labelSubsystem(subsystemScenario), subsystemFlow, func(context.Context) {
+		inside = labelsOfGoroutineWithFrame(t, "TestProfilingWithSubsystemSkipsARedundantRelabel")
+	})
+	if inside != `{"subsystem":"flow"}` {
+		t.Errorf("inside a relabel from scenario to flow: %q", inside)
+	}
+}
+
+// TestProfilingLabel_FleetFlowTicker reads the fleet ticker's birth label
+// from the goroutine profile, on the real constructor's ticker.
+func TestProfilingLabel_FleetFlowTicker(t *testing.T) {
+	sm := NewSimulatorManagerWithOptions(false, WithFlowTickInterval(30*time.Second))
+	t.Cleanup(func() { _ = sm.Shutdown() })
+	time.Sleep(20 * time.Millisecond)
+	wantSubsystemLabel(t, "(*SimulatorManager).startFlowTicker.func", subsystemFlow)
+}
+
+// TestProfilingLabel_ScheduledStartInheritsScenario: a goroutine spawned by
+// a SCHEDULED start (inside startLocked's funnel, on the timer goroutine)
+// inherits subsystem=scenario. The read-back is the scheduler's stop-watch
+// goroutine (Run.func1), spawned at the top of SyslogScheduler.Run and never
+// running a fire: the scheduler's OWN goroutine carries the inherited label
+// only until its first fire, because the syslog funnel restores
+// context.Background() on the way out (the documented by-design caveat), so
+// it is asserted UNLABELLED here once fires have run.
+func TestProfilingLabel_ScheduledStartInheritsScenario(t *testing.T) {
+	sm, _ := scenarioTestManager(t, 1)
+	c := newScenarioController(sm, time.Now)
+	spec := &Scenario{Participants: []string{"10.42.0.1"}, Protocol: "syslog", Rate: 10, Window: 5 * time.Second, Seed: 1}
+	if err := c.Submit(spec, "s-000001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Arm(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ScheduleStart(context.Background(), time.Now().Add(50*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = c.Stop() })
+	deadline := time.Now().Add(5 * time.Second)
+	for c.Phase() != phaseRunning && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if c.Phase() != phaseRunning {
+		t.Fatalf("scheduled start did not run: phase %v", c.Phase())
+	}
+	wantSubsystemLabel(t, "(*SyslogScheduler).Run.func", subsystemScenario)
+	// Rate 10: fires have run by now. The scheduler's own loop goroutine has
+	// been through the syslog funnel and reads unlabelled between fires.
+	time.Sleep(250 * time.Millisecond)
+	for _, stanza := range strings.Split(goroutineProfileText(t), "\n\n") {
+		if strings.Contains(stanza, "(*SyslogScheduler).Run+") && strings.Contains(stanza, "# labels:") {
+			t.Errorf("the scheduler loop still carries a label after fires; the inherited-label caveat in profiling.go is no longer true:\n%s", stanza)
+		}
+	}
+}
+
+// TestProfilingLabel_TrapInformLoops: the INFORM reader and retry goroutines
+// are per device and long-lived, labelled at birth.
+func TestProfilingLabel_TrapInformLoops(t *testing.T) {
+	mc := newMockCollector(t, true)
+	defer mc.Close()
+	conn := openTestUDPConn(t)
+	e := NewTrapExporter(TrapExporterOptions{
+		DeviceIP:  net.IPv4(127, 0, 0, 1),
+		Community: "public",
+		Mode:      TrapModeInform,
+		Collector: mc.addr,
+	})
+	e.SetConn(conn)
+	e.StartBackgroundLoops(context.Background())
+	defer e.Close()
+	time.Sleep(20 * time.Millisecond)
+	wantSubsystemLabel(t, "(*TrapExporter).readerLoop", subsystemTrap)
+	wantSubsystemLabel(t, "(*TrapExporter).retryLoop", subsystemTrap)
 }

@@ -118,9 +118,9 @@ func waitTicks(base, profileType, selector string, within time.Duration) (int, e
 // a selector, through the Connect JSON querier API (the legacy
 // /pyroscope/label-values route needs a `name` Pyroscope 2 no longer reads
 // from the query string). Used rather than hard-coding type IDs, because the
-// SDK and an Alloy scrape name the goroutine profile differently.
-func pyroscopeProfileTypes(t *testing.T, base, selector string) []string {
-	t.Helper()
+// SDK and an Alloy scrape name the goroutine profile differently. A non-200
+// is an error the caller may retry.
+func pyroscopeProfileTypes(base, selector string) ([]string, error) {
 	now := time.Now()
 	req, _ := json.Marshal(map[string]any{
 		"name":     "__profile_type__",
@@ -130,20 +130,31 @@ func pyroscopeProfileTypes(t *testing.T, base, selector string) []string {
 	})
 	resp, err := http.Post(base+"/querier.v1.QuerierService/LabelValues", "application/json", strings.NewReader(string(req)))
 	if err != nil {
-		t.Fatalf("LabelValues: %v", err)
+		return nil, fmt.Errorf("LabelValues: %w", err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("LabelValues: HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("LabelValues: HTTP %d: %s", resp.StatusCode, body)
 	}
 	var out struct {
 		Names []string `json:"names"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
-		t.Fatalf("LabelValues: %v (%s)", err, body)
+		return nil, fmt.Errorf("LabelValues: %w (%s)", err, body)
 	}
-	return out.Names
+	return out.Names, nil
+}
+
+// mustProfileTypes is pyroscopeProfileTypes for a one-shot read whose
+// failure IS the finding.
+func mustProfileTypes(t *testing.T, base, selector string) []string {
+	t.Helper()
+	types, err := pyroscopeProfileTypes(base, selector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return types
 }
 
 // burnCPU spins until the context ends, so a CPU profile has samples.
@@ -208,14 +219,14 @@ func TestPyroscopeInterop(t *testing.T) {
 	// The heap profiles pushed too: find the alloc_space type among what
 	// Pyroscope holds for the service, then require ticks on it.
 	allocType := ""
-	for _, pt := range pyroscopeProfileTypes(t, base, sel(pushService)) {
+	for _, pt := range mustProfileTypes(t, base, sel(pushService)) {
 		if strings.HasPrefix(pt, "memory:alloc_space:") {
 			allocType = pt
 		}
 	}
 	if allocType == "" {
 		t.Errorf("row 1: no memory:alloc_space profile type for %s; Pyroscope holds %v",
-			sel(pushService), pyroscopeProfileTypes(t, base, sel(pushService)))
+			sel(pushService), mustProfileTypes(t, base, sel(pushService)))
 	} else if n, err := waitTicks(base, allocType, sel(pushService), 30*time.Second); n == 0 {
 		t.Errorf("row 1: %s has no ticks for %s (last error: %v)", allocType, sel(pushService), err)
 	}
@@ -232,6 +243,13 @@ func TestPyroscopeInterop(t *testing.T) {
 	if scrapeAddr == "" {
 		scrapeAddr = interopDefaultScrapeAddr
 	}
+	// The Alloy config reads its target from NL6_SCRAPE_TARGET; if both are
+	// set and disagree, Alloy scrapes somewhere the test does not listen and
+	// row 2 would time out with a misleading message.
+	if target := os.Getenv("NL6_SCRAPE_TARGET"); target != "" && target != scrapeAddr {
+		t.Fatalf("%s=%q but NL6_SCRAPE_TARGET=%q: Alloy would scrape a different address from the one the test listens on",
+			interopEnvScrapeAddr, scrapeAddr, target)
+	}
 	ln, err := net.Listen("tcp", scrapeAddr)
 	if err != nil {
 		t.Fatalf("listen %s for the Alloy scrape: %v", scrapeAddr, err)
@@ -239,7 +257,7 @@ func TestPyroscopeInterop(t *testing.T) {
 	srv := &http.Server{Handler: setupRoutes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	if _, err := setProfiling(true, "", 0); err != nil {
+	if _, err := setProfiling(true, nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	// Keep the process busy so the 14 s CPU scrape has samples, and do it
@@ -254,7 +272,11 @@ func TestPyroscopeInterop(t *testing.T) {
 	deadline := time.Now().Add(90 * time.Second)
 	var haveCPU, haveGoroutine bool
 	for time.Now().Before(deadline) && !(haveCPU && haveGoroutine) {
-		for _, pt := range pyroscopeProfileTypes(t, base, scrapeSel) {
+		types, err := pyroscopeProfileTypes(base, scrapeSel)
+		if err != nil {
+			t.Logf("row 2: transient query error, retrying: %v", err)
+		}
+		for _, pt := range types {
 			if n, err := pyroscopeRenderTicks(base, pt, scrapeSel); err != nil || n == 0 {
 				continue
 			}
@@ -288,7 +310,8 @@ func TestPyroscopeInterop(t *testing.T) {
 		}
 	}
 	if t.Failed() {
-		t.Logf("profile types Pyroscope holds for %s: %v", scrapeSel, pyroscopeProfileTypes(t, base, scrapeSel))
+		types, err := pyroscopeProfileTypes(base, scrapeSel)
+		t.Logf("profile types Pyroscope holds for %s: %v (%v)", scrapeSel, types, err)
 	}
 }
 

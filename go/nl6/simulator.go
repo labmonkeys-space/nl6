@@ -276,19 +276,28 @@ func main() {
 		if err := validateProfilingAddress(*profilingPyroscope); err != nil {
 			log.Fatalf("profiling: -profiling-pyroscope %v", err)
 		}
+		// The SDK would honour this variable over the flag, silently. Fatal
+		// ONLY when the flag is set: a process that never profiles must not be
+		// stopped by an unrelated tool's environment (a runtime push refuses
+		// it at start instead).
+		if err := validateProfilingEnvironment(os.LookupEnv); err != nil {
+			log.Fatalf("profiling: %v", err)
+		}
+	}
+	if *profilingBasicAuth != "" || *profilingTenant != "" {
+		// Credentials are bound to the flag's address, so without the flag
+		// they would be accepted and then withheld from every push forever.
+		if *profilingPyroscope == "" {
+			log.Fatalf("profiling: -profiling-pyroscope-basic-auth/-profiling-pyroscope-tenant require " +
+				"-profiling-pyroscope; they are bound to its address")
+		}
 	}
 	if *profilingBasicAuth != "" {
-		// BOTH halves non-empty: the SDK sends Basic auth only when both are
-		// set, so `user:` would push unauthenticated while looking configured.
-		user, pass, ok := strings.Cut(*profilingBasicAuth, ":")
-		if !ok || user == "" || pass == "" {
-			log.Fatalf("profiling: -profiling-pyroscope-basic-auth must be user:pass with both parts " +
-				"non-empty (the SDK sends no Authorization header when either is empty)")
+		user, pass, err := parseProfilingBasicAuth(*profilingBasicAuth)
+		if err != nil {
+			log.Fatalf("profiling: %v", err)
 		}
 		profilingBasicAuthUser, profilingBasicAuthPassword = user, pass
-	}
-	if err := validateProfilingEnvironment(os.LookupEnv); err != nil {
-		log.Fatalf("profiling: %v", err)
 	}
 	profilingTenantID = *profilingTenant
 	profilingForceGC = *profilingForceGCFlag

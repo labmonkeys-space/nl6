@@ -31,8 +31,8 @@ import (
 //
 // This is an IN-PROCESS PROXY: the devices carry their value engines and
 // resource pointers but no sockets, TUN or namespace, so the real fleet's
-// heap is larger. The fleet-scale VM measurement is the follow-up recorded in
-// deferred-work.md.
+// heap is larger. The fleet-scale VM measurement is the follow-up recorded
+// under docs/ops/profiling.md#follow-ups.
 
 // benchFleetSizes are the device counts measured. Override with
 // NL6_GC_BENCH_DEVICES=<n> to measure one size.
@@ -114,18 +114,24 @@ func BenchmarkForcedGCOnFleetHeap(b *testing.B) {
 
 // TestProfilerForcesGCOnlyWhenConfigured pins the knob's wiring to the SDK:
 // with DisableGCRuns following -profiling-force-gc, a heap snapshot forces a
-// GC iff the flag is true. Automatic GC is switched off for the window so a
-// background collection cannot stand in for a forced one.
+// GC iff the flag is true. NumForcedGC counts explicit runtime.GC calls only,
+// so for the false half a background collection cannot stand in for a forced
+// one and automatic GC is left alone. The TRUE half is the reverse: the SDK
+// forces a collection only when none ran during the interval, and in a test
+// binary one usually does (observed: the half failed with automatic GC on),
+// so automatic GC is paused for that half alone.
 func TestProfilerForcesGCOnlyWhenConfigured(t *testing.T) {
 	srv, _ := fakePyroscope(t)
-	prev := debug.SetGCPercent(-1)
-	t.Cleanup(func() { debug.SetGCPercent(prev) })
 
 	for _, forceGC := range []bool{true, false} {
 		t.Run(fmt.Sprintf("force-gc=%v", forceGC), func(t *testing.T) {
 			saved := profilingForceGC
 			profilingForceGC = forceGC
 			t.Cleanup(func() { profilingForceGC = saved })
+			if forceGC {
+				prev := debug.SetGCPercent(-1)
+				t.Cleanup(func() { debug.SetGCPercent(prev) })
+			}
 
 			cfg := newProfilerConfig(srv.URL)
 			cfg.UploadRate = time.Second

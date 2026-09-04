@@ -159,6 +159,7 @@ func (t *tcpTransport) start() {
 
 func (t *tcpTransport) run() {
 	defer t.wg.Done()
+	labelSubsystem(subsystemSyslog) // once per goroutine (nl6#635)
 	backoff := syslogTCPInitialBackoff
 	for {
 		if t.closing.Load() || t.ctx.Err() != nil {

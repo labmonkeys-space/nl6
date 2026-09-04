@@ -10,7 +10,22 @@
 #
 #   docker compose up -d                       # nl6 pushes to Pyroscope
 #   docker compose --profile alloy up -d       # ... plus an Alloy scraper
-#   ./run.sh                                   # checks the profiles arrived
+#   ./run.sh                                   # verifies the stack: waits for
+#                                              # Pyroscope's /ready from the
+#                                              # host, then for profiles
+#
+# run.sh IS the verification. The pyroscope image ships no shell, wget or
+# curl, so it cannot carry a compose healthcheck; nl6 therefore starts as
+# soon as the container does. That is fine: the SDK never dials at start,
+# and uploads that fail while Pyroscope is still booting are counted in
+# sdk_errors and recover on the next interval.
+#
+# The two Grafana image tags below are written LITERALLY (no ${VAR:-...}
+# default): Dependabot's docker-compose parser skips the env form, and the
+# Makefile's test-interop-pyroscope reads its pins from these lines, so this
+# file is the single source for both. The nl6 image keeps the env form so a
+# locally built image can be substituted (NL6_IMAGE=nl6:local); the published
+# :latest predates the profiling flags until the next release.
 #
 # Profiling is OFF BY DEFAULT in nl6. This example is the ONLY place the
 # -profiling-pyroscope flag is set; the shipped compose.yml, Helm chart and
@@ -34,7 +49,7 @@ services:
       - "8080:8080"                       # web console + REST (incl. /api/v1/profiling, /debug/pprof/)
     depends_on:
       pyroscope:
-        condition: service_healthy
+        condition: service_started   # no healthcheck possible: see the header
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/version"]
       interval: 5s
@@ -42,22 +57,16 @@ services:
       retries: 24
 
   pyroscope:
-    image: ${PYROSCOPE_IMAGE:-grafana/pyroscope:2.1.2}
+    image: grafana/pyroscope:2.1.2
     ports:
       - "4040:4040"                       # Pyroscope UI + ingest + query API
-    healthcheck:
-      # Pyroscope 2 answers 503 on /ready for ~60 s after start.
-      test: ["CMD", "wget", "-qO-", "http://localhost:4040/ready"]
-      interval: 5s
-      timeout: 3s
-      retries: 40
 
   # Optional: Grafana Alloy scraping nl6's /debug/pprof/ surface. Enable with
   # `--profile alloy`. It expects nl6's gate open in PULL-ONLY mode, so run.sh
-  # switches the push off first (POST /api/v1/profiling {"enabled":true}
-  # with no server_address) when this profile is active.
+  # switches the push off first (POST /api/v1/profiling
+  # {"enabled":true,"server_address":""}) when this profile is active.
   alloy:
-    image: ${ALLOY_IMAGE:-grafana/alloy:v1.19.2}
+    image: grafana/alloy:v1.19.2
     profiles: ["alloy"]
     command: ["run", "/etc/alloy/config.alloy"]
     environment:

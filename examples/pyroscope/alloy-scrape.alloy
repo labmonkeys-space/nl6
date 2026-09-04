@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // alloy-scrape.alloy — Grafana Alloy pulling profiles from an nl6 whose
-// profiling gate is open (POST /api/v1/profiling {"enabled":true}, no
-// server_address: pull-only). Alloy's DEFAULT pyroscope.scrape profiling
+// profiling gate is open in PULL-ONLY mode (POST /api/v1/profiling
+// {"enabled":true,"server_address":""}). Alloy's DEFAULT pyroscope.scrape profiling
 // block is left as shipped (process_cpu, memory, goroutine, mutex, block),
 // plus the three godeltaprof endpoints nl6 serves at /debug/pprof/delta_*.
 //

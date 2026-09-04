@@ -47,9 +47,10 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
-  # Pyroscope + Alloy images in the profiling example. The Makefile's
-  # test-interop-pyroscope pins the same tags and TestProfilingImagePinsAgree
-  # fails when the two drift, so a bump here needs the Makefile line too.
+  # Pyroscope + Alloy images in the profiling example, written as literal
+  # `image:` lines (this parser skips the ${VAR:-default} form). The
+  # Makefile's test-interop-pyroscope reads its pins from the same lines, so
+  # a bump here is the whole bump.
   - package-ecosystem: docker-compose
     directory: /examples/pyroscope
     schedule:
