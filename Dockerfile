@@ -3,7 +3,7 @@
 # Digest-pinned (tag is in the reference; the `docker` Dependabot ecosystem
 # keeps the digest current). Dockerfile has no inline comments, so the tag note
 # lives on its own line.
-FROM --platform=${BUILDPLATFORM} golang:1.27-alpine@sha256:26402d86be3d72e6a9410afa0108f03529f51f0c1b5eb7f503d0bc44cc7857ac AS build
+FROM --platform=${BUILDPLATFORM} golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 
 ARG TARGETARCH
 # APP_VERSION is the build-time version string. The Makefile's docker
