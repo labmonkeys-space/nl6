@@ -9,9 +9,9 @@ description: |
   pod's hostNetwork so it inherits the host routes nl6 installs into the
   nl6sim namespace and can poll the simulated devices directly.
 type: application
-version: 0.1.4
+version: 0.1.5
 # appVersion tracks the nl6 simulator image tag this chart defaults to.
-appVersion: "0.21.0"
+appVersion: "0.29.0"
 keywords:
   - nl6
   - opennms
