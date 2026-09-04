@@ -62,22 +62,55 @@ curl -s -X POST localhost:8080/api/v1/profiling -H 'Content-Type: application/js
   -d '{"enabled":false}'
 ```
 
-`enabled` is required; a body without it is a `400`, and so is a `server_address` on an `enabled:false` request (validated-then-ignored is the nl6#445 family).
-`server_address` has three shapes: **omitted** keeps the address in force if a push is running (so a bare `{"enabled":true,"duration":"30m"}` on a pushing process keeps pushing), else uses the startup flag's, else is pull-only; an **explicit `""`** is pull-only even when the flag is set, which is the only way to reach pull-only on a process booted with the flag; a **value** re-targets.
-The same address twice is a no-op; a different address stops the old push and starts a new one.
-A push that cannot start (the SDK refuses the address) answers `500` with the state attached: `enabled:true`, `pushing:false`, and `last_error`, and the pull surface still serves.
-`pushing:true` means the SDK is **running**, not that uploads succeed: `pyroscope.Start` never touches the network, so a collector that is down, answers `401`, or rejects the tenant is invisible to it.
-Every error the SDK reports (a failed upload, a refused CPU collector, a full upload queue) shows as `sdk_errors` (a count for the current push) and `last_error` on `GET`, and as **one** log line per push (`[profiling] push to ... failing`), the first occurrence only.
-Switching off first asks the SDK to **flush** (a final CPU and heap snapshot, then the queued uploads) and then stops it; `Profiler.Stop` alone would upload nothing.
-That flush is bounded by two upload timeouts (20 s), after which it is abandoned with a log line and the last profiles may not have reached the collector; `GET` never waits behind it.
-Basic auth (`-profiling-pyroscope-basic-auth user:pass`, both parts required) and the tenant (`-profiling-pyroscope-tenant`) are flag-only, because `GET` echoes everything REST can set, and they require `-profiling-pyroscope` (refused at startup without it).
-They are **bound to the flag's address**, compared normalised (scheme and host case-insensitive, trailing slash ignored): a `server_address` supplied over REST that differs from `-profiling-pyroscope` is pushed to without them, and the transition log says `credentials withheld: address differs from -profiling-pyroscope`.
-Otherwise an unauthenticated `POST` could redirect the operator's credentials to any host, along with the profiles (a Go heap profile carries allocation sites and sizes, not object contents; a CPU profile carries stack traces).
-An address that embeds credentials (`http://user:pass@host`), a query or a fragment is refused everywhere: the first would be echoed by `GET` and the logs, the others mangled when the SDK appends `/ingest`.
-`PYROSCOPE_ADHOC_SERVER_ADDRESS` is refused, because the SDK would silently push there instead of to the address nl6 was told: at startup when `-profiling-pyroscope` is set, otherwise at the start of a runtime push (`500`, `last_error`, one log line), so a process that never profiles is not stopped by an unrelated tool's environment.
+### The request
 
-**Threat statement.**
-`POST /api/v1/profiling` and `/debug/pprof/` are exactly as unauthenticated as the rest of the REST API: anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile.
+`enabled` is required.
+A body without it is a `400`, and so is a `server_address` on an `enabled:false` request, because validated-then-ignored is the nl6#445 family.
+
+`server_address` has three shapes:
+
+| Shape | Effect |
+|---|---|
+| omitted | Keeps the address in force if a push is running, else uses the startup flag's, else pull-only. A bare `{"enabled":true,"duration":"30m"}` on a pushing process therefore keeps pushing. |
+| `""` | Pull-only, even when the flag is set. This is the only way to reach pull-only on a process booted with `-profiling-pyroscope`. |
+| a value | Re-targets. The same address twice is a no-op; a different one stops the old push and starts a new one. |
+
+A push the SDK refuses to start answers `500` with the state attached (`enabled:true`, `pushing:false`, `last_error`); the pull surface still serves.
+
+### What the status means
+
+`pushing:true` means the SDK is running, not that uploads succeed.
+`pyroscope.Start` never touches the network, so a collector that is down, answers `401` or rejects the tenant is invisible to it.
+Every error the SDK reports (a failed upload, a refused CPU collector, a full upload queue) shows on `GET` as `sdk_errors`, a count for the current push, and `last_error`.
+It is logged once per push, on the first occurrence: `[profiling] push to ... failing`.
+
+### Switching off
+
+Off first asks the SDK to flush (a final CPU and heap snapshot, then the queued uploads) and then stops it; `Profiler.Stop` alone uploads nothing.
+The flush is bounded by two upload timeouts (20 s).
+Past that it is abandoned with a log line and the last profiles may not have reached the collector.
+`GET` never waits behind it.
+
+### Credentials
+
+Basic auth (`-profiling-pyroscope-basic-auth user:pass`, both parts required) and the tenant (`-profiling-pyroscope-tenant`) are flag-only, because `GET` echoes everything REST can set.
+Both require `-profiling-pyroscope` and are refused at startup without it.
+
+They are bound to the flag's address, compared normalised (scheme and host case-insensitive, trailing slash ignored).
+A `server_address` supplied over REST that differs from the flag is pushed to without them, and the transition log says `credentials withheld: address differs from -profiling-pyroscope`.
+Otherwise an unauthenticated `POST` could redirect the operator's credentials, and the profiles, to any host.
+A Go heap profile carries allocation sites and sizes, not object contents; a CPU profile carries stack traces.
+
+### Refused inputs
+
+- An address that embeds credentials (`http://user:pass@host`): it would be echoed by `GET` and the logs.
+- An address with a query or a fragment: the SDK appends `/ingest` and mangles it.
+- `PYROSCOPE_ADHOC_SERVER_ADDRESS` in the environment: the SDK would silently push there instead of to the address nl6 was told. Refused at startup when `-profiling-pyroscope` is set, otherwise at the start of a runtime push (`500`, `last_error`, one log line), so a process that never profiles is not stopped by an unrelated tool's environment.
+
+### Threat statement
+
+`POST /api/v1/profiling` and `/debug/pprof/` are exactly as unauthenticated as the rest of the REST API.
+Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile.
 nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
 The basic-auth flag value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is listed under [Follow-ups](#follow-ups).
 
