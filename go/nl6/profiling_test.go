@@ -1632,15 +1632,59 @@ func TestProfilingLabel_ScheduledStartInheritsScenario(t *testing.T) {
 	if c.Phase() != phaseRunning {
 		t.Fatalf("scheduled start did not run: phase %v", c.Phase())
 	}
-	wantSubsystemLabel(t, "(*SyslogScheduler).Run.func", subsystemScenario)
-	// Rate 10: fires have run by now. The scheduler's own loop goroutine has
-	// been through the syslog funnel and reads unlabelled between fires.
-	time.Sleep(250 * time.Millisecond)
-	for _, stanza := range strings.Split(goroutineProfileText(t), "\n\n") {
-		if strings.Contains(stanza, "(*SyslogScheduler).Run+") && strings.Contains(stanza, "# labels:") {
-			t.Errorf("the scheduler loop still carries a label after fires; the inherited-label caveat in profiling.go is no longer true:\n%s", stanza)
+	// phaseRunning is published before `go c.sched.Run(...)` has necessarily
+	// been scheduled, so the stop-watch goroutine can be absent from the
+	// first profile on a loaded runner (it was, on CI). Poll for the frame.
+	const stopWatch = "(*SyslogScheduler).Run.func"
+	want := `{"subsystem":"` + subsystemScenario + `"}`
+	var got string
+	for time.Now().Before(deadline) {
+		if got = labelsOfGoroutineWithFrameOrEmpty(t, stopWatch); got != "" {
+			break
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	if got != want {
+		t.Errorf("goroutine with %s: labels %q, want %s", stopWatch, got, want)
+	}
+	// The scheduler's own loop goroutine goes through the syslog funnel on
+	// its first fire and reads unlabelled between fires from then on. Rate 10
+	// makes the first fire a Poisson draw with a 100 ms mean, so waiting a
+	// fixed 250 ms failed about one run in twelve; poll for the state instead
+	// and let the deadline (several dozen expected fires) be the bound.
+	loopUnlabelled := func() bool {
+		for _, stanza := range strings.Split(goroutineProfileText(t), "\n\n") {
+			if strings.Contains(stanza, "(*SyslogScheduler).Run+") {
+				return !strings.Contains(stanza, "# labels:")
+			}
+		}
+		return false
+	}
+	for !loopUnlabelled() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !loopUnlabelled() {
+		t.Error("the scheduler loop still carries a label after fires; the inherited-label caveat in profiling.go is no longer true")
+	}
+}
+
+// labelsOfGoroutineWithFrameOrEmpty is labelsOfGoroutineWithFrame for a
+// goroutine that may not exist YET: it returns "" instead of failing when no
+// goroutine has the frame, so a caller can poll for it.
+func labelsOfGoroutineWithFrameOrEmpty(t *testing.T, frame string) string {
+	t.Helper()
+	for _, stanza := range strings.Split(goroutineProfileText(t), "\n\n") {
+		if !strings.Contains(stanza, frame) {
+			continue
+		}
+		for _, line := range strings.Split(stanza, "\n") {
+			if strings.HasPrefix(line, "# labels:") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "# labels:"))
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 // TestProfilingLabel_TrapInformLoops: the INFORM reader and retry goroutines
