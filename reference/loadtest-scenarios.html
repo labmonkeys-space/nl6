@@ -1,0 +1,448 @@
+<!doctype html><html lang=en dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-reference/loadtest-scenarios" data-has-hydrated=false><head><meta charset=UTF-8><meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; form-action 'self'; script-src 'self' 'sha256-ByKaI/rimPHWCJW+jCvFlORyuIF5lU2Zigu9+639SD0=' 'sha256-rgdaaTjPDCRZW8A0BSmqUB94FlXJinsn22EN1s+h64c='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; upgrade-insecure-requests"><meta name=generator content="Docusaurus v3.10.2"><title data-rh=true>Running a load-test scenario | nl6</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:url content=https://nl6.eu/reference/loadtest-scenarios /><meta data-rh=true property=og:locale content=en /><meta data-rh=true name=docusaurus_locale content=en /><meta data-rh=true name=docsearch:language content=en /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="Running a load-test scenario | nl6"/><meta data-rh=true name=description content="The operating guide for the nl6 load-test scenario subsystem — the lifecycle,"/><meta data-rh=true property=og:description content="The operating guide for the nl6 load-test scenario subsystem — the lifecycle,"/><link data-rh=true rel=icon href=/img/nl6-logo.svg /><link data-rh=true rel=canonical href=https://nl6.eu/reference/loadtest-scenarios /><link data-rh=true rel=alternate href=https://nl6.eu/reference/loadtest-scenarios hreflang=en /><link data-rh=true rel=alternate href=https://nl6.eu/reference/loadtest-scenarios hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://nl6.eu/reference/loadtest-overview","name":"Load-test scenarios","position":1},{"@type":"ListItem","item":"https://nl6.eu/reference/loadtest-scenarios","name":"Running a load-test scenario","position":2}]}</script><link rel=stylesheet href=/assets/css/styles.fe1e35f8.css /><script src=/assets/js/runtime~main.8dc01fe9.js defer></script><script src=/assets/js/main.a5ca1976.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-49f")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/img/nl6-logo-with-text.svg /><div role=region aria-label="Skip to main content"><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>Skip to main content</a></div><nav aria-label=Main class="theme-layout-navbar navbar navbar--fixed-top"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/><div class=navbar__logo><img src=/img/nl6-logo-with-text.svg alt="nl6 — network device simulator" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/img/nl6-logo-with-text.svg alt="nl6 — network device simulator" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div></a><a class="navbar__item navbar__link" href=/getting-started/quick-start>Getting Started</a><a class="navbar__item navbar__link" href=/ops/scaling>Ops</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/reference/architecture>Reference</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href=https://github.com/labmonkeys-space/nl6 target=_blank rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1><div class="navbar__search searchBarContainer_NW3z" dir=ltr><svg aria-hidden=true class=searchIcon_T3tP focusable=false viewBox="0 0 16 16"><path fill=currentColor d="M6.02945 10.20327a4.17382 4.17382 0 1 1 4.17382-4.17382 4.15609 4.15609 0 0 1-4.17382 4.17382Zm9.69195 4.2199-4.8225-4.82338A5.88021 5.88021 0 0 0 12.058 6.02856 6.00467 6.00467 0 1 0 9.59979 10.8989l4.82338 4.82338a.89729.89729 0 0 0 1.29912 0 .89749.89749 0 0 0-.00087-1.29909Z"/></svg><input placeholder=Search aria-label=Search class="navbar__search-input searchInput_YFbd" value="" /><div class="loadingRing_RJI3 searchBarLoadingRing_YnHq"><div></div><div></div><div></div><div></div></div></div></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class=sidebar_njMd><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role=button aria-expanded=true href=/reference/architecture><span class=categoryLinkLabel_W154>Reference</span></a></div><ul class=menu__list><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/architecture><span class=linkLabel_WmDU>Architecture</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/cli-flags><span class=linkLabel_WmDU>CLI flags</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/web-api><span class=linkLabel_WmDU>Web API</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/device-types><span class=linkLabel_WmDU>Device types</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/snmp><span class=linkLabel_WmDU>SNMP reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/snmp-traps><span class=linkLabel_WmDU>SNMP trap / INFORM reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/syslog-export><span class=linkLabel_WmDU>Syslog export reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/flow-export><span class=linkLabel_WmDU>Flow export reference</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/gnmi><span class=linkLabel_WmDU>gNMI target</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/gnmi-dial-out><span class=linkLabel_WmDU>gNMI dial-out</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/optical-telemetry><span class=linkLabel_WmDU>Optical telemetry</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/interface-state><span class=linkLabel_WmDU>Interface state engine</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/lldp-topology><span class=linkLabel_WmDU>LLDP topology</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/dns-service-discovery><span class=linkLabel_WmDU>DNS service discovery</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--active" tabindex=0 href=/reference/loadtest-overview><span class=categoryLinkLabel_W154>Load-test scenarios</span></a><button aria-label="Collapse sidebar category 'Load-test scenarios'" aria-expanded=true type=button class="clean-btn menu__caret"></button></div><ul class=menu__list><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class=menu__link tabindex=0 href=/reference/loadtest-api><span class=linkLabel_WmDU>Load-test scenario REST API</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class="menu__link menu__link--active" aria-current=page tabindex=0 href=/reference/loadtest-scenarios><span class=linkLabel_WmDU>Running a load-test scenario</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class=menu__link tabindex=0 href=/reference/loadtest-runbooks><span class=linkLabel_WmDU>Runbooks</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class=menu__link tabindex=0 href=/reference/loadtest-report-schema><span class=linkLabel_WmDU>Load-test scenario report schema</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-3 menu__list-item"><a class=menu__link tabindex=0 href=/reference/loadtest-collector-ceiling><span class=linkLabel_WmDU>Measuring a collector's ingest ceiling</span></a></ul><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/reference/resource-files><span class=linkLabel_WmDU>Resource files</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" tabindex=0 href=/reference/gpu><span class=categoryLinkLabel_W154>GPU Simulation</span></a><button aria-label="Expand sidebar category 'GPU Simulation'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div></ul></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=Breadcrumbs><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label="Home page" class=breadcrumbs__link href=/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class=breadcrumbs__item><span class=breadcrumbs__link>Reference</span><li class=breadcrumbs__item><a class=breadcrumbs__link href=/reference/loadtest-overview><span>Load-test scenarios</span></a><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>Running a load-test scenario</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Running a load-test scenario</h1></header>
+<p>The operating guide for the nl6 load-test scenario subsystem — the lifecycle,
+fidelity mode, run isolation, reconciliation, and troubleshooting. New to the
+feature? Start with the <a class="" href=/reference/loadtest-overview>overview</a>. For copy-pasteable
+recipes by use case, see the <a class="" href=/reference/loadtest-runbooks>runbooks</a>; for endpoints
+and shapes, the <a class="" href=/reference/loadtest-api>REST API</a> and <a class="" href=/reference/loadtest-report-schema>report schema</a>.</p>
+<p>Scope: <strong>up to 8 concurrent scenarios</strong>, each over any one of the seven shipped
+push protocols — <strong>syslog</strong>, <strong>SNMP trap/inform</strong>, <strong>NetFlow v5/v9</strong>, <strong>IPFIX</strong>,
+<strong>sFlow</strong>, and <strong>gNMI dial-out</strong>. Each protocol opts a device in via its own
+export config; the scenario gates whichever protocol it targets.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=run-a-fidelity-check>Run a fidelity check<a href=#run-a-fidelity-check class=hash-link aria-label="Direct link to Run a fidelity check" title="Direct link to Run a fidelity check" translate=no>​</a></h2>
+<p>The lifecycle is <code>submit → arm → start → (window elapses) → stop → report</code>.</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token assign-left variable" style=color:#36acaa>NL6</span><span class="token operator" style=color:#393A34>=</span><span class="token plain">http://localhost:8080</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># 1. Submit — validate + fingerprint. Returns the scenario id.</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token assign-left variable" style=color:#36acaa>ID</span><span class="token operator" style=color:#393A34>=</span><span class="token variable" style=color:#36acaa>$(</span><span class="token variable function" style=color:#d73a49>curl</span><span class="token variable" style=color:#36acaa> </span><span class="token variable parameter variable" style=color:#36acaa>-sf</span><span class="token variable" style=color:#36acaa> </span><span class="token variable parameter variable" style=color:#36acaa>-X</span><span class="token variable" style=color:#36acaa> POST $NL6/api/v1/scenarios </span><span class="token variable parameter variable" style=color:#36acaa>-H</span><span class="token variable" style=color:#36acaa> </span><span class="token variable string" style=color:#e3116c>'Content-Type: application/json'</span><span class="token variable" style=color:#36acaa> </span><span class="token variable parameter variable" style=color:#36acaa>-d</span><span class="token variable" style=color:#36acaa> </span><span class="token variable string" style=color:#e3116c>'{</span><br/></div><div class=token-line style=color:#393A34><span class="token variable string" style=color:#e3116c>  "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],</span><br/></div><div class=token-line style=color:#393A34><span class="token variable string" style=color:#e3116c>  "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42</span><br/></div><div class=token-line style=color:#393A34><span class="token variable string" style=color:#e3116c>}'</span><span class="token variable" style=color:#36acaa> </span><span class="token variable operator" style=color:#393A34>|</span><span class="token variable" style=color:#36acaa> jq </span><span class="token variable parameter variable" style=color:#36acaa>-r</span><span class="token variable" style=color:#36acaa> .id</span><span class="token variable" style=color:#36acaa>)</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># 2. Arm — resolve participants; check the excluded list before starting.</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token function" style=color:#d73a49>curl</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-sf</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-X</span><span class="token plain"> POST </span><span class="token variable" style=color:#36acaa>$NL6</span><span class="token plain">/api/v1/scenarios/</span><span class="token variable" style=color:#36acaa>$ID</span><span class="token plain">/arm </span><span class="token operator" style=color:#393A34>|</span><span class="token plain"> jq</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># 3. Start — freezes the fleet, opens the window at T0. Refused at 0/N armed.</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token function" style=color:#d73a49>curl</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-sf</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-X</span><span class="token plain"> POST </span><span class="token variable" style=color:#36acaa>$NL6</span><span class="token plain">/api/v1/scenarios/</span><span class="token variable" style=color:#36acaa>$ID</span><span class="token plain">/start </span><span class="token operator" style=color:#393A34>|</span><span class="token plain"> jq</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># 4. Wait for the window (it self-closes at T1), then finalize + fetch report.</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token function" style=color:#d73a49>sleep</span><span class="token plain"> </span><span class="token number" style=color:#36acaa>33</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token function" style=color:#d73a49>curl</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-sf</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-X</span><span class="token plain"> POST </span><span class="token variable" style=color:#36acaa>$NL6</span><span class="token plain">/api/v1/scenarios/</span><span class="token variable" style=color:#36acaa>$ID</span><span class="token plain">/stop </span><span class="token operator" style=color:#393A34>|</span><span class="token plain"> jq</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># 5. Reconcile: report `sent` (in_window + drain) vs your collector's received.</span><br/></div></code></pre></div></div>
+<p><code>stop</code> is idempotent, so it is safe to call after the window has already
+auto-closed — you get the same report back.</p>
+<p>To <strong>reconcile</strong>, sum <code>in_window + drain</code> per <code>counters[]</code> row and compare to
+your monitor's received count for the same <code>(protocol, source_ip, collector)</code>
+tuple. <code>send_failures</code> vs <code>dropped</code> separates "nl6 could not send" from "nl6
+sent but the wire lost it". See the
+<a class="" href=/reference/loadtest-report-schema#the-ledger-identity>report schema</a>.</p>
+<p><strong>Prefer a browser?</strong> Add <code>?format=html</code> for a self-contained page (stat cards,
+a loss-localization bar chart, and the participant table) you can eyeball or
+attach to a run report; <code>?format=csv</code> gives the flat join-ready projection. JSON
+(no <code>format</code>) stays the machine source of truth.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=fidelity-mode>Fidelity mode<a href=#fidelity-mode class=hash-link aria-label="Direct link to Fidelity mode" title="Direct link to Fidelity mode" translate=no>​</a></h2>
+<p><strong><code>-fidelity</code> — a silent fleet.</strong> By default every device starts pushing its
+background telemetry — flow, SNMP
+traps, syslog, gNMI dial-out — on its own cadence the moment it comes up. So a
+scenario's window is mixed in with steady background noise, and the fleet keeps
+emitting after the run ends. Start nl6 with <strong><code>-fidelity</code></strong> to invert that: the
+fleet is <strong>silent</strong> — no autonomous push leaves any device — <strong>except</strong> during a
+running scenario's <code>[T0,T1)</code> window, where only that scenario's gated traffic
+flows. Silence before the run, only the scenario during it, silence again after.</p>
+<p>Fidelity is also togglable <strong>at runtime</strong>, which is what you want when
+bracketing a measurement on a fleet you would rather not rebuild — a restart
+destroys every REST-created device:</p>
+<div class="language-console codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-console codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">curl -sX POST $NL6/api/v1/fidelity -H 'Content-Type: application/json' \</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  -d '{"silent": true}'</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"># or bound it, so it restores itself even if you forget</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">curl -sX POST $NL6/api/v1/fidelity -H 'Content-Type: application/json' \</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  -d '{"silent": true, "duration": "20m"}'</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">curl -s $NL6/api/v1/fidelity   # value in force, startup flag, pending revert</span><br/></div></code></pre></div></div>
+<p><code>GET</code> reports the value in force <strong>and</strong> the startup flag separately: once the
+value is mutable, <code>-fidelity</code> is only a default, and a surface reporting the
+flag alone would assert something the engine may have stopped honouring.</p>
+<ul>
+<li class="">Devices still answer <strong>polls</strong> (SNMP / SSH / HTTPS) normally — fidelity mutes
+only autonomous <em>push</em> telemetry.</li>
+<li class="">Explicit <strong>on-demand</strong> fires (<code>POST /devices/{ip}/{trap,syslog}</code>) still go
+through — a deliberate action, not background chatter.</li>
+<li class="">Fleet-wide and static: set once at startup, <strong>off by default</strong>.</li>
+<li class="">It mutes <strong>autonomous</strong> push. A gNMI <strong>dial-in</strong> subscription is
+client-initiated (the collector <code>Subscribe</code>d), so it keeps streaming — cancel
+the subscription if you need the gNMI path quiet too.</li>
+</ul>
+<p>The payoff is the cleanest possible measurement environment — a report you can
+diff against a collector with zero background contamination on either side. Add
+<code>-fidelity</code> to any launch command in the <a class="" href=/reference/loadtest-runbooks>runbooks</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=netflow-v5-run-isolation-time-window--source-ip-only>NetFlow v5 run isolation (time-window + source-IP only)<a href=#netflow-v5-run-isolation-time-window--source-ip-only class=hash-link aria-label="Direct link to NetFlow v5 run isolation (time-window + source-IP only)" title="Direct link to NetFlow v5 run isolation (time-window + source-IP only)" translate=no>​</a></h2>
+<p>NetFlow v5 is a fixed-format protocol — no templates, no option records, no
+in-band field a scenario could tag. So a v5 fidelity run is isolated purely by
+<strong>the measurement window <code>[T0,T1)</code> and the participant source IPs</strong>: the
+collector attributes scenario traffic by <code>(source_ip, arrival time)</code>, not by any
+per-flow marker. Keep this in mind when reconciling — filter the collector's v5
+records to the participant IPs <strong>and</strong> the window before diffing against the
+report's <code>sent</code>. (The other protocols carry richer identity — v9/IPFIX
+templates, sFlow agent/sub-agent, trap varbinds — but the report's join tuple
+<code>(protocol, source_ip, collector)</code> is the same across all of them.)</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=run-tagging--isolating-experiment-traffic>Run tagging — isolating experiment traffic<a href=#run-tagging--isolating-experiment-traffic class=hash-link aria-label="Direct link to Run tagging — isolating experiment traffic" title="Direct link to Run tagging — isolating experiment traffic" translate=no>​</a></h2>
+<p>On a <strong>shared collector</strong> — one that also receives background/production
+telemetry — you must separate this run's traffic from the noise before
+reconciling. Each protocol is isolated by its <strong>native lever</strong>; the report's
+<code>metadata.run_tags</code> records the mechanism + value so you know how to filter.
+This is <em>tag-what-exists</em>: the levers below are already carried by the wire
+encoders (or, for PEN-dependent ones, degrade cleanly).</p>
+<table><thead><tr><th>Protocol<th><code>mechanism</code><th>Lever<th>PEN?<tbody><tr><td>NetFlow v9<td><code>netflow9_source_id</code><td>filter received flows by the device's <strong>Source ID</strong><td>no<tr><td>IPFIX<td><code>ipfix_odid</code><td>filter by the <strong>Observation Domain ID</strong> (enterprise IE is a secondary, PEN-only lever)<td>no<tr><td>sFlow v5<td><code>sflow_sub_agent_id</code><td>filter by <strong><code>sub_agent_id</code></strong><td>no<tr><td>gNMI dial-out<td><code>gnmi_synthetic_path</code><td>dial-out stamps the device IP in <code>Notification.Prefix.Target</code>; filter by target<td>no<tr><td>Syslog 5424<td><code>syslog_sd_param</code><td>RFC 5424 SD-PARAM <code>[nl6@&lt;PEN> runId="&lt;id>"]</code><td><strong>yes</strong><tr><td>SNMP trap/inform<td><code>snmp_enterprise_varbind</code><td>enterprise varbind under the nl6 PEN<td><strong>yes</strong><tr><td>NetFlow v5<td><code>window_source_ip</code><td>no taggable field — isolate by participant source IPs + <code>[T0,T1)</code><td>n/a</table>
+<ul>
+<li class=""><strong>In every case</strong> the measurement window <code>[T0,T1)</code> plus the participant source
+IPs already narrow the traffic; the per-protocol lever adds a second, in-band
+discriminator where one exists.</li>
+<li class=""><strong>PEN-dependent levers degrade gracefully.</strong> Syslog SD-PARAM and the SNMP
+enterprise varbind need an IANA <strong>Private Enterprise Number</strong>. Without one
+(<code>-scenario-pen</code> unset, the default), <code>run_tags.mechanism</code> is
+<code>window_source_ip</code> and <code>run_tags.degraded</code> is <code>true</code> — you fall back to window<!-- -->
+<ul>
+<li class="">source-IP isolation, which is always available. Set <code>-scenario-pen &lt;n></code> once
+your PEN is registered to activate the clean levers; <code>run_tags.value</code> then
+carries the <code>runId</code> a receiver keys on.</li>
+</ul>
+</li>
+<li class=""><code>nl6-reconcile</code>'s <code>PHANTOM</code> status flags received traffic that is <strong>not</strong> in
+the report — usually background noise that leaked past your filter. Tighten
+the filter using the <code>run_tags</code> mechanism above.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=reconciliation-walkthrough>Reconciliation walkthrough<a href=#reconciliation-walkthrough class=hash-link aria-label="Direct link to Reconciliation walkthrough" title="Direct link to Reconciliation walkthrough" translate=no>​</a></h2>
+<p>The instrument's one job is to make loss <strong>measurable</strong>. The arithmetic:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-text codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">sent       = in_window + drain          (per counters[] row, or summed)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">received   = your monitor's count for the same (protocol, source_ip, collector)</span><br/></div><div class=token-line style=color:#393A34><span class="token plain">loss_ratio = (sent − received) / sent</span><br/></div></code></pre></div></div>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=nl6-reconcile--one-command-not-a-spreadsheet><code>nl6-reconcile</code> — one command, not a spreadsheet<a href=#nl6-reconcile--one-command-not-a-spreadsheet class=hash-link aria-label="Direct link to nl6-reconcile--one-command-not-a-spreadsheet" title="Direct link to nl6-reconcile--one-command-not-a-spreadsheet" translate=no>​</a></h3>
+<p><code>nl6-reconcile</code> does the join for you. It is <strong>read-only</strong>: give it a saved
+report and your collector's received-counts export, and it outer-joins on
+<code>(protocol, source_ip, collector)</code> and prints <code>loss_ratio</code> per key with an
+in-flight tolerance band. See <a href=#getting-nl6-reconcile class="">Getting nl6-reconcile</a>.</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token comment" style=color:#999988;font-style:italic># Report as JSON (or CSV via ?format=csv); received as a collector CSV export.</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token function" style=color:#d73a49>curl</span><span class="token plain"> </span><span class="token parameter variable" style=color:#36acaa>-sf</span><span class="token plain"> </span><span class="token variable" style=color:#36acaa>$NL6</span><span class="token plain">/api/v1/scenarios/</span><span class="token variable" style=color:#36acaa>$ID</span><span class="token plain">/report </span><span class="token operator" style=color:#393A34>></span><span class="token plain"> report.json</span><br/></div><div class=token-line style=color:#393A34><span class="token plain" style=display:inline-block></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">nl6-reconcile </span><span class="token parameter variable" style=color:#36acaa>-report</span><span class="token plain"> report.json </span><span class="token parameter variable" style=color:#36acaa>-received</span><span class="token plain"> collector.csv</span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># PROTOCOL  SOURCE_IP   COLLECTOR     SENT  RECEIVED  DELTA  LOSS%   STATUS</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># syslog    10.42.0.1   10.0.0.9:514  1000  1000      0      0.00%   OK</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># syslog    10.42.0.2   10.0.0.9:514  1000  950       50     5.00%   RESIDUAL</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic>#</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># Summary: 2 keys | 1 OK | 1 flagged | tolerance 0.50% | sent=2000 received=1950 fleet_residual=2.50%</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic>#</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># NOTE: shortfalls above are UNCLASSIFIED (RESIDUAL, or MISSING with no received row).</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># Still-queued messages are backlog and resolve themselves; drained-and-missing</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># messages are loss and do not. Re-run with -drained once the collector's input</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain"></span><span class="token comment" style=color:#999988;font-style:italic># queue has emptied to classify them.</span><br/></div></code></pre></div></div>
+<ul>
+<li class=""><strong>Inputs.</strong> <code>-report</code> takes the report <strong>JSON</strong> or the flat <strong>CSV</strong> projection
+(auto-detected). <code>-received</code> takes a <strong>CSV</strong> (<code>protocol,source_ip,collector,received</code>
+columns) or a <strong>Prometheus range-query result</strong> (<code>/api/v1/query_range</code> JSON —
+the last sample of each series is the received count, keyed by its
+<code>protocol</code>/<code>source_ip</code>/<code>collector</code> labels). Either input may be <code>-</code> for stdin.</li>
+<li class=""><strong>Tolerance.</strong> <code>-tolerance 0.005</code> (default 0.5 %) is the in-flight band:
+<code>|loss_ratio|</code> within it is <code>OK</code> — records still on the wire at <code>T1</code> cause a
+tiny delta that is not real loss. Widen it for lossy paths, tighten to <code>0</code> for
+an exact check.</li>
+<li class=""><strong>Statuses.</strong> <code>OK</code> · <code>RESIDUAL</code> (received &lt; sent, queue state unknown) ·
+<code>LOSS</code> (received &lt; sent <strong>and</strong> you passed <code>-drained</code>) · <code>DUP</code> (received > sent —
+duplication) · <code>MISSING</code> (in the report, no received row — a join gap, or the
+100 % case of the same shortfall ambiguity, so it is unclassified without
+<code>-drained</code> too) · <code>PHANTOM</code> (received but not in the report — background noise leaked
+into your export; see the run-tagging notes to isolate it).</li>
+<li class=""><strong><code>-drained</code>: classify the shortfall.</strong> A shortfall measured while the
+collector's input queue is still draining is <strong>backlog</strong>, and backlog resolves
+itself. The same shortfall measured after the queue has emptied is <strong>loss</strong>,
+and loss does not. They have opposite remedies, so <code>nl6-reconcile</code> will not
+guess: it cannot see your collector's queue, and by default reports a
+shortfall as <code>RESIDUAL</code>. Pass <code>-drained</code> once the queue has emptied to assert
+the run is over and get <code>LOSS</code>. Reporting a single unclassified residual as
+loss is the defect this flag exists to prevent — see
+<a class="" href=/reference/loadtest-collector-ceiling>Collector ceiling</a>.</li>
+<li class=""><strong>Compatibility note.</strong> <code>-drained</code> changed the DEFAULT output: a shortfall that
+previously printed <code>LOSS</code> now prints <code>RESIDUAL</code>, in text, CSV and JSON alike,
+and the summary reads <code>fleet_residual</code> (or <code>fleet_delta</code> when the figure is
+zero or negative). Exit codes are unchanged, so CI gates still fire as before,
+but a pipeline grepping for the literal <code>LOSS</code> or <code>fleet_loss=</code> needs either
+<code>-drained</code> or an updated pattern.</li>
+<li class=""><strong>Exit code.</strong> <code>0</code> when every key is <code>OK</code>, <code>1</code> when any key is flagged — so
+<code>nl6-reconcile</code> drops straight into a CI gate. Use <code>-format csv|json</code> for a
+machine-readable diff.</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id=getting-nl6-reconcile>Getting nl6-reconcile<a href=#getting-nl6-reconcile class=hash-link aria-label="Direct link to Getting nl6-reconcile" title="Direct link to Getting nl6-reconcile" translate=no>​</a></h4>
+<p><code>nl6-reconcile</code> is a small, stateless, <strong>cross-platform</strong> Go CLI — it runs
+wherever you diff (your laptop, a CI runner, the monitoring host), not on the
+Linux-only simulator host. Three ways to get it:</p>
+<ul>
+<li class="">
+<p><strong>Download a release binary</strong> (recommended). Grab <code>nl6-reconcile-&lt;os>-&lt;arch></code>
+from the <a href=https://github.com/labmonkeys-space/nl6/releases target=_blank rel="noopener noreferrer" class="">releases</a> —
+<code>linux</code> / <code>darwin</code> / <code>windows</code> × <code>amd64</code> / <code>arm64</code> — then <code>chmod +x</code> and put it
+on your <code>PATH</code>.</p>
+</li>
+<li class="">
+<p><strong><code>go install</code></strong> (any platform with a Go toolchain):</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token plain">go </span><span class="token function" style=color:#d73a49>install</span><span class="token plain"> github.com/labmonkeys-space/nl6/go/cmd/nl6-reconcile@latest</span><br/></div></code></pre></div></div>
+</li>
+<li class="">
+<p><strong>From source</strong>: <code>make reconcile</code> builds <code>go/nl6-reconcile</code>; run it as
+<code>./go/nl6-reconcile</code> or copy it onto your <code>PATH</code>.</p>
+</li>
+</ul>
+<p><code>nl6-reconcile -version</code> prints the build version (stamped from the same release
+tag as the simulator, so a report's <code>metadata.nl6_version</code> and the diff tool's
+version together pin a reconciliation).</p>
+<p>To reconcile <strong>by hand</strong> instead:</p>
+<ol>
+<li class=""><strong>Join</strong> the report's <code>counters[]</code> (or the <a class="" href=/reference/loadtest-report-schema#csv-projection>CSV
+projection</a>) against your
+monitor's received-counts export <strong>on <code>(protocol, source_ip, collector)</code></strong> —
+the report is keyed by exactly that tuple so the join is 1:1.</li>
+<li class=""><strong>Per row</strong>, compute <code>loss_ratio</code>. <code>0</code> = perfect fidelity. A positive ratio
+localizes to that <code>source_ip</code>; a <em>negative</em> ratio (received > sent) means
+<strong>duplication</strong> in the path (retransmits, a misconfigured fan-out).</li>
+<li class=""><strong>Loss model.</strong> <code>sent</code> is the authoritative denominator — it is exact and,
+with a fixed <code>seed</code>, reproducible. Any shortfall is real wire/collector
+loss, <strong>not</strong> measurement noise. The simulator proves this: an injected X%
+drop is recovered by this arithmetic within ±1 pp (0 % exactly) — see the
+<code>examples/scenario-syslog-fidelity</code> "injecting known loss" section.</li>
+</ol>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=when-the-numbers-dont-add-up>When the numbers don't add up<a href=#when-the-numbers-dont-add-up class=hash-link aria-label="Direct link to When the numbers don't add up" title="Direct link to When the numbers don't add up" translate=no>​</a></h3>
+<ul>
+<li class=""><strong><code>received</code> &lt; <code>sent</code> but the network is fine</strong> → the collector host is
+dropping datagrams before your monitor counts them. Check the kernel UDP
+drop counters: <code>nstat -az | grep -i Udp</code> or
+<code>cat /proc/net/snmp | grep Udp:</code> — a rising <strong><code>UdpRcvbufErrors</code></strong> /
+<strong><code>InErrors</code></strong> means the receive buffer overflowed under burst. Raise the
+collector's <code>SO_RCVBUF</code> (or <code>net.core.rmem_max</code>) and re-run; that loss is on
+the collector, not the wire.</li>
+<li class=""><strong><code>received</code> == 0 despite <code>sent</code> > 0</strong> → almost always the collector host's
+<strong><code>rp_filter</code></strong> dropping <code>10.42.0.0/16</code> source IPs (see <em>Collector
+unreachable</em> below), not real loss.</li>
+<li class="">Always confirm the join tuple matches: a mismatched <code>collector</code> column means
+you are diffing against the wrong receiver.</li>
+<li class=""><strong><code>sent</code> far below <code>informational.requested</code></strong> → the shared global cap
+throttled the run: the shortfall is in <code>informational.deferred</code> (fires the
+cap had no token for — <strong>not fired, not lost</strong>). Deferral is <em>not</em> loss and
+is excluded from <code>sent</code> (the loss denominator), so <code>loss_ratio</code> stays honest.
+Raise the cap, lower the profile rate, or accept the throttle — but don't
+read it as pipeline loss.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=validating-a-collector-against-the-report>Validating a collector against the report<a href=#validating-a-collector-against-the-report class=hash-link aria-label="Direct link to Validating a collector against the report" title="Direct link to Validating a collector against the report" translate=no>​</a></h2>
+<p>For flow scenarios (<code>netflow5</code> / <code>netflow9</code> / <code>ipfix</code>) the report's
+<a class="" href=/reference/loadtest-report-schema#applications--fleet-wide-flow-traffic-ground-truth><code>applications[]</code></a>
+block is the trusted-sender ground truth for per-application traffic: total
+<code>bytes</code> / <code>packets</code> / <code>records</code> and <code>avg_bytes_per_second</code> per
+<code>(l4_proto, dst_port)</code>. To validate a collector's per-application view
+(a "Top Applications" dashboard or equivalent) against it:</p>
+<ol>
+<li class="">
+<p><strong>Reconcile on totals, not time buckets.</strong> nl6 attributes a flow's bytes
+at the moment its record hits the wire; collectors <strong>interpolate</strong> each
+flow's bytes across its <code>[flowStart, flowEnd]</code> interval (shipped-profile
+flow durations run up to 300 s). Per-bucket series will never line up —
+<code>sub_window_bytes</code> is a sanity curve, not a reconciliation target.</p>
+</li>
+<li class="">
+<p><strong>Pad the collector-side query window</strong> to
+<code>[t0 − max profile flow duration, drain_end + slack]</code> so interpolated bytes
+that the collector attributes before <code>t0</code> are captured, and so the tail is
+not cut off. Generation stops at <code>t1</code>, but you are reconciling against
+<code>sent = in_window + drain</code>, and a <code>drain</code> record is <em>by definition</em> one whose
+write returned at or after <code>t1</code> — bounding the query at exactly <code>t1</code> would
+drop it from the collector side while the report still counts it, inventing a
+loss in the number this step exists to reconcile. <code>metadata.drain_end</code> is the
+honest upper bound (milliseconds past <code>t1</code> on a healthy run); add a slack of
+a second or two for collector-side timestamping and clock skew. There is
+nothing beyond it: no fire initiates after <code>t1</code>. Filter by the scenario's
+exporter IPs (the <code>counters[].source_ip</code> set).</p>
+<p><strong>The exception is a report carrying <code>drain_stragglers</code>.</strong> There, <code>drain_end</code>
+is the instant the barrier gave up rather than the instant the last write
+returned, and the uncancelled sends land <em>after</em> it. <code>drain_end</code> is then not
+an upper bound at all, and a query bounded by it invents exactly the loss this
+step exists to rule out. Reconcile such a run only for what it can support, or
+re-run it.</p>
+</li>
+<li class="">
+<p><strong>Join on <code>(l4_proto, dst_port)</code>, not on names.</strong> Collector classification
+is user-configurable; <code>app_hint</code> is a convenience label only. Generated
+source ports sit in the IANA dynamic range (≥ 49152), so a collector rule
+matching registered ports on either side of the flow cannot reclassify
+nl6 traffic away from its destination-port application.</p>
+</li>
+<li class="">
+<p>In <strong>fidelity mode</strong> the fleet is silent outside the window, so the block
+is the <em>complete</em> record of what the trusted sender emitted — any
+collector-side surplus is foreign traffic, any deficit is loss or
+misclassification.</p>
+</li>
+</ol>
+<p><code>sflow</code> scenarios have no <code>applications</code> rows: sFlow byte volumes are derived
+by sampling extrapolation at the collector, which is not comparable to
+record-byte totals.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=clock-sync-chronyntp--required-for-time-localization>Clock sync (chrony/NTP) — required for time localization<a href=#clock-sync-chronyntp--required-for-time-localization class=hash-link aria-label="Direct link to Clock sync (chrony/NTP) — required for time localization" title="Direct link to Clock sync (chrony/NTP) — required for time localization" translate=no>​</a></h2>
+<p>Reconciliation totals (<code>sent</code> vs <code>received</code>) need <strong>no</strong> clock agreement — a
+counter is a counter. But <strong>time localization</strong> (<a class="" href=/reference/loadtest-report-schema#loss-localization><code>sub_windows</code></a>)
+does: nl6 buckets each send by its write-return time relative to <code>T0</code>, and to
+line your received data up against those buckets you must bucket <strong>your</strong>
+records by receive-time relative to the <strong>same</strong> <code>T0</code>. If nl6's host and the
+collector's host disagree on the wall clock, the two bucketings shear and a
+loss that is really in <code>[T0+30s, T0+45s]</code> appears smeared across neighbours.</p>
+<ul>
+<li class="">Run <strong>chrony</strong> (or ntpd) on both the simulator host and every collector host,
+disciplined to the <strong>same</strong> upstream sources. Confirm with <code>chronyc tracking</code>
+— keep the estimated offset well under one <code>sub_window_duration</code> (a 30 s
+window → 3 s buckets → sub-second sync is ample; tighten for shorter windows).</li>
+<li class="">The report's <code>metadata.t0</code>/<code>t1</code> are the simulator's clock. Bucket your
+received records against <strong>that</strong> <code>t0</code>, not your own start time.</li>
+<li class="">Fleet totals and <code>loss_ratio</code> are unaffected by skew — only the per-bucket
+<code>sub_windows</code> attribution is. If localization looks smeared but totals
+reconcile, suspect clock skew before suspecting the pipeline.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=troubleshooting-arm-failures>Troubleshooting arm failures<a href=#troubleshooting-arm-failures class=hash-link aria-label="Direct link to Troubleshooting arm failures" title="Direct link to Troubleshooting arm failures" translate=no>​</a></h2>
+<p><code>arm</code> never fails wholesale for a bad participant — it accounts for every one of
+them in the readiness response and reports up to 900 individually in the
+<code>excluded[]</code> list as <code>{device, reason, remediation_hint}</code> (100 of the 1,000-row
+budget is reserved for exclusions found at <code>start</code>). Check that list before
+<code>start</code>.</p>
+<p>Above 900 arm-time exclusions the list is a <strong>sample</strong>: <code>excluded_truncated</code> is set,
+<code>excluded_total</code> holds the true count, and <code>excluded_by_reason</code> gives the full
+<code>reason → count</code> breakdown. Read the counts from those, never from
+<code>len(excluded)</code>. Fix what the sample shows, re-arm, and the next batch surfaces.</p>
+<table><thead><tr><th>Symptom<th>Cause<th>Fix<tbody><tr><td><code>excluded[].reason = "device not found"</code><td>The participant IP is not in the live fleet.<td>Create the device (<code>POST /api/v1/devices</code>) before arming, or remove it from <code>participants</code>.<tr><td><code>excluded[].reason = "device has no syslog exporter"</code><td>The device exists but syslog export is not enabled on it.<td>Enable syslog export on the device — the <code>-syslog-collector</code> seed flag (auto-start batch) or a per-device <code>syslog</code> block in <code>POST /api/v1/devices</code>.<tr><td><code>excluded[].reason = "device deleted between arm and start"</code><td>The device was deleted in the arm→start gap (before the freeze).<td>Re-arm after the fleet is stable.<tr><td><code>start</code> → <code>409 … 0/N participants armed</code><td>Every declared participant was excluded (or, with <code>participants_cidr</code> only, no live device matched any prefix — prefix non-matches are silent, so <code>excluded[]</code> can be empty).<td>Fix the exclusions above, or check the prefixes against the fleet's addressing; you cannot start a scenario with no armed devices.<tr><td><code>POST /scenarios</code> → <code>400 … has host bits set; the canonical form is …</code><td>A <code>participants_cidr</code> entry like <code>10.42.1.5/16</code> — a host address where a network was meant.<td>Use the canonical (masked) prefix from the error message, or a <code>/32</code> if one address was intended.<tr><td><code>POST /scenarios</code> → <code>400 … is covered by …; a nested prefix adds nothing</code><td>One prefix contains another (or repeats it).<td>Remove the narrower prefix — the wider one already selects every address in it. (An explicit <code>participants</code> entry inside a prefix is fine: that is the loud-miss assertion form.)<tr><td><code>arm</code> → <code>409 selectors resolve to N live devices, exceeding the 100000 participant cap</code><td>The prefix selector matched more of the fleet than a scenario may hold.<td>Narrow the selector or shrink the fleet, then re-arm; a refused re-arm leaves the previous arm intact.<tr><td>Armed count is lower than the prefix "should" match<td>Addresses inside a prefix with no live device are silently skipped — a typo'd prefix can half-match without any error.<td>Declare <code>expect_participants</code> so the shortfall is refused instead of measured. Without it, compare <code>participants_armed</code> against your expected fleet size by hand.<tr><td><code>start</code> → <code>409 expected N participants, M armed: … nothing was excluded</code><td>The selectors matched fewer live devices than declared, and nothing was rejected — so the shortfall is entirely silent.<td>Almost always a prefix one bit too narrow (<code>/19</code> for <code>/18</code>), or a fleet smaller than you think. Check the prefix, then <code>GET /api/v1/devices</code> for the real count.<tr><td><code>start</code> → <code>409 expected N participants, M armed: … see excluded_by_reason</code><td>Devices were found but rejected, so the shortfall has enumerable causes.<td>Fix what <code>excluded_by_reason</code> reports (usually a missing exporter), re-arm, and the count recovers.<tr><td><code>start</code> → <code>409 expected N participants, M armed: M−N more than declared</code><td>The fleet holds devices your selectors match but your expectation omits.<td>Either the fleet grew or the expectation is stale. Update <code>expect_participants</code> — an over-sized run is refused because it is no longer comparable to the baseline it would be measured against.<tr><td><code>POST /scenarios</code> → <code>409 too many active scenarios</code><td>8 scenarios are already non-terminal.<td>Stop / abort / <code>DELETE</code> one first (<code>GET /api/v1/scenarios</code> lists them with their phases).<tr><td><code>arm</code> → <code>409 … participant(s) are claimed by scenario …</code><td>Those devices belong to another non-terminal scenario. A device participates in at most one scenario at a time (FR38).<td>Stop or delete the named scenario, or narrow this one's participants. Note an <strong>armed</strong> scenario already holds its fleet — it does not have to be running — so cancelling it releases the devices.<tr><td><code>start</code> / <code>stop</code> → <code>409 cannot … in phase …</code><td>Illegal lifecycle transition.<td>The <code>409</code> body names the current phase and the resolving verb; follow the <a class="" href=/reference/loadtest-api#phase--verb-matrix>phase/verb matrix</a>.<tr><td><code>report</code> → <code>409 … available only after stop or abort</code><td>The scenario has not finalized yet.<td>Stop it (or wait for the window to auto-close at <code>T1</code>), then re-request the report.<tr><td>Device create/delete → <code>409 fleet … frozen by running scenario</code><td>Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window.<td>Wait for the scenario to finish, or stop it.</table>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=collector-unreachable>Collector unreachable<a href=#collector-unreachable class=hash-link aria-label="Direct link to Collector unreachable" title="Direct link to Collector unreachable" translate=no>​</a></h3>
+<p>If the scenario runs but your monitor receives nothing:</p>
+<ul>
+<li class=""><strong><code>report.send_failures</code> is high</strong> → nl6 itself could not send (socket bind
+failure, no route). Check the device's configured collector <code>host:port</code> and
+that the simulator container can reach it.</li>
+<li class=""><strong><code>report.sent</code> is high but the collector received 0</strong> → the datagrams left
+nl6 but were dropped en route. The usual culprit is the collector host's
+<strong>reverse-path filter</strong> rejecting UDP with <code>10.42.0.0/16</code> source IPs when
+<code>-syslog-source-per-device=true</code> (the default). Relax it
+(<code>net.ipv4.conf.*.rp_filter=0</code> or <code>2</code>) or run with
+<code>-syslog-source-per-device=false</code> so datagrams carry the simulator's own
+source IP.</li>
+<li class="">Confirm the device's collector matches where your monitor listens
+(<code>counters[].collector</code> in the report).</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=heartbeat--silence-alert-warning>Heartbeat / silence-alert warning<a href=#heartbeat--silence-alert-warning class=hash-link aria-label="Direct link to Heartbeat / silence-alert warning" title="Direct link to Heartbeat / silence-alert warning" translate=no>​</a></h2>
+<p>⚠️ <strong>A scenario suppresses the fleet's ordinary background telemetry cadence for
+its participants for the entire time it is armed and running.</strong> Before <code>T0</code>,
+background fires from armed participants are <em>generation-suppressed</em>
+(<code>informational.background_suppressed</code> in the report counts them). This is intentional — it
+keeps the measurement window clean — but it means:</p>
+<ul>
+<li class=""><strong>Silence-based alerts</strong> (heartbeat monitors, "no syslog in N minutes"
+detectors) watching a participant <strong>may fire during a scenario</strong> because the
+device's normal chatter is paused. Schedule fidelity checks in a maintenance
+window, suppress those alerts for the participants, or keep windows short.</li>
+<li class="">Non-participant devices are unaffected — their background cadence continues.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=participant-cardinality-vs-rate>Participant cardinality vs. rate<a href=#participant-cardinality-vs-rate class=hash-link aria-label="Direct link to Participant cardinality vs. rate" title="Direct link to Participant cardinality vs. rate" translate=no>​</a></h2>
+<p>A scenario may name up to <strong>100,000 participants</strong>, which is a <em>bounds</em> limit,
+not a throughput promise. The two dimensions have separate ceilings and the
+interesting one is usually cardinality:</p>
+<ul>
+<li class="">
+<p><strong>Cardinality is what the instrument measures.</strong> The ledger reconciles on
+<code>(protocol, source_ip, collector)</code>, and the failure modes a fidelity check
+exists to expose are all per-source: <code>rp_filter</code> drops, neighbour-table
+pressure, collector per-agent state, and node cardinality in the monitoring
+system. <strong>Rate cannot substitute for distinct source IPs</strong> — 4,300 devices at
+7/s loads a collector's throughput about like 30,000 at 1/s, but tells you
+nothing about whether the pipeline survives 30,000 agents. (Participants are a
+<strong>set</strong>: a repeated IP is rejected at submit, so cardinality is always the
+number of entries you sent.)</p>
+</li>
+<li class="">
+<p><strong>Aggregate rate has its own, lower ceiling.</strong> <code>syslog</code> and <code>snmp-trap</code> fire
+inline on a single scheduler goroutine (one datagram per event), so their
+aggregate throughput is bounded by one core's per-event cost regardless of how
+the per-device rate and participant count are divided. Flow protocols are far
+cheaper per record because v9/IPFIX pack many records per datagram.</p>
+<p>⚠️ <strong>That ceiling has not been measured.</strong> A per-event cost estimate of
+~3–5 µs puts it somewhere around 200–350k events/s per subsystem, but this is
+an <em>estimate from code inspection</em>, not a benchmark. Treat it as an order of
+magnitude, and measure on your own hardware before designing a run that
+depends on the exact number.</p>
+</li>
+<li class="">
+<p><strong>Flow protocols have a hard per-device rate ceiling, around 8.1–9.2 records/s at the default 5s tick.</strong>
+A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed <code>MaxFlows</code> (256), so the reachable rate is <code>MaxFlows / residency</code>: roughly 8.1/s for the GPU-server profile up to 9.2/s for the campus-switch one.
+Residency is <code>mean-flow-lifetime + half the tick interval</code>, so <strong>the ceiling falls as the tick lengthens</strong>: at <code>-flow-tick-interval 60</code> residency is about 59s and the ceiling roughly 4.3/s, half the figure above. Compute it from the formula rather than quoting the number when the tick is not the default. The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes. It was omitted before <a href=https://github.com/labmonkeys-space/nl6/issues/462 target=_blank rel="noopener noreferrer" class="">nl6#462</a>, which stated the ceiling about 5 % high and ran every paced rate a few percent low.
+A rate above a participant's ceiling is <strong>refused at arm</strong>, with the ceiling in the message, rather than silently under-delivered.
+Fleet throughput scales with participant count; per-device rate does not scale past the cache. Flow is not a protocol to drive hard per device.</p>
+</li>
+<li class="">
+<p><strong><code>rate_profile</code> is not supported for flow protocols</strong> and is refused at submit.
+Resizing the cache moves the rate with a lag of about one mean flow lifetime (~29s at the shipped defaults, measured at 1.03x), so a ramp shorter than that would be smeared into a shape that is neither the profile requested nor a constant.
+Use a constant rate for flow, or drive the shape with <code>syslog</code>.</p>
+</li>
+<li class="">
+<p><strong><code>rate</code> does not set the flow tick cadence.</strong> It did before: the scenario ticker ran at <code>1s/rate</code>, which set <em>batching</em> rather than volume, so the requested rate was never what the wire carried.
+The cadence now follows <code>-flow-tick-interval</code> (clamped so a short window is still divided into enough batches to report a rate), and <code>rate</code> sets the cache population, which is what determines volume.</p>
+</li>
+</ul>
+<p>So high-cardinality runs are best driven at <strong>low per-device rates</strong>: 30,000
+participants at <code>rate: 0.5</code> is a comfortable 15k events/s, while the same fleet
+at <code>rate: 10</code> asks for 300k/s and will likely be scheduler-bound rather than
+collector-bound — measuring nl6 instead of the system under test.</p>
+<p>If a <code>syslog</code> or <code>snmp-trap</code> run's <code>sent</code> total comes in low, check these in
+order before suspecting the collector:</p>
+<ol>
+<li class=""><strong>The arm-time exclusions.</strong> Participants are not existence-checked at submit,
+so the expected total is <code>participants_armed × rate × window</code>, not
+<code>participants × rate × window</code>. Use <code>participants_armed</code> (or
+<code>excluded_total</code>) — <strong>not</strong> <code>len(excluded)</code>, which is capped (900 arm-time
+rows, 1,000 in the report) and understates the exclusions on a large run. Long participant lists make this
+the most common cause by far.</li>
+<li class=""><strong>The scheduler ceiling above</strong>, if the remaining participants × rate is in
+the hundreds of thousands per second.</li>
+</ol>
+<p>This arithmetic applies to <strong><code>syslog</code> and <code>snmp-trap</code> only</strong> — protocols where
+one scheduled fire is one event. Do not apply it to flow protocols: there <code>rate</code>
+is the flow-<em>tick</em> cadence, not an event rate, and the ledger counts flow
+<strong>records</strong>. A tick emits however many records expired under the active/inactive
+timeouts, which is frequently <strong>zero</strong> at a fast tick cadence, so <code>sent</code> bears no
+fixed relationship to <code>participants × rate × window</code> in either direction. For a
+flow run, reconcile the report's <code>sent</code> against the collector directly rather
+than against a predicted total.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=graceful-abort-produces-a-finalized-report>Graceful abort produces a finalized report<a href=#graceful-abort-produces-a-finalized-report class=hash-link aria-label="Direct link to Graceful abort produces a finalized report" title="Direct link to Graceful abort produces a finalized report" translate=no>​</a></h2>
+<p>A SIGTERM/SIGINT during a <em>running</em> scenario does <strong>not</strong> silently discard the
+run. The shutdown path aborts the scenario through the same drain-and-finalize
+pipeline a normal stop uses, so:</p>
+<p><strong>How long that takes.</strong> The abort publishes the terminal gate — no new fire
+initiates — and then waits for the fires already admitted to return from their
+writes. There is <strong>no configurable grace</strong> (<a href=https://github.com/labmonkeys-space/nl6/issues/500 target=_blank rel="noopener noreferrer" class="">nl6#500</a> removed a <code>drain</code> duration
+that never bounded anything). On a healthy run the wait is milliseconds. The
+worst case an operator can observe is set by the slowest transport in the run: a
+UDP write parks only while the socket buffer is full, while a syslog <strong>TCP/TLS</strong>
+device bounds one write at 2 s and serialises the fires queued behind it, so a
+stalled collector can hold shutdown for 2 s × those queued fires.</p>
+<p><strong>The drain barrier itself is bounded</strong>, at 60 s (<a href=https://github.com/labmonkeys-space/nl6/issues/567 target=_blank rel="noopener noreferrer" class="">nl6#567</a>): past that it gives
+up, reports how many sends were still outstanding in <code>drain_stragglers</code>, and
+lets finalize proceed. At the shipped constants it logs exactly one warning, at
+the 30 s mark, and then the give-up line at 60 s. The reported count is an upper
+bound on outstanding <strong>admissions</strong>, not on records: the syslog and trap paths
+admit one write, while the flow paths admit a whole paginated batch, so one flow
+straggler can stand for hundreds of records.</p>
+<p><strong>Finalize as a whole is bounded by one budget</strong> (<a href=https://github.com/labmonkeys-space/nl6/issues/618 target=_blank rel="noopener noreferrer" class="">nl6#618</a>). Before it, only
+the barrier was: finalize joins the scenario's scheduler and its trap and flow
+tickers <em>before</em> it reaches the barrier, every one of those was an unbounded
+channel receive, and the syslog and trap schedulers fire inline, so a stalled
+<strong>scheduler-driven</strong> write parked finalize with the barrier ceiling never armed.
+That was the common case, which meant the ceiling reached only sends admitted
+outside the scheduler.</p>
+<p>All four waits now share a single 60 s budget, so the number an operator is told
+is the number finalize can actually take, rather than one ceiling per wait
+summing to four times it. Whatever did not finish is named in
+<code>metadata.incomplete_joins</code>.</p>
+<p><strong>Nothing is cancelled.</strong> A goroutine parked in a write cannot be interrupted,
+so an abandoned join keeps running and can still move counters after the report
+is taken, exactly as a drain straggler can. A report carrying either
+<code>incomplete_joins</code> or <code>drain_stragglers</code> should be read as a lower bound.</p>
+<p>Note also that 60 s exceeds <code>docker stop</code>'s default 10 s grace, so on a
+containerised deployment the process may be killed before the ceiling fires and
+no report is written. Raise <code>stop_grace_period</code> if a truncated report is worth
+more to you than a fast stop.</p>
+<ul>
+<li class="">The report is <strong>finalized and marked <code>phase: "aborted"</code></strong>, with <code>metadata.t0</code>
+and a <code>metadata.t1</code> equal to the <strong>abort instant</strong> (the window that actually
+ran, always earlier than the planned <code>T1</code>). <code>duration</code> reflects the truncated
+window.</li>
+<li class="">It is <strong>immutable</strong> and served by <code>GET /api/v1/scenarios/{id}/report</code>
+<strong>exactly like a <code>stopped</code> report</strong> — same schema, same ledger identity, same
+<code>counters[]</code>. Only the <code>phase</code> differs.</li>
+<li class="">The fleet freeze is released as part of the abort, so device CRUD works again.</li>
+</ul>
+<p>The catch is timing: the report lives in memory (see the non-goal below), so a
+graceful abort finalizes it but the process still exits. <strong>If you need the
+abort report, fetch it before the process is fully gone</strong> — or drive the abort
+by other means and read the report while nl6 is still up.</p>
+<p><strong>SIGKILL</strong> (or a crash / OOM) makes <strong>no promise</strong> beyond the in-memory-loss
+non-goal below: there is no abort pipeline, so no report is produced.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=non-goal-scenarios-are-in-memory>Non-goal: scenarios are in-memory<a href=#non-goal-scenarios-are-in-memory class=hash-link aria-label="Direct link to Non-goal: scenarios are in-memory" title="Direct link to Non-goal: scenarios are in-memory" translate=no>​</a></h2>
+<p><strong>Scenarios do not persist.</strong> The active scenario, its ledger, and its
+finalized report live entirely in the simulator process's memory. They do
+<strong>not</strong> survive a restart:</p>
+<ul>
+<li class="">Restarting nl6 (or the container) <strong>discards</strong> any active scenario and any
+finalized-but-not-yet-fetched report. <strong>Fetch the report before restarting.</strong></li>
+<li class="">There is no scenario history or store — <code>GET /api/v1/scenarios/{id}</code> returns
+<code>404</code> for any ID the current process did not allocate, and IDs
+(<code>s-000001</code>, …) reset on restart.</li>
+<li class="">On a graceful shutdown (SIGTERM/SIGINT) a <em>running</em> scenario is <strong>aborted</strong>
+first — it finalizes its report (still in-memory) and releases the fleet
+freeze — so the shutdown is clean, but the report is still lost once the
+process exits.</li>
+</ul>
+<p>Persistence is a deliberate non-goal for this subsystem: a fidelity check is a
+short, operator-driven experiment whose result is consumed immediately (diffed
+against a monitor), not an audit log. Capture the report JSON yourself if you
+need to keep it.</div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/labmonkeys-space/nl6/edit/main/docs/reference/loadtest-scenarios.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href=/reference/loadtest-api><div class=pagination-nav__sublabel>Previous</div><div class=pagination-nav__label>Load-test scenario REST API</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/reference/loadtest-runbooks><div class=pagination-nav__sublabel>Next</div><div class=pagination-nav__label>Runbooks</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#run-a-fidelity-check class="table-of-contents__link toc-highlight">Run a fidelity check</a><li><a href=#fidelity-mode class="table-of-contents__link toc-highlight">Fidelity mode</a><li><a href=#netflow-v5-run-isolation-time-window--source-ip-only class="table-of-contents__link toc-highlight">NetFlow v5 run isolation (time-window + source-IP only)</a><li><a href=#run-tagging--isolating-experiment-traffic class="table-of-contents__link toc-highlight">Run tagging — isolating experiment traffic</a><li><a href=#reconciliation-walkthrough class="table-of-contents__link toc-highlight">Reconciliation walkthrough</a><ul><li><a href=#nl6-reconcile--one-command-not-a-spreadsheet class="table-of-contents__link toc-highlight"><code>nl6-reconcile</code> — one command, not a spreadsheet</a><li><a href=#when-the-numbers-dont-add-up class="table-of-contents__link toc-highlight">When the numbers don't add up</a></ul><li><a href=#validating-a-collector-against-the-report class="table-of-contents__link toc-highlight">Validating a collector against the report</a><li><a href=#clock-sync-chronyntp--required-for-time-localization class="table-of-contents__link toc-highlight">Clock sync (chrony/NTP) — required for time localization</a><li><a href=#troubleshooting-arm-failures class="table-of-contents__link toc-highlight">Troubleshooting arm failures</a><ul><li><a href=#collector-unreachable class="table-of-contents__link toc-highlight">Collector unreachable</a></ul><li><a href=#heartbeat--silence-alert-warning class="table-of-contents__link toc-highlight">Heartbeat / silence-alert warning</a><li><a href=#participant-cardinality-vs-rate class="table-of-contents__link toc-highlight">Participant cardinality vs. rate</a><li><a href=#graceful-abort-produces-a-finalized-report class="table-of-contents__link toc-highlight">Graceful abort produces a finalized report</a><li><a href=#non-goal-scenarios-are-in-memory class="table-of-contents__link toc-highlight">Non-goal: scenarios are in-memory</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Docs</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/getting-started/quick-start>Quick Start</a><li class=footer__item><a class=footer__link-item href=/reference/cli-flags>CLI Flags</a><li class=footer__item><a class=footer__link-item href=/reference/web-api>Web API</a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Project</div><ul class="footer__items clean-list"><li class=footer__item><a href=https://github.com/labmonkeys-space/nl6 target=_blank rel="noopener noreferrer" class=footer__link-item>GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><li class=footer__item><a href=https://github.com/labmonkeys-space/nl6/issues target=_blank rel="noopener noreferrer" class=footer__link-item>Issues<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><li class=footer__item><a href=https://github.com/labmonkeys-space/nl6/releases target=_blank rel="noopener noreferrer" class=footer__link-item>Releases<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Legal</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/imprint>Imprint</a><li class=footer__item><a class=footer__link-item href=/privacy>Privacy</a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>© 2026 Labmonkeys Space. Licensed under Apache-2.0. Built with Docusaurus.</div></div></div></footer></div></body>
