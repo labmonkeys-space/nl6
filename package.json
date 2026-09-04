@@ -51,13 +51,17 @@
     "overrides": "Force patched versions of transitive Docusaurus/webpack deps flagged by Dependabot. These are docs-site build/dev dependencies (not shipped in the nl6 binary or image). Every entry MUST be load-bearing (change resolution) and MUST have a removal condition in overrides-entries below; an inert entry is a version ceiling that blocks upgrades while delivering nothing. Run `make docs-audit-overrides` to find inert entries. Prefer a nested (per-consumer) override over a global one when only some consumers need the forced version.",
     "overrides-entries": {
       "serialize-javascript": "Advisory fix. Forces 7.x on copy-webpack-plugin@11 and css-minimizer-webpack-plugin@5, both of which declare ^6.x -- a deliberate major-boundary crossing. Without it the tree drops to 6.0.2. REMOVE WHEN both plugins accept ^7.",
-      "sockjs>uuid": "Advisory fix for uuid 8.3.2, reached only via sockjs under webpack-dev-server (npm run start) -- never in the production build or the shipped site. Scoped to sockjs so it does not cap mermaid, which accepts ^11 || ^12 || ^13 || ^14. Forces 11.1.1 on sockjs, whose declared range is ^8.3.2. REMOVE WHEN sockjs accepts a patched uuid."
+      "sockjs>uuid": "Advisory fix for uuid 8.3.2, reached only via sockjs under webpack-dev-server (npm run start) -- never in the production build or the shipped site. Scoped to sockjs so it does not cap mermaid, which accepts ^11 || ^12 || ^13 || ^14. Forces 11.1.1 on sockjs, whose declared range is ^8.3.2. REMOVE WHEN sockjs accepts a patched uuid.",
+      "express>qs": "Advisory fix (GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx) for qs 6.15.3, reached only via express and body-parser under webpack-dev-server (npm run start) -- never in the production build or the shipped site. express@4.22 pins ~6.15.1, so 6.16.0 is a deliberate range crossing. Scoped to express so nothing else is capped. REMOVE WHEN express accepts ^6.16."
     }
   },
   "overrides": {
     "serialize-javascript": "^7.0.5",
     "sockjs": {
       "uuid": "^11.1.1"
+    },
+    "express": {
+      "qs": "^6.16.0"
     }
   }
 }
