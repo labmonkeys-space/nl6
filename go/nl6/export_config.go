@@ -558,6 +558,9 @@ func (c *DeviceGnmiDialoutConfig) ApplyDefaults() {
 	}
 	if len(c.Paths) == 0 {
 		c.Paths = append([]string(nil), defaultDialoutPaths...)
+		if c.Flavor == "altiplano" {
+			c.Paths = append(c.Paths, "/access-node")
+		}
 	}
 	if c.TLS == nil {
 		c.TLS = &DialoutTLSConfig{Enabled: true}

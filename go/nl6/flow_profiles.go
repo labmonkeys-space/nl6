@@ -314,6 +314,7 @@ var flowProfileMap = map[string]*FlowProfile{
 // exporter; GetFlowProfile deliberately keeps its non-nil contract so
 // existing call sites cannot nil-panic.
 var flowIncapableTypes = map[string]struct{}{
+	"altiplano.json": {},
 	"ciena_waveserver5.json": {},
 }
 

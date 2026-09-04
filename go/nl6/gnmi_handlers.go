@@ -362,7 +362,26 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			// exceeds a float64 significand); JSON_IETF preserves them.
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
 		case json.RawMessage:
-			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_JsonIetfVal{JsonIetfVal: []byte(x)}}, nil
+			b := []byte(x)
+			if len(b) > 0 && b[0] != '{' && b[0] != '[' {
+				var val interface{}
+				if err := json.Unmarshal(b, &val); err == nil {
+					switch v2 := val.(type) {
+					case string:
+						if u, err := strconv.ParseUint(v2, 10, 64); err == nil {
+							return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: u}}, nil
+						}
+						return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_StringVal{StringVal: v2}}, nil
+					case float64:
+						if v2 == float64(uint64(v2)) && v2 >= 0 {
+							return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: uint64(v2)}}, nil
+						}
+					case bool:
+						return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_BoolVal{BoolVal: v2}}, nil
+					}
+				}
+			}
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_JsonIetfVal{JsonIetfVal: b}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)
 		}

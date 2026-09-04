@@ -114,7 +114,8 @@ type DeviceSimulator struct {
 	sysLocation  string // Dynamic sysLocation for this device
 	sysName      string
 
-	AltiplanoData *altiplano.Device `json:"-"` 
+	AltiplanoData *altiplano.Device
+	AltiplanoMu sync.RWMutex `json:"-"` 
 	// Cached frequently accessed values (lock-free)
 	cachedSysName     atomic.Value    // Stores string
 	cachedSysLocation atomic.Value    // Stores string

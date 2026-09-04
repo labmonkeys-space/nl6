@@ -134,6 +134,7 @@ type ownVendorPEN struct {
 // profiles, and TestEveryProfileServesOnlyItsOwnVendorArc re-derives it again on
 // every run.
 var ownVendorPENs = map[string]ownVendorPEN{
+	"altiplano.json":               {"", "Altiplano uses OpenConfig and TR-413 over gNMI, serving standard SNMP MIB-II without a vendor arc"},
 	"arista_7280r3.json":           {"30065", "Arista Networks, Inc. — registered as 'Arista Networks, Inc. (formerly Arastra, Inc.)'; the company renamed"},
 	"asr9k.json":                   {"9", "ciscoSystems; the ASR 9000 is a Cisco platform"},
 	"aws_s3_storage.json":          {"32473", "RFC 5612's documentation PEN, held by IANA. nl6#588 chose it over Amazon's real numbers (4843 Amazon.com Inc., 60099 Amazon Web Services Inc) DELIBERATELY: this profile models a CATEGORY — an S3-compatible object storage gateway, which MinIO, Ceph RGW and others implement — not a manufacturer, and AWS's own S3 is an HTTP service with no SNMP surface. Naming Amazon would trade one misattribution for a more plausible one. THIS IS A PER-PROFILE ALLOWANCE: 32473 must not become globally permitted, or any future profile could dodge this guard by claiming to be documentation"},

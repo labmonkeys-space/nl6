@@ -223,8 +223,8 @@ const (
 	// entries UNCHANGED in their effective catalog. A profile declaring
 	// `extends: false`, or an overlay that overrides a universal entry name with
 	// different varbinds, would legitimately move the second number.
-	trapCatalogProfiles           = 29
-	trapProfilesCarryingUniversal = 29
+	trapCatalogProfiles           = 30
+	trapProfilesCarryingUniversal = 30
 )
 
 // trapPollJoinedPairsShipped is the joined set BY IDENTITY, not by count.
@@ -292,7 +292,7 @@ const trapUniversalCatalogLabel = "<universal, as carried by profiles with no ov
 // This is coverage of a surface the catalog does not control, not a near-miss.
 const (
 	trapPrependedJoinedPairs   = 24
-	trapPrependedUnservedPairs = 37 // 29x2 prepends + 3 profiles whose catalog sets snmpTrapEnterprise, less the 24
+	trapPrependedUnservedPairs = 39 // 29x2 prepends + 3 profiles whose catalog sets snmpTrapEnterprise, less the 24
 )
 
 // ── the type vocabulary, driven off the PRODUCTION accept-set ───────────────

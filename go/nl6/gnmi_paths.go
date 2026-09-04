@@ -340,9 +340,11 @@ func (r *pathResolver) ClassifyLeaves(p *gnmipb.Path) ([]string, error) {
 	}
 	
 	// Altiplano dynamic schema interception
-	if elems[0].GetName() == "access-node" {
+	if r.device != nil && r.device.AltiplanoData != nil {
+			if elems[0].GetName() == "access-node" || elems[0].GetName() == "interfaces" {
 		return []string{}, nil
 	}
+		}
 
 	// Optical branch: shape-only, so it deliberately does NOT consult the
 	// value engine — not even to check whether one exists. A device without
