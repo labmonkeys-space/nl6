@@ -913,6 +913,15 @@ func validateResourceFilename(name string) error {
 // "does not exist" is a fault rather than absence. It does not touch the
 // cache, so it is safe under the gate and outside resourcesCacheMu.
 func resourceIsShipped(filename string) (bool, error) {
+	// Self-guarding, like LoadSpecificResources: the name is re-checked HERE,
+	// in the function that stats it, not only in the caller. ReloadResources
+	// already validated it, but a free function that builds a filesystem path
+	// from a string must not depend on every future caller remembering to --
+	// and CodeQL's go/path-injection only credits a barrier it can see in the
+	// same function as the sink (the nl6#93 lesson on the syslog CA path).
+	if err := validateResourceFilename(filename); err != nil {
+		return false, err
+	}
 	dirPath := "resources/" + strings.TrimSuffix(filename, ".json")
 	info, err := os.Stat(dirPath)
 	switch {

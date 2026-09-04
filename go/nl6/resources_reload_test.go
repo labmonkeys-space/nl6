@@ -764,3 +764,23 @@ func TestReloadResourcesHandler(t *testing.T) {
 		}
 	})
 }
+
+// TestResourceIsShippedRefusesAnUnvalidatedName pins that the stat helper is
+// SELF-GUARDING. ReloadResources validates the name before calling it, but a
+// free function that builds a filesystem path from a string must refuse a bad
+// one itself: a future caller that skips the check would otherwise stat
+// "resources/../x" -- the go/path-injection class CodeQL flagged here (#634).
+// Asserted on the helper directly, since the handler path is already covered
+// by the caller's own check and could not see this regression.
+func TestResourceIsShippedRefusesAnUnvalidatedName(t *testing.T) {
+	for _, bad := range []string{"../etc.json", "a/b.json", "x.json.json/../y.json", "", "nojson"} {
+		shipped, err := resourceIsShipped(bad)
+		if err == nil || shipped {
+			t.Errorf("resourceIsShipped(%q) = (%v, %v), want (false, error): the helper trusted "+
+				"its caller to have validated the name and built a path from it", bad, shipped, err)
+		}
+		if err != nil && !errors.Is(err, errResourceInvalid) {
+			t.Errorf("resourceIsShipped(%q) error is not errResourceInvalid: %v", bad, err)
+		}
+	}
+}
