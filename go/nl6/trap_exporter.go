@@ -353,7 +353,17 @@ func (e *TrapExporter) fireScenario(entry *CatalogEntry, overrides map[string]st
 // non-participant, byte-for-byte legacy), decide() per the source-flag matrix,
 // drain admit, emitted at produce, and outcome bucketing inside fireWithCtx.
 // ifIndex < 0 means "use ifIndexFn()".
-func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) uint32 {
+func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) (reqID uint32) {
+	// pprof label at the funnel (nl6#635): this runs on the shared scheduler
+	// goroutine and on HTTP goroutines, so the label is scoped to the fire.
+	withSubsystem(context.Background(), subsystemTrap, func(context.Context) {
+		reqID = e.fireWithSourceLabelled(entry, overrides, src, ifIndex)
+	})
+	return reqID
+}
+
+// fireWithSourceLabelled is fireWithSource's body; see the wrap above.
+func (e *TrapExporter) fireWithSourceLabelled(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) uint32 {
 	if e == nil || entry == nil || e.closing.Load() {
 		return 0
 	}
@@ -632,6 +642,7 @@ func (e *TrapExporter) uptimeHundredths() uint32 {
 // on net.ErrClosed (Close) or on repeated unknown errors.
 func (e *TrapExporter) readerLoop() {
 	defer e.loopsWG.Done()
+	labelSubsystem(subsystemTrap) // once per goroutine (nl6#635)
 	conn := e.conn.Load()
 	if conn == nil {
 		return
@@ -684,6 +695,7 @@ func (e *TrapExporter) resolveAck(reqID uint32) {
 // and fails records that exhausted retry budget.
 func (e *TrapExporter) retryLoop(ctx context.Context) {
 	defer e.loopsWG.Done()
+	labelSubsystem(subsystemTrap) // once per goroutine (nl6#635)
 	// Tick at half the timeout so pending checks happen with reasonable
 	// resolution without burning CPU.
 	tickInterval := e.informTimeout / 2

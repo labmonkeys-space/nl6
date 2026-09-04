@@ -311,6 +311,9 @@ endif
 ## not in `snmp`, so both are named below; a missing snmptrapd FAILS the test
 ## rather than skipping it, because a silent skip is coverage that asserts
 ## nothing.
+##
+## Sibling: test-interop-pyroscope does the same for continuous profiling
+## against real Pyroscope + Alloy containers (nl6#635).
 test-interop: check-go
 	@command -v snmpget >/dev/null 2>&1 || { \
 	  echo "snmpget not found. Install net-snmp:"; \
@@ -326,6 +329,46 @@ test-interop: check-go
 	@snmptrapd --version 2>&1 | head -2 | tail -1
 	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ \
 	    -run 'TestUSMInterop|TestSNMPv3TrapInterop' -count=1 -v
+
+## test-interop-pyroscope: Push to and be scraped by REAL Pyroscope + Alloy containers (needs docker)
+##
+## The profiling sibling of test-interop (nl6#635): every other profiling test
+## reads nl6's handlers with nl6's client, so a push that Pyroscope silently
+## rejects, or a scrape path Alloy's default block does not ask for, passes
+## them all. This starts grafana/pyroscope and grafana/alloy on the HOST
+## network (the Alloy config targets 127.0.0.1:18080, where the test serves
+## nl6's router), waits for Pyroscope's /ready (Pyroscope 2 holds it at 503
+## for ~60 s after start), runs the three-row test, and tears both down in a
+## trap. FAILS rather than skips when docker is missing. --network host needs
+## Linux (the CI runner) or a Docker Desktop / OrbStack with host networking
+## enabled; without it Alloy cannot reach the test's 127.0.0.1:18080 listener.
+## The image pins are READ FROM examples/pyroscope/compose.yml, the single
+## source Dependabot bumps (its docker-compose parser needs the literal
+## `image:` form, so the compose file must not use an env default there).
+PYROSCOPE_IMAGE = $(shell sed -n 's/^ *image: *\(grafana\/pyroscope:[^ ]*\).*/\1/p' examples/pyroscope/compose.yml)
+ALLOY_IMAGE     = $(shell sed -n 's/^ *image: *\(grafana\/alloy:[^ ]*\).*/\1/p' examples/pyroscope/compose.yml)
+test-interop-pyroscope: check-go check-docker
+	@command -v curl >/dev/null 2>&1 || { echo "curl not found; it polls Pyroscope's /ready"; exit 1; }
+	@[ -n "$(PYROSCOPE_IMAGE)" ] && [ -n "$(ALLOY_IMAGE)" ] || { echo "could not read the image pins from examples/pyroscope/compose.yml"; exit 1; }
+	@echo "images: $(PYROSCOPE_IMAGE) $(ALLOY_IMAGE)"
+	@set -e; \
+	dump() { for c in nl6-interop-pyroscope nl6-interop-alloy; do echo "=== docker logs $$c (tail)"; docker logs "$$c" 2>&1 | tail -40 || true; done; }; \
+	cleanup() { docker rm -f nl6-interop-pyroscope nl6-interop-alloy >/dev/null 2>&1 || true; }; \
+	fail() { echo "$$1"; dump; exit 1; }; \
+	trap cleanup EXIT; cleanup; \
+	docker run -d --name nl6-interop-pyroscope --network host $(PYROSCOPE_IMAGE) >/dev/null; \
+	sleep 1; [ "$$(docker inspect -f '{{.State.Running}}' nl6-interop-pyroscope 2>/dev/null)" = true ] || fail "Pyroscope container is not running"; \
+	echo "waiting for Pyroscope /ready ..."; \
+	for i in $$(seq 1 180); do \
+	  curl -sf http://127.0.0.1:4040/ready >/dev/null 2>&1 && break; \
+	  [ $$i -eq 180 ] && fail "Pyroscope did not become ready"; \
+	  sleep 1; \
+	done; \
+	docker run -d --name nl6-interop-alloy --network host \
+	  -v "$(CURDIR)/examples/pyroscope/alloy-scrape.alloy:/etc/alloy/config.alloy:ro" \
+	  $(ALLOY_IMAGE) run --server.http.listen-addr=127.0.0.1:12345 /etc/alloy/config.alloy >/dev/null; \
+	sleep 2; [ "$$(docker inspect -f '{{.State.Running}}' nl6-interop-alloy 2>/dev/null)" = true ] || fail "Alloy container is not running"; \
+	( cd $(GO_DIR) && NL6_PYROSCOPE_INTEROP=1 go test ./nl6/ -run 'TestPyroscopeInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
 
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime

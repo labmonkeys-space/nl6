@@ -201,6 +201,16 @@ func main() {
 		// dial-out push) except during a running load-test scenario window, so
 		// the measurement window is clean. Devices still answer polls.
 		fidelity = flag.Bool("fidelity", false, "Fidelity mode: keep the fleet silent (no autonomous flow/trap/syslog/gNMI-dial-out push) except during a load-test scenario window")
+
+		// Continuous profiling (nl6#635). OFF by default: with no
+		// -profiling-pyroscope and no POST /api/v1/profiling, no profiler
+		// runs and /debug/pprof/ answers 503. The address is the one
+		// REST-settable value; basic-auth and the tenant are flag-only
+		// because GET /api/v1/profiling echoes what REST can set.
+		profilingPyroscope   = flag.String("profiling-pyroscope", "", "Pyroscope push URL (http://host:4040). Starts continuous profiling at boot and opens /debug/pprof/; empty = off (togglable at runtime via POST /api/v1/profiling)")
+		profilingForceGCFlag = flag.Bool("profiling-force-gc", profilingForceGCDefault, "Force a runtime.GC() before each heap snapshot the profiler uploads when no GC ran in the interval (SDK default). Default set from BenchmarkForcedGCOnFleetHeap; see docs/ops/profiling.md")
+		profilingBasicAuth   = flag.String("profiling-pyroscope-basic-auth", "", "HTTP basic auth for the Pyroscope push as user:pass (flag-only: never echoed by the API)")
+		profilingTenant      = flag.String("profiling-pyroscope-tenant", "", "Pyroscope tenant ID (X-Scope-OrgID) for the push (flag-only)")
 	)
 
 	flag.Parse()
@@ -259,6 +269,39 @@ func main() {
 		log.Fatalf("Invalid -datagram-mtu: %v", err)
 	}
 
+	// Validate the profiling flags in the same slot, for the same reason:
+	// fatal here, before any TUN, namespace or subsystem exists, and after
+	// -help / -version so those still work with a bad flag.
+	if *profilingPyroscope != "" {
+		if err := validateProfilingAddress(*profilingPyroscope); err != nil {
+			log.Fatalf("profiling: -profiling-pyroscope %v", err)
+		}
+		// The SDK would honour this variable over the flag, silently. Fatal
+		// ONLY when the flag is set: a process that never profiles must not be
+		// stopped by an unrelated tool's environment (a runtime push refuses
+		// it at start instead).
+		if err := validateProfilingEnvironment(os.LookupEnv); err != nil {
+			log.Fatalf("profiling: %v", err)
+		}
+	}
+	if *profilingBasicAuth != "" || *profilingTenant != "" {
+		// Credentials are bound to the flag's address, so without the flag
+		// they would be accepted and then withheld from every push forever.
+		if *profilingPyroscope == "" {
+			log.Fatalf("profiling: -profiling-pyroscope-basic-auth/-profiling-pyroscope-tenant require " +
+				"-profiling-pyroscope; they are bound to its address")
+		}
+	}
+	if *profilingBasicAuth != "" {
+		user, pass, err := parseProfilingBasicAuth(*profilingBasicAuth)
+		if err != nil {
+			log.Fatalf("profiling: %v", err)
+		}
+		profilingBasicAuthUser, profilingBasicAuthPassword = user, pass
+	}
+	profilingTenantID = *profilingTenant
+	profilingForceGC = *profilingForceGCFlag
+
 	log.Printf("simulator %s starting (pid=%d)", Version, os.Getpid())
 
 	// Check if running as root
@@ -281,6 +324,11 @@ func main() {
 	if *fidelity {
 		log.Printf("[fidelity] fleet silent — no autonomous push telemetry until a scenario runs (-fidelity)")
 	}
+	// Record the startup flag (so GET /api/v1/profiling can report the
+	// default beside the value in force) and start the push when set. A
+	// Pyroscope that is down at boot is logged, not fatal: the address was
+	// validated above and the pull surface serves regardless.
+	startProfilingFromFlag(*profilingPyroscope)
 
 	// Load the inter-device LLDP topology graph if configured. Syntactic
 	// validation failures are fatal; missing devices are NOT (lazy

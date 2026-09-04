@@ -74,7 +74,7 @@ func (s *SNMPServer) Start() error {
 	listener.SetWriteBuffer(snmpSocketBufSize)
 
 	s.listener = listener
-	s.running = true
+	s.running.Store(true)
 
 	go s.handleRequests()
 	return nil
@@ -82,15 +82,18 @@ func (s *SNMPServer) Start() error {
 
 func (s *SNMPServer) Stop() error {
 	if s.listener != nil {
-		s.running = false
+		s.running.Store(false)
 		return s.listener.Close()
 	}
 	return nil
 }
 
 func (s *SNMPServer) handleRequests() {
+	// Once per goroutine, NOT per datagram (nl6#635): a pprof label so a CPU
+	// profile can be filtered by subsystem.
+	labelSubsystem(subsystemSNMP)
 	for {
-		if !s.running || s.listener == nil {
+		if !s.running.Load() || s.listener == nil {
 			break
 		}
 
@@ -98,7 +101,7 @@ func (s *SNMPServer) handleRequests() {
 		n, clientAddr, err := s.listener.ReadFromUDP(*bufPtr)
 		if err != nil {
 			snmpBufPool.Put(bufPtr)
-			if s.running {
+			if s.running.Load() {
 				log.Printf("SNMP server error reading UDP: %v", err)
 			}
 			continue

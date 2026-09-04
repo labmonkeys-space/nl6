@@ -21,6 +21,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net"
 	"sync"
@@ -265,7 +266,17 @@ func (e *SyslogExporter) fireScenario(entry *SyslogCatalogEntry, overrides map[s
 // recheck to close the straggler race against the stop drain barrier;
 // bucket classification later uses a FRESH write-return clock read.
 // ifIndex < 0 means "use ifIndexFn()".
-func (e *SyslogExporter) fireWithSource(entry *SyslogCatalogEntry, overrides map[string]string, src fireSource, ifIndex int) error {
+func (e *SyslogExporter) fireWithSource(entry *SyslogCatalogEntry, overrides map[string]string, src fireSource, ifIndex int) (err error) {
+	// pprof label at the funnel (nl6#635): shared scheduler and HTTP
+	// goroutines, so the label is scoped to the fire.
+	withSubsystem(context.Background(), subsystemSyslog, func(context.Context) {
+		err = e.fireWithSourceLabelled(entry, overrides, src, ifIndex)
+	})
+	return err
+}
+
+// fireWithSourceLabelled is fireWithSource's body; see the wrap above.
+func (e *SyslogExporter) fireWithSourceLabelled(entry *SyslogCatalogEntry, overrides map[string]string, src fireSource, ifIndex int) error {
 	if e == nil || entry == nil || e.closing.Load() {
 		return nil
 	}

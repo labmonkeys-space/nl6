@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -573,27 +572,6 @@ func generateRouteScriptHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(script))
 }
 
-func pprofMemoryHandler(w http.ResponseWriter, r *http.Request) {
-	filename := fmt.Sprintf("nl6_heap_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	if err := pprof.WriteHeapProfile(w); err != nil {
-		http.Error(w, "Failed to write heap profile", http.StatusInternalServerError)
-	}
-}
-
-func cpuProfileHandler(w http.ResponseWriter, r *http.Request) {
-	filename := fmt.Sprintf("nl6_cpu_%s.pprof", time.Now().Format("2006-01-02_15-04-05"))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	if err := pprof.StartCPUProfile(w); err != nil {
-		http.Error(w, "Failed to start CPU profile: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	time.Sleep(5 * time.Second)
-	pprof.StopCPUProfile()
-}
-
 // Helper functions for API responses
 func sendSuccessResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -655,6 +633,9 @@ func setupRoutes() *mux.Router {
 	api := router.PathPrefix("/api/v1").Subrouter()
 	api.HandleFunc("/fidelity", fidelityStatusHandler).Methods("GET")
 	api.HandleFunc("/fidelity", fidelityToggleHandler).Methods("POST")
+	// Continuous profiling gate (nl6#635): same shape as /fidelity.
+	api.HandleFunc("/profiling", profilingStatusHandler).Methods("GET")
+	api.HandleFunc("/profiling", profilingToggleHandler).Methods("POST")
 	api.HandleFunc("/devices", createDevicesHandler).Methods("POST")
 	api.HandleFunc("/devices", listDevicesHandler).Methods("GET")
 	api.HandleFunc("/devices/export", exportDevicesCSVHandler).Methods("GET")
@@ -699,8 +680,15 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/scenarios/{id}", scenarioStatusHandler).Methods("GET")
 	api.HandleFunc("/scenarios/{id}", deleteScenarioHandler).Methods("DELETE")
 
-	api.HandleFunc("/debug/pprof-memory", pprofMemoryHandler).Methods("GET")
-	api.HandleFunc("/debug/cpu-profile", cpuProfileHandler).Methods("GET")
+	// The gated pprof surface, on the ROOT router so Grafana Alloy's default
+	// scrape paths resolve. Every path under it answers 503 while profiling
+	// is off (nl6#635); see profiling.go.
+	router.PathPrefix(profilingPprofPath).Handler(newPprofHandler())
+	// Without the trailing slash the prefix does not match and the path fell
+	// through to a plain 404, which reads as "no such surface" rather than
+	// "gated". Redirect onto the gated prefix instead.
+	router.Path(strings.TrimSuffix(profilingPprofPath, "/")).Handler(
+		http.RedirectHandler(profilingPprofPath, http.StatusMovedPermanently))
 
 	// Health check
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

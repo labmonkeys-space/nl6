@@ -117,7 +117,7 @@ func TestScenarioIPFIX_FleetTickerYields(t *testing.T) {
 	// scenDriven=false → fleet ticker DOES tick it (packets attempted).
 	fe.scenDriven.Store(false)
 	injectExpiredFlows(fe, 2, time.Now())
-	sm.tickAllFlowExporters(time.Now())
+	sm.tickAllFlowExporters(context.Background(), time.Now())
 	before := attempts()
 	if before == 0 {
 		t.Fatal("fleet ticker should tick a non-scenario-driven exporter")
@@ -125,7 +125,7 @@ func TestScenarioIPFIX_FleetTickerYields(t *testing.T) {
 	// scenDriven=true → fleet ticker SKIPS it.
 	fe.scenDriven.Store(true)
 	injectExpiredFlows(fe, 2, time.Now())
-	sm.tickAllFlowExporters(time.Now())
+	sm.tickAllFlowExporters(context.Background(), time.Now())
 	if attempts() != before {
 		t.Fatal("fleet ticker must skip a scenario-driven exporter")
 	}

@@ -1,0 +1,41 @@
+// Copyright 2026 Ronny Trommer <ronny@no42.org>
+// SPDX-License-Identifier: Apache-2.0
+//
+// alloy-scrape.alloy — Grafana Alloy pulling profiles from an nl6 whose
+// profiling gate is open in PULL-ONLY mode (POST /api/v1/profiling
+// {"enabled":true,"server_address":""}). Alloy's DEFAULT pyroscope.scrape profiling
+// block is left as shipped (process_cpu, memory, goroutine, mutex, block),
+// plus the three godeltaprof endpoints nl6 serves at /debug/pprof/delta_*.
+//
+// Also the config `make test-interop-pyroscope` runs, so the target address
+// and service_name below are pinned by go/nl6/profiling_interop_test.go.
+// Override NL6_SCRAPE_TARGET / PYROSCOPE_URL in the environment when the
+// stack is not on localhost (examples/pyroscope/compose.yml does).
+
+pyroscope.scrape "nl6" {
+	targets = [{
+		"__address__"  = coalesce(sys.env("NL6_SCRAPE_TARGET"), "127.0.0.1:18080"),
+		"service_name" = "nl6-interop-scrape",
+	}]
+	forward_to = [pyroscope.write.local.receiver]
+
+	profiling_config {
+		profile.godeltaprof_memory {
+			enabled = true
+		}
+
+		profile.godeltaprof_mutex {
+			enabled = true
+		}
+
+		profile.godeltaprof_block {
+			enabled = true
+		}
+	}
+}
+
+pyroscope.write "local" {
+	endpoint {
+		url = coalesce(sys.env("PYROSCOPE_URL"), "http://127.0.0.1:4040")
+	}
+}

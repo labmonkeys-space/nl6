@@ -32,6 +32,9 @@ management web UI at `/`.
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/fidelity` | GET | Fidelity mode: the value **in force**, the startup flag it began from, and any pending auto-revert. |
 | `/api/v1/fidelity` | POST | Toggle fleet silence at runtime, with optional `duration` auto-revert (24h cap). |
+| `/api/v1/profiling` | GET | Continuous-profiling gate: the value **in force**, the startup flag, whether the SDK is pushing, and any pending auto-revert. |
+| `/api/v1/profiling` | POST | Open or close the gate at runtime, optionally with a push `server_address` and a `duration` auto-revert (24h cap). |
+| `/debug/pprof/` | GET | The Go `net/http/pprof` surface plus `godeltaprof`'s `delta_heap` / `delta_block` / `delta_mutex`, for a Grafana Alloy scrape. `503` while the gate is closed. |
 | `/health` | GET | Health check endpoint. |
 
 ## Fidelity mode
@@ -64,6 +67,53 @@ curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
 **Auto-revert restores the value from before the current chain of timed toggles**, not simply the previous value. Shortening or extending a window keeps the same destination; a toggle in the *opposite* direction starts a new chain and reverts to whatever was in force when it was issued. `revert_to` reports the target, because it is not inferable from `silent`.
 
 A scenario report records `fidelity.silent_at_start` and `fidelity.changed_during_window`, so an archived measurement can say whether the rest of the fleet was quiet for its window.
+
+## Continuous profiling
+
+`GET /api/v1/profiling` reports the profiling gate; `POST` changes it without a restart.
+Off by default: booted without `-profiling-pyroscope` and never POSTed, no profiler goroutine exists and `/debug/pprof/*` answers `503` naming this endpoint.
+The full reference, including the one-CPU-profile-at-a-time rule and the subsystem labels, is [Continuous profiling](../ops/profiling.md).
+
+```json
+// GET response .data
+{
+  "enabled": true,                              // the gate IN FORCE
+  "startup_flag": "http://pyroscope:4040",      // what -profiling-pyroscope was at launch ("" when unset)
+  "server_address": "http://pyroscope:4040",    // push destination in force; "" = pull-only or off
+  "pushing": true,                              // the SDK is RUNNING (false with enabled:true = pull-only, or a failed start); says nothing about upload success
+  "sdk_errors": 3,                              // every error the SDK reported for the CURRENT push (failed upload, refused CPU collector, full queue); omitted while zero
+  "last_error": "...",                          // the Start failure, or the latest SDK error of the current push
+  "pprof_path": "/debug/pprof/",
+  "revert_pending": true,
+  "revert_at": "2026-09-04T12:00:00Z",
+  "revert_to": false,                           // the gate value the pending revert restores
+  "revert_to_address": "http://pyroscope:4040"  // the push address it restores with it; omitted when that is pull-only or off
+}
+```
+
+```bash
+curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
+  -d '{"enabled": true, "server_address": "http://pyroscope:4040"}'   # push
+curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
+  -d '{"enabled": true, "server_address": ""}'                        # pull-only (Alloy scrape); an OMITTED server_address keeps a running push, else uses the flag's address
+curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
+  -d '{"enabled": true, "server_address": "http://pyroscope:4040", "duration": "30m"}'   # auto-off after 30m, 24h cap
+curl -X POST .../api/v1/profiling -H 'Content-Type: application/json' \
+  -d '{"enabled": false}'                                             # off; the last profiles are flushed (bounded, 20 s) before 200
+```
+
+`enabled` is **required**; a body without it is rejected with `400`, as is an unknown field, a non-positive or over-cap `duration`, a `server_address` that is not an `http://` or `https://` URL or embeds credentials or a query or fragment, or a `server_address` on an `enabled:false` request.
+`server_address` has three shapes: omitted keeps the address in force if a push is running, else uses the startup flag's, else is pull-only; an explicit `""` is pull-only even when the flag is set; a value re-targets.
+The same address twice is a no-op; a different address re-targets the push in one transition.
+A push the SDK refuses to start answers `500` with the state attached (`enabled:true`, `pushing:false`, `last_error`); the pull surface serves regardless.
+`pushing` means the SDK is running; a collector that is down or rejecting shows in `sdk_errors` and `last_error`, since `pyroscope.Start` never touches the network.
+`{"enabled":false}` asks the SDK to flush (a final snapshot plus the queued uploads) and then stops it, bounded by two upload timeouts (20 s) after which the flush is abandoned and logged; `GET` does not wait behind that flush.
+`/debug/pprof/profile?seconds=N` and `trace?seconds=N` are refused by `net/http/pprof` once `N` reaches the server's 30 s write timeout.
+Auto-revert follows the fidelity chain rule above and restores the whole (gate, address) pair; `revert_to_address` reports the address.
+Basic auth and the tenant ID are flag-only (`-profiling-pyroscope-basic-auth`, `-profiling-pyroscope-tenant`), because this endpoint echoes everything REST can set, and they are sent only to the flag's own address: a differing `server_address` is pushed to without them.
+
+**Removed.** The two hand-rolled `GET /api/v1/debug/...` handlers (a heap download and a fixed 5 s CPU download) are gone; a request to either is a `404`.
+Their replacements are `GET /debug/pprof/heap` and `GET /debug/pprof/profile?seconds=N`, which require the gate to be open (`503` otherwise).
 
 ## Create devices
 

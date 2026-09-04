@@ -47,6 +47,16 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # Pyroscope + Alloy images in the profiling example, written as literal
+  # `image:` lines (this parser skips the ${VAR:-default} form). The
+  # Makefile's test-interop-pyroscope reads its pins from the same lines, so
+  # a bump here is the whole bump.
+  - package-ecosystem: docker-compose
+    directory: /examples/pyroscope
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
   - package-ecosystem: npm
     directory: /
