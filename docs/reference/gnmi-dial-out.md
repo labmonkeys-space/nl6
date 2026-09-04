@@ -132,7 +132,7 @@ read" from "no certificates here". A path is accepted only from
 `-gnmi-dialout-tls-ca`, read once at startup by the operator who launched the
 process.
 
-:::warning `tls.ca_file` is no longer accepted
+:::warning[`tls.ca_file` is no longer accepted]
 
 It named a file the simulator opened at dial time. Requests carrying it are now
 **rejected** with a message naming both replacements, rather than silently

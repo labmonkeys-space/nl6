@@ -193,7 +193,7 @@ details.
 | `-flow-option-interface-table` | `if-scoped` \| `system-scoped` | — (off) | **seed** | Emit v9/IPFIX interface option records ("option interface-table") for the auto-start batch: `if-scoped` carries the ifIndex in the scope with fields 82+83; `system-scoped` carries it as option field `INPUT_SNMP(10)` with field 83 only (the IOS-XR shape). Requires `-flow-protocol netflow9` or `ipfix` — other protocols fail startup validation. Per-group shapes via the REST `flow.options_interface_table` field. See [Flow export reference → Interface option records](flow-export.md#interface-option-records-netflow-v9--ipfix). |
 | `-flow-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. |
 
-:::note Tick interval sets batching, not volume
+:::note[Tick interval sets batching, not volume]
 
 It is natural to reach for `-flow-tick-interval` to turn flow volume up or down. It is not that knob.
 
@@ -238,7 +238,7 @@ prerequisites and `snmptrapd` smoke-test, and
 | `-trap-inform-timeout` | duration | `5s` | **seed** | Per-retry timeout in INFORM mode. |
 | `-trap-inform-retries` | int | `2` | **seed** | Maximum retransmissions per INFORM before it's declared failed. |
 
-:::danger These are the only secrets on nl6's command line
+:::danger[These are the only secrets on nl6's command line]
 
 `-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the first
 credentials nl6 accepts as flags — the polling side deliberately has none. A
@@ -251,7 +251,7 @@ environment-variable or file form is recorded as follow-up work; until it
 exists there is no private way to pass these.
 :::
 
-:::note There is no `-trap-snmpv3-engine-id`, and that is deliberate
+:::note[There is no `-trap-snmpv3-engine-id`, and that is deliberate]
 
 Each device derives its own authoritative engine ID from its IPv4 address, so
 two devices sharing a user and password still localize **different** keys. A
@@ -311,7 +311,7 @@ TLS, and the per-device `gnmi_dialout` REST block.
 
 See [UDP syslog export (operator guide)](../ops/syslog-export.md) for
 prerequisites and `netcat` smoke-test, and
-[UDP syslog reference](syslog-export.md) for wire format and catalog JSON.
+[Syslog export reference](syslog-export.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|

@@ -11,7 +11,7 @@ messages correctly without extra work.
 This page is the operator-facing setup guide. For the CLI flags see
 [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags);
 for wire format, catalog JSON, and HTTP endpoints see
-[UDP syslog reference](../reference/syslog-export.md).
+[Syslog export reference](../reference/syslog-export.md).
 
 ## Enabling syslog export
 
@@ -174,7 +174,7 @@ port conflicts) see [Troubleshooting](troubleshooting.md).
 
 ## Related
 
-- [UDP syslog reference](../reference/syslog-export.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
+- [Syslog export reference](../reference/syslog-export.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
 - [SNMP trap export (operator guide)](snmp-traps.md) — sibling feature; shared overlay loader and template vocabulary
 - [Flow export (operator guide)](flow-export.md) — shared `nl6sim` namespace plumbing

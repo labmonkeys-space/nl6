@@ -1,13 +1,9 @@
-# UDP syslog reference
+# Syslog export reference
 
-nl6 emits UDP syslog messages in either **RFC 5424** (modern,
-structured) or **RFC 3164** (legacy BSD) format. Only one format is
-active per simulator process. The two encoders sit behind a shared
-`SyslogEncoder` interface in `go/nl6/syslog_wire.go`; the per-
-device `SyslogExporter` holds a UDP socket (per-device or shared) and
-fires messages at times drawn by a central Poisson scheduler. This
-page covers the wire format, the catalog JSON schema, the HTTP
-endpoints, and the status JSON shape. For enabling the feature, CLI
+nl6 emits syslog messages in either **RFC 5424** (modern, structured) or **RFC 3164** (legacy BSD) format, over UDP, TCP (RFC 6587) or TLS (RFC 5425).
+Format and transport are per device.
+The two encoders sit behind a shared `SyslogEncoder` interface in `go/nl6/syslog_wire.go`; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
+This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape. For enabling the feature, CLI
 flags, and troubleshooting see
 [UDP syslog export (operator guide)](../ops/syslog-export.md) and
 [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
@@ -39,13 +35,9 @@ flags, and troubleshooting see
 
 ## Scope
 
-The simulator emits syslog over **UDP only** — TCP (RFC 6587) and TLS
-(RFC 5425) transports are follow-up work
-([#92](https://github.com/labmonkeys-space/nl6/issues/92),
-[#93](https://github.com/labmonkeys-space/nl6/issues/93)).
-UDP is the form most network-device simulation scenarios test against;
-adding TCP/TLS requires connection management that doesn't fit the
-fire-and-forget single-socket design.
+UDP is the default transport and the one most collector tests exercise.
+TCP (RFC 6587, [#92](https://github.com/labmonkeys-space/nl6/issues/92)) and TLS (RFC 5425, [#93](https://github.com/labmonkeys-space/nl6/issues/93)) are documented under [TCP transport](#tcp-transport-rfc-6587) below.
+They are deliberately not symmetric with UDP: a TCP or TLS device owns one connection, refuses to attach when the collector is unreachable, and has no shared-socket fallback.
 
 ## RFC 5424 wire format
 
@@ -444,7 +436,7 @@ Three things differ:
 | **default port** | **6514** where the other transports use 514 (RFC 5425 §4.1). |
 | **verification** | the collector's certificate is verified. |
 
-:::warning A bare hostname changes port when you change transport
+:::warning[A bare hostname changes port when you change transport]
 
 `"collector": "logs.example"` means `logs.example:514` under `udp` and `tcp`,
 and `logs.example:6514` under `tls`. That is what the RFC assigns, and it means

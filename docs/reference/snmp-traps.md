@@ -144,7 +144,7 @@ included. Only what wraps it changes:
 `-trap-community` is ignored under v3: there is no community string anywhere in
 an SNMPv3 message. nl6 says so at startup if you set it explicitly.
 
-:::danger The USM passwords are on the command line
+:::danger[The USM passwords are on the command line]
 
 `-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the **first
 secrets nl6 accepts as CLI flags** — the polling side deliberately has none. A
@@ -182,7 +182,7 @@ notification identity and the same key.
 A device whose address is not IPv4 is **refused at attach** rather than falling
 back to a default engine ID, for the same reason.
 
-:::warning A polled device and a trap from it report different engine IDs
+:::warning[A polled device and a trap from it report different engine IDs]
 
 This looks like a bug and is not. The polling engine's ID is fleet-wide
 (`-snmpv3-engine-id`), while a notification originator is authoritative for its
@@ -212,7 +212,7 @@ authUser log trapuser priv
 `GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every
 exporting device, along with the user name, security level and protocols.
 
-:::warning `createUser` is consumed on first read
+:::warning[`createUser` is consumed on first read]
 
 net-snmp **rewrites its own config**: on startup `snmptrapd` moves each
 `createUser` line into its persistent store (`/var/lib/snmp/snmptrapd.conf` by

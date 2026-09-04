@@ -174,7 +174,7 @@ sudo ./nl6 -auto-start-ip 1.0.0.1 -auto-count 1 \
 `/etc/snmp/snmptrapd.conf` cannot change the result; `-On` prints numeric OIDs
 so no MIBs need to be installed.
 
-:::danger The USM passwords are visible in `ps`
+:::danger[The USM passwords are visible in `ps`]
 
 `-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the only secrets
 nl6 takes on the command line. They are readable by every user on the host via

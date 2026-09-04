@@ -195,4 +195,4 @@ Programmatic callers of the manager (tests, embedded-use cases):
 - [Web API reference](../reference/web-api.md) — per-device block schemas and status shapes.
 - [Flow export reference](../reference/flow-export.md) — protocol-level details.
 - [SNMP trap reference](../reference/snmp-traps.md) — TRAP / INFORM wire format and catalog.
-- [UDP syslog reference](../reference/syslog-export.md) — RFC 5424 / 3164 wire format and catalog.
+- [Syslog export reference](../reference/syslog-export.md) — RFC 5424 / 3164 wire format and catalog.
