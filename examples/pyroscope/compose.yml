@@ -57,7 +57,7 @@ services:
       retries: 24
 
   pyroscope:
-    image: grafana/pyroscope:2.1.2
+    image: grafana/pyroscope:2.3.0
     ports:
       - "4040:4040"                       # Pyroscope UI + ingest + query API
 
