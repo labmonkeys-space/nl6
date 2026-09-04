@@ -1021,7 +1021,7 @@ only when `-syslog-global-cap` is set. When disabled the response is
 `{"enabled": false}`.
 
 See [UDP syslog export (operator guide)](../ops/syslog-export.md) and
-[UDP syslog reference](syslog-export.md) for the full feature details.
+[Syslog export reference](syslog-export.md) for the full feature details.
 
 ## Fire a syslog message on demand
 
