@@ -17,6 +17,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -28,27 +29,35 @@ func parseLength(data []byte, pos int) (int, int) {
 		return -1, pos
 	}
 
-	length := int(data[pos])
+	first := data[pos]
 	pos++
 
 	// Short form (length < 128)
-	if length < 0x80 {
-		return length, pos
+	if first < 0x80 {
+		return int(first), pos
 	}
 
 	// Long form
-	lengthBytes := length & 0x7F
+	lengthBytes := int(first & 0x7F)
 	if lengthBytes == 0 || lengthBytes > 4 || pos+lengthBytes > len(data) {
 		return -1, pos
 	}
 
-	length = 0
+	// Accumulate at a fixed width and bound it BEFORE the conversion to int.
+	// Four length octets reach 0xFFFFFFFF, which wraps negative in a 32-bit
+	// int; every caller then tests `n > len(buf)-pos`, which a negative n
+	// passes. A declared length above MaxInt32 is not a length any datagram
+	// can carry, so it is malformed here rather than left for each caller.
+	var acc uint32
 	for i := 0; i < lengthBytes; i++ {
-		length = (length << 8) | int(data[pos])
+		acc = (acc << 8) | uint32(data[pos])
 		pos++
 	}
+	if acc > math.MaxInt32 {
+		return -1, pos
+	}
 
-	return length, pos
+	return int(acc), pos
 }
 
 // encodableAsOID reports whether encodeOID can represent v faithfully.
