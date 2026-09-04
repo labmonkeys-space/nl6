@@ -47,6 +47,15 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # Pyroscope + Alloy images in the profiling example. The Makefile's
+  # test-interop-pyroscope pins the same tags and TestProfilingImagePinsAgree
+  # fails when the two drift, so a bump here needs the Makefile line too.
+  - package-ecosystem: docker-compose
+    directory: /examples/pyroscope
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
   - package-ecosystem: npm
     directory: /

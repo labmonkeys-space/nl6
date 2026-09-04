@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1512
+const minimumTestFunctions = 1550
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -192,6 +192,19 @@ type loadBearingGuard struct {
 // transition is no longer reversible. Their sibling vacuity and value-pin tests
 // are left to the floor, so that the manifest stays a list a reader can read.
 var loadBearingGuards = []loadBearingGuard{
+	// The profiling gate (nl6#635): the two properties the feature exists to
+	// keep, neither of which any other test can see.
+	{"TestProfilingOffByDefaultPaysNothing", "profiling_test.go",
+		"nl6#635. Off by default is a GATE, not a preference: with no flag and no POST the pprof " +
+			"surface answers 503, the request spawns nothing, and no SDK goroutine exists. Without " +
+			"this a later change could open the surface 'for convenience' or start the profiler at " +
+			"boot with every value assertion still passing"},
+	{"TestProfilingRuntimeGlobalsStayZero", "profiling_test.go",
+		"nl6#635. runtime.SetMutexProfileFraction / SetBlockProfileRate are NOT set by this " +
+			"feature, and the runtime exposes no getter for the block rate, so this is the only " +
+			"read-back. A change that sets them inside the on-branch and forgets to restore them " +
+			"on stop leaves every device paying for a profile nobody reads"},
+
 	// The two nl6#577 names. Both were actually deleted with a green suite.
 	{"TestEveryDeletedDeadRowIsAnsweredByTheCycler", "snmp_shipped_resource_defect_ledger_test.go",
 		"nl6#574, deleted once already. The only guard that the 742 deleted static ifTable rows are " +

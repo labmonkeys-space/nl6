@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
         'ops/syslog-export',
         'ops/migration-per-device-exports',
         'ops/kubernetes',
+        'ops/profiling',
         'ops/troubleshooting',
       ],
     },

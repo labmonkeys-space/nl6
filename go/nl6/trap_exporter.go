@@ -353,7 +353,17 @@ func (e *TrapExporter) fireScenario(entry *CatalogEntry, overrides map[string]st
 // non-participant, byte-for-byte legacy), decide() per the source-flag matrix,
 // drain admit, emitted at produce, and outcome bucketing inside fireWithCtx.
 // ifIndex < 0 means "use ifIndexFn()".
-func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) uint32 {
+func (e *TrapExporter) fireWithSource(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) (reqID uint32) {
+	// pprof label at the funnel (nl6#635): this runs on the shared scheduler
+	// goroutine and on HTTP goroutines, so the label is scoped to the fire.
+	withSubsystem(context.Background(), subsystemTrap, func(context.Context) {
+		reqID = e.fireWithSourceLabelled(entry, overrides, src, ifIndex)
+	})
+	return reqID
+}
+
+// fireWithSourceLabelled is fireWithSource's body; see the wrap above.
+func (e *TrapExporter) fireWithSourceLabelled(entry *CatalogEntry, overrides map[string]string, src fireSource, ifIndex int) uint32 {
 	if e == nil || entry == nil || e.closing.Load() {
 		return 0
 	}

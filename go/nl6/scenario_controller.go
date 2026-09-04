@@ -677,6 +677,10 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	c.flowTickerDone = done
 	go func() {
 		defer close(done)
+		// Once per goroutine (nl6#635): the scenario's own flow ticker. The
+		// context is handed to every tick so the funnel's label reverts to
+		// this one rather than erasing it.
+		tickCtx := labelSubsystem(subsystemScenario)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -695,7 +699,7 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 					if ctx.Err() != nil {
 						return
 					}
-					c.sm.tickFlowExporter(fe, now)
+					c.sm.tickFlowExporter(tickCtx, fe, now)
 				}
 			}
 		}
@@ -1078,7 +1082,17 @@ func (c *ScenarioController) Start(ctx context.Context) error {
 // AND run the start under a SINGLE lock acquisition, because a concurrent Arm
 // can otherwise interleave between the two and change the membership the start
 // then runs against (see startScheduled).
-func (c *ScenarioController) startLocked(ctx context.Context) error {
+func (c *ScenarioController) startLocked(ctx context.Context) (err error) {
+	// pprof label for the start's duration (nl6#635): HTTP and timer
+	// goroutines are shared, so the label is scoped to the call.
+	withSubsystem(ctx, subsystemScenario, func(ctx context.Context) {
+		err = c.startLockedLabelled(ctx)
+	})
+	return err
+}
+
+// startLockedLabelled is startLocked's body; see the wrap above.
+func (c *ScenarioController) startLockedLabelled(ctx context.Context) error {
 	if c.phase != phaseArmed {
 		return fmt.Errorf("%w: %s -> running (arm first)", errInvalidTransition, c.phase)
 	}
@@ -1337,7 +1351,16 @@ func (c *ScenarioController) Abort() (*ScenarioResult, error) {
 	return c.finish(phaseAborted)
 }
 
-func (c *ScenarioController) finish(to scenarioPhase) (*ScenarioResult, error) {
+func (c *ScenarioController) finish(to scenarioPhase) (res *ScenarioResult, err error) {
+	// pprof label for finalize (nl6#635); see startLocked.
+	withSubsystem(context.Background(), subsystemScenario, func(context.Context) {
+		res, err = c.finishLabelled(to)
+	})
+	return res, err
+}
+
+// finishLabelled is finish's body; see the wrap above.
+func (c *ScenarioController) finishLabelled(to scenarioPhase) (*ScenarioResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.transitionLocked(to); err != nil {

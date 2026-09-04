@@ -1,0 +1,70 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# pyroscope — continuous profiling of a live nl6 fleet (nl6#635). nl6 pushes
+# CPU, goroutine and heap profiles to Pyroscope through the pyroscope-go SDK,
+# labelled per subsystem (snmp, trap, syslog, flow, gnmi, gnmi-dialout,
+# scenario). The optional `alloy` profile scrapes the same nl6 pull-only
+# instead, which is the way to get a CPU profile out of Alloy (the runtime
+# allows one CPU profile at a time, so push and scrape cannot both take it).
+#
+#   docker compose up -d                       # nl6 pushes to Pyroscope
+#   docker compose --profile alloy up -d       # ... plus an Alloy scraper
+#   ./run.sh                                   # checks the profiles arrived
+#
+# Profiling is OFF BY DEFAULT in nl6. This example is the ONLY place the
+# -profiling-pyroscope flag is set; the shipped compose.yml, Helm chart and
+# systemd unit do not set it.
+name: nl6-pyroscope
+
+services:
+  nl6:
+    image: ${NL6_IMAGE:-ghcr.io/labmonkeys-space/nl6:latest}
+    # TUN interfaces + network namespaces require these.
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    devices:
+      - /dev/net/tun
+    command:
+      - -auto-start-ip=10.42.0.1
+      - -auto-count=50
+      - -profiling-pyroscope=http://pyroscope:4040   # push; omit to boot with profiling off
+    ports:
+      - "8080:8080"                       # web console + REST (incl. /api/v1/profiling, /debug/pprof/)
+    depends_on:
+      pyroscope:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  pyroscope:
+    image: ${PYROSCOPE_IMAGE:-grafana/pyroscope:2.1.2}
+    ports:
+      - "4040:4040"                       # Pyroscope UI + ingest + query API
+    healthcheck:
+      # Pyroscope 2 answers 503 on /ready for ~60 s after start.
+      test: ["CMD", "wget", "-qO-", "http://localhost:4040/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  # Optional: Grafana Alloy scraping nl6's /debug/pprof/ surface. Enable with
+  # `--profile alloy`. It expects nl6's gate open in PULL-ONLY mode, so run.sh
+  # switches the push off first (POST /api/v1/profiling {"enabled":true}
+  # with no server_address) when this profile is active.
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.19.2}
+    profiles: ["alloy"]
+    command: ["run", "/etc/alloy/config.alloy"]
+    environment:
+      NL6_SCRAPE_TARGET: nl6:8080
+      PYROSCOPE_URL: http://pyroscope:4040
+    volumes:
+      - ./alloy-scrape.alloy:/etc/alloy/config.alloy:ro
+    depends_on:
+      nl6:
+        condition: service_healthy

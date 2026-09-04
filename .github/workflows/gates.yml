@@ -117,6 +117,15 @@ jobs:
       - name: Test (SNMPv3 interop with net-snmp)
         run: make test-interop
 
+      # The profiling sibling (nl6#635): pushes to a real Pyroscope and is
+      # scraped by a real Alloy, both as containers on the runner's host
+      # network. Same argument as above: every in-package profiling test reads
+      # nl6 with nl6's client, so this is the one step in which the collector
+      # decides. make test-interop-pyroscope FAILS rather than skips when
+      # docker is missing.
+      - name: Test (Pyroscope + Alloy interop)
+        run: make test-interop-pyroscope
+
   quality:
     name: Code Quality
     runs-on: ubuntu-24.04

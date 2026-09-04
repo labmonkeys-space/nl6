@@ -653,6 +653,12 @@ func (sm *SimulatorManager) Shutdown() error {
 	// abortActiveScenario.
 	sm.abortActiveScenario()
 
+	// Stop continuous profiling (nl6#635): drops its pending revert and
+	// flushes the SDK's last upload, bounded by profilingUploadTimeout.
+	// Process-global like fidelity, safe when it was never enabled, and after
+	// the scenario abort so that "FIRST" above stays true.
+	stopProfiling()
+
 	// Stop the flow ticker goroutine and close every pooled shared socket.
 	// Per the per-device-export-config refactor the subsystem is always-on
 	// (design §D9); flowStopOnce ensures close(flowStopCh) is idempotent.

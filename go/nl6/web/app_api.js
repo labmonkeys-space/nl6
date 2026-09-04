@@ -779,17 +779,45 @@ function pingDevice(ip) {
     showAlert('Ping from your terminal with: ping ' + ip, 'warning');
 }
 
-function downloadPprofMemory() {
+// The two profile buttons hit the gated net/http/pprof surface (nl6#635).
+// They fetch rather than link-click so a 503 (profiling off) surfaces the
+// server's message instead of a silent empty download.
+const PPROF_BASE = '/debug/pprof';
+
+async function downloadPprof(path, filename) {
+    const response = await fetch(PPROF_BASE + path);
+    if (!response.ok) {
+        // The gate answers a JSON envelope (503); net/http/pprof answers
+        // text/plain (its 500 "cpu profiling already in use"). Read the body
+        // as text and take the envelope's message when there is one.
+        let text = '';
+        try { text = (await response.text()).trim(); } catch (_) { /* no body */ }
+        let message = text;
+        try {
+            const payload = JSON.parse(text);
+            if (payload && payload.message) { message = payload.message; }
+        } catch (_) { /* not JSON: keep the text */ }
+        throw new Error(message || ('HTTP ' + response.status + ': ' + response.statusText));
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    // Revoke after the browser has had a chance to start the download; a
+    // synchronous revoke can cancel it.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadPprofMemory() {
     try {
         setLoading('pprofMemoryLoading', true);
-        const link = document.createElement('a');
-        link.href = API_BASE + '/debug/pprof-memory';
-        link.download = 'nl6_heap.pprof';
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showAlert('Heap profile download started', 'success');
+        await downloadPprof('/heap', 'nl6_heap.pprof.gz');
+        showAlert('Heap profile downloaded', 'success');
     } catch (error) {
         showAlert('Failed to download heap profile: ' + error.message, 'error');
     } finally {
@@ -797,24 +825,15 @@ function downloadPprofMemory() {
     }
 }
 
-function downloadCpuProfile() {
+async function downloadCpuProfile() {
     try {
         setLoading('cpuProfileLoading', true);
         showAlert('Capturing CPU profile for 5 seconds...', 'warning');
-        const link = document.createElement('a');
-        link.href = API_BASE + '/debug/cpu-profile';
-        link.download = 'nl6_cpu.pprof';
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        // The server takes 5 seconds to respond, so keep the spinner a bit
-        setTimeout(() => {
-            setLoading('cpuProfileLoading', false);
-            showAlert('CPU profile captured (5 seconds)', 'success');
-        }, 6000);
+        await downloadPprof('/profile?seconds=5', 'nl6_cpu.pprof.gz');
+        showAlert('CPU profile captured (5 seconds)', 'success');
     } catch (error) {
         showAlert('Failed to capture CPU profile: ' + error.message, 'error');
+    } finally {
         setLoading('cpuProfileLoading', false);
     }
 }

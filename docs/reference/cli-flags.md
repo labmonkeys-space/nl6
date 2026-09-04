@@ -361,6 +361,19 @@ by default. See [DNS service-discovery reference](dns-service-discovery.md).
 | `-dns-notify` | string | — | **global** | Comma-separated secondary NOTIFY targets (`host:port`); empty disables NOTIFY. |
 | `-dns-debounce` | duration | `1s` | **global** | Quiescence window coalescing a burst of device changes into one serial bump + NOTIFY. |
 
+## Continuous profiling flags
+
+Off by default: with none of these set and no `POST /api/v1/profiling`, no profiler runs and `/debug/pprof/` answers `503`.
+The gate is also switchable at runtime (`POST /api/v1/profiling`), so `-profiling-pyroscope` is the startup **default** rather than the value in force.
+See [Continuous profiling](../ops/profiling.md).
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-profiling-pyroscope` | string | — | **global** | Pyroscope push URL (`http://host:4040` or `https://`). Starts the `pyroscope-go` SDK at boot (CPU, goroutines, four heap views, tagged `service_name=nl6`, `version`, `hostname`) and opens the gated `/debug/pprof/` surface. An unparseable URL, a scheme other than `http`/`https`, or embedded credentials are fatal at startup, after `-help` and `-version` and before any subsystem starts. A Pyroscope that is down at boot is not a start failure (the SDK never touches the network at start); it shows as `upload_failures` and `last_error` on `GET /api/v1/profiling` and as one log line per push. Startup also refuses to run with `PYROSCOPE_ADHOC_SERVER_ADDRESS` set, which the SDK would silently honour over this flag. |
+| `-profiling-force-gc` | bool | `true` | **global** | Let the SDK force a `runtime.GC()` before a heap snapshot when no collection ran during the upload interval. The default is set from `BenchmarkForcedGCOnFleetHeap` (~29 ms per GC extrapolated to 30,000 devices, under the 150 ms rule); see [the measurement](../ops/profiling.md#the-forced-gc-default-measured). `false` sets the SDK's `DisableGCRuns`. |
+| `-profiling-pyroscope-basic-auth` | string | — | **global** | HTTP basic auth for the push as `user:pass`, both parts non-empty (the SDK sends no `Authorization` header when either is empty, so `user:` is refused rather than pushing unauthenticated). Flag-only, never settable or echoed over REST, and sent only to the `-profiling-pyroscope` address: a REST-supplied `server_address` that differs is pushed to without it. |
+| `-profiling-pyroscope-tenant` | string | — | **global** | Pyroscope tenant ID (`X-Scope-OrgID`) for the push. Flag-only, bound to the flag's address like the basic auth. |
+
 ## Examples
 
 ```bash

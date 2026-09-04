@@ -213,6 +213,8 @@ func (e *GnmiDialoutExporter) Close() error {
 // the context.
 func (e *GnmiDialoutExporter) run() {
 	defer e.wg.Done()
+	// Once per goroutine (nl6#635): this loop is the device's own.
+	labelSubsystem(subsystemGNMIDialout)
 	backoff := dialoutInitialBackoff
 	for {
 		if e.closing.Load() || e.ctx.Err() != nil {

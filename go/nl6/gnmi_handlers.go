@@ -65,7 +65,17 @@ func (s *gnmiServer) Capabilities(_ context.Context, _ *gnmipb.CapabilityRequest
 // prefix's `origin` field: the simulator only knows one origin
 // (openconfig), and a non-empty origin from a client is silently
 // accepted so clients that always set it (gNMIc, mostly) still work.
-func (s *gnmiServer) Get(_ context.Context, req *gnmipb.GetRequest) (*gnmipb.GetResponse, error) {
+func (s *gnmiServer) Get(ctx context.Context, req *gnmipb.GetRequest) (resp *gnmipb.GetResponse, err error) {
+	// pprof label for the RPC's duration (nl6#635): gRPC handler goroutines
+	// are shared, so the label is scoped to the call.
+	withSubsystem(ctx, subsystemGNMI, func(context.Context) {
+		resp, err = s.getLabelled(req)
+	})
+	return resp, err
+}
+
+// getLabelled is Get's body; see the wrap above.
+func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, error) {
 	enc := req.GetEncoding()
 	if !encodingSupported(enc) {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported encoding %v", enc)
@@ -177,7 +187,16 @@ func (s *gnmiServer) Set(_ context.Context, _ *gnmipb.SetRequest) (*gnmipb.SetRe
 // goroutine remains parked until the underlying transport closes (gRPC
 // owns that lifetime via the keepalive parameters set in
 // startGnmiServer).
-func (s *gnmiServer) Subscribe(stream gnmipb.GNMI_SubscribeServer) error {
+func (s *gnmiServer) Subscribe(stream gnmipb.GNMI_SubscribeServer) (err error) {
+	// pprof label for the stream's lifetime (nl6#635); see Get.
+	withSubsystem(stream.Context(), subsystemGNMI, func(context.Context) {
+		err = s.subscribeLabelled(stream)
+	})
+	return err
+}
+
+// subscribeLabelled is Subscribe's body; see the wrap above.
+func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error {
 	type firstRecv struct {
 		req *gnmipb.SubscribeRequest
 		err error

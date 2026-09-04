@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -1216,12 +1217,14 @@ func (sm *SimulatorManager) startFlowTicker() {
 	sm.flowWg.Add(1)
 	go func() {
 		defer sm.flowWg.Done()
+		// Once per goroutine (nl6#635): the fleet's own flow ticker.
+		ctx := labelSubsystem(subsystemFlow)
 		ticker := time.NewTicker(period)
 		defer ticker.Stop()
 		for {
 			select {
 			case now := <-ticker.C:
-				sm.tickAllFlowExporters(now)
+				sm.tickAllFlowExporters(ctx, now)
 			case <-sm.flowStopCh:
 				return
 			}
@@ -1234,7 +1237,7 @@ func (sm *SimulatorManager) startFlowTicker() {
 // supplies the shared-pool fallback socket (looked up by the exporter's
 // (collector, protocol) key). Stats are accumulated per-exporter and
 // aggregated at status-endpoint read time.
-func (sm *SimulatorManager) tickAllFlowExporters(now time.Time) {
+func (sm *SimulatorManager) tickAllFlowExporters(ctx context.Context, now time.Time) {
 	sm.mu.RLock()
 	exporters := make([]*FlowExporter, 0, len(sm.devices))
 	for _, d := range sm.devices {
@@ -1252,7 +1255,7 @@ func (sm *SimulatorManager) tickAllFlowExporters(now time.Time) {
 		if fe.scenDriven.Load() {
 			continue
 		}
-		s := sm.tickFlowExporter(fe, now)
+		s := sm.tickFlowExporter(ctx, fe, now)
 		if s.LastTemplateMs > lastTemplMs {
 			lastTemplMs = s.LastTemplateMs
 		}
@@ -1265,7 +1268,21 @@ func (sm *SimulatorManager) tickAllFlowExporters(now time.Time) {
 // tickFlowExporter ticks one exporter with the shared-pool fallback socket and
 // folds its stats. Shared by the fleet ticker and the scenario-owned flow
 // ticker (D1 cadence adaptation) so both take the identical wire path.
-func (sm *SimulatorManager) tickFlowExporter(fe *FlowExporter, now time.Time) FlowTickStats {
+//
+// ctx is the CALLER's labelled context (labelSubsystem's return), which the
+// label reverts to after the tick; passing context.Background() from a
+// goroutine with a birth label erases that label (see labelSubsystem).
+func (sm *SimulatorManager) tickFlowExporter(ctx context.Context, fe *FlowExporter, now time.Time) (stats FlowTickStats) {
+	// pprof label at the funnel (nl6#635): the fleet ticker and the scenario
+	// ticker are shared goroutines, so the label is scoped to the tick.
+	withSubsystem(ctx, subsystemFlow, func(context.Context) {
+		stats = sm.tickFlowExporterLabelled(fe, now)
+	})
+	return stats
+}
+
+// tickFlowExporterLabelled is tickFlowExporter's body; see the wrap above.
+func (sm *SimulatorManager) tickFlowExporterLabelled(fe *FlowExporter, now time.Time) FlowTickStats {
 	var sharedConn *net.UDPConn
 	if fe.conn.Load() == nil {
 		sharedConn = sm.flowConnFor(flowConnKey{collector: fe.collectorStr, protocol: fe.protocol})

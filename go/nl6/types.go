@@ -200,7 +200,10 @@ type SNMPv3SecurityParams struct {
 type SNMPServer struct {
 	device   *DeviceSimulator
 	listener *net.UDPConn
-	running  bool
+	// running is written by Stop and read by the read loop on its own
+	// goroutine, so it is atomic (a plain bool here was a data race the race
+	// detector reported the first time a test drove Start and Stop).
+	running  atomic.Bool
 	v3Config *SNMPv3Config
 
 	// usm holds the RFC 3414 material derived once per server (nl6#624): the

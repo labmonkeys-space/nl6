@@ -5,6 +5,8 @@ go 1.27.0
 require (
 	github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9
 	github.com/gorilla/mux v1.8.1
+	github.com/grafana/pyroscope-go v1.4.2
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
 	github.com/miekg/dns v1.1.73
 	github.com/openconfig/gnmi v0.14.1
 	golang.org/x/crypto v0.56.0
@@ -15,6 +17,7 @@ require (
 )
 
 require (
+	github.com/klauspost/compress v1.18.7 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
