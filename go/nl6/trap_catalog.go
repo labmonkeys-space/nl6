@@ -23,6 +23,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -567,9 +568,89 @@ const dryRenderCommunity = "public"
 // only at fire time, so the encode guard remains the backstop for them. The
 // check is a best-effort early warning for STATIC content, not a guarantee.
 //
+// THE SIZE DEPENDS ON THE FLEET'S WIRE FORMAT, which is why the measurement is
+// a PARAMETER (nl6#98). This function used to dry-render with
+// encodeV2cNotificationFast unconditionally while the fire path encoded whatever
+// -trap-snmp-version selected, and under v3 the USM envelope adds ~91 bytes to
+// every entry. Measured on the shipped Ciena catalog at authPriv/SHA1+AES:
+// opticalPreFecSdClear load-checks at 1000 B and fires at 1091 B. So for a
+// budget anywhere in 1000..1090 a v3 fleet disabled NOTHING, logged NOTHING, and
+// failed at EVERY fire into send_failures behind a sync.Once log line — the
+// exact per-fire silence this check exists to convert into one startup warning,
+// reintroduced one version later.
+//
+// ApplySizeBudget keeps the v2c measurement so its many callers and their
+// assertions are unchanged; ApplySizeBudgetWith takes the sizer.
+//
 // Entries are DISABLED, never rejected — see the `oversized` field for why.
 func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
-	if c == nil || budget <= 0 {
+	return c.ApplySizeBudgetWith(budget, source, v2cDryRenderSizer())
+}
+
+// notificationSizer measures ONE resolved catalog entry the way the fleet's
+// configured wire format will actually encode it.
+//
+// It returns the encoded length and the encoder's error. A sizer must report the
+// WORST case for anything it cannot see: the v2c one renders at
+// math.MaxUint32 for the request-id, and the v3 one additionally pins the msgID
+// at its widest RFC 3412 value.
+type notificationSizer func(e *CatalogEntry, vbs []Varbind, uptime uint32) (int, error)
+
+// v2cDryRenderSizer measures through the shipped fast encoder — the same path a
+// v2c fleet fires through, including its own maxTrapPDU guard, whose
+// pduTooLargeError carries the real size when it refuses.
+//
+// It is ALSO what SNMPv1 is sized with, deliberately. A v1 Trap-PDU is strictly
+// smaller than the v2c message for the same entry (it carries none of the three
+// prepended varbinds), so the v2c figure over-estimates and can only disable an
+// entry that would have fit. That is the behaviour v1 shipped with; sizing v1
+// exactly would newly ENABLE entries, which is a wire change and not this one's.
+func v2cDryRenderSizer() notificationSizer {
+	scratch := make([]byte, 0, 65535)
+	return func(e *CatalogEntry, vbs []Varbind, uptime uint32) (int, error) {
+		pdu, err := encodeV2cNotificationFast(scratch[:0], ASN1_TRAP_V2C, dryRenderCommunity,
+			math.MaxUint32, e.pre, e.SnmpTrapOID, e.SnmpTrapEnterprise, uptime, vbs)
+		return len(pdu), err
+	}
+}
+
+// dryRenderV3DeviceIP is the address the v3 sizer's probe encoder is built from.
+//
+// ANY IPv4 GIVES THE SAME ANSWER, and that is a property rather than an
+// assumption: snmpv3TrapEngineID is 11 octets for every IPv4 (4 PEN + 1 format +
+// 6 MAC), the user name is fleet-wide, the digest is 12 octets and the salt is
+// 8, so no per-device value changes the encoded LENGTH.
+// TestV3SizerIsIndependentOfTheProbeDevice pins it.
+var dryRenderV3DeviceIP = net.IPv4(10, 42, 0, 1)
+
+// v3DryRenderSizer measures through a real SNMPv3TrapEncoder at the fleet's
+// configured security level — never through an estimate of what USM adds. Every
+// bug in this family was a predicted size disagreeing with an emitted one
+// (nl6#489's rule, applied here).
+//
+// THE msgID IS PINNED AT ITS WIDEST. RFC 3412 types it INTEGER (0..2^31-1), so
+// its BER content is 1..4 octets and a device's own counter walks across that
+// boundary during its life. Measuring at a small msgID would understate every
+// entry by up to 3 bytes, which is the same off-by-a-few that made the load
+// check render Detail empty and split a Raise/Clear pair.
+func v3DryRenderSizer(cfg TrapV3Config) (notificationSizer, error) {
+	enc, err := NewSNMPv3TrapEncoder(dryRenderV3DeviceIP, cfg)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 65535)
+	return func(e *CatalogEntry, vbs []Varbind, uptime uint32) (int, error) {
+		// Add(1) lands on the mask itself, 0x7FFFFFFF — four content octets,
+		// the widest a legal msgID encodes to.
+		enc.nextMsgID.Store(snmpv3MsgIDMask - 1)
+		n, err := enc.EncodeTrap("", math.MaxUint32, e.SnmpTrapOID, e.SnmpTrapEnterprise, uptime, vbs, buf)
+		return n, err
+	}, nil
+}
+
+// ApplySizeBudgetWith is ApplySizeBudget with the measurement supplied.
+func (c *Catalog) ApplySizeBudgetWith(budget int, source string, size notificationSizer) []string {
+	if c == nil || budget <= 0 || size == nil {
 		return nil
 	}
 	ctx := TemplateCtx{
@@ -586,7 +667,6 @@ func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
 		Detail:    worstCaseDetail,
 	}
 	var disabled []string
-	scratch := make([]byte, 0, 65535)
 	for _, e := range c.Entries {
 		vbs, err := e.Resolve(ctx, nil)
 		if err != nil {
@@ -598,18 +678,17 @@ func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
 		// math.MaxUint32 for the request ID: the fire path uses a monotonically
 		// growing counter, and appendInteger spends 5 content bytes past
 		// 0x7FFFFFFF against 1 for a small value. Rendering with 1 understated
-		// every entry by 4 bytes.
-		pdu, err := encodeV2cNotificationFast(scratch[:0], ASN1_TRAP_V2C, dryRenderCommunity, math.MaxUint32,
-			e.pre, e.SnmpTrapOID, e.SnmpTrapEnterprise, ctx.Uptime, vbs)
-		if err == nil && len(pdu) <= budget {
+		// every entry by 4 bytes. See notificationSizer.
+		encodedLen, err := size(e, vbs, ctx.Uptime)
+		if err == nil && encodedLen <= budget {
 			continue
 		}
 		e.oversized = true
 
 		// The encoder's own guard fires before this budget comparison whenever
 		// budget == maxTrapPDU — which is the PRODUCTION wiring, so the error
-		// path is normal here, not an edge case. On that path pdu is nil, so
-		// len(pdu) reports 0 and the operator's only diagnostic reads
+		// path is normal here, not an edge case. On that path the size reports
+		// 0 and the operator's only diagnostic reads
 		// "0 B > 972 B budget", which says nothing about how far over the entry
 		// is or what MTU would admit it. Recover the real size from the typed
 		// error (nl6#487 review).
@@ -625,7 +704,10 @@ func (c *Catalog) ApplySizeBudget(budget int, source string) []string {
 			disabled = append(disabled, fmt.Sprintf("%s/%s (%v; budget %d B)", source, e.Name, err, budget))
 			continue
 		}
-		disabled = append(disabled, fmt.Sprintf("%s/%s (%d B > %d B budget)", source, e.Name, len(pdu), budget))
+		disabled = append(disabled, fmt.Sprintf(
+			"%s/%s (%d B, over the %d B budget by %d B; needs -datagram-mtu >= %d)",
+			source, e.Name, encodedLen, budget, encodedLen-budget,
+			encodedLen+ipv4HeaderBytes+udpHeaderBytes))
 	}
 	if len(disabled) > 0 {
 		// Ignore the error: a non-positive TOTAL weight is impossible here

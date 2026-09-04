@@ -297,21 +297,35 @@ else
 	cd $(GO_DIR) && go test -race ./...
 endif
 
-## test-interop: Poll nl6's SNMPv3 stack with net-snmp (needs snmpget on PATH)
+## test-interop: Exchange SNMPv3 with net-snmp (needs snmpget AND snmptrapd on PATH)
 ##
 ## THE ONLY CHECK THAT IS NOT nl6 READING ITS OWN OUTPUT. Every other SNMPv3
 ## test in the package parses nl6's bytes with nl6's parser, so a shared
 ## misunderstanding of RFC 3414 passes all of them — which is exactly how a v3
 ## stack that computed no digest stayed green for years (nl6#624/#625).
 ## net-snmp derives its own key, verifies our digest and builds its own IV.
+##
+## BOTH DIRECTIONS. snmpget POLLS nl6 (nl6#624); snmptrapd RECEIVES nl6's
+## SNMPv3 notifications (nl6#98), which snmpget structurally cannot check —
+## nothing polls a trap. On Debian and Ubuntu snmptrapd is in its OWN package,
+## not in `snmp`, so both are named below; a missing snmptrapd FAILS the test
+## rather than skipping it, because a silent skip is coverage that asserts
+## nothing.
 test-interop: check-go
 	@command -v snmpget >/dev/null 2>&1 || { \
 	  echo "snmpget not found. Install net-snmp:"; \
 	  echo "  Debian/Ubuntu: sudo apt-get install -y snmp"; \
 	  echo "  macOS:         it ships with the system, or 'brew install net-snmp'"; \
 	  exit 1; }
+	@command -v snmptrapd >/dev/null 2>&1 || { \
+	  echo "snmptrapd not found. It is a SEPARATE package from snmpget:"; \
+	  echo "  Debian/Ubuntu: sudo apt-get install -y snmptrapd"; \
+	  echo "  macOS:         it ships with the system, or 'brew install net-snmp'"; \
+	  exit 1; }
 	@snmpget --version 2>&1 | head -1
-	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ -run TestUSMInterop -count=1 -v
+	@snmptrapd --version 2>&1 | head -2 | tail -1
+	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ \
+	    -run 'TestUSMInterop|TestSNMPv3TrapInterop' -count=1 -v
 
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime

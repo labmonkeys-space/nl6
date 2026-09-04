@@ -30,34 +30,30 @@ import (
 	"time"
 )
 
-// parseAuthProtocol converts string to authentication protocol constant
+// parseAuthProtocol converts string to authentication protocol constant.
+//
+// LENIENT BY DECISION, and unchanged: an unknown -snmpv3-auth logs and falls
+// back to MD5. The accepted spellings live in parseUSMAuthProtocol
+// (trap_v3.go), which is the strict form the -trap-snmpv3-* flags use directly;
+// this is the same table with a different failure policy, not a second one.
 func parseAuthProtocol(proto string) int {
-	switch strings.ToLower(proto) {
-	case "md5":
-		return SNMPV3_AUTH_MD5
-	case "sha1", "sha":
-		return SNMPV3_AUTH_SHA1
-	case "none", "":
-		return SNMPV3_AUTH_NONE
-	default:
+	p, err := parseUSMAuthProtocol(proto)
+	if err != nil {
 		log.Printf("Unknown auth protocol '%s', using MD5", proto)
 		return SNMPV3_AUTH_MD5
 	}
+	return p
 }
 
-// parsePrivProtocol converts string to privacy protocol constant
+// parsePrivProtocol converts string to privacy protocol constant. Lenient, for
+// the same reason as parseAuthProtocol; parseUSMPrivProtocol is the table.
 func parsePrivProtocol(proto string) int {
-	switch strings.ToLower(proto) {
-	case "des":
-		return SNMPV3_PRIV_DES
-	case "aes128", "aes":
-		return SNMPV3_PRIV_AES128
-	case "none", "":
-		return SNMPV3_PRIV_NONE
-	default:
+	p, err := parseUSMPrivProtocol(proto)
+	if err != nil {
 		log.Printf("Unknown privacy protocol '%s', using none", proto)
 		return SNMPV3_PRIV_NONE
 	}
+	return p
 }
 
 // setupSignalHandler sets up graceful shutdown on SIGINT/SIGTERM
@@ -126,13 +122,24 @@ func main() {
 		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
-		trapCollector       = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
-		trapMode            = flag.String("trap-mode", "trap", "SNMP notification mode: trap (default, fire-and-forget) or inform (acknowledged)")
-		trapInterval        = flag.Duration("trap-interval", 30*time.Second, "Per-device mean firing interval (Poisson-distributed); default 30s")
-		trapGlobalCap       = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
-		trapCatalog         = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
-		trapCommunity       = flag.String("trap-community", "public", "SNMPv2c community string for trap/INFORM PDUs")
-		trapSNMPVersion     = flag.String("trap-snmp-version", "v2c", "SNMP notification wire format: v2c (default) or v1 (RFC 1157 Trap-PDU). One per fleet; v1 cannot serve -trap-mode inform")
+		trapCollector   = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
+		trapMode        = flag.String("trap-mode", "trap", "SNMP notification mode: trap (default, fire-and-forget) or inform (acknowledged)")
+		trapInterval    = flag.Duration("trap-interval", 30*time.Second, "Per-device mean firing interval (Poisson-distributed); default 30s")
+		trapGlobalCap   = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
+		trapCatalog     = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
+		trapCommunity   = flag.String("trap-community", "public", "SNMPv2c community string for trap/INFORM PDUs")
+		trapSNMPVersion = flag.String("trap-snmp-version", "v2c", "SNMP notification wire format: v2c (default), v1 (RFC 1157 Trap-PDU) or v3 (RFC 3414 USM). One per fleet; neither v1 nor v3 can serve -trap-mode inform")
+		// -trap-snmpv3-* is the USM surface for notifications, and it is
+		// SEPARATE from -snmpv3-* by design (nl6#98). The poll flags configure
+		// the device's polling engine, whose engine ID is fleet-wide; a trap is
+		// sent by the device as its OWN authoritative engine, with an ID derived
+		// from its address. Sharing one flag set would tie the two identities
+		// together and make a change to either re-identify the other.
+		trapV3User          = flag.String("trap-snmpv3-user", "", "USM user name for SNMPv3 notifications (required when -trap-snmp-version=v3)")
+		trapV3Auth          = flag.String("trap-snmpv3-auth", "none", "USM authentication protocol for SNMPv3 notifications: none (default), md5, sha1. Also selects the hash that localizes the privacy key")
+		trapV3Priv          = flag.String("trap-snmpv3-priv", "none", "USM privacy protocol for SNMPv3 notifications: none (default), des, aes128. Requires an authentication protocol")
+		trapV3Password      = flag.String("trap-snmpv3-password", "", "USM authentication password for SNMPv3 notifications")
+		trapV3PrivPass      = flag.String("trap-snmpv3-priv-password", "", "USM privacy password for SNMPv3 notifications (empty = reuse -trap-snmpv3-password)")
 		trapSourcePerDevice = flag.Bool("trap-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so trap packets use the device IP as source (required in -trap-mode inform)")
 		trapInformTimeout   = flag.Duration("trap-inform-timeout", 5*time.Second, "Per-retry timeout in INFORM mode (default 5s)")
 		trapInformRetries   = flag.Int("trap-inform-retries", 2, "Maximum retransmissions per INFORM before declaring it failed (default 2)")
@@ -349,9 +356,43 @@ func main() {
 	if err := trapVersionModeConflict(trapVersion, *trapMode); err != nil {
 		log.Fatalf("trap export: %v", err)
 	}
+	// STRICT, unlike the -snmpv3-* poll flags: a typo'd protocol here would
+	// silently produce a fleet whose notifications no collector can verify
+	// (nl6#98). Parsed unconditionally so a -trap-snmpv3-auth typo is reported
+	// even when the operator also forgot -trap-snmp-version=v3.
+	trapV3AuthProto, err := parseUSMAuthProtocol(*trapV3Auth)
+	if err != nil {
+		log.Fatalf("trap export: -trap-snmpv3-auth: %v", err)
+	}
+	trapV3PrivProto, err := parseUSMPrivProtocol(*trapV3Priv)
+	if err != nil {
+		log.Fatalf("trap export: -trap-snmpv3-priv: %v", err)
+	}
+	trapV3Settings := TrapV3Config{
+		UserName:     *trapV3User,
+		AuthProtocol: trapV3AuthProto,
+		PrivProtocol: trapV3PrivProto,
+		Password:     *trapV3Password,
+		PrivPassword: *trapV3PrivPass,
+	}
+	// A flag that is set and never read is the nl6#445 family. `-trap-snmpv3-*`
+	// without `-trap-snmp-version=v3` yields a PLAINTEXT fleet, which is a
+	// security surprise rather than a no-op, so it is said out loud.
+	//
+	// `flag.Visit` reports what the operator actually TYPED, so a community left
+	// at its default does not draw a warning under v3 while an explicitly-passed
+	// `-trap-community public` does.
+	communitySet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "trap-community" {
+			communitySet = true
+		}
+	})
+	warnTrapVersionFlagsIgnored(trapVersion, trapV3Settings, *trapCommunity, communitySet, log.Printf)
 	if err := manager.StartTrapSubsystem(TrapSubsystemConfig{
 		CatalogPath:           *trapCatalog,
 		SNMPVersion:           trapVersion,
+		SNMPv3:                trapV3Settings,
 		GlobalCap:             *trapGlobalCap,
 		SourcePerDevice:       *trapSourcePerDevice,
 		MeanSchedulerInterval: *trapInterval,

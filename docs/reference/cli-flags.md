@@ -227,11 +227,52 @@ prerequisites and `snmptrapd` smoke-test, and
 | `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence; the per-device `interval` in a REST `traps` block is accepted, echoed by `GET /api/v1/devices`, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
-| `-trap-community` | string | `public` | **seed** | SNMPv2c community string. |
-| `-trap-snmp-version` | `v2c` \| `v1` | `v2c` | **seed** | Notification wire format. `v1` emits RFC 1157 Trap-PDUs (tag `0xA4`) with the identity derived per RFC 3584 §3.2. One per fleet; cannot be combined with `-trap-mode inform`, which SNMPv1 does not define. |
+| `-trap-community` | string | `public` | **seed** | SNMPv2c community string. **Ignored under `-trap-snmp-version=v3`** — an SNMPv3 message carries no community string anywhere; nl6 warns at startup if you set it explicitly. |
+| `-trap-snmp-version` | `v2c` \| `v1` \| `v3` | `v2c` | **seed** | Notification wire format. `v1` emits RFC 1157 Trap-PDUs (tag `0xA4`) with the identity derived per RFC 3584 §3.2. `v3` emits the same SNMPv2-Trap-PDU as `v2c` inside an RFC 3414 USM envelope. One per fleet; neither `v1` nor `v3` can be combined with `-trap-mode inform` — SNMPv1 defines no InformRequest at all, and an SNMPv3 inform is authoritative at the *receiver*, which needs an engine-discovery exchange nl6 does not implement. |
+| `-trap-snmpv3-user` | string | — | **seed** | USM user name carried in `msgUserName`. Required when `-trap-snmp-version=v3`; USM has no anonymous identity. |
+| `-trap-snmpv3-auth` | `none` \| `md5` \| `sha1` | `none` | **seed** | USM authentication protocol for notifications. Also selects the hash that localizes the privacy key (RFC 3414 §2.6). **Strict**: an unrecognised value is fatal at startup, unlike `-snmpv3-auth`, which logs and falls back to MD5. |
+| `-trap-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | **seed** | USM privacy protocol for notifications. Requires an authentication protocol — USM defines no privacy-without-authentication security level. |
+| `-trap-snmpv3-password` | string | — | **seed** | USM authentication password. Required when `-trap-snmpv3-auth` is not `none`. **Visible in `ps` — see the warning below.** |
+| `-trap-snmpv3-priv-password` | string | — | **seed** | USM privacy password. Empty reuses `-trap-snmpv3-password`, matching the poll path's own fallback. **Visible in `ps` — see the warning below.** |
 | `-trap-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. **Required** when a device is configured `mode=inform` — enforced at device-attach time: the attach fails per-device and the device's `trapConfig` is cleared. |
 | `-trap-inform-timeout` | duration | `5s` | **seed** | Per-retry timeout in INFORM mode. |
 | `-trap-inform-retries` | int | `2` | **seed** | Maximum retransmissions per INFORM before it's declared failed. |
+
+:::danger These are the only secrets on nl6's command line
+
+`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the first
+credentials nl6 accepts as flags — the polling side deliberately has none. A
+command line is not private: it is readable by every user on the host through
+`ps` and `/proc/<pid>/cmdline`, recorded in shell history, and echoed verbatim
+by `docker inspect` and `kubectl describe pod`.
+
+Use lab credentials only, and never a password that protects anything else. An
+environment-variable or file form is recorded as follow-up work; until it
+exists there is no private way to pass these.
+:::
+
+:::note There is no `-trap-snmpv3-engine-id`, and that is deliberate
+
+Each device derives its own authoritative engine ID from its IPv4 address, so
+two devices sharing a user and password still localize **different** keys. A
+configured engine ID would be shared by the whole fleet, which is the
+shared-identity defect
+[nl6#588](https://github.com/labmonkeys-space/nl6/issues/588) and
+[nl6#599](https://github.com/labmonkeys-space/nl6/issues/599) each corrected
+once already.
+
+The `-trap-snmpv3-*` flags are also **separate from the `-snmpv3-*` poll flags**
+on purpose. A device polled over SNMPv3 and a trap received from that same
+device report **two different `snmpEngineID` values**: the poll engine's is
+fleet-wide (`-snmpv3-engine-id`), while a notification originator is
+authoritative for its own engine (RFC 3414 §2.1). Correct, and the first thing
+that looks like a bug when you debug it — see
+[SNMP trap reference → SNMPv3 notifications](snmp-traps.md#snmpv3-notifications).
+
+`GET /api/v1/traps/status` reports each exporting device's derived engine ID
+under `snmpv3.engine_ids_by_device`, which is what a receiver's `createUser -e`
+line needs.
+:::
 
 ## gNMI target flags
 

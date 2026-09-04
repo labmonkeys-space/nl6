@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1471
+const minimumTestFunctions = 1495
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -338,6 +338,29 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#624. The ONLY check here that does not read nl6's output with nl6's own parser: the four " +
 			"localized keys are compared against RFC 3414 A.3's published values, parsed from a " +
 			"checked-in extract of the RFC. A shared misunderstanding passes every other v3 test"},
+	{"TestSNMPv3TrapInteropWithSnmptrapd", "snmpv3_usm_interop_test.go",
+		"nl6#98. The ONLY check that an emitted SNMPv3 notification is acceptable to something other " +
+			"than nl6. snmpget structurally cannot cover it — nothing polls a trap — so without this " +
+			"the whole v3 trap path is verified by nl6 reading its own bytes, which is precisely the " +
+			"state nl6#624 shipped for years with a green suite"},
+	{"TestV3TrapOutputIsPinned", "trap_v3_test.go",
+		"nl6#98. The ONLY byte-level pin on the v3 notification path. Every other test in that file " +
+			"re-derives its expectation through the same code, so a refactor of the shared v3 " +
+			"envelope moves every emitted byte while satisfying all of them; the four " +
+			"trap_pdu_extraction_test.go digests cover the poll path and v1/v2c, not this one"},
+	{"TestSNMPv3TrapInteropRejectsAWrongPassword", "snmpv3_usm_interop_test.go",
+		"nl6#98. The control for the seven interop rows. Without it a receiver that logged " +
+			"unauthenticated notifications would pass all seven, so they would prove reachability " +
+			"rather than authentication — the exact gap nl6#625 found on the poll side"},
+	{"TestV3TrapDoesNotTouchThePollEngine", "trap_v3_test.go",
+		"nl6#98. The trap engine identity must NOT be usmState()'s, whose engine ID is fleet-wide by " +
+			"decision. Keying a trap on it makes every device's notification identity and localized " +
+			"key identical — the nl6#588/#599 shared-identity defect — while every single-message " +
+			"assertion in the package still passes"},
+	{"TestV3TrapRefusesAnUnderivableEngineIdentity", "trap_v3_test.go",
+		"nl6#98. The DECIDED half of nl6#627's open question. wrapInScopedPDU accepts a nil engine ID " +
+			"and usmState substitutes defaultSNMPv3EngineID for an empty one, so without this refusal " +
+			"a device with no derivable IPv4 silently joins a fleet that all shares one engine identity"},
 	{"TestV1MappingEnterpriseSpecificIgnoresTheDeclaredEnterprise", "trap_v1_test.go",
 		"nl6#97. RFC 3584 3.2 honours a declared snmpTrapEnterprise ONLY for a standard trap; a " +
 			"non-standard one always derives it from snmpTrapOID. The spec had this backwards, and " +

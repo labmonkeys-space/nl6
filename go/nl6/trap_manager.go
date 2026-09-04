@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -40,13 +41,27 @@ type TrapSNMPVersion int
 const (
 	TrapSNMPv2c TrapSNMPVersion = iota
 	TrapSNMPv1
+	// TrapSNMPv3 emits RFC 3416 SNMPv2-Trap-PDUs inside an RFC 3414 USM
+	// envelope (nl6#98). Like v1, its encoder is PER DEVICE — the engine
+	// identity and the keys localized against it are per-device state.
+	TrapSNMPv3
 )
 
+// String names the version. An UNRECOGNISED value is spelled out rather than
+// reported as v2c: this string reaches the startup log and error messages, and
+// a new enum member that read as "v2c" everywhere would make its own
+// mis-wiring invisible (nl6#98 review).
 func (v TrapSNMPVersion) String() string {
-	if v == TrapSNMPv1 {
+	switch v {
+	case TrapSNMPv2c:
+		return "v2c"
+	case TrapSNMPv1:
 		return "v1"
+	case TrapSNMPv3:
+		return "v3"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(v))
 	}
-	return "v2c"
 }
 
 // ParseTrapSNMPVersion maps the -trap-snmp-version flag. Empty is v2c, which
@@ -57,19 +72,75 @@ func ParseTrapSNMPVersion(s string) (TrapSNMPVersion, error) {
 		return TrapSNMPv2c, nil
 	case "v1", "1":
 		return TrapSNMPv1, nil
+	case "v3", "3":
+		return TrapSNMPv3, nil
 	default:
-		return 0, fmt.Errorf("invalid -trap-snmp-version %q (valid: v1, v2c)", s)
+		return 0, fmt.Errorf("invalid -trap-snmp-version %q (valid: v1, v2c, v3)", s)
 	}
 }
 
-// trapVersionModeConflict reports the one unsatisfiable flag pair: SNMPv1 with
-// an acknowledged notification mode (nl6#97).
+// warnTrapVersionFlagsIgnored reports flags that are SET and NOT READ, one line
+// per flag, at startup.
+//
+// THIS IS THE nl6#445 FAMILY AND THIS REPO REFUSES IT ELSEWHERE. A knob that is
+// accepted, echoed and ignored is the defect `-flow-tick-interval`,
+// `-trap-interval` and `-syslog-interval` each shipped; two of the three are now
+// hard 400s. The v3 credentials cannot be a hard error — `-trap-snmpv3-*` under
+// v2c is a plausible half-finished command line, not a contradiction — so they
+// warn, loudly, naming the flag that would make them take effect.
+//
+// The asymmetry matters: setting a PASSWORD and getting a plaintext fleet is a
+// security surprise, while setting a COMMUNITY under v3 merely does nothing.
+// Both are warned; only the first says what the operator got instead.
+func warnTrapVersionFlagsIgnored(version TrapSNMPVersion, v3 TrapV3Config, community string,
+	communitySet bool, warn func(string, ...any)) {
+	if version != TrapSNMPv3 {
+		var set []string
+		if strings.TrimSpace(v3.UserName) != "" {
+			set = append(set, "-trap-snmpv3-user")
+		}
+		if v3.AuthProtocol != SNMPV3_AUTH_NONE {
+			set = append(set, "-trap-snmpv3-auth")
+		}
+		if v3.PrivProtocol != SNMPV3_PRIV_NONE {
+			set = append(set, "-trap-snmpv3-priv")
+		}
+		if v3.Password != "" {
+			set = append(set, "-trap-snmpv3-password")
+		}
+		if v3.PrivPassword != "" {
+			set = append(set, "-trap-snmpv3-priv-password")
+		}
+		if len(set) > 0 {
+			warn("trap export: WARNING: %s set but IGNORED — -trap-snmp-version is %s, so this "+
+				"fleet emits UNAUTHENTICATED notifications. Add -trap-snmp-version=v3 to use them",
+				strings.Join(set, ", "), version)
+		}
+		return
+	}
+	// Under v3 there is no community string anywhere in the message.
+	if communitySet {
+		warn("trap export: WARNING: -trap-community=%q set but IGNORED — an SNMPv3 message carries "+
+			"no community string; the notification is authenticated by USM instead", community)
+	}
+}
+
+// trapVersionModeConflict reports the unsatisfiable flag pairs: an acknowledged
+// notification mode under a version that has none.
+//
+// TWO VERSIONS, ONE REASON EACH, and the reasons are NOT the same. SNMPv1
+// defines no InformRequest-PDU at all (RFC 1157), so there is nothing to encode.
+// SNMPv3 defines one, but it is authoritative at the RECEIVER (RFC 3414 §3.1):
+// serving it needs an engine-discovery exchange with each collector and a key
+// localized against THAT engine, which is per-collector state this subsystem
+// does not have. The messages say which, because "not supported" leaves an
+// operator guessing whether a flag is missing.
 //
 // Extracted from main() rather than left inline so it can be tested. The
 // startup path exits on the root check well before it, so an integration run as
 // an unprivileged user never reaches the guard and would have verified nothing.
 func trapVersionModeConflict(version TrapSNMPVersion, mode string) error {
-	if version != TrapSNMPv1 {
+	if version != TrapSNMPv1 && version != TrapSNMPv3 {
 		return nil
 	}
 	m, err := ParseTrapMode(mode)
@@ -78,6 +149,12 @@ func trapVersionModeConflict(version TrapSNMPVersion, mode string) error {
 	}
 	if m != TrapModeInform {
 		return nil
+	}
+	if version == TrapSNMPv3 {
+		return fmt.Errorf("-trap-snmp-version=v3 cannot be combined with -trap-mode=inform: an " +
+			"SNMPv3 InformRequest is authoritative at the RECEIVER (RFC 3414 §3.1), so it needs an " +
+			"engine-discovery exchange and a key localized against each collector's engine, which " +
+			"nl6 does not implement. Use -trap-mode=trap, or -trap-snmp-version=v2c")
 	}
 	return fmt.Errorf("-trap-snmp-version=v1 cannot be combined with -trap-mode=inform: SNMPv1 " +
 		"defines no InformRequest-PDU (RFC 1157), so there is nothing for a collector to " +
@@ -106,11 +183,43 @@ func ParseTrapMode(s string) (TrapMode, error) {
 // CatalogsByType surfaces the per-device-type overlay map — unchanged
 // from phase-4-prior behaviour.
 type TrapStatus struct {
-	SubsystemActive            bool                         `json:"subsystem_active"`
-	Collectors                 []TrapCollectorStatus        `json:"collectors"`
+	SubsystemActive bool                  `json:"subsystem_active"`
+	Collectors      []TrapCollectorStatus `json:"collectors"`
+	// SNMPVersion is the fleet's notification wire format ("v2c", "v1", "v3").
+	// Always present once the subsystem is active: which format a fleet emits
+	// is not deducible from anything else the endpoint reports.
+	SNMPVersion                string                       `json:"snmp_version,omitempty"`
+	SNMPv3                     *TrapV3Status                `json:"snmpv3,omitempty"`
 	DevicesExporting           int                          `json:"devices_exporting"`
 	RateLimiterTokensAvailable int                          `json:"rate_limiter_tokens_available,omitempty"`
 	CatalogsByType             map[string]CatalogSourceInfo `json:"catalogs_by_type,omitempty"`
+}
+
+// TrapV3Status reports what a receiver has to be told to accept this fleet's
+// notifications. Present only under -trap-snmp-version=v3.
+//
+// THE ENGINE IDS ARE THE POINT. They are DERIVED from each device's IPv4 and
+// are not configurable, and a trap carries no discovery exchange, so a
+// collector cannot learn them by asking — snmptrapd needs `createUser -e
+// <engineID>` per device before the first trap arrives. Leaving them off the
+// status endpoint meant the one value an operator MUST have was available
+// nowhere but the source code.
+//
+// NO PASSWORD IS REPORTED, and no localized key. The security level and the
+// protocol names are enough to write a receiver config; the secret is the
+// operator's own and this endpoint is unauthenticated.
+type TrapV3Status struct {
+	UserName      string `json:"user"`
+	SecurityLevel string `json:"security_level"`
+	AuthProtocol  string `json:"auth_protocol"`
+	PrivProtocol  string `json:"priv_protocol"`
+	// EngineIDFormat describes the derivation so an operator can compute a
+	// device's identity without polling for it.
+	EngineIDFormat string `json:"engine_id_format"`
+	// EngineIDsByDevice maps each exporting device's IP to the lowercase hex of
+	// its authoritative engine ID — exactly the string `createUser -e 0x...`
+	// wants.
+	EngineIDsByDevice map[string]string `json:"engine_ids_by_device,omitempty"`
 }
 
 // TrapCollectorStatus is one aggregate record in TrapStatus.Collectors.
@@ -162,7 +271,17 @@ type TrapSubsystemConfig struct {
 	CatalogPath string
 	// SNMPVersion selects the notification wire format for the whole fleet
 	// (nl6#97). Zero value is v2c, so an unset field keeps existing behaviour.
-	SNMPVersion     TrapSNMPVersion
+	SNMPVersion TrapSNMPVersion
+	// SNMPv3 carries the -trap-snmpv3-* USM settings. Read ONLY when
+	// SNMPVersion is TrapSNMPv3, and validated at StartTrapSubsystem so a bad
+	// user/password/protocol combination fails once at startup rather than at
+	// every device's attach (nl6#98).
+	//
+	// IT HOLDS NO ENGINE ID. Each device's authoritative engine identity is
+	// derived from its own address (snmpv3TrapEngineID); a configured one would
+	// be shared fleet-wide, which is the identity defect the derivation exists
+	// to avoid.
+	SNMPv3          TrapV3Config
 	GlobalCap       int  // 0 = unlimited
 	SourcePerDevice bool // bind per-device UDP socket in nl6sim ns
 	// MeanSchedulerInterval seeds the scheduler's Poisson draw when no
@@ -179,6 +298,30 @@ type TrapSubsystemConfig struct {
 	// in one place and consumed in another (design D5). A non-positive value is
 	// rejected rather than defaulted, so forgetting it fails loudly.
 	PDUBudget int
+}
+
+// trapDryRenderSizer picks the load-time size measurement for a fleet's
+// configured notification format.
+//
+// v1 is deliberately sized as v2c: a v1 Trap-PDU is strictly smaller (it drops
+// the three prepended varbinds), so the v2c figure over-estimates and can only
+// disable an entry that would have fit — which is the behaviour v1 shipped
+// with. Sizing it exactly would newly ENABLE entries.
+//
+// An unrecognised version is an ERROR rather than a silent fall-through to v2c:
+// a new TrapSNMPVersion whose encoder is larger than v2c's would otherwise
+// inherit exactly the defect this function exists to fix.
+func trapDryRenderSizer(cfg TrapSubsystemConfig) (notificationSizer, error) {
+	switch cfg.SNMPVersion {
+	case TrapSNMPv2c, TrapSNMPv1:
+		return v2cDryRenderSizer(), nil
+	case TrapSNMPv3:
+		return v3DryRenderSizer(cfg.SNMPv3)
+	default:
+		return nil, fmt.Errorf("trap export: unrecognised SNMP notification version %d; the "+
+			"load-time datagram-budget check has no measurement for it, and falling back to the "+
+			"v2c one would silently under-size a larger format", int(cfg.SNMPVersion))
+	}
 }
 
 // StartTrapSubsystem loads the catalog, creates the shared scheduler
@@ -200,6 +343,16 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 	if cfg.MeanSchedulerInterval <= 0 {
 		log.Printf("trap export: MeanSchedulerInterval <= 0, defaulting to 30s (phase-5 review P12)")
 		cfg.MeanSchedulerInterval = 30 * time.Second
+	}
+	// Validate the USM settings ONCE here rather than per device at attach: the
+	// configuration is fleet-wide, so a missing password is one startup message
+	// instead of one line per device (nl6#98). The per-device construction in
+	// startDeviceTrapExporter re-validates anyway, since it is what turns the
+	// configuration into keys.
+	if cfg.SNMPVersion == TrapSNMPv3 {
+		if err := cfg.SNMPv3.Validate(); err != nil {
+			return err
+		}
 	}
 
 	var catalog *Catalog
@@ -236,8 +389,19 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 	// actually lands in. Disabled, not fatal: the budget follows -datagram-mtu,
 	// and rejecting would make a low MTU refuse to boot on shipped catalogs
 	// (design D2).
+	//
+	// MEASURED AT THE FLEET'S OWN WIRE FORMAT (nl6#98). The check used to
+	// dry-render v2c unconditionally while the fire path encoded whatever
+	// -trap-snmp-version selected; under v3 the USM envelope adds ~91 bytes, so
+	// a budget in the 1000..1090 band left the shipped Ciena optical alarms
+	// enabled at load and failing at every fire, silently. See
+	// notificationSizer.
+	sizer, err := trapDryRenderSizer(cfg)
+	if err != nil {
+		return err
+	}
 	for slug, c := range catalogsByType {
-		for _, msg := range c.ApplySizeBudget(cfg.PDUBudget, slug) {
+		for _, msg := range c.ApplySizeBudgetWith(cfg.PDUBudget, slug, sizer) {
 			log.Printf("trap catalog: %s exceeds the datagram budget and is DISABLED "+
 				"(it will not fire from the scheduler or from link state changes); "+
 				"lower catalog size or raise -datagram-mtu", msg)
@@ -259,11 +423,13 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 	sm.trapCatalog = catalog
 	sm.trapCatalogsByType = catalogsByType
 	// v2c stays a shared zero-size value; v1 needs the per-device agent address
-	// so its encoder is built at ATTACH time instead (nl6#97). Leaving this nil
-	// for v1 would make a missed attach-site branch a nil-pointer panic on the
+	// and v3 the per-device engine identity and localized keys, so both build
+	// their encoder at ATTACH time instead (nl6#97, nl6#98). Leaving this nil
+	// for them would make a missed attach-site branch a nil-pointer panic on the
 	// fire path, so it holds the v2c encoder as a safe stand-in that the attach
 	// site always replaces.
 	sm.trapSNMPVersion = cfg.SNMPVersion
+	sm.trapV3Config = cfg.SNMPv3
 	sm.trapEncoder = SNMPv2cEncoder{}
 	sm.trapLimiter = limiter
 	sm.trapGlobalCap = cfg.GlobalCap
@@ -286,8 +452,15 @@ func (sm *SimulatorManager) StartTrapSubsystem(cfg TrapSubsystemConfig) error {
 	if cfg.CatalogPath != "" {
 		catStr = cfg.CatalogPath
 	}
-	log.Printf("Trap subsystem: ready (cap=%s, catalog=%s, per-device-source=%v) — awaiting per-device config",
-		capStr, catStr, cfg.SourcePerDevice)
+	verStr := cfg.SNMPVersion.String()
+	if cfg.SNMPVersion == TrapSNMPv3 {
+		verStr = fmt.Sprintf("v3 user=%s %s (auth=%s priv=%s; per-device engine ID derived from the "+
+			"device IP, NOT the fleet-wide -snmpv3-engine-id)",
+			cfg.SNMPv3.UserName, cfg.SNMPv3.securityLevel(),
+			usmAuthProtocolName(cfg.SNMPv3.AuthProtocol), usmPrivProtocolName(cfg.SNMPv3.PrivProtocol))
+	}
+	log.Printf("Trap subsystem: ready (version=%s, cap=%s, catalog=%s, per-device-source=%v) — "+
+		"awaiting per-device config", verStr, capStr, catStr, cfg.SourcePerDevice)
 
 	go scheduler.Run(context.Background())
 
@@ -469,6 +642,17 @@ func (sm *SimulatorManager) StopTrapExport() {
 	sm.trapLimiter = nil
 	sm.trapGlobalCap = 0
 	sm.trapSourcePerDevice = false
+	// Clear the USM credentials. Start always overwrites the field, so this is
+	// not about correctness.
+	//
+	// AND IT IS COSMETIC, not a wipe: every device's SNMPv3TrapEncoder still
+	// holds its own copy of the passwords in the SNMPv3Config it was built from,
+	// plus the localized auth and privacy keys, and those encoders outlive this
+	// field — StopTrapExport nils device.trapExporter, so they become
+	// unreachable and are collected whenever the GC gets to them, at no defined
+	// moment. Anyone reasoning about secret lifetime should read that sentence,
+	// not this line.
+	sm.trapV3Config = TrapV3Config{}
 	sm.mu.Unlock()
 }
 
@@ -504,6 +688,7 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	sourcePerDevice := sm.trapSourcePerDevice
 	encoder := sm.trapEncoder
 	snmpVersion := sm.trapSNMPVersion
+	v3Config := sm.trapV3Config
 	limiter := sm.trapLimiter
 	deviceIPStr := device.IP.String()
 	modelLabel := modelLabelForSlug(sm.deviceTypesByIP[deviceIPStr])
@@ -523,10 +708,42 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 		return fmt.Errorf("trap export: SNMPv1 has no InformRequest-PDU, so mode=inform cannot be " +
 			"served while -trap-snmp-version=v1")
 	}
-	// agent-addr is the originating device's own IP, which is why the v1
-	// encoder is per device where the v2c one is shared.
-	if snmpVersion == TrapSNMPv1 {
+	// The v3 twin, for a different reason: an SNMPv3 inform is authoritative at
+	// the RECEIVER, so it needs engine discovery and a per-collector localized
+	// key (nl6#98). Layer two of three — startup refuses the seed flags, this
+	// refuses a REST device under a v3 fleet, and SNMPv3TrapEncoder.EncodeInform
+	// is the fire-time backstop.
+	if snmpVersion == TrapSNMPv3 && mode == TrapModeInform {
+		return fmt.Errorf("trap export: SNMPv3 InformRequest needs an engine-discovery exchange with " +
+			"the collector and a key localized against ITS engine, which nl6 does not implement, so " +
+			"mode=inform cannot be served while -trap-snmp-version=v3")
+	}
+	switch snmpVersion {
+	case TrapSNMPv1:
+		// agent-addr is the originating device's own IP, which is why the v1
+		// encoder is per device where the v2c one is shared.
 		encoder = SNMPv1Encoder{AgentAddr: deviceIPStr}
+	case TrapSNMPv3:
+		// Per device for a stronger reason than v1's: the engine identity is
+		// derived from this device's address and the USM keys are localized
+		// against it, so two devices sharing a user and password still key
+		// differently. Construction is where the 1 MB password-to-key step
+		// would land, and it does not: usmPasswordToKey is cached fleet-wide,
+		// so this costs one short localization hash per key (nl6#624's split).
+		v3enc, err := NewSNMPv3TrapEncoder(device.IP, v3Config)
+		if err != nil {
+			return err
+		}
+		encoder = v3enc
+	case TrapSNMPv2c:
+		// The shared stateless encoder published at StartTrapSubsystem.
+	default:
+		// NOT a fall-through to v2c. `encoder` still holds the v2c stand-in
+		// StartTrapSubsystem published, so an unhandled version would attach a
+		// device that silently emits the wrong wire format — the one failure
+		// this branch structure exists to prevent.
+		return fmt.Errorf("trap export: unrecognised SNMP notification version %s; refusing to "+
+			"attach %s rather than fall back to the SNMPv2c encoder", snmpVersion, deviceIPStr)
 	}
 
 	collectorAddr, err := net.ResolveUDPAddr("udp4", cfg.Collector)
@@ -715,6 +932,18 @@ func (sm *SimulatorManager) GetTrapStatus() TrapStatus {
 	sm.mu.RLock()
 	limiter := sm.trapLimiter
 	status := TrapStatus{SubsystemActive: sm.trapScheduler.Load() != nil}
+	if status.SubsystemActive {
+		status.SNMPVersion = sm.trapSNMPVersion.String()
+		if sm.trapSNMPVersion == TrapSNMPv3 {
+			status.SNMPv3 = &TrapV3Status{
+				UserName:       sm.trapV3Config.UserName,
+				SecurityLevel:  sm.trapV3Config.securityLevel(),
+				AuthProtocol:   usmAuthProtocolName(sm.trapV3Config.AuthProtocol),
+				PrivProtocol:   usmPrivProtocolName(sm.trapV3Config.PrivProtocol),
+				EngineIDFormat: snmpv3TrapEngineIDFormat,
+			}
+		}
+	}
 
 	if len(sm.trapCatalogsByType) > 0 {
 		status.CatalogsByType = make(map[string]CatalogSourceInfo, len(sm.trapCatalogsByType))
@@ -741,6 +970,18 @@ func (sm *SimulatorManager) GetTrapStatus() TrapStatus {
 			agg[key] = rec
 		}
 		rec.Devices++
+		// The derived engine identity, read from the device's OWN encoder
+		// rather than recomputed here: a recomputation that agreed on the day
+		// it was written is how trap_catalog.go's validateDottedOID drifted
+		// from the encoder (nl6#539).
+		if status.SNMPv3 != nil {
+			if v3enc, ok := te.encoder.(*SNMPv3TrapEncoder); ok {
+				if status.SNMPv3.EngineIDsByDevice == nil {
+					status.SNMPv3.EngineIDsByDevice = make(map[string]string)
+				}
+				status.SNMPv3.EngineIDsByDevice[d.IP.String()] = hex.EncodeToString(v3enc.EngineID())
+			}
+		}
 		st := te.Stats()
 		rec.Sent += st.Sent.Load()
 		rec.SendFailures += st.SendFailures.Load()

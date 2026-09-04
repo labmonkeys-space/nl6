@@ -522,11 +522,16 @@ type SimulatorManager struct {
 	// startup. Key `_universal` holds the universal catalog; other keys
 	// are device-type slugs (e.g., "cisco_ios"). `trapCatalog` remains
 	// as a legacy alias for the fallback.
-	trapCatalog         *Catalog
-	trapCatalogsByType  map[string]*Catalog
-	trapScheduler       atomic.Pointer[TrapScheduler] // lock-free read so device.Stop can deregister without taking sm.mu
-	trapEncoder         TrapEncoder
-	trapSNMPVersion     TrapSNMPVersion
+	trapCatalog        *Catalog
+	trapCatalogsByType map[string]*Catalog
+	trapScheduler      atomic.Pointer[TrapScheduler] // lock-free read so device.Stop can deregister without taking sm.mu
+	trapEncoder        TrapEncoder
+	trapSNMPVersion    TrapSNMPVersion
+	// trapV3Config carries the -trap-snmpv3-* USM settings, read at attach
+	// time only when trapSNMPVersion is TrapSNMPv3 (nl6#98). It holds no engine
+	// ID: each device derives its own from its address, so the identity cannot
+	// be shared across the fleet.
+	trapV3Config        TrapV3Config
 	trapLimiter         *rate.Limiter // shared global cap (nil = unlimited)
 	trapConns           sync.Map      // key: string collector, value: *net.UDPConn (shared-socket fallback pool, TRAP mode only)
 	trapAggregates      sync.Map      // key: trapAggKey, value: *trapCollectorAggregate — monotonic counters surviving device delete

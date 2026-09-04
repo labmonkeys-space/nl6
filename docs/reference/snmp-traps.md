@@ -1,8 +1,9 @@
 # SNMP trap / INFORM reference
 
-nl6 emits **SNMPv2c** notifications only. The PDU encoder in
-`go/nl6/trap_v2c.go` handles TRAPs and INFORMs; SNMPv1 traps and SNMPv3
-notifications are deferred and tracked as follow-up work. This page covers
+nl6 emits notifications in **all three SNMP versions**, one per fleet, selected
+with `-trap-snmp-version`: SNMPv2c (default, `go/nl6/trap_v2c.go`), SNMPv1
+Trap-PDUs (`go/nl6/trap_v1.go`), and SNMPv3 with RFC 3414 USM authentication and
+privacy (`go/nl6/trap_v3.go`). INFORM is SNMPv2c only. This page covers
 the wire format, the JSON catalog schema, the HTTP endpoints, and the status
 JSON shape. For enabling the feature, CLI flags, and troubleshooting see
 [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and
@@ -10,14 +11,18 @@ JSON shape. For enabling the feature, CLI flags, and troubleshooting see
 
 ## Scope and security posture
 
-Traps are always emitted as **SNMPv2c** regardless of whether the
-simulator's polling side is configured with `-snmpv3-engine-id` — the
-two paths are independent. An operator polling the simulator over SNMPv3
-still sees v2c community-authenticated traps on port 162. (Those polls are
-not authenticated either: nl6's USM authentication is unimplemented, see
-[nl6#624](https://github.com/labmonkeys-space/nl6/issues/624).)
+**The notification path and the polling path are configured independently.**
+`-snmpv3-engine-id` and the `-snmpv3-*` flags configure the device's *polling*
+engine; `-trap-snmp-version` and the `-trap-snmpv3-*` flags configure what it
+*sends*. A fleet can poll over SNMPv3 and emit v2c traps, or the reverse.
 
-The SNMPv2c community string (`-trap-community`, default `public`) rides
+Polls over SNMPv3 are authenticated: nl6's USM implementation is RFC 3414
+conformant and verified against net-snmp
+([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)).
+
+Under `-trap-snmp-version v2c` (the default) or `v1`, notifications carry no
+authentication at all. The SNMPv2c community string (`-trap-community`, default
+`public`) rides
 in the clear on every trap and inform. This is a property of SNMPv2c
 itself, not a simulator choice, and matches how the simulator's polling
 side treats v2c. Do not select a production-like community secret — the
@@ -32,8 +37,10 @@ confidential data.
 - **Per-device `TrapExporter`** (`trap_exporter.go`) owns the device's UDP
   socket, request-id counter, pending-inform map, and stats.
 - **Shared `TrapEncoder` interface** (`trap_v2c.go`) — narrow surface
-  (`EncodeTrap`, `EncodeInform`, `ParseAck`) so SNMPv1 and SNMPv3 encoders
-  can layer in later without changing the scheduler or exporter.
+  (`EncodeTrap`, `EncodeInform`, `ParseAck`). The SNMPv1 and SNMPv3 encoders
+  implement it without changing the scheduler or exporter; each ignores the
+  argument its wire format has no field for (v1 the request-id, v3 the
+  community).
 - **Embedded catalog** loaded via `go:embed` from
   `resources/_common/traps.json` at startup — no filesystem dependency
   for the out-of-box experience. `-trap-catalog <path>` replaces the
@@ -66,6 +73,15 @@ The PDU envelope is one of three ASN.1 tags:
 | `0xA6` | InformRequest-PDU | simulator → collector | `-trap-mode inform` |
 | `0xA2` | GetResponse-PDU | collector → simulator | INFORM acknowledgement |
 | `0xA4` | Trap-PDU (SNMPv1) | simulator → collector | `-trap-snmp-version v1` |
+
+Inside each PDU: `request-id` (INTEGER), `error-status` (INTEGER, always 0
+on emission), `error-index` (INTEGER, always 0), and a variable-bindings
+SEQUENCE.
+
+Under `-trap-snmp-version v3` the `data` field is the **same `0xA7`
+SNMPv2-Trap-PDU**, and it is the top-level shape that changes: `community` is
+gone and the PDU travels inside a ScopedPDU and a USM envelope. See
+[SNMPv3 notifications](#snmpv3-notifications).
 
 ## SNMPv1 traps
 
@@ -109,9 +125,187 @@ real device does; it is not a mapping defect.
 
 [RFC 3584]: https://www.rfc-editor.org/rfc/rfc3584.txt
 
-Inside each PDU: `request-id` (INTEGER), `error-status` (INTEGER, always 0
-on emission), `error-index` (INTEGER, always 0), and a variable-bindings
-SEQUENCE.
+## SNMPv3 notifications
+
+`-trap-snmp-version v3` switches the whole fleet to RFC 3414 USM-secured
+notifications, for exercising a collector's SNMPv3 trap path. The default is
+`v2c` and is unchanged.
+
+**The PDU is identical to v2c**, `0xA7` and all three auto-prepended varbinds
+included. Only what wraps it changes:
+
+| Layer | v2c | v3 |
+|-------|-----|-----|
+| outer | `version` + `community` + PDU | `version` + `msgGlobalData` + `msgSecurityParameters` + ScopedPDU |
+| authentication | community string, in the clear | HMAC-MD5-96 or HMAC-SHA-96 over the whole message |
+| confidentiality | none | CBC-DES or CFB-AES128 over the ScopedPDU |
+| context | none | `contextEngineID` = the device's own engine ID, default (empty) context name |
+
+`-trap-community` is ignored under v3: there is no community string anywhere in
+an SNMPv3 message. nl6 says so at startup if you set it explicitly.
+
+:::danger The USM passwords are on the command line
+
+`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the **first
+secrets nl6 accepts as CLI flags** — the polling side deliberately has none. A
+command line is not private: it is visible to every user on the host through
+`ps`, readable at `/proc/<pid>/cmdline`, recorded in your shell history, and
+echoed verbatim by `docker inspect` and `kubectl describe pod`.
+
+Treat these as test credentials for a lab collector. Do not reuse a password
+that protects anything else. An environment-variable or file form is recorded as
+follow-up work; until it exists there is no way to pass these privately.
+:::
+
+### Every device is its own SNMP engine
+
+**The engine ID is derived from the device's IPv4 address and is not
+configurable.** It is an RFC 3411 §5 format-3 (MAC address) identity, 11 octets:
+
+```
+80 00 7E D9 | 03 | 02 42 aa bb cc dd
+ PEN 32473  |fmt |  the device's own MAC
+```
+
+PEN 32473 is [RFC 5612]'s documentation number, held by IANA — nl6 has no PEN of
+its own and claims nobody else's, the same call
+[nl6#588](https://github.com/labmonkeys-space/nl6/issues/588) made for
+`sysObjectID`. The MAC is the device's synthesized chassis ID, the same value
+`{{.ChassisID}}` renders and the LLDP provider advertises, so the engine
+identity is the identity the device already asserts elsewhere.
+
+Deriving it is what makes **two devices sharing a user and password localize
+different keys** — RFC 3414 localization is `H(Ku || engineID || Ku)`. A
+configured, fleet-wide engine ID would give every simulated device the same
+notification identity and the same key.
+
+A device whose address is not IPv4 is **refused at attach** rather than falling
+back to a default engine ID, for the same reason.
+
+:::warning A polled device and a trap from it report different engine IDs
+
+This looks like a bug and is not. The polling engine's ID is fleet-wide
+(`-snmpv3-engine-id`), while a notification originator is authoritative for its
+own engine (RFC 3414 §2.1) and supplies its own `msgAuthoritativeEngineID`,
+`msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime`. There is no
+discovery on the trap path and nothing to echo.
+
+:::
+
+`msgAuthoritativeEngineTime` is seconds since **that device's engine** booted,
+not a Unix epoch, so a collector applying RFC 3414 §3.2's 150-second window
+accepts it.
+
+### Configuring a receiver
+
+`snmptrapd` needs the engine ID up front, because a trap carries no discovery
+exchange for it to learn one from:
+
+```
+disableAuthorization yes
+createUser -e 0x80007ed90302420a2a0009 trapuser SHA "authpass" AES "privpass"
+authUser log trapuser priv
+```
+
+`0x80007ed9 03 0242<ip-in-hex>` is the device's derived engine ID: for
+`10.42.0.9` that is `0a2a0009`. You do not have to compute it —
+`GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every
+exporting device, along with the user name, security level and protocols.
+
+:::warning `createUser` is consumed on first read
+
+net-snmp **rewrites its own config**: on startup `snmptrapd` moves each
+`createUser` line into its persistent store (`/var/lib/snmp/snmptrapd.conf` by
+default) and deletes it from yours. A second run with a corrected password
+therefore keeps the **stale** user and silently drops every trap.
+
+Point the daemon at a scratch directory while you are iterating, and clear it
+between attempts:
+
+```bash
+export SNMP_PERSISTENT_DIR=/tmp/nl6-trapd
+rm -rf "$SNMP_PERSISTENT_DIR" && mkdir -p "$SNMP_PERSISTENT_DIR"
+snmptrapd -f -Lo -On -C -c ./snmptrapd.conf udp:127.0.0.1:1162
+```
+
+`-C -c` makes it read only your file, so a host `/etc/snmp/snmptrapd.conf`
+cannot change the result, and `-On` prints numeric OIDs so no MIBs are needed.
+nl6's own interop test does exactly this.
+:::
+
+### Restart resets every engine, and traps have no discovery
+
+`msgAuthoritativeEngineBoots` is **always 1** and is not persisted across a
+restart, while `msgAuthoritativeEngineTime` restarts from 0.
+
+On the **poll** path a manager recovers by re-running discovery. On the **trap**
+path there is no discovery: the receiver keeps whatever `(boots, time)` it last
+saw and applies RFC 3414 §3.2's 150-second window to it. So after nl6 restarts,
+a collector that cached `(boots=1, time=T)` sees notifications claiming
+`(boots=1, time≈0)` and **rejects them as outside the time window** until its own
+estimate ages past T. The trap path is worse than the poll path here precisely
+because it cannot re-synchronise itself.
+
+Two consequences worth planning around: restarting nl6 mid-run can silently
+stop notification delivery to a long-lived collector, and `snmpEngineBoots`
+never increments, so a collector cannot distinguish a restart from a clock
+anomaly. Clear the receiver's persistent USM state (see the warning above) after
+restarting nl6, or wait the window out.
+
+### No SNMPv3 INFORM
+
+An SNMPv3 InformRequest is authoritative at the **receiver** (RFC 3414 §3.1):
+the originator must first discover the *collector's* engine ID, boots and time,
+localize a second key against that engine, and track its time window per
+collector. nl6 has none of that state, so `-trap-snmp-version v3` with
+`-trap-mode inform` is refused at startup, at per-device attach, and at fire —
+never silently downgraded.
+
+### Throughput cost
+
+v3 is the most expensive format per fire, and unavoidably so: it skips the
+allocation-free fast encoder (a v2c-only path by decision, exactly as SNMPv1
+does), adds an HMAC over the whole message, and at `authPriv` adds a cipher pass
+plus 8 bytes of `crypto/rand` salt. Measured on an Apple M1 Max with
+`go test ./nl6/ -bench BenchmarkTrapEncode -benchmem`, four body varbinds:
+
+| Format | allocations / fire | bytes / fire |
+|--------|-------------------:|-------------:|
+| v2c, fast encoder (what a v2c fleet runs) | 33 | 1,232 |
+| v1 | 102 | 3,448 |
+| v2c, reference encoder | 144 | 4,715 |
+| v3 `noAuthNoPriv` | 207 | 6,002 |
+| v3 `authNoPriv` | 215 | 6,754 |
+| v3 `authPriv` (AES128) | 227 | 7,994 |
+| v3 `authPriv` (DES) | 231 | 7,898 |
+
+Roughly **6–7× the allocations of the shipped v2c fast path**, and about 1.5×
+the reference encoder's. Allocation counts are stable across runs and machines,
+which is why the table quotes those and not nanoseconds: on the M1 Max above a
+v3 `authPriv` fire measured 9–12 µs against 2.6–4.6 µs for the v2c fast path,
+but the spread within a single run was wide enough that the ratio is not worth
+quoting as a number. Run the benchmark on the hardware you care about.
+
+Per-device *setup* is cheap and deliberately so: about 0.7 µs and 15
+allocations to build one device's encoder, because RFC 3414 §A.2's
+password-to-key step — a megabyte of hashing — is cached fleet-wide on the
+password, and only the short localization hash is per device. A 30,000-device v3
+fleet therefore pays that megabyte once.
+
+The USM envelope adds **91 bytes** to each shipped notification at
+`authPriv`/SHA1+AES (88–91 across the whole shipped corpus). That matters only
+near the datagram budget: `ciena_waveserver5`'s 39-varbind optical alarms encode
+to 989–1000 bytes under v2c and 1080–1091 under v3, so **a low `-datagram-mtu`
+disables them sooner under v3 than under v2c** — between roughly MTU 1028 and
+1119 they fire on a v2c fleet and are disabled on a v3 one.
+
+The load-time budget check is measured at the fleet's **own** wire format, so
+those entries are named in the startup log with their v3 size and the MTU that
+would admit them, exactly as they are under v2c. (Before nl6#98 that check
+always measured v2c, so a v3 fleet in that band disabled nothing and failed at
+every fire instead.)
+
+[RFC 5612]: https://www.rfc-editor.org/rfc/rfc5612.txt
 
 ### Auto-prepended varbinds
 
@@ -311,6 +505,16 @@ sudo ./nl6 \
   -trap-collector 192.168.1.10:162 \
   -trap-mode inform \
   -trap-inform-timeout 3s -trap-inform-retries 5
+
+# SNMPv3 authPriv notifications. The engine ID is derived per device and is
+# not configurable; -trap-community is ignored. INFORM is not available here.
+sudo ./nl6 \
+  -auto-start-ip 10.0.0.1 -auto-count 100 \
+  -trap-collector 192.168.1.10:162 \
+  -trap-snmp-version v3 \
+  -trap-snmpv3-user trapuser \
+  -trap-snmpv3-auth sha1 -trap-snmpv3-password authpass \
+  -trap-snmpv3-priv aes128 -trap-snmpv3-priv-password privpass
 ```
 
 ### 2. REST body (per-device)
@@ -500,8 +704,8 @@ state transition.
 
 ## CLI flags
 
-The nine `-trap-*` flags are documented with their types, defaults, and
-purposes at
+The `-trap-*` flags — including the five `-trap-snmpv3-*` USM settings — are
+documented with their types, defaults, and purposes at
 [CLI flags → SNMP trap / INFORM export](cli-flags.md#snmp-trap--inform-export-flags).
 
 ## Related
