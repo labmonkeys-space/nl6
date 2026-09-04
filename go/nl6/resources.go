@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -840,14 +841,234 @@ func (sm *SimulatorManager) publishResources(key string, loaded *DeviceResources
 	return loaded
 }
 
+// evictResources drops one cache entry and returns the pointer it held, so the
+// caller can count the devices still serving from it. The third sibling of
+// cachedResources / publishResources under the nl6#555 rule: resourcesCacheMu
+// around the map operation only, and no I/O anywhere near it.
+//
+// EVICT, NEVER MUTATE (nl6#519). The entry is DELETED, not rewritten. Every
+// device built from it holds the pointer and serves from indexes built ON that
+// struct, so writing into it would change what those devices answer mid-walk.
+// After the evict the old set is reachable only through the devices that hold
+// it, and the next load of the key reads the file as it is now.
+func (sm *SimulatorManager) evictResources(key string) (*DeviceResources, bool) {
+	sm.resourcesCacheMu.Lock()
+	defer sm.resourcesCacheMu.Unlock()
+	old, exists := sm.resourcesCache[key]
+	if exists {
+		delete(sm.resourcesCache, key)
+	}
+	return old, exists
+}
+
+// errResourceNotCached is the sentinel a single-key reload is refused with when
+// the profile is SHIPPED but the cache holds nothing under that key — 404 at
+// the REST boundary. It is a refusal and not a silent no-op so a caller cannot
+// believe it evicted something it did not; the message says the next creation
+// loads from disk regardless, which is what the caller actually wanted. A key
+// that is NOT shipped is a different answer (errResourceNotFound, 400): telling
+// a typo'd name "the next creation reads from disk anyway" would be false.
+var errResourceNotCached = errors.New("resource not cached")
+
+// ReloadReport is what a reload answers with. It reports what HAPPENED, not
+// what the caller might infer: the keys that were evicted, per key how many
+// running devices still serve a pre-reload set, and per key whether the profile
+// is still on disk. Those devices keep their set until they are recreated, and
+// the note says so in words — and says what a reload does NOT cover.
+type ReloadReport struct {
+	Evicted              []string        `json:"evicted"`
+	DevicesOnOldSnapshot map[string]int  `json:"devices_on_old_snapshot"`
+	PresentOnDisk        map[string]bool `json:"present_on_disk"`
+	Note                 string          `json:"note"`
+}
+
+// reloadNote is the sentence a caller must read. It states the two limits of
+// a reload: existing devices are untouched, and the trap/syslog catalogs
+// (traps.json / syslog.json, loaded into trapCatalogsByType /
+// syslogCatalogsByType at subsystem start) are OUT OF SCOPE — an edit to one
+// is not reloaded and still needs a restart. Saying so is what keeps a
+// catalog edit followed by a 200 out of the accepted-echoed-ignored family
+// (nl6#445).
+const reloadNote = "existing devices keep the snapshot they were built from until they are " +
+	"recreated; the next device creation of an evicted type reads the profile from disk. " +
+	"Trap and syslog catalogs (traps.json, syslog.json) are NOT reloaded by this endpoint " +
+	"and still need a restart"
+
+// validateResourceFilename is the one allowlist check on a resource file name
+// reaching the filesystem, shared by LoadSpecificResources and ReloadResources
+// so the two cannot drift. Caller data that is wrong, classified with the
+// content faults: 400 at REST. filepath.Base keeps a name with separators in
+// it out of the response body.
+func validateResourceFilename(name string) error {
+	if !resourceFilenameRe.MatchString(name) {
+		return invalidResource(name, "invalid resource file name (expected <device-type>.json, "+
+			"a slug of letters, digits, underscores and hyphens)")
+	}
+	return nil
+}
+
+// resourceIsShipped reports whether a profile exists on disk under either
+// layout, by the SAME stat rule LoadSpecificResources applies: a device-type
+// directory first, then the single file, and a stat error that is not
+// "does not exist" is a fault rather than absence. It does not touch the
+// cache, so it is safe under the gate and outside resourcesCacheMu.
+func resourceIsShipped(filename string) (bool, error) {
+	dirPath := "resources/" + strings.TrimSuffix(filename, ".json")
+	info, err := os.Stat(dirPath)
+	switch {
+	case err == nil && info.IsDir():
+		return true, nil
+	case err != nil && !os.IsNotExist(err):
+		return false, invalidResourceCause(dirPath, err, "cannot stat the device-type directory: %v", err)
+	}
+	_, err = os.Stat("resources/" + filename)
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	}
+	return false, invalidResourceCause("resources/"+filename, err, "cannot stat the resource file: %v", err)
+}
+
+// reloadWalkProbe is nil in production and set only by a test, before a reload
+// starts. It fires after the LAST evict and before the device walk, so a test
+// can stand at the end of the evict loop and ask whether the gate is still
+// held — the same seam shape as createBatchStageProbe, for the same reason: a
+// release moved to right after the TryLock left every value assertion green.
+var reloadWalkProbe func()
+
+// ReloadResources evicts one cached device profile (resourceFile set) or every
+// cached one (resourceFile empty), so that the NEXT device creation reads the
+// profile from disk. It never mutates a cached set (nl6#519).
+//
+// It takes createBatchGate, the one-batch-at-a-time mutex of nl6#565, and
+// refuses with errCreateBatchInProgress (409) when a batch holds it. That is
+// what makes the evict CORRECT rather than merely race-free: every
+// LoadSpecificResources call runs inside a gated batch, and publishResources
+// keeps whichever entry is present when it re-checks under the write lock. An
+// evict that raced an in-flight load would therefore clear the slot and then
+// watch that load re-publish the OLD file's contents into it. Holding the gate
+// means no load is in flight, so the ordering hazard is impossible rather than
+// defended against. Fail-fast, never queued, for nl6#565's reasons.
+//
+// The gate is held DIRECTLY, not through tryEnterCreateBatch: that helper
+// publishes a createBatchInfo, and a reload is not a batch — a create refused
+// during the microseconds a reload holds the gate must not be told a
+// "0-device batch" is running. The reload publishes its OWN token
+// (sm.resourceReload) instead, after the TryLock and cleared before the Unlock,
+// so createBatchRefusal names the right holder and GET /api/v1/status shows
+// resource_reload_in_progress while createBatch stays nil.
+//
+// Two locks are taken inside, never together: resourcesCacheMu around the map
+// operation (the nl6#555 rule) and sm.mu.RLock around the device walk. The
+// walk counts by KEY (DeviceSimulator.resourceFile), not by the pointer
+// evicted now: a device built from a set evicted by an EARLIER reload is also
+// on a pre-reload snapshot, and a pointer comparison would miss it once a
+// newer generation had been loaded in between. A device created with no
+// resource_file has an empty resourceFile and is attributed to
+// defaultResourceKey, the key it actually resolved through.
+func (sm *SimulatorManager) ReloadResources(resourceFile string) (ReloadReport, error) {
+	report := ReloadReport{Evicted: []string{}, DevicesOnOldSnapshot: map[string]int{},
+		PresentOnDisk: map[string]bool{}, Note: reloadNote}
+
+	if resourceFile != "" {
+		// Checked BEFORE the gate: caller data that is wrong is a 400 whether
+		// or not a batch runs.
+		if err := validateResourceFilename(resourceFile); err != nil {
+			return report, err
+		}
+	}
+
+	if !sm.createBatchGate.TryLock() {
+		return report, sm.createBatchRefusal()
+	}
+	sm.resourceReload.Store(&resourceReloadInfo{started: time.Now()})
+	defer func() {
+		// Clear BEFORE the unlock, the createBatch discipline.
+		sm.resourceReload.Store(nil)
+		sm.createBatchGate.Unlock()
+	}()
+
+	var keys []string
+	if resourceFile != "" {
+		keys = []string{resourceFile}
+	} else {
+		sm.resourcesCacheMu.RLock()
+		for key := range sm.resourcesCache {
+			keys = append(keys, key)
+		}
+		sm.resourcesCacheMu.RUnlock()
+	}
+	sort.Strings(keys)
+
+	// Stat every key BEFORE evicting anything, so a stat fault aborts with the
+	// cache untouched rather than half-evicted, and so a single-key request
+	// for an unshipped type is refused as such rather than as "not cached".
+	shipped := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		present, err := resourceIsShipped(key)
+		if err != nil {
+			return report, err
+		}
+		shipped[key] = present
+	}
+	if resourceFile != "" {
+		if _, cached := sm.cachedResources(resourceFile); !cached {
+			if !shipped[resourceFile] {
+				return report, notFoundResource(resourceFile, "no such device type %q: no resource directory "+
+					"or single-file resource is shipped for it, and nothing is cached under that name",
+					strings.TrimSuffix(resourceFile, ".json"))
+			}
+			return report, fmt.Errorf("%w: %s is shipped but not in the resource cache, so there is nothing "+
+				"to evict; the next device creation of that type reads the profile from disk anyway",
+				errResourceNotCached, sanitiseResourceName(resourceFile))
+		}
+	}
+
+	for _, key := range keys {
+		if _, exists := sm.evictResources(key); !exists {
+			// Not reachable: the single-key case was checked above and the
+			// all-keys list was read under the gate, so nothing removed a key
+			// in between. Named with key, never resourceFile, which is empty
+			// on the all-keys path.
+			return report, fmt.Errorf("%w: %s left the resource cache during the reload",
+				errResourceNotCached, sanitiseResourceName(key))
+		}
+		report.Evicted = append(report.Evicted, key)
+		report.DevicesOnOldSnapshot[key] = 0
+		report.PresentOnDisk[key] = shipped[key]
+	}
+
+	if reloadWalkProbe != nil {
+		reloadWalkProbe()
+	}
+
+	// Count under sm.mu.RLock: sm.devices is written by device creation (gated
+	// out above) and by deletion (not gated), and reading a map beside a
+	// concurrent delete is a data race. The count is a snapshot: an ungated
+	// DeleteDevice can lower it before the response is read.
+	sm.mu.RLock()
+	for _, device := range sm.devices {
+		key := device.resourceFile
+		if key == "" {
+			key = sm.defaultResourceKey
+		}
+		if _, isEvicted := report.DevicesOnOldSnapshot[key]; isEvicted {
+			report.DevicesOnOldSnapshot[key]++
+		}
+	}
+	sm.mu.RUnlock()
+
+	log.Printf("resources: evicted %d cached profile(s) %v; devices on a pre-reload snapshot: %v; present on disk: %v",
+		len(report.Evicted), report.Evicted, report.DevicesOnOldSnapshot, report.PresentOnDisk)
+	return report, nil
+}
+
 // LoadSpecificResources loads resources from a directory in the resources folder
 func (sm *SimulatorManager) LoadSpecificResources(filename string) (*DeviceResources, error) {
-	if !resourceFilenameRe.MatchString(filename) {
-		// Caller data that is wrong, so it is classified with the content
-		// faults and takes the same 400 at REST. filepath.Base keeps a name
-		// with separators in it out of the response body.
-		return nil, invalidResource(filename, "invalid resource file name (expected <device-type>.json, "+
-			"a slug of letters, digits, underscores and hyphens)")
+	if err := validateResourceFilename(filename); err != nil {
+		return nil, err
 	}
 
 	// Check cache first. See resourcesCacheMu in types.go for the locking

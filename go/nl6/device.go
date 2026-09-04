@@ -131,7 +131,19 @@ func (sm *SimulatorManager) resolveCreateResources(roundRobin bool, category, re
 		return res, nil, nil, nil
 	}
 
-	// Use default resources
+	// No resource_file: the startup default. Resolved THROUGH the cache under
+	// defaultResourceKey (nl6#519), so that a reload covers the profile the
+	// whole -auto-start-ip fleet and every plain REST create serve from, and so
+	// that a create naming "asr9k.json" explicitly and one naming nothing share
+	// ONE object. sm.deviceResources is read only when loadDefaultResources
+	// took the createDefaultResources fallback, which is never in the cache.
+	if sm.defaultResourceKey != "" {
+		res, loadErr := sm.LoadSpecificResources(sm.defaultResourceKey)
+		if loadErr != nil {
+			return nil, nil, nil, fmt.Errorf("failed to load default resource file %s: %w", sm.defaultResourceKey, loadErr)
+		}
+		return res, nil, nil, nil
+	}
 	return sm.deviceResources, nil, nil, nil
 }
 
@@ -236,7 +248,28 @@ func (sm *SimulatorManager) tryEnterCreateBatch(count int) (func(), error) {
 			})
 		}, nil
 	}
+	return func() {}, sm.createBatchRefusal()
+}
 
+// resourceReloadInfo identifies a profile reload holding createBatchGate
+// (nl6#519). Published by ReloadResources after its TryLock and cleared before
+// its Unlock, exactly like createBatchInfo, so a refusal names the holder that
+// is actually in the way.
+type resourceReloadInfo struct {
+	started time.Time
+}
+
+// createBatchRefusal composes the errCreateBatchInProgress error for a caller
+// that found createBatchGate held. Shared by tryEnterCreateBatch and by
+// ReloadResources (nl6#519), which holds the gate without being a batch and so
+// must not go through tryEnterCreateBatch's token publish.
+//
+// THE DIAGNOSIS NAMES THE HOLDER'S KIND. A gate held by a reload is not a
+// batch: there is no IP cursor at stake and nothing to wait minutes for, so
+// telling a colliding create "another batch is running" with the cursor
+// remedy would be a false diagnosis (nl6#519 review). The reload branch is
+// checked SECOND so a real batch is never misreported as a reload.
+func (sm *SimulatorManager) createBatchRefusal() error {
 	const remedy = "retry once it finishes. Device IP allocation is a shared cursor, so a second " +
 		"concurrent batch would hand out overlapping addresses and silently create fewer devices " +
 		"than requested (nl6#565)"
@@ -244,11 +277,16 @@ func (sm *SimulatorManager) tryEnterCreateBatch(count int) (func(), error) {
 	// and its Store, or between its clear and its Unlock. Say less rather than
 	// inventing numbers.
 	if running := sm.createBatch.Load(); running != nil {
-		return func() {}, fmt.Errorf("%w: batch #%d (%d devices, started %s ago) is running; %s",
+		return fmt.Errorf("%w: batch #%d (%d devices, started %s ago) is running; %s",
 			errCreateBatchInProgress, running.id, running.count,
 			time.Since(running.started).Round(time.Millisecond), remedy)
 	}
-	return func() {}, fmt.Errorf("%w: another batch is running; %s", errCreateBatchInProgress, remedy)
+	if reload := sm.resourceReload.Load(); reload != nil {
+		return fmt.Errorf("%w: a profile reload (POST /api/v1/resources/reload, started %s ago) holds "+
+			"the device-creation gate for the duration of its evict; retry in a moment (nl6#519)",
+			errCreateBatchInProgress, time.Since(reload.started).Round(time.Millisecond))
+	}
+	return fmt.Errorf("%w: another holder of the device-creation gate is running; %s", errCreateBatchInProgress, remedy)
 }
 
 // CreateDevicesWithOptions creates devices with optional pre-allocation control.

@@ -309,3 +309,135 @@ func TestConcurrentLoadAndRejection(t *testing.T) {
 		t.Error("the valid type was not cached")
 	}
 }
+
+// Matrix row 4 (nl6#519): the evict is the THIRD sibling of the seam, and it
+// takes the same lock. N goroutines load distinct types while N others evict
+// everything; without resourcesCacheMu around the delete this is a concurrent
+// map write against the publish. A RACE-DETECTOR pin: it fails only under
+// -race (or by the runtime's best-effort concurrent-write throw).
+//
+// The evicts contend for createBatchGate too, so some are refused with the
+// nl6#565 sentinel; that is the contract (a reload borrows the gate, so two
+// reloads exclude each other as well) and not a failure. What must hold is
+// that every load returns its own type's set and every reload that ran left
+// the cache holding only sets that were loaded, never a half-written map.
+//
+// Every contender LOOPS, and the cache is PRE-LOADED. A first cut ran one
+// load and one reload per goroutine from a cold cache, and the lock could be
+// deleted from the evict with the row green three runs out of three: the
+// reloads all ran while the loads were still in their file I/O, found an
+// empty cache, and deleted nothing — so no delete ever overlapped a publish
+// and the detector had nothing to pair (the nl6#556 lesson, again).
+func TestConcurrentEvictAndLoad(t *testing.T) {
+	silenceCreateGateLogs(t)
+	sm := classifyFixture(t)
+
+	const (
+		n     = 16
+		loops = 40
+	)
+	// MIXED layouts, so both publish sites race the evict (the nl6#555
+	// lesson: a directory-only row leaves LoadSpecificResources' own write
+	// site pinned by nothing).
+	slugs := make([]string, n)
+	for i := range slugs {
+		if i%2 == 0 {
+			slugs[i] = fmt.Sprintf("evictracedir_%02d", i)
+			writeTypeDir(t, slugs[i])
+		} else {
+			slugs[i] = fmt.Sprintf("evictracefile_%02d", i)
+			writeTypeFile(t, slugs[i])
+		}
+		if _, err := sm.LoadSpecificResources(slugs[i] + ".json"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := make([]*DeviceResources, n)
+	errs := make([]error, n)
+	reloadErrs := make([]error, n)
+	concurrently(2*n, func(i int) {
+		for range loops {
+			if i%2 == 0 {
+				got[i/2], errs[i/2] = sm.LoadSpecificResources(slugs[i/2] + ".json")
+				if errs[i/2] != nil {
+					return
+				}
+			} else {
+				if _, err := sm.ReloadResources(""); err != nil && !errors.Is(err, errCreateBatchInProgress) {
+					reloadErrs[i/2] = err
+					return
+				}
+			}
+		}
+	})
+
+	for i, slug := range slugs {
+		assertLoaded(t, slug, got[i], errs[i])
+	}
+	for i, err := range reloadErrs {
+		if err != nil {
+			t.Errorf("reload %d failed with %v; the only refusal a reload may hear is the batch sentinel", i, err)
+		}
+	}
+	sm.resourcesCacheMu.RLock()
+	defer sm.resourcesCacheMu.RUnlock()
+	for key, cached := range sm.resourcesCache {
+		if cached == nil || len(cached.SNMP) != 1 {
+			t.Errorf("cache holds a half-built set under %s: %+v", key, cached)
+		}
+	}
+}
+
+// Matrix row 5 (nl6#519): the device walk that counts who still holds an
+// evicted set reads sm.devices, which DeleteDevice writes without the batch
+// gate. The walk must run under sm.mu.RLock. A RACE-DETECTOR pin: a spinning
+// goroutine churns the device map under sm.mu.Lock while reloads walk it, and
+// dropping the RLock around the walk is reported deterministically under
+// -race. The churner spins rather than running a bounded loop so it is still
+// writing when the walks happen (the nl6#556 lesson).
+func TestConcurrentReloadAndDeviceChurn(t *testing.T) {
+	silenceCreateGateLogs(t)
+	sm := classifyFixture(t)
+	sm.devices = make(map[string]*DeviceSimulator)
+	writeTypeDir(t, "churn")
+	res, err := sm.LoadSpecificResources("churn.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stop := make(chan struct{})
+	running := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		close(running)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			key := fmt.Sprintf("10.42.%d.%d", (i/256)%256, i%256)
+			sm.mu.Lock()
+			if _, exists := sm.devices[key]; exists {
+				delete(sm.devices, key)
+			} else {
+				sm.devices[key] = &DeviceSimulator{resources: res}
+			}
+			sm.mu.Unlock()
+		}
+	}()
+	<-running
+
+	for i := 0; i < 200; i++ {
+		if _, err := sm.LoadSpecificResources("churn.json"); err != nil {
+			t.Fatalf("load %d: %v", i, err)
+		}
+		if _, err := sm.ReloadResources("churn.json"); err != nil {
+			t.Fatalf("reload %d: %v", i, err)
+		}
+	}
+	close(stop)
+	<-done
+}
