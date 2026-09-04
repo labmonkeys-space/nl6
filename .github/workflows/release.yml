@@ -192,7 +192,7 @@ jobs:
         # Runs `docker run` on a public GHCR image; no registry login is needed
         # (report-0.7.0 verified anonymously pullable), so this job keeps
         # `packages: none`.
-        uses: no42-org/blitsbom@48e615d57bd2a11d808cf52eb9f86bb8e853bee9  # v0.8.0
+        uses: no42-org/blitsbom@0ddd4fd19cc563e3e1c1e27f7be2ffc7225dca65  # v0.8.2
         with:
           sbom: dist/nl6.sbom.spdx.json
           output: dist/nl6.sbom.report.html
