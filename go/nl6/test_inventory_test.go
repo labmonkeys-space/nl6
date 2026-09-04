@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1495
+const minimumTestFunctions = 1512
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 25
@@ -489,6 +489,28 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#590's Arista arc audit reversal, the 6 of 6 result"},
 	{"TestJuniperArcAuditReproducesTheParentCorpus", "snmp_shipped_juniper_arc_ledger_test.go",
 		"nl6#602's Juniper arc audit reversal, 13 of 15 OIDs corrected"},
+
+	// nl6#519's two contract tests. The reload endpoint EVICTS and never mutates;
+	// each of these is the only test that fails under the mutation it names.
+	{"TestReloadedProfileIsServedByTheNextDevice", "resources_reload_test.go",
+		"nl6#519. The evict-not-mutate contract, through a real findResponse on both sides of a " +
+			"reload. Deleting the key AND hot-swapping the old struct's contents from disk left every " +
+			"other test green while every running device of the type changed its answers mid-walk; " +
+			"the pre-reload device's served value here is the only assertion that saw it"},
+	{"TestReloadDuringABatchIs409", "resources_reload_test.go",
+		"nl6#519. The only pin taken INSIDE a real batch that the reload takes createBatchGate. " +
+			"Without the gate an evict racing an in-flight load is undone by publishResources' " +
+			"keep-the-first re-check, which re-caches the OLD file's contents after the evict — " +
+			"a defect no value assertion on a quiet fleet can see"},
+	{"TestReloadHoldsTheGateThroughTheEvictAndRefusesACreate", "resources_reload_test.go",
+		"nl6#519 review. The only pin on the gate's SPAN and on the reload's holder token: an " +
+			"Unlock moved to right after the TryLock, the reload routed through " +
+			"tryEnterCreateBatch(0), and the token left unpublished each passed every other test"},
+	{"TestDefaultProfileResolvesThroughTheCache", "resources_reload_test.go",
+		"nl6#519, renegotiated. The only pin that a create with no resource_file resolves through " +
+			"the cache and shares one object with an explicit asr9k.json; reverting " +
+			"resolveCreateResources to sm.deviceResources takes the whole auto-start fleet out of " +
+			"the reload's reach with every other test green"},
 }
 
 // ── the parse ───────────────────────────────────────────────────────────────

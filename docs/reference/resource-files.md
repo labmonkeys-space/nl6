@@ -1,10 +1,18 @@
 # Resource files
 
 Every device type has a directory under `go/nl6/resources/` containing
-one or more JSON files. At startup, `resources.go` loads and caches every
-`*.json` file in each directory, merging the `snmp`, `ssh`, and (optionally)
-`api` sections. There are currently 379 JSON files across 28 device-type
-directories.
+one or more JSON files. `resources.go` loads and caches a device type the
+first time a device of that type is created (the startup default, `asr9k`, at
+startup), merging the `snmp`, `ssh`, and (optionally) `api` sections of every
+`*.json` file in its directory. There are currently 379 JSON files across 28
+device-type directories.
+
+**Editing a profile on a running simulator.** A cached profile is not re-read
+on its own. `POST /api/v1/resources/reload` evicts the cache so the next device
+creation reads the file as it is now; devices already created keep the set they
+were built from until they are recreated. Trap and syslog catalogs
+(`traps.json`, `syslog.json`) are not covered and still need a restart. See
+[Web API → Reload device profiles](web-api.md#reload-device-profiles).
 
 OIDs in the `snmp` section may be written with or without a leading dot —
 the loader normalises them to the net-snmp convention (`.1.3.6.1…`) at

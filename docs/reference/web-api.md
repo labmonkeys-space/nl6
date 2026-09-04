@@ -16,6 +16,7 @@ management web UI at `/`.
 | `/api/v1/devices/export` | GET | Export device list to CSV. |
 | `/api/v1/devices/routes` | GET | Generate a routing script (Debian/Ubuntu). |
 | `/api/v1/resources` | GET | List available device resource types. |
+| `/api/v1/resources/reload` | POST | Evict cached device profiles so the next creation re-reads them from disk. Existing devices keep their snapshot. `409` during a creation batch. |
 | `/api/v1/status` | GET | Manager status. |
 | `/api/v1/system-stats` | GET | System stats (file descriptors, memory). |
 | `/api/v1/version` | GET | Running simulator version string. Immutable per process; response carries `Cache-Control: max-age=3600`. |
@@ -300,8 +301,9 @@ The response carries `Retry-After: 5`, and a body naming the batch in the way:
 The refusal is fail-fast, not a queue.
 A large batch would otherwise make a small one wait minutes with no feedback, and an HTTP client that times out mid-wait cannot tell whether its batch ran.
 
-**How to wait properly.** `GET /api/v1/status` reports `create_batch_in_progress` (and `create_batch_requested`, the running batch's requested device count).
-That field IS the gate: poll it until it is false, then retry.
+**How to wait properly.** `GET /api/v1/status` reports `create_batch_in_progress` (and `create_batch_requested`, the running batch's requested device count) and `resource_reload_in_progress`.
+The gate is held exactly when either is true: poll both until both are false, then retry.
+The second holder is a [profile reload](#reload-device-profiles), which borrows the same gate for microseconds; a create refused during one is told so in its `409` body rather than told a batch is running.
 `is_creating_devices` is a proxy, not the gate — it is published just after the gate is taken and cleared just before it is released, so it can read `false` while a create would still be refused.
 `Retry-After` is a fixed, deliberately short 5 seconds; the handler has no way to estimate the remaining work of a batch whose rate it does not know.
 
@@ -316,7 +318,7 @@ The shipped clients behave as follows, and a client of your own should do the fi
 - `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). This is what keeps `compose up`'s bootstrapper working with `-auto-start-ip` set.
 - The web console's Clos-fabric wizard does **not** retry. Its per-tier POSTs are sequential, so it never conflicts with itself, but a `409` from another batch (an auto-start batch, another operator, a script) aborts it and leaves a **half-built fabric** — the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe: existing addresses are absorbed as successes.
 
-**What "one batch at a time" does and does not cover.** It excludes one creation batch from another creation batch, and nothing more.
+**What "one batch at a time" does and does not cover.** It excludes one creation batch from another creation batch, and from a profile reload, and nothing more.
 Three paths still mutate creation state without holding the gate, all pre-existing: a previous batch's **detached pre-allocation workers** (the pre-allocator's 5-minute timeout returns while its workers keep writing the interface pool), `DELETE /api/v1/devices` (which clears the device and interface maps), and shutdown.
 So a create that overlaps a delete-all, or that follows a batch which timed out in pre-allocation, is not protected by this gate.
 
@@ -325,7 +327,7 @@ When no batch is in flight, nothing about a single batch changes, the `400` and 
 
 **One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](loadtest-scenarios.md) documents it as a `409`.
 That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
-Today `409` on this endpoint means a concurrent creation batch and nothing else.
+Today `409` on this endpoint means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
 ### `resource_file` failures
 
@@ -650,6 +652,62 @@ still reports them as present. `location` is omitted when empty.
 
 Note: locations are assigned **randomly per device**, so a deployed fabric is
 geographically scattered rather than clustered by site.
+
+## Reload device profiles
+
+`POST /api/v1/resources/reload` makes an edited profile under `resources/` take effect without a restart (nl6#519).
+It **evicts** cached profiles; it never rewrites one.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/resources/reload                # every cached profile
+curl -X POST http://localhost:8080/api/v1/resources/reload \
+  -H 'Content-Type: application/json' -d '{"resource_file":"cisco_ios.json"}'   # one profile
+```
+
+```json
+// 200 response .data
+{
+  "evicted": ["cisco_ios.json"],
+  "devices_on_old_snapshot": {"cisco_ios.json": 40},
+  "present_on_disk": {"cisco_ios.json": true},
+  "note": "existing devices keep the snapshot they were built from until they are recreated; the next device creation of an evicted type reads the profile from disk. Trap and syslog catalogs (traps.json, syslog.json) are NOT reloaded by this endpoint and still need a restart"
+}
+```
+
+**What a reload does and does not change.** A profile is read from disk the first time a device of that type is created and cached.
+Every device built from it holds a pointer to that cached set and serves from indexes built on it, so rewriting the set in place would change what 30,000 devices answer mid-walk.
+A reload therefore drops the cache entry and nothing else: a device created **before** the reload serves exactly what it served before, and a device created **after** it serves the file as it is now.
+`devices_on_old_snapshot` counts, per evicted key, how many running devices still serve a pre-reload set (any earlier generation, not only the one evicted now).
+It is a snapshot taken under the gate: `DELETE /api/v1/devices/{id}` is not gated, so the number can already be lower by the time the response is read.
+To move devices onto the edited profile, delete and recreate them.
+`present_on_disk` says whether the profile still exists on disk at the time of the reload, so a renamed or removed directory is reported now rather than at the next create.
+
+**The default profile is covered.** The profile a device gets with no `resource_file` (`asr9k`, the same one the whole `-auto-start-ip` fleet serves) is read from `resources/asr9k/` at startup through the same cache under the key `asr9k.json`, so a device created with `"resource_file":"asr9k.json"` and one created without it share one object, and reloading `asr9k.json` covers both.
+Devices created without a `resource_file` are counted under that key.
+The only default that stays outside the cache is the compiled-in one the simulator synthesises when no `asr9k` directory or file exists at all.
+
+**Not reloaded: trap and syslog catalogs.** `resources/<type>/traps.json` and `syslog.json` are loaded when the trap and syslog subsystems start and are never re-read.
+Editing one and calling this endpoint gets a `200` that evicts the profile and leaves the catalog as it was; the `note` says so.
+A catalog edit still needs a restart.
+
+The workflow for verifying a profile fix is: edit the file, `POST /resources/reload`, then `POST /devices` for the type.
+A profile that fails to load after the edit is answered by that create with the usual `400` (see [`resource_file` failures](#resource_file-failures)); a rejection is never cached, so fixing the file and creating again needs no second reload.
+
+| Status | When |
+|--------|------|
+| `200` | Evicted. `evicted` lists the keys as `<slug>.json`, sorted; with nothing cached it is `[]`. |
+| `400` | Malformed JSON, an unknown field, an explicitly empty `resource_file` (omit the field to mean "all"), a `resource_file` that is not a device-type slug, or one naming a type that is **not shipped** (no directory or file under `resources/`). |
+| `404` | `resource_file` names a type that is shipped but not cached, because no device of it has been created since startup or since the last reload. Not a silent no-op: the body names the key and says the next creation reads from disk regardless. |
+| `409` | A device-creation batch, or another reload, holds the gate. Same `Retry-After: 5` and body as the [create endpoint's `409`](#one-creation-batch-at-a-time-409). |
+| `413` | The body exceeds 4 KiB. |
+
+**Why a reload is refused during a batch.** Every profile load runs inside a creation batch, and the cache keeps the **first** entry published for a key (two goroutines may both miss and both load; only one set is retained).
+An evict that raced a load already in flight would clear the slot and then watch that load publish the *old* file's contents into it.
+The reload takes the same one-batch-at-a-time gate as creation, so that ordering cannot happen.
+It is fail-fast, never queued, for the reasons given for the create endpoint; poll `create_batch_in_progress` and `resource_reload_in_progress` on `GET /api/v1/status` and retry.
+While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true` and `create_batch_in_progress: false`, and a create refused in that window is told a reload holds the gate, not that a batch is running.
+
+There is no file watcher. Reload is explicit.
 
 ## Export to CSV
 

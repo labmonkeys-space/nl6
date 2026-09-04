@@ -324,9 +324,19 @@ type SimulatorManager struct {
 	// the cursor a reservation: createBatchGate admits one batch at a time, held
 	// across the reservation AND the IP walk, and a second concurrent
 	// POST /api/v1/devices is answered 409 Conflict.
-	currentIP       net.IP
-	nextTunIndex    int
-	deviceResources *DeviceResources
+	currentIP    net.IP
+	nextTunIndex int
+	// deviceResources is the set loaded at startup by loadDefaultResources. It
+	// is NOT compiled-in: it is resources/asr9k/ read from disk (nl6#519
+	// corrected the docs that said otherwise). Since nl6#519 a create with no
+	// resource_file resolves THROUGH resourcesCache under defaultResourceKey,
+	// so a reload covers the default profile; this field is read by
+	// resolveCreateResources only when defaultResourceKey is empty, which is
+	// the createDefaultResources fallback (compiled-in constants written when
+	// no asr9k directory or file exists) — the one default that stays out of
+	// the cache.
+	deviceResources    *DeviceResources
+	defaultResourceKey string
 	// resourcesCache is read and written by LoadSpecificResources, which runs
 	// on the net/http handler goroutine via resolveCreateResources — two
 	// concurrent POST /api/v1/devices naming different device types are a
@@ -334,10 +344,13 @@ type SimulatorManager struct {
 	// recover() cannot catch: it kills the process, not the request (nl6#555).
 	//
 	// CANONICAL LOCKING RULE for this field. resourcesCacheMu is held around
-	// the map operations ONLY, in cachedResources and publishResources, both
-	// of which defer the unlock. It is never held across os.Stat, os.ReadDir,
-	// os.Open, json.Decode, checkSingleDocument, validateSNMPResourceValues,
-	// validateOpticalInventory or buildResourceIndexes.
+	// the map operations ONLY, in cachedResources, publishResources and
+	// evictResources (the third sibling, nl6#519), all of which defer the
+	// unlock. It is never held across os.Stat, os.ReadDir, os.Open,
+	// json.Decode, checkSingleDocument, validateSNMPResourceValues,
+	// validateOpticalInventory or buildResourceIndexes. ReloadResources reads
+	// the key set under it and evicts under it, and does its own os.Stat and
+	// its device walk OUTSIDE it.
 	//
 	// Not for throughput: a round-robin batch already loads its types in a
 	// sequential loop in resolveCreateResources, and each type loads once per
@@ -421,14 +434,24 @@ type SimulatorManager struct {
 	// entry, so two batches can both observe false. The gate sits ABOVE the
 	// freeze check and does not reorder the FR35/FR38 interlock.
 	// SCOPE, stated because the docs claimed more than this once: the gate
-	// excludes one BATCH from another batch. It does NOT exclude a batch from
+	// excludes one BATCH from another batch, and from a profile RELOAD, which
+	// borrows it for its evict and publishes resourceReload below (nl6#519).
+	// It does NOT exclude a batch from
 	// the paths that mutate the same state outside it — a previous batch's
 	// DETACHED pre-allocation stragglers (prealloc.go's 5-minute timeout returns
 	// while its workers keep writing tunInterfacePool), DeleteAllDevices, and
 	// Shutdown / CleanupPreAllocatedInterfaces. See the CLAUDE.md paragraph.
-	createBatchGate      sync.Mutex
-	createBatchSeq       atomic.Int64
-	createBatch          atomic.Pointer[createBatchInfo]
+	createBatchGate sync.Mutex
+	createBatchSeq  atomic.Int64
+	createBatch     atomic.Pointer[createBatchInfo]
+	// resourceReload is the SECOND kind of holder of createBatchGate (nl6#519):
+	// a profile reload borrows the gate for its evict and is not a batch, so
+	// it publishes here rather than in createBatch — a create refused during a
+	// reload must be told a reload holds the gate, not that a "0-device batch"
+	// is running, and GET /api/v1/status reports it as
+	// resource_reload_in_progress. Same discipline as createBatch: stored
+	// after the TryLock, cleared before the Unlock.
+	resourceReload       atomic.Pointer[resourceReloadInfo]
 	isCreatingDevices    atomic.Value // bool - STATUS FLAG (UI + freeze interlock), never an exclusion primitive; see createBatchGate
 	deviceCreateProgress atomic.Value // int - number of devices created so far
 	deviceCreateTotal    atomic.Value // int - total number of devices to create
@@ -840,16 +863,21 @@ type ManagerStatus struct {
 	// thing — it is published after the gate is taken and cleared before it is
 	// released, so it is a proxy that can read false while the gate is held.
 	// CreateBatchRequested is that batch's requested device count, 0 when idle.
-	CreateBatchInProgress bool `json:"create_batch_in_progress"`
-	CreateBatchRequested  int  `json:"create_batch_requested"`
-	IsPreAllocating       bool `json:"is_pre_allocating"`
-	PreAllocProgress      int  `json:"pre_alloc_progress"`
-	PreAllocTotal         int  `json:"pre_alloc_total"`
-	IsCreatingDevices     bool `json:"is_creating_devices"`
-	DeviceCreateProgress  int  `json:"device_create_progress"`
-	DeviceCreateTotal     int  `json:"device_create_total"`
-	TotalDevices          int  `json:"total_devices"`
-	RunningDevices        int  `json:"running_devices"`
+	//
+	// ResourceReloadInProgress is the OTHER holder of the same gate (nl6#519):
+	// a profile reload borrows it for its evict. The gate is held exactly when
+	// either flag is true, so a 409'd client polls both.
+	CreateBatchInProgress    bool `json:"create_batch_in_progress"`
+	CreateBatchRequested     int  `json:"create_batch_requested"`
+	ResourceReloadInProgress bool `json:"resource_reload_in_progress"`
+	IsPreAllocating          bool `json:"is_pre_allocating"`
+	PreAllocProgress         int  `json:"pre_alloc_progress"`
+	PreAllocTotal            int  `json:"pre_alloc_total"`
+	IsCreatingDevices        bool `json:"is_creating_devices"`
+	DeviceCreateProgress     int  `json:"device_create_progress"`
+	DeviceCreateTotal        int  `json:"device_create_total"`
+	TotalDevices             int  `json:"total_devices"`
+	RunningDevices           int  `json:"running_devices"`
 }
 
 // FlowStatus is the JSON body returned by GET /api/v1/flows/status.

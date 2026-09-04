@@ -662,6 +662,9 @@ func setupRoutes() *mux.Router {
 	api.HandleFunc("/devices/{id}", deleteDeviceHandler).Methods("DELETE")
 	api.HandleFunc("/devices", deleteAllDevicesHandler).Methods("DELETE")
 	api.HandleFunc("/resources", listResourcesHandler).Methods("GET")
+	// Evicts cached device profiles so the next creation re-reads them; never
+	// mutates what a running device serves (nl6#519).
+	api.HandleFunc("/resources/reload", reloadResourcesHandler).Methods("POST")
 	api.HandleFunc("/status", statusHandler).Methods("GET")
 	api.HandleFunc("/system-stats", systemStatsHandler).Methods("GET")
 	api.HandleFunc("/version", versionHandler).Methods("GET")

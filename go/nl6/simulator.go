@@ -774,8 +774,32 @@ func main() {
 //
 // It returns the error rather than calling log.Fatalf itself so the decision
 // is reachable from a test; main turns a non-nil return into log.Fatalf.
+//
+// THE DEFAULT GOES THROUGH THE CACHE (nl6#519). asr9k is loaded with
+// LoadSpecificResources under the key "asr9k.json", the same key a REST create
+// naming it explicitly uses, and defaultResourceKey records it so a create with
+// no resource_file resolves through the cache too. That is what lets
+// POST /api/v1/resources/reload cover the profile the whole -auto-start-ip
+// fleet serves from. Only the ABSENT arm stays outside the cache: when neither
+// resources/asr9k/ nor resources/asr9k.json exists, LoadResources synthesises
+// the compiled-in default file and publishes sm.deviceResources directly, and
+// the cisco_ios arm behind it is reached only when that write fails.
 func loadDefaultResources(sm *SimulatorManager) error {
-	err := sm.LoadResources("resources/asr9k.json")
+	res, err := sm.LoadSpecificResources(defaultResourceFile)
+	if err == nil {
+		sm.deviceResources = res
+		sm.defaultResourceKey = defaultResourceFile
+		return nil
+	}
+	if !errors.Is(err, errResourceNotFound) {
+		return fmt.Errorf("failed to load ASR9K resources: %w", err)
+	}
+
+	// Absent: synthesise the compiled-in default. LoadResources' single-file
+	// arm writes resources/asr9k.json and publishes sm.deviceResources; it
+	// caches nothing, and defaultResourceKey stays empty so creates read
+	// sm.deviceResources directly.
+	err = sm.LoadResources("resources/" + defaultResourceFile)
 	if err == nil {
 		return nil
 	}
@@ -784,8 +808,19 @@ func loadDefaultResources(sm *SimulatorManager) error {
 	}
 	log.Printf("Failed to load ASR9K resources: %v", err)
 	log.Println("Trying to load default Cisco IOS resources...")
-	if err := sm.LoadResources("resources/cisco_ios.json"); err != nil {
+	res, err = sm.LoadSpecificResources(fallbackResourceFile)
+	if err != nil {
 		return fmt.Errorf("failed to load any resources: %w", err)
 	}
+	sm.deviceResources = res
+	sm.defaultResourceKey = fallbackResourceFile
 	return nil
 }
+
+// defaultResourceFile is the cache key of the startup default profile, and
+// fallbackResourceFile the one tried when it is absent and cannot be
+// synthesised. Both are keys in the LoadSpecificResources spelling.
+const (
+	defaultResourceFile  = "asr9k.json"
+	fallbackResourceFile = "cisco_ios.json"
+)
