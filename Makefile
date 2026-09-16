@@ -72,6 +72,7 @@ UNAME_S := $(shell uname -s)
 .PHONY: all build reconcile run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
+        check-release-integrity check-release-integrity-test \
         tools-quality fmt-check lint vuln sec lint-actions check-check-run-names quality
 
 all: build
@@ -581,6 +582,14 @@ docs-check-csp: check-node
 # rather than on the commit, so it can change without anyone touching the repo.
 docs-audit-overrides: check-node
 	node scripts/check-npm-overrides.mjs
+
+## check-release-integrity: Reconcile version tags against published releases (read-only; --dry-run touches no issue)
+check-release-integrity: check-node
+	node scripts/check-release-integrity.mjs --dry-run
+
+## check-release-integrity-test: Unit-test the reconciliation (no network)
+check-release-integrity-test: check-node
+	node scripts/check-release-integrity.test.mjs
 
 ## docs-clean: Remove built docs artefacts and installed Node dependencies
 docs-clean:

@@ -86,7 +86,11 @@ jobs:
           fi
           if [ "$nixver" != "$tag" ]; then
             echo "Nix version drift: package.nix is '$nixver', tag is '$tag'."
-            echo "Bump 'version ? \"...\"' in deploy/packages/nix/package.nix (see RELEASING.md) and re-tag."
+            echo "Fix with:  make set-nix-version APP_VERSION=${GITHUB_REF_NAME}"
+            echo "then commit deploy/packages/nix/package.nix, merge, and re-tag on the"
+            echo "bump commit (see RELEASING.md). NOTE: this failure SKIPS the publish"
+            echo "jobs, so the tag exists with no release behind it — delete the tag"
+            echo "rather than leaving it, or release-integrity.yml will report it."
             exit 1
           fi
           echo "Nix version OK: $nixver"

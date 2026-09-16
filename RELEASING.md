@@ -42,6 +42,29 @@ Values that used to drift between releases are now derived at build time:
 
 The checklist below covers only what a human still has to decide or verify.
 
+## When a tag produces no release
+
+A tag push that fails a quality gate **skips** the publish jobs, so no GitHub
+Release, image or artifact is created. The tag still exists, and
+`https://github.com/labmonkeys-space/nl6/releases/tag/<tag>` renders a
+normal-looking page for it — a tag page and a release page are hard to tell
+apart at a glance. The Releases *list* only shows release objects, so the
+failed tag simply never appears there, and `git describe --tags` on a fresh
+clone reports it as the latest version. Three tags (`v0.28.1`, `v0.29.1`,
+`v0.29.2`) sat in that state for up to two weeks because of this.
+
+**If it happens:** fix the cause, delete the tag (`git push origin :refs/tags/<tag>`
+and `git tag -d <tag>`), and re-tag on the commit that carries the fix. Leaving
+the tag in place is what makes the next person believe the version shipped.
+
+`.github/workflows/release-integrity.yml` reconciles tags against releases
+weekly and opens a single issue when they disagree — for missing releases,
+releases whose tag has been deleted, and releases carrying no assets. It
+updates that issue in place and closes it when the findings clear, so an open
+"Release integrity" issue always describes the current state. Run it on demand
+with `workflow_dispatch`, or locally and read-only with
+`make check-release-integrity`.
+
 ## Before you tag
 
 1. **`main` is green.** Check the `CI` status on the most recent commit

@@ -1,0 +1,46 @@
+name: Release integrity
+
+# Reconcile the version tags on origin against the releases they were supposed
+# to produce. When a tag push fails a release gate, the publish jobs are
+# SKIPPED and no release object is created — the tag is the only trace, and
+# `releases/tag/<tag>` renders a normal-looking page for it, so the failure is
+# invisible in the Releases list, on the tag page, and to `git describe`.
+# Three tags sat in that state for up to two weeks before anyone noticed.
+#
+# The report is a GitHub ISSUE rather than this workflow's own red ❌: "a
+# failed Actions run is easy to miss days later" is the premise of the whole
+# check, so a weekly red run would be no more visible than the tag-push run
+# that was already missed. The run still fails when the script cannot answer
+# (see the script's empty-listing guards), so an API failure is red AND
+# issue-less rather than silently reported as clean.
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    name: Reconcile tags against releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write    # opens/updates/closes the single report issue
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reconcile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-release-integrity.mjs
