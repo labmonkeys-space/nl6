@@ -22,24 +22,45 @@ const gnmiDefaultPort = 9339
 type GnmiSubsystemConfig struct {
 	Port     int
 	Disabled bool
+	// TLSDisabled selects the dial-in transport (-gnmi-tls=false).
+	//
+	// The polarity is INVERTED against the flag deliberately, matching
+	// `Disabled` above: a zero-valued config must mean TLS. A
+	// `TLSEnabled bool` would make the security-relevant knob FAIL OPEN
+	// — any literal that omitted the field would silently serve
+	// plaintext gRPC — and `startGnmiServer` does not require
+	// `StartGnmiSubsystem` to have run (device.go gates only on
+	// `manager != nil && !gnmiSubsystemDisabled`), so a manager built
+	// without it would downgrade from TLS with no error.
+	//
+	// The mode is subsystem-wide: dial-in is one listener answering
+	// whoever calls, so a per-device mode would let one fleet speak two
+	// protocols on one port with no way for a client to tell which.
+	// Contrast dial-out, which is per-device because each device
+	// targets its own collector.
+	TLSDisabled bool
 }
 
 // GnmiStatus is the JSON body returned by GET /api/v1/gnmi/status. The
 // shape is locked in design.md §D11: simulator-wide aggregates only,
 // no per-collector array (gNMI has no collector concept).
 //
-// `tls_handshake_failures` (P17) is a coarse counter of `Accept`
-// errors on the per-device gRPC listener — a TLS handshake that fails
-// surfaces as Accept returning an error in gRPC, so this approximates
-// "TLS handshakes that didn't complete" without integrating a custom
-// credentials wrapper.
+// `tls_enabled` reports the dial-in transport mode in force, so an
+// operator can tell a TLS fleet from a plaintext one without reading
+// the process's flags. `tls_handshake_failures` counts connections that
+// were accepted and whose TLS handshake then failed;
+// `listener_accept_failures` counts Accept errors, which are listener
+// faults. Before nl6#663 a single field carried the Accept count under
+// the handshake name and could never report a handshake at all.
 type GnmiStatus struct {
-	SubsystemActive      bool   `json:"subsystem_active"`
-	Listeners            int    `json:"listeners"`
-	ActiveSubscriptions  int64  `json:"active_subscriptions"`
-	UpdatesSent          uint64 `json:"updates_sent"`
-	UpdatesDropped       uint64 `json:"updates_dropped"`
-	TLSHandshakeFailures uint64 `json:"tls_handshake_failures"`
+	SubsystemActive        bool   `json:"subsystem_active"`
+	TLSEnabled             bool   `json:"tls_enabled"`
+	Listeners              int    `json:"listeners"`
+	ActiveSubscriptions    int64  `json:"active_subscriptions"`
+	UpdatesSent            uint64 `json:"updates_sent"`
+	UpdatesDropped         uint64 `json:"updates_dropped"`
+	TLSHandshakeFailures   uint64 `json:"tls_handshake_failures"`
+	ListenerAcceptFailures uint64 `json:"listener_accept_failures"`
 	// State-engine counters (add-interface-state §D12). Cumulative
 	// since process start; reset only on subsystem restart (currently
 	// shutdown-only).
@@ -62,12 +83,20 @@ func (sm *SimulatorManager) StartGnmiSubsystem(cfg GnmiSubsystemConfig) error {
 		return fmt.Errorf("gnmi: invalid port %d (must be 1..65535)", port)
 	}
 	sm.gnmiPort = port
+	sm.gnmiTLSDisabled = cfg.TLSDisabled
 	sm.gnmiSubsystemDisabled.Store(cfg.Disabled)
 	sm.gnmiSubsystemActive.Store(true)
 	if cfg.Disabled {
 		log.Printf("gNMI subsystem disabled via -gnmi-disable")
+	} else if !cfg.TLSDisabled {
+		// The transport belongs in this line: the old port-only version
+		// reads as a health signal while the transport mismatch that
+		// makes the subsystem unusable stays invisible (nl6#663).
+		log.Printf("gNMI subsystem enabled on port %d (TLS; clients need --skip-verify "+
+			"or the simulator's cert)", port)
 	} else {
-		log.Printf("gNMI subsystem enabled on port %d", port)
+		log.Printf("gNMI subsystem enabled on port %d (plaintext, -gnmi-tls=false; "+
+			"clients must NOT use TLS)", port)
 	}
 	return nil
 }
@@ -129,14 +158,16 @@ func (sm *SimulatorManager) GetGnmiStatus() GnmiStatus {
 		sm.mu.RUnlock()
 	}
 	return GnmiStatus{
-		SubsystemActive:      active,
-		Listeners:            listeners,
-		ActiveSubscriptions:  atomic.LoadInt64(&sm.gnmiActiveSubscriptions),
-		UpdatesSent:          atomic.LoadUint64(&sm.gnmiUpdatesSent),
-		UpdatesDropped:       atomic.LoadUint64(&sm.gnmiUpdatesDropped),
-		TLSHandshakeFailures: atomic.LoadUint64(&sm.gnmiTLSHandshakeFailures),
-		StateEventsEmitted:   atomic.LoadUint64(&sm.gnmiStateEventsEmitted),
-		StateEventsDropped:   atomic.LoadUint64(&sm.gnmiStateEventsDropped),
+		SubsystemActive:        active,
+		TLSEnabled:             !sm.gnmiTLSDisabled,
+		Listeners:              listeners,
+		ActiveSubscriptions:    atomic.LoadInt64(&sm.gnmiActiveSubscriptions),
+		UpdatesSent:            atomic.LoadUint64(&sm.gnmiUpdatesSent),
+		UpdatesDropped:         atomic.LoadUint64(&sm.gnmiUpdatesDropped),
+		TLSHandshakeFailures:   atomic.LoadUint64(&sm.gnmiTLSHandshakeFailures),
+		ListenerAcceptFailures: atomic.LoadUint64(&sm.gnmiListenerAcceptFailures),
+		StateEventsEmitted:     atomic.LoadUint64(&sm.gnmiStateEventsEmitted),
+		StateEventsDropped:     atomic.LoadUint64(&sm.gnmiStateEventsDropped),
 	}
 }
 

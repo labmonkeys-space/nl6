@@ -207,11 +207,13 @@ on-demand endpoints (`POST .../trap`, `POST .../syslog`).
 ```json
 {
   "subsystem_active": true,
+  "tls_enabled": true,
   "listeners": 30000,
   "active_subscriptions": 12,
   "updates_sent": 567,
   "updates_dropped": 0,
   "tls_handshake_failures": 0,
+  "listener_accept_failures": 0,
   "state_events_emitted": 42,
   "state_events_dropped": 0
 }

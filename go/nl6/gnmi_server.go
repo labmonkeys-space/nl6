@@ -54,10 +54,16 @@ const (
 	gnmiFirstRecvTimeout            = 30 * time.Second
 )
 
-// startGnmiServer binds a TLS-wrapped gRPC listener inside the device's
-// netns (or the root ns if isolation is off) and registers the gNMI
-// service. Mirrors the SSH and HTTPS REST start patterns. Returns any
-// error to the caller; on error the device-create call fails.
+// startGnmiServer binds a gRPC listener inside the device's netns (or
+// the root ns if isolation is off) and registers the gNMI service.
+// Mirrors the SSH and HTTPS REST start patterns. Returns any error to
+// the caller; on error the device-create call fails.
+//
+// The transport is TLS by default and plaintext under -gnmi-tls=false
+// (`mgr.gnmiTLSDisabled`). The shared-certificate precondition is
+// checked INSIDE the TLS branch: under plaintext there is no cert to
+// require, and hoisting the check would stop a plaintext fleet from
+// starting on a manager that has none (nl6#663).
 //
 // P4 lock discipline: caller MUST hold `d.mu`. Both reads of and
 // writes to `d.gnmiServer` / `d.gnmiListener` happen with the caller
@@ -74,7 +80,7 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 	if mgr == nil {
 		return fmt.Errorf("simulator manager not initialised")
 	}
-	if mgr.sharedTLSCert == nil {
+	if !mgr.gnmiTLSDisabled && mgr.sharedTLSCert == nil {
 		return fmt.Errorf("no shared TLS certificate available for gNMI on %s", d.IP)
 	}
 
@@ -91,13 +97,13 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 		return fmt.Errorf("failed to start gNMI server on %s: %v", addr, err)
 	}
 
-	// P17: wrap the raw listener so Accept failures (the bucket where
-	// TLS handshake errors surface in gRPC) increment a manager-level
-	// counter visible via GET /api/v1/gnmi/status.
-	listener := newGnmiFailureCountingListener(rawListener, &mgr.gnmiTLSHandshakeFailures)
+	// Wrap the raw listener so Accept failures increment a
+	// manager-level counter visible via GET /api/v1/gnmi/status. Accept
+	// errors are LISTENER faults; handshake failures are counted
+	// separately at the credentials seam below (nl6#663).
+	listener := newGnmiFailureCountingListener(rawListener, &mgr.gnmiListenerAcceptFailures)
 
-	server := grpc.NewServer(
-		grpc.Creds(credentials.NewServerTLSFromCert(mgr.sharedTLSCert)),
+	opts := []grpc.ServerOption{
 		grpc.MaxConcurrentStreams(gnmiMaxConcurrentStreams),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 5 * time.Minute,
@@ -108,7 +114,12 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-	)
+	}
+	if !mgr.gnmiTLSDisabled {
+		opts = append(opts, grpc.Creds(mgr.gnmiServerCredsFor(d.IP.String())))
+	}
+
+	server := grpc.NewServer(opts...)
 	gnmipb.RegisterGNMIServer(server, newGnmiServer(
 		d,
 		&mgr.gnmiActiveSubscriptions,
@@ -159,13 +170,88 @@ func (d *DeviceSimulator) stopGnmiServer() {
 	}
 }
 
+// gnmiServerCredsFor returns the TLS credentials for one device's gNMI
+// listener, wrapped so a failed handshake is counted and the first one
+// is logged.
+//
+// The underlying credentials are built ONCE per manager: a wrapper is a
+// three-word struct, but `credentials.NewServerTLSFromCert` builds a
+// tls.Config per call, and this runs once per device at 30k devices.
+func (sm *SimulatorManager) gnmiServerCredsFor(deviceIP string) credentials.TransportCredentials {
+	sm.gnmiBaseCredsOnce.Do(func() {
+		sm.gnmiBaseCreds = credentials.NewServerTLSFromCert(sm.sharedTLSCert)
+	})
+	return &gnmiHandshakeCountingCreds{
+		TransportCredentials: sm.gnmiBaseCreds,
+		mgr:                  sm,
+		deviceIP:             deviceIP,
+	}
+}
+
+// gnmiHandshakeCountingCreds counts TLS handshakes that fail on an
+// already-accepted connection, and logs the first one per process.
+//
+// This is the ONLY point in gRPC's server path that observes a
+// handshake outcome. `Server.Serve` calls `lis.Accept()` and then hands
+// the connection to `handleRawConn`, which runs `ServerHandshake` — so
+// a listener wrapper sees a healthy connection and learns nothing about
+// what happens to it next. Counting at Accept (what nl6 did before
+// nl6#663) therefore reported 0 for every client-side transport
+// mismatch, including a plaintext gRPC client against this TLS
+// listener, which is the single most likely misconfiguration here.
+//
+// A `grpc.StatsHandler` is not an alternative: `ConnBegin`/`ConnEnd`
+// carry no error, so a failed handshake is indistinguishable from a
+// connection that closed normally.
+type gnmiHandshakeCountingCreds struct {
+	credentials.TransportCredentials
+	mgr      *SimulatorManager
+	deviceIP string
+}
+
+// ServerHandshake delegates to the wrapped credentials and records a
+// failure. The log line is gated to one per process while the counter
+// moves on every occurrence — the trap/syslog fire-path convention
+// (`logFirstEncodeErr`), for the same reason: one misconfigured
+// collector retrying against a 30k fleet is a fleet-sized log volume
+// describing a single fault.
+func (c *gnmiHandshakeCountingCreds) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
+	conn, info, err := c.TransportCredentials.ServerHandshake(rawConn)
+	if err != nil && c.mgr != nil {
+		atomic.AddUint64(&c.mgr.gnmiTLSHandshakeFailures, 1)
+		peer := "unknown"
+		if rawConn != nil && rawConn.RemoteAddr() != nil {
+			peer = rawConn.RemoteAddr().String()
+		}
+		c.mgr.gnmiFirstHandshakeErrOnce.Do(func() {
+			log.Printf("gNMI handshake failed on %s from %s: %v "+
+				"(a plaintext gNMI client against the TLS listener looks exactly like this; "+
+				"use --skip-verify, or start nl6 with -gnmi-tls=false. "+
+				"Further handshake errors are suppressed; see tls_handshake_failures "+
+				"on GET /api/v1/gnmi/status)", c.deviceIP, peer, err)
+		})
+	}
+	return conn, info, err
+}
+
+// Clone preserves the wrapper. gRPC clones server credentials, and a
+// Clone that returned the bare inner credentials would silently drop
+// the counting for the cloned copy.
+func (c *gnmiHandshakeCountingCreds) Clone() credentials.TransportCredentials {
+	return &gnmiHandshakeCountingCreds{
+		TransportCredentials: c.TransportCredentials.Clone(),
+		mgr:                  c.mgr,
+		deviceIP:             c.deviceIP,
+	}
+}
+
 // gnmiFailureCountingListener is a thin net.Listener wrapper that
 // increments `failures` whenever Accept returns an error other than
-// net.ErrClosed (which is the expected signal during shutdown). gRPC
-// surfaces TLS handshake failures via Accept returning an error, so
-// this gives a usable approximation of "TLS handshakes that didn't
-// complete" without integrating a custom credentials/StatsHandler
-// pipeline (P17).
+// net.ErrClosed (which is the expected signal during shutdown).
+//
+// It counts LISTENER faults — fd exhaustion at 30k listeners is the
+// realistic one. It does NOT see TLS handshake failures: those happen
+// after Accept returns, and are counted by gnmiHandshakeCountingCreds.
 type gnmiFailureCountingListener struct {
 	net.Listener
 	failures *uint64
@@ -175,11 +261,7 @@ func newGnmiFailureCountingListener(inner net.Listener, failures *uint64) *gnmiF
 	return &gnmiFailureCountingListener{Listener: inner, failures: failures}
 }
 
-// Accept counts errors that aren't the listener-closed sentinel. The
-// counter doubles as a coarse "is anyone failing handshakes" signal;
-// distinguishing TLS-handshake errors from raw-TCP-accept errors
-// would require a custom credentials.TransportCredentials wrapper,
-// which is out of scope for this pass — see CLAUDE.md gNMI section.
+// Accept counts errors that aren't the listener-closed sentinel.
 func (l *gnmiFailureCountingListener) Accept() (net.Conn, error) {
 	c, err := l.Listener.Accept()
 	if err != nil {

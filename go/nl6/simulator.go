@@ -157,8 +157,9 @@ func main() {
 		syslogSourcePerDevice = flag.Bool("syslog-source-per-device", true, "Bind a per-device UDP socket in the nl6sim ns so syslog packets use the device IP as source (default true). Bind failures fall back to shared socket with a warning (never fatal for syslog)")
 
 		// gNMI flags. See CLAUDE.md "gNMI target" for detail.
-		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for gNMI listener on each device (default: 9339)")
-		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on)")
+		gnmiPort    = flag.Int("gnmi-port", gnmiDefaultPort, "TCP port for the per-device gNMI dial-in listener, which serves TLS unless -gnmi-tls=false (default: 9339)")
+		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on, TLS)")
+		gnmiTLS     = flag.Bool("gnmi-tls", true, "Serve gNMI dial-in over TLS with the simulator's shared self-signed cert (default: true; clients need --skip-verify). -gnmi-tls=false serves plaintext gRPC instead, for clients that dial without TLS")
 
 		// gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the
 		// auto-start batch; REST-created devices opt in via a per-device
@@ -512,11 +513,13 @@ func main() {
 
 	// Start the gNMI subsystem. Always-on per-device when not disabled
 	// (design.md §D2): every device created from this point onward
-	// binds a TLS-wrapped gRPC listener on -gnmi-port. The opt-out
-	// is the subsystem-wide -gnmi-disable flag.
+	// binds a gRPC listener on -gnmi-port, TLS by default and plaintext
+	// under -gnmi-tls=false. The opt-out is the subsystem-wide
+	// -gnmi-disable flag.
 	if err := manager.StartGnmiSubsystem(GnmiSubsystemConfig{
-		Port:     *gnmiPort,
-		Disabled: *gnmiDisable,
+		Port:        *gnmiPort,
+		Disabled:    *gnmiDisable,
+		TLSDisabled: !*gnmiTLS,
 	}); err != nil {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}
