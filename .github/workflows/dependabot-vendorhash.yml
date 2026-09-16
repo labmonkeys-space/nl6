@@ -83,8 +83,12 @@ jobs:
       pull-requests: read  # list and inspect the open Dependabot PRs
       checks: read         # skip a PR whose Nix build is already green
     steps:
-      # Mirrors nix-cache.yml's "Gate on Cachix being configured": the feature
-      # is a no-op with a notice until the secrets exist, rather than a red run.
+      # This gate no longer mirrors nix-cache.yml's "Gate on Cachix being
+      # configured", and the divergence is deliberate. An absent Cachix token
+      # costs cache hits; an absent app credential here means every Dependabot
+      # gomod PR is blocked on a required check. Same shape, different stakes,
+      # so this one reports the shortfall (see the trigger split below) while
+      # the Cachix gate stays a quiet no-op.
       #
       # WHY A SEPARATE CREDENTIAL AT ALL: GitHub does not start workflow runs
       # for push events made with the GITHUB_TOKEN (recursion guard). Pushing
@@ -101,29 +105,52 @@ jobs:
       # Sunday, and its pushes DO start workflow runs, which is the only
       # property this design needs from "not the GITHUB_TOKEN".
       #
-      # PROVISION (one time, by a maintainer):
-      #   1. Settings -> Developer settings -> GitHub Apps -> New GitHub App.
-      #      Name it whatever you like, no callback URL, no webhook.
-      #      Repository permissions: Contents = Read and write. Nothing else.
-      #   2. Install it on THIS repository only.
-      #   3. Generate a private key, then add two repository secrets:
-      #        VENDORHASH_APP_ID           the app's numeric App ID
-      #        VENDORHASH_APP_PRIVATE_KEY  the whole downloaded .pem, verbatim
-      #   4. If the app is ever uninstalled or the key revoked, this job fails
-      #      loudly on the first push rather than going quiet (see the auth
-      #      handling in the script).
+      # PROVISION (one time, by a maintainer): the steps, the dry-run
+      # rehearsal and the two verification checks live in
+      # deploy/packages/README.md, section "Dependabot vendorHash automation".
+      # They are kept there rather than here because that file is where someone
+      # looking for the vendorHash goes; this comment records WHY the design is
+      # what it is, which is the part worth reading in place.
+      # UNCONFIGURED IS NOT SUCCESS ON A DISPATCH (nl6#662). This gate used to
+      # emit a ::notice:: and let the job end green on every trigger, so eight
+      # consecutive runs reported success for doing nothing under a name that
+      # reads as "the hash is being maintained". The conclusion now splits on
+      # the trigger, and the asymmetry is the point:
+      #
+      #   workflow_dispatch -> FAIL. Someone is waiting on the answer, and a
+      #     success that refreshed nothing answers them wrongly.
+      #   schedule -> WARN and continue. The unconfigured state is expected
+      #     until a maintainer provisions the app, and failing four speculative
+      #     runs a day for a known, human-resolvable condition produces exactly
+      #     the alarm people learn to ignore — which is how this hid.
+      #
+      # Credentials that are present but REJECTED (revoked key, uninstalled
+      # app, wrong App ID) are a different case and must fail on every trigger,
+      # including schedule. That is handled by the token-mint steps below
+      # failing the job; neither carries continue-on-error, and that is
+      # load-bearing rather than incidental.
       - name: Gate on the GitHub App being configured
         id: cfg
         env:
           APP_ID: ${{ secrets.VENDORHASH_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.VENDORHASH_APP_PRIVATE_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::VENDORHASH_APP_ID / VENDORHASH_APP_PRIVATE_KEY not set, skipping. Dependabot gomod PRs need 'make nix-vendor-hash' by hand until the app is configured."
+            exit 0
           fi
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          msg="VENDORHASH_APP_ID / VENDORHASH_APP_PRIVATE_KEY are not set, so no vendorHash was refreshed."
+          msg="$msg Dependabot gomod PRs will stay red until someone fixes them by hand: the Nix vendor build"
+          msg="$msg is a required check and fails on a stale hash."
+          msg="$msg Manual remedy: 'make nix-vendor-hash', then commit deploy/packages/nix/package.nix onto the PR branch."
+          msg="$msg Provisioning steps: deploy/packages/README.md (section 'Dependabot vendorHash automation')."
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "::error::$msg"
+            exit 1
+          fi
+          echo "::warning::$msg"
 
       # Two tokens, not one. The fetch reads a branch and has no business
       # holding a credential that can write to it; separating them means the

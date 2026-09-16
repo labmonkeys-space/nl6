@@ -215,7 +215,11 @@ output rather than computing it by hand:
 - **By hand, without any of the above.** Set `vendorHash = lib.fakeHash`, run
   `nix build`, and copy the printed `got:` value back in.
 
-#### The automated sweep: setup and caveats
+#### Dependabot vendorHash automation: setup and caveats
+
+> **Status: not provisioned.** The two secrets below are unset, so the sweep
+> has never refreshed a hash. Every Dependabot Go-module PR therefore arrives
+> blocked and needs the manual path above. This is nl6#662.
 
 The sweep needs a **GitHub App**, not a PAT: an installation token is scoped to
 the repositories the app is installed on, lives about an hour, is minted fresh
@@ -232,8 +236,41 @@ reason a second credential is needed at all).
    - `VENDORHASH_APP_ID`, the app's numeric App ID.
    - `VENDORHASH_APP_PRIVATE_KEY`, the whole downloaded `.pem`, verbatim.
 
-Without both secrets the job logs a notice and skips, and the manual paths above
-remain the answer.
+##### What the job does when it is not configured
+
+Without both secrets the sweep refreshes nothing, and the manual paths above
+remain the answer. How it *reports* that depends on the trigger:
+
+| Trigger | Conclusion | Why |
+|---|---|---|
+| `workflow_dispatch` | **fails** | Someone is waiting on the answer; a success that refreshed nothing answers them wrongly. |
+| `schedule` | succeeds, with a warning annotation | The unconfigured state is expected until provisioning; four red runs a day for a known condition is an alarm people learn to ignore. |
+
+A credential that is **present but rejected** — revoked key, uninstalled app,
+wrong App ID — is a different case and fails the run on *every* trigger,
+schedule included. Something was configured and has stopped working; that is a
+fault, not a pending setup step.
+
+> Before provisioning, a dispatch **fails by design**. That is the first thing
+> most people try, so expect it: it is this feature reporting that it cannot do
+> its job, not a regression.
+
+##### Verifying it works
+
+Two checks, both worth doing once at provisioning time. The repair path has
+never executed, so the first real Dependabot PR would otherwise be its first
+run.
+
+1. **Rehearse against a real PR.** Dispatch with `pr` set to an open Dependabot
+   `go_modules` PR and `dry_run: true`. A correct result prints the
+   `package.nix` diff it *would* commit and pushes nothing; the write token is
+   never minted on a dry run, so the run cannot modify the branch even by
+   mistake. Seeing the skip message instead means the secrets are not in place.
+2. **Prove the broken-credential path.** Temporarily set `VENDORHASH_APP_ID` to
+   a bogus value and let a scheduled run fire (or dispatch one). It must
+   **fail** at the token mint rather than warn and continue. Restore the real
+   value afterwards. Without this check, that branch stays untested until the
+   day a key is actually revoked.
 
 Two consequences of pushing onto a Dependabot branch, both inherent and neither
 avoidable from this side:
