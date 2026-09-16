@@ -182,7 +182,7 @@ func TestGnmiStatus_ReportsTLSMode(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mgr := newTestManager()
-			if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{TLSEnabled: tc.tls}); err != nil {
+			if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{TLSDisabled: !tc.tls}); err != nil {
 				t.Fatalf("Start: %v", err)
 			}
 			if got := mgr.GetGnmiStatus().TLSEnabled; got != tc.tls {

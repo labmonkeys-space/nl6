@@ -353,8 +353,11 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 `updates_sent` count depends on how many interfaces each device has and
 how long the stream ran.
 
-`tls_enabled` reports the dial-in transport in force, so you can tell a
-TLS fleet from a plaintext one without reading the simulator's flags.
+`tls_enabled` reports the dial-in transport the subsystem is configured
+for, so you can tell a TLS fleet from a plaintext one without reading the
+simulator's flags. It describes the configuration rather than any live
+listener, so read it alongside `subsystem_active`: when that is `false`
+there are no listeners for it to apply to.
 
 `updates_dropped > 0` means the send buffer overflowed — typically
 indicates a slow consumer or a sample interval too aggressive for the

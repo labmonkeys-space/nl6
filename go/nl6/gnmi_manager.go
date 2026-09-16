@@ -22,13 +22,23 @@ const gnmiDefaultPort = 9339
 type GnmiSubsystemConfig struct {
 	Port     int
 	Disabled bool
-	// TLSEnabled selects the dial-in transport (-gnmi-tls, default
-	// true). The mode is subsystem-wide: dial-in is one listener
-	// answering whoever calls, so a per-device mode would let one fleet
-	// speak two protocols on one port with no way for a client to tell
-	// which. Contrast dial-out, which is per-device because each device
+	// TLSDisabled selects the dial-in transport (-gnmi-tls=false).
+	//
+	// The polarity is INVERTED against the flag deliberately, matching
+	// `Disabled` above: a zero-valued config must mean TLS. A
+	// `TLSEnabled bool` would make the security-relevant knob FAIL OPEN
+	// — any literal that omitted the field would silently serve
+	// plaintext gRPC — and `startGnmiServer` does not require
+	// `StartGnmiSubsystem` to have run (device.go gates only on
+	// `manager != nil && !gnmiSubsystemDisabled`), so a manager built
+	// without it would downgrade from TLS with no error.
+	//
+	// The mode is subsystem-wide: dial-in is one listener answering
+	// whoever calls, so a per-device mode would let one fleet speak two
+	// protocols on one port with no way for a client to tell which.
+	// Contrast dial-out, which is per-device because each device
 	// targets its own collector.
-	TLSEnabled bool
+	TLSDisabled bool
 }
 
 // GnmiStatus is the JSON body returned by GET /api/v1/gnmi/status. The
@@ -73,12 +83,12 @@ func (sm *SimulatorManager) StartGnmiSubsystem(cfg GnmiSubsystemConfig) error {
 		return fmt.Errorf("gnmi: invalid port %d (must be 1..65535)", port)
 	}
 	sm.gnmiPort = port
-	sm.gnmiTLSEnabled = cfg.TLSEnabled
+	sm.gnmiTLSDisabled = cfg.TLSDisabled
 	sm.gnmiSubsystemDisabled.Store(cfg.Disabled)
 	sm.gnmiSubsystemActive.Store(true)
 	if cfg.Disabled {
 		log.Printf("gNMI subsystem disabled via -gnmi-disable")
-	} else if cfg.TLSEnabled {
+	} else if !cfg.TLSDisabled {
 		// The transport belongs in this line: the old port-only version
 		// reads as a health signal while the transport mismatch that
 		// makes the subsystem unusable stays invisible (nl6#663).
@@ -149,7 +159,7 @@ func (sm *SimulatorManager) GetGnmiStatus() GnmiStatus {
 	}
 	return GnmiStatus{
 		SubsystemActive:        active,
-		TLSEnabled:             sm.gnmiTLSEnabled,
+		TLSEnabled:             !sm.gnmiTLSDisabled,
 		Listeners:              listeners,
 		ActiveSubscriptions:    atomic.LoadInt64(&sm.gnmiActiveSubscriptions),
 		UpdatesSent:            atomic.LoadUint64(&sm.gnmiUpdatesSent),

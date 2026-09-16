@@ -60,7 +60,7 @@ const (
 // the caller; on error the device-create call fails.
 //
 // The transport is TLS by default and plaintext under -gnmi-tls=false
-// (`mgr.gnmiTLSEnabled`). The shared-certificate precondition is
+// (`mgr.gnmiTLSDisabled`). The shared-certificate precondition is
 // checked INSIDE the TLS branch: under plaintext there is no cert to
 // require, and hoisting the check would stop a plaintext fleet from
 // starting on a manager that has none (nl6#663).
@@ -80,7 +80,7 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 	if mgr == nil {
 		return fmt.Errorf("simulator manager not initialised")
 	}
-	if mgr.gnmiTLSEnabled && mgr.sharedTLSCert == nil {
+	if !mgr.gnmiTLSDisabled && mgr.sharedTLSCert == nil {
 		return fmt.Errorf("no shared TLS certificate available for gNMI on %s", d.IP)
 	}
 
@@ -115,7 +115,7 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 			PermitWithoutStream: true,
 		}),
 	}
-	if mgr.gnmiTLSEnabled {
+	if !mgr.gnmiTLSDisabled {
 		opts = append(opts, grpc.Creds(mgr.gnmiServerCredsFor(d.IP.String())))
 	}
 

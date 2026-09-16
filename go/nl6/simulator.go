@@ -517,9 +517,9 @@ func main() {
 	// under -gnmi-tls=false. The opt-out is the subsystem-wide
 	// -gnmi-disable flag.
 	if err := manager.StartGnmiSubsystem(GnmiSubsystemConfig{
-		Port:       *gnmiPort,
-		Disabled:   *gnmiDisable,
-		TLSEnabled: *gnmiTLS,
+		Port:        *gnmiPort,
+		Disabled:    *gnmiDisable,
+		TLSDisabled: !*gnmiTLS,
 	}); err != nil {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}

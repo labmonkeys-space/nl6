@@ -62,9 +62,9 @@ func startRealGnmiServer(t *testing.T, tlsEnabled, withCert bool) (mgr *Simulato
 		mgr.sharedTLSCert = generateTestTLSCert(t)
 	}
 	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{
-		Port:       gnmiDefaultPort,
-		Disabled:   false,
-		TLSEnabled: tlsEnabled,
+		Port:        gnmiDefaultPort,
+		Disabled:    false,
+		TLSDisabled: !tlsEnabled,
 	}); err != nil {
 		t.Fatalf("StartGnmiSubsystem: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestGnmiTLSRequiresSharedCert(t *testing.T) {
 		deviceIPs:       map[string]struct{}{},
 		deviceTypesByIP: map[string]string{},
 	}
-	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{Port: gnmiDefaultPort, TLSEnabled: true}); err != nil {
+	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{Port: gnmiDefaultPort}); err != nil {
 		t.Fatalf("StartGnmiSubsystem: %v", err)
 	}
 	prev := manager
@@ -346,6 +346,41 @@ func TestGnmiTLSRequiresSharedCert(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no shared TLS certificate") {
 		t.Errorf("error %q does not name the missing certificate", err)
+	}
+}
+
+// TestGnmiZeroValuedConfigServesTLS pins the polarity of the transport
+// knob: a `GnmiSubsystemConfig` literal that says nothing about TLS must
+// serve TLS. Stated as a test because the natural spelling of the field
+// — `TLSEnabled bool`, matching the flag — makes the security-relevant
+// knob FAIL OPEN, and `startGnmiServer` does not require
+// `StartGnmiSubsystem` to have run at all (device.go gates only on
+// `manager != nil && !gnmiSubsystemDisabled`), so a manager built
+// without it would silently downgrade a fleet from TLS to plaintext.
+func TestGnmiZeroValuedConfigServesTLS(t *testing.T) {
+	mgr := &SimulatorManager{
+		devices:         map[string]*DeviceSimulator{},
+		deviceIPs:       map[string]struct{}{},
+		deviceTypesByIP: map[string]string{},
+		sharedTLSCert:   generateTestTLSCert(t),
+	}
+	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{}); err != nil {
+		t.Fatalf("StartGnmiSubsystem: %v", err)
+	}
+	if mgr.gnmiTLSDisabled {
+		t.Fatal("a zero-valued GnmiSubsystemConfig disabled TLS: the knob fails open")
+	}
+
+	// A manager that never ran StartGnmiSubsystem must also serve TLS.
+	bare := &SimulatorManager{
+		devices:         map[string]*DeviceSimulator{},
+		deviceIPs:       map[string]struct{}{},
+		deviceTypesByIP: map[string]string{},
+		sharedTLSCert:   generateTestTLSCert(t),
+	}
+	if bare.gnmiTLSDisabled {
+		t.Error("a manager with no StartGnmiSubsystem call serves plaintext; " +
+			"device.go starts listeners without requiring that call")
 	}
 }
 

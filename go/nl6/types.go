@@ -596,10 +596,17 @@ type SimulatorManager struct {
 	gnmiActiveSubscriptions int64  // atomic; live ONCE + STREAM streams (P16)
 	gnmiUpdatesSent         uint64 // atomic; cumulative SubscribeResponse.update entries
 	gnmiUpdatesDropped      uint64 // atomic; oldest-drop overflow events (§D8)
-	// gnmiTLSEnabled is the subsystem-wide dial-in transport mode
-	// (-gnmi-tls, default true). Read at attach by startGnmiServer,
-	// written once by StartGnmiSubsystem, same lifetime as gnmiPort.
-	gnmiTLSEnabled bool
+	// gnmiTLSDisabled is the subsystem-wide dial-in transport mode
+	// (-gnmi-tls=false). Read at attach by startGnmiServer, written once
+	// by StartGnmiSubsystem, same lifetime as gnmiPort.
+	//
+	// Stored INVERTED against the flag so the zero value is TLS.
+	// startGnmiServer does not require StartGnmiSubsystem to have run —
+	// device.go gates only on `manager != nil &&
+	// !gnmiSubsystemDisabled` — so a `gnmiTLSEnabled bool` would make a
+	// manager built without that call serve plaintext gRPC where it
+	// previously served TLS. A security-relevant knob must fail closed.
+	gnmiTLSDisabled bool
 	// gnmiTLSHandshakeFailures counts connections that were ACCEPTED and
 	// whose TLS handshake then failed, incremented from the credentials
 	// seam (gnmiHandshakeCountingCreds). Before nl6#663 it counted
