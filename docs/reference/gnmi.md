@@ -12,14 +12,21 @@ The gNMI subsystem is **always-on by default**. Every device gets a listener; no
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `-gnmi-port` | `9339` | TCP port for the gNMI listener on each device. |
+| `-gnmi-port` | `9339` | TCP port for the gNMI dial-in listener on each device. |
 | `-gnmi-disable` | `false` | Disable the subsystem; no device listens on the gNMI port. |
+| `-gnmi-tls` | `true` | Serve dial-in over TLS. `false` serves plaintext gRPC. |
 
 ## TLS
 
-The server presents the simulator's shared self-signed certificate (the same cert used by the HTTPS REST surface). Client-certificate authentication is **not required**. Connect with `gnmic --skip-verify` for the easy path, or `gnmic --tls-ca <path>` if you want the cert chain validated.
+**Dial-in is TLS by default.** The server presents the simulator's shared self-signed certificate (the same cert used by the HTTPS REST surface). Client-certificate authentication is **not required**. Connect with `gnmic --skip-verify` for the easy path, or `gnmic --tls-ca <path>` if you want the cert chain validated.
 
 > The shared-cert model is a simulator convention — every simulated device presents the same certificate. The simulator does not pretend to model PKI.
+
+### Plaintext dial-in
+
+`-gnmi-tls=false` binds the per-device listener without transport credentials, for collectors that dial plaintext gRPC. This mirrors the dial-out side's `-gnmi-dialout-tls=false`. The mode is simulator-wide: every device serves the same transport, and there is no per-device override.
+
+The two modes do not coexist on one port, by design — a client that dialed the wrong one could not tell from the port which it got. A transport mismatch in either direction looks the same from the client: TCP connects, the server sends nothing, and the connection closes. See [Troubleshooting](#troubleshooting).
 
 ## Supported paths
 
@@ -329,11 +336,15 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 ```json
 {
   "subsystem_active": true,
+  "tls_enabled": true,
   "listeners": 5,
   "active_subscriptions": 0,
   "updates_sent": 30,
   "updates_dropped": 0,
-  "tls_handshake_failures": 0
+  "tls_handshake_failures": 0,
+  "listener_accept_failures": 0,
+  "state_events_emitted": 0,
+  "state_events_dropped": 0
 }
 ```
 
@@ -342,15 +353,38 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 `updates_sent` count depends on how many interfaces each device has and
 how long the stream ran.
 
+`tls_enabled` reports the dial-in transport in force, so you can tell a
+TLS fleet from a plaintext one without reading the simulator's flags.
+
 `updates_dropped > 0` means the send buffer overflowed — typically
 indicates a slow consumer or a sample interval too aggressive for the
-path coverage. `tls_handshake_failures > 0` usually means clients
-connecting without `--skip-verify` (or with a wrong `--tls-ca`).
+path coverage.
+
+`tls_handshake_failures` counts connections that were accepted and whose
+TLS handshake then failed. The usual causes are a client connecting
+without `--skip-verify` (or with a wrong `--tls-ca`), and a client
+dialing **plaintext** against the TLS listener. It stays 0 under
+`-gnmi-tls=false`, where no handshake happens. The first failure is
+logged once per process; the counter keeps moving after that.
+
+`listener_accept_failures` counts `Accept` errors on the per-device
+listener — a fault on the simulator's side, file-descriptor exhaustion
+being the realistic one at fleet scale, not a client misconfiguration.
+
+:::note[`tls_handshake_failures` changed meaning in nl6#663]
+Before that fix the field carried `Accept` errors. gRPC runs the TLS
+handshake *after* `Accept` returns, so the field could never report a
+handshake failure and read 0 in every situation the paragraph above
+describes. If you are comparing against an older deployment, a value
+going from 0 to non-zero is this fix working, not a new fault. The
+`Accept` signal now lives in `listener_accept_failures`.
+:::
 
 ### Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
+| TCP connects but the server sends **zero bytes** and closes; the collector never leaves `TRANSIENT_FAILURE` | Transport mismatch. A plaintext client against the TLS listener sends the HTTP/2 preface, which is a malformed ClientHello, so the server closes without replying. Add `--skip-verify` to the client, or start nl6 with `-gnmi-tls=false`. Check `tls_enabled` and `tls_handshake_failures` on `/api/v1/gnmi/status` to confirm |
 | `tls: failed to verify certificate` | Add `--skip-verify`, or pass the simulator's cert via `--tls-ca` |
 | `connection refused` | Device IP not reachable from your shell — check routing into the `nl6sim` netns; the host route script is at `GET /api/v1/devices/routes` |
 | `code = InvalidArgument desc = unsupported encoding ASCII` | Only `JSON_IETF` and `PROTO` are advertised; `gnmic` defaults to `JSON_IETF` so this only triggers if you passed `-e ASCII` / `-e BYTES` |

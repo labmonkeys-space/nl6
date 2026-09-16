@@ -156,13 +156,39 @@ func TestGnmiStatus_JSONShape(t *testing.T) {
 		`"active_subscriptions":`,
 		`"updates_sent":`,
 		`"updates_dropped":`,
+		`"tls_enabled":`,
 		`"tls_handshake_failures":`,
+		`"listener_accept_failures":`,
 		`"state_events_emitted":`,
 		`"state_events_dropped":`,
 	} {
 		if !strings.Contains(body, key) {
 			t.Errorf("JSON body missing expected key %s; got: %s", key, body)
 		}
+	}
+}
+
+// TestGnmiStatus_ReportsTLSMode pins the transport mode onto the status
+// endpoint. A counter alone cannot answer "is this fleet TLS?" — it
+// reads 0 until some client has already failed, which is exactly the
+// window in which an operator is trying to find out (nl6#663).
+func TestGnmiStatus_ReportsTLSMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tls  bool
+	}{
+		{"TLS default", true},
+		{"plaintext", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mgr := newTestManager()
+			if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{TLSEnabled: tc.tls}); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			if got := mgr.GetGnmiStatus().TLSEnabled; got != tc.tls {
+				t.Errorf("tls_enabled = %v, want %v", got, tc.tls)
+			}
+		})
 	}
 }
 

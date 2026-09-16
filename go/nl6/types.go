@@ -26,6 +26,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // TUN interface management structures
@@ -589,15 +590,43 @@ type SimulatorManager struct {
 	// subsystem-wide knobs (port, disabled flag) plus the aggregate
 	// counters surfaced by GET /api/v1/gnmi/status. All counters are
 	// accessed via sync/atomic.
-	gnmiPort                 int
-	gnmiSubsystemDisabled    atomic.Bool // -gnmi-disable; lock-free read on every device start (P6)
-	gnmiSubsystemActive      atomic.Bool
-	gnmiActiveSubscriptions  int64  // atomic; live ONCE + STREAM streams (P16)
-	gnmiUpdatesSent          uint64 // atomic; cumulative SubscribeResponse.update entries
-	gnmiUpdatesDropped       uint64 // atomic; oldest-drop overflow events (§D8)
-	gnmiTLSHandshakeFailures uint64 // atomic; per-device listener Accept errors (P17)
-	gnmiStateEventsEmitted   uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
-	gnmiStateEventsDropped   uint64 // atomic; per-channel oldest-drop overflow
+	gnmiPort                int
+	gnmiSubsystemDisabled   atomic.Bool // -gnmi-disable; lock-free read on every device start (P6)
+	gnmiSubsystemActive     atomic.Bool
+	gnmiActiveSubscriptions int64  // atomic; live ONCE + STREAM streams (P16)
+	gnmiUpdatesSent         uint64 // atomic; cumulative SubscribeResponse.update entries
+	gnmiUpdatesDropped      uint64 // atomic; oldest-drop overflow events (§D8)
+	// gnmiTLSEnabled is the subsystem-wide dial-in transport mode
+	// (-gnmi-tls, default true). Read at attach by startGnmiServer,
+	// written once by StartGnmiSubsystem, same lifetime as gnmiPort.
+	gnmiTLSEnabled bool
+	// gnmiTLSHandshakeFailures counts connections that were ACCEPTED and
+	// whose TLS handshake then failed, incremented from the credentials
+	// seam (gnmiHandshakeCountingCreds). Before nl6#663 it counted
+	// Accept errors, which cannot report a handshake: gRPC runs the
+	// handshake after Accept returns, so this read 0 in every scenario
+	// its own documentation described. Always 0 under -gnmi-tls=false,
+	// where no handshake is performed.
+	gnmiTLSHandshakeFailures uint64 // atomic
+	// gnmiListenerAcceptFailures counts Accept errors other than
+	// net.ErrClosed — a listener fault (fd exhaustion at 30k listeners
+	// is the realistic one), not a client one. This is the signal that
+	// previously occupied gnmiTLSHandshakeFailures; it is kept under a
+	// name that describes it rather than deleted (nl6#663).
+	gnmiListenerAcceptFailures uint64 // atomic
+	// gnmiFirstHandshakeErrOnce gates the failed-handshake log line to
+	// one line per process. One misconfigured collector produces one
+	// failure per device per retry, so an ungated line is fleet-sized
+	// (nl6#663 reported 132 attempts in four minutes against 11k
+	// devices). Same trade-off as trap_exporter.go's logFirstEncodeErr:
+	// the counter above moves on every occurrence, only the log is gated.
+	gnmiFirstHandshakeErrOnce sync.Once
+	// gnmiBaseCreds is the shared server TLS credential the per-device
+	// counting wrapper delegates to, built once (see gnmiServerCredsFor).
+	gnmiBaseCreds          credentials.TransportCredentials
+	gnmiBaseCredsOnce      sync.Once
+	gnmiStateEventsEmitted uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
+	gnmiStateEventsDropped uint64 // atomic; per-channel oldest-drop overflow
 
 	// gNMI dial-out subsystem state. Each dial-out device owns its own
 	// grpc.ClientConn + Publish stream on its gnmiDialoutExporter (no

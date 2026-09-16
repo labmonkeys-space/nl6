@@ -75,7 +75,9 @@ func startTestGnmiServer(t *testing.T) (mgr *SimulatorManager, dev *DeviceSimula
 		deviceTypesByIP: map[string]string{},
 		sharedTLSCert:   generateTestTLSCert(t),
 	}
-	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{Port: 0, Disabled: false}); err != nil {
+	// TLSEnabled matches the TLS credentials this helper wires below, so
+	// the subsystem config does not disagree with the server it builds.
+	if err := mgr.StartGnmiSubsystem(GnmiSubsystemConfig{Port: 0, Disabled: false, TLSEnabled: true}); err != nil {
 		t.Fatalf("StartGnmiSubsystem: %v", err)
 	}
 

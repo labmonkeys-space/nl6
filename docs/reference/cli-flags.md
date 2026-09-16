@@ -283,8 +283,9 @@ interfaces subset over gRPC + TLS on every device. See
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
-| `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI listener on each device. |
+| `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI dial-in listener on each device. The listener serves **TLS** unless `-gnmi-tls=false`. |
 | `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
+| `-gnmi-tls` | bool | `true` | **global** | Serve dial-in over TLS with the simulator's shared self-signed certificate; clients need `--skip-verify` or `--tls-ca`. `false` serves plaintext gRPC instead. A client whose transport does not match the listener gets a completed TCP connection and no bytes — see [gNMI troubleshooting](gnmi.md#troubleshooting). |
 
 ## gNMI dial-out flags
 
