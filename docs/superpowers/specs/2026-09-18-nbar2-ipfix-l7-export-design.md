@@ -35,8 +35,12 @@ From Cisco's *Application Visibility and Control Field Definition Guide for Thir
 |-------|-----|----------------------------------|------|-----------------|
 | Application ID | `collect application name` | 95 | 4 bytes: engine-id (8 bits) + selector (24 bits) | v9 and IPFIX |
 | Application Name | `option application-table` | 96 | 24 bytes | options template |
-| HTTP Host | `collect application http host` | 45003 | variable-length string | IPFIX only |
+| HTTP Host | `collect application http host` | 45003 | variable-length string | IPFIX only; contested, see "Two unresolved findings" below |
 | HTTP URI statistics | `collect application http uri statistics` | 42125 | concatenated URIs with 2-byte hit counts | IPFIX only |
+| Application Description | option application-table, non-scope field | 94 | 55 bytes at offset 28 in the Cisco guide; RFC 6759 states the field with no fixed length | options template |
+
+Application ID, Application Name, HTTP Host and HTTP URI statistics are cited to the Cisco guide below.
+Application Description is cited to RFC 6759, corroborated by the offset and length the Cisco guide gives for the same field in its option-table listing.
 
 Source: https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide/5_AVC_Metric_Def.html
 
@@ -48,18 +52,23 @@ An RFC extract can be checked in under `testdata/rfc/`, the way RFC 3414 already
 
 ### Two unresolved findings
 
-**The HTTP host number is contested.**
-CESNET's libfds element database defines `appHTTPHost` under PEN 9 as **12235**.
-Cisco's own guide gives **45003**.
-One of the two is platform-specific or era-specific.
-The Cisco guide covers ISR G2 and ASR 1000 in 2015, while `cisco_catalyst_9500` is IOS-XE 17.x, and WLC and Catalyst AVC field numbering is reported to differ from ISR and ASR numbering.
-Resolving this is the first task of unit 1.
-It is also the reason the cross-check was worth doing: a single-source design would have shipped one of these numbers as fact.
+**The HTTP host number stays contested, and 45003 stays in scope.**
+HTTP host is Cisco-sourced at IE 45003 for the IOS and IOS-XE router class (ISR G2, ASR 1000).
+No Cisco IOS-XE 17.x or Catalyst 9000 document names either 45003 or libfds' 12235, so the Catalyst 9500 platform's number is unconfirmed and the 12235 discrepancy stays on record.
 
-**No TLS string export was found.**
-No Cisco PEN 9 element that exports a TLS SNI or certificate common name as a string could be located.
-NBAR2 consumes SNI and CN for classification, via `ip nbar custom ... ssl unique-name`, but the export product is an application ID selector rather than the raw name.
-Unit 1 widens the search across WLC AVC, Catalyst 9000 on IOS-XE 17.x, ISR 4000 and current protocol packs before TLS scope is fixed.
+**No TLS string export was found on any platform checked.**
+The search covered the 2015 guide, Catalyst 9500, IOS-XE 17.x, Catalyst 9800 and current protocol packs (PP68, PP74), and NBAR2 consumes SNI and CN for classification only, producing an application ID selector rather than a raw string export.
+TLS SNI and certificate common name therefore leave scope: TLS-classified traffic is represented by `applicationId` and the application table only.
+
+### Outcome of unit 1
+
+The following fields are unverified and leave scope: TLS SNI and certificate common name (no Cisco export exists; TLS-classified traffic is represented by applicationId and the application table).
+The claim stays "Cisco-faithful" for the remaining fields.
+Units 2 to 7 proceed on those.
+
+Two caveats travel with that claim.
+The Catalyst 9500 HTTP host IE number is unconfirmed by any Cisco document read for this task, and the exit rule above applies to it until a Cisco document or a capture pins it.
+The 42125 hit-count byte order is an encoder assumption unit 2 must state explicitly, and the same exit rule applies to it until a Cisco document or a capture pins that too.
 
 ### Reference policy
 
@@ -341,15 +350,15 @@ Unit 1 gates everything after it.
 
 - NetFlow v9, NetFlow v5 and sFlow. Unchanged, and cannot carry these fields.
 - IOS-XR and NX-OS device types. No NBAR2 on those platforms.
-- TLS SNI and certificate common name, pending unit 1.
+- TLS SNI and certificate common name. No Cisco export exists; TLS-classified traffic is represented by `applicationId` and the application table.
 - Bidirectional or client/server AVC fields such as `clientIPv4Address` and the response-time metrics. Separate feature.
 - Protocol-pack emulation. nl6 ships a fixed catalog, not a versioned protocol pack.
 
 ## Open questions
 
-1. HTTP host IE number: 45003 or 12235, and on which platform. Unit 1.
-2. Does a TLS SNI or common-name string export exist on any Cisco platform. Unit 1.
-3. `applicationId` engine-id values and their meanings. Unit 1.
-4. Application-table options-template scope fields. Unit 1.
+1. Resolved: 45003 stays in scope for the IOS and IOS-XE router class (ISR G2, ASR 1000); the Catalyst 9500 number is unconfirmed by any Cisco document read, per `testdata/cisco-avc/NOTES.md`.
+2. Resolved: no Cisco PEN 9 export of a TLS SNI or certificate common name string was found on any platform checked, so TLS SNI and certificate common name leave scope, per `testdata/cisco-avc/NOTES.md`.
+3. Resolved: engine ids 3 (IANA-L4, port-based), 6 (USER-Defined, custom) and 13 (PANA-L7, NBAR2 layer-7), per RFC 6759 section 4.1, per `testdata/cisco-avc/NOTES.md`.
+4. Resolved: scope field `applicationId` (IE 95), non-scope fields `applicationName` (IE 96) and `applicationDescription` (IE 94), per RFC 6759 section 4.3, per `testdata/cisco-avc/NOTES.md`.
 5. Template ID allocation when a device enables both `nbar2` and `options_interface_table`. Unit 2.
 6. Resolved: the IPFIX sequence number is fixed fleet-wide in a prerequisite PR (section 2, option 1).
