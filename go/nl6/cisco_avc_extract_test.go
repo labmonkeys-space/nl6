@@ -159,3 +159,37 @@ func TestCiscoAVCExtract_RFC6759EngineIDsArePinned(t *testing.T) {
 		t.Error("elements.tsv has no applicationDescription (IE 94) row")
 	}
 }
+
+// Every rfc6759-sourced element must appear in the checked-in RFC extract
+// as `ElementId: <id>`. This is the join the final review of unit 1 asked
+// for: without it a transposed IE number in elements.tsv passes every test.
+func TestCiscoAVCExtract_RFC6759RowsJoinTheExtract(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "rfc", "rfc6759-application-information.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	_, elements := loadCiscoAVCExtract(t)
+	joined := 0
+	for _, e := range elements {
+		cites := false
+		for _, s := range e.Sources {
+			if strings.TrimSpace(s) == "rfc6759" {
+				cites = true
+			}
+		}
+		if !cites {
+			continue
+		}
+		joined++
+		if !strings.Contains(text, "ElementId: "+e.ID) {
+			t.Errorf("element %s/%s cites rfc6759 but the extract has no 'ElementId: %s'", e.PEN, e.ID, e.ID)
+		}
+		if !strings.Contains(text, e.Name) {
+			t.Errorf("element %s/%s (%s) cites rfc6759 but the extract never names it", e.PEN, e.ID, e.Name)
+		}
+	}
+	if joined < 3 {
+		t.Fatalf("only %d rfc6759-sourced rows joined; expected at least applicationId, applicationName, applicationDescription", joined)
+	}
+}
