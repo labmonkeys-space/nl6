@@ -84,3 +84,7 @@ _bmad/
 # per-machine state, never committed. Start from inventory/devices.example.json.
 inventory/devices.json
 
+
+# Git worktrees (superpowers:using-git-worktrees)
+.worktrees/
+.superpowers/
