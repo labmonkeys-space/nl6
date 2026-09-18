@@ -55,6 +55,24 @@ The Catalyst 9500 AVC chapter (`cisco-cat9500-avc`) documents the `option applic
 The Catalyst 9800 WLC AVC chapter (`cisco-cat9800-wlc-avc`) does not mention `applicationDescription` or `option application-table`.
 The superseded IOS XE Release 3.9S AVC configuration guide (`cisco-avc-cfg-xe39s`) does not mention `applicationDescription` or `option application-table`.
 
+## HTTP URI statistics (42125) layout
+
+Cisco's 2015 guide states, verbatim: "Collects and exports the URI and URI hit counts." (`cisco-avc-fdg-2015`, table row for field 42125).
+In my own words, restated from the same table row: the field is a repeating sequence of URI-then-count pairs, one pair per tracked URI, concatenated back to back with no separate leading or trailing element.
+Element order: within each pair the URI comes first, followed immediately by its hit count.
+Delimiter versus length prefix: each URI is terminated by a NUL byte rather than preceded by a length field, so the field is delimiter-terminated, not length-prefixed.
+Hit count width and byte order: the guide sizes the hit count at two bytes and calls it an integer, but it does not say which byte order that integer uses, so byte order is unstated by Cisco.
+Maximum URI length: the guide caps a single URI at 512 characters for IOS, truncating anything longer; for IOS XE it gives no URI-specific number, only the same generic 2 KB ceiling it applies to every IOS XE extracted variable-length field, the same pattern already recorded for HTTP host at row `9/45003`.
+Maximum hit count: the guide puts the ceiling at 65535, the natural limit of an unsigned two-byte field.
+The full PDF of this guide, https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide.pdf, returned only its table-of-contents/landing content through the fetch tool and not the chapter body, the same non-decoding outcome already recorded for the xe-16-9 PDF above, so this section relies on the HTML chapter (`cisco-avc-fdg-2015`), which is already a cited source and was refetched for this task.
+
+### libfds appHTTPUriStatistics (9357)
+
+libfds `cisco.xml` defines `<id>9357</id>`, `<name>appHTTPUriStatistics</name>`, `<dataType>string</dataType>` (`libfds-cisco-xml`).
+Cisco's guide names no explicit IPFIX data type for field 42125 in its table, so libfds is the only place a type name is stated and there is no Cisco-versus-libfds disagreement to resolve on this point.
+
+Layout pinned: row `9/42125` stays `verified`; its note now carries the one-line layout summary above.
+
 ## applicationId engine ids (RFC 6759 section 4.1)
 
 | engine id | name | selector | nl6 use |

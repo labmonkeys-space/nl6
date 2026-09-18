@@ -2,5 +2,5 @@ pen	id	name	type	length	status	source	note
 0	95	applicationId	octetArray	4	verified	cisco-avc-fdg-2015,rfc6759	engine-id (8 bits) + selector (24 bits); CLI collect application name; exportable under v9 and IPFIX; engine ids per RFC 6759 section 4.1: 3 IANA-L4 (port based), 6 USER-Defined (custom), 13 PANA-L7 (NBAR2 layer 7)
 0	96	applicationName	string	24	verified	cisco-avc-fdg-2015,rfc6759	carried by option application-table, not in data records
 9	45003	HTTP Host	string	var	contested	cisco-avc-fdg-2015,libfds-cisco-xml	Cisco 2015 guide: 45003, IPFIX only, max 512 chars IOS / 2 KB IOS XE; libfds defines appHTTPHost as 12235; see NOTES.md
-9	42125	HTTP URI statistics	octetArray	var	verified	cisco-avc-fdg-2015	concatenated URIs each followed by a 2-byte hit count; IPFIX only; wire layout to be pinned in Task 5
+9	42125	HTTP URI statistics	octetArray	var	verified	cisco-avc-fdg-2015	URI/count pairs repeat back to back: NUL(0x00)-delimited URI string then a 2-byte integer hit count, byte order not stated; IOS truncates URI at 512 chars, IOS XE caps the field at 2 KB; max hit count 65535; see NOTES.md
 0	94	applicationDescription	string	var	verified	rfc6759	non-scope field of the application-table options template (RFC 6759 section 4.3)
