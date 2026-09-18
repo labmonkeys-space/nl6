@@ -471,21 +471,28 @@ func TestFlowOptionsSequenceConsecutive(t *testing.T) {
 	}
 }
 
-func TestFlowOptionsIPFIXSequencePlusOne(t *testing.T) {
-	fe, tick := optionsTickHarness(t, IPFIXEncoder{}, flowOptionShapeIfScoped, testOptionIfaces())
+// TestFlowOptionsIPFIXSequenceCountsRecords: under RFC 7011 §3.1 the IPFIX
+// Sequence Number counts Data Records, and Options Data Records are Data
+// Records. So the options datagram's sequence is the number of flow records
+// emitted before it, and the counter then advances by the option records it
+// carries, not by 1 per message (the retired "design D7" reading).
+func TestFlowOptionsIPFIXSequenceCountsRecords(t *testing.T) {
+	ifaces := testOptionIfaces()
+	fe, tick := optionsTickHarness(t, IPFIXEncoder{}, flowOptionShapeIfScoped, ifaces)
 	flows, opts := tick()
 	if len(flows) == 0 || len(opts) != 1 {
 		t.Fatalf("flows = %d, opts = %d, want >=1 and 1", len(flows), len(opts))
 	}
-	lastFlowSeq := decodeIPFIXPacket(t, flows[len(flows)-1]).Header.SequenceNumber
-	dg := decodeIPFIXOptionsDatagram(t, opts[0])
-	if dg.SequenceNo != lastFlowSeq+1 {
-		t.Errorf("options seq = %d, want %d", dg.SequenceNo, lastFlowSeq+1)
+	var flowRecords uint32
+	for _, pkt := range flows {
+		flowRecords += uint32(len(decodeIPFIXPacket(t, pkt).Records))
 	}
-	// Message-counting interpretation: +1 for the whole options message,
-	// regardless of the 2 option data records it carries (design D7).
-	if fe.seqNo != dg.SequenceNo+1 {
-		t.Errorf("fe.seqNo = %d, want %d", fe.seqNo, dg.SequenceNo+1)
+	dg := decodeIPFIXOptionsDatagram(t, opts[0])
+	if dg.SequenceNo != flowRecords {
+		t.Errorf("options seq = %d, want %d (flow data records emitted before it)", dg.SequenceNo, flowRecords)
+	}
+	if want := dg.SequenceNo + uint32(len(ifaces)); fe.seqNo != want {
+		t.Errorf("fe.seqNo = %d, want %d (options seq + %d option data records)", fe.seqNo, want, len(ifaces))
 	}
 }
 

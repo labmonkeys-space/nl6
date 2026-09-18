@@ -528,8 +528,11 @@ func TestNetFlow5SeqIncrement(t *testing.T) {
 	}
 
 	var ipfix IPFIXEncoder
-	if got := ipfix.SeqIncrement(30); got != 1 {
-		t.Errorf("IPFIX.SeqIncrement(30) = %d, want 1 (per-message semantics)", got)
+	if got := ipfix.SeqIncrement(30); got != 30 {
+		t.Errorf("IPFIX.SeqIncrement(30) = %d, want 30 (RFC 7011 §3.1 data-record semantics)", got)
+	}
+	if got := ipfix.SeqIncrement(0); got != 0 {
+		t.Errorf("IPFIX.SeqIncrement(0) = %d, want 0 (a template-only message does not advance)", got)
 	}
 }
 

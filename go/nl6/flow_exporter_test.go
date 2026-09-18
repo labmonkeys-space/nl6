@@ -148,9 +148,9 @@ func TestDomainIDtoIP_RoundTrip(t *testing.T) {
 }
 
 // TestFlowExporter_Tick_TemplateOnFirstCall verifies that Tick sends a
-// template-only NF9 packet on the first call (seqNo == 0) even when no flows
-// have expired yet. This satisfies the RFC 3954 requirement to send the
-// template before any data records.
+// template-only NF9 packet on the first call (lastTempl still zero) even when
+// no flows have expired yet. This satisfies the RFC 3954 requirement to send
+// the template before any data records.
 func TestFlowExporter_Tick_TemplateOnFirstCall(t *testing.T) {
 	ln, ch := testUDPListener(t)
 	defer ln.Close()
@@ -330,8 +330,13 @@ func TestFlowExporter_Tick_IPFIXTemplateOnFirstCall(t *testing.T) {
 	if len(decoded.Templates) != 1 {
 		t.Errorf("template count = %d, want 1", len(decoded.Templates))
 	}
-	if fe.seqNo != 1 {
-		t.Errorf("seqNo after first Tick = %d, want 1", fe.seqNo)
+	// A template-only message carries no Data Records, so the IPFIX Sequence
+	// Number does not move (RFC 7011 §3.1). Before the record-count fix this
+	// read 1, and that 1 doubled as Tick's "template already sent" marker;
+	// TestIPFIXSequenceCountsDataRecords pins that an idle tick after this one
+	// sends nothing.
+	if fe.seqNo != 0 {
+		t.Errorf("seqNo after a template-only first Tick = %d, want 0", fe.seqNo)
 	}
 }
 
@@ -524,7 +529,7 @@ func TestFlowTickStats_Counters(t *testing.T) {
 	if stats.RecordsSent != 5 {
 		t.Errorf("RecordsSent = %d, want 5", stats.RecordsSent)
 	}
-	// seqNo == 0 on first call, so a template must have been sent.
+	// lastTempl is zero on the first call, so a template must have been sent.
 	if stats.LastTemplateMs == 0 {
 		t.Error("LastTemplateMs = 0 on first Tick, want non-zero")
 	}

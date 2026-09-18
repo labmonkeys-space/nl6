@@ -93,14 +93,12 @@ Two wire shapes are available; the names describe where the ifIndex lives:
 | Record size | 68 B | 40 B |
 | Collector path exercised | scope resolution | field fallback |
 
-Each device emits **one** shape; run two device groups with different
-shapes to cover both collector resolution paths. String fields are fixed
-32-byte NUL-padded values. The options datagram advances the sequence
-counter by 1 (both protocols) and counts toward `sent_packets` /
-`sent_bytes` but not `sent_records` (option records are metadata, not
-flows). Valid only under `netflow9` / `ipfix` — combining it with
-`netflow5` / `sflow` is rejected at validation. Default off; devices
-without the field emit byte-identical output to previous releases.
+Each device emits **one** shape; run two device groups with different shapes to cover both collector resolution paths.
+String fields are fixed 32-byte NUL-padded values.
+The options datagram advances the sequence counter per its protocol's rule: NetFlow v9 by 1 (RFC 3954 counts export packets), IPFIX by the number of Options Data Records it carries (RFC 7011 §3.1 counts Data Records, and an Options Data Record is one).
+It counts toward `sent_packets` / `sent_bytes` but not `sent_records` (option records are metadata, not flows).
+Valid only under `netflow9` / `ipfix`; combining it with `netflow5` / `sflow` is rejected at validation.
+Default off; devices without the field emit byte-identical output to previous releases.
 
 ```bash
 # 20 devices emitting NetFlow v9 + an if-scoped option interface-table
