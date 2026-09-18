@@ -19,18 +19,27 @@ Excluded: ElastiFlow, on licence grounds (object-code EULA; legacy repo under a 
 Cisco's 2015 Field Definition Guide (ISR G2, ASR 1000) gives 45003 (`cisco-avc-fdg-2015`).
 Its option-template table lists HTTP host as a variable-length string field, IPFIX only, max 512 chars on IOS and 2 KB on IOS XE.
 libfds `cisco.xml` defines `<id>12235</id>`, `<name>appHTTPHost</name>`, `<dataType>string</dataType>` for this field, with no `<source>` tag and no comment attached to that element (`libfds-cisco-xml`).
-Task 3 checked four IOS-XE 17.x / Catalyst-era Cisco documents for either number, and none of them names an exported field ID for HTTP host at all.
-The four are the Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`), the Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`), the Catalyst 9500 System Management Configuration Guide's AVC chapter (`cisco-cat9500-avc`), and the Catalyst 9800 WLC AVC chapter (`cisco-cat9800-wlc-avc`).
+Task 3 checked four IOS-XE 17.x / Catalyst-era Cisco documents for either number: the Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`), the Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`), the Catalyst 9500 System Management Configuration Guide's AVC chapter (`cisco-cat9500-avc`), and the Catalyst 9800 WLC AVC chapter (`cisco-cat9800-wlc-avc`).
+The Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`) does not name an exported field ID for HTTP host.
+The Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`) does not name an exported field ID for HTTP host either.
 The Catalyst 9500 chapter documents the `option application-table [ timeout seconds ]` CLI but has no field-ID table.
 The nearest standalone AVC configuration guide found, for the superseded Cisco IOS XE Release 3.9S (`cisco-avc-cfg-xe39s`), predates the 17.x train and also names neither number.
 Resolution: row `9/45003` stays `contested` per Task 3's decision rule, since no Cisco IOS-XE 17.x or Catalyst 9000 document names either number.
 45003 is confirmed only for ISR G2 and ASR 1000, by the 2015 guide.
 Catalyst 9500 (and Catalyst 9000 generally) support for HTTP host export, and which IE number it would use, remains unconfirmed by any Cisco document read for this task.
 
-## Unverified
+## Unverified: TLS SNI / common name
 
-TLS SNI or certificate common name as an exported string: no Cisco PEN 9 element found yet.
-Resolution: pending Task 4.
+Searched on 2026-09-18 (sources: cisco-avc-fdg-2015, cisco-avc-fdg-2015-exported-fields, cisco-fnf-ntw-servs-17x, cisco-fnf-xe17-book, cisco-cat9500-avc, cisco-cat9800-wlc-avc, cisco-cat9800-eta, cisco-nbar-extracted-fields-xe16-6, cisco-nbar-pp68, cisco-nbar-pp74, libfds-cisco-xml).
+No Cisco PEN 9 element exporting a TLS SNI or certificate common name as a string was found on ISR G2, ASR 1000, IOS-XE 17.x, Catalyst 9000 or Catalyst 9800.
+The Catalyst 9500 AVC chapter (`cisco-cat9500-avc`) is the one document read for this task that names SNI and CN at all: its SSL customization section states "Customization can be done for SSL encrypted traffic using information extracted from the SSL Server Name Indication (SNI) or Common Name (CN)", in the context of the `ip nbar custom ... ssl unique-name` classification CLI, not an export field.
+The 2015 Field Definition Guide's "New Exported Fields" chapter (`cisco-avc-fdg-2015-exported-fields`) documents over 50 Flexible NetFlow fields by ID but names neither SSL, TLS, SNI, nor a certificate common name among them.
+The Catalyst 9800 Encrypted Traffic Analytics chapter (`cisco-cat9800-eta`) exports flow metadata (IDP, SPLT, SALT, BD and TLS record statistics) used to infer TLS handshake shape, but names no SNI or certificate common name field, and gives no IPFIX Information Element numbers at all.
+The "Reporting Extracted Fields Through Flexible NetFlow" chapter (`cisco-nbar-extracted-fields-xe16-6`) covers NBAR sub-application field reporting but names no SSL/TLS field.
+Cisco Protocol Pack release notes 68.0.0 (`cisco-nbar-pp68`) and 74.0.0 (`cisco-nbar-pp74`, the current pack found as of this search) name neither SSL/TLS nor an exported field ID.
+libfds `cisco.xml` (`libfds-cisco-xml`) defines no element matching ssl, tls, sni or commonName; corroboration only, per this file's reference policy.
+NBAR2 consumes SNI and CN for classification (`ip nbar custom ... ssl unique-name`); the export product is an applicationId selector.
+Consequence for the spec: TLS-classified traffic is represented by applicationId and the application table, with no SNI string on the wire.
 
 ## Application table options template (RFC 6759 section 4.3)
 
