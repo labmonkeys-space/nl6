@@ -115,3 +115,37 @@ func TestCiscoAVCExtract_EveryElementCitesAKnownSource(t *testing.T) {
 		}
 	}
 }
+
+// RFC 6759 is the IETF publication of Cisco's applicationId export. Its
+// engine-id table decides which classification engine a collector resolves
+// an applicationId against, so the values the encoder uses must be read from
+// the checked-in extract, never recalled.
+func TestCiscoAVCExtract_RFC6759EngineIDsArePinned(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "rfc", "rfc6759-application-information.txt"))
+	if err != nil {
+		t.Fatalf("read extract: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"IANA-L4", "USER-Defined", "PANA-L7",
+		"applicationName", "applicationDescription",
+		"Section 4.3",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("rfc6759 extract is missing %q", want)
+		}
+	}
+	sources, elements := loadCiscoAVCExtract(t)
+	if _, ok := sources["rfc6759"]; !ok {
+		t.Fatal("sources.tsv has no rfc6759 row")
+	}
+	var have94 bool
+	for _, e := range elements {
+		if e.PEN == "0" && e.ID == "94" {
+			have94 = true
+		}
+	}
+	if !have94 {
+		t.Error("elements.tsv has no applicationDescription (IE 94) row")
+	}
+}

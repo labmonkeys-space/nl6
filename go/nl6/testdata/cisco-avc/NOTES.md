@@ -23,3 +23,20 @@ Resolution: pending Task 3.
 
 TLS SNI or certificate common name as an exported string: no Cisco PEN 9 element found yet.
 Resolution: pending Task 4.
+
+## Application table options template (RFC 6759 section 4.3)
+
+Scope field: `applicationId` (IE 95).
+Non-scope fields: `applicationName` (IE 96), `applicationDescription` (IE 94).
+Cisco's 2015 guide gives `applicationName` a fixed length of 24 bytes in `option application-table`.
+Whether `applicationDescription` is emitted by IOS-XE `option application-table`, and at what length, is checked in Task 3 alongside the platform reading.
+
+## applicationId engine ids (RFC 6759 section 4.1)
+
+| engine id | name | selector | nl6 use |
+|-----------|------|----------|---------|
+| 3 | IANA-L4 | 2 bytes, well-known port | port-based catalog entries |
+| 6 | USER-Defined | 3 bytes | custom applications |
+| 13 | PANA-L7 | 3 bytes | NBAR2 layer-7 applications |
+
+The selector values for PANA-L7 are Cisco's NBAR2 registry and are not published as a table; a catalog entry records the selector it uses and the reading it came from.

@@ -1,3 +1,4 @@
 id	title	revision	url	fetched
 cisco-avc-fdg-2015	Cisco Application Visibility and Control Field Definition Guide for Third-Party Customers, AVC Metric Definitions	Revised March 26, 2015	https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide/5_AVC_Metric_Def.html	2026-09-18
 libfds-cisco-xml	CESNET libfds system element definitions, cisco.xml (PEN 9). Corroborating data file only; BSD-3-Clause/GPLv2+; not copied	master as of fetch date	https://github.com/CESNET/libfds/blob/master/config/system/elements/cisco.xml	2026-09-18
+rfc6759	RFC 6759: Cisco Systems Export of Application Information in IPFIX (Claise, Aitken, Ben-Dvora)	November 2012	https://www.rfc-editor.org/rfc/rfc6759.txt	2026-09-18

@@ -1,0 +1,302 @@
+RFC 6759, Cisco Systems Export of Application Information in IP Flow
+Information Export (IPFIX), November 2012.
+Verbatim extract, checked in so the engine-id table and IE definitions are
+data rather than recall.
+
+  Source:  https://www.rfc-editor.org/rfc/rfc6759.txt
+  Fetched: 2026-09-18
+  Command: curl -sSL https://www.rfc-editor.org/rfc/rfc6759.txt -o rfc6759.txt
+
+Consumed by TestCiscoAVCExtract_RFC6759EngineIDsArePinned and by the NBAR2
+IPFIX encoder as the source of the applicationId engine-id values. Page
+furniture (running header/footer, page-break blank lines) removed; no word
+is altered. Section numbers below are RFC 6759's own numbering except where
+noted.
+
+--- RFC 6759 Section 4.1 (verbatim) ---
+
+4.1.  Existing Classification Engine IDs
+
+   The following Classification Engine IDs have been allocated:
+
+   Name         Value  Description
+
+                0      Invalid.
+
+   IANA-L3      1      The Assigned Internet Protocol
+                       Number (layer 3 (L3)) is exported
+                       in the Selector ID.
+                       See [IANA-PROTO].
+
+   PANA-L3      2      Proprietary layer 3 definition.
+                       An enterprise can export its own
+                       layer 3 protocol numbers.  The
+                       Selector ID has a global
+                       significance for all devices from
+                       the same enterprise.
+
+   IANA-L4      3      The IANA layer 4 (L4) well-known
+                       port number is exported in the
+                       Selector ID.  See [IANA-PORTS].
+                       Note: as an IPFIX flow is
+                       unidirectional, it contains the
+                       destination port.
+
+   PANA-L4      4      Proprietary layer 4 definition.
+                       An enterprise can export its own
+                       layer 4 port numbers.  The
+                       Selector ID has global
+                       significance for devices from the
+                       same enterprise.  Example: IPFIX was
+                       pre-assigned the port 4739 using the IANA
+                       early allocation process [RFC4020] years
+                       before the document was published as an RFC.
+                       While waiting for the RFC and its associated
+                       IANA registration, Selector ID 4739
+                       was used with this PANA-L4.
+
+                5      Reserved.
+
+   USER-        6      The Selector ID represents
+   Defined             applications defined by the user
+                       (using CLI, GUI, etc.) based on
+                       the methods described in Section
+                       1.  The Selector ID has a local
+                       significance per device.
+
+                7      Reserved.
+
+                8      Reserved.
+
+                9      Reserved.
+
+                10     Reserved.
+
+                11     Reserved.
+
+   PANA-L2      12     Proprietary layer 2 (L2)
+                       definition.  An enterprise can
+                       export its own layer 2
+                       identifiers.  The Selector ID
+                       represents the enterprise's
+                       unique global layer 2
+                       applications.  The Selector ID has
+                       a global significance for all
+                       devices from the same enterprise.
+                       Examples include Cisco Subnetwork
+                       Access Protocol (SNAP).
+
+   PANA-L7      13     Proprietary layer 7 definition.
+                       The Selector ID represents the
+                       enterprise's unique global ID for
+                       layer 7 applications.  The
+                       Selector ID has a global
+                       significance for all devices from
+                       the same enterprise.  This
+                       Classification Engine ID is used
+                       when the application registry is
+                       owned by the Exporter
+                       manufacturer (referred to as the
+                       "enterprise" in this document).
+
+                14     Reserved.
+
+                15     Reserved.
+
+                16     Reserved.
+
+                17     Reserved.
+
+   ETHERTYPE    18     The Selector ID represents the
+                       well-known Ethertype.  See
+                       [ETHERTYPE].
+
+   LLC          19     The Selector ID represents the
+                       well-known IEEE 802.2 Link Layer
+                       Control (LLC) Destination Service
+                       Access Point (DSAP).  See [LLC].
+
+   PANA-L7-     20     Proprietary layer 7 definition,
+   PEN                 including a Private Enterprise
+                       Number (PEN) [IANA-PEN] to identify
+                       that the application registry
+                       being used is not owned by the
+                       Exporter manufacturer or to
+                       identify the original
+                       enterprise in the case of a
+                       mediator or 3rd party device.  The
+                       Selector ID represents the
+                       enterprise unique global ID for
+                       the layer 7 applications.  The
+                       Selector ID has a global
+                       significance for all devices from
+                       the same enterprise.
+
+                21 to
+                 255   Available (255 is the maximum
+                       Engine ID)
+
+       Table 1: Existing Classification Engine IDs
+
+   "PANA = Proprietary Assigned Number Authority".  In other words, an
+   enterprise specific version of IANA for internal IDs.
+
+   The PANA-L7 Classification Engine ID SHOULD be used when the
+   application registry is owned by the Exporter manufacturer.  Even if
+   the application registry is owned by the Exporter manufacturer, the
+   PANA-L7-PEN MAY be used, specifying the manufacturer.
+
+   For example, if Exporter A (from enterprise-A) wants to export its
+   enterprise-A L7 registry, then it uses the PANA-L7 Classification
+   Engine ID.  If Exporter B (from enterprise-B) wants to export its
+   enterprise-B L7 registry, then it also uses the PANA-L7
+   Classification Engine ID.
+
+   The mechanism for the Collector to know about the Exporter PEN is out
+   of scope of this document.  Possible tracks are SNMP polling, an
+   Options Template exporting the privateEnterpriseNumber Information
+   Element [IANA-IPFIX], hardcoded value, etc.
+
+   An Exporter may classify the application according to another
+   vendor's application registry.  For example, an IPFIX Mediator
+   [RFC6183] may need to re-export applications received from different
+   Exporters using different PANA-L7 application registries.  For
+   example, if Exporter C (from enterprise-C) wants to reuse enterprise-
+   D's application registry, then it uses PANA-L7-PEN with enterprise-
+   D's PEN.
+
+   When reporting application information from multiple Exporters from
+   different enterprises (different PENs), the PANA-L7-PEN
+   Classification Engine MUST be used in exported Flow Records, which
+   allows the original enterprise ID to be reported.  The ID of the
+   enterprise that defined the Application ID is identified by the
+   enterprise's PEN.  For example, an IPFIX Mediator aggregates traffic
+   from some Exporters which report enterprise-E applications and other
+   Exporters that report enterprise-F applications.
+
+   An example is displayed in Section 6.6.
+
+   Note that the PANA-L7 Classification Engine ID is also used for
+   resolving IANA L4 port Discrepancies (see Section 4.4).
+
+   The list in Table 1 is maintained by IANA thanks to the registry
+   within the classificationEngineId Information Element.  See the IANA
+   Considerations section.  The Classification Engine ID is part of the
+   Application ID encoding, so the classificationEngineId Information
+   Element is currently not required by the specifications in this
+   document.  However, this Information Element was created for
+   completeness, as it was anticipated that this Information Element
+   will be required in the future.
+
+--- RFC 6759 Section 4.2 (verbatim) ---
+
+4.2.  Selector ID Length per Classification ID
+
+   As the Selector ID part of the Application ID is variable based on
+   the Classification Engine ID value, the applicationId SHOULD be
+   encoded in a variable-length Information Element [RFC5101] for IPFIX
+   export.
+
+   The following table displays the Selector ID default length for the
+   different Classification Engine IDs.
+
+      Classification               Selector ID default
+      Engine ID Name               length (in bytes)
+
+      IANA-L3                      1
+
+      PANA-L3                      1
+
+      IANA-L4                      2
+
+      PANA-L4                      2
+
+      USER-Defined                 3
+
+      PANA-L2                      5
+
+      PANA-L7                      3
+
+      ETHERTYPE                    2
+
+      LLC                          1
+
+      PANA-L7-PEN                  3 (*)
+
+               Table 2: Selector ID Default Length
+                  per Classification Engine ID
+
+   (*) There are an extra 4 bytes for the PEN.  However, the PEN is not
+   considered part of the Selector ID.
+
+   If a legacy protocol such as NetFlow version 9 [RFC3954] is used, and
+   this protocol doesn't support variable-length Information Elements,
+   then either multiple Template Records (one per applicationId length),
+   or a single Template Record corresponding to the maximum sized
+   applicationId MUST be used.
+
+   Application IDs MAY be encoded in a smaller number of bytes,
+   following the same rules as for IPFIX Reduced Size Encoding
+   [RFC5101].
+
+   Application IDs MAY be encoded with a larger length.  For example, a
+   normal IANA L3 protocol encoding would take 2 bytes since the
+   Selector ID represents the protocol field from the IP header encoded
+   in one byte.  However, an IANA L3 protocol encoding may be encoded
+   with 3 bytes.  In this case, the Selector ID value MUST always be
+   encoded in the least significant bits as shown in Figure 2.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |Class. Eng. ID |zero-valued upper-bits ... Selector ID         |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                    Figure 2: Selector ID Encoding
+
+--- RFC 6759 Section 4.2 continued (verbatim: applicationName /
+    applicationDescription Information Element registrations, RFC
+    section 7.1.1 and 7.1.3) ---
+
+7.1.1.  applicationDescription
+
+   Name: applicationDescription
+   Description:
+     Specifies the description of an application.
+   Abstract Data Type: string
+   Data Type Semantics:
+   ElementId: 94
+   Status: current
+
+7.1.3.  applicationName
+
+   Name: applicationName
+   Description:
+     Specifies the name of an application.
+   Abstract Data Type: string
+   Data Type Semantics:
+   ElementId: 96
+   Status: current
+
+--- RFC 6759 Section 4.3 (verbatim) ---
+
+4.3.  Application Name Options Template Record
+
+   For Classification Engines that specify locally unique Application
+   IDs (which means unique per engine and per router), an Options
+   Template Record (see [RFC5101]) MUST be used to export the
+   correspondence between the Application ID, the Application Name, and
+   the Application Description.
+
+   For Classification Engines that specify globally unique Application
+   IDs, an Options Template Record MAY be used to export the
+   correspondence between the Application ID, the Application Name and
+   the Application Description, unless the mapping is hardcoded in the
+   Collector, or known out of band (for example, by polling a MIB).
+
+   An example Options Template is shown in Section 6.8.
+
+   Enterprises may assign company-wide Application ID values for the
+   PANA-L7 Classification Engine.  In this case, a possible optimization
+   for the Collector is to keep the mappings between the Application IDs
+   and the Application Names per enterprise, as opposed to per Exporter.
