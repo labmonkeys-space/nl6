@@ -42,6 +42,8 @@ libfds `cisco.xml` (`libfds-cisco-xml`) defines no element matching ssl, tls, sn
 NBAR2 consumes SNI and CN for classification (`ip nbar custom ... ssl unique-name`); the export product is an applicationId selector.
 Consequence for the spec: TLS-classified traffic is represented by applicationId and the application table, with no SNI string on the wire.
 
+HTTP URI statistics (42125) hit-count byte order: not stated by Cisco; encoder assumption pending unit 2.
+
 ## Application table options template (RFC 6759 section 4.3)
 
 Scope field: `applicationId` (IE 95).
@@ -64,6 +66,8 @@ Delimiter versus length prefix: each URI is terminated by a NUL byte rather than
 Hit count width and byte order: the guide sizes the hit count at two bytes and calls it an integer, but it does not say which byte order that integer uses, so byte order is unstated by Cisco.
 Maximum URI length: the guide caps a single URI at 512 characters for IOS, truncating anything longer; for IOS XE it gives no URI-specific number, only the same generic 2 KB ceiling it applies to every IOS XE extracted variable-length field, the same pattern already recorded for HTTP host at row `9/45003`.
 Maximum hit count: the guide puts the ceiling at 65535, the natural limit of an unsigned two-byte field.
+Cisco's text gives no byte order for the 2-byte hit count, and no other source consulted for this row supplies one either.
+This is an open encoder assumption: unit 2 must decide it explicitly, naming whether it follows RFC 7011's network byte order convention for IPFIX integers or something else and why, and the spec's fidelity exit rule applies to that assumption until a Cisco document or a packet capture pins it.
 The full PDF of this guide, https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide.pdf, returned only its table-of-contents/landing content through the fetch tool and not the chapter body, the same non-decoding outcome already recorded for the xe-16-9 PDF above, so this section relies on the HTML chapter (`cisco-avc-fdg-2015`), which is already a cited source and was refetched for this task.
 
 ### libfds appHTTPUriStatistics (9357)
