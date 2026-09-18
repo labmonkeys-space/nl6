@@ -87,3 +87,4 @@ inventory/devices.json
 
 # Git worktrees (superpowers:using-git-worktrees)
 .worktrees/
+.superpowers/
