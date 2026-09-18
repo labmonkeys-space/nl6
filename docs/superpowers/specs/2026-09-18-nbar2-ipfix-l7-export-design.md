@@ -144,11 +144,14 @@ RFC 7011 section 3.1 defines the IPFIX sequence number as the count of **Data Re
 nl6's `IPFIXEncoder.SeqIncrement` returns 1 per message and its comment cites the RFC for that reading; the reading is wrong, and the options path inherits it as "design D7".
 This is a pre-existing conformance divergence in nl6's IPFIX export, independent of NBAR2.
 It matters here because a device claiming Cisco fidelity cannot inherit it: IOS-XE advances by record count, and IPFIXcol2 reports sequence gaps, so the interop gate in section 6 will flag it.
-Three options, recorded for the owner to choose before unit 2:
+Three options were considered; the owner chose the first on 2026-09-18.
 
-1. Fix `SeqIncrement` for every IPFIX device in its own PR before NBAR2 lands, as an RFC conformance fix with a digest showing the only byte that moves is the sequence field. Recommended: one IPFIX semantic, and the fix is small.
-2. Fix it for NBAR2 devices only. Two IPFIX sequence semantics in one fleet, which is the kind of split this repository has removed elsewhere.
-3. Leave it. The interop gate then needs an allowance for a known divergence, and the fidelity claim carries a documented exception.
+1. **Chosen.** Fix `SeqIncrement` for every IPFIX device in its own PR before NBAR2 lands, as an RFC conformance fix with a digest showing the only field that moves is the sequence number. One IPFIX semantic, and the fix is small.
+2. Rejected: fix it for NBAR2 devices only. Two IPFIX sequence semantics in one fleet, which is the kind of split this repository has removed elsewhere.
+3. Rejected: leave it. The interop gate would need an allowance for a known divergence, and the fidelity claim would carry a documented exception.
+
+The conformance fix is a prerequisite PR, outside this spec's work units, and unit 2 depends on it having landed.
+It also covers the options path, whose "design D7" comment inherits the same reading.
 
 **Engine-id semantics** inside `applicationId`, meaning which value marks a port-based, an NBAR2 layer-7, and a custom application, are a unit-1 output.
 A wrong engine id yields IDs a collector resolves against the wrong classification engine.
@@ -343,4 +346,4 @@ Unit 1 gates everything after it.
 3. `applicationId` engine-id values and their meanings. Unit 1.
 4. Application-table options-template scope fields. Unit 1.
 5. Template ID allocation when a device enables both `nbar2` and `options_interface_table`. Unit 2.
-6. Which of the three sequence-number options in section 2 the owner chooses. Decided before unit 2; option 1 recommended.
+6. Resolved: the IPFIX sequence number is fixed fleet-wide in a prerequisite PR (section 2, option 1).
