@@ -51,6 +51,7 @@ Non-scope fields: `applicationName` (IE 96), `applicationDescription` (IE 94).
 Cisco's 2015 guide gives `applicationName` a fixed length of 24 bytes in `option application-table`.
 Task 3 checked every Cisco document read for the HTTP host question for this same fact, one sentence per document.
 Cisco's 2015 guide (`cisco-avc-fdg-2015`) lists `application description` (IE 94) in the same option-table field list, at offset 28 with a length of 55 bytes, immediately after `application name` (offset 4, length 24).
+RFC 6759 sections 7.1.1 and 7.1.3 (`rfc6759`, `testdata/rfc/rfc6759-application-information.txt`) register `applicationDescription` and `applicationName` with Abstract Data Type `string` and no fixed length.
 The Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`) does not mention `applicationDescription` or `option application-table`.
 The Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`) does not mention `applicationDescription` or `option application-table`.
 The Catalyst 9500 AVC chapter (`cisco-cat9500-avc`) documents the `option application-table [ timeout seconds ]` CLI but does not mention `applicationDescription`.
