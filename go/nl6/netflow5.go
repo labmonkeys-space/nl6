@@ -52,9 +52,9 @@ type NetFlow5Encoder struct {
 //
 // Cisco's v5 spec defines flow_sequence as "sequence counter of total flows
 // seen" — i.e. the counter advances by the number of records in each packet,
-// not once per packet. NetFlow9Encoder and IPFIXEncoder, by contrast, advance
-// by 1 per packet (RFC 3954's "sequence number of all export packets" and
-// RFC 7011's "per-SCTP-stream message count").
+// not once per packet. IPFIXEncoder does the same (RFC 7011 §3.1 counts Data
+// Records); NetFlow9Encoder, by contrast, advances by 1 per packet (RFC 3954
+// §5.1's "sequence counter of all export packets").
 func (*NetFlow5Encoder) SeqIncrement(packetRecordCount int) int {
 	return packetRecordCount
 }

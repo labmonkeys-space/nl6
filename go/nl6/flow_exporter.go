@@ -38,11 +38,13 @@ type FlowEncoder interface {
 	// paginator bound instead of dividing buffer space by recordSize.
 	PacketSizes() (baseOverhead int, templateSize int, recordSize int)
 	// SeqIncrement returns how much to advance the flow-sequence counter after
-	// a packet carrying packetRecordCount data records. NetFlow v9 and IPFIX
-	// return 1 (RFC 3954 "sequence number of all export packets" / RFC 7011
-	// "per-SCTP-stream message count"). NetFlow v5 returns packetRecordCount
-	// because Cisco v5 defines flow_sequence as the cumulative count of
-	// records, not packets.
+	// a packet carrying packetRecordCount data records. NetFlow v9 returns 1
+	// (RFC 3954 §5.1 "sequence counter of all export packets"). NetFlow v5
+	// and IPFIX return packetRecordCount: Cisco v5 defines flow_sequence as
+	// the cumulative count of records, and RFC 7011 §3.1 defines the IPFIX
+	// Sequence Number as the count of Data Records, template records excluded.
+	// Tick calls this with the options datagram's record count too, because an
+	// Options Data Record is a Data Record.
 	SeqIncrement(packetRecordCount int) int
 	// MaxRecordSize returns the worst-case on-wire byte size of a single record
 	// for variable-length protocols. Fixed-size encoders (NetFlow v5 / v9,
@@ -615,7 +617,12 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// Replenish the cache to its target population.
 	fe.cache.GenerateFlows(fe.profile, target, deviceIP, fe.rng, now, uptimeMs)
 
-	sendTemplate := fe.seqNo == 0 || now.Sub(fe.lastTempl) >= fe.templateInterval
+	// "First tick" is a zero lastTempl, not a zero sequence number. Under
+	// IPFIX the counter counts Data Records (RFC 7011 §3.1), so an idle
+	// exporter's template-only first message leaves seqNo at 0, and a
+	// seqNo-based marker would re-send the template on every idle tick until
+	// the first data record (TestIPFIXIdleExporterSendsTemplateOnce).
+	sendTemplate := fe.lastTempl.IsZero() || now.Sub(fe.lastTempl) >= fe.templateInterval
 	if len(expired) == 0 && !sendTemplate {
 		return FlowTickStats{}
 	}
@@ -785,8 +792,9 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			stats.BytesSent += uint64(n)
 			stats.RecordsSent += uint64(len(batch))
 		}
-		// Advance flow_sequence per the protocol's semantics. NF9/IPFIX advance
-		// by 1 per packet; NF5 advances by the record count of this packet.
+		// Advance flow_sequence per the protocol's semantics. NF9 advances by
+		// 1 per packet; NF5 and IPFIX advance by the record count of this
+		// packet (IPFIX per RFC 7011 §3.1: Data Records, templates excluded).
 		//
 		// Advanced even on a failed write, deliberately and unchanged by
 		// nl6#491. The alternative — reusing the sequence — would hide the loss
@@ -850,10 +858,11 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// (emitOptions captured before the flow loop consumed sendTemplate).
 	// Each datagram is self-contained (options template + data records), so
 	// pagination just re-invokes with the remainder. The datagram advances
-	// fe.seqNo by 1 under both protocols (v9 counts export packets; IPFIX
-	// keeps this simulator's message-counting interpretation — design D7).
-	// Option data records are metadata, not flows: counted in packet/byte
-	// stats but excluded from RecordsSent.
+	// fe.seqNo by the encoder's rule: v9 counts export packets (1), IPFIX
+	// counts Data Records, and an Options Data Record IS a Data Record under
+	// RFC 7011 §3.1, so IPFIX advances by `consumed`. Option data records are
+	// metadata, not flows: counted in packet/byte stats but excluded from
+	// RecordsSent.
 	//
 	// optionShape is only ever set for netflow9/ipfix (Validate), whose
 	// encoders satisfy flowOptionsEncoder — the assertion failing means a
@@ -878,7 +887,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			}
 			stats.PacketsSent++
 			stats.BytesSent += uint64(n)
-			fe.seqNo++
+			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
 			remaining = remaining[consumed:]
 		}
 	}

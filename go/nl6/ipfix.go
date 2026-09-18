@@ -219,11 +219,18 @@ func (IPFIXEncoder) PacketSizes() (int, int, int) {
 	return ipfixHeaderSize + 4, ipfixTemplSetSize, ipfixRecordSize
 }
 
-// SeqIncrement returns 1 because IPFIX's header sequence number is defined
-// (RFC 7011 §3.1) as the incremental count of IPFIX Messages sent on this
-// SCTP stream / UDP flow, not of data records — it advances once per message.
-func (IPFIXEncoder) SeqIncrement(_ int) int {
-	return 1
+// SeqIncrement returns the packet's data-record count. RFC 7011 §3.1 defines
+// the Sequence Number as the "incremental sequence counter modulo 2^32 of all
+// IPFIX Data Records sent in the current stream from the current Observation
+// Domain", and adds that "Template and Options Template Records do not
+// increase the Sequence Number". So a template-only message advances it by
+// zero and an options datagram advances it by its Options Data Records.
+//
+// This used to return 1 per message under a misreading of the same section,
+// which every multi-record datagram showed a collector as a sequence gap.
+// NetFlow v9 (RFC 3954 §5.1) really is per export packet; the two differ.
+func (IPFIXEncoder) SeqIncrement(packetRecordCount int) int {
+	return packetRecordCount
 }
 
 // ipfixDataPadBytes returns the padding the data Set needs to reach a 4-byte

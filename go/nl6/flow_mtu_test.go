@@ -381,9 +381,10 @@ func TestFlowTickCapacityMatchesEncoder(t *testing.T) {
 					1*time.Millisecond, 1*time.Millisecond, 10*time.Minute)
 				// Skip the template so every datagram is data-only and the
 				// sweep can reach down to the smallest data-only buffer.
-				// Tick sends a template when `seqNo == 0` OR the interval has
-				// elapsed, so BOTH have to be suppressed — setting lastTempl
-				// alone still templates the first tick. Template framing is
+				// Tick sends a template when lastTempl is zero OR the interval
+				// has elapsed, so a fresh lastTempl suppresses it. seqNo is
+				// set too so the sweep starts from a non-zero sequence as a
+				// data-only tick would in production. Template framing is
 				// covered by TestFlowDatagramsFitMTU.
 				fe.seqNo = 1
 				fe.lastTempl = time.Now()
