@@ -31,7 +31,7 @@ Task 3 checked four IOS-XE 17.x / Catalyst-era Cisco documents for either number
 The Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`) does not name an exported field ID for HTTP host.
 The Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`) does not name an exported field ID for HTTP host either.
 The Catalyst 9500 chapter documents the `option application-table [ timeout seconds ]` CLI but has no field-ID table.
-The nearest standalone AVC configuration guide found, for the superseded Cisco IOS XE Release 3.9S (`cisco-avc-cfg-xe39s`), predates the 17.x train and also names neither number.
+The nearest standalone AVC configuration guide found, the Cisco IOS XE 16 book (`cisco-avc-cfg-xe39s`; its page names Release 3.9S only in a related-document link), predates the 17.x train and also names neither number.
 Resolution: row `9/45003` stays `contested` per Task 3's decision rule, since no Cisco IOS-XE 17.x or Catalyst 9000 document names either number.
 45003 is confirmed only for ISR G2 and ASR 1000, by the 2015 guide.
 Catalyst 9500 (and Catalyst 9000 generally) support for HTTP host export, and which IE number it would use, remains unconfirmed by any Cisco document read for this task.
@@ -50,8 +50,6 @@ libfds `cisco.xml` (`libfds-cisco-xml`) defines no element matching ssl, tls, sn
 NBAR2 consumes SNI and CN for classification (`ip nbar custom ... ssl unique-name`); the export product is an applicationId selector.
 Consequence for the spec: TLS-classified traffic is represented by applicationId and the application table, with no SNI string on the wire.
 
-HTTP URI statistics (42125) hit-count byte order: not stated by Cisco; encoder assumption pending unit 2.
-
 ## Application table options template (RFC 6759 section 4.3)
 
 Scope field: `applicationId` (IE 95).
@@ -64,7 +62,7 @@ The Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow ove
 The Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`) does not mention `applicationDescription` or `option application-table`.
 The Catalyst 9500 AVC chapter (`cisco-cat9500-avc`) documents the `option application-table [ timeout seconds ]` CLI but does not mention `applicationDescription`.
 The Catalyst 9800 WLC AVC chapter (`cisco-cat9800-wlc-avc`) does not mention `applicationDescription` or `option application-table`.
-The superseded IOS XE Release 3.9S AVC configuration guide (`cisco-avc-cfg-xe39s`) does not mention `applicationDescription` or `option application-table`.
+The Cisco IOS XE 16 AVC configuration guide (`cisco-avc-cfg-xe39s`) does not mention `applicationDescription` or `option application-table`.
 
 ## HTTP URI statistics (42125) layout
 

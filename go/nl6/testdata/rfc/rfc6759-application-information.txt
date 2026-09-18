@@ -7,8 +7,9 @@ data rather than recall.
   Fetched: 2026-09-18
   Command: curl -sSL https://www.rfc-editor.org/rfc/rfc6759.txt -o rfc6759.txt
 
-Consumed by TestCiscoAVCExtract_RFC6759EngineIDsArePinned and by the NBAR2
-IPFIX encoder as the source of the applicationId engine-id values. Page
+Consumed by TestCiscoAVCExtract_RFC6759EngineIDsArePinned; the NBAR2 IPFIX
+encoder (unit 2, not yet built) is to read the applicationId engine-id
+values from here as well. Page
 furniture (running header/footer, page-break blank lines) removed; no word
 is altered. Section numbers below are RFC 6759's own numbering.
 
