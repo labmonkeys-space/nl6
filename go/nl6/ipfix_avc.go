@@ -5,6 +5,8 @@
 
 package main
 
+import "encoding/binary"
+
 // Cisco AVC (NBAR2) export over IPFIX. Every number below is DERIVED from
 // testdata/cisco-avc/elements.tsv and pinned by TestIPFIXAVCConstantsMatchEvidence;
 // the provenance of each row is in testdata/cisco-avc/NOTES.md. Do not add an
@@ -53,3 +55,33 @@ const (
 // Neither is Cisco-sourced; a capture from a real IOS-XE box would settle
 // both, and the spec's fidelity exit rule applies to them until then.
 const ipfixURIStatsLayout = "URI\\0 + uint16 big-endian count, repeated, no trailing delimiter"
+
+// ipfixVarLenSize is the on-wire size of an n-byte variable-length value
+// including its RFC 7011 section 7 length prefix.
+func ipfixVarLenSize(n int) int {
+	if n < 255 {
+		return 1 + n
+	}
+	return 3 + n
+}
+
+// putIPFIXVarLen writes v at pos as an RFC 7011 section 7 variable-length
+// field and returns the new position. ok is false, and buf is untouched,
+// when the value does not fit; the caller decides what a non-fit means.
+// Values longer than 65535 bytes cannot be represented and never fit.
+func putIPFIXVarLen(buf []byte, pos int, v []byte) (int, bool) {
+	n := len(v)
+	if n > 0xFFFF || pos+ipfixVarLenSize(n) > len(buf) {
+		return pos, false
+	}
+	if n < 255 {
+		buf[pos] = byte(n)
+		pos++
+	} else {
+		buf[pos] = 255
+		binary.BigEndian.PutUint16(buf[pos+1:], uint16(n))
+		pos += 3
+	}
+	copy(buf[pos:], v)
+	return pos + n, true
+}

@@ -67,3 +67,47 @@ func TestIPFIXAVCConstantsMatchEvidence(t *testing.T) {
 		t.Errorf("template ids = %d/%d, want 258/259 (plan A global constraint)", ipfixAVCTemplateID, ipfixAppTableTemplateID)
 	}
 }
+
+// RFC 7011 section 7: a value shorter than 255 bytes carries a 1-byte length;
+// otherwise the byte 255 then a 2-byte big-endian length. 254, 255 and 256
+// are the boundary where variable-length encoders break.
+func TestIPFIXVarLenBoundary(t *testing.T) {
+	for _, n := range []int{0, 1, 254, 255, 256, 1000} {
+		v := make([]byte, n)
+		for i := range v {
+			v[i] = byte('a' + i%26)
+		}
+		buf := make([]byte, n+3)
+		pos, ok := putIPFIXVarLen(buf, 0, v)
+		if !ok {
+			t.Fatalf("n=%d: did not fit in %d bytes", n, len(buf))
+		}
+		if pos != ipfixVarLenSize(n) {
+			t.Fatalf("n=%d: wrote %d bytes, ipfixVarLenSize says %d", n, pos, ipfixVarLenSize(n))
+		}
+		var gotLen, hdr int
+		if buf[0] < 255 {
+			gotLen, hdr = int(buf[0]), 1
+		} else {
+			gotLen, hdr = int(buf[1])<<8|int(buf[2]), 3
+		}
+		if n < 255 && hdr != 1 || n >= 255 && hdr != 3 {
+			t.Fatalf("n=%d: header form %d bytes", n, hdr)
+		}
+		if gotLen != n || string(buf[hdr:pos]) != string(v) {
+			t.Fatalf("n=%d: decoded length %d, payload mismatch=%v", n, gotLen, string(buf[hdr:pos]) != string(v))
+		}
+	}
+	// Does not fit, one byte short in each length form: 253 bytes need 254;
+	// 255 bytes need 258.
+	if _, ok := putIPFIXVarLen(make([]byte, 253), 0, make([]byte, 253)); ok {
+		t.Fatal("253-byte value needs 254 bytes and must not fit in 253")
+	}
+	if _, ok := putIPFIXVarLen(make([]byte, 257), 0, make([]byte, 255)); ok {
+		t.Fatal("255-byte value needs 258 bytes and must not fit in 257")
+	}
+	// Too long to represent at all.
+	if _, ok := putIPFIXVarLen(make([]byte, 70000), 0, make([]byte, 65536)); ok {
+		t.Fatal("65536-byte value cannot be represented in a 2-byte length")
+	}
+}
