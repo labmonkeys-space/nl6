@@ -11,6 +11,14 @@ Primary: Cisco documentation and RFCs, cited by title, revision and URL.
 Corroborating: CESNET libfds `cisco.xml`, a BSD-licensed data file, never copied here.
 libfds and IPFIXcol2 C sources are not read.
 Excluded: ElastiFlow, on licence grounds (object-code EULA; legacy repo under a non-OSI commercial-use restriction).
+The 2015 Cisco guide was read from its HTML chapters throughout because the PDF does not decode through the tools available, and the two are believed, not verified, to be identical.
+
+## Status column
+
+`verified`: a Cisco document or an RFC names the IE number for at least one platform; layout sub-facts and encoder decisions live in the note and may still be open.
+`contested`: sources disagree on the number and at least two are cited.
+`unresolved`: no authoritative source names the number.
+The note column, not the status, says whether the layout is complete enough to encode.
 
 ## Contested
 
@@ -18,7 +26,7 @@ Excluded: ElastiFlow, on licence grounds (object-code EULA; legacy repo under a 
 
 Cisco's 2015 Field Definition Guide (ISR G2, ASR 1000) gives 45003 (`cisco-avc-fdg-2015`).
 Its option-template table lists HTTP host as a variable-length string field, IPFIX only, max 512 chars on IOS and 2 KB on IOS XE.
-libfds `cisco.xml` defines `<id>12235</id>`, `<name>appHTTPHost</name>`, `<dataType>string</dataType>` for this field, with no `<source>` tag and no comment attached to that element (`libfds-cisco-xml`).
+libfds defines appHTTPHost as IE 12235 with data type string, with no source tag and no comment attached to that element (`libfds-cisco-xml`).
 Task 3 checked four IOS-XE 17.x / Catalyst-era Cisco documents for either number: the Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`), the Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`), the Catalyst 9500 System Management Configuration Guide's AVC chapter (`cisco-cat9500-avc`), and the Catalyst 9800 WLC AVC chapter (`cisco-cat9800-wlc-avc`).
 The Network Services Configuration Guide, Cisco IOS XE 17.x Flexible NetFlow overview (`cisco-fnf-ntw-servs-17x`) does not name an exported field ID for HTTP host.
 The Flexible NetFlow Configuration Guide, Cisco IOS XE 17 (`cisco-fnf-xe17-book`) does not name an exported field ID for HTTP host either.
@@ -60,10 +68,12 @@ The superseded IOS XE Release 3.9S AVC configuration guide (`cisco-avc-cfg-xe39s
 
 ## HTTP URI statistics (42125) layout
 
-Cisco's 2015 guide states, verbatim: "Collects and exports the URI and URI hit counts." (`cisco-avc-fdg-2015`, table row for field 42125).
+Cisco's 2015 guide states, verbatim: "NULL (\0) is the delimiter." (`cisco-avc-fdg-2015`, table row for field 42125).
 In my own words, restated from the same table row: the field is a repeating sequence of URI-then-count pairs, one pair per tracked URI, concatenated back to back with no separate leading or trailing element.
 Element order: within each pair the URI comes first, followed immediately by its hit count.
 Delimiter versus length prefix: each URI is terminated by a NUL byte rather than preceded by a length field, so the field is delimiter-terminated, not length-prefixed.
+The guide's prose format line `uri <delimiter> count <delimiter> uri <delimiter> count <delimiter>...` shows a delimiter after each count, while its encoding example `{URI\0countURI\0count}` shows none.
+nl6 records the encoding example as governing because it is the byte-level statement, and unit 2 must state that choice beside the byte-order assumption.
 Hit count width and byte order: the guide sizes the hit count at two bytes and calls it an integer, but it does not say which byte order that integer uses, so byte order is unstated by Cisco.
 Maximum URI length: the guide caps a single URI at 512 characters for IOS, truncating anything longer; for IOS XE it gives no URI-specific number, only the same generic 2 KB ceiling it applies to every IOS XE extracted variable-length field, the same pattern already recorded for HTTP host at row `9/45003`.
 Maximum hit count: the guide puts the ceiling at 65535, the natural limit of an unsigned two-byte field.
@@ -73,8 +83,9 @@ The full PDF of this guide, https://www.cisco.com/c/en/us/td/docs/routers/access
 
 ### libfds appHTTPUriStatistics (9357)
 
-libfds `cisco.xml` defines `<id>9357</id>`, `<name>appHTTPUriStatistics</name>`, `<dataType>string</dataType>` (`libfds-cisco-xml`).
-Cisco's guide names no explicit IPFIX data type for field 42125 in its table, so libfds is the only place a type name is stated and there is no Cisco-versus-libfds disagreement to resolve on this point.
+libfds defines appHTTPUriStatistics as IE 9357 with data type string (`libfds-cisco-xml`).
+libfds states string and Cisco states no type, so the only stated type is string.
+nl6 records octetArray as its own encoder decision for the reason above, and unit 2 inherits that decision explicitly rather than as a sourced fact.
 
 Layout pinned: row `9/42125` stays `verified`; its note now carries the one-line layout summary above.
 

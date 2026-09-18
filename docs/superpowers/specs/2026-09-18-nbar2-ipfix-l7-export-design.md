@@ -37,7 +37,7 @@ From Cisco's *Application Visibility and Control Field Definition Guide for Thir
 | Application Name | `option application-table` | 96 | 24 bytes | options template |
 | HTTP Host | `collect application http host` | 45003 | variable-length string | IPFIX only; contested, see "Two unresolved findings" below |
 | HTTP URI statistics | `collect application http uri statistics` | 42125 | concatenated URIs with 2-byte hit counts | IPFIX only |
-| Application Description | option application-table, non-scope field | 94 | Cisco guide: 55 bytes at offset 28 in its option-table listing. RFC 6759 sections 7.1.1 and 7.1.3: Abstract Data Type string, no fixed length | options template |
+| Application Description | option application-table, non-scope field | 94 | Cisco guide: 55 bytes at offset 28 in its option-table listing. RFC 6759 section 7.1.1: Abstract Data Type string, no fixed length | options template |
 
 Application ID, Application Name, HTTP Host and HTTP URI statistics are cited to the Cisco guide below.
 Application Description is cited to RFC 6759, corroborated by the offset and length the Cisco guide gives for the same field in its option-table listing.

@@ -253,7 +253,7 @@ is altered. Section numbers below are RFC 6759's own numbering.
 
                     Figure 2: Selector ID Encoding
 
---- RFC 6759 Sections 7.1.1 and 7.1.3 (verbatim) ---
+--- RFC 6759 Sections 7.1.1, 7.1.2 and 7.1.3 (verbatim) ---
 
 7.1.1.  applicationDescription
 
@@ -263,6 +263,18 @@ is altered. Section numbers below are RFC 6759's own numbering.
    Abstract Data Type: string
    Data Type Semantics:
    ElementId: 94
+   Status: current
+
+7.1.2.  applicationId
+
+   Name: applicationId
+   Description:
+     Specifies an Application ID.
+   Abstract Data Type: octetArray
+   Data Type Semantics: identifier
+   Reference: See Section 4 of [RFC6759]
+   for the applicationId Information Element Specification.
+   ElementId: 95
    Status: current
 
 7.1.3.  applicationName

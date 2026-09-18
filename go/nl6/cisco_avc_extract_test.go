@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -104,6 +105,15 @@ func TestCiscoAVCExtract_EveryElementCitesAKnownSource(t *testing.T) {
 		seen[key] = true
 		if !valid[e.Status] {
 			t.Errorf("element %s: status %q not in verified|contested|unresolved", key, e.Status)
+		}
+		validType := map[string]bool{"unsigned32": true, "string": true, "octetArray": true}
+		if !validType[e.Type] {
+			t.Errorf("element %s: type %q not in unsigned32|string|octetArray", key, e.Type)
+		}
+		if e.Length != "var" {
+			if n, err := strconv.Atoi(e.Length); err != nil || n <= 0 {
+				t.Errorf("element %s: length %q must be \"var\" or a positive integer", key, e.Length)
+			}
 		}
 		for _, src := range e.Sources {
 			if _, ok := sources[strings.TrimSpace(src)]; !ok {
