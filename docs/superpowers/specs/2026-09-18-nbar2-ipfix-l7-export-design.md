@@ -95,17 +95,35 @@ Three encoder changes follow.
 
 **Enterprise IEs widen the template.**
 `buildIPFIXTemplateSet` writes 4 bytes per field today.
-An enterprise-specific IE takes 8: the IE ID with bit 15 set, followed by a 4-byte PEN.
+An enterprise-specific field specifier takes 8 (RFC 7011 section 3.2): the IE ID with bit 15 set (2 bytes), the field length (2 bytes), then the PEN (4 bytes).
 The template set length becomes computed, and `ipfixTemplSetSize` stops being a constant.
 
 **Variable-length fields remove the fixed record size.**
 Such fields declare length `0xFFFF` in the template and carry a per-record length prefix on the wire, per RFC 7011 section 7: one byte below 255, otherwise `255` followed by a 2-byte length.
 `ipfixRecordSize` does not apply to this template.
 
-**Pagination becomes measured.**
+**Pagination becomes measured, and the seam moves into `Tick`.**
 `EncodePacket` currently paginates with `available / ipfixRecordSize` plus a single decrement for pad parity.
 That arithmetic is replaced by encode-and-check per record against the remaining budget, backing out the last record when it does not fit.
-`FlowEncoder.MaxRecordSize()`, the seam sFlow already uses to give `Tick` a worst-case bound, is what the NBAR2 IPFIX encoder returns non-zero from, so `Tick` needs no new concept.
+
+The existing `MaxRecordSize()` seam is **not** sufficient, and the first draft of this section said it was.
+`Tick` (`flow_exporter.go`) uses `MaxRecordSize()` as a divisor: `cap = (len(buf) - overhead) / perRec`.
+With a worst-case NBAR2 record of several hundred bytes, every datagram carries one to three records regardless of the actual sizes, and per-device volume collapses.
+Worse, when the worst case exceeds `len(buf) - overhead` on a template tick, `batch` is empty, the loop breaks, and the expired records are dropped without being sent or counted.
+
+Two `Tick` invariants make the fix specific.
+`Tick` counts `len(batch)` as sent at datagram write-return, and `EncodePacket` returns only `(n, err)`.
+A record the encoder backs out is therefore counted as sent and never re-queued, which breaks `Σ applications[].records == summary.sent` in section 5.
+The comment beside the capacity arithmetic names exactly this hazard.
+
+So the measured encoder gets a **consumed-count return**, the shape `EncodeOptionsDatagram` already has: `Tick` hands it the whole `expired` slice, the encoder reports how many records it emitted, and `Tick` counts exactly those and re-queues the remainder for the next datagram.
+This is a `Tick` change, not only an encoder change, and unit 2 owns both halves.
+
+**A record that fits no datagram.**
+Encode-and-check has a degenerate case: a record larger than an empty datagram.
+Backing it out and starting a new datagram produces the same result, so without a rule the loop either spins or emits zero-record datagrams.
+The rule is: a record the encoder cannot fit into an empty datagram is **dropped and counted in `send_failures`**, and the first occurrence is logged under the `sync.Once` gate.
+The catalog dry render (below) is what keeps this path cold, and the dry render must use the budget **with the template set included**, because a template tick has roughly 100 bytes less room than a data-only tick.
 
 **Options template.**
 The application table maps `applicationId` to `applicationName` in an Options Template (Set ID 3), re-sent on `-flow-template-interval` alongside the data template.
@@ -115,13 +133,24 @@ Template ID allocation, and the behaviour when a device enables both, are settle
 
 **Oversized records.**
 A flow whose URI field is long can push a single record past `flowPayloadBudget`, and a record that fits no datagram can never be sent.
-This takes the rule the trap catalog already established: bound it at catalog load with a worst-case dry render against the configured budget, mark the entry oversized, exclude it from selection, and name it once at startup with its size and the MTU that would admit it.
+This takes the rule the trap catalog already established: bound it at catalog load with a worst-case dry render against the configured budget, mark the entry oversized, exclude it from selection **and from the application table**, and name it once at startup with its size and the MTU that would admit it.
+Excluding it from selection alone would leave the options table advertising an id the device can never emit, which contradicts the agreement invariant in section 3.
+The trap catalog learned the same thing when filtering only `Pick` left an oversized `linkDown` firing from `EntriesByRole`.
 Loading does not fail, because the budget follows the operator-settable `-datagram-mtu`.
 The fire-time encode check remains the backstop.
 
-**Two details to establish rather than assume.**
-Whether options data records count toward the IPFIX sequence number.
-And the engine-id semantics inside `applicationId`, meaning which value marks a port-based, an NBAR2 layer-7, and a custom application.
+**The sequence number is a decision, not a lookup.**
+RFC 7011 section 3.1 defines the IPFIX sequence number as the count of **Data Records** sent from the observation domain, options data records included, and never the count of messages.
+nl6's `IPFIXEncoder.SeqIncrement` returns 1 per message and its comment cites the RFC for that reading; the reading is wrong, and the options path inherits it as "design D7".
+This is a pre-existing conformance divergence in nl6's IPFIX export, independent of NBAR2.
+It matters here because a device claiming Cisco fidelity cannot inherit it: IOS-XE advances by record count, and IPFIXcol2 reports sequence gaps, so the interop gate in section 6 will flag it.
+Three options, recorded for the owner to choose before unit 2:
+
+1. Fix `SeqIncrement` for every IPFIX device in its own PR before NBAR2 lands, as an RFC conformance fix with a digest showing the only byte that moves is the sequence field. Recommended: one IPFIX semantic, and the fix is small.
+2. Fix it for NBAR2 devices only. Two IPFIX sequence semantics in one fleet, which is the kind of split this repository has removed elsewhere.
+3. Leave it. The interop gate then needs an allowance for a known divergence, and the fidelity claim carries a documented exception.
+
+**Engine-id semantics** inside `applicationId`, meaning which value marks a port-based, an NBAR2 layer-7, and a custom application, are a unit-1 output.
 A wrong engine id yields IDs a collector resolves against the wrong classification engine.
 
 ## 3. Data model and flow generation
@@ -144,6 +173,14 @@ At 30k devices times `MaxFlows` 256 there are roughly 7.7M live records.
 A pointer plus two string headers per record is on the order of 300 MB resident for values drawn from a fixed catalog.
 `FlowRecord` therefore carries `appIdx`, `hostIdx` and `uriIdx`, about 6 bytes, resolved against the immutable catalog at encode time.
 
+**How the catalog reaches the encoder.**
+`IPFIXEncoder` is a shared stateless value and `EncodePacket` carries no device context, but the indices above resolve against the *device's* catalog, which is per type.
+sFlow hit the same wall and grew a type-switch special case in `Tick` (`EncodeFlowDatagram`) because the interface carries no profile.
+NBAR2 does not add a second special case.
+The NBAR2 IPFIX encoder is constructed **per resolved catalog** and holds a pointer to it, so devices sharing a type share an encoder and `Tick` calls the ordinary encoder interface.
+The precedent is `SNMPv1Encoder`, which is per device because `agent-addr` is per device, and the v3 trap encoder, which holds its own engine.
+An encoder holding an immutable pointer is still safe to share across goroutines.
+
 **Catalog entry shape**, mirroring the trap and syslog loaders:
 application name, the `applicationId` selector, L4 protocol, destination port, weight, and weighted host and URI lists.
 
@@ -159,7 +196,13 @@ A collector never sees an `applicationId` it cannot resolve, and never a table r
 ## 4. Configuration, gating and capability
 
 **Config surface.**
-NBAR2 is a property of the flow record format, so it lives in the existing per-device `flow` block as `"nbar2": true`, with a matching seed flag for the auto-start batch.
+NBAR2 is a property of the flow record format, so it lives in the existing per-device `flow` block as `"nbar2": true`, with a matching `-flow-nbar2` seed flag for the auto-start batch.
+
+**The seed flag is validated at startup, fatally.**
+`-flow-protocol` defaults to `netflow9`, so a bare `-flow-nbar2` is the same contradiction rejection 1 below refuses over HTTP, but at startup there is no 400 to return.
+It is fatal after `-help` and `-version` and before any subsystem starts, with the same message.
+The precedent is `-syslog-framing` under `udp` (nl6#445), refused at startup rather than ignored.
+A batch that silently ran without NBAR2 would be the accepted-echoed-ignored failure this repository has removed three times.
 No per-device catalog path.
 The path-injection reasoning that made syslog's and dial-out's `ca_pem` inline-only applies, so an operator catalog arrives only via `-nbar2-catalog`, read once at startup.
 
@@ -169,6 +212,10 @@ The path-injection reasoning that made syslog's and dial-out's `ca_pem` inline-o
 1. `nbar2: true` with any protocol other than `ipfix` is rejected, with an error naming `ipfix`.
 2. `nbar2: true` on a device type without NBAR2 is rejected, naming the offending resource file, via `nbar2IncapableRequest` built as the third sibling of `flowIncapableRequest` and `opticalIncapableRequest`.
    It inherits their round-robin semantics: a mixed batch is accepted and incapable devices are skipped with a log line, and only an entirely incapable resolved type set fails.
+   "Skipped" means something different here than for flow, and the difference is stated.
+   A flow-incapable device in a mixed batch gets **no flow block**.
+   An NBAR2-incapable but flow-capable device in a mixed NBAR2 batch gets the **plain IPFIX record** with `nbar2` dropped and logged once per type, because its flow block is otherwise valid.
+   The two outcomes differ in byte identity and in what the ground-truth join sees, so the spec names which applies.
 3. An explicit NBAR2 request on a flow-incapable type is already covered by the existing flow rejection and needs no new rule.
 
 **The capability set is curated with a written reason per row.**
@@ -186,6 +233,9 @@ NBAR2 capability gets the treatment `TestFlowCapabilityCompleteness` already giv
 **The join key extends, which is a compatibility change.**
 A fleet can mix NBAR2 and non-NBAR2 devices, so the same `(tcp, 443)` traffic arrives both with and without an `applicationId`.
 The key becomes `(l4_proto, dst_port, application_id)`, with an empty application id for non-NBAR2 records.
+`application_id` in the key is the **wire selector** (the 32-bit engine-id plus selector value), never `appIdx`.
+`addAppBatch` builds `appKey` from `FlowRecord` fields, and an index is only meaningful against one catalog: two per-type overlays can place different applications at the same index, and keying on the index would merge them.
+Resolving the selector at ledger time means the ledger, like the encoder, needs the device's catalog.
 `Σ applications[].records == summary.sent` still holds, so totals reconcile as before.
 A consumer grouping only on protocol and port now sees two rows where it saw one.
 That goes in the schema doc explicitly.
@@ -261,10 +311,12 @@ Unit 1 gates everything after it.
    Produce `testdata/cisco-avc/` and a written record of what stays unverified.
    Produces no shippable code.
    If it fails, the exit in section 1 applies.
-2. **Encoder.**
-   Enterprise IEs, variable-length encoding, measured pagination, `MaxRecordSize`.
+2. **Encoder and `Tick`.**
+   Enterprise IEs, variable-length encoding, measured pagination with a consumed-count return, the `Tick` change that counts and re-queues on that count, and the drop-and-count rule for a record that fits no datagram.
+   Per-catalog encoder construction.
    Reconcile template-ID allocation with the existing options-interface-table path.
    Decode round-trip tests including the length boundary cases.
+   Depends on the sequence-number decision.
 3. **Application table.**
    Options template, re-send cadence, agreement with the device's catalog.
 4. **Catalog.**
@@ -291,4 +343,4 @@ Unit 1 gates everything after it.
 3. `applicationId` engine-id values and their meanings. Unit 1.
 4. Application-table options-template scope fields. Unit 1.
 5. Template ID allocation when a device enables both `nbar2` and `options_interface_table`. Unit 2.
-6. Whether options data records advance the IPFIX sequence number. Unit 2.
+6. Which of the three sequence-number options in section 2 the owner chooses. Decided before unit 2; option 1 recommended.
