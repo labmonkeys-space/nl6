@@ -40,6 +40,12 @@ From Cisco's *Application Visibility and Control Field Definition Guide for Thir
 
 Source: https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide/5_AVC_Metric_Def.html
 
+A second primary source covers the application identity half.
+RFC 6759 (Claise, Aitken, Ben-Dvora, November 2012) is the IETF publication of Cisco's application export.
+Section 4.1 defines the `applicationId` classification engine IDs, of which three matter here: 3 IANA-L4 (well-known port, 2-byte selector), 6 USER-Defined (3-byte selector) and 13 PANA-L7 (the NBAR2 layer-7 registry, 3-byte selector).
+Section 4.3 gives the application-table options template: scope field `applicationId`, non-scope fields `applicationName` (IE 96) and `applicationDescription` (IE 94).
+An RFC extract can be checked in under `testdata/rfc/`, the way RFC 3414 already is, so both the engine-id table and the options-template shape become checkable rather than recalled.
+
 ### Two unresolved findings
 
 **The HTTP host number is contested.**
