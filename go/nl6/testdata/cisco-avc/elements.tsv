@@ -1,0 +1,5 @@
+pen	id	name	type	length	status	source	note
+0	95	applicationId	octetArray	4	verified	cisco-avc-fdg-2015	engine-id (8 bits) + selector (24 bits); CLI collect application name; exportable under v9 and IPFIX
+0	96	applicationName	string	24	verified	cisco-avc-fdg-2015	carried by option application-table, not in data records
+9	45003	HTTP Host	string	var	contested	cisco-avc-fdg-2015,libfds-cisco-xml	Cisco 2015 guide: 45003, IPFIX only, max 512 chars IOS / 2 KB IOS XE; libfds defines appHTTPHost as 12235; see NOTES.md
+9	42125	HTTP URI statistics	octetArray	var	verified	cisco-avc-fdg-2015	concatenated URIs each followed by a 2-byte hit count; IPFIX only; wire layout to be pinned in Task 5
