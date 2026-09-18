@@ -133,6 +133,19 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/labmonkeys-space/nl6/edit/main/',
+          // docs/superpowers/ holds design specs and implementation plans
+          // (working documents committed for the engineering record). They
+          // are not site pages: excluded here so the build never routes
+          // them, and scripts/check-doc-orphans.mjs skips the same prefix.
+          // Setting `exclude` REPLACES the plugin defaults, so they are
+          // restated.
+          exclude: [
+            '**/_*.{js,jsx,ts,tsx,md,mdx}',
+            '**/_*/**',
+            '**/*.test.{js,jsx,ts,tsx}',
+            '**/__tests__/**',
+            'superpowers/**',
+          ],
         },
         blog: false,
         theme: {

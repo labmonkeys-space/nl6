@@ -25,11 +25,18 @@ const ALLOWLIST = new Set([]);
 
 const sidebars = readFileSync('sidebars.ts', 'utf8');
 
+// Directories under docs/ that the docs plugin EXCLUDES from the site
+// (docusaurus.config.ts `docs.exclude`). Files there are working documents
+// (design specs, implementation plans), never pages, so they cannot be
+// orphans. Keep this list in step with the config's `exclude` globs.
+const EXCLUDED_DIRS = ['docs/superpowers/'];
+
 // git-tracked doc files under docs/ — matches exactly what CI checks out and
 // builds (untracked scratch files are ignored, as they are by the build).
 const files = execSync('git ls-files docs', { encoding: 'utf8' })
   .split('\n')
-  .filter((f) => /\.mdx?$/.test(f));
+  .filter((f) => /\.mdx?$/.test(f))
+  .filter((f) => !EXCLUDED_DIRS.some((d) => f.startsWith(d)));
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
