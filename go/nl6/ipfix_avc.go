@@ -415,3 +415,118 @@ func uriStatsValue(uri string, count uint32) []byte {
 
 var _ FlowEncoder = (*IPFIXAVCEncoder)(nil)
 var _ measuredFlowEncoder = (*IPFIXAVCEncoder)(nil)
+
+// ipfixAppTableRecSize is one application-table option data record: the
+// 4-byte applicationId scope, then the two fixed-width strings Cisco's
+// option application-table emits.
+const ipfixAppTableRecSize = 4 + ipfixApplicationNameLen + ipfixApplicationDescriptionLen
+
+// ipfixAppTableTemplateSetBytes is the RFC 6759 section 4.3 options
+// template: scope applicationId, non-scope applicationName and
+// applicationDescription, at Cisco's fixed lengths. Built once, read-only.
+var ipfixAppTableTemplateSetBytes = buildIPFIXAppTableTemplateSet()
+
+func buildIPFIXAppTableTemplateSet() []byte {
+	length := 4 + 6 + 3*4 // set hdr + (id, field count, scope count) + 3 specifiers = 22
+	if rem := length % 4; rem != 0 {
+		length += 4 - rem
+	}
+	buf := make([]byte, length)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], ipfixSetIDOptionsTemplate)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(length))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], ipfixAppTableTemplateID)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], 3) // field count incl. scope
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], 1) // scope field count
+	pos += 2
+	for _, f := range [][2]uint16{
+		{ipfixApplicationID, 4},
+		{ipfixApplicationName, ipfixApplicationNameLen},
+		{ipfixApplicationDescription, ipfixApplicationDescriptionLen},
+	} {
+		binary.BigEndian.PutUint16(buf[pos:], f[0])
+		pos += 2
+		binary.BigEndian.PutUint16(buf[pos:], f[1])
+		pos += 2
+	}
+	return buf
+}
+
+// appTableEncoder is the seam Tick uses to emit the application table on
+// the template-refresh cadence, beside the interface option table.
+type appTableEncoder interface {
+	Applications() []avcApplication
+	EncodeAppTableDatagram(domainID, seqNo uint32, apps []avcApplication, buf []byte) (n, consumed int, err error)
+}
+
+// Applications returns the catalog's applications in index order. The slice
+// is the catalog's own and must not be modified.
+func (e *IPFIXAVCEncoder) Applications() []avcApplication { return e.cat.apps }
+
+// EncodeAppTableDatagram writes a self-contained message: header, the
+// options template, and as many application records as fit. consumed <
+// len(apps) means the caller re-invokes with the remainder. The set is padded
+// to 4 bytes because 83-byte records are not aligned.
+func (e *IPFIXAVCEncoder) EncodeAppTableDatagram(domainID, seqNo uint32, apps []avcApplication, buf []byte) (int, int, error) {
+	if len(apps) == 0 {
+		return 0, 0, nil
+	}
+	overhead := ipfixHeaderSize + len(ipfixAppTableTemplateSetBytes) + ipfixDataSetHdrSize
+	if len(buf) < overhead+ipfixAppTableRecSize+3 {
+		return 0, 0, fmt.Errorf("ipfix avc: buffer too small (%d bytes) for an application-table datagram, need at least %d", len(buf), overhead+ipfixAppTableRecSize+3)
+	}
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], ipfixVersion)
+	pos += 2
+	lengthOffset := pos
+	pos += 2
+	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], seqNo)
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], domainID)
+	pos += 4
+	copy(buf[pos:], ipfixAppTableTemplateSetBytes)
+	pos += len(ipfixAppTableTemplateSetBytes)
+
+	setStart := pos
+	binary.BigEndian.PutUint16(buf[pos:], ipfixAppTableTemplateID)
+	pos += 4
+	maxFit := (len(buf) - pos - 3) / ipfixAppTableRecSize
+	consumed := len(apps)
+	if consumed > maxFit {
+		consumed = maxFit
+	}
+	for _, app := range apps[:consumed] {
+		binary.BigEndian.PutUint32(buf[pos:], app.ID)
+		pos += 4
+		pos = putFixedString(buf, pos, app.Name, ipfixApplicationNameLen)
+		pos = putFixedString(buf, pos, app.Description, ipfixApplicationDescriptionLen)
+	}
+	if rem := (pos - setStart) % 4; rem != 0 {
+		for i := 0; i < 4-rem; i++ {
+			buf[pos] = 0
+			pos++
+		}
+	}
+	binary.BigEndian.PutUint16(buf[setStart+2:], uint16(pos-setStart))
+	binary.BigEndian.PutUint16(buf[lengthOffset:], uint16(pos))
+	return pos, consumed, nil
+}
+
+// putFixedString writes s into a fixed-width NUL-padded field of n bytes,
+// truncating at n, and returns the new position. putPaddedString is the
+// 32-byte special case used by the interface option table.
+func putFixedString(buf []byte, pos int, s string, n int) int {
+	c := copy(buf[pos:pos+n], s)
+	for i := pos + c; i < pos+n; i++ {
+		buf[i] = 0
+	}
+	return pos + n
+}
+
+var _ appTableEncoder = (*IPFIXAVCEncoder)(nil)

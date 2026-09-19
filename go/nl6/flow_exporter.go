@@ -691,7 +691,10 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 
 	// Options datagrams ride the template-refresh cadence; capture the
 	// condition now because the flow loop below consumes sendTemplate.
-	emitOptions := sendTemplate && fe.optionShape != "" && len(fe.optionIfaces) > 0
+	// emitOptionsCadence is the refresh condition alone, reused by the
+	// application table below, which has no interface universe to be empty.
+	emitOptionsCadence := sendTemplate
+	emitOptions := emitOptionsCadence && fe.optionShape != "" && len(fe.optionIfaces) > 0
 
 	// `sync.Pool` stores `*[]byte` (SA6002). Deref once into a local
 	// slice header — the backing array is shared, so writes via `buf`
@@ -922,6 +925,32 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 		remaining := fe.optionIfaces
 		for ok && len(remaining) > 0 {
 			n, consumed, err := optEnc.EncodeOptionsDatagram(fe.domainID, fe.seqNo, uptimeMs, fe.optionShape, remaining, buf)
+			if err != nil {
+				fe.logFirstOptionsErr(err)
+				break
+			}
+			if n == 0 || consumed == 0 {
+				break
+			}
+			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
+				fe.logFirstWriteErr(err)
+			}
+			stats.PacketsSent++
+			stats.BytesSent += uint64(n)
+			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
+			remaining = remaining[consumed:]
+		}
+	}
+
+	// The application table (RFC 6759 section 4.3) rides the same
+	// template-refresh cadence as the interface option table. An AVC device
+	// may carry both; template ids 257 and 259 keep them apart. Its records
+	// are Data Records under RFC 7011 section 3.1, so the sequence advances
+	// by consumed; they are metadata, not flows, so RecordsSent is untouched.
+	if ate, ok := encoder.(appTableEncoder); ok && emitOptionsCadence {
+		remaining := ate.Applications()
+		for len(remaining) > 0 {
+			n, consumed, err := ate.EncodeAppTableDatagram(fe.domainID, fe.seqNo, remaining, buf)
 			if err != nil {
 				fe.logFirstOptionsErr(err)
 				break

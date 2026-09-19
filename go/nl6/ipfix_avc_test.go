@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"net"
 	"strconv"
 	"strings"
@@ -372,8 +373,16 @@ func TestIPFIXAVCTickRequeuesOnConsumed(t *testing.T) {
 		}
 		running += uint32(len(recs))
 	}
-	if len(seen) != 120 || stats.RecordsSent != 120 || fe.seqNo != 120 {
-		t.Fatalf("wire=%d RecordsSent=%d seqNo=%d, want 120 each", len(seen), stats.RecordsSent, fe.seqNo)
+	// fe.seqNo is 121, not 120: IPFIXAVCEncoder now also implements
+	// appTableEncoder (Task 7), so this catalog's one application rides an
+	// application-table datagram on the same refresh tick and advances the
+	// sequence by one more Data Record (RFC 7011 section 3.1). That extra
+	// datagram is not an AVC flow record, so it does not appear in `seen`
+	// or move RecordsSent — decodeIPFIXAVCRecords returns nothing for it
+	// (dec.RawSets[ipfixAVCTemplateID] is unset), leaving `running`
+	// unaffected too.
+	if len(seen) != 120 || stats.RecordsSent != 120 || fe.seqNo != 121 {
+		t.Fatalf("wire=%d RecordsSent=%d seqNo=%d, want 120, 120, 121", len(seen), stats.RecordsSent, fe.seqNo)
 	}
 	if stats.SendFailures != 0 {
 		t.Fatalf("SendFailures = %d, want 0", stats.SendFailures)
@@ -474,5 +483,101 @@ func TestIPFIXAVCTickSendsWhenWorstCaseExceedsBudget(t *testing.T) {
 		if r.Host != "short.example" {
 			t.Fatalf("record host = %q, want %q", r.Host, "short.example")
 		}
+	}
+}
+
+// The application table is an Options Template (Set ID 3, template 259)
+// with scope applicationId and non-scope applicationName (24 bytes) and
+// applicationDescription (55 bytes), per RFC 6759 section 4.3 and Cisco's
+// option application-table lengths. Records are 83 bytes, so the set pads.
+func TestIPFIXAVCAppTableDatagram(t *testing.T) {
+	cat := testAVCCatalog()
+	enc := NewIPFIXAVCEncoder(cat)
+	buf := make([]byte, 1472)
+	n, consumed, err := enc.EncodeAppTableDatagram(1, 42, enc.Applications(), buf)
+	if err != nil || consumed != 3 {
+		t.Fatalf("n=%d consumed=%d err=%v", n, consumed, err)
+	}
+	if n%4 != 0 {
+		t.Fatalf("message length %d not 4-byte aligned", n)
+	}
+	dg := decodeIPFIXOptionsDatagram(t, buf[:n])
+	if dg.SequenceNo != 42 || dg.Template == nil || dg.Template.TemplateID != ipfixAppTableTemplateID {
+		t.Fatalf("datagram = %+v", dg)
+	}
+	if dg.Template.ScopeCount != 1 || len(dg.Template.Fields) != 3 {
+		t.Fatalf("template = %+v", dg.Template)
+	}
+	if f := dg.Template.Fields; f[0].IEID != ipfixApplicationID || f[0].IELength != 4 ||
+		f[1].IEID != ipfixApplicationName || f[1].IELength != ipfixApplicationNameLen ||
+		f[2].IEID != ipfixApplicationDescription || f[2].IELength != ipfixApplicationDescriptionLen {
+		t.Fatalf("template fields = %+v", f)
+	}
+	if len(dg.Records) != 3 {
+		t.Fatalf("records = %d, want 3", len(dg.Records))
+	}
+	if dg.Records[0].Scope != avcApplicationID(13, 80) || dg.Records[0].Strings[0] != "http" || dg.Records[0].Strings[1] != "HTTP" {
+		t.Fatalf("record 0 = %+v", dg.Records[0])
+	}
+	// Pagination: a buffer holding two records consumes two.
+	small := make([]byte, 16+len(ipfixAppTableTemplateSetBytes)+4+2*ipfixAppTableRecSize+3)
+	_, consumed, err = enc.EncodeAppTableDatagram(1, 0, enc.Applications(), small)
+	if err != nil || consumed != 2 {
+		t.Fatalf("small buffer: consumed=%d err=%v, want 2", consumed, err)
+	}
+}
+
+// Through Tick: on a template-refresh tick an AVC device emits the data
+// template AND the application table (259) on the same tick, the application
+// table advancing the sequence by its record count.
+//
+// Deviation from the task brief: the brief's version of this test also set
+// fe.optionShape/fe.optionIfaces expecting a THIRD datagram, the interface
+// option table (257), to fire from the same encoder. IPFIXAVCEncoder does
+// not implement flowOptionsEncoder (EncodeOptionsDatagram) — only
+// IPFIXEncoder and NetFlow9Encoder do — and Task 7's brief neither lists
+// that method in IPFIXAVCEncoder's Produces section nor asks for it in
+// step 3, so adding it here would be new scope. With fe.optionShape set on
+// an encoder that does not implement the interface, flow_exporter.go's
+// `optEnc, ok := encoder.(flowOptionsEncoder)` sees ok=false and the
+// interface-option loop runs zero iterations (a one-time log, no datagram,
+// no panic) — so the third datagram the original assertions expected can
+// never arrive. This version keeps the sequence-math assertions the brief
+// cared about (do not weaken those) for the two datagrams the encoder can
+// actually produce.
+func TestIPFIXAVCTickEmitsApplicationTable(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	addr := ln.LocalAddr().(*net.UDPAddr)
+
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.52"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	fe.cache.Add(avcRecord(1, 1, 1, 49152), time.Now().Add(-time.Hour))
+	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
+	if stats.PacketsSent != 2 || stats.RecordsSent != 1 {
+		t.Fatalf("stats = %+v, want 2 datagrams (data, app-table) and 1 record", stats)
+	}
+	var seqs []uint32
+	templates := map[uint16]bool{}
+	for i := 0; i < 2; i++ {
+		pkt := receivePacket(ch)
+		if pkt == nil {
+			t.Fatalf("datagram %d missing", i)
+		}
+		seqs = append(seqs, binary.BigEndian.Uint32(pkt[8:]))
+		templates[binary.BigEndian.Uint16(pkt[20:])] = true // template id follows the 4-byte set header at offset 16
+	}
+	for _, id := range []uint16{ipfixAVCTemplateID, ipfixAppTableTemplateID} {
+		if !templates[id] {
+			t.Fatalf("template %d not seen; saw %v", id, templates)
+		}
+	}
+	// data (1 record) at 0; app table (3 records) at 1; final 4.
+	if seqs[0] != 0 || seqs[1] != 1 || fe.seqNo != 4 {
+		t.Fatalf("sequences = %v, seqNo = %d; want [0 1] and 4", seqs, fe.seqNo)
 	}
 }
