@@ -112,7 +112,10 @@ func TestNbar2IncapableRequest(t *testing.T) {
 		{"mixed round robin is allowed", nbar2Req("", true, ""), false},
 		{"no flow block", CreateDevicesRequest{ResourceFile: "juniper_mx240.json"}, false},
 		{"flow block without nbar2", CreateDevicesRequest{ResourceFile: "juniper_mx240.json", Flow: &DeviceFlowConfig{Collector: "x:1", Protocol: "ipfix"}}, false},
-		{"neither round robin nor a resource file", CreateDevicesRequest{Flow: &DeviceFlowConfig{Nbar2: true}}, false},
+		// No resource file and no round robin creates the DEFAULT type,
+		// asr9k (IOS-XR), which has no NBAR2: refused, naming it, rather than
+		// a 201 whose every device silently degraded.
+		{"neither round robin nor a resource file resolves to the incapable default", CreateDevicesRequest{Flow: &DeviceFlowConfig{Nbar2: true}}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -145,6 +148,10 @@ func TestCreateDevicesHandler_Nbar2Rejections(t *testing.T) {
 	req.StartIP, req.DeviceCount, req.Netmask = "10.0.0.1", 1, "24"
 	if code, msg := post(req); code != http.StatusBadRequest || !strings.Contains(msg, `"juniper_mx240.json" has no NBAR2 (Junos`) {
 		t.Fatalf("incapable type: %d %q", code, msg)
+	}
+	req.ResourceFile = ""
+	if code, msg := post(req); code != http.StatusBadRequest || !strings.Contains(msg, `"asr9k.json" has no NBAR2 (IOS-XR`) {
+		t.Fatalf("default type: %d %q", code, msg)
 	}
 	req.Flow.Protocol = "netflow9"
 	req.ResourceFile = "cisco_ios.json"
@@ -210,7 +217,12 @@ func TestDegradeNbar2IfIncapable(t *testing.T) {
 	mk := func() *DeviceSimulator {
 		return &DeviceSimulator{flowConfig: &DeviceFlowConfig{Collector: "x:4739", Protocol: "ipfix", Nbar2: true}}
 	}
-	d1, d2, d3 := mk(), mk(), mk()
+	d1, d2, d3, d4 := mk(), mk(), mk(), mk()
+	nbar2DegradeLogged.Delete(defaultResourceFile)
+	degradeNbar2IfIncapable(d4, "") // the default type, named in the log
+	if d4.flowConfig.Nbar2 || !strings.Contains(sink.String(), "device type asr9k.json has no NBAR2 (IOS-XR") {
+		t.Fatalf("empty resource file must degrade as the default type and name it:\n%s", sink.String())
+	}
 	degradeNbar2IfIncapable(d1, "juniper_mx240.json")
 	degradeNbar2IfIncapable(d2, "juniper_mx240.json")
 	degradeNbar2IfIncapable(d3, "cisco_ios.json")

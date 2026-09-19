@@ -531,10 +531,12 @@ func main() {
 	// catalogs, unconditionally, so a REST-created device can opt in with
 	// flow.nbar2 without a CLI seed. The payload budget is passed explicitly
 	// after SetLinkMTU has run, the trap loader's rule, so the dry render
-	// can never silently size against the default MTU.
+	// can never silently size against the default MTU. The IPv6 budget is
+	// the SMALLER family budget (flowPayloadBudget), so an entry that passes
+	// load fits an empty datagram to every collector, not only an IPv4 one.
 	if err := manager.StartNbar2Catalogs(Nbar2CatalogConfig{
 		CatalogPath:   *nbar2CatalogPath,
-		PayloadBudget: maxFlowPayloadIPv4,
+		PayloadBudget: maxFlowPayloadIPv6,
 	}); err != nil {
 		log.Fatalf("Failed to load NBAR2 catalogs: %v", err)
 	}

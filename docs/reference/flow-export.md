@@ -195,6 +195,7 @@ At load, each entry's worst-case record (its longest host and URI) is encoded th
 An entry that cannot fit is **disabled, not rejected**: it stays out of generation and out of the application table, and the startup log names it with its size, the gap and the MTU that would admit it.
 Loading does not fail on size because the budget follows an operator-settable MTU.
 A device whose resolved catalog has no usable entry is refused at attach with that reason.
+The budget used is the IPv6 one, the smaller of the two address families, so an entry that passes load fits a datagram to any collector.
 `GET /api/v1/flows/status` reports the resolved catalogs under `nbar2_catalogs_by_type` with entry counts, the number disabled, and the source (`embedded`, `file:resources/<type>/nbar2.json`, `override:<path>`).
 
 ## Per-device source IP

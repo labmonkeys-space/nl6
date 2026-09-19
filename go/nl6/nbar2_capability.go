@@ -78,13 +78,15 @@ func nbar2IncapableRequest(req CreateDevicesRequest) (string, bool) {
 	if req.Flow == nil || !req.Flow.Nbar2 {
 		return "", false
 	}
-	if req.ResourceFile != "" {
-		if !SupportsNbar2(req.ResourceFile) {
-			return req.ResourceFile, true
-		}
-		return "", false
-	}
 	if !req.RoundRobin {
+		// A request naming no resource file is created as the default type
+		// (defaultResourceFile), which is itself incapable. Resolving it here
+		// keeps that request from a 201 whose every device silently degraded
+		// (review finding on the first cut of this gate).
+		rf := effectiveResourceFile(req.ResourceFile)
+		if !SupportsNbar2(rf) {
+			return rf, true
+		}
 		return "", false
 	}
 	types := roundRobinTypesForCategory(req.Category)
@@ -126,6 +128,7 @@ var nbar2DegradeLogged sync.Map
 // continues. The two outcomes differ in byte identity and in what the
 // ground-truth join sees, which is why this comment and the docs say so.
 func degradeNbar2IfIncapable(device *DeviceSimulator, resourceFile string) {
+	resourceFile = effectiveResourceFile(resourceFile)
 	cfg := device.flowConfig
 	if cfg == nil || !cfg.Nbar2 {
 		return
@@ -137,6 +140,15 @@ func degradeNbar2IfIncapable(device *DeviceSimulator, resourceFile string) {
 		log.Printf("flow export: device type %s has no NBAR2 (%s); its devices keep their flow block and emit plain IPFIX (template 256), not AVC (further devices of this type not logged)",
 			resourceFile, nbar2IncapableTypes[resourceFile])
 	}
+}
+
+// effectiveResourceFile maps the empty resource file a create request may
+// carry to the type the device is actually built as.
+func effectiveResourceFile(rf string) string {
+	if rf == "" {
+		return defaultResourceFile
+	}
+	return rf
 }
 
 // nbar2FieldFor is what a created device stores and GET /api/v1/devices
