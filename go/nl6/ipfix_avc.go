@@ -20,9 +20,25 @@ const (
 	ipfixApplicationName        = 96 // applicationName, fixed 24 bytes in Cisco's option application-table
 	ipfixApplicationDescription = 94 // applicationDescription, fixed 55 bytes in Cisco's option application-table
 
-	// Cisco enterprise-specific layer-7 IEs (PEN 9), IPFIX only.
-	ciscoHTTPHost          = 45003 // collect application http host; variable-length string
-	ciscoHTTPURIStatistics = 42125 // collect application http uri statistics; see ipfixURIStatsLayout
+	// Cisco enterprise-specific layer-7 IEs (PEN 9), IPFIX only. The IE id is
+	// the low 15 bits, RFC 7011 section 3.2's "Information Element
+	// identifier"; ciscoHTTPHost = 12235 and ciscoHTTPURIStatistics = 9357
+	// are those 15-bit ids, matching libfds. Cisco's 2015 AVC guide instead
+	// quotes the field specifier as it appears on the wire in a template,
+	// enterprise bit already set (45003 = 0x8000|12235, 42125 = 0x8000|9357);
+	// that wire-level specifier is not a second IE number, and a decoder
+	// reports the IE id (12235 / 9357) beside PEN 9, never the specifier.
+	ciscoHTTPHost          = 12235 // collect application http host; variable-length string
+	ciscoHTTPURIStatistics = 9357  // collect application http uri statistics; see ipfixURIStatsLayout
+
+	// ciscoHTTPHostWireSpecifier and ciscoHTTPURIStatisticsWireSpecifier are
+	// the wire-level field specifiers Cisco's guide quotes (enterprise bit
+	// included); ciscoHTTPHostWireSpecifier == ipfixEnterpriseBit|ciscoHTTPHost
+	// and likewise for the URI statistics pair. Kept as named constants so a
+	// reader checking the guide's own numbers against this file does not
+	// have to compute the OR by hand.
+	ciscoHTTPHostWireSpecifier          = 45003
+	ciscoHTTPURIStatisticsWireSpecifier = 42125
 
 	// Fixed lengths Cisco's 2015 AVC guide gives for option application-table.
 	ipfixApplicationNameLen        = 24

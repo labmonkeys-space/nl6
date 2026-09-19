@@ -111,6 +111,7 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 							break
 						}
 						pen = binary.BigEndian.Uint32(setData[tmplPos+4:])
+						ieID &^= ipfixEnterpriseBit
 						tmplPos += 8
 					} else {
 						tmplPos += 4

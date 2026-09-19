@@ -22,7 +22,10 @@ The note column, not the status, says whether the layout is complete enough to e
 
 ## Contested
 
-### HTTP Host: 45003 or 12235
+### HTTP Host: 45003 and 12235 are the same element (resolved)
+
+45003 and 12235 are the same element: 45003 = 0x8000 | 12235.
+Cisco's "Export Field ID" column quotes the template field specifier with the enterprise bit already set, not a second IE number; RFC 7011 section 3.2's Information Element identifier, the low 15 bits, is 12235, and that is what libfds names and what a decoder reports beside PEN 9.
 
 Cisco's 2015 Field Definition Guide (ISR G2, ASR 1000) gives 45003 (`cisco-avc-fdg-2015`).
 Its option-template table lists HTTP host as a variable-length string field, IPFIX only, max 512 chars on IOS and 2 KB on IOS XE.
@@ -66,6 +69,7 @@ The Cisco IOS XE 16 AVC configuration guide (`cisco-avc-cfg-xe39s`) does not men
 
 ## HTTP URI statistics (42125) layout
 
+42125 = 0x8000 | 9357, the same identity resolved for HTTP host above; libfds's 9357 (`appHTTPUriStatistics`) is the same element as Cisco's 42125, not a second candidate.
 Cisco's 2015 guide states, verbatim: "NULL (\0) is the delimiter." (`cisco-avc-fdg-2015`, table row for field 42125).
 In my own words, restated from the same table row: the field is a repeating sequence of URI-then-count pairs, one pair per tracked URI, concatenated back to back with no separate leading or trailing element.
 Element order: within each pair the URI comes first, followed immediately by its hit count.

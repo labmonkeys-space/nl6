@@ -23,8 +23,8 @@ func TestIPFIXAVCConstantsMatchEvidence(t *testing.T) {
 		"applicationId":          {0, 95, ipfixApplicationID},
 		"applicationName":        {0, 96, ipfixApplicationName},
 		"applicationDescription": {0, 94, ipfixApplicationDescription},
-		"HTTP Host":              {9, 45003, ciscoHTTPHost},
-		"HTTP URI statistics":    {9, 42125, ciscoHTTPURIStatistics},
+		"HTTP Host":              {9, 12235, ciscoHTTPHost},
+		"HTTP URI statistics":    {9, 9357, ciscoHTTPURIStatistics},
 	}
 	seen := map[string]bool{}
 	for _, e := range elements {
@@ -65,6 +65,12 @@ func TestIPFIXAVCConstantsMatchEvidence(t *testing.T) {
 	}
 	if ipfixAVCTemplateID != 258 || ipfixAppTableTemplateID != 259 {
 		t.Errorf("template ids = %d/%d, want 258/259 (plan A global constraint)", ipfixAVCTemplateID, ipfixAppTableTemplateID)
+	}
+	if ciscoHTTPHostWireSpecifier != ipfixEnterpriseBit|ciscoHTTPHost {
+		t.Errorf("ciscoHTTPHostWireSpecifier = %d, want ipfixEnterpriseBit|ciscoHTTPHost = %d (45003 = 0x8000|12235)", ciscoHTTPHostWireSpecifier, ipfixEnterpriseBit|ciscoHTTPHost)
+	}
+	if ciscoHTTPURIStatisticsWireSpecifier != ipfixEnterpriseBit|ciscoHTTPURIStatistics {
+		t.Errorf("ciscoHTTPURIStatisticsWireSpecifier = %d, want ipfixEnterpriseBit|ciscoHTTPURIStatistics = %d (42125 = 0x8000|9357)", ciscoHTTPURIStatisticsWireSpecifier, ipfixEnterpriseBit|ciscoHTTPURIStatistics)
 	}
 }
 

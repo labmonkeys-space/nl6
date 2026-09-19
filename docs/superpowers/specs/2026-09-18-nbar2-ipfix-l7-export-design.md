@@ -35,8 +35,8 @@ From Cisco's *Application Visibility and Control Field Definition Guide for Thir
 |-------|-----|----------------------------------|------|-----------------|
 | Application ID | `collect application name` | 95 | 4 bytes: engine-id (8 bits) + selector (24 bits) | v9 and IPFIX |
 | Application Name | `option application-table` | 96 | 24 bytes | options template |
-| HTTP Host | `collect application http host` | 45003 | variable-length string | IPFIX only; contested, see "Two unresolved findings" below |
-| HTTP URI statistics | `collect application http uri statistics` | 42125 | concatenated URIs with 2-byte hit counts | IPFIX only |
+| HTTP Host | `collect application http host` | 12235 (wire specifier 45003 = 0x8000 \| 12235) | variable-length string | IPFIX only |
+| HTTP URI statistics | `collect application http uri statistics` | 9357 (wire specifier 42125 = 0x8000 \| 9357) | concatenated URIs with 2-byte hit counts | IPFIX only |
 | Application Description | option application-table, non-scope field | 94 | Cisco guide: 55 bytes at offset 28 in its option-table listing. RFC 6759 section 7.1.1: Abstract Data Type string, no fixed length | options template |
 
 Application ID, Application Name, HTTP Host and HTTP URI statistics are cited to the Cisco guide below.
@@ -52,9 +52,10 @@ An RFC extract can be checked in under `testdata/rfc/`, the way RFC 3414 already
 
 ### Two unresolved findings
 
-**The HTTP host number stays contested, and 45003 stays in scope.**
-HTTP host is Cisco-sourced at IE 45003 for the IOS and IOS-XE router class (ISR G2, ASR 1000).
-No Cisco IOS-XE 17.x or Catalyst 9000 document names either 45003 or libfds' 12235, so the Catalyst 9500 platform's number is unconfirmed and the 12235 discrepancy stays on record.
+**The HTTP host number is resolved.**
+45003 and 12235 are the same element: 45003 = 0x8000 | 12235, Cisco's wire-level field specifier with the enterprise bit set, and 12235 is the RFC 7011 Information Element identifier a decoder reports beside PEN 9.
+libfds and Cisco agree on the element; they were never citing two different numbers.
+The Catalyst 9500 platform confirmation remains a separate open caveat, unaffected by this resolution (see "Outcome of unit 1" below).
 
 **No TLS string export was found on any platform checked.**
 The search covered the 2015 guide, Catalyst 9500, IOS-XE 17.x, Catalyst 9800 and current protocol packs (PP68, PP74), and NBAR2 consumes SNI and CN for classification only, producing an application ID selector rather than a raw string export.
@@ -356,7 +357,7 @@ Unit 1 gates everything after it.
 
 ## Open questions
 
-1. Resolved: 45003 stays in scope for the IOS and IOS-XE router class (ISR G2, ASR 1000); the Catalyst 9500 number is unconfirmed by any Cisco document read, per `testdata/cisco-avc/NOTES.md`.
+1. Resolved: 45003 and 12235 are the same element (45003 = 0x8000 | 12235, Cisco's wire-level specifier over RFC 7011's Information Element identifier); the Catalyst 9500 number is unconfirmed by any Cisco document read, per `testdata/cisco-avc/NOTES.md`.
 2. Resolved: no Cisco PEN 9 export of a TLS SNI or certificate common name string was found on any platform checked, so TLS SNI and certificate common name leave scope, per `testdata/cisco-avc/NOTES.md`.
 3. Resolved: engine ids 3 (IANA-L4, port-based), 6 (USER-Defined, custom) and 13 (PANA-L7, NBAR2 layer-7), per RFC 6759 section 4.1, per `testdata/cisco-avc/NOTES.md`.
 4. Resolved: scope field `applicationId` (IE 95), non-scope fields `applicationName` (IE 96) and `applicationDescription` (IE 94), per RFC 6759 section 4.3, per `testdata/cisco-avc/NOTES.md`.
