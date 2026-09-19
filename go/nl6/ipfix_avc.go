@@ -5,7 +5,12 @@
 
 package main
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"fmt"
+	"math"
+	"time"
+)
 
 // Cisco AVC (NBAR2) export over IPFIX. Every number below is DERIVED from
 // testdata/cisco-avc/elements.tsv and pinned by TestIPFIXAVCConstantsMatchEvidence;
@@ -220,3 +225,193 @@ func buildIPFIXAVCTemplateSet() []byte {
 	}
 	return buf
 }
+
+// IPFIXAVCEncoder emits the AVC data template (258) and records that
+// resolve their avcRef against ONE catalog. It is constructed per catalog,
+// not shared fleet-wide like IPFIXEncoder, because the record's indices
+// are meaningless without the catalog they were drawn from (spec section 3).
+// The catalog is immutable, so one encoder is still safe across goroutines.
+type IPFIXAVCEncoder struct {
+	cat *avcCatalog
+}
+
+func NewIPFIXAVCEncoder(cat *avcCatalog) *IPFIXAVCEncoder {
+	return &IPFIXAVCEncoder{cat: cat}
+}
+
+// measuredFlowEncoder is the seam for encoders whose record size is not
+// fixed. Tick hands it the whole expired slice and takes back how many
+// records it emitted; the rest ride the next datagram. dropped is 1 when the
+// first record could not fit an otherwise empty datagram: it is skipped,
+// counted in consumed so the caller cannot retry it forever, and the caller
+// counts it as a send failure. Like flowOptionsEncoder it is reached by
+// type assertion, so fixed-size encoders are untouched.
+type measuredFlowEncoder interface {
+	EncodeMeasured(domainID, seqNo, uptimeMs uint32, records []FlowRecord, includeTemplate bool, buf []byte) (n, consumed, dropped int, err error)
+}
+
+func (e *IPFIXAVCEncoder) PacketSizes() (int, int, int) {
+	return ipfixHeaderSize + ipfixDataSetHdrSize, len(ipfixAVCTemplateSetBytes), 0
+}
+func (e *IPFIXAVCEncoder) SeqIncrement(n int) int     { return n }
+func (e *IPFIXAVCEncoder) TrailingPadBytes(int) int   { return 0 }
+func (e *IPFIXAVCEncoder) MaxRecordsPerDatagram() int { return 0 }
+
+// MaxRecordSize is the worst case over the catalog: the fixed prefix plus the
+// longest host and the longest single-URI statistics value. Tick uses it only
+// as a sanity bound; pagination is measured in EncodeMeasured.
+func (e *IPFIXAVCEncoder) MaxRecordSize() int {
+	maxHost, maxURI := 0, 0
+	for i := 0; i < e.cat.Len(); i++ {
+		app, _ := e.cat.App(uint16(i + 1))
+		for _, h := range app.Hosts {
+			if len(h) > maxHost {
+				maxHost = len(h)
+			}
+		}
+		for _, u := range app.URIs {
+			if len(u)+3 > maxURI {
+				maxURI = len(u) + 3 // URI + NUL + uint16 count
+			}
+		}
+	}
+	return ipfixRecordSize + 4 + ipfixVarLenSize(maxHost) + ipfixVarLenSize(maxURI)
+}
+
+// EncodePacket satisfies FlowEncoder for callers that do not use the measured
+// seam; consumed is discarded, which is why Tick must use EncodeMeasured.
+func (e *IPFIXAVCEncoder) EncodePacket(domainID, seqNo, uptimeMs uint32, records []FlowRecord, includeTemplate bool, buf []byte) (int, error) {
+	n, _, _, err := e.EncodeMeasured(domainID, seqNo, uptimeMs, records, includeTemplate, buf)
+	return n, err
+}
+
+// EncodeMeasured writes the message header, the AVC template when asked, and
+// as many leading records as fit, padding the data Set to 4 bytes. Sizing is
+// measured per record, never predicted: every bug in this family was a
+// predicted size disagreeing with an emitted one.
+func (e *IPFIXAVCEncoder) EncodeMeasured(domainID, seqNo, uptimeMs uint32, records []FlowRecord, includeTemplate bool, buf []byte) (int, int, int, error) {
+	if len(records) == 0 && !includeTemplate {
+		return 0, 0, 0, nil
+	}
+	nowMs := time.Now().UnixMilli()
+	deviceStartMs := nowMs - int64(uptimeMs)
+	if deviceStartMs < 0 {
+		deviceStartMs = 0
+	}
+	overhead := ipfixHeaderSize
+	if includeTemplate {
+		overhead += len(ipfixAVCTemplateSetBytes)
+	}
+	if len(buf) < overhead {
+		return 0, 0, 0, fmt.Errorf("ipfix avc: buffer too small (%d bytes), need at least %d", len(buf), overhead)
+	}
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], ipfixVersion)
+	pos += 2
+	lengthOffset := pos
+	pos += 2
+	binary.BigEndian.PutUint32(buf[pos:], uint32(nowMs/1000))
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], seqNo)
+	pos += 4
+	binary.BigEndian.PutUint32(buf[pos:], domainID)
+	pos += 4
+	if includeTemplate {
+		copy(buf[pos:], ipfixAVCTemplateSetBytes)
+		pos += len(ipfixAVCTemplateSetBytes)
+	}
+	if len(records) == 0 {
+		binary.BigEndian.PutUint16(buf[lengthOffset:], uint16(pos))
+		return pos, 0, 0, nil
+	}
+	// Data Set: header now, length backfilled. A record is written into the
+	// remaining space minus the worst-case pad (3 bytes); if it does not fit,
+	// the write position is rewound and the loop stops.
+	setStart := pos
+	binary.BigEndian.PutUint16(buf[pos:], ipfixAVCTemplateID)
+	binary.BigEndian.PutUint16(buf[pos+2:], 0)
+	pos += 4
+	consumed := 0
+	for _, r := range records {
+		limit := len(buf) - 3
+		if limit < pos {
+			break
+		}
+		next, ok := e.encodeRecord(buf[:limit], pos, r, deviceStartMs)
+		if !ok {
+			break
+		}
+		pos = next
+		consumed++
+	}
+	if consumed == 0 {
+		// Nothing fit. If the datagram was otherwise empty this record can
+		// never be sent: report it dropped and consumed so the caller moves on.
+		if !includeTemplate {
+			return 0, 1, 1, nil
+		}
+		// Template-carrying message with no room for a record: send the
+		// template alone and let the caller retry the record in a data-only
+		// datagram, which has more room.
+		binary.BigEndian.PutUint16(buf[lengthOffset:], uint16(setStart))
+		return setStart, 0, 0, nil
+	}
+	if rem := (pos - setStart) % 4; rem != 0 {
+		for i := 0; i < 4-rem; i++ {
+			buf[pos] = 0
+			pos++
+		}
+	}
+	binary.BigEndian.PutUint16(buf[setStart+2:], uint16(pos-setStart))
+	binary.BigEndian.PutUint16(buf[lengthOffset:], uint16(pos))
+	return pos, consumed, 0, nil
+}
+
+// encodeRecord writes the plain 54-byte prefix (reusing encodeIPFIXRecord so
+// the two templates cannot drift), then applicationId and the two
+// variable-length fields. Returns false, with nothing counted, when the
+// record does not fit in buf.
+func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, deviceStartMs int64) (int, bool) {
+	if pos+ipfixRecordSize+4 > len(buf) {
+		return pos, false
+	}
+	start := pos
+	pos = encodeIPFIXRecord(buf, pos, r, deviceStartMs)
+	var appID uint32
+	var host, uriStats []byte
+	if app, ok := e.cat.App(r.AVC.App); ok {
+		appID = app.ID
+		if h := int(r.AVC.Host); h > 0 && h <= len(app.Hosts) {
+			host = []byte(app.Hosts[h-1])
+		}
+		if u := int(r.AVC.URI); u > 0 && u <= len(app.URIs) {
+			uriStats = uriStatsValue(app.URIs[u-1], 1)
+		}
+	}
+	binary.BigEndian.PutUint32(buf[pos:], appID)
+	pos += 4
+	var ok bool
+	if pos, ok = putIPFIXVarLen(buf, pos, host); !ok {
+		return start, false
+	}
+	if pos, ok = putIPFIXVarLen(buf, pos, uriStats); !ok {
+		return start, false
+	}
+	return pos, true
+}
+
+// uriStatsValue renders one IE 42125 entry per ipfixURIStatsLayout: the URI,
+// a NUL, then the hit count as uint16 big-endian, with no trailing delimiter.
+// count is clamped to Cisco's stated maximum of 65535.
+func uriStatsValue(uri string, count uint32) []byte {
+	if count > math.MaxUint16 {
+		count = math.MaxUint16
+	}
+	out := make([]byte, 0, len(uri)+3)
+	out = append(out, uri...)
+	out = append(out, 0, byte(count>>8), byte(count))
+	return out
+}
+
+var _ FlowEncoder = (*IPFIXAVCEncoder)(nil)
+var _ measuredFlowEncoder = (*IPFIXAVCEncoder)(nil)

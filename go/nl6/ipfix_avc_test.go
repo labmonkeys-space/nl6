@@ -6,7 +6,9 @@
 package main
 
 import (
+	"net"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -193,5 +195,108 @@ func TestIPFIXAVCTemplateSet(t *testing.T) {
 	}
 	if f[21] != (ipfixTemplateField{IEID: ciscoHTTPURIStatistics, IELength: ipfixVarLen, PEN: ciscoPEN}) {
 		t.Fatalf("field 21 = %+v, want httpUriStatistics var PEN 9", f[21])
+	}
+}
+
+func avcRecord(app, host, uri uint16, srcPort uint16) FlowRecord {
+	return FlowRecord{
+		SrcIP: net.ParseIP("10.0.0.1").To4(), DstIP: net.ParseIP("10.0.0.2").To4(),
+		NextHop: net.IPv4(0, 0, 0, 0).To4(), SrcPort: srcPort, DstPort: 80, Protocol: 6,
+		Bytes: 100, Packets: 1, AVC: avcRef{App: app, Host: host, URI: uri},
+	}
+}
+
+// Round trip through the test decoder: template + records; applicationId,
+// host and URI statistics come back as written; a record with no
+// application carries applicationId 0 and two zero-length fields.
+func TestIPFIXAVCEncodeRoundTrip(t *testing.T) {
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	buf := make([]byte, 1472)
+	recs := []FlowRecord{avcRecord(1, 2, 1, 50000), avcRecord(2, 0, 0, 50001), avcRecord(0, 0, 0, 50002)}
+	n, consumed, dropped, err := enc.EncodeMeasured(1, 7, 1000, recs, true, buf)
+	if err != nil || consumed != 3 || dropped != 0 {
+		t.Fatalf("n=%d consumed=%d dropped=%d err=%v", n, consumed, dropped, err)
+	}
+	pkt := decodeIPFIXPacket(t, buf[:n])
+	if len(pkt.Templates) != 1 || pkt.Templates[0].TemplateID != ipfixAVCTemplateID {
+		t.Fatalf("templates = %+v", pkt.Templates)
+	}
+	if pkt.Header.SequenceNumber != 7 || int(pkt.Header.Length) != n {
+		t.Fatalf("header = %+v, n=%d", pkt.Header, n)
+	}
+	got := decodeIPFIXAVCRecords(t, pkt.RawSets[ipfixAVCTemplateID])
+	if len(got) != 3 {
+		t.Fatalf("decoded %d records, want 3", len(got))
+	}
+	if got[0].AppID != avcApplicationID(13, 80) || got[0].Host != "cdn.example.net" {
+		t.Fatalf("record 0 = %+v", got[0])
+	}
+	want := append([]byte("/index.html\x00"), 0, 1)
+	if string(got[0].URIStats) != string(want) {
+		t.Fatalf("record 0 uri stats = %q, want %q (URI, NUL, uint16 BE count 1)", got[0].URIStats, want)
+	}
+	if got[1].AppID != avcApplicationID(13, 443) || got[1].Host != "" || len(got[1].URIStats) != 0 {
+		t.Fatalf("record 1 (ssl, no host) = %+v", got[1])
+	}
+	if got[2].AppID != 0 || got[2].Host != "" || got[2].Base.SrcPort != 50002 {
+		t.Fatalf("record 2 (no application) = %+v", got[2])
+	}
+	if n%4 != 0 {
+		t.Fatalf("message length %d is not 4-byte aligned", n)
+	}
+}
+
+// Host lengths at the RFC 7011 section 7 boundary survive the round trip.
+func TestIPFIXAVCEncodeHostLengthBoundary(t *testing.T) {
+	for _, hl := range []int{1, 254, 255, 256} {
+		cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http", Hosts: []string{strings.Repeat("h", hl)}}})
+		enc := NewIPFIXAVCEncoder(cat)
+		buf := make([]byte, 1472)
+		n, consumed, _, err := enc.EncodeMeasured(1, 0, 0, []FlowRecord{avcRecord(1, 1, 0, 1)}, false, buf)
+		if err != nil || consumed != 1 {
+			t.Fatalf("hl=%d: consumed=%d err=%v", hl, consumed, err)
+		}
+		got := decodeIPFIXAVCRecords(t, decodeIPFIXPacket(t, buf[:n]).RawSets[ipfixAVCTemplateID])
+		if len(got) != 1 || len(got[0].Host) != hl {
+			t.Fatalf("hl=%d: decoded host length %d", hl, len(got[0].Host))
+		}
+	}
+}
+
+// Measured pagination: with a small budget the encoder consumes only what
+// fits, and the count it reports is exactly the number of records on the
+// wire. Then a record that fits no empty datagram is dropped and reported.
+func TestIPFIXAVCEncodeMeasuredConsumesWhatFits(t *testing.T) {
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	recs := make([]FlowRecord, 10)
+	for i := range recs {
+		recs[i] = avcRecord(1, 1, 1, uint16(50000+i))
+	}
+	// Each record is 54 + 4 + (1+15) + (1+14) = 89 bytes; header 16 + set 4.
+	// +3 (not +2): EncodeMeasured reserves a 3-byte worst-case pad margin
+	// (limit := len(buf)-3) while probing whether a record fits, so exactly
+	// 3*89 bytes of headroom beyond the base overhead is required for the
+	// third record's last write to land inside that margin.
+	buf := make([]byte, 20+89*3+3)
+	n, consumed, dropped, err := enc.EncodeMeasured(1, 0, 0, recs, false, buf)
+	if err != nil || dropped != 0 {
+		t.Fatalf("err=%v dropped=%d", err, dropped)
+	}
+	if consumed != 3 {
+		t.Fatalf("consumed = %d, want 3", consumed)
+	}
+	if got := len(decodeIPFIXAVCRecords(t, decodeIPFIXPacket(t, buf[:n]).RawSets[ipfixAVCTemplateID])); got != consumed {
+		t.Fatalf("%d records on the wire, consumed reports %d", got, consumed)
+	}
+	// Too small for even one record: dropped=1, consumed=1, nothing written.
+	tiny := make([]byte, 20+50)
+	n, consumed, dropped, err = enc.EncodeMeasured(1, 0, 0, recs[:1], false, tiny)
+	if err != nil || n != 0 || consumed != 1 || dropped != 1 {
+		t.Fatalf("oversize: n=%d consumed=%d dropped=%d err=%v; want 0,1,1,nil", n, consumed, dropped, err)
+	}
+	// Template-only message when nothing is given.
+	n, consumed, dropped, err = enc.EncodeMeasured(1, 0, 0, nil, true, buf)
+	if err != nil || consumed != 0 || dropped != 0 || n != 16+len(ipfixAVCTemplateSetBytes) {
+		t.Fatalf("template-only: n=%d consumed=%d dropped=%d err=%v", n, consumed, dropped, err)
 	}
 }
