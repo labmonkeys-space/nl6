@@ -528,23 +528,12 @@ func TestIPFIXAVCAppTableDatagram(t *testing.T) {
 }
 
 // Through Tick: on a template-refresh tick an AVC device emits the data
-// template AND the application table (259) on the same tick, the application
-// table advancing the sequence by its record count.
-//
-// Deviation from the task brief: the brief's version of this test also set
-// fe.optionShape/fe.optionIfaces expecting a THIRD datagram, the interface
-// option table (257), to fire from the same encoder. IPFIXAVCEncoder does
-// not implement flowOptionsEncoder (EncodeOptionsDatagram) — only
-// IPFIXEncoder and NetFlow9Encoder do — and Task 7's brief neither lists
-// that method in IPFIXAVCEncoder's Produces section nor asks for it in
-// step 3, so adding it here would be new scope. With fe.optionShape set on
-// an encoder that does not implement the interface, flow_exporter.go's
-// `optEnc, ok := encoder.(flowOptionsEncoder)` sees ok=false and the
-// interface-option loop runs zero iterations (a one-time log, no datagram,
-// no panic) — so the third datagram the original assertions expected can
-// never arrive. This version keeps the sequence-math assertions the brief
-// cared about (do not weaken those) for the two datagrams the encoder can
-// actually produce.
+// template, the interface option table (257) AND the application table
+// (259); the two options tables coexist and the application table advances
+// the sequence by its record count. IPFIXAVCEncoder now also implements
+// flowOptionsEncoder (delegating to IPFIXEncoder — the interface option
+// table's message is identical regardless of which flow template a device
+// otherwise uses), so both options tables fire from the one encoder.
 func TestIPFIXAVCTickEmitsApplicationTable(t *testing.T) {
 	ln, ch := testUDPListener(t)
 	defer ln.Close()
@@ -556,28 +545,30 @@ func TestIPFIXAVCTickEmitsApplicationTable(t *testing.T) {
 	prof := *mtuTestProfile()
 	prof.ConcurrentFlows = 0
 	fe := newTestFlowExporter(testDevice("10.1.2.52"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	fe.optionShape = flowOptionShapeIfScoped
+	fe.optionIfaces = []flowOptionIface{{ifIndex: 1, name: "Gi0/1"}}
 	fe.cache.Add(avcRecord(1, 1, 1, 49152), time.Now().Add(-time.Hour))
 	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
-	if stats.PacketsSent != 2 || stats.RecordsSent != 1 {
-		t.Fatalf("stats = %+v, want 2 datagrams (data, app-table) and 1 record", stats)
+	if stats.PacketsSent != 3 || stats.RecordsSent != 1 {
+		t.Fatalf("stats = %+v, want 3 datagrams (data, if-options, app-table) and 1 record", stats)
 	}
 	var seqs []uint32
 	templates := map[uint16]bool{}
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		pkt := receivePacket(ch)
 		if pkt == nil {
 			t.Fatalf("datagram %d missing", i)
 		}
 		seqs = append(seqs, binary.BigEndian.Uint32(pkt[8:]))
-		templates[binary.BigEndian.Uint16(pkt[20:])] = true // template id follows the 4-byte set header at offset 16
+		templates[binary.BigEndian.Uint16(pkt[20:])] = true // template id follows the 4-byte set header at offset 16, for a Template Set and an Options Template Set alike
 	}
-	for _, id := range []uint16{ipfixAVCTemplateID, ipfixAppTableTemplateID} {
+	for _, id := range []uint16{ipfixAVCTemplateID, ipfixOptionsTemplateID, ipfixAppTableTemplateID} {
 		if !templates[id] {
 			t.Fatalf("template %d not seen; saw %v", id, templates)
 		}
 	}
-	// data (1 record) at 0; app table (3 records) at 1; final 4.
-	if seqs[0] != 0 || seqs[1] != 1 || fe.seqNo != 4 {
-		t.Fatalf("sequences = %v, seqNo = %d; want [0 1] and 4", seqs, fe.seqNo)
+	// data (1 record) at 0; interface options (1 record) at 1; app table (3 records) at 2; final 5.
+	if seqs[0] != 0 || seqs[1] != 1 || seqs[2] != 2 || fe.seqNo != 5 {
+		t.Fatalf("sequences = %v, seqNo = %d; want [0 1 2] and 5", seqs, fe.seqNo)
 	}
 }

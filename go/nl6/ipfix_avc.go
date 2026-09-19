@@ -530,3 +530,13 @@ func putFixedString(buf []byte, pos int, s string, n int) int {
 }
 
 var _ appTableEncoder = (*IPFIXAVCEncoder)(nil)
+
+// EncodeOptionsDatagram emits the interface option table (template 257) for
+// an AVC device by delegating to the plain IPFIX encoder: the message is
+// identical, only the flow template differs. An AVC device therefore
+// carries both options tables, 257 and 259, on the refresh cadence.
+func (e *IPFIXAVCEncoder) EncodeOptionsDatagram(domainID, seqNo, uptimeMs uint32, shape string, ifaces []flowOptionIface, buf []byte) (int, int, error) {
+	return IPFIXEncoder{}.EncodeOptionsDatagram(domainID, seqNo, uptimeMs, shape, ifaces, buf)
+}
+
+var _ flowOptionsEncoder = (*IPFIXAVCEncoder)(nil)
