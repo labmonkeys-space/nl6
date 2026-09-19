@@ -139,3 +139,68 @@ func avcApplicationID(engine uint8, selector uint32) uint32 {
 type avcRef struct {
 	App, Host, URI uint16
 }
+
+// ipfixFieldSpec is one template field specifier; pen 0 means IANA.
+type ipfixFieldSpec struct {
+	id, length uint16
+	pen        uint32
+}
+
+// ipfixAVCFields is the AVC data template: the plain template's 19 IEs in
+// the same order, then applicationId, then the two Cisco layer-7 fields.
+// Keeping the plain prefix identical means a collector's decoder for 256
+// reads the first 54 bytes of a 258 record unchanged.
+var ipfixAVCFields = func() []ipfixFieldSpec {
+	out := make([]ipfixFieldSpec, 0, len(ipfixFields)+3)
+	for _, f := range ipfixFields {
+		out = append(out, ipfixFieldSpec{id: f[0], length: f[1]})
+	}
+	return append(out,
+		ipfixFieldSpec{id: ipfixApplicationID, length: 4},
+		ipfixFieldSpec{id: ciscoHTTPHost, length: ipfixVarLen, pen: ciscoPEN},
+		ipfixFieldSpec{id: ciscoHTTPURIStatistics, length: ipfixVarLen, pen: ciscoPEN},
+	)
+}()
+
+// ipfixAVCTemplateSetBytes is the pre-encoded AVC Template Set, read-only
+// after init.
+var ipfixAVCTemplateSetBytes = buildIPFIXAVCTemplateSet()
+
+// buildIPFIXAVCTemplateSet encodes the Template Set for ipfixAVCFields. An
+// enterprise specifier is id|0x8000 (2) + length (2) + PEN (4), so the set
+// length is computed from the field list rather than fixed.
+func buildIPFIXAVCTemplateSet() []byte {
+	length := 4 + 4
+	for _, f := range ipfixAVCFields {
+		if f.pen != 0 {
+			length += 8
+		} else {
+			length += 4
+		}
+	}
+	buf := make([]byte, length)
+	pos := 0
+	binary.BigEndian.PutUint16(buf[pos:], ipfixSetIDTemplate)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(length))
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], ipfixAVCTemplateID)
+	pos += 2
+	binary.BigEndian.PutUint16(buf[pos:], uint16(len(ipfixAVCFields)))
+	pos += 2
+	for _, f := range ipfixAVCFields {
+		id := f.id
+		if f.pen != 0 {
+			id |= ipfixEnterpriseBit
+		}
+		binary.BigEndian.PutUint16(buf[pos:], id)
+		pos += 2
+		binary.BigEndian.PutUint16(buf[pos:], f.length)
+		pos += 2
+		if f.pen != 0 {
+			binary.BigEndian.PutUint32(buf[pos:], f.pen)
+			pos += 4
+		}
+	}
+	return buf
+}

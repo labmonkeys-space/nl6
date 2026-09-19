@@ -150,3 +150,42 @@ func TestAVCCatalogIndexing(t *testing.T) {
 		t.Fatal("zero FlowRecord must carry no application")
 	}
 }
+
+// The AVC template is the 19 existing IEs, then applicationId, then the two
+// PEN 9 layer-7 fields as variable-length enterprise specifiers. Enterprise
+// specifiers are 8 bytes (RFC 7011 section 3.2), so the set length is
+// computed, not the plain template's 84.
+func TestIPFIXAVCTemplateSet(t *testing.T) {
+	set := buildIPFIXAVCTemplateSet()
+	wantLen := 4 + 4 + 20*4 + 2*8
+	if len(set) != wantLen {
+		t.Fatalf("template set length = %d, want %d", len(set), wantLen)
+	}
+	if got := int(set[2])<<8 | int(set[3]); got != wantLen {
+		t.Fatalf("declared set length = %d, want %d", got, wantLen)
+	}
+	msg := append([]byte{0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, set...)
+	msg[2], msg[3] = byte(len(msg)>>8), byte(len(msg))
+	pkt := decodeIPFIXPacket(t, msg)
+	if len(pkt.Templates) != 1 || pkt.Templates[0].TemplateID != ipfixAVCTemplateID {
+		t.Fatalf("templates = %+v", pkt.Templates)
+	}
+	f := pkt.Templates[0].Fields
+	if len(f) != 22 {
+		t.Fatalf("field count = %d, want 22", len(f))
+	}
+	for i := 0; i < 19; i++ {
+		if f[i].IEID != ipfixFields[i][0] || f[i].IELength != ipfixFields[i][1] || f[i].PEN != 0 {
+			t.Fatalf("field %d = %+v, want the plain template's %v", i, f[i], ipfixFields[i])
+		}
+	}
+	if f[19] != (ipfixTemplateField{IEID: ipfixApplicationID, IELength: 4}) {
+		t.Fatalf("field 19 = %+v, want applicationId/4", f[19])
+	}
+	if f[20] != (ipfixTemplateField{IEID: ciscoHTTPHost, IELength: ipfixVarLen, PEN: ciscoPEN}) {
+		t.Fatalf("field 20 = %+v, want httpHost var PEN 9", f[20])
+	}
+	if f[21] != (ipfixTemplateField{IEID: ciscoHTTPURIStatistics, IELength: ipfixVarLen, PEN: ciscoPEN}) {
+		t.Fatalf("field 21 = %+v, want httpUriStatistics var PEN 9", f[21])
+	}
+}

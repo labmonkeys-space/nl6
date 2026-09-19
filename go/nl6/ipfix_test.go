@@ -29,6 +29,7 @@ type ipfixMsgHeader struct {
 type ipfixTemplateField struct {
 	IEID     uint16
 	IELength uint16
+	PEN      uint32
 }
 
 type ipfixDecodedTemplate struct {
@@ -62,6 +63,7 @@ type ipfixPacket struct {
 	Header    ipfixMsgHeader
 	Templates []ipfixDecodedTemplate
 	Records   []ipfixDecodedRecord
+	RawSets   map[uint16][]byte
 }
 
 // decodeIPFIXPacket parses the given bytes into an ipfixPacket using only the
@@ -103,13 +105,22 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 				for i := 0; i < fieldCount && tmplPos+4 <= len(setData); i++ {
 					ieID := binary.BigEndian.Uint16(setData[tmplPos:])
 					ieLen := binary.BigEndian.Uint16(setData[tmplPos+2:])
-					tmpl.Fields = append(tmpl.Fields, ipfixTemplateField{ieID, ieLen})
-					tmplPos += 4
+					var pen uint32
+					if ieID&ipfixEnterpriseBit != 0 {
+						if tmplPos+8 > len(setData) {
+							break
+						}
+						pen = binary.BigEndian.Uint32(setData[tmplPos+4:])
+						tmplPos += 8
+					} else {
+						tmplPos += 4
+					}
+					tmpl.Fields = append(tmpl.Fields, ipfixTemplateField{IEID: ieID, IELength: ieLen, PEN: pen})
 				}
 				pkt.Templates = append(pkt.Templates, tmpl)
 			}
 
-		case setID >= 256: // Data Set
+		case setID == ipfixTemplateID: // Data Set (fixed 54-byte records)
 			recPos := 4 // skip Set header
 			for recPos+ipfixRecordSize <= setLen {
 				r := ipfixDecodedRecord{}
@@ -135,6 +146,12 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 				pkt.Records = append(pkt.Records, r)
 				recPos += ipfixRecordSize
 			}
+
+		case setID >= 256: // Data Set this decoder cannot fix-decode
+			if pkt.RawSets == nil {
+				pkt.RawSets = make(map[uint16][]byte)
+			}
+			pkt.RawSets[setID] = append([]byte{}, setData[4:]...)
 		}
 	}
 	return pkt
