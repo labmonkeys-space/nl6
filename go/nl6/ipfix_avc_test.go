@@ -300,3 +300,25 @@ func TestIPFIXAVCEncodeMeasuredConsumesWhatFits(t *testing.T) {
 		t.Fatalf("template-only: n=%d consumed=%d dropped=%d err=%v", n, consumed, dropped, err)
 	}
 }
+
+// A template-carrying message with no room for even one record sends the
+// template alone and reports nothing consumed and nothing dropped: the
+// record is retried in the next, data-only datagram, which has more room.
+func TestIPFIXAVCEncodeTemplateWhenNoRoom(t *testing.T) {
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	buf := make([]byte, 16+len(ipfixAVCTemplateSetBytes)+20) // room for the set header, not a record
+	n, consumed, dropped, err := enc.EncodeMeasured(1, 9, 0, []FlowRecord{avcRecord(1, 1, 1, 50000)}, true, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := 16 + len(ipfixAVCTemplateSetBytes); n != want || consumed != 0 || dropped != 0 {
+		t.Fatalf("n=%d consumed=%d dropped=%d, want %d, 0, 0", n, consumed, dropped, want)
+	}
+	pkt := decodeIPFIXPacket(t, buf[:n])
+	if len(pkt.Templates) != 1 || int(pkt.Header.Length) != n || pkt.Header.SequenceNumber != 9 {
+		t.Fatalf("template-only message decoded as %+v", pkt.Header)
+	}
+	if len(pkt.RawSets) != 0 {
+		t.Fatalf("template-only message must carry no data set, got %v", pkt.RawSets)
+	}
+}
