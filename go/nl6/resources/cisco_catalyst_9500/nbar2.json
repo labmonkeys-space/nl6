@@ -1,0 +1,24 @@
+{
+  "_comment": "cisco_catalyst_9500 NBAR2 overlay; extends the universal catalog. Adds the directory and authentication traffic a campus core switch classifies. Engine 3 with the IANA port as selector, per RFC 6759 section 4.1; see resources/_common/nbar2.json for sourcing.",
+  "extends": true,
+  "entries": [
+    {
+      "name": "ldap",
+      "description": "Lightweight Directory Access Protocol",
+      "engine": 3,
+      "selector": 389,
+      "proto": "tcp",
+      "dst_port": 389,
+      "weight": 6
+    },
+    {
+      "name": "kerberos",
+      "description": "Kerberos",
+      "engine": 3,
+      "selector": 88,
+      "proto": "tcp",
+      "dst_port": 88,
+      "weight": 5
+    }
+  ]
+}

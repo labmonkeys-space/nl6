@@ -572,6 +572,15 @@ type SimulatorManager struct {
 	// The manager retains subsystem-level concerns: catalog, scheduler,
 	// shared limiter, and shared-socket pool for the fallback path.
 	//
+	// nbar2CatalogsByType mirrors trapCatalogsByType for the NBAR2
+	// application catalog (nbar2_catalog.go): `_universal` plus per-type
+	// slugs. Each value is finalised and immutable, and carries the ONE
+	// IPFIXAVCEncoder every device of that type shares. nbar2CatalogPath is
+	// the -nbar2-catalog override, kept for the status endpoint's source
+	// label. Nil until StartNbar2Catalogs runs.
+	nbar2CatalogsByType map[string]*nbar2Catalog
+	nbar2CatalogPath    string
+
 	// syslogCatalogsByType mirrors trapCatalogsByType for the syslog side.
 	syslogCatalog         *SyslogCatalog
 	syslogCatalogsByType  map[string]*SyslogCatalog

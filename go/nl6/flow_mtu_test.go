@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -154,6 +155,10 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 		// which is why tightlyPacked must be false: there is no fixed record
 		// size to compare the slack against.
 		{"ipfix-avc", NewIPFIXAVCEncoder(testAVCCatalog()), false},
+		// The SHIPPED cisco_ios catalog through the loader, so the bound is
+		// asserted on the encoder a real device gets, not only on a test
+		// fixture. App 1 is http with hosts and URIs in both overlays.
+		{"ipfix-avc-shipped", shippedNbar2Encoder(t, "cisco_ios.json"), false},
 	}
 
 	for _, tc := range cases {
@@ -174,7 +179,7 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 			}
 
 			fill := func(n int) {
-				if tc.protocol == "ipfix-avc" {
+				if strings.HasPrefix(tc.protocol, "ipfix-avc") {
 					fillExpiredAVCFlows(t, fe, n)
 				} else {
 					fillExpiredFlows(t, fe, n)
@@ -186,7 +191,7 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 			// variable-length fields on top of the 54-byte prefix, so 60 is
 			// already enough to force pagination across several datagrams.
 			recordCount := 240
-			if tc.protocol == "ipfix-avc" {
+			if strings.HasPrefix(tc.protocol, "ipfix-avc") {
 				recordCount = 60
 			}
 			fill(recordCount)
