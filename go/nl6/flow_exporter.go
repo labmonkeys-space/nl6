@@ -213,6 +213,10 @@ type FlowExporter struct {
 	// path: an encoder error there would otherwise stop option emission
 	// silently (review finding — unreachable today, but defensive).
 	firstOptionsErr sync.Once
+	// firstEncodeErr mirrors firstWriteErr/firstOptionsErr for the measured
+	// flow-encode path (nl6#670): an encoder error there would otherwise
+	// stop flow emission silently at tick cadence × device count.
+	firstEncodeErr sync.Once
 	// persistOnce makes persistFlowCounters idempotent per exporter. The
 	// fold is reachable from two device-teardown paths (device.go Stop and
 	// delete), and folding twice would double the persisted per-collector
@@ -436,6 +440,15 @@ func (fe *FlowExporter) logFirstOptionsErr(err error) {
 	fe.firstOptionsErr.Do(func() {
 		log.Printf("flow export: device %s option-datagram encode (shape %s) failed: %v (further errors suppressed for this exporter)",
 			domainIDtoIP(fe.domainID), fe.optionShape, err)
+	})
+}
+
+// logFirstEncodeErr logs at most one encode-path error per exporter, the
+// sync.Once shape trap and options already use: ungated this was ~1,000
+// lines per second at 30k devices for a defect present since startup.
+func (fe *FlowExporter) logFirstEncodeErr(err error) {
+	fe.firstEncodeErr.Do(func() {
+		log.Printf("flow export: encode error for %s (further occurrences suppressed): %v", domainIDtoIP(fe.domainID), err)
 	})
 }
 
@@ -678,7 +691,10 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 
 	// Options datagrams ride the template-refresh cadence; capture the
 	// condition now because the flow loop below consumes sendTemplate.
-	emitOptions := sendTemplate && fe.optionShape != "" && len(fe.optionIfaces) > 0
+	// emitOptionsCadence is the refresh condition alone, reused by the
+	// application table below, which has no interface universe to be empty.
+	emitOptionsCadence := sendTemplate
+	emitOptions := emitOptionsCadence && fe.optionShape != "" && len(fe.optionIfaces) > 0
 
 	// `sync.Pool` stores `*[]byte` (SA6002). Deref once into a local
 	// slice header — the backing array is shared, so writes via `buf`
@@ -715,55 +731,89 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			overhead += templSize
 		}
 		var batch []FlowRecord
-		perRec := recSize
-		if maxRecSize > 0 {
-			perRec = maxRecSize
-		}
-		if len(buf) >= overhead+perRec {
-			cap := (len(buf) - overhead) / perRec
-			// Match the encoder's own capacity exactly, pad included. Handing
-			// it one record more than it will encode drops that record
-			// silently while still counting it as sent (see TrailingPadBytes).
-			// Dropping one record flips the pad parity, so one decrement is
-			// always enough.
-			if cap > 0 && overhead+cap*perRec+encoder.TrailingPadBytes(cap) > len(buf) {
-				cap--
-			}
-			// Honour a protocol record-count ceiling that buffer arithmetic
-			// cannot see (NetFlow v5's 30). The remainder stays in `expired`
-			// and rides the next datagram, so nothing is lost.
-			if m := encoder.MaxRecordsPerDatagram(); m > 0 && cap > m {
-				cap = m
-			}
-			if cap >= len(expired) {
-				batch = expired
-				expired = nil
-			} else {
-				batch = expired[:cap]
-				expired = expired[cap:]
-			}
-		}
-
-		if len(batch) == 0 && !sendTemplate {
-			break
-		}
-
 		var n int
 		var err error
-		if sfe, ok := encoder.(SFlowEncoder); ok {
-			// sFlow routes through EncodeFlowDatagram so sampling_rate can be
-			// derived from the device's FlowProfile — the FlowEncoder interface
-			// doesn't carry the profile, and a shared encoder can't hold state.
-			rate := uint32(fe.profile.ConcurrentFlows * SyntheticSamplingRateMultiplier)
-			if rate == 0 {
-				rate = 1
+		if me, ok := encoder.(measuredFlowEncoder); ok {
+			// Measured path: the encoder decides how many of `expired` fit.
+			// Capacity is not predicted from MaxRecordSize (a worst case
+			// that collapses per-datagram volume, and can be larger than the
+			// budget on a template tick, which would send nothing forever).
+			var consumed, dropped int
+			n, consumed, dropped, err = me.EncodeMeasured(fe.domainID, fe.seqNo, uptimeMs, expired, sendTemplate, buf)
+			if err != nil {
+				fe.logFirstEncodeErr(err)
+				break
 			}
-			n, err = sfe.EncodeFlowDatagram(fe.domainID, fe.subAgentID, fe.seqNo, uptimeMs, batch, rate, buf)
+			if dropped > 0 {
+				// The first record fits no empty datagram. It is gone from
+				// the queue (consumed counts it) and is a send failure, never
+				// a sent record; nothing was written for it.
+				fe.logFirstEncodeErr(fmt.Errorf("record for %s exceeds the datagram budget of %d bytes and was dropped", domainIDtoIP(fe.domainID), len(buf)))
+				stats.SendFailures += uint64(dropped)
+				if scenActive {
+					part.ledger.emitted.Add(uint64(dropped))
+					part.ledger.sendFailures.Add(uint64(dropped))
+				}
+				expired = expired[consumed:]
+				if len(expired) == 0 && !sendTemplate {
+					break
+				}
+				continue
+			}
+			batch = expired[:consumed]
+			expired = expired[consumed:]
+			if n == 0 {
+				break
+			}
 		} else {
-			n, err = encoder.EncodePacket(fe.domainID, fe.seqNo, uptimeMs, batch, sendTemplate, buf)
-		}
-		if err != nil || n == 0 {
-			break
+			perRec := recSize
+			if maxRecSize > 0 {
+				perRec = maxRecSize
+			}
+			if len(buf) >= overhead+perRec {
+				cap := (len(buf) - overhead) / perRec
+				// Match the encoder's own capacity exactly, pad included. Handing
+				// it one record more than it will encode drops that record
+				// silently while still counting it as sent (see TrailingPadBytes).
+				// Dropping one record flips the pad parity, so one decrement is
+				// always enough.
+				if cap > 0 && overhead+cap*perRec+encoder.TrailingPadBytes(cap) > len(buf) {
+					cap--
+				}
+				// Honour a protocol record-count ceiling that buffer arithmetic
+				// cannot see (NetFlow v5's 30). The remainder stays in `expired`
+				// and rides the next datagram, so nothing is lost.
+				if m := encoder.MaxRecordsPerDatagram(); m > 0 && cap > m {
+					cap = m
+				}
+				if cap >= len(expired) {
+					batch = expired
+					expired = nil
+				} else {
+					batch = expired[:cap]
+					expired = expired[cap:]
+				}
+			}
+
+			if len(batch) == 0 && !sendTemplate {
+				break
+			}
+
+			if sfe, ok := encoder.(SFlowEncoder); ok {
+				// sFlow routes through EncodeFlowDatagram so sampling_rate can be
+				// derived from the device's FlowProfile — the FlowEncoder interface
+				// doesn't carry the profile, and a shared encoder can't hold state.
+				rate := uint32(fe.profile.ConcurrentFlows * SyntheticSamplingRateMultiplier)
+				if rate == 0 {
+					rate = 1
+				}
+				n, err = sfe.EncodeFlowDatagram(fe.domainID, fe.subAgentID, fe.seqNo, uptimeMs, batch, rate, buf)
+			} else {
+				n, err = encoder.EncodePacket(fe.domainID, fe.seqNo, uptimeMs, batch, sendTemplate, buf)
+			}
+			if err != nil || n == 0 {
+				break
+			}
 		}
 
 		writeErr := false
@@ -884,9 +934,45 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			}
 			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 				fe.logFirstWriteErr(err)
+				stats.SendFailures++
+			} else {
+				stats.PacketsSent++
+				stats.BytesSent += uint64(n)
 			}
-			stats.PacketsSent++
-			stats.BytesSent += uint64(n)
+			// Advanced even on a failed write, matching the flow loop above
+			// (nl6#491): reusing the sequence would hide the loss from the
+			// collector entirely, whereas advancing shows it as a gap.
+			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
+			remaining = remaining[consumed:]
+		}
+	}
+
+	// The application table (RFC 6759 section 4.3) rides the same
+	// template-refresh cadence as the interface option table. An AVC device
+	// may carry both; template ids 257 and 259 keep them apart. Its records
+	// are Data Records under RFC 7011 section 3.1, so the sequence advances
+	// by consumed; they are metadata, not flows, so RecordsSent is untouched.
+	if ate, ok := encoder.(appTableEncoder); ok && emitOptionsCadence {
+		remaining := ate.Applications()
+		for len(remaining) > 0 {
+			n, consumed, err := ate.EncodeAppTableDatagram(fe.domainID, fe.seqNo, remaining, buf)
+			if err != nil {
+				fe.logFirstOptionsErr(err)
+				break
+			}
+			if n == 0 || consumed == 0 {
+				break
+			}
+			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
+				fe.logFirstWriteErr(err)
+				stats.SendFailures++
+			} else {
+				stats.PacketsSent++
+				stats.BytesSent += uint64(n)
+			}
+			// Advanced even on a failed write, matching the flow loop above
+			// (nl6#491): reusing the sequence would hide the loss from the
+			// collector entirely, whereas advancing shows it as a gap.
 			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
 			remaining = remaining[consumed:]
 		}

@@ -46,6 +46,7 @@ type FlowRecord struct {
 	DstAS    uint16
 	SrcMask  uint8
 	DstMask  uint8
+	AVC      avcRef // NBAR2 application reference; zero = plain record (ipfix_avc.go)
 }
 
 // flowEntry wraps a FlowRecord with metadata used by the aging engine.

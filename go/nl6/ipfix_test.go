@@ -29,6 +29,7 @@ type ipfixMsgHeader struct {
 type ipfixTemplateField struct {
 	IEID     uint16
 	IELength uint16
+	PEN      uint32
 }
 
 type ipfixDecodedTemplate struct {
@@ -62,6 +63,33 @@ type ipfixPacket struct {
 	Header    ipfixMsgHeader
 	Templates []ipfixDecodedTemplate
 	Records   []ipfixDecodedRecord
+	RawSets   map[uint16][]byte
+}
+
+// decodeOneIPFIXRecord parses one fixed 54-byte record starting at b[0]. Pure
+// extraction, no behaviour change from the inline form it replaced.
+func decodeOneIPFIXRecord(b []byte) ipfixDecodedRecord {
+	r := ipfixDecodedRecord{}
+	r.Bytes = binary.BigEndian.Uint32(b[0:])
+	r.Packets = binary.BigEndian.Uint32(b[4:])
+	r.Protocol = b[8]
+	r.ToS = b[9]
+	r.TCPFlags = b[10]
+	r.SrcPort = binary.BigEndian.Uint16(b[11:])
+	r.SrcIP = net.IP(append([]byte{}, b[13:17]...))
+	r.SrcMask = b[17]
+	r.InIface = binary.BigEndian.Uint16(b[18:])
+	r.DstPort = binary.BigEndian.Uint16(b[20:])
+	r.DstIP = net.IP(append([]byte{}, b[22:26]...))
+	r.DstMask = b[26]
+	r.OutIface = binary.BigEndian.Uint16(b[27:])
+	r.NextHop = net.IP(append([]byte{}, b[29:33]...))
+	r.SrcAS = binary.BigEndian.Uint16(b[33:])
+	r.DstAS = binary.BigEndian.Uint16(b[35:])
+	r.StartMs = binary.BigEndian.Uint64(b[37:])
+	r.EndMs = binary.BigEndian.Uint64(b[45:])
+	r.Direction = b[ipfixRecordSize-1]
+	return r
 }
 
 // decodeIPFIXPacket parses the given bytes into an ipfixPacket using only the
@@ -103,38 +131,34 @@ func decodeIPFIXPacket(t *testing.T, data []byte) *ipfixPacket {
 				for i := 0; i < fieldCount && tmplPos+4 <= len(setData); i++ {
 					ieID := binary.BigEndian.Uint16(setData[tmplPos:])
 					ieLen := binary.BigEndian.Uint16(setData[tmplPos+2:])
-					tmpl.Fields = append(tmpl.Fields, ipfixTemplateField{ieID, ieLen})
-					tmplPos += 4
+					var pen uint32
+					if ieID&ipfixEnterpriseBit != 0 {
+						if tmplPos+8 > len(setData) {
+							break
+						}
+						pen = binary.BigEndian.Uint32(setData[tmplPos+4:])
+						ieID &^= ipfixEnterpriseBit
+						tmplPos += 8
+					} else {
+						tmplPos += 4
+					}
+					tmpl.Fields = append(tmpl.Fields, ipfixTemplateField{IEID: ieID, IELength: ieLen, PEN: pen})
 				}
 				pkt.Templates = append(pkt.Templates, tmpl)
 			}
 
-		case setID >= 256: // Data Set
+		case setID == ipfixTemplateID: // Data Set (fixed 54-byte records)
 			recPos := 4 // skip Set header
 			for recPos+ipfixRecordSize <= setLen {
-				r := ipfixDecodedRecord{}
-				r.Bytes = binary.BigEndian.Uint32(setData[recPos:])
-				r.Packets = binary.BigEndian.Uint32(setData[recPos+4:])
-				r.Protocol = setData[recPos+8]
-				r.ToS = setData[recPos+9]
-				r.TCPFlags = setData[recPos+10]
-				r.SrcPort = binary.BigEndian.Uint16(setData[recPos+11:])
-				r.SrcIP = net.IP(append([]byte{}, setData[recPos+13:recPos+17]...))
-				r.SrcMask = setData[recPos+17]
-				r.InIface = binary.BigEndian.Uint16(setData[recPos+18:])
-				r.DstPort = binary.BigEndian.Uint16(setData[recPos+20:])
-				r.DstIP = net.IP(append([]byte{}, setData[recPos+22:recPos+26]...))
-				r.DstMask = setData[recPos+26]
-				r.OutIface = binary.BigEndian.Uint16(setData[recPos+27:])
-				r.NextHop = net.IP(append([]byte{}, setData[recPos+29:recPos+33]...))
-				r.SrcAS = binary.BigEndian.Uint16(setData[recPos+33:])
-				r.DstAS = binary.BigEndian.Uint16(setData[recPos+35:])
-				r.StartMs = binary.BigEndian.Uint64(setData[recPos+37:])
-				r.EndMs = binary.BigEndian.Uint64(setData[recPos+45:])
-				r.Direction = setData[recPos+ipfixRecordSize-1]
-				pkt.Records = append(pkt.Records, r)
+				pkt.Records = append(pkt.Records, decodeOneIPFIXRecord(setData[recPos:]))
 				recPos += ipfixRecordSize
 			}
+
+		case setID >= 256: // Data Set this decoder cannot fix-decode
+			if pkt.RawSets == nil {
+				pkt.RawSets = make(map[uint16][]byte)
+			}
+			pkt.RawSets[setID] = append([]byte{}, setData[4:]...)
 		}
 	}
 	return pkt
@@ -478,4 +502,49 @@ func TestIPFIXEncodePacket_LengthFieldMatchesPayload(t *testing.T) {
 			t.Errorf("includeTemplate=%v: Length field %d != actual bytes %d", includeTempl, msgLen, n)
 		}
 	}
+}
+
+type ipfixDecodedAVCRecord struct {
+	Base     ipfixDecodedRecord
+	AppID    uint32
+	Host     string
+	URIStats []byte
+}
+
+// decodeIPFIXAVCRecords parses a 258 data set body (after the 4-byte set
+// header) written by IPFIXAVCEncoder: the plain 54-byte record, then
+// applicationId, then two RFC 7011 section 7 variable-length values. Stops
+// at padding (fewer than 58 bytes left).
+func decodeIPFIXAVCRecords(t *testing.T, raw []byte) []ipfixDecodedAVCRecord {
+	t.Helper()
+	var out []ipfixDecodedAVCRecord
+	pos := 0
+	readVar := func() []byte {
+		if pos >= len(raw) {
+			t.Fatalf("avc: truncated at variable-length prefix, pos %d", pos)
+		}
+		n := int(raw[pos])
+		pos++
+		if n == 255 {
+			n = int(binary.BigEndian.Uint16(raw[pos:]))
+			pos += 2
+		}
+		if pos+n > len(raw) {
+			t.Fatalf("avc: variable-length value of %d overruns the set at pos %d", n, pos)
+		}
+		v := raw[pos : pos+n]
+		pos += n
+		return v
+	}
+	for pos+ipfixRecordSize+4 <= len(raw) {
+		rec := ipfixDecodedAVCRecord{}
+		rec.Base = decodeOneIPFIXRecord(raw[pos:])
+		pos += ipfixRecordSize
+		rec.AppID = binary.BigEndian.Uint32(raw[pos:])
+		pos += 4
+		rec.Host = string(readVar())
+		rec.URIStats = append([]byte(nil), readVar()...)
+		out = append(out, rec)
+	}
+	return out
 }

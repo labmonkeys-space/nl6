@@ -23,14 +23,20 @@ import (
 // data records interpreted through that template.
 
 type optTemplateField struct {
-	Type   uint16
-	Length uint16
+	IEID     uint16
+	IELength uint16
 }
 
 type optDecodedTemplate struct {
 	TemplateID uint16
 	Scopes     []optTemplateField
 	Options    []optTemplateField
+	// ScopeCount and Fields are the same information in field-specifier
+	// order (scopes then options) rather than split into two slices — the
+	// shape a generic decoder (one not written for template 257 in
+	// particular) wants when deriving record layout from the template.
+	ScopeCount int
+	Fields     []optTemplateField
 }
 
 type optDecodedRecord struct {
@@ -39,6 +45,12 @@ type optDecodedRecord struct {
 	ScopeVals  []uint32
 	OptionU32s map[uint16]uint32 // numeric option fields by field type / IE
 	OptionStrs map[uint16]string // string option fields by field type / IE
+	// Scope is ScopeVals[0] (0 if none) and Strings is the string option
+	// fields in template order — the shapes a single-scope, all-string
+	// options template (like the application table) wants without a map
+	// lookup or an index into a slice that might have zero scopes.
+	Scope   uint32
+	Strings []string
 }
 
 type optDatagram struct {
@@ -55,31 +67,36 @@ func decodeOptRecords(t *testing.T, tmpl *optDecodedTemplate, data []byte) []opt
 	t.Helper()
 	recSize := 0
 	for _, f := range tmpl.Scopes {
-		recSize += int(f.Length)
+		recSize += int(f.IELength)
 	}
 	for _, f := range tmpl.Options {
-		recSize += int(f.Length)
+		recSize += int(f.IELength)
 	}
 	var recs []optDecodedRecord
 	for pos := 0; pos+recSize <= len(data); pos += recSize {
 		r := optDecodedRecord{OptionU32s: map[uint16]uint32{}, OptionStrs: map[uint16]string{}}
 		p := pos
 		for _, f := range tmpl.Scopes {
-			if f.Length != 4 {
-				t.Fatalf("oracle only handles 4-byte scope fields, got %d", f.Length)
+			if f.IELength != 4 {
+				t.Fatalf("oracle only handles 4-byte scope fields, got %d", f.IELength)
 			}
 			r.ScopeVals = append(r.ScopeVals, binary.BigEndian.Uint32(data[p:]))
-			p += int(f.Length)
+			p += int(f.IELength)
+		}
+		if len(r.ScopeVals) > 0 {
+			r.Scope = r.ScopeVals[0]
 		}
 		for _, f := range tmpl.Options {
-			switch f.Length {
+			switch f.IELength {
 			case 4:
-				r.OptionU32s[f.Type] = binary.BigEndian.Uint32(data[p:])
+				r.OptionU32s[f.IEID] = binary.BigEndian.Uint32(data[p:])
 			default: // string field
-				raw := data[p : p+int(f.Length)]
-				r.OptionStrs[f.Type] = strings.TrimSpace(strings.ReplaceAll(string(raw), "\x00", ""))
+				raw := data[p : p+int(f.IELength)]
+				s := strings.TrimSpace(strings.ReplaceAll(string(raw), "\x00", ""))
+				r.OptionStrs[f.IEID] = s
+				r.Strings = append(r.Strings, s)
 			}
-			p += int(f.Length)
+			p += int(f.IELength)
 		}
 		recs = append(recs, r)
 	}
@@ -123,6 +140,8 @@ func decodeNF9OptionsDatagram(t *testing.T, data []byte) *optDatagram {
 				tmpl.Options = append(tmpl.Options, optTemplateField{binary.BigEndian.Uint16(fs[p:]), binary.BigEndian.Uint16(fs[p+2:])})
 				p += 4
 			}
+			tmpl.ScopeCount = len(tmpl.Scopes)
+			tmpl.Fields = append(append([]optTemplateField{}, tmpl.Scopes...), tmpl.Options...)
 			dg.Template = tmpl
 		case fsID >= 256:
 			if dg.Template == nil || fsID != dg.Template.TemplateID {
@@ -177,6 +196,8 @@ func decodeIPFIXOptionsDatagram(t *testing.T, data []byte) *optDatagram {
 				}
 				p += 4
 			}
+			tmpl.ScopeCount = scopeCount
+			tmpl.Fields = append(append([]optTemplateField{}, tmpl.Scopes...), tmpl.Options...)
 			dg.Template = tmpl
 		case setID >= 256:
 			if dg.Template == nil || setID != dg.Template.TemplateID {
@@ -249,11 +270,11 @@ func TestNF9OptionsSystemScopedRoundTrip(t *testing.T) {
 	}
 	dg := decodeNF9OptionsDatagram(t, buf[:n])
 	tmpl := dg.Template
-	if len(tmpl.Scopes) != 1 || tmpl.Scopes[0].Type != nf9ScopeSystem {
+	if len(tmpl.Scopes) != 1 || tmpl.Scopes[0].IEID != nf9ScopeSystem {
 		t.Errorf("scopes = %v, want system (1)", tmpl.Scopes)
 	}
 	for _, f := range tmpl.Options {
-		if f.Type == nf9IfName {
+		if f.IEID == nf9IfName {
 			t.Errorf("system-scoped template must NOT declare interfaceName(82)")
 		}
 	}
@@ -309,11 +330,11 @@ func TestIPFIXOptionsSystemScopedRoundTrip(t *testing.T) {
 	tmpl := dg.Template
 	// Scope IE must NOT be an interface IE — that's what forces the
 	// collector's field-fallback resolution.
-	if len(tmpl.Scopes) != 1 || tmpl.Scopes[0].Type == ipfixIngressInterface || tmpl.Scopes[0].Type == ipfixEgressInterface {
+	if len(tmpl.Scopes) != 1 || tmpl.Scopes[0].IEID == ipfixIngressInterface || tmpl.Scopes[0].IEID == ipfixEgressInterface {
 		t.Errorf("scope IEs = %v, want a single non-interface scope", tmpl.Scopes)
 	}
-	if tmpl.Scopes[0].Type != ipfixObservationDomainID {
-		t.Errorf("scope IE = %d, want observationDomainId (149)", tmpl.Scopes[0].Type)
+	if tmpl.Scopes[0].IEID != ipfixObservationDomainID {
+		t.Errorf("scope IE = %d, want observationDomainId (149)", tmpl.Scopes[0].IEID)
 	}
 	if got := dg.Records[0].OptionU32s[ipfixIngressInterface]; got != 1 {
 		t.Errorf("record 0 ingressInterface field = %d, want 1", got)
