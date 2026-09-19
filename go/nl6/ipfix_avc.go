@@ -34,7 +34,7 @@ const (
 	// that wire-level specifier is not a second IE number, and a decoder
 	// reports the IE id (12235 / 9357) beside PEN 9, never the specifier.
 	ciscoHTTPHost          = 12235 // collect application http host; variable-length string
-	ciscoHTTPURIStatistics = 9357  // collect application http uri statistics; see ipfixURIStatsLayout
+	ciscoHTTPURIStatistics = 9357  // collect application http uri statistics; layout at uriStatsValue
 
 	// ciscoHTTPHostWireSpecifier and ciscoHTTPURIStatisticsWireSpecifier are
 	// the wire-level field specifiers Cisco's guide quotes (enterprise bit
@@ -63,19 +63,6 @@ const (
 	// field (RFC 7011 section 7).
 	ipfixVarLen = 0xFFFF
 )
-
-// ipfixURIStatsLayout documents the two decisions unit 1 left to the encoder
-// for IE 9357 (wire specifier 42125) (testdata/cisco-avc/NOTES.md, "HTTP URI statistics (42125)
-// layout"). Cisco's text gives "NULL (\0) is the delimiter." and the encoding
-// example {URI\0countURI\0count}; it states no byte order and its prose
-// format line shows a trailing delimiter its encoding example does not.
-//
-// Decision 1: the 2-byte hit count is BIG-ENDIAN, RFC 7011 section 6.1.1's
-// network byte order for integers. Decision 2: the encoding example governs,
-// so a record is `URI\0` + count, repeated, with NO trailing delimiter.
-// Neither is Cisco-sourced; a capture from a real IOS-XE box would settle
-// both, and the spec's fidelity exit rule applies to them until then.
-const ipfixURIStatsLayout = "URI\\0 + uint16 big-endian count, repeated, no trailing delimiter"
 
 // ipfixVarLenSize is the on-wire size of an n-byte variable-length value
 // including its RFC 7011 section 7 length prefix.
@@ -415,9 +402,21 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 	return pos, true
 }
 
-// uriStatsValue renders one IE 9357 entry per ipfixURIStatsLayout: the URI,
+// uriStatsValue renders one IE 9357 (wire specifier 42125) entry: the URI,
 // a NUL, then the hit count as uint16 big-endian, with no trailing delimiter.
 // count is clamped to Cisco's stated maximum of 65535.
+//
+// The layout settles the two decisions unit 1 left to the encoder
+// (testdata/cisco-avc/NOTES.md, "HTTP URI statistics (42125) layout").
+// Cisco's text gives "NULL (\0) is the delimiter." and the encoding example
+// {URI\0countURI\0count}; it states no byte order and its prose format line
+// shows a trailing delimiter its encoding example does not.
+//
+// Decision 1: the 2-byte hit count is BIG-ENDIAN, RFC 7011 section 6.1.1's
+// network byte order for integers. Decision 2: the encoding example governs,
+// so a record is `URI\0` + count, repeated, with NO trailing delimiter.
+// Neither is Cisco-sourced; a capture from a real IOS-XE box would settle
+// both, and the spec's fidelity exit rule applies to them until then.
 func uriStatsValue(uri string, count uint32) []byte {
 	if count > math.MaxUint16 {
 		count = math.MaxUint16

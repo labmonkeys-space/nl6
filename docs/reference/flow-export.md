@@ -121,7 +121,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 `IPFIXAVCEncoder` emits Cisco AVC (NBAR2) layer-7 flow records: template ID 258 for the data records, plus template ID 259 for an application table carried on the refresh cadence beside the interface option table.
 An AVC record is the plain 54-byte prefix (byte-identical to template 256) followed by a 4-byte `applicationId` and two RFC 7011 §7 variable-length PEN 9 fields: `ciscoHTTPHost` (IE 12235) and `ciscoHTTPURIStatistics` (IE 9357).
 Cisco's 2015 AVC guide quotes these as wire specifiers 45003 and 42125, the same IE ids with the enterprise bit set, not separate identifiers.
-The IE 9357 hit count is encoded big-endian with no trailing delimiter after the URI; Cisco's guide leaves both decisions open, so this is an nl6 decision documented in `ipfixURIStatsLayout`.
+The IE 9357 hit count is encoded big-endian with no trailing delimiter after the URI; Cisco's guide leaves both decisions open, so this is an nl6 decision documented at `uriStatsValue` in `ipfix_avc.go`.
 All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`, pinned by `TestIPFIXAVCConstantsMatchEvidence`.
 An AVC device carries both options tables, 257 (interfaces) and 259 (applications), on the same refresh cadence.
 The IPFIX Sequence Number counts Data Records including options records, per RFC 7011 §3.1, the same rule the plain IPFIX encoder follows.
