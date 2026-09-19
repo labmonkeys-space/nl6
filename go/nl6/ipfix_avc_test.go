@@ -7,9 +7,11 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -570,5 +572,138 @@ func TestIPFIXAVCTickEmitsApplicationTable(t *testing.T) {
 	// data (1 record) at 0; interface options (1 record) at 1; app table (3 records) at 2; final 5.
 	if seqs[0] != 0 || seqs[1] != 1 || seqs[2] != 2 || fe.seqNo != 5 {
 		t.Fatalf("sequences = %v, seqNo = %d; want [0 1 2] and 5", seqs, fe.seqNo)
+	}
+}
+
+// TestIPFIXAVCTickDropCountsInScenarioLedger is the scenario-participant arm
+// of TestIPFIXAVCTickDropsUnsendableRecord: with a running scenario installed
+// on the exporter, a record dropped because it fits no datagram must still be
+// counted in the scenario ledger (emitted + sendFailures), not just in the
+// plain FlowTickStats. Two records are queued: one whose host is too large to
+// ever fit a datagram, one that fits.
+func TestIPFIXAVCTickDropCountsInScenarioLedger(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	addr := ln.LocalAddr().(*net.UDPAddr)
+
+	cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http",
+		Hosts: []string{"ok.example", strings.Repeat("z", 1500)}}})
+	enc := NewIPFIXAVCEncoder(cat)
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.53"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	fe.lastTempl = time.Now() // data-only tick
+	past := time.Now().Add(-time.Hour)
+	fe.cache.Add(avcRecord(1, 2, 0, 49152), past) // 1500-byte host: never fits
+	fe.cache.Add(avcRecord(1, 1, 0, 49153), past)
+
+	now := time.Now()
+	gate := &atomic.Pointer[gateState]{}
+	gate.Store(&gateState{phase: phaseRunning, t0: now.Add(-time.Minute), t1: now.Add(time.Hour)})
+	led := &ledgerEntry{}
+	part := &scenarioPart{gate: gate, ledger: led, drain: &drainGate{}, now: time.Now, owner: "test"}
+	fe.scenPart.Store(part)
+
+	stats := tickWithEncoder(fe, now, enc, conn, addr, testPool())
+	if stats.SendFailures != 1 || stats.RecordsSent != 1 || stats.PacketsSent != 1 {
+		t.Fatalf("stats = %+v, want SendFailures 1, RecordsSent 1, PacketsSent 1", stats)
+	}
+	if pkt := receivePacket(ch); pkt == nil {
+		t.Fatal("the sendable record never arrived")
+	}
+
+	if got := led.emitted.Load(); got != 2 {
+		t.Fatalf("ledger emitted = %d, want 2 (both records generated, one dropped, one sent)", got)
+	}
+	if got := led.sendFailures.Load(); got != 1 {
+		t.Fatalf("ledger sendFailures = %d, want 1", got)
+	}
+	if got := led.inWindow.Load(); got != 1 {
+		t.Fatalf("ledger inWindow = %d, want 1 (only the sent record counts as in-window traffic)", got)
+	}
+}
+
+// TestFlowOptionsWriteFailureCountsSendFailure is the write-failure arm of
+// Tick's options datagrams (Task 4 of the final review): a refused write on
+// the interface option table or the application table must count as a send
+// failure, must NOT count toward PacketsSent/BytesSent, and must still
+// advance fe.seqNo/the remainder as though the datagram had been sent
+// (nl6#491's rule, now applied at these two sites too). Driven on a
+// template-refresh tick of an AVC exporter with an if-scoped interface
+// option table, so all three datagrams (data, interface options, app table)
+// are attempted and all three writes are made to fail via writeOverride.
+func TestFlowOptionsWriteFailureCountsSendFailure(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := testSender(t)
+	defer conn.Close()
+
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.54"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	fe.optionShape = flowOptionShapeIfScoped
+	fe.optionIfaces = []flowOptionIface{{ifIndex: 1, name: "Gi0/1"}}
+	fe.cache.Add(avcRecord(1, 1, 1, 49152), time.Now().Add(-time.Hour))
+	// lastTempl left at zero: this is the first, template-refresh tick, so
+	// the data template, the interface option table AND the application
+	// table are all attempted.
+	failEverything := errors.New("induced write failure")
+	fe.writeOverride = func([]byte) error { return failEverything }
+
+	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
+
+	// Three datagrams are attempted on this tick: data (1 record), interface
+	// options (1 record), application table (3 records, all of testAVCCatalog).
+	// Every write fails, so nothing was ever handed to the kernel.
+	if stats.PacketsSent != 0 {
+		t.Fatalf("PacketsSent = %d, want 0 (every write failed)", stats.PacketsSent)
+	}
+	if stats.SendFailures != 3 {
+		t.Fatalf("SendFailures = %d, want 3 (data, interface options, application table)", stats.SendFailures)
+	}
+	// The sequence still advances as though every datagram had been sent
+	// successfully: data (1) + interface options (1) + app table (3) = 5,
+	// matching TestIPFIXAVCTickEmitsApplicationTable's success-path total.
+	if fe.seqNo != 5 {
+		t.Fatalf("seqNo = %d, want 5 (advances on a failed write, nl6#491)", fe.seqNo)
+	}
+}
+
+// TestIPFIXAVCEncodeBufferTooSmall pins the Data Set header write added to
+// close Minor 6: EncodeMeasured must check room for the 4-byte Data Set
+// header before writing it, the same way it already checks room for the
+// message header. Without the guard a buffer that fits the message header
+// (and template) but not four more bytes panics on the header write instead
+// of returning nl6's usual "buffer too small" error.
+func TestIPFIXAVCEncodeBufferTooSmall(t *testing.T) {
+	enc := NewIPFIXAVCEncoder(testAVCCatalog())
+	rec := []FlowRecord{avcRecord(1, 1, 1, 49152)}
+
+	// Shorter than the message header: the existing top-of-function guard.
+	tooShortForHeader := make([]byte, ipfixHeaderSize-1)
+	if _, _, _, err := enc.EncodeMeasured(1, 0, 0, rec, false, tooShortForHeader); err == nil {
+		t.Fatal("buffer shorter than the message header must error, got nil")
+	}
+
+	// Room for the message header but not the 4-byte Data Set header: [16, 20).
+	for n := ipfixHeaderSize; n < ipfixHeaderSize+ipfixDataSetHdrSize; n++ {
+		buf := make([]byte, n)
+		if _, _, _, err := enc.EncodeMeasured(1, 0, 0, rec, false, buf); err == nil {
+			t.Fatalf("n=%d: buffer with no room for the Data Set header must error, got nil", n)
+		}
+	}
+
+	// buf == overhead, no records, includeTemplate=true: a template-only
+	// message that needs no Data Set header at all.
+	overhead := ipfixHeaderSize + len(ipfixAVCTemplateSetBytes)
+	buf := make([]byte, overhead)
+	n, consumed, dropped, err := enc.EncodeMeasured(1, 0, 0, nil, true, buf)
+	if err != nil || n != overhead || consumed != 0 || dropped != 0 {
+		t.Fatalf("template-only at buf==overhead: n=%d consumed=%d dropped=%d err=%v, want %d,0,0,nil", n, consumed, dropped, err, overhead)
 	}
 }

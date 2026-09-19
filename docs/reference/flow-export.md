@@ -97,6 +97,7 @@ Each device emits **one** shape; run two device groups with different shapes to 
 String fields are fixed 32-byte NUL-padded values.
 The options datagram advances the sequence counter per its protocol's rule: NetFlow v9 by 1 (RFC 3954 counts export packets), IPFIX by the number of Options Data Records it carries (RFC 7011 §3.1 counts Data Records, and an Options Data Record is one).
 It counts toward `sent_packets` / `sent_bytes` but not `sent_records` (option records are metadata, not flows).
+`send_failures` counts refused datagrams and, for an AVC device, records dropped because they fit no datagram; Plan B decides whether the latter gets its own field.
 Valid only under `netflow9` / `ipfix`; combining it with `netflow5` / `sflow` is rejected at validation.
 Default off; devices without the field emit byte-identical output to previous releases.
 

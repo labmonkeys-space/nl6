@@ -361,5 +361,5 @@ Unit 1 gates everything after it.
 2. Resolved: no Cisco PEN 9 export of a TLS SNI or certificate common name string was found on any platform checked, so TLS SNI and certificate common name leave scope, per `testdata/cisco-avc/NOTES.md`.
 3. Resolved: engine ids 3 (IANA-L4, port-based), 6 (USER-Defined, custom) and 13 (PANA-L7, NBAR2 layer-7), per RFC 6759 section 4.1, per `testdata/cisco-avc/NOTES.md`.
 4. Resolved: scope field `applicationId` (IE 95), non-scope fields `applicationName` (IE 96) and `applicationDescription` (IE 94), per RFC 6759 section 4.3, per `testdata/cisco-avc/NOTES.md`.
-5. Template ID allocation when a device enables both `nbar2` and `options_interface_table`. Unit 2.
+5. Resolved: template 258 is the AVC data template and 259 the application table; an AVC device may carry both 257 and 259 (Plan A).
 6. Resolved: the IPFIX sequence number is fixed fleet-wide in a prerequisite PR (section 2, option 1).

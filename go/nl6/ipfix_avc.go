@@ -65,7 +65,7 @@ const (
 )
 
 // ipfixURIStatsLayout documents the two decisions unit 1 left to the encoder
-// for IE 42125 (testdata/cisco-avc/NOTES.md, "HTTP URI statistics (42125)
+// for IE 9357 (wire specifier 42125) (testdata/cisco-avc/NOTES.md, "HTTP URI statistics (42125)
 // layout"). Cisco's text gives "NULL (\0) is the delimiter." and the encoding
 // example {URI\0countURI\0count}; it states no byte order and its prose
 // format line shows a trailing delimiter its encoding example does not.
@@ -279,7 +279,10 @@ func (e *IPFIXAVCEncoder) MaxRecordSize() int {
 }
 
 // EncodePacket satisfies FlowEncoder for callers that do not use the measured
-// seam; consumed is discarded, which is why Tick must use EncodeMeasured.
+// seam; consumed AND dropped are both discarded here, so a caller through this
+// path cannot see a record that fit no datagram and never learns it was lost.
+// Tick is the only supported caller and it goes through EncodeMeasured
+// instead; do not route production traffic through EncodePacket.
 func (e *IPFIXAVCEncoder) EncodePacket(domainID, seqNo, uptimeMs uint32, records []FlowRecord, includeTemplate bool, buf []byte) (int, error) {
 	n, _, _, err := e.EncodeMeasured(domainID, seqNo, uptimeMs, records, includeTemplate, buf)
 	return n, err
@@ -326,7 +329,13 @@ func (e *IPFIXAVCEncoder) EncodeMeasured(domainID, seqNo, uptimeMs uint32, recor
 	}
 	// Data Set: header now, length backfilled. A record is written into the
 	// remaining space minus the worst-case pad (3 bytes); if it does not fit,
-	// the write position is rewound and the loop stops.
+	// the write position is rewound and the loop stops. The header itself
+	// needs room too: without this check a buffer that fits the message
+	// header (and template) but not four more bytes panics on the PutUint16
+	// below instead of returning the same "buffer too small" error.
+	if len(buf) < overhead+ipfixDataSetHdrSize {
+		return 0, 0, 0, fmt.Errorf("ipfix avc: buffer too small (%d bytes), need at least %d", len(buf), overhead+ipfixDataSetHdrSize)
+	}
 	setStart := pos
 	binary.BigEndian.PutUint16(buf[pos:], ipfixAVCTemplateID)
 	binary.BigEndian.PutUint16(buf[pos+2:], 0)
@@ -376,6 +385,12 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 		return pos, false
 	}
 	start := pos
+	// encodeIPFIXRecord writes the plain prefix at start, advancing pos; if a
+	// later field in this record fails to fit, the caller sees ok=false and
+	// rewinds to start, but the prefix bytes already written past that point
+	// are never returned as part of a record: they are overwritten by the
+	// next record's write, by the trailing pad, or excluded because the
+	// caller only reads buf[:n] for n <= the last successfully returned pos.
 	pos = encodeIPFIXRecord(buf, pos, r, deviceStartMs)
 	var appID uint32
 	var host, uriStats []byte
@@ -400,7 +415,7 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 	return pos, true
 }
 
-// uriStatsValue renders one IE 42125 entry per ipfixURIStatsLayout: the URI,
+// uriStatsValue renders one IE 9357 entry per ipfixURIStatsLayout: the URI,
 // a NUL, then the hit count as uint16 big-endian, with no trailing delimiter.
 // count is clamped to Cisco's stated maximum of 65535.
 func uriStatsValue(uri string, count uint32) []byte {

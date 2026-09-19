@@ -934,9 +934,14 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			}
 			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 				fe.logFirstWriteErr(err)
+				stats.SendFailures++
+			} else {
+				stats.PacketsSent++
+				stats.BytesSent += uint64(n)
 			}
-			stats.PacketsSent++
-			stats.BytesSent += uint64(n)
+			// Advanced even on a failed write, matching the flow loop above
+			// (nl6#491): reusing the sequence would hide the loss from the
+			// collector entirely, whereas advancing shows it as a gap.
 			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
 			remaining = remaining[consumed:]
 		}
@@ -960,9 +965,14 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 			}
 			if err := fe.writeDatagram(writeConn, buf[:n], collectorAddr); err != nil {
 				fe.logFirstWriteErr(err)
+				stats.SendFailures++
+			} else {
+				stats.PacketsSent++
+				stats.BytesSent += uint64(n)
 			}
-			stats.PacketsSent++
-			stats.BytesSent += uint64(n)
+			// Advanced even on a failed write, matching the flow loop above
+			// (nl6#491): reusing the sequence would hide the loss from the
+			// collector entirely, whereas advancing shows it as a gap.
 			fe.seqNo += uint32(encoder.SeqIncrement(consumed))
 			remaining = remaining[consumed:]
 		}
