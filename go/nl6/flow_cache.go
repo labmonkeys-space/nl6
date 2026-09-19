@@ -275,6 +275,15 @@ func (fc *FlowCache) Len() int {
 // whole fleet. Passing the target makes that mistake impossible to express
 // here: the only way to vary it is per call site, which is per exporter.
 func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP net.IP, rng *rand.Rand, now time.Time, startUptimeMs uint32) {
+	fc.GenerateFlowsFrom(profile, target, deviceIP, rng, now, startUptimeMs, nil)
+}
+
+// GenerateFlowsFrom is GenerateFlows with the device's NBAR2 catalog. A nil
+// catalog is the plain draw, byte-for-byte what GenerateFlows produced before
+// NBAR2 existed (pinned by the flow digest test); a non-nil one is the
+// application-first draw, in which the catalog, not the profile, decides
+// protocol and destination port (spec section 3).
+func (fc *FlowCache) GenerateFlowsFrom(profile *FlowProfile, target int, deviceIP net.IP, rng *rand.Rand, now time.Time, startUptimeMs uint32, cat *nbar2Catalog) {
 	fc.mu.Lock()
 	need := target - len(fc.flows)
 	fc.mu.Unlock()
@@ -293,7 +302,11 @@ func (fc *FlowCache) GenerateFlows(profile *FlowProfile, target int, deviceIP ne
 	batch := make([]FlowRecord, need)
 	jitters := make([]time.Duration, need)
 	for i := range batch {
-		batch[i] = syntheticFlow(profile, deviceIP, rng, startUptimeMs)
+		if cat != nil {
+			batch[i] = syntheticAVCFlow(profile, cat, deviceIP, rng, startUptimeMs)
+		} else {
+			batch[i] = syntheticFlow(profile, deviceIP, rng, startUptimeMs)
+		}
 		jitters[i] = activeTimeoutJitter(fc.activeTimeout, fc.activeJitterFraction, rng)
 	}
 
@@ -439,7 +452,28 @@ func recordKey(r FlowRecord) FlowKey {
 func syntheticFlow(profile *FlowProfile, deviceIP net.IP, rng *rand.Rand, startUptimeMs uint32) FlowRecord {
 	proto := profile.SampleProtocol(rng)
 	dstPort := profile.SampleDstPort(rng)
+	return syntheticFlowWith(profile, deviceIP, rng, startUptimeMs, proto, dstPort)
+}
 
+// syntheticAVCFlow is the application-first draw for an NBAR2 device: the
+// application is drawn by catalog weight and FIXES the protocol and the
+// destination port, so the exporter never emits a record on port 443 tagged
+// as an application that runs elsewhere; then a host and a URI index are
+// drawn by weight into the record's AVC reference. The catalog draws exactly
+// three RNG values on every call, application list or not (nbar2Catalog.draw),
+// and everything after the port is the same code the plain draw uses.
+func syntheticAVCFlow(profile *FlowProfile, cat *nbar2Catalog, deviceIP net.IP, rng *rand.Rand, startUptimeMs uint32) FlowRecord {
+	ref, proto, dstPort := cat.draw(rng)
+	r := syntheticFlowWith(profile, deviceIP, rng, startUptimeMs, proto, dstPort)
+	r.AVC = ref
+	return r
+}
+
+// syntheticFlowWith is the record body shared by both draws: everything a
+// record carries once protocol and destination port are decided. Its RNG
+// call sequence is what the pre-NBAR2 syntheticFlow made after its own two
+// draws, so the plain path's stream is unchanged.
+func syntheticFlowWith(profile *FlowProfile, deviceIP net.IP, rng *rand.Rand, startUptimeMs uint32, proto uint8, dstPort uint16) FlowRecord {
 	var srcPort uint16
 	spread := int(profile.SrcPortMax) - int(profile.SrcPortMin)
 	if spread > 0 {

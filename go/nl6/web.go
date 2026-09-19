@@ -207,6 +207,16 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 				rf), http.StatusBadRequest)
 			return
 		}
+		// Third sibling of the two capability gates above. Evaluated AFTER
+		// the flow gate so a flow-incapable type stays a flow rejection and
+		// never mentions NBAR2. Same round-robin semantics: only an entirely
+		// incapable type set is refused; a mixed batch is accepted and its
+		// incapable devices degrade to plain IPFIX at creation
+		// (degradeNbar2IfIncapable).
+		if rf, ok := nbar2IncapableRequest(req); ok {
+			rejectWith(nbar2IncapableMessage(rf), http.StatusBadRequest)
+			return
+		}
 	}
 	if seed.Traps != nil {
 		seed.Traps.ApplyDefaults()

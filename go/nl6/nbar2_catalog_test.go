@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,7 +206,7 @@ func TestNbar2ShippedCatalogsLoad(t *testing.T) {
 	if cat == u || cat.ByName["ldap"] == nil || cat.ByName["kerberos"] == nil || cat.ByName["http"] == nil {
 		t.Fatalf("cisco_catalyst_9500 overlay not applied: %+v", cat)
 	}
-	if ios.Encoder() == nil || ios.Encoder() == cat.Encoder() || ios.Encoder() != ios.Encoder() {
+	if ios.Encoder() == nil || ios.Encoder() == cat.Encoder() {
 		t.Fatal("each catalog carries its own encoder, built once")
 	}
 	if got := len(ios.Encoder().Applications()); got != ios.Usable() {
@@ -331,4 +332,38 @@ func shippedNbar2Encoder(t *testing.T, resourceFile string) *IPFIXAVCEncoder {
 		t.Fatal(err)
 	}
 	return sm.Nbar2CatalogFor(resourceFile).Encoder()
+}
+
+// The corpus walker sees resources/<slug>/nbar2.json as a part of that
+// profile, exactly as it sees traps.json and syslog.json: the resource
+// decoder is non-strict, so a catalog file's keys are inert to the SNMP,
+// SSH and REST loaders. That holds only while a catalog part carries NO
+// profile key, which this pins for every shipped nbar2.json.
+func TestNbar2CatalogPartsAreInertToProfileLoaders(t *testing.T) {
+	seen := 0
+	for _, p := range shippedResourceParts(t) {
+		if filepath.Base(p) != nbar2CatalogFileName {
+			continue
+		}
+		seen++
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal(data, &top); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		for _, k := range []string{"snmp", "ssh", "rest", "optical", "_comment"} {
+			if _, has := top[k]; has {
+				t.Errorf("%s carries a %q key; a catalog part must carry only comment, extends and entries, or the profile loaders read it", p, k)
+			}
+		}
+		if _, err := parseNbar2Catalog(data, p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("saw %d shipped per-type nbar2.json parts, want 2 (cisco_ios, cisco_catalyst_9500); the walk is blind to a layout or an overlay moved", seen)
+	}
 }

@@ -891,7 +891,7 @@ type ReloadReport struct {
 // (nl6#445).
 const reloadNote = "existing devices keep the snapshot they were built from until they are " +
 	"recreated; the next device creation of an evicted type reads the profile from disk. " +
-	"Trap and syslog catalogs (traps.json, syslog.json) are NOT reloaded by this endpoint " +
+	"Trap, syslog and NBAR2 catalogs (traps.json, syslog.json, nbar2.json) are NOT reloaded by this endpoint " +
 	"and still need a restart"
 
 // validateResourceFilename is the one allowlist check on a resource file name

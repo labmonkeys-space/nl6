@@ -257,6 +257,14 @@ type FlowExporter struct {
 	optionShape  string
 	optionIfaces []flowOptionIface
 
+	// nbar2 is the device type's NBAR2 catalog when the flow config has
+	// nbar2 set, else nil. Non-nil switches generation to the
+	// application-first draw (syntheticAVCFlow) and is the same catalog the
+	// exporter's shared IPFIXAVCEncoder resolves record indices against, so
+	// records and the application table cannot disagree. Set once at attach,
+	// read-only thereafter (the counterSources discipline).
+	nbar2 *nbar2Catalog
+
 	// scenPart is the load-test scenario participation handle (nil = not
 	// participating → byte-for-byte legacy behaviour). When set, Tick gates
 	// DATA emission through the scenario gate (FR15/FR17): pre-T0 and post-
@@ -653,8 +661,10 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// alternating bursts and silence.
 	expired := fe.cache.Expire(now)
 
-	// Replenish the cache to its target population.
-	fe.cache.GenerateFlows(fe.profile, target, deviceIP, fe.rng, now, uptimeMs)
+	// Replenish the cache to its target population. A nil catalog is the
+	// untouched non-NBAR2 draw; the digest test pins that its bytes did not
+	// move.
+	fe.cache.GenerateFlowsFrom(fe.profile, target, deviceIP, fe.rng, now, uptimeMs, fe.nbar2)
 
 	// "First tick" is a zero lastTempl, not a zero sequence number. Under
 	// IPFIX the counter counts Data Records (RFC 7011 §3.1), so an idle
@@ -1216,6 +1226,27 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 	if err != nil {
 		return err
 	}
+	// NBAR2 is a record format under ipfix, not a protocol, so
+	// buildFlowEncoder stays the single source of truth for protocol names
+	// and the swap happens here: the device takes its type's SHARED
+	// IPFIXAVCEncoder, built once at catalog load, and the catalog rides the
+	// exporter so generation draws from the same table the encoder resolves
+	// against. The protocol string stays "ipfix": the collector tells the
+	// two apart by template id, and an AVC device shares the plain IPFIX
+	// socket-pool entry and status row.
+	var nbar2 *nbar2Catalog
+	if cfg.Nbar2 {
+		nbar2 = sm.Nbar2CatalogFor(device.resourceFile)
+		if nbar2 == nil {
+			return fmt.Errorf("nbar2 requested but no NBAR2 catalog is loaded (StartNbar2Catalogs did not run)")
+		}
+		if nbar2.Usable() == 0 {
+			return fmt.Errorf("nbar2: every entry of the catalog for %s is oversized at the configured MTU "+
+				"(-datagram-mtu %d; %d entries disabled at load, see the startup log); raise the MTU or shorten the catalog's hosts and URIs",
+				resourceDirName(device.resourceFile), linkMTU, len(nbar2.Oversized))
+		}
+		encoder = nbar2.Encoder()
+	}
 	collectorAddr, err := net.ResolveUDPAddr("udp", cfg.Collector)
 	if err != nil {
 		return fmt.Errorf("resolve collector %q: %w", cfg.Collector, err)
@@ -1252,6 +1283,7 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 		time.Duration(cfg.InactiveTimeout),
 		sm.flowTemplateInterval,
 		canonicalCollector, collectorAddr, canonical, encoder, cfg.SubAgentID)
+	device.flowExporter.nbar2 = nbar2
 	sm.openFlowConnForDevice(device)
 	sm.registerSFlowCounterSources(device)
 	sm.registerFlowOptionInterfaces(device)
@@ -1493,9 +1525,27 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 		lastTemplate = time.UnixMilli(ms).UTC().Format(time.RFC3339Nano)
 	}
 
+	// The resolved NBAR2 catalogs, the way trap and syslog report theirs:
+	// how an operator confirms which catalog a type resolved to, and how
+	// many of its entries the dry render disabled, without reading logs.
+	sm.mu.RLock()
+	var nbar2Cats map[string]CatalogSourceInfo
+	if len(sm.nbar2CatalogsByType) > 0 {
+		nbar2Cats = make(map[string]CatalogSourceInfo, len(sm.nbar2CatalogsByType))
+		for slug, c := range sm.nbar2CatalogsByType {
+			nbar2Cats[slug] = CatalogSourceInfo{
+				Entries:   len(c.Entries),
+				Oversized: len(c.Oversized),
+				Source:    nbar2CatalogSource(slug, sm.nbar2CatalogPath),
+			}
+		}
+	}
+	sm.mu.RUnlock()
+
 	return FlowStatus{
-		Collectors:       collectors,
-		DevicesExporting: totalDevices,
-		LastTemplateSend: lastTemplate,
+		Collectors:          collectors,
+		DevicesExporting:    totalDevices,
+		LastTemplateSend:    lastTemplate,
+		Nbar2CatalogsByType: nbar2Cats,
 	}
 }

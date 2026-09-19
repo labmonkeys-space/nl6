@@ -550,7 +550,7 @@ func (c *nbar2Catalog) draw(rng *rand.Rand) (ref avcRef, proto uint8, port uint1
 // 0, so the caller's draw count does not depend on the data.
 func weightedIndex(cum []int, total int, rng *rand.Rand) int {
 	if total <= 0 {
-		rng.Intn(1)
+		_ = rng.Int63() // one draw, discarded: the count must not depend on the data
 		return 0
 	}
 	v := rng.Intn(total)

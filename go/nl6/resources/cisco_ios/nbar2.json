@@ -1,5 +1,5 @@
 {
-  "_comment": "cisco_ios NBAR2 overlay; extends the universal catalog. Adds the alternate HTTP port an IOS edge router classifies beside http, and re-weights http toward the edge. Engine 3 with the IANA port as selector, per RFC 6759 section 4.1; see resources/_common/nbar2.json for sourcing.",
+  "comment": "cisco_ios NBAR2 overlay; extends the universal catalog. Adds the alternate HTTP port an IOS edge router classifies beside http, and re-weights http toward the edge. Engine 3 with the IANA port as selector, per RFC 6759 section 4.1; see resources/_common/nbar2.json for sourcing.",
   "extends": true,
   "entries": [
     {

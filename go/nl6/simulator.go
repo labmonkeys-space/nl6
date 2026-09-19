@@ -120,6 +120,8 @@ func main() {
 		flowSubAgentID           = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
 		flowOptionIfaceTable     = flag.String("flow-option-interface-table", "", "[seed] Emit v9/IPFIX interface option records for every auto-start device: if-scoped (ifIndex in the scope, fields 82+83) or system-scoped (system scope, ifIndex as option field, field 83 only). Empty = off (default). Requires -flow-protocol netflow9 or ipfix; use the per-device REST flow.options_interface_table field for per-group shapes")
 		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
+		flowNbar2                = flag.Bool("flow-nbar2", false, "[seed] Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from every NBAR2-capable auto-start device (cisco_ios, cisco_catalyst_9500); incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Requires -flow-protocol ipfix and -flow-collector; fatal at startup otherwise. Per-device via REST flow.nbar2")
+		nbar2CatalogPath         = flag.String("nbar2-catalog", "", "[global] Path to a JSON NBAR2 application catalog; replaces the embedded universal catalog AND every per-type overlay (resources/<type>/nbar2.json) when set. Read once at startup")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
 		trapCollector   = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
@@ -285,6 +287,16 @@ func main() {
 			log.Fatalf("profiling: %v", err)
 		}
 	}
+	// -flow-nbar2 with the default -flow-protocol (netflow9) is the same
+	// contradiction the REST validator refuses with a 400, but at startup
+	// there is no 400 to return, so it is fatal here: after -help and
+	// -version, before any subsystem. A batch that silently ran without
+	// NBAR2 would be the accepted-echoed-ignored failure (nl6#445). The
+	// precedent is -syslog-framing under udp.
+	if err := validateNbar2Seed(*flowNbar2, *flowCollector, *flowProtocol); err != nil {
+		log.Fatalf("flow export: %v", err)
+	}
+
 	if *profilingBasicAuth != "" || *profilingTenant != "" {
 		// Credentials are bound to the flag's address, so without the flag
 		// they would be accepted and then withheld from every push forever.
@@ -382,6 +394,10 @@ func main() {
 			// Protocol compatibility (netflow9/ipfix only) is enforced by
 			// the Validate call below — an incompatible seed is a startup fatal.
 			OptionsInterfaceTable: *flowOptionIfaceTable,
+			// Already validated fatally above (validateNbar2Seed); carried on
+			// the same struct both creation paths read, so the per-device
+			// capability degradation applies to the batch exactly as to REST.
+			Nbar2: *flowNbar2,
 		}
 		flowSeed.ApplyDefaults()
 		if err := flowSeed.Validate(); err != nil {
@@ -509,6 +525,18 @@ func main() {
 		MeanSchedulerInterval: *syslogInterval,
 	}); err != nil {
 		log.Fatalf("Failed to initialize syslog subsystem: %v", err)
+	}
+
+	// Load the NBAR2 application catalogs beside the trap and syslog
+	// catalogs, unconditionally, so a REST-created device can opt in with
+	// flow.nbar2 without a CLI seed. The payload budget is passed explicitly
+	// after SetLinkMTU has run, the trap loader's rule, so the dry render
+	// can never silently size against the default MTU.
+	if err := manager.StartNbar2Catalogs(Nbar2CatalogConfig{
+		CatalogPath:   *nbar2CatalogPath,
+		PayloadBudget: maxFlowPayloadIPv4,
+	}); err != nil {
+		log.Fatalf("Failed to load NBAR2 catalogs: %v", err)
 	}
 
 	// Start the gNMI subsystem. Always-on per-device when not disabled

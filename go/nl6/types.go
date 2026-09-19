@@ -938,6 +938,12 @@ type FlowStatus struct {
 	Collectors       []FlowCollectorStatus `json:"collectors"`
 	DevicesExporting int                   `json:"devices_exporting"`
 	LastTemplateSend string                `json:"last_template_send,omitempty"`
+	// Nbar2CatalogsByType reports the resolved NBAR2 application catalogs
+	// (`_universal` plus per-type slugs) with entry counts, how many the
+	// load-time dry render disabled, and where each came from. Absent when
+	// no catalog loaded. NBAR2 is a flow option rather than a subsystem of
+	// its own, which is why it reports here and not on an endpoint of its own.
+	Nbar2CatalogsByType map[string]CatalogSourceInfo `json:"nbar2_catalogs_by_type,omitempty"`
 }
 
 // FlowCollectorStatus is one aggregate record in FlowStatus.Collectors.
