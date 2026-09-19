@@ -440,7 +440,8 @@ in to any combination.
   "active_timeout":   "30s",                     // optional; default 30s
   "inactive_timeout": "15s",                     // optional; default 15s
   "sub_agent_id":     0,                         // optional; sFlow datagram sub_agent_id, default 0; ignored by non-sFlow protocols
-  "options_interface_table": ""                  // optional; "" (off, default) | "if-scoped" | "system-scoped"; netflow9/ipfix only — other protocols rejected with 400
+  "options_interface_table": "",                 // optional; "" (off, default) | "if-scoped" | "system-scoped"; netflow9/ipfix only — other protocols rejected with 400
+  "nbar2":            false                      // optional; Cisco AVC (NBAR2) records, ipfix only (other protocols 400); cisco_ios / cisco_catalyst_9500 only (an entirely incapable type set is 400; in a mixed batch incapable devices emit plain IPFIX with nbar2 cleared). Echoed only on devices that emit AVC. See flow-export.md
 }
 ```
 

@@ -97,7 +97,7 @@ Each device emits **one** shape; run two device groups with different shapes to 
 String fields are fixed 32-byte NUL-padded values.
 The options datagram advances the sequence counter per its protocol's rule: NetFlow v9 by 1 (RFC 3954 counts export packets), IPFIX by the number of Options Data Records it carries (RFC 7011 §3.1 counts Data Records, and an Options Data Record is one).
 It counts toward `sent_packets` / `sent_bytes` but not `sent_records` (option records are metadata, not flows).
-`send_failures` counts refused datagrams and, for an AVC device, records dropped because they fit no datagram; Plan B decides whether the latter gets its own field.
+`send_failures` counts refused datagrams and, for an AVC device, records dropped because they fit no datagram; the drop is logged once per exporter through its own gate, separate from encoder errors.
 Valid only under `netflow9` / `ipfix`; combining it with `netflow5` / `sflow` is rejected at validation.
 Default off; devices without the field emit byte-identical output to previous releases.
 
@@ -125,7 +125,78 @@ The IE 9357 hit count is encoded big-endian with no trailing delimiter after the
 All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`, pinned by `TestIPFIXAVCConstantsMatchEvidence`.
 An AVC device carries both options tables, 257 (interfaces) and 259 (applications), on the same refresh cadence.
 The IPFIX Sequence Number counts Data Records including options records, per RFC 7011 §3.1, the same rule the plain IPFIX encoder follows.
-Nothing in the shipped config surface enables this encoder yet; it is reachable only from Go, and wiring it to a device's `flow` block is Plan B.
+
+### Enabling NBAR2
+
+Set `"nbar2": true` in a device's `flow` block, or `-flow-nbar2` for the auto-start batch.
+It requires `protocol: "ipfix"`; any other protocol is rejected with a 400, and the seed flag with any other `-flow-protocol` (or no `-flow-collector`) is fatal at startup.
+Only `cisco_ios` and `cisco_catalyst_9500` have NBAR2; the set is curated by name with a reason per row in `nbar2_capability.go`, never by slug prefix, because `cisco_nexus_9500` (NX-OS), `cisco_crs_x` and `asr9k` (IOS-XR) do not.
+A request whose whole resolved type set is incapable is rejected with a 400 naming the type and its OS.
+A mixed round-robin batch is accepted, and here the rule differs from flow's own skip: an NBAR2-incapable but flow-capable device **keeps its flow block and emits the plain IPFIX record** (template 256) with `nbar2` cleared, logged once per type.
+Flow's incapable skip attaches no flow block at all.
+The two outcomes differ in byte identity and in what a collector sees, so `GET /api/v1/devices` echoes `nbar2` only on devices that emit AVC.
+
+```bash
+# 20 cisco_ios devices emitting Cisco AVC records to an IPFIX collector
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "start_ip": "10.0.3.1",
+    "device_count": 20,
+    "resource_file": "cisco_ios",
+    "flow": {
+      "collector": "192.168.1.10:4739",
+      "protocol": "ipfix",
+      "nbar2": true
+    }
+  }'
+```
+
+### Application-first generation
+
+For an NBAR2 device the catalog, not the `FlowProfile`, decides protocol and destination port: each flow draws an application by weight, takes the application's protocol and port, then draws a host and a URI by weight.
+The exporter therefore never emits a record on port 443 tagged as an application that runs elsewhere.
+The profile's port mix and per-device record ceilings still describe the non-NBAR2 fleet; an NBAR2 device's port and protocol distribution is its catalog's.
+The host and URI draws are unconditional, so a seeded device reproduces its stream exactly.
+Every device not using NBAR2 emits byte-identical output to the previous release, pinned by a digest over every shipped type and protocol (`testdata/flow-digests/pre-nbar2.tsv`).
+
+### The catalog
+
+`resources/_common/nbar2.json` is compiled into the binary.
+`resources/<type>/nbar2.json` overlays it for that type with the trap and syslog catalogs' `extends` semantic: `true` (the default) replaces same-name entries and appends new ones, `false` makes the per-type file the whole catalog for that type.
+`-nbar2-catalog <path>` replaces the universal **and** suppresses every overlay; it is read once at startup, and there is no per-device catalog path on the REST surface.
+`POST /api/v1/resources/reload` does not reload it.
+
+```json
+{
+  "comment":  "optional",
+  "extends":  true,                       // per-type files only; default true
+  "entries": [
+    {
+      "name":        "http",              // unique; at most 24 bytes (applicationName)
+      "description": "Hypertext Transfer Protocol",   // at most 55 bytes (applicationDescription)
+      "engine":      3,                   // RFC 6759 section 4.1: 3 IANA-L4, 6 USER-Defined, 13 PANA-L7
+      "selector":    80,                  // 0..16777215; applicationId = engine<<24 | selector, unique in the merged catalog
+      "proto":       "tcp",               // tcp | udp | icmp | 0..255
+      "dst_port":    80,                  // 0..65535; must be 0 under icmp
+      "weight":      30,                  // draw weight; default 1
+      "hosts": [ {"value": "www.example.com", "weight": 6} ],   // optional; ciscoHTTPHost
+      "uris":  [ {"value": "/index.html",     "weight": 4} ]    // optional; ciscoHTTPURIStatistics
+    }
+  ]
+}
+```
+
+Every rule names the file, the entry and the rule when it refuses a load.
+The shipped entries all use engine 3 with the IANA port as selector, which RFC 6759 defines and which needs no Cisco protocol-pack number to verify; Cisco's PANA-L7 selectors are protocol-pack data nl6 has not sourced, so an operator catalog is where they go.
+A collector's own classification may disagree with `applicationName`; join on the id.
+
+At load, each entry's worst-case record (its longest host and URI) is encoded through the production encoder against an empty datagram at the `-datagram-mtu` payload budget.
+An entry that cannot fit is **disabled, not rejected**: it stays out of generation and out of the application table, and the startup log names it with its size, the gap and the MTU that would admit it.
+Loading does not fail on size because the budget follows an operator-settable MTU.
+A device whose resolved catalog has no usable entry is refused at attach with that reason.
+The budget used is the IPv6 one, the smaller of the two address families, so an entry that passes load fits a datagram to any collector.
+`GET /api/v1/flows/status` reports the resolved catalogs under `nbar2_catalogs_by_type` with entry counts, the number disabled, and the source (`embedded`, `file:resources/<type>/nbar2.json`, `override:<path>`).
 
 ## Per-device source IP
 
@@ -350,9 +421,16 @@ Returns an array-of-collectors aggregated by `(collector, protocol)`:
     {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "sent_bytes":  5560000, "sent_records":  62000}
   ],
   "devices_exporting": 70,
-  "last_template_send": "2026-04-23T10:35:00Z"
+  "last_template_send": "2026-04-23T10:35:00Z",
+  "nbar2_catalogs_by_type": {
+    "_universal": {"entries": 7, "source": "embedded"},
+    "cisco_ios":  {"entries": 8, "source": "file:resources/cisco_ios/nbar2.json"}
+  }
 }
 ```
+
+An NBAR2 device and a plain IPFIX device to the same collector share one `ipfix` row; the collector tells them apart by template id.
+`nbar2_catalogs_by_type` is absent when no catalog loaded, and each row carries `oversized` when the load-time dry render disabled any entry.
 
 `subsystem_active=false` with `collectors: []` means flow export never
 ran (the subsystem starts on-demand when the first device with a `flow`

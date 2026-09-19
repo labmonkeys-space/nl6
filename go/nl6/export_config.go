@@ -93,6 +93,14 @@ type DeviceFlowConfig struct {
 	// matches the shape real Cisco IOS-XR exporters emit). Valid only under
 	// netflow9/ipfix — Validate rejects other protocols.
 	OptionsInterfaceTable string `json:"options_interface_table,omitempty"`
+	// Nbar2 selects the Cisco AVC record format (template 258 plus the
+	// RFC 6759 application table on 259) with values drawn from the
+	// device type's NBAR2 catalog (nbar2_catalog.go). Valid only under
+	// ipfix, and only on an NBAR2-capable type (nbar2_capability.go); a
+	// mixed batch degrades incapable devices to the plain IPFIX record and
+	// clears this field on them, so GET /api/v1/devices never echoes it for
+	// a device that does not emit AVC.
+	Nbar2 bool `json:"nbar2,omitempty"`
 
 	// tickIntervalSet — see DeviceSyslogConfig.intervalSet.
 	tickIntervalSet bool
@@ -359,6 +367,12 @@ func (c *DeviceFlowConfig) Validate() error {
 	}
 	if shape != "" && c.Protocol != "netflow9" && c.Protocol != "ipfix" {
 		return fmt.Errorf("flow: options_interface_table requires protocol netflow9 or ipfix, got %q", c.Protocol)
+	}
+	// NBAR2 is a record format of one protocol. Refused rather than stored
+	// under any other, the same shape as the option-table check above; the
+	// seed flag reuses this message at startup.
+	if c.Nbar2 && c.Protocol != "ipfix" {
+		return fmt.Errorf("flow: nbar2 requires protocol ipfix (Cisco AVC records are IPFIX with enterprise fields), got %q", c.Protocol)
 	}
 	return nil
 }

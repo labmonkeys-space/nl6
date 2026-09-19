@@ -622,6 +622,9 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 						deviceResourceFile, device.IP)
 					device.flowConfig = nil
 				} else {
+					// An NBAR2-incapable type in a mixed batch keeps its flow
+					// block and emits plain IPFIX (nbar2_capability.go).
+					degradeNbar2IfIncapable(device, deviceResourceFile)
 					flowProfile := GetFlowProfile(deviceResourceFile)
 					if err := sm.attachFlowExporter(device, flowProfile); err != nil {
 						log.Printf("flow export: skipping device %s: %v", device.IP, err)
@@ -975,6 +978,8 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 				resourceFile, device.IP)
 			device.flowConfig = nil
 		} else {
+			// Mirrors the sequential path: degrade before attach.
+			degradeNbar2IfIncapable(device, resourceFile)
 			flowProfile := GetFlowProfile(resourceFile)
 			if err := sm.attachFlowExporter(device, flowProfile); err != nil {
 				log.Printf("flow export: skipping device %s: %v", device.IP, err)

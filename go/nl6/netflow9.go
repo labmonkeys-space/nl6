@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"time"
 )
 
 // NetFlow v9 wire constants (RFC 3954).
@@ -321,7 +320,7 @@ func (NetFlow9Encoder) EncodePacket(
 	pos += 2
 	binary.BigEndian.PutUint32(buf[pos:], uptimeMs) // SysUptime (ms)
 	pos += 4
-	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix())) // unix_secs
+	binary.BigEndian.PutUint32(buf[pos:], uint32(flowWallClock().Unix())) // unix_secs
 	pos += 4
 	binary.BigEndian.PutUint32(buf[pos:], seqNo) // SequenceNumber
 	pos += 4
@@ -405,7 +404,7 @@ func (NetFlow9Encoder) EncodeOptionsDatagram(
 	pos += 2
 	binary.BigEndian.PutUint32(buf[pos:], uptimeMs)
 	pos += 4
-	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	binary.BigEndian.PutUint32(buf[pos:], uint32(flowWallClock().Unix()))
 	pos += 4
 	binary.BigEndian.PutUint32(buf[pos:], seqNo)
 	pos += 4

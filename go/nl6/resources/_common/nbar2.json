@@ -1,0 +1,81 @@
+{
+  "comment": "Universal NBAR2 application catalog. Sourcing: the applicationId layout (engine id in the top 8 bits, selector in the low 24) and the engine ids 3 (IANA-L4), 6 (USER-Defined) and 13 (PANA-L7) come from RFC 6759 section 4.1 (go/nl6/testdata/rfc/rfc6759-application-information.txt); the wire layout of every field comes from go/nl6/testdata/cisco-avc/elements.tsv. Every shipped entry uses engine 3 with the IANA port as selector, which RFC 6759 defines and which needs no Cisco protocol-pack number to verify. Cisco's PANA-L7 (engine 13) selectors are protocol-pack data nl6 has not sourced, so none are shipped; an operator catalog may carry them. Host and URI values are nl6's invention for a simulator and name no real organisation. A collector's own classification may disagree with applicationName; join on the id.",
+  "entries": [
+    {
+      "name": "http",
+      "description": "Hypertext Transfer Protocol",
+      "engine": 3,
+      "selector": 80,
+      "proto": "tcp",
+      "dst_port": 80,
+      "weight": 30,
+      "hosts": [
+        {"value": "www.example.com", "weight": 6},
+        {"value": "cdn.example.net", "weight": 3},
+        {"value": "api.example.org", "weight": 2},
+        {"value": "static.example.com", "weight": 1}
+      ],
+      "uris": [
+        {"value": "/", "weight": 5},
+        {"value": "/index.html", "weight": 4},
+        {"value": "/api/v1/items", "weight": 3},
+        {"value": "/assets/app.js", "weight": 2},
+        {"value": "/images/logo.png", "weight": 1}
+      ]
+    },
+    {
+      "name": "ssl",
+      "description": "Secure Socket Layer",
+      "engine": 3,
+      "selector": 443,
+      "proto": "tcp",
+      "dst_port": 443,
+      "weight": 40
+    },
+    {
+      "name": "dns",
+      "description": "Domain Name System",
+      "engine": 3,
+      "selector": 53,
+      "proto": "udp",
+      "dst_port": 53,
+      "weight": 15
+    },
+    {
+      "name": "ssh",
+      "description": "Secure Shell",
+      "engine": 3,
+      "selector": 22,
+      "proto": "tcp",
+      "dst_port": 22,
+      "weight": 5
+    },
+    {
+      "name": "ntp",
+      "description": "Network Time Protocol",
+      "engine": 3,
+      "selector": 123,
+      "proto": "udp",
+      "dst_port": 123,
+      "weight": 4
+    },
+    {
+      "name": "snmp",
+      "description": "Simple Network Management Protocol",
+      "engine": 3,
+      "selector": 161,
+      "proto": "udp",
+      "dst_port": 161,
+      "weight": 3
+    },
+    {
+      "name": "smtp",
+      "description": "Simple Mail Transfer Protocol",
+      "engine": 3,
+      "selector": 25,
+      "proto": "tcp",
+      "dst_port": 25,
+      "weight": 3
+    }
+  ]
+}

@@ -572,6 +572,15 @@ type SimulatorManager struct {
 	// The manager retains subsystem-level concerns: catalog, scheduler,
 	// shared limiter, and shared-socket pool for the fallback path.
 	//
+	// nbar2CatalogsByType mirrors trapCatalogsByType for the NBAR2
+	// application catalog (nbar2_catalog.go): `_universal` plus per-type
+	// slugs. Each value is finalised and immutable, and carries the ONE
+	// IPFIXAVCEncoder every device of that type shares. nbar2CatalogPath is
+	// the -nbar2-catalog override, kept for the status endpoint's source
+	// label. Nil until StartNbar2Catalogs runs.
+	nbar2CatalogsByType map[string]*nbar2Catalog
+	nbar2CatalogPath    string
+
 	// syslogCatalogsByType mirrors trapCatalogsByType for the syslog side.
 	syslogCatalog         *SyslogCatalog
 	syslogCatalogsByType  map[string]*SyslogCatalog
@@ -929,6 +938,12 @@ type FlowStatus struct {
 	Collectors       []FlowCollectorStatus `json:"collectors"`
 	DevicesExporting int                   `json:"devices_exporting"`
 	LastTemplateSend string                `json:"last_template_send,omitempty"`
+	// Nbar2CatalogsByType reports the resolved NBAR2 application catalogs
+	// (`_universal` plus per-type slugs) with entry counts, how many the
+	// load-time dry render disabled, and where each came from. Absent when
+	// no catalog loaded. NBAR2 is a flow option rather than a subsystem of
+	// its own, which is why it reports here and not on an endpoint of its own.
+	Nbar2CatalogsByType map[string]CatalogSourceInfo `json:"nbar2_catalogs_by_type,omitempty"`
 }
 
 // FlowCollectorStatus is one aggregate record in FlowStatus.Collectors.

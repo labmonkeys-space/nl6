@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"time"
 )
 
 // IPFIX wire constants (RFC 7011).
@@ -298,7 +297,7 @@ func (IPFIXEncoder) EncodePacket(
 	// Clamp to zero to guard against a negative result if uptimeMs exceeds nowMs
 	// (e.g. NTP step-back or synthetic clock in tests), which would otherwise
 	// wrap via uint64 cast to a timestamp in year ~584 million CE.
-	nowMs := time.Now().UnixMilli()
+	nowMs := flowWallClock().UnixMilli()
 	deviceStartMs := nowMs - int64(uptimeMs)
 	if deviceStartMs < 0 {
 		deviceStartMs = 0
@@ -420,7 +419,7 @@ func (IPFIXEncoder) EncodeOptionsDatagram(
 	pos += 2
 	lengthOffset := pos // total message length, backfilled
 	pos += 2
-	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	binary.BigEndian.PutUint32(buf[pos:], uint32(flowWallClock().Unix()))
 	pos += 4
 	binary.BigEndian.PutUint32(buf[pos:], seqNo)
 	pos += 4

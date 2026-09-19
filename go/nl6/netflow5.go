@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"sync/atomic"
-	"time"
 )
 
 // Cisco NetFlow v5 wire constants. NetFlow v5 predates the RFC era and has no
@@ -137,7 +136,7 @@ func (e *NetFlow5Encoder) EncodePacket(
 		return 0, fmt.Errorf("netflow5: buffer too small (%d bytes), need at least %d", len(buf), needed)
 	}
 
-	now := time.Now()
+	now := flowWallClock()
 	unixSecs := uint32(now.Unix())
 	unixNsecs := uint32(now.Nanosecond())
 

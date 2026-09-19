@@ -1,0 +1,41 @@
+{
+  "comment": "cisco_ios NBAR2 overlay; extends the universal catalog. Adds the alternate HTTP port an IOS edge router classifies beside http, and re-weights http toward the edge. Engine 3 with the IANA port as selector, per RFC 6759 section 4.1; see resources/_common/nbar2.json for sourcing.",
+  "extends": true,
+  "entries": [
+    {
+      "name": "http",
+      "description": "Hypertext Transfer Protocol",
+      "engine": 3,
+      "selector": 80,
+      "proto": "tcp",
+      "dst_port": 80,
+      "weight": 35,
+      "hosts": [
+        {"value": "www.example.com", "weight": 6},
+        {"value": "portal.example.com", "weight": 3},
+        {"value": "cdn.example.net", "weight": 2}
+      ],
+      "uris": [
+        {"value": "/", "weight": 5},
+        {"value": "/login", "weight": 3},
+        {"value": "/api/v1/status", "weight": 2}
+      ]
+    },
+    {
+      "name": "http-alt",
+      "description": "HTTP Alternate",
+      "engine": 3,
+      "selector": 8080,
+      "proto": "tcp",
+      "dst_port": 8080,
+      "weight": 6,
+      "hosts": [
+        {"value": "proxy.example.com", "weight": 1}
+      ],
+      "uris": [
+        {"value": "/", "weight": 2},
+        {"value": "/health", "weight": 1}
+      ]
+    }
+  ]
+}

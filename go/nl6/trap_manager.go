@@ -259,8 +259,12 @@ type trapCollectorAggregate struct {
 // SyslogStatus.CatalogsByType. Shared between trap and syslog since their
 // observability shape is identical.
 type CatalogSourceInfo struct {
-	Entries int    `json:"entries"`
-	Source  string `json:"source"` // "embedded", "file:<path>", or "override:<path>"
+	Entries int `json:"entries"`
+	// Oversized counts entries the load-time dry render disabled at the
+	// configured -datagram-mtu. Reported for the NBAR2 catalogs; the trap
+	// and syslog rows leave it at zero (additive, omitted when zero).
+	Oversized int    `json:"oversized,omitempty"`
+	Source    string `json:"source"` // "embedded", "file:<path>", or "override:<path>"
 }
 
 // TrapSubsystemConfig bundles the simulator-wide knobs still owned by

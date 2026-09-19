@@ -131,6 +131,15 @@ func flowPayloadBudget(addr *net.UDPAddr) int {
 	return maxFlowPayloadIPv6
 }
 
+// flowWallClock is the wall clock every flow encoder stamps into a datagram
+// header (NetFlow v9 unix_secs, IPFIX export time, NetFlow v5 unix_secs and
+// unix_nsecs, and the absolute IPFIX record timestamps derived from it).
+// Production never reassigns it. It exists so a test can hold the clock and
+// take a byte digest of emitted datagrams that two commits can be compared on;
+// without it, every datagram differs by its export time and no digest can be
+// taken at all.
+var flowWallClock = time.Now
+
 // FlowTickStats holds per-tick export counters returned by Tick.
 // tickAllFlowExporters sums these across all devices and adds them to the
 // cumulative atomic counters on SimulatorManager.
@@ -217,6 +226,11 @@ type FlowExporter struct {
 	// flow-encode path (nl6#670): an encoder error there would otherwise
 	// stop flow emission silently at tick cadence × device count.
 	firstEncodeErr sync.Once
+	// firstDropErr gates the oversized-record drop report separately from
+	// firstEncodeErr. Sharing one gate meant that once a single oversized
+	// record had been reported, a later GENUINE encoder error on the same
+	// exporter, which stops emission for that device, was never logged at all.
+	firstDropErr sync.Once
 	// persistOnce makes persistFlowCounters idempotent per exporter. The
 	// fold is reachable from two device-teardown paths (device.go Stop and
 	// delete), and folding twice would double the persisted per-collector
@@ -242,6 +256,14 @@ type FlowExporter struct {
 	// Validate enforces the protocol compatibility.
 	optionShape  string
 	optionIfaces []flowOptionIface
+
+	// nbar2 is the device type's NBAR2 catalog when the flow config has
+	// nbar2 set, else nil. Non-nil switches generation to the
+	// application-first draw (syntheticAVCFlow) and is the same catalog the
+	// exporter's shared IPFIXAVCEncoder resolves record indices against, so
+	// records and the application table cannot disagree. Set once at attach,
+	// read-only thereafter (the counterSources discipline).
+	nbar2 *nbar2Catalog
 
 	// scenPart is the load-test scenario participation handle (nil = not
 	// participating → byte-for-byte legacy behaviour). When set, Tick gates
@@ -452,6 +474,18 @@ func (fe *FlowExporter) logFirstEncodeErr(err error) {
 	})
 }
 
+// logFirstDropErr logs at most one oversized-record drop per exporter. Its
+// own gate, not firstEncodeErr's: a drop is a property of one record and the
+// exporter keeps emitting, while an encode error stops emission, and the two
+// must not consume each other's single log line. SendFailures still counts
+// every drop.
+func (fe *FlowExporter) logFirstDropErr(budget int) {
+	fe.firstDropErr.Do(func() {
+		log.Printf("flow export: a record for %s exceeds the datagram budget of %d bytes and was dropped (further drops suppressed; each counts in send_failures)",
+			domainIDtoIP(fe.domainID), budget)
+	})
+}
+
 // effectiveFlowLifetime is how long a flow actually occupies the cache: the
 // lifetime the profile and timeouts imply, PLUS half the sweep interval.
 //
@@ -627,8 +661,10 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 	// alternating bursts and silence.
 	expired := fe.cache.Expire(now)
 
-	// Replenish the cache to its target population.
-	fe.cache.GenerateFlows(fe.profile, target, deviceIP, fe.rng, now, uptimeMs)
+	// Replenish the cache to its target population. A nil catalog is the
+	// untouched non-NBAR2 draw; the digest test pins that its bytes did not
+	// move.
+	fe.cache.GenerateFlowsFrom(fe.profile, target, deviceIP, fe.rng, now, uptimeMs, fe.nbar2)
 
 	// "First tick" is a zero lastTempl, not a zero sequence number. Under
 	// IPFIX the counter counts Data Records (RFC 7011 §3.1), so an idle
@@ -748,7 +784,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 				// The first record fits no empty datagram. It is gone from
 				// the queue (consumed counts it) and is a send failure, never
 				// a sent record; nothing was written for it.
-				fe.logFirstEncodeErr(fmt.Errorf("record for %s exceeds the datagram budget of %d bytes and was dropped", domainIDtoIP(fe.domainID), len(buf)))
+				fe.logFirstDropErr(len(buf))
 				stats.SendFailures += uint64(dropped)
 				if scenActive {
 					part.ledger.emitted.Add(uint64(dropped))
@@ -1190,6 +1226,27 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 	if err != nil {
 		return err
 	}
+	// NBAR2 is a record format under ipfix, not a protocol, so
+	// buildFlowEncoder stays the single source of truth for protocol names
+	// and the swap happens here: the device takes its type's SHARED
+	// IPFIXAVCEncoder, built once at catalog load, and the catalog rides the
+	// exporter so generation draws from the same table the encoder resolves
+	// against. The protocol string stays "ipfix": the collector tells the
+	// two apart by template id, and an AVC device shares the plain IPFIX
+	// socket-pool entry and status row.
+	var nbar2 *nbar2Catalog
+	if cfg.Nbar2 {
+		nbar2 = sm.Nbar2CatalogFor(device.resourceFile)
+		if nbar2 == nil {
+			return fmt.Errorf("nbar2 requested but no NBAR2 catalog is loaded (StartNbar2Catalogs did not run)")
+		}
+		if nbar2.Usable() == 0 {
+			return fmt.Errorf("nbar2: every entry of the catalog for %s is oversized at the configured MTU "+
+				"(-datagram-mtu %d; %d entries disabled at load, see the startup log); raise the MTU or shorten the catalog's hosts and URIs",
+				resourceDirName(device.resourceFile), linkMTU, len(nbar2.Oversized))
+		}
+		encoder = nbar2.Encoder()
+	}
 	collectorAddr, err := net.ResolveUDPAddr("udp", cfg.Collector)
 	if err != nil {
 		return fmt.Errorf("resolve collector %q: %w", cfg.Collector, err)
@@ -1226,6 +1283,7 @@ func (sm *SimulatorManager) attachFlowExporter(device *DeviceSimulator, flowProf
 		time.Duration(cfg.InactiveTimeout),
 		sm.flowTemplateInterval,
 		canonicalCollector, collectorAddr, canonical, encoder, cfg.SubAgentID)
+	device.flowExporter.nbar2 = nbar2
 	sm.openFlowConnForDevice(device)
 	sm.registerSFlowCounterSources(device)
 	sm.registerFlowOptionInterfaces(device)
@@ -1467,9 +1525,27 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 		lastTemplate = time.UnixMilli(ms).UTC().Format(time.RFC3339Nano)
 	}
 
+	// The resolved NBAR2 catalogs, the way trap and syslog report theirs:
+	// how an operator confirms which catalog a type resolved to, and how
+	// many of its entries the dry render disabled, without reading logs.
+	sm.mu.RLock()
+	var nbar2Cats map[string]CatalogSourceInfo
+	if len(sm.nbar2CatalogsByType) > 0 {
+		nbar2Cats = make(map[string]CatalogSourceInfo, len(sm.nbar2CatalogsByType))
+		for slug, c := range sm.nbar2CatalogsByType {
+			nbar2Cats[slug] = CatalogSourceInfo{
+				Entries:   len(c.Entries),
+				Oversized: len(c.Oversized),
+				Source:    nbar2CatalogSource(slug, sm.nbar2CatalogPath),
+			}
+		}
+	}
+	sm.mu.RUnlock()
+
 	return FlowStatus{
-		Collectors:       collectors,
-		DevicesExporting: totalDevices,
-		LastTemplateSend: lastTemplate,
+		Collectors:          collectors,
+		DevicesExporting:    totalDevices,
+		LastTemplateSend:    lastTemplate,
+		Nbar2CatalogsByType: nbar2Cats,
 	}
 }
