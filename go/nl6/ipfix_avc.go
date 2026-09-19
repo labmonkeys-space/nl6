@@ -85,3 +85,57 @@ func putIPFIXVarLen(buf []byte, pos int, v []byte) (int, bool) {
 	copy(buf[pos:], v)
 	return pos + n, true
 }
+
+// avcApplication is one NBAR2 application as the encoder needs it. Plan B's
+// catalog loader produces these; here they are constructed directly.
+type avcApplication struct {
+	ID          uint32
+	Name        string
+	Description string
+	Proto       uint8
+	DstPort     uint16
+	Hosts       []string
+	URIs        []string
+}
+
+// avcCatalog is an immutable, 1-based indexed set of applications. Index 0
+// means "no application" so a zero avcRef on a FlowRecord is a plain record.
+// FlowRecords carry INDICES into this catalog rather than strings (spec
+// section 3): at 30k devices x 256 flows the strings would cost ~300 MB.
+type avcCatalog struct {
+	apps []avcApplication
+}
+
+func newAVCCatalog(apps []avcApplication) *avcCatalog {
+	c := &avcCatalog{apps: make([]avcApplication, len(apps))}
+	copy(c.apps, apps)
+	return c
+}
+
+// App returns the application at 1-based idx, or false for 0 or out of range.
+func (c *avcCatalog) App(idx uint16) (*avcApplication, bool) {
+	if c == nil || idx == 0 || int(idx) > len(c.apps) {
+		return nil, false
+	}
+	return &c.apps[idx-1], true
+}
+
+func (c *avcCatalog) Len() int {
+	if c == nil {
+		return 0
+	}
+	return len(c.apps)
+}
+
+// avcApplicationID packs RFC 6759 section 4.1's applicationId: the
+// classification engine id in the top 8 bits and the selector in the low 24.
+func avcApplicationID(engine uint8, selector uint32) uint32 {
+	return uint32(engine)<<24 | selector&0xFFFFFF
+}
+
+// avcRef is the per-record application reference: 1-based indices into the
+// device's avcCatalog (App) and into that application's Hosts and URIs
+// slices. 0 means absent. Six bytes per record, resolved at encode time.
+type avcRef struct {
+	App, Host, URI uint16
+}

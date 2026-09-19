@@ -111,3 +111,39 @@ func TestIPFIXVarLenBoundary(t *testing.T) {
 		t.Fatal("65536-byte value cannot be represented in a 2-byte length")
 	}
 }
+
+func testAVCCatalog() *avcCatalog {
+	return newAVCCatalog([]avcApplication{
+		{ID: avcApplicationID(13, 80), Name: "http", Description: "HTTP", Proto: 6, DstPort: 80,
+			Hosts: []string{"www.example.com", "cdn.example.net"}, URIs: []string{"/index.html", "/api/v1/items"}},
+		{ID: avcApplicationID(13, 443), Name: "ssl", Description: "Secure Socket Layer", Proto: 6, DstPort: 443},
+		{ID: avcApplicationID(3, 53), Name: "dns", Description: "Domain Name System", Proto: 17, DstPort: 53},
+	})
+}
+
+func TestAVCCatalogIndexing(t *testing.T) {
+	c := testAVCCatalog()
+	if c.Len() != 3 {
+		t.Fatalf("Len = %d, want 3", c.Len())
+	}
+	if _, ok := c.App(0); ok {
+		t.Fatal("index 0 must mean absent")
+	}
+	if _, ok := c.App(4); ok {
+		t.Fatal("index past the end must be absent")
+	}
+	app, ok := c.App(1)
+	if !ok || app.Name != "http" {
+		t.Fatalf("App(1) = %+v ok=%v, want http", app, ok)
+	}
+	if got := avcApplicationID(13, 80); got != 13<<24|80 {
+		t.Fatalf("avcApplicationID(13,80) = %#x, want %#x", got, 13<<24|80)
+	}
+	if got := avcApplicationID(13, 0x1FFFFFF); got&0xFFFFFF != 0xFFFFFF || got>>24 != 13 {
+		t.Fatalf("selector must be masked to 24 bits, got %#x", got)
+	}
+	var r FlowRecord
+	if r.AVC != (avcRef{}) {
+		t.Fatal("zero FlowRecord must carry no application")
+	}
+}
