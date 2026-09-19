@@ -415,3 +415,64 @@ func TestIPFIXAVCTickDropsUnsendableRecord(t *testing.T) {
 		t.Fatalf("seqNo = %d, want 1 (dropped record never counted as sent)", fe.seqNo)
 	}
 }
+
+// Under the divisor-based pagination this catalog's worst case (a ~1400-byte
+// host) exceeds the template tick's budget on its own, so cap computed from
+// MaxRecordSize() was 0, the fixed-size loop broke immediately, and all ten
+// queued records were lost without a single counter moving. The measured
+// path must not predict capacity from the worst case in the catalog at all:
+// it measures per record, so short-host records in the same catalog as one
+// oversized host still get sent.
+func TestIPFIXAVCTickSendsWhenWorstCaseExceedsBudget(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	addr := ln.LocalAddr().(*net.UDPAddr)
+
+	cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http",
+		Hosts: []string{"short.example", strings.Repeat("w", 1400)}}})
+	enc := NewIPFIXAVCEncoder(cat)
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.52"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	// lastTempl left at its zero value: the first tick carries the template.
+	past := time.Now().Add(-time.Hour)
+	for i := 0; i < 10; i++ {
+		fe.cache.Add(avcRecord(1, 1, 0, uint16(49152+i)), past) // all use the SHORT host
+	}
+	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
+	if stats.PacketsSent < 1 {
+		t.Fatalf("expected at least one datagram, got %d", stats.PacketsSent)
+	}
+	if stats.RecordsSent != 10 {
+		t.Fatalf("RecordsSent = %d, want 10", stats.RecordsSent)
+	}
+	if stats.SendFailures != 0 {
+		t.Fatalf("SendFailures = %d, want 0", stats.SendFailures)
+	}
+	var got []ipfixDecodedAVCRecord
+	sawTemplate := false
+	for i := 0; i < int(stats.PacketsSent); i++ {
+		pkt := receivePacket(ch)
+		if pkt == nil {
+			t.Fatalf("datagram %d missing", i)
+		}
+		dec := decodeIPFIXPacket(t, pkt)
+		if i == 0 && len(dec.Templates) == 1 {
+			sawTemplate = true
+		}
+		got = append(got, decodeIPFIXAVCRecords(t, dec.RawSets[ipfixAVCTemplateID])...)
+	}
+	if !sawTemplate {
+		t.Fatal("first datagram must carry the template")
+	}
+	if len(got) != 10 {
+		t.Fatalf("decoded %d records across all datagrams, want 10", len(got))
+	}
+	for _, r := range got {
+		if r.Host != "short.example" {
+			t.Fatalf("record host = %q, want %q", r.Host, "short.example")
+		}
+	}
+}
