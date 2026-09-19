@@ -226,6 +226,11 @@ type FlowExporter struct {
 	// flow-encode path (nl6#670): an encoder error there would otherwise
 	// stop flow emission silently at tick cadence × device count.
 	firstEncodeErr sync.Once
+	// firstDropErr gates the oversized-record drop report separately from
+	// firstEncodeErr. Sharing one gate meant that once a single oversized
+	// record had been reported, a later GENUINE encoder error on the same
+	// exporter, which stops emission for that device, was never logged at all.
+	firstDropErr sync.Once
 	// persistOnce makes persistFlowCounters idempotent per exporter. The
 	// fold is reachable from two device-teardown paths (device.go Stop and
 	// delete), and folding twice would double the persisted per-collector
@@ -458,6 +463,18 @@ func (fe *FlowExporter) logFirstOptionsErr(err error) {
 func (fe *FlowExporter) logFirstEncodeErr(err error) {
 	fe.firstEncodeErr.Do(func() {
 		log.Printf("flow export: encode error for %s (further occurrences suppressed): %v", domainIDtoIP(fe.domainID), err)
+	})
+}
+
+// logFirstDropErr logs at most one oversized-record drop per exporter. Its
+// own gate, not firstEncodeErr's: a drop is a property of one record and the
+// exporter keeps emitting, while an encode error stops emission, and the two
+// must not consume each other's single log line. SendFailures still counts
+// every drop.
+func (fe *FlowExporter) logFirstDropErr(budget int) {
+	fe.firstDropErr.Do(func() {
+		log.Printf("flow export: a record for %s exceeds the datagram budget of %d bytes and was dropped (further drops suppressed; each counts in send_failures)",
+			domainIDtoIP(fe.domainID), budget)
 	})
 }
 
@@ -757,7 +774,7 @@ func (fe *FlowExporter) Tick(now time.Time, sharedConn *net.UDPConn, bufPool *sy
 				// The first record fits no empty datagram. It is gone from
 				// the queue (consumed counts it) and is a send failure, never
 				// a sent record; nothing was written for it.
-				fe.logFirstEncodeErr(fmt.Errorf("record for %s exceeds the datagram budget of %d bytes and was dropped", domainIDtoIP(fe.domainID), len(buf)))
+				fe.logFirstDropErr(len(buf))
 				stats.SendFailures += uint64(dropped)
 				if scenActive {
 					part.ledger.emitted.Add(uint64(dropped))

@@ -219,10 +219,37 @@ func buildIPFIXAVCTemplateSet() []byte {
 // The catalog is immutable, so one encoder is still safe across goroutines.
 type IPFIXAVCEncoder struct {
 	cat *avcCatalog
+	// maxRecSize is the worst-case record over the catalog, computed once
+	// here because the catalog is immutable. Tick reads MaxRecordSize on every
+	// tick of every device; walking every host and URI of the catalog there
+	// was a full catalog scan per device per tick for a value that never
+	// changes.
+	maxRecSize int
 }
 
 func NewIPFIXAVCEncoder(cat *avcCatalog) *IPFIXAVCEncoder {
-	return &IPFIXAVCEncoder{cat: cat}
+	return &IPFIXAVCEncoder{cat: cat, maxRecSize: avcWorstCaseRecordSize(cat)}
+}
+
+// avcWorstCaseRecordSize is the fixed prefix plus the longest host and the
+// longest single-URI statistics value in cat. Zero-length fields still cost
+// their one-byte length prefix.
+func avcWorstCaseRecordSize(cat *avcCatalog) int {
+	maxHost, maxURI := 0, 0
+	for i := 0; i < cat.Len(); i++ {
+		app, _ := cat.App(uint16(i + 1))
+		for _, h := range app.Hosts {
+			if len(h) > maxHost {
+				maxHost = len(h)
+			}
+		}
+		for _, u := range app.URIs {
+			if len(u)+3 > maxURI {
+				maxURI = len(u) + 3 // URI + NUL + uint16 count
+			}
+		}
+	}
+	return ipfixRecordSize + 4 + ipfixVarLenSize(maxHost) + ipfixVarLenSize(maxURI)
 }
 
 // measuredFlowEncoder is the seam for encoders whose record size is not
@@ -243,26 +270,10 @@ func (e *IPFIXAVCEncoder) SeqIncrement(n int) int     { return n }
 func (e *IPFIXAVCEncoder) TrailingPadBytes(int) int   { return 0 }
 func (e *IPFIXAVCEncoder) MaxRecordsPerDatagram() int { return 0 }
 
-// MaxRecordSize is the worst case over the catalog: the fixed prefix plus the
-// longest host and the longest single-URI statistics value. Tick uses it only
-// as a sanity bound; pagination is measured in EncodeMeasured.
-func (e *IPFIXAVCEncoder) MaxRecordSize() int {
-	maxHost, maxURI := 0, 0
-	for i := 0; i < e.cat.Len(); i++ {
-		app, _ := e.cat.App(uint16(i + 1))
-		for _, h := range app.Hosts {
-			if len(h) > maxHost {
-				maxHost = len(h)
-			}
-		}
-		for _, u := range app.URIs {
-			if len(u)+3 > maxURI {
-				maxURI = len(u) + 3 // URI + NUL + uint16 count
-			}
-		}
-	}
-	return ipfixRecordSize + 4 + ipfixVarLenSize(maxHost) + ipfixVarLenSize(maxURI)
-}
+// MaxRecordSize is the worst case over the catalog, computed at construction
+// (avcWorstCaseRecordSize). Tick uses it only as a sanity bound; pagination
+// is measured in EncodeMeasured.
+func (e *IPFIXAVCEncoder) MaxRecordSize() int { return e.maxRecSize }
 
 // EncodePacket satisfies FlowEncoder for callers that do not use the measured
 // seam; consumed AND dropped are both discarded here, so a caller through this
@@ -476,9 +487,17 @@ type appTableEncoder interface {
 	EncodeAppTableDatagram(domainID, seqNo uint32, apps []avcApplication, buf []byte) (n, consumed int, err error)
 }
 
-// Applications returns the catalog's applications in index order. The slice
-// is the catalog's own and must not be modified.
-func (e *IPFIXAVCEncoder) Applications() []avcApplication { return e.cat.apps }
+// Applications returns the catalog's applications in index order, or nil for
+// a nil catalog (App, Len and MaxRecordSize are nil-safe; this must be too,
+// or an encoder over a nil catalog survives every flow tick and panics on
+// the first template refresh). The slice is the catalog's own and must not
+// be modified.
+func (e *IPFIXAVCEncoder) Applications() []avcApplication {
+	if e.cat == nil {
+		return nil
+	}
+	return e.cat.apps
+}
 
 // EncodeAppTableDatagram writes a self-contained message: header, the
 // options template, and as many application records as fit. consumed <
