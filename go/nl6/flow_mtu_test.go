@@ -104,6 +104,18 @@ func fillExpiredFlows(t *testing.T, fe *FlowExporter, n int) {
 	}
 }
 
+// fillExpiredAVCFlows inserts n distinct already-expired AVC records so the
+// next Tick paginates them across datagrams. fillExpiredFlows plants a zero
+// AVC ref, which never exercises the variable-length host/URI-statistics
+// path, so the AVC case in TestFlowDatagramsFitMTU needs its own filler.
+func fillExpiredAVCFlows(t *testing.T, fe *FlowExporter, n int) {
+	t.Helper()
+	past := time.Now().Add(-1 * time.Hour)
+	for i := 0; i < n; i++ {
+		fe.cache.Add(avcRecord(1, 1, 1, uint16(50000+i)), past)
+	}
+}
+
 // TestFlowDatagramsFitMTU is the regression test for nl6#485. Every datagram
 // every encoder emits through Tick must fit the link MTU once the IP and UDP
 // headers are added.
@@ -136,6 +148,12 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 		// while real samples run ~100 B, so sFlow datagrams sit well below the
 		// ceiling by construction. Only the bound applies.
 		{"sflow", SFlowEncoder{}, false},
+		// AVC records carry two RFC 7011 §7 variable-length PEN 9 fields on
+		// top of the plain 54-byte prefix, so per-record size is measured by
+		// the encoder rather than fixed — PacketSizes() reports recSize 0,
+		// which is why tightlyPacked must be false: there is no fixed record
+		// size to compare the slack against.
+		{"ipfix-avc", NewIPFIXAVCEncoder(testAVCCatalog()), false},
 	}
 
 	for _, tc := range cases {
@@ -155,17 +173,32 @@ func TestFlowDatagramsFitMTU(t *testing.T) {
 				fe.counterSources = []CounterSource{NewCPUCounterSource(nil)}
 			}
 
-			// Tick 1 carries the template (lastTempl is zero).
-			fillExpiredFlows(t, fe, 240)
+			fill := func(n int) {
+				if tc.protocol == "ipfix-avc" {
+					fillExpiredAVCFlows(t, fe, n)
+				} else {
+					fillExpiredFlows(t, fe, n)
+				}
+			}
+
+			// Tick 1 carries the template (lastTempl is zero). The AVC case
+			// plants 60 records rather than 240: each carries two
+			// variable-length fields on top of the 54-byte prefix, so 60 is
+			// already enough to force pagination across several datagrams.
+			recordCount := 240
+			if tc.protocol == "ipfix-avc" {
+				recordCount = 60
+			}
+			fill(recordCount)
 			tickWithEncoder(fe, time.Now(), tc.encoder, conn, collectorAddr, testPool())
 			withTemplate := drainPackets(ch)
 			if len(withTemplate) < 2 {
-				t.Fatalf("expected ≥2 datagrams for 240 records, got %d", len(withTemplate))
+				t.Fatalf("expected ≥2 datagrams for %d records, got %d", recordCount, len(withTemplate))
 			}
 			largest := assertDatagramsFitMTU(t, tc.protocol+" (template tick)", withTemplate)
 
 			// Tick 2 is data-only.
-			fillExpiredFlows(t, fe, 240)
+			fill(recordCount)
 			tickWithEncoder(fe, time.Now(), tc.encoder, conn, collectorAddr, testPool())
 			dataOnly := drainPackets(ch)
 			if len(dataOnly) < 2 {
