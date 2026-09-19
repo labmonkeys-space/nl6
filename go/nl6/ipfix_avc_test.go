@@ -139,8 +139,11 @@ func TestAVCCatalogIndexing(t *testing.T) {
 	if got := avcApplicationID(13, 80); got != 13<<24|80 {
 		t.Fatalf("avcApplicationID(13,80) = %#x, want %#x", got, 13<<24|80)
 	}
-	if got := avcApplicationID(13, 0x1FFFFFF); got&0xFFFFFF != 0xFFFFFF || got>>24 != 13 {
-		t.Fatalf("selector must be masked to 24 bits, got %#x", got)
+	// An even engine is load-bearing here: with an odd engine (13) the
+	// selector's out-of-range bit 24 collides with a bit the engine already
+	// sets, so an unmasked implementation would pass this assertion too.
+	if got := avcApplicationID(12, 0x1FFFFFF); got&0xFFFFFF != 0xFFFFFF || got>>24 != 12 {
+		t.Fatalf("selector must be masked to 24 bits (engine must stay 12), got %#x", got)
 	}
 	var r FlowRecord
 	if r.AVC != (avcRef{}) {
