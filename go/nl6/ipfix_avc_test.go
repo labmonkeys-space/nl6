@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The encoder's IE table is DERIVED from testdata/cisco-avc/elements.tsv
@@ -320,5 +321,97 @@ func TestIPFIXAVCEncodeTemplateWhenNoRoom(t *testing.T) {
 	}
 	if len(pkt.RawSets) != 0 {
 		t.Fatalf("template-only message must carry no data set, got %v", pkt.RawSets)
+	}
+}
+
+// Through the real Tick: 120 AVC records with varied host lengths paginate
+// across several datagrams, every record reaches the wire exactly once,
+// RecordsSent equals the wire count, and the sequence numbers are the
+// running record count (RFC 7011 section 3.1).
+func TestIPFIXAVCTickRequeuesOnConsumed(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	addr := ln.LocalAddr().(*net.UDPAddr)
+
+	cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http",
+		Hosts: []string{"a.example", strings.Repeat("b", 200), strings.Repeat("c", 300)}, URIs: []string{"/x"}}})
+	enc := NewIPFIXAVCEncoder(cat)
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.50"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	past := time.Now().Add(-time.Hour)
+	for i := 0; i < 120; i++ {
+		fe.cache.Add(avcRecord(1, uint16(i%3+1), 1, uint16(49152+i)), past)
+	}
+	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
+	if stats.PacketsSent < 3 {
+		t.Fatalf("expected several datagrams, got %d", stats.PacketsSent)
+	}
+	seen := map[uint16]bool{}
+	var running uint32
+	for i := 0; i < int(stats.PacketsSent); i++ {
+		pkt := receivePacket(ch)
+		if pkt == nil {
+			t.Fatalf("datagram %d missing", i)
+		}
+		if len(pkt) > maxFlowPayloadIPv4 {
+			t.Fatalf("datagram %d is %d bytes, over the %d budget", i, len(pkt), maxFlowPayloadIPv4)
+		}
+		dec := decodeIPFIXPacket(t, pkt)
+		if dec.Header.SequenceNumber != running {
+			t.Fatalf("datagram %d sequence %d, want %d", i, dec.Header.SequenceNumber, running)
+		}
+		recs := decodeIPFIXAVCRecords(t, dec.RawSets[ipfixAVCTemplateID])
+		for _, r := range recs {
+			if seen[r.Base.SrcPort] {
+				t.Fatalf("record with src port %d arrived twice", r.Base.SrcPort)
+			}
+			seen[r.Base.SrcPort] = true
+		}
+		running += uint32(len(recs))
+	}
+	if len(seen) != 120 || stats.RecordsSent != 120 || fe.seqNo != 120 {
+		t.Fatalf("wire=%d RecordsSent=%d seqNo=%d, want 120 each", len(seen), stats.RecordsSent, fe.seqNo)
+	}
+	if stats.SendFailures != 0 {
+		t.Fatalf("SendFailures = %d, want 0", stats.SendFailures)
+	}
+}
+
+// A record that fits no datagram is dropped once, counted once, and does
+// not block the records behind it.
+func TestIPFIXAVCTickDropsUnsendableRecord(t *testing.T) {
+	ln, ch := testUDPListener(t)
+	defer ln.Close()
+	conn := testSender(t)
+	defer conn.Close()
+	addr := ln.LocalAddr().(*net.UDPAddr)
+
+	cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http",
+		Hosts: []string{"ok.example", strings.Repeat("z", 1500)}}})
+	enc := NewIPFIXAVCEncoder(cat)
+	prof := *mtuTestProfile()
+	prof.ConcurrentFlows = 0
+	fe := newTestFlowExporter(testDevice("10.1.2.51"), &prof, 10*time.Minute, 5*time.Minute, 10*time.Minute)
+	fe.lastTempl = time.Now() // data-only tick
+	past := time.Now().Add(-time.Hour)
+	fe.cache.Add(avcRecord(1, 2, 0, 49152), past) // 1500-byte host: never fits
+	fe.cache.Add(avcRecord(1, 1, 0, 49153), past)
+	stats := tickWithEncoder(fe, time.Now(), enc, conn, addr, testPool())
+	if stats.SendFailures != 1 || stats.RecordsSent != 1 || stats.PacketsSent != 1 {
+		t.Fatalf("stats = %+v, want SendFailures 1, RecordsSent 1, PacketsSent 1", stats)
+	}
+	pkt := receivePacket(ch)
+	if pkt == nil {
+		t.Fatal("the sendable record never arrived")
+	}
+	recs := decodeIPFIXAVCRecords(t, decodeIPFIXPacket(t, pkt).RawSets[ipfixAVCTemplateID])
+	if len(recs) != 1 || recs[0].Host != "ok.example" {
+		t.Fatalf("wire records = %+v", recs)
+	}
+	if fe.seqNo != 1 {
+		t.Fatalf("seqNo = %d, want 1 (dropped record never counted as sent)", fe.seqNo)
 	}
 }
