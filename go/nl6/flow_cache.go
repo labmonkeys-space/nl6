@@ -6,9 +6,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"sort"
 	"sync"
 	"time"
 )
@@ -183,7 +185,33 @@ func (fc *FlowCache) Expire(now time.Time) []FlowRecord {
 		expired = append(expired, e.record)
 		delete(fc.flows, key)
 	}
+	// Map iteration order is randomised per run, so without this the records
+	// of one tick land in the datagrams in a different order every process.
+	// A seeded device is meant to reproduce its stream exactly (scenario ground
+	// truth reconciles against it, and a byte digest of emitted datagrams is
+	// how a wire change is measured), so the batch is ordered by key. The order
+	// carries no protocol meaning; a collector treats records independently.
+	sort.Slice(expired, func(i, j int) bool { return flowRecordLess(expired[i], expired[j]) })
 	return expired
+}
+
+// flowRecordLess orders records by their 5-tuple key: source IP, destination
+// IP, source port, destination port, protocol. Total for distinct cache keys.
+func flowRecordLess(a, b FlowRecord) bool {
+	ka, kb := recordKey(a), recordKey(b)
+	if c := bytes.Compare(ka.SrcIP[:], kb.SrcIP[:]); c != 0 {
+		return c < 0
+	}
+	if c := bytes.Compare(ka.DstIP[:], kb.DstIP[:]); c != 0 {
+		return c < 0
+	}
+	if ka.SrcPort != kb.SrcPort {
+		return ka.SrcPort < kb.SrcPort
+	}
+	if ka.DstPort != kb.DstPort {
+		return ka.DstPort < kb.DstPort
+	}
+	return ka.Protocol < kb.Protocol
 }
 
 // ExpiryReasons returns cumulative counts of flows retired by the active and

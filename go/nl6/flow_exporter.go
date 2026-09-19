@@ -131,6 +131,15 @@ func flowPayloadBudget(addr *net.UDPAddr) int {
 	return maxFlowPayloadIPv6
 }
 
+// flowWallClock is the wall clock every flow encoder stamps into a datagram
+// header (NetFlow v9 unix_secs, IPFIX export time, NetFlow v5 unix_secs and
+// unix_nsecs, and the absolute IPFIX record timestamps derived from it).
+// Production never reassigns it. It exists so a test can hold the clock and
+// take a byte digest of emitted datagrams that two commits can be compared on;
+// without it, every datagram differs by its export time and no digest can be
+// taken at all.
+var flowWallClock = time.Now
+
 // FlowTickStats holds per-tick export counters returned by Tick.
 // tickAllFlowExporters sums these across all devices and adds them to the
 // cumulative atomic counters on SimulatorManager.

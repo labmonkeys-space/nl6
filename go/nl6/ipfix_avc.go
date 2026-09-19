@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"time"
 )
 
 // Cisco AVC (NBAR2) export over IPFIX. Every number below is DERIVED from
@@ -283,7 +282,7 @@ func (e *IPFIXAVCEncoder) EncodeMeasured(domainID, seqNo, uptimeMs uint32, recor
 	if len(records) == 0 && !includeTemplate {
 		return 0, 0, 0, nil
 	}
-	nowMs := time.Now().UnixMilli()
+	nowMs := flowWallClock().UnixMilli()
 	deviceStartMs := nowMs - int64(uptimeMs)
 	if deviceStartMs < 0 {
 		deviceStartMs = 0
@@ -498,7 +497,7 @@ func (e *IPFIXAVCEncoder) EncodeAppTableDatagram(domainID, seqNo uint32, apps []
 	pos += 2
 	lengthOffset := pos
 	pos += 2
-	binary.BigEndian.PutUint32(buf[pos:], uint32(time.Now().Unix()))
+	binary.BigEndian.PutUint32(buf[pos:], uint32(flowWallClock().Unix()))
 	pos += 4
 	binary.BigEndian.PutUint32(buf[pos:], seqNo)
 	pos += 4
