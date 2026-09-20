@@ -371,6 +371,31 @@ test-interop-pyroscope: check-go check-docker
 	sleep 2; [ "$$(docker inspect -f '{{.State.Running}}' nl6-interop-alloy 2>/dev/null)" = true ] || fail "Alloy container is not running"; \
 	( cd $(GO_DIR) && NL6_PYROSCOPE_INTEROP=1 go test ./nl6/ -run 'TestPyroscopeInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
 
+## test-interop-ipfix: Decode nl6's IPFIX / NBAR2 export with a REAL IPFIXcol2 container (needs docker)
+##
+## The flow sibling of test-interop (nl6 NBAR2 Plan C): every other IPFIX/AVC
+## test in the package decodes nl6's bytes with nl6's own decoder, so a shared
+## misreading of RFC 7011 section 7 or of Cisco's PEN 9 element numbers passes
+## all of them. This builds examples/ipfixcol2/Dockerfile (Debian forky's
+## ipfixcol2 package with libfds's OWN cisco.xml; Ubuntu 24.04, the CI runner,
+## does not package it), starts it on the HOST network (UDP 127.0.0.1:4739 in,
+## NDJSON to the test's TCP listener on 127.0.0.1:14739 out), runs the two
+## interop tests, and tears it down in a trap. FAILS rather than skips when
+## docker is missing. --network host needs Linux (the CI runner) or a Docker
+## Desktop / OrbStack with host networking enabled.
+IPFIXCOL2_IMAGE = nl6-interop-ipfixcol2:local
+test-interop-ipfix: check-go check-docker
+	@set -e; \
+	dump() { echo "=== docker logs nl6-interop-ipfixcol2 (tail)"; docker logs nl6-interop-ipfixcol2 2>&1 | tail -40 || true; }; \
+	cleanup() { docker rm -f nl6-interop-ipfixcol2 >/dev/null 2>&1 || true; }; \
+	fail() { echo "$$1"; dump; exit 1; }; \
+	trap cleanup EXIT; cleanup; \
+	docker build -q -t $(IPFIXCOL2_IMAGE) examples/ipfixcol2 >/dev/null || fail "could not build the IPFIXcol2 image from examples/ipfixcol2/Dockerfile"; \
+	docker run -d --name nl6-interop-ipfixcol2 --network host $(IPFIXCOL2_IMAGE) >/dev/null; \
+	sleep 2; [ "$$(docker inspect -f '{{.State.Running}}' nl6-interop-ipfixcol2 2>/dev/null)" = true ] || fail "IPFIXcol2 container is not running"; \
+	docker exec nl6-interop-ipfixcol2 ipfixcol2 -V 2>&1 | head -1; \
+	( cd $(GO_DIR) && NL6_IPFIX_INTEROP=1 go test ./nl6/ -run 'TestIPFIXInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
+
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime
 	cd $(WEB_DIR) && for t in *.test.js; do \
