@@ -37,6 +37,11 @@ import (
 
 const flowDigestFile = "testdata/flow-digests/pre-nbar2.tsv"
 
+// nbar2DigestFile is the same table for the NBAR2 stream itself, taken at the
+// Plan B merge commit (6de7f5e) so that Plan C, which touches only the ledger
+// and the report, can show the AVC datagrams did not move either.
+const nbar2DigestFile = "testdata/flow-digests/plan-b-nbar2.tsv"
+
 // flowDigestClock is the held wall clock. Any fixed instant works; this one is
 // recorded in the TSV header so a reader can reproduce the table.
 var flowDigestClock = time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
@@ -54,6 +59,28 @@ type flowDigestCase struct {
 	deviceType string
 	protocol   string
 	shape      string
+	// nbar2 selects the type's shared IPFIXAVCEncoder and catalog, the way
+	// attachFlowExporter does for a device whose flow block sets nbar2. Only
+	// meaningful with protocol ipfix; the key format is unchanged because
+	// NBAR2 rows live in their own table.
+	nbar2 bool
+}
+
+// nbar2DigestCases enumerates the NBAR2 stream: both capable types under
+// ipfix, in every option shape, with the catalog they resolve at load.
+func nbar2DigestCases(t *testing.T) []flowDigestCase {
+	t.Helper()
+	var cases []flowDigestCase
+	for slug := range nbar2CapableTypes {
+		for _, shape := range []string{"", flowOptionShapeIfScoped, flowOptionShapeSystemScoped} {
+			cases = append(cases, flowDigestCase{slug, "ipfix", shape, true})
+		}
+	}
+	sort.Slice(cases, func(i, j int) bool { return flowDigestKey(cases[i]) < flowDigestKey(cases[j]) })
+	if len(cases) == 0 {
+		t.Fatal("nbar2CapableTypes is empty; this harness is hashing nothing")
+	}
+	return cases
 }
 
 // flowDigestCases enumerates (type, protocol, shape) for the shipped tree:
@@ -75,10 +102,10 @@ func flowDigestCases(t *testing.T) []flowDigestCase {
 			continue
 		}
 		for _, proto := range []string{"netflow5", "netflow9", "ipfix", "sflow"} {
-			cases = append(cases, flowDigestCase{e.Name(), proto, ""})
+			cases = append(cases, flowDigestCase{e.Name(), proto, "", false})
 			if proto == "netflow9" || proto == "ipfix" {
-				cases = append(cases, flowDigestCase{e.Name(), proto, flowOptionShapeIfScoped})
-				cases = append(cases, flowDigestCase{e.Name(), proto, flowOptionShapeSystemScoped})
+				cases = append(cases, flowDigestCase{e.Name(), proto, flowOptionShapeIfScoped, false})
+				cases = append(cases, flowDigestCase{e.Name(), proto, flowOptionShapeSystemScoped, false})
 			}
 		}
 	}
@@ -97,11 +124,21 @@ func flowDigestFor(t *testing.T, c flowDigestCase) string {
 	if err != nil {
 		t.Fatalf("%v: %v", c, err)
 	}
+	var cat *nbar2Catalog
+	if c.nbar2 {
+		// The catalog's shared encoder, as attachFlowExporter selects it.
+		cat = nbar2TestManager(t).Nbar2CatalogFor(c.deviceType + ".json")
+		if cat == nil || cat.Usable() == 0 {
+			t.Fatalf("%v: no usable NBAR2 catalog", c)
+		}
+		enc = cat.Encoder()
+	}
 	collector := &net.UDPAddr{IP: net.ParseIP("127.0.0.1").To4(), Port: 2055}
 	fe := NewFlowExporter(testDevice(flowDigestDeviceIP), GetFlowProfile(c.deviceType+".json"),
 		30*time.Second, 15*time.Second, 60*time.Second,
 		collector.String(), collector, canon, enc, 0)
 	fe.startTime = flowDigestClock
+	fe.nbar2 = cat
 	if c.shape != "" {
 		fe.optionShape = c.shape
 		fe.optionIfaces = []flowOptionIface{
@@ -178,14 +215,26 @@ func readFlowDigests(t *testing.T, path string) map[string]string {
 // With NL6_FLOW_DIGEST_WRITE=1 it instead rewrites the table from the live
 // build and fails, so a regeneration can never pass by accident.
 func TestNonNbar2WireOutputUnchanged(t *testing.T) {
-	cases := flowDigestCases(t)
+	runFlowDigestGate(t, "TestNonNbar2WireOutputUnchanged", flowDigestFile, flowDigestCases(t))
+}
+
+// TestNbar2WireOutputUnchanged is the same gate over the NBAR2 stream against
+// the table taken at the Plan B merge commit.
+func TestNbar2WireOutputUnchanged(t *testing.T) {
+	runFlowDigestGate(t, "TestNbar2WireOutputUnchanged", nbar2DigestFile, nbar2DigestCases(t))
+}
+
+// runFlowDigestGate hashes every case live and compares it with the table at
+// path; with NL6_FLOW_DIGEST_WRITE set it rewrites that table and fails.
+func runFlowDigestGate(t *testing.T, testName, path string, cases []flowDigestCase) {
+	t.Helper()
 	live := make(map[string]string, len(cases))
 	for _, c := range cases {
 		live[flowDigestKey(c)] = flowDigestFor(t, c)
 	}
 
 	if os.Getenv("NL6_FLOW_DIGEST_WRITE") != "" {
-		if err := os.MkdirAll(filepath.Dir(flowDigestFile), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		keys := make([]string, 0, len(live))
@@ -195,21 +244,21 @@ func TestNonNbar2WireOutputUnchanged(t *testing.T) {
 		sort.Strings(keys)
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "# Flow datagram digests, one per (device type, protocol, option shape).\n")
-		fmt.Fprintf(&sb, "# Produced by TestNonNbar2WireOutputUnchanged with NL6_FLOW_DIGEST_WRITE=1.\n")
+		fmt.Fprintf(&sb, "# Produced by %s with NL6_FLOW_DIGEST_WRITE=1.\n", testName)
 		fmt.Fprintf(&sb, "# Clock held at %s; device %s; %d ticks of 5s; timeouts 30s/15s/60s.\n",
 			flowDigestClock.Format(time.RFC3339), flowDigestDeviceIP, flowDigestTicks)
-		fmt.Fprintf(&sb, "# Command: cd go && NL6_FLOW_DIGEST_WRITE=1 go test ./nl6/ -run TestNonNbar2WireOutputUnchanged\n")
+		fmt.Fprintf(&sb, "# Command: cd go && NL6_FLOW_DIGEST_WRITE=1 go test ./nl6/ -run %s\n", testName)
 		fmt.Fprintf(&sb, "# The commit that produced this table is named in the commit that added it.\n")
 		for _, k := range keys {
 			fmt.Fprintf(&sb, "%s\t%s\n", k, live[k])
 		}
-		if err := os.WriteFile(flowDigestFile, []byte(sb.String()), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Fatalf("wrote %d rows to %s; unset NL6_FLOW_DIGEST_WRITE to compare", len(keys), flowDigestFile)
+		t.Fatalf("wrote %d rows to %s; unset NL6_FLOW_DIGEST_WRITE to compare", len(keys), path)
 	}
 
-	want := readFlowDigests(t, flowDigestFile)
+	want := readFlowDigests(t, path)
 	for _, c := range cases {
 		k := flowDigestKey(c)
 		w, ok := want[k]
@@ -231,7 +280,7 @@ func TestNonNbar2WireOutputUnchanged(t *testing.T) {
 // TestFlowDigestIsDeterministic is the harness's own control: two runs of one
 // case must agree, or every row in the table is noise.
 func TestFlowDigestIsDeterministic(t *testing.T) {
-	c := flowDigestCase{"cisco_ios", "ipfix", flowOptionShapeIfScoped}
+	c := flowDigestCase{"cisco_ios", "ipfix", flowOptionShapeIfScoped, false}
 	a := flowDigestFor(t, c)
 	b := flowDigestFor(t, c)
 	if a != b {
