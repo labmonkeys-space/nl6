@@ -1,0 +1,19 @@
+# IPFIXcol2 as an independent decoder for nl6's IPFIX / NBAR2 export.
+#
+# This is what `make test-interop-ipfix` runs (it builds the image from the
+# Dockerfile beside this file and starts it with `docker run --network host`,
+# the same shape as the Pyroscope gate). It is also a ready-made collector
+# for a manual look at what nl6 puts on the wire:
+#
+#   docker compose -f examples/ipfixcol2/compose.yml up --build
+#   nc -l 127.0.0.1 14739          # the JSON output SENDS NDJSON here
+#   sudo ./nl6 -flow-collector 127.0.0.1:4739 -flow-protocol ipfix -flow-nbar2 ...
+#
+# Host networking is REQUIRED: the collector binds 127.0.0.1:4739 for nl6's
+# datagrams and connects to 127.0.0.1:14739 where the test (or your nc)
+# listens. Linux, or Docker Desktop / OrbStack with host networking enabled.
+services:
+  ipfixcol2:
+    build: .
+    image: nl6-interop-ipfixcol2:local
+    network_mode: host

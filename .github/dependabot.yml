@@ -57,6 +57,15 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # IPFIXcol2 collector image for the IPFIX interop gate: the Dockerfile's
+  # digest-pinned debian base. The package itself comes from Debian at build
+  # time, so the base bump is the whole bump.
+  - package-ecosystem: docker
+    directory: /examples/ipfixcol2
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   # Docs site (Docusaurus) npm dependencies, manifest at the repo root.
   - package-ecosystem: npm
     directory: /

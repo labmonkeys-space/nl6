@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  IPFIXcol2 startup config for `make test-interop-ipfix`.
+
+  UDP input on the loopback collector port nl6's test exporter targets, and a
+  JSON output that SENDS newline-delimited records over TCP to the Go test's
+  listener. Options records are INCLUDED so the RFC 6759 application table
+  (template 259) reaches the test, and unknown elements are INCLUDED so an
+  unresolved PEN 9 element shows up as `en9:idNNNN` (the failure signal)
+  rather than vanishing. octetArrayAsUint keeps applicationId (octetArray 4)
+  as an integer; nonPrintableChar is off because the URI statistics field
+  carries NUL delimiters and binary counts the test must see.
+-->
+<ipfixcol2>
+    <inputPlugins>
+        <input>
+            <name>nl6 UDP input</name>
+            <plugin>udp</plugin>
+            <params>
+                <localPort>4739</localPort>
+                <localIPAddress>127.0.0.1</localIPAddress>
+            </params>
+        </input>
+    </inputPlugins>
+    <outputPlugins>
+        <output>
+            <name>NDJSON to the Go test</name>
+            <plugin>json</plugin>
+            <params>
+                <tcpFlags>raw</tcpFlags>
+                <timestamp>unix</timestamp>
+                <protocol>raw</protocol>
+                <ignoreUnknown>false</ignoreUnknown>
+                <ignoreOptions>false</ignoreOptions>
+                <nonPrintableChar>false</nonPrintableChar>
+                <octetArrayAsUint>true</octetArrayAsUint>
+                <numericNames>false</numericNames>
+                <splitBiflow>false</splitBiflow>
+                <detailedInfo>true</detailedInfo>
+                <templateInfo>false</templateInfo>
+                <outputs>
+                    <send>
+                        <name>Go test listener</name>
+                        <ip>127.0.0.1</ip>
+                        <port>14739</port>
+                        <protocol>tcp</protocol>
+                        <blocking>yes</blocking>
+                    </send>
+                </outputs>
+            </params>
+        </output>
+    </outputPlugins>
+</ipfixcol2>
