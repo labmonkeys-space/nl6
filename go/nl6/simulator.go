@@ -293,7 +293,7 @@ func main() {
 	// -version, before any subsystem. A batch that silently ran without
 	// NBAR2 would be the accepted-echoed-ignored failure (nl6#445). The
 	// precedent is -syslog-framing under udp.
-	if err := validateNbar2Seed(*flowNbar2, *flowCollector, *flowProtocol); err != nil {
+	if err := validateNbar2Seed(*flowNbar2, *flowCollector, *flowProtocol, defaultResourceFile); err != nil {
 		log.Fatalf("flow export: %v", err)
 	}
 

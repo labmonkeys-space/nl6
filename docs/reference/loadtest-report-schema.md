@@ -242,11 +242,9 @@ know which keys to exclude.
 
 ## `applications[]` — fleet-wide flow traffic ground truth
 
-For scenarios on a flow protocol (`netflow5` / `netflow9` / `ipfix`), one row
-per distinct `(l4_proto, dst_port)` across all **sent** flow records — the
-trusted-sender reference for validating a collector's per-application
-aggregation. Rows are sorted ascending by the numeric `(protocol, dst_port)`
-key; the block is always present (`[]` for non-flow and `sflow` scenarios).
+For scenarios on a flow protocol (`netflow5` / `netflow9` / `ipfix`), one row per distinct `(l4_proto, dst_port, application_id)` across all **sent** flow records, the trusted-sender reference for validating a collector's per-application aggregation.
+Rows are sorted ascending by the numeric `(protocol, dst_port, application_id)` key, so on one port a plain row sorts before the NBAR2 rows.
+The block is always present (`[]` for non-flow and `sflow` scenarios).
 Additive block per the evolution policy below.
 
 ```json
@@ -254,27 +252,73 @@ Additive block per the evolution policy below.
   {"l4_proto": "tcp", "dst_port": 443, "app_hint": "https",
    "records": 3, "bytes": 3000, "packets": 30,
    "avg_bytes_per_second": 500.0,
-   "sub_window_bytes": [300, 300, 300, 300, 300, 300, 300, 300, 300, 300]}
+   "sub_window_bytes": [300, 300, 300, 300, 300, 300, 300, 300, 300, 300]},
+  {"l4_proto": "tcp", "dst_port": 443, "application_id": 50332091, "application_name": "ssl",
+   "app_hint": "https",
+   "records": 2, "bytes": 2000, "packets": 20,
+   "avg_bytes_per_second": 333.3,
+   "sub_window_bytes": [200, 200, 200, 200, 200, 200, 200, 200, 200, 200]}
 ]
 ```
 
 (A 6-second window carrying 3000 in-window bytes → `3000 / 6 = 500.0` B/s.)
 
+**The join key has three parts, and the third is what separates NBAR2 traffic from plain traffic on the same port.**
+The first row above is plain IPFIX (or NetFlow) traffic to 443/tcp; the second is Cisco AVC traffic to the same port whose records carried an `applicationId`.
+A consumer that groups only on `(l4_proto, dst_port)` sees both rows for one port and must sum them to get the old single row.
+
+`application_id` is the 32-bit value the record's IE 95 carries: the RFC 6759 classification engine id in the top 8 bits and the selector in the low 24, so engine 3 (IANA-L4, port-based) with selector 443 is `3 × 2^24 + 443 = 50332091`.
+It is resolved from the sending device's NBAR2 catalog at the moment the record is counted, never from a per-record index, so two device types whose catalogs list applications in different orders still fold into one row per wire id.
+A collector that decodes `applicationId` as a big-endian integer (IPFIXcol2 with `octetArrayAsUint`, for instance) compares the number directly.
+
 | Field | Type | Meaning |
 |-------|------|---------|
 | `l4_proto` | string | Transport protocol name (`tcp` / `udp` / `icmp`; numeric fallback). Join key, part 1. |
 | `dst_port` | number | Flow destination port. Join key, part 2. ICMP records carry zero source and destination ports (ICMP has no transport ports), so ICMP traffic aggregates under a single `(icmp, 0)` row. |
-| `app_hint` | string | Convenience label from a built-in well-known-port map (`443` → `https`, `53` → `domain`, …); `""` for unmapped ports. **Informational** — collector classification is user-configurable, so join on `(l4_proto, dst_port)`, never on the hint. |
-| `records` | number | Sent flow records for this application (`sent` basis: in-window + drain). For a pure flow scenario, `Σ applications[].records == summary.sent`. |
-| `bytes` | number | Sum of the records' flow byte counters — exactly what a conforming collector sums for the same window. |
+| `application_id` | number | Wire `applicationId` (IE 95) as an integer. Join key, part 3. **Omitted** on a row of plain records (no NBAR2), so a fleet with no NBAR2 device serializes exactly as before this field existed. |
+| `application_name` | string | The catalog's `applicationName` for `application_id`, the same string the device advertises in its RFC 6759 application table. Omitted with `application_id`. Informational, like `app_hint`. |
+| `app_hint` | string | Convenience label from a built-in well-known-port map (`443` → `https`, `53` → `domain`, …); `""` for unmapped ports. **Informational**: collector classification is user-configurable, so join on the key, never on the hint. |
+| `records` | number | Sent flow records for this row (`sent` basis: in-window + drain). For a pure flow scenario, `Σ applications[].records == summary.sent`. |
+| `bytes` | number | Sum of the records' flow byte counters, exactly what a conforming collector sums for the same window. |
 | `packets` | number | Sum of the records' flow packet counters. |
-| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here — the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span — [nl6#500].) In-window bytes = `Σ sub_window_bytes`. |
-| `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded — same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
+| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here: the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span, [nl6#500].) In-window bytes = `Σ sub_window_bytes`. |
+| `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded, the same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
 
-`sflow` scenarios are excluded by design: an sFlow collector derives byte
-volumes by sampling extrapolation (`frame_length × sampling_rate`), not by
-summing record byte counters, so these totals are not the numbers a correct
-sFlow collector would report.
+`sflow` scenarios are excluded by design: an sFlow collector derives byte volumes by sampling extrapolation (`frame_length × sampling_rate`), not by summing record byte counters, so these totals are not the numbers a correct sFlow collector would report.
+
+## `l7_values[]` — layer-7 values from NBAR2 records
+
+One row per distinct `(application_id, field, value)` across all **sent** records that carried that value, positioned after `applications`.
+`field` is `http_host` (the HTTP host, Cisco IE 12235 under PEN 9) or `http_uri` (the URI half of the HTTP URI statistics field, IE 9357).
+Rows are sorted ascending by `(application_id, field, value)`.
+The block is always present and is `[]` unless an NBAR2 participant sent a record carrying a host or a URI.
+
+```json
+"l7_values": [
+  {"application_id": 50331728, "application_name": "http", "field": "http_host",
+   "value": "www.example.com", "records": 6, "bytes": 6000, "packets": 60,
+   "avg_bytes_per_second": 1000.0},
+  {"application_id": 50331728, "application_name": "http", "field": "http_uri",
+   "value": "/index.html", "records": 10, "bytes": 10000, "packets": 100,
+   "avg_bytes_per_second": 1666.7}
+]
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `application_id` | number | Wire `applicationId` of the records, as in `applications[]`. Join key, part 1. |
+| `application_name` | string | The catalog's name for it. Informational. |
+| `field` | string | `http_host` or `http_uri`. Join key, part 2. |
+| `value` | string | The host or URI exactly as the record carried it. Join key, part 3. |
+| `records` / `bytes` / `packets` | number | Sent-basis totals of the records carrying this value, the `applications[]` convention. |
+| `avg_bytes_per_second` | number | In-window bytes ÷ actual window, the `applications[]` convention. |
+
+**The invariant is an inequality.**
+For each `field`, `Σ l7_values[field].records ≤ Σ applications[].records`, and equality is not required: a DNS or SSL record carries no host and no URI, so it contributes to `applications[]` and to no row here.
+Equality holds only when every sent record carried exactly one value of that field.
+
+A collector that types IE 9357 as a string (libfds does) truncates the URI statistics value at its NUL delimiter and reports the URI alone; the `http_uri` row's `value` is that URI, so it reconciles against such a collector directly.
+The 2-byte hit count that follows the URI on the wire is not part of the key.
 
 ## The ledger identity
 

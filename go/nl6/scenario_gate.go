@@ -96,6 +96,14 @@ type scenarioPart struct {
 	// math is sampling extrapolation) and every non-flow protocol. Owned here,
 	// not passed per call, so a second batch call site cannot disagree.
 	countApps bool
+	// nbar2 is the participant's NBAR2 catalog (nil for a plain participant),
+	// captured from the exporter at installScenPart and handed to the
+	// application ledger so it can resolve each record's wire applicationId,
+	// host and URI (nbar2 Plan C). Captured, not read from the exporter per
+	// batch, so a re-attach that swaps the exporter mid-scenario cannot
+	// change what a ledger already counted under. Immutable after load, so
+	// the pointer is safe to share.
+	nbar2 *nbar2Catalog
 	// owner is the scenario ID that installed this handle. It makes the
 	// exporter's single scenPart slot self-arbitrating under per-device
 	// overlap (#392): a claim is a compare-and-swap that succeeds on an empty
@@ -191,7 +199,7 @@ func (p *scenarioPart) bucketFlowBatch(t time.Time, batch []FlowRecord) {
 		p.ledger.drain.Add(n)
 	}
 	if p.countApps {
-		p.ledger.addAppBatch(batch, inWindow, subIdx)
+		p.ledger.addAppBatch(batch, inWindow, subIdx, p.nbar2)
 	}
 }
 

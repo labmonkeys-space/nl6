@@ -106,6 +106,12 @@ func TestNbar2IncapableRequest(t *testing.T) {
 	}{
 		{"explicit incapable type", nbar2Req("juniper_mx240.json", false, ""), true},
 		{"explicit capable type", nbar2Req("cisco_ios.json", false, ""), false},
+		// A bare slug is refused by validateResourceFilename LATER, but this
+		// gate runs first and used to answer it with a capability 400 (the
+		// first veth capture of Plan C hit exactly this row); the verdict
+		// must be the type's, whatever form names it (resourceFileKey).
+		{"explicit capable type without the .json suffix", nbar2Req("cisco_ios", false, ""), false},
+		{"explicit incapable type without the .json suffix", nbar2Req("juniper_mx240", false, ""), true},
 		{"explicit NX-OS type", nbar2Req("cisco_nexus_9500.json", false, ""), true},
 		{"category round robin with no capable type", nbar2Req("", true, "GPU Servers"), true},
 		{"category round robin with a capable type", nbar2Req("", true, "Network Devices"), false},
@@ -189,17 +195,25 @@ func TestDeviceFlowConfigValidateNbar2(t *testing.T) {
 // The seed flag fails the same way the REST field does, plus the
 // no-collector arm. Fatal at startup is log.Fatalf on this error.
 func TestValidateNbar2Seed(t *testing.T) {
-	if err := validateNbar2Seed(false, "", "netflow9"); err != nil {
+	if err := validateNbar2Seed(false, "", "netflow9", defaultResourceFile); err != nil {
 		t.Fatalf("flag off must never fail: %v", err)
 	}
-	if err := validateNbar2Seed(true, "", "ipfix"); err == nil || !strings.Contains(err.Error(), "requires -flow-collector") {
+	if err := validateNbar2Seed(true, "", "ipfix", "cisco_ios.json"); err == nil || !strings.Contains(err.Error(), "requires -flow-collector") {
 		t.Fatalf("no collector: %v", err)
 	}
-	if err := validateNbar2Seed(true, "127.0.0.1:2055", "netflow9"); err == nil || !strings.Contains(err.Error(), "nbar2 requires protocol ipfix") {
+	if err := validateNbar2Seed(true, "127.0.0.1:2055", "netflow9", "cisco_ios.json"); err == nil || !strings.Contains(err.Error(), "nbar2 requires protocol ipfix") {
 		t.Fatalf("default protocol: %v", err)
 	}
-	if err := validateNbar2Seed(true, "127.0.0.1:4739", "ipfix"); err != nil {
-		t.Fatalf("ipfix: %v", err)
+	if err := validateNbar2Seed(true, "127.0.0.1:4739", "ipfix", "cisco_ios.json"); err != nil {
+		t.Fatalf("ipfix on a capable type: %v", err)
+	}
+	// The auto-start batch is built as defaultResourceFile (asr9k, IOS-XR)
+	// and nothing selects another type for it, so the flag as shipped today
+	// is refused with the type, its OS and the REST remedy named; before
+	// this arm it booted and every device silently emitted plain IPFIX.
+	err := validateNbar2Seed(true, "127.0.0.1:4739", "ipfix", defaultResourceFile)
+	if err == nil || !strings.Contains(err.Error(), "asr9k.json") || !strings.Contains(err.Error(), "IOS-XR") || !strings.Contains(err.Error(), "resource_file cisco_ios.json") {
+		t.Fatalf("incapable auto-start type must be fatal naming type, OS and remedy: %v", err)
 	}
 }
 

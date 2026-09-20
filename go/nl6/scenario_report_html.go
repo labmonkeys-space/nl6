@@ -54,6 +54,7 @@ type reportHTMLData struct {
 	BarMax     uint64        // 0 → no in-window sends (chart shows an empty note)
 	Rows       []htmlPartRow // per-participant rows with a status class
 	Apps       []htmlAppRow  // fleet-wide application rows (flow scenarios)
+	L7         []htmlL7Row   // layer-7 value rows (NBAR2 participants)
 }
 
 type htmlStatCard struct {
@@ -80,6 +81,12 @@ type htmlPartRow struct {
 type htmlAppRow struct {
 	Row scenarioAppRow
 	Avg string // avg_bytes_per_second, 1-decimal
+}
+
+// htmlL7Row is the same pairing for a layer-7 value row.
+type htmlL7Row struct {
+	Row scenarioL7Row
+	Avg string
 }
 
 // buildReportHTMLData projects the wire report into the view model.
@@ -138,6 +145,10 @@ func buildReportHTMLData(rep *scenarioReport) reportHTMLData {
 	d.Apps = make([]htmlAppRow, 0, len(rep.Applications))
 	for _, a := range rep.Applications {
 		d.Apps = append(d.Apps, htmlAppRow{Row: a, Avg: strconv.FormatFloat(a.AvgBytesPerSecond, 'f', 1, 64)})
+	}
+	d.L7 = make([]htmlL7Row, 0, len(rep.L7Values))
+	for _, v := range rep.L7Values {
+		d.L7 = append(d.L7, htmlL7Row{Row: v, Avg: strconv.FormatFloat(v.AvgBytesPerSecond, 'f', 1, 64)})
 	}
 	return d
 }
@@ -374,7 +385,7 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
     <h2>Application traffic (trusted-sender ground truth)</h2>
     <table>
       <thead><tr>
-        <th>proto</th><th class="num">dst&nbsp;port</th><th>hint</th>
+        <th>proto</th><th class="num">dst&nbsp;port</th><th class="num">app&nbsp;id</th><th>app&nbsp;name</th><th>hint</th>
         <th class="num">records</th><th class="num">bytes</th><th class="num">packets</th>
         <th class="num">avg&nbsp;B/s</th>
       </tr></thead>
@@ -383,6 +394,8 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
         <tr>
           <td class="mono">{{.Row.L4Proto}}</td>
           <td class="num">{{.Row.DstPort}}</td>
+          <td class="num">{{if .Row.ApplicationID}}{{.Row.ApplicationID}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="mono">{{if .Row.ApplicationName}}{{.Row.ApplicationName}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td>{{if .Row.AppHint}}{{.Row.AppHint}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td class="num">{{.Row.Records}}</td>
           <td class="num">{{.Row.Bytes}}</td>
@@ -393,8 +406,40 @@ footer{margin-top:52px;padding-top:16px;border-top:1px solid var(--hair);font-si
       </tbody>
     </table>
     <p class="muted" style="margin:12px 0 0;font-size:11px">
-      Sent-basis totals per (l4_proto, dst_port); avg&nbsp;B/s = in-window bytes / window.
+      Sent-basis totals per (l4_proto, dst_port, application_id); avg&nbsp;B/s = in-window bytes / window.
+      A plain record has no application id; an NBAR2 record's id is the wire applicationId (IE 95).
       Reconcile a collector on totals over a padded query window — not per-bucket.
+    </p>
+  </section>
+  {{end}}
+
+  {{if .L7}}
+  <section>
+    <h2>Layer-7 values (NBAR2 hosts and URIs)</h2>
+    <table>
+      <thead><tr>
+        <th class="num">app&nbsp;id</th><th>app&nbsp;name</th><th>field</th><th>value</th>
+        <th class="num">records</th><th class="num">bytes</th><th class="num">packets</th>
+        <th class="num">avg&nbsp;B/s</th>
+      </tr></thead>
+      <tbody>
+      {{range .L7}}
+        <tr>
+          <td class="num">{{.Row.ApplicationID}}</td>
+          <td class="mono">{{.Row.ApplicationName}}</td>
+          <td class="mono">{{.Row.Field}}</td>
+          <td class="mono">{{.Row.Value}}</td>
+          <td class="num">{{.Row.Records}}</td>
+          <td class="num">{{.Row.Bytes}}</td>
+          <td class="num">{{.Row.Packets}}</td>
+          <td class="num">{{.Avg}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="muted" style="margin:12px 0 0;font-size:11px">
+      Sent-basis totals per (application_id, field, value). Per field, Σ records is at most the
+      applications total, never necessarily equal: a record without a host or URI has no row here.
     </p>
   </section>
   {{end}}

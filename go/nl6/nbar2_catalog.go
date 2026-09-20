@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -101,15 +102,18 @@ func (p *nbar2Proto) UnmarshalJSON(b []byte) error {
 // selector are separate on purpose: the loader packs them with
 // avcApplicationID, and can validate the engine only if it sees it.
 type nbar2EntryJSON struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Engine      int              `json:"engine"`
-	Selector    int64            `json:"selector"`
-	Proto       nbar2Proto       `json:"proto"`
-	DstPort     int              `json:"dst_port"`
-	Weight      int              `json:"weight,omitempty"`
-	Hosts       []nbar2ValueJSON `json:"hosts,omitempty"`
-	URIs        []nbar2ValueJSON `json:"uris,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Engine      int    `json:"engine"`
+	Selector    int64  `json:"selector"`
+	// proto and dst_port are POINTERS so an absent key is distinguishable
+	// from 0: an entry that omitted proto used to compile to IP protocol 0
+	// and go on the wire that way (review of PR #673).
+	Proto   *nbar2Proto      `json:"proto"`
+	DstPort *int             `json:"dst_port"`
+	Weight  int              `json:"weight,omitempty"`
+	Hosts   []nbar2ValueJSON `json:"hosts,omitempty"`
+	URIs    []nbar2ValueJSON `json:"uris,omitempty"`
 }
 
 // nbar2CatalogJSON is the whole file. Both `comment` (the trap catalog's
@@ -256,11 +260,22 @@ func compileNbar2Entry(raw nbar2EntryJSON, source string, i int) (*nbar2Entry, e
 	if raw.Selector < 0 || raw.Selector > avcSelectorMax {
 		return fail("selector %d out of range 0..%d (24 bits)", raw.Selector, avcSelectorMax)
 	}
-	if raw.DstPort < 0 || raw.DstPort > 65535 {
-		return fail("dst_port %d out of range 0..65535", raw.DstPort)
+	if raw.Proto == nil {
+		return fail("proto is required (tcp, udp, icmp or an integer 0..255)")
 	}
-	if raw.Proto == 1 && raw.DstPort != 0 {
-		return fail("proto icmp carries no port; dst_port must be 0, got %d", raw.DstPort)
+	proto := uint8(*raw.Proto)
+	if raw.DstPort == nil && proto != 1 {
+		return fail("dst_port is required for proto %d (only icmp may omit it)", proto)
+	}
+	dstPort := 0
+	if raw.DstPort != nil {
+		dstPort = *raw.DstPort
+	}
+	if dstPort < 0 || dstPort > 65535 {
+		return fail("dst_port %d out of range 0..65535", dstPort)
+	}
+	if proto == 1 && dstPort != 0 {
+		return fail("proto icmp carries no port; dst_port must be 0, got %d", dstPort)
 	}
 	if raw.Weight < 0 {
 		return fail("weight must be positive, got %d", raw.Weight)
@@ -283,8 +298,8 @@ func compileNbar2Entry(raw nbar2EntryJSON, source string, i int) (*nbar2Entry, e
 		Engine:      uint8(raw.Engine),
 		Selector:    uint32(raw.Selector),
 		ID:          avcApplicationID(uint8(raw.Engine), uint32(raw.Selector)),
-		Proto:       uint8(raw.Proto),
-		DstPort:     uint16(raw.DstPort),
+		Proto:       proto,
+		DstPort:     uint16(dstPort),
 		Weight:      weight,
 		Hosts:       hosts,
 		URIs:        uris,
@@ -408,6 +423,37 @@ func ScanPerTypeNbar2Catalogs(universal *nbar2Catalog, resourceDir string) (map[
 		}
 	}
 	return result, nil
+}
+
+// nbar2CatalogsAgreeOnNames checks that no two catalogs give one wire
+// applicationId two different names. The scenario report labels an
+// application row from a fleet-wide id → name table built first-seen over
+// the participants' catalogs (ScenarioController.participantAppNames), which
+// is only a safe rule while this holds for every catalog a fleet can
+// resolve. The error names the id, both catalogs and both names; nil when
+// every shared id agrees. Catalogs are visited in sorted key order so the
+// reported pair is deterministic.
+func nbar2CatalogsAgreeOnNames(cats map[string]*nbar2Catalog) error {
+	slugs := make([]string, 0, len(cats))
+	for s := range cats {
+		slugs = append(slugs, s)
+	}
+	sort.Strings(slugs)
+	type seen struct{ slug, name string }
+	first := make(map[uint32]seen)
+	for _, slug := range slugs {
+		for _, e := range cats[slug].Entries {
+			if prev, ok := first[e.ID]; ok {
+				if prev.name != e.Name {
+					return fmt.Errorf("nbar2 catalogs disagree on applicationId %d (%#x): %s names it %q, %s names it %q",
+						e.ID, e.ID, prev.slug, prev.name, slug, e.Name)
+				}
+				continue
+			}
+			first[e.ID] = seen{slug, e.Name}
+		}
+	}
+	return nil
 }
 
 // ApplySizeBudget dry-renders every entry's worst-case record through the
@@ -579,6 +625,9 @@ func nbar2CatalogSource(slug, catalogFlagPath string) string {
 type Nbar2CatalogConfig struct {
 	CatalogPath   string
 	PayloadBudget int
+	// ResourceDir is where per-type overlays are scanned from; empty means
+	// the shipped resources tree. A seam so a test can plant overlays.
+	ResourceDir string
 }
 
 // StartNbar2Catalogs loads the universal catalog and the per-type overlays
@@ -601,13 +650,24 @@ func (sm *SimulatorManager) StartNbar2Catalogs(cfg Nbar2CatalogConfig) error {
 	}
 	byType := map[string]*nbar2Catalog{universalCatalogKey: universal}
 	if cfg.CatalogPath == "" {
-		perType, scanErr := ScanPerTypeNbar2Catalogs(universal, trapCatalogResourceDir)
+		dir := cfg.ResourceDir
+		if dir == "" {
+			dir = trapCatalogResourceDir
+		}
+		perType, scanErr := ScanPerTypeNbar2Catalogs(universal, dir)
 		if scanErr != nil {
 			return fmt.Errorf("nbar2 catalog: scanning per-type catalogs: %w", scanErr)
 		}
 		for slug, c := range perType {
 			byType[slug] = c
 		}
+	}
+	// One name per wire id across every catalog a fleet can resolve: the
+	// scenario report labels a row from a first-seen id -> name table over
+	// the participants' catalogs, which is only honest if this holds. A
+	// catalog-author error, refused at load like a duplicate name.
+	if err := nbar2CatalogsAgreeOnNames(byType); err != nil {
+		return err
 	}
 	for slug, c := range byType {
 		for _, msg := range c.ApplySizeBudget(cfg.PayloadBudget, slug) {

@@ -128,8 +128,9 @@ The IPFIX Sequence Number counts Data Records including options records, per RFC
 
 ### Enabling NBAR2
 
-Set `"nbar2": true` in a device's `flow` block, or `-flow-nbar2` for the auto-start batch.
-It requires `protocol: "ipfix"`; any other protocol is rejected with a 400, and the seed flag with any other `-flow-protocol` (or no `-flow-collector`) is fatal at startup.
+Set `"nbar2": true` in a device's `flow` block.
+It requires `protocol: "ipfix"`; any other protocol is rejected with a 400.
+The seed flag `-flow-nbar2` exists for the auto-start batch, but that batch is built as `asr9k` (IOS-XR, no NBAR2) and no flag selects another type, so the flag is refused at startup on every boot today with the REST remedy named; it is fatal rather than ignored because a batch that booted and emitted plain IPFIX under an NBAR2 flag is the accepted-and-ignored failure (nl6#445).
 Only `cisco_ios` and `cisco_catalyst_9500` have NBAR2; the set is curated by name with a reason per row in `nbar2_capability.go`, never by slug prefix, because `cisco_nexus_9500` (NX-OS), `cisco_crs_x` and `asr9k` (IOS-XR) do not.
 A request whose whole resolved type set is incapable is rejected with a 400 naming the type and its OS.
 A mixed round-robin batch is accepted, and here the rule differs from flow's own skip: an NBAR2-incapable but flow-capable device **keeps its flow block and emits the plain IPFIX record** (template 256) with `nbar2` cleared, logged once per type.
@@ -143,7 +144,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   -d '{
     "start_ip": "10.0.3.1",
     "device_count": 20,
-    "resource_file": "cisco_ios",
+    "resource_file": "cisco_ios.json",
     "flow": {
       "collector": "192.168.1.10:4739",
       "protocol": "ipfix",
@@ -159,6 +160,32 @@ The exporter therefore never emits a record on port 443 tagged as an application
 The profile's port mix and per-device record ceilings still describe the non-NBAR2 fleet; an NBAR2 device's port and protocol distribution is its catalog's.
 The host and URI draws are unconditional, so a seeded device reproduces its stream exactly.
 Every device not using NBAR2 emits byte-identical output to the previous release, pinned by a digest over every shipped type and protocol (`testdata/flow-digests/pre-nbar2.tsv`).
+The NBAR2 stream itself is pinned the same way (`testdata/flow-digests/plan-b-nbar2.tsv`, taken at the Plan B merge), so later work on the ledger or the report cannot move an AVC byte unnoticed.
+
+### Verified against an independent collector
+
+`make test-interop-ipfix` is the check with detection power for this feature, in the sense `make test-interop` is for SNMPv3: every other IPFIX and AVC test decodes nl6's bytes with nl6's own decoder, so a shared misreading of RFC 7011 section 7 or of Cisco's PEN 9 numbers would pass all of them.
+The target builds `examples/ipfixcol2/` (Debian forky's `ipfixcol2` 2.8.0 package with libfds's own `cisco.xml`; Ubuntu 24.04 does not package it), starts CESNET IPFIXcol2 on the host network, and runs two tests that read the collector's own NDJSON output.
+The first drives a real exporter through `Tick` and requires that the collector resolves IEs 12235 and 9357 under PEN 9 **by name** (`cisco:appHTTPHost`, `cisco:appHTTPUriStatistics`; the `en9:idNNNN` form is the failure signal and the test names both causes), decodes `applicationId` to an id in the device's catalog with the record's protocol and port matching it, carries the host and URI as catalog values, receives the application table (template 259) with name and description for every id seen in a data record, keeps the RFC 7011 section 3.1 sequence arithmetic per observation domain, and shows none of that on a plain IPFIX control.
+The second runs a real scenario over three NBAR2 participants and one plain one and reconciles the report's `applications[]` and `l7_values[]` against sums over the collector's decoded records per key, with no tolerance band.
+Both were verified by mutation: disabling the host fold or never resolving the id fails them by name.
+One limit is stated rather than hidden: libfds types IE 9357 as a string, so the collector cuts the URI statistics value at its NUL delimiter and the 2-byte hit count is not visible in its output; the URI is asserted there and the count layout stays covered by nl6's own decode tests.
+The gate runs in CI beside the SNMPv3 and Pyroscope interop steps and fails rather than skips when docker is missing.
+
+### Verified on the wire over veth
+
+Loopback has an MTU of 65536, so no Go test can see fragmentation; the check that can is a capture on the simulator's own veth, the nl6#488 method.
+Taken 2026-09-20 in an Ubuntu 24.04 arm64 VM, kernel default MTU 1500 on the veth, from the commit that added this section: ten `cisco_ios` devices created over REST with `flow: {protocol: "ipfix", nbar2: true}`, a 1-second tick, 3-second active and 2-second inactive timeouts, captured for 45 seconds on `veth-sim-host` with the filter `udp port 4739 or (ip[6:2] & 0x3fff != 0)`.
+
+| `-datagram-mtu` | datagrams captured | fragmented | largest IP length | entries disabled at startup |
+|---|---|---|---|---|
+| 1500 (default) | 963 | 0 | 1500 | none |
+| 1000 | 1415 | 0 | 1000 | none |
+| 576 (floor) | 2451 | 0 | 576 | none |
+
+The largest datagram sits exactly at the configured MTU in every run and nothing fragments, which is the frame budget doing its job.
+No shipped catalog entry goes oversized at any legal MTU: the worst case of the longest shipped entry fits the 548-byte payload a 576-byte frame leaves, so the dry render's disable-and-name path is exercised only by the load-time test with a planted 1400-byte URI, not by the shipped data.
+The first capture attempt found a real defect rather than a fragment: a create request naming the type as `cisco_ios` without the `.json` suffix was refused as NBAR2-incapable, because the capability gates run before the name validator and indexed their maps with the raw string; `resourceFileKey` now normalises the lookup for the NBAR2, flow and optical gates, and the example above carries the suffix the API requires.
 
 ### The catalog
 

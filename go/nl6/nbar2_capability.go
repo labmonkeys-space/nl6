@@ -65,7 +65,7 @@ var nbar2IncapableTypes = map[string]string{
 // SupportsNbar2 reports whether a device type can emit NBAR2 AVC records.
 // Map lookup only, never a name test.
 func SupportsNbar2(resourceFile string) bool {
-	_, ok := nbar2CapableTypes[resourceFile]
+	_, ok := nbar2CapableTypes[resourceFileKey(resourceFile)]
 	return ok
 }
 
@@ -143,12 +143,13 @@ func degradeNbar2IfIncapable(device *DeviceSimulator, resourceFile string) {
 }
 
 // effectiveResourceFile maps the empty resource file a create request may
-// carry to the type the device is actually built as.
+// carry to the type the device is actually built as, and a bare slug to the
+// ".json" key the capability and reason maps use.
 func effectiveResourceFile(rf string) string {
 	if rf == "" {
 		return defaultResourceFile
 	}
-	return rf
+	return resourceFileKey(rf)
 }
 
 // nbar2FieldFor is what a created device stores and GET /api/v1/devices
@@ -161,14 +162,23 @@ func nbar2FieldFor(resourceFile string, requested bool) bool {
 
 // validateNbar2Seed is the startup half of the nbar2 protocol rule, pure so
 // the fatal path is testable. It reuses DeviceFlowConfig.Validate's message
-// so the flag and the REST field fail the same way, and additionally refuses
-// -flow-nbar2 with no collector, since nothing would export.
-func validateNbar2Seed(nbar2 bool, collector, protocol string) error {
+// so the flag and the REST field fail the same way, additionally refuses
+// -flow-nbar2 with no collector (nothing would export), and refuses it when
+// the type the auto-start batch is built as has no NBAR2. The batch has no
+// type selector and is built as defaultResourceFile (asr9k, IOS-XR), so
+// without this arm the flag passed validation, logged one degrade line and
+// every device emitted plain IPFIX: the accepted-and-ignored family
+// (nl6#445) the REST gate already refuses with a 400 for the same shape.
+func validateNbar2Seed(nbar2 bool, collector, protocol, autoStartType string) error {
 	if !nbar2 {
 		return nil
 	}
 	if collector == "" {
 		return fmt.Errorf("-flow-nbar2 requires -flow-collector; without a collector no device exports and the flag would be accepted and ignored")
+	}
+	if !SupportsNbar2(autoStartType) {
+		return fmt.Errorf("-flow-nbar2: the auto-start batch is built as %s, which has no NBAR2 (%s); no flag selects another type for it, so create NBAR2 devices over REST with resource_file cisco_ios.json or cisco_catalyst_9500.json and flow.nbar2 instead",
+			resourceFileKey(autoStartType), nbar2IncapableTypes[resourceFileKey(autoStartType)])
 	}
 	probe := DeviceFlowConfig{Collector: collector, Protocol: protocol, Nbar2: true}
 	probe.ApplyDefaults()

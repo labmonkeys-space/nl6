@@ -1,0 +1,11 @@
+# Flow datagram digests, one per (device type, protocol, option shape).
+# Produced by TestNbar2WireOutputUnchanged with NL6_FLOW_DIGEST_WRITE=1.
+# Clock held at 2026-09-19T12:00:00Z; device 10.42.7.13; 13 ticks of 5s; timeouts 30s/15s/60s.
+# Command: cd go && NL6_FLOW_DIGEST_WRITE=1 go test ./nl6/ -run TestNbar2WireOutputUnchanged
+# The commit that produced this table is named in the commit that added it.
+cisco_catalyst_9500.json	ipfix		ea54e1ab73c7080dee4989e46ced39abc86612a651f4b0b07aac7ca4d08780d8
+cisco_catalyst_9500.json	ipfix	if-scoped	fa40a468658f6f9238e46dcfe110a54a96c9b63c0a5863105c1dc426487e14ef
+cisco_catalyst_9500.json	ipfix	system-scoped	a46562f696a2b61b67af35ed08f75652763ead832210240d545ce1a47bba32a5
+cisco_ios.json	ipfix		ea54e1ab73c7080dee4989e46ced39abc86612a651f4b0b07aac7ca4d08780d8
+cisco_ios.json	ipfix	if-scoped	fa40a468658f6f9238e46dcfe110a54a96c9b63c0a5863105c1dc426487e14ef
+cisco_ios.json	ipfix	system-scoped	a46562f696a2b61b67af35ed08f75652763ead832210240d545ce1a47bba32a5

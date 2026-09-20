@@ -62,6 +62,10 @@ func TestNbar2CatalogRulesReject(t *testing.T) {
 		{"bad proto", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"sctp","dst_port":1}`), "proto must be tcp, udp, icmp"},
 		{"port too wide", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"tcp","dst_port":70000}`), "dst_port 70000 out of range"},
 		{"icmp with port", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"proto":"icmp","dst_port":443}`), "icmp carries no port"},
+		// Absent keys are not zero values: an entry without proto used to
+		// load as IP protocol 0 and go on the wire that way (PR #673 review).
+		{"missing proto", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"dst_port":443}`), "proto is required"},
+		{"missing dst_port on tcp", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"proto":"tcp"}`), "dst_port is required"},
 		{"name too long", nbar2JSON("", `{"name":"`+strings.Repeat("n", 25)+`","engine":3,"selector":1,"proto":"tcp","dst_port":1}`), "name is 25 bytes, over the 24-byte"},
 		{"description too long", nbar2JSON("", `{"name":"a","description":"`+strings.Repeat("d", 56)+`","engine":3,"selector":1,"proto":"tcp","dst_port":1}`), "description is 56 bytes, over the 55-byte"},
 		{"negative weight", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"tcp","dst_port":1,"weight":-1}`), "weight must be positive"},
@@ -365,5 +369,33 @@ func TestNbar2CatalogPartsAreInertToProfileLoaders(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Fatalf("saw %d shipped per-type nbar2.json parts, want 2 (cisco_ios, cisco_catalyst_9500); the walk is blind to a layout or an overlay moved", seen)
+	}
+}
+
+// The name-agreement rule is WIRED into StartNbar2Catalogs, so an operator
+// overlay that renames a wire id the universal (or another overlay) also
+// carries is refused at load, naming both, rather than surfacing as
+// whichever name the lowest participant IP happened to carry in a report.
+func TestNbar2StartRefusesDisagreeingOverlay(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cisco_ios"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// engine 3 / selector 80 is "http" in the embedded universal.
+	doc := `{"extends": false, "entries":[{"name":"web","description":"x","engine":3,"selector":80,"proto":"tcp","dst_port":80}]}`
+	if err := os.WriteFile(filepath.Join(dir, "cisco_ios", "nbar2.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := (&SimulatorManager{}).StartNbar2Catalogs(Nbar2CatalogConfig{PayloadBudget: maxFlowPayloadIPv4, ResourceDir: dir})
+	if err == nil || !strings.Contains(err.Error(), "disagree") || !strings.Contains(err.Error(), `"http"`) || !strings.Contains(err.Error(), `"web"`) {
+		t.Fatalf("a renaming overlay must be refused at load naming both names, got %v", err)
+	}
+	// Control: an overlay that agrees loads.
+	doc = `{"extends": false, "entries":[{"name":"http","description":"x","engine":3,"selector":80,"proto":"tcp","dst_port":80}]}`
+	if err := os.WriteFile(filepath.Join(dir, "cisco_ios", "nbar2.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&SimulatorManager{}).StartNbar2Catalogs(Nbar2CatalogConfig{PayloadBudget: maxFlowPayloadIPv4, ResourceDir: dir}); err != nil {
+		t.Fatalf("an agreeing overlay must load: %v", err)
 	}
 }

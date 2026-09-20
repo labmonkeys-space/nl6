@@ -299,15 +299,19 @@ block is the trusted-sender ground truth for per-application traffic: total
    an upper bound at all, and a query bounded by it invents exactly the loss this
    step exists to rule out. Reconcile such a run only for what it can support, or
    re-run it.
-3. **Join on `(l4_proto, dst_port)`, not on names.** Collector classification
-   is user-configurable; `app_hint` is a convenience label only. Generated
-   source ports sit in the IANA dynamic range (≥ 49152), so a collector rule
-   matching registered ports on either side of the flow cannot reclassify
-   nl6 traffic away from its destination-port application.
+3. **Join on `(l4_proto, dst_port, application_id)`, not on names.**
+   Collector classification is user-configurable; `app_hint` and `application_name` are convenience labels only.
+   `application_id` is the wire `applicationId` (IE 95) as an integer and is absent on plain rows, so a mixed NBAR2 and plain fleet reports two rows for one port; sum them if your collector does not separate AVC records from plain ones.
+   Generated source ports sit in the IANA dynamic range (≥ 49152), so a collector rule matching registered ports on either side of the flow cannot reclassify nl6 traffic away from its destination-port application.
 4. In **fidelity mode** the fleet is silent outside the window, so the block
    is the *complete* record of what the trusted sender emitted — any
    collector-side surplus is foreign traffic, any deficit is loss or
    misclassification.
+
+5. **For NBAR2 participants, reconcile the decoded AVC fields on the same totals basis.**
+   Sum the collector's decoded records by `(protocol, destination port, applicationId)` and compare `records`, `octetDeltaCount` and `packetDeltaCount` sums against `applications[]`; then sum by `(applicationId, HTTP host)` and `(applicationId, URI)` and compare against the [`l7_values[]`](./loadtest-report-schema.md#l7_values--layer-7-values-from-nbar2-records) rows.
+   Per field, the `l7_values` total is at most the `applications` total, never necessarily equal, because a record without a host or URI has no `l7_values` row.
+   `make test-interop-ipfix` does exactly this against a real IPFIXcol2 with no tolerance band and is the reference for the method; see [flow export](./flow-export.md#verified-against-an-independent-collector).
 
 `sflow` scenarios have no `applications` rows: sFlow byte volumes are derived
 by sampling extrapolation at the collector, which is not comparable to

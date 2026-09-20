@@ -130,6 +130,16 @@ jobs:
       - name: Test (Pyroscope + Alloy interop)
         run: make test-interop-pyroscope
 
+      # The flow sibling (NBAR2 Plan C): nl6's real IPFIX/AVC exporter against
+      # a real IPFIXcol2 (CESNET) in a container on the host network, whose
+      # OWN libfds definitions decide whether the PEN 9 elements, the
+      # applicationId and the RFC 6759 application table decode, and whose
+      # decoded records the scenario report must reconcile against per key.
+      # Same argument as above: every in-package IPFIX test decodes nl6 with
+      # nl6. make test-interop-ipfix FAILS rather than skips without docker.
+      - name: Test (IPFIX / NBAR2 interop with IPFIXcol2)
+        run: make test-interop-ipfix
+
   quality:
     name: Code Quality
     runs-on: ubuntu-24.04

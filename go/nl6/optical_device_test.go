@@ -108,6 +108,10 @@ func TestFlowIncapableRequest(t *testing.T) {
 		reject bool
 	}{
 		{"explicit optical type", CreateDevicesRequest{ResourceFile: opticalResourceFile}, true},
+		// A bare slug is refused by validateResourceFilename later, but this
+		// gate runs first and its verdict must be the type's whatever form
+		// names it; before resourceFileKey the bare slug missed the map.
+		{"explicit optical type without the .json suffix", CreateDevicesRequest{ResourceFile: strings.TrimSuffix(opticalResourceFile, ".json")}, true},
 		{"explicit packet type", CreateDevicesRequest{ResourceFile: "asr9k.json"}, false},
 		{"category-filtered round robin, optical only",
 			CreateDevicesRequest{RoundRobin: true, Category: "Optical Transport"}, true},
@@ -150,6 +154,10 @@ func TestOpticalIncapableRequest(t *testing.T) {
 			CreateDevicesRequest{ResourceFile: "cisco_ios.json"}, OpticalClean, false},
 		{"optical type with a non-clean band",
 			CreateDevicesRequest{ResourceFile: opticalResourceFile}, OpticalDegraded, false},
+		// Bare slug: the gate runs before the name validator and must give
+		// the TYPE's verdict (resourceFileKey), not a capability 400.
+		{"optical type without the .json suffix with a non-clean band",
+			CreateDevicesRequest{ResourceFile: strings.TrimSuffix(opticalResourceFile, ".json")}, OpticalDegraded, false},
 		{"category-filtered round robin, packet category",
 			CreateDevicesRequest{RoundRobin: true, Category: "Network Devices"}, OpticalFailing, true},
 		{"category-filtered round robin, optical only",
