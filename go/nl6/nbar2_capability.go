@@ -65,7 +65,7 @@ var nbar2IncapableTypes = map[string]string{
 // SupportsNbar2 reports whether a device type can emit NBAR2 AVC records.
 // Map lookup only, never a name test.
 func SupportsNbar2(resourceFile string) bool {
-	_, ok := nbar2CapableTypes[resourceFile]
+	_, ok := nbar2CapableTypes[resourceFileKey(resourceFile)]
 	return ok
 }
 
@@ -143,12 +143,13 @@ func degradeNbar2IfIncapable(device *DeviceSimulator, resourceFile string) {
 }
 
 // effectiveResourceFile maps the empty resource file a create request may
-// carry to the type the device is actually built as.
+// carry to the type the device is actually built as, and a bare slug to the
+// ".json" key the capability and reason maps use.
 func effectiveResourceFile(rf string) string {
 	if rf == "" {
 		return defaultResourceFile
 	}
-	return rf
+	return resourceFileKey(rf)
 }
 
 // nbar2FieldFor is what a created device stores and GET /api/v1/devices

@@ -320,7 +320,7 @@ var flowIncapableTypes = map[string]struct{}{
 // SupportsFlowExport reports whether a device type natively exports flow
 // records. False for layer-1 transport platforms.
 func SupportsFlowExport(resourceFile string) bool {
-	_, incapable := flowIncapableTypes[resourceFile]
+	_, incapable := flowIncapableTypes[resourceFileKey(resourceFile)]
 	return !incapable
 }
 

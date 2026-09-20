@@ -35,6 +35,22 @@ func resourceDirName(resourceFile string) string {
 	return strings.TrimSuffix(name, ".json")
 }
 
+// resourceFileKey maps whatever a create request or a device carries as its
+// resource file ("cisco_ios", "cisco_ios.json", "resources/cisco_ios.json")
+// to the ".json" form the curated capability maps are keyed on. The create
+// API requires the suffix (validateResourceFilename, nl6#538), but the flow,
+// optical and NBAR2 gates run BEFORE that validation, so a bare slug used to
+// reach them raw and get a WRONG verdict: NBAR2 refused a capable type with
+// a capability 400 instead of the name error, and flow let an incapable type
+// past its gate. Found by the first wire capture of Plan C, not by a test,
+// because every test wrote the suffix.
+func resourceFileKey(resourceFile string) string {
+	if resourceFile == "" {
+		return ""
+	}
+	return resourceDirName(resourceFile) + ".json"
+}
+
 // slugifyDeviceType turns a resource filename (e.g. "cisco_catalyst_9500.json")
 // into a lowercase, URL-/hostname-safe slug (e.g. "cisco-catalyst-9500").
 // Any character outside [a-z0-9-] becomes '-', consecutive hyphens collapse,

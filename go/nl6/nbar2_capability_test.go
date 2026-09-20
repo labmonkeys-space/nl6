@@ -106,6 +106,12 @@ func TestNbar2IncapableRequest(t *testing.T) {
 	}{
 		{"explicit incapable type", nbar2Req("juniper_mx240.json", false, ""), true},
 		{"explicit capable type", nbar2Req("cisco_ios.json", false, ""), false},
+		// A bare slug is refused by validateResourceFilename LATER, but this
+		// gate runs first and used to answer it with a capability 400 (the
+		// first veth capture of Plan C hit exactly this row); the verdict
+		// must be the type's, whatever form names it (resourceFileKey).
+		{"explicit capable type without the .json suffix", nbar2Req("cisco_ios", false, ""), false},
+		{"explicit incapable type without the .json suffix", nbar2Req("juniper_mx240", false, ""), true},
 		{"explicit NX-OS type", nbar2Req("cisco_nexus_9500.json", false, ""), true},
 		{"category round robin with no capable type", nbar2Req("", true, "GPU Servers"), true},
 		{"category round robin with a capable type", nbar2Req("", true, "Network Devices"), false},
