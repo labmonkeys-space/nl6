@@ -35,29 +35,56 @@ type scenarioReport struct {
 	Summary      scenarioReportSummary `json:"summary"`
 	Counters     []scenarioCounterRow  `json:"counters"`
 	Applications []scenarioAppRow      `json:"applications"`
+	// L7Values is the layer-7 value block (nbar2 Plan C), additive after
+	// applications per the same policy; [] unless an NBAR2 participant sent
+	// a record carrying a host or URI.
+	L7Values []scenarioL7Row `json:"l7_values"`
 }
 
 // scenarioAppRow is one fleet-wide application's sent-basis traffic ground
-// truth (scenario-app-traffic). The (l4_proto, dst_port) tuple is the
-// authoritative join key against a collector's classification; app_hint is
-// informational (collector rules are user-configurable). bytes/packets/
+// truth (scenario-app-traffic). The (l4_proto, dst_port, application_id)
+// tuple is the authoritative join key against a collector's classification;
+// app_hint is informational (collector rules are user-configurable).
+// application_id is the 32-bit wire applicationId (IE 95: RFC 6759 engine id
+// in the top byte, selector below) and is OMITTED on a plain record's row,
+// which keeps a plain-only report byte-identical to the pre-Plan-C shape;
+// application_name is the catalog's applicationName beside it. bytes/packets/
 // records follow the `sent` (in_window + drain) convention; sub_window_bytes
 // buckets in-window bytes only and is informational — collectors interpolate
 // flow bytes across [start, end], so totals, not buckets, are the
 // reconciliation target.
 type scenarioAppRow struct {
-	L4Proto string `json:"l4_proto"`
-	DstPort uint16 `json:"dst_port"`
-	AppHint string `json:"app_hint"`
-	Records uint64 `json:"records"`
-	Bytes   uint64 `json:"bytes"`
-	Packets uint64 `json:"packets"`
+	L4Proto         string `json:"l4_proto"`
+	DstPort         uint16 `json:"dst_port"`
+	ApplicationID   uint32 `json:"application_id,omitempty"`
+	ApplicationName string `json:"application_name,omitempty"`
+	AppHint         string `json:"app_hint"`
+	Records         uint64 `json:"records"`
+	Bytes           uint64 `json:"bytes"`
+	Packets         uint64 `json:"packets"`
 	// AvgBytesPerSecond = in-window bytes / actual window duration
 	// (T1Actual−T0Actual) — drain bytes stay in Bytes (reconciliation
 	// total) but are excluded here, since the denominator excludes drain
 	// time. Named to avoid the bits-per-second ambiguity of "bps".
 	AvgBytesPerSecond float64                        `json:"avg_bytes_per_second"`
 	SubWindowBytes    [scenarioSubWindowCount]uint64 `json:"sub_window_bytes"`
+}
+
+// scenarioL7Row is one layer-7 value's sent-basis ground truth (nbar2 Plan
+// C): every sent record of application_id that carried this host or URI.
+// field is "http_host" (IE 12235 under PEN 9) or "http_uri" (the URI half of
+// IE 9357). For each field, Σ records over the block is AT MOST
+// Σ applications[].records, never necessarily equal: a record without a
+// host or URI contributes to applications and to no row here.
+type scenarioL7Row struct {
+	ApplicationID     uint32  `json:"application_id"`
+	ApplicationName   string  `json:"application_name"`
+	Field             string  `json:"field"`
+	Value             string  `json:"value"`
+	Records           uint64  `json:"records"`
+	Bytes             uint64  `json:"bytes"`
+	Packets           uint64  `json:"packets"`
+	AvgBytesPerSecond float64 `json:"avg_bytes_per_second"`
 }
 
 // scenarioReportSummary is the top-level aggregate block: identity,
@@ -424,17 +451,19 @@ func buildScenarioReport(sm *SimulatorManager, c *ScenarioController) *scenarioR
 		rep.Summary.Informational.InformsPending += informsPending(led)
 	}
 	rep.Applications = buildAppRows(res)
+	rep.L7Values = buildL7Rows(res)
 	return rep
 }
 
 // buildAppRows projects the finalized fleet-wide application fold into
-// report rows: sorted ascending by the numeric (proto, dst_port) key — not
-// the rendered name, so an unmapped protocol number can never sort
-// lexicographically — with the average byte rate computed on the IN-WINDOW
-// byte basis over the actual window (drain bytes stay in `bytes` for
-// reconciliation but never inflate a rate whose denominator excludes drain
-// time). Always returns a non-nil slice so the block serializes as [] rather
-// than null for non-flow and sflow scenarios.
+// report rows: sorted ascending by the numeric (proto, dst_port,
+// application_id) key — not the rendered name, so an unmapped protocol
+// number can never sort lexicographically, and a plain row (id 0) sorts
+// before the NBAR2 rows on the same port — with the average byte rate
+// computed on the IN-WINDOW byte basis over the actual window (drain bytes
+// stay in `bytes` for reconciliation but never inflate a rate whose
+// denominator excludes drain time). Always returns a non-nil slice so the
+// block serializes as [] rather than null for non-flow and sflow scenarios.
 func buildAppRows(res *ScenarioResult) []scenarioAppRow {
 	keys := make([]appKey, 0, len(res.Apps))
 	for k := range res.Apps {
@@ -444,20 +473,63 @@ func buildAppRows(res *ScenarioResult) []scenarioAppRow {
 		if keys[i].proto != keys[j].proto {
 			return keys[i].proto < keys[j].proto
 		}
-		return keys[i].dstPort < keys[j].dstPort
+		if keys[i].dstPort != keys[j].dstPort {
+			return keys[i].dstPort < keys[j].dstPort
+		}
+		return keys[i].appID < keys[j].appID
 	})
 	rows := make([]scenarioAppRow, 0, len(keys))
 	seconds := res.T1Actual.Sub(res.T0Actual).Seconds()
 	for _, k := range keys {
 		v := res.Apps[k]
 		row := scenarioAppRow{
-			L4Proto:        l4ProtoName(k.proto),
-			DstPort:        k.dstPort,
-			AppHint:        appHintForPort(k.dstPort),
-			Records:        v.records,
-			Bytes:          v.bytes,
-			Packets:        v.packets,
-			SubWindowBytes: v.subWindowBytes,
+			L4Proto:         l4ProtoName(k.proto),
+			DstPort:         k.dstPort,
+			ApplicationID:   k.appID,
+			ApplicationName: res.AppNames[k.appID],
+			AppHint:         appHintForPort(k.dstPort),
+			Records:         v.records,
+			Bytes:           v.bytes,
+			Packets:         v.packets,
+			SubWindowBytes:  v.subWindowBytes,
+		}
+		if seconds > 0 {
+			row.AvgBytesPerSecond = float64(v.inWindowBytes) / seconds
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// buildL7Rows projects the layer-7 fold into report rows sorted by
+// (application_id, field, value), with the same in-window rate basis as
+// buildAppRows. Always non-nil.
+func buildL7Rows(res *ScenarioResult) []scenarioL7Row {
+	keys := make([]l7Key, 0, len(res.L7))
+	for k := range res.L7 {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].appID != keys[j].appID {
+			return keys[i].appID < keys[j].appID
+		}
+		if keys[i].field != keys[j].field {
+			return keys[i].field < keys[j].field
+		}
+		return keys[i].value < keys[j].value
+	})
+	rows := make([]scenarioL7Row, 0, len(keys))
+	seconds := res.T1Actual.Sub(res.T0Actual).Seconds()
+	for _, k := range keys {
+		v := res.L7[k]
+		row := scenarioL7Row{
+			ApplicationID:   k.appID,
+			ApplicationName: res.AppNames[k.appID],
+			Field:           k.field.String(),
+			Value:           k.value,
+			Records:         v.records,
+			Bytes:           v.bytes,
+			Packets:         v.packets,
 		}
 		if seconds > 0 {
 			row.AvgBytesPerSecond = float64(v.inWindowBytes) / seconds

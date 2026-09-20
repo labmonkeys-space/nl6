@@ -75,14 +75,66 @@ type ledgerEntry struct {
 	// allocated so non-flow scenarios pay nothing.
 	appMu sync.Mutex
 	apps  map[appKey]*appCounters
+	// l7 is the layer-7 value fold (nbar2 Plan C): sent-basis totals per
+	// (application id, field, value) for every record that carried an HTTP
+	// host or URI. Same lock, same write site and same lazy allocation as
+	// apps; a plain participant never allocates it.
+	l7 map[l7Key]*l7Counters
 }
 
-// appKey identifies one application row: transport protocol number + flow
-// destination port — the authoritative join key against a collector's
-// classification (names are informational only).
+// appKey identifies one application row: transport protocol number, flow
+// destination port and the wire applicationId — the authoritative join key
+// against a collector's classification (names are informational only).
+//
+// appID is the 32-bit value IE 95 carries (RFC 6759 engine id in the top 8
+// bits, selector in the low 24), resolved through the PARTICIPANT'S catalog
+// at ledger time and never the per-record index: an index is only meaningful
+// against one catalog, and two per-type overlays can place different
+// applications at the same index. 0 is a plain record (engine 0 is not a
+// legal RFC 6759 engine and the catalog loader refuses it), so a mixed fleet
+// reports a plain row and an NBAR2 row for the same (proto, port).
 type appKey struct {
 	proto   uint8
 	dstPort uint16
+	appID   uint32
+}
+
+// l7Field names which layer-7 value an l7Key carries.
+type l7Field uint8
+
+const (
+	l7FieldHost l7Field = iota + 1 // ciscoHTTPHost, IE 12235 under PEN 9
+	l7FieldURI                     // the URI of ciscoHTTPURIStatistics, IE 9357
+)
+
+// String is the report's `field` column.
+func (f l7Field) String() string {
+	switch f {
+	case l7FieldHost:
+		return "http_host"
+	case l7FieldURI:
+		return "http_uri"
+	}
+	return "unknown"
+}
+
+// l7Key identifies one layer-7 value row. value is the catalog's own string
+// (a header over the catalog's bytes, no copy per record), so cardinality is
+// the catalog's and known before T0.
+type l7Key struct {
+	appID uint32
+	field l7Field
+	value string
+}
+
+// l7Counters is one layer-7 value's sent-basis tally. Same conventions as
+// appCounters minus the sub-window series (spec: four fields; per-bucket
+// comparison is already documented as approximate for applications).
+type l7Counters struct {
+	records       uint64
+	bytes         uint64
+	packets       uint64
+	inWindowBytes uint64
 }
 
 // appCounters is one application's sent-basis traffic tally. bytes/packets/
@@ -100,12 +152,18 @@ type appCounters struct {
 }
 
 // addAppBatch folds a successfully-written flow batch into the application
-// tally. inWindow/subIdx are the SAME classification the record ledger used
-// for this batch (single gate read in bucketFlowBatch), so the two ledgers
+// tally and, for records carrying a host or URI, into the layer-7 tally.
+// inWindow/subIdx are the SAME classification the record ledger used for
+// this batch (single gate read in bucketFlowBatch), so the two ledgers
 // cannot disagree about which sends counted. subIdx is -1 exactly when the
 // batch is not in-window or the window span is degenerate — already
 // validated by subWindowIndex, hence the single guard.
-func (l *ledgerEntry) addAppBatch(batch []FlowRecord, inWindow bool, subIdx int) {
+//
+// cat is the participant's NBAR2 catalog (nil for a plain participant),
+// captured on the scenarioPart at install. Every record's application id
+// and strings are resolved through it HERE, at ledger time, because the
+// record carries indices that mean nothing outside this one catalog.
+func (l *ledgerEntry) addAppBatch(batch []FlowRecord, inWindow bool, subIdx int, cat *nbar2Catalog) {
 	l.appMu.Lock()
 	defer l.appMu.Unlock()
 	if l.apps == nil {
@@ -113,7 +171,14 @@ func (l *ledgerEntry) addAppBatch(batch []FlowRecord, inWindow bool, subIdx int)
 	}
 	for i := range batch {
 		r := &batch[i]
+		var app *avcApplication
+		if cat != nil {
+			app, _ = cat.avc.App(r.AVC.App)
+		}
 		k := appKey{proto: r.Protocol, dstPort: r.DstPort}
+		if app != nil {
+			k.appID = app.ID
+		}
 		c := l.apps[k]
 		if c == nil {
 			c = &appCounters{}
@@ -128,7 +193,48 @@ func (l *ledgerEntry) addAppBatch(batch []FlowRecord, inWindow bool, subIdx int)
 		if subIdx >= 0 {
 			c.subWindowBytes[subIdx] += r.Bytes
 		}
+		if app == nil {
+			continue
+		}
+		if h := int(r.AVC.Host); h > 0 && h <= len(app.Hosts) {
+			l.addL7(l7Key{appID: app.ID, field: l7FieldHost, value: app.Hosts[h-1]}, r, inWindow)
+		}
+		if u := int(r.AVC.URI); u > 0 && u <= len(app.URIs) {
+			l.addL7(l7Key{appID: app.ID, field: l7FieldURI, value: app.URIs[u-1]}, r, inWindow)
+		}
 	}
+}
+
+// addL7 folds one record into one layer-7 row. Caller holds appMu.
+func (l *ledgerEntry) addL7(k l7Key, r *FlowRecord, inWindow bool) {
+	if l.l7 == nil {
+		l.l7 = make(map[l7Key]*l7Counters)
+	}
+	c := l.l7[k]
+	if c == nil {
+		c = &l7Counters{}
+		l.l7[k] = c
+	}
+	c.records++
+	c.bytes += r.Bytes
+	c.packets += uint64(r.Packets)
+	if inWindow {
+		c.inWindowBytes += r.Bytes
+	}
+}
+
+// l7Snapshot copies the layer-7 tally for finalize, the appSnapshot shape.
+func (l *ledgerEntry) l7Snapshot() map[l7Key]l7Counters {
+	l.appMu.Lock()
+	defer l.appMu.Unlock()
+	if len(l.l7) == 0 {
+		return nil
+	}
+	out := make(map[l7Key]l7Counters, len(l.l7))
+	for k, v := range l.l7 {
+		out[k] = *v
+	}
+	return out
 }
 
 // appSnapshot copies the application tally for finalize. Kept separate from

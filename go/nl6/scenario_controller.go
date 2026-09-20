@@ -300,9 +300,43 @@ type ScenarioResult struct {
 	PerDevice       map[string]ledgerSnapshot
 	// Apps is the fleet-wide per-application flow-traffic fold
 	// (scenario-app-traffic): sent-basis totals keyed by (l4 proto, dst
-	// port), folded across participants at finalize. Empty for non-flow
-	// and sflow scenarios.
+	// port, application id), folded across participants at finalize. Empty
+	// for non-flow and sflow scenarios.
 	Apps map[appKey]appCounters
+	// L7 is the fleet-wide layer-7 value fold (nbar2 Plan C): sent-basis
+	// totals keyed by (application id, field, value). Empty unless an NBAR2
+	// participant sent a record carrying a host or URI.
+	L7 map[l7Key]l7Counters
+	// AppNames maps every wire application id a participant catalog can
+	// emit to its applicationName, so the report can label rows without
+	// re-reading catalogs. Built at finalize from the participants' catalogs;
+	// TestNbar2CatalogsAgreeOnNames is what makes first-seen a safe rule.
+	AppNames map[uint32]string
+}
+
+// participantAppNames collects applicationId → applicationName over every
+// participant's catalog (usable entries only, in catalog order). Two catalogs
+// that name one id differently resolve to the first seen in IP order; the
+// shipped catalogs are pinned to agree.
+func (c *ScenarioController) participantAppNames() map[uint32]string {
+	names := make(map[uint32]string)
+	ips := make([]string, 0, len(c.parts))
+	for ip := range c.parts {
+		ips = append(ips, ip)
+	}
+	slices.Sort(ips)
+	for _, ip := range ips {
+		cat := c.parts[ip].nbar2
+		if cat == nil {
+			continue
+		}
+		for _, app := range cat.Encoder().Applications() {
+			if _, seen := names[app.ID]; !seen {
+				names[app.ID] = app.Name
+			}
+		}
+	}
+	return names
 }
 
 // newScenarioController is used by the manager and tests. clock may be nil
@@ -435,6 +469,10 @@ func (c *ScenarioController) installScenPart(dev *DeviceSimulator, part *scenari
 		// template protocols only — sflow byte totals are sampling
 		// extrapolation at the collector and would not reconcile.
 		part.countApps = c.spec.Protocol != "sflow"
+		// The catalog the ledger resolves applicationId/host/URI through:
+		// the same pointer the exporter encodes with, so the report and the
+		// wire cannot disagree (nil for a plain participant).
+		part.nbar2 = dev.flowExporter.nbar2
 		// Ceiling check BEFORE the claim: a device that cannot reach the rate is
 		// excluded with a reason, the same way one lacking the exporter is.
 		// Checked here rather than at submit because the ceiling depends on the
@@ -1468,6 +1506,7 @@ func (c *ScenarioController) finishLabelled(to scenarioPhase) (*ScenarioResult, 
 
 	perDevice := make(map[string]ledgerSnapshot, len(c.ledgers))
 	apps := make(map[appKey]appCounters)
+	l7 := make(map[l7Key]l7Counters)
 	for ip, led := range c.ledgers {
 		perDevice[ip] = led.snapshot()
 		// Fleet-wide application fold (scenario-app-traffic). Element-wise
@@ -1483,6 +1522,14 @@ func (c *ScenarioController) finishLabelled(to scenarioPhase) (*ScenarioResult, 
 			}
 			apps[k] = agg
 		}
+		for k, v := range led.l7Snapshot() {
+			agg := l7[k]
+			agg.records += v.records
+			agg.bytes += v.bytes
+			agg.packets += v.packets
+			agg.inWindowBytes += v.inWindowBytes
+			l7[k] = agg
+		}
 	}
 	c.result = &ScenarioResult{
 		ID: c.id, Phase: to, T0Actual: t0, T1Actual: actualT1, DrainEnd: c.now(),
@@ -1490,7 +1537,8 @@ func (c *ScenarioController) finishLabelled(to scenarioPhase) (*ScenarioResult, 
 		ExcludedByReason: maps.Clone(c.excludedByReason),
 		DrainStragglers:  stragglers,
 		IncompleteJoins:  incompleteJoins,
-		PerDevice:        perDevice, Apps: apps,
+		PerDevice:        perDevice, Apps: apps, L7: l7,
+		AppNames: c.participantAppNames(),
 	}
 	return c.result, nil
 }

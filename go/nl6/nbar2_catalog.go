@@ -16,6 +16,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -408,6 +409,37 @@ func ScanPerTypeNbar2Catalogs(universal *nbar2Catalog, resourceDir string) (map[
 		}
 	}
 	return result, nil
+}
+
+// nbar2CatalogsAgreeOnNames checks that no two catalogs give one wire
+// applicationId two different names. The scenario report labels an
+// application row from a fleet-wide id → name table built first-seen over
+// the participants' catalogs (ScenarioController.participantAppNames), which
+// is only a safe rule while this holds for every catalog a fleet can
+// resolve. The error names the id, both catalogs and both names; nil when
+// every shared id agrees. Catalogs are visited in sorted key order so the
+// reported pair is deterministic.
+func nbar2CatalogsAgreeOnNames(cats map[string]*nbar2Catalog) error {
+	slugs := make([]string, 0, len(cats))
+	for s := range cats {
+		slugs = append(slugs, s)
+	}
+	sort.Strings(slugs)
+	type seen struct{ slug, name string }
+	first := make(map[uint32]seen)
+	for _, slug := range slugs {
+		for _, e := range cats[slug].Entries {
+			if prev, ok := first[e.ID]; ok {
+				if prev.name != e.Name {
+					return fmt.Errorf("nbar2 catalogs disagree on applicationId %d (%#x): %s names it %q, %s names it %q",
+						e.ID, e.ID, prev.slug, prev.name, slug, e.Name)
+				}
+				continue
+			}
+			first[e.ID] = seen{slug, e.Name}
+		}
+	}
+	return nil
 }
 
 // ApplySizeBudget dry-renders every entry's worst-case record through the

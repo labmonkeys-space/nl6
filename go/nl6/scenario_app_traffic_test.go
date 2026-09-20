@@ -284,12 +284,14 @@ func TestScenarioAppTraffic_Determinism(t *testing.T) {
 	res := &ScenarioResult{
 		T0Actual: time.Unix(0, 0), T1Actual: time.Unix(10, 0),
 		Apps: map[appKey]appCounters{
-			{6, 443}:   {records: 3, bytes: 3000, packets: 30},
-			{17, 53}:   {records: 2, bytes: 400, packets: 4},
-			{6, 80}:    {records: 1, bytes: 100, packets: 1},
-			{1, 0}:     {records: 1, bytes: 64, packets: 1},
-			{17, 4789}: {records: 5, bytes: 5000, packets: 50},
+			{6, 443, 0}:        {records: 3, bytes: 3000, packets: 30},
+			{6, 443, 50332091}: {records: 2, bytes: 2000, packets: 20}, // engine 3, selector 443: sorts AFTER the plain row
+			{17, 53, 0}:        {records: 2, bytes: 400, packets: 4},
+			{6, 80, 0}:         {records: 1, bytes: 100, packets: 1},
+			{1, 0, 0}:          {records: 1, bytes: 64, packets: 1},
+			{17, 4789, 0}:      {records: 5, bytes: 5000, packets: 50},
 		},
+		AppNames: map[uint32]string{50332091: "ssl"},
 	}
 	a, _ := json.Marshal(buildAppRows(res))
 	for i := 0; i < 20; i++ {
@@ -298,10 +300,14 @@ func TestScenarioAppTraffic_Determinism(t *testing.T) {
 			t.Fatalf("non-deterministic serialization:\n%s\n%s", a, b)
 		}
 	}
-	// Numeric key order: icmp(1) < tcp(6) < udp(17); ports ascending within.
+	// Numeric key order: icmp(1) < tcp(6) < udp(17); ports ascending within;
+	// on one port the plain row (no application id) before the NBAR2 row.
 	rows := buildAppRows(res)
-	if rows[0].L4Proto != "icmp" || rows[1].DstPort != 80 || rows[2].DstPort != 443 || rows[4].DstPort != 4789 {
+	if rows[0].L4Proto != "icmp" || rows[1].DstPort != 80 || rows[2].DstPort != 443 || rows[5].DstPort != 4789 {
 		t.Fatalf("row order wrong: %+v", rows)
+	}
+	if rows[2].ApplicationID != 0 || rows[3].ApplicationID != 50332091 || rows[3].ApplicationName != "ssl" {
+		t.Fatalf("plain row must sort before the NBAR2 row on the same port and carry the catalog name: %+v", rows[2:4])
 	}
 }
 
