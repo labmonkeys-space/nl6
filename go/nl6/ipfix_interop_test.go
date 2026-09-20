@@ -194,6 +194,36 @@ func requireIPFIXInterop(t *testing.T) {
 	}
 }
 
+// awaitIPFIXCollector ticks a throwaway plain exporter at the collector
+// until the sink receives its first record, or fails after max. The
+// collector's JSON <send> output connects to the sink LAZILY and, when the
+// sink was not yet listening at its first attempt, retries on its own
+// schedule; on the CI runner that schedule left the first test's records
+// unseen for the whole of its 15 s settle while the second test, 20 s
+// later, passed. Warming the path up first makes the tests independent of
+// that policy. The warm-up device has its own observation domain, so its
+// records never count against another device's sent total.
+func awaitIPFIXCollector(t *testing.T, sink *ipfixInteropSink, from int, max time.Duration) {
+	t.Helper()
+	sm := nbar2TestManager(t)
+	warm := attachNbar2Device(t, sm, "10.9.0.250", "cisco_ios.json", false)
+	defer warm.flowExporter.Close()
+	warm.flowExporter.cache = NewFlowCache(time.Second, time.Second, 4)
+	conn := testSender(t)
+	defer conn.Close()
+	start := time.Now()
+	deadline := start.Add(max)
+	for i := 0; time.Now().Before(deadline); i++ {
+		warm.flowExporter.Tick(start.Add(time.Duration(i)*2*time.Second), conn, testPool())
+		time.Sleep(time.Second)
+		if len(sink.recordsFrom(from)) > 0 {
+			t.Logf("collector output reached the sink after %s", time.Since(start).Round(100*time.Millisecond))
+			return
+		}
+	}
+	t.Fatalf("collector delivered nothing to the sink within %s: is its JSON <send> output pointed at %s, and is the container on the host network?", max, ipfixInteropSinkAddr)
+}
+
 // interopEnterpriseKey names the PEN 9 element the collector resolved, or
 // fails with both possible causes when it did not.
 func interopEnterpriseKey(t *testing.T, rec ipfixInteropRecord, name string, id int) string {
@@ -217,6 +247,8 @@ func interopEnterpriseKey(t *testing.T, rec ipfixInteropRecord, name string, id 
 func TestIPFIXInteropAVCDecodes(t *testing.T) {
 	requireIPFIXInterop(t)
 	sink, from := startIPFIXInteropSink(t)
+	awaitIPFIXCollector(t, sink, from, 90*time.Second)
+	from = len(sink.recordsFrom(0))
 
 	sm := nbar2TestManager(t)
 	avc := attachNbar2Device(t, sm, "10.9.0.1", "cisco_ios.json", true)
@@ -425,6 +457,8 @@ func interopHasString(list []string, s string) bool {
 func TestIPFIXInteropGroundTruthReconciles(t *testing.T) {
 	requireIPFIXInterop(t)
 	sink, from := startIPFIXInteropSink(t)
+	awaitIPFIXCollector(t, sink, from, 90*time.Second)
+	from = len(sink.recordsFrom(0))
 
 	sm := nbar2TestManager(t)
 	sm.flowBufPool.New = func() any { b := make([]byte, flowBufSize); return &b }
