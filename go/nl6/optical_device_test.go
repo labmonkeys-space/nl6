@@ -154,6 +154,10 @@ func TestOpticalIncapableRequest(t *testing.T) {
 			CreateDevicesRequest{ResourceFile: "cisco_ios.json"}, OpticalClean, false},
 		{"optical type with a non-clean band",
 			CreateDevicesRequest{ResourceFile: opticalResourceFile}, OpticalDegraded, false},
+		// Bare slug: the gate runs before the name validator and must give
+		// the TYPE's verdict (resourceFileKey), not a capability 400.
+		{"optical type without the .json suffix with a non-clean band",
+			CreateDevicesRequest{ResourceFile: strings.TrimSuffix(opticalResourceFile, ".json")}, OpticalDegraded, false},
 		{"category-filtered round robin, packet category",
 			CreateDevicesRequest{RoundRobin: true, Category: "Network Devices"}, OpticalFailing, true},
 		{"category-filtered round robin, optical only",

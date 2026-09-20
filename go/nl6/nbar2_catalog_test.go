@@ -371,3 +371,31 @@ func TestNbar2CatalogPartsAreInertToProfileLoaders(t *testing.T) {
 		t.Fatalf("saw %d shipped per-type nbar2.json parts, want 2 (cisco_ios, cisco_catalyst_9500); the walk is blind to a layout or an overlay moved", seen)
 	}
 }
+
+// The name-agreement rule is WIRED into StartNbar2Catalogs, so an operator
+// overlay that renames a wire id the universal (or another overlay) also
+// carries is refused at load, naming both, rather than surfacing as
+// whichever name the lowest participant IP happened to carry in a report.
+func TestNbar2StartRefusesDisagreeingOverlay(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cisco_ios"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// engine 3 / selector 80 is "http" in the embedded universal.
+	doc := `{"extends": false, "entries":[{"name":"web","description":"x","engine":3,"selector":80,"proto":"tcp","dst_port":80}]}`
+	if err := os.WriteFile(filepath.Join(dir, "cisco_ios", "nbar2.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := (&SimulatorManager{}).StartNbar2Catalogs(Nbar2CatalogConfig{PayloadBudget: maxFlowPayloadIPv4, ResourceDir: dir})
+	if err == nil || !strings.Contains(err.Error(), "disagree") || !strings.Contains(err.Error(), `"http"`) || !strings.Contains(err.Error(), `"web"`) {
+		t.Fatalf("a renaming overlay must be refused at load naming both names, got %v", err)
+	}
+	// Control: an overlay that agrees loads.
+	doc = `{"extends": false, "entries":[{"name":"http","description":"x","engine":3,"selector":80,"proto":"tcp","dst_port":80}]}`
+	if err := os.WriteFile(filepath.Join(dir, "cisco_ios", "nbar2.json"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&SimulatorManager{}).StartNbar2Catalogs(Nbar2CatalogConfig{PayloadBudget: maxFlowPayloadIPv4, ResourceDir: dir}); err != nil {
+		t.Fatalf("an agreeing overlay must load: %v", err)
+	}
+}

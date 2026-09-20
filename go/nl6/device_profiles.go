@@ -220,7 +220,10 @@ var deviceProfileMap = map[string]DeviceProfile{
 // optical transport device type. Backed by the device profile so the
 // profile map stays the single source of truth.
 func IsOpticalDeviceType(resourceFile string) bool {
-	p, ok := deviceProfileMap[resourceFile]
+	// Keyed on the canonical name so the optical create gate, which runs
+	// before validateResourceFilename, gives a bare slug the type's verdict
+	// rather than a capability one (the resourceFileKey rule).
+	p, ok := deviceProfileMap[resourceFileKey(resourceFile)]
 	return ok && p.Optical != nil
 }
 

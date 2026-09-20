@@ -625,6 +625,9 @@ func nbar2CatalogSource(slug, catalogFlagPath string) string {
 type Nbar2CatalogConfig struct {
 	CatalogPath   string
 	PayloadBudget int
+	// ResourceDir is where per-type overlays are scanned from; empty means
+	// the shipped resources tree. A seam so a test can plant overlays.
+	ResourceDir string
 }
 
 // StartNbar2Catalogs loads the universal catalog and the per-type overlays
@@ -647,13 +650,24 @@ func (sm *SimulatorManager) StartNbar2Catalogs(cfg Nbar2CatalogConfig) error {
 	}
 	byType := map[string]*nbar2Catalog{universalCatalogKey: universal}
 	if cfg.CatalogPath == "" {
-		perType, scanErr := ScanPerTypeNbar2Catalogs(universal, trapCatalogResourceDir)
+		dir := cfg.ResourceDir
+		if dir == "" {
+			dir = trapCatalogResourceDir
+		}
+		perType, scanErr := ScanPerTypeNbar2Catalogs(universal, dir)
 		if scanErr != nil {
 			return fmt.Errorf("nbar2 catalog: scanning per-type catalogs: %w", scanErr)
 		}
 		for slug, c := range perType {
 			byType[slug] = c
 		}
+	}
+	// One name per wire id across every catalog a fleet can resolve: the
+	// scenario report labels a row from a first-seen id -> name table over
+	// the participants' catalogs, which is only honest if this holds. A
+	// catalog-author error, refused at load like a duplicate name.
+	if err := nbar2CatalogsAgreeOnNames(byType); err != nil {
+		return err
 	}
 	for slug, c := range byType {
 		for _, msg := range c.ApplySizeBudget(cfg.PayloadBudget, slug) {
