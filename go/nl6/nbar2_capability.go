@@ -162,14 +162,23 @@ func nbar2FieldFor(resourceFile string, requested bool) bool {
 
 // validateNbar2Seed is the startup half of the nbar2 protocol rule, pure so
 // the fatal path is testable. It reuses DeviceFlowConfig.Validate's message
-// so the flag and the REST field fail the same way, and additionally refuses
-// -flow-nbar2 with no collector, since nothing would export.
-func validateNbar2Seed(nbar2 bool, collector, protocol string) error {
+// so the flag and the REST field fail the same way, additionally refuses
+// -flow-nbar2 with no collector (nothing would export), and refuses it when
+// the type the auto-start batch is built as has no NBAR2. The batch has no
+// type selector and is built as defaultResourceFile (asr9k, IOS-XR), so
+// without this arm the flag passed validation, logged one degrade line and
+// every device emitted plain IPFIX: the accepted-and-ignored family
+// (nl6#445) the REST gate already refuses with a 400 for the same shape.
+func validateNbar2Seed(nbar2 bool, collector, protocol, autoStartType string) error {
 	if !nbar2 {
 		return nil
 	}
 	if collector == "" {
 		return fmt.Errorf("-flow-nbar2 requires -flow-collector; without a collector no device exports and the flag would be accepted and ignored")
+	}
+	if !SupportsNbar2(autoStartType) {
+		return fmt.Errorf("-flow-nbar2: the auto-start batch is built as %s, which has no NBAR2 (%s); no flag selects another type for it, so create NBAR2 devices over REST with resource_file cisco_ios.json or cisco_catalyst_9500.json and flow.nbar2 instead",
+			resourceFileKey(autoStartType), nbar2IncapableTypes[resourceFileKey(autoStartType)])
 	}
 	probe := DeviceFlowConfig{Collector: collector, Protocol: protocol, Nbar2: true}
 	probe.ApplyDefaults()

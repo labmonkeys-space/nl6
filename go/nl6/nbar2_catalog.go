@@ -102,15 +102,18 @@ func (p *nbar2Proto) UnmarshalJSON(b []byte) error {
 // selector are separate on purpose: the loader packs them with
 // avcApplicationID, and can validate the engine only if it sees it.
 type nbar2EntryJSON struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Engine      int              `json:"engine"`
-	Selector    int64            `json:"selector"`
-	Proto       nbar2Proto       `json:"proto"`
-	DstPort     int              `json:"dst_port"`
-	Weight      int              `json:"weight,omitempty"`
-	Hosts       []nbar2ValueJSON `json:"hosts,omitempty"`
-	URIs        []nbar2ValueJSON `json:"uris,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Engine      int    `json:"engine"`
+	Selector    int64  `json:"selector"`
+	// proto and dst_port are POINTERS so an absent key is distinguishable
+	// from 0: an entry that omitted proto used to compile to IP protocol 0
+	// and go on the wire that way (review of PR #673).
+	Proto   *nbar2Proto      `json:"proto"`
+	DstPort *int             `json:"dst_port"`
+	Weight  int              `json:"weight,omitempty"`
+	Hosts   []nbar2ValueJSON `json:"hosts,omitempty"`
+	URIs    []nbar2ValueJSON `json:"uris,omitempty"`
 }
 
 // nbar2CatalogJSON is the whole file. Both `comment` (the trap catalog's
@@ -257,11 +260,22 @@ func compileNbar2Entry(raw nbar2EntryJSON, source string, i int) (*nbar2Entry, e
 	if raw.Selector < 0 || raw.Selector > avcSelectorMax {
 		return fail("selector %d out of range 0..%d (24 bits)", raw.Selector, avcSelectorMax)
 	}
-	if raw.DstPort < 0 || raw.DstPort > 65535 {
-		return fail("dst_port %d out of range 0..65535", raw.DstPort)
+	if raw.Proto == nil {
+		return fail("proto is required (tcp, udp, icmp or an integer 0..255)")
 	}
-	if raw.Proto == 1 && raw.DstPort != 0 {
-		return fail("proto icmp carries no port; dst_port must be 0, got %d", raw.DstPort)
+	proto := uint8(*raw.Proto)
+	if raw.DstPort == nil && proto != 1 {
+		return fail("dst_port is required for proto %d (only icmp may omit it)", proto)
+	}
+	dstPort := 0
+	if raw.DstPort != nil {
+		dstPort = *raw.DstPort
+	}
+	if dstPort < 0 || dstPort > 65535 {
+		return fail("dst_port %d out of range 0..65535", dstPort)
+	}
+	if proto == 1 && dstPort != 0 {
+		return fail("proto icmp carries no port; dst_port must be 0, got %d", dstPort)
 	}
 	if raw.Weight < 0 {
 		return fail("weight must be positive, got %d", raw.Weight)
@@ -284,8 +298,8 @@ func compileNbar2Entry(raw nbar2EntryJSON, source string, i int) (*nbar2Entry, e
 		Engine:      uint8(raw.Engine),
 		Selector:    uint32(raw.Selector),
 		ID:          avcApplicationID(uint8(raw.Engine), uint32(raw.Selector)),
-		Proto:       uint8(raw.Proto),
-		DstPort:     uint16(raw.DstPort),
+		Proto:       proto,
+		DstPort:     uint16(dstPort),
 		Weight:      weight,
 		Hosts:       hosts,
 		URIs:        uris,

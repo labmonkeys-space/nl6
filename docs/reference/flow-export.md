@@ -128,8 +128,9 @@ The IPFIX Sequence Number counts Data Records including options records, per RFC
 
 ### Enabling NBAR2
 
-Set `"nbar2": true` in a device's `flow` block, or `-flow-nbar2` for the auto-start batch.
-It requires `protocol: "ipfix"`; any other protocol is rejected with a 400, and the seed flag with any other `-flow-protocol` (or no `-flow-collector`) is fatal at startup.
+Set `"nbar2": true` in a device's `flow` block.
+It requires `protocol: "ipfix"`; any other protocol is rejected with a 400.
+The seed flag `-flow-nbar2` exists for the auto-start batch, but that batch is built as `asr9k` (IOS-XR, no NBAR2) and no flag selects another type, so the flag is refused at startup on every boot today with the REST remedy named; it is fatal rather than ignored because a batch that booted and emitted plain IPFIX under an NBAR2 flag is the accepted-and-ignored failure (nl6#445).
 Only `cisco_ios` and `cisco_catalyst_9500` have NBAR2; the set is curated by name with a reason per row in `nbar2_capability.go`, never by slug prefix, because `cisco_nexus_9500` (NX-OS), `cisco_crs_x` and `asr9k` (IOS-XR) do not.
 A request whose whole resolved type set is incapable is rejected with a 400 naming the type and its OS.
 A mixed round-robin batch is accepted, and here the rule differs from flow's own skip: an NBAR2-incapable but flow-capable device **keeps its flow block and emits the plain IPFIX record** (template 256) with `nbar2` cleared, logged once per type.

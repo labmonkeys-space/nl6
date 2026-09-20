@@ -62,6 +62,10 @@ func TestNbar2CatalogRulesReject(t *testing.T) {
 		{"bad proto", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"sctp","dst_port":1}`), "proto must be tcp, udp, icmp"},
 		{"port too wide", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"tcp","dst_port":70000}`), "dst_port 70000 out of range"},
 		{"icmp with port", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"proto":"icmp","dst_port":443}`), "icmp carries no port"},
+		// Absent keys are not zero values: an entry without proto used to
+		// load as IP protocol 0 and go on the wire that way (PR #673 review).
+		{"missing proto", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"dst_port":443}`), "proto is required"},
+		{"missing dst_port on tcp", nbar2JSON("", `{"name":"a","engine":6,"selector":1,"proto":"tcp"}`), "dst_port is required"},
 		{"name too long", nbar2JSON("", `{"name":"`+strings.Repeat("n", 25)+`","engine":3,"selector":1,"proto":"tcp","dst_port":1}`), "name is 25 bytes, over the 24-byte"},
 		{"description too long", nbar2JSON("", `{"name":"a","description":"`+strings.Repeat("d", 56)+`","engine":3,"selector":1,"proto":"tcp","dst_port":1}`), "description is 56 bytes, over the 55-byte"},
 		{"negative weight", nbar2JSON("", `{"name":"a","engine":3,"selector":1,"proto":"tcp","dst_port":1,"weight":-1}`), "weight must be positive"},
