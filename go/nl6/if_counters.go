@@ -1061,8 +1061,11 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 
 	// Build the interface state engine. Seed each slot from the static
 	// ifAdminStatus.<N> / ifOperStatus.<N> JSON values so the initial
-	// state matches what the resources declare; later mutations (flap
-	// scenario, REST control plane) write to this engine directly.
+	// state matches what the resources declare, then overlay the active
+	// `-if-scenario` (scenarioSeed, nl6#692) — the flag shapes the seed
+	// and nothing else, so a later SET, REST POST or flap moves what
+	// every reader sees. Later mutations (flap scenario, REST control
+	// plane, SNMP SET) write to this engine directly.
 	// Counter aggregates are wired in by SimulatorManager.StartGnmiSubsystem
 	// once it owns the global counters (§D12).
 	//
@@ -1096,6 +1099,7 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 				}
 			}
 		}
+		oper, admin = scenarioSeed(ifStateConfig, idx, oper, admin)
 		ic.state.Seed(idx, oper, admin)
 	}
 

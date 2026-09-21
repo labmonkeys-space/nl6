@@ -51,6 +51,14 @@ wires them together.
   it. `GetDynamicAt` for `.7` (admin) / `.8` (oper) / `.9` (last-change)
   reads atomically from the slot table; the SNMP wire encoding (decimal
   enum for `.7`/`.8`, TimeTicks for `.9`) is computed without locking.
+- **Initial state (`if_counters.go`, `if_state.go`)** — each slot is seeded
+  once at engine construction from the device's `ifAdminStatus.<N>` /
+  `ifOperStatus.<N>` resource rows, overlaid by the process-wide
+  [`-if-scenario`](cli-flags.md#interface-state-scenarios).
+  The seed stores `lastChangeNs = 0` and broadcasts nothing, so a scenario
+  costs no link trap, no syslog and no ON_CHANGE update at fleet start.
+  The scenario is applied here and nowhere else: there is no read-time
+  override on the SNMP path, so every later mutation is what readers see.
 - **Flap scheduler (`flap_scheduler.go`)** — single shared min-heap
   goroutine driving Poisson-distributed flaps per `(device, ifIndex)`.
   Mirrors `trap_scheduler.go` exactly. Mutates `InterfaceState` directly;

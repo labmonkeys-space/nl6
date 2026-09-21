@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1675
+const minimumTestFunctions = 1687
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 26
@@ -524,6 +524,22 @@ var loadBearingGuards = []loadBearingGuard{
 			"the cache and shares one object with an explicit asr9k.json; reverting " +
 			"resolveCreateResources to sm.deviceResources takes the whole auto-start fleet out of " +
 			"the reload's reach with every other test green"},
+
+	// The interface-state scenario seed (nl6#692). A flag that does nothing
+	// is the failure this pair exists to stop, and it had already run for
+	// every release since v0.8.0 with the whole suite green.
+	{"TestIfScenario3SeedsEveryInterfaceOperDown", "if_scenario_seed_test.go",
+		"nl6#692. The only pin that -if-scenario reaches an ENGINE-BACKED device, which is every " +
+			"production device. The flag was applied at a read-time override that the cycler's " +
+			"engine lookup ran ahead of, so it had been silently dead since v0.8.0 while " +
+			"docs/reference/cli-flags.md documented four working scenarios; deleting this row's " +
+			"test lets the seed call be dropped from InitIfCountersWithScenario with no other " +
+			"test failing"},
+	{"TestIfScenarioWithoutEngineReadsTheStaticRow", "if_scenario_seed_test.go",
+		"nl6#692. The only pin that NO read-time interface-state override exists. Re-adding one to " +
+			"findResponse 'so the flag works without an engine' would shadow an SNMP SET and a REST " +
+			"POST again, which is the defect the issue was filed for, and would restore a GET/walk " +
+			"disagreement that no digest covers"},
 }
 
 // ── the parse ───────────────────────────────────────────────────────────────

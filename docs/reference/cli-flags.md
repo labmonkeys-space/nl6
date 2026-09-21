@@ -41,9 +41,17 @@ See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
 ## Interface-state scenarios
 
-The `-if-scenario` flag controls the SNMP admin/oper status reported for all
-simulated interfaces, so you can reproduce common network conditions without
+The `-if-scenario` flag sets the **initial** admin/oper status of every
+simulated interface, so you can reproduce common network conditions without
 editing resource files.
+It is applied once per device, when the interface-state engine is built, to
+every device the process creates: the auto-start batch and REST-created devices
+alike.
+From then on the engine is the single source every reader agrees on, so an SNMP
+`SET`, a REST `oper-status` or `admin-status` POST, or a link flap moves what
+`GET`, a walk, gNMI and the REST view all report.
+A value outside 1..4, or an `-if-failure-pct` outside 0..100, is refused at
+startup rather than ignored.
 
 | Flag | Type | Default | Purpose |
 |------|------|---------|---------|
@@ -59,6 +67,35 @@ editing resource files.
 
 Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are
 reproducible across restarts.
+
+Three consequences worth knowing before you pick a scenario.
+
+The seed is initial state, not a transition, so it fires no link traps, no
+syslog and no gNMI `ON_CHANGE` updates, and `ifLastChange` reads `0` until
+something actually changes.
+
+`lldpRemTable` only emits a row when both ends of a link are oper-up, so
+scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the
+rows whose local or remote port it put down.
+`ifAlias` reflects configured intent and stays.
+
+Interfaces that scenario 1 shut down come back the ordinary way: a `SET` of
+`ifAdminStatus` to `up(1)`, or a REST `admin-status` POST, raises oper with
+them through the admin-to-oper cascade.
+
+Do not pair scenario 1 with a link-flap scenario.
+The cascade runs on admin changes and is not enforced continuously, and the
+flap scheduler moves oper alone, so a flap will raise oper on an interface
+scenario 1 left admin-down.
+Those interfaces then report `ifAdminStatus = down(2)` with
+`ifOperStatus = up(1)`, which RFC 2863 does not allow.
+The same caveat applies to the REST `oper-status` endpoint under scenario 1,
+and it is the reason that endpoint exists separately from `admin-status`.
+
+The scenario reaches the interfaces the counter engine knows, which are those
+with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
+An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from
+the resource file unchanged.
 
 ### Error / discard scenario
 
