@@ -311,7 +311,7 @@ block is the trusted-sender ground truth for per-application traffic: total
 5. **For NBAR2 participants, reconcile the decoded AVC fields on the same totals basis.**
    Sum the collector's decoded records by `(protocol, destination port, applicationId)` and compare `records`, `octetDeltaCount` and `packetDeltaCount` sums against `applications[]`; then sum by `(applicationId, HTTP host)` and `(applicationId, URI)` and compare against the [`l7_values[]`](./loadtest-report-schema.md#l7_values--layer-7-values-from-nbar2-records) rows.
    Per field, the `l7_values` total is at most the `applications` total, never necessarily equal, because a record without a host or URI has no `l7_values` row.
-   `make test-interop-ipfix` does exactly this against a real IPFIXcol2 with no tolerance band and is the reference for the method; see [flow export](./flow-export.md#verified-against-an-independent-collector).
+   `make test-interop-ipfix` does exactly this against a real IPFIXcol2 with no tolerance band and is the reference for the method; see [flow export](./flow-export.md#interoperability).
 
 `sflow` scenarios have no `applications` rows: sFlow byte volumes are derived
 by sampling extrapolation at the collector, which is not comparable to
