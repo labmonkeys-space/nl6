@@ -39,6 +39,25 @@ Omit the engine-id flag to run in v2c-only mode.
 
 See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
+### Write admission (`SetRequest`)
+
+Writes are **opt-in**. A fleet booted with neither flag below answers no `SET` at any version.
+
+| Flag | Values | Default | Scope | Description |
+|------|--------|---------|-------|-------------|
+| `-snmp-write-community` | string | — (empty) | **seed** | SNMPv1/v2c community required to **write**. Empty admits no v1/v2c `SET`. A mismatch is **discarded** — no datagram, which `snmpset` reports as a timeout — and the cause is logged once per device. Reads are unaffected: nl6 checks no community on a poll, at any version. REST-created devices set `write_community` on the create body. |
+| `-snmp-set-min-security-level` | `none` \| `auth` \| `priv` | `auth` | **seed** | Lowest SNMPv3 security level a `SetRequest` may carry (`noAuthNoPriv` / `authNoPriv` / `authPriv`). Below it, the request is answered with a `usmStatsUnsupportedSecLevels` Report (RFC 3414 §3.2 step 5). On a fleet run with `-snmpv3-auth none` nothing can reach the default, so no v3 `SET` is admitted — the startup log says so. REST-created devices set `snmpv3.set_min_security_level`. |
+
+An unrecognised `-snmp-set-min-security-level` is fatal at startup, after `-help` and `-version` and before any subsystem starts.
+
+To restore the admission nl6 had before [nl6#690]:
+
+```bash
+sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
+```
+
+[nl6#690]: https://github.com/labmonkeys-space/nl6/issues/690
+
 ## Interface-state scenarios
 
 The `-if-scenario` flag sets the **initial** admin/oper status of every

@@ -6,6 +6,8 @@
 package main
 
 import (
+	"crypto/subtle"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -288,5 +290,213 @@ func (s *SNMPServer) logFirstMalformedSet(what string) {
 	s.firstMalformedSet.Do(func() {
 		log.Printf("SNMP %s: discarded a SetRequest: %s (further discards suppressed for this device)",
 			s.device.ID, what)
+	})
+}
+
+// ── Write admission (nl6#690) ──────────────────────────────────────────────
+//
+// nl6#684 admitted a SetRequest on exactly a GetRequest's terms, which was
+// right while every served PDU was a read and is not right now that one of them
+// mutates state, fires link traps and syslog and is visible to gNMI. Writes are
+// now OPT-IN at every version, and BOTH gates ship together because they cover
+// disjoint halves: a v3 message carries no community, a v1/v2c message carries
+// no security level, so either one alone leaves the other version exactly as
+// nl6#690 reported it.
+//
+// The rule is written ONCE, here, and the two dispatchers only frame the
+// verdict. A predicate copied per version is the failure this package has
+// already paid for three times — servedPDUTag had three readers and add-snmp-set
+// found the third still carrying its own tag list, so every SET answered
+// request-id 123. The copy of an ADMISSION rule fails the same way, and its
+// failure is a write one version admits and the other refuses.
+//
+// Both gates run BEFORE the bindings are parsed, so a refused SET validates
+// nothing, applies nothing, and cannot reach logFirstMalformedSet to report a
+// parse verdict about a request that was never admitted.
+
+// snmpSecurityLevel is the RFC 3411 §5 security level of a v3 message, ordered
+// so that "at least this level" is a `>=` comparison.
+//
+// securityLevelUnset is the ZERO VALUE and is deliberately not a level: it means
+// the device was built without an explicit policy, and effectiveMinSecurityLevel
+// reads it as authNoPriv. Ordering the constants with noAuthNoPriv at zero would
+// have made every SNMPServer literal in the package — and any future one — admit
+// an unauthenticated write by default, which is the defect this change exists to
+// remove. The permissive level has to be asked for by name.
+type snmpSecurityLevel int
+
+const (
+	securityLevelUnset snmpSecurityLevel = iota
+	securityLevelNoAuthNoPriv
+	securityLevelAuthNoPriv
+	securityLevelAuthPriv
+)
+
+// String names the level as RFC 3411 spells it, for logs and errors.
+func (l snmpSecurityLevel) String() string {
+	switch l {
+	case securityLevelNoAuthNoPriv:
+		return "noAuthNoPriv"
+	case securityLevelAuthNoPriv:
+		return "authNoPriv"
+	case securityLevelAuthPriv:
+		return "authPriv"
+	default:
+		return "unset"
+	}
+}
+
+// parseSetMinSecurityLevel reads the -snmp-set-min-security-level flag value and
+// the REST set_min_security_level field. Empty means unset, which is authNoPriv;
+// anything unrecognised is an ERROR the caller must make fatal (startup) or a 400
+// (REST), never a silent fallback — an accepted-and-ignored security knob is the
+// nl6#445 family with a worse consequence.
+func parseSetMinSecurityLevel(s string) (snmpSecurityLevel, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
+		return securityLevelUnset, nil
+	case "none", "noauthnopriv":
+		return securityLevelNoAuthNoPriv, nil
+	case "auth", "authnopriv":
+		return securityLevelAuthNoPriv, nil
+	case "priv", "authpriv":
+		return securityLevelAuthPriv, nil
+	}
+	return securityLevelUnset, fmt.Errorf(
+		"unknown SET minimum security level %q: use none (noAuthNoPriv), auth (authNoPriv) or priv (authPriv)", s)
+}
+
+// newSetAdmission builds the resolved write-admission policy from the two
+// places an operator states it: the write community (a v1/v2c concept, so a
+// flag and a top-level REST field) and the v3 block's set_min_security_level.
+//
+// ONE constructor, so the CLI and the REST handler cannot drift on what an
+// empty field means, and both get the same error text for a bad level. Callers
+// make the error fatal (startup) or a 400 (REST).
+func newSetAdmission(writeCommunity string, v3 *SNMPv3Config) (setAdmissionConfig, error) {
+	level := ""
+	if v3 != nil {
+		level = v3.SetMinSecurityLevel
+	}
+	min, err := parseSetMinSecurityLevel(level)
+	if err != nil {
+		return setAdmissionConfig{}, err
+	}
+	return setAdmissionConfig{WriteCommunity: writeCommunity, MinSecurityLevel: min}, nil
+}
+
+// describe states the policy for the startup log, in the operator's terms.
+// Both halves, always, including the case where the device's own auth
+// configuration cannot reach the minimum — the alternative is a fleet that
+// refuses every write with nothing on the console saying why.
+func (c setAdmissionConfig) describe(v3 *SNMPv3Config) string {
+	v1v2 := "v1/v2c SET: refused (no write community configured)"
+	if c.WriteCommunity != "" {
+		v1v2 = "v1/v2c SET: admitted with the configured write community"
+	}
+	min := c.effectiveMinSecurityLevel()
+	v3s := fmt.Sprintf("v3 SET: minimum security level %s", min)
+	switch {
+	case v3 == nil || !v3.Enabled:
+		v3s += " (SNMPv3 disabled)"
+	case v3.AuthProtocol == SNMPV3_AUTH_NONE && min > securityLevelNoAuthNoPriv:
+		v3s += " — UNREACHABLE: this fleet is configured with no authentication protocol, so no v3 SET can be admitted"
+	case v3.PrivProtocol == SNMPV3_PRIV_NONE && min > securityLevelAuthNoPriv:
+		v3s += " — UNREACHABLE: this fleet is configured with no privacy protocol, so no v3 SET can be admitted"
+	}
+	return v1v2 + "; " + v3s
+}
+
+// effectiveMinSecurityLevel resolves the zero value to the shipped default.
+func (c setAdmissionConfig) effectiveMinSecurityLevel() snmpSecurityLevel {
+	if c.MinSecurityLevel == securityLevelUnset {
+		return securityLevelAuthNoPriv
+	}
+	return c.MinSecurityLevel
+}
+
+// securityLevelOf reads a v3 message's level off its msgFlags (RFC 3412 §6.4).
+//
+// The PRIV bit without the AUTH bit is not a level USM defines; it is reported
+// as noAuthNoPriv, which is the lowest, so such a message can never clear a
+// minimum a well-formed one could not. Failing toward the strict answer is the
+// only safe direction for an admission test.
+func securityLevelOf(flags byte) snmpSecurityLevel {
+	auth := flags&SNMPV3_MSG_FLAG_AUTH != 0
+	priv := flags&SNMPV3_MSG_FLAG_PRIV != 0
+	switch {
+	case auth && priv:
+		return securityLevelAuthPriv
+	case auth:
+		return securityLevelAuthNoPriv
+	default:
+		return securityLevelNoAuthNoPriv
+	}
+}
+
+// admitSetV2c decides whether a v1/v2c SetRequest is admitted.
+//
+// The community must have been READ FROM THE DATAGRAM and must equal the
+// device's write community. req.Community carries "public" when the field is
+// absent or its length is unreadable — a default that exists only so a response
+// can echo something — so comparing it without req.CommunityParsed would admit
+// an unparseable SET on any fleet configured `-snmp-write-community public`.
+//
+// An empty write community admits nothing, which is the default and needs no
+// separate disable flag: the first test below refuses before the comparison is
+// reached, so a manager cannot send the empty string and match.
+//
+// The comparison is constant-time. It is not load-bearing — nl6 is a simulator
+// and this community protects nothing real — but it costs nothing and spares
+// every future reader the same review comment.
+func (s *SNMPServer) admitSetV2c(req SNMPRequest) bool {
+	want := s.setAdmission.WriteCommunity
+	if want == "" {
+		return false
+	}
+	if !req.CommunityParsed {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(req.Community), []byte(want)) == 1
+}
+
+// admitSetV3 decides whether a v3 SetRequest is admitted.
+//
+// Called AFTER the user check and the USM verification a GET receives, so an
+// unknown user or a wrong digest is still answered with its own Report rather
+// than with a level verdict — the manager is told which of the two things is
+// wrong. On a device configured with no authentication protocol no request can
+// ever reach the default minimum, so no v3 SET is admitted; that is the same
+// writes-are-opt-in outcome as an empty write community, and the startup log
+// says so rather than leaving it as a silent dead end.
+func (s *SNMPServer) admitSetV3(v3Msg *SNMPv3Message) bool {
+	return securityLevelOf(v3Msg.GlobalData.MsgFlags) >= s.setAdmission.effectiveMinSecurityLevel()
+}
+
+// refusedSetReason names why a v1/v2c SET was refused, distinguishing the two
+// cases an operator confuses: a fleet that was never configured for writes at
+// all, and one whose write community the manager got wrong.
+func refusedSetReason(writeCommunity string) string {
+	if writeCommunity == "" {
+		return "no write community is configured, so no v1/v2c write is admitted " +
+			"(set -snmp-write-community, or write_community on the REST create body)"
+	}
+	return "community does not match the configured write community"
+}
+
+// logFirstRefusedSet emits at most one line per device when a v1/v2c SetRequest
+// is discarded for its community. Its own sync.Once, not firstMalformedSet's:
+// sharing one would let whichever fault a device saw first silence the other for
+// its whole life, and a refused write and an unparseable one have different
+// causes and different fixes.
+//
+// The line names the cause because the manager cannot: a discarded SET is a
+// TIMEOUT at snmpset, which reads as an unreachable device rather than a refused
+// write. That is the price of answering the way real hardware answers, and this
+// line is what pays it.
+func (s *SNMPServer) logFirstRefusedSet(why string) {
+	s.firstRefusedSet.Do(func() {
+		log.Printf("SNMP %s: discarded a SetRequest: %s (further refusals suppressed for this device)",
+			s.device.ID, why)
 	})
 }

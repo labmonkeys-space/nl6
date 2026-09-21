@@ -103,13 +103,33 @@ func requestListContents(t *testing.T, req []byte) []byte {
 	return contents
 }
 
+// allowSetsForTest grants a server the write admission the LADDER tests need
+// (nl6#690): community "public", which setRequestAt sends, and a noAuthNoPriv
+// v3 minimum, which v3SetRequest can reach.
+//
+// Every test in this file is about what a SET DOES once admitted, so without
+// the grant each of them would assert the admission gate instead and the
+// ladder's coverage would vanish silently. The gate itself is asserted in
+// snmp_set_admission_test.go, which never calls this.
+//
+// It is a named helper rather than a field set inline at each site so that
+// `grep allowSetsForTest` answers "which tests are exempt from the gate".
+func allowSetsForTest(s *SNMPServer) *SNMPServer {
+	s.setAdmission = setAdmissionConfig{
+		WriteCommunity:   "public",
+		MinSecurityLevel: securityLevelNoAuthNoPriv,
+	}
+	return s
+}
+
 // newSetTestServer is newTestServer plus a live interface-state engine over
 // ifIndex 1..nIf, every interface at admin up / oper up, and sysDescr.0 as a
 // read-only probe. v3 is enabled at noAuthNoPriv (v3TestServer's shape) so the
-// same server answers both dispatchers.
+// same server answers both dispatchers, and it admits writes — see
+// allowSetsForTest.
 func newSetTestServer(t *testing.T, nIf int) (*SNMPServer, *InterfaceState) {
 	t.Helper()
-	s := v3TestServer(map[string]string{oidSysDescr0: "nl6 set probe"})
+	s := allowSetsForTest(v3TestServer(map[string]string{oidSysDescr0: "nl6 set probe"}))
 	speeds := make([]uint64, nIf)
 	for i := range speeds {
 		speeds[i] = 1_000_000_000
@@ -500,7 +520,7 @@ func TestV1SetErrorStatusMapsEveryConstant(t *testing.T) {
 
 func TestSetFiresLinkTrapAndSyslog(t *testing.T) {
 	fx := buildWired(t, true, true)
-	s := &SNMPServer{device: fx.device}
+	s := allowSetsForTest(&SNMPServer{device: fx.device})
 	if status, _ := setVia(t, s, snmpVersion2c, []testBind{intBind(oidIfAdminStatus+".1", 2)}); status != snmpErrNoError {
 		t.Fatal(status)
 	}
@@ -660,7 +680,7 @@ func FuzzParseVarBinds(f *testing.F) {
 
 func TestSetSNMPAndGnmiAgree(t *testing.T) {
 	device := newTestGnmiDevice(t, 3)
-	s := &SNMPServer{device: device}
+	s := allowSetsForTest(&SNMPServer{device: device})
 	if status, _ := setVia(t, s, snmpVersion2c, []testBind{intBind(oidIfAdminStatus+".2", 2)}); status != snmpErrNoError {
 		t.Fatal(status)
 	}
