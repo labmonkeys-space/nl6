@@ -1,13 +1,14 @@
 # NBAR2 layer-7 export over IPFIX
 
 Date: 2026-09-18
-Status: design approved, not implemented
+Status: implemented in Plans A to C (PRs #672, #673, #674); fidelity claim downgraded 2026-09-21 against the IOS-XE 26.01.02 reference capture (nl6#680)
 Scope: `go/nl6/` flow export subsystem
 
 ## Goal
 
 Let NBAR2-capable simulated devices export Cisco AVC style flow records over IPFIX, carrying the NBAR2 application identity and the layer-7 fields NBAR2 extracts.
-The fidelity bar is **Cisco-faithful**: a capture taken from nl6 should match what a real IOS-XE box emits for an equivalent `flow record` configuration.
+The fidelity claim is **conformant and interop-tested against open decoders**.
+The design set the bar at "Cisco-faithful" (a capture taken from nl6 should match what a real IOS-XE box emits for an equivalent `flow record` configuration) under the evidence rule in section 1; the reference capture contradicted the encoder and the claim downgraded, recorded under "Outcome of the reference capture (2026-09-21)" below.
 
 IPFIX is mandatory for this feature, and that is a property of the platform rather than a design choice.
 Cisco's AVC field guide marks `applicationId` (IE 95) as exportable under both NetFlow v9 and IPFIX, but marks the layer-7 string fields as IPFIX only.
@@ -64,12 +65,12 @@ TLS SNI and certificate common name therefore leave scope: TLS-classified traffi
 ### Outcome of unit 1
 
 The following fields are unverified and leave scope: TLS SNI and certificate common name (no Cisco export exists; TLS-classified traffic is represented by applicationId and the application table).
-The claim stays "Cisco-faithful" for the remaining fields.
-Units 2 to 7 proceed on those.
+At that point the claim stayed "Cisco-faithful" for the remaining fields; it was later withdrawn by the reference capture (see "Outcome of the reference capture" below).
+Units 2 to 7 proceeded on those fields.
 
-Two caveats travel with that claim.
-The Catalyst 9500 HTTP host IE number is unconfirmed by any Cisco document read for this task, and the exit rule above applies to it until a Cisco document or a capture pins it.
-The 42125 hit-count byte order is an encoder assumption unit 2 must state explicitly, and the same exit rule applies to it until a Cisco document or a capture pins that too.
+Two caveats travelled with that claim.
+The Catalyst 9500 HTTP host IE number is unconfirmed by any Cisco document read for this task, and the exit rule above still applies to it: the reference capture below is a Catalyst 8000V, not a 9500, so it does not close this caveat.
+The 42125 hit-count byte order was an encoder assumption unit 2 stated explicitly at `uriStatsValue`; the reference capture confirmed it (big-endian, no trailing delimiter), pinned by `TestCiscoAVCCapture_URIStatisticsLayout`, and that caveat is closed.
 
 ### Reference policy
 
@@ -100,6 +101,32 @@ The encoder's IE table derives from that file, and a test asserts the two agree.
 If coverage comes back partial, the design does not proceed by guessing.
 Either the unverified fields leave scope, or the feature's claim downgrades from "Cisco-faithful" to "conformant and interop-tested against open decoders", stated in those words in `docs/`.
 The spec records which happened.
+
+### Outcome of the reference capture (2026-09-21)
+
+The exit rule fired.
+A real Cisco Catalyst 8000V running IOS-XE 26.01.02 (NBAR engine 56) exported AVC records through containerlab on 2026-09-21; the capture, the router's final configuration and the files that regenerate it are checked in at `go/nl6/testdata/cisco-avc/capture/` (PR #681), and `cisco_avc_capture_test.go` decodes the pcap with its own template parser and pins every fact below.
+It is the first Cisco-originated wire reading in the evidence base.
+
+The capture contradicts the encoder on six points:
+
+1. IE 12235 (HTTP host) carries a constant six-byte prefix `03 00 00 50 34 02` before the hostname on every record; nl6 emits the bare hostname (`TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix`).
+2. IOS-XE refuses URI statistics without `match connection id` (PEN 9 IE 12242) and transaction-end aging, so the router's record is a 17-field connection record with match fields first and the variable-length fields before the counters; nl6's is a unidirectional flow record with no connection id (`TestCiscoAVCCapture_DataTemplateFieldOrder`).
+3. Host and URI appear on the ingress record of an HTTP request only; nl6 puts them on every AVC record (`TestCiscoAVCCapture_LayerSevenValuesAreIngressHTTPOnly`).
+4. URI statistics record the first path segment only; nl6's shipped catalogs carry multi-segment URIs (`TestCiscoAVCCapture_URIStatisticsLayout`).
+5. The router's application table is 1560 rows across engines 1, 3 and 13, and NBAR2 reclassifies mid-connection to engine-13 `binary-over-http`; every nl6 entry is engine 3 (`TestCiscoAVCCapture_OptionsTemplates`).
+6. The interface option table is 33 and 65 bytes plus egressInterface under template 256, with Cisco's ids 256 interface, 257 application, 258 data; nl6 sends 32 and 32 with no egressInterface under 257 and its application table under 259 (`TestCiscoAVCCapture_OptionsTemplates`).
+
+It confirms five: the IE 9357 layout (URI, NUL, big-endian 2-byte count, no trailing delimiter, so both decisions at `uriStatsValue` close in nl6's favour), the application table string lengths of 24 and 55, the engine-3 `http` id `0x03000050`, sequence numbers that count option data records, and a 1420-byte maximum datagram with no fragmentation (`TestCiscoAVCCapture_MessageShape`).
+
+**The downgrade branch was taken (nl6#680, Option B).**
+The claim is now "conformant and interop-tested against open decoders", stated in those words here and in `docs/reference/flow-export.md`, which lists the six differences beside the tests that pin them.
+The reason: the feature exists so collectors can be tested against layer-7 records at scale, and every open decoder tried (IPFIXcol2 through `make test-interop-ipfix`, nProbe for the fields it decodes) reads nl6's records correctly.
+Following would be seven wire changes plus a generation change to transaction-end aging, every one moving `plan-b-nbar2.tsv` and the IPFIXcol2 reconciliation, for a fidelity no consumer has asked for.
+Item 1 is a correctness defect rather than a faithfulness gap, because a decoder written to Cisco's documented layout misreads nl6's value; it is fixed under nl6#679 as its own wire change.
+Item 2 is the one item that would change what a collector computes.
+Items 2 to 6 are recorded, not filed; each is filed individually when a consumer needs it.
+The Catalyst 9500 host IE caveat above stays open, since the capture is a Catalyst 8000V.
 
 ## 2. Wire format
 

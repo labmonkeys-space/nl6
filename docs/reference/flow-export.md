@@ -121,7 +121,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
 `IPFIXAVCEncoder` emits Cisco AVC (NBAR2) layer-7 flow records: template ID 258 for the data records, plus template ID 259 for an application table carried on the refresh cadence beside the interface option table.
 An AVC record is the plain 54-byte prefix (byte-identical to template 256) followed by a 4-byte `applicationId` and two RFC 7011 §7 variable-length PEN 9 fields: `ciscoHTTPHost` (IE 12235) and `ciscoHTTPURIStatistics` (IE 9357).
 Cisco's 2015 AVC guide quotes these as wire specifiers 45003 and 42125, the same IE ids with the enterprise bit set, not separate identifiers.
-The IE 9357 hit count is encoded big-endian with no trailing delimiter after the URI; Cisco's guide leaves both decisions open, so this is an nl6 decision documented at `uriStatsValue` in `ipfix_avc.go`.
+The IE 9357 hit count is encoded big-endian with no trailing delimiter after the URI; Cisco's guide leaves both decisions open, and both are confirmed by the IOS-XE 26.01.02 reference capture, pinned by `TestCiscoAVCCapture_URIStatisticsLayout`.
+
+The export is **conformant and interop-tested against open decoders**.
+It is not Cisco-faithful: the design spec's evidence rule made that claim conditional on a Cisco document or a capture, and the IOS-XE 26.01.02 reference capture of 2026-09-21 contradicts the encoder on six points, so the claim was withdrawn (nl6#680) and the differences are listed under [Known differences from IOS-XE 26.01.02](#known-differences-from-ios-xe-260102).
 All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`, pinned by `TestIPFIXAVCConstantsMatchEvidence`.
 An AVC device carries both options tables, 257 (interfaces) and 259 (applications), on the same refresh cadence.
 The IPFIX Sequence Number counts Data Records including options records, per RFC 7011 §3.1, the same rule the plain IPFIX encoder follows.
@@ -187,6 +190,23 @@ The largest datagram sits exactly at the configured MTU in every run and nothing
 No shipped catalog entry goes oversized at any legal MTU: the worst case of the longest shipped entry fits the 548-byte payload a 576-byte frame leaves, so the dry render's disable-and-name path is exercised only by the load-time test with a planted 1400-byte URI, not by the shipped data.
 The first capture attempt found a real defect rather than a fragment: a create request naming the type as `cisco_ios` without the `.json` suffix was refused as NBAR2-incapable, because the capability gates run before the name validator and indexed their maps with the raw string; `resourceFileKey` now normalises the lookup for the NBAR2, flow and optical gates, and the example above carries the suffix the API requires.
 
+### Known differences from IOS-XE 26.01.02
+
+A real Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21; the capture, the router's configuration and the files that regenerate it are in `go/nl6/testdata/cisco-avc/capture/`, and `cisco_avc_capture_test.go` decodes the pcap with its own template parser and pins each fact below.
+The design spec's evidence rule (`docs/superpowers/specs/2026-09-18-nbar2-ipfix-l7-export-design.md`, section 1) said a contradicting capture would make the encoder follow or the claim downgrade.
+The claim downgraded (nl6#680): the feature exists so collectors can be tested against layer-7 records at scale, every open decoder tried reads nl6's records correctly, and following would be seven wire changes plus a generation change to transaction-end aging for a fidelity no consumer has asked for.
+The differences are recorded here rather than filed; an item is filed individually when a consumer needs it.
+
+1. **HTTP host (IE 12235) carries a constant prefix.** Every router record starts the field with `03 00 00 50 34 02` (applicationId `http` then sub-application id 0x3402) and then the hostname; a record with no host carries exactly the six bytes. nl6 emits the bare hostname. This is the one correctness item in the list: a decoder written to Cisco's layout misreads nl6's value, and libfds shows `www.example.com` where a real box shows six binary bytes and then the name. Tracked as nl6#679. Pinned by `TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix`.
+2. **The record is a connection record with a different field order.** IOS-XE refuses to bind a monitor that collects URI statistics without `match connection id` (PEN 9 IE 12242, 4 bytes, zero on ICMP) and refuses that without `cache timeout event transaction-end`. The router's template 258 has 17 fields with match fields first, the two variable-length fields before the counters and URI statistics before host; nl6's is the 54-byte unidirectional prefix followed by applicationId, host, URI statistics, with no connection id. This is the one item that would change what a collector computes, since it is a generation model, not an encoding. Pinned by `TestCiscoAVCCapture_DataTemplateFieldOrder`.
+3. **Host and URI appear on ingress records only.** The router puts them on the ingress-direction record of an HTTP request; the reverse-direction record carries the six-byte host prefix and an empty URI field. nl6 puts host and URI on every AVC record. Pinned by `TestCiscoAVCCapture_LayerSevenValuesAreIngressHTTPOnly`.
+4. **URI statistics record the first path segment only.** `/api/v1` arrives as `/api`, `/static/app.js` as `/static`. nl6's shipped catalogs carry multi-segment URIs such as `/api/v1/items`. Pinned by `TestCiscoAVCCapture_URIStatisticsLayout`.
+5. **A real application table is two-thirds engine 13.** The router's table has 1560 rows across engines 1 (127), 3 (748) and 13 (685), and NBAR2 reclassified half the plain HTTP transactions mid-connection to `binary-over-http` (`0x0d0001af`), emitting a second record per request. Every nl6 catalog entry is engine 3 and no engine-13 application exists. Ids the capture sourced: `unknown` `0x0d000001`, `binary-over-http` `0x0d0001af`, `ping` `0x0d0001df`. Pinned by `TestCiscoAVCCapture_OptionsTemplates`.
+6. **The interface option table differs in width, fields and template ids.** The router sends scope ingressInterface, then interfaceName at 33 bytes, interfaceDescription at 65 bytes and egressInterface, under template 256; Cisco numbers the tables 256 interface, 257 application, 258 data. nl6's `if-scoped` shape is 32 and 32 with no egressInterface under 257, and its application table is 259. Pinned by `TestCiscoAVCCapture_OptionsTemplates`.
+
+What the capture confirmed: the IE 9357 layout (URI, NUL, big-endian 2-byte hit count, no trailing delimiter, so `uriStatsValue` reproduces the router's bytes exactly), the application table string lengths of 24 and 55, the engine-3 `http` id `0x03000050`, sequence numbers that count option data records, and a maximum datagram of 1420 bytes with no fragmentation (`TestCiscoAVCCapture_URIStatisticsLayout`, `TestCiscoAVCCapture_OptionsTemplates`, `TestCiscoAVCCapture_MessageShape`).
+The evidence base (`go/nl6/testdata/cisco-avc/NOTES.md`) says which of the remaining facts are Cisco-sourced and which are nl6 decisions; `capture/README.md` says how to regenerate the capture in about five minutes against a vrnetlab-built `cisco_c8000v` image.
+
 ### The catalog
 
 `resources/_common/nbar2.json` is compiled into the binary.
@@ -215,7 +235,7 @@ The first capture attempt found a real defect rather than a fragment: a create r
 ```
 
 Every rule names the file, the entry and the rule when it refuses a load.
-The shipped entries all use engine 3 with the IANA port as selector, which RFC 6759 defines and which needs no Cisco protocol-pack number to verify; Cisco's PANA-L7 selectors are protocol-pack data nl6 has not sourced, so an operator catalog is where they go.
+The shipped entries all use engine 3 with the IANA port as selector, which RFC 6759 defines and which needs no Cisco protocol-pack number to verify; Cisco's PANA-L7 selectors are protocol-pack data; the reference capture sourced three (listed under known differences) and none is shipped, so an operator catalog is where they go.
 A collector's own classification may disagree with `applicationName`; join on the id.
 
 At load, each entry's worst-case record (its longest host and URI) is encoded through the production encoder against an empty datagram at the `-datagram-mtu` payload budget.
