@@ -61,36 +61,6 @@ Every byte arrives as a `\u00XX` escape, and the gate asserts the six-byte host 
 The gate runs in CI beside the SNMPv3 and Pyroscope interop steps.
 It fails rather than skips when docker is missing.
 
-## The veth capture
-
-Loopback has an MTU of 65536, so no Go test can see fragmentation.
-The check that can is a capture on the simulator's own veth, the nl6#488 method.
-
-Taken 2026-09-20 in an Ubuntu 24.04 arm64 VM at commit b32a7a1 (Plan C merge):
-
-- kernel default MTU 1500 on the veth
-- ten `cisco_ios` devices created over REST with `flow: {protocol: "ipfix", nbar2: true}`
-- `-flow-tick-interval 1s` at boot, `active_timeout` 3s and `inactive_timeout` 2s in the REST flow block
-- 45 seconds on `veth-sim-host` with the filter `udp port 4739 or (ip[6:2] & 0x3fff != 0)`
-
-| `-datagram-mtu` | datagrams captured | fragmented | largest IP length | entries disabled at startup |
-|---|---|---|---|---|
-| 1500 (default) | 963 | 0 | 1500 | none |
-| 1000 | 1415 | 0 | 1000 | none |
-| 576 (floor) | 2451 | 0 | 576 | none |
-
-The largest datagram sits exactly at the configured MTU in every run and nothing fragments.
-That is the frame budget doing its job.
-
-The capture predates nl6#679, which added six bytes to every AVC record.
-The frame budget bounds every record at load time and at emit time, so fragmentation cannot appear either way.
-The datagram counts and the largest-length figures are from the older byte stream and are not reproducible against today's encoder.
-
-The first capture attempt found a defect rather than a fragment.
-A create request naming the type as `cisco_ios` without the `.json` suffix was refused as NBAR2-incapable.
-The capability gates ran before the name validator and indexed their maps with the raw string.
-`resourceFileKey` now normalises the lookup for the NBAR2, flow and optical gates.
-
 ## The IOS-XE 26.01.02 reference capture
 
 A real Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21.

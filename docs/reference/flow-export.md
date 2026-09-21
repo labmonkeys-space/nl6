@@ -341,7 +341,6 @@ The remedy is a larger `-datagram-mtu` or shorter hosts and URIs, followed by a 
 
 No shipped entry is disabled at any legal MTU.
 At the 576-byte floor the IPv6 budget is 528 bytes, and every shipped entry fits it.
-A capture on the simulator's own veth at MTU 1500, 1000 and 576 showed zero fragments.
 The disable path is exercised only by a load-time test with a planted 1400-byte URI.
 
 ### Interoperability
