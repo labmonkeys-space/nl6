@@ -147,6 +147,18 @@ func servedStateDigest(rows []servedStateRow) (string, []string) {
 func TestShippedServedStateDigest(t *testing.T) {
 	rows := shippedServedStateRows(t)
 	got, lines := servedStateDigest(rows)
+
+	// The pinned digest must not be the PRE-derivation one. This is what makes
+	// shippedServedStateDigestBeforeDerivation load-bearing rather than a
+	// comment: reverting the derivation and re-pinning — the tempting way out
+	// of a failure here — reproduces the old value and fails this line with a
+	// message saying so, instead of going quietly green.
+	if shippedServedStateDigest == shippedServedStateDigestBeforeDerivation {
+		t.Fatal("the pinned digest equals the pre-derivation one. Either the derivation was " +
+			"reverted and this constant re-pinned to match, or the two constants were edited " +
+			"to agree. The shipped corpus DOES contain 18 admin-down/oper-up rows, so a correct " +
+			"derivation cannot produce the pre-change digest.")
+	}
 	if got != shippedServedStateDigest {
 		t.Errorf("served-state digest = %s, want %s\n"+
 			"%d rows over %d profiles. Re-pin ONLY for an intended wire change, and say which rows moved and why.\n"+
