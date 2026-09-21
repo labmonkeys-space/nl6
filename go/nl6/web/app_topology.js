@@ -47,7 +47,12 @@
 
   // ---- API helpers (reuse the console's apiCall) ----------------------------
 
-  function postOperStatus(ip, ifindex, status) {
+  // postLinkState sets an interface's LINK state. The path is still
+  // /oper-status — it names the leaf the caller is trying to move, not the leaf
+  // it writes — but ifOperStatus is derived from (admin, link), so on an
+  // admin-down interface the request is accepted and its effect is MASKED. The
+  // 202 body carries `masked` for exactly that case.
+  function postLinkState(ip, ifindex, status) {
     return apiCall('/devices/' + ip + '/interfaces/' + ifindex + '/oper-status', {
       method: 'POST',
       body: JSON.stringify({ status: status })
@@ -56,14 +61,12 @@
 
   async function applyOps(ops, label) {
     var results = await Promise.allSettled(ops.map(function (o) {
-      return postOperStatus(o.ip, o.ifindex, o.status);
+      return postLinkState(o.ip, o.ifindex, o.status);
     }));
-    var failed = results.filter(function (r) { return r.status === 'rejected'; }).length;
-    if (failed) {
-      showAlert(label + ': ' + failed + '/' + ops.length + ' operations failed', 'error');
-    } else {
-      showAlert(label + ' (' + ops.length + ' interface' + (ops.length === 1 ? '' : 's') + ')', 'success');
-    }
+    // A masked op must not be reported as a plain success: the follow-up fetch
+    // redraws the edge unchanged, which reads as a broken control.
+    var alert = TopologyLogic.opsAlert(label, TopologyLogic.summariseOps(results));
+    showAlert(alert.message, alert.severity);
     await pollTopology(); // immediate refetch so the canvas reflects the change
   }
 

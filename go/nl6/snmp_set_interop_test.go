@@ -147,6 +147,10 @@ func TestSNMPSetInterop(t *testing.T) {
 			}
 
 			// Success path: 2, then 1, then 3, read back on BOTH columns.
+			//
+			// The fixture's link is up, so the derived ifOperStatus tracks the
+			// admin value on every step here. The asymmetry is exercised by the
+			// scenario-3 case below, where the link is down.
 			for _, v := range []string{"2", "1", "3"} {
 				if out, err := set(ifAdmin3, "i", v); err != nil {
 					t.Fatalf("snmpset ifAdminStatus.3 = %s failed: %v\n%s", v, err, out)
@@ -207,6 +211,75 @@ func TestSNMPSetInterop(t *testing.T) {
 				t.Error("two-binding SET applied its first binding although the second failed")
 			}
 		})
+	}
+}
+
+// TestSNMPSetInteropAdminBounceDoesNotHealTheLink is the external check on
+// nl6#694's headline behaviour: net-snmp's own snmpset and snmpget, over a real
+// UDP socket, must agree that shutting and unshutting a port under
+// `-if-scenario 3` leaves ifOperStatus at down(2).
+//
+// It runs through net-snmp rather than the in-package helpers for the reason
+// the USM interop test exists (nl6#624): an in-package test compares nl6 with
+// itself, and the first run of that one failed all six rows with the package
+// green. Here the risk is narrower but the same in kind — a derivation that is
+// right in the engine and wrong in an encoder would pass every Go test in the
+// package.
+func TestSNMPSetInteropAdminBounceDoesNotHealTheLink(t *testing.T) {
+	if os.Getenv("NL6_SNMP_INTEROP") != "1" {
+		t.Skip("set NL6_SNMP_INTEROP=1 to run the net-snmp interop check")
+	}
+	snmpset, err := exec.LookPath("snmpset")
+	if err != nil {
+		t.Fatalf("NL6_SNMP_INTEROP=1 but snmpset is not on PATH: %v", err)
+	}
+	snmpget, err := exec.LookPath("snmpget")
+	if err != nil {
+		t.Fatalf("NL6_SNMP_INTEROP=1 but snmpget is not on PATH: %v", err)
+	}
+
+	const ifAdmin2 = ".1.3.6.1.2.1.2.2.1.7.2"
+	const ifOper2 = ".1.3.6.1.2.1.2.2.1.8.2"
+
+	withIfScenario(t, IfScenarioAllFailure, 0) // admin up, link down: a cable pull
+	s, _ := newSetTestServer(t, 3)
+	port, stop, _ := interopListener(t, s)
+	defer stop()
+	target := "127.0.0.1:" + strconv.Itoa(port)
+	base := netsnmpArgs("2c", s)
+
+	get := func(oid string) string {
+		out, err := runNetSNMP(t, snmpget, append(append([]string(nil), base...), target, oid)...)
+		if err != nil {
+			t.Fatalf("snmpget %s: %v\n%s", oid, err, out)
+		}
+		return out
+	}
+	set := func(oid, val string) {
+		t.Helper()
+		if out, err := runNetSNMP(t, snmpset,
+			append(append([]string(nil), base...), target, oid, "i", val)...); err != nil {
+			t.Fatalf("snmpset %s = %s: %v\n%s", oid, val, err, out)
+		}
+	}
+
+	if out := get(ifOper2); !strings.Contains(out, "INTEGER: 2") {
+		t.Fatalf("precondition: snmpget ifOperStatus.2 printed %q, want down(2) under scenario 3", out)
+	}
+
+	set(ifAdmin2, "2") // shut
+	if out := get(ifOper2); !strings.Contains(out, "INTEGER: 2") {
+		t.Errorf("after shut, snmpget ifOperStatus.2 printed %q, want 2", out)
+	}
+	set(ifAdmin2, "1") // unshut
+
+	if out := get(ifAdmin2); !strings.Contains(out, "INTEGER: 1") {
+		t.Errorf("after unshut, snmpget ifAdminStatus.2 printed %q, want 1: the SET must still land", out)
+	}
+	if out := get(ifOper2); !strings.Contains(out, "INTEGER: 2") {
+		t.Errorf("after unshut, snmpget ifOperStatus.2 printed %q, want down(2). "+
+			"An administrative bounce must not repair a simulated cable pull — this is the "+
+			"defect nl6#694 was filed on.", out)
 	}
 }
 

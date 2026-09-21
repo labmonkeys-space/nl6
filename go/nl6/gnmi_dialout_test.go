@@ -334,7 +334,7 @@ func TestGnmiDialoutOnChange(t *testing.T) {
 	}
 	// Mutate then broadcast — mirrors the REST/flap caller contract
 	// (SetOperStatus records the change; the caller fans it out).
-	if changed, evt := ic.State().SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(ic.State(), 1, OperDown); changed {
 		ic.State().Broadcast(evt)
 	} else {
 		t.Fatal("SetOperStatus(1, OperDown) reported no change")
@@ -419,7 +419,7 @@ func TestGnmiDialoutOnChangeSubtreePath(t *testing.T) {
 	if ic == nil || ic.State() == nil {
 		t.Fatal("device has no state engine")
 	}
-	if changed, evt := ic.State().SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(ic.State(), 1, OperDown); changed {
 		ic.State().Broadcast(evt)
 	} else {
 		t.Fatal("SetOperStatus reported no change")

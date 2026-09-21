@@ -567,7 +567,11 @@ func TestSetAndRestProduceTheSameEventSequence(t *testing.T) {
 		postInterfaceStatus(t, f, "admin-status", 1, `{"status":"DOWN"}`)
 	})
 
-	want := []key{{1, OperUp, AdminDown, LeafAdminStatus}, {1, OperDown, AdminDown, LeafOperStatus}}
+	// Both events come from ONE compare-and-swap since nl6#694, so both carry
+	// the post-swap derived oper. The predecessor made two swaps and its admin
+	// event reported the pre-cascade oper (UP), which described a state that
+	// no reader could observe by the time the event was delivered.
+	want := []key{{1, OperDown, AdminDown, LeafAdminStatus}, {1, OperDown, AdminDown, LeafOperStatus}}
 	if !reflect.DeepEqual(viaSet, want) {
 		t.Errorf("SET events = %+v, want %+v", viaSet, want)
 	}

@@ -60,7 +60,7 @@ startup rather than ignored.
 
 | Scenario | Name | `ifAdminStatus` | `ifOperStatus` | Use case |
 |----------|------|-----------------|----------------|----------|
-| 1 | all-shutdown | down (2) | down (2) | Planned maintenance, device decommission |
+| 1 | all-shutdown | down (2) | down (2) *(derived)* | Planned maintenance, device decommission |
 | 2 | all-normal *(default)* | as shipped | as shipped | Normal steady-state operations |
 | 3 | all-failure | up (1) | down (2) | Link failures, SFP issues, cable pull |
 | 4 | pct-failure | up (1) | down for n% | Partial outage, staged rollout testing |
@@ -87,28 +87,39 @@ scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the
 rows whose local or remote port it put down.
 `ifAlias` reflects configured intent and stays.
 
-Interfaces that scenario 1 shut down come back the ordinary way: a `SET` of
-`ifAdminStatus` to `up(1)`, or a REST `admin-status` POST, raises oper with
-them through the admin-to-oper cascade.
+Scenario 1 shuts the port and **preserves the link underneath it**.
+`ifOperStatus` is derived from `ifAdminStatus` and the link state, so admin-down
+forces it to `down(2)` while the link keeps whatever the profile declared.
+Interfaces come back the ordinary way — a `SET` of `ifAdminStatus` to `up(1)`,
+or a REST `admin-status` POST — and each one returns to the value its link had
+reached, which for most profiles is up.
 
-Do not pair a non-default scenario with a link-flap scenario.
-The flap scheduler alternates oper down and up per interface and raises oper
-unconditionally, so it takes ownership of every interface it is registered for
-and undoes whatever the seed set.
-Under scenarios 3 and 4 the first up-flap brings the failed interfaces back,
-and the "all-failure" fleet you asked for comes up within one flap interval.
+Scenario 3 seeds the **link** down, which is why it survives an admin bounce.
+Shutting and unshutting a port under `-if-scenario 3` leaves
+`ifOperStatus = 2`: the flag models a cable pull, and an administrative bounce
+does not repair a cable.
+This is the behaviour RFC 2863 describes — admin-up releases `ifOperStatus` to
+the physical layer rather than forcing it up — and it changed in
+[nl6#694](https://github.com/labmonkeys-space/nl6/issues/694), where a bounce
+used to bring the interface back up and erase the fault.
 
-Under scenario 1 it is worse than surprising.
-The admin-to-oper cascade runs on admin changes and is not enforced
-continuously, so a flap raises oper on an interface left admin-down.
-Those interfaces then report `ifAdminStatus = down(2)` with
-`ifOperStatus = up(1)`, which RFC 2863 does not allow.
+**Pairing a non-default scenario with a link-flap scenario now behaves.**
+The flap scheduler moves the **link**, not `ifOperStatus` directly:
 
-The same caveats apply to the REST `oper-status` endpoint, which is the reason
-it exists separately from `admin-status`.
-Deriving oper from admin and a modelled link state, which removes both
-problems, is tracked in
-[nl6#694](https://github.com/labmonkeys-space/nl6/issues/694).
+- Under scenario 1 every flap is **masked**. The link moves beneath the shut
+  port, nothing observable changes, `ifLastChange` does not advance, and no
+  trap, syslog or `ON_CHANGE` update fires. Unshutting a port then shows
+  whatever its link had reached. The fleet can no longer report
+  `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`, which RFC 2863 does
+  not allow — that state is now unrepresentable rather than merely discouraged.
+- Under scenarios 3 and 4 the first up-flap still brings a failed interface
+  back, because those scenarios leave the port administratively up and a flap
+  is a real link event. If you want a fleet that stays down, leave
+  `-if-flap-scenario` at `clean` or use scenario 1.
+
+The REST `oper-status` endpoint sets the link too, so the same masking applies:
+a POST to an admin-down interface is accepted, moves the link, and reports
+`"masked": true` in its `202` body.
 
 The scenario reaches the interfaces the counter engine knows, which are those
 with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.

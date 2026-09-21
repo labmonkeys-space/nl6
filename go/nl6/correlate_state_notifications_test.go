@@ -154,7 +154,7 @@ func TestStateNotify_OperOnlyAndDirection(t *testing.T) {
 	s.SetNotify(func(evt StateChange) { got = append(got, evt) })
 
 	// Oper DOWN → notify fires with the committed (DOWN) value.
-	if changed, evt := s.SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(s, 1, OperDown); changed {
 		s.Broadcast(evt)
 	}
 	if len(got) != 1 || got[0].Oper != OperDown {
@@ -162,24 +162,39 @@ func TestStateNotify_OperOnlyAndDirection(t *testing.T) {
 	}
 
 	// Admin change → Broadcast must NOT fire the hook (admin gated out).
-	if changed, evt := s.SetAdminStatus(1, AdminDown); changed {
+	// The link is already DOWN here, so admin-down moves no derived oper and
+	// the funnel reports the admin leaf alone.
+	for _, evt := range s.ApplyAdminStatus(1, AdminDown) {
 		s.Broadcast(evt)
 	}
 	if len(got) != 1 {
 		t.Fatalf("admin change fired the hook: got %d events, want still 1", len(got))
 	}
 
-	// Oper UP → fires again with Oper=up.
-	if changed, evt := s.SetOperStatus(1, OperUp); changed {
+	// A link move while admin is DOWN is MASKED: stored, but not observable,
+	// so it fires nothing (nl6#694). This is what stops a shut port emitting
+	// linkUp/linkDown telemetry for a cable nobody can use.
+	if res, evt := s.SetLinkState(1, OperUp); res != LinkMovedMasked {
+		t.Fatalf("link UP under admin-down: got %v, want LinkMovedMasked", res)
+	} else {
+		s.Broadcast(evt) // zero event; broadcasting it must stay harmless
+	}
+	if len(got) != 1 {
+		t.Fatalf("a masked link move fired the hook: got %d events, want still 1", len(got))
+	}
+
+	// Raising admin surfaces the link that moved beneath the mask, and THAT
+	// is the oper transition — one fire, with the committed UP value.
+	for _, evt := range s.ApplyAdminStatus(1, AdminUp) {
 		s.Broadcast(evt)
 	}
 	if len(got) != 2 || got[1].Oper != OperUp {
-		t.Fatalf("after oper UP: got %d events (want 2nd with Oper=up)", len(got))
+		t.Fatalf("after admin UP surfaced the link: got %d events (want 2nd with Oper=up)", len(got))
 	}
 
 	// Clearing the hook makes further transitions a no-op.
 	s.SetNotify(nil)
-	if changed, evt := s.SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(s, 1, OperDown); changed {
 		s.Broadcast(evt)
 	}
 	if len(got) != 2 {
@@ -191,7 +206,7 @@ func TestStateNotify_NilSafeBeforeWiring(t *testing.T) {
 	s := NewInterfaceState(2, nil, nil)
 	s.Seed(1, OperUp, AdminUp)
 	// No SetNotify call: a transition before exporter attach must not panic.
-	if changed, evt := s.SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(s, 1, OperDown); changed {
 		s.Broadcast(evt)
 	}
 }
@@ -249,7 +264,7 @@ func TestWireStateNotify_EndToEnd(t *testing.T) {
 	sm.wireStateNotify(device)
 
 	// Drive an oper DOWN transition → expect a link-down trap + syslog.
-	changed, evt := state.SetOperStatus(1, OperDown)
+	changed, evt := setLinkVisible(state, 1, OperDown)
 	if !changed {
 		t.Fatal("oper DOWN did not change state")
 	}
@@ -327,7 +342,7 @@ func buildWired(t *testing.T, withTrap, withSyslog bool) *wiredFixture {
 
 func (fx *wiredFixture) transition(t *testing.T, oper uint8) {
 	t.Helper()
-	if changed, evt := fx.state.SetOperStatus(1, oper); changed {
+	if changed, evt := setLinkVisible(fx.state, 1, oper); changed {
 		fx.state.Broadcast(evt)
 	}
 }
@@ -373,7 +388,7 @@ func TestStateNotify_StoreCommittedBeforeHook(t *testing.T) {
 	s.Seed(1, OperUp, AdminUp)
 	var observed uint8
 	s.SetNotify(func(evt StateChange) { observed = s.OperStatus(1) })
-	if changed, evt := s.SetOperStatus(1, OperDown); changed {
+	if changed, evt := setLinkVisible(s, 1, OperDown); changed {
 		s.Broadcast(evt)
 	}
 	if observed != OperDown {
@@ -427,10 +442,10 @@ func TestStateNotify_ConcurrentRace(t *testing.T) {
 					return
 				default:
 				}
-				if c, e := s.SetOperStatus(ifx, OperDown); c {
+				if c, e := setLinkVisible(s, ifx, OperDown); c {
 					s.Broadcast(e)
 				}
-				if c, e := s.SetOperStatus(ifx, OperUp); c {
+				if c, e := setLinkVisible(s, ifx, OperUp); c {
 					s.Broadcast(e)
 				}
 			}

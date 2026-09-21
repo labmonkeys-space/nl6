@@ -100,9 +100,9 @@ func indexResources(res *DeviceResources) {
 func setOper(d *DeviceSimulator, ifIndex int, up bool) {
 	st := d.metricsCycler.ifCounters.Load().State()
 	if up {
-		st.SetOperStatus(ifIndex, OperUp)
+		setLinkVisible(st, ifIndex, OperUp)
 	} else {
-		st.SetOperStatus(ifIndex, OperDown)
+		setLinkVisible(st, ifIndex, OperDown)
 	}
 }
 

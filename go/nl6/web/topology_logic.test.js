@@ -453,4 +453,64 @@ ok('buildClosFabric: flat /16 — linear map, device set covers endpoints, .x.0/
   assert.ok(lastOctets.includes(255), 'flat /16 should assign a .x.255 host');
 });
 
+// ── masked click-to-flap reporting (nl6#694) ────────────────────────────────
+//
+// The oper-status endpoint sets the LINK state and ifOperStatus is derived from
+// (admin, link), so a click on an interface whose admin-status is down is
+// ACCEPTED, moves the link, and changes nothing the canvas draws — `active` and
+// `downEnd` both derive from oper-status. Reporting that as a plain success is
+// indistinguishable from a broken control.
+
+const settled = (bodies) => bodies.map(b =>
+  b === 'REJECT' ? { status: 'rejected', reason: new Error('boom') }
+                 : { status: 'fulfilled', value: b });
+
+ok('summariseOps counts applied, masked and failed separately', () => {
+  const s = T.summariseOps(settled([
+    { masked: false, link: 'DOWN', oper_status: 'DOWN' },
+    { masked: true, link: 'DOWN', oper_status: 'DOWN' },
+    'REJECT'
+  ]));
+  assert.deepStrictEqual(s, { applied: 1, masked: 1, failed: 1, total: 3 });
+});
+
+ok('summariseOps treats a body without the flag as applied', () => {
+  // A server predating the outcome body must not be read as masking
+  // everything: absence of the flag is not evidence of masking.
+  const s = T.summariseOps(settled([{}, null, { masked: false }]));
+  assert.deepStrictEqual(s, { applied: 3, masked: 0, failed: 0, total: 3 });
+});
+
+ok('summariseOps handles an empty batch', () => {
+  assert.deepStrictEqual(T.summariseOps([]), { applied: 0, masked: 0, failed: 0, total: 0 });
+  assert.deepStrictEqual(T.summariseOps(undefined), { applied: 0, masked: 0, failed: 0, total: 0 });
+});
+
+ok('opsAlert names masking rather than reporting success', () => {
+  const a = T.opsAlert('Downing link', { applied: 0, masked: 1, failed: 0, total: 1 });
+  assert.strictEqual(a.severity, 'warning');
+  assert.ok(/masked by admin-down/.test(a.message), a.message);
+  // The user must be told why the canvas did not move.
+  assert.ok(/unshut/.test(a.message), a.message);
+});
+
+ok('opsAlert reports a mixed batch as both', () => {
+  // Fail a node with 3 links, one of whose interfaces is admin-down.
+  const a = T.opsAlert('Failed device spine1', { applied: 2, masked: 1, failed: 0, total: 3 });
+  assert.strictEqual(a.severity, 'warning');
+  assert.ok(/2 interfaces/.test(a.message), a.message);
+  assert.ok(/1 interface masked/.test(a.message), a.message);
+});
+
+ok('opsAlert keeps success and failure wording', () => {
+  const okAlert = T.opsAlert('Restoring link', { applied: 1, masked: 0, failed: 0, total: 1 });
+  assert.strictEqual(okAlert.severity, 'success');
+  assert.strictEqual(okAlert.message, 'Restoring link (1 interface)');
+  // Failure outranks masking: a batch that both failed and masked reports the
+  // failure, which is the actionable half.
+  const bad = T.opsAlert('Downing link', { applied: 0, masked: 1, failed: 2, total: 3 });
+  assert.strictEqual(bad.severity, 'error');
+  assert.ok(/2\/3 operations failed/.test(bad.message), bad.message);
+});
+
 console.log(`\n${pass} checks passed.`);

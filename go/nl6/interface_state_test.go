@@ -69,7 +69,7 @@ func TestInterfaceState_LastChangeNsAbsolute(t *testing.T) {
 	}
 	// After SetOperStatus, last-change is bootTimeUnixNs + (some small relative ns).
 	beforeNs := uint64(time.Now().UnixNano())
-	changed, _ := s.SetOperStatus(1, OperDown)
+	changed, _ := setLinkVisible(s, 1, OperDown)
 	afterNs := uint64(time.Now().UnixNano())
 	if !changed {
 		t.Fatal("expected changed=true")
@@ -85,7 +85,7 @@ func TestInterfaceState_SetOperStatus_TransitionsAndIdempotence(t *testing.T) {
 	s.Seed(1, OperUp, AdminUp)
 
 	// First transition: UP → DOWN.
-	changed, evt := s.SetOperStatus(1, OperDown)
+	changed, evt := setLinkVisible(s, 1, OperDown)
 	if !changed {
 		t.Fatal("UP→DOWN: expected changed=true")
 	}
@@ -97,7 +97,7 @@ func TestInterfaceState_SetOperStatus_TransitionsAndIdempotence(t *testing.T) {
 	}
 
 	// Idempotent: DOWN → DOWN is a no-op.
-	changed, evt = s.SetOperStatus(1, OperDown)
+	changed, evt = setLinkVisible(s, 1, OperDown)
 	if changed {
 		t.Error("DOWN→DOWN: expected changed=false")
 	}
@@ -106,7 +106,7 @@ func TestInterfaceState_SetOperStatus_TransitionsAndIdempotence(t *testing.T) {
 	}
 
 	// Out-of-range ifIndex is benign.
-	changed, _ = s.SetOperStatus(99, OperDown)
+	changed, _ = setLinkVisible(s, 99, OperDown)
 	if changed {
 		t.Error("out-of-range ifIndex: expected changed=false")
 	}
@@ -116,7 +116,7 @@ func TestInterfaceState_SetAdminStatus_DoesNotTouchOper(t *testing.T) {
 	s := NewInterfaceState(1, nil, nil)
 	s.Seed(1, OperDown, AdminUp)
 
-	changed, evt := s.SetAdminStatus(1, AdminDown)
+	changed, evt := setAdminOne(s, 1, AdminDown)
 	if !changed {
 		t.Fatal("expected changed=true")
 	}
@@ -149,7 +149,7 @@ func TestInterfaceState_ConcurrentCAS_NoLostTransitions(t *testing.T) {
 				if (w+i)&1 == 0 {
 					target = OperDown
 				}
-				if changed, _ := s.SetOperStatus(1, target); changed {
+				if changed, _ := setLinkVisible(s, 1, target); changed {
 					transitions.Add(1)
 				}
 			}
@@ -180,7 +180,7 @@ func TestInterfaceState_Broadcast_DeliversToAllListeners(t *testing.T) {
 	s.AddListener(chA)
 	s.AddListener(chB)
 
-	_, evt := s.SetOperStatus(1, OperDown)
+	_, evt := setLinkVisible(s, 1, OperDown)
 	s.Broadcast(evt)
 
 	select {
@@ -218,10 +218,10 @@ func TestInterfaceState_Broadcast_DropsOldestOnFullChannel(t *testing.T) {
 	s.AddListener(ch)
 
 	// First broadcast fills the channel.
-	_, evt1 := s.SetOperStatus(1, OperDown)
+	_, evt1 := setLinkVisible(s, 1, OperDown)
 	s.Broadcast(evt1)
 	// Second broadcast: channel is full → drop-oldest, then push.
-	_, evt2 := s.SetOperStatus(1, OperUp)
+	_, evt2 := setLinkVisible(s, 1, OperUp)
 	s.Broadcast(evt2)
 
 	// The channel should now hold the SECOND event (oldest was dropped).
@@ -251,7 +251,7 @@ func TestInterfaceState_RemoveListener_StopsDelivery(t *testing.T) {
 	s.AddListener(ch)
 	s.RemoveListener(ch)
 
-	_, evt := s.SetOperStatus(1, OperDown)
+	_, evt := setLinkVisible(s, 1, OperDown)
 	s.Broadcast(evt)
 
 	select {
@@ -268,7 +268,7 @@ func TestInterfaceState_NilCountersTolerated(t *testing.T) {
 	s.Seed(1, OperUp, AdminUp)
 	ch := make(chan StateChange, 16)
 	s.AddListener(ch)
-	_, evt := s.SetOperStatus(1, OperDown)
+	_, evt := setLinkVisible(s, 1, OperDown)
 	s.Broadcast(evt)
 	<-ch // drain
 }
@@ -310,7 +310,7 @@ func TestInterfaceState_Broadcast_ConcurrentProducers(t *testing.T) {
 				if (seed+i)&1 == 0 {
 					target = OperDown
 				}
-				if changed, evt := s.SetOperStatus(1, target); changed {
+				if changed, evt := setLinkVisible(s, 1, target); changed {
 					s.Broadcast(evt)
 				}
 			}

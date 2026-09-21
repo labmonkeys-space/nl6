@@ -178,27 +178,36 @@ func newInterfaceStateWithClock(maxIfIndex int, emitted, dropped *uint64, clock 
 	return s
 }
 
-// Seed initialises a slot with the given oper/admin status and
-// lastChangeNs=0. Rejects out-of-range enum values (0 or > OperLowerLayerDn
-// for oper, 0 or > AdminTesting for admin) — the JSON-validation layer in
+// Seed initialises a slot with the given LINK state and admin-status and
+// lastChangeNs=0. The observable oper-status follows from deriveOper, so a
+// seed of (link=up, admin=down) reads as oper down while preserving that the
+// cable is good — which is what makes "unshut the port and see it come back"
+// work under `-if-scenario 1`.
+//
+// Rejects out-of-range enum values (0 or > OperLowerLayerDn for link, 0 or >
+// AdminTesting for admin) — the JSON-validation layer in
 // `InitIfCountersWithScenario` already filters these, so Seed's rejection
 // is defense-in-depth. Reader-safe via atomic.Store; callers must still
 // ensure publication ordering before exposing the engine to consumers.
-func (s *InterfaceState) Seed(ifIndex int, oper, admin uint8) {
+//
+// A seed is NOT a transition: it stamps lastChangeNs = 0 and broadcasts
+// nothing, so a fleet does not report a transition per interface at boot and
+// fires no Tier C link telemetry for state that never changed.
+func (s *InterfaceState) Seed(ifIndex int, link, admin uint8) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		log.Printf("interface_state: Seed rejected: ifIndex %d out of range [1..%d]", ifIndex, s.maxIfIndex)
 		return
 	}
-	if oper < OperUp || oper > OperLowerLayerDn {
-		log.Printf("interface_state: Seed rejected: ifIndex %d oper=%d outside IF-MIB range [%d..%d]", ifIndex, oper, OperUp, OperLowerLayerDn)
+	if link < OperUp || link > OperLowerLayerDn {
+		log.Printf("interface_state: Seed rejected: ifIndex %d link=%d outside IF-MIB range [%d..%d]", ifIndex, link, OperUp, OperLowerLayerDn)
 		return
 	}
 	if admin < AdminUp || admin > AdminTesting {
 		log.Printf("interface_state: Seed rejected: ifIndex %d admin=%d outside IF-MIB range [%d..%d]", ifIndex, admin, AdminUp, AdminTesting)
 		return
 	}
-	s.slots[slot].Store(packState(oper, admin, 0))
+	s.slots[slot].Store(packState(link, admin, 0))
 }
 
 // StateSnapshot is the atomic (oper, admin, lastChange) tuple
@@ -209,7 +218,13 @@ func (s *InterfaceState) Seed(ifIndex int, oper, admin uint8) {
 // one; consumers wanting "real interface vs ghost" should branch on
 // it rather than inferring from defaulted enum values.
 type StateSnapshot struct {
-	Oper         uint8
+	// Oper is DERIVED from Admin and Link (see deriveOper). It is not stored.
+	Oper uint8
+	// Link is the stored physical-layer reading. Callers that must restore or
+	// compare what was actually stored — notably the REST oper-status
+	// auto-revert — MUST use this, never Oper: reverting to a derived value
+	// writes the mask into the link and destroys the pre-mutation state.
+	Link         uint8
 	Admin        uint8
 	LastChangeNs uint64
 	Found        bool
@@ -229,36 +244,55 @@ func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 	if slot < 0 || slot >= s.maxIfIndex {
 		return StateSnapshot{}
 	}
-	oper, admin, rel := unpackState(s.slots[slot].Load())
-	if oper == 0 {
-		oper = OperUnknown
-	}
-	if admin == 0 {
-		admin = AdminUp
-	}
+	link, admin, rel := unpackState(s.slots[slot].Load())
+	link, admin = normaliseSlot(link, admin)
 	var lc uint64
 	if rel == lastChangeMask {
 		lc = LastChangeRewindSentinel
 	} else {
 		lc = s.bootTimeUnixNs + rel
 	}
-	return StateSnapshot{Oper: oper, Admin: admin, LastChangeNs: lc, Found: true}
+	return StateSnapshot{
+		Oper:         deriveOper(admin, link),
+		Link:         link,
+		Admin:        admin,
+		LastChangeNs: lc,
+		Found:        true,
+	}
 }
 
-// OperStatus returns the current oper-status enum value for ifIndex.
-// Returns OperUnknown if ifIndex is out of range or the slot is
-// uninitialised. Single atomic load, no allocation. For consistent
-// multi-leaf reads see `Snapshot`.
+// LinkState returns the stored physical-layer reading for ifIndex, which is
+// what the flap scheduler and the REST oper-status endpoint mutate. Returns
+// OperUnknown for an out-of-range or unseeded slot, matching OperStatus.
+//
+// This is NOT what SNMP, gNMI or REST report: they report OperStatus, which
+// masks the link under admin-down. A caller wanting the observable value wants
+// OperStatus.
+func (s *InterfaceState) LinkState(ifIndex int) uint8 {
+	slot := ifIndex - 1
+	if slot < 0 || slot >= s.maxIfIndex {
+		return OperUnknown
+	}
+	link, _, _ := unpackState(s.slots[slot].Load())
+	if link == 0 {
+		return OperUnknown
+	}
+	return link
+}
+
+// OperStatus returns the current oper-status enum value for ifIndex — DERIVED
+// from the stored (admin, link) pair per deriveOper, never stored. Returns
+// OperUnknown if ifIndex is out of range or the slot is uninitialised. Single
+// atomic load, no allocation, exactly as before the derivation landed. For
+// consistent multi-leaf reads see `Snapshot`.
 func (s *InterfaceState) OperStatus(ifIndex int) uint8 {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
 		return OperUnknown
 	}
-	oper, _, _ := unpackState(s.slots[slot].Load())
-	if oper == 0 {
-		return OperUnknown
-	}
-	return oper
+	link, admin, _ := unpackState(s.slots[slot].Load())
+	link, admin = normaliseSlot(link, admin)
+	return deriveOper(admin, link)
 }
 
 // AdminStatus returns the current admin-status enum value for ifIndex.
@@ -305,18 +339,40 @@ func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 	return s.bootTimeUnixNs + rel
 }
 
-// SetOperStatus atomically updates oper-status on ifIndex. Returns
-// (false, zero) on three distinct conditions:
-//  1. `ifIndex` is out of range
-//  2. `newVal` is not a valid IF-MIB ifOperStatus enum (1..7)
-//  3. `newVal` is identical to the current value (idempotent no-op)
+// LinkMutation is the outcome of a SetLinkState call. Three outcomes, because
+// the `bool` this replaced conflated two of them: the flap scheduler could not
+// tell "the slot was already at the target" from "the move is masked by
+// admin-down", so its no-op log line named both possibilities and its comment
+// claimed a suppression that did not exist anywhere in the code (nl6#694).
+type LinkMutation uint8
+
+const (
+	// LinkUnchanged: nothing was stored. Out-of-range ifIndex, out-of-range
+	// enum, or the link was already at the requested value.
+	LinkUnchanged LinkMutation = iota
+	// LinkMovedMasked: the link value WAS stored, but the derived oper-status
+	// did not move because admin is down(2) or testing(3). No lastChange
+	// stamp, no event, no notify hook — the device is masking a real change,
+	// exactly as hardware does. Not an anomaly and not worth a log line: at
+	// `-if-flap-scenario aggressive` on a shut fleet that is one line per fire
+	// per interface.
+	LinkMovedMasked
+	// LinkMovedVisible: the link value was stored and the derived oper-status
+	// moved. lastChange is stamped and the returned StateChange must be
+	// broadcast by the caller.
+	LinkMovedVisible
+)
+
+// SetLinkState atomically updates the LINK state on ifIndex — the
+// physical-layer reading, not the observable oper-status, which is derived.
 //
-// Callers that need to distinguish these conditions must validate the
-// inputs upstream — today both production callers (REST handler and
-// flap scheduler) do exactly that. On a real transition, updates
-// lastChangeNs to "now relative to bootTime" and returns (true, evt).
-// The caller is responsible for calling Broadcast(evt) to fan the event
-// out to listeners.
+// This replaced SetOperStatus in nl6#694. A caller wanting "make this interface
+// go down" still calls this; what changed is that the effect is masked while
+// admin is down(2) or testing(3), and the outcome says so rather than the
+// caller having to re-read admin (a second read, at a different instant, whose
+// verdict could disagree with what was stored).
+//
+// On LinkMovedVisible the caller is responsible for calling Broadcast(evt).
 //
 // `s.now()` and `wallRelNs` are sampled INSIDE the CAS loop so that
 // retries on contention record the timestamp of the winning CAS, not
@@ -328,32 +384,47 @@ func (s *InterfaceState) LastChangeNs(ifIndex int) uint64 {
 // and the placement above is unchanged by that: the seam exposes WHICH clock is
 // read, never WHERE it is read. Moving the sample out of the loop would be a
 // behaviour change wearing a refactor's clothes.
-func (s *InterfaceState) SetOperStatus(ifIndex int, newVal uint8) (bool, StateChange) {
+func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation, StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
-		return false, StateChange{}
+		return LinkUnchanged, StateChange{}
 	}
-	if newVal < OperUp || newVal > OperLowerLayerDn {
-		return false, StateChange{}
+	if newLink < OperUp || newLink > OperLowerLayerDn {
+		return LinkUnchanged, StateChange{}
 	}
 	for {
 		cur := s.slots[slot].Load()
-		curOper, curAdmin, _ := unpackState(cur)
-		if curOper == newVal {
-			return false, StateChange{}
+		curLink, curAdmin, curRel := unpackState(cur)
+		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
+		if curLink == newLink {
+			return LinkUnchanged, StateChange{}
 		}
+
+		// The transition that matters is the DERIVED one. RFC 2863 defines
+		// ifLastChange as the time the interface entered its current
+		// OPERATIONAL state, so a link flap on a shut port must not stamp it.
+		wasOper := deriveOper(curAdmin, curLink)
+		nowOper := deriveOper(curAdmin, newLink)
+		if wasOper == nowOper {
+			// Masked: store the link, carry lastChange forward untouched.
+			if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curRel)) {
+				return LinkMovedMasked, StateChange{}
+			}
+			continue
+		}
+
 		nowAbs := s.now()
 		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
-		next := packState(newVal, curAdmin, relNs)
-		if s.slots[slot].CompareAndSwap(cur, next) {
+		if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, relNs)) {
 			// An oper transition changes which lldpRemTable rows are live on
 			// both ends of the link, so invalidate cached LLDP served-OID
-			// sets. Funnelled here (not in Broadcast) so REST, the flap
-			// scheduler, and direct test mutations are all covered.
+			// sets. Only a VISIBLE transition can move a row — a masked flap
+			// changes no LLDP row, so invalidating on it would be pure cost at
+			// fleet scale.
 			invalidateLLDPServedCache()
-			return true, StateChange{
+			return LinkMovedVisible, StateChange{
 				IfIndex:      ifIndex,
-				Oper:         newVal,
+				Oper:         nowOper,
 				Admin:        curAdmin,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
@@ -363,93 +434,138 @@ func (s *InterfaceState) SetOperStatus(ifIndex int, newVal uint8) (bool, StateCh
 	}
 }
 
-// SetAdminStatus atomically updates admin-status on ifIndex. Same
-// semantics as SetOperStatus, including the three-condition `(false,
-// zero)` return and the inside-the-loop timestamp sampling.
-func (s *InterfaceState) SetAdminStatus(ifIndex int, newVal uint8) (bool, StateChange) {
+// setAdminLeaf atomically updates admin-status on ifIndex and reports the
+// events the single CAS implies: the admin leaf whenever it moved, and the
+// derived oper-status whenever the move changed it.
+//
+// UNEXPORTED DELIBERATELY. ApplyAdminStatus is the funnel, and the funnel's
+// whole value is that SNMP SET, the REST POST and the auto-revert are
+// indistinguishable to every observer. An exported second door let a caller
+// move admin without that guarantee; before nl6#684 exactly that happened and
+// an admin-down over REST fired no link trap.
+//
+// ONE CAS, not two. With oper derived there is nothing to store for it, and a
+// second CAS would open a window in which a concurrent link mutation is
+// attributed to the admin change.
+func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
-		return false, StateChange{}
+		return nil
 	}
 	if newVal < AdminUp || newVal > AdminTesting {
-		return false, StateChange{}
+		return nil
 	}
 	for {
 		cur := s.slots[slot].Load()
-		curOper, curAdmin, _ := unpackState(cur)
+		curLink, curAdmin, curRel := unpackState(cur)
+		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
 		if curAdmin == newVal {
-			return false, StateChange{}
+			return nil
 		}
-		nowAbs := s.now()
-		relNs := wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
-		next := packState(curOper, newVal, relNs)
-		if s.slots[slot].CompareAndSwap(cur, next) {
-			return true, StateChange{
+
+		wasOper := deriveOper(curAdmin, curLink)
+		nowOper := deriveOper(newVal, curLink)
+		operMoved := wasOper != nowOper
+
+		// lastChange keys on the DERIVED transition, so an admin change that
+		// leaves the operational state where it was (admin up -> down over an
+		// already-down link) does not stamp it.
+		relNs, nowAbs := curRel, s.now()
+		if operMoved {
+			relNs = wallRelNs(uint64(nowAbs.UnixNano()), s.bootTimeUnixNs)
+		}
+		if !s.slots[slot].CompareAndSwap(cur, packState(curLink, newVal, relNs)) {
+			continue
+		}
+
+		evts := []StateChange{{
+			IfIndex:      ifIndex,
+			Oper:         nowOper,
+			Admin:        newVal,
+			LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+			Changed:      LeafAdminStatus,
+			At:           nowAbs,
+		}}
+		if operMoved {
+			invalidateLLDPServedCache()
+			evts = append(evts, StateChange{
 				IfIndex:      ifIndex,
-				Oper:         curOper,
+				Oper:         nowOper,
 				Admin:        newVal,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
-				Changed:      LeafAdminStatus,
+				Changed:      LeafOperStatus,
 				At:           nowAbs,
-			}
+			})
 		}
+		return evts
 	}
 }
 
-// adminCascadeOper is the RFC 2863 rule an admin-status value implies for
-// oper-status: "If ifAdminStatus is down(2) then ifOperStatus should be
-// down(2). If ifAdminStatus is changed to up(1) then ifOperStatus should
-// change to up(1) if the interface is ready to transmit and receive network
-// traffic" — a simulated interface always is — and testing(3) means "no
-// operational packets can be passed", which is oper testing(3).
-func adminCascadeOper(admin uint8) uint8 {
+// deriveOper is THE rule, and the only place it is written. Every accessor
+// routes through it; no read site computes oper-status by other means.
+//
+// RFC 2863's ifOperStatus DESCRIPTION, from the extract checked in at
+// testdata/rfc/rfc2863-if-status-objects.txt rather than recalled:
+//
+//	"If ifAdminStatus is down(2) then ifOperStatus should be down(2).  If
+//	 ifAdminStatus is changed to up(1) then ifOperStatus should change to
+//	 up(1) if the interface is ready to transmit and receive network
+//	 traffic; [...] it should remain in the down(2) state if and only if
+//	 there is a fault that prevents it from going to the up(1) state"
+//
+// THE RULE IS ASYMMETRIC AND THE ASYMMETRY IS THE WHOLE MODEL. admin-down
+// FORCES oper-down. admin-up FORCES NOTHING: it releases oper to the physical
+// layer, which may still be faulted. The predecessor of this function
+// (adminCascadeOper, nl6#684) was a total function of admin alone — it modelled
+// the first half and inverted the second, which is why an admin bounce used to
+// repair a simulated cable pull (nl6#694).
+//
+// testing(3) is forced likewise: the MIB defines it as "no operational packets
+// can be passed", which is a property of the device's intent, not the cable.
+//
+// `link` carries the physical-layer reading and may be any ifOperStatus enum
+// value; the engine never assigns lowerLayerDown(7) itself (deriving it from
+// the LLDP peer graph is deliberately out of scope), but it stores and derives
+// it through unchanged if something else sets it.
+func deriveOper(admin, link uint8) uint8 {
 	switch admin {
-	case AdminUp:
-		return OperUp
 	case AdminDown:
 		return OperDown
 	case AdminTesting:
 		return OperTesting
 	}
-	return 0
+	return link
 }
 
 // ApplyAdminStatus is THE funnel for every source that changes admin-status:
 // the REST admin-status POST, its auto-revert, and SNMP SET (add-snmp-set). It
-// sets the admin leaf and then cascades the oper leaf per adminCascadeOper, and
-// returns the StateChange for each leaf that actually moved, admin first.
+// returns the StateChange for each leaf that moved, admin first.
 //
 // The caller broadcasts the returned events (the mutators never do, by the
 // engine's existing design), so an ON_CHANGE listener sees admin then oper and
 // the Tier C notify hook fires once, on the oper event, exactly as it does for
 // the flap scheduler.
 //
-// The cascade is applied to the oper leaf EVEN WHEN the admin leaf was already
-// at target: an interface at admin down whose oper the flap scheduler raised
-// is put back to oper down, because RFC 2863's rule is about the state, not
-// about the transition. A leaf already at its target yields no event and no
-// lastChange update, so applying the current value is a no-op end to end.
+// IT NO LONGER CASCADES, and that is the point of nl6#694. It writes the admin
+// leaf; oper follows by derivation, asymmetrically (see deriveOper). Three
+// observable consequences, each of which a reviewer should look for:
 //
-// Before this funnel existed SetAdminStatus preserved oper verbatim and only
-// the REST handler called it, so an admin-down over REST fired no link trap;
-// the issue that introduced SET (nl6#684) assumed the cascade existed. The
-// primitive mutators are deliberately unchanged: SetAdminStatus still moves
-// ONE leaf, so the per-leaf idempotence contract stays exact.
+//   - admin up(1) over a DOWN link returns ONE event, for the admin leaf. It
+//     does not raise oper, so an admin bounce no longer repairs a simulated
+//     cable pull. This is the defect nl6#694 was filed on.
+//   - admin down(2) over an already-down link likewise returns ONE event, and
+//     does NOT stamp ifLastChange: the operational state did not change, and
+//     RFC 2863 defines that leaf as the time the interface entered its current
+//     operational state.
+//   - the predecessor applied the cascade EVEN WHEN admin was already at
+//     target, to put back an oper the flap scheduler had raised on a shut
+//     port. That repair is now structural — the flap scheduler mutates the
+//     link, and admin-down masks it — so there is nothing to put back.
 //
 // An out-of-range ifIndex or a target outside AdminUp..AdminTesting returns
-// nil, matching the mutators' three-condition zero return.
+// nil, matching the mutators' zero return.
 func (s *InterfaceState) ApplyAdminStatus(ifIndex int, target uint8) []StateChange {
-	if target < AdminUp || target > AdminTesting {
-		return nil
-	}
-	var evts []StateChange
-	if changed, evt := s.SetAdminStatus(ifIndex, target); changed {
-		evts = append(evts, evt)
-	}
-	if changed, evt := s.SetOperStatus(ifIndex, adminCascadeOper(target)); changed {
-		evts = append(evts, evt)
-	}
-	return evts
+	return s.setAdminLeaf(ifIndex, target)
 }
 
 // AddListener registers a channel for state-change events. The channel
@@ -529,6 +645,16 @@ func (s *InterfaceState) SetNotify(fn func(StateChange)) {
 // listener — i.e. one bad subscriber never silences the rest. Callers
 // that repeatedly trigger this should be audited.
 func (s *InterfaceState) Broadcast(evt StateChange) {
+	// An event naming no leaf describes nothing, and the zero StateChange
+	// carries IfIndex 0 — a gNMI subscriber handed one would encode an update
+	// for an interface that does not exist. The mutators return it on every
+	// non-transition, including the LinkMovedMasked outcome, so a caller that
+	// broadcasts unconditionally is a mistake this must absorb rather than
+	// propagate. Production callers already gate on the outcome; this makes
+	// the gate an invariant of the API instead of a convention.
+	if evt.Changed == 0 {
+		return
+	}
 	s.listeners.Range(func(key, _ any) bool {
 		ch, ok := key.(chan StateChange)
 		if !ok {
@@ -592,31 +718,38 @@ func (s *InterfaceState) incDropped() {
 //
 // Slot layout (LSB-first):
 //
-//	[0..2]  oper-status   (3 bits, max 7 — covers IF-MIB ifOperStatus 1..7)
+//	[0..2]  link state    (3 bits, max 7 — the IF-MIB ifOperStatus enum, 1..7)
 //	[3..5]  admin-status  (3 bits, max 7 — only 1..3 used by IF-MIB)
 //	[6..63] lastChangeNs  (58 bits, max ~9.13 years)
+//
+// The low three bits held oper-status until nl6#694. They hold the LINK state
+// now and oper-status is derived (see deriveOper) — same three bits, same word,
+// same single-Load read, layout guard untouched. Adding a fourth field would
+// have cost lastChange 3 of its 58 bits (~9.13 years down to ~1.14) AND created
+// a second source of truth for a value that is a pure function of the other
+// two, which is the bug class nl6#694 exists to remove.
 const (
-	_operWidth   = 3
+	_linkWidth   = 3
 	_adminWidth  = 3
 	_lastChWidth = 58
 
-	adminStatusShift = _operWidth
-	lastChangeShift  = _operWidth + _adminWidth
+	adminStatusShift = _linkWidth
+	lastChangeShift  = _linkWidth + _adminWidth
 
 	// Masks derived from widths so any change to a width
 	// automatically resizes the corresponding mask — fixes the
 	// previous independent-constant drift hazard surfaced in chunk A
 	// review.
-	operStatusMask  uint64 = (1 << _operWidth) - 1
+	linkStateMask   uint64 = (1 << _linkWidth) - 1
 	adminStatusMask uint64 = (1 << _adminWidth) - 1
 	lastChangeMask  uint64 = (1 << _lastChWidth) - 1
 
 	// _layoutGuard is a compile-time guard that the three field
 	// widths fit in a uint64 with the documented packing
-	// (operWidth + adminWidth + lastChWidth == 64). If any width
+	// (linkWidth + adminWidth + lastChWidth == 64). If any width
 	// changes without rebalancing the others, the array index goes
 	// negative and the package fails to compile.
-	_layoutGuard = 64 - _operWidth - _adminWidth - _lastChWidth
+	_layoutGuard = 64 - _linkWidth - _adminWidth - _lastChWidth
 )
 
 var _ = [1]struct{}{}[_layoutGuard] // compile error if layout invariant breaks
@@ -642,7 +775,7 @@ func wallRelNs(nowWallNs, bootWallNs uint64) uint64 {
 
 // lastChangeAbs reconstructs the absolute Unix-nanosecond timestamp
 // from a stored relNs, with the rewind sentinel pass-through. Used by
-// SetOperStatus/SetAdminStatus to populate StateChange.LastChangeNs.
+// SetLinkState/setAdminLeaf to populate StateChange.LastChangeNs.
 func lastChangeAbs(bootTimeUnixNs, relNs uint64) uint64 {
 	if relNs == lastChangeMask {
 		return LastChangeRewindSentinel
@@ -650,15 +783,29 @@ func lastChangeAbs(bootTimeUnixNs, relNs uint64) uint64 {
 	return bootTimeUnixNs + relNs
 }
 
-func packState(oper, admin uint8, lastChangeNs uint64) uint64 {
-	return uint64(oper)&operStatusMask |
+func packState(link, admin uint8, lastChangeNs uint64) uint64 {
+	return uint64(link)&linkStateMask |
 		(uint64(admin)&adminStatusMask)<<adminStatusShift |
 		((lastChangeNs & lastChangeMask) << lastChangeShift)
 }
 
-func unpackState(w uint64) (oper, admin uint8, lastChangeNs uint64) {
-	oper = uint8(w & operStatusMask)
+func unpackState(w uint64) (link, admin uint8, lastChangeNs uint64) {
+	link = uint8(w & linkStateMask)
 	admin = uint8((w >> adminStatusShift) & adminStatusMask)
 	lastChangeNs = (w >> lastChangeShift) & lastChangeMask
 	return
+}
+
+// normaliseSlot applies the defaults an unseeded slot reads as, so every
+// accessor and every mutator agrees on what a zero word means. Extracted
+// because three call sites open-coded it and a fourth (the derivation) would
+// have made a divergence invisible.
+func normaliseSlot(link, admin uint8) (uint8, uint8) {
+	if link == 0 {
+		link = OperUnknown
+	}
+	if admin == 0 {
+		admin = AdminUp
+	}
+	return link, admin
 }

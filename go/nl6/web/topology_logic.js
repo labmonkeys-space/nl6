@@ -588,7 +588,53 @@
     return batches;
   }
 
+  // summariseOps folds the settled results of a click-to-flap batch into
+  // applied / masked / failed counts.
+  //
+  // MASKED IS NOT SUCCESS AND NOT FAILURE. The oper-status endpoint sets the
+  // interface's LINK state, and ifOperStatus is derived from (admin, link): on
+  // an interface whose admin-status is down, the request is accepted, the link
+  // moves, and the observable oper-status does not. The canvas colours edges
+  // from `active`/`downEnd`, which derive from oper-status, so the follow-up
+  // fetch redraws identically — a masked click otherwise looks exactly like a
+  // broken control.
+  //
+  // The masked flag is read from the POST's own 202 body rather than from a
+  // second request or a graph-payload field, so the report cannot disagree with
+  // the mutation it describes. `results` is what Promise.allSettled produces
+  // over apiCall, whose fulfilled value is the parsed response body. Pure.
+  function summariseOps(results) {
+    var applied = 0, masked = 0, failed = 0;
+    (results || []).forEach(function (r) {
+      if (!r || r.status === 'rejected') { failed++; return; }
+      var body = r.value;
+      // A server that predates the outcome body (or any non-object value)
+      // counts as applied: absence of the flag is not evidence of masking.
+      if (body && typeof body === 'object' && body.masked === true) { masked++; return; }
+      applied++;
+    });
+    return { applied: applied, masked: masked, failed: failed, total: applied + masked + failed };
+  }
+
+  // opsAlert renders summariseOps output as (message, severity) for showAlert.
+  // Split from the DOM so the wording is testable. Pure.
+  function opsAlert(label, summary) {
+    function ifaces(n) { return n + ' interface' + (n === 1 ? '' : 's'); }
+    if (summary.failed) {
+      return { message: label + ': ' + summary.failed + '/' + summary.total + ' operations failed', severity: 'error' };
+    }
+    if (summary.masked) {
+      var msg = label + ': ' + ifaces(summary.masked) + ' masked by admin-down' +
+        ' (accepted, link moved, no visible change until the port is unshut)';
+      if (summary.applied) { msg = label + ' (' + ifaces(summary.applied) + '); ' + msg.slice(label.length + 2); }
+      return { message: msg, severity: 'warning' };
+    }
+    return { message: label + ' (' + ifaces(summary.applied) + ')', severity: 'success' };
+  }
+
   return {
+    summariseOps: summariseOps,
+    opsAlert: opsAlert,
     CLOS_MAX_K: CLOS_MAX_K,
     closKError: closKError,
     closSubnetError: closSubnetError,

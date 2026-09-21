@@ -54,7 +54,7 @@ func TestInterfaceStateClockDefaultsToWallClock(t *testing.T) {
 		t.Errorf("boot time %d is outside [%d, %d]: the default clock is not the wall clock",
 			s.bootTimeUnixNs, before, after)
 	}
-	if ok, _ := s.SetOperStatus(1, OperDown); !ok {
+	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("SetOperStatus did not apply")
 	}
 	if lc := s.LastChangeNs(1); lc < before {
@@ -84,7 +84,7 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 	// time.Now() was then detected by nothing: verified by mutation, not assumed.
 	var prev uint64
 	for i, want := range []uint8{OperDown, OperUp, OperDown} {
-		if ok, _ := s.SetOperStatus(1, want); !ok {
+		if ok, _ := setLinkVisible(s, 1, want); !ok {
 			t.Fatalf("transition %d did not apply", i)
 		}
 		lc := s.LastChangeNs(1)
@@ -111,7 +111,7 @@ func TestInterfaceStateInjectedClockIsUsedEverywhere(t *testing.T) {
 
 	// SetAdminStatus on its own interface, so the assertion is about that
 	// setter's clock read and nothing else.
-	if ok, _ := s.SetAdminStatus(2, AdminDown); !ok {
+	if ok, _ := setAdminOne(s, 2, AdminDown); !ok {
 		t.Fatal("admin transition did not apply")
 	}
 	adminLC := s.LastChangeNs(2)
@@ -137,7 +137,7 @@ func TestInterfaceStateInjectedClockCanStepBackwards(t *testing.T) {
 
 	// Step the clock behind the engine's boot time, as an NTP step would.
 	reading.Store(1_000_000_000)
-	if ok, _ := s.SetOperStatus(1, OperDown); !ok {
+	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("SetOperStatus did not apply")
 	}
 	if lc := s.LastChangeNs(1); lc != LastChangeRewindSentinel {
@@ -162,11 +162,11 @@ func TestInterfaceStateEqualClockReadingsAreNotADecrease(t *testing.T) {
 	untouched := s.LastChangeNs(1)
 	reading = time.Unix(0, 9_000_000_000) // frozen, but past boot
 
-	if ok, _ := s.SetOperStatus(1, OperDown); !ok {
+	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("first transition did not apply")
 	}
 	first := s.LastChangeNs(1)
-	if ok, _ := s.SetOperStatus(1, OperUp); !ok {
+	if ok, _ := setLinkVisible(s, 1, OperUp); !ok {
 		t.Fatal("second transition did not apply")
 	}
 	second := s.LastChangeNs(1)
@@ -221,7 +221,7 @@ func TestInterfaceStateClockSampleStaysInsideTheCASLoop(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					s.SetOperStatus(1, want)
+					setLinkVisible(s, 1, want)
 				}
 			}
 		}(w)
@@ -270,7 +270,7 @@ func TestInterfaceStateSnapshotAgreesWithLastChangeNs(t *testing.T) {
 	s := newInterfaceStateWithClock(2, nil, nil, func() time.Time {
 		return time.Unix(0, tick.Add(injectedTickNs))
 	})
-	if ok, _ := s.SetOperStatus(1, OperDown); !ok {
+	if ok, _ := setLinkVisible(s, 1, OperDown); !ok {
 		t.Fatal("transition did not apply")
 	}
 	if snap := s.Snapshot(1); snap.LastChangeNs != s.LastChangeNs(1) {
@@ -287,7 +287,7 @@ func TestInterfaceStateSnapshotAgreesWithLastChangeNs(t *testing.T) {
 		return time.Unix(0, reading.Load())
 	})
 	reading.Store(1_000_000_000) // steps behind boot
-	if ok, _ := back.SetOperStatus(1, OperDown); !ok {
+	if ok, _ := setLinkVisible(back, 1, OperDown); !ok {
 		t.Fatal("rewind transition did not apply")
 	}
 	if snap := back.Snapshot(1); snap.LastChangeNs != LastChangeRewindSentinel {
@@ -308,7 +308,7 @@ func TestInterfaceStateSetterReturnsTheSameClockReading(t *testing.T) {
 		return time.Unix(0, tick.Add(injectedTickNs))
 	})
 
-	ok, ev := s.SetOperStatus(1, OperDown)
+	ok, ev := setLinkVisible(s, 1, OperDown)
 	if !ok {
 		t.Fatal("transition did not apply")
 	}

@@ -427,7 +427,7 @@ func (s *FlapScheduler) Run(ctx context.Context) {
 		s.byKey[key] = next
 		s.mu.Unlock()
 
-		// Fire outside the lock. SetOperStatus is idempotent; if a REST
+		// Fire outside the lock. SetLinkState is idempotent; if a REST
 		// POST flipped the interface to the action's target state
 		// between schedule and fire, the mutator no-ops and the
 		// scheduler self-corrects on the counterpart.
@@ -450,19 +450,31 @@ func (s *FlapScheduler) fireWithRecover(state *InterfaceState, ifIndex int, targ
 	if state == nil {
 		return
 	}
-	changed, evt := state.SetOperStatus(ifIndex, target)
-	if changed {
+	// The scheduler flaps the LINK, never oper-status directly. It needs no
+	// admin guard of its own: an admin-down interface is protected by the
+	// derivation, so a flap beneath a shut port moves real state that becomes
+	// visible the moment admin comes up — which is what the hardware does.
+	switch res, evt := state.SetLinkState(ifIndex, target); res {
+	case LinkMovedVisible:
 		state.Broadcast(evt)
-		return
+	case LinkMovedMasked:
+		// The link moved; admin-down or admin-testing masks it. Designed
+		// behaviour, NOT an anomaly — deliberately unlogged. Under
+		// `-if-scenario 1 -if-flap-scenario aggressive` every fire on the
+		// fleet is masked, so a log line here is ~30k lines a minute
+		// describing the feature working.
+	case LinkUnchanged:
+		// The slot is already at `target` — a REST POST flipped it between
+		// schedule and fire. The counterpart event was already scheduled
+		// before the fire; the scheduler keeps cycling and self-corrects on
+		// the next genuine transition. Logged because a silent no-op here is
+		// a debugging trap if a real coverage gap shows up at scale, and
+		// because this is now the ONLY thing that reaches this branch: before
+		// nl6#694 it also absorbed every masked fire, which is why its
+		// message had to name two causes and why one of the two ("admin-down
+		// suppression") described a guard that did not exist.
+		log.Printf("flap scheduler: fire was a no-op for %s ifIndex=%d target=%d (link already at target — REST race)", deviceIP, ifIndex, target)
 	}
-	// changed=false means the slot is already in `target` (e.g., REST
-	// POST flipped it between schedule and fire, or an admin-down
-	// override means oper transitions are being suppressed). The next
-	// counterpart event was already scheduled before fire; the scheduler
-	// will keep cycling and the state machine self-corrects on the next
-	// genuine transition. Log once for visibility — silent no-ops are a
-	// debugging trap if a real coverage gap shows up at scale.
-	log.Printf("flap scheduler: fire was a no-op for %s ifIndex=%d target=%d (state already at target — REST race or admin-down suppression)", deviceIP, ifIndex, target)
 }
 
 // pendingCountForTest returns the number of scheduled entries.

@@ -198,23 +198,68 @@ func (rt *revertTimer) closeStop() {
 // 24h max revertAfter (parseStateChangeRequest) bounds the worst case.
 // On-demand HTTP fires bypass the flap scheduler's global cap, matching
 // trap/syslog convention for test-harness use.
-func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper bool, target uint8, revertAfter time.Duration) error {
+// stateChangeOutcome is the 202 body. It exists because the oper-status POST
+// can now be ACCEPTED AND MASKED: on an admin-down interface the link moves and
+// the observable oper-status does not. A 202 with an empty body whose read-back
+// does not move is indistinguishable from the accepted-echoed-ignored family
+// (nl6#445), so the response states the outcome rather than leaving the caller
+// to infer it from a later read that shows nothing.
+type stateChangeOutcome struct {
+	// Link is the stored physical-layer state after the request.
+	Link string `json:"link"`
+	// OperStatus is what SNMP, gNMI and REST will now report.
+	OperStatus string `json:"oper_status"`
+	// AdminStatus is the administrative state doing the masking, if any.
+	AdminStatus string `json:"admin_status"`
+	// Masked is true when the request was applied to the link but the
+	// observable oper-status did not move, because admin is down or testing.
+	//
+	// It is the mutator's verdict, not a comparison of the reported link and
+	// oper-status: those can be equal while the request was still masked (a
+	// POST of DOWN on an admin-down interface whose link was up moves the link
+	// and fires nothing, yet leaves both reading DOWN).
+	Masked bool `json:"masked"`
+}
+
+// ifStatusName renders an IF-MIB status enum for the REST surface. Unknown
+// values render numerically rather than being coerced, so a bug is visible.
+func ifStatusName(v uint8) string {
+	switch v {
+	case OperUp:
+		return "UP"
+	case OperDown:
+		return "DOWN"
+	case OperTesting:
+		return "TESTING"
+	case OperUnknown:
+		return "UNKNOWN"
+	case OperDormant:
+		return "DORMANT"
+	case OperNotPresent:
+		return "NOT_PRESENT"
+	case OperLowerLayerDn:
+		return "LOWER_LAYER_DOWN"
+	}
+	return strconv.Itoa(int(v))
+}
+
+func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper bool, target uint8, revertAfter time.Duration) (stateChangeOutcome, error) {
 	// Use the manager's IP-keyed device lookup (existing helper) rather
 	// than a linear scan over `sm.devices`. At 30k devices the linear
 	// scan was O(N) per request with a string allocation per entry.
 	device := sm.FindDeviceByIP(ip)
 	if device == nil {
-		return ErrIfStateDeviceNotFound
+		return stateChangeOutcome{}, ErrIfStateDeviceNotFound
 	}
 	sm.mu.RLock()
 	mc := device.metricsCycler
 	sm.mu.RUnlock()
 	if mc == nil {
-		return fmt.Errorf("device %s has no metrics cycler", ip)
+		return stateChangeOutcome{}, fmt.Errorf("device %s has no metrics cycler", ip)
 	}
 	ic := mc.ifCounters.Load()
 	if ic == nil || ic.State() == nil {
-		return fmt.Errorf("device %s has no interface state engine", ip)
+		return stateChangeOutcome{}, fmt.Errorf("device %s has no interface state engine", ip)
 	}
 	state := ic.State()
 
@@ -225,7 +270,7 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 	if !containsInt(known, ifIndex) {
 		valid := append([]int(nil), known...)
 		sort.Ints(valid)
-		return &ErrIfStateIfIndexInvalid{IfIndex: ifIndex, Valid: valid}
+		return stateChangeOutcome{}, &ErrIfStateIfIndexInvalid{IfIndex: ifIndex, Valid: valid}
 	}
 
 	// Snapshot the pre-mutation tuple atomically. Using the
@@ -235,16 +280,22 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 	snap := state.Snapshot(ifIndex)
 	var preSnap uint8
 	if isOper {
-		preSnap = snap.Oper
+		// THE LINK, NOT THE DERIVED OPER. The auto-revert restores this value,
+		// and oper is a function of (admin, link): reverting to the derived
+		// value would write the mask into the link, so a masked POST's revert
+		// would destroy the pre-POST link state instead of restoring it
+		// (nl6#694).
+		preSnap = snap.Link
 	} else {
 		preSnap = snap.Admin
 	}
 
-	// Oper is a single-leaf mutation. Admin goes through the engine's funnel so
-	// oper follows per RFC 2863 (add-snmp-set); the funnel returns one event per
-	// leaf that moved and the caller broadcasts each, admin first.
+	// The oper-status endpoint sets the LINK; the observable oper-status
+	// follows by derivation and may be masked by admin. Admin goes through the
+	// engine's funnel, which returns one event per leaf that moved and leaves
+	// the broadcast to us, admin first.
 	if isOper {
-		if changed, evt := state.SetOperStatus(ifIndex, target); changed {
+		if res, evt := state.SetLinkState(ifIndex, target); res == LinkMovedVisible {
 			state.Broadcast(evt)
 		}
 	} else {
@@ -253,12 +304,40 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		}
 	}
 
+	// Read the post-mutation tuple from ONE Load so the reported link,
+	// oper and admin cannot disagree with each other. It may already
+	// reflect a concurrent flap; that is the true current state, which is
+	// what the caller asked to be told.
+	post := state.Snapshot(ifIndex)
+	outcome := stateChangeOutcome{
+		Link:        ifStatusName(post.Link),
+		OperStatus:  ifStatusName(post.Oper),
+		AdminStatus: ifStatusName(post.Admin),
+		// MASKED IS A PROPERTY OF THE INTERFACE, NOT OF THIS REQUEST'S
+		// OUTCOME. Two tempting definitions are both wrong, each in a case the
+		// other gets right:
+		//
+		//   - `res == LinkMovedMasked` misses an already-at-target request.
+		//     Admin down, link already up, POST UP: nothing is stored, nothing
+		//     fires, and the read still shows DOWN — the caller must be told.
+		//   - `post.Oper != post.Link` misses a move whose values coincide.
+		//     Admin down, link up, POST DOWN: the link moves, nothing fires,
+		//     and oper == link == DOWN — which reads as "applied normally".
+		//
+		// What the caller actually needs to know is whether the link they now
+		// hold is authoritative for what collectors see. It is not, for as long
+		// as admin is down or testing: no link trap, no syslog and no ON_CHANGE
+		// will fire from this leaf, and `ifLastChange` will not move, whatever
+		// the link does. That is exactly `admin != up`.
+		Masked: isOper && post.Admin != AdminUp,
+	}
+
 	if revertAfter > 0 {
 		if err := sm.scheduleAutoRevert(ip, ifIndex, isOper, preSnap, revertAfter, state); err != nil {
-			return err
+			return outcome, err
 		}
 	}
-	return nil
+	return outcome, nil
 }
 
 // revertCounterFor returns the per-device atomic counter for in-flight
@@ -354,7 +433,10 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 		// oper follows the RESTORED admin value rather than staying where the
 		// cascade (or a flap in between) left it.
 		if isOper {
-			if c, e := state.SetOperStatus(ifIndex, revertTo); c {
+			// revertTo is the LINK value captured at POST time (see
+			// mutateInterfaceState), so this restores what was found rather
+			// than what was observable.
+			if res, e := state.SetLinkState(ifIndex, revertTo); res == LinkMovedVisible {
 				state.Broadcast(e)
 			}
 		} else {
@@ -388,7 +470,8 @@ func (sm *SimulatorManager) cancelAutoRevertsForDevice(ip string) {
 		if rt, ok := v.(*revertTimer); ok {
 			rt.timer.Stop()
 			// Pre-empt the goroutine's mutation; the goroutine's CAS
-			// will then fail and skip SetOperStatus.
+			// will then fail and skip the SetLinkState /
+			// ApplyAdminStatus call.
 			rt.done.Store(true)
 			rt.closeStop()
 			// Use CompareAndDelete so a NEW timer that the goroutine's
@@ -487,8 +570,25 @@ func containsInt(s []int, v int) bool {
 
 // setOperStatusHandler implements POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status.
 // Body: {"status":"UP"|"DOWN"|"TESTING", "duration":"<go-duration>"?}.
-// Returns 202 Accepted with {} on success. 404 for unknown device,
-// 400 for unknown ifIndex / malformed body / unsupported status,
+//
+// IT SETS THE LINK STATE. ifOperStatus is derived from (admin, link), so on an
+// interface whose admin-status is down or testing the request is ACCEPTED and
+// MASKED: the link moves, the observable oper-status does not, and raising
+// admin later surfaces the stored link with no further request. The 202 body
+// reports `masked: true` for that case — a caller must never have to infer a
+// masked effect from a read that shows nothing.
+//
+// Masking rather than refusing (409) is deliberate: the caller is simulating a
+// cable and the device is the thing masking it, so refusing would make this
+// endpoint's contract depend on another leaf and would remove a legitimate
+// harness sequence (stage a fault, then unshut the port).
+//
+// The path keeps the name `oper-status` — the leaf a caller is trying to move,
+// not the leaf it writes. A rename to `link-state` is deferred until the link
+// value gains a read surface; see the change's design notes.
+//
+// Returns 202 Accepted with a stateChangeOutcome on success. 404 for unknown
+// device, 400 for unknown ifIndex / malformed body / unsupported status,
 // 503 if the state engine is not initialised for this device.
 func setOperStatusHandler(w http.ResponseWriter, r *http.Request) {
 	handleSetInterfaceStatus(w, r, true)
@@ -520,7 +620,8 @@ func handleSetInterfaceStatus(w http.ResponseWriter, r *http.Request, isOper boo
 		return
 	}
 
-	if err := manager.mutateInterfaceState(ip, ifIndex, isOper, target, revertAfter); err != nil {
+	outcome, err := manager.mutateInterfaceState(ip, ifIndex, isOper, target, revertAfter)
+	if err != nil {
 		var idxErr *ErrIfStateIfIndexInvalid
 		switch {
 		case errors.Is(err, ErrIfStateDeviceNotFound):
@@ -542,5 +643,5 @@ func handleSetInterfaceStatus(w http.ResponseWriter, r *http.Request, isOper boo
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte("{}"))
+	_ = json.NewEncoder(w).Encode(outcome)
 }

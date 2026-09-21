@@ -1371,14 +1371,16 @@ A `SET` is admitted exactly as a `GET` is: no community check, the one configure
 Any manager that can reach the port can write; see [the community section](#the-community-string-is-echoed-never-checked).
 
 One interaction to know.
-The flap scheduler and the REST `oper-status` POST change oper alone and may still raise oper on an interface whose admin is down; the cascade is applied on admin changes, not enforced continuously.
+`ifOperStatus` is **derived** from `ifAdminStatus` and a modelled link state, so a `SET` of `ifAdminStatus` to `down(2)` forces oper down, while a `SET` to `up(1)` releases oper to the link rather than forcing it up.
+On an interface whose link is down — `-if-scenario 3`, a flap, a REST `oper-status` POST — the `SET` is accepted and read back, and `ifOperStatus` stays `2`.
+An administrative bounce does not repair a simulated link fault, and no sequence of SETs can produce `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`.
 
 A `SET` is read back under every `-if-scenario`.
 The scenario shapes the state engine's initial seed and nothing else, so a `SET`, a REST POST, a flap and the seed all move the same value that `GET`, a walk, gNMI and the REST view read.
 
 ### Verified against net-snmp
 
-`make test-interop` drives `snmpset` and `snmpget` against the real dispatchers over a real UDP socket under v1, v2c and v3 authPriv, asserting the round trip and every error-status row by net-snmp's own printed reason, and `snmptrapd` receives the `linkDown` and `linkUp` the cascade fires.
+`make test-interop` drives `snmpset` and `snmpget` against the real dispatchers over a real UDP socket under v1, v2c and v3 authPriv, asserting the round trip and every error-status row by net-snmp's own printed reason, and `snmptrapd` receives the `linkDown` and `linkUp` the derived oper transition fires.
 A captured `snmpset` datagram is a golden fixture in `snmp_golden_packets_test.go`.
 The read paths are unchanged, which the wire digest over well-formed GET, GETNEXT and GETBULK responses pins.
 
@@ -1687,7 +1689,8 @@ JSON value. Three mutation sources update them at runtime:
 - **REST control plane** — `POST /api/v1/devices/{ip}/interfaces/{N}/{oper,admin}-status`
   flips state for test-harness use.
 - **SNMP SET** — a `SetRequest` of `ifAdminStatus.<N>` through the same
-  funnel, with the admin-to-oper cascade. See [SetRequest](#setrequest).
+  funnel. `ifOperStatus` follows by derivation, asymmetrically: `down(2)` and
+  `testing(3)` force it, `up(1)` releases it to the link. See [SetRequest](#setrequest).
 
 Cross-protocol consistency: SNMP `ifOperStatus.<N>` and gNMI
 `/interfaces/interface[name=*]/state/oper-status` read from the same

@@ -101,7 +101,7 @@ func benchDevice(ipStr string, maxIf int, name string, seed int64) *DeviceSimula
 	d.snmpServer = &SNMPServer{device: d}
 	if st := d.metricsCycler.ifCounters.Load().State(); st != nil {
 		for i := 1; i <= maxIf; i++ {
-			st.SetOperStatus(i, OperUp)
+			setLinkVisible(st, i, OperUp)
 		}
 	}
 	return d
