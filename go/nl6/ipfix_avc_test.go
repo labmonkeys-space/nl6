@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -211,8 +212,11 @@ func avcRecord(app, host, uri uint16, srcPort uint16) FlowRecord {
 }
 
 // Round trip through the test decoder: template + records; applicationId,
-// host and URI statistics come back as written; a record with no
-// application carries applicationId 0 and two zero-length fields.
+// host and URI statistics come back as written. IE 12235 is Cisco's
+// six-byte prefix then the host (nl6#679); a record with no host, and a
+// record with no application at all, carry exactly the prefix and a
+// zero-length URI field. The field is never empty: the IOS-XE capture shows
+// the prefix on DNS flows too (TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix).
 func TestIPFIXAVCEncodeRoundTrip(t *testing.T) {
 	enc := NewIPFIXAVCEncoder(testAVCCatalog())
 	buf := make([]byte, 1472)
@@ -235,6 +239,9 @@ func TestIPFIXAVCEncodeRoundTrip(t *testing.T) {
 	if got[0].AppID != avcApplicationID(13, 80) || got[0].Host != "cdn.example.net" {
 		t.Fatalf("record 0 = %+v", got[0])
 	}
+	if want := append([]byte{0x03, 0x00, 0x00, 0x50, 0x34, 0x02}, "cdn.example.net"...); !bytes.Equal(got[0].HostField, want) {
+		t.Fatalf("record 0 IE 12235 = %x, want %x (applicationId http, sub-application id 0x3402, host)", got[0].HostField, want)
+	}
 	want := append([]byte("/index.html\x00"), 0, 1)
 	if string(got[0].URIStats) != string(want) {
 		t.Fatalf("record 0 uri stats = %q, want %q (URI, NUL, uint16 BE count 1)", got[0].URIStats, want)
@@ -242,17 +249,27 @@ func TestIPFIXAVCEncodeRoundTrip(t *testing.T) {
 	if got[1].AppID != avcApplicationID(13, 443) || got[1].Host != "" || len(got[1].URIStats) != 0 {
 		t.Fatalf("record 1 (ssl, no host) = %+v", got[1])
 	}
+	if !bytes.Equal(got[1].HostField, avcHostPrefix) || len(got[1].HostField) != 6 {
+		t.Fatalf("record 1 (ssl, no host) IE 12235 = %x, want exactly the six-byte prefix", got[1].HostField)
+	}
 	if got[2].AppID != 0 || got[2].Host != "" || got[2].Base.SrcPort != 50002 {
 		t.Fatalf("record 2 (no application) = %+v", got[2])
+	}
+	if !bytes.Equal(got[2].HostField, avcHostPrefix) {
+		t.Fatalf("record 2 (no application) IE 12235 = %x, want the prefix: the field is never empty", got[2].HostField)
 	}
 	if n%4 != 0 {
 		t.Fatalf("message length %d is not 4-byte aligned", n)
 	}
 }
 
-// Host lengths at the RFC 7011 section 7 boundary survive the round trip.
+// Field lengths at the RFC 7011 section 7 boundary survive the round trip.
+// The boundary is on the WHOLE IE 12235 value, prefix included, so a
+// 249-byte host is the last one-byte-length field (255) and a 250-byte host
+// the first three-byte-length field (256); the length form is read off the
+// wire, not inferred from the decode.
 func TestIPFIXAVCEncodeHostLengthBoundary(t *testing.T) {
-	for _, hl := range []int{1, 254, 255, 256} {
+	for _, hl := range []int{0, 1, 248, 249, 250, 300} {
 		cat := newAVCCatalog([]avcApplication{{ID: avcApplicationID(13, 80), Name: "http", Hosts: []string{strings.Repeat("h", hl)}}})
 		enc := NewIPFIXAVCEncoder(cat)
 		buf := make([]byte, 1472)
@@ -260,9 +277,17 @@ func TestIPFIXAVCEncodeHostLengthBoundary(t *testing.T) {
 		if err != nil || consumed != 1 {
 			t.Fatalf("hl=%d: consumed=%d err=%v", hl, consumed, err)
 		}
-		got := decodeIPFIXAVCRecords(t, decodeIPFIXPacket(t, buf[:n]).RawSets[ipfixAVCTemplateID])
-		if len(got) != 1 || len(got[0].Host) != hl {
-			t.Fatalf("hl=%d: decoded host length %d", hl, len(got[0].Host))
+		set := decodeIPFIXPacket(t, buf[:n]).RawSets[ipfixAVCTemplateID]
+		got := decodeIPFIXAVCRecords(t, set)
+		if len(got) != 1 || len(got[0].Host) != hl || len(got[0].HostField) != hl+6 {
+			t.Fatalf("hl=%d: decoded host length %d, field length %d", hl, len(got[0].Host), len(got[0].HostField))
+		}
+		lenByte := set[ipfixRecordSize+4]
+		switch total := hl + 6; {
+		case total < 255 && int(lenByte) != total:
+			t.Fatalf("hl=%d: length byte %d, want the one-byte form %d", hl, lenByte, total)
+		case total >= 255 && (lenByte != 255 || int(binary.BigEndian.Uint16(set[ipfixRecordSize+5:])) != total):
+			t.Fatalf("hl=%d: length bytes %x, want the three-byte form 255,%04x", hl, set[ipfixRecordSize+4:ipfixRecordSize+7], total)
 		}
 	}
 }
@@ -276,12 +301,14 @@ func TestIPFIXAVCEncodeMeasuredConsumesWhatFits(t *testing.T) {
 	for i := range recs {
 		recs[i] = avcRecord(1, 1, 1, uint16(50000+i))
 	}
-	// Each record is 54 + 4 + (1+15) + (1+14) = 89 bytes; header 16 + set 4.
+	// Each record is 54 + 4 + (1+6+15) + (1+14) = 95 bytes (the host field
+	// carries avcHostPrefix before the 15-byte host); header 16 + set 4.
 	// +3 (not +2): EncodeMeasured reserves a 3-byte worst-case pad margin
 	// (limit := len(buf)-3) while probing whether a record fits, so exactly
-	// 3*89 bytes of headroom beyond the base overhead is required for the
+	// 3*95 bytes of headroom beyond the base overhead is required for the
 	// third record's last write to land inside that margin.
-	buf := make([]byte, 20+89*3+3)
+	const recSize = ipfixRecordSize + 4 + (1 + 6 + 15) + (1 + 14)
+	buf := make([]byte, 20+recSize*3+3)
 	n, consumed, dropped, err := enc.EncodeMeasured(1, 0, 0, recs, false, buf)
 	if err != nil || dropped != 0 {
 		t.Fatalf("err=%v dropped=%d", err, dropped)

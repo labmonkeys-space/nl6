@@ -9,12 +9,13 @@
 // parser written here, not with nl6's encoders or test decoders, so a shared
 // misreading cannot make them agree. Each test pins one fact NOTES.md quotes.
 //
-// Two of the facts are the residuals the design spec left open: the IE 9357
+// Two of the facts were the residuals the design spec left open: the IE 9357
 // layout (nl6's two encoder decisions are confirmed) and the IE 12235 host
-// layout (nl6 emits a bare hostname, the router does not; nl6#679). The
-// remaining structural differences are the decision in nl6#680. When #679
-// lands, the natural companion is an assertion that nl6's encoder output
-// starts with capturedHostPrefix.
+// layout (the router prefixes the host with six constant bytes; nl6 emits
+// them since nl6#679). Both are checked against the PRODUCTION encoder, not
+// against a copy of its constants, so the capture and the encoder cannot
+// drift apart. The remaining structural differences are the decision in
+// nl6#680.
 
 package main
 
@@ -28,13 +29,6 @@ import (
 )
 
 const ciscoAVCCapturePath = "testdata/cisco-avc/capture/c8000v-26.01.02-avc.pcap"
-
-// capturedHostPrefix is the constant six bytes every IE 12235 value in the
-// capture starts with: applicationId 0x03000050 (engine 3, port 80, http)
-// then sub-application id 0x3402, the "Subapplication ID for the host" of
-// Cisco's 2015 field guide. It precedes the hostname and stands alone when a
-// record has no host.
-var capturedHostPrefix = []byte{0x03, 0x00, 0x00, 0x50, 0x34, 0x02}
 
 type captureField struct {
 	id, pen, length uint16 // length 0xFFFF = variable
@@ -292,10 +286,10 @@ func TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix(t *testing.T) {
 	hosts := map[string]int{}
 	for _, r := range records {
 		v := r.values[hostField]
-		if !bytes.HasPrefix(v, capturedHostPrefix) {
-			t.Fatalf("IE 12235 value %x does not start with %x", v, capturedHostPrefix)
+		if !bytes.HasPrefix(v, avcHostPrefix) {
+			t.Fatalf("IE 12235 value %x does not start with %x", v, avcHostPrefix)
 		}
-		if name := string(v[len(capturedHostPrefix):]); name != "" {
+		if name := string(v[len(avcHostPrefix):]); name != "" {
 			hosts[name]++
 		}
 	}
@@ -366,7 +360,7 @@ func TestCiscoAVCCapture_LayerSevenValuesAreIngressHTTPOnly(t *testing.T) {
 	for _, r := range records {
 		app := binary.BigEndian.Uint32(r.values[appField])
 		ingress := r.values[dirField][0] == 0
-		hasHost := len(r.values[hostField]) > len(capturedHostPrefix)
+		hasHost := len(r.values[hostField]) > len(avcHostPrefix)
 		hasURI := len(r.values[uriField]) > 0
 		if hasHost != hasURI {
 			t.Fatalf("record app=%08x dir=%d has host=%v uri=%v; the router sets both or neither", app, r.values[dirField][0], hasHost, hasURI)
