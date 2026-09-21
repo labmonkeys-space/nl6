@@ -61,9 +61,17 @@ startup rather than ignored.
 | Scenario | Name | `ifAdminStatus` | `ifOperStatus` | Use case |
 |----------|------|-----------------|----------------|----------|
 | 1 | all-shutdown | down (2) | down (2) | Planned maintenance, device decommission |
-| 2 | all-normal *(default)* | up (1) | up (1) | Normal steady-state operations |
+| 2 | all-normal *(default)* | as shipped | as shipped | Normal steady-state operations |
 | 3 | all-failure | up (1) | down (2) | Link failures, SFP issues, cable pull |
 | 4 | pct-failure | up (1) | down for n% | Partial outage, staged rollout testing |
+
+Scenario 2 does not force anything up.
+It leaves both values exactly as the device's resource files declare them, and
+most shipped profiles declare up.
+Four do not: `cisco_nexus_9500`, `juniper_mx960`, `asr9k` and
+`palo_alto_pa3220` ship some interfaces oper-down, so those boot down under the
+default scenario.
+Use scenario 3 if you want every interface down regardless of profile.
 
 Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are
 reproducible across restarts.
@@ -83,14 +91,24 @@ Interfaces that scenario 1 shut down come back the ordinary way: a `SET` of
 `ifAdminStatus` to `up(1)`, or a REST `admin-status` POST, raises oper with
 them through the admin-to-oper cascade.
 
-Do not pair scenario 1 with a link-flap scenario.
-The cascade runs on admin changes and is not enforced continuously, and the
-flap scheduler moves oper alone, so a flap will raise oper on an interface
-scenario 1 left admin-down.
+Do not pair a non-default scenario with a link-flap scenario.
+The flap scheduler alternates oper down and up per interface and raises oper
+unconditionally, so it takes ownership of every interface it is registered for
+and undoes whatever the seed set.
+Under scenarios 3 and 4 the first up-flap brings the failed interfaces back,
+and the "all-failure" fleet you asked for comes up within one flap interval.
+
+Under scenario 1 it is worse than surprising.
+The admin-to-oper cascade runs on admin changes and is not enforced
+continuously, so a flap raises oper on an interface left admin-down.
 Those interfaces then report `ifAdminStatus = down(2)` with
 `ifOperStatus = up(1)`, which RFC 2863 does not allow.
-The same caveat applies to the REST `oper-status` endpoint under scenario 1,
-and it is the reason that endpoint exists separately from `admin-status`.
+
+The same caveats apply to the REST `oper-status` endpoint, which is the reason
+it exists separately from `admin-status`.
+Deriving oper from admin and a modelled link state, which removes both
+problems, is tracked in
+[nl6#694](https://github.com/labmonkeys-space/nl6/issues/694).
 
 The scenario reaches the interfaces the counter engine knows, which are those
 with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
