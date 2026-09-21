@@ -1,0 +1,35 @@
+# containerlab topology that produced c8000v-26.01.02-avc.pcap. See README.md.
+name: avc
+topology:
+  nodes:
+    r1:
+      kind: cisco_c8000v
+      image: vrnetlab/cisco_c8000v:26.01.02
+      startup-config: r1.cfg
+    client:
+      kind: linux
+      image: nicolaka/netshoot:latest
+      exec:
+        - ip addr add 10.10.1.10/24 dev eth1
+        - ip route add 10.10.2.0/24 via 10.10.1.1
+        - ip route add 10.10.3.0/24 via 10.10.1.1
+    server:
+      kind: linux
+      image: nicolaka/netshoot:latest
+      exec:
+        - ip addr add 10.10.2.10/24 dev eth1
+        - ip route add 10.10.1.0/24 via 10.10.2.1
+      cmd: sh -c "mkdir -p /www/api /www/static && echo ok > /www/index.html && cp /www/index.html /www/api/v1 && cp /www/index.html /www/static/app.js && cp /www/index.html /www/api/login && cd /www && exec python3 -m http.server 80"
+    collector:
+      kind: linux
+      image: nicolaka/netshoot:latest
+      binds:
+        - ./pcap:/pcap
+      exec:
+        - ip addr add 10.10.3.10/24 dev eth1
+        - ip route add 10.10.1.0/24 via 10.10.3.1
+      cmd: sh -c "sleep 5; exec tcpdump -i eth1 -U -w /pcap/avc.pcap udp port 4739"
+  links:
+    - endpoints: ["r1:Gi2", "client:eth1"]
+    - endpoints: ["r1:Gi3", "server:eth1"]
+    - endpoints: ["r1:Gi4", "collector:eth1"]
