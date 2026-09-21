@@ -41,9 +41,17 @@ See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
 ## Interface-state scenarios
 
-The `-if-scenario` flag controls the SNMP admin/oper status reported for all
-simulated interfaces, so you can reproduce common network conditions without
+The `-if-scenario` flag sets the **initial** admin/oper status of every
+simulated interface, so you can reproduce common network conditions without
 editing resource files.
+It is applied once per device, when the interface-state engine is built, to
+every device the process creates: the auto-start batch and REST-created devices
+alike.
+From then on the engine is the single source every reader agrees on, so an SNMP
+`SET`, a REST `oper-status` or `admin-status` POST, or a link flap moves what
+`GET`, a walk, gNMI and the REST view all report.
+A value outside 1..4, or an `-if-failure-pct` outside 0..100, is refused at
+startup rather than ignored.
 
 | Flag | Type | Default | Purpose |
 |------|------|---------|---------|
@@ -53,12 +61,59 @@ editing resource files.
 | Scenario | Name | `ifAdminStatus` | `ifOperStatus` | Use case |
 |----------|------|-----------------|----------------|----------|
 | 1 | all-shutdown | down (2) | down (2) | Planned maintenance, device decommission |
-| 2 | all-normal *(default)* | up (1) | up (1) | Normal steady-state operations |
+| 2 | all-normal *(default)* | as shipped | as shipped | Normal steady-state operations |
 | 3 | all-failure | up (1) | down (2) | Link failures, SFP issues, cable pull |
 | 4 | pct-failure | up (1) | down for n% | Partial outage, staged rollout testing |
 
+Scenario 2 does not force anything up.
+It leaves both values exactly as the device's resource files declare them, and
+most shipped profiles declare up.
+Four do not: `cisco_nexus_9500`, `juniper_mx960`, `asr9k` and
+`palo_alto_pa3220` ship some interfaces oper-down, so those boot down under the
+default scenario.
+Use scenario 3 if you want every interface down regardless of profile.
+
 Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are
 reproducible across restarts.
+
+Three consequences worth knowing before you pick a scenario.
+
+The seed is initial state, not a transition, so it fires no link traps, no
+syslog and no gNMI `ON_CHANGE` updates, and `ifLastChange` reads `0` until
+something actually changes.
+
+`lldpRemTable` only emits a row when both ends of a link are oper-up, so
+scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the
+rows whose local or remote port it put down.
+`ifAlias` reflects configured intent and stays.
+
+Interfaces that scenario 1 shut down come back the ordinary way: a `SET` of
+`ifAdminStatus` to `up(1)`, or a REST `admin-status` POST, raises oper with
+them through the admin-to-oper cascade.
+
+Do not pair a non-default scenario with a link-flap scenario.
+The flap scheduler alternates oper down and up per interface and raises oper
+unconditionally, so it takes ownership of every interface it is registered for
+and undoes whatever the seed set.
+Under scenarios 3 and 4 the first up-flap brings the failed interfaces back,
+and the "all-failure" fleet you asked for comes up within one flap interval.
+
+Under scenario 1 it is worse than surprising.
+The admin-to-oper cascade runs on admin changes and is not enforced
+continuously, so a flap raises oper on an interface left admin-down.
+Those interfaces then report `ifAdminStatus = down(2)` with
+`ifOperStatus = up(1)`, which RFC 2863 does not allow.
+
+The same caveats apply to the REST `oper-status` endpoint, which is the reason
+it exists separately from `admin-status`.
+Deriving oper from admin and a modelled link state, which removes both
+problems, is tracked in
+[nl6#694](https://github.com/labmonkeys-space/nl6/issues/694).
+
+The scenario reaches the interfaces the counter engine knows, which are those
+with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
+An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from
+the resource file unchanged.
 
 ### Error / discard scenario
 

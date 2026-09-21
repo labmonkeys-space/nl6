@@ -1370,9 +1370,11 @@ A v3 `SET` produces the same `Response-PDU` bytes as a v2c `SET` of the same bin
 A `SET` is admitted exactly as a `GET` is: no community check, the one configured v3 user, USM verification driven by the request's own flags.
 Any manager that can reach the port can write; see [the community section](#the-community-string-is-echoed-never-checked).
 
-Two interactions to know.
-Under a non-default interface-state scenario (`-if-scenario` other than `2`), `GET` reads the scenario override before the engine, so a `SET` applies to the engine while the poll still reads the scenario's value.
-And the flap scheduler and the REST `oper-status` POST change oper alone and may still raise oper on an interface whose admin is down; the cascade is applied on admin changes, not enforced continuously.
+One interaction to know.
+The flap scheduler and the REST `oper-status` POST change oper alone and may still raise oper on an interface whose admin is down; the cascade is applied on admin changes, not enforced continuously.
+
+A `SET` is read back under every `-if-scenario`.
+The scenario shapes the state engine's initial seed and nothing else, so a `SET`, a REST POST, a flap and the seed all move the same value that `GET`, a walk, gNMI and the REST view read.
 
 ### Verified against net-snmp
 
@@ -1655,10 +1657,16 @@ see [GPU simulation](gpu/index.md).
 
 ## Interface-state scenarios
 
-The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag controls
-the *initial* `ifAdminStatus` / `ifOperStatus` values reported across every
-simulated interface. Scenario 4 uses a deterministic `ifIndex % 100 < n`
+The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag sets the
+*initial* `ifAdminStatus` / `ifOperStatus` values across every simulated
+interface. Scenario 4 uses a deterministic `ifIndex % 100 < n`
 rule so results are reproducible across restarts.
+
+The scenario is applied once per device, when the state engine below is
+built, and there is no read-time override anywhere on the SNMP path.
+So a `SET`, a REST POST or a flap is read back by the next `GET` or walk
+under every scenario, and a seeded interface reports `ifLastChange = 0`
+because a seed is not a transition.
 
 ```bash
 # Spot-check admin status (should all be "1" in scenarios 2/3/4)
@@ -1671,13 +1679,15 @@ snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1.8
 **Dynamic state engine (post-v0.8.0).** `ifOperStatus.<N>` (`.8`),
 `ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are now served
 live from the per-device interface state engine — not from the cached
-JSON value. Two mutation sources update them at runtime:
+JSON value. Three mutation sources update them at runtime:
 
 - **Flap scheduler** — `-if-flap-scenario {clean|rare|typical|aggressive}`
   drives Poisson-distributed link flaps per (device, ifIndex). See the
   [interface state engine reference](interface-state.md).
 - **REST control plane** — `POST /api/v1/devices/{ip}/interfaces/{N}/{oper,admin}-status`
   flips state for test-harness use.
+- **SNMP SET** — a `SetRequest` of `ifAdminStatus.<N>` through the same
+  funnel, with the admin-to-oper cascade. See [SetRequest](#setrequest).
 
 Cross-protocol consistency: SNMP `ifOperStatus.<N>` and gNMI
 `/interfaces/interface[name=*]/state/oper-status` read from the same

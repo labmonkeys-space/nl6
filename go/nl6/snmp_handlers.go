@@ -52,10 +52,14 @@ func (s *SNMPServer) findResponse(oid string) string {
 		}
 	}
 
-	// Interface state scenario override (admin/oper status)
-	if override := getIfStateOverride(oid); override != "" {
-		return override
-	}
+	// No interface-state scenario override here, deliberately (nl6#692).
+	// `-if-scenario` shapes the state engine's SEED (scenarioSeed, called from
+	// InitIfCountersWithScenario); the engine is then the single source every
+	// reader agrees on. A read-time override used to sit at this point and was
+	// dead code on every engine-backed device, because the cycler above serves
+	// ifAdminStatus / ifOperStatus / ifLastChange from the engine and runs
+	// first. Re-adding one would also shadow an SNMP SET or REST POST, which is
+	// the defect nl6#692 was filed for.
 
 	// LLDP-MIB neighbor / local-system tables and the ifAlias link label
 	// are served by the topology-driven dynamic provider. Checked before

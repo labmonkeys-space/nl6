@@ -272,6 +272,14 @@ func main() {
 		log.Fatalf("Invalid -datagram-mtu: %v", err)
 	}
 
+	// Same slot, same reason: the interface-state scenario is applied once
+	// per device at engine construction, so an unknown value would otherwise
+	// be accepted, echoed by nothing and silently ignored (nl6#692). Fatal
+	// here, after -help/-version and before any device exists.
+	if err := ifStateConfig.validate(); err != nil {
+		log.Fatalf("Invalid interface-state scenario: %v", err)
+	}
+
 	// Validate the profiling flags in the same slot, for the same reason:
 	// fatal here, before any TUN, namespace or subsystem exists, and after
 	// -help / -version so those still work with a bad flag.

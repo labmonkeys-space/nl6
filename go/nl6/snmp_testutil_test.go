@@ -29,9 +29,12 @@ import (
 // at their defaults, which every test that sets them restores in t.Cleanup:
 // manager == nil and ifStateConfig.Scenario == IfScenarioAllNormal.
 // Consequences in findResponse: the CPU/memory and IF-MIB dispatch is skipped
-// (metricsCycler == nil), the interface-state override is inert (AllNormal),
-// and the LLDP provider returns "" (lldpManager() == nil), so every OID
-// resolves against the static index. This constructor is for the static OID
+// (metricsCycler == nil) and the LLDP provider returns "" (lldpManager() ==
+// nil), so every OID resolves against the static index. `-if-scenario` does not
+// reach a server built here at all: since nl6#692 the scenario is applied at
+// state-engine construction (scenarioSeed) rather than on the read path, and
+// this constructor builds no engine. A test that needs a scenario-seeded device
+// wants newSetTestServer or newStateAPIFixture with withIfScenario. This constructor is for the static OID
 // lookup, encoding and walk paths.
 //
 // One trap: buildResourceIndexes drops sysName (.1.3.6.1.2.1.1.5.0) and

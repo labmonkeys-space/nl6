@@ -200,7 +200,9 @@ of what the resource files contain:
   and `ifXTable` (octets, HC packets, Counter32 shadows, errors, discards)
   is computed analytically from the octet sine wave, phase-offset per
   interface. See [SNMP reference → Dynamic IF-MIB counters](snmp.md#dynamic-if-mib-counters).
-- **Interface state** — `ifAdminStatus` / `ifOperStatus` depend on
-  [`-if-scenario`](cli-flags.md#interface-state-scenarios).
+- **Interface state** — the `ifAdminStatus` / `ifOperStatus` rows seed the
+  state engine at device creation, overlaid by
+  [`-if-scenario`](cli-flags.md#interface-state-scenarios); from then on the
+  engine owns the value and the rows are not read again.
 - **GPU metrics** — per-GPU utilization, VRAM, temp, power, fan, clocks.
   See [GPU simulation](gpu/index.md).
