@@ -245,25 +245,36 @@ func (s *SNMPServer) createScopedPDUMulti(oids, values []string, requestMsg *SNM
 		return nil, fmt.Errorf("createScopedPDUMulti: %d oids but %d values", len(oids), len(values))
 	}
 
-	requestID := s.extractRequestIDFromScopedPDU(requestMsg.ScopedPDU)
-
 	var varBinds []byte
 	for i, oid := range oids {
 		varBinds = append(varBinds, encodeVarBind(oid, encodeTypedValue(oid, values[i]))...)
 	}
+	return s.createScopedPDUEncoded(varBinds, snmpErrNoError, 0, requestMsg), nil
+}
+
+// createScopedPDUEncoded is the ONE place a Response-PDU is framed inside a
+// scoped PDU. It takes an ALREADY-ENCODED variable-bindings list contents and
+// an explicit error-status / error-index, so the SET path (add-snmp-set) can
+// echo a request's bindings verbatim and report an RFC 3416 §4.2.5 error
+// without growing a second builder beside createScopedPDUMulti — the drift
+// nl6#529 and nl6#539 each cost. For errStatus == 0 and encodeTypedValue'd
+// bindings its output is byte-identical to what createScopedPDUMulti emitted
+// before the split, which the v3 GET/GETBULK suites pin.
+func (s *SNMPServer) createScopedPDUEncoded(varBinds []byte, errStatus, errIndex int, requestMsg *SNMPv3Message) []byte {
+	requestID := s.extractRequestIDFromScopedPDU(requestMsg.ScopedPDU)
 	varBindList := encodeSequence(varBinds)
 
 	var pduContents []byte
 	pduContents = append(pduContents, encodeInteger(requestID)...)
-	pduContents = append(pduContents, encodeInteger(0)...) // error-status (noError)
-	pduContents = append(pduContents, encodeInteger(0)...) // error-index
+	pduContents = append(pduContents, encodeInteger(errStatus)...) // error-status
+	pduContents = append(pduContents, encodeInteger(errIndex)...)  // error-index
 	pduContents = append(pduContents, varBindList...)
 
 	pdu := []byte{ASN1_GET_RESPONSE}
 	pdu = append(pdu, encodeLength(len(pduContents))...)
 	pdu = append(pdu, pduContents...)
 
-	return wrapInScopedPDU(s.usmState().engineID, "", pdu), nil
+	return wrapInScopedPDU(s.usmState().engineID, "", pdu)
 }
 
 // wrapInScopedPDU builds the RFC 3412 §6 ScopedPDU envelope around an
@@ -336,7 +347,11 @@ func (s *SNMPServer) extractRequestIDFromScopedPDU(scopedPDU []byte) int {
 	// request-id read (the nl6#537 rule: bounded by the PDU's own length, not
 	// by the datagram), so a length that over-declares takes the fallback
 	// rather than reading an INTEGER out of whatever follows.
-	if pos < len(scopedPDU) && (scopedPDU[pos] == ASN1_GET_REQUEST || scopedPDU[pos] == ASN1_GET_NEXT || scopedPDU[pos] == ASN1_GET_BULK) {
+	//
+	// The tag list MUST agree with extractOIDAndTypeFromScopedPDU's, which is
+	// pinned by TestV3TagClassifiersAgree: a tag the dispatcher serves but this
+	// function does not recognise answers request-id 1 to every such request.
+	if pos < len(scopedPDU) && servedPDUTag(scopedPDU[pos]) {
 		pos++ // Skip PDU type
 		pduLen, newPos := parseLength(scopedPDU, pos)
 		if pduLen < 0 || newPos+pduLen > len(scopedPDU) {

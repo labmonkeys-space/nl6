@@ -254,6 +254,13 @@ type SNMPServer struct {
 	// two have different causes and different fixes. The v1/v2c side already
 	// keeps them apart (logFirstMalformedList).
 	firstMalformedV3List sync.Once
+
+	// firstMalformedSet gates the log line for a discarded SetRequest whose
+	// variable-bindings list is not a valid ASN.1 encoding, at any version
+	// (see logFirstMalformedSet). Its own gate for the reason stated above:
+	// a SET's list is the first one whose VALUES are decoded, so it has faults
+	// the GET-family gates never see.
+	firstMalformedSet sync.Once
 }
 
 // lldpServedSnapshot is an immutable (gen, served) pair stored under

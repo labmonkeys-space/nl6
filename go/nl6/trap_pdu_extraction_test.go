@@ -1069,8 +1069,12 @@ func TestExtractedSeamsHaveExactlyOneImplementation(t *testing.T) {
 		callee string
 		why    string
 	}{
-		{"SNMPServer.createScopedPDUMulti", "wrapInScopedPDU",
+		{"SNMPServer.createScopedPDUEncoded", "wrapInScopedPDU",
 			"the scoped-PDU envelope must exist once; the nl6#98 trap encoder wraps a 0xA7 PDU with it"},
+		{"SNMPServer.createScopedPDUMulti", "createScopedPDUEncoded",
+			"add-snmp-set: the Response-PDU framing (request-id, error-status, error-index, bindings) " +
+				"exists once, in createScopedPDUEncoded, so the SET path can carry an error-status " +
+				"without a second builder; the typed-value builder must delegate to it, not re-frame"},
 		{"SNMPServer.createDiscoveryScopedPDU", "wrapInScopedPDU",
 			"the Report path's own copy of this envelope drifted from the response path's once already " +
 				"(nl6#624: the engine ID's hex spelling against its octets), and no in-package test " +

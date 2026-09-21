@@ -150,6 +150,14 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/interfaces/999/oper-
 Same shape and semantics, mutates `ifAdminStatus.<ifIndex>`. Accepted
 statuses are `UP` / `DOWN` / `TESTING` (per IF-MIB ifAdminStatus enum).
 
+**`oper-status` follows `admin-status`.**
+The POST goes through the engine's admin funnel (`InterfaceState.ApplyAdminStatus`), which cascades oper per RFC 2863: `DOWN` drives oper `DOWN`, `UP` drives oper `UP`, `TESTING` drives oper `TESTING`.
+The oper transition fires the role-tagged link trap and syslog, and an ON_CHANGE subscriber sees two updates, admin then oper.
+**This is a behaviour change**: the endpoint used to leave oper untouched and fire nothing.
+A client that needs admin and oper independent still has the `oper-status` endpoint, which is unchanged.
+An SNMP `SET` of `ifAdminStatus.<N>` is a third source through the same funnel (see the SNMP reference), so a SET and this POST are indistinguishable to every reader.
+The reverse direction is not enforced: the flap scheduler and the `oper-status` POST may still raise oper on an admin-down interface.
+
 ### Auto-revert semantics
 
 When `duration` is set, the handler:
@@ -159,6 +167,9 @@ When `duration` is set, the handler:
 3. Registers a timer in `SimulatorManager.revertTimers`, keyed by
    `(ip, ifIndex, leaf)`
 4. After `duration` elapses, reverts the slot back to the snapshotted value
+
+An `admin-status` revert goes through the same admin funnel as the POST.
+Oper therefore follows the restored admin value and fires the matching link trap, rather than staying where the cascade or an intervening flap left it.
 
 Properties:
 

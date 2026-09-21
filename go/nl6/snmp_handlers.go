@@ -560,93 +560,191 @@ func (s *SNMPServer) handleGetRequestVarbinds(oids []string, requestData []byte)
 // (the envelope before it was unreadable, or the list is empty), which the
 // general request parser's single OID still covers.
 func (s *SNMPServer) parseAllOIDsFromRequest(data []byte) ([]string, bool) {
-	var oids []string
-
-	pos := 0
-
-	// Outer SEQUENCE
-	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
-		return oids, true
+	pos, _, reached := requestVarBindListPos(data)
+	if !reached {
+		return nil, true
 	}
-	pos++
-	outerLen, newPos := parseLength(data, pos)
-	if outerLen < 0 {
-		return oids, true
-	}
-	pos = newPos
-
-	// Version (INTEGER)
-	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids, true
-	}
-	pos++
-	verLen, newPos := parseLength(data, pos)
-	if verLen < 0 {
-		return oids, true
-	}
-	pos = newPos + verLen
-
-	// Community (OCTET STRING)
-	if pos >= len(data) || data[pos] != ASN1_OCTET_STRING {
-		return oids, true
-	}
-	pos++
-	commLen, newPos := parseLength(data, pos)
-	if commLen < 0 {
-		return oids, true
-	}
-	pos = newPos + commLen
-
-	// PDU tag (any: GET / GETNEXT / GETBULK / …)
-	if pos >= len(data) {
-		return oids, true
-	}
-	pos++ // consume PDU type byte
-	pduLen, newPos := parseLength(data, pos)
-	if pduLen < 0 {
-		return oids, true
-	}
-	pos = newPos
-
-	// Request-ID (INTEGER)
-	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids, true
-	}
-	pos++
-	reqIDLen, newPos := parseLength(data, pos)
-	if reqIDLen < 0 {
-		return oids, true
-	}
-	pos = newPos + reqIDLen
-
-	// error-status / non-repeaters (INTEGER)
-	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids, true
-	}
-	pos++
-	f1Len, newPos := parseLength(data, pos)
-	if f1Len < 0 {
-		return oids, true
-	}
-	pos = newPos + f1Len
-
-	// error-index / max-repetitions (INTEGER)
-	if pos >= len(data) || data[pos] != ASN1_INTEGER {
-		return oids, true
-	}
-	pos++
-	f2Len, newPos := parseLength(data, pos)
-	if f2Len < 0 {
-		return oids, true
-	}
-	pos = newPos + f2Len
-
 	// VarBindList (SEQUENCE). The walk of the list itself is shared with the
 	// SNMPv3 scoped-PDU sibling (parseAllOIDsFromScopedPDU): the two PDUs
 	// differ only in the envelope that precedes the list, and a second copy of
 	// this loop is exactly the drift this package has paid for twice
 	// (nl6#529's encodeOID/appendOID, nl6#539's validateDottedOID).
 	return parseVarBindNames(data, pos)
+}
+
+// requestVarBindListPos walks a v1/v2c message envelope — outer SEQUENCE,
+// version, community, PDU tag and length, request-id, and the two PDU
+// INTEGERs — and returns the offset of the variable-bindings list. false means
+// the envelope could not be read that far, which parseAllOIDsFromRequest
+// reports as the "absent" case (nil, true).
+//
+// Shared by the GET-family parser and the SET parser (add-snmp-set), so the
+// envelope is read one way. Every verdict here is "absent", never "malformed":
+// that is the pre-existing contract, and the SET caller decides for itself what
+// an unreadable envelope means for a PDU with no fallback OID.
+//
+// pduEnd is where the PDU's DECLARED length says it ends. The GET-family caller
+// ignores it (its list is bounded by the datagram, pre-existing and pinned by
+// the wire digest); the SET caller bounds its list by it, as the v3 sibling
+// does, so a list that overruns the PDU inside a longer datagram is malformed
+// rather than echoed from bytes outside the PDU. Not clamped to len(data): an
+// over-declared PDU is the caller's to refuse.
+func requestVarBindListPos(data []byte) (pos, pduEnd int, ok bool) {
+	pos = 0
+
+	// Outer SEQUENCE
+	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
+		return 0, 0, false
+	}
+	pos++
+	outerLen, newPos := parseLength(data, pos)
+	if outerLen < 0 {
+		return 0, 0, false
+	}
+	pos = newPos
+
+	// Version (INTEGER)
+	if pos >= len(data) || data[pos] != ASN1_INTEGER {
+		return 0, 0, false
+	}
+	pos++
+	verLen, newPos := parseLength(data, pos)
+	if verLen < 0 {
+		return 0, 0, false
+	}
+	pos = newPos + verLen
+
+	// Community (OCTET STRING)
+	if pos >= len(data) || data[pos] != ASN1_OCTET_STRING {
+		return 0, 0, false
+	}
+	pos++
+	commLen, newPos := parseLength(data, pos)
+	if commLen < 0 {
+		return 0, 0, false
+	}
+	pos = newPos + commLen
+
+	// PDU tag (any: GET / GETNEXT / GETBULK / SET / …)
+	if pos >= len(data) {
+		return 0, 0, false
+	}
+	pos++ // consume PDU type byte
+	pduLen, newPos := parseLength(data, pos)
+	if pduLen < 0 {
+		return 0, 0, false
+	}
+	pos = newPos
+	pduEnd = newPos + pduLen
+
+	// Request-ID, then error-status / non-repeaters, then error-index /
+	// max-repetitions: three INTEGERs.
+	for i := 0; i < 3; i++ {
+		if pos >= len(data) || data[pos] != ASN1_INTEGER {
+			return 0, 0, false
+		}
+		pos++
+		n, newPos := parseLength(data, pos)
+		if n < 0 {
+			return 0, 0, false
+		}
+		pos = newPos + n
+	}
+
+	return pos, pduEnd, true
+}
+
+// snmpVarBind is one variable binding of a request with its VALUE kept: the
+// name, the value's ASN.1 tag and the value's raw content octets.
+//
+// GET / GETNEXT / GETBULK never need this — a manager sends NULL values — so
+// parseVarBindNames drops the value after checking its shape. A SET is the
+// first PDU whose values matter (add-snmp-set).
+type snmpVarBind struct {
+	name    string
+	tag     byte
+	content []byte
+}
+
+// parseVarBinds is parseVarBindNames with the values kept. It walks a
+// variable-bindings list starting at the offset of its SEQUENCE tag and
+// returns every binding (name, value tag, value content) in order, plus the
+// list's CONTENTS bytes — everything between the list header and its end — so
+// a SET response can echo the request's bindings byte-for-byte (RFC 3416
+// §4.2.5: the Response-PDU's variable-bindings field is "identical to the
+// request", in success and in every error case).
+//
+// Same contract as parseVarBindNames and the same bounds discipline, stated
+// once there: (nil, nil, false) is malformed → discard; (nil, nil, true) is a
+// list header never reached. An EMPTY list returns a non-nil empty slice, so a
+// SET caller can tell "no bindings" from "no list".
+//
+// A SEPARATE function rather than a value-returning parseVarBindNames,
+// deliberately: the GET-family callers run on every read of every device, and
+// a shared parser that allocates per binding for values nobody reads is a
+// serve-path regression the wire digests cannot see.
+func parseVarBinds(data []byte, pos int) ([]snmpVarBind, []byte, bool) {
+	if pos >= len(data) || data[pos] != ASN1_SEQUENCE {
+		return nil, nil, true
+	}
+	pos++
+	vbListLen, newPos := parseLength(data, pos)
+	if vbListLen < 0 {
+		return nil, nil, true
+	}
+	pos = newPos
+	if vbListLen > len(data)-pos {
+		return nil, nil, false
+	}
+	end := pos + vbListLen
+	contents := data[pos:end]
+
+	binds := []snmpVarBind{}
+	for pos < end {
+		if data[pos] != ASN1_SEQUENCE {
+			return nil, nil, false
+		}
+		pos++
+		vbLen, newPos := parseLength(data, pos)
+		if vbLen < 0 {
+			return nil, nil, false
+		}
+		pos = newPos
+		if vbLen > end-pos {
+			return nil, nil, false
+		}
+		nextVarBind := pos + vbLen
+
+		// Name.
+		if pos >= nextVarBind || data[pos] != ASN1_OID {
+			return nil, nil, false
+		}
+		pos++
+		oidLen, newPos := parseLength(data, pos)
+		if oidLen < 0 || oidLen > nextVarBind-newPos {
+			return nil, nil, false
+		}
+		oid := decodeOID(data[newPos : newPos+oidLen])
+		if oid == "" {
+			return nil, nil, false
+		}
+		pos = newPos + oidLen
+
+		// Value: exactly one TLV of any tag, ending on the VarBind boundary.
+		if pos >= nextVarBind {
+			return nil, nil, false
+		}
+		tag := data[pos]
+		pos++
+		valLen, newPos := parseLength(data, pos)
+		if valLen < 0 || valLen > nextVarBind-newPos || newPos+valLen != nextVarBind {
+			return nil, nil, false
+		}
+		binds = append(binds, snmpVarBind{name: oid, tag: tag, content: data[newPos:nextVarBind]})
+		pos = nextVarBind
+	}
+
+	return binds, contents, true
 }
 
 // parseVarBindNames walks a variable-bindings list, starting at the offset of
