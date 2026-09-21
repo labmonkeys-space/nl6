@@ -34,28 +34,37 @@ import (
 // `go test` has the container), env set with the collector unreachable
 // FAILS, because a silent skip asserts nothing.
 //
-// What the collector's output looks like (observed 2026-09-20 against
+// What the collector's output looks like (observed 2026-09-21 against
 // ipfixcol2 2.8.0 from Debian forky with the config in
-// examples/ipfixcol2/ipfixcol2.xml; every assertion below keys on this):
+// examples/ipfixcol2/ipfixcol2.xml, nonPrintableChar ON; every assertion
+// below keys on this):
 //
 //	{"@type":"ipfix.entry","iana:octetDeltaCount":380217,"iana:packetDeltaCount":140,
 //	 "iana:protocolIdentifier":6,...,"iana:destinationTransportPort":80,...,
-//	 "iana:applicationId":50331728,"cisco:appHTTPHost":"www.example.com",
-//	 "cisco:appHTTPUriStatistics":"/api/v1/status",
+//	 "iana:applicationId":50331728,
+//	 "cisco:appHTTPHost":"\u0003\u0000\u0000P4\u0002www.example.com",
+//	 "cisco:appHTTPUriStatistics":"/api/v1/status\u0000\u0000\u0001",
 //	 "ipfix:exportTime":1789866258,"ipfix:seqNumber":8,"ipfix:odid":168361985,
 //	 "ipfix:msgLength":1212,"ipfix:srcAddr":"127.0.0.1","ipfix:templateId":258}
 //	{"@type":"ipfix.optionsEntry","iana:applicationId":50331728,
 //	 "iana:applicationName":"http","iana:applicationDescription":"Hypertext Transfer Protocol",
 //	 ...,"ipfix:templateId":259}
 //
-// Three facts from that run shape the assertions. applicationId (octetArray
-// 4) is rendered as an INTEGER under octetArrayAsUint. The two PEN 9 fields
-// are rendered BY NAME from libfds's own cisco.xml, which is the point: had
-// nl6 sent a wrong number they would read en9:idNNNN. And libfds types
-// 9357 as `string`, so the collector cuts the URI statistics value at its
-// NUL delimiter and the 2-byte hit count is NOT visible in its output; the
-// URI is asserted here and the count layout stays covered by nl6's own
-// decode tests (Plan A), which is stated rather than papered over.
+// Three facts shape the assertions. applicationId (octetArray 4) is rendered
+// as an INTEGER under octetArrayAsUint. The two PEN 9 fields are rendered BY
+// NAME from libfds's own cisco.xml, which is the point: had nl6 sent a wrong
+// number they would read en9:idNNNN (an id cisco.xml DOES define renders
+// under that name instead, so a wrong-id mutation must pick one it does not:
+// 12232 to 12242 and 12244 are all defined). And libfds types both 12235 and
+// 9357 as `string`, which is lossless ONLY with nonPrintableChar on: every
+// non-printable byte is then a \u00XX escape that encoding/json turns back
+// into the byte, so Cisco's six-byte host prefix (nl6#679) and the URI
+// statistics' NUL and two-byte hit count are asserted here byte for byte.
+// With the flag OFF (the config before 2026-09-21, and the state the comment
+// there wrongly described as showing those bytes) the collector DROPPED
+// them: the host rendered "P4www.example.com", prefix-only "P4", the URI
+// "/api/v1/status" with no count, and an earlier version of this comment
+// read that as "the collector cuts at the NUL". It does not; it discards.
 //
 // The collector does not log UDP sequence gaps, so the RFC 7011 section 3.1
 // rule (the sequence number counts Data Records, options records included)
@@ -84,6 +93,42 @@ func (r ipfixInteropRecord) num(key string) (float64, bool) {
 func (r ipfixInteropRecord) str(key string) string {
 	s, _ := r[key].(string)
 	return s
+}
+
+// fixedStr reads a FIXED-WIDTH string element (applicationName 24,
+// applicationDescription 55): with nonPrintableChar on, the collector renders
+// the NUL padding as \u0000 escapes, so the padding is trimmed here. Not
+// used for the variable-length PEN 9 fields, whose NULs are data.
+func (r ipfixInteropRecord) fixedStr(key string) string {
+	return strings.TrimRight(r.str(key), "\x00")
+}
+
+// interopHostAfterPrefix returns the hostname the collector decoded for IE
+// 12235: the value must start with avcHostPrefix (a real IOS-XE and nl6 since
+// nl6#679 never send the field without it), and the remainder is the host,
+// empty for a prefix-only value. The bytes reach us intact because the
+// collector escapes non-printables (see the file comment).
+func interopHostAfterPrefix(t *testing.T, value string) string {
+	t.Helper()
+	if !strings.HasPrefix(value, string(avcHostPrefix)) {
+		t.Fatalf("collector's IE 12235 value %q (%x) lacks Cisco's host prefix %x (nl6#679)", value, value, avcHostPrefix)
+	}
+	return value[len(avcHostPrefix):]
+}
+
+// interopURIStats parses the collector's IE 9357 rendering as uriStatsValue
+// writes it: URI, NUL, big-endian uint16 hit count, no trailing delimiter. An
+// empty value (a record with no URI) returns "", 0.
+func interopURIStats(t *testing.T, value string) (string, uint16) {
+	t.Helper()
+	if value == "" {
+		return "", 0
+	}
+	nul := strings.IndexByte(value, 0)
+	if nul < 0 || len(value) != nul+3 {
+		t.Fatalf("collector's IE 9357 value %q (%x) is not URI, NUL, 2-byte count", value, value)
+	}
+	return value[:nul], uint16(value[nul+1])<<8 | uint16(value[nul+2])
 }
 
 func (r ipfixInteropRecord) isData() bool    { return r.str("@type") == "ipfix.entry" }
@@ -315,7 +360,8 @@ func TestIPFIXInteropAVCDecodes(t *testing.T) {
 		}
 		hostKey := interopEnterpriseKey(t, r, "appHTTPHost", ciscoHTTPHost)
 		uriKey := interopEnterpriseKey(t, r, "appHTTPUriStatistics", ciscoHTTPURIStatistics)
-		host, uri := r.str(hostKey), r.str(uriKey)
+		host := interopHostAfterPrefix(t, r.str(hostKey))
+		uri, hits := interopURIStats(t, r.str(uriKey))
 		if host != "" {
 			avcWithHost++
 			if !interopHasString(app.Hosts, host) {
@@ -327,6 +373,9 @@ func TestIPFIXInteropAVCDecodes(t *testing.T) {
 		if uri != "" {
 			if !interopHasString(app.URIs, uri) {
 				t.Fatalf("decoded URI %q is not a catalog URI of %s (%v)", uri, app.Name, app.URIs)
+			}
+			if hits != 1 {
+				t.Fatalf("decoded URI hit count %d, want 1 (uriStatsValue's per-record count)", hits)
 			}
 		} else if len(app.URIs) > 0 {
 			t.Fatalf("application %s has URIs but the record carried none: %v", app.Name, r)
@@ -359,8 +408,8 @@ func TestIPFIXInteropAVCDecodes(t *testing.T) {
 		if !ok {
 			t.Fatalf("application table lacks %s (%d)", app.Name, id)
 		}
-		if row.str("iana:applicationName") != app.Name || row.str("iana:applicationDescription") != app.Description {
-			t.Fatalf("application table row for %d = %q / %q, want %q / %q", id, row.str("iana:applicationName"), row.str("iana:applicationDescription"), app.Name, app.Description)
+		if row.fixedStr("iana:applicationName") != app.Name || row.fixedStr("iana:applicationDescription") != app.Description {
+			t.Fatalf("application table row for %d = %q / %q, want %q / %q", id, row.fixedStr("iana:applicationName"), row.fixedStr("iana:applicationDescription"), app.Name, app.Description)
 		}
 	}
 	for id := range seenIDs {
@@ -532,7 +581,7 @@ func TestIPFIXInteropGroundTruthReconciles(t *testing.T) {
 	for _, r := range recs {
 		if r.isOptions() {
 			idf, _ := r.num("iana:applicationId")
-			names[uint32(idf)] = r.str("iana:applicationName")
+			names[uint32(idf)] = r.fixedStr("iana:applicationName")
 			continue
 		}
 		if !r.isData() {
@@ -570,8 +619,18 @@ func TestIPFIXInteropGroundTruthReconciles(t *testing.T) {
 			ls.bytes += uint64(b)
 			ls.packets += uint64(pk)
 		}
-		add(l7FieldHost, r.str("cisco:appHTTPHost"))
-		add(l7FieldURI, r.str("cisco:appHTTPUriStatistics"))
+		// The report's http_host value is the bare hostname; the wire carries
+		// Cisco's prefix in front of it, so the fold strips it (and fails on
+		// an AVC record without it). The http_uri value is the URI half of
+		// 9357. The plain control participant's records (template 256) carry
+		// neither key and fold into no l7 row, which is the report's rule too.
+		if v, ok := r["cisco:appHTTPHost"].(string); ok {
+			add(l7FieldHost, interopHostAfterPrefix(t, v))
+		}
+		if v, ok := r["cisco:appHTTPUriStatistics"].(string); ok {
+			uri, _ := interopURIStats(t, v)
+			add(l7FieldURI, uri)
+		}
 	}
 
 	if total != rep.Summary.Sent {

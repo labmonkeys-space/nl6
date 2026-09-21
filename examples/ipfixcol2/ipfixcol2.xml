@@ -8,8 +8,15 @@
   (template 259) reaches the test, and unknown elements are INCLUDED so an
   unresolved PEN 9 element shows up as `en9:idNNNN` (the failure signal)
   rather than vanishing. octetArrayAsUint keeps applicationId (octetArray 4)
-  as an integer; nonPrintableChar is off because the URI statistics field
-  carries NUL delimiters and binary counts the test must see.
+  as an integer. nonPrintableChar is ON so that a non-printable byte inside a
+  string-typed element is ESCAPED (\u00XX) instead of DROPPED: libfds types
+  PEN 9 IEs 12235 and 9357 as string, the host value starts with Cisco's
+  six-byte prefix 03 00 00 50 34 02 (nl6#679) and the URI statistics value
+  ends in a NUL and a two-byte count, and with the flag off (measured
+  2026-09-21) the collector rendered them as "P4www.example.com" and
+  "/index.html", four of the six prefix bytes and the whole hit count gone.
+  The earlier comment here said the flag was off SO THAT the test could see
+  those bytes; the flag's sense is the reverse, and the test never saw them.
 -->
 <ipfixcol2>
     <inputPlugins>
@@ -32,7 +39,7 @@
                 <protocol>raw</protocol>
                 <ignoreUnknown>false</ignoreUnknown>
                 <ignoreOptions>false</ignoreOptions>
-                <nonPrintableChar>false</nonPrintableChar>
+                <nonPrintableChar>true</nonPrintableChar>
                 <octetArrayAsUint>true</octetArrayAsUint>
                 <numericNames>false</numericNames>
                 <splitBiflow>false</splitBiflow>
