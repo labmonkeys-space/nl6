@@ -75,12 +75,13 @@ In my own words, restated from the same table row: the field is a repeating sequ
 Element order: within each pair the URI comes first, followed immediately by its hit count.
 Delimiter versus length prefix: each URI is terminated by a NUL byte rather than preceded by a length field, so the field is delimiter-terminated, not length-prefixed.
 The guide's prose format line `uri <delimiter> count <delimiter> uri <delimiter> count <delimiter>...` shows a delimiter after each count, while its encoding example `{URI\0countURI\0count}` shows none.
-nl6 records the encoding example as governing because it is the byte-level statement, and unit 2 must state that choice beside the byte-order assumption.
+nl6 records the encoding example as governing because it is the byte-level statement; unit 2 stated that choice beside the byte-order decision, and the reference capture confirmed it (see below).
 Hit count width and byte order: the guide sizes the hit count at two bytes and calls it an integer, but it does not say which byte order that integer uses, so byte order is unstated by Cisco.
 Maximum URI length: the guide caps a single URI at 512 characters for IOS, truncating anything longer; for IOS XE it gives no URI-specific number, only the same generic 2 KB ceiling it applies to every IOS XE extracted variable-length field, the same pattern already recorded for HTTP host at row `9/12235`.
 Maximum hit count: the guide puts the ceiling at 65535, the natural limit of an unsigned two-byte field.
 Cisco's text gives no byte order for the 2-byte hit count, and no other source consulted for this row supplies one either.
-This is an open encoder assumption: unit 2 must decide it explicitly, naming whether it follows RFC 7011's network byte order convention for IPFIX integers or something else and why, and the spec's fidelity exit rule applies to that assumption until a Cisco document or a packet capture pins it.
+Unit 2 decided it explicitly at `uriStatsValue` (big-endian, RFC 7011 section 6.1.1's network byte order; encoding example governs, so no trailing delimiter), and the IOS-XE 26.01.02 reference capture confirmed both decisions on 2026-09-21: all 400 values are URI, NUL, big-endian count, nothing after (`TestCiscoAVCCapture_URIStatisticsLayout`).
+Neither is an open assumption any more; both are capture-confirmed facts, though still not stated in any Cisco document.
 The full PDF of this guide, https://www.cisco.com/c/en/us/td/docs/routers/access/ISRG2/AVC/api/guide/AVC_Metric_Definition_Guide.pdf, returned only its table-of-contents/landing content through the fetch tool and not the chapter body, the same non-decoding outcome already recorded for the xe-16-9 PDF above, so this section relies on the HTML chapter (`cisco-avc-fdg-2015`), which is already a cited source and was refetched for this task.
 
 ### libfds appHTTPUriStatistics (9357)
@@ -153,3 +154,12 @@ Cisco numbers them 256 interface table, 257 application table, 258 data.
 
 395 messages; the largest IP datagram is 1420 bytes and none is fragmented.
 The sequence number counts data records including option data records, as nl6 does.
+
+### Cisco-sourced versus nl6 decision, after the capture
+
+The fidelity decision (nl6#680) kept the encoder and downgraded the claim to "conformant and interop-tested against open decoders"; `docs/reference/flow-export.md` lists the six differences.
+This is the ledger of what each shipped fact rests on now.
+
+Cisco-sourced (a document or the capture): IE numbers 12235, 9357, 12242 and their PEN; the 9357 layout including byte order and the absent trailing delimiter (capture); the 12235 six-byte host prefix that nl6 does not yet emit (capture, nl6#679); applicationName 24 and applicationDescription 55 (2015 guide and capture); the engine-3 `http` id and the engine-13 ids `unknown`, `binary-over-http`, `ping` (capture); RFC 6759 engine ids 3, 6, 13 (RFC); the router's 17-field connection record, ingress-only layer-7 values, first-segment URIs and 33/65-byte interface table (capture, recorded as differences).
+
+nl6 decisions, labelled as such and not to be read as Cisco facts: the octetArray type for IE 9357 (libfds says string, Cisco names no type); engine 3 with the IANA port as selector for every shipped catalog entry; the unidirectional flow-record shape with no connection id; option template ids 257 (interface) and 259 (application) against Cisco's 256 and 257; the 32-byte interfaceName and interfaceDescription widths; host and URI on every AVC record; multi-segment URIs in the shipped catalogs.

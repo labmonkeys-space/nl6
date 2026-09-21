@@ -425,8 +425,11 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 // Decision 1: the 2-byte hit count is BIG-ENDIAN, RFC 7011 section 6.1.1's
 // network byte order for integers. Decision 2: the encoding example governs,
 // so a record is `URI\0` + count, repeated, with NO trailing delimiter.
-// Neither is Cisco-sourced; a capture from a real IOS-XE box would settle
-// both, and the spec's fidelity exit rule applies to them until then.
+// Neither is stated in a Cisco document, but both are confirmed by the
+// IOS-XE 26.01.02 reference capture (testdata/cisco-avc/capture/), whose
+// 400 values are exactly this layout; pinned by
+// TestCiscoAVCCapture_URIStatisticsLayout, which compares against this
+// function's output byte for byte.
 func uriStatsValue(uri string, count uint32) []byte {
 	if count > math.MaxUint16 {
 		count = math.MaxUint16
