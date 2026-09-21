@@ -122,12 +122,14 @@ sourceIPv4Address (8, 4), destinationIPv4Address (12, 4), ipVersion (60, 1), pro
 Match fields come first, the two variable-length fields sit before the counters, and URI statistics precede host.
 nl6's template 258 is its 54-byte unidirectional prefix followed by applicationId, host, URI statistics.
 
-### IE 12235, HTTP host: not a bare string (nl6#679)
+### IE 12235, HTTP host: not a bare string (nl6#679, resolved)
 
 Every one of the 1302 records starts the field with the constant six bytes `03 00 00 50 34 02`, then the hostname.
 That is applicationId 0x03000050 (engine 3, selector 80, http) followed by sub-application id 0x3402, the "Subapplication ID for the host" sentence in `cisco-avc-fdg-2015` that the earlier reading recorded as prose rather than as a wire layout.
 A record with no host carries exactly the six bytes; the field is never empty; the prefix is constant regardless of the flow's own applicationId (a DNS flow carries it too).
-nl6 emits the bare hostname, so a decoder written to Cisco's layout reads nl6's value wrongly, and libfds, which types the element as string, shows nl6's `www.example.com` where a real box shows six binary bytes and then the name.
+nl6 emitted the bare hostname until nl6#679, so a decoder written to Cisco's layout read nl6's value wrongly.
+Since nl6#679 the encoder writes the prefix from the single constant `avcHostPrefix` (`ipfix_avc.go`) on every AVC record, prefix alone without a host, and `TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix` compares the capture against that constant rather than against a copy, so the two cannot drift.
+What a collector shows depends on its string handling: libfds types the element as string, and IPFIXcol2's JSON output drops non-printable bytes unless `nonPrintableChar` is on, rendering the value as `P4www.example.com` (the prefix's two printable bytes, then the name) or, with the option on, as `\u0003\u0000\u0000P4\u0002www.example.com`; the interop gate runs with the option on and asserts the six bytes.
 
 ### IE 9357, HTTP URI statistics: layout confirmed
 
@@ -160,6 +162,6 @@ The sequence number counts data records including option data records, as nl6 do
 The fidelity decision (nl6#680) kept the encoder and downgraded the claim to "conformant and interop-tested against open decoders"; `docs/reference/flow-export.md` lists the six differences.
 This is the ledger of what each shipped fact rests on now.
 
-Cisco-sourced (a document or the capture): IE numbers 12235, 9357, 12242 and their PEN; the 9357 layout including byte order and the absent trailing delimiter (capture); the 12235 six-byte host prefix that nl6 does not yet emit (capture, nl6#679); applicationName 24 and applicationDescription 55 (2015 guide and capture); the engine-3 `http` id and the engine-13 ids `unknown`, `binary-over-http`, `ping` (capture); RFC 6759 engine ids 3, 6, 13 (RFC); the router's 17-field connection record, ingress-only layer-7 values, first-segment URIs and 33/65-byte interface table (capture, recorded as differences).
+Cisco-sourced (a document or the capture): IE numbers 12235, 9357, 12242 and their PEN; the 9357 layout including byte order and the absent trailing delimiter (capture); the 12235 six-byte host prefix, emitted since nl6#679 (capture); applicationName 24 and applicationDescription 55 (2015 guide and capture); the engine-3 `http` id and the engine-13 ids `unknown`, `binary-over-http`, `ping` (capture); RFC 6759 engine ids 3, 6, 13 (RFC); the router's 17-field connection record, ingress-only layer-7 values, first-segment URIs and 33/65-byte interface table (capture, recorded as differences).
 
 nl6 decisions, labelled as such and not to be read as Cisco facts: the octetArray type for IE 9357 (libfds says string, Cisco names no type); engine 3 with the IANA port as selector for every shipped catalog entry; the unidirectional flow-record shape with no connection id; option template ids 257 (interface) and 259 (application) against Cisco's 256 and 257; the 32-byte interfaceName and interfaceDescription widths; host and URI on every AVC record; multi-segment URIs in the shipped catalogs.

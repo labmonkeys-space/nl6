@@ -309,7 +309,7 @@ The block is always present and is `[]` unless an NBAR2 participant sent a recor
 | `application_id` | number | Wire `applicationId` of the records, as in `applications[]`. Join key, part 1. |
 | `application_name` | string | The catalog's name for it. Informational. |
 | `field` | string | `http_host` or `http_uri`. Join key, part 2. |
-| `value` | string | The host or URI exactly as the record carried it. Join key, part 3. |
+| `value` | string | The hostname or URI as a string. For `http_host` this is the hostname WITHOUT the six-byte prefix `03 00 00 50 34 02` the wire carries in front of it (Cisco's layout, nl6#679); for `http_uri` it is the URI without the NUL and hit count that follow it. Join key, part 3. |
 | `records` / `bytes` / `packets` | number | Sent-basis totals of the records carrying this value, the `applications[]` convention. |
 | `avg_bytes_per_second` | number | In-window bytes ÷ actual window, the `applications[]` convention. |
 
@@ -317,7 +317,8 @@ The block is always present and is `[]` unless an NBAR2 participant sent a recor
 For each `field`, `Σ l7_values[field].records ≤ Σ applications[].records`, and equality is not required: a DNS or SSL record carries no host and no URI, so it contributes to `applications[]` and to no row here.
 Equality holds only when every sent record carried exactly one value of that field.
 
-A collector that types IE 9357 as a string (libfds does) truncates the URI statistics value at its NUL delimiter and reports the URI alone; the `http_uri` row's `value` is that URI, so it reconciles against such a collector directly.
+To reconcile `http_host` against a collector, strip the six-byte prefix from the decoded IE 12235 value first; a record whose value is exactly the six bytes carried no host and belongs to no `http_host` row.
+libfds types both IE 12235 and IE 9357 as strings, and IPFIXcol2 drops non-printable bytes from a string unless its `nonPrintableChar` output option is on: off, it shows the URI alone (the NUL and count vanish) and a host as `P4www.example.com` (the prefix's two printable bytes and then the name); on, every byte is a `\u00XX` escape.
 The 2-byte hit count that follows the URI on the wire is not part of the key.
 
 ## The ledger identity
