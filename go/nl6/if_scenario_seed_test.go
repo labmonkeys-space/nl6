@@ -107,16 +107,25 @@ func TestSetUnderNonDefaultScenarioIsReadBack(t *testing.T) {
 	if name, val := v2cGetNextValue(t, s, oidIfAdminStatus+".1"); name != oidIfAdminStatus+".2" || val != "2" {
 		t.Errorf("walk after SET: (%s, %s), want (%s.2, 2)", name, val, oidIfAdminStatus)
 	}
-	// Admin up cascades oper up (nl6#684), and the scenario does not pull it
-	// back down: the seed was applied once, at construction.
+	// AN ADMIN BOUNCE DOES NOT HEAL THE CABLE (nl6#694). Scenario 3 is
+	// documented as "link failures, SFP issues, cable pull", so it seeds the
+	// LINK down; admin-up releases oper to that link rather than forcing it up,
+	// and the fault the scenario exists to simulate survives the bounce.
+	//
+	// This assertion is inverted from nl6#693, which required ifOperStatus = 1
+	// here and so required an admin bounce to repair a simulated cable pull.
 	if status, _ := setVia(t, s, snmpVersion2c, []testBind{intBind(oidIfAdminStatus+".2", 1)}); status != snmpErrNoError {
 		t.Fatalf("SET admin up: status %d", status)
 	}
 	if got := v2cGet(t, s, oidIfAdminStatus+".2"); got != "1" {
 		t.Errorf("after SET up, GET ifAdminStatus.2 = %s, want 1", got)
 	}
-	if got := v2cGet(t, s, oidIfOperStatus+".2"); got != "1" {
-		t.Errorf("after SET up, GET ifOperStatus.2 = %s, want 1 (cascade)", got)
+	if got := v2cGet(t, s, oidIfOperStatus+".2"); got != "2" {
+		t.Errorf("after SET up, GET ifOperStatus.2 = %s, want 2: the link is still down", got)
+	}
+	if name, val := v2cGetNextValue(t, s, oidIfOperStatus+".1"); name != oidIfOperStatus+".2" || val != "2" {
+		t.Errorf("walk after the bounce: (%s, %s), want (%s.2, 2) — GET and the walk must agree",
+			name, val, oidIfOperStatus)
 	}
 	// Interfaces never named still carry the seed.
 	for _, i := range []int{1, 3} {
@@ -126,10 +135,16 @@ func TestSetUnderNonDefaultScenarioIsReadBack(t *testing.T) {
 	}
 }
 
-// Scenario 1 seeds admin AND oper down explicitly (no cascade runs at seed
-// time), and a SET of admin up brings the interface back through the nl6#684
-// cascade, with the same event sequence a REST POST produces.
-func TestIfScenario1SeedsAdminAndOperDownAndSetRaisesThem(t *testing.T) {
+// Scenario 1 seeds admin down and PRESERVES the link (nl6#694). The
+// observable oper follows by derivation, so the fleet reads down/down exactly
+// as before; what changed is that the link survives, and a SET of admin up
+// surfaces it with the same event sequence a REST POST produces.
+//
+// nl6#693 had to write oper explicitly here because a seed runs no cascade.
+// Under derivation the forcing lives in the accessor, so writing the link down
+// as well would model a fleet of severed cables rather than shut ports — and
+// unshutting a port would then leave it dead.
+func TestIfScenario1SeedsAdminDownPreservesTheLinkAndSetRaisesIt(t *testing.T) {
 	withIfScenario(t, IfScenarioAllShutdown, 10)
 	s, state := newSetTestServer(t, 2)
 	for i := 1; i <= 2; i++ {
@@ -167,7 +182,7 @@ func TestIfScenario1SeedsAdminAndOperDownAndSetRaisesThem(t *testing.T) {
 		t.Errorf("after SET, GET ifAdminStatus.1 = %s, want 1", got)
 	}
 	if got := v2cGet(t, s, oidIfOperStatus+".1"); got != "1" {
-		t.Errorf("after SET, GET ifOperStatus.1 = %s, want 1 (cascade)", got)
+		t.Errorf("after SET, GET ifOperStatus.1 = %s, want 1: the link was preserved by the seed", got)
 	}
 	var got []key
 	for done := false; !done; {
@@ -178,7 +193,8 @@ func TestIfScenario1SeedsAdminAndOperDownAndSetRaisesThem(t *testing.T) {
 			done = true
 		}
 	}
-	want := []key{{1, OperDown, AdminUp, LeafAdminStatus}, {1, OperUp, AdminUp, LeafOperStatus}}
+	// Both events come from one swap, so both carry the post-swap derived oper.
+	want := []key{{1, OperUp, AdminUp, LeafAdminStatus}, {1, OperUp, AdminUp, LeafOperStatus}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("events = %+v, want %+v", got, want)
 	}
@@ -233,11 +249,16 @@ func TestScenarioSeedTable(t *testing.T) {
 	cases := []struct {
 		scenario, pct, ifIndex int
 		jsonOper, jsonAdmin    uint8
-		wantOper, wantAdmin    uint8
+		wantLink, wantAdmin    uint8
 	}{
 		{IfScenarioAllNormal, 10, 1, OperUp, AdminUp, OperUp, AdminUp},
 		{IfScenarioAllNormal, 10, 1, OperDown, AdminDown, OperDown, AdminDown},
-		{IfScenarioAllShutdown, 10, 1, OperUp, AdminUp, OperDown, AdminDown},
+		// Scenario 1 shuts the port and PRESERVES the link (nl6#694): admin
+		// down forces oper down by derivation, so seeding the link down too
+		// would model a severed cable instead of a shut port, and unshutting
+		// would leave the interface dead.
+		{IfScenarioAllShutdown, 10, 1, OperUp, AdminUp, OperUp, AdminDown},
+		{IfScenarioAllShutdown, 10, 1, OperDown, AdminUp, OperDown, AdminDown},
 		{IfScenarioAllFailure, 10, 1, OperUp, AdminUp, OperDown, AdminUp},
 		{IfScenarioAllFailure, 10, 1, OperDown, AdminDown, OperDown, AdminUp},
 		{IfScenarioPctFailure, 0, 1, OperUp, AdminUp, OperUp, AdminUp},
@@ -250,10 +271,10 @@ func TestScenarioSeedTable(t *testing.T) {
 	}
 	for _, c := range cases {
 		cfg := &IfStateConfig{Scenario: c.scenario, FailurePct: c.pct}
-		oper, admin := scenarioSeed(cfg, c.ifIndex, c.jsonOper, c.jsonAdmin)
-		if oper != c.wantOper || admin != c.wantAdmin {
-			t.Errorf("scenarioSeed(%d/%d, ifIndex %d, json %d/%d) = %d/%d, want %d/%d",
-				c.scenario, c.pct, c.ifIndex, c.jsonOper, c.jsonAdmin, oper, admin, c.wantOper, c.wantAdmin)
+		link, admin := scenarioSeed(cfg, c.ifIndex, c.jsonOper, c.jsonAdmin)
+		if link != c.wantLink || admin != c.wantAdmin {
+			t.Errorf("scenarioSeed(%d/%d, ifIndex %d, json %d/%d) = link %d/admin %d, want link %d/admin %d",
+				c.scenario, c.pct, c.ifIndex, c.jsonOper, c.jsonAdmin, link, admin, c.wantLink, c.wantAdmin)
 		}
 	}
 }

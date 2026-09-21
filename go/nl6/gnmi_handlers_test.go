@@ -320,7 +320,7 @@ func TestGnmiServer_Subscribe_OnChange_DeliversOnStateChange(t *testing.T) {
 	drainOne(t, stream, 2*time.Second)
 
 	state := srv.device.metricsCycler.ifCounters.Load().State()
-	changed, evt := state.SetOperStatus(2, OperDown)
+	changed, evt := setLinkVisible(state, 2, OperDown)
 	if !changed {
 		t.Fatal("SetOperStatus failed")
 	}
@@ -581,7 +581,7 @@ func TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers(t *testing.T) {
 	drainOne(t, stream, 2*time.Second)
 
 	state := mc.ifCounters.Load().State()
-	changed, evt := state.SetOperStatus(1, OperDown)
+	changed, evt := setLinkVisible(state, 1, OperDown)
 	if !changed {
 		t.Fatal("SetOperStatus failed")
 	}

@@ -453,7 +453,7 @@ func TestIfCounterCycler_StateEngine_GetDynamicReadsFromState(t *testing.T) {
 	time.Sleep(25 * time.Millisecond)
 
 	// Mutate oper-status; SNMP read must reflect the change.
-	changed, _ := ic.State().SetOperStatus(1, OperDown)
+	changed, _ := setLinkVisible(ic.State(), 1, OperDown)
 	if !changed {
 		t.Fatal("SetOperStatus(1, OperDown): expected changed=true")
 	}
@@ -484,11 +484,22 @@ func TestIfCounterCycler_StateEngine_SeedsFromOidIndex(t *testing.T) {
 	c.InitIfCountersWithScenario(res, 1, IfErrorClean)
 	ic := c.ifCounters.Load()
 
-	if got := ic.State().OperStatus(1); got != OperDown {
-		t.Errorf("seeded OperStatus: got %d, want OperDown(2)", got)
+	// The JSON ifOperStatus row seeds the LINK; the observable oper-status is
+	// derived. admin = testing(3) FORCES oper testing(3) per RFC 2863 ("The
+	// testing(3) state indicates that no operational packets can be passed"),
+	// so the down link is masked — and is still there when admin comes up.
+	if got := ic.State().LinkState(1); got != OperDown {
+		t.Errorf("seeded link: got %d, want OperDown(2) from the JSON ifOperStatus row", got)
 	}
 	if got := ic.State().AdminStatus(1); got != AdminTesting {
 		t.Errorf("seeded AdminStatus: got %d, want AdminTesting(3)", got)
+	}
+	if got := ic.State().OperStatus(1); got != OperTesting {
+		t.Errorf("derived OperStatus: got %d, want OperTesting(3) — admin testing forces it", got)
+	}
+	ic.State().ApplyAdminStatus(1, AdminUp)
+	if got := ic.State().OperStatus(1); got != OperDown {
+		t.Errorf("after admin up, OperStatus: got %d, want OperDown(2) — the seeded link", got)
 	}
 }
 
@@ -584,8 +595,8 @@ func TestIfCounterCycler_StateEngine_ConcurrentSnmpReadDuringFlap(t *testing.T) 
 			case <-stop:
 				return
 			default:
-				state.SetOperStatus(1, OperDown)
-				state.SetOperStatus(1, OperUp)
+				setLinkVisible(state, 1, OperDown)
+				setLinkVisible(state, 1, OperUp)
 			}
 		}
 	}()
@@ -789,7 +800,7 @@ func TestIfCounterCycler_StateEngine_SetCountersRewire(t *testing.T) {
 	ch := make(chan StateChange, 16)
 	state.AddListener(ch)
 
-	_, evt := state.SetOperStatus(1, OperDown)
+	_, evt := setLinkVisible(state, 1, OperDown)
 	state.Broadcast(evt)
 	<-ch
 
@@ -799,7 +810,7 @@ func TestIfCounterCycler_StateEngine_SetCountersRewire(t *testing.T) {
 
 	// Re-wire to a new pair.
 	state.SetCounters(&emit2, &drop2)
-	_, evt = state.SetOperStatus(1, OperUp)
+	_, evt = setLinkVisible(state, 1, OperUp)
 	state.Broadcast(evt)
 	<-ch
 
@@ -813,7 +824,7 @@ func TestIfCounterCycler_StateEngine_SetCountersRewire(t *testing.T) {
 
 	// Nil-out: subsequent events should not panic.
 	state.SetCounters(nil, nil)
-	_, evt = state.SetOperStatus(1, OperDown)
+	_, evt = setLinkVisible(state, 1, OperDown)
 	state.Broadcast(evt)
 	<-ch
 }

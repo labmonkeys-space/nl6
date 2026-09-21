@@ -22,8 +22,9 @@ import (
 //
 // # Why this needs a goroutine at all
 //
-// Tier C's interface notifications work because `SetOperStatus` is a mutator:
-// something calls it, and the broadcast hook fires. Optical values have no
+// Tier C's interface notifications work because the interface state engine has
+// MUTATORS (`SetLinkState`, `ApplyAdminStatus`): something calls one, and the
+// broadcast hook fires. Optical values have no
 // mutator. They are pure functions of elapsed time, so a channel can drift
 // across the FEC threshold with nothing in the process aware of it.
 //

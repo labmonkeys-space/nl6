@@ -61,33 +61,42 @@ func (c IfStateConfig) validate() error {
 	return nil
 }
 
-// scenarioSeed overlays the active interface-state scenario on the oper/admin
+// scenarioSeed overlays the active interface-state scenario on the link/admin
 // values a device's JSON resources declare for one ifIndex. It is a pure
 // function called once per interface at engine construction; the returned pair
 // is handed to InterfaceState.Seed, which stamps lastChangeNs = 0 and
 // broadcasts nothing.
 //
-// Seeding rather than mutating is load-bearing: SetOperStatus / SetAdminStatus
-// stamp lastChange and broadcast, so applying the scenario through them would
-// make a fleet report a transition per interface at boot, fire Tier C link
-// traps and syslog for state that never changed, and leave ifLastChange
-// non-zero. Scenario 1 therefore writes admin AND oper explicitly instead of
-// letting the nl6#684 admin→oper cascade derive oper — a seed is not a change,
-// so no cascade runs. A later SET of ifAdminStatus does go through the cascade
-// and raises oper, which needs no special case here.
+// The JSON `ifOperStatus.<N>` row seeds the LINK state (nl6#694): oper-status
+// is derived from (admin, link) and is not stored. For the default scenario
+// that is the identity on every interface whose admin row is up(1).
 //
-// Scenario 2 (all-normal, the default) is the identity, so the default fleet's
-// wire output is byte-identical to a build without this function. An unknown
-// scenario is the identity too; startup validation refuses it before any
-// device exists, and defaulting to "JSON wins" is the safe reading if one ever
-// reached here.
-func scenarioSeed(cfg *IfStateConfig, ifIndex int, jsonOper, jsonAdmin uint8) (oper, admin uint8) {
+// Seeding rather than mutating is load-bearing: the mutators stamp lastChange
+// and broadcast, so applying the scenario through them would make a fleet
+// report a transition per interface at boot, fire Tier C link traps and syslog
+// for state that never changed, and leave ifLastChange non-zero.
+//
+// SCENARIO 1 SEEDS ADMIN ONLY, and that is a deliberate change from nl6#693.
+// It had to write oper explicitly because a seed runs no cascade; under
+// derivation the forcing lives in the accessor, so seeding admin = down is
+// sufficient AND it preserves the link value. That preservation is the
+// feature: "shut the fleet, then unshut a port and watch it come back" needs
+// to know what the cable was doing, and writing link = down would model 30,000
+// severed cables instead of 30,000 shut ports.
+//
+// Scenario 2 (all-normal, the default) is the identity. An unknown scenario is
+// the identity too; startup validation refuses it before any device exists, and
+// defaulting to "JSON wins" is the safe reading if one ever reached here.
+func scenarioSeed(cfg *IfStateConfig, ifIndex int, jsonOper, jsonAdmin uint8) (link, admin uint8) {
 	if cfg == nil {
 		return jsonOper, jsonAdmin
 	}
 	switch cfg.Scenario {
 	case IfScenarioAllShutdown:
-		return OperDown, AdminDown
+		// Admin down forces oper down by derivation; the link keeps whatever
+		// the JSON declared, so unshutting restores it with no further
+		// mutation.
+		return jsonOper, AdminDown
 
 	case IfScenarioAllFailure:
 		return OperDown, AdminUp

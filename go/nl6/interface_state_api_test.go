@@ -423,7 +423,7 @@ func TestSetOperStatus_DurationSnapshotsPreState(t *testing.T) {
 	// Pre-state: flip ifIndex 1 to DOWN manually so the next POST
 	// is an idempotent no-op at the immediate step.
 	state := ic.State()
-	state.SetOperStatus(1, OperDown)
+	setLinkVisible(state, 1, OperDown)
 
 	// POST DOWN with duration: revert should keep it DOWN (snapshot).
 	body := strings.NewReader(`{"status":"DOWN","duration":"100ms"}`)

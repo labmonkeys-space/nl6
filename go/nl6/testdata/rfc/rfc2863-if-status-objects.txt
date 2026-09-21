@@ -1,0 +1,79 @@
+RFC 2863 (The Interfaces Group MIB), the ifAdminStatus / ifOperStatus /
+ifLastChange OBJECT-TYPE definitions. Verbatim extract, checked in so the
+derivation rule is data rather than recall.
+
+  Source:  https://www.rfc-editor.org/rfc/rfc2863.txt
+  Fetched: 2026-09-21
+  Command: curl -sS https://www.rfc-editor.org/rfc/rfc2863.txt |
+             sed -n "/^ifAdminStatus OBJECT-TYPE/,/^ifInOctets OBJECT-TYPE/p"
+
+Consumed by TestDeriveOperMatchesRFC2863. Page furniture (running headers,
+footers, form feeds) removed; no character of the definitions is altered.
+
+RFC text is redistributable under the IETF Trust's terms. The vendor MIB
+modules this repo deliberately does NOT vendor are not — which is why the
+vendor arc audits are pinned readings citing module and revision instead.
+
+ifAdminStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                up(1),       -- ready to pass packets
+                down(2),
+                testing(3)   -- in some test mode
+            }
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+            "The desired state of the interface.  The testing(3) state
+            indicates that no operational packets can be passed.  When a
+            managed system initializes, all interfaces start with
+            ifAdminStatus in the down(2) state.  As a result of either
+            explicit management action or per configuration information
+            retained by the managed system, ifAdminStatus is then
+            changed to either the up(1) or testing(3) states (or remains
+            in the down(2) state)."
+    ::= { ifEntry 7 }
+
+
+
+ifOperStatus OBJECT-TYPE
+    SYNTAX  INTEGER {
+                up(1),        -- ready to pass packets
+                down(2),
+                testing(3),   -- in some test mode
+                unknown(4),   -- status can not be determined
+                              -- for some reason.
+                dormant(5),
+                notPresent(6),    -- some component is missing
+                lowerLayerDown(7) -- down due to state of
+                                  -- lower-layer interface(s)
+            }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The current operational state of the interface.  The
+            testing(3) state indicates that no operational packets can
+            be passed.  If ifAdminStatus is down(2) then ifOperStatus
+            should be down(2).  If ifAdminStatus is changed to up(1)
+            then ifOperStatus should change to up(1) if the interface is
+            ready to transmit and receive network traffic; it should
+            change to dormant(5) if the interface is waiting for
+            external actions (such as a serial line waiting for an
+            incoming connection); it should remain in the down(2) state
+            if and only if there is a fault that prevents it from going
+            to the up(1) state; it should remain in the notPresent(6)
+            state if the interface has missing (typically, hardware)
+            components."
+    ::= { ifEntry 8 }
+
+ifLastChange OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+            "The value of sysUpTime at the time the interface entered
+            its current operational state.  If the current state was
+            entered prior to the last re-initialization of the local
+            network management subsystem, then this object contains a
+            zero value."
+    ::= { ifEntry 9 }
+

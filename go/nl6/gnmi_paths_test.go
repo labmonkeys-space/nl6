@@ -356,7 +356,7 @@ func TestPathResolver_LastChangeLeaf(t *testing.T) {
 
 	// Mutate; wait past 10ms so the change is observable in the integer slot.
 	time.Sleep(15 * time.Millisecond)
-	changed, evt := state.SetOperStatus(1, OperDown)
+	changed, evt := setLinkVisible(state, 1, OperDown)
 	if !changed {
 		t.Fatal("SetOperStatus failed")
 	}
@@ -388,37 +388,50 @@ func TestPathResolver_OperStatusReadsFromState(t *testing.T) {
 	}
 
 	// Mutate → resolver returns DOWN.
-	state.SetOperStatus(1, OperDown)
+	setLinkVisible(state, 1, OperDown)
 	updates, _ = r.Resolve(p, time.Now())
 	if got := updates[0].Value.(string); got != "openconfig-interfaces:DOWN" {
 		t.Errorf("post-mutation: got %q, want DOWN", got)
 	}
 
 	// Mutate to TESTING (rare enum).
-	state.SetOperStatus(1, OperTesting)
+	setLinkVisible(state, 1, OperTesting)
 	updates, _ = r.Resolve(p, time.Now())
 	if got := updates[0].Value.(string); got != "openconfig-interfaces:TESTING" {
 		t.Errorf("TESTING: got %q, want TESTING", got)
 	}
 }
 
-// TestPathResolver_AdminStatusReadsFromState mirrors the oper-status
-// test for admin-status. Confirms the two leaves are independent.
+// TestPathResolver_AdminStatusReadsFromState mirrors the oper-status test for
+// admin-status, and pins that gNMI sees the DERIVATION rather than two
+// independent leaves.
+//
+// It asserted independence until nl6#694 ("Confirms the two leaves are
+// independent"), which was the model the engine has stopped having: admin-down
+// forces oper-down, so a gNMI client reading both leaves at one instant must
+// never see admin DOWN with oper UP.
 func TestPathResolver_AdminStatusReadsFromState(t *testing.T) {
 	r := newTestPathResolver(t, 1)
 	state := r.device.metricsCycler.ifCounters.Load().State()
-	state.SetAdminStatus(1, AdminDown)
+	setAdminOne(state, 1, AdminDown)
 
 	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/admin-status")
 	updates, _ := r.Resolve(p, time.Now())
 	if got := updates[0].Value.(string); got != "openconfig-interfaces:DOWN" {
 		t.Errorf("admin: got %q, want DOWN", got)
 	}
-	// oper unaffected.
+	// oper FOLLOWS admin down, per RFC 2863.
 	pOper := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status")
 	updates, _ = r.Resolve(pOper, time.Now())
+	if got := updates[0].Value.(string); got != "openconfig-interfaces:DOWN" {
+		t.Errorf("oper: got %q, want DOWN (admin-down forces it)", got)
+	}
+
+	// Raising admin releases oper back to the link, which is still up.
+	state.ApplyAdminStatus(1, AdminUp)
+	updates, _ = r.Resolve(pOper, time.Now())
 	if got := updates[0].Value.(string); got != "openconfig-interfaces:UP" {
-		t.Errorf("oper untouched: got %q, want UP", got)
+		t.Errorf("oper after admin up: got %q, want UP (the link was never touched)", got)
 	}
 }
 
@@ -460,7 +473,7 @@ func TestPathResolver_OperStatusMatchesSNMPAtSameInstant(t *testing.T) {
 	}
 	p := pathFromString(t, "/interfaces/interface[name=TestIf1]/state/oper-status")
 	for _, tc := range cases {
-		state.SetOperStatus(1, tc.oper)
+		setLinkVisible(state, 1, tc.oper)
 		// gNMI side.
 		updates, err := r.Resolve(p, time.Now())
 		if err != nil {

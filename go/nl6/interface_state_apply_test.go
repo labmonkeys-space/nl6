@@ -49,12 +49,42 @@ func TestApplyAdminStatus_DownCascadesToOper(t *testing.T) {
 	}
 }
 
-func TestApplyAdminStatus_UpCascadesToOper(t *testing.T) {
+// THE ASYMMETRY. admin-up RELEASES oper to the link; it does not force it up.
+// This test asserted the opposite until nl6#694, and that assertion is what
+// made an admin bounce repair a simulated cable pull.
+func TestApplyAdminStatus_UpReleasesOperToTheLinkAndDoesNotForceItUp(t *testing.T) {
 	st := newApplyTestState(t)
-	st.Seed(1, OperDown, AdminDown)
+	st.Seed(1, OperDown, AdminDown) // link DOWN, admin DOWN
+
+	evts := st.ApplyAdminStatus(1, AdminUp)
+	if len(evts) != 1 || evts[0].Changed != LeafAdminStatus {
+		t.Fatalf("got %+v, want exactly one admin event: the link is down, so oper did not move", evts)
+	}
+	if snap := st.Snapshot(1); snap.Admin != AdminUp || snap.Oper != OperDown || snap.Link != OperDown {
+		t.Errorf("slot = %+v, want admin up / link down / oper down", snap)
+	}
+
+	// Bouncing admin again must not heal it either — the fault is in the link.
+	st.ApplyAdminStatus(1, AdminDown)
+	st.ApplyAdminStatus(1, AdminUp)
+	if snap := st.Snapshot(1); snap.Oper != OperDown {
+		t.Errorf("an admin bounce healed a broken link: %+v", snap)
+	}
+}
+
+// The other arm: over an UP link, admin-up does move oper, and reports both
+// leaves. Without this arm the test above would pass on an engine that never
+// raises oper at all.
+func TestApplyAdminStatus_UpOverAnUpLinkMovesOper(t *testing.T) {
+	st := newApplyTestState(t)
+	st.Seed(1, OperUp, AdminDown) // link UP, admin DOWN — a shut port, good cable
+
 	evts := st.ApplyAdminStatus(1, AdminUp)
 	if len(evts) != 2 {
-		t.Fatalf("got %d events, want 2: %+v", len(evts), evts)
+		t.Fatalf("got %d events, want 2 (admin then oper): %+v", len(evts), evts)
+	}
+	if evts[0].Changed != LeafAdminStatus || evts[1].Changed != LeafOperStatus || evts[1].Oper != OperUp {
+		t.Errorf("events = %+v, want admin UP then oper UP", evts)
 	}
 	if snap := st.Snapshot(1); snap.Admin != AdminUp || snap.Oper != OperUp {
 		t.Errorf("slot = %+v, want up/up", snap)
@@ -71,14 +101,49 @@ func TestApplyAdminStatus_TestingCascadesToOperTesting(t *testing.T) {
 	}
 }
 
-// admin already DOWN, oper raised by the flap scheduler: the cascade puts oper
-// back and reports exactly the oper event.
-func TestApplyAdminStatus_CorrectsFlappedOperOnAdminDown(t *testing.T) {
+// There is nothing to correct any more, and that is the improvement.
+//
+// The predecessor applied its cascade EVEN WHEN admin was already at target,
+// because the flap scheduler could raise oper on a shut port and something had
+// to put it back. The scheduler now moves the LINK and admin-down masks it, so
+// the bad state is unreachable rather than repaired after the fact — an
+// at-target apply is a pure no-op even over a link the scheduler has raised.
+func TestApplyAdminStatus_AtTargetOverARaisedLinkIsAPureNoOp(t *testing.T) {
 	st := newApplyTestState(t)
-	st.Seed(1, OperUp, AdminDown)
+	st.Seed(1, OperUp, AdminDown) // link raised beneath a shut port
+	before := st.Snapshot(1)
+
+	if evts := st.ApplyAdminStatus(1, AdminDown); len(evts) != 0 {
+		t.Fatalf("events = %+v, want none: admin was already down and oper never moved", evts)
+	}
+	if after := st.Snapshot(1); after != before {
+		t.Errorf("at-target apply moved the slot: %+v -> %+v", before, after)
+	}
+	if before.Oper != OperDown {
+		t.Errorf("a raised link was observable under admin-down: %+v", before)
+	}
+}
+
+// An admin change that does not move the DERIVED oper reports one event and
+// leaves ifLastChange alone — RFC 2863 defines it as the time the interface
+// entered its current OPERATIONAL state.
+func TestApplyAdminStatus_DownOverADownLinkDoesNotStampLastChange(t *testing.T) {
+	st := newApplyTestState(t)
+	st.Seed(1, OperDown, AdminUp) // link DOWN, admin UP: oper already down
+	before := st.Snapshot(1)
+	time.Sleep(2 * time.Millisecond)
+
 	evts := st.ApplyAdminStatus(1, AdminDown)
-	if len(evts) != 1 || evts[0].Changed != LeafOperStatus || evts[0].Oper != OperDown {
-		t.Fatalf("events = %+v, want exactly one oper DOWN event", evts)
+	if len(evts) != 1 || evts[0].Changed != LeafAdminStatus {
+		t.Fatalf("events = %+v, want exactly one admin event", evts)
+	}
+	after := st.Snapshot(1)
+	if after.Oper != OperDown {
+		t.Errorf("oper = %d, want down throughout", after.Oper)
+	}
+	if after.LastChangeNs != before.LastChangeNs {
+		t.Errorf("ifLastChange moved (%d -> %d) for an admin change that did not move the "+
+			"operational state", before.LastChangeNs, after.LastChangeNs)
 	}
 }
 
@@ -111,16 +176,30 @@ func TestApplyAdminStatus_RejectsBadInputs(t *testing.T) {
 	}
 }
 
-// The primitive mutator is unchanged: it still moves ONE leaf. The cascade is
-// the funnel's, not SetAdminStatus's (interface-state spec, MODIFIED mutator
-// requirement).
-func TestSetAdminStatusPrimitiveStillMovesOneLeaf(t *testing.T) {
+// The funnel is the ONLY door to admin-status, and one call is one CAS.
+//
+// The exported primitive (SetAdminStatus) is gone: with oper derived, every
+// admin move implies its derived transition, so a "moves one leaf" primitive
+// would be a second door with weaker guarantees — which is how an admin-down
+// over REST once fired no link trap (nl6#684). The funnel writes admin and
+// reports both leaves from the same swap.
+func TestApplyAdminStatus_IsOneSwapReportingBothLeaves(t *testing.T) {
 	st := newApplyTestState(t)
-	if changed, _ := st.SetAdminStatus(1, AdminDown); !changed {
-		t.Fatal("no change")
+	evts := st.ApplyAdminStatus(1, AdminDown)
+	if len(evts) != 2 {
+		t.Fatalf("got %d events, want 2 (admin then oper): %+v", len(evts), evts)
 	}
-	if snap := st.Snapshot(1); snap.Oper != OperUp {
-		t.Errorf("SetAdminStatus moved oper: %+v", snap)
+	// Both events describe the SAME swap, so they carry the same timestamp and
+	// the same post-swap values. Two CASes would let a concurrent link mutation
+	// land between them and be attributed to the admin change.
+	if evts[0].LastChangeNs != evts[1].LastChangeNs || !evts[0].At.Equal(evts[1].At) {
+		t.Errorf("the two events came from different swaps: %+v", evts)
+	}
+	if evts[0].Admin != AdminDown || evts[1].Admin != AdminDown {
+		t.Errorf("events disagree on admin: %+v", evts)
+	}
+	if snap := st.Snapshot(1); snap.Admin != AdminDown || snap.Oper != OperDown || snap.Link != OperUp {
+		t.Errorf("slot = %+v, want admin down / oper down / link still up", snap)
 	}
 }
 

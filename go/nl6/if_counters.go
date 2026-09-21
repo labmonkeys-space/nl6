@@ -1082,7 +1082,14 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 					if n >= 1 && n <= 7 {
 						oper = uint8(n)
 					} else {
-						log.Printf("if_counters: ifOperStatus.%d JSON value %q out of IF-MIB range 1..7; defaulting to UP", idx, s)
+						// This row seeds the LINK state, not the served
+						// ifOperStatus, which is derived from (admin, link).
+						// Saying "defaulting to UP" about the served value
+						// would be wrong on any interface whose admin row is
+						// down, where the derivation reports down regardless.
+						log.Printf("if_counters: ifOperStatus.%d JSON value %q out of IF-MIB range 1..7; "+
+							"defaulting the link state to UP (the served ifOperStatus is derived from "+
+							"ifAdminStatus and this link value)", idx, s)
 					}
 				}
 			}
@@ -1099,8 +1106,10 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 				}
 			}
 		}
-		oper, admin = scenarioSeed(ifStateConfig, idx, oper, admin)
-		ic.state.Seed(idx, oper, admin)
+		// The JSON ifOperStatus row seeds the LINK state; the observable
+		// oper-status is derived from (admin, link) at read time (nl6#694).
+		link, admin := scenarioSeed(ifStateConfig, idx, oper, admin)
+		ic.state.Seed(idx, link, admin)
 	}
 
 	// ic is fully constructed before the Store, so concurrent readers
