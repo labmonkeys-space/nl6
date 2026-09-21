@@ -109,8 +109,11 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		}
 	}
 
-	// Parse PDU (GetRequest = 0xa0, GetNext = 0xa1, GetBulk = 0xa5)
-	if pos < len(data) && (data[pos] == 0xa0 || data[pos] == 0xa1 || data[pos] == 0xa5) {
+	// Parse PDU. The tag list is servedPDUTag, shared with the two v3
+	// classifiers (add-snmp-set): this parser used to gate on its own
+	// three-tag list, so a SET's request-id was never read and every SET
+	// response carried the 123 default.
+	if pos < len(data) && servedPDUTag(data[pos]) {
 		pos++
 		pduLen, newPos := parseLength(data, pos)
 		if pduLen < 0 {
@@ -287,7 +290,74 @@ const (
 	// noSuchInstance (§4.2.2.2.1) and endOfMibView (§4.2.2.2.2) onto this
 	// error-status when answering a v1 manager.
 	snmpErrNoSuchName = 2
+	// The remaining RFC 3416 §3 values. Only the SET ladder (snmp_set.go)
+	// emits any of them, and of those only notWritable, wrongType,
+	// wrongEncoding, wrongValue and noCreation are reachable with one INTEGER
+	// column and an infallible apply; the rest are here so the ladder and the
+	// RFC 3584 §4.3 v1 mapping read against the whole table rather than a
+	// hand-picked subset (add-snmp-set).
+	snmpErrBadValue            = 3
+	snmpErrReadOnly            = 4 // RFC 1157 defines it; RFC 3584 §4.3 never emits it
+	snmpErrGenErr              = 5
+	snmpErrNoAccess            = 6
+	snmpErrWrongType           = 7
+	snmpErrWrongLength         = 8
+	snmpErrWrongEncoding       = 9
+	snmpErrWrongValue          = 10
+	snmpErrNoCreation          = 11
+	snmpErrInconsistentValue   = 12
+	snmpErrResourceUnavailable = 13
+	snmpErrCommitFailed        = 14
+	snmpErrUndoFailed          = 15
+	snmpErrAuthorizationError  = 16
+	snmpErrNotWritable         = 17
+	snmpErrInconsistentName    = 18
 )
+
+// v1SetErrorStatus maps an RFC 3416 SET error-status onto the value an SNMPv1
+// manager can represent, per the RFC 3584 §4.3 table. ONE ladder computes the
+// v2 verdict and this function is the only place the v1 answer comes from, so
+// the two RFCs cannot be applied independently and disagree (add-snmp-set D6).
+//
+// readOnly(4) is never an output: RFC 1157 lists it, RFC 3584 §4.3 says it is
+// not used, and RFC 1157 §4.1.5 itself answers a non-writable object with
+// noSuchName. noError, tooBig and genErr are their own mapping.
+func v1SetErrorStatus(v2 int) int {
+	switch v2 {
+	case snmpErrNoAccess, snmpErrNotWritable, snmpErrNoCreation,
+		snmpErrInconsistentName, snmpErrAuthorizationError:
+		return snmpErrNoSuchName
+	case snmpErrWrongType, snmpErrWrongLength, snmpErrWrongEncoding,
+		snmpErrWrongValue, snmpErrInconsistentValue:
+		return snmpErrBadValue
+	case snmpErrResourceUnavailable, snmpErrCommitFailed, snmpErrUndoFailed:
+		return snmpErrGenErr
+	}
+	return v2
+}
+
+// createSetResponse frames a SET's Response-PDU for v1/v2c. `echoed` is the
+// request's own variable-bindings list CONTENTS, copied verbatim: RFC 3416
+// §4.2.5 wants the response's bindings "identical to the request" in success
+// and in every error case, and copying the bytes makes that true by
+// construction rather than by re-encoding through encodeTypedValue (which would
+// make SET the fourth caller of an encoder that has drifted twice, nl6#529 and
+// nl6#539). No size budget, on the same argument as the v1 GET echo in
+// createVarbindResponse: the bytes are the request's own, which the socket
+// already accepted, and sizing them would produce a partial echo.
+//
+// The v1 mapping is applied HERE, at the response, so the ladder in
+// snmp_set.go computes one verdict for every version.
+func (s *SNMPServer) createSetResponse(requestData, echoed []byte, errStatus, errIndex int) []byte {
+	req := s.parseIncomingRequest(requestData)
+	if req.Version == snmpVersion1 {
+		errStatus = v1SetErrorStatus(errStatus)
+	}
+	if errStatus == snmpErrNoError {
+		errIndex = 0
+	}
+	return s.encodeGetResponseAt(req, echoed, errStatus, errIndex)
+}
 
 // SNMP message versions on the wire (SNMPv3 is 3). Named because the
 // exception encoding below turns on the v1 value.

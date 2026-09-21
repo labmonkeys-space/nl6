@@ -8,7 +8,8 @@ stack is implemented in `go/nl6/snmp*.go` — see
 ## Protocol coverage
 
 - **SNMP v2c** — `GET`, `GETNEXT`, `GETBULK` against the full per-device OID
-  table. Community string is `public` by default.
+  table, and `SET` on one writable object, `ifAdminStatus.<N>` (see
+  [SetRequest](#setrequest)). Community string is `public` by default.
 - **SNMPv3** — enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags).
   Auth protocols: `none`, `md5`, `sha1`. Privacy protocols: `none`, `des`,
   `aes128`. The message framing lives in `snmpv3.go` / `snmpv3_crypto.go`, the
@@ -119,6 +120,8 @@ REST API — see [Web API → Create devices](web-api.md#create-devices).
 nl6 does not authenticate on the community: it parses the value, answers the request, and echoes the same value back in the response.
 There is no ACL and no rejection path, by design.
 This is a simulator for collector validation, not an access-control surface.
+The same holds for a `SET`: there is no separate write community, so any manager that can reach a device's SNMP port can change its `ifAdminStatus`.
+The boundary is the network namespace the devices live in.
 
 A **zero-length** community is legal and is parsed as the empty string, not as absent.
 Both shipped clients emit one on request: net-snmp and snmp4j each send `04 00` for `-c ""`.
@@ -1320,9 +1323,62 @@ The SNMPv3 path behaves the same way since nl6#547.
 A malformed scoped PDU is discarded there too, and a request that fails to DECRYPT — which used to share the same fallback and be answered with `sysDescr.0` — is answered with a `usmStatsDecryptionErrors` Report, as RFC 3414 §3.2 step 8 requires.
 The two faults take opposite answers, discard against answer, which is why they had to be told apart before either could be right.
 Two differences from the v1/v2c rule are worth knowing.
-The v3 gate is broader: a PDU type nl6 does not serve (SET, INFORM, TRAP, Report) and an empty variable-bindings list are discarded too, where v1/v2c answers the empty list from its default OID, and only the first binding's name is validated.
+The v3 gate is broader: a PDU type nl6 does not serve (INFORM, TRAP, Report) and an empty variable-bindings list are discarded too, where v1/v2c answers the empty list from its default OID, and only the first binding's name is validated.
+A `SET` is served at every version since the change that added it, and a malformed `SET` list is discarded under the same rule.
 And a PRIV-flagged request to a device configured without privacy is neither malformed nor a decryption failure; it is answered with a `usmStatsUnsupportedSecLevels` Report (RFC 3414 §3.2 step 5).
 Every Report goes out unauthenticated with request-id 1 and the request's `msgID` echoed; on a decryption failure the real request-id is inside the ciphertext.
+
+## SetRequest
+
+Every `SetRequest` is answered with a `Response-PDU`, at SNMPv1, v2c and v3.
+Before this landed a v1/v2c `SET` fell through the dispatcher's `GET` branch and was answered with the object's current value under `noError`, which a manager reads as a write that succeeded and changed nothing, and a v3 `SET` was discarded as an unsupported PDU type so the manager timed out.
+Neither is an SNMP answer.
+
+### The writable set
+
+One object is writable: `ifAdminStatus.<N>` (`1.3.6.1.2.1.2.2.1.7.<N>`), INTEGER, values `up(1)`, `down(2)` and `testing(3)`.
+A `SET` on it goes through the same interface-state funnel the REST `admin-status` POST uses, so `ifOperStatus.<N>` follows per RFC 2863 (`down` to `down`, `up` to `up`, `testing` to `testing`), `ifLastChange.<N>` moves, a gNMI ON_CHANGE subscriber sees the admin then the oper update, and the oper transition fires the device's role-tagged link trap and syslog.
+A following `GET` reads the new value on both columns, and gNMI reads the same engine.
+A `SET` to the value the interface already holds succeeds with `noError` and moves nothing.
+
+Nothing else is writable: not `ifOperStatus` (read-only in RFC 2863), not the `system` group, not any counter the cycler serves.
+The set is a curated table with a reason per row (`writableColumns` in `snmp_set.go`), never derived from a type table, because writability is a MAX-ACCESS property no nl6 rule models.
+
+### The error ladder
+
+Each binding is tested in RFC 3416 §4.2.5's order and the first failure names the binding in `error-index` (1-based).
+Every binding is validated before any is applied, so a request in which one binding fails changes nothing.
+In success and in every error case the response's variable bindings are the request's own bytes, values included, which is what §4.2.5 means by "identical to the request".
+
+| Condition | v2c / v3 | v1 (RFC 3584 §4.3) |
+|---|---|---|
+| name is not `ifAdminStatus.<N>` and shares no writable prefix | `notWritable(17)` | `noSuchName(2)` |
+| value tag is not INTEGER | `wrongType(7)` | `badValue(3)` |
+| INTEGER content is not a valid encoding | `wrongEncoding(9)` | `badValue(3)` |
+| value outside 1..3 | `wrongValue(10)` | `badValue(3)` |
+| `<N>` is not an ifIndex the device owns, or the name has the wrong arity under the column | `noCreation(11)` | `noSuchName(2)` |
+
+Two rows are worth reading twice.
+The value tests run before the instance test, so `ifAdminStatus.999 = 7` is `wrongValue`, not `noCreation`.
+And a name under the column with the wrong arity, the bare column or `...7.1.2`, is `noCreation` rather than `notWritable`: it shares the writable prefix but names a variable that could never be created.
+
+The v1 answer is the RFC 3584 §4.3 mapping of the v2 verdict, computed once (`v1SetErrorStatus`), and `readOnly(4)` is never emitted.
+A v3 `SET` produces the same `Response-PDU` bytes as a v2c `SET` of the same bindings; only the envelope differs.
+
+### Admission and interactions
+
+A `SET` is admitted exactly as a `GET` is: no community check, the one configured v3 user, USM verification driven by the request's own flags.
+Any manager that can reach the port can write; see [the community section](#the-community-string-is-echoed-never-checked).
+
+Two interactions to know.
+Under a non-default interface-state scenario (`-if-scenario` other than `2`), `GET` reads the scenario override before the engine, so a `SET` applies to the engine while the poll still reads the scenario's value.
+And the flap scheduler and the REST `oper-status` POST change oper alone and may still raise oper on an interface whose admin is down; the cascade is applied on admin changes, not enforced continuously.
+
+### Verified against net-snmp
+
+`make test-interop` drives `snmpset` and `snmpget` against the real dispatchers over a real UDP socket under v1, v2c and v3 authPriv, asserting the round trip and every error-status row by net-snmp's own printed reason, and `snmptrapd` receives the `linkDown` and `linkUp` the cascade fires.
+A captured `snmpset` datagram is a golden fixture in `snmp_golden_packets_test.go`.
+The read paths are unchanged, which the wire digest over well-formed GET, GETNEXT and GETBULK responses pins.
 
 ## Malformed-datagram handling
 

@@ -153,9 +153,11 @@ func TestSetAdminStatus_HappyPath202(t *testing.T) {
 	if got := ic.State().AdminStatus(2); got != AdminDown {
 		t.Errorf("AdminStatus(2): got %d, want AdminDown(2)", got)
 	}
-	// oper-status untouched.
-	if got := ic.State().OperStatus(2); got != OperUp {
-		t.Errorf("OperStatus(2) should be unaffected: got %d, want OperUp", got)
+	// oper-status FOLLOWS admin per RFC 2863 since add-snmp-set: the admin
+	// POST goes through InterfaceState.ApplyAdminStatus, the same funnel SNMP
+	// SET uses. Before that change this test asserted oper was untouched.
+	if got := ic.State().OperStatus(2); got != OperDown {
+		t.Errorf("OperStatus(2) should follow admin down: got %d, want OperDown", got)
 	}
 }
 

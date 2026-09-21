@@ -158,8 +158,9 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		// datagram.
 		//
 		// The extractor's error is broader than the v2c list check: it also
-		// covers a PDU type this server does not serve (SET, INFORM, TRAP,
-		// Report) and an empty variable-bindings list, and it validates the
+		// covers a PDU type this server does not serve (INFORM, TRAP, Report;
+		// SET is served since add-snmp-set) and an empty variable-bindings
+		// list, and it validates the
 		// FIRST binding's name only. All of those are discarded here; the
 		// v2c path answers an empty list from its default OID. Before nl6#547
 		// every one of them was answered as a GET of sysDescr.0.
@@ -187,6 +188,11 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 	} else if pduType == ASN1_GET_BULK {
 		// Handle GetBulk request for SNMPv3
 		return s.handleSNMPv3GetBulk(oid, v3Msg, scopedPDU)
+	} else if pduType == ASN1_SET_REQUEST {
+		// A SET is answered, never read-answered and never discarded for
+		// its type (add-snmp-set). Same ladder as v2c; only the envelope
+		// differs.
+		return s.handleSNMPv3Set(v3Msg, scopedPDU)
 	} else {
 		// Handle regular Get request
 		responseOID = oid
@@ -201,6 +207,22 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		return []byte{}
 	}
 	return responseBytes
+}
+
+// servedPDUTag is the ONE list of PDU tags the dispatchers serve, at every
+// version. THREE functions classify the tag — extractOIDAndTypeFromScopedPDU
+// (the nl6#547 discard gate), extractRequestIDFromScopedPDU (the v3 request-id
+// reader) and parseIncomingRequest (the v1/v2c request parser) — and widening
+// one without the others answers a DEFAULT request-id to every request of the
+// new type: add-snmp-set found parseIncomingRequest still gating on its own
+// three-tag list, so every SET response carried request-id 123. SET (0xA3) joined GET / GETNEXT / GETBULK in add-snmp-set;
+// INFORM, SNMPv2-Trap, Report and the v1 Trap-PDU are still discarded.
+func servedPDUTag(tag byte) bool {
+	switch tag {
+	case ASN1_GET_REQUEST, ASN1_GET_NEXT, ASN1_GET_BULK, ASN1_SET_REQUEST:
+		return true
+	}
+	return false
 }
 
 // extractOIDAndTypeFromScopedPDU extracts both OID and PDU type from a scoped PDU
@@ -240,7 +262,7 @@ func (s *SNMPServer) extractOIDAndTypeFromScopedPDU(scopedPDU []byte) (string, b
 
 	pduType := scopedPDU[pos]
 
-	if pduType != ASN1_GET_REQUEST && pduType != ASN1_GET_NEXT && pduType != ASN1_GET_BULK {
+	if !servedPDUTag(pduType) {
 		return "", ASN1_GET_REQUEST, fmt.Errorf("unsupported PDU type in scoped PDU: 0x%02X", pduType)
 	}
 	pos++
@@ -358,20 +380,62 @@ var errV3VarBindListMalformed = errors.New("GETBULK variable-bindings list is no
 // through an upper-bound test, sending a slice expression into a panic on a
 // serve path with no recover() (nl6#513's trap 1, one level up).
 func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
+	bounded, pos, verdict := scopedPDUVarBindListPos(scopedPDU)
+	switch verdict {
+	case scopedListAbsent:
+		return nil, true
+	case scopedListMalformed:
+		return nil, false
+	}
+	// Slicing to the PDU's end is what bounds the list by its PDU rather than
+	// by the datagram.
+	return parseVarBindNames(bounded, pos)
+}
+
+// parseSetVarBindsFromScopedPDU is the SET sibling of parseAllOIDsFromScopedPDU
+// (add-snmp-set): same envelope walk, values kept, plus the list's contents
+// bytes for the echo. Same three-way contract; see parseVarBinds.
+func parseSetVarBindsFromScopedPDU(scopedPDU []byte) ([]snmpVarBind, []byte, bool) {
+	bounded, pos, verdict := scopedPDUVarBindListPos(scopedPDU)
+	switch verdict {
+	case scopedListAbsent:
+		return nil, nil, true
+	case scopedListMalformed:
+		return nil, nil, false
+	}
+	return parseVarBinds(bounded, pos)
+}
+
+// scopedListVerdict is what scopedPDUVarBindListPos found on the way to the
+// variable-bindings list.
+type scopedListVerdict int
+
+const (
+	scopedListFound     scopedListVerdict = iota // pos is the list's SEQUENCE tag
+	scopedListAbsent                             // envelope never reached a list: (nil, true)
+	scopedListMalformed                          // a container length lies: (nil, false)
+)
+
+// scopedPDUVarBindListPos walks a scoped PDU in CONTENTS form up to its
+// variable-bindings list and returns the PDU-bounded slice, the list's offset
+// in it, and the verdict. The walk is shared by the GET-family parser and the
+// SET parser so the nl6#535 R1 rule (an overrunning container length is
+// MALFORMED, never absent) is stated once and cannot drift between them.
+func scopedPDUVarBindListPos(scopedPDU []byte) ([]byte, int, scopedListVerdict) {
 	pos := 0
 
 	// contextEngineID and contextName, both OCTET STRING.
 	for i := 0; i < 2; i++ {
 		if pos >= len(scopedPDU) || scopedPDU[pos] != ASN1_OCTET_STRING {
-			return nil, true
+			return nil, 0, scopedListAbsent
 		}
 		pos++
 		n, newPos := parseLength(scopedPDU, pos)
 		if n < 0 {
-			return nil, true
+			return nil, 0, scopedListAbsent
 		}
 		if n > len(scopedPDU)-newPos {
-			return nil, false
+			return nil, 0, scopedListMalformed
 		}
 		pos = newPos + n
 	}
@@ -380,15 +444,15 @@ func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
 	// does not serve, and the varbind list sits in the same place in all of
 	// them.
 	if pos >= len(scopedPDU) {
-		return nil, true
+		return nil, 0, scopedListAbsent
 	}
 	pos++
 	pduLen, newPos := parseLength(scopedPDU, pos)
 	if pduLen < 0 {
-		return nil, true
+		return nil, 0, scopedListAbsent
 	}
 	if pduLen > len(scopedPDU)-newPos {
-		return nil, false
+		return nil, 0, scopedListMalformed
 	}
 	pos = newPos
 	end := newPos + pduLen
@@ -398,15 +462,15 @@ func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
 	// reads the two that matter.
 	for i := 0; i < 3; i++ {
 		if pos >= end || scopedPDU[pos] != ASN1_INTEGER {
-			return nil, true
+			return nil, 0, scopedListAbsent
 		}
 		pos++
 		n, newPos := parseLength(scopedPDU, pos)
 		if n < 0 {
-			return nil, true
+			return nil, 0, scopedListAbsent
 		}
 		if n > end-newPos {
-			return nil, false
+			return nil, 0, scopedListMalformed
 		}
 		pos = newPos + n
 	}
@@ -418,13 +482,11 @@ func parseAllOIDsFromScopedPDU(scopedPDU []byte) ([]string, bool) {
 	if pos < end && scopedPDU[pos] == ASN1_SEQUENCE {
 		listLen, afterLen := parseLength(scopedPDU, pos+1)
 		if listLen >= 0 && (listLen > end-afterLen || afterLen+listLen != end) {
-			return nil, false
+			return nil, 0, scopedListMalformed
 		}
 	}
 
-	// Slicing to `end` is what bounds the list by its PDU rather than by the
-	// datagram.
-	return parseVarBindNames(scopedPDU[:end], pos)
+	return scopedPDU[:end], pos, scopedListFound
 }
 
 // usmStats OIDs a Report can name (RFC 3414 §5). The whole subtree is typed

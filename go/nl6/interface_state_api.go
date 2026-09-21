@@ -240,17 +240,17 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		preSnap = snap.Admin
 	}
 
-	var (
-		changed bool
-		evt     StateChange
-	)
+	// Oper is a single-leaf mutation. Admin goes through the engine's funnel so
+	// oper follows per RFC 2863 (add-snmp-set); the funnel returns one event per
+	// leaf that moved and the caller broadcasts each, admin first.
 	if isOper {
-		changed, evt = state.SetOperStatus(ifIndex, target)
+		if changed, evt := state.SetOperStatus(ifIndex, target); changed {
+			state.Broadcast(evt)
+		}
 	} else {
-		changed, evt = state.SetAdminStatus(ifIndex, target)
-	}
-	if changed {
-		state.Broadcast(evt)
+		for _, evt := range state.ApplyAdminStatus(ifIndex, target) {
+			state.Broadcast(evt)
+		}
 	}
 
 	if revertAfter > 0 {
@@ -350,15 +350,17 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 		if !rt.done.CompareAndSwap(false, true) {
 			return
 		}
-		var c bool
-		var e StateChange
+		// The admin revert goes through the same funnel as the POST did, so
+		// oper follows the RESTORED admin value rather than staying where the
+		// cascade (or a flap in between) left it.
 		if isOper {
-			c, e = state.SetOperStatus(ifIndex, revertTo)
+			if c, e := state.SetOperStatus(ifIndex, revertTo); c {
+				state.Broadcast(e)
+			}
 		} else {
-			c, e = state.SetAdminStatus(ifIndex, revertTo)
-		}
-		if c {
-			state.Broadcast(e)
+			for _, e := range state.ApplyAdminStatus(ifIndex, revertTo) {
+				state.Broadcast(e)
+			}
 		}
 	}()
 	return nil

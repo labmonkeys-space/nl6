@@ -905,14 +905,18 @@ type fatalfTB interface {
 }
 
 // parseIncomingRequestReadsPDU reports whether parseIncomingRequest will walk
-// INTO a PDU carrying this tag. It recognises exactly GET, GETNEXT and GETBULK
-// and leaves request-id and OID at their defaults for anything else —
-// GetResponse and SetRequest included, where parseAllOIDsFromRequest (which
-// accepts any tag) still reads the names. That divergence is a documented
-// contract difference, so it is asserted as the CONTRAPOSITIVE rather than
-// skipped.
+// INTO a PDU carrying this tag. It recognises exactly the tags the dispatchers
+// serve (servedPDUTag: GET, GETNEXT, GETBULK and, since add-snmp-set, SET) and
+// leaves request-id and OID at their defaults for anything else — GetResponse
+// included, where parseAllOIDsFromRequest (which accepts any tag) still reads
+// the names. That divergence is a documented contract difference, so it is
+// asserted as the CONTRAPOSITIVE rather than skipped.
+//
+// It READS the production predicate rather than mirroring it: a hand-written
+// copy here is how the parser's own three-tag list went unnoticed when SET was
+// added to the two v3 classifiers (every SET response carried request-id 123).
 func parseIncomingRequestReadsPDU(tag byte) bool {
-	return tag == ASN1_GET_REQUEST || tag == ASN1_GET_NEXT || tag == ASN1_GET_BULK
+	return servedPDUTag(tag)
 }
 
 // assertV2cParserAgreement is the self-differential core: it drives every

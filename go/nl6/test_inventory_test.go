@@ -118,10 +118,10 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1644
+const minimumTestFunctions = 1675
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
-const minimumFuzzTargets = 25
+const minimumFuzzTargets = 26
 
 // maximumHeadroom bounds how far the real count may drift above a floor before
 // the floor has to be raised.

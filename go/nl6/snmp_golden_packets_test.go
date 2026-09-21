@@ -279,3 +279,53 @@ func TestGoldenPackets_CommunityGuardRejectsMalformedLengths(t *testing.T) {
 		})
 	}
 }
+
+// snmpset -v2c -c public -r 0 -t 1 127.0.0.1:<port> .1.3.6.1.2.1.2.2.1.7.3 i 2
+// (net-snmp 5.6.2.1, MIBS= so the OID went out numeric). A real SetRequest:
+// tag 0xa3, and the one binding carries an INTEGER value (`02 01 02`) where
+// every GET fixture above carries NULL (`05 00`). Captured for add-snmp-set.
+var goldenNetSNMPSetIfAdminStatus = []byte{
+	0x30, 0x2c, 0x02, 0x01, 0x01, 0x04, 0x06, 0x70, 0x75, 0x62, 0x6c, 0x69,
+	0x63, 0xa3, 0x1f, 0x02, 0x04, 0x3f, 0xd4, 0x2d, 0xa4, 0x02, 0x01, 0x00,
+	0x02, 0x01, 0x00, 0x30, 0x11, 0x30, 0x0f, 0x06, 0x0a, 0x2b, 0x06, 0x01,
+	0x02, 0x01, 0x02, 0x02, 0x01, 0x07, 0x03, 0x02, 0x01, 0x02,
+}
+
+// TestGoldenPackets_SetRequest drives a real snmpset datagram through the
+// dispatcher (add-snmp-set). Two devices: one that owns ifIndex 3 applies it
+// and answers noError; one that does not answers noCreation. Both echo the
+// request's binding, INTEGER value included, under the request's own
+// request-id — the parser used to leave a SET's request-id at its 123 default.
+func TestGoldenPackets_SetRequest(t *testing.T) {
+	req := goldenNetSNMPSetIfAdminStatus
+	parsed := (&SNMPServer{device: &DeviceSimulator{}}).parseIncomingRequest(req)
+	if parsed.RequestID != 1070869924 || parsed.Community != "public" || parsed.Version != 1 {
+		t.Fatalf("parseIncomingRequest = %+v, want request-id 1070869924, community public, version 1", parsed)
+	}
+	if got := (&SNMPServer{}).getPDUType(req); got != ASN1_SET_REQUEST {
+		t.Fatalf("getPDUType = 0x%02X, want 0xA3", got)
+	}
+	wantEcho := requestListContents(t, req)
+
+	owns, state := newSetTestServer(t, 3)
+	h := decodeResponseHeader(t, owns.handleSNMPv2cRequest(req))
+	if h.errStatus != snmpErrNoError || h.errIndex != 0 || h.requestID != 1070869924 {
+		t.Errorf("device owning ifIndex 3: status/index/request-id = %d/%d/%d, want 0/0/1070869924",
+			h.errStatus, h.errIndex, h.requestID)
+	}
+	if !bytes.Equal(h.varbinds, wantEcho) {
+		t.Errorf("echo differs from the request's bindings:\n got % x\nwant % x", h.varbinds, wantEcho)
+	}
+	if snap := state.Snapshot(3); snap.Admin != AdminDown || snap.Oper != OperDown {
+		t.Errorf("interface 3 after the golden SET = %+v, want down/down", snap)
+	}
+
+	lacks, _ := newSetTestServer(t, 2)
+	h = decodeResponseHeader(t, lacks.handleSNMPv2cRequest(req))
+	if h.errStatus != snmpErrNoCreation || h.errIndex != 1 {
+		t.Errorf("device without ifIndex 3: status/index = %d/%d, want noCreation(11)/1", h.errStatus, h.errIndex)
+	}
+	if !bytes.Equal(h.varbinds, wantEcho) {
+		t.Errorf("error echo differs from the request's bindings")
+	}
+}

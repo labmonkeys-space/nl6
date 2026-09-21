@@ -326,6 +326,16 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// Handle GetBulk request - return multiple OIDs
 		// log.Printf("SNMP %s: Processing GetBulk request for OID: %s", s.device.ID, oid)
 		return s.handleGetBulk(oid, requestData)
+	} else if pduType == ASN1_SET_REQUEST {
+		// An EXPLICIT tag test, placed before the GET fallthrough below, and
+		// that ordering is the fix (add-snmp-set): a SetRequest used to land in
+		// the `else` branch and be answered as a GET of its own names — the
+		// object's CURRENT value under error-status noError, which a manager
+		// reads as a write that succeeded and changed nothing (nl6#684). The
+		// `else` keeps its fallthrough because getPDUType defaults to GET on an
+		// unreadable envelope, and that default is pinned by the golden-packet
+		// tests; SET must never be "whatever is not GETNEXT or GETBULK".
+		return s.handleSetRequest(requestData)
 	} else {
 		// Handle regular Get request — answer EVERY requested varbind, not
 		// just the first (RFC 3416 §4.2.1). A single-varbind response breaks

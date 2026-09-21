@@ -326,10 +326,15 @@ test-interop: check-go
 	  echo "  Debian/Ubuntu: sudo apt-get install -y snmptrapd"; \
 	  echo "  macOS:         it ships with the system, or 'brew install net-snmp'"; \
 	  exit 1; }
+	@command -v snmpset >/dev/null 2>&1 || { \
+	  echo "snmpset not found. It ships with snmpget (net-snmp):"; \
+	  echo "  Debian/Ubuntu: sudo apt-get install -y snmp"; \
+	  echo "  macOS:         it ships with the system, or 'brew install net-snmp'"; \
+	  exit 1; }
 	@snmpget --version 2>&1 | head -1
 	@snmptrapd --version 2>&1 | head -2 | tail -1
 	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ \
-	    -run 'TestUSMInterop|TestSNMPv3TrapInterop' -count=1 -v
+	    -run 'TestUSMInterop|TestSNMPv3TrapInterop|TestSNMPSetInterop' -count=1 -v
 
 ## test-interop-pyroscope: Push to and be scraped by REAL Pyroscope + Alloy containers (needs docker)
 ##

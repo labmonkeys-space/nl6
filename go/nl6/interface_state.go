@@ -396,6 +396,62 @@ func (s *InterfaceState) SetAdminStatus(ifIndex int, newVal uint8) (bool, StateC
 	}
 }
 
+// adminCascadeOper is the RFC 2863 rule an admin-status value implies for
+// oper-status: "If ifAdminStatus is down(2) then ifOperStatus should be
+// down(2). If ifAdminStatus is changed to up(1) then ifOperStatus should
+// change to up(1) if the interface is ready to transmit and receive network
+// traffic" — a simulated interface always is — and testing(3) means "no
+// operational packets can be passed", which is oper testing(3).
+func adminCascadeOper(admin uint8) uint8 {
+	switch admin {
+	case AdminUp:
+		return OperUp
+	case AdminDown:
+		return OperDown
+	case AdminTesting:
+		return OperTesting
+	}
+	return 0
+}
+
+// ApplyAdminStatus is THE funnel for every source that changes admin-status:
+// the REST admin-status POST, its auto-revert, and SNMP SET (add-snmp-set). It
+// sets the admin leaf and then cascades the oper leaf per adminCascadeOper, and
+// returns the StateChange for each leaf that actually moved, admin first.
+//
+// The caller broadcasts the returned events (the mutators never do, by the
+// engine's existing design), so an ON_CHANGE listener sees admin then oper and
+// the Tier C notify hook fires once, on the oper event, exactly as it does for
+// the flap scheduler.
+//
+// The cascade is applied to the oper leaf EVEN WHEN the admin leaf was already
+// at target: an interface at admin down whose oper the flap scheduler raised
+// is put back to oper down, because RFC 2863's rule is about the state, not
+// about the transition. A leaf already at its target yields no event and no
+// lastChange update, so applying the current value is a no-op end to end.
+//
+// Before this funnel existed SetAdminStatus preserved oper verbatim and only
+// the REST handler called it, so an admin-down over REST fired no link trap;
+// the issue that introduced SET (nl6#684) assumed the cascade existed. The
+// primitive mutators are deliberately unchanged: SetAdminStatus still moves
+// ONE leaf, so the per-leaf idempotence contract stays exact.
+//
+// An out-of-range ifIndex or a target outside AdminUp..AdminTesting returns
+// nil, matching the mutators' three-condition zero return.
+func (s *InterfaceState) ApplyAdminStatus(ifIndex int, target uint8) []StateChange {
+	if target < AdminUp || target > AdminTesting {
+		return nil
+	}
+	var evts []StateChange
+	if changed, evt := s.SetAdminStatus(ifIndex, target); changed {
+		evts = append(evts, evt)
+	}
+	if changed, evt := s.SetOperStatus(ifIndex, adminCascadeOper(target)); changed {
+		evts = append(evts, evt)
+	}
+	return evts
+}
+
 // AddListener registers a channel for state-change events. The channel
 // should be buffered (depth onChangeBufferDepth = 16 per §D8); unbuffered
 // channels will hit the drop-oldest slow path on every event and lose
