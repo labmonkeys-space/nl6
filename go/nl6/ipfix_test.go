@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"net"
 	"testing"
@@ -505,10 +506,15 @@ func TestIPFIXEncodePacket_LengthFieldMatchesPayload(t *testing.T) {
 }
 
 type ipfixDecodedAVCRecord struct {
-	Base     ipfixDecodedRecord
-	AppID    uint32
-	Host     string
-	URIStats []byte
+	Base  ipfixDecodedRecord
+	AppID uint32
+	// HostField is the whole IE 12235 value as it sits on the wire; Host is
+	// the hostname after Cisco's six-byte prefix (empty for a prefix-only
+	// value). The decoder FAILS the test on a value without the prefix, so
+	// every test that decodes an AVC record asserts the layout of nl6#679.
+	HostField []byte
+	Host      string
+	URIStats  []byte
 }
 
 // decodeIPFIXAVCRecords parses a 258 data set body (after the 4-byte set
@@ -542,7 +548,11 @@ func decodeIPFIXAVCRecords(t *testing.T, raw []byte) []ipfixDecodedAVCRecord {
 		pos += ipfixRecordSize
 		rec.AppID = binary.BigEndian.Uint32(raw[pos:])
 		pos += 4
-		rec.Host = string(readVar())
+		rec.HostField = append([]byte(nil), readVar()...)
+		if !bytes.HasPrefix(rec.HostField, avcHostPrefix) {
+			t.Fatalf("avc: IE 12235 value %x lacks Cisco's host prefix %x (nl6#679)", rec.HostField, avcHostPrefix)
+		}
+		rec.Host = string(rec.HostField[len(avcHostPrefix):])
 		rec.URIStats = append([]byte(nil), readVar()...)
 		out = append(out, rec)
 	}

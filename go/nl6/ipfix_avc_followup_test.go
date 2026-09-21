@@ -32,8 +32,8 @@ func TestIPFIXAVCEncoderNilCatalogSurvivesTemplateRefresh(t *testing.T) {
 	if got := enc.Applications(); got != nil {
 		t.Fatalf("Applications() on a nil catalog = %v, want nil", got)
 	}
-	if got := enc.MaxRecordSize(); got != ipfixRecordSize+4+2 {
-		t.Fatalf("MaxRecordSize() on a nil catalog = %d, want %d (prefix + applicationId + two empty var-len fields)", got, ipfixRecordSize+4+2)
+	if want := ipfixRecordSize + 4 + ipfixVarLenSize(len(avcHostPrefix)) + 1; enc.MaxRecordSize() != want {
+		t.Fatalf("MaxRecordSize() on a nil catalog = %d, want %d (prefix + applicationId + prefix-only host field + empty URI field)", enc.MaxRecordSize(), want)
 	}
 	prof := *mtuTestProfile()
 	prof.ConcurrentFlows = 0
@@ -53,7 +53,7 @@ func TestIPFIXAVCMaxRecordSizeIsPrecomputed(t *testing.T) {
 		{ID: avcApplicationID(3, 53), Name: "dns"},
 	})
 	enc := NewIPFIXAVCEncoder(cat)
-	want := ipfixRecordSize + 4 + ipfixVarLenSize(300) + ipfixVarLenSize(263)
+	want := ipfixRecordSize + 4 + ipfixVarLenSize(len(avcHostPrefix)+300) + ipfixVarLenSize(263)
 	if enc.MaxRecordSize() != want {
 		t.Fatalf("MaxRecordSize = %d, want %d", enc.MaxRecordSize(), want)
 	}

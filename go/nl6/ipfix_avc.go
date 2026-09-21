@@ -32,7 +32,7 @@ const (
 	// enterprise bit already set (45003 = 0x8000|12235, 42125 = 0x8000|9357);
 	// that wire-level specifier is not a second IE number, and a decoder
 	// reports the IE id (12235 / 9357) beside PEN 9, never the specifier.
-	ciscoHTTPHost          = 12235 // collect application http host; variable-length string
+	ciscoHTTPHost          = 12235 // collect application http host; variable-length, layout at avcHostPrefix
 	ciscoHTTPURIStatistics = 9357  // collect application http uri statistics; layout at uriStatsValue
 
 	// ciscoHTTPHostWireSpecifier and ciscoHTTPURIStatisticsWireSpecifier are
@@ -63,6 +63,22 @@ const (
 	ipfixVarLen = 0xFFFF
 )
 
+// avcHostPrefix is the constant six bytes a real IOS-XE puts in front of
+// every IE 12235 (HTTP host) value: applicationId 0x03000050 (engine 3,
+// selector 80, http) then sub-application id 0x3402, the "Subapplication ID
+// for the host" sentence of Cisco's 2015 AVC field guide
+// (testdata/cisco-avc/sources.tsv, cisco-avc-fdg-2015). The IOS-XE 26.01.02
+// reference capture (testdata/cisco-avc/capture/) shows it on all 1302
+// records regardless of the flow's own applicationId (DNS flows carry it
+// too), and a record without a host carries exactly these six bytes: the
+// field is never empty. nl6 emitted the bare hostname before nl6#679.
+//
+// This is the ONE copy: TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix
+// compares the capture against it and the test decoder requires it on every
+// record, so the encoder and the pinned reading cannot drift apart. Read-only
+// by convention, like ipfixAVCTemplateSetBytes.
+var avcHostPrefix = []byte{0x03, 0x00, 0x00, 0x50, 0x34, 0x02}
+
 // ipfixVarLenSize is the on-wire size of an n-byte variable-length value
 // including its RFC 7011 section 7 length prefix.
 func ipfixVarLenSize(n int) int {
@@ -77,7 +93,17 @@ func ipfixVarLenSize(n int) int {
 // when the value does not fit; the caller decides what a non-fit means.
 // Values longer than 65535 bytes cannot be represented and never fit.
 func putIPFIXVarLen(buf []byte, pos int, v []byte) (int, bool) {
-	n := len(v)
+	return putIPFIXVarLenParts(buf, pos, v, "")
+}
+
+// putIPFIXVarLenParts writes prefix followed by body as ONE variable-length
+// value: a single RFC 7011 section 7 length covering both, then the bytes.
+// The length form (one byte below 255, three bytes from 255) is decided on
+// the combined length, which is why the host field's boundary sits at a
+// 249-byte hostname once avcHostPrefix is in front of it. body is a string
+// so the caller can hand over a catalog value without allocating a copy.
+func putIPFIXVarLenParts(buf []byte, pos int, prefix []byte, body string) (int, bool) {
+	n := len(prefix) + len(body)
 	if n > 0xFFFF || pos+ipfixVarLenSize(n) > len(buf) {
 		return pos, false
 	}
@@ -89,8 +115,9 @@ func putIPFIXVarLen(buf []byte, pos int, v []byte) (int, bool) {
 		binary.BigEndian.PutUint16(buf[pos+1:], uint16(n))
 		pos += 3
 	}
-	copy(buf[pos:], v)
-	return pos + n, true
+	pos += copy(buf[pos:], prefix)
+	pos += copy(buf[pos:], body)
+	return pos, true
 }
 
 // avcApplication is one NBAR2 application as the encoder needs it. Plan B's
@@ -231,9 +258,10 @@ func NewIPFIXAVCEncoder(cat *avcCatalog) *IPFIXAVCEncoder {
 	return &IPFIXAVCEncoder{cat: cat, maxRecSize: avcWorstCaseRecordSize(cat)}
 }
 
-// avcWorstCaseRecordSize is the fixed prefix plus the longest host and the
-// longest single-URI statistics value in cat. Zero-length fields still cost
-// their one-byte length prefix.
+// avcWorstCaseRecordSize is the fixed prefix plus the longest host field and
+// the longest single-URI statistics value in cat. The host field is
+// avcHostPrefix plus the hostname, so a catalog with no hosts still pays the
+// six bytes; a zero-length URI field still costs its one-byte length prefix.
 func avcWorstCaseRecordSize(cat *avcCatalog) int {
 	maxHost, maxURI := 0, 0
 	for i := 0; i < cat.Len(); i++ {
@@ -249,7 +277,7 @@ func avcWorstCaseRecordSize(cat *avcCatalog) int {
 			}
 		}
 	}
-	return ipfixRecordSize + 4 + ipfixVarLenSize(maxHost) + ipfixVarLenSize(maxURI)
+	return ipfixRecordSize + 4 + ipfixVarLenSize(len(avcHostPrefix)+maxHost) + ipfixVarLenSize(maxURI)
 }
 
 // measuredFlowEncoder is the seam for encoders whose record size is not
@@ -375,8 +403,12 @@ func (e *IPFIXAVCEncoder) EncodeMeasured(domainID, seqNo, uptimeMs uint32, recor
 
 // encodeRecord writes the plain 54-byte prefix (reusing encodeIPFIXRecord so
 // the two templates cannot drift), then applicationId and the two
-// variable-length fields. Returns false, with nothing counted, when the
-// record does not fit in buf.
+// variable-length fields. IE 12235 is ALWAYS avcHostPrefix followed by the
+// hostname, and the prefix alone when the record resolves no host (no
+// application, or an application with no hosts): the capture shows the
+// field is never empty, and the prefix does not follow the record's own
+// applicationId. Returns false, with nothing counted, when the record does
+// not fit in buf.
 func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, deviceStartMs int64) (int, bool) {
 	if pos+ipfixRecordSize+4 > len(buf) {
 		return pos, false
@@ -390,11 +422,12 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 	// caller only reads buf[:n] for n <= the last successfully returned pos.
 	pos = encodeIPFIXRecord(buf, pos, r, deviceStartMs)
 	var appID uint32
-	var host, uriStats []byte
+	var host string
+	var uriStats []byte
 	if app, ok := e.cat.App(r.AVC.App); ok {
 		appID = app.ID
 		if h := int(r.AVC.Host); h > 0 && h <= len(app.Hosts) {
-			host = []byte(app.Hosts[h-1])
+			host = app.Hosts[h-1]
 		}
 		if u := int(r.AVC.URI); u > 0 && u <= len(app.URIs) {
 			uriStats = uriStatsValue(app.URIs[u-1], 1)
@@ -403,7 +436,7 @@ func (e *IPFIXAVCEncoder) encodeRecord(buf []byte, pos int, r FlowRecord, device
 	binary.BigEndian.PutUint32(buf[pos:], appID)
 	pos += 4
 	var ok bool
-	if pos, ok = putIPFIXVarLen(buf, pos, host); !ok {
+	if pos, ok = putIPFIXVarLenParts(buf, pos, avcHostPrefix, host); !ok {
 		return start, false
 	}
 	if pos, ok = putIPFIXVarLen(buf, pos, uriStats); !ok {
