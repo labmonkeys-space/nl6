@@ -100,3 +100,56 @@ Layout pinned: row `9/9357` stays `verified`; its note now carries the one-line 
 | 13 | PANA-L7 | 3 bytes | NBAR2 layer-7 applications |
 
 The selector values for PANA-L7 are Cisco's NBAR2 registry and are not published as a table; a catalog entry records the selector it uses and the reading it came from.
+
+## Reference capture: IOS-XE 26.01.02 on a Catalyst 8000V (2026-09-21)
+
+`capture/c8000v-26.01.02-avc.pcap` is the first Cisco-originated wire reading in this evidence base; `capture/README.md` says how it was taken and how to regenerate it, and `cisco_avc_capture_test.go` pins every fact below by decoding the file with its own template parser.
+Source row: `c8000v-26.01.02-capture`.
+The design spec's exit rule said a Cisco document or a capture would settle the two open encoder residuals; this capture settles both, one for nl6 and one against it.
+
+### What IOS-XE will and will not export
+
+IOS-XE refused to bind a monitor whose record collects URI statistics without a connection id: "'uri statistics' must have 'connection id' or 'transaction-id'".
+It refused `collect connection id` with "must be defined as a match field", and refused `match connection id` until the monitor carried `cache timeout event transaction-end`.
+So the record a real router exports with URI statistics is a connection record aged at transaction end, and nl6's shape, a unidirectional flow record with URI statistics and no connection id, cannot be produced by IOS-XE.
+The connection id is PEN 9 IE 12242, 4 bytes, zero on ICMP flows (row `9/12242`).
+This is the fidelity decision in nl6#680.
+
+### Data template 258, 17 fields, in wire order
+
+sourceIPv4Address (8, 4), destinationIPv4Address (12, 4), ipVersion (60, 1), protocolIdentifier (4, 1), sourceTransportPort (7, 2), destinationTransportPort (11, 2), ingressInterface (10, 4), PEN 9 connection id (12242, 4), applicationId (95, 4), egressInterface (14, 4), flowDirection (61, 1), PEN 9 HTTP URI statistics (9357, var), PEN 9 HTTP host (12235, var), octetDeltaCount (1, 8), packetDeltaCount (2, 8), flowStartMilliseconds (152, 8), flowEndMilliseconds (153, 8).
+Match fields come first, the two variable-length fields sit before the counters, and URI statistics precede host.
+nl6's template 258 is its 54-byte unidirectional prefix followed by applicationId, host, URI statistics.
+
+### IE 12235, HTTP host: not a bare string (nl6#679)
+
+Every one of the 1302 records starts the field with the constant six bytes `03 00 00 50 34 02`, then the hostname.
+That is applicationId 0x03000050 (engine 3, selector 80, http) followed by sub-application id 0x3402, the "Subapplication ID for the host" sentence in `cisco-avc-fdg-2015` that the earlier reading recorded as prose rather than as a wire layout.
+A record with no host carries exactly the six bytes; the field is never empty; the prefix is constant regardless of the flow's own applicationId (a DNS flow carries it too).
+nl6 emits the bare hostname, so a decoder written to Cisco's layout reads nl6's value wrongly, and libfds, which types the element as string, shows nl6's `www.example.com` where a real box shows six binary bytes and then the name.
+
+### IE 9357, HTTP URI statistics: layout confirmed
+
+All 400 values are `URI` then NUL then a 2-byte big-endian hit count with no trailing delimiter, for example `2f 00 00 01` for `/`.
+Both encoder decisions recorded above (big-endian, encoding example governs) are confirmed; `uriStatsValue` reproduces the router's bytes exactly.
+The router records the first path segment only: `/api/v1` and `/api/login` both arrive as `/api`, `/static/app.js` as `/static`.
+nl6's shipped catalogs carry multi-segment URIs, which a real box would never emit; that is part of nl6#680.
+
+### Direction and classification
+
+Host and URI statistics appear only on the ingress-direction (flowDirection 0) record of an http-classified request; the reverse-direction record carries the six-byte host prefix and an empty URI field.
+The 400 requests produced 400 `http` (0x03000050) ingress records with host and URI, 400 `http` egress records without, and 400 records classified `binary-over-http` (0x0d0001af, engine 13): NBAR2 reclassified half the plain `python3 -m http.server` transactions mid-connection and, with transaction-end aging, emitted a second record for them.
+Every nl6 catalog entry is engine 3; the router's application table has 1560 rows, 127 on engine 1, 748 on engine 3 and 685 on engine 13.
+Ids read from the table: http 0x03000050, dns 0x03000035, ssh 0x03000016, icmp 0x01000001, unknown 0x0d000001, binary-over-http 0x0d0001af, ping 0x0d0001df.
+
+### Options templates
+
+Template 256, interface table: scope ingressInterface (10, 4), then interfaceName (82, 33), interfaceDescription (83, 65), egressInterface (14, 4).
+nl6's `if-scoped` shape sends 82 and 83 at 32 bytes each with no egressInterface, under template id 257.
+Template 257, application table: scope applicationId (95, 4), then applicationName (96, 24), applicationDescription (94, 55), exactly nl6's constants, under nl6's template id 259.
+Cisco numbers them 256 interface table, 257 application table, 258 data.
+
+### Message shape
+
+395 messages; the largest IP datagram is 1420 bytes and none is fragmented.
+The sequence number counts data records including option data records, as nl6 does.
