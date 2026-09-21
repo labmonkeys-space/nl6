@@ -118,29 +118,51 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 ## NBAR2 application records (IPFIX only)
 
-`IPFIXAVCEncoder` emits Cisco AVC (NBAR2) layer-7 flow records: template ID 258 for the data records, plus template ID 259 for an application table carried on the refresh cadence beside the interface option table.
-An AVC record is the plain 54-byte prefix (byte-identical to template 256) followed by a 4-byte `applicationId` and two RFC 7011 §7 variable-length PEN 9 fields: `ciscoHTTPHost` (IE 12235) and `ciscoHTTPURIStatistics` (IE 9357).
-Cisco's 2015 AVC guide quotes these as wire specifiers 45003 and 42125, the same IE ids with the enterprise bit set, not separate identifiers.
-The IE 12235 value is Cisco's constant six-byte prefix `03 00 00 50 34 02` (applicationId `http`, then sub-application id 0x3402) followed by the hostname, and exactly the six bytes when the record carries no host; the field is never empty and the prefix does not follow the record's own `applicationId`.
-That is the layout the IOS-XE 26.01.02 reference capture shows on every record, pinned against the production constant `avcHostPrefix` by `TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix` (nl6#679).
-The IE 9357 hit count is encoded big-endian with no trailing delimiter after the URI; Cisco's guide leaves both decisions open, and both are confirmed by the IOS-XE 26.01.02 reference capture, pinned by `TestCiscoAVCCapture_URIStatisticsLayout`.
+NBAR2 export adds Cisco layer-7 application fields to a device's IPFIX records.
+Cisco calls the classifier NBAR2 and the export format AVC.
+This section uses NBAR2 for the feature and AVC for the record layout.
+NBAR2 is a record format carried inside the IPFIX protocol.
+It is not a separate `protocol` value.
+The status API and the socket pool report an NBAR2 device as `ipfix`.
 
-The export is **conformant and interop-tested against open decoders**.
-It is not Cisco-faithful: the design spec's evidence rule made that claim conditional on a Cisco document or a capture, and the IOS-XE 26.01.02 reference capture of 2026-09-21 contradicts the encoder on six points, so the claim was withdrawn (nl6#680) and the differences are listed under [Known differences from IOS-XE 26.01.02](#known-differences-from-ios-xe-260102).
-All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`, pinned by `TestIPFIXAVCConstantsMatchEvidence`.
-An AVC device carries both options tables, 257 (interfaces) and 259 (applications), on the same refresh cadence.
-The IPFIX Sequence Number counts Data Records including options records, per RFC 7011 §3.1, the same rule the plain IPFIX encoder follows.
+Only two device types have NBAR2.
+The export is conformant to RFC 7011 and RFC 6759 and is interop-tested against open decoders.
+It is not Cisco-faithful.
+A real IOS-XE router differs from nl6 in five recorded ways, listed under [Differences from IOS-XE](#differences-from-ios-xe-260102).
+The engineering record behind every claim in this section is in `context/nbar2-evidence.md`.
 
 ### Enabling NBAR2
 
 Set `"nbar2": true` in a device's `flow` block.
-It requires `protocol: "ipfix"`; any other protocol is rejected with a 400.
-The seed flag `-flow-nbar2` exists for the auto-start batch, but that batch is built as `asr9k` (IOS-XR, no NBAR2) and no flag selects another type, so the flag is refused at startup on every boot today with the REST remedy named; it is fatal rather than ignored because a batch that booted and emitted plain IPFIX under an NBAR2 flag is the accepted-and-ignored failure (nl6#445).
-Only `cisco_ios` and `cisco_catalyst_9500` have NBAR2; the set is curated by name with a reason per row in `nbar2_capability.go`, never by slug prefix, because `cisco_nexus_9500` (NX-OS), `cisco_crs_x` and `asr9k` (IOS-XR) do not.
-A request whose whole resolved type set is incapable is rejected with a 400 naming the type and its OS.
-A mixed round-robin batch is accepted, and here the rule differs from flow's own skip: an NBAR2-incapable but flow-capable device **keeps its flow block and emits the plain IPFIX record** (template 256) with `nbar2` cleared, logged once per type.
-Flow's incapable skip attaches no flow block at all.
-The two outcomes differ in byte identity and in what a collector sees, so `GET /api/v1/devices` echoes `nbar2` only on devices that emit AVC.
+The block must also set `protocol: "ipfix"`.
+Any other protocol, including the `netflow9` default, is rejected with a 400.
+
+| Type | OS | NBAR2 |
+|---|---|---|
+| `cisco_ios` | IOS | yes |
+| `cisco_catalyst_9500` | IOS-XE | yes |
+| `cisco_nexus_9500` | NX-OS | no |
+| `cisco_crs_x` | IOS-XR | no |
+| `asr9k` | IOS-XR | no |
+
+The set is curated by name in `nbar2_capability.go`, with a reason per row.
+It is never derived from a slug prefix.
+A request whose whole resolved type set lacks NBAR2 is rejected with a 400 naming the type and its OS.
+
+A mixed round-robin batch is accepted.
+Two rules apply to devices that cannot do what the request asks, and they differ:
+
+| Device | Outcome |
+|---|---|
+| Cannot export flow at all | No flow block is attached. The device is skipped with a log line. |
+| Exports flow but lacks NBAR2 | Keeps its flow block. Emits the plain IPFIX record, template 256, with `nbar2` cleared. Logged once per type. |
+
+`GET /api/v1/devices` echoes `nbar2` only on devices that emit AVC records.
+A device that degraded to plain IPFIX shows no `nbar2` field.
+`GET /api/v1/flows/status` lists an NBAR2 device under its collector with `protocol: "ipfix"`.
+The same response reports the resolved catalogs under `nbar2_catalogs_by_type`.
+Each row carries `entries`, `oversized` when non-zero, and `source`.
+`source` is `embedded`, `file:resources/<type>/nbar2.json` or `override:<path>`.
 
 ```bash
 # 20 cisco_ios devices emitting Cisco AVC records to an IPFIX collector
@@ -158,96 +180,197 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+`resource_file` must carry the `.json` suffix.
+
+The seed flag `-flow-nbar2` exists for the auto-start batch but is refused at startup on every boot today.
+The auto-start batch is always built as `asr9k`, which has no NBAR2, and no flag selects another type.
+The error names the REST remedy.
+Refusing is deliberate.
+A batch that booted and emitted plain IPFIX under an NBAR2 flag would be the accepted-and-ignored failure of nl6#445.
+
+There is no per-device catalog path on the REST surface.
+The catalog is chosen per device type, see [The catalog](#the-catalog).
+
+### What a collector sees
+
+An NBAR2 device sends data records under template 258.
+The first 54 bytes are byte-identical to the plain IPFIX record, template 256.
+
+| Field | PEN | Length |
+|---|---|---|
+| the plain IPFIX record, template 256 | IANA | 54 bytes fixed |
+| `applicationId` (IE 95) | IANA | 4 |
+| `ciscoHTTPHost` (IE 12235) | 9 | variable, RFC 7011 §7 |
+| `ciscoHTTPURIStatistics` (IE 9357) | 9 | variable, RFC 7011 §7 |
+
+Cisco's 2015 AVC guide quotes the two PEN 9 fields as wire specifiers 45003 and 42125.
+Those are the IE ids with bit 15 set: 12235 + 32768 = 45003 and 9357 + 32768 = 42125.
+
+**`applicationId`** is `engine << 24 | selector`, per RFC 6759.
+The shipped `http` entry has engine 3 and selector 80, so its id is `0x03000050`.
+A collector shows that as 50331728 or as `3:80`.
+Join on this id, not on the name.
+A collector's own classification may disagree with `applicationName`.
+
+**`ciscoHTTPHost`** always starts with the constant six bytes `03 00 00 50 34 02`.
+The first four bytes are the `applicationId` of `http`.
+The last two are Cisco's sub-application id 0x3402.
+The hostname follows.
+A record with no host carries exactly the six bytes.
+The field is never empty.
+The prefix is the same on every record, whatever the record's own `applicationId` says.
+This is the layout the IOS-XE 26.01.02 reference capture shows on every record.
+
+**`ciscoHTTPURIStatistics`** is the URI, a NUL byte, then a 2-byte big-endian hit count.
+There is no trailing delimiter.
+Cisco's guide leaves both the byte order and the delimiter open.
+The reference capture confirms both.
+
+Both PEN 9 fields carry binary bytes.
+A collector that renders them as strings must keep non-printable characters.
+In CESNET IPFIXcol2 that is the `nonPrintableChar` option.
+The shipped `examples/ipfixcol2/ipfixcol2.xml` has it on.
+With it off, IPFIXcol2 drops the non-printable bytes silently and shows the host as `P4www.example.com`.
+
+**Template 259** is an options table describing every application the device can emit.
+
+| Field | Length |
+|---|---|
+| `applicationId` (IE 95, scope) | 4 |
+| `applicationName` (IE 96) | 24 |
+| `applicationDescription` (IE 94) | 55 |
+
+It is sent on the template refresh cadence, `-flow-template-interval`.
+When the device also has an interface option table configured, template 257 is sent on the same cadence.
+Without one, only 259 is sent.
+
+The IPFIX Sequence Number counts Data Records, options records included, per RFC 7011 §3.1.
+That is the same rule the plain IPFIX encoder follows.
+
+All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`.
+
 ### Application-first generation
 
-For an NBAR2 device the catalog, not the `FlowProfile`, decides protocol and destination port: each flow draws an application by weight, takes the application's protocol and port, then draws a host and a URI by weight.
+For an NBAR2 device the catalog decides protocol and destination port, not the `FlowProfile`.
+Each flow draws an application by weight.
+The application fixes the protocol and port.
+The flow then draws a host and a URI by weight from that application's lists.
 The exporter therefore never emits a record on port 443 tagged as an application that runs elsewhere.
-The profile's port mix and per-device record ceilings still describe the non-NBAR2 fleet; an NBAR2 device's port and protocol distribution is its catalog's.
-The host and URI draws are unconditional, so a seeded device reproduces its stream exactly.
-Every device not using NBAR2 emits byte-identical output to the previous release, pinned by a digest over every shipped type and protocol (`testdata/flow-digests/pre-nbar2.tsv`).
-The NBAR2 stream itself is pinned the same way (`testdata/flow-digests/plan-b-nbar2.tsv`, taken at the Plan B merge), so later work on the ledger or the report cannot move an AVC byte unnoticed.
 
-### Verified against an independent collector
+The profile's volume knobs still apply.
+Concurrent flows, lifetimes and per-device record ceilings come from the `FlowProfile` as before.
+Only the port and protocol distribution comes from the catalog.
 
-`make test-interop-ipfix` is the check with detection power for this feature, in the sense `make test-interop` is for SNMPv3: every other IPFIX and AVC test decodes nl6's bytes with nl6's own decoder, so a shared misreading of RFC 7011 section 7 or of Cisco's PEN 9 numbers would pass all of them.
-The target builds `examples/ipfixcol2/` (Debian forky's `ipfixcol2` 2.8.0 package with libfds's own `cisco.xml`; Ubuntu 24.04 does not package it), starts CESNET IPFIXcol2 on the host network, and runs two tests that read the collector's own NDJSON output.
-The first drives a real exporter through `Tick` and requires that the collector resolves IEs 12235 and 9357 under PEN 9 **by name** (`cisco:appHTTPHost`, `cisco:appHTTPUriStatistics`; the `en9:idNNNN` form is the failure signal and the test names both causes), decodes `applicationId` to an id in the device's catalog with the record's protocol and port matching it, carries the host and URI as catalog values, receives the application table (template 259) with name and description for every id seen in a data record, keeps the RFC 7011 section 3.1 sequence arithmetic per observation domain, and shows none of that on a plain IPFIX control.
-The second runs a real scenario over three NBAR2 participants and one plain one and reconciles the report's `applications[]` and `l7_values[]` against sums over the collector's decoded records per key, with no tolerance band.
-Both were verified by mutation: disabling the host fold or never resolving the id fails them by name.
-libfds types IEs 12235 and 9357 as strings, and IPFIXcol2's JSON output DROPS non-printable bytes from a string unless `nonPrintableChar` is on: off, the collector showed the URI statistics as the URI alone and would show a Cisco-layout host as `P4www.example.com` (the two printable bytes of the prefix, then the name).
-The gate's config has the flag on, so every byte arrives as a `\u00XX` escape and the test asserts the six-byte host prefix and the URI's NUL and big-endian hit count byte for byte, against the collector's own element definitions.
-An earlier version of this paragraph said the collector "cuts the value at its NUL"; it discards non-printables, which looks the same on a URI and hides four of the six prefix bytes on a host.
-The gate runs in CI beside the SNMPv3 and Pyroscope interop steps and fails rather than skips when docker is missing.
+The host and URI draws happen on every flow, even for an entry with no host or URI list.
+A seeded device therefore reproduces its stream exactly.
+Adding a host list to one entry does not shift any other entry's stream.
 
-### Verified on the wire over veth
-
-Loopback has an MTU of 65536, so no Go test can see fragmentation; the check that can is a capture on the simulator's own veth, the nl6#488 method.
-Taken 2026-09-20 in an Ubuntu 24.04 arm64 VM, kernel default MTU 1500 on the veth, from the commit that added this section: ten `cisco_ios` devices created over REST with `flow: {protocol: "ipfix", nbar2: true}`, a 1-second tick, 3-second active and 2-second inactive timeouts, captured for 45 seconds on `veth-sim-host` with the filter `udp port 4739 or (ip[6:2] & 0x3fff != 0)`.
-
-| `-datagram-mtu` | datagrams captured | fragmented | largest IP length | entries disabled at startup |
-|---|---|---|---|---|
-| 1500 (default) | 963 | 0 | 1500 | none |
-| 1000 | 1415 | 0 | 1000 | none |
-| 576 (floor) | 2451 | 0 | 576 | none |
-
-The largest datagram sits exactly at the configured MTU in every run and nothing fragments, which is the frame budget doing its job.
-No shipped catalog entry goes oversized at any legal MTU: the worst case of the longest shipped entry fits the 548-byte payload a 576-byte frame leaves, so the dry render's disable-and-name path is exercised only by the load-time test with a planted 1400-byte URI, not by the shipped data.
-The first capture attempt found a real defect rather than a fragment: a create request naming the type as `cisco_ios` without the `.json` suffix was refused as NBAR2-incapable, because the capability gates run before the name validator and indexed their maps with the raw string; `resourceFileKey` now normalises the lookup for the NBAR2, flow and optical gates, and the example above carries the suffix the API requires.
-
-### Known differences from IOS-XE 26.01.02
-
-A real Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21; the capture, the router's configuration and the files that regenerate it are in `go/nl6/testdata/cisco-avc/capture/`, and `cisco_avc_capture_test.go` decodes the pcap with its own template parser and pins each fact below.
-The design spec's evidence rule (`docs/superpowers/specs/2026-09-18-nbar2-ipfix-l7-export-design.md`, section 1) said a contradicting capture would make the encoder follow or the claim downgrade.
-The claim downgraded (nl6#680): the feature exists so collectors can be tested against layer-7 records at scale, every open decoder tried reads nl6's records correctly, and following would be seven wire changes plus a generation change to transaction-end aging for a fidelity no consumer has asked for.
-The differences are recorded here rather than filed; an item is filed individually when a consumer needs it.
-
-1. **HTTP host (IE 12235) carries a constant prefix. Resolved.** Every router record starts the field with `03 00 00 50 34 02` (applicationId `http` then sub-application id 0x3402) and then the hostname; a record with no host carries exactly the six bytes. nl6 emitted the bare hostname until nl6#679, the one correctness item in this list, since a decoder written to Cisco's layout misread the value; since nl6#679 (the release after v0.29.2) nl6 emits the prefix from the single constant `avcHostPrefix`, the wire change moved `plan-b-nbar2.tsv`, and the interop gate asserts the prefix on every record the collector decodes. Pinned by `TestCiscoAVCCapture_HTTPHostCarriesConstantPrefix`, which compares the capture against the production constant.
-2. **The record is a connection record with a different field order.** IOS-XE refuses to bind a monitor that collects URI statistics without `match connection id` (PEN 9 IE 12242, 4 bytes, zero on ICMP) and refuses that without `cache timeout event transaction-end`. The router's template 258 has 17 fields with match fields first, the two variable-length fields before the counters and URI statistics before host; nl6's is the 54-byte unidirectional prefix followed by applicationId, host, URI statistics, with no connection id. This is the one item that would change what a collector computes, since it is a generation model, not an encoding. Pinned by `TestCiscoAVCCapture_DataTemplateFieldOrder`.
-3. **Host and URI appear on ingress records only.** The router puts them on the ingress-direction record of an HTTP request; the reverse-direction record carries the six-byte host prefix and an empty URI field. nl6 puts host and URI on every AVC record. Pinned by `TestCiscoAVCCapture_LayerSevenValuesAreIngressHTTPOnly`.
-4. **URI statistics record the first path segment only.** `/api/v1` arrives as `/api`, `/static/app.js` as `/static`. nl6's shipped catalogs carry multi-segment URIs such as `/api/v1/items`. Pinned by `TestCiscoAVCCapture_URIStatisticsLayout`.
-5. **A real application table is two-thirds engine 13.** The router's table has 1560 rows across engines 1 (127), 3 (748) and 13 (685), and NBAR2 reclassified half the plain HTTP transactions mid-connection to `binary-over-http` (`0x0d0001af`), emitting a second record per request. Every nl6 catalog entry is engine 3 and no engine-13 application exists. Ids the capture sourced: `unknown` `0x0d000001`, `binary-over-http` `0x0d0001af`, `ping` `0x0d0001df`. Pinned by `TestCiscoAVCCapture_OptionsTemplates`.
-6. **The interface option table differs in width, fields and template ids.** The router sends scope ingressInterface, then interfaceName at 33 bytes, interfaceDescription at 65 bytes and egressInterface, under template 256; Cisco numbers the tables 256 interface, 257 application, 258 data. nl6's `if-scoped` shape is 32 and 32 with no egressInterface under 257, and its application table is 259. Pinned by `TestCiscoAVCCapture_OptionsTemplates`.
-
-What the capture confirmed: the IE 9357 layout (URI, NUL, big-endian 2-byte hit count, no trailing delimiter, so `uriStatsValue` reproduces the router's bytes exactly), the application table string lengths of 24 and 55, the engine-3 `http` id `0x03000050`, sequence numbers that count option data records, and a maximum datagram of 1420 bytes with no fragmentation (`TestCiscoAVCCapture_URIStatisticsLayout`, `TestCiscoAVCCapture_OptionsTemplates`, `TestCiscoAVCCapture_MessageShape`).
-The evidence base (`go/nl6/testdata/cisco-avc/NOTES.md`) says which of the remaining facts are Cisco-sourced and which are nl6 decisions; `capture/README.md` says how to regenerate the capture in about five minutes against a vrnetlab-built `cisco_c8000v` image.
+Every device not using NBAR2 emits output byte-identical to v0.29.1, the release before NBAR2 landed.
+A digest over every shipped type and protocol pins that.
 
 ### The catalog
 
 `resources/_common/nbar2.json` is compiled into the binary.
-`resources/<type>/nbar2.json` overlays it for that type with the trap and syslog catalogs' `extends` semantic: `true` (the default) replaces same-name entries and appends new ones, `false` makes the per-type file the whole catalog for that type.
-`-nbar2-catalog <path>` replaces the universal **and** suppresses every overlay; it is read once at startup, and there is no per-device catalog path on the REST surface.
+`resources/<type>/nbar2.json` overlays it for that type.
+The overlay follows the `extends` rule the trap and syslog catalogs use.
+With `extends: true`, the default, a same-name entry replaces the universal one and new names are appended.
+With `extends: false` the per-type file is the whole catalog for that type.
+
+`-nbar2-catalog <path>` replaces the universal catalog and suppresses every overlay.
+It is read once at startup.
 `POST /api/v1/resources/reload` does not reload it.
+A catalog edit needs a restart.
 
 ```json
 {
-  "comment":  "optional",
-  "extends":  true,                       // per-type files only; default true
+  "comment": "optional",
+  "extends": true,
   "entries": [
     {
-      "name":        "http",              // unique; at most 24 bytes (applicationName)
-      "description": "Hypertext Transfer Protocol",   // at most 55 bytes (applicationDescription)
-      "engine":      3,                   // RFC 6759 section 4.1: 3 IANA-L4, 6 USER-Defined, 13 PANA-L7
-      "selector":    80,                  // 0..16777215; applicationId = engine<<24 | selector, unique in the merged catalog
-      "proto":       "tcp",               // tcp | udp | icmp | 0..255
-      "dst_port":    80,                  // 0..65535; must be 0 under icmp
-      "weight":      30,                  // draw weight; default 1
-      "hosts": [ {"value": "www.example.com", "weight": 6} ],   // optional; ciscoHTTPHost
-      "uris":  [ {"value": "/index.html",     "weight": 4} ]    // optional; ciscoHTTPURIStatistics
+      "name": "http",
+      "description": "Hypertext Transfer Protocol",
+      "engine": 3,
+      "selector": 80,
+      "proto": "tcp",
+      "dst_port": 80,
+      "weight": 30,
+      "hosts": [ {"value": "www.example.com", "weight": 6} ],
+      "uris":  [ {"value": "/index.html", "weight": 4} ]
     }
   ]
 }
 ```
 
-Every rule names the file, the entry and the rule when it refuses a load.
-The shipped entries all use engine 3 with the IANA port as selector, which RFC 6759 defines and which needs no Cisco protocol-pack number to verify; Cisco's PANA-L7 selectors are protocol-pack data; the reference capture sourced three (listed under known differences) and none is shipped, so an operator catalog is where they go.
-A collector's own classification may disagree with `applicationName`; join on the id.
+| Field | Required | Value |
+|---|---|---|
+| `comment` | no | Free text. |
+| `extends` | no | Per-type files only. Default `true`. |
+| `name` | yes | Unique in the merged catalog. At most 24 bytes. Becomes `applicationName`. |
+| `description` | yes | At most 55 bytes. Becomes `applicationDescription`. |
+| `engine` | yes | `3` IANA-L4, `6` user-defined or `13` PANA-L7, per RFC 6759 §4.1. Any other value fails the load. |
+| `selector` | yes | `0` to `16777215`. `engine << 24 \| selector` must be unique in the merged catalog. |
+| `proto` | yes | `tcp`, `udp`, `icmp` or an integer `0` to `255`. |
+| `dst_port` | tcp, udp | `0` to `65535`. Under `icmp` omit it or set `0`. |
+| `weight` | no | Draw weight. `0` or omitted draws as `1`. Negative fails the load. |
+| `hosts` | no | Weighted values for `ciscoHTTPHost`. |
+| `uris` | no | Weighted values for `ciscoHTTPURIStatistics`. |
 
-At load, each entry's worst-case record (its longest host and URI) is encoded through the production encoder against an empty datagram at the `-datagram-mtu` payload budget.
-An entry that cannot fit is **disabled, not rejected**: it stays out of generation and out of the application table, and the startup log names it with its size, the gap and the MTU that would admit it.
-Loading does not fail on size because the budget follows an operator-settable MTU.
+A refused load names the file, the entry and the rule that failed.
+
+The shipped entries all use engine 3 with the IANA port as selector.
+RFC 6759 defines that mapping, so no Cisco protocol-pack number is needed to verify it.
+Cisco's PANA-L7 selectors are protocol-pack data.
+The reference capture sourced three of them: `unknown` `0x0d000001`, `binary-over-http` `0x0d0001af` and `ping` `0x0d0001df`.
+None is shipped.
+An operator catalog is where they go.
+
+#### Size budget
+
+At load, each entry's worst-case record is encoded through the production encoder.
+The worst case is the entry's longest host and longest URI.
+It must fit an empty datagram at the `-datagram-mtu` payload budget.
+The budget used is the IPv6 one, the smaller of the two address families.
+An entry that passes therefore fits a datagram to any collector.
+
+An entry that cannot fit is disabled, not rejected.
+It stays out of generation and out of the application table.
+The startup log names it with its size, the gap and the MTU that would admit it.
+Loading does not fail on size, because the budget follows an operator-settable MTU.
 A device whose resolved catalog has no usable entry is refused at attach with that reason.
-The budget used is the IPv6 one, the smaller of the two address families, so an entry that passes load fits a datagram to any collector.
-`GET /api/v1/flows/status` reports the resolved catalogs under `nbar2_catalogs_by_type` with entry counts, the number disabled, and the source (`embedded`, `file:resources/<type>/nbar2.json`, `override:<path>`).
+The remedy is a larger `-datagram-mtu` or shorter hosts and URIs, followed by a restart.
+
+No shipped entry is disabled at any legal MTU.
+At the 576-byte floor the IPv6 budget is 528 bytes, and every shipped entry fits it.
+A capture on the simulator's own veth at MTU 1500, 1000 and 576 showed zero fragments.
+The disable path is exercised only by a load-time test with a planted 1400-byte URI.
+
+### Interoperability
+
+`make test-interop-ipfix` decodes nl6's AVC records with CESNET IPFIXcol2 using libfds's own Cisco element definitions.
+It requires the two PEN 9 fields to resolve by name, as `cisco:appHTTPHost` and `cisco:appHTTPUriStatistics`.
+It decodes `applicationId` to a catalog entry, receives the application table, and reconciles a scenario report against the collector's records with no tolerance.
+The gate runs in CI and fails rather than skips when docker is missing.
+An `en9:idNNNN` field name in the collector's output is the failure signal.
+
+### Differences from IOS-XE 26.01.02
+
+A Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21.
+The capture is checked in under `go/nl6/testdata/cisco-avc/capture/` and each row below is pinned by a test that decodes it.
+The capture confirmed the IE 9357 layout, the application table string lengths, the `http` id and the sequence arithmetic.
+It also showed that the HTTP host carries a constant prefix.
+nl6 emits that prefix since v0.30.0, so it no longer appears below.
+
+Five differences remain and are recorded rather than fixed, by decision in nl6#680.
+An item is filed when a consumer needs it.
+
+| | IOS-XE 26.01.02 | nl6 | What a collector sees |
+|---|---|---|---|
+| Record model | A connection record. Template 258 has 17 fields including `connectionId` (PEN 9 IE 12242, 4 bytes, zero on ICMP). Match fields first, then the two variable-length fields, then counters. URI statistics before host. | The 54-byte unidirectional record, then `applicationId`, host, URI statistics. No connection id. | Different field order and no connection id to join on. This is the one difference that changes what a collector computes. |
+| Where host and URI appear | On the ingress-direction record of an HTTP request only. The reverse record carries the six-byte host prefix and an empty URI. | On every AVC record. | Layer-7 values on both directions. |
+| URI depth | First path segment only. `/api/v1` arrives as `/api`. | Full catalog value, such as `/api/v1/items`. | Longer URIs than a router produces. |
+| Application table | 1560 rows, two-thirds engine 13. Reclassifies HTTP mid-connection to `binary-over-http` and emits a second record. | Every entry is engine 3. One record per flow with a stable id. | Fewer applications and no mid-flow reclassification. |
+| Template ids and option widths | Interface table under 256 with 33-byte name, 65-byte description and egressInterface. Application table under 257. Data under 258. | Interface table under 257 with 32 and 32 and no egressInterface. Application table under 259. Data under 258. | The option-table ids collide with Cisco's numbering. Decode by template content, not by id. |
+
 
 ## Per-device source IP
 
