@@ -186,7 +186,7 @@ The seed flag `-flow-nbar2` exists for the auto-start batch but is refused at st
 The auto-start batch is always built as `asr9k`, which has no NBAR2, and no flag selects another type.
 The error names the REST remedy.
 Refusing is deliberate.
-A batch that booted and emitted plain IPFIX under an NBAR2 flag would be the accepted-and-ignored failure of nl6#445.
+A batch that booted and silently emitted plain IPFIX under an NBAR2 flag would look configured while doing nothing.
 
 There is no per-device catalog path on the REST surface.
 The catalog is chosen per device type, see [The catalog](#the-catalog).
@@ -360,8 +360,9 @@ The capture confirmed the IE 9357 layout, the application table string lengths, 
 It also showed that the HTTP host carries a constant prefix.
 nl6 emits that prefix since v0.30.0, so it no longer appears below.
 
-Five differences remain and are recorded rather than fixed, by decision in nl6#680.
-An item is filed when a consumer needs it.
+Five differences remain and are recorded rather than fixed.
+nl6 exists so collectors can be tested against layer-7 records at scale, and every open decoder tried reads its records correctly.
+An item is fixed when a consumer needs it.
 
 | | IOS-XE 26.01.02 | nl6 | What a collector sees |
 |---|---|---|---|
