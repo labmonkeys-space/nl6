@@ -27,8 +27,9 @@ applies to the version you poll with.
 
 ## Whole fleet, SNMPv1 and v2c
 
-Start the simulator with a write community. Any string works. It is separate
-from the read community, which nl6 never checks.
+Start the simulator with a write community. It is separate from the read
+community, which nl6 never checks. Nothing validates the value, so keep it to
+characters your shell will not reinterpret when you pass it to `snmpset`.
 
 ```bash
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
@@ -84,6 +85,16 @@ the line that begins `SNMP write admission`.
 
 Devices created over the REST API carry their own admission settings.
 
+:::note[Wait for the auto-start batch to finish]
+
+Only one device-creation batch runs at a time, and `-auto-start-ip` counts as
+one. A `POST /api/v1/devices` issued while the fleet is still coming up is
+refused with `409 Conflict` and a `Retry-After` header. Poll
+`GET /api/v1/status` and wait for `create_batch_in_progress` to clear, or just
+retry.
+
+:::
+
 ```bash
 curl -X POST http://localhost:8080/api/v1/devices \
   -H "Content-Type: application/json" \
@@ -104,7 +115,21 @@ curl -X POST http://localhost:8080/api/v1/devices \
 ```
 
 `auth_protocol` is `0` for none, `1` for MD5, `2` for SHA1.
-`set_min_security_level` takes `none`, `auth` or `priv`.
+`set_min_security_level` takes `none`, `auth` or `priv`, and `auth` is already
+the default. It is spelled out above so the field is visible, not because
+omitting it would change anything.
+
+Raising it to `priv` needs a privacy protocol on the same block, or the device
+admits no v3 `SET` at all:
+
+```json
+"auth_protocol": 2,
+"priv_protocol": 2,
+"priv_password": "simadmin",
+"set_min_security_level": "priv"
+```
+
+`priv_protocol` is `0` for none, `1` for DES, `2` for AES128.
 
 Either version then works against that device alone:
 
@@ -130,12 +155,28 @@ there is no way to read back what a device was configured with.
 ## Disable a network interface
 
 `ifAdminStatus.<N>` is `1.3.6.1.2.1.2.2.1.7.<N>`, where `<N>` is the ifIndex.
-The values are `up(1)`, `down(2)` and `testing(3)`. Walk the column first to
+The values are `up(1)`, `down(2)` and `testing(3)`. Its read-only companion
+`ifOperStatus.<N>` is `1.3.6.1.2.1.2.2.1.8.<N>`, and the examples read both back
+so you can see the derivation below at work. Walk the column first to
 see which interfaces a device has:
 
 ```bash
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1.7
 ```
+
+On the default profile that returns 48 interfaces, all administratively up:
+
+```
+IF-MIB::ifAdminStatus.1 = INTEGER: up(1)
+IF-MIB::ifAdminStatus.2 = INTEGER: up(1)
+...
+IF-MIB::ifAdminStatus.48 = INTEGER: up(1)
+```
+
+The examples below use ifIndex 2, which on that profile is `TenGigE0/0/0/0`.
+Interface numbering is a property of the device profile, so check the walk
+before picking an index on a fleet built with `-round-robin` or your own
+resource files.
 
 ### With SNMPv1 or v2c
 
@@ -165,9 +206,28 @@ snmpget -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin 192.168.100.1 \
 
 ### What the device does with it
 
-Shutting an interface moves `ifOperStatus` too, stamps `ifLastChange`, pushes an
-update to any gNMI `ON_CHANGE` subscriber, and fires the device's link-down trap
-and syslog message. Unshutting it fires the link-up pair.
+Shutting an interface moves `ifOperStatus` too, stamps `ifLastChange`, and
+pushes an update to any gNMI `ON_CHANGE` subscriber. The gNMI listener is on by
+default, so that part needs no extra flag.
+
+:::caution[Link traps and syslog need a collector]
+
+The state change also fires the device's link-down trap and syslog message, but
+only on a device that has somewhere to send them. None of the startup commands
+above configure one, so nothing is emitted.
+
+To watch the telemetry, start the fleet with a collector address:
+
+```bash
+sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
+  -snmp-write-community s3cret \
+  -trap-collector 127.0.0.1:1162 \
+  -syslog-collector 127.0.0.1:1514
+```
+
+Shutting an interface then sends `linkDown`, and unshutting it sends `linkUp`.
+
+:::
 
 :::note[Re-enabling does not always bring the interface back up]
 
@@ -192,7 +252,7 @@ interface.
 
 | Symptom | Cause |
 |---------|-------|
-| `Timeout: No Response` under v1 or v2c | Wrong write community, or none configured. Check the `SNMP write admission` line in the startup log. |
+| `Timeout: No Response` under v1 or v2c | Most often a wrong write community, or none configured. A timeout is also what an unreachable address, a fleet still starting, or a blocked port 161 looks like, so confirm `snmpget` works against the same device first. |
 | `Unsupported security level` under v3 | The request is below the minimum. Raise the request's level, or lower `-snmp-set-min-security-level`. |
 | `notWritable` | The OID is not `ifAdminStatus`. It is the only writable object. |
 | `wrongValue` | The value is outside `up(1)`, `down(2)`, `testing(3)`. |
@@ -203,9 +263,30 @@ SNMPv1 has a smaller set of error values, so those four collapse under `-v1`:
 `wrongValue` and `wrongType` both report `badValue`, while `notWritable` and
 `noCreation` both report `noSuchName`.
 
-To restore the behaviour of earlier releases, where any manager that could
-reach the port could write, start with
-`-snmp-write-community public -snmp-set-min-security-level none`.
+### Confirming the policy took effect
+
+Every boot prints the policy in one line, before any device exists:
+
+```
+SNMP write admission (auto-start batch; REST-created devices use the create body, not these flags) — v1/v2c SET: admitted with the configured write community; v3 SET: minimum security level authNoPriv
+```
+
+Grep the startup output for `SNMP write admission`. It reports what the
+auto-start batch got, so it is the fastest way to tell a configuration mistake
+from a network one.
+
+### Turning the gates off
+
+Earlier releases admitted a write from any manager that could reach the port.
+To get that back:
+
+```bash
+sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
+```
+
+That makes every simulated device writable by anything that can route to it.
+It is reasonable on an isolated lab network and when a harness predates the
+gates. It is not a setting to carry into a shared environment.
 
 ## Next steps
 

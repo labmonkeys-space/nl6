@@ -11,6 +11,8 @@ container workflows see [Docker](docker.md).
 - Go 1.27 or later. The canonical version is pinned in
   [`go/go.mod`](https://github.com/labmonkeys-space/nl6/blob/main/go/go.mod).
 - Basic networking tools: `ip`, `iptables`.
+- net-snmp client tools (`snmpget`, `snmpwalk`, `snmpset`) to poll and write
+  to the devices. On Debian and Ubuntu these are the `snmp` package.
 
 :::tip[Skip host setup]
 For a zero-prerequisite path, run the published container image — see
@@ -60,10 +62,10 @@ dynamic HC counter layout.
 
 ## Next steps
 
-- **Change device state** — [Enable SNMP SET](snmp-set.md) to shut and unshut
+- **Change device state**: [Enable SNMP SET](snmp-set.md) to shut and unshut
   an interface over SNMP. Writes are off by default.
-- **Scale up** — [Scaling](../ops/scaling.md) covers the 30k-device tuning.
-- **Flow export** — [Flow export (operator guide)](../ops/flow-export.md) to
+- **Scale up**: [Scaling](../ops/scaling.md) covers the 30k-device tuning.
+- **Flow export**: [Flow export (operator guide)](../ops/flow-export.md) to
   plug nl6 into a NetFlow / IPFIX / sFlow collector.
-- **Device types** — [Device types](../reference/device-types.md) lists the
+- **Device types**: [Device types](../reference/device-types.md) lists the
   28 simulated devices across 8 categories.
