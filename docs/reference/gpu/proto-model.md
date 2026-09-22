@@ -36,7 +36,7 @@ The opensim GPU simulator exposes data via three protocols. This model must repr
 
 `5703` is NVIDIA Corporation's IANA-registered Private Enterprise Number.
 It used to be `53246`, which IANA allocates to an unrelated company.
-nl6#576 re-homed the arc and preserved every sub-identifier below the PEN.
+The arc was re-homed, preserving every sub-identifier below the PEN.
 See [GPU pollaris and parsing rules](./pollaris.mdx) for the migration note.
 
 ## Protobuf Messages

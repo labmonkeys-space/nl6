@@ -75,8 +75,8 @@ for a representative example.
 
 The resource decoder is not strict, so a key it does not recognise is dropped silently.
 That is a hazard for a typo'd `snmp` array — an optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check — and it is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments.
-`palo_alto_pa3220_snmp_4.json` carried one recording an unresolved question about a vendor OID subtree; nl6#569 resolved it and the note is gone, so no shipped part uses the key today.
-Such a key changes nothing that loads, and `TestUnknownTopLevelKeysAreInert` pins that, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
+`palo_alto_pa3220_snmp_4.json` carried one recording an unresolved question about a vendor OID subtree; that one is resolved and the note is gone, so no shipped part uses the key today.
+Such a key changes nothing that loads, and that is pinned, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
 
 ## Load-time validation
 
@@ -142,16 +142,16 @@ See [SNMP reference → Resource values are validated at load](snmp-data-fidelit
 
 | Rule | What it refuses |
 |---|---|
-| Sentinel (nl6#523) | a response exactly equal to `noSuchObject` or `endOfMibView` |
-| OID-typed value (nl6#529) | a value on an `OBJECT IDENTIFIER` leaf that the encoder cannot represent |
-| Typed class (nl6#541) | a value on a `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` or `IpAddress` leaf that does not encode at that type |
+| Sentinel | a response exactly equal to `noSuchObject` or `endOfMibView` |
+| OID-typed value | a value on an `OBJECT IDENTIFIER` leaf that the encoder cannot represent |
+| Typed class | a value on a `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` or `IpAddress` leaf that does not encode at that type |
 
 Every rule is decided by calling the SNMP encoder and looking at what it emits, so the loader cannot drift from the wire.
 
 ### Typed values
 
-A leaf the encoder's type table types must carry a value that type can hold, or the file is rejected with the file, the OID, the declared type and the value named (nl6#541).
-This is the class that shipped nl6#515: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB — OpenNMS does, as a gauge — logged a conversion error on every poll of every device.
+A leaf the encoder's type table types must carry a value that type can hold, or the file is rejected with the file, the OID, the declared type and the value named.
+One shipped example: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB — OpenNMS does, as a gauge — logged a conversion error on every poll of every device.
 
 - `Counter32`, `Gauge32`, `TimeTicks`: an unsigned decimal that fits 32 bits. A negative loads with a warning (the encoder wrap-casts, so `-1` is served as `4294967295` under the declared tag), but anything the encoder cannot parse does not.
 - `Counter64`: an unsigned decimal that fits 64 bits. `-1` is **refused** here, unlike the 32-bit types, because that branch of the encoder has no signed fallback.
@@ -172,11 +172,11 @@ Two whole classes of wrong data therefore load without a word, and both were swe
 
 **A static entry on an OID the cycler serves is dead, not authoritative.**
 `findResponse` consults the dynamic cyclers before the static map, so an entry on any `ifTable`/`ifXTable` column in `ifCyclerColumns` is unreachable — writing one is a silent no-op, and reading a profile's JSON to learn what a device answers will mislead you.
-nl6#570 and nl6#574 deleted 2064 such rows between them for exactly that reason.
+2064 such rows were deleted for exactly that reason.
 The two exceptions are `ifAdminStatus` (`.7`) and `ifOperStatus` (`.8`), whose static rows *seed* the interface-state engine and are load-bearing.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
-The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected (nl6#529). Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
+The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected. Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
 Which leaves count as OID-typed is bounded by the encoder's type table, which today lists only `sysObjectID`; a non-OID value on any other OBJECT IDENTIFIER leaf still loads and is served as an OCTET STRING.
 An OID **key** is still not checked: a malformed key reaches the encoder and is served as the degenerate encoding `06 00` rather than silently becoming a different OID, with nothing logged.
 See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint).

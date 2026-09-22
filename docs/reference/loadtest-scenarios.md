@@ -429,7 +429,7 @@ interesting one is usually cardinality:
 
 - **Flow protocols have a hard per-device rate ceiling, around 8.1–9.2 records/s at the default 5s tick.**
   A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / residency`: roughly 8.1/s for the GPU-server profile up to 9.2/s for the campus-switch one.
-  Residency is `mean-flow-lifetime + half the tick interval`, so **the ceiling falls as the tick lengthens**: at `-flow-tick-interval 60` residency is about 59s and the ceiling roughly 4.3/s, half the figure above. Compute it from the formula rather than quoting the number when the tick is not the default. The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes. It was omitted before [nl6#462](https://github.com/labmonkeys-space/nl6/issues/462), which stated the ceiling about 5 % high and ran every paced rate a few percent low.
+  Residency is `mean-flow-lifetime + half the tick interval`, so **the ceiling falls as the tick lengthens**: at `-flow-tick-interval 60` residency is about 59s and the ceiling roughly 4.3/s, half the figure above. Compute it from the formula rather than quoting the number when the tick is not the default. The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes. It is included, which stated the ceiling about 5 % high and ran every paced rate a few percent low.
   A rate above a participant's ceiling is **refused at arm**, with the ceiling in the message, rather than silently under-delivered.
   Fleet throughput scales with participant count; per-device rate does not scale past the cache. Flow is not a protocol to drive hard per device.
 
@@ -474,14 +474,13 @@ pipeline a normal stop uses, so:
 
 **How long that takes.** The abort publishes the terminal gate — no new fire
 initiates — and then waits for the fires already admitted to return from their
-writes. There is **no configurable grace** ([nl6#500] removed a `drain` duration
-that never bounded anything). On a healthy run the wait is milliseconds. The
+writes. There is **no configurable grace**. On a healthy run the wait is milliseconds. The
 worst case an operator can observe is set by the slowest transport in the run: a
 UDP write parks only while the socket buffer is full, while a syslog **TCP/TLS**
 device bounds one write at 2 s and serialises the fires queued behind it, so a
 stalled collector can hold shutdown for 2 s × those queued fires.
 
-**The drain barrier itself is bounded**, at 60 s ([nl6#567]): past that it gives
+**The drain barrier itself is bounded**, at 60 s: past that it gives
 up, reports how many sends were still outstanding in `drain_stragglers`, and
 lets finalize proceed. At the shipped constants it logs exactly one warning, at
 the 30 s mark, and then the give-up line at 60 s. The reported count is an upper
@@ -489,7 +488,7 @@ bound on outstanding **admissions**, not on records: the syslog and trap paths
 admit one write, while the flow paths admit a whole paginated batch, so one flow
 straggler can stand for hundreds of records.
 
-**Finalize as a whole is bounded by one budget** ([nl6#618]). Before it, only
+**Finalize as a whole is bounded by one budget**. Before it, only
 the barrier was: finalize joins the scenario's scheduler and its trap and flow
 tickers *before* it reaches the barrier, every one of those was an unbounded
 channel receive, and the syslog and trap schedulers fire inline, so a stalled
@@ -550,6 +549,3 @@ short, operator-driven experiment whose result is consumed immediately (diffed
 against a monitor), not an audit log. Capture the report JSON yourself if you
 need to keep it.
 
-[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
-[nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567
-[nl6#618]: https://github.com/labmonkeys-space/nl6/issues/618

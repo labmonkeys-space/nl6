@@ -265,7 +265,7 @@ The host and URI draws happen on every flow, even for an entry with no host or U
 A seeded device therefore reproduces its stream exactly.
 Adding a host list to one entry does not shift any other entry's stream.
 
-Every device not using NBAR2 emits output byte-identical to v0.29.1, the release before NBAR2 landed.
+Enabling NBAR2 on one device does not change what any other device emits.
 A digest over every shipped type and protocol pins that.
 
 ### The catalog
@@ -354,10 +354,10 @@ An `en9:idNNNN` field name in the collector's output is the failure signal.
 ### Differences from IOS-XE 26.01.02
 
 A Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21.
-The capture is checked in under `go/nl6/testdata/cisco-avc/capture/` and each row below is pinned by a test that decodes it.
+The capture is checked in and each row below is pinned by a test that decodes it.
 The capture confirmed the IE 9357 layout, the application table string lengths, the `http` id and the sequence arithmetic.
 It also showed that the HTTP host carries a constant prefix.
-nl6 emits that prefix since v0.30.0, so it no longer appears below.
+nl6 emits that prefix.
 
 Five differences remain and are recorded rather than fixed.
 nl6 exists so collectors can be tested against layer-7 records at scale, and every open decoder tried reads its records correctly.
@@ -466,7 +466,7 @@ mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeo
 
 Each synthetic flow is given a duration sampled from the device profile. A flow still running when it reaches the **active timeout** is exported and restarted; a flow that has ended and then sat idle for the **inactive timeout** is exported then. Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one, giving a mean cached lifetime near 29s.
 
-The **active timeout is jittered per flow**, by ±25 % of its configured value. A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s. The jitter is symmetric, but symmetric in the deadline is not symmetric in the lifetime: the lifetime is a **minimum** of that deadline and another, and a minimum is concave, so a spread lowers it slightly. Measured across the shipped profiles the mean lifetime falls by 0.05 % to **1.18 %**, largest on the campus-switch profile whose sampled durations cluster near the timeout. So the jitter changes when records leave, and how many by about a percent. See [Changed in nl6#462: emission shape](#changed-in-nl6462-emission-shape) for why.
+The **active timeout is jittered per flow**, by ±25 % of its configured value. A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s. The jitter is symmetric, but symmetric in the deadline is not symmetric in the lifetime: the lifetime is a **minimum** of that deadline and another, and a minimum is concave, so a spread lowers it slightly. Measured across the shipped profiles the mean lifetime falls by 0.05 % to **1.18 %**, largest on the campus-switch profile whose sampled durations cluster near the timeout. So the jitter changes when records leave, and how many by about a percent. See [Emission shape](#emission-shape) for why.
 
 Expiry is noticed by a periodic sweep. A flow's real residency is therefore the mean lifetime **plus about half a tick interval**, because it waits for the sweep that notices its deadline. That term matters for pacing. A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
 
@@ -489,7 +489,7 @@ The MTU defaults to 1500 and is set with `-datagram-mtu`. That default holds for
 
 **Lower it when the collector path is not standard Ethernet.** A Docker overlay or VXLAN network is typically 1450 and a tunnelled path lower still. Measured at 1450 against a 1500-derived build, NetFlow v9 (1480 B frame), IPFIX (1484) and NetFlow v5 (1492) all fragment, as does an SNMP GETBULK at OpenNMS's default collector settings (1464). Only sFlow and SNMP traps fit.
 
-**The flag governs flow export and SNMP trap notifications.** SNMP GETBULK responses still carry their own fixed bound and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set; that subsystem joins the shared value when nl6#489 lands. Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
+**The flag governs flow export and SNMP trap notifications.** SNMP GETBULK responses still carry their own fixed bound and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set; that subsystem does not yet join the shared value. Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
 
 On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them — they are disabled at catalog load and named in the startup log with the MTU that would admit them.
 
@@ -501,7 +501,7 @@ Setting the tick close to or above the mean flow lifetime is not useful — ever
 
 To raise or lower volume, change the concurrent-flow count or the timeouts.
 
-### Changed in nl6#446: cadence and volume both moved
+### Cadence and volume
 
 > **Measured on the wire.** The emission model here was derived by reading the code and simulating the loop. Two of its predictions were then checked against a packet capture, and the rest were not — the distinction matters, so it is drawn explicitly below.
 >
@@ -534,7 +534,7 @@ The volume change reaches deployments that set no flag at all, which makes it th
 
 It happened because a flow's "last seen" time was pinned to its creation instant, so every flow looked idle from birth. Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together — a burst followed by silence that no real exporter produces. Flow lifetimes now derive from the duration the profile already sampled.
 
-### Changed in nl6#462: emission shape
+### Emission shape
 
 Volume is unchanged. **Timing is not**, and it moves for every flow deployment whether or not a scenario runs.
 
@@ -571,11 +571,11 @@ Measured in-process as autocorrelation of per-tick record counts across multiple
 
 Autocorrelation at one lifetime never exceeded +0.29 on the wire, so the repetition an in-process probe sees at +0.96 is not what a collector was receiving. What a collector was receiving is over-dispersion: before the change, per-tick counts scattered three to six times wider than Poisson counting noise allows; after it, the 8 rec/s case sits essentially at the Poisson floor.
 
-Both symptoms come from the same deterministic deadline. Flows created in one tick expire in one tick, which lumps each tick's output immediately (variance) and repeats the lump a lifetime later (periodicity). The warm first fill added by [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) already staggered creation ages enough to blunt the repetition on real timing, leaving the variance as the dominant wire symptom.
+Both symptoms come from the same deterministic deadline. Flows created in one tick expire in one tick, which lumps each tick's output immediately (variance) and repeats the lump a lifetime later (periodicity). The warm first fill already staggered creation ages enough to blunt the repetition on real timing, leaving the variance as the dominant wire symptom.
 
 **What this means for a collector.** A rule keyed on flows arriving at exactly the configured active timeout will now see a spread instead of a spike. `-flow-active-timeout` sets a mean, not an exact deadline.
 
-**Why the ceiling moved.** The stated per-device scenario ceiling was `MaxFlows / mean-flow-lifetime`, which omitted the sweep delay described above. Pacing now divides by the real residency. The ceiling is about 5 % lower, and a paced rate is actually achieved. Before this, pacing ran a few percent low at every rate, which is what [nl6#462](https://github.com/labmonkeys-space/nl6/issues/462) was reporting.
+**Why the ceiling moved.** The stated per-device scenario ceiling was `MaxFlows / mean-flow-lifetime`, which omitted the sweep delay described above. Pacing now divides by the real residency. The ceiling is about 5 % lower, and a paced rate is actually achieved. Before this, pacing ran a few percent low at every rate, which is what the sweep-residency correction was reporting.
 
 The old figure was not wrong by accident. With a deterministic deadline, flows created on a tick boundary expired on a tick boundary, so the sweep genuinely cost nothing. That alignment was an artifact of synthetic timing, and the jitter removed it.
 

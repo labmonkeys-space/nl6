@@ -1,9 +1,8 @@
 # SNMP trap / INFORM reference
 
 nl6 emits notifications in **all three SNMP versions**, one per fleet, selected
-with `-trap-snmp-version`: SNMPv2c (default, `go/nl6/trap_v2c.go`), SNMPv1
-Trap-PDUs (`go/nl6/trap_v1.go`), and SNMPv3 with RFC 3414 USM authentication and
-privacy (`go/nl6/trap_v3.go`). INFORM is SNMPv2c only. This page covers
+with `-trap-snmp-version`: SNMPv2c (default), SNMPv1 Trap-PDUs, and SNMPv3 with RFC 3414 USM
+authentication and privacy. INFORM is SNMPv2c only. This page covers
 the wire format, the JSON catalog schema, the HTTP endpoints, and the status
 JSON shape. For enabling the feature, CLI flags, and troubleshooting see
 [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and
@@ -18,7 +17,7 @@ engine; `-trap-snmp-version` and the `-trap-snmpv3-*` flags configure what it
 
 Polls over SNMPv3 are authenticated: nl6's USM implementation is RFC 3414
 conformant and verified against net-snmp
-([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)).
+.
 
 Under `-trap-snmp-version v2c` (the default) or `v1`, notifications carry no
 authentication at all. The SNMPv2c community string (`-trap-community`, default
@@ -169,7 +168,7 @@ configurable.** It is an RFC 3411 §5 format-3 (MAC address) identity, 11 octets
 
 PEN 32473 is [RFC 5612]'s documentation number, held by IANA — nl6 has no PEN of
 its own and claims nobody else's, the same call
-[nl6#588](https://github.com/labmonkeys-space/nl6/issues/588) made for
+ made for
 `sysObjectID`. The MAC is the device's synthesized chassis ID, the same value
 `{{.ChassisID}}` renders and the LLDP provider advertises, so the engine
 identity is the identity the device already asserts elsewhere.
@@ -267,7 +266,7 @@ v3 is the most expensive format per fire, and unavoidably so: it skips the
 allocation-free fast encoder (a v2c-only path by decision, exactly as SNMPv1
 does), adds an HMAC over the whole message, and at `authPriv` adds a cipher pass
 plus 8 bytes of `crypto/rand` salt. Measured on an Apple M1 Max with
-`go test ./nl6/ -bench BenchmarkTrapEncode -benchmem`, four body varbinds:
+Four body varbinds:
 
 | Format | allocations / fire | bytes / fire |
 |--------|-------------------:|-------------:|
@@ -301,7 +300,7 @@ disables them sooner under v3 than under v2c** — between roughly MTU 1028 and
 
 The load-time budget check is measured at the fleet's **own** wire format, so
 those entries are named in the startup log with their v3 size and the MTU that
-would admit them, exactly as they are under v2c. (Before nl6#98 that check
+would admit them, exactly as they are under v2c. (That check
 always measured v2c, so a v3 fleet in that band disabled nothing and failed at
 every fire instead.)
 
@@ -343,7 +342,7 @@ silently ignored.
 ## Catalog JSON schema
 
 The embedded universal catalog at
-`go/nl6/resources/_common/traps.json` is the authoritative example
+`resources/_common/traps.json` is the authoritative example
 of the schema:
 
 ```json
@@ -397,17 +396,16 @@ Every dotted OID in this file, whether a varbind name, `snmpTrapOID` or `snmpTra
 - Every arc, and the combined value of the first two, is at most `4294967295`.
 - Every component is a number. A non-numeric component is not treated as zero.
 
-An OID that breaks any of these is **rejected when the catalog loads**, naming the entry and the field (nl6#539).
+An OID that breaks any of these is **rejected when the catalog loads**, naming the entry and the field.
 That covers `snmpTrapOID`, `snmpTrapEnterprise` and literal body-varbind OIDs.
 Whether a value qualifies is decided by asking the encoder itself, so the catalog can never load an OID the encoder then refuses.
 The load check is slightly stricter than the encoder on spelling and length: a signed component such as `+1.3` and an OID over 256 characters are refused at load even though the encoder could carry them.
 A rejected entry fails its catalog file at load, like every other catalog validation error.
 
 A **templated** varbind OID such as `1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}` is checked only after it renders, since a `varbindOverrides` value supplied over REST can make it unencodable at fire time whatever the catalog says.
-An override supplying a non-numeric or out-of-range component therefore makes the trap fail to encode at fire time (nl6#540).
+An override supplying a non-numeric or out-of-range component therefore makes the trap fail to encode at fire time.
 The same refusal covers the value of an `oid`-typed varbind, which can go bad by the identical rendered-template route.
 The failure is logged once per device and counted in `send_failures` on `GET /api/v1/traps/status`, so a template that renders badly is visible without a packet capture.
-The history of this spot: before nl6#529 such an OID was silently fabricated, so `3.40.1` went on the wire as `.4.0.1`; nl6#529 replaced the fabrication with a degenerate `06 00`, a binding no manager can match, still with no log line and no counter; nl6#540 replaced that emission with the refusal.
 
 ### Universal catalog (embedded default)
 
@@ -554,7 +552,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-trap-interval` cadence ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
+> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-trap-interval` cadence. The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
 `/api/v1/traps/status` reports both batches as separate records keyed by
 `(collector, mode)`.
@@ -648,9 +646,9 @@ directly at the top level.
 The **four `informs_*` fields appear only on records whose `mode == inform`**.
 TRAP-mode records omit them.
 
-`sent` means the datagram reached the kernel; a fire that did not lands in `send_failures` instead — a template that resolves or renders to something unencodable (nl6#540), a refused write, or a failed INFORM retransmission.
+`sent` means the datagram reached the kernel; a fire that did not lands in `send_failures` instead — a template that resolves or renders to something unencodable, a refused write, or a failed INFORM retransmission.
 The counter moves on every occurrence even though the matching log line is emitted only once per exporter.
-This is the same split flow and syslog status use (nl6#491).
+This is the same split flow and syslog status use.
 
 `subsystem_active` is the authoritative "is the feature live?" signal —
 `true` after `StartTrapSubsystem` runs. During normal operation of the
@@ -696,8 +694,7 @@ informs_pending + informs_acked + informs_failed + informs_dropped == informs_or
 ```
 
 `informs_originated` isn't exposed in the status JSON — it's an internal
-counter verified by `TestInformInvariant_AtExporterLevel` in
-`trap_api_test.go`. If the four exposed counters don't add up across two
+counter. If the four exposed counters don't add up across two
 successive polls (after allowing for newly-originated informs between
 reads), something is miscounted or a retransmit path is skipping a
 state transition.

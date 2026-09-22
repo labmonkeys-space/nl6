@@ -65,7 +65,7 @@ curl -s -X POST localhost:8080/api/v1/profiling -H 'Content-Type: application/js
 ### The request
 
 `enabled` is required.
-A body without it is a `400`, and so is a `server_address` on an `enabled:false` request, because validated-then-ignored is the nl6#445 family.
+A body without it is a `400`, and so is a `server_address` on an `enabled:false` request, because validated-then-ignored is worse than refused.
 
 `server_address` has three shapes:
 
@@ -129,14 +129,14 @@ Set through `pprof.Do` for the call's duration: per fire on the trap and syslog 
 In Pyroscope, filter with `{service_name="nl6",subsystem="trap"}`.
 Labels nest by the runtime's rule: `pprof.Do` restores the labels of the context it was given, so a goroutine labelled at birth keeps its label across a funnel because it hands the funnel its birth context (the scenario ticker carries `scenario` between ticks and `flow` inside one).
 A label merely **inherited** by a goroutine, such as the scenario syslog scheduler spawned under a scenario start, does not survive a trap or syslog funnel, by design: those fires are trap and syslog work.
-What is pinned **behaviourally** (read back from the goroutine profile or from inside the funnel) by `TestProfilingLabel_*`: the SNMP read loop, the trap fire funnel, the trap INFORM loops, the syslog fire funnel, the flow tick funnel, the fleet flow ticker, gNMI `Get` and `Subscribe`, the dial-out loop, the scenario flow ticker (between ticks, after ticks ran), the scenario `finish`, a scheduled start's inherited label, and the nesting rule itself.
+What is pinned **behaviourally** (read back from the goroutine profile or from inside the funnel) for: the SNMP read loop, the trap fire funnel, the trap INFORM loops, the syslog fire funnel, the flow tick funnel, the fleet flow ticker, gNMI `Get` and `Subscribe`, the dial-out loop, the scenario flow ticker (between ticks, after ticks ran), the scenario `finish`, a scheduled start's inherited label, and the nesting rule itself.
 Not pinned behaviourally: the syslog TCP reconnect loop and `startLocked` on the non-scheduled path (the same helper, covered by the helper's own test).
 The interop test proves only that a label set through the helper reaches Pyroscope and is filterable, over both the push and the Alloy scrape.
 
 **What "off by default pays nothing" means.**
 The labels are set whether or not profiling is on.
 A goroutine label is a pointer swap set once per long-lived goroutine, from a context built once per subsystem; `pprof.Do` on a shared scheduler goroutine allocates one small map per fire.
-The delta on `BenchmarkSyslogExporterFire` (CI runner class, `main` versus this branch): **+3 allocs, +104 B, about +6% wall time** per fire (23 allocs / 2662 B / 8835 ns on `main` against 26 / 2766 / 9428 ns).
+The delta on a syslog-fire benchmark (CI runner class, `main` versus this branch): **+3 allocs, +104 B, about +6% wall time** per fire (23 allocs / 2662 B / 8835 ns on `main` against 26 / 2766 / 9428 ns).
 Re-labelling live goroutines on toggle would need every long-lived loop to poll the gate, which costs more than the label, so that cost is paid unconditionally and this sentence is the disclosure.
 Everything else, the SDK, its goroutines, the forced GC, the upload connection, and the pull handlers, exists only while the gate is open.
 The feature opens no listener of its own by construction: the two files that implement it never call anything that opens a socket, and a test scans them for that.
@@ -183,7 +183,7 @@ A pprof label is a sample label inside the pprof body, so a scrape carries it ex
 
 Before each heap snapshot the SDK forces a `runtime.GC()` if no collection ran during the upload interval, so the heap profile is fresh.
 `-profiling-force-gc` controls it (`false` sets the SDK's `DisableGCRuns`).
-Its default was **set from a measurement, not chosen**, by a rule registered before the number was known: run `BenchmarkForcedGCOnFleetHeap`; if one `runtime.GC()` on a heap built from N=5000 TUN-less devices, extrapolated linearly to 30,000, exceeds 150 ms (1% of one core per 15 s upload window), default `false`; otherwise default `true`.
+Its default was **set from a measurement, not chosen**, by a rule registered before the number was known: if one `runtime.GC()` on a heap built from N=5000 TUN-less devices, extrapolated linearly to 30,000, exceeds 150 ms (1% of one core per 15 s upload window), default `false`; otherwise default `true`.
 
 | N devices | live heap | ms per `runtime.GC()` (3 runs of `-benchtime=5x`) |
 |-----------|-----------|----------------------------------------------------|
@@ -191,7 +191,7 @@ Its default was **set from a measurement, not chosen**, by a rule registered bef
 | 5000 | 78.5 MiB | 4.3, 4.8, 5.8 |
 
 Linear from the N=5000 median (4.8 ms): **~29 ms at 30,000 devices**, ~35 ms from the worst run.
-Machine: Apple M1 Max, darwin/arm64, Go 1.27.0, `asr9k` profile, `cd go && go test ./nl6/ -run '^$' -bench BenchmarkForcedGCOnFleetHeap -benchtime=5x -count=3`.
+Machine: Apple M1 Max, darwin/arm64, Go 1.27.0, `asr9k` profile, measured with a forced-GC benchmark over a fleet-sized heap.
 Under the 150 ms line by a factor of five, so **the default is `true`** (the SDK default), and `simulator.go`'s flag default reads from the same constant.
 
 This is an **in-process proxy**.
@@ -220,6 +220,6 @@ With the gate closed they show the server's `503` message instead of a silent em
 ## Follow-ups
 
 - **Fleet-scale forced-GC measurement.** The `-profiling-force-gc` default rests on an in-process proxy (N=5000 TUN-free devices, ~29 ms extrapolated to 30,000). A real fleet's heap also holds sockets, buffers, TUN and namespace state. Time one forced `runtime.GC()` on the Ubuntu VM with 30,000 real devices against the 150 ms rule, and watch the SDK's 15 s cadence under load. If it crosses the line, flip `profilingForceGCDefault` and the table above.
-- **Mutex and block profile rates.** Served but empty until `runtime.SetMutexProfileFraction` / `SetBlockProfileRate` have a measured cost. `TestProfilingRuntimeGlobalsStayZero` pins them at 0, so setting them is a decision with a test to change.
+- **Mutex and block profile rates.** Served but empty until `runtime.SetMutexProfileFraction` / `SetBlockProfileRate` have a measured cost. They are pinned at 0, so setting them is a decision with a test to change.
 - **eBPF for kernel frames and off-CPU time.** The only thing `pyroscope.ebpf` offers that the SDK cannot. Revisit only if a question needs kernel frames; it is CPU-only, blind to goroutines and to the `subsystem` labels, and its kernel floor is contradicted between Grafana's own pages.
 - **A file or environment form for the basic-auth secret.** `-profiling-pyroscope-basic-auth user:pass` sits in the process arguments, readable by every local user (`/proc/<pid>/cmdline`, `docker inspect`, shell history). A `-profiling-pyroscope-basic-auth-file` or an environment variable read once at startup would keep it out of argv.

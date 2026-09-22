@@ -45,7 +45,7 @@ Its own GPU telemetry story is DCGM and Prometheus, not SNMP.
 So `1.3.6.1.4.1.5703.1.1.1.*` names no registered object and cannot be resolved against a real MIB.
 Treat the layout as nl6's own contract with its collectors, never as a vendor specification.
 
-**Migration (nl6#576).** This arc used to be `1.3.6.1.4.1.53246`, which the IANA enterprise-numbers registry allocates to Mailteck, S.A., a company unrelated to NVIDIA.
+**Migration.** This arc was previously `1.3.6.1.4.1.53246`, which the IANA enterprise-numbers registry allocates to Mailteck, S.A., a company unrelated to NVIDIA.
 A collector doing vendor detection resolved a simulated DGX as Mailteck.
 Every sub-identifier below the PEN was preserved exactly, so a downstream pollaris rule, `oid_base`, or vendor-detection prefix needs only `53246` replaced with `5703`.
 No object was added, removed, or renumbered, and no OID's value or type changed.

@@ -34,8 +34,8 @@ Omit the engine-id flag to run in v2c-only mode.
 | Flag | Values | Default | Purpose |
 |------|--------|---------|---------|
 | `-snmpv3-engine-id` | string | — | Enable SNMPv3 with the specified engine ID (e.g. `0x80001234`). |
-| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 authentication protocol (RFC 3414 USM). Implemented in [nl6#624] and verified against net-snmp: the key is derived by §A.2 password-to-key plus localization, and the HMAC is truncated to 12 octets. It also selects the hash used to localize the **privacy** key (§2.6). Inbound messages are verified, so a wrong password is answered with a `usmStatsWrongDigests` Report. |
-| `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. Requires `-snmpv3-auth`, since USM defines no privacy-without-authentication level. The key comes from the per-device `snmpv3.priv_password` REST field, falling back to the auth password — a CLI-started fleet has no separate privacy-password flag and reuses the shared password; DES builds `IV = salt XOR pre-IV` (RFC 3414 §8.1.1.1) and AES128 builds its IV from the advertised engine boots and time (RFC 3826 §3.1.2.1). Both conformant as of [nl6#624]. |
+| `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 authentication protocol (RFC 3414 USM). Verified against net-snmp: the key is derived by §A.2 password-to-key plus localization, and the HMAC is truncated to 12 octets. It also selects the hash used to localize the **privacy** key (§2.6). Inbound messages are verified, so a wrong password is answered with a `usmStatsWrongDigests` Report. |
+| `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. Requires `-snmpv3-auth`, since USM defines no privacy-without-authentication level. The key comes from the per-device `snmpv3.priv_password` REST field, falling back to the auth password — a CLI-started fleet has no separate privacy-password flag and reuses the shared password; DES builds `IV = salt XOR pre-IV` (RFC 3414 §8.1.1.1) and AES128 builds its IV from the advertised engine boots and time (RFC 3826 §3.1.2.1). Both conformant. |
 
 See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
@@ -50,13 +50,12 @@ Writes are **opt-in**. A fleet booted with neither flag below answers no `SET` a
 
 An unrecognised `-snmp-set-min-security-level` is fatal at startup, after `-help` and `-version` and before any subsystem starts.
 
-To restore the admission nl6 had before [nl6#690]:
+To restore the earlier admission, where any manager that could reach the port could write:
 
 ```bash
 sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
 ```
 
-[nl6#690]: https://github.com/labmonkeys-space/nl6/issues/690
 
 ## Interface-state scenarios
 
@@ -117,10 +116,8 @@ Scenario 3 seeds the **link** down, which is why it survives an admin bounce.
 Shutting and unshutting a port under `-if-scenario 3` leaves
 `ifOperStatus = 2`: the flag models a cable pull, and an administrative bounce
 does not repair a cable.
-This is the behaviour RFC 2863 describes — admin-up releases `ifOperStatus` to
-the physical layer rather than forcing it up — and it changed in
-[nl6#694](https://github.com/labmonkeys-space/nl6/issues/694), where a bounce
-used to bring the interface back up and erase the fault.
+This is the behaviour RFC 2863 describes: admin-up releases `ifOperStatus` to
+the physical layer rather than forcing it up.
 
 **Pairing a non-default scenario with a link-flap scenario now behaves.**
 The flap scheduler moves the **link**, not `ifOperStatus` directly:
@@ -269,8 +266,8 @@ details.
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | — | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. The per-device `tick_interval` is still accepted and not honored ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). |
-| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#changed-in-nl6462-emission-shape). |
+| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. The per-device `tick_interval` is still accepted and not honored. |
+| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#emission-shape). |
 | `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Idle time after a flow's last packet before it is exported. |
 
 | `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
@@ -293,11 +290,11 @@ mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeo
 
 The tick interval decides how finely that stream is cut into datagrams. A slower tick sends **bigger datagrams**, not proportionally fewer records. A residual dependence remains, because export polls: a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average. It is bounded by the interval and is not a proportional control.
 
-That `T/2` is not only a rate effect. It is real cache residency, so scenario pacing divides a requested rate by `mean-flow-lifetime + T/2` rather than by the lifetime alone. Omitting it sized every paced cache short and ran every paced run a few percent low ([nl6#462](https://github.com/labmonkeys-space/nl6/issues/462)).
+That `T/2` is not only a rate effect. It is real cache residency, so scenario pacing divides a requested rate by `mean-flow-lifetime + T/2` rather than by the lifetime alone. Omitting it sized every paced cache short and ran every paced run a few percent low.
 
 To change volume, change the device profile's concurrent-flow count or the timeouts.
 
-**Before [nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) was fixed**, this flag was inert (every deployment ticked at 5s) and volume *did* step with cadence, because the whole cache expired on one tick and then sat empty. Both are fixed; a deployment that set this flag will see a different cadence and every flow deployment will see a different record rate. See [Flow export](./flow-export.md).
+Volume does not step with cadence: the ticker is a batching knob, not a volume knob. See [Flow export](./flow-export.md).
 
 :::
 
@@ -311,7 +308,7 @@ prerequisites and `snmptrapd` smoke-test, and
 |------|------|---------|-------|---------|
 | `-trap-collector` | string | — | **seed** | Enable trap export to this UDP collector (e.g. `192.168.1.10:162`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `traps` block. |
 | `-trap-mode` | `trap` \| `inform` | `trap` | **seed** | Notification mode. TRAP is fire-and-forget; INFORM is acknowledged and retried. |
-| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence; the per-device `interval` in a REST `traps` block is accepted, echoed by `GET /api/v1/devices`, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence; the per-device `interval` in a REST `traps` block is accepted, echoed by `GET /api/v1/devices`, and **not honored**. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-trap-community` | string | `public` | **seed** | SNMPv2c community string. **Ignored under `-trap-snmp-version=v3`** — an SNMPv3 message carries no community string anywhere; nl6 warns at startup if you set it explicitly. |
@@ -342,11 +339,9 @@ exists there is no private way to pass these.
 
 Each device derives its own authoritative engine ID from its IPv4 address, so
 two devices sharing a user and password still localize **different** keys. A
-configured engine ID would be shared by the whole fleet, which is the
-shared-identity defect
-[nl6#588](https://github.com/labmonkeys-space/nl6/issues/588) and
-[nl6#599](https://github.com/labmonkeys-space/nl6/issues/599) each corrected
-once already.
+configured engine ID would be shared by the whole fleet, which is a
+shared-identity defect: each notification originator derives its own engine ID
+from its own IPv4.
 
 The `-trap-snmpv3-*` flags are also **separate from the `-snmpv3-*` poll flags**
 on purpose. A device polled over SNMPv3 and a trap received from that same
@@ -405,11 +400,11 @@ prerequisites and `netcat` smoke-test, and
 |------|------|---------|-------|---------|
 | `-syslog-collector` | string | — | **seed** | Enable syslog export to this UDP collector (e.g. `192.168.1.10:514`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `syslog` block. |
 | `-syslog-format` | `5424` \| `3164` | `5424` | **seed** | Wire format. RFC 5424 is structured (recommended); RFC 3164 is legacy BSD. Per-device as of phase 5 — different devices can emit different formats to the same collector; the shared-socket pool is keyed by `(collector, format)` so streams never interleave. |
-| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence; the per-device `interval` in a REST `syslog` block is accepted, echoed by `GET /api/v1/devices`, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence; the per-device `interval` in a REST `syslog` block is accepted, echoed by `GET /api/v1/devices`, and **not honored**. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-syslog-global-cap` | int (rate) | `0` | **global** | Simulator-wide rate ceiling across scheduled fires. On-demand HTTP fires bypass the cap. `0` is unlimited. |
 | `-syslog-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-syslog-transport` | `udp` \| `tcp` \| `tls` | `udp` | **seed** | Transport for the auto-start batch. `tls` is RFC 5425 (TCP inside TLS, port **6514** by default, octet-counting forced); it verifies the collector and presents no certificate of its own. `tcp` is RFC 6587 syslog-over-TCP: one connection per device, reconnecting with capped backoff. Per-device via the REST `syslog.transport` field. See [Syslog export → TCP transport](syslog-export.md#tcp-transport-rfc-6587). |
-| `-syslog-framing` | `octet-counting` \| `non-transparent` | `octet-counting` | **seed** | RFC 6587 framing, used only when the transport is `tcp`. Under `tls` it is forced to `octet-counting` (RFC 5425 §4.3.1) and anything else is rejected. Setting it while the transport is `udp` is **rejected at startup** rather than ignored — framing is a stream concept, and echoing back a setting nothing reads is the defect [nl6#445](https://github.com/labmonkeys-space/nl6/issues/445) describes. |
+| `-syslog-framing` | `octet-counting` \| `non-transparent` | `octet-counting` | **seed** | RFC 6587 framing, used only when the transport is `tcp`. Under `tls` it is forced to `octet-counting` (RFC 5425 §4.3.1) and anything else is rejected. Setting it while the transport is `udp` is **rejected at startup** rather than ignored — framing is a stream concept, and echoing back a setting nothing reads would be worse than refusing it. |
 | `-syslog-tls-ca` | path | — | **seed** | PEM CA bundle verifying the syslog collector under `-syslog-transport tls`. Empty uses the host's root store. Read **once at startup**; the per-device REST config carries the PEM inline (`tls.ca_pem`) rather than a path, so no HTTP request can name a file for the simulator to open. |
 | `-syslog-tls-insecure` | bool | `false` | **seed** | Skip verification of the collector's certificate. Development only. Requires `-syslog-transport tls`. |
 | `-syslog-source-per-device` | bool | `true` | **global** | Use each device's IP as the source address. Per-device bind failures are non-fatal under **udp** (unlike INFORM mode on the trap side) — the exporter falls back to the shared socket with a warning. Under **tcp** there is no shared-socket fallback, so setting this to `false` makes a TCP attach **fail** rather than degrade; see [Syslog export → TCP transport](syslog-export.md#tcp-transport-rfc-6587). |
@@ -458,7 +453,7 @@ See [Continuous profiling](../ops/profiling.md).
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
 | `-profiling-pyroscope` | string | — | **global** | Pyroscope push URL (`http://host:4040` or `https://`). Starts the `pyroscope-go` SDK at boot (CPU, goroutines, four heap views, tagged `service_name=nl6`, `version`, `hostname`) and opens the gated `/debug/pprof/` surface. An unparseable URL, a scheme other than `http`/`https`, or embedded credentials are fatal at startup, after `-help` and `-version` and before any subsystem starts. A Pyroscope that is down at boot is not a start failure (the SDK never touches the network at start); it shows as `sdk_errors` and `last_error` on `GET /api/v1/profiling` and as one log line per push. With this flag set, startup also refuses to run while `PYROSCOPE_ADHOC_SERVER_ADDRESS` is set, which the SDK would silently honour over the flag (without the flag, a runtime push refuses it instead). |
-| `-profiling-force-gc` | bool | `true` | **global** | Let the SDK force a `runtime.GC()` before a heap snapshot when no collection ran during the upload interval. The default is set from `BenchmarkForcedGCOnFleetHeap` (~29 ms per GC extrapolated to 30,000 devices, under the 150 ms rule); see [the measurement](../ops/profiling.md#the-forced-gc-default-measured). `false` sets the SDK's `DisableGCRuns`. |
+| `-profiling-force-gc` | bool | `true` | **global** | Let the SDK force a `runtime.GC()` before a heap snapshot when no collection ran during the upload interval. The default is set from a measurement (~29 ms per GC extrapolated to 30,000 devices, under the 150 ms rule); see [the measurement](../ops/profiling.md#the-forced-gc-default-measured). `false` sets the SDK's `DisableGCRuns`. |
 | `-profiling-pyroscope-basic-auth` | string | — | **global** | HTTP basic auth for the push as `user:pass`, both parts non-empty (the SDK sends no `Authorization` header when either is empty, so `user:` is refused rather than pushing unauthenticated). Requires `-profiling-pyroscope` and is sent only to that address (compared normalised): a REST-supplied `server_address` that differs is pushed to without it. Flag-only, never settable or echoed over REST. The value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is a listed follow-up in [Continuous profiling](../ops/profiling.md#follow-ups). |
 | `-profiling-pyroscope-tenant` | string | — | **global** | Pyroscope tenant ID (`X-Scope-OrgID`) for the push. Requires `-profiling-pyroscope`; flag-only, bound to the flag's address like the basic auth. |
 
@@ -503,4 +498,3 @@ sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 10 \
     -if-scenario 4 -if-failure-pct 30
 ```
 
-[nl6#624]: https://github.com/labmonkeys-space/nl6/issues/624

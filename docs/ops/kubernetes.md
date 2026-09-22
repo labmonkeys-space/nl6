@@ -61,7 +61,7 @@ break per-device flow / trap / syslog egress without surfacing an error.
 Several names and addresses are hardcoded:
 
 - Network namespace name: `nl6sim`
-  (`go/nl6/netns.go` → `NETNS_NAME`).
+  (the `nl6sim` namespace name is compiled in).
 - veth pair names: `veth-sim-host`, `veth-sim-ns`.
 - veth bridge CIDR: `10.254.0.0/30`.
 

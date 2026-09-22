@@ -6,12 +6,12 @@ This page answers that in two parts. **Load-time validation** is what nl6
 enforces automatically on every resource file, including one you write
 yourself: three rules that decide whether a value can go on the wire at its
 declared type. **Vendor arc audits** are what a human checked by hand against
-a published MIB, and — more usefully — what nobody checked.
+a published MIB, and, more usefully, what nobody checked.
 
 The distinction matters more than it sounds. The automatic rules prove only
 that nl6 will not emit a mistyped BER value. They say nothing about whether an
 OID means what the vendor's MIB says it means. Five vendor subtrees have been
-read against a MIB; fourteen have not, and are labelled as such in the files
+read against a MIB. Fourteen have not, and are labelled as such in the files
 themselves.
 
 For how the agent answers a request, see the [SNMP reference](snmp.md).
@@ -20,7 +20,7 @@ For writing your own profiles, see [resource files](resource-files.md).
 ## Resource values are validated at load
 
 `validateSNMPResourceValues` runs three rules over the `snmp` array of every resource file, in the order `encodeTypedValue` itself applies them, so the first diagnosis to fire is the one that matches what the wire would do.
-Every rule decides by **calling the encoder** and inspecting what it emits, never by a second predicate that re-derives the encoder's rules — that is how `trap_catalog.go`'s `validateDottedOID` drifted from `encodeOID` in both directions.
+Every rule decides by **calling the encoder** and inspecting what it emits, never by a second predicate that re-derives the encoder's rules. That is how `trap_catalog.go`'s `validateDottedOID` drifted from `encodeOID` in both directions.
 
 | Rule | What it refuses | Decided by |
 |---|---|---|
@@ -33,7 +33,7 @@ Rule 2 cannot be folded into rule 3: the degenerate `06 00` carries the **declar
 Rule 3 is the class that actually shipped a bug: a `freeMem` entry carrying the device's own name went out as an OCTET STRING, and OpenNMS, which types that OID as a gauge, logged a conversion error on every poll of every device for as long as the fleet ran.
 It covers `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` and `IpAddress` leaves, and it inherits the encoder's asymmetries rather than tidying them up:
 
-- A negative on a `Counter32`, `Gauge32` or `TimeTicks` **loads**: the encoder parses it at 32-bit width and wrap-casts, so `-1` goes out as `0xFFFFFFFF` at the declared tag. The asymmetry is inherited from the encoder and has no shipped motivation — all 116 negative values in the shipped set are `-1` on `ipRouteMetric1/2/3/5`, which the table does not type and where RFC 1213 gives `-1` as "not used", and none sit on an unsigned 32-bit leaf. Because a wrapped `4294967295` is invisible to a collector in a way a dropped metric is not, such a value draws a load-time **warning** naming the file, the OID and what will go on the wire. It is not refused, because the encoder encodes it and the guard's verdict is the encoder's.
+- A negative on a `Counter32`, `Gauge32` or `TimeTicks` **loads**: the encoder parses it at 32-bit width and wrap-casts, so `-1` goes out as `0xFFFFFFFF` at the declared tag. The asymmetry is inherited from the encoder and has no shipped motivation. All 116 negative values in the shipped set are `-1` on `ipRouteMetric1/2/3/5`, which the table does not type and where RFC 1213 gives `-1` as "not used", and none sit on an unsigned 32-bit leaf. Because a wrapped `4294967295` is invisible to a collector in a way a dropped metric is not, such a value draws a load-time **warning** naming the file, the OID and what will go on the wire. It is not refused, because the encoder encodes it and the guard's verdict is the encoder's.
 - The same `-1` on a `Counter64` is **refused**, because that branch has no signed fallback and degrades to an OCTET STRING.
 - Surrounding whitespace is **refused** (`" 42"`, `"42 "`), because `strconv` does not trim.
 - A value carrying units (`"42 packets"`), hex (`"0x2a"`), a decimal fraction, or anything past the type's width is **refused**.
@@ -41,16 +41,16 @@ It covers `Counter32`, `Gauge32`, `TimeTicks`, `Counter64` and `IpAddress` leave
 
 Rules 2 and 3 reach only leaves the type table types.
 A leaf it does not type takes the encoder's default branch, where INTEGER for a number and OCTET STRING for anything else are both legitimate, so there is nothing to compare against.
-Numeric leaves outside the table — the `OLD-CISCO-SYSTEM-MIB` INTEGER leaves, for instance — are covered instead by a test over the shipped profiles, which operator-supplied files never reach.
+Numeric leaves outside the table, such as the `OLD-CISCO-SYSTEM-MIB` INTEGER leaves, are covered instead by a test over the shipped profiles, which operator-supplied files never reach.
 
 Applying rule 3 to the shipped set for the first time found 45 entries of exactly that class, all corrected in the same change: a bare `ipRouteDest` column OID valued `1` in 14 profiles (deleted, because that column is `IpAddress`-typed and `1` is not an address), 30 `ifInOctets`/`ifOutOctets` entries in the three NVIDIA profiles whose values overflowed `Counter32`, and one `asr9k` `sysUpTime` past the `TimeTicks` wrap (both wrapped modulo 2^32, which is what the real counter does).
 Those 30 rewrapped values are now moot: they are among the 1322 static `ifInOctets`/`ifOutOctets` entries deleted when the cycler took both columns over, so nothing serves them any more.
-The reversal chains rather than being replaced — it restores the earlier ledger first, reconstructing the tree that change left, and only then reverses its own three tables.
+The reversal chains rather than being replaced. It restores the earlier ledger first, reconstructing the tree that change left, and only then reverses its own three tables.
 
 Sixteen further values were edited that rule 3 **never saw**, and it is worth naming the mechanism that did, because that is the one a reader will rely on next time. All sixteen sit on leaves the type table does not type, so all were and remain INTEGER on the wire:
 
-- Values past 2^32 — `hrStorageSize`/`hrStorageUsed` rows and a Palo Alto memory scalar — found by the big-value guard.
-- `hrStorageSize.1 = 2147483648`, exactly one over `Integer32`'s ceiling, in two profiles — found by neither of those, because that guard's threshold is 2^32. A second guard closes the band between 2^31-1 and 2^32 and is what caught it.
+- Values past 2^32, in `hrStorageSize`/`hrStorageUsed` rows and a Palo Alto memory scalar, found by the big-value guard.
+- `hrStorageSize.1 = 2147483648`, exactly one over `Integer32`'s ceiling, in two profiles. Found by neither of those, because that guard's threshold is 2^32. A second guard closes the band between 2^31-1 and 2^32 and is what caught it.
 - The rest are allocation-unit and `hrStorageUsed` rows rescaled alongside, so each `hrStorage` row stays internally consistent (`hrStorageAllocationUnits` is what makes a large device expressible in an `Integer32` size).
 
 The whole transition is committed as data rather than summarised as a count: a ledger holds the 31 tag changes, 16 rescales and 14 removals, machine-generated from a diff against the parent revision, reverses them against today's corpus and requires the parent digest byte for byte.
@@ -69,35 +69,35 @@ In a device-type directory each JSON part is validated separately, so the error 
 
 It closes the resource-file route, not every route.
 `sysName` and `sysLocation` are served outside the resource map, so neither reaches this guard.
-`sysLocation` comes from the operator-supplied worldcities CSV, and it is covered at `getRandomLocation` — the single funnel every served location passes through, whatever its source: a name equal to a sentinel is replaced with the coordinate-less `Unknown Location` the empty-dataset branch already uses, and the substitution is logged.
+`sysLocation` comes from the operator-supplied worldcities CSV, and it is covered at `getRandomLocation`, the single funnel every served location passes through, whatever its source: a name equal to a sentinel is replaced with the coordinate-less `Unknown Location` the empty-dataset branch already uses, and the substitution is logged.
 The CSV loader carries the same check on the row, so a defective dataset row is named with its file, but that check cannot fire today: the display string is always composed as `city, country` or `city, admin, country`, so it always contains `", "` and no sentinel does.
 It is an invariant guard for a future change to that composition, and a guard fails if the composition changes.
 `sysName` is derived from the device rather than from operator data, so there is nothing there to validate.
 
 Where a rejection surfaces matters.
 Resource files are also loaded on REST device creation, so a bad operator-supplied file is a failed API call in the middle of a run, not only a refusal at startup.
-It answers HTTP 400, with the file's base name in the body, plus the OID and the value when the fault is attributable to one entry; the full path stays in the server log.
+It answers HTTP 400, with the file's base name in the body, plus the OID and the value when the fault is attributable to one entry. The full path stays in the server log.
 A rejection is never downgraded to a log line.
 The startup load exits rather than substituting another profile, and round-robin device creation fails the call rather than skipping the offending device type.
 An absent file is a different kind of fault: round-robin still skips it, while over REST it is also a 400, because naming a device type that does not exist is an unsatisfiable request rather than a server fault.
-The no-path guarantee covers these classified rejections only — an unclassified loader failure still answers 500 with the raw error text.
+The no-path guarantee covers these classified rejections only. An unclassified loader failure still answers 500 with the raw error text.
 The full path is logged server-side on every rejection, so base-naming the body loses nothing.
 Full detail, including the response envelope, is in [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 
 Rule 2 covers a value on an OID-typed leaf, today only `sysObjectID`: it must be an OID the encoder can represent.
-Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire; see [The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
+Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire. See [The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
 The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
 
 What remains uncovered, stated in one place:
 
 - **OID keys.** Only values are checked; a malformed `oid` key is not.
-- **Bare table columns.** No rule sees them. A hand audit deleted **61 entries** — 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances — and the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
-- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. That profile was corrected by hand against PAN-COMMON-MIB; the *class* is untouched. Five arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1 and Juniper 13 of 15. The remaining fourteen arcs have had no equivalent review and each now carries an `UNAUDITED-ARC(<pen>)` label saying so in the file, because nothing in this repository reads them; an arc is audited, deliberately labelled, or explicitly excluded, and a new one must be one of the three (see [Every arc is audited, labelled, or explicitly excluded](#every-arc-is-audited-labelled-or-explicitly-excluded)). The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
-- **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values — none of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. The one confirmed instance was deleted (`writeMem`); the class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
-- **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf — an `Integer32` leaf carrying a value past 2^31-1, say — loads and is served as a wide INTEGER.
+- **Bare table columns.** No rule sees them. A hand audit deleted **61 entries**: 57 bare columns across 14 distinct OIDs and 13 profiles, plus 4 over-specified instances. And the census reads zero *for what the census can see*, which is not the same as the class being closed. See [Bare column OIDs](#bare-column-oids) below.
+- **Semantics.** The rules check ENCODABILITY, not faithfulness to the MIB: a value that encodes cleanly at its declared type passes even when the object at that OID is a different object, or does not exist. `palo_alto_pa3220`'s PAN subtree was the worked example — a number where `panMgmtPanoramaConnected` is a `DisplayString`, and two OIDs hanging under a leaf scalar — and every one of them passed all three rules. That profile was corrected by hand against PAN-COMMON-MIB. The *class* is untouched. Five arcs have since been audited by reading a MIB, at miss rates of Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1 and Juniper 13 of 15. The remaining fourteen arcs have had no equivalent review and each now carries an `UNAUDITED-ARC(<pen>)` label saying so in the file, because nothing in this repository reads them. An arc is audited, deliberately labelled, or explicitly excluded, and a new one must be one of the three (see [Every arc is audited, labelled, or explicitly excluded](#every-arc-is-audited-labelled-or-explicitly-excluded)). The Ciena result is what tells the other three apart from a general claim. The corpus is not uniformly fabricated. It is split between data somebody read a MIB for and data nobody did. See [Semantic faithfulness](#semantic-faithfulness).
+- **Access modes.** No rule anywhere models MAX-ACCESS. The three load rules check encodability, the PEN guards check vendor identity, and the audit reading tests check names, types and values. None of them can see that an object is `write-only` or `not-accessible`, because an access mode is a property of the MIB and nl6 has no MIB. The one confirmed instance was deleted (`writeMem`). The class is open. See [Access modes are not modelled](#access-modes-are-not-modelled).
+- **Leaves the type table does not type.** Rules 2 and 3 are type-directed, so a mistyped value on an untyped leaf, such as an `Integer32` leaf carrying a value past 2^31-1, loads and is served as a wide INTEGER.
 - **Vendor 64-bit counters.** A vendor HC column is not typed, so it is served as an INTEGER and SNMPv1 is not diverted for it. The big-value guard fails if a shipped profile grows such a column, which is the reminder that the table is hand-maintained.
 - **`sysName`.** Derived from the device, not operator data.
-- **Non-`snmp` sections.** SSH, API and optical entries never reach `encodeTypedValue`; the trap and syslog catalogs have their own validation. A trap catalog declaring one type for an OID whose polled value encodes as another is a *cross-surface* disagreement that no load rule can see, because neither side is wrong on its own; it is covered instead by a guard (see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type)).
+- **Non-`snmp` sections.** SSH, API and optical entries never reach `encodeTypedValue`. The trap and syslog catalogs have their own validation. A trap catalog declaring one type for an OID whose polled value encodes as another is a *cross-surface* disagreement that no load rule can see, because neither side is wrong on its own; it is covered instead by a guard (see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type)).
 - **Version-0 GETBULK.** Answered as-is, `0x46` tags included, by decision (see above).
 
 ## Bare column OIDs
@@ -105,15 +105,15 @@ What remains uncovered, stated in one place:
 A varbind name has to be an instance, not a column, and an instance has exactly as many trailing sub-identifiers as the table's INDEX clause says.
 Both ways of getting that wrong ship in resource files, and no load guard can see either: the OIDs are well formed and the values encode cleanly at their declared types.
 
-- **Bare column** — too few sub-identifiers. `1.3.6.1.2.1.25.2.3.1.4` names the `hrStorageAllocationUnits` *column*; a value lives at `…1.4.<index>`.
-- **Over-specified instance** — too many. `ciscoImageEntry`'s INDEX is `{ ciscoImageIndex }`, a single sub-identifier, so at `ciscoImageString` (`1.3.6.1.4.1.9.9.25.1.1.1.2`) the legal instance is `…1.2.2` and `…1.2.2.1` is one sub-identifier too many.
+- **Bare column**: too few sub-identifiers. `1.3.6.1.2.1.25.2.3.1.4` names the `hrStorageAllocationUnits` *column*. A value lives at `…1.4.<index>`.
+- **Over-specified instance**: too many. `ciscoImageEntry`'s INDEX is `{ ciscoImageIndex }`, a single sub-identifier, so at `ciscoImageString` (`1.3.6.1.4.1.9.9.25.1.1.1.2`) the legal instance is `…1.2.2` and `…1.2.2.1` is one sub-identifier too many.
 
 61 entries were deleted in total: 57 bare columns across 14 distinct OIDs and 13 profiles (bare `entPhysicalTable` columns, bare `ifDescr`/`ifMtu`/`ifSpeed`/`ifOperStatus`, `ciscoImageString`'s over-specified sibling's neighbours, a Juniper `jnxOperatingCPU` column carried by four *Cisco* profiles, a Palo Alto column carried by twelve *non-Palo-Alto* profiles, and a bare `hrStorageAllocationUnits` column), plus the 4 over-specified `ciscoImageString` instances.
 The 14 `ipRouteDest` entries removed earlier are the precedent, but that change removed them because the typed-class rule refused the value, not as a sweep of the class.
 
 **The detector is a heuristic, and it inverted on first use.**
 "Some other shipped OID extends it" is a proxy for "it is a column", and the proxy fails precisely when the *extending* sibling is the malformed one.
-All four Cisco profiles shipped both `ciscoImageString.2` and the over-specified `…2.2.1`; the detector flagged `.2.2`, the **legal** name, and the first cut of this change deleted it and kept the illegal one — inverting the fix in four profiles.
+All four Cisco profiles shipped both `ciscoImageString.2` and the over-specified `…2.2.1`; the detector flagged `.2.2`, the **legal** name, and the first cut of this change deleted it and kept the illegal one. Inverting the fix in four profiles.
 Telling the two apart requires the table's INDEX arity, which requires the MIB, which nothing in the test suite has.
 So a hit is a **candidate to check against the MIB**, never a verdict. The correction is recorded per row in `nl6571DeletedOverSpecifiedInstances`, and the limitation is documented on `bareColumnsAcrossProfiles` itself.
 
@@ -122,20 +122,20 @@ A same-profile scan finds only 41 of them: legality is a property of the OID, no
 Twenty further entries were bare columns whose instantiated sibling lived in a **different** profile, and the per-profile scan was structurally unable to see any of them: sweeping only the 41 would have driven the pinned constant to 0 while 20 bare columns still shipped, with a green suite.
 Legality is a property of the OID, not of which profile carries it.
 
-Both guards now share one detector (`bareColumnsAcrossProfiles`) and one comparison (`bareColumnCountViolation`), and both begin by calling `assertBareColumnDetectionIsCorpusWide` — a positive control that plants a bare column in profile A and its instance in profile B and requires it to be reported.
+Both guards now share one detector (`bareColumnsAcrossProfiles`) and one comparison (`bareColumnCountViolation`), and both begin by calling `assertBareColumnDetectionIsCorpusWide`. A positive control that plants a bare column in profile A and its instance in profile B and requires it to be reported.
 Narrow the scan and that control fails in both guards.
-The control it replaces planted the column and its instance in the same set, so it survived a narrowing; that is how a review demonstrated both guards could be reverted to that blind spot with the whole suite green, since a narrowing changes no shipped byte and therefore moves no digest and no ledger.
+The control it replaces planted the column and its instance in the same set, so it survived a narrowing. That is how a review demonstrated both guards could be reverted to that blind spot with the whole suite green, since a narrowing changes no shipped byte and therefore moves no digest and no ledger.
 
 **Four of the 61 emptied a table, and deleting them was still right.**
-The bare `hrStorageAllocationUnits` entry in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` was, in each of those profiles, the *only* `hrStorageTable` row of any column — no index, no descriptor, no size.
+The bare `hrStorageAllocationUnits` entry in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` was, in each of those profiles, the *only* `hrStorageTable` row of any column. No index, no descriptor, no size.
 So deleting it removes the table rather than a duplicate, which is why it was raised as a decision rather than taken silently.
 The decision is **delete**: the choice was between a collector getting nothing and a collector getting one binding whose name is not a legal instance OID, and an illegal varbind name is worse than an absent table.
 **Those four profiles now model no storage, and that is the correct outcome.**
-Do not restore the row to make `hrStorageTable` non-empty — a profile that models no storage should answer nothing for it.
+Do not restore the row to make `hrStorageTable` non-empty. A profile that models no storage should answer nothing for it.
 Modelling the table properly (index, descriptor, size, used, allocation units, per row) is separate fidelity work, not a repair of this one.
 
 **Exactly what the two guards cover, and what they do not.**
-One guard reads the JSON and says what the corpus *contains*; a second walks every profile through `findNextOIDWithServed` and says what a walk *emits*. Both assert zero. Neither can see:
+One guard reads the JSON and says what the corpus *contains*. A second walks every profile through `findNextOIDWithServed` and says what a walk *emits*. Both assert zero. Neither can see:
 
 - **A bare column that nothing in the corpus extends.** Without a MIB it is indistinguishable from a scalar.
 - **An over-specified instance whose legal prefix is absent.** Same reason, mirrored: `…1.2.2.1` alone looks like an ordinary leaf.
@@ -147,7 +147,7 @@ So "the census reads zero" means *no entry is an interior node of the shipped se
 
 A trap catalog **declares** a varbind's ASN.1 type (`"type": "octet-string"`).
 The resource `snmp` array **separately** determines the type of a GET of that same OID, through `oidTypeTable` plus `encodeTypedValue`'s value heuristics.
-The two surfaces are validated by entirely separate code paths, and for a long time nothing joined them — so one profile could answer one object at two different types depending on how a collector asked.
+The two surfaces are validated by entirely separate code paths, and for a long time nothing joined them. So one profile could answer one object at two different types depending on how a collector asked.
 
 `cisco_ios` shipped exactly that.
 Its `ciscoEnvMonSupplyStatusChangeNotif` declared `ciscoEnvMonSupplyStatusDescr.1` as `octet-string`, while a GET of the same OID answered ASN.1 INTEGER: the resource value was the string `1`, that OID is not in `oidTypeTable`, and `encodeTypedValue`'s default branch takes the integer-parseable path.
@@ -158,18 +158,18 @@ A guard joins the two surfaces on the OID, per profile, and requires the tag eac
 Six properties are load-bearing:
 
 - **Both tags come from the encoders**, `encodeVarbindTyped` on the trap side and `encodeTypedValue` on the poll side. A hand-written type map would record today's agreement and then rot silently, which is how `validateDottedOID` drifted from `encodeOID` once. The trap side reads the tag back out of the encoded varbind rather than mirroring the encoder's switch, so a new case there is picked up for free. The catalog's type *vocabulary* is shared for the same reason: `trapVarbindTypes` is the loader's own accept-set and the probe table is driven off it, so a ninth type added to `compileEntry` fails a test instead of silently landing every varbind of that type in the encoder-failure bucket.
-- **A templated value is encoded with a probe, and only a templated value.** The tag a trap varbind puts on the wire is a function of its declared type alone, so any value that type accepts resolves it — but falling back to a probe on *any* encode error would launder real defects into agreement. An `integer` varbind whose literal value is `up` fails at every fire, and the catalog loader's dry render disables the whole entry for an unrenderable one. The gate is the value containing `{{`, nothing else, and such a varbind is reported as an encoder failure.
+- **A templated value is encoded with a probe, and only a templated value.** The tag a trap varbind puts on the wire is a function of its declared type alone, so any value that type accepts resolves it. But falling back to a probe on *any* encode error would launder real defects into agreement. An `integer` varbind whose literal value is `up` fails at every fire, and the catalog loader's dry render disables the whole entry for an unrenderable one. The gate is the value containing `{{`, nothing else, and such a varbind is reported as an encoder failure.
 - **`_common/traps.json` is applied to every profile**, because it is merged into every device type's effective catalog. The merge is done by the production resolver (`ScanPerTypeTrapCatalogs` plus the universal fallback), not by re-reading the files, so overlay precedence and `extends` are whatever the fleet gets. **This arm is pinned by the control, not by the counts**, and the difference was measured rather than assumed: a join narrowed to `entry.fromOverlay` — never examining a universal varbind at all — leaves every count in the file unchanged and the package green, because all six real `_common` varbinds are templated and contribute no occurrences. So the control substitutes a *synthetic* universal catalog whose varbind carries a literal OID the planted profiles serve. The same reason the entry comparison is on each universal entry's **varbind set** and not its name: `MergeOverlay` replaces a same-named entry wholesale.
-- **The poll side has to be the production poll side.** Two ways it might not be, and both ship. `buildResourceIndexes` calls `oidIndex.Store` in sorted order, so a **duplicated OID** resolves last-wins — and after a non-stable `sort.Slice`, so which of several equal keys wins is unspecified; 111 `(profile, OID)` pairs are duplicated today (64 in `cisco_nexus_9500`, 32 in `juniper_mx960`, 5 in each `nvidia_*`, all `ifHighSpeed` rows carrying identical values, so none diverges yet). And `findResponse` answers **ahead of** `oidIndex` from `sysName.0`/`sysLocation.0` (which `buildResourceIndexes` does not even store), `getMetricValue`, `IfCounterCycler`, the interface-state override and the LLDP/`ifAlias` provider, so a resource entry for one of those is dead data. Both are reported rather than resolved silently: there is no single polled value to compare against.
-- **A varbind naming an OID the profile does not serve is normal, not a finding.** 182 of the 185 examined varbinds are in that bucket. The claim is only that **the profile serves no resource entry for them** — this guard cannot read a MIB, so it cannot say they are notification-only objects, however likely that is. They are counted so the number is visible when it moves, and never flagged; flagging them would turn an agreement rule into a coverage rule, which is a different question.
-- **The positive control has eight arms.** A planted disagreeing pair must be reported; a planted *agreeing* pair must be silent; a planted unencodable literal must surface as an encoder failure; a planted duplicate entry must be reported; a planted shadowed OID must be reported as shadowed, and its declared type deliberately *agrees* with its resource value so that a rule which stopped honouring shadowing falls silent rather than reporting a different kind; a planted overlay that keeps a universal entry's name while swapping its varbinds must be reported as drift; and a pair covers the typed-leaf rule below, one declaring the wrong type on a leaf `oidTypeTable` types and one declaring the right one. A test asserting zero findings cannot fail on its own, and the silent arms are what stop a rule that reports every joined pair from passing all the others.
+- **The poll side has to be the production poll side.** Two ways it might not be, and both ship. `buildResourceIndexes` calls `oidIndex.Store` in sorted order, so a **duplicated OID** resolves last-wins. And after a non-stable `sort.Slice`, so which of several equal keys wins is unspecified; 111 `(profile, OID)` pairs are duplicated today (64 in `cisco_nexus_9500`, 32 in `juniper_mx960`, 5 in each `nvidia_*`, all `ifHighSpeed` rows carrying identical values, so none diverges yet). And `findResponse` answers **ahead of** `oidIndex` from `sysName.0`/`sysLocation.0` (which `buildResourceIndexes` does not even store), `getMetricValue`, `IfCounterCycler`, the interface-state override and the LLDP/`ifAlias` provider, so a resource entry for one of those is dead data. Both are reported rather than resolved silently: there is no single polled value to compare against.
+- **A varbind naming an OID the profile does not serve is normal, not a finding.** 182 of the 185 examined varbinds are in that bucket. The claim is only that **the profile serves no resource entry for them**. This guard cannot read a MIB, so it cannot say they are notification-only objects, however likely that is. They are counted so the number is visible when it moves, and never flagged. Flagging them would turn an agreement rule into a coverage rule, which is a different question.
+- **The positive control has eight arms.** A planted disagreeing pair must be reported. A planted *agreeing* pair must be silent; a planted unencodable literal must surface as an encoder failure; a planted duplicate entry must be reported; a planted shadowed OID must be reported as shadowed, and its declared type deliberately *agrees* with its resource value so that a rule which stopped honouring shadowing falls silent rather than reporting a different kind; a planted overlay that keeps a universal entry's name while swapping its varbinds must be reported as drift; and a pair covers the typed-leaf rule below, one declaring the wrong type on a leaf `oidTypeTable` types and one declaring the right one. A test asserting zero findings cannot fail on its own, and the silent arms are what stop a rule that reports every joined pair from passing all the others.
 
 The corpus is clean, and every number below is re-derived on each run and pinned to a named constant, because a rule that finds nothing to join reports no findings either:
 
 | Constant | Value | What it counts |
 |---|---|---|
 | `trapCatalogVarbindsShipped` | 191 | distinct varbinds across the four `traps.json` files |
-| `trapVarbindsWithTemplatedOID` | 6 | of those, naming no fixed object — all of `_common`'s |
+| `trapVarbindsWithTemplatedOID` | 6 | of those, naming no fixed object, all of `_common`'s |
 | `trapPollJoinOccurrences` | 185 | `(profile, varbind)` pairs the join examines |
 | `trapPollUnservedVarbinds` | 182 | of those, with no resource entry in that profile |
 | `trapPollTypedUnservedVarbinds` | 0 | of *those*, the ones `oidTypeTable` types and so compares anyway |
@@ -178,10 +178,10 @@ The corpus is clean, and every number below is re-derived on each run and pinned
 | `trapCatalogProfiles` / `trapProfilesCarryingUniversal` | 29 / 29 | device types, and how many carry the universal entries unchanged |
 | `trapPrependedJoinedPairs` | 24 | profiles serving one of the encoder-prepended OIDs |
 
-The joined set is pinned by identity rather than by count because a count goes quiet on a swap — drop one pair, gain another, and the total is unchanged.
+The joined set is pinned by identity rather than by count because a count goes quiet on a swap. Drop one pair, gain another, and the total is unchanged.
 The three are `cisco_ios` `1.3.6.1.4.1.9.9.13.1.5.1.2.1` — the OID that carried the defect, and so the regression anchor — and `juniper_mx240` `1.3.6.1.4.1.2636.3.1.2.0` / `.3.1.3.0`, each declared `octet-string` against a non-numeric string.
 The per-catalog breakdown exists because `ciena_waveserver5` is 156 of the 185 examined occurrences and joins **zero** of them: summed away, a normalisation bug that de-joined ciena would be indistinguishable from ciena genuinely serving none of its trap OIDs, so that zero is asserted deliberately.
-A per-arc reading of the same two Juniper OIDs remains; this guard is the corpus-wide policy.
+A per-arc reading of the same two Juniper OIDs remains. This guard is the corpus-wide policy.
 
 `trapPrependedJoinedPairs` covers the three varbinds the **encoder** prepends rather than the catalog declaring — `sysUpTime.0`, `snmpTrapOID.0` and, when an entry sets it, `snmpTrapEnterprise.0` — with their tags taken from `encodeVarbindTimeTicks` / `encodeVarbindOID`.
 **It finds nothing today and is not expected to**: 24 profiles serve a static `sysUpTime.0`, `oidTypeTable` types `1.3.6.1.2.1.1.3` `TIMETICKS` and the encoder prepends `TIMETICKS`, so the two agree by construction, and no profile serves anything under `1.3.6.1.6.3.1.1.4`.
@@ -189,9 +189,9 @@ That is coverage of a surface the catalog does not control, not a near-miss.
 
 **What it cannot see, and it should not be read as broader than it is:**
 
-- **It does not compare either side against a MIB.** Whether nl6 agrees with the *vendor* is the arc audits' question; this asks only whether nl6 contradicts *itself*. `jnxFruFailed` is the worked example: it declares `{ jnxFruEntry 9 }` — `jnxFruTemp`, `SYNTAX Gauge32` — as `timeticks`. That is a catalog-versus-MIB disagreement, no profile serves that OID, so the join can never reach it. It is recorded under [The trap catalog, and the cross-surface check](#the-trap-catalog-and-the-cross-surface-check).
-- **It joins against static resource data only.** An OID served analytically has no `snmp` entry at all, so a varbind naming one lands in the unserved bucket; one that has *both* a resource entry and a dynamic answer is reported as shadowed rather than compared. Today the first case is moot: every varbind naming an `ifTable` column is templated on `{{.IfIndex}}`.
-- **A templated OID is not joinable at all.** The six `_common` link-trap varbinds name `…2.2.1.7.{{.IfIndex}}`; the OID exists only at fire time. They are counted in their own bucket rather than swept into "unserved", because a template appearing where a literal used to be is a change worth seeing. They are not entirely unchecked, though: the catalog self-consistency rule below reads them, because it needs no resource data.
+- **It does not compare either side against a MIB.** Whether nl6 agrees with the *vendor* is the arc audits' question. This asks only whether nl6 contradicts *itself*. `jnxFruFailed` is the worked example: it declares `{ jnxFruEntry 9 }` — `jnxFruTemp`, `SYNTAX Gauge32` — as `timeticks`. That is a catalog-versus-MIB disagreement, no profile serves that OID, so the join can never reach it. It is recorded under [The trap catalog, and the cross-surface check](#the-trap-catalog-and-the-cross-surface-check).
+- **It joins against static resource data only.** An OID served analytically has no `snmp` entry at all, so a varbind naming one lands in the unserved bucket. One that has *both* a resource entry and a dynamic answer is reported as shadowed rather than compared. Today the first case is moot: every varbind naming an `ifTable` column is templated on `{{.IfIndex}}`.
+- **A templated OID is not joinable at all.** The six `_common` link-trap varbinds name `…2.2.1.7.{{.IfIndex}}`. The OID exists only at fire time. They are counted in their own bucket rather than swept into "unserved", because a template appearing where a literal used to be is a change worth seeing. They are not entirely unchecked, though: the catalog self-consistency rule below reads them, because it needs no resource data.
 
 ### Two widenings that need no new data source
 
@@ -212,13 +212,13 @@ A test asserting zero cannot fail on its own, so what makes it able to fail at a
 **A catalog must not contradict itself.**
 Two varbinds of one **effective** catalog naming the same OID at different declared types are the same one-object-two-types defect, and the join above cannot see it unless the OID also happens to be served.
 The self-consistency rule needs no resource data, which is why it reaches two surfaces nothing else did.
-`ciena_waveserver5` is 156 of the 185 examined occurrences and joins **zero**, so its catalog had no internal check of any kind; its four entries share one trap OID by design, one notification differing only in severity and which condition flag is set, which makes a same-OID-different-type slip both plausible and previously undetectable.
+`ciena_waveserver5` is 156 of the 185 examined occurrences and joins **zero**, so its catalog had no internal check of any kind. Its four entries share one trap OID by design, one notification differing only in severity and which condition flag is set, which makes a same-OID-different-type slip both plausible and previously undetectable.
 And the universal catalog's entire comparison surface is templated, so the join can never reach any of it.
 
 Three properties are load-bearing:
 
 - **The effective catalog, not the overlay file.** `MergeOverlay` replaces a same-named entry wholesale, and an overlay entry that contradicts a *universal* varbind sits in an overlay file that is internally consistent on its own. The control's third arm plants exactly that, so a rule that read the overlay file passes every other arm and reports nothing here while the device fires both types.
-- **Per distinct effective catalog, not per profile.** 26 profiles carry the universal catalog unchanged, so a defect in it is one fact; reporting it 26 times would bury the three overlay catalogs' findings underneath it.
+- **Per distinct effective catalog, not per profile.** 26 profiles carry the universal catalog unchanged, so a defect in it is one fact. Reporting it 26 times would bury the three overlay catalogs' findings underneath it.
 - **The tag comes from the declared type, through the probe.** What a trap varbind puts in the value slot is a function of its declared type alone, so resolving through the type keeps the rule answering the question it asks. Resolving through the varbind's own value would make an unencodable literal or a templated value into an encoder failure here, which is the join's finding to report and not this one's, and would leave the rule unable to see the universal catalog at all.
 
 `trapCatalogSelfCensus` pins `{entries, distinct varbind OIDs, OIDs carried by more than one varbind}` per effective catalog:
@@ -243,7 +243,7 @@ Neither widening changes what the guard can say about a **MIB**.
 The three load rules answer "will nl6 put a mistyped BER value on the wire", never "is this profile faithful to the MIB".
 The Palo Alto audit is the worked example, and it is worth reading as a calibration of how much the guards prove.
 
-Of the 11 Palo Alto enterprise OIDs `palo_alto_pa3220` served, 3 were correct, 5 answered a value of the wrong *kind*, and 3 were not valid OIDs at all — and the whole table passed rules 1 to 3.
+Of the 11 Palo Alto enterprise OIDs `palo_alto_pa3220` served, 3 were correct, 5 answered a value of the wrong *kind*, and 3 were not valid OIDs at all. The whole table passed rules 1 to 3.
 A collector with a PAN-COMMON-MIB rule keyed on `panMgmtPanoramaConnected` got `4194304` where a real PA-3220 answers `connected`; one keyed on `panChassisType` got `127`.
 The rule appears to work and validates nothing, which is the failure mode a simulator has to avoid above all others.
 
@@ -268,12 +268,12 @@ Their names are known (`panGPGWUtilizationPct`, `…MaxTunnels`, `…ActiveTunne
 Those 24 entries are **deleted, not corrected**: an Arista should not answer a Palo Alto enterprise OID at all, and a collector keyed on PAN-COMMON-MIB would read such a device as a firewall.
 A vendor enterprise subtree is an identity claim, not an approximation.
 
-The pinned Palo Alto reading pins the eight surviving values and the three absences; a corpus-wide guard is the corpus-wide half, since the first test builds one device from one profile and 24 foreign entries were invisible to it.
+The pinned Palo Alto reading pins the eight surviving values and the three absences. A corpus-wide guard is the corpus-wide half, since the first test builds one device from one profile and 24 foreign entries were invisible to it.
 Both are a record of a reading, not a verification: nothing in CI compares nl6 against PAN-COMMON-MIB.
 **Only this profile was audited.** The other 28 carried vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason that was treated as outstanding work rather than an assumption. Four more arcs have been audited since, and the fourteen that remain are labelled rather than assumed correct.
 
 The NVIDIA PEN re-homing closed one more instance of the class and not the class itself.
-The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.; the arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and a guard keeps that one arc clean in both the OID-name and the OID-typed-value positions.
+The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.. The arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and a guard keeps that one arc clean in both the OID-name and the OID-typed-value positions.
 The general per-profile own-vendor-enterprise-OID guard was deliberately not built there: it needs an allowlist decision, and it would have failed against the corpus as it stood.
 
 ### Every profile serves its own vendor's PEN and no other
@@ -293,9 +293,9 @@ The second and third surfaces each held a live defect, which is why they are cov
 
 `vendorOIDs` served `sonicwall_nsa6700` four OIDs under `1.3.6.1.4.1.8714` — **iNOC, Inc.** — where SonicWALL is **8741**.
 A digit transposition, and no test in the package had ever read that map.
-It was live: `findResponse(".1.3.6.1.4.1.8714.2.1.3.1.1.0")` answered a real CPU reading, all four were enumerated into every walk of that device type, and the profile's own resource files used 8741 throughout — so one simulated device served two vendors' arcs at once.
+It was live: `findResponse(".1.3.6.1.4.1.8714.2.1.3.1.1.0")` answered a real CPU reading, all four were enumerated into every walk of that device type, and the profile's own resource files used 8741 throughout. So one simulated device served two vendors' arcs at once.
 Fixed to 8741 with every sub-identifier preserved.
-It moves no golden digest, because `collectShippedOIDs` walks resource files and these OIDs live in Go code — which is itself the reason this surface needed a guard of its own.
+It moves no golden digest, because `collectShippedOIDs` walks resource files and these OIDs live in Go code. That is itself the reason this surface needed a guard of its own.
 
 `createDefaultResources` answered `sysObjectID.0` with `1.3.6.1.4.1.9.1.1`, ciscoSystems.
 That is a production path — any device whose resource file is missing lands on it — so an unprofiled device identified itself as Cisco hardware.
@@ -303,7 +303,7 @@ It now answers the documentation PEN, for the same reason `aws_s3_storage` does.
 `sysDescr` still reads "Cisco IOS Software": that is a DisplayString a human reads, not an identity a collector keys rules on, and changing it is a separate behaviour change.
 
 The data fix in the resource files was one row.
-`aws_s3_storage` answered `sysObjectID.0` with `1.3.6.1.4.1.9999`, which the registry allocates to **Zerna, Koepper & Partner**, a German engineering firm with no connection to Amazon or to storage — the same shape of defect as 53246/Mailteck, and the last foreign arc in the corpus.
+`aws_s3_storage` answered `sysObjectID.0` with `1.3.6.1.4.1.9999`, which the registry allocates to **Zerna, Koepper & Partner**, a German engineering firm with no connection to Amazon or to storage. The same shape of defect as 53246/Mailteck, and the last foreign arc in the corpus.
 It now answers `1.3.6.1.4.1.32473.1.1`, RFC 5612's *Example Enterprise Number for Documentation Use*, which IANA holds itself.
 That was chosen over Amazon's real numbers (4843 `Amazon.com Inc.`, 60099 `Amazon Web Services Inc`) deliberately: "AWS S3 Compatible Object Storage Gateway" names a **category** that MinIO, Ceph RGW and others implement, not a manufacturer, and AWS's own S3 is an HTTP service with no SNMP surface.
 Naming Amazon would trade one misattribution for a more plausible one.
@@ -311,20 +311,20 @@ The cost is real and accepted — vendor detection now resolves this profile to 
 
 Four properties of the guard are load-bearing, and each is a defect this repo has already shipped:
 
-- **It reads OID-typed values, not just names.** `sysObjectID.0` is a *response*, and it is the field a collector reads for vendor detection. A name-only scan is structurally blind to it; that blind spot hid this very defect from the research census, and from that census's own first-cut guard. There is one scan of the two positions in the package and both guards go through it.
+- **It reads OID-typed values, not just names.** `sysObjectID.0` is a *response*, and it is the field a collector reads for vendor detection. A name-only scan is structurally blind to it. That blind spot hid this very defect from the research census, and from that census's own first-cut guard. There is one scan of the two positions in the package and both guards go through it.
 - **Its positive control plants across profiles.** A Juniper OID name in `cisco_ios`, an NVIDIA `sysObjectID` value in `linux_server`, a Huawei OID name in `ibm_power_s922`. A control that plants and detects inside one profile survives a narrowing of the scan, which is the regression the bare-column audit's review demonstrated with a green suite.
-- **The slug-to-PEN map is curated, never derived from name matching.** Six shipped pairs share no word with their slug and are all correct: `hpe_proliant_dl380` → 232 (Compaq), `dell_emc_unity` → 1139 (EMC Corp), `nokia_7750_sr12` → 6527 (Nokia, formerly Alcatel-Lucent), `netapp_ontap` → 789 (Network Appliance Corporation), `arista_7280r3` → 30065 (formerly Arastra), `ibm_power_s922` → 2 (IBM). Every number is looked up in `go/nl6/testdata/iana/enterprise_numbers.tsv`, the checked-in registry extract, and every row carries a written reason.
+- **The slug-to-PEN map is curated, never derived from name matching.** Six shipped pairs share no word with their slug and are all correct: `hpe_proliant_dl380` → 232 (Compaq), `dell_emc_unity` → 1139 (EMC Corp), `nokia_7750_sr12` → 6527 (Nokia, formerly Alcatel-Lucent), `netapp_ontap` → 789 (Network Appliance Corporation), `arista_7280r3` → 30065 (formerly Arastra), `ibm_power_s922` → 2 (IBM). Every number is looked up in a checked-in extract of the IANA registry, and every row carries a written reason.
 - **The PEN is matched on a sub-identifier boundary.** PEN 2 is a string prefix of 2011 (Huawei), 2620 (Check Point), 2636 (Juniper) and 25461 (Palo Alto), and all five ship, so a `HasPrefix` match reports four vendors as IBM.
 
 What the guard does **not** cover, and what remains outstanding:
 
-- **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate — nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
-- **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA — so this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
+- **In the value position it sees `sysObjectID` and nothing else.** The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row. `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in six profiles, and the main guard reads every one of them as an OCTET STRING and skips it. Reusing the production predicate is deliberate. Nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity. Widening it means adding a row to `oidTypeTable`, which is a wire change. `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 224 enterprise-rooted values is cross-vendor today.
+- **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`). PEN 0 is `Reserved` in the registry, held by IANA. So this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing. The count is pinned as a known quantity, not endorsed. Eight further entries answer a bare `1`, which is not a valid OID for that object at all.
 - Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Five arcs have been audited against a vendor MIB and every one but Ciena was mostly or entirely wrong — see [Semantic faithfulness](#semantic-faithfulness) for the miss rates and the per-arc sections. The remaining fourteen were closed by decision rather than by audit: each is labelled `UNAUDITED-ARC(<pen>)` in the parts that carry it, and a guard fails by name on any arc that is neither audited, labelled nor explicitly excluded, so a new device type cannot regrow the problem quietly. All three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks — see [Access modes are not modelled](#access-modes-are-not-modelled).
-- **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it; rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep — see [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
+- **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it. Rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep. See [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
-- The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for the own-vendor PEN guard and are clean; scanning them was considered and deliberately not added.
-- **Agreement between a trap catalog and the resource data for the same OID.** Found by hand on `cisco_ios`, which fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. This class is now **closed** by a corpus-wide guard — see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type).
+- The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for the own-vendor PEN guard and are clean. Scanning them was considered and deliberately not added.
+- **Agreement between a trap catalog and the resource data for the same OID.** Found by hand on `cisco_ios`, which fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. This class is now **closed** by a corpus-wide guard. See [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type).
 
 ### The Cisco arc audited against its MIBs
 
@@ -359,10 +359,10 @@ Every deletion is in `cisco_catalyst_9500` except the second `…13.1.3.1.3.1` r
 The seven `1` rows are not legal DisplayStrings, and the reason that is easy to miss is instructive: judging a value by whether it *looks like* a description passes a bare `1`, and the one row in the pinned reading with no tag assertion was exactly the row that carried it.
 Every case in that test now asserts the tag.
 
-**The supply correction is settled by evidence inside the profile; the fan correction is not, and the difference is recorded rather than smoothed over.**
+**The supply correction is settled by evidence inside the profile. The fan correction is not, and the difference is recorded rather than smoothed over.**
 `resources/cisco_ios/traps.json` fires `ciscoEnvMonSupplyStatusChangeNotif` carrying `1.3.6.1.4.1.9.9.13.1.5.1.2.1` as an `octet-string` valued `PWR-{{.Serial}}`, with `…13.1.5.1.3.1` as an `integer` beside it.
 So one profile modelled one OID as two types, depending on whether you polled it or received its trap.
-Deleting the static row would have left a device sending a trap that names an object it refuses to answer when polled, which is worse than either state; correcting it is what makes poll and trap agree.
+Deleting the static row would have left a device sending a trap that names an object it refuses to answer when polled, which is worse than either state. Correcting it is what makes poll and trap agree.
 No trap references any fan object, so nothing independent says what `ciscoEnvMonFanStatusDescr` should hold: that correction rests on consistency alone, two sibling columns of the same MIB family both declared `DisplayString` and both valued `1`, where a split would need a principle and there is none.
 
 The replacements are generic positional descriptions on purpose, since inventing a part number would be the Palo Alto audit's defect in the other direction.
@@ -374,7 +374,7 @@ That is a real gap, lesser than the wire-type error, and it must not be closed b
 The trap catalog fires two of the three.
 
 **Deleting the four fan rows empties that table**, exactly as the bare-column audit's `hrStorageTable` deletions did for four profiles, and for the same reason.
-A collector that gets nothing learns the truth about a profile that models no fans; a collector that gets `C9300-SUP-1` from `ciscoEnvMonFanStatusDescr` is told a supervisor module is a fan.
+A collector that gets nothing learns the truth about a profile that models no fans. A collector that gets `C9300-SUP-1` from `ciscoEnvMonFanStatusDescr` is told a supervisor module is a fan.
 Do not restore a row to make the table non-empty.
 
 **The two `ciscoEnvMonTemperatureStatusValue` rows were reachable, and the walk is the path this change moved.**
@@ -384,7 +384,7 @@ A **walk** is a different path: `findNextOIDWithServed` collects candidates and 
 Measured on a device with a live cycler at the parent revision, `findNextOID` from `…13.1.3.1.2.1` returned `…13.1.3.1.3.1 = "CAT9500-001"` on `cisco_catalyst_9500` and `"39"` on `cisco_nexus_9500`, while `findResponse` on the same devices returned `30` and `31`.
 So a GETNEXT or GETBULK across that table returned a chassis name, as an OCTET STRING, on a `Gauge32` leaf.
 The deletion is still right, because the static values were wrong on any path, but what it changed is the walk.
-A guard now drives `findNextOIDWithServed` and requires a numeric, INTEGER-tagged answer; before that, nothing in the package walked a Cisco profile at all, so a change to `GetSortedMetricOIDs`' ordering could drop the column from every Cisco walk with only the NVIDIA arc's walk test firing.
+A guard now drives `findNextOIDWithServed` and requires a numeric, INTEGER-tagged answer. Before that, nothing in the package walked a Cisco profile at all, so a change to `GetSortedMetricOIDs`' ordering could drop the column from every Cisco walk with only the NVIDIA arc's walk test firing.
 
 **`ciscoEnvMonTemperatureStatusValue` is `STATUS deprecated`** in the revision consulted, superseded by `ciscoEnvMonTemperatureStatusValueRev1` (`ciscoEnvMonTemperatureStatusEntry 7`, `Integer32`, which also carries negative temperatures).
 That does not change the deletion, but a collector written against the current MIB polls `…13.1.3.1.7.x`, which nl6 answers with `noSuchObject` because no profile serves it.
@@ -402,7 +402,7 @@ An earlier version of this section attributed all eight to `OLD-CISCO-CHASSIS-MI
 | `…9.2.1.8.0` | not defined in the OLD-CISCO-SYSTEM-MIB copy obtained (a v2 conversion that drops the deprecated memory objects) |
 
 **No MIB file or extracted fixture is checked in, and that is a decision.**
-the checked-in MIB fixtures are IETF standards-track modules; a vendor MIB is a different legal object.
+the checked-in MIB fixtures are IETF standards-track modules. A vendor MIB is a different legal object.
 The the arc programme obtainability research found no published redistribution grant for any of nineteen vendors (Cisco's own header asserts copyright and grants nothing), and LibreNMS, which has shipped vendor MIBs for years, classifies its own MIB tree as a GPL-non-compliant component rather than claiming the right.
 So each audit is recorded as a **pinned reading** citing the module and revision consulted, never as a live check.
 The asymmetry is the point: if the licensing question later resolves permissively a fixture can be added, and if it resolves restrictively nothing has to be removed.
@@ -450,18 +450,18 @@ Inventing one for an object the MIB does not define is the Palo Alto audit's def
 That leaves `arista_7280r3` serving **no object at all** under its own vendor's arc, and The pinned Arista reading asserts it as a **walk** from the PEN root rather than as five named absences, so a sixth invented Arista object fails instead of arriving unguarded.
 
 That walk needs a positive control, and finding out why is worth recording.
-OIDs sort as strings, so `1.3.6.1.4.1.30065` sorts *above* every mib-2 OID the profile serves; once the five Arista rows are gone the arc root has **no successor at all**, and `findNextOIDWithServed` answers with an empty string.
+OIDs sort as strings, so `1.3.6.1.4.1.30065` sorts *above* every mib-2 OID the profile serves. Once the five Arista rows are gone the arc root has **no successor at all**, and `findNextOIDWithServed` answers with an empty string.
 A check written as "the successor is not under the arc" is therefore satisfied by the empty answer *and* by a walk that aborted, which is a guard that cannot fail.
 Requiring a non-empty successor instead — the obvious fix — fails on a healthy tree, because the empty answer is the correct verdict here.
 So the vacuity is closed the way this repo closes it everywhere else: a positive control plants an object at `…30065.3.1.1.99.0` and requires the walk to reach it, which is what makes the empty answer mean "the arc is empty" rather than "this assertion sees nothing".
 
 **What was actually observed about `aristaProducts`, stated as observed.**
 Every one of ARISTA-PRODUCTS-MIB's 373 assignments names a subtree rooted at `aristaProducts` whose *first* sub-identifier is one of sixteen values — 138, 447, 1082, 1362, 1470, 1788, 2546, 2682, 2759, 3011, 3413, 3806, 7289, 7358, 7368, 7388 — and `3` is not among them.
-The assignments themselves run several sub-identifiers deep; the correction below is eight deep.
+The assignments themselves run several sub-identifiers deep. The correction below is eight deep.
 The observation is about the *first* sub-identifier, which is what settles whether `30065.1.3` is a node at all.
 
 **The `sysObjectID` value is the one a collector actually reads.**
-`1.3.6.1.4.1.30065.1.3011.7280.3282.32.4` is well formed, under the right PEN and under the right sysObjectID root — and no assignment in ARISTA-PRODUCTS-MIB `202603030000Z` uses `3011 7280 3282`.
+`1.3.6.1.4.1.30065.1.3011.7280.3282.32.4` is well formed, under the right PEN and under the right sysObjectID root. No assignment in ARISTA-PRODUCTS-MIB `202603030000Z` uses `3011 7280 3282`.
 The module mentions `3011 7280` on 109 lines and the third sub-identifier observed there is one of 312, 877, 1347, 1359, 1964, 2655, 2727, 2899, 2972, 3101, 3232, 3714, 3735 or 3977, never 3282.
 `3282` *is* a real Arista sub-identifier — it appears under 7124, 7148, 7050 and, at a different depth, under `7280 2727 3 1810 32 2129 4` — which is exactly why the invented OID looks right.
 It now answers `aristaDCS7280CR332P4M`, assigned as `{ aristaProducts 3011 7280 2727 3 32 2129 4 972 }`.
@@ -493,8 +493,8 @@ It carries a positive control and fails if it finds no SSH responses at all, bec
 
 **One weak call, recorded rather than smoothed over.**
 `entPhysicalModelName.2` is the model name of "Module 1", a modelled line card.
-The other six rows name the *chassis*, which the `sysObjectID` settles; nothing says a module has that model name, and `DCS-7280CR3-32P4-M` is a fixed-configuration switch with no pluggable line cards at all.
-So the honest residual is that the profile models a module the product does not have — a fidelity question about the **entity table**, not about the Arista arc, left open rather than closed by deleting rows this audit read no MIB about.
+The other six rows name the *chassis*, which the `sysObjectID` settles. Nothing says a module has that model name, and `DCS-7280CR3-32P4-M` is a fixed-configuration switch with no pluggable line cards at all.
+So the honest residual is that the profile models a module the product does not have. That is a fidelity question about the **entity table**, not about the Arista arc, and it is left open rather than closed by deleting rows this audit read no MIB about.
 Same shape as the fan-versus-supply asymmetry in the Cisco section: the stronger call is settled by evidence, the weaker rests on consistency, and both are written down.
 
 **The EOS version `4.29.2F` is deliberately untouched**, and the reading test asserts it so that changing it becomes a decision rather than a side effect of editing the model name in the same string.
@@ -506,19 +506,19 @@ The slug is an nl6 identifier, not a claim about hardware, and renaming it would
 **Fleet-visible surface change.**
 Stated with counts, per the octet-shadow sweep's convention, because this changes what a collector sees on every `arista_7280r3` device in a running fleet:
 
-- `sysObjectID.0` and `sysDescr.0` both change, so **vendor detection and asset inventory resolve the node differently**. `sysObjectID` was unresolvable and now resolves to a real Arista product; that is the point of the change, not a side effect.
+- `sysObjectID.0` and `sysDescr.0` both change, so **vendor detection and asset inventory resolve the node differently**. `sysObjectID` was unresolvable and now resolves to a real Arista product. That is the point of the change, not a side effect.
 - a walk of the profile returns **five fewer OIDs** and the five that left were the profile's only objects under its own vendor's arc.
 - four ENTITY-MIB responses and two SSH command outputs change their model string. No OID is added or removed by those, and no tag moves.
 - no other profile is touched: every edit is in `resources/arista_7280r3/`.
 
 **One defect of the same class is recorded and not fixed.**
-`entPhysicalVendorType.1` answers `1.3.6.1.4.1.30065.1.3082.7280.3714.3`, and `3082` is not among the sixteen first sub-identifiers either — the same unresolvable-product-OID defect, in the value slot of a different object.
+`entPhysicalVendorType.1` answers `1.3.6.1.4.1.30065.1.3082.7280.3714.3`, and `3082` is not among the sixteen first sub-identifiers either. The same unresolvable-product-OID defect, in the value slot of a different object.
 It is a **subclass this audit newly surfaced**: an OID-typed value under a *correct* PEN that resolves to no assignment, which the earlier research census/#589's guards pass by construction and no load rule can see.
 It is left alone because it is an ENTITY-MIB question rather than an Arista-arc one: 224 shipped values sit in that column across the corpus, 208 of them the reserved-PEN placeholder, and correcting one profile's while the class goes unexamined would be arbitrary.
 The pinned Arista reading asserts its current value as a **presence**, so a later fix has to edit that assertion deliberately.
 
 **Provenance, since no MIB file is checked in.**
-The five modules were fetched anonymously from `https://www.arista.com/assets/data/docs/MIBS/<NAME>.txt` on 2026-09-01 and are cited by LAST-UPDATED **and by the SHA-256 of the file read** — a revision string alone does not let a second reader confirm they read the same bytes, and ARISTA-PRODUCTS-MIB in particular gains products continuously.
+The five modules were fetched anonymously from `https://www.arista.com/assets/data/docs/MIBS/<NAME>.txt` on 2026-09-01 and are cited by LAST-UPDATED **and by the SHA-256 of the file read**. A revision string alone does not let a second reader confirm they read the same bytes, and ARISTA-PRODUCTS-MIB in particular gains products continuously.
 This is the same provenance convention applied to a file that cannot be checked in: licensing blocks the bytes, not their digest.
 
 | module | LAST-UPDATED | SHA-256 |
@@ -605,10 +605,10 @@ Following the clause would have given 7, ?, 5, 6, 3, 2, ?, 4.
 
 Two more transcription facts are pinned because they are the kind a tidy-up erases:
 
-- **`.6` does not exist on this notification.** The definitions run `.1 .2 .3 .4 .5` and jump to `.7`. The `TableId` at `.6` belongs to `wsAlarmNotification`, the sibling notification at `{ cienaWsNotifications 11 }`; borrowing it would put one notification's object into another's varbind list.
+- **`.6` does not exist on this notification.** The definitions run `.1 .2 .3 .4 .5` and jump to `.7`. The `TableId` at `.6` belongs to `wsAlarmNotification`, the sibling notification at `{ cienaWsNotifications 11 }`. Borrowing it would put one notification's object into another's varbind list.
 - **39 body varbinds**, one per object in the `OBJECTS` clause. That is 9 scalars + 4 Ptp + 8 Eth + 8 Otu + 10 Odu, derived from the reading's own tables rather than asserted, so editing a table moves the census.
 
-The optical trap overlay guard (shipped with the profile) already pins the four entries' severities and condition flags; the reading test adds the structure those values sit in and does not restate them.
+The optical trap overlay guard (shipped with the profile) already pins the four entries' severities and condition flags. The reading test adds the structure those values sit in and does not restate them.
 
 **The trap/poll join's class was checked explicitly and the answer is zero overlap.**
 With 165 trap references against one profile's polled data, this is where a trap declaring a type that disagrees with what a GET answers is most likely.
@@ -770,14 +770,14 @@ It answered `JNP-MX240-002` and `JNP-MX960-001`.
 Both are legal DisplayStrings and both encode as OCTET STRINGs, so nothing about them is a wire defect.
 The MIB's DESCRIPTION is "The name, model, or detailed description of the box, indicating which product the box is about, for example 'M40'", and an asset tag with an instance suffix indicates which *unit* the box is, not which *product*.
 The values now name the product each profile's `sysObjectID` identifies, which is the Arista audit's model-identity rule.
-A device can be configured to answer anything here; what is not arguable is that the previous value did not indicate a product.
+A device can be configured to answer anything here. What is not arguable is that the previous value did not indicate a product.
 This is the same disposition the Arista audit gave `entPhysicalModelName.2` and the arc programme its fan half.
 
 #### The trap catalog, and the cross-surface check
 
 **The trap/poll join's class was checked and both shared OIDs agree.**
 The Juniper trap catalog and the two profiles' polled data share exactly two OIDs, `jnxBoxDescr` and `jnxBoxSerialNo`, and the type a trap declares matches the tag a GET emits for each.
-The Ciena audit could only assert *disjointness*, because that profile shared no OID at all; here there was something to compare, so a guard compares it and pins the shared count so a new shared OID has to be looked at rather than absorbed.
+The Ciena audit could only assert *disjointness*, because that profile shared no OID at all. Here there was something to compare, so a guard compares it and pins the shared count so a new shared OID has to be looked at rather than absorbed.
 The trap/poll join has since generalised the check to the whole corpus — see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type) — so this test is now the per-arc reading of a rule that holds everywhere.
 
 **Two further findings are recorded and neither is fixed.**
@@ -791,13 +791,13 @@ But:
 `juniper_mx240/traps.json`'s comment says its OIDs were "verified against oidref.com and Observium's JUNIPER-MIB mirror", which are aggregators rather than the module.
 The Ciena catalog cited the module, its `LAST-UPDATED`, the severity enum and an internal contradiction in the MIB, and every one of those claims re-checked out.
 The polled data here carries no provenance claim at all.
-The catalog's seven notification OIDs all resolve; the polled data missed 13 of 15.
+The catalog's seven notification OIDs all resolve. The polled data missed 13 of 15.
 The pinned Juniper trap reading pins the comment's aggregator citation rather than letting it be tidied away, because that difference is the finding.
 
 #### Fleet-visible surface change
 
 - `juniper_mx960`'s `sysObjectID.0` changes, so vendor detection and asset inventory resolve the node differently. It resolved to an MX480 and now resolves to an MX960. `juniper_mx240`'s is unchanged and was already right.
-- A walk of the two profiles returns **12 fewer OIDs** and **3 OIDs change name**. An mx240 walk loses eight names and renames three; an mx960 walk loses four and renames one.
+- A walk of the two profiles returns **12 fewer OIDs** and **3 OIDs change name**. An mx240 walk loses eight names and renames three. An mx960 walk loses four and renames one.
 - `ownVendorArcNamesShipped` falls from 328 to 316. `ownVendorArcValuesShipped` stays 28, because the mx960 correction moves its value *within* 2636 and a value count that fell would mean a profile had stopped identifying itself.
 - Four values change without changing a name: two `jnxBoxDescr` and one `jnxOperatingDescr` per profile.
 - No other profile is touched and no SSH response changes.
@@ -805,7 +805,7 @@ The pinned Juniper trap reading pins the comment's aggregator citation rather th
 #### What this audit did not close
 
 - **The trap catalog's OBJECTS-clause fidelity**, and the one misdeclared varbind type. Both are recorded as measurements above.
-- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123` and `entPhysicalVendorType.1` with `1`, neither of which is under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done; the Arista audit left the same class open for the same reason.
+- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123` and `entPhysicalVendorType.1` with `1`, neither of which is under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done. The Arista audit left the same class open for the same reason.
 - **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
 - **Whether the mirrored modules are what Juniper ships.** See the provenance note below.
 
@@ -876,7 +876,7 @@ No per-vendor detail beyond that is written down, deliberately.
 An obtainability survey exists for all nineteen vendors and is summarised in the arc programme, but the point of the label is that it claims only what is known about *this* data.
 
 **The marker is a sentinel, not prose, and it carries the PEN.**
-`UNAUDITED-ARC(2620)` is a literal substring the guard looks for; a prose match would fail on a rewording and pass on a label that says nothing.
+`UNAUDITED-ARC(2620)` is a literal substring the guard looks for. A prose match would fail on a rewording and pass on a label that says nothing.
 Binding it to the number is what stops a profile that later gains a **second** arc inheriting the first one's label, so a labelled 2620 does not excuse an unlabelled 1234 in the same file.
 It is also what `git grep UNAUDITED-ARC` finds.
 
@@ -887,7 +887,7 @@ It is also what `git grep UNAUDITED-ARC` finds.
 - **NVIDIA's 5703** is in the audited set rather than the labelled one, and the reason is that its existing `_comment` says something *stronger* than a label would. NVIDIA publishes no SNMP GPU MIB at all, so the NVIDIA PEN re-homing and the earlier research census recorded that every object below the PEN is nl6's own invention and unresolvable against any published module. There is nothing to audit it against, so `UNAUDITED-ARC` would understate what is known.
 
 The four PEN-0 rows carry `scanVisible: false`, and that flag is checked **both ways**.
-`oidTypeTable` does not type `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OCTET STRINGs and never reports them; they are covered instead by `assertEntPhysicalVendorTypeIsNotCrossVendor`.
+`oidTypeTable` does not type `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OCTET STRINGs and never reports them. They are covered instead by `assertEntPhysicalVendorTypeIsNotCrossVendor`.
 If `oidTypeTable` ever gains that row the four flip to visible, a curation guard says so, and the disposition has to be decided again rather than inherited.
 A stale exclusion that describes nothing fails the same test.
 
@@ -897,7 +897,7 @@ What it can do, and does, is refuse the fourth state: a vendor subtree that read
 A staleness guard is the mirror, since the guard says every arc is accounted for and something has to say that every account describes something: a marker naming a PEN its own part serves no entry under is reported, and so is a marker on an arc that has since been audited, because after an audit the label tells a reader the opposite of the truth.
 
 **No shipped OID data changed.**
-The label lives in a `_comment` key the decoder ignores, so nothing a device serves changes — as with the Ciena audit, the deliverable is a reading, not a data change.
+The label lives in a `_comment` key the decoder ignores, so nothing a device serves changes. As with the Ciena audit, the deliverable is a reading, not a data change.
 
 **The scope measurement's two caveats stand.**
 Absence of a consumer *in this repository* is not absence in the world, and the [Pollaris GPU contract](gpu/pollaris.mdx) is simply the only one nl6 publishes: if an operator reports keying on one of the fourteen, that arc moves up.
@@ -923,7 +923,7 @@ writeMem OBJECT-TYPE
     ::= { lsystem 54 }
 ```
 
-The object exists, the arc is right, the instance sub-identifier is right, and the value even encoded as the declared INTEGER — which is exactly why every guard passed it.
+The object exists, the arc is right, the instance sub-identifier is right, and the value even encoded as the declared INTEGER. That is exactly why every guard passed it.
 What was wrong is that the object is not readable at all.
 It is also a *command* rather than a datum: writing to it saves the running configuration, and writing `0` erases config memory.
 A collector that discovers it as a readable integer has learned something false about the device in a way that is worse than a wrong number.
@@ -933,7 +933,7 @@ A collector that discovers it as a readable integer has learned something false 
 | `cisco_catalyst_9500` | `1.3.6.1.4.1.9.2.1.54.0` | `393084300` | *deleted* |
 | `cisco_crs_x` | `1.3.6.1.4.1.9.2.1.54.0` | `1451548800` | *deleted* |
 
-**Deleted, not corrected**: a write-only object has no correct readable value, so correction is not available — the same reasoning that deleted 3 of 11 OIDs in the Palo Alto audit and the fan rows in the arc programme.
+**Deleted, not corrected**: a write-only object has no correct readable value, so correction is not available. The same reasoning that deleted 3 of 11 OIDs in the Palo Alto audit and the fan rows in the arc programme.
 A guard pins both absences, and extends the assertion across every Cisco profile to the other write-only objects in the same group (`netConfigSet`, `hostConfigSet`, `writeNet`), none of which ships today.
 It also pins the neighbours this change deliberately left alone as *presences*, so the scope boundary is a measurement rather than a sentence.
 
@@ -945,5 +945,5 @@ As with every audit on this page, no MIB file or extracted fixture is checked in
 **`not-accessible` is the larger half of the class, and it is unswept.**
 Every SMIv2 table INDEX column is `not-accessible`, so a profile shipping an index column as a readable row makes the same mistake in the commonest possible place.
 Nothing sweeps it, and nothing can sweep it generically: deciding it needs the table's definition, which needs the arc's MIB, which has been read for Palo Alto, Cisco (partially), Arista, Ciena and Juniper only.
-The access-mode class therefore advances **with** the arc programme's per-arc audit rather than being closed by the access-mode audit — an arc becomes sweepable for access modes at the same moment it becomes sweepable for wrong INDEX arity, and for the same reason.
+The access-mode class therefore advances **with** the arc programme's per-arc audit rather than being closed by the access-mode audit. An arc becomes sweepable for access modes at the same moment it becomes sweepable for wrong INDEX arity, and for the same reason.
 The Juniper audit is the demonstration: reading JUNIPER-MIB for the arity question found two `not-accessible` objects in the same pass, `jnxContentsTable` served with a `.0` on both Juniper profiles and `jnxVirtualChassisMemberId`, which is an INDEX column.
