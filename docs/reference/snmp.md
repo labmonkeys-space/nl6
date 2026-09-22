@@ -94,7 +94,9 @@ hash and fatal under the other.
 `-snmpv3-priv` requires `-snmpv3-auth`. USM defines no
 privacy-without-authentication level, and since the privacy key is localized
 with the authentication protocol's hash there is no key to derive without one;
-the combination is refused at startup rather than failing on every request.
+a device created over REST with that combination is refused with a 400. The
+CLI flags are **not** validated together, so `-snmpv3-priv aes128` with
+`-snmpv3-auth none` starts and then fails on every encrypted request.
 
 ### Two engine-identity limitations
 
@@ -136,8 +138,7 @@ Both shipped clients emit one on request: net-snmp and snmp4j each send `04 00` 
 nl6 answers with an empty community rather than substituting `public`.
 A community of 128 octets or more encodes its length in BER long form (`04 81 c8`), which is parsed correctly on every path.
 
-Golden fixtures for these cases are captured bytes from net-snmp and snmp4j, which matters.
-They are verbatim bytes captured from net-snmp and snmp4j, which matters.
+Golden fixtures for these cases are verbatim bytes captured from net-snmp and snmp4j, which matters.
 Every other SNMP test in the package builds its input with nl6's own encoders, so encoder and parser can share a misconception and still agree.
 The empty-community defect survived exactly that blind spot.
 
@@ -525,7 +526,7 @@ With a write community set and SNMPv3 on:
 … — v1/v2c SET: admitted with the configured write community; v3 SET: minimum security level authNoPriv
 ```
 
-On a fleet run with `-snmpv3-auth none`, nothing can reach the default minimum, so no v3 `SET` is admitted at all. The line says so rather than leaving a silent dead end:
+On a fleet with SNMPv3 enabled but `-snmpv3-auth none`, nothing can reach the default minimum, so no v3 `SET` is admitted at all. The line says so rather than leaving a silent dead end:
 
 ```
 … — v1/v2c SET: refused (no write community configured); v3 SET: minimum security level authNoPriv — UNREACHABLE: this fleet is configured with no authentication protocol, so no v3 SET can be admitted
@@ -578,7 +579,7 @@ That includes the INFORM acknowledgement parser, which had never been fuzzed and
 The fuzz corpus those runs built is committed under `testdata/fuzz/`, so CI replays it too.
 
 The no-`recover()` position above rests on that null result, and the result is **provisional**: the pre-registered rule asked for ten minutes of fuzzing per target, and 5 of the targets that existed then got that budget.
-The verdict is strongest for the request path, the INFORM-ack path and the v3 scoped-PDU path, which are the five, and rests on seed replay alone for the other sixteen.
+The verdict is strongest for the request path, the INFORM-ack path and the v3 scoped-PDU path, and rests on seed replay alone for the rest.
 
 `parseLength` keeps its `-1` failure sentinel on the same evidence: 22.3 million executions confirmed it returns `-1` and never any other negative value, so screening for `< 0` at a call site is sufficient as well as necessary.
 
@@ -652,8 +653,8 @@ loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
 
 ## Dynamic IF-MIB counters
 
-Every per-interface counter listed below is generated dynamically by
-The dynamic counter engine:
+Every per-interface counter listed below is generated dynamically, not read
+from the profile's JSON:
 
 **ifXTable Counter64 HC columns** (`.1.3.6.1.2.1.31.1.1.1.X`):
 
@@ -846,8 +847,8 @@ because a seed is not a transition.
 ```bash
 # Spot-check admin status. All "1" under scenarios 3 and 4, which force it.
 # Scenario 2 is the identity and serves whatever the profile ships, so a "2"
-# here is not a fault: cisco_nexus_9500 ships 18 interfaces administratively
-# down.
+# here is not a fault: cisco_nexus_9500 ships 32 of its 64 interfaces
+# administratively down (ifIndex 33-64).
 snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.7
 
 # Verify oper status after scenario 3 (all-failure)

@@ -49,8 +49,8 @@ The reversal chains rather than being replaced — it restores the earlier ledge
 
 Sixteen further values were edited that rule 3 **never saw**, and it is worth naming the mechanism that did, because that is the one a reader will rely on next time. All sixteen sit on leaves the type table does not type, so all were and remain INTEGER on the wire:
 
-- Five values past 2^32 — three `hrStorageSize`/`hrStorageUsed` rows and a Palo Alto memory scalar — found by the big-value guard.
-- `hrStorageSize.1 = 2147483648`, exactly one over `Integer32`'s ceiling, in two profiles — found by neither of those, because that test's threshold is 2^32. a guard closes the band between 2^31-1 and 2^32 and is what caught it.
+- Values past 2^32 — `hrStorageSize`/`hrStorageUsed` rows and a Palo Alto memory scalar — found by the big-value guard.
+- `hrStorageSize.1 = 2147483648`, exactly one over `Integer32`'s ceiling, in two profiles — found by neither of those, because that guard's threshold is 2^32. A second guard closes the band between 2^31-1 and 2^32 and is what caught it.
 - The rest are allocation-unit and `hrStorageUsed` rows rescaled alongside, so each `hrStorage` row stays internally consistent (`hrStorageAllocationUnits` is what makes a large device expressible in an `Integer32` size).
 
 The whole transition is committed as data rather than summarised as a count: a ledger holds the 31 tag changes, 16 rescales and 14 removals, machine-generated from a diff against the parent revision, reverses them against today's corpus and requires the parent digest byte for byte.
@@ -242,7 +242,7 @@ Neither widening changes what the guard can say about a **MIB**.
 ## Semantic faithfulness
 
 The three load rules answer "will nl6 put a mistyped BER value on the wire", never "is this profile faithful to the MIB".
-the Palo Alto audit is the worked example, and it is worth reading as a calibration of how much the guards prove.
+The Palo Alto audit is the worked example, and it is worth reading as a calibration of how much the guards prove.
 
 Of the 11 Palo Alto enterprise OIDs `palo_alto_pa3220` served, 3 were correct, 5 answered a value of the wrong *kind*, and 3 were not valid OIDs at all — and the whole table passed rules 1 to 3.
 A collector with a PAN-COMMON-MIB rule keyed on `panMgmtPanoramaConnected` got `4194304` where a real PA-3220 answers `connected`; one keyed on `panChassisType` got `127`.
@@ -273,13 +273,13 @@ The pinned Palo Alto reading pins the eight surviving values and the three absen
 Both are a record of a reading, not a verification: nothing in CI compares nl6 against PAN-COMMON-MIB.
 **Only this profile was audited.** The other 28 carried vendor enterprise subtrees with no equivalent review, and this profile's hit rate — 8 of 11 wrong — is the reason that was treated as outstanding work rather than an assumption. Four more arcs have been audited since, and the fourteen that remain are labelled rather than assumed correct.
 
-the NVIDIA PEN re-homing closed one more instance of the class and not the class itself.
+The NVIDIA PEN re-homing closed one more instance of the class and not the class itself.
 The three `nvidia_*` profiles served GPU telemetry under `1.3.6.1.4.1.53246`, which IANA allocates to Mailteck, S.A.; the arc was re-homed to NVIDIA's real PEN `1.3.6.1.4.1.5703` with every sub-identifier preserved, and a guard keeps that one arc clean in both the OID-name and the OID-typed-value positions.
 The general per-profile own-vendor-enterprise-OID guard was deliberately not built there: it needs an allowlist decision, and it would have failed against the corpus as it stood.
 
 ### Every profile serves its own vendor's PEN and no other
 
-the own-vendor PEN guard built that guard and closed the class.
+The own-vendor PEN guard closed the class.
 The own-vendor PEN guard walks every shipped profile and requires each enterprise OID it serves — in an OID **name** or an OID-typed **value** — to sit under the one IANA private enterprise number that profile's device type belongs to.
 
 It covers **three** surfaces, each with its own test and its own positive control, all running one rule over one curated map:
@@ -287,7 +287,7 @@ It covers **three** surfaces, each with its own test and its own positive contro
 | surface | what it is | test |
 |---|---|---|
 | resource files | the `snmp` arrays of every shipped profile | The own-vendor PEN guard |
-| `vendorOIDs` | dynamic metric OIDs served from Go code , answered by `getMetricValue` and enumerated into walks by `GetSortedMetricOIDs` | a guard |
+| `vendorOIDs` | dynamic metric OIDs served from Go code, answered by `getMetricValue` and enumerated into walks by `GetSortedMetricOIDs` | a guard |
 | `createDefaultResources` | the compiled-in fallback a device gets when its named resource file is absent | a guard |
 
 The second and third surfaces each held a live defect, which is why they are covered rather than excluded.
@@ -312,7 +312,7 @@ The cost is real and accepted — vendor detection now resolves this profile to 
 
 Four properties of the guard are load-bearing, and each is a defect this repo has already shipped:
 
-- **It reads OID-typed values, not just names.** `sysObjectID.0` is a *response*, and it is the field a collector reads for vendor detection. A name-only scan is structurally blind to it; that blind spot hid this very defect from the research census that informed the earlier research census, and from the earlier research census's own first-cut guard. There is one scan of the two positions in the package and both this guard and a guard go through it.
+- **It reads OID-typed values, not just names.** `sysObjectID.0` is a *response*, and it is the field a collector reads for vendor detection. A name-only scan is structurally blind to it; that blind spot hid this very defect from the research census, and from that census's own first-cut guard. There is one scan of the two positions in the package and both guards go through it.
 - **Its positive control plants across profiles.** A Juniper OID name in `cisco_ios`, an NVIDIA `sysObjectID` value in `linux_server`, a Huawei OID name in `ibm_power_s922`. A control that plants and detects inside one profile survives a narrowing of the scan, which is the regression the bare-column audit's review demonstrated with a green suite.
 - **The slug-to-PEN map is curated, never derived from name matching.** Six shipped pairs share no word with their slug and are all correct: `hpe_proliant_dl380` → 232 (Compaq), `dell_emc_unity` → 1139 (EMC Corp), `nokia_7750_sr12` → 6527 (Nokia, formerly Alcatel-Lucent), `netapp_ontap` → 789 (Network Appliance Corporation), `arista_7280r3` → 30065 (formerly Arastra), `ibm_power_s922` → 2 (IBM). Every number is looked up in `go/nl6/testdata/iana/enterprise_numbers.tsv`, the checked-in registry extract, and every row carries a written reason.
 - **The PEN is matched on a sub-identifier boundary.** PEN 2 is a string prefix of 2011 (Huawei), 2620 (Check Point), 2636 (Juniper) and 25461 (Palo Alto), and all five ship, so a `HasPrefix` match reports four vendors as IBM.
@@ -325,11 +325,11 @@ What the guard does **not** cover, and what remains outstanding:
 - **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it; rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep — see [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
 - The trap catalogs' `snmpTrapEnterprise` values, gNMI and the REST surface. The catalogs were audited by hand for the own-vendor PEN guard and are clean; scanning them was considered and deliberately not added.
-- **Agreement between a trap catalog and the resource data for the same OID.** The two surfaces are validated by entirely separate code paths and nothing compares them, so a trap may declare an OID one type while a GET of that same OID answers another. the arc programme found the worked example by hand: `cisco_ios` fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. No load rule, no PEN guard and no reading test can see this class. Filed separately.
+- **Agreement between a trap catalog and the resource data for the same OID.** Found by hand on `cisco_ios`, which fired `ciscoEnvMonSupplyStatusDescr.1` as an `octet-string` while its resource row answered INTEGER `1`. This class is now **closed** by a corpus-wide guard — see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type).
 
 ### The Cisco arc audited against its MIBs
 
-the arc programme is the first audit of the class the two guards above cannot see, and it took the Cisco arc because it is the largest (39 shipped entries across five profiles) and the only one whose MIBs are obtainable anonymously from the vendor's own repository, `github.com/cisco/cisco-mibs`.
+The arc programme is the first audit of the class the two guards above cannot see, and it took the Cisco arc because it is the largest (39 shipped entries across five profiles) and the only one whose MIBs are obtainable anonymously from the vendor's own repository, `github.com/cisco/cisco-mibs`.
 
 **The arithmetic is given in two views, because mixing them is how this audit first got it wrong.**
 A first cut quoted "3 of 13" while counting `ciscoEnvMonFanStatusDescr.1` twice: once as a deleted OID (it was deleted from `cisco_catalyst_9500`) and once as a kept entry (it survives in three other profiles).
@@ -551,7 +551,7 @@ That is the headline, and the contrast with the other three is the finding rathe
 The deliverable is a pinned reading of the MIB, not a data change.
 No golden digest moves and no resource file changes.
 
-**the Ciena audit's own expectation was wrong, and correcting it is the point.**
+**The Ciena audit's own expectation was wrong, and correcting it is the point.**
 The issue said "Set expectations from the base rate, not from hope: Palo Alto 8 of 11 wrong, Cisco 11 of 13, Arista 6 of 6. There is no reason to think this arc is better", and told the implementer to plan for deletions.
 There *was* a reason, and it was visible before the audit started: this is the only one of the four arcs whose data somebody had already read a MIB for.
 `resources/ciena_waveserver5/traps.json` carries a `comment` citing the module, its `LAST-UPDATED`, the non-contiguous severity enum and a self-contradiction inside the MIB.
@@ -612,7 +612,7 @@ Two more transcription facts are pinned because they are the kind a tidy-up eras
 
 The optical trap overlay guard (shipped with the profile) already pins the four entries' severities and condition flags; the reading test adds the structure those values sit in and does not restate them.
 
-**the trap/poll join's class was checked explicitly and the answer is zero overlap.**
+**The trap/poll join's class was checked explicitly and the answer is zero overlap.**
 With 165 trap references against one profile's polled data, this is where a trap declaring a type that disagrees with what a GET answers is most likely.
 `cisco_ios` demonstrably violated it, declaring `ciscoEnvMonSupplyStatusDescr` as `octet-string` in a trap while a GET answered INTEGER.
 Here the polled entries are entirely mib-2 and every trap varbind is under `wsLinkStateAlarmNotification`, so there is no shared OID and nothing to disagree about.
@@ -664,7 +664,7 @@ One of the 13 misses is a **weak call** and is named below, so the strong-call r
 **The value-position denominator is 2, not 3, and the missing one is a known coverage gap.**
 `juniper_mx240` answers `entPhysicalVendorType.1` with a Juniper product OID too.
 The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` has exactly one OBJECT IDENTIFIER row (`sysObjectID`), so that value goes out as an OCTET STRING and sits outside every OID-position measurement in the package.
-the own-vendor PEN guard recorded the same gap and closed it separately.
+The own-vendor PEN guard recorded the same gap and closed it separately.
 The value is pinned anyway, because it was already right.
 
 #### The finding that matters most to a collector
@@ -681,7 +681,7 @@ It now answers `1.3.6.1.4.1.2636.1.1.1.2.21`, `jnxProductNameMX960`.
 
 `juniper_mx240` answers `.29`, `jnxProductNameMX240`, and that was already correct.
 
-**the Juniper audit expected this to be unauditable and it was not.**
+**The Juniper audit expected this to be unauditable and it was not.**
 The issue told the implementer to record both `sysObjectID` values as UNAUDITED if JUNIPER-CHASSIS-DEFINES-MIB could not be obtained, since it 404s from the LibreNMS mirror.
 A copy was obtained from `netdisco/netdisco-mibs`, and reading it is what found this.
 An UNAUDITED verdict recorded without trying the second mirror would have shipped the defect.
@@ -694,7 +694,7 @@ JUNIPER-SMI assigns `jnxExMibRoot ::= { jnxMibs 40 }`, between `jnxJsMibRoot` (3
 JUNIPER-EX-SMI puts `jnxExVirtualChassis` at `{ jnxExSwitching 4 }` and JUNIPER-VIRTUALCHASSIS-MIB puts `jnxVirtualChassisMemberTable` under it.
 
 **This is a subclass no guard sees, and it is the reason a per-arc audit is not the same as a PEN check.**
-the own-vendor PEN guard's own-vendor rule passes these by construction: 2636 really is Juniper's.
+The own-vendor PEN guard passes these by construction: 2636 really is Juniper's.
 What is wrong is the platform, one level below the vendor.
 
 | OID | was | object |
@@ -707,7 +707,7 @@ What is wrong is the platform, one level below the vendor.
 The four read as CPU model, core count, clock MHz and software version, which is what the author meant them to be.
 No obtainable Juniper module defines a CPU-model object for an MX, so there is nowhere to move them to and **deletion is the only honest answer**.
 The `SWVersion` row is the one whose value suits its column, which is exactly why it survived: it looks right.
-the bare-column audit's bare-column census could not see it, because its heuristic is "some other shipped OID extends it" and nothing extended it.
+The bare-column census could not see it, because its heuristic is "some other shipped OID extends it" and nothing extended it.
 
 #### A table served with a scalar instance, again
 
@@ -777,10 +777,10 @@ This is the same disposition the Arista audit gave `entPhysicalModelName.2` and 
 
 #### The trap catalog, and the cross-surface check
 
-**the trap/poll join's class was checked and both shared OIDs agree.**
+**The trap/poll join's class was checked and both shared OIDs agree.**
 The Juniper trap catalog and the two profiles' polled data share exactly two OIDs, `jnxBoxDescr` and `jnxBoxSerialNo`, and the type a trap declares matches the tag a GET emits for each.
-the Ciena audit could only assert *disjointness*, because that profile shared no OID at all; here there was something to compare, so a guard compares it and pins the shared count so a new shared OID has to be looked at rather than absorbed.
-the trap/poll join has since generalised the check to the whole corpus — see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type) — so this test is now the per-arc reading of a rule that holds everywhere.
+The Ciena audit could only assert *disjointness*, because that profile shared no OID at all; here there was something to compare, so a guard compares it and pins the shared count so a new shared OID has to be looked at rather than absorbed.
+The trap/poll join has since generalised the check to the whole corpus — see [A trap and a poll must agree on type](#a-trap-and-a-poll-must-agree-on-type) — so this test is now the per-arc reading of a rule that holds everywhere.
 
 **Two further findings are recorded and neither is fixed.**
 All seven `snmpTrapOID` values resolve to real NOTIFICATION-TYPEs under `jnxChassisTraps`, and every varbind uses a legal four-sub-identifier instance.
@@ -791,7 +791,7 @@ But:
 
 **The provenance difference predicted the result.**
 `juniper_mx240/traps.json`'s comment says its OIDs were "verified against oidref.com and Observium's JUNIPER-MIB mirror", which are aggregators rather than the module.
-the Ciena audit's Ciena catalog cited the module, its `LAST-UPDATED`, the severity enum and an internal contradiction in the MIB, and every one of those claims re-checked out.
+The Ciena catalog cited the module, its `LAST-UPDATED`, the severity enum and an internal contradiction in the MIB, and every one of those claims re-checked out.
 The polled data here carries no provenance claim at all.
 The catalog's seven notification OIDs all resolve; the polled data missed 13 of 15.
 The pinned Juniper trap reading pins the comment's aggregator citation rather than letting it be tidied away, because that difference is the finding.
@@ -852,7 +852,7 @@ A new device type that serves a vendor subtree and does none of the three fails 
 Nothing previously stopped the corpus regrowing the problem, and that is how it got here.
 
 **Fourteen arcs were closed by decision rather than by audit, and that is the honest call rather than a shortcut.**
-the arc programme's scope measurement cross-referenced every enterprise arc the corpus serves, in both the OID-name and the OID-typed-value positions, against every consumer in this repository: the polling rules published in the [Pollaris GPU contract](gpu/pollaris.mdx), the trap catalogs (`_common` plus per-type overlays), and the docs.
+The scope measurement cross-referenced every enterprise arc the corpus serves, in both the OID-name and the OID-typed-value positions, against every consumer in this repository: the polling rules published in the [Pollaris GPU contract](gpu/pollaris.mdx), the trap catalogs (`_common` plus per-type overlays), and the docs.
 Of the arcs served, only four have any consumer at all, and all four are now audited or were already correct.
 **The remaining arcs are read by nothing here.** No polling rule, no trap varbind, no doc keys on any of them.
 
@@ -869,7 +869,7 @@ The marker is therefore **per part**, not per profile: a per-profile marker leav
 Each label states five things and claims nothing else:
 
 - the objects under this PEN have not been read against any of the vendor's MIBs;
-- the PEN itself **is** checked, by The own-vendor PEN guard (the own-vendor PEN guard), so what is unverified is what sits below the number rather than the number;
+- the PEN itself **is** checked, by the own-vendor PEN guard, so what is unverified is what sits below the number rather than the number;
 - what "unverified" covers: whether each object is defined, whether the value is of the kind its SYNTAX declares, and whether the object is readable at all;
 - that nothing in this repository reads the arc, per the scope measurement, which is why it was labelled and not audited;
 - the miss rates from the arcs that *were* audited, counting distinct OIDs: Palo Alto 8 of 11, Cisco 11 of 13, Arista 6 of 6, Ciena 0 of 1, Juniper 13 of 15.
@@ -911,7 +911,7 @@ And the four arcs that do have a consumer are consumed by nl6 *emitting* those O
 The three load rules check encodability, the PEN guards check vendor identity, and the arc programme's reading tests check names, types and values.
 None of them models access, and none of them can: an access mode is a property of the MIB, and nl6 has no MIB.
 
-the access-mode audit is the first defect of the class, and it is a different class from everything above rather than one more wrong value.
+The access-mode audit is the first defect of the class, and it is a different class from everything above rather than one more wrong value.
 `1.3.6.1.4.1.9.2.1.54.0` is `writeMem` in OLD-CISCO-SYSTEM-MIB:
 
 ```text
@@ -948,4 +948,4 @@ As with every audit on this page, no MIB file or extracted fixture is checked in
 Every SMIv2 table INDEX column is `not-accessible`, so a profile shipping an index column as a readable row makes the same mistake in the commonest possible place.
 Nothing sweeps it, and nothing can sweep it generically: deciding it needs the table's definition, which needs the arc's MIB, which has been read for Palo Alto, Cisco (partially), Arista, Ciena and Juniper only.
 The access-mode class therefore advances **with** the arc programme's per-arc audit rather than being closed by the access-mode audit — an arc becomes sweepable for access modes at the same moment it becomes sweepable for wrong INDEX arity, and for the same reason.
-the Juniper audit is the demonstration: reading JUNIPER-MIB for the arity question found two `not-accessible` objects in the same pass, `jnxContentsTable` served with a `.0` on both Juniper profiles and `jnxVirtualChassisMemberId`, which is an INDEX column.
+The Juniper audit is the demonstration: reading JUNIPER-MIB for the arity question found two `not-accessible` objects in the same pass, `jnxContentsTable` served with a `.0` on both Juniper profiles and `jnxVirtualChassisMemberId`, which is an INDEX column.
