@@ -1,4 +1,4 @@
-# gNMI target
+# gNMI dial-in
 
 Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. The target serves OpenConfig interface state and counter telemetry, scoped to `/interfaces/interface[name=*]/state/*`. Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
 
@@ -437,5 +437,5 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 ## See also
 
 - [SNMP reference](snmp.md) — the IF-MIB counter source, including the analytical sine-wave model.
-- [Architecture](architecture.md) — where the gNMI target sits in the simulator's component map.
+- [Architecture](architecture.md) — where the gNMI dial-in server sits in the simulator's component map.
 - [CLI flags](cli-flags.md) — the canonical flag catalog.

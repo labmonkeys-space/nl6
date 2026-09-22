@@ -356,11 +356,11 @@ under `snmpv3.engine_ids_by_device`, which is what a receiver's `createUser -e`
 line needs.
 :::
 
-## gNMI target flags
+## gNMI dial-in flags
 
 The gNMI subsystem is always-on by default and serves a read-only OpenConfig
 interfaces subset over gRPC + TLS on every device. See
-[gNMI target reference](gnmi.md) for path coverage, subscribe semantics, and
+[gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, and
 `gnmic` invocation examples.
 
 | Flag | Type | Default | Scope | Purpose |

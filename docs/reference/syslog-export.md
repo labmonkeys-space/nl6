@@ -457,7 +457,7 @@ certificate of its own.
 ```
 
 This is worth stating because it is the opposite of what the rest of the
-simulator does with TLS: the HTTPS API and gNMI target present nl6's shared
+simulator does with TLS: the HTTPS API and the gNMI dial-in listener present nl6's shared
 certificate as *servers*. That certificate is irrelevant on this path — it
 answers "who is connecting", which nothing here asks.
 
