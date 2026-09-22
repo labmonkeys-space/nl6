@@ -477,11 +477,16 @@ sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 100 -port 9090
 # Non-privileged SNMP port (no CAP_NET_BIND_SERVICE needed)
 sudo ./nl6 -auto-start-ip 10.10.10.1 -auto-count 10 -snmp-port 1161
 
-# SNMPv3. Only noAuthNoPriv is reachable: -snmpv3-auth is accepted but not
-# implemented, and privacy needs authPriv, so -snmpv3-priv is never exercised
-# by a conforming manager (nl6#624).
+# SNMPv3. USM is implemented and verified against net-snmp, so all three
+# security levels are reachable. The user and password both default to
+# "simadmin"; -snmpv3-auth defaults to md5 and -snmpv3-priv to none.
 sudo ./nl6 -snmpv3-engine-id 800000090300AABBCCDD
-snmpget -v3 -l noAuthNoPriv -u simadmin -e 800000090300AABBCCDD \
+snmpget -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin \
+  10.42.0.1 1.3.6.1.2.1.1.1.0
+
+# authPriv needs a privacy protocol on the fleet as well.
+sudo ./nl6 -snmpv3-engine-id 800000090300AABBCCDD -snmpv3-auth sha1 -snmpv3-priv aes128
+snmpget -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
   10.42.0.1 1.3.6.1.2.1.1.1.0
 
 # Disable network namespace isolation
