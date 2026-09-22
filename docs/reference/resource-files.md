@@ -138,7 +138,7 @@ If you have hand-written resource files or scripts, check for these before upgra
 Three rules are enforced on `snmp` values at load, and they cover resource files only.
 The typed-class rule is the most likely of the three to break a hand-written file: nl6's own shipped set carried 45 violations of it, and it is fatal at startup and a `400` over REST.
 The `optical` part of an optical transport type has its own load-time check, which fails the load when the OCH inventory is missing, malformed, or disagrees with the type's channel count.
-See [SNMP reference → Resource values are validated at load](snmp.md#resource-values-are-validated-at-load) for the canonical description of all three, including what each covers and what stays uncovered.
+See [SNMP reference → Resource values are validated at load](snmp-data-fidelity.md#resource-values-are-validated-at-load) for the canonical description of all three, including what each covers and what stays uncovered.
 
 | Rule | What it refuses |
 |---|---|
@@ -167,8 +167,8 @@ A malformed OID **key** is still accepted, and so is a value that encodes cleanl
 
 Two whole classes of wrong data therefore load without a word, and both were swept by hand rather than by a rule:
 
-- **An OID with the wrong number of instance sub-identifiers** — a bare table column (too few) or an over-specified instance (too many). Neither is a legal varbind name. nl6#571 deleted 61 such entries: 57 bare columns, four of which were the only `hrStorageTable` row their profile had (those profiles now model no storage, which is the intended outcome rather than a gap to fill), plus 4 over-specified `ciscoImageString` instances. Deciding which of a prefix/extension pair is the legal one needs the table's INDEX arity, so it needs the MIB — the guards flag candidates, not verdicts. See [SNMP reference → Bare column OIDs](snmp.md#bare-column-oids).
-- **A value of the wrong semantic kind on a real vendor OID, or a whole vendor subtree on the wrong vendor's device.** nl6#569 found 8 of 11 Palo Alto enterprise OIDs wrong or invalid in `palo_alto_pa3220`, all passing every rule, and twelve profiles that are not Palo Alto devices serving that subtree as well. Only that vendor arc has been audited. See [SNMP reference → Semantic faithfulness](snmp.md#semantic-faithfulness).
+- **An OID with the wrong number of instance sub-identifiers** — a bare table column (too few) or an over-specified instance (too many). Neither is a legal varbind name. nl6#571 deleted 61 such entries: 57 bare columns, four of which were the only `hrStorageTable` row their profile had (those profiles now model no storage, which is the intended outcome rather than a gap to fill), plus 4 over-specified `ciscoImageString` instances. Deciding which of a prefix/extension pair is the legal one needs the table's INDEX arity, so it needs the MIB — the guards flag candidates, not verdicts. See [SNMP reference → Bare column OIDs](snmp-data-fidelity.md#bare-column-oids).
+- **A value of the wrong semantic kind on a real vendor OID, or a whole vendor subtree on the wrong vendor's device.** nl6#569 found 8 of 11 Palo Alto enterprise OIDs wrong or invalid in `palo_alto_pa3220`, all passing every rule, and twelve profiles that are not Palo Alto devices serving that subtree as well. Only that vendor arc has been audited. See [SNMP reference → Semantic faithfulness](snmp-data-fidelity.md#semantic-faithfulness).
 
 **A static entry on an OID the cycler serves is dead, not authoritative.**
 `findResponse` consults the dynamic cyclers before the static map, so an entry on any `ifTable`/`ifXTable` column in `ifCyclerColumns` is unreachable — writing one is a silent no-op, and reading a profile's JSON to learn what a device answers will mislead you.

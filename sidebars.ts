@@ -48,6 +48,7 @@ const sidebars: SidebarsConfig = {
         'reference/web-api',
         'reference/device-types',
         'reference/snmp',
+        'reference/snmp-data-fidelity',
         'reference/snmp-traps',
         'reference/syslog-export',
         'reference/flow-export',
