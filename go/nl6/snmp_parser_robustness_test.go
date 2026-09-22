@@ -2304,6 +2304,17 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 
 		data := buildV2cRequestForRoundTrip(pduTag, ver, comm, rid, oids, int(int1), int(int2), st)
 		s := fuzzTestServer(50)
+		// The community the fuzzer drew is ALSO the device's write community
+		// (nl6#690), so a SetRequest is ADMITTED whenever its community parsed
+		// and the over-discard claim below keeps its reach over the SET tag.
+		// Without this every fuzzed SET would be discarded by the write gate
+		// and the claim would have to be narrowed to the read PDUs — which is
+		// the direction that quietly costs a target its detection power.
+		//
+		// An EMPTY community is the one shape left out, and it is left out
+		// deliberately: an empty write community admits nothing BY DEFINITION,
+		// so a discard there is the gate working rather than an over-discard.
+		s.setAdmission.WriteCommunity = comm
 		readsPDU := parseIncomingRequestReadsPDU(pduTag)
 
 		req := s.parseIncomingRequest(data)
@@ -2411,6 +2422,11 @@ func FuzzV2cRequestRoundTrip(f *testing.F) {
 			// discard here is the nl6#537 OVER-discard direction — a server
 			// that answered nothing at all would otherwise pass silently.
 			if len(resp) == 0 {
+				if pduTag == ASN1_SET_REQUEST && comm == "" {
+					// The write gate, not the parser: see the note at
+					// s.setAdmission above.
+					return
+				}
 				t.Fatalf("the server discarded a datagram this package built and "+
 					"parseAllOIDsFromRequest accepted (nl6#537 over-discard)\ndatagram: % x", data)
 			}

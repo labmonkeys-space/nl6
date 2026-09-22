@@ -335,6 +335,16 @@ func (s *SNMPServer) handleSNMPv2cRequest(requestData []byte) []byte {
 		// `else` keeps its fallthrough because getPDUType defaults to GET on an
 		// unreadable envelope, and that default is pinned by the golden-packet
 		// tests; SET must never be "whatever is not GETNEXT or GETBULK".
+		//
+		// Admission first, and before ANY binding is parsed (nl6#690): a
+		// refused SET validates nothing, applies nothing and is answered with
+		// NOTHING — a wrong community gets the silence real hardware gives,
+		// which snmpset shows as a timeout. Returning nil means
+		// handleSingleRequest sends no datagram.
+		if !s.admitSetV2c(req) {
+			s.logFirstRefusedSet(refusedSetReason(s.setAdmission.WriteCommunity))
+			return nil
+		}
 		return s.handleSetRequest(requestData)
 	} else {
 		// Handle regular Get request — answer EVERY requested varbind, not

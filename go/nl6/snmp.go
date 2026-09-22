@@ -192,6 +192,38 @@ func (s *SNMPServer) handleSNMPv3Request(requestData []byte) []byte {
 		// A SET is answered, never read-answered and never discarded for
 		// its type (add-snmp-set). Same ladder as v2c; only the envelope
 		// differs.
+		//
+		// Admission before the SET is DECIDED or APPLIED (nl6#690): nothing is
+		// validated, nothing is written, and no link trap, syslog or gNMI
+		// update fires. It is NOT before every parse, unlike the v1/v2c twin —
+		// extractOIDAndTypeFromScopedPDU above has already read the PDU type
+		// and the first binding's name, which is how this branch was reached at
+		// all. Only handleSNMPv3Set's own parse of the bindings and values is
+		// skipped.
+		//
+		// Unlike the v1/v2c refusal this one ANSWERS, because RFC 3414 §3.2
+		// step 5 prescribes a Report for a security level the device will not
+		// accept, and this agent already emits exactly this Report for a PRIV
+		// request to a no-priv device (above). The two refusals differ in shape
+		// because the two protocols do, not because the decision drifted.
+		//
+		// This sits after the user check and after authenticateInbound, so an
+		// unknown user or a wrong digest is still told which of THOSE is wrong
+		// rather than being told about a level.
+		//
+		// The Report is SIGNED when the REQUEST authenticated, which is the same
+		// request-driven rule verification follows. A manager that got its key
+		// right and only its LEVEL wrong must be able to verify the answer: an
+		// unsigned Report carries the discovery shape — no user name, no digest
+		// — and a strict manager discards it, turning a refusal the operator
+		// could act on into a timeout they cannot. The noAuthNoPriv arm stays
+		// unsigned because there is no key agreement to demonstrate, and
+		// createSNMPv3ReportResponseSigned degrades to unsigned by itself on a
+		// device with no auth key.
+		if !s.admitSetV3(v3Msg) {
+			signed := securityLevelOf(v3Msg.GlobalData.MsgFlags) >= securityLevelAuthNoPriv
+			return s.createSNMPv3ReportResponseSigned(oidUsmStatsUnsupportedSecLevels, v3Msg, signed)
+		}
 		return s.handleSNMPv3Set(v3Msg, scopedPDU)
 	} else {
 		// Handle regular Get request

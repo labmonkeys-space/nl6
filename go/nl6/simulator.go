@@ -97,18 +97,21 @@ func main() {
 		snmpv3EngineID  = flag.String("snmpv3-engine-id", "", "Enable SNMPv3 with specified engine ID (e.g., 800000090300AABBCCDD)")
 		snmpv3AuthProto = flag.String("snmpv3-auth", "md5", "SNMPv3 authentication protocol: none, md5, sha1. RFC 3414 USM, verified against net-snmp (nl6#624). Also selects the hash used to localize the privacy key")
 		snmpv3PrivProto = flag.String("snmpv3-priv", "none", "SNMPv3 privacy protocol: none, des, aes128 (default: none)")
-		port            = flag.String("port", "8080", "Server port (default: 8080)")
-		snmpPort        = flag.Int("snmp-port", DEFAULT_SNMP_PORT, "UDP port for SNMP listener on each device (default: 161)")
-		noNamespace     = flag.Bool("no-namespace", false, "Disable network namespace isolation (use root namespace)")
-		datagramMTU     = flag.Int("datagram-mtu", defaultLinkMTU, "Assumed MTU of the egress path to collectors, in bytes (default: 1500). Sizes flow export datagrams and SNMP trap notifications; SNMP GETBULK responses still carry their own fixed bound (nl6#489) and are NOT yet affected. Lowering it far enough disables shipped optical trap entries, which are named in the startup log. Lower it when the path to the collector is not standard Ethernet — a Docker overlay or VXLAN network is typically 1450, tunnels lower — otherwise full-size flow datagrams are IP-fragmented. This is an assumption about a path nl6 does not control, not a property of nl6's own interfaces.")
-		showHelp        = flag.Bool("help", false, "Show this help message")
-		showVersion     = flag.Bool("version", false, "Print the simulator version string and exit")
-		ifScenario      = flag.Int("if-scenario", 2, "Interface state scenario: 1=all-shutdown, 2=all-normal (default), 3=all-failure, 4=pct-failure")
-		ifFailurePct    = flag.Int("if-failure-pct", 10, "Percentage of interfaces with oper-down (used with -if-scenario 4, 0–100)")
-		opticalScenario = flag.String("optical-scenario", "clean", "Per-device optical health band for the auto-start batch (optical transport device types only): clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via optical_scenario in the POST body.")
-		ifErrorScenario = flag.String("if-error-scenario", "clean", "Per-device IF-MIB error/discard counter scenario for the auto-start batch: clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via if_error_scenario in the POST body.")
-		ifFlapScenario  = flag.String("if-flap-scenario", "clean", "Per-device link-flap scenario for the auto-start batch: clean (default, no flaps) | rare (~6h mean) | typical (~15min) | aggressive (~1min). REST-created devices default to clean; opt in via if_flap_scenario in the POST body.")
-		ifFlapGlobalCap = flag.Int("if-flap-global-cap", 0, "Simulator-wide tps ceiling for flap events (0 = unlimited)")
+		//nolint:lll // one line per flag, matching every sibling
+		snmpWriteCommunity = flag.String("snmp-write-community", "", "SNMPv2c/v1 community required to WRITE (SetRequest). Empty (the default) admits NO v1/v2c SET: writes are opt-in since nl6#690, because a SET mutates state, fires link traps and syslog and is visible to gNMI. A SET whose community does not match is DISCARDED, which is what real hardware does and what snmpset reports as a timeout; the reason is named once per device in the log. Reads are unaffected — nl6 checks no community on a poll, at any version, deliberately. Seeds the auto-start batch; REST-created devices set write_community on the create body")
+		snmpSetMinSecLevel = flag.String("snmp-set-min-security-level", "auth", "Lowest SNMPv3 security level a SetRequest may carry: none (noAuthNoPriv), auth (authNoPriv, the default) or priv (authPriv). A SET below it is refused with a usmStatsUnsupportedSecLevels Report (RFC 3414 §3.2 step 5), the same Report a PRIV request to a no-priv device receives. On a fleet run with -snmpv3-auth none no request can reach the default, so no v3 SET is admitted; the startup log says so. Reads are unaffected. Seeds the auto-start batch; REST-created devices set snmpv3.set_min_security_level")
+		port               = flag.String("port", "8080", "Server port (default: 8080)")
+		snmpPort           = flag.Int("snmp-port", DEFAULT_SNMP_PORT, "UDP port for SNMP listener on each device (default: 161)")
+		noNamespace        = flag.Bool("no-namespace", false, "Disable network namespace isolation (use root namespace)")
+		datagramMTU        = flag.Int("datagram-mtu", defaultLinkMTU, "Assumed MTU of the egress path to collectors, in bytes (default: 1500). Sizes flow export datagrams and SNMP trap notifications; SNMP GETBULK responses still carry their own fixed bound (nl6#489) and are NOT yet affected. Lowering it far enough disables shipped optical trap entries, which are named in the startup log. Lower it when the path to the collector is not standard Ethernet — a Docker overlay or VXLAN network is typically 1450, tunnels lower — otherwise full-size flow datagrams are IP-fragmented. This is an assumption about a path nl6 does not control, not a property of nl6's own interfaces.")
+		showHelp           = flag.Bool("help", false, "Show this help message")
+		showVersion        = flag.Bool("version", false, "Print the simulator version string and exit")
+		ifScenario         = flag.Int("if-scenario", 2, "Interface state scenario: 1=all-shutdown, 2=all-normal (default), 3=all-failure, 4=pct-failure")
+		ifFailurePct       = flag.Int("if-failure-pct", 10, "Percentage of interfaces with oper-down (used with -if-scenario 4, 0–100)")
+		opticalScenario    = flag.String("optical-scenario", "clean", "Per-device optical health band for the auto-start batch (optical transport device types only): clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via optical_scenario in the POST body.")
+		ifErrorScenario    = flag.String("if-error-scenario", "clean", "Per-device IF-MIB error/discard counter scenario for the auto-start batch: clean | typical | degraded | failing. REST-created devices default to clean regardless; they opt in via if_error_scenario in the POST body.")
+		ifFlapScenario     = flag.String("if-flap-scenario", "clean", "Per-device link-flap scenario for the auto-start batch: clean (default, no flaps) | rare (~6h mean) | typical (~15min) | aggressive (~1min). REST-created devices default to clean; opt in via if_flap_scenario in the POST body.")
+		ifFlapGlobalCap    = flag.Int("if-flap-global-cap", 0, "Simulator-wide tps ceiling for flap events (0 = unlimited)")
 
 		// Flow export flags
 		flowCollector            = flag.String("flow-collector", "", "NetFlow/IPFIX collector address (host:port, e.g. 192.168.1.100:2055); disables flow export when empty")
@@ -279,6 +282,39 @@ func main() {
 	if err := ifStateConfig.validate(); err != nil {
 		log.Fatalf("Invalid interface-state scenario: %v", err)
 	}
+
+	// Same slot again: the SET minimum security level is read once per device
+	// at construction, so an unknown value would be accepted and ignored — and
+	// this one is a SECURITY knob, where accepted-and-ignored means an operator
+	// believes writes are restricted while they are not (nl6#690). The write
+	// community needs no validation: any string is a legal community, and the
+	// empty one means "no v1/v2c write", which is the default.
+	setAdmissionSeed, err := newSetAdmission(*snmpWriteCommunity, &SNMPv3Config{SetMinSecurityLevel: *snmpSetMinSecLevel})
+	if err != nil {
+		log.Fatalf("Invalid -snmp-set-min-security-level: %v", err)
+	}
+	// State the policy on EVERY boot, because a refused SET is a TIMEOUT at the
+	// manager and without this line an operator whose snmpset stopped working
+	// has nothing to read that names the cause.
+	//
+	// It describes the AUTO-START BATCH and says so, because REST-created
+	// devices do NOT inherit it: createDevicesHandler builds their admission
+	// from the request body alone, which is the same opt-in-explicit contract
+	// the export blocks and the scenario fields follow. A line that read as
+	// fleet-wide would tell an operator who boots with -snmp-write-community
+	// and imports devices over REST that writes are permitted, while every
+	// imported device refused them — which is the exact class of mistake this
+	// change exists to prevent, arriving by a different door.
+	//
+	// Described against the v3 FLAGS rather than the batch's config, which is
+	// built later in the auto-start goroutine: the UNREACHABLE case is the one
+	// worth saying out loud and these flags decide it.
+	log.Printf("SNMP write admission (auto-start batch; REST-created devices use the create body, not these flags) — %s",
+		setAdmissionSeed.describe(&SNMPv3Config{
+			Enabled:      *snmpv3EngineID != "",
+			AuthProtocol: parseAuthProtocol(*snmpv3AuthProto),
+			PrivProtocol: parsePrivProtocol(*snmpv3PrivProto),
+		}))
 
 	// Validate the profiling flags in the same slot, for the same reason:
 	// fatal here, before any TUN, namespace or subsystem exists, and after
@@ -776,7 +812,7 @@ func main() {
 					*snmpv3EngineID, *snmpv3AuthProto, *snmpv3PrivProto)
 			}
 
-			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario})
+			err := manager.CreateDevices(*autoStartIP, *autoCount, *autoNetmask, "", v3Config, false, "", *snmpPort, &ExportSeed{Flow: flowSeed, Traps: trapSeed, Syslog: syslogSeed, GnmiDialout: gnmiDialoutSeed, IfErrorScenario: autoStartScenario, IfFlapScenario: autoStartFlapScenario, OpticalScenario: autoStartOpticalScenario, SetAdmission: setAdmissionSeed})
 			if err != nil {
 				log.Printf("Failed to auto-create devices: %v", err)
 			} else {

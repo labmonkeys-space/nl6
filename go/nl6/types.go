@@ -172,6 +172,15 @@ type SNMPv3Config struct {
 	AuthProtocol int    `json:"auth_protocol"` // 0=none, 1=MD5, 2=SHA1
 	PrivProtocol int    `json:"priv_protocol"` // 0=none, 1=DES, 2=AES128
 	PrivPassword string `json:"priv_password"` // Can be same as auth password
+
+	// SetMinSecurityLevel is the lowest security level a v3 SetRequest may
+	// carry: "none" (noAuthNoPriv), "auth" (authNoPriv) or "priv" (authPriv).
+	// Empty means authNoPriv (nl6#690). It sits on the v3 block because it is
+	// a v3 concept; the v1/v2c half of write admission is the write community,
+	// which is not. Validated at the boundary — fatal at startup, 400 at the
+	// REST handler — never silently defaulted, because an accepted-and-ignored
+	// security knob is the nl6#445 family with a worse consequence.
+	SetMinSecurityLevel string `json:"set_min_security_level,omitempty"`
 }
 
 // SNMPv3 message structures
@@ -261,6 +270,42 @@ type SNMPServer struct {
 	// a SET's list is the first one whose VALUES are decoded, so it has faults
 	// the GET-family gates never see.
 	firstMalformedSet sync.Once
+
+	// firstRefusedSet gates the log line for a v1/v2c SetRequest discarded
+	// because its community did not match the device's write community (see
+	// logFirstRefusedSet). Its own gate, like every sibling above: the
+	// condition is attacker-controlled and an ungated line is a log-flood
+	// primitive at 30k devices, and sharing a gate with the malformed-SET
+	// line would let whichever arrived first hide the other for the life of
+	// the device — a refused write and an unparseable one have different
+	// causes and different fixes.
+	firstRefusedSet sync.Once
+
+	// setAdmission decides whether a SetRequest is admitted at all: the
+	// v1/v2c write community and the minimum v3 security level (nl6#690).
+	// Both refuse by default, so a device constructed without one — every
+	// test that builds an SNMPServer literal — admits no SET. That is the
+	// intended default and not an oversight: writes are opt-in.
+	setAdmission setAdmissionConfig
+}
+
+// setAdmissionConfig is the per-device write-admission policy (nl6#690).
+//
+// Read-only after the device is constructed and shared across the SNMP
+// goroutines without a lock, exactly as v3Config is.
+type setAdmissionConfig struct {
+	// WriteCommunity admits a v1/v2c SetRequest whose community equals it.
+	// Empty means NO v1/v2c SET is ever admitted, which is the default and
+	// needs no separate disable flag: the empty string is not a community a
+	// manager can send in a way that matches (see admitSetV2c).
+	WriteCommunity string
+
+	// MinSecurityLevel is the lowest v3 security level a SetRequest may carry.
+	// The zero value is securityLevelUnset, which effectiveMinSecurityLevel
+	// reads as authNoPriv — so a device built without an explicit policy
+	// refuses a noAuthNoPriv write rather than admitting one. The permissive
+	// level has to be asked for by name.
+	MinSecurityLevel snmpSecurityLevel
 }
 
 // lldpServedSnapshot is an immutable (gen, served) pair stored under
@@ -771,6 +816,20 @@ type CreateDevicesRequest struct {
 	// auto-start seed flag says otherwise — the established REST opt-in
 	// contract.
 	OpticalScenario string `json:"optical_scenario,omitempty"`
+
+	// WriteCommunity is the SNMPv1/v2c community this batch's devices require
+	// on a SetRequest (nl6#690). Omitted or empty means the batch admits no
+	// v1/v2c SET, which is the default everywhere — writes are opt-in. It is
+	// top-level rather than inside `snmpv3` because a community is not a v3
+	// concept; the v3 half is `snmpv3.set_min_security_level`.
+	//
+	// WRITE-ONLY. It must never appear in a response: GET /api/v1/devices and
+	// the CSV export build their own view structs and this field is not on
+	// them, which is the property TestWriteCommunityIsNeverEchoed pins. This
+	// repo has echoed a credential once already — `gnmi_dialout` is returned
+	// unredacted, which is why `ca_pem` had to be scrubbed of private-key
+	// blocks at both entry points.
+	WriteCommunity string `json:"write_community,omitempty"`
 }
 
 // RoundRobinDeviceTypes defines all 29 device flavors for round robin creation.
@@ -996,6 +1055,28 @@ type ExportSeed struct {
 	// it applies to the auto-start batch only, and a REST request that
 	// omits the field gets clean.
 	OpticalScenario OpticalScenario
+	// SetAdmission is the write-admission policy for every device created
+	// from this seed (nl6#690): the v1/v2c write community and the minimum
+	// v3 SET security level. It rides here for the reason stated on
+	// IfErrorScenario above — one plumbing channel rather than a twelfth
+	// positional parameter on CreateDevicesWithOptions and its four
+	// downstream signatures.
+	//
+	// The ZERO VALUE refuses every SET, so a nil seed — every test that
+	// passes one, and any future caller that forgets — gets the safe answer
+	// rather than nl6#684's permissive one.
+	SetAdmission setAdmissionConfig
+}
+
+// setAdmissionOf reads the write-admission policy from a seed that may be nil.
+// A nil seed means no policy was stated, and no policy means no write: the
+// zero setAdmissionConfig has an empty write community and an unset minimum
+// that resolves to authNoPriv.
+func setAdmissionOf(seed *ExportSeed) setAdmissionConfig {
+	if seed == nil {
+		return setAdmissionConfig{}
+	}
+	return seed.SetAdmission
 }
 
 // flowConnKey identifies a shared-socket pool entry. One pooled

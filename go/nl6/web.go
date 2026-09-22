@@ -134,6 +134,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Write admission for this batch (nl6#690). An unknown security level is a
+	// 400, never a silent default: the caller who typed it is the one who has
+	// to hear that their fleet is not restricted the way they think.
+	setAdmission, err := newSetAdmission(req.WriteCommunity, req.SNMPv3)
+	if err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	seed := &ExportSeed{
 		Flow:            req.Flow,
 		Traps:           req.Traps,
@@ -142,6 +151,7 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		IfErrorScenario: ifErrScenario,
 		IfFlapScenario:  ifFlapScenario,
 		OpticalScenario: opticalScenario,
+		SetAdmission:    setAdmission,
 	}
 	// Record whether each interval was EXPLICITLY supplied, from the RAW
 	// request — ApplyDefaults below stamps the package default over an omitted

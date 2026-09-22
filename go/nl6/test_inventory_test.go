@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1710
+const minimumTestFunctions = 1730
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 26
@@ -204,6 +204,22 @@ var loadBearingGuards = []loadBearingGuard{
 			"feature, and the runtime exposes no getter for the block rate, so this is the only " +
 			"read-back. A change that sets them inside the on-branch and forgets to restore them " +
 			"on stop leaves every device paying for a profile nobody reads"},
+
+	// Write admission (nl6#690). Both rows meet the narrow criterion: deleting
+	// either lets nl6#684's defect — a SetRequest admitted on a GetRequest's
+	// terms, so any manager that can reach the port can change ifAdminStatus —
+	// return with the whole suite green, because every OTHER SET test grants
+	// itself admission through allowSetsForTest and asserts the ladder.
+	{"TestSetCommunityAdmission", "snmp_set_admission_test.go",
+		"nl6#690. The only in-package guard that a v1/v2c SET requires the write community and that " +
+			"an unconfigured fleet admits none. Mutation-verified: deleting the gate fails 8 of its " +
+			"12 subtests. Its siblings in that file all grant themselves admission, so with this row " +
+			"gone the gate could be removed and nothing would notice"},
+	{"TestSNMPSetInteropWriteCommunity", "snmp_set_admission_interop_test.go",
+		"nl6#690. The refusal seen from OUTSIDE, by net-snmp, over a real socket — the check with " +
+			"detection power, for the reason nl6#625 recorded. It also carries the positive controls " +
+			"that separate a refusal from a dead listener; a timeout assertion without them would " +
+			"pass against a build with no SET at all"},
 
 	// The two nl6#577 names. Both were actually deleted with a green suite.
 	{"TestEveryDeletedDeadRowIsAnsweredByTheCycler", "snmp_shipped_resource_defect_ledger_test.go",

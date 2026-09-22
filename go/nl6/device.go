@@ -690,10 +690,14 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			device.cachedSysLocation.Store(sysLocationValue)
 			device.cachedLocation.Store(locationValue)
 
-			// Create servers with SNMPv3 configuration
+			// Create servers with SNMPv3 configuration and the batch's write
+			// admission policy (nl6#690). MIRROR IN createSingleDevice — the two
+			// creation paths have diverged before, and a device created by the
+			// parallel path without this line would admit every SET.
 			device.snmpServer = &SNMPServer{
-				device:   device,
-				v3Config: v3Config,
+				device:       device,
+				v3Config:     v3Config,
+				setAdmission: setAdmissionOf(seed),
 			}
 			device.sshServer = &SSHServer{device: device, signer: sm.sharedSSHSigner}
 			device.apiServer = &APIServer{device: device, sharedTLSCert: sm.sharedTLSCert}
@@ -1032,10 +1036,13 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	device.cachedSysLocation.Store(sysLocationValue)
 	device.cachedLocation.Store(locationValue)
 
-	// Create servers with SNMPv3 configuration
+	// Create servers with SNMPv3 configuration and the batch's write admission
+	// policy (nl6#690). MIRROR OF the sequential path in
+	// createDevicesWithOptionsLocked — keep the two in step.
 	device.snmpServer = &SNMPServer{
-		device:   device,
-		v3Config: v3Config,
+		device:       device,
+		v3Config:     v3Config,
+		setAdmission: setAdmissionOf(seed),
 	}
 	device.sshServer = &SSHServer{device: device, signer: sm.sharedSSHSigner}
 	device.apiServer = &APIServer{device: device, sharedTLSCert: sm.sharedTLSCert}

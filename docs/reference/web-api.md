@@ -184,7 +184,43 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "netmask": "16",
     "if_error_scenario": "degraded"
   }'
+
+# Devices that accept a SetRequest
+curl -X POST http://localhost:8080/api/v1/devices \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_ip": "192.168.100.1",
+    "device_count": 3,
+    "netmask": "16",
+    "write_community": "writeme",
+    "snmpv3": {
+      "enabled": true,
+      "engine_id": "0x80001234",
+      "username": "admin",
+      "password": "authpass123",
+      "auth_protocol": 1,
+      "set_min_security_level": "auth"
+    }
+  }'
 ```
+
+### Write admission
+
+Writes are **opt-in** since [nl6#690](https://github.com/labmonkeys-space/nl6/issues/690).
+A batch created without `write_community` answers no v1/v2c `SetRequest`, and the v3 minimum security level defaults to `authNoPriv`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `write_community` | string (top level) | — (empty) | SNMPv1/v2c community required to write. A mismatch is discarded with no response, which `snmpset` reports as a timeout. Empty admits no v1/v2c `SET`. |
+| `snmpv3.set_min_security_level` | `none` \| `auth` \| `priv` | `auth` | Lowest security level a v3 `SetRequest` may carry. Below it, the device answers a `usmStatsUnsupportedSecLevels` Report. An unrecognised value is rejected **400**. |
+
+Two properties worth knowing.
+
+`write_community` is **write-only**: it never appears in a response, and `GET /api/v1/devices` does not echo it. There is no way to read a device's write community back out of the API.
+
+Neither field is inherited from the CLI seed. A `POST` that omits them gets the shipped defaults — no v1/v2c write, `authNoPriv` for v3 — even when the simulator was started with `-snmp-write-community`. That is the same opt-in-explicit contract the export blocks and the scenario fields follow.
+
+Reads are not gated at any version, and that asymmetry is deliberate; see the [SNMP reference](snmp.md#on-a-read-the-community-string-is-echoed-and-never-checked).
 
 A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a
 password is rejected with **400**.

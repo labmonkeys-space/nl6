@@ -27,6 +27,17 @@ type SNMPRequest struct {
 	RequestID int
 	OID       string
 	Version   int
+
+	// CommunityParsed reports whether Community was READ FROM THE DATAGRAM
+	// rather than left at the "public" default below (nl6#690).
+	//
+	// The default exists so a response can echo something when the field is
+	// absent or unreadable, which is all it ever had to do while every served
+	// PDU was a read. It is not safe for a COMPARISON: without this flag a
+	// fleet configured with write community "public" would admit a SET whose
+	// community field does not parse at all. Every comparison against
+	// Community must require this; the echo path must not.
+	CommunityParsed bool
 }
 
 // Parse incoming SNMP request to extract all needed info
@@ -105,6 +116,10 @@ func (s *SNMPServer) parseIncomingRequest(data []byte) SNMPRequest {
 		// evaluate data[pos : pos-1] and panic on the inverted range.
 		if communityLen >= 0 && pos+communityLen <= len(data) {
 			req.Community = string(data[pos : pos+communityLen])
+			// The ONE site that assigns Community from the wire, so the ONE
+			// site that may set this (nl6#690). A second assignment anywhere
+			// is the defect: it would make an unread community comparable.
+			req.CommunityParsed = true
 			pos += communityLen
 		}
 	}

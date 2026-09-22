@@ -115,13 +115,20 @@ a manager at a large fleet.
 Per-device SNMPv3 credentials can be supplied when creating devices via the
 REST API — see [Web API → Create devices](web-api.md#create-devices).
 
-### The community string is echoed, never checked
+### On a read, the community string is echoed and never checked
 
-nl6 does not authenticate on the community: it parses the value, answers the request, and echoes the same value back in the response.
-There is no ACL and no rejection path, by design.
+nl6 does not authenticate a poll on the community: it parses the value, answers the request, and echoes the same value back in the response.
+There is no ACL and no rejection path for a read, by design.
 This is a simulator for collector validation, not an access-control surface.
-The same holds for a `SET`: there is no separate write community, so any manager that can reach a device's SNMP port can change its `ifAdminStatus`.
 The boundary is the network namespace the devices live in.
+
+**A `SET` is different, and the asymmetry is deliberate.**
+A write requires the device's configured write community, which defaults to empty and therefore admits nothing.
+See [write admission](#write-admission-for-a-set) for the whole rule.
+
+nl6 will check a community on a write and not on a read, which is not how any real agent behaves.
+That is a scope boundary rather than an oversight: a `SET` mutates state, fires link traps and syslog and is visible to gNMI, while a poll returns simulated data to whoever asked.
+Gating reads would change every collector-validation workflow the simulator exists for; gating writes changes only the workflows that write.
 
 A **zero-length** community is legal and is parsed as the empty string, not as absent.
 Both shipped clients emit one on request: net-snmp and snmp4j each send `04 00` for `-c ""`.
@@ -1365,10 +1372,71 @@ And a name under the column with the wrong arity, the bare column or `...7.1.2`,
 The v1 answer is the RFC 3584 §4.3 mapping of the v2 verdict, computed once (`v1SetErrorStatus`), and `readOnly(4)` is never emitted.
 A v3 `SET` produces the same `Response-PDU` bytes as a v2c `SET` of the same bindings; only the envelope differs.
 
-### Admission and interactions
+### Write admission for a `SET`
 
-A `SET` is admitted exactly as a `GET` is: no community check, the one configured v3 user, USM verification driven by the request's own flags.
-Any manager that can reach the port can write; see [the community section](#the-community-string-is-echoed-never-checked).
+:::caution[Writes are off by default]
+
+A fleet booted with no `-snmp-write-community` answers **no** `SET` at v1 or v2c, and the default v3 minimum security level of `authNoPriv` refuses a `noAuthNoPriv` write.
+`snmpset` against a default fleet does not work until you configure one of the two knobs below.
+This changed in nl6#690; before it, any manager that could reach the port could write.
+
+:::
+
+A `SET` is admitted only when the request clears the gate for its version. Reads are untouched at every version.
+
+**SNMPv1 and SNMPv2c: the write community.**
+
+| Setting | Where |
+|---------|-------|
+| `-snmp-write-community <string>` | seeds the `-auto-start-ip` batch |
+| `write_community` | top level of the `POST /api/v1/devices` body |
+
+The default is empty, which admits nothing. A `SET` whose community does not match is **discarded** — no datagram at all, which `snmpset` reports as `Timeout: No Response`.
+
+That silence is what real hardware does, and it is the reason the device logs the cause once:
+
+```
+SNMP <device>: discarded a SetRequest: community does not match the configured write community (further refusals suppressed for this device)
+SNMP <device>: discarded a SetRequest: no write community is configured, so no v1/v2c write is admitted (set -snmp-write-community, or write_community on the REST create body) (further refusals suppressed for this device)
+```
+
+The line is emitted at most once per device, because the condition is attacker-controlled and an ungated line is a log-flood primitive at 30k devices.
+If `snmpset` times out against a device that answers `snmpget`, that log line is the answer.
+
+**SNMPv3: the minimum security level.**
+
+| Setting | Where |
+|---------|-------|
+| `-snmp-set-min-security-level none\|auth\|priv` | seeds the `-auto-start-ip` batch, default `auth` |
+| `snmpv3.set_min_security_level` | the `snmpv3` block of the `POST /api/v1/devices` body |
+
+`none` is `noAuthNoPriv`, `auth` is `authNoPriv`, `priv` is `authPriv`.
+A `SET` below the minimum is answered with a `usmStatsUnsupportedSecLevels` Report, which is what RFC 3414 §3.2 step 5 prescribes and the same Report a privacy-flagged request to a no-privacy device already receives.
+
+The two refusals have different shapes because the two protocols do, not because the decision drifted: v2c has no Report to send, and v3 has a prescribed one.
+
+The Report is **signed when the request authenticated**, following the same request-driven rule USM verification follows.
+A manager that got its key right and only its level wrong can therefore verify the refusal; an unsigned Report carries the discovery shape, with no user name and no digest, which a strict manager discards — turning a refusal the operator could act on into a timeout they cannot.
+A `noAuthNoPriv` refusal is unsigned, because such a request demonstrates no key agreement to sign against.
+
+The v3 user check and the USM verification a `GET` receives run **first**, so an unknown user still gets `usmStatsUnknownUserNames` and a wrong digest still gets `usmStatsWrongDigests`.
+A manager is told which of those is wrong rather than being told about a security level it did in fact clear.
+
+On a fleet run with `-snmpv3-auth none` no request can reach the default minimum, so no v3 `SET` is admitted at all.
+That is stated at startup rather than left as a silent dead end — every boot prints one line:
+
+```
+SNMP write admission — v1/v2c SET: refused (no write community configured); v3 SET: minimum security level authNoPriv — UNREACHABLE: this fleet is configured with no authentication protocol, so no v3 SET can be admitted
+```
+
+The configured write community itself is never printed, and never appears in an API response: `GET /api/v1/devices` does not echo it.
+
+**To restore the pre-nl6#690 behaviour exactly**, run with `-snmp-write-community public -snmp-set-min-security-level none`.
+
+**What this is not.** There is no read community, no VACM, no per-user or per-object write privilege, and no second v3 user.
+`snmpInBadCommunityNames` (`1.3.6.1.2.1.11.4.0`) is still served statically and does **not** count refusals; a real agent bumps it, and making one counter of the SNMP group live while its siblings stay static would be worse than leaving all of them alone.
+
+### Interactions
 
 One interaction to know.
 `ifOperStatus` is **derived** from `ifAdminStatus` and a modelled link state, so a `SET` of `ifAdminStatus` to `down(2)` forces oper down, while a `SET` to `up(1)` releases oper to the link rather than forcing it up.
@@ -1383,6 +1451,10 @@ The scenario shapes the state engine's initial seed and nothing else, so a `SET`
 `make test-interop` drives `snmpset` and `snmpget` against the real dispatchers over a real UDP socket under v1, v2c and v3 authPriv, asserting the round trip and every error-status row by net-snmp's own printed reason, and `snmptrapd` receives the `linkDown` and `linkUp` the derived oper transition fires.
 A captured `snmpset` datagram is a golden fixture in `snmp_golden_packets_test.go`.
 The read paths are unchanged, which the wire digest over well-formed GET, GETNEXT and GETBULK responses pins.
+
+The refusals are asserted by the same target, in `snmp_set_admission_interop_test.go`, because an in-package encoder and decoder that share one reading prove nothing about admission: a wrong-community `snmpset`, a `snmpset` against a device with no write community, and a `noAuthNoPriv` `snmpset` below the minimum.
+Every one of those rows carries a **positive control on the same listener** — a `snmpget` that must succeed, and where a write is possible at all, a `snmpset` with the right community that must succeed afterwards.
+A timeout on its own cannot tell a refusal from a dead socket, so without the control these rows would pass against a build in which `SET` had been deleted entirely.
 
 ## Malformed-datagram handling
 

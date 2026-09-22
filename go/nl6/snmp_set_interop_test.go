@@ -335,7 +335,7 @@ func TestSNMPSetInteropFiresLinkTrap(t *testing.T) {
 	sm.indexDeviceByIP(device)
 	sm.mu.Unlock()
 
-	s := &SNMPServer{device: device}
+	s := allowSetsForTest(&SNMPServer{device: device})
 	port, stop, _ := interopListener(t, s)
 	defer stop()
 	target := "127.0.0.1:" + strconv.Itoa(port)
