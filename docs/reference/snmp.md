@@ -31,11 +31,9 @@ That check runs on every push, against net-snmp 5.9.4. To run it yourself:
 make test-interop
 ```
 
-It matters more than the rest of the suite put together.
-It matters because nl6 once shipped a v3 stack for years that computed no
-digest and localized keys against the wrong bytes, with every in-package test
-green: all of them read nl6's output with nl6's own parser. Only an outside
-manager can catch that class of fault.
+It matters more than the rest of the suite put together. Every other v3 test
+reads nl6's output with nl6's own parser, so a shared misreading of RFC 3414
+passes all of them. Only an outside manager can catch that class of fault.
 
 :::
 
@@ -60,8 +58,7 @@ USM is implemented per RFC 3414:
   (the §3.2 150-second window), and an authenticated request to a device
   configured without auth with `usmStatsUnsupportedSecLevels`.
 
-So nl6 **can** be used to test a collector's wrong-credential handling, which it
-could not before.
+So nl6 can be used to test a collector's wrong-credential handling.
 
 **What is still not implemented:** SNMPv3 **INFORM**, and the SHA-2 auth
 protocols and AES-192/256 privacy of RFC 7860 / RFC 3826 §3.1.2.2.
@@ -155,7 +152,7 @@ The standard separates the two by OID prefix registration, and a profile is a fl
 The mapping applies to GET and GETNEXT only.
 GETBULK does not exist in SNMPv1, so a version-0 GETBULK is malformed and is answered as before rather than mapped: its bindings are walked OIDs, not the request's names, and there can be `max-repetitions × columns` of them.
 
-**SNMPv3 GET and GETNEXT are covered.** Since v0.28.0 the v3 encoder (`createScopedPDU`) goes through `encodeTypedValue` as well, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
+**SNMPv3 GET and GETNEXT are covered.** The v3 encoder goes through `encodeTypedValue` too, so a v3 GET for an absent OID returns the `80 00` tag and a v3 GETNEXT past the last OID returns `82 00`.
 The v3 GETBULK handler reaches the same encoder through `createScopedPDUMulti`, so its bindings carry the same tags. It honours `max-repetitions` and `non-repeaters` as sent, and it answers every column the request names; a request for zero repetitions is answered with an empty binding list, not an `endOfMibView`.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
@@ -166,7 +163,6 @@ Until then the resource-file route to it is closed at load time.
 ### The first OID sub-identifier is a varint
 
 X.690 §8.19.4 packs the first two arcs of an OID into a single sub-identifier valued `40*first + second`, encoded as a base-128 varint like every other one.
-nl6 used to emit that sub-identifier as one byte, and to read it back as one, so the encoder and decoder agreed with each other while both disagreed with the standard.
 
 The round-trip held only while the second arc stayed below 40, and fabricated silently above it:
 
@@ -186,40 +182,26 @@ Refusing to build the message at all would be better still, but that needs an er
 The OCTET STRING fallback asked for in a value slot (the way `encodeIPAddress` already degrades an unparseable address) is also still open: `encodeTypedValue`'s OID branch returns the same `06 00`, so a `sysObjectID` of `unknown` still goes out as a degenerate OID rather than as a string. That covers a first arc above 2, a second arc above 39 when the first is 0 or 1 (a wider one would be indistinguishable from a higher first arc, since `1.40` and `2.0` both compute 80), a combined first sub-identifier or any later arc above 2^32-1, and any component that is not a number.
 
 The decoder is stricter too, because it parses bytes that arrive from the network.
-A sub-identifier whose final byte still sets the continuation bit is truncated and is now refused, where it used to be accepted at face value.
-A sub-identifier wider than 2^32-1 is refused, where it used to wrap and could produce a negative arc.
+A sub-identifier whose final byte still sets the continuation bit is truncated, and is refused.
+A sub-identifier wider than 2^32-1 is refused.
 A non-minimal sub-identifier, one whose leading octet is `0x80` (X.690 §8.19.2), is refused too; otherwise an attacker could pad any OID with continuation bytes and produce unbounded distinct byte strings that all decode to one OID.
 
 Nothing that ships with nl6 changes on the wire: every OID across the resource files and trap catalogs encodes to exactly the same bytes as before.
 
 ### SNMPv3 authPriv requests are served
 
-:::note[What "served" means here]
-
-nl6 *processes* an authPriv request correctly. Whether a
-conforming manager can send one was a separate question until v0.28.0: USM
-authentication was unimplemented, and USM defines no privacy-without-auth level,
-so the tests covering this section built the PRIV flag byte themselves. Both
-halves work now and net-snmp drives the authPriv rows end to end — see
+An authPriv request is answered for the OID and PDU type it asks for, and
+net-snmp drives every authPriv row end to end — see
 [the auth/priv matrix](#snmpv3-auth--priv-matrix).
 
-:::
+A request whose scoped PDU genuinely fails to decrypt is answered with a
+`usmStatsDecryptionErrors` Report (see [malformed datagrams](#malformed-datagram-handling)).
 
-Before v0.28.0 an SNMPv3 request sent with privacy was answered with `sysDescr.0`, whatever OID it asked for and whatever PDU type it used, carrying request-id 1.
-
-The cause was a shape mismatch rather than anything cryptographic. A scoped PDU appears in two forms here: the message parser stores its *contents*, with the outer SEQUENCE header stripped, while decryption returns the whole thing including that header. The code that reads the OID and the request id from a scoped PDU expects contents, so on a successful decrypt it failed to parse, and the surrounding decrypt-*failure* fallback took over and substituted `sysDescr.0`.
-
-Nothing reported an error, because the fallback exists precisely to keep the path quiet under adversarial input.
-That fallback was later removed: a request whose scoped PDU genuinely fails to decrypt is now answered with a `usmStatsDecryptionErrors` Report (see the malformed-datagram section).
-
-If you are testing an SNMPv3 collector against nl6 older than v0.28.0, authPriv results are not meaningful: every device answers `sysDescr.0`. authNoPriv and noAuthNoPriv were unaffected.
-
-The discovery Report also now carries `usmStatsUnknownEngineIDs.0` as a Counter32, which is the type RFC 3414 §5 gives it. It previously went out as an INTEGER.
-Only the type changed: the value is a fixed `1` and does not count unknown-engine-ID events.
+The discovery Report carries `usmStatsUnknownEngineIDs.0` as a Counter32, the type RFC 3414 §5 gives it. The value is a fixed `1` and does not count unknown-engine-ID events.
 
 ### SNMPv1 never returns a Counter64
 
-Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column used to answer tag `0x46` under `error-status = noError`.
+Counter64 does not exist in SNMPv1, and the response encoder picks the ASN.1 tag from the OID alone, so a v1 request for an `ifHC*` column needs diverting rather than encoding.
 
 RFC 3584 §4.2.2.1 prescribes two different behaviours, and the difference matters more than it first looks:
 
@@ -244,14 +226,13 @@ Two limitations are worth stating plainly:
 - **Coverage is bounded by the type table.** It has been widened: the Counter64 objects nl6 recognises are now the eight `ifXTable` HC columns, the fourteen HC columns of each of the two RFC 4293 IP statistics tables (`ipSystemStatsTable`, `ipIfStatsTable`) and all six columns of the RFC 3635 `dot3HCStatsTable` — 42 columns in total. The column numbers were read out of the shipped IP-MIB and EtherLike-MIB with `snmptranslate`, not recalled. A 64-bit counter served under any OID still outside that set — a **vendor** HC column above all — is not recognised as Counter64, and a v1 request for it is answered with a value rather than diverted.
   Widening a type table changes what goes on the wire for every OID matching a new row, so it was measured rather than argued: a digest hashes the (profile, OID, emitted tag) triple of every shipped resource entry, and the digest taken before the widening still matches after it. **The effect on the shipped fleet is exactly zero** — no shipped profile serves any newly typed column, so the widening's value is entirely for operator-supplied files and for a future profile.
   The digest is keyed on the profile as well as the OID because a fleet-wide key hides a per-profile change: keyed by OID alone, the 31 tag changes this same change made to shipped data vanish entirely, since other profiles already produced those pairs. It hashes tags rather than encoded bytes, which is what keeps it stable across ordinary value edits.
-  Every corpus test walks `resources/` recursively through one shared collector, and the two views of the tree cross-check each other. They used to glob `resources/*/*.json`, which is two path segments and therefore blind to the single-file `resources/<slug>.json` layout that all four loaders accept: a vendor 64-bit column in such a profile passed the sentinel guard, this digest and the Counter64 pin, and the only test that fired pointed the maintainer at re-pinning a golden digest — which would have absorbed the defect rather than reporting it.
+  Every corpus test walks `resources/` recursively through one shared collector, and the two views of the tree cross-check each other. A single-file profile is seen by the same walk as a directory profile, which is two path segments and therefore blind to the single-file `resources/<slug>.json` layout that all four loaders accept: a vendor 64-bit column in such a profile passed the sentinel guard, this digest and the Counter64 pin, and the only test that fired pointed the maintainer at re-pinning a golden digest — which would have absorbed the defect rather than reporting it.
 
 ### A GETNEXT answers every variable binding
 
 RFC 3416 §4.2.2 defines GETNEXT over the whole variable-bindings list, and nl6 answers it that way.
 Each binding carries the lexicographic successor of its own name, in request order.
 A binding with nothing after it carries `endOfMibView` named with the OID that was asked for, so a walker fetching several columns per round trip can tell which column ended.
-Earlier releases read one OID and answered one binding, so such a walker got the first column and no signal that the rest had been dropped.
 
 Two of the three behaviours below differ by version; the third is the same either way and is listed with them because all three are decided in one place.
 The SNMPv1 Counter64 rule is the one that matters most.
@@ -268,7 +249,7 @@ A GET does divert there, because it names the object.
 The two rules share one response encoder, so which one applies is an explicit argument at the call site (`v1DiversionRule`) rather than something the encoder infers.
 
 Overflow is `tooBig` rather than truncation for the same reason it is on a GET: the manager named N positions and has no resume point for a binding a shorter response would drop.
-**This changed the answer for a single-binding GETNEXT.** Earlier releases applied no size bound to that path at all and emitted an over-budget datagram; it now answers `tooBig`.
+A single-binding GETNEXT is bounded the same way and answers `tooBig` rather than emitting an over-budget datagram.
 The change is not reachable with shipped resources, where no value approaches the budget, but it is reachable with an operator resource file carrying a value over roughly 1400 bytes.
 The empty binding list under SNMPv1 is nl6's choice, not something RFC 1157 settles: §4.1.2 and §4.1.3 describe a `tooBig` response as "of identical form", which reads as echoing the request's bindings.
 nl6 sends none, so a `tooBig` cannot be mistaken for an answer.
@@ -331,23 +312,20 @@ The 30 × 2 row is the OpenNMS collector default (`max-vars-per-pdu` 30, `max-re
 
 ### `max-repetitions` is honoured as sent
 
-Any value is accepted and used. Before v0.27.0 the parser read only single-byte BER content, which looks like a 255 ceiling but is really a 127 one — BER encodes any value from 128 upward in two bytes, because the leading `0x00` is what keeps it positive. Everything above 127 silently fell back to the default of 10.
+Any value is accepted and used, at any BER width.
 
-That mattered for benchmarking more than for correctness: an operator setting `max-repetitions=200` got 10, the collector performed twenty times the round-trips, and the result described a configuration nobody chose. **Numbers gathered against nl6 before this change, with `max-repetitions` above 127, are not comparable with numbers gathered after it.**
+
 
 A negative value is treated as 0, per RFC 3416's definition of the field as non-negative.
 
 ### SNMPv3 values are typed like v2c
 
 Both versions encode a value through `encodeTypedValue`, so the same OID carries the same ASN.1 type whichever version answered.
-That was not always true: the v3 scoped-PDU builder used to branch on `strconv.Atoi` and emit only INTEGER or OCTET STRING, which meant v3 had no Counter32/Gauge32/TimeTicks/IpAddress typing and sent `endOfMibView` as literal text rather than as an exception, so a GETNEXT-driven v3 walk did not terminate where the protocol says it should.
-**Measurements of SNMPv3 responses taken before that change are not comparable with measurements after it.** The wire types differ.
 
 ### SNMPv3 GETBULK answers every column
 
 `handleSNMPv3GetBulk` parses every variable-binding name from the scoped PDU and applies the RFC 3416 §4.2.3 split: the first `non-repeaters` columns get one successor each, and the rest are walked `max-repetitions` times, interleaved one binding per column per repetition.
-It used to serve a single starting OID: the first binding, and the only one `extractOIDAndTypeFromScopedPDU` validates.
-A manager bundling `ifDescr`/`ifName`/`ifAlias` in one GETBULK therefore got successors of `ifDescr` and nothing at all for the rest, a wrong answer rather than merely a small one.
+A manager bundling `ifDescr`/`ifName`/`ifAlias` in one GETBULK gets successors for all three.
 That single-column shape also forced `non-repeaters` to collapse into `max-repetitions = 1`, which is not what the field means: with non-repeaters present and `max-repetitions` zero, the non-repeater bindings are now returned rather than an empty list.
 
 A column that reaches the end of its MIB view is padded with its OWN requested OID and `endOfMibView`, so the interleave stays aligned and a manager can still tell which column a slot belongs to.
@@ -373,9 +351,8 @@ It has its own log gate, separate from the dispatcher's malformed-scoped-PDU dis
 
 **A declared container length that overruns what contains it is malformed, not absent.**
 That distinction is load-bearing rather than pedantic.
-It used to be classified absent, so adding 8 to one length byte of a well-formed three-column GETBULK made the parser report that there was no list, the handler fall back to the single OID the dispatcher validated, and the response carry ten bindings from the first column: the defect this change fixes, restored by a one-byte lie, with no discard and no log line.
-Shortening the same byte was already treated as malformed, so one lie had opposite verdicts in its two directions.
-Every container is now checked the same way, bytes between the end of the list and the end of the PDU are refused, and every bound is written so that a four-octet BER length cannot wrap an addition negative on a 32-bit build.
+Classifying an overrun as *absent* would let one altered length byte silently shrink a well-formed three-column GETBULK to a single binding, while shortening the same byte was already malformed — one lie with opposite verdicts in its two directions.
+Every container is checked the same way, bytes between the end of the list and the end of the PDU are refused, and every bound is written so that a four-octet BER length cannot wrap an addition negative on a 32-bit build.
 
 The column count itself has no explicit cap.
 The repeater walk is bounded regardless, since the clamp divides by the column count, but the non-repeater loop is one walk step per column, and what bounds that is the 1024-byte read buffer.
@@ -395,14 +372,13 @@ A variable-bindings list that is not a valid ASN.1 encoding makes the whole PDU 
 Once the list header has been read, the parser checks the list length against the datagram, each binding's framing, the name's tag, length and content, and that exactly one value follows the name; any of those failing discards the request.
 The first such discard on a device is logged once; RFC 3412 would count it in `snmpInASNParseErrs`, which nl6 does not serve.
 
-Earlier releases silently dropped the offending binding and the rest of the request was answered, so a GET carrying three bindings came back with two. RFC 3416 requires the response's bindings to correspond to the request's, and a collector had no way to tell which one had gone missing.
-A GETNEXT with a malformed name was answered as a walk restart from `sysDescr.0`, an OID the requester never sent.
+RFC 3416 requires the response's bindings to correspond to the request's, and a collector had no way to tell which one had gone missing.
 
 A PDU whose variable-bindings list is empty, or whose envelope cannot be read as far as the list, is a different case and is still answered.
 The general request parser falls back to `sysDescr.0` for it, so what comes back is one binding the requester did not name; that behaviour is older still and is unchanged.
 
 The SNMPv3 path behaves the same way.
-A malformed scoped PDU is discarded there too, and a request that fails to DECRYPT — which used to share the same fallback and be answered with `sysDescr.0` — is answered with a `usmStatsDecryptionErrors` Report, as RFC 3414 §3.2 step 8 requires.
+A malformed scoped PDU is discarded there too, and a request that fails to DECRYPT is answered with a `usmStatsDecryptionErrors` Report, as RFC 3414 §3.2 step 8 requires.
 The two faults take opposite answers, discard against answer, which is why they had to be told apart before either could be right.
 Two differences from the v1/v2c rule are worth knowing.
 The v3 gate is broader: a PDU type nl6 does not serve (INFORM, TRAP, Report) and an empty variable-bindings list are discarded too, where v1/v2c answers the empty list from its default OID, and only the first binding's name is validated.
@@ -417,8 +393,6 @@ The others cannot usefully be signed: on a wrong digest or an unknown user there
 ## SetRequest
 
 Every `SetRequest` is answered with a `Response-PDU`, at SNMPv1, v2c and v3.
-Before this landed a v1/v2c `SET` fell through the dispatcher's `GET` branch and was answered with the object's current value under `noError`, which a manager reads as a write that succeeded and changed nothing, and a v3 `SET` was discarded as an unsupported PDU type so the manager timed out.
-Neither is an SNMP answer.
 
 ### The writable set
 
@@ -470,7 +444,6 @@ A v3 `SET` produces the same `Response-PDU` bytes as a v2c `SET` of the same bin
 
 A fleet booted with no `-snmp-write-community` answers **no** `SET` at v1 or v2c, and the default v3 minimum security level of `authNoPriv` refuses a `noAuthNoPriv` write.
 `snmpset` against a default fleet does not work until you configure one of the two knobs below.
-Before this, any manager that could reach the port could write.
 
 :::
 
@@ -569,7 +542,7 @@ The parsers are consequently required to be **total**: any byte sequence must pr
 
 There is deliberately **no `recover()`** on the request path.
 A blanket recover would convert a parser defect into a silently dropped datagram, which is indistinguishable from a network drop and hides the bug for as long as it exists.
-Fuzz targets hold the guarantee instead, each seeded with the input that previously crashed it.
+Fuzz targets hold the guarantee instead, each seeded with an input that once crashed it.
 `go test` replays every seed on an ordinary run, so a regression fails the normal suite rather than only a fuzzing session.
 
 That guarantee was measured rather than assumed: seed replay alone reaches every `parseLength` / `skipLength` call site in the package.
@@ -632,8 +605,7 @@ What did produce them is nl6's own fuzzer, and the two committed corpora had bee
 
 All five reproducers are committed fuzz seeds, so an ordinary `go test` replays them.
 The nine fuzz targets that read a v1/v2c datagram were then run live for 180 seconds each, 43.5 million executions in total, with no find.
-That campaign predates the change to the GETNEXT serve path — one of the three PDU types those targets reach — so its executions do not cover the multi-binding walk; seeds for that shape were committed with the change and replay on every ordinary `go test`.
-The campaign run before that fix had been recorded as clean and was not: one target failed an agreement assertion 33 seconds in, on an input that then failed deterministically on replay, and two shorter runs had missed it.
+Its executions do not cover the multi-binding walk; seeds for that shape are committed and replay on every run.
 A digest pins the other side: responses to well-formed minimal datagrams hash to a digest computed against the pre-change tree, so the fixes are observable only on the encodings that were mis-parsed.
 The corpus is 432 datagrams; the digest covers 360 of them, because a multi-binding GETNEXT now answers every binding and its response changed by design.
 That shape is excluded and the digest was re-derived against the new baseline rather than updated in place, so it is still a pre-change measurement.
@@ -723,8 +695,7 @@ That is a property of the read API, not of the derivation.
 Capturing one instant per SNMP request would remove it and is a larger change than that one took on; the scope is stated here rather than claimed away.
 
 **The compiled-in fallback profile.**
-`createDefaultResources` is written whenever a named resource file is absent, and it used to ship static `ifInOctets.1` / `ifOutOctets.1` with no `ifHCInOctets` row — so no cycler was published for it and both values were served frozen, the defect this change removes, on a production path the corpus guard cannot see because it reads only `resources/`.
-It now ships `ifHCInOctets.1` / `ifHCOutOctets.1` instead and derives all four octet columns.
+`createDefaultResources` is written whenever a named resource file is absent. It ships `ifHCInOctets.1` / `ifHCOutOctets.1` and derives all four octet columns.
 Do not add a static `.10` / `.16` row back to that set: with the HC rows present it would be unreachable.
 
 **What fires if a profile loses the columns.**
@@ -855,7 +826,7 @@ snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.7
 snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.8
 ```
 
-**Dynamic state engine (post-v0.8.0).** `ifOperStatus.<N>` (`.8`),
+**Dynamic state engine.** `ifOperStatus.<N>` (`.8`),
 `ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are now served
 live from the per-device interface state engine — not from the cached
 JSON value. Three mutation sources update them at runtime:

@@ -118,11 +118,10 @@ Telling the two apart requires the table's INDEX arity, which requires the MIB, 
 So a hit is a **candidate to check against the MIB**, never a verdict. The correction is recorded per row in `nl6571DeletedOverSpecifiedInstances`, and the limitation is documented on `bareColumnsAcrossProfiles` itself.
 
 **The scan is corpus-wide, and narrowing it is the regression to guard against.**
-The detector used to look for an extending sibling within the *same* profile and reported 41.
+A same-profile scan finds only 41 of them: legality is a property of the OID, not of which profile carries it.
 Twenty further entries were bare columns whose instantiated sibling lived in a **different** profile, and the per-profile scan was structurally unable to see any of them: sweeping only the 41 would have driven the pinned constant to 0 while 20 bare columns still shipped, with a green suite.
 Legality is a property of the OID, not of which profile carries it.
 
-That instruction used to exist only as prose, and prose does not fail a build.
 Both guards now share one detector (`bareColumnsAcrossProfiles`) and one comparison (`bareColumnCountViolation`), and both begin by calling `assertBareColumnDetectionIsCorpusWide` — a positive control that plants a bare column in profile A and its instance in profile B and requires it to be reported.
 Narrow the scan and that control fails in both guards.
 The control it replaces planted the column and its instance in the same set, so it survived a narrowing; that is how a review demonstrated both guards could be reverted to that blind spot with the whole suite green, since a narrowing changes no shipped byte and therefore moves no digest and no ledger.
@@ -140,7 +139,7 @@ One guard reads the JSON and says what the corpus *contains*; a second walks eve
 
 - **A bare column that nothing in the corpus extends.** Without a MIB it is indistinguishable from a scalar.
 - **An over-specified instance whose legal prefix is absent.** Same reason, mirrored: `…1.2.2.1` alone looks like an ordinary leaf.
-- **Any wrong INDEX arity**, which is the general form of both. The under-specified `jnxOperating` tranche this bullet used to file as open has been closed by a reading of the four-column INDEX clause out of JUNIPER-MIB and corrected or deleted all six rows: see [The Juniper arc audited against its MIBs](#the-juniper-arc-audited-against-its-mibs). The class is still open everywhere else, and deciding any instance needs the arc's MIB.
+- **Any wrong INDEX arity**, which is the general form of both. The under-specified `jnxOperating` tranche is closed by a reading of the four-column INDEX clause out of JUNIPER-MIB and corrected or deleted all six rows: see [The Juniper arc audited against its MIBs](#the-juniper-arc-audited-against-its-mibs). The class is still open everywhere else, and deciding any instance needs the arc's MIB.
 
 So "the census reads zero" means *no entry is an interior node of the shipped set*. It does not mean every shipped name is a legal instance, and this page should not be read as claiming that.
 
@@ -357,8 +356,7 @@ Every deletion is in `cisco_catalyst_9500` except the second `…13.1.3.1.3.1` r
 
 **Nine of the ten corrections move the emitted tag, and all nine are one defect: a bare number on a `DisplayString` leaf.**
 `encodeTypedValue` emits `1100` and `1` as tag `0x02` INTEGER, so those rows put an INTEGER on a leaf the MIB declares a `DisplayString`.
-The seven `1` rows survived the first cut of this audit, which recorded them as "weak but a legal DisplayString" and left them alone.
-They are not legal, and the reason the mistake was invisible is instructive: judging a value by whether it *looks like* a description passes a bare `1`, and the one row in the pinned reading with no tag assertion was exactly the row that carried it.
+The seven `1` rows are not legal DisplayStrings, and the reason that is easy to miss is instructive: judging a value by whether it *looks like* a description passes a bare `1`, and the one row in the pinned reading with no tag assertion was exactly the row that carried it.
 Every case in that test now asserts the tag.
 
 **The supply correction is settled by evidence inside the profile; the fan correction is not, and the difference is recorded rather than smoothed over.**
@@ -468,13 +466,13 @@ The module mentions `3011 7280` on 109 lines and the third sub-identifier observ
 `3282` *is* a real Arista sub-identifier — it appears under 7124, 7148, 7050 and, at a different depth, under `7280 2727 3 1810 32 2129 4` — which is exactly why the invented OID looks right.
 It now answers `aristaDCS7280CR332P4M`, assigned as `{ aristaProducts 3011 7280 2727 3 32 2129 4 972 }`.
 
-**The product's name is `DCS-7280CR3-32P4-M`, and the first cut of this audit got that wrong.**
+**The product's name is `DCS-7280CR3-32P4-M`.**
 `aristaDCS7280CR332P4M` is the ASN.1 *identifier*, which strips punctuation from every product name in that module.
 The name is in the comment immediately above the assignment — `-- DCS-7280CR3-32P4-M 32x100GbE (QSFP100) & 4x400GbE (OSFP) Ethernet Switch with SSD` — and again in the module's own revision note ("Revised to include DCS-7280CR3-32P4-M and DCS-7280CR3-32D4-M").
 Reading the identifier as the name is exactly the wrong-MIB-reading class this audit exists to eliminate, committed inside the change that exists to eliminate it.
 The pinned Arista reading now requires the MIB's spelling and rejects the hyphenless one by name.
 
-**The model-identity rule is profile-wide, not a `sysDescr` rule**, and the first cut got *that* wrong too.
+**The model-identity rule is profile-wide, not a `sysDescr` rule.**
 `grep -c 7280R3 ARISTA-PRODUCTS-MIB` returns 0, so the profile was **already** split between two products that do not exist: `DCS-7280R3-32P4-M` in `sysDescr` and the SSH outputs, `DCS-7280R3-48C6` in the entity table.
 (The real 48C6 products are `DCS-7280SR-48C6`, `DCS-7280TR-48C6`, `DCS-7280SRA-48C6` and `DCS-7280TRA-48C6` — SR / TR series, not R3.)
 Correcting only `sysDescr` replaced a fake-versus-fake split with a real-versus-fake contradiction across surfaces, which is worse than either.
@@ -588,7 +586,7 @@ The pinned Ciena reading rejects `1271.3.5` by name and says what it is.
 **One fact, because the dual-position scan says so.**
 `ciena_waveserver5` serves 86 SNMP entries, **zero** OID names under `1.3.6.1.4.1.1271` and **one** OID-typed value.
 Reading names only would have reported this arc as absent from the corpus entirely.
-That is the blind spot that hid the AWS defect in the own-vendor PEN guard and the first cut of the earlier research census's guard.
+That is the blind spot that hid the AWS defect from a name-only scan.
 It is also why the value-position guard gates the value position through `snmpTypeTag` rather than by string shape.
 The empty *name* half is asserted as a walk from the PEN root with a positive control, for exactly the reason the Arista audit's is: end of MIB is an empty successor, so "the successor is not under the arc" is also satisfied by a walk that sees nothing.
 
