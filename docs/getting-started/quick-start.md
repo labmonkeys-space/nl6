@@ -60,6 +60,8 @@ dynamic HC counter layout.
 
 ## Next steps
 
+- **Change device state** — [Enable SNMP SET](snmp-set.md) to shut and unshut
+  an interface over SNMP. Writes are off by default.
 - **Scale up** — [Scaling](../ops/scaling.md) covers the 30k-device tuning.
 - **Flow export** — [Flow export (operator guide)](../ops/flow-export.md) to
   plug nl6 into a NetFlow / IPFIX / sFlow collector.
