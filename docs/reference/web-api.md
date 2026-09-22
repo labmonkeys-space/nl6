@@ -206,7 +206,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 ### Write admission
 
-Writes are **opt-in** since [nl6#690](https://github.com/labmonkeys-space/nl6/issues/690).
+Writes are **opt-in**.
 A batch created without `write_community` answers no v1/v2c `SetRequest`, and the v3 minimum security level defaults to `authNoPriv`.
 
 | Field | Type | Default | Description |
@@ -231,7 +231,7 @@ poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when
 both are set **on the DES path only**. The AES128 path ignores `priv_password`
 and always derives from `password`
-([nl6#624](https://github.com/labmonkeys-space/nl6/issues/624)), so a device
+, so a device
 configured with two distinct passwords and `"priv_protocol": 2` encrypts under
 a key no RFC 3414 manager derives. `Validate` accepts the configuration
 regardless.
@@ -371,7 +371,7 @@ BER table.
 
 ### One creation batch at a time (`409`)
 
-**Behaviour change in nl6#565.** Only one device-creation batch runs at a time.
+**Only one device-creation batch runs at a time.** It at a time.
 A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
 Two such requests used to interleave.
 
@@ -380,7 +380,7 @@ The response carries `Retry-After: 5`, and a body naming the batch in the way:
 ```json
 {
   "success": false,
-  "message": "device creation already in progress: batch #7 (2000 devices, started 1.482s ago) is running; retry once it finishes. Device IP allocation is a shared cursor, so a second concurrent batch would hand out overlapping addresses and silently create fewer devices than requested (nl6#565)"
+  "message": "device creation already in progress: batch #7 (2000 devices, started 1.482s ago) is running; retry once it finishes. Device IP allocation is a shared cursor, so a second concurrent batch would hand out overlapping addresses and silently create fewer devices than requested"
 }
 ```
 
@@ -418,7 +418,7 @@ Today `409` on this endpoint means a concurrent creation batch or a concurrent p
 ### `resource_file` failures
 
 `resource_file` names the device type to load, and a request naming one the
-simulator cannot use is answered **`400`** (nl6#538), not `500`.
+simulator cannot use is answered **`400`**, not `500`.
 
 Response:
 
@@ -522,7 +522,7 @@ without per-device binding is a runtime attach failure, not a 400.
 
 Three per-device cadence settings are accepted, stored, and echoed back, but the engine ignores them: `syslog.interval`, `traps.interval`, and `flow.tick_interval`.
 
-The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. The simulator-wide `-flow-tick-interval` **is** honored ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) is fixed); it is the per-device override that is not.
+The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. The simulator-wide `-flow-tick-interval` **is** honored; it is the per-device override that is not.
 
 So that the API does not confirm a wrong belief, both values are reported:
 
@@ -742,7 +742,7 @@ geographically scattered rather than clustered by site.
 
 ## Reload device profiles
 
-`POST /api/v1/resources/reload` makes an edited profile under `resources/` take effect without a restart (nl6#519).
+`POST /api/v1/resources/reload` makes an edited profile under `resources/` take effect without a restart.
 It **evicts** cached profiles; it never rewrites one.
 
 ```bash
@@ -1099,7 +1099,7 @@ ssh simadmin@192.168.100.1     # password: simadmin
 snmpget  -v2c -c public 192.168.100.1 1.3.6.1.2.1.1.1.0
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1
 
-# SNMP v3 (when enabled). RFC 3414 USM, verified against net-snmp (nl6#624).
+# SNMP v3 (when enabled). RFC 3414 USM, verified against net-snmp.
 # A CLI-started fleet uses simadmin for the user and for both passwords, and
 # defaults to -snmpv3-auth md5 with privacy off, so the level you can poll
 # follows the flags the simulator was started with.

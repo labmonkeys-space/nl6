@@ -151,7 +151,7 @@ If the identity does not reproduce the measured rate, something is missing from 
 Background emission inflates (3) without touching (1).
 It is the one failure mode three-point reconciliation cannot self-detect, because it makes the pipeline look like it is running *ahead* of the load.
 
-nl6's per-device `interval` and `tick_interval` are accepted, echoed back, and **not honored** ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)): every device fires at the simulator-wide cadence regardless.
+nl6's per-device `interval` and `tick_interval` are accepted, echoed back, and **not honored**: every device fires at the simulator-wide cadence regardless.
 A long per-device interval therefore does not silence anything, and reading the value back confirms a setting that is not in force.
 
 Start nl6 with `-fidelity`, then verify the generator is actually silent before offering load: its sent counter must not move while idle.

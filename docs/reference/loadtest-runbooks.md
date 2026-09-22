@@ -13,7 +13,7 @@ namespace). For a clean window with no background noise, add
 > **A long per-device `interval` will not silence a fleet.** The per-device
 > `interval` / `tick_interval` fields are accepted, echoed back by
 > `GET /api/v1/devices`, and **not honored**
-> ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)): every device
+>: every device
 > fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence
 > regardless. Setting `"interval": "24h"` on 500 devices leaves ~50 events/s of
 > background running, which is enough to contaminate an accept-rate measurement

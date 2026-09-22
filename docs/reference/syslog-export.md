@@ -2,7 +2,7 @@
 
 nl6 emits syslog messages in either **RFC 5424** (modern, structured) or **RFC 3164** (legacy BSD) format, over UDP, TCP (RFC 6587) or TLS (RFC 5425).
 Format and transport are per device.
-The two encoders sit behind a shared `SyslogEncoder` interface in `go/nl6/syslog_wire.go`; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
+The two encoders sit behind a shared `SyslogEncoder` interface; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
 This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape. For enabling the feature, CLI
 flags, and troubleshooting see
 [UDP syslog export (operator guide)](../ops/syslog-export.md) and
@@ -327,7 +327,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-syslog-interval` cadence ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)). The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
+> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-syslog-interval` cadence. The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
 `/api/v1/syslog/status` reports both batches as separate records keyed
 by `(collector, format)`.

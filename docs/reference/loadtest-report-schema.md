@@ -86,8 +86,8 @@ The reproducibility fingerprint plus the timestamps the run actually observed.
 Copy the `(config_sha256, seed)` back into a resubmit on the same
 `nl6_version` to re-run a scenario exactly.
 
-**Resubmitting a body archived before v0.28.0:** if it carries a `drain` key,
-strip it. That field is refused with a `400` since v0.28.0 ([nl6#500]) — it
+**Resubmitting an archived body:** if it carries a `drain` key,
+strip it. That field is refused with a `400` — it
 configured nothing. A body that never carried one hashes to the same
 `config_sha256` as it always did, so baselines stay comparable.
 
@@ -126,14 +126,13 @@ achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
 
 Both halves of that are deliberate. `in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window. Nothing else belongs in either half.
 
-`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`). On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0 ([nl6#500]).
+`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`). On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0.
 
-**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and the `drain` duration is no longer a configurable field at all ([nl6#500] — submitting one is now a 400).
+**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and `drain` is not a configurable field: submitting one is a 400.
 
 ### The drain barrier is bounded
 
-The barrier that produces `drain_end` waits for every send admitted before `T1` to return.
-Until [nl6#567] nothing capped that wait, and the shutdown path runs it: one admitted send that never returned held shutdown open indefinitely.
+The barrier that produces `drain_end` waits for every send admitted before `T1` to return, and the shutdown path runs it — so the wait is capped. Uncapped, one admitted send that never returned would hold shutdown open indefinitely.
 Two cases reach that state.
 A stream transport whose write sets no deadline blocks for as long as it blocks.
 And an admitted send that never completes at all, because its write path panicked or a callback was dropped, would never return no matter what deadline the transport carried.
@@ -141,9 +140,9 @@ And an admitted send that never completes at all, because its write path panicke
 That second case is why the **barrier** is bounded rather than the transports.
 A per-transport write deadline cannot see it, and it could not bound the total anyway: syslog TCP serialises behind a per-connection mutex, so a device's worst case is its own 2 s write timeout times the sends queued behind it.
 
-**The whole waiting phase shares one budget** ([nl6#618]).
-Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and until nl6#618 none of those joins was bounded: the syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parked finalize with the barrier ceiling never armed.
-All four waits now share a single 60 s budget, and whatever did not complete is named in `incomplete_joins`.
+**The whole waiting phase shares one budget.**
+Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and every one of those joins is bounded too: the syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parked finalize with the barrier ceiling never armed.
+All four waits share a single 60 s budget, and whatever did not complete is named in `incomplete_joins`.
 Nothing is cancelled in either case, so a report carrying `incomplete_joins` or `drain_stragglers` is a lower bound over a set that was still moving.
 
 The barrier now gives up after a fixed ceiling of **60 s** and records how many sends were still outstanding in `drain_stragglers`.
@@ -158,7 +157,7 @@ On a healthy run the field is absent and none of this applies.
 
 An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`. On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error. (The superseded sentence quoted 4.2 %, which is 5/120 — the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
 
-[nl6#463] resolved what the gap actually was. Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled). Template FlowSets subtracted, non-first fragments skipped.
+Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled). Template FlowSets subtracted, non-first fragments skipped.
 
 Part one, at rate 4/device, seed 42, with capture and report taken on the same clock — **2349 wire data records against 2349 ledger records in `[t0, t1)`, zero ledger error**, with 0 records in `[t1, drain_end)` and 0 after it.
 
@@ -178,10 +177,6 @@ The post-window burst is not drain. It is traffic emitted after the scenario sto
 
 **What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length. What a short window still costs is precision, not bias — fewer records, so first-fire alignment and scheduler jitter are a larger share of the total. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
-[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
-[nl6#567]: https://github.com/labmonkeys-space/nl6/issues/567
-[nl6#618]: https://github.com/labmonkeys-space/nl6/issues/618
-[nl6#463]: https://github.com/labmonkeys-space/nl6/issues/463
 
 #### Reproducing `resolved_participants_sha256`
 
@@ -225,7 +220,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `emitted` | Records **generated**: gate-passed fires + emission-suppressed pre-window fires. |
 | `sent` | `in_window + drain` — the **loss denominator** for reconciliation (convenience; derived). |
 | `in_window` | Records sent (write returned success) with the write-return timestamp in `[T0, T1)`. |
-| `drain` | Records whose write returned at or after `T1` — the drain barrier's tail. Bounded by the writes already in flight at `T1`, so on a healthy run it is 0; it is not a configurable grace period ([nl6#500]). |
+| `drain` | Records whose write returned at or after `T1` — the drain barrier's tail. Bounded by the writes already in flight at `T1`, so on a healthy run it is 0; it is not a configurable grace period. |
 | `suppressed_pre_window` | State-driven / on-demand fires that occurred before `T0` — counted but not emitted on the wire. |
 | `send_failures` | Resolve / encode / write errors (nl6 could not send). |
 | `dropped` | Records generated but never confirmed on the wire. The barrier waits for every fire it admitted, so this is not a "slow write" bucket: the real causes are a fire that reached the barrier *after* it closed (the detach/teardown race) and a shutdown-race socket drop. |
@@ -281,7 +276,7 @@ A collector that decodes `applicationId` as a big-endian integer (IPFIXcol2 with
 | `records` | number | Sent flow records for this row (`sent` basis: in-window + drain). For a pure flow scenario, `Σ applications[].records == summary.sent`. |
 | `bytes` | number | Sum of the records' flow byte counters, exactly what a conforming collector sums for the same window. |
 | `packets` | number | Sum of the records' flow packet counters. |
-| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here: the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span, [nl6#500].) In-window bytes = `Σ sub_window_bytes`. |
+| `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here: the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span.) In-window bytes = `Σ sub_window_bytes`. |
 | `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded, the same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
 
 `sflow` scenarios are excluded by design: an sFlow collector derives byte volumes by sampling extrapolation (`frame_length × sampling_rate`), not by summing record byte counters, so these totals are not the numbers a correct sFlow collector would report.
@@ -309,7 +304,7 @@ The block is always present and is `[]` unless an NBAR2 participant sent a recor
 | `application_id` | number | Wire `applicationId` of the records, as in `applications[]`. Join key, part 1. |
 | `application_name` | string | The catalog's name for it. Informational. |
 | `field` | string | `http_host` or `http_uri`. Join key, part 2. |
-| `value` | string | The hostname or URI as a string. For `http_host` this is the hostname WITHOUT the six-byte prefix `03 00 00 50 34 02` the wire carries in front of it (Cisco's layout, nl6#679); for `http_uri` it is the URI without the NUL and hit count that follow it. Join key, part 3. |
+| `value` | string | The hostname or URI as a string. For `http_host` this is the hostname WITHOUT the six-byte prefix `03 00 00 50 34 02` the wire carries in front of it (Cisco's layout); for `http_uri` it is the URI without the NUL and hit count that follow it. Join key, part 3. |
 | `records` / `bytes` / `packets` | number | Sent-basis totals of the records carrying this value, the `applications[]` convention. |
 | `avg_bytes_per_second` | number | In-window bytes ÷ actual window, the `applications[]` convention. |
 
@@ -356,7 +351,7 @@ The report is a versioned contract. Consumers should tolerate unknown fields.
   harnesses. Removals are listed in the API reference's [Removed request
   fields](./loadtest-api.md#removed-request-fields) with the release that
   removed them, so a reader on an older binary can tell which one changed.
-  So far: `drain`, refused with a `400` since v0.28.0 ([nl6#500]).
+  So far: `drain`, refused with a `400`.
 
 Future projections (additional protocols in `counters`, richer
 loss-localization blocks) are **additive** under this policy.

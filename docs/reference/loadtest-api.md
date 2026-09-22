@@ -104,13 +104,12 @@ Always required and fingerprinted. |
 
 ##### Removed request fields
 
-A removed request field is a **breaking change for a harness**: the submit that worked before the upgrade now returns a `400`. The submit config carries no version of its own, so it moves with `nl6_version` and removals are listed here with the release that made them.
+A removed request field is a **breaking change for a harness**: a submit carrying it returns a `400`. The submit config carries no version of its own, so it moves with `nl6_version` and removals are listed here with the release that made them.
 
-| Field | Refused since | Why |
-|-------|---------------|-----|
-| `drain` | **v0.28.0** ([nl6#500]) | It configured nothing. The post-window phase is a **barrier, not a duration**: at `T1` no new fire initiates, and finalize waits for the work already admitted to return from its write — milliseconds on a healthy run. The refusal keys on the key's *presence*, so `""`, `null`, `0s` and a non-string value are all `400` with the same message; the fix is to delete the key. The `drain` ledger bucket and the `drain_end` timestamp are **unaffected** — both are observed, not configured. |
+| Field | Why |
+|-------|-----|
+| `drain` | It configured nothing. The post-window phase is a **barrier, not a duration**: at `T1` no new fire initiates, and finalize waits for the work already admitted to return from its write — milliseconds on a healthy run. The refusal keys on the key's *presence*, so `""`, `null`, `0s` and a non-string value are all `400` with the same message; the fix is to delete the key. The `drain` ledger bucket and the `drain_end` timestamp are **unaffected** — both are observed, not configured. |
 
-[nl6#500]: https://github.com/labmonkeys-space/nl6/issues/500
 
 #### Abort predicate — `abort_predicate`
 
@@ -454,4 +453,4 @@ dropped, releasing any devices it held. A `running` scenario is refused
 | `canceled` | 409 | 409 | 409 | 409 | drop |
 
 This matrix is enforced by the table-driven contract test
-(`scenario_api_test.go`).
+.

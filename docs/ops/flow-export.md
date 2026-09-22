@@ -121,10 +121,8 @@ per `(collector, protocol)` tuple:
   same cadence regardless of batch. Per-device `tick_interval` in the REST body
   is accepted and validated but **not honored**; a single warning is logged per
   subsystem lifecycle the first time any device SETS it (not only when it
-  diverges), and the create response carries the same disclosure
-  ([nl6#445](https://github.com/labmonkeys-space/nl6/issues/445)).
-- `-flow-tick-interval` sets the simulator-wide cadence and **is** honored
-  ([nl6#446](https://github.com/labmonkeys-space/nl6/issues/446) fixed). It
+  diverges), and the create response carries the same disclosure.
+- `-flow-tick-interval` sets the simulator-wide cadence and **is** honored. It
   controls **batching, not volume**: a slower tick puts more records in each
   datagram rather than proportionally reducing the record rate. Volume is set
   by the profile's concurrent-flow count and the expiry timeouts. Values
