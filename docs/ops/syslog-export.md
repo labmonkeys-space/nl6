@@ -1,4 +1,4 @@
-# UDP syslog export (operator guide)
+# Syslog export (operator guide)
 
 nl6 can emit UDP syslog messages in either **RFC 5424** (the modern
 structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy
@@ -7,6 +7,13 @@ device to a single collector such as `rsyslog`, `syslog-ng`, or an
 NMS syslog daemon. Each device uses its own IP as the UDP source by
 default, so collectors that key on source-IP → node mapping attribute
 messages correctly without extra work.
+
+UDP is the default transport.
+`-syslog-transport tcp` (RFC 6587) and `-syslog-transport tls` (RFC 5425) switch the auto-start batch to one connection per device.
+`-syslog-framing` selects `octet-counting` or `non-transparent` under tcp; it is rejected under udp and forced to octet-counting under tls.
+`-syslog-tls-ca` names a PEM CA bundle for the collector and `-syslog-tls-insecure` skips verification.
+Under tls a bare collector hostname defaults to port 6514 instead of 514.
+See [Syslog reference → TCP transport](../reference/syslog-export.md#tcp-transport-rfc-6587) and [TLS](../reference/syslog-export.md#tls-rfc-5425).
 
 This page is the operator-facing setup guide. For the CLI flags see
 [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags);
@@ -42,9 +49,8 @@ sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
 
 ## 5424 vs 3164
 
-Only **one format is active per simulator process** — the two coexist
-poorly on a single UDP socket because auto-detecting collectors can
-mis-parse the other form.
+The format is per device: `-syslog-format` seeds the auto-start batch and a REST `syslog.format` sets it per device.
+The shared-socket pool is keyed by `(collector, format)`, so 5424 and 3164 never interleave on one socket.
 
 | Aspect | RFC 5424 (`-syslog-format 5424`, default) | RFC 3164 (`-syslog-format 3164`) |
 |--------|-------------------------------------------|----------------------------------|
@@ -134,15 +140,17 @@ sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
   -syslog-collector 127.0.0.1:514 -syslog-interval 2s
 ```
 
-You should see lines arriving every few seconds. The universal catalog
-dominates with `interface-up` / `interface-down` (together 60% of
-fires by weight); `auth-success` / `auth-failure` sit at 30%, and
-`config-change` / `system-restart` round out the remainder.
+You should see lines arriving every few seconds.
+Only the untagged universal entries are scheduled: `auth-success` (weight 20), `auth-failure` (20), `config-change` (10) and `system-restart` (5).
+`interface-up` / `interface-down` carry a `role` and never fire from the scheduler.
+They fire on an interface oper-status transition.
+To see them, add `-if-flap-scenario typical` or `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`.
 
 For vendor-flavoured content (e.g., Cisco `%LINK-3-UPDOWN:` or Juniper
 `MIB2D_IFD_IFL_ENCAPS_MISMATCH:`), select a device type with a per-type
 overlay — see
 [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays).
+Shipped overlays: `cisco_ios` (8 entries), `juniper_mx240` (7) and `ciena_waveserver5` (4 role-tagged optical pre-FEC alarms).
 
 If you need a specific message on demand:
 
@@ -160,8 +168,8 @@ for the full request / response shape.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `enabled: false` in `/api/v1/syslog/status` | `-syslog-collector` not set | Pass the flag; verify port |
-| `enabled: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
+| `subsystem_active: true` with `collectors: []` in `/api/v1/syslog/status` | No device has a `syslog` block | Pass `-syslog-collector` for the auto-start batch, or add a `syslog` block to the REST request |
+| `subsystem_active: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
 | Messages sent but collector sees nothing | FORWARD rule missing or `rp_filter` blocking | See [Flow export → Flow troubleshooting](flow-export.md#flow-troubleshooting) — the netns diagnostic steps apply verbatim |
 | Source IP on the wire is the host, not the device | Per-device bind failed for that device (non-fatal) | Check simulator logs for `per-device bind failed`; expected when run without netns (`-no-namespace`) |
 | Collector parser chokes on the message format | Collector and simulator disagree on 5424 vs 3164 | Match `-syslog-format` to the collector's expected form |

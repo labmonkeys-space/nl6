@@ -5,7 +5,7 @@ Format and transport are per device.
 The two encoders sit behind a shared `SyslogEncoder` interface; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
 This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape. For enabling the feature, CLI
 flags, and troubleshooting see
-[UDP syslog export (operator guide)](../ops/syslog-export.md) and
+[Syslog export (operator guide)](../ops/syslog-export.md) and
 [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
 
 ## Architecture
@@ -54,7 +54,7 @@ They are deliberately not symmetric with UDP: a TCP or TLS device owns one conne
 | `APP-NAME` | Catalog entry's `appName` (required) | `IFMGR` |
 | `PROCID` | Always `NILVALUE` (`-`) | `-` |
 | `MSGID` | Catalog entry's `msgId` (optional; NILVALUE if omitted) | `LINKDOWN` |
-| `[SD-PARAM]` | Zero or more structured-data blocks from the catalog's `structuredData` map | `[ifIndex="3" ifName="ge-0/0/3"]` |
+| `[SD-PARAM]` | One structured-data element with the constant SD-ID `meta@32473`, carrying every key of the catalog's `structuredData` map; NILVALUE when the map is empty | `[meta@32473 ifIndex="3" ifName="ge-0/0/3"]` |
 | `MSG` | Catalog entry's `template` rendered | `Interface ge-0/0/3 changed state to down` |
 
 All header tokens pass through sanitisation per RFC 5424 §6: spaces
@@ -65,8 +65,9 @@ expansion exceeds 1400 bytes.
 ### Structured-data grammar
 
 Each key in the catalog's `structuredData` map becomes one SD-PARAM
-inside a single `[<SD-ID>=...]` block whose SD-ID is the catalog entry
-`appName`. Keys must match the RFC 5424 §6.3.3 SD-NAME grammar
+inside a single `[meta@32473 ...]` element. The SD-ID is the constant
+`meta@32473` (RFC 5612's documentation PEN), not the entry's `appName`.
+Keys must match the RFC 5424 §6.3.3 SD-NAME grammar
 (PRINTUSASCII, no space / `=` / `]` / `"`, 1..32 chars). Values are
 rendered through the standard template vocabulary. SD-PARAM value
 escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
@@ -74,7 +75,7 @@ escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
 ## RFC 3164 wire format
 
 ```
-<PRI>TIMESTAMP HOSTNAME TAG[pid]: MSG
+<PRI>TIMESTAMP HOSTNAME TAG: MSG
 ```
 
 | Field | Source | Example |
@@ -82,8 +83,7 @@ escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
 | `<PRI>` | Same computation as 5424 | `<187>` |
 | `TIMESTAMP` | BSD-style, no year | `Apr 21 13:30:45` |
 | `HOSTNAME` | Same derivation chain as 5424 | `rtr-dc-01` |
-| `TAG` | Catalog entry's `appName` | `IFMGR` |
-| Pid | Always `[-]` (placeholder; simulator doesn't track per-device pids) | `[-]` |
+| `TAG` | Catalog entry's `appName`, sanitised and truncated to 32 characters (RFC 3164 §5.3). No `[pid]` is emitted | `IFMGR` |
 | `MSG` | Catalog entry's `template` rendered | `Interface ge-0/0/3 changed state to down` |
 
 RFC 3164 has **no structured-data support**; the catalog's
@@ -186,7 +186,8 @@ Per-entry:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `name` | string | yes | Unique within the catalog. Used by the HTTP fire-on-demand endpoint and for log attribution. |
-| `weight` | integer | no (default `1`) | Relative weight for weighted-random selection. Zero means omit from scheduled firing (still reachable via HTTP). |
+| `weight` | integer | no (default `1`) | Relative weight for weighted-random selection. `0` or omitted is coerced to `1`; a negative value fails catalog load. To keep an entry out of scheduled firing, give it a `role`. |
+| `role` | string | no | Tags the entry as state-driven. Allowed: `link-down`, `link-up`. Unknown values fail catalog load. A role-tagged entry is excluded from the scheduler's weighted pick and fires only through `EntriesByRole` on an interface oper-status transition. Empty means untagged, scheduler-driven. |
 | `facility` | string or integer | yes | Canonical name (`kern`..`local7`) or integer 0..23. |
 | `severity` | string or integer | yes | Canonical name (`emerg`..`debug`) or integer 0..7. |
 | `appName` | string | yes | RFC 5424 APP-NAME / RFC 3164 TAG. 1..48 ASCII chars; sanitised at render time. |
@@ -199,24 +200,25 @@ Per-entry:
 
 Ships six generic entries matching common network-device semantics:
 
-| Name | Facility.Severity | APP-NAME | MSGID | Weight |
-|------|-------------------|----------|-------|--------|
-| `interface-up` | `local7.notice` | `IFMGR` | `LINKUP` | 40 |
-| `interface-down` | `local7.error` | `IFMGR` | `LINKDOWN` | 40 |
-| `auth-success` | `authpriv.info` | `sshd` | `LOGIN` | 20 |
-| `auth-failure` | `authpriv.warning` | `sshd` | `FAIL` | 20 |
-| `config-change` | `local7.notice` | `SYSMGR` | `CONFIG` | 10 |
-| `system-restart` | `local7.warning` | `SYSMGR` | `RESTART` | 5 |
+| Name | Facility.Severity | APP-NAME | MSGID | Weight | Role |
+|------|-------------------|----------|-------|--------|------|
+| `interface-up` | `local7.notice` | `IFMGR` | `LINKUP` | 40 | `link-up` |
+| `interface-down` | `local7.error` | `IFMGR` | `LINKDOWN` | 40 | `link-down` |
+| `auth-success` | `authpriv.info` | `sshd` | `LOGIN` | 20 | _(none)_ |
+| `auth-failure` | `authpriv.warning` | `sshd` | `FAIL` | 20 | _(none)_ |
+| `config-change` | `local7.notice` | `SYSMGR` | `CONFIG` | 10 | _(none)_ |
+| `system-restart` | `local7.warning` | `SYSMGR` | `RESTART` | 5 | _(none)_ |
 
-Weights sum to 135. Interface state dominates; authentication and
-system events round out the tail.
+Weights sum to 135, but `interface-up` and `interface-down` are role-tagged and never fire from the scheduler.
+They fire on an interface oper-status transition: a flap scenario (`-if-flap-scenario`), a REST `oper-status` or `admin-status` POST, or an SNMP SET of `ifAdminStatus`.
+The scheduler draws from the four untagged entries only, so the scheduled weight is 55.
 
 ### Template vocabulary
 
 Both the `template` body, `hostname` override, and every value in
 `structuredData` are evaluated as Go `text/template` strings per fire.
 The vocabulary is **unified with the trap subsystem** — the same
-nine fields work on both sides:
+eleven fields work on both sides:
 
 | Field | Evaluation |
 |-------|-----------|
@@ -229,6 +231,8 @@ nine fields work on both sides:
 | `{{.Model}}` | Human-readable model string derived from device-type slug (e.g., `cisco_ios` → `Cisco IOS`) |
 | `{{.Serial}}` | Deterministic `SN` + 8-hex-digit serial synthesised from the device's IPv4 |
 | `{{.ChassisID}}` | Deterministic locally-administered MAC-style chassis ID synthesised from the device's IPv4 (`02:42:xx:xx:xx:xx`) |
+| `{{.NowLocal}}` | Fire time as local `2006-01-02 15:04:05` |
+| `{{.Detail}}` | Per-fire free-form measurement suffix. Empty unless the firing site supplies it (the optical alarms carry the triggering OSNR this way) |
 
 References to any other field are rejected at catalog load.
 Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`,
@@ -259,6 +263,7 @@ default is `"extends": true`.
 |------|-------|-----------------|
 | `cisco_ios` | 8 Cisco-format entries (merged total 14) | `cisco-link-updown-up/down` (`%LINK-3-UPDOWN:`), `cisco-lineproto-updown-up/down` (`%LINEPROTO-5-UPDOWN:`), `cisco-sys-config` (`%SYS-5-CONFIG_I:`), `cisco-snmp-coldstart`, `cisco-sys-restart` (uses `{{.Model}}` / `{{.Serial}}` / `{{.ChassisID}}`), `cisco-envmon-temp-ok` |
 | `juniper_mx240` | 7 Junos-format entries (merged total 13) | `juniper-snmp-link-up/down` (`SNMP_TRAP_LINK_*`), `juniper-mib2d-encaps-mismatch` (`MIB2D_IFD_IFL_ENCAPS_MISMATCH`), `juniper-chassisd-temp-critical` (`CHASSISD_FRU_TEMP_CRITICAL`), `juniper-chassisd-eeprom-fail` (uses `{{.ChassisID}}` / `{{.Serial}}`), `juniper-license-expired`, `juniper-ui-commit-complete` |
+| `ciena_waveserver5` | 4 optical entries (merged total 10) | `optical-prefec-sd-raise` / `-clear`, `optical-prefec-sf-raise` / `-clear`. Fired by the optical pre-FEC threshold evaluator; not scheduled. |
 
 Message bodies match the vendor's canonical shape verbatim so
 collector-side pattern matchers tuned for Cisco / Juniper strings
@@ -308,8 +313,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "device_count": 50,
     "syslog": {
       "collector": "192.168.1.10:514",
-      "format": "5424",
-      "interval": "15s"
+      "format": "5424"
     }
   }'
 
@@ -327,7 +331,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-syslog-interval` cadence. The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
+> **Note:** a per-device `interval` in the `syslog` block is **rejected with 400** (nl6#445). Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
 `/api/v1/syslog/status` reports both batches as separate records keyed
 by `(collector, format)`.
@@ -337,10 +341,7 @@ device doesn't emit syslog. See
 [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full
 per-device schema.
 
-**Duration fields** (`interval`) require **Go duration strings**
-(`"10s"`, `"5m"`, `"1m30s"`). Integer seconds (`"interval": 10`) are
-rejected with 400 — a deliberate mismatch with the `-syslog-interval`
-CLI flag, which takes integer seconds.
+The `-syslog-interval` CLI flag takes a Go duration string (`10s`, `1m30s`), not integer seconds.
 
 ## TCP transport (RFC 6587)
 
@@ -570,6 +571,7 @@ On-demand fires **do not** consume global rate-cap tokens.
     {
       "collector":     "192.168.1.10:514",
       "format":        "5424",
+      "transport":     "udp",
       "devices":       50,
       "sent":          18240,
       "send_failures": 3
@@ -577,6 +579,7 @@ On-demand fires **do not** consume global rate-cap tokens.
     {
       "collector":     "192.168.1.10:514",
       "format":        "3164",
+      "transport":     "udp",
       "devices":       20,
       "sent":          6130,
       "send_failures": 0
@@ -600,6 +603,7 @@ Fields:
 | `collectors[]` | One record per `(collector, format)` tuple that ever had a device. |
 | `collectors[].collector` | Target `host:port` (canonicalised). |
 | `collectors[].format` | `"5424"` or `"3164"`. |
+| `collectors[].transport` | `"udp"`, `"tcp"` or `"tls"`. Keeps a TCP outage from merging into a row of healthy UDP devices sending the same format to the same collector. |
 | `collectors[].devices` | Count of LIVE devices emitting to this tuple. `0` means no live device but the aggregate remembers prior fires (monotonic within subsystem lifecycle). |
 | `collectors[].sent` | Cumulative wire emissions across all devices (live + deleted) for this tuple. |
 | `collectors[].send_failures` | UDP write errors (collector unreachable, socket-level failure). |
@@ -624,7 +628,7 @@ Documented with types, defaults, and purposes at
 
 ## Related
 
-- [UDP syslog export (operator guide)](../ops/syslog-export.md) — enabling, per-device source binding, smoke test
+- [Syslog export (operator guide)](../ops/syslog-export.md) — enabling, per-device source binding, smoke test
 - [SNMP trap reference](snmp-traps.md) — sibling feature; unified template vocabulary and catalog overlay semantics
 - [Web API](web-api.md) — control-plane REST surface
 - Epic [#76](https://github.com/labmonkeys-space/nl6/issues/76) for original design and implementation context; epic [#103](https://github.com/labmonkeys-space/nl6/issues/103) for per-type catalogs + unified vocabulary

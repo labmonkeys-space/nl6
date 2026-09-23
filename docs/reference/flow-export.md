@@ -445,11 +445,11 @@ curl -X POST http://localhost:8080/api/v1/devices \
 The `flow` block is **optional** on every request — omit it and the
 device doesn't export.
 
-**Duration fields** (`tick_interval`, `active_timeout`,
-`inactive_timeout`) require **Go duration strings** (`"5s"`, `"30s"`,
-`"1m30s"`). Integer seconds (`"tick_interval": 5`) are rejected with
-400 — a deliberate mismatch with the `-flow-tick-interval` / `-flow-*-timeout`
-CLI flags, which take integer seconds.
+**Duration fields** (`active_timeout`, `inactive_timeout`) require
+**Go duration strings** (`"30s"`, `"1m30s"`). Integer seconds
+(`"active_timeout": 30`) are rejected with 400 — a deliberate mismatch
+with the `-flow-*-timeout` CLI flags, which take integer seconds.
+A per-device `tick_interval` is rejected with 400 (nl6#445); the fleet-wide cadence is `-flow-tick-interval`.
 
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the
 full per-device schema.
@@ -589,24 +589,31 @@ Returns an array-of-collectors aggregated by `(collector, protocol)`:
 
 ```json
 {
-  "subsystem_active": true,
-  "collectors": [
-    {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "sent_bytes": 12123456, "sent_records": 243690},
-    {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "sent_bytes":  5560000, "sent_records":  62000}
-  ],
-  "devices_exporting": 70,
-  "last_template_send": "2026-04-23T10:35:00Z",
-  "nbar2_catalogs_by_type": {
-    "_universal": {"entries": 7, "source": "embedded"},
-    "cisco_ios":  {"entries": 8, "source": "file:resources/cisco_ios/nbar2.json"}
+  "success": true,
+  "message": "Success",
+  "data": {
+    "collectors": [
+      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "sent_bytes": 12123456, "sent_records": 243690, "send_failures": 0},
+      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "sent_bytes":  5560000, "sent_records":  62000, "send_failures": 2}
+    ],
+    "devices_exporting": 70,
+    "last_template_send": "2026-04-23T10:35:00Z",
+    "nbar2_catalogs_by_type": {
+      "_universal": {"entries": 7, "source": "embedded"},
+      "cisco_ios":  {"entries": 8, "source": "file:resources/cisco_ios/nbar2.json"}
+    }
   }
 }
 ```
 
+The body is the standard `{success, message, data}` envelope.
+`sent_packets`, `sent_bytes` and `sent_records` count datagrams that reached the kernel.
+A datagram the kernel refused is counted once in `send_failures` and in none of the `sent_*` fields.
+
 An NBAR2 device and a plain IPFIX device to the same collector share one `ipfix` row; the collector tells them apart by template id.
 `nbar2_catalogs_by_type` is absent when no catalog loaded, and each row carries `oversized` when the load-time dry render disabled any entry.
 
-`subsystem_active=false` with `collectors: []` means flow export never
-ran (the subsystem starts on-demand when the first device with a `flow`
-block attaches). See [Web API → Flow export status](web-api.md#flow-export-status)
+Flow status has no `subsystem_active` field.
+`collectors: []` means no device with a `flow` block has attached yet.
+See [Web API → Flow export status](web-api.md#flow-export-status)
 for the full field reference.

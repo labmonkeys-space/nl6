@@ -125,7 +125,7 @@ for a worked example.
   "data": {
     "subsystem_active": true,
     "collectors": [
-      {"collector": "192.168.1.10:4739", "protocol": "ipfix", "devices": 100, "sent_packets": 91215, "sent_bytes": 136823040, "sent_records": 2436900}
+      {"collector": "192.168.1.10:4739", "protocol": "ipfix", "devices": 100, "sent_packets": 91215, "sent_bytes": 136823040, "sent_records": 2436900, "send_failures": 0}
     ],
     "devices_exporting": 100,
     "last_template_send": "2026-04-23T10:35:00Z"
@@ -135,8 +135,10 @@ for a worked example.
 
 **Trap / syslog status** are symmetric — both retired their scalar
 fields (`enabled`, `mode`, `collector`, `community`, `sent`,
-`informs_*`, `format`, `send_failures`) in favour of the
+`informs_*`, `format`) in favour of the
 array-of-collectors form with a top-level `subsystem_active` bool.
+`send_failures` is not retired: it moved onto each collector record, for flow as well.
+New fields since then: trap status carries top-level `snmp_version` and, under v3, a `snmpv3` object; each syslog record carries `transport`.
 
 **Dashboard / CI / probe migration:**
 
@@ -184,10 +186,10 @@ Programmatic callers of the manager (tests, embedded-use cases):
   Phase-5 review D1 deferred the lock-discipline tightening; don't
   introduce a REST "restart subsystem" endpoint without addressing it
   first.
-- **Per-device `tick_interval` / `interval` are validated but not
-  honored by the scheduler today.** A single warning is logged per
-  subsystem lifecycle if any attached device's value differs from the
-  simulator-wide mean. Design debt tracked against phases 3-5.
+- **Per-device `tick_interval` / `interval` are rejected with 400** (nl6#445).
+  The cadence is simulator-wide: `-flow-tick-interval`, `-trap-interval`, `-syslog-interval`.
+  The device read-back reports the values in force under `effective_intervals`.
+  To silence a fleet use `-fidelity`, not a long interval.
 
 ## References
 

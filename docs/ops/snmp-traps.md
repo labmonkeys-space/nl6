@@ -23,7 +23,7 @@ it; every other `-trap-*` flag has a sensible default for common trap
 collectors.
 
 ```bash
-# 100 devices firing a random catalog trap every ~30s (Poisson-distributed)
+# 100 devices firing a random scheduled catalog trap every ~30s (Poisson-distributed)
 sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -trap-collector 192.168.1.10:162
 
@@ -54,7 +54,9 @@ sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
 simulator uses each device's per-device UDP socket to demultiplex ack
 traffic back to the originating device — there is no single shared
 request-id table. If you explicitly set `-trap-source-per-device=false`
-while in INFORM mode, startup fails with a clear error.
+while in INFORM mode, startup succeeds but no device attaches:
+each auto-start device fails its trap attach and its `traps` block is cleared.
+A REST `traps` block with `"mode": "inform"` is refused with 400.
 
 ## Pending informs and retries
 
@@ -130,9 +132,13 @@ sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
 ```
 
 You should see lines arriving every few seconds tagged with the simulated
-device IP as the sender and an OID from the universal catalog
-(`linkDown` / `linkUp` dominate; `coldStart` / `warmStart` /
-`authenticationFailure` appear less often).
+device IP as the sender and an OID from the universal catalog.
+Only the untagged entries are scheduled: `authenticationFailure` (weight 10),
+`coldStart` (5) and `warmStart` (5).
+`linkDown` / `linkUp` carry a `role` and never fire from the scheduler.
+They fire on an interface oper-status transition.
+To see them, add `-if-flap-scenario typical` or
+`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`.
 
 ### SNMPv3 notifications
 
@@ -188,6 +194,8 @@ overlay — see
 [SNMP trap reference → Per-type catalog overlays](../reference/snmp-traps.md#per-type-catalog-overlays).
 `cisco_ios` devices fire from 12 merged entries (universal 5 + 7 Cisco),
 `juniper_mx240` devices fire from a comparable 12-entry Juniper set.
+`ciena_waveserver5` adds 4 role-tagged optical pre-FEC alarm entries
+(`opticalPreFecSdRaise` / `Clear`, `opticalPreFecSfRaise` / `Clear`).
 
 If you need it sooner on demand:
 
@@ -205,13 +213,13 @@ for the full request / response shape.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `enabled: false` in `/api/v1/traps/status` | `-trap-collector` not set | Pass the flag; verify port |
-| `enabled: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
+| `subsystem_active: true` with `collectors: []` in `/api/v1/traps/status` | No device has a `traps` block | Pass `-trap-collector` for the auto-start batch, or add a `traps` block to the REST request |
+| `subsystem_active: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
 | Traps sent but collector sees nothing | FORWARD rule missing or `rp_filter` blocking | See [Flow export → Flow troubleshooting](flow-export.md#flow-troubleshooting) — the netns diagnostic steps apply verbatim |
 | Source IP on the wire is the host, not the device | Per-device bind failed for that device | Check simulator logs for `per-device bind failed`. TRAP mode falls back to shared socket with a warning; INFORM mode refuses to start |
 | `informs_failed` climbing, `informs_acked` flat | Collector not ack'ing (down, firewall, misconfigured) | Verify collector ingest; relax `rp_filter`; check collector logs |
 | `informs_dropped` climbing | Per-device pending cap (100) exhausted — collector unreachable long enough that old entries are being aged out | Collector-side issue; fix there. Simulator is doing the right thing |
-| Startup error about INFORM + per-device binding | `-trap-mode inform` with `-trap-source-per-device=false` | Remove the `-trap-source-per-device` override; INFORM requires per-device sockets |
+| Every device attach fails with `INFORM mode requires -trap-source-per-device=true`, or a REST `traps` block is refused 400 | `-trap-mode inform` with `-trap-source-per-device=false` | Remove the `-trap-source-per-device` override; INFORM requires per-device sockets |
 | Startup error naming `-trap-snmp-version` and `-trap-mode` together | `inform` asked for under `v1` or `v3` | SNMPv1 defines no InformRequest; an SNMPv3 one is receiver-authoritative and needs engine discovery nl6 does not implement. Use `-trap-mode trap`, or `v2c` |
 | `WARNING: -trap-snmpv3-* set but IGNORED` at startup | The credentials were passed without `-trap-snmp-version=v3` | Add it. The fleet is otherwise emitting **unauthenticated** v2c |
 | v3 fleet, `sent` climbing, `snmptrapd` logs nothing | The receiver's `createUser` engine ID does not match the device's, or a stale user survived in `SNMP_PERSISTENT_DIR` | Take the engine ID from `snmpv3.engine_ids_by_device` in `/api/v1/traps/status`; clear the persistent dir and restart the receiver |
@@ -225,6 +233,6 @@ conflicts) see [Troubleshooting](troubleshooting.md).
 
 - [SNMP trap reference](../reference/snmp-traps.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
 - [CLI flags → SNMP trap / INFORM export flags](../reference/cli-flags.md#snmp-trap--inform-export-flags)
-- [UDP syslog export (operator guide)](syslog-export.md) — sibling feature; shares overlay loader and template vocabulary
+- [Syslog export (operator guide)](syslog-export.md) — sibling feature; shares overlay loader and template vocabulary
 - [Flow export (operator guide)](flow-export.md) — shared `nl6sim` namespace plumbing
 - [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)

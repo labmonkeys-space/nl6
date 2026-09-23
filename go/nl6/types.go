@@ -907,12 +907,13 @@ type DeviceInfo struct {
 	Traps       *DeviceTrapConfig        `json:"traps,omitempty"`
 	Syslog      *DeviceSyslogConfig      `json:"syslog,omitempty"`
 	GnmiDialout *DeviceGnmiDialoutConfig `json:"gnmi_dialout,omitempty"`
-	// EffectiveIntervals reports the cadences the schedulers are configured
-	// with, for the subsystems this device participates in. Present only when
-	// the device has at least one export config. It exists because the
-	// per-device interval fields above are accepted, stored, and NOT honored
-	// (nl6#445): reporting only what was asked for would let the API confirm a
-	// wrong belief.
+	// EffectiveIntervals reports the scheduler cadences actually in force
+	// (-flow-tick-interval, -trap-interval, -syslog-interval) for the
+	// subsystems this device participates in. Present only when the device
+	// has at least one export config. The per-device interval fields on the
+	// blocks above are rejected with 400 by Validate (nl6#445), so nothing a
+	// caller sets there can disagree with what is reported here; the field
+	// exists so the cadence is readable from the device at all.
 	EffectiveIntervals *effectiveIntervals `json:"effective_intervals,omitempty"`
 	// IfErrorScenario surfaces the per-device counter scenario set at
 	// creation time. Omitted from JSON when "" so clean-default devices
