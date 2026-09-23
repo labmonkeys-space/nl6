@@ -84,7 +84,7 @@ A push the SDK refuses to start answers `500` with the state attached (`enabled:
 Every error the SDK reports (a failed upload, a refused CPU collector, a full upload queue) shows on `GET` as `sdk_errors`, a count for the current push, and `last_error`.
 It is logged once per push, on the first occurrence: `[profiling] push to ... failing`.
 
-### Switching off
+### Switch profiling off
 
 Off first asks the SDK to flush (a final CPU and heap snapshot, then the queued uploads) and then stops it; `Profiler.Stop` alone uploads nothing.
 The flush is bounded by two upload timeouts (20 s).
@@ -133,15 +133,14 @@ What is pinned **behaviourally** (read back from the goroutine profile or from i
 Not pinned behaviourally: the syslog TCP reconnect loop and `startLocked` on the non-scheduled path (the same helper, covered by the helper's own test).
 The interop test proves only that a label set through the helper reaches Pyroscope and is filterable, over both the push and the Alloy scrape.
 
-**What "off by default pays nothing" means.**
-The labels are set whether or not profiling is on.
+**What "off by default pays nothing" means.** The labels are set whether or not profiling is on.
 A goroutine label is a pointer swap set once per long-lived goroutine, from a context built once per subsystem; `pprof.Do` on a shared scheduler goroutine allocates one small map per fire.
 The delta on a syslog-fire benchmark (CI runner class, `main` versus this branch): **+3 allocs, +104 B, about +6% wall time** per fire (23 allocs / 2662 B / 8835 ns on `main` against 26 / 2766 / 9428 ns).
 Re-labelling live goroutines on toggle would need every long-lived loop to poll the gate, which costs more than the label, so that cost is paid unconditionally and this sentence is the disclosure.
 Everything else, the SDK, its goroutines, the forced GC, the upload connection, and the pull handlers, exists only while the gate is open.
 The feature opens no listener of its own by construction: the two files that implement it never call anything that opens a socket, and a test scans them for that.
 
-## Alloy scrape
+## Scrape with Alloy
 
 [`examples/pyroscope/alloy-scrape.alloy`](https://github.com/labmonkeys-space/nl6/tree/main/examples/pyroscope) is Alloy's unmodified default `pyroscope.scrape` profiling block plus the three `godeltaprof` endpoints.
 Simplified here (the file reads its target and the Pyroscope URL from `NL6_SCRAPE_TARGET` and `PYROSCOPE_URL`, defaulting to `127.0.0.1:18080` and `http://127.0.0.1:4040`, and labels the scraped profiles `service_name=nl6-interop-scrape`):
@@ -172,11 +171,11 @@ In production, disable them when the delta variants are on, so each profile is s
     profile.godeltaprof_block  { enabled = true }
   }
 ```
+
 `make test-interop-pyroscope` runs this exact file against real `grafana/pyroscope` and `grafana/alloy` containers and asserts, through Pyroscope's query API, that the pushed CPU and `alloc_space` profiles and the scraped `process_cpu` and `goroutine` series arrive, that the `subsystem` label filters on both the pushed and the scraped service, and that a `service_name` nothing pushed under returns nothing (the control without which the other rows prove reachability, not ingestion).
 It is a CI gate.
 
-**Do pprof labels survive an Alloy scrape?**
-Yes.
+**Do pprof labels survive an Alloy scrape?** Yes.
 A pprof label is a sample label inside the pprof body, so a scrape carries it exactly as a push does; the interop test's second row runs a labelled CPU burn while Alloy scrapes and requires `{service_name="nl6-interop-scrape",subsystem="interop-probe"}` to return ticks and a bogus label to return none.
 
 ## The forced-GC default, measured

@@ -3,35 +3,17 @@
 nl6 emits syslog messages in either **RFC 5424** (modern, structured) or **RFC 3164** (legacy BSD) format, over UDP, TCP (RFC 6587) or TLS (RFC 5425).
 Format and transport are per device.
 The two encoders sit behind a shared `SyslogEncoder` interface; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
-This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape. For enabling the feature, CLI
-flags, and troubleshooting see
-[Syslog export (operator guide)](../ops/syslog-export.md) and
-[CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
+This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape.
+For enabling the feature, CLI flags, and troubleshooting see [Syslog export (operator guide)](../ops/syslog-export.md) and [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
 
 ## Architecture
 
-- **Central scheduler goroutine** (`syslog_scheduler.go`) owns a
-  min-heap of `(nextFire, deviceIP)` entries. Single goroutine
-  regardless of device count — identical design to
-  [trap export](snmp-traps.md#architecture).
-- **Per-device `SyslogExporter`** (`syslog_exporter.go`) owns the
-  device's UDP socket and stats. Class 1 device-context fields
-  (`SysName`, `Model`, `Serial`, `ChassisID`) are captured at
-  exporter construction — stable for the device's lifetime.
-- **Shared `SyslogEncoder` interface** (`syslog_wire.go`) with two
-  implementations: `RFC5424Encoder` and `RFC3164Encoder`. Both
-  produce a single UDP datagram per message.
-- **Embedded catalog** loaded via `go:embed` from
-  `resources/_common/syslog.json` at startup. `-syslog-catalog <path>`
-  replaces the entire catalog surface (universal + per-type overlays)
-  with a single user-supplied JSON file.
-- **Per-device-type catalog overlays** loaded from
-  `resources/<slug>/syslog.json` when present. Each device of type
-  `<slug>` fires from the merged catalog (universal + per-type) —
-  see [Per-type catalog overlays](#per-type-catalog-overlays).
-- **Global rate limiter** (`golang.org/x/time/rate`) gates scheduled
-  fires. On-demand fires via the HTTP endpoint **bypass** the cap —
-  they're for fault injection, not load shaping.
+- **Central scheduler goroutine** (`syslog_scheduler.go`) owns a min-heap of `(nextFire, deviceIP)` entries. Single goroutine regardless of device count, the same design as [trap export](snmp-traps.md#architecture).
+- **Per-device `SyslogExporter`** (`syslog_exporter.go`) owns the device's UDP socket and stats. Class 1 device-context fields (`SysName`, `Model`, `Serial`, `ChassisID`) are captured at exporter construction and stay stable for the device's lifetime.
+- **Shared `SyslogEncoder` interface** (`syslog_wire.go`) with two implementations: `RFC5424Encoder` and `RFC3164Encoder`. Both produce a single UDP datagram per message.
+- **Embedded catalog** loaded via `go:embed` from `resources/_common/syslog.json` at startup. `-syslog-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single user-supplied JSON file.
+- **Per-device-type catalog overlays** loaded from `resources/<slug>/syslog.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
+- **Global rate limiter** (`golang.org/x/time/rate`) gates scheduled fires. On-demand fires via the HTTP endpoint **bypass** the cap. They're for fault injection, not load shaping.
 
 ## Scope
 
@@ -57,20 +39,16 @@ They are deliberately not symmetric with UDP: a TCP or TLS device owns one conne
 | `[SD-PARAM]` | One structured-data element with the constant SD-ID `meta@32473`, carrying every key of the catalog's `structuredData` map; NILVALUE when the map is empty | `[meta@32473 ifIndex="3" ifName="ge-0/0/3"]` |
 | `MSG` | Catalog entry's `template` rendered | `Interface ge-0/0/3 changed state to down` |
 
-All header tokens pass through sanitisation per RFC 5424 §6: spaces
-become hyphens, non-ASCII bytes become `_`, lengths are capped. The
-dry-render check at catalog load rejects any entry whose worst-case
-expansion exceeds 1400 bytes.
+All header tokens pass through sanitisation per RFC 5424 §6: spaces become hyphens, non-ASCII bytes become `_`, lengths are capped.
+The dry-render check at catalog load rejects any entry whose worst-case expansion exceeds 1400 bytes.
 
 ### Structured-data grammar
 
-Each key in the catalog's `structuredData` map becomes one SD-PARAM
-inside a single `[meta@32473 ...]` element. The SD-ID is the constant
-`meta@32473` (RFC 5612's documentation PEN), not the entry's `appName`.
-Keys must match the RFC 5424 §6.3.3 SD-NAME grammar
-(PRINTUSASCII, no space / `=` / `]` / `"`, 1..32 chars). Values are
-rendered through the standard template vocabulary. SD-PARAM value
-escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
+Each key in the catalog's `structuredData` map becomes one SD-PARAM inside a single `[meta@32473 ...]` element.
+The SD-ID is the constant `meta@32473` (RFC 5612's documentation PEN), not the entry's `appName`.
+Keys must match the RFC 5424 §6.3.3 SD-NAME grammar (PRINTUSASCII, no space / `=` / `]` / `"`, 1..32 chars).
+Values are rendered through the standard template vocabulary.
+SD-PARAM value escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
 
 ## RFC 3164 wire format
 
@@ -86,10 +64,8 @@ escapes (`"` → `\"`, `\` → `\\`, `]` → `\]`) are applied automatically.
 | `TAG` | Catalog entry's `appName`, sanitised and truncated to 32 characters (RFC 3164 §5.3). No `[pid]` is emitted | `IFMGR` |
 | `MSG` | Catalog entry's `template` rendered | `Interface ge-0/0/3 changed state to down` |
 
-RFC 3164 has **no structured-data support**; the catalog's
-`structuredData` and `msgId` fields are silently dropped for this
-format. If a catalog entry depends on structured data for
-correlation, stay on 5424.
+RFC 3164 has **no structured-data support**; the catalog's `structuredData` and `msgId` fields are silently dropped for this format.
+If a catalog entry depends on structured data for correlation, stay on 5424.
 
 ## PRI calculation
 
@@ -128,31 +104,21 @@ Range 0..191. No leading zeros on the wire.
 | `info` | 6 | |
 | `debug` | 7 | |
 
-The catalog loader accepts either the canonical name or the integer
-value; out-of-range integers or unknown names are rejected.
+The catalog loader accepts either the canonical name or the integer value; out-of-range integers or unknown names are rejected.
 
 ## HOSTNAME derivation
 
 Resolved at fire time, in priority order:
 
-1. **Catalog `hostname` template** — if the entry defines a non-empty
-   `hostname` field, render it through the template vocabulary and
-   use the result.
-2. **Device's `sysName.0`** — captured at device construction from
-   the SNMP OID table. Used when the catalog entry has no `hostname`
-   template and the device's sysName is non-empty.
-3. **Device's IPv4** — dotted-quad fallback when sysName is also
-   empty.
+1. **Catalog `hostname` template.** If the entry defines a non-empty `hostname` field, render it through the template vocabulary and use the result.
+2. **Device's `sysName.0`.** Captured at device construction from the SNMP OID table. Used when the catalog entry has no `hostname` template and the device's sysName is non-empty.
+3. **Device's IPv4.** Dotted-quad fallback when sysName is also empty.
 
-Whatever branch fires, the result is passed through hostname
-sanitisation: spaces → hyphens (mandated by both RFCs), non-ASCII
-and control chars → `_`.
+Whatever branch fires, the result is passed through hostname sanitisation: spaces → hyphens (mandated by both RFCs), non-ASCII and control chars → `_`.
 
 ## Catalog JSON schema
 
-The embedded universal catalog at
-`go/nl6/resources/_common/syslog.json` is the authoritative
-example:
+The embedded universal catalog at `go/nl6/resources/_common/syslog.json` is the authoritative example:
 
 ```json
 {
@@ -215,10 +181,9 @@ The scheduler draws from the four untagged entries only, so the scheduled weight
 
 ### Template vocabulary
 
-Both the `template` body, `hostname` override, and every value in
-`structuredData` are evaluated as Go `text/template` strings per fire.
-The vocabulary is **unified with the trap subsystem** — the same
-eleven fields work on both sides:
+Both the `template` body, `hostname` override, and every value in `structuredData` are evaluated as Go `text/template` strings per fire.
+The vocabulary is **unified with the trap subsystem**.
+The same eleven fields work on both sides:
 
 | Field | Evaluation |
 |-------|-----------|
@@ -235,27 +200,20 @@ eleven fields work on both sides:
 | `{{.Detail}}` | Per-fire free-form measurement suffix. Empty unless the firing site supplies it (the optical alarms carry the triggering OSNR this way) |
 
 References to any other field are rejected at catalog load.
-Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`,
-`RuleName`, `NeighborRouterID`) are explicitly unsupported — they're
-tracked as follow-up work so syslog entries that semantically
-require them (sshd auth, BGP/OSPF events, firewall rules) are either
-shipped bland or deferred.
+Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`, `RuleName`, `NeighborRouterID`) are explicitly unsupported.
+They're tracked as follow-up work so syslog entries that semantically require them (sshd auth, BGP/OSPF events, firewall rules) are either shipped bland or deferred.
 
 ## Per-type catalog overlays
 
-Devices can ship vendor-flavoured syslog content via per-type JSON
-files at `resources/<slug>/syslog.json`. When a per-type file exists,
-the simulator merges it with the universal catalog using **name-based
-overlay semantics**:
+Devices can ship vendor-flavoured syslog content via per-type JSON files at `resources/<slug>/syslog.json`.
+When a per-type file exists, the simulator merges it with the universal catalog using **name-based overlay semantics**:
 
 1. Entries whose names are unique to the per-type file are **added**.
-2. Entries whose names match a universal entry **override** the
-   universal entry for devices of that type.
+2. Entries whose names match a universal entry **override** the universal entry for devices of that type.
 3. Universal entries with no matching per-type name **carry through**.
 
-Set `"extends": false` at the top of the per-type file for a pure
-replacement (no universal entries carry through for that type). The
-default is `"extends": true`.
+Set `"extends": false` at the top of the per-type file for a pure replacement (no universal entries carry through for that type).
+The default is `"extends": true`.
 
 ### Shipped vendor catalogs
 
@@ -265,24 +223,21 @@ default is `"extends": true`.
 | `juniper_mx240` | 7 Junos-format entries (merged total 13) | `juniper-snmp-link-up/down` (`SNMP_TRAP_LINK_*`), `juniper-mib2d-encaps-mismatch` (`MIB2D_IFD_IFL_ENCAPS_MISMATCH`), `juniper-chassisd-temp-critical` (`CHASSISD_FRU_TEMP_CRITICAL`), `juniper-chassisd-eeprom-fail` (uses `{{.ChassisID}}` / `{{.Serial}}`), `juniper-license-expired`, `juniper-ui-commit-complete` |
 | `ciena_waveserver5` | 4 optical entries (merged total 10) | `optical-prefec-sd-raise` / `-clear`, `optical-prefec-sf-raise` / `-clear`. Fired by the optical pre-FEC threshold evaluator; not scheduled. |
 
-Message bodies match the vendor's canonical shape verbatim so
-collector-side pattern matchers tuned for Cisco / Juniper strings
-fire correctly. Other cisco_* slugs (`cisco_catalyst_9500`,
-`cisco_crs_x`, etc.), `juniper_mx960`, Arista, Linux, and Palo Alto
-fall back to the universal catalog in this epic — their realistic
-content depends on Class 2 random fields deferred to a follow-up.
+Message bodies match the vendor's canonical shape verbatim so collector-side pattern matchers tuned for Cisco / Juniper strings fire correctly.
+Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, etc.), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog in this epic.
+Their realistic content depends on Class 2 random fields deferred to a follow-up.
 
-Family-catalog concept (one catalog shared by all `cisco_*` slugs,
-one by all `juniper_*`) is also a follow-up refactor.
+Family-catalog concept (one catalog shared by all `cisco_*` slugs, one by all `juniper_*`) is also a follow-up refactor.
 
 ## Starting syslog export
 
-Syslog export is opt-in per device. There are two ways to configure it:
+Syslog export is opt-in per device.
+There are two ways to configure it:
 
 ### 1. CLI seed (auto-start batch)
 
-The `-syslog-*` flags seed auto-created devices. Every device in the
-auto-start batch gets the same collector, format, and interval.
+The `-syslog-*` flags seed auto-created devices.
+Every device in the auto-start batch gets the same collector, format, and interval.
 
 ```bash
 # RFC 5424 → 192.168.1.10:514, 100 auto-created devices
@@ -290,7 +245,7 @@ sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 100 \
   -syslog-collector 192.168.1.10:514
 
-# RFC 3164 legacy BSD format for downstream parsers that don't groket 5424
+# RFC 3164 legacy BSD format for downstream parsers that don't grok 5424
 sudo ./nl6 \
   -auto-start-ip 10.0.0.1 -auto-count 50 \
   -syslog-collector 192.168.1.10:514 \
@@ -300,9 +255,7 @@ sudo ./nl6 \
 ### 2. REST body (per-device)
 
 `POST /api/v1/devices` accepts an optional `syslog` block per request.
-Different batches can target different collectors or mix formats
-(5424 and 3164 streams never interleave on the same socket — the
-shared-socket pool is keyed by `(collector, format)`).
+Different batches can target different collectors or mix formats (5424 and 3164 streams never interleave on the same socket, because the shared-socket pool is keyed by `(collector, format)`).
 
 ```bash
 # A: 50 devices emitting 5424 to collector A
@@ -331,28 +284,26 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-> **Note:** a per-device `interval` in the `syslog` block is **rejected with 400** (nl6#445). Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
+A per-device `interval` in the `syslog` block is **rejected with 400** (nl6#445).
+Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`.
+To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
-`/api/v1/syslog/status` reports both batches as separate records keyed
-by `(collector, format)`.
+`/api/v1/syslog/status` reports both batches as separate records keyed by `(collector, format)`.
 
-The `syslog` block is **optional** on every request — omit it and the
-device doesn't emit syslog. See
-[Web API → POST /api/v1/devices](web-api.md#create-devices) for the full
-per-device schema.
+The `syslog` block is **optional** on every request.
+Omit it and the device doesn't emit syslog.
+See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
 
 The `-syslog-interval` CLI flag takes a Go duration string (`10s`, `1m30s`), not integer seconds.
 
 ## TCP transport (RFC 6587)
 
-Syslog is UDP by default. Setting `-syslog-transport tcp`, or a per-device
-`"transport": "tcp"`, carries the same messages over a per-device TCP
-connection instead.
+Syslog is UDP by default.
+Setting `-syslog-transport tcp`, or a per-device `"transport": "tcp"`, carries the same messages over a per-device TCP connection instead.
 
-The message does not change. Catalog, template vocabulary, wire format and the
-resolved bytes are properties of the message; the transport only decides how
-those bytes reach the collector. Moving a deployment between transports gives
-you the same bytes, framed differently.
+The message does not change.
+Catalog, template vocabulary, wire format and the resolved bytes are properties of the message; the transport only decides how those bytes reach the collector.
+Moving a deployment between transports gives you the same bytes, framed differently.
 
 ### Framing
 
@@ -361,73 +312,55 @@ you the same bytes, framed differently.
 | `octet-counting` (default) | `<byteCount> SP <msg>` | RFC 6587 §3.4.1. What rsyslog emits, and unambiguous for any payload. |
 | `non-transparent` | `<msg> LF` | RFC 6587 §3.4.2. Some Cisco platforms speak only this. |
 
-Octet-counting is the default because it is safe by construction. LF framing is
-only unambiguous because the message body cannot contain a bare line feed, and
-that guarantee comes from a control-byte replacement added to prevent injection
-of a forged `<PRI>` line. It holds today, but it is a precondition, and the
-default should not depend on one.
+Octet-counting is the default because it is safe by construction.
+LF framing is only unambiguous because the message body cannot contain a bare line feed, and that guarantee comes from a control-byte replacement added to prevent injection of a forged `<PRI>` line.
+It holds today, but it is a precondition, and the default should not depend on one.
 
 Setting `framing` while the transport is `udp` is **rejected**, not ignored.
 
 ### TCP refuses where UDP degrades
 
-Under UDP a device that cannot bind its own socket falls back to a shared one,
-losing source-address attribution and nothing else. A datagram socket is
-stateless, so one socket can serve any number of devices.
+Under UDP a device that cannot bind its own socket falls back to a shared one, losing source-address attribution and nothing else.
+A datagram socket is stateless, so one socket can serve any number of devices.
 
-There is no equivalent for TCP. A shared connection would multiplex several
-devices into **one framed byte stream carrying no field to demultiplex on**, so
-the collector would see a single client and per-device identity would be
-destroyed rather than degraded.
+There is no equivalent for TCP.
+A shared connection would multiplex several devices into **one framed byte stream carrying no field to demultiplex on**, so the collector would see a single client and per-device identity would be destroyed rather than degraded.
 
 Two consequences:
 
 - A device whose connection cannot be established does not attach.
-- `-syslog-source-per-device=false` makes a TCP attach **fail**, because the
-  fallback it selects does not exist for a stream transport.
+- `-syslog-source-per-device=false` makes a TCP attach **fail**, because the fallback it selects does not exist for a stream transport.
 
-The dial itself is asynchronous: attach succeeds once the reconnect loop is
-running. Requiring the collector to be up at attach time would make fleet
-startup depend on collector availability, which is the condition the reconnect
-loop exists to ride out.
+The dial itself is asynchronous: attach succeeds once the reconnect loop is running.
+Requiring the collector to be up at attach time would make fleet startup depend on collector availability, which is the condition the reconnect loop exists to ride out.
 
 ### Connection handling
 
-One connection per device, dialled from inside the device's network namespace
-so the source address is the device's own. Reconnect uses capped backoff, and
-the backoff only resets once a connection has survived long enough to count as
-working — a collector that accepts and immediately closes (an ACL reject) backs
-off instead of being re-dialled every second by every device.
+One connection per device, dialled from inside the device's network namespace so the source address is the device's own.
+Reconnect uses capped backoff, and the backoff only resets once a connection has survived long enough to count as working.
+A collector that accepts and immediately closes (an ACL reject) backs off instead of being re-dialled every second by every device.
 
-TCP keepalives are on. Without them a collector that dies **without closing**
-(host crash, network partition) is undetectable on an idle connection: the read
-that would notice never returns, and the device is silently gone.
+TCP keepalives are on.
+Without them a collector that dies **without closing** (host crash, network partition) is undetectable on an idle connection: the read that would notice never returns, and the device is silently gone.
 
 ### What `sent` means under TCP
 
-`GET /api/v1/syslog/status` rows carry a `transport` field, so TCP and UDP
-devices sending the same format to the same collector do not merge into one row.
+`GET /api/v1/syslog/status` rows carry a `transport` field, so TCP and UDP devices sending the same format to the same collector do not merge into one row.
 
-On the datagram path `sent` approximates "on the wire". **On TCP it means
-"handed to the kernel"**, and under load those differ by however deep the send
-buffer is.
+On the datagram path `sent` approximates "on the wire".
+**On TCP it means "handed to the kernel"**, and under load those differ by however deep the send buffer is.
 
 The per-connection send buffer is capped deliberately rather than inherited.
-Linux auto-tunes it to roughly 4 MiB against a collector that has stopped
-reading; at 30,000 devices that would be ~117 GiB of kernel buffer, so the
-default is the difference between the feature existing at fleet scale and not.
-The cap also means a stalled collector is noticed in seconds rather than
-minutes.
+Linux auto-tunes it to roughly 4 MiB against a collector that has stopped reading; at 30,000 devices that would be ~117 GiB of kernel buffer, so the default is the difference between the feature existing at fleet scale and not.
+The cap also means a stalled collector is noticed in seconds rather than minutes.
 
-A write that cannot complete within a short bound is dropped and the connection
-replaced. Blocking is not an option: the syslog scheduler fires inline for the
-whole fleet, so one stalled collector would stop every device.
+A write that cannot complete within a short bound is dropped and the connection replaced.
+Blocking is not an option: the syslog scheduler fires inline for the whole fleet, so one stalled collector would stop every device.
 
 ### TLS (RFC 5425)
 
-`transport: "tls"` carries the same stream inside a TLS session. Everything the
-plaintext stream transport does is unchanged — per-device connection,
-reconnection, keepalives, the write bound, the refusal to share a connection.
+`transport: "tls"` carries the same stream inside a TLS session.
+Everything the plaintext stream transport does is unchanged: per-device connection, reconnection, keepalives, the write bound, the refusal to share a connection.
 
 Three things differ:
 
@@ -437,19 +370,15 @@ Three things differ:
 | **default port** | **6514** where the other transports use 514 (RFC 5425 §4.1). |
 | **verification** | the collector's certificate is verified. |
 
-:::warning[A bare hostname changes port when you change transport]
-
-`"collector": "logs.example"` means `logs.example:514` under `udp` and `tcp`,
-and `logs.example:6514` under `tls`. That is what the RFC assigns, and it means
-switching a portless collector to TLS silently moves which port it talks to.
+**A bare hostname changes port when you change transport.**
+`"collector": "logs.example"` means `logs.example:514` under `udp` and `tcp`, and `logs.example:6514` under `tls`.
+That is what the RFC assigns, and it means switching a portless collector to TLS silently moves which port it talks to.
 Give the collector an explicit port if you do not want that.
-
-:::
 
 #### What is verified, and by whom
 
-nl6 is the **client** here. It verifies the *collector*; it presents no
-certificate of its own.
+nl6 is the **client** here.
+It verifies the *collector*; it presents no certificate of its own.
 
 ```
         nl6 (client)                     collector (server)
@@ -457,79 +386,59 @@ certificate of its own.
    verifies the collector ◀──── presents its server cert
 ```
 
-This is worth stating because it is the opposite of what the rest of the
-simulator does with TLS: the HTTPS API and the gNMI dial-in listener present nl6's shared
-certificate as *servers*. That certificate is irrelevant on this path — it
-answers "who is connecting", which nothing here asks.
+This is worth stating because it is the opposite of what the rest of the simulator does with TLS: the HTTPS API and the gNMI dial-in listener present nl6's shared certificate as *servers*.
+That certificate is irrelevant on this path.
+It answers "who is connecting", which nothing here asks.
 
 | field | effect |
 |---|---|
 | `tls.ca_pem` | PEM bundle used to verify the collector, **inline** |
 | *(omitted)* | verify against the host's root store |
 | `tls.insecure_skip_verify` | disable verification (development only) |
-| `tls.mtls` | **not implemented** — rejected at configuration rather than ignored |
+| `tls.mtls` | **not implemented**, rejected at configuration rather than ignored |
 
-The CA is inline PEM rather than a file path, and that is deliberate. A path in
-the per-device config is settable over REST, which would let any API caller name
-a file for the simulator to open — an arbitrary-file-read primitive, where even
-the error message distinguishes "could not read" from "no certificates here".
-Certificate authorities are small and pasteable, so a path bought nothing worth
-that.
+The CA is inline PEM rather than a file path, and that is deliberate.
+A path in the per-device config is settable over REST, which would let any API caller name a file for the simulator to open.
+That is an arbitrary-file-read primitive, where even the error message distinguishes "could not read" from "no certificates here".
+Certificate authorities are small and pasteable, so a path bought nothing worth that.
 
-A path survives on the command line, where the operator who started the process
-names it:
+A path survives on the command line, where the operator who started the process names it:
 
 ```sh
 nl6 -syslog-transport tls -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
 ```
 
-That file is read once at startup and its contents stamped into the seed config,
-so the trusted read happens in exactly one place.
+That file is read once at startup and its contents stamped into the seed config, so the trusted read happens in exactly one place.
 
-Whatever the source, **only `CERTIFICATE` blocks are kept**. A bundle that also
-carries a private key has the key discarded rather than stored, because this
-config is echoed back by `GET /api/v1/devices`. `ca_pem` is capped at 64 KiB.
+Whatever the source, **only `CERTIFICATE` blocks are kept**.
+A bundle that also carries a private key has the key discarded rather than stored, because this config is echoed back by `GET /api/v1/devices`.
+`ca_pem` is capped at 64 KiB.
 
-Verification cannot be lost by omission: with no `ca_pem` and no explicit
-`insecure_skip_verify`, a collector the host does not trust fails to connect.
+Verification cannot be lost by omission: with no `ca_pem` and no explicit `insecure_skip_verify`, a collector the host does not trust fails to connect.
 
 TLS 1.2 is the floor and is not configurable.
 
 #### Memory at fleet scale
 
-The socket send-buffer cap applies as it does for plaintext, and is applied to
-the underlying socket *before* the TLS wrap — after wrapping, the connection is
-no longer a raw TCP socket and the setting is unreachable.
+The socket send-buffer cap applies as it does for plaintext, and is applied to the underlying socket *before* the TLS wrap.
+After wrapping, the connection is no longer a raw TCP socket and the setting is unreachable.
 
-TLS adds record buffers **per connection**, on top of the socket buffer. So the
-per-device cost is higher than the plaintext figure, and a fleet-scale estimate
-should not simply reuse it.
+TLS adds record buffers **per connection**, on top of the socket buffer.
+So the per-device cost is higher than the plaintext figure, and a fleet-scale estimate should not reuse it.
 
 ### Collector-side caveats
 
-- `rp_filter` may need relaxing (`net.ipv4.conf.*.rp_filter=0` or `2`) to accept
-  connections whose source addresses are in the simulated range — the same
-  caveat already documented for flow, trap and UDP syslog.
-- A fleet means **one connection per device**. A collector accepting 30,000
-  concurrent connections from 30,000 distinct source addresses is a different
-  proposition from receiving datagrams, and file-descriptor and accept-backlog
-  limits are usually what bites first.
-- TLS moves the same caveats to port 6514, and adds handshake cost per
-  reconnect — a collector that bounces makes a fleet renegotiate, not just
-  reconnect.
-- **OpenNMS's classic Syslogd is UDP-only** — `syslogd-configuration.xml` has no
-  transport attribute. The documented pattern is to terminate TCP in rsyslog or
-  syslog-ng and relay onward. Measured, rsyslog's `imtcp` absorbs roughly
-  262,000 frames/s, comfortably above what a simulated fleet produces, so a
-  realistic deployment does not approach backpressure.
+- `rp_filter` may need relaxing (`net.ipv4.conf.*.rp_filter=0` or `2`) to accept connections whose source addresses are in the simulated range. This is the same caveat already documented for flow, trap and UDP syslog.
+- A fleet means **one connection per device**. A collector accepting 30,000 concurrent connections from 30,000 distinct source addresses is a different proposition from receiving datagrams, and file-descriptor and accept-backlog limits are usually what bites first.
+- TLS moves the same caveats to port 6514, and adds handshake cost per reconnect. A collector that bounces makes a fleet renegotiate, not only reconnect.
+- **OpenNMS's classic Syslogd is UDP-only.** `syslogd-configuration.xml` has no transport attribute. The documented pattern is to terminate TCP in rsyslog or syslog-ng and relay onward. Measured, rsyslog's `imtcp` absorbs roughly 262,000 frames/s, comfortably above what a simulated fleet produces, so a realistic deployment does not approach backpressure.
 
 ## HTTP endpoints
 
 ### Fire a syslog message on demand
 
-`POST /api/v1/devices/{ip}/syslog` — fires one message for the
-named device immediately, bypassing the Poisson scheduler and the
-global rate cap. Body:
+`POST /api/v1/devices/{ip}/syslog` fires one message for the named device immediately, bypassing the Poisson scheduler and the global rate cap.
+Body:
 
 ```json
 {
@@ -541,10 +450,9 @@ global rate cap. Body:
 }
 ```
 
-`name` is required and must match an entry in the **device's
-resolved catalog** (per-type overlay if present, universal otherwise).
-`templateOverrides` is optional — supplied keys pin the corresponding
-template field for this fire only.
+`name` is required and must match an entry in the **device's resolved catalog** (per-type overlay if present, universal otherwise).
+`templateOverrides` is optional.
+Supplied keys pin the corresponding template field for this fire only.
 
 Responses:
 
@@ -560,7 +468,7 @@ On-demand fires **do not** consume global rate-cap tokens.
 
 ### Syslog export status
 
-`GET /api/v1/syslog/status` — current snapshot of the syslog subsystem.
+`GET /api/v1/syslog/status` returns a current snapshot of the syslog subsystem.
 
 **Response shape** (array-of-collectors aggregated by `(collector, format)`):
 
@@ -617,17 +525,14 @@ When the subsystem is stopped (or never started):
 {"subsystem_active": false, "collectors": [], "devices_exporting": 0}
 ```
 
-Clients that previously branched on the retired `enabled` scalar
-should branch on `subsystem_active` (primary) or `len(collectors) > 0`
-(secondary — true only when at least one device has opted in).
+Clients that previously branched on the retired `enabled` scalar should branch on `subsystem_active` (primary) or `len(collectors) > 0` (secondary, true only when at least one device has opted in).
 
 ## CLI flags
 
-Documented with types, defaults, and purposes at
-[CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
+Documented with types, defaults, and purposes at [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
 
 ## Related
 
-- [Syslog export (operator guide)](../ops/syslog-export.md) — enabling, per-device source binding, smoke test
-- [SNMP trap reference](snmp-traps.md) — sibling feature; unified template vocabulary and catalog overlay semantics
-- [Web API](web-api.md) — control-plane REST surface
+- [Syslog export (operator guide)](../ops/syslog-export.md) for enabling, per-device source binding, and the smoke test
+- [SNMP trap reference](snmp-traps.md) for the sibling feature, with the unified template vocabulary and catalog overlay semantics
+- [Web API](web-api.md) for the control-plane REST surface

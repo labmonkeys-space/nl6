@@ -53,8 +53,7 @@ The OpenNMS worked example uses "Core" for the product component and "vCPU" for 
 These are not the same, and the second is almost always the one an operator wants.
 "Can my collector keep up with 30,000 devices?" is a question about steady state.
 
-**A result must state which one it measured.**
-They are not interchangeable, and a number reported without that label is unusable by anyone who did not run it.
+**A result must state which one it measured.** They are not interchangeable, and a number reported without that label is unusable by anyone who did not run it.
 
 Define the sustained ceiling as **the highest offered rate at which the collector's input queue depth stays bounded over a sustained window**.
 Bounded, not zero: queue depth oscillates normally.
@@ -94,7 +93,7 @@ Loss instruments must read zero on runs that **claim a rate**: the loss-isolatio
 
 They will **not** read zero while searching above the ceiling, and that is expected.
 Probing above the ceiling is how the search finds it, and on a UDP path an overrun receiver is the signal you are looking for.
-An above-ceiling probe with loss is a valid probe; it is simply not a result.
+An above-ceiling probe with loss is a valid probe; it is not a result.
 
 ### The loss-isolation control
 
@@ -182,8 +181,7 @@ The matrix that follows is not a gate; it is the work these two gates decide the
 First, on Kafka `num.partitions` only affects newly created topics.
 Raising it without an explicit `--alter` on the existing topic changes nothing, which looks exactly like the collector failing to parallelise and would retire a live axis on no evidence.
 
-Second, and more serious: **the producer starts using new partitions immediately, while a running consumer may never discover them.**
-Measured on Horizon 36.0.3, going from 1 to 4 partitions left the new three carrying thousands of records that did not appear in the consumer group at all, with no consumer, no committed offset and no lag tracked.
+Second, and more serious: **the producer starts using new partitions immediately, while a running consumer may never discover them.** Measured on Horizon 36.0.3, going from 1 to 4 partitions left the new three carrying thousands of records that did not appear in the consumer group at all, with no consumer, no committed offset and no lag tracked.
 They were never processed until the collector was restarted.
 
 So a reader who alters a live topic and then checks the assignment gets **both** a data-stranding incident and a false "inert" reading, because the assignment is still what it was.
@@ -214,12 +212,11 @@ Measured on Horizon 36.0.3, whose syslog sink keys aggregation per host and flus
 | 63 | 47/s | 24.0 |
 
 **More devices at the same aggregate rate makes the collector slower**, because it shreds the batches.
-That is the opposite of the intuition that a fleet is just a rate.
+That is the opposite of the intuition that a fleet is only a rate.
 
 Two consequences for any result:
 
-- A ceiling figure is meaningless without the **device count and per-device rate** that produced it.
-  Report them beside the number, and carry them in the manifest as controls.
+- A ceiling figure is meaningless without the **device count and per-device rate** that produced it. Report them beside the number, and carry them in the manifest as controls.
 - Comparing two runs at the same aggregate rate but different fleet sizes compares two different workloads, not two configurations.
 
 ## The matrix
@@ -278,8 +275,7 @@ If a cell's observed values drifted from its declared level, that cell must be d
 
 If a tuning change can alter the collector's *output*, throughput alone is not a result.
 
-**Parallelism can reorder events.**
-Message queues typically guarantee order only within a partition.
+**Parallelism can reorder events.** Message queues typically guarantee order only within a partition.
 Unless records are keyed by device, raising the partition count lets two messages from one device be processed out of order.
 
 For a monitoring system that is semantically loaded, not cosmetic.
@@ -299,8 +295,7 @@ Forty strictly sequential messages from a single device produced seven work unit
 Messages are aggregated per host *within* a work unit, so ordering holds inside one record.
 It is the spread of records across partitions that breaks it, because with one consumer per partition those records are processed concurrently.
 
-**What was measured is the spread, not its cause.**
-Records from one device are evidently not partitioned by device, but this test does not establish why.
+**What was measured is the spread, not its cause.** Records from one device are evidently not partitioned by device, but this test does not establish why.
 An unkeyed record and a record keyed by something other than the device would both produce this result, and modern queue clients do not necessarily round-robin unkeyed records anyway.
 Naming a mechanism here would be the same unmeasured-cause error this page opens by criticising.
 The disqualification does not depend on the cause: spread across partitions is sufficient, because the ordering guarantee exists only *within* a partition.
@@ -327,8 +322,7 @@ It is correspondingly weaker as evidence that messages *were* misordered, which 
 
 Measured on the `opennms-benchmark` KVM lab: single Minion, 4 vCPU Core, single-partition sink.
 
-**This example reports a service rate, not a sustained ceiling.**
-It was obtained by offering a burst far above capacity and measuring the drain, with queue depth growing throughout.
+**This example reports a service rate, not a sustained ceiling.** It was obtained by offering a burst far above capacity and measuring the drain, with queue depth growing throughout.
 It is shown because it is where the mechanism came from, and it is exactly the substitution this page tells you to avoid.
 
 ```
@@ -347,8 +341,7 @@ The example assumes one message persists as one event; a collector that coalesce
 
 Two honest limits on this example.
 
-The per-message figure of about 248 bytes is `994 / 4`, a **queue-side** number that includes record framing.
-nl6's syslog datagrams are smaller on the wire, roughly 130 to 210 bytes depending on the catalog entry, so 248 must not be read as a datagram size.
+The per-message figure of about 248 bytes is `994 / 4`, a **queue-side** number that includes record framing. nl6's syslog datagrams are smaller on the wire, roughly 130 to 210 bytes depending on the catalog entry, so 248 must not be read as a datagram size.
 
 The batching is a **count cap plus an interval flush**, not a byte cap, and the interval is what actually binds here.
 `SyslogSinkModule` exposes an aggregation policy with `getBatchSize()` (a count) and `getBatchIntervalMs()`; neither is configured in this lab, so both run at defaults, and the observed batch tracks per-device rate rather than record size.
@@ -362,7 +355,8 @@ A single Minion and a 4 vCPU Core with a single-partition sink is not a tuned pr
 
 A ceiling only earns its place in a capacity plan if it survives contact with the fleet it is meant to describe, and this one does not survive it intact.
 
-Capacity here **rises with offered rate**. Both rows below were measured on the same 500-device fleet at the same 4 partitions, so worker count is held fixed and only the per-device rate differs:
+Capacity here **rises with offered rate**.
+Both rows below were measured on the same 500-device fleet at the same 4 partitions, so worker count is held fixed and only the per-device rate differs:
 
 | offered | per device | mean batch | drain rate |
 |---|---|---|---|
@@ -370,10 +364,16 @@ Capacity here **rises with offered rate**. Both rows below were measured on the 
 | 900/s | 1.8/s | ~1 | ~144/s |
 | 3000/s | 6/s | ~4 | ~320/s |
 
-**The obvious explanation does not survive this page's own model, and that is worth stating rather than smoothing over.**
-Batch size tracks per-device rate, so batching is the natural suspect for the 2.2x jump. But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s per worker — about 30%, and [the ordering section](#the-check-is-not-a-formality-it-fired) puts it at 12% against the asymptote. Neither is 2.2x. Held the other way the model overshoots: four workers at batch 1 predicts ~412/s against a measured 144/s.
+**The obvious explanation does not survive this page's own model, and that is worth stating rather than smoothing over.** Batch size tracks per-device rate, so batching is the natural suspect for the 2.2x jump.
+But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s per worker, about 30%.
+[The ordering section](#the-check-is-not-a-formality-it-fired) puts it at 12% against the asymptote.
+Neither is 2.2x.
+Held the other way the model overshoots: four workers at batch 1 predicts ~412/s against a measured 144/s.
 
-So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood** — the offered-rate effect is real and measured, but its cause is not established as batch size. The database was the most loaded component at these rates and is the standing candidate. Resolving it needs a run that varies per-device rate with batch size pinned, which this session did not do.
+So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood**.
+The offered-rate effect is real and measured, but its cause is not established as batch size.
+The database was the most loaded component at these rates and is the standing candidate.
+Resolving it needs a run that varies per-device rate with batch size pinned, which this session did not do.
 
 What survives without the mechanism is the **shape** of the dependency, which is measured directly: capacity depends on per-device rate, not only on the fleet's total.
 Total offered rate alone does not predict whether a fleet is inside the ceiling; **concentration does**.
@@ -382,10 +382,14 @@ So "~320/s" is not a number to plan a real deployment against.
 Reaching it requires every device sustaining roughly 6 syslog messages per second, which is a device in a fault storm, not a device in steady state.
 A production fleet at rest sits at the low-per-device-rate end of the table, and its usable figure is the lower one.
 
-This inverts the usual sizing question. The number to check is not "how many messages per second will the fleet send" but **"how many messages per second will the busiest devices send during an incident"**, since that is both when volume peaks and where the measured capacity is highest.
+This inverts the usual sizing question.
+The number to check is not "how many messages per second will the fleet send" but **"how many messages per second will the busiest devices send during an incident"**, since that is both when volume peaks and where the measured capacity is highest.
 
 Two honest limits on the above.
-The three rows are measured; the 10,000-device extrapolation is **inference from them** and has not been run. It assumes only that the measured dependence on per-device rate continues down to 0.03/s — deliberately not that batching causes it, since the paragraph above shows that attribution failing. It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.
+The three rows are measured; the 10,000-device extrapolation is **inference from them** and has not been run.
+It assumes only that the measured dependence on per-device rate continues down to 0.03/s.
+It deliberately does not assume that batching causes it, since the paragraph above shows that attribution failing.
+It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.
 And the 320/s configuration is disqualified anyway on ordering grounds ([the check fired](#the-check-is-not-a-formality-it-fired)), so it bounds what the tuning *could* buy, not what it is safe to run.
 
 ## Related

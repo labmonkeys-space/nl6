@@ -39,7 +39,8 @@ A GET under the old arc answers `noSuchObject` (SNMPv2c/v3) or `error-status = n
 
 ### Per-GPU static objects
 
-Pattern `1.3.6.1.4.1.5703.1.1.1.1.<X>.<gpu>`, with `<gpu>` from `0` to `7`. Values come from the resource file and do not change.
+Pattern `1.3.6.1.4.1.5703.1.1.1.1.<X>.<gpu>`, with `<gpu>` from `0` to `7`.
+Values come from the resource file and do not change.
 
 | X | Object | Example |
 |---|--------|---------|
@@ -55,7 +56,8 @@ Pattern `1.3.6.1.4.1.5703.1.1.1.1.<X>.<gpu>`, with `<gpu>` from `0` to `7`. Valu
 
 ### Per-GPU dynamic metrics
 
-Same pattern, `<X>` from `5` to `12`. Values come from the metrics cycler and change every poll.
+Same pattern, `<X>` from `5` to `12`.
+Values come from the metrics cycler and change every poll.
 Eight metrics times eight GPUs is 64 dynamic OIDs per device.
 
 | X | Metric | Unit |

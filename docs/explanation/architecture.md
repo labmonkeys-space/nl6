@@ -1,19 +1,13 @@
 # Architecture
 
-nl6 is a single Go program that stands up thousands of simulated
-devices inside a dedicated Linux network namespace. Each simulated device has
-its own IP address on a TUN interface, its own SNMP listener, its own SSH
-server, and — for storage devices — its own HTTPS REST endpoint.
+nl6 is a single Go program that stands up thousands of simulated devices inside a dedicated Linux network namespace.
+Each simulated device has its own IP address on a TUN interface, its own SNMP listener, its own SSH server, and, for storage devices, its own HTTPS REST endpoint.
 
-This page covers the package layout, core components, and the key design
-decisions that make the 30,000-device target tractable.
+This page covers the package layout, core components, and the key design decisions that make the 30,000-device target tractable.
 
 ## System overview
 
-The diagram below is laid out as a [C4 container](https://c4model.com/#ContainerDiagram)
-view (rendered as a Mermaid flowchart): it shows what lives inside the
-nl6 process boundary, the host-side Linux infrastructure it depends on,
-and how operators and monitoring systems interact with it.
+The diagram below is laid out as a [C4 container](https://c4model.com/#ContainerDiagram) view (rendered as a Mermaid flowchart): it shows what lives inside the nl6 process boundary, the host-side Linux infrastructure it depends on, and how operators and monitoring systems interact with it.
 
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
@@ -44,119 +38,88 @@ flowchart LR
     class simulator,resources,netns,tun default
 ```
 
-The namespace was historically `opensim` (from the `l8opensim` fork origin) and
-is now `nl6sim`. A build only cleans up its own `nl6sim` namespace, so after
-upgrading remove a leftover `opensim` once with `sudo ip netns delete opensim` —
-see [Network namespace](../ops/network-namespace.md).
+The namespace was historically `opensim` (from the `l8opensim` fork origin) and is now `nl6sim`.
+A build only cleans up its own `nl6sim` namespace, so after upgrading remove a leftover `opensim` once with `sudo ip netns delete opensim`.
+See [Network namespace](../ops/network-namespace.md).
 
 ## Package layout
 
 | Path | Purpose |
 |------|---------|
-| `go/nl6/` | Core simulator — all device simulation logic and tests. |
+| `go/nl6/` | Core simulator, with all device simulation logic and tests. |
 | `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 29 device-type directories, plus the shared trap, syslog and NBAR2 catalogs under `_common/`. |
 | `go/nl6/worldcities/` | The `sysLocation` city dataset: 97 CSV shards plus `header.csv`, about 47,000 rows. |
 
-The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile)
-is the canonical build entry point.
+The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is the canonical build entry point.
 
 ## Core simulator components (`go/nl6/`)
 
 ### Device lifecycle
 
-`simulator.go` (CLI entry) → `manager.go` (`SimulatorManager`, shared keys /
-certs) → `device.go` (per-device startup, protocol server lifecycle).
+`simulator.go` (CLI entry) → `manager.go` (`SimulatorManager`, shared keys / certs) → `device.go` (per-device startup, protocol server lifecycle).
 
 ### SNMP stack
 
-`snmp_server.go` → `snmp.go` (request handling) → `snmp_handlers.go` (OID
-lookup via `sync.Map`) → `snmp_response.go` (response building) →
-`snmp_encoding.go` (ASN.1 BER/DER). SNMPv3 is handled separately in
-`snmpv3.go` + `snmpv3_crypto.go` (message framing, DES / AES128 privacy) and `snmpv3_usm.go` (RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96, and inbound verification and verified against net-snmp).
+`snmp_server.go` → `snmp.go` (request handling) → `snmp_handlers.go` (OID lookup via `sync.Map`) → `snmp_response.go` (response building) → `snmp_encoding.go` (ASN.1 BER/DER).
+SNMPv3 is handled separately in `snmpv3.go` + `snmpv3_crypto.go` (message framing, DES / AES128 privacy) and `snmpv3_usm.go` (RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96, and inbound verification and verified against net-snmp).
 
 ### Metrics engine
 
-`metrics_cycler.go` drives 100-point pre-generated sine-wave patterns per
-device. `gpu_metrics.go` handles per-GPU metrics (utilization, VRAM,
-temperature, power, clocks). `device_profiles.go` defines per-category
-baselines.
+`metrics_cycler.go` drives 100-point pre-generated sine-wave patterns per device.
+`gpu_metrics.go` handles per-GPU metrics (utilization, VRAM, temperature, power, clocks).
+`device_profiles.go` defines per-category baselines.
 
 ### Network infrastructure
 
-`tun.go` creates TUN interfaces, `netns.go` manages the `nl6sim` network
-namespace, `prealloc.go` does parallel pre-allocation of TUN interfaces
-(100 to 200 workers by default, sized by batch; `max_workers` in the create request overrides it and is clamped to 500) for fast scaling. See
-[Network namespace](../ops/network-namespace.md) for the namespace operator
-guide.
+`tun.go` creates TUN interfaces, `netns.go` manages the `nl6sim` network namespace, `prealloc.go` does parallel pre-allocation of TUN interfaces (100 to 200 workers by default, sized by batch; `max_workers` in the create request overrides it and is clamped to 500) for fast scaling.
+See [Network namespace](../ops/network-namespace.md) for the namespace operator guide.
 
 ### Web API
 
-`web.go` (route setup) + `api.go` (handlers) + `web_routes*.go` (Linux route
-script generation). Serves device CRUD, CSV export, system stats, and flow
+`web.go` (route setup) + `api.go` (handlers) + `web_routes*.go` (Linux route script generation).
+Serves device CRUD, CSV export, system stats, and flow
 export status (`GET /api/v1/flows/status`). See [Web API](../reference/web-api.md) for
 the endpoint catalog.
 
 ### Flow export
 
-`flow_exporter.go` (`FlowExporter`, `FlowEncoder` interface, `SimulatorManager`
-integration) + `netflow5.go` / `netflow9.go` / `ipfix.go` / `sflow.go`.
-One shared UDP socket and ticker goroutine; per-device `FlowExporter` owns
-a `FlowCache`. See [Flow export reference](../reference/flow-export.md).
+`flow_exporter.go` (`FlowExporter`, `FlowEncoder` interface, `SimulatorManager` integration) + `netflow5.go` / `netflow9.go` / `ipfix.go` / `sflow.go`.
+One shared UDP socket and ticker goroutine; per-device `FlowExporter` owns a `FlowCache`.
+See [Flow export reference](../reference/flow-export.md).
 
 ### gNMI dial-in
 
-`gnmi_paths.go` (path resolver), `gnmi_handlers.go` (Capabilities / Get /
-Subscribe / Set), `gnmi_subscribe.go` (per-stream ticker + bounded send
-buffer), `gnmi_server.go` (per-device gRPC + TLS listener lifecycle),
-`gnmi_manager.go` (subsystem config + status). Counter values come from the
-same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow,
-so all three protocols agree byte-for-byte at the same instant. Read-only;
-`Set` returns `Unimplemented`. See [gNMI dial-in reference](../reference/gnmi.md).
+`gnmi_paths.go` (path resolver), `gnmi_handlers.go` (Capabilities / Get / Subscribe / Set), `gnmi_subscribe.go` (per-stream ticker + bounded send buffer), `gnmi_server.go` (per-device gRPC + TLS listener lifecycle), `gnmi_manager.go` (subsystem config + status).
+Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so all three protocols agree byte-for-byte at the same instant.
+Read-only; `Set` returns `Unimplemented`.
+See [gNMI dial-in reference](../reference/gnmi.md).
 
 ### gNMI dial-out
 
-`gnmi_dialout_transport.go` (`DialoutTransport` seam + Arista `gNMIReverse`
-flavor), `gnmi_dialout_exporter.go` (per-device gRPC client: one
-`ClientConn` + one `Publish` stream per device, reconnect loop with
-dwell-gated backoff, SAMPLE / ON_CHANGE pacing), `gnmi_dialout_manager.go`
-(lifecycle, TLS credentials, per-(collector, flavor) status aggregates).
-Reverses the gRPC role, not the data direction: the device dials the
-collector and streams the same `SubscribeResponse` payload the dial-in
-target serves, with `Prefix.Target` = device IP for in-band attribution.
-Opt-in per device via the `-gnmi-dialout-*` seed flags or the
-`gnmi_dialout` REST block — the fleet can mix dial-in and dial-out. See
-[gNMI dial-out reference](../reference/gnmi-dial-out.md).
+`gnmi_dialout_transport.go` (`DialoutTransport` seam + Arista `gNMIReverse` flavor), `gnmi_dialout_exporter.go` (per-device gRPC client: one `ClientConn` + one `Publish` stream per device, reconnect loop with dwell-gated backoff, SAMPLE / ON_CHANGE pacing), `gnmi_dialout_manager.go` (lifecycle, TLS credentials, per-(collector, flavor) status aggregates).
+Reverses the gRPC role, not the data direction: the device dials the collector and streams the same `SubscribeResponse` payload the dial-in target serves, with `Prefix.Target` = device IP for in-band attribution.
+Opt-in per device via the `-gnmi-dialout-*` seed flags or the `gnmi_dialout` REST block.
+The fleet can mix dial-in and dial-out.
+See [gNMI dial-out reference](../reference/gnmi-dial-out.md).
 
 ### Resource loading
 
-`resources.go` loads and caches a device type the first time a device of that
-type is created; only the auto-start default, `asr9k`, is loaded at startup.
-There are 394 JSON files: 391 across 29 device-type directories plus 3 shared
-catalogs under `_common/`. Each device type directory has split JSON files for
-SNMP, SSH, and REST responses that are merged at load time. See [Resource files](../reference/resource-files.md).
+`resources.go` loads and caches a device type the first time a device of that type is created; only the auto-start default, `asr9k`, is loaded at startup.
+There are 394 JSON files: 391 across 29 device-type directories plus 3 shared catalogs under `_common/`.
+Each device type directory has split JSON files for SNMP, SSH, and REST responses that are merged at load time.
+See [Resource files](../reference/resource-files.md).
 
 ## Key design decisions
 
-- **`sync.Map` for OID lookups** — lock-free O(1) access during concurrent
-  SNMP queries.
-- **Pre-computed next-OID mappings** — efficient SNMP `GETNEXT` / `WALK`
-  without scanning the table.
-- **Buffer pool** — reduces GC pressure on SNMP request handling.
-- **Shared SSH / TLS keys** across all devices — avoids per-device key
-  generation overhead.
-- **Analytic IF-MIB counters** — every per-interface counter in `ifTable`
-  and `ifXTable` computed on demand from a single per-direction octet
-  sine wave, instead of maintained by a polling loop; see
-  [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters).
-- **Network namespace isolation** — the `nl6sim` namespace prevents
-  systemd-networkd interference on many Linux distros.
-- **Per-device flow egress** — a `FORWARD -i veth-sim-host -j ACCEPT`
-  iptables rule lets per-device flow exporters send UDP out of the
-  namespace through the host's routing table (Docker-present hosts default
-  `FORWARD` to `DROP`). The rule is removed in `NetNamespace.Close`.
+- **`sync.Map` for OID lookups.** Lock-free O(1) access during concurrent SNMP queries.
+- **Pre-computed next-OID mappings.** Efficient SNMP `GETNEXT` / `WALK` without scanning the table.
+- **Buffer pool.** Reduces GC pressure on SNMP request handling.
+- **Shared SSH / TLS keys across all devices.** Avoids per-device key generation overhead.
+- **Analytic IF-MIB counters.** Every per-interface counter in `ifTable` and `ifXTable` is computed on demand from a single per-direction octet sine wave, instead of maintained by a polling loop. See [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters).
+- **Network namespace isolation.** The `nl6sim` namespace prevents systemd-networkd interference on many Linux distros.
+- **Per-device flow egress.** A `FORWARD -i veth-sim-host -j ACCEPT` iptables rule lets per-device flow exporters send UDP out of the namespace through the host's routing table (Docker-present hosts default `FORWARD` to `DROP`). The rule is removed in `NetNamespace.Close`.
 
 ## Container image
 
-The simulator is published as `ghcr.io/labmonkeys-space/nl6` on
-push to `main` and on release tags — see the project's CI workflow
-files.
+The simulator is published as `ghcr.io/labmonkeys-space/nl6` on push to `main` and on release tags.
+See the project's CI workflow files.

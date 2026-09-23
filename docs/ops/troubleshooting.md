@@ -1,27 +1,22 @@
 # Troubleshooting
 
-Common failures during bring-up and how to recover. Flow-export-specific
-issues live on their own page —
-[Flow export (operator guide) → Flow troubleshooting](flow-export.md#flow-troubleshooting)
-— because they cross into collector-side `rp_filter` and FORWARD-chain
-territory.
+Common failures during bring-up and how to recover.
+Flow-export-specific issues live on their own page, [Flow export (operator guide) → Flow troubleshooting](flow-export.md#flow-troubleshooting), because they cross into collector-side `rp_filter` and FORWARD-chain territory.
 
 ## Common issues
 
 ### Permission denied
-The simulator creates TUN interfaces and manages the `nl6sim` network
-namespace; both require privileges. Run with `sudo` or use a container that
-grants `CAP_NET_ADMIN` plus access to `/dev/net/tun` — see
-[Docker](../getting-started/docker.md).
+The simulator creates TUN interfaces and manages the `nl6sim` network namespace; both require privileges.
+Run with `sudo` or use a container that grants `CAP_NET_ADMIN` plus access to `/dev/net/tun`.
+See [Docker](../getting-started/docker.md).
 
 ### Port conflicts
-Something else is listening on `:8080` (the default control plane). Pick an
-alternative with [`-port`](../reference/cli-flags.md#core-flags), e.g.
-`-port 9090`.
+Something else is listening on `:8080` (the default control plane).
+Pick an alternative with [`-port`](../reference/cli-flags.md#core-flags), e.g. `-port 9090`.
 
 ### Privileged SNMP port
-Port `161` requires root or `CAP_NET_BIND_SERVICE`. If you can't grant
-either, run the simulator on a non-privileged port:
+Port `161` requires root or `CAP_NET_BIND_SERVICE`.
+If you can't grant either, run the simulator on a non-privileged port:
 
 ```bash
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 -snmp-port 1161
@@ -35,15 +30,14 @@ Then query it with `snmpwalk -v2c -c public -p 1161 …`.
 sudo modprobe tun
 ```
 
-If `modprobe` fails the host kernel may be missing TUN support entirely
-(some minimal cloud images). Switch kernels or use a container host.
+If `modprobe` fails the host kernel may be missing TUN support entirely (some minimal cloud images).
+Switch kernels or use a container host.
 
 ### High resource usage / file descriptors
-Each device opens several sockets, so large fleets need a high `nofile`. The Go
-runtime nl6 is built on raises the soft limit to the **hard** limit at startup,
-so this is usually handled automatically. If you still hit `too many open files`, the *hard* limit
-is capped (restrictive container or a hand-written systemd unit with
-`LimitNOFILE=…:1024`; the packaged unit sets `LimitNOFILE=1048576`) — raise it:
+Each device opens several sockets, so large fleets need a high `nofile`.
+The Go runtime nl6 is built on raises the soft limit to the **hard** limit at startup, so this is usually handled automatically.
+If you still hit `too many open files`, the *hard* limit is capped (restrictive container or a hand-written systemd unit with `LimitNOFILE=…:1024`; the packaged unit sets `LimitNOFILE=1048576`).
+Raise it:
 
 ```bash
 ulimit -Hn 1048576          # current shell; nl6 then lifts the soft limit to it
@@ -51,13 +45,8 @@ ulimit -Hn 1048576          # current shell; nl6 then lifts the soft limit to it
 # /etc/security/limits.conf
 ```
 
-Keep the `nl6sim` namespace enabled (default); running in the root
-namespace with `-no-namespace` at scale drags `systemd-networkd` into
-every interface change. See [Scaling](scaling.md).
-
-### SNMP integer-encoding panics
-Historical regression — fixed. If you see panics in ASN.1 encoding of
-negative integer values on a tagged release, upgrade to a newer build.
+Keep the `nl6sim` namespace enabled (default); running in the root namespace with `-no-namespace` at scale drags `systemd-networkd` into every interface change.
+See [Scaling](scaling.md).
 
 ## Debug commands
 
@@ -76,17 +65,14 @@ htop
 
 ## Log files
 
-- **Application logs** — stdout / stderr. Redirect with shell plumbing when
-  daemonising.
-- **System logs** — `journalctl -u <service-name>` when run under systemd.
-- **Web access logs** — built into the application and visible in the
-  stdout stream.
+- **Application logs** go to stdout / stderr. Redirect with shell plumbing when daemonising.
+- **System logs** are in `journalctl -u <service-name>` when run under systemd.
+- **Web access logs** are built into the application and visible in the stdout stream.
 
 ## When the namespace is stuck
 
-If the simulator dies without cleaning up (e.g. `kill -9`), the `nl6sim`
-namespace and `veth-sim-host` / `veth-sim-ns` may linger. Tear them down
-by hand:
+If the simulator dies without cleaning up (e.g. `kill -9`), the `nl6sim` namespace and `veth-sim-host` / `veth-sim-ns` may linger.
+Tear them down by hand:
 
 ```bash
 sudo ip netns delete nl6sim
