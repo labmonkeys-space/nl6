@@ -1,7 +1,8 @@
 # gNMI dial-out
 
 By default every nl6 device is a gNMI **dial-in** target: a collector opens the connection and calls `Subscribe`.
-With **dial-out** the roles reverse — the device opens a gRPC connection *to a collector* and streams telemetry to it.
+With **dial-out** the roles reverse.
+The device opens a gRPC connection *to a collector* and streams telemetry to it.
 Dial-out is firewall/NAT-friendly (outbound only, no inbound service) and is the mechanism behind [Arista EOS gNMIReverse](https://aristanetworks.github.io/openmgmt/telemetry/adapters/gnmi-dial-out/).
 
 Dial-out is **opt-in and per-device**, so the fleet can run mixed: some devices serve dial-in on `:9339` while others push dial-out to a collector.
@@ -15,12 +16,14 @@ Dial-out is **opt-in and per-device**, so the fleet can run mixed: some devices 
 
 ## Wire protocol
 
-nl6 ships the **Arista `gNMIReverse`** flavor: `Publish(stream gnmi.SubscribeResponse) → google.protobuf.Empty` — fire-and-forget (no per-message ack).
+nl6 ships the **Arista `gNMIReverse`** flavor: `Publish(stream gnmi.SubscribeResponse) → google.protobuf.Empty`.
+It is fire-and-forget, with no per-message ack.
 The payload is the standard `gnmi.SubscribeResponse`, the exact message nl6's dial-in `Subscribe` produces, so **dial-out and dial-in values agree byte-for-byte at the same instant**.
 The `DialoutTransport` seam leaves room to add the SONiC `gNMIDialOut` flavor later; only `gnmireverse` is implemented today.
 
 Every pushed notification carries the device identity **in-band**: `Notification.Prefix.Target` is set to the device's management IP (the same job the Arista client's `-target_value` flag does).
-Collectors can attribute messages by target instead of source IP — useful behind NAT/proxies and a prerequisite for any future shared-transport mode.
+Collectors can attribute messages by target instead of source IP.
+This is useful behind NAT/proxies and a prerequisite for any future shared-transport mode.
 Dial-in responses are unaffected (servers echo a client-set target; they don't invent one).
 
 ## Subscription modes
@@ -35,40 +38,42 @@ The default path is the full state subtree (`/interfaces/interface[name=*]/state
 
 ## Connection model
 
-Each dial-out device owns **one `grpc.ClientConn` and one `Publish` stream** — never a shared pool.
+Each dial-out device owns **one `grpc.ClientConn` and one `Publish` stream**, never a shared pool.
 A single Go `ClientConn` caps at ~100 concurrent HTTP/2 streams with no automatic multi-connection, so a shared pool would silently bottleneck at fleet scale; per-device is also the faithful simulation (each real device is its own dial-out client).
 When network namespaces are enabled the client dials from inside the device's netns with the source IP pinned to the device IP, reusing the existing veth + `FORWARD` egress rule (no new netns / iptables surface).
 
-Hostname collectors are resolved **per-dial in the host namespace** (the sim netns has no resolver), so DNS failover is picked up on every reconnect and the gRPC authority stays the hostname — TLS `ServerName` verification works against the collector's certificate.
+Hostname collectors are resolved **per-dial in the host namespace** (the sim netns has no resolver), so DNS failover is picked up on every reconnect and the gRPC authority stays the hostname.
+TLS `ServerName` verification works against the collector's certificate.
 Only **IPv4** records are used (the sim netns is IPv4-only); a hostname resolving exclusively to AAAA records fails the dial with a clear error.
 In-namespace dial concurrency is bounded (64 concurrent dials, 10s per-dial timeout) so an unreachable collector cannot exhaust OS threads at fleet scale.
 
 ## Resilience
 
 - **Own reconnect loop.** A broken `Publish` stream ends the RPC, so the exporter wraps dial→publish in a capped exponential backoff loop (1s → 30s), resetting after a stream stays up.
-- **Drop-on-outage, no buffering.** During a collector outage telemetry is dropped, matching vendor behaviour. A slow collector cannot stall the device — sends go through a bounded channel with drop-oldest (counted as `updates_dropped`).
+- **Drop-on-outage, no buffering.** During a collector outage telemetry is dropped, matching vendor behaviour. A slow collector cannot stall the device. Sends go through a bounded channel with drop-oldest (counted as `updates_dropped`).
 - **Shutdown-only stop.** `StopGnmiDialout` runs only at process exit (same constraint as trap/syslog/gNMI Stop); there is no runtime restart path.
 
 ## Configuration
 
 Two levels, mirroring flow / trap / syslog:
 
-### Global seed flags (`[seed]` — auto-start batch only)
+### Global seed flags (`[seed]`, auto-start batch only)
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-gnmi-mode` | `dial-in` | `dial-in` (serve gNMI) or `dial-out` (also push) for the auto-start batch |
-| `-gnmi-dialout-collector` | — | Collector `host:port` (required when `-gnmi-mode=dial-out`) |
+| `-gnmi-dialout-collector` | none | Collector `host:port` (required when `-gnmi-mode=dial-out`) |
 | `-gnmi-dialout-flavor` | `gnmireverse` | Dial-out wire flavor |
 | `-gnmi-dialout-encoding` | `json_ietf` | `json_ietf` or `proto` |
 | `-gnmi-dialout-sub-mode` | `sample` | `sample` or `on-change` |
 | `-gnmi-dialout-interval` | `10s` | SAMPLE cadence (1s floor) |
 | `-gnmi-dialout-tls` | `true` | Use TLS (false = plaintext, Arista `-collector_tls=false` parity) |
 | `-gnmi-dialout-tls-insecure` | `false` | Skip collector cert verification (dev only) |
-| `-gnmi-dialout-tls-ca` | — | PEM CA bundle to verify the collector (empty = system roots) |
+| `-gnmi-dialout-tls-ca` | none | PEM CA bundle to verify the collector (empty = system roots) |
 | `-gnmi-dialout-mtls` | `false` | Present the shared cert as a client cert (mutual TLS) |
 
-REST-created devices do **not** inherit these — they opt in per device.
+REST-created devices do **not** inherit these.
+They opt in per device.
 
 ### Per-device REST block (`POST /api/v1/devices`)
 
@@ -95,10 +100,12 @@ Unknown fields are rejected (`400`).
 
 `tls.enabled=false` selects a plaintext gRPC connection.
 When enabled, the collector is verified against `ca_pem` (or the system roots), or verification is skipped with `insecure_skip_verify` (dev only).
-The simulator's shared TLS certificate is a **server leaf** cert — it can be presented as a client cert (`mtls: true`) but cannot verify the collector, which is why `ca_pem` exists.
+The simulator's shared TLS certificate is a **server leaf** cert.
+It can be presented as a client cert (`mtls: true`) but cannot verify the collector, which is why `ca_pem` exists.
 
 `ca_pem` is the bundle **inline**, not a path.
-This block is settable over REST, and a path here would let any API caller name a file for the simulator to open — an arbitrary-file-read primitive, where even the error distinguishes "could not read" from "no certificates here".
+This block is settable over REST, and a path here would let any API caller name a file for the simulator to open.
+That is an arbitrary-file-read primitive, where even the error distinguishes "could not read" from "no certificates here".
 A path is accepted only from `-gnmi-dialout-tls-ca`, read once at startup by the operator who launched the process.
 
 :::warning[`tls.ca_file` is no longer accepted]

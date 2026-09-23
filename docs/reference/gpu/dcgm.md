@@ -1,9 +1,8 @@
 # NVIDIA DCGM simulation
 
-:::note[Simulator side of the GPU story]
-This page covers the **simulator** — the metric OID types, the GPU cycler extension, device profiles, resource file layout, and integration points.
+**Simulator side of the GPU story.**
+This page covers the **simulator**: the metric OID types, the GPU cycler extension, device profiles, resource file layout, and integration points.
 The OIDs a collector polls are in [GPU simulation → Collector OID contract](index.md#collector-oid-contract).
-:::
 
 ## Overview
 
@@ -26,13 +25,13 @@ NVIDIA DCGM provides:
 - **GPU health status** (healthy, warning, critical)
 - **Process/job info** (running PIDs, memory per process)
 
-Real DCGM exposes these through its API and the DCGM exporter's Prometheus `/metrics` endpoint, not through SNMP. nl6 exposes them via:
-1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number. The layout below the PEN is nl6's own (see the warning below).
+Real DCGM exposes these through its API and the DCGM exporter's Prometheus `/metrics` endpoint, not through SNMP.
+nl6 exposes them via:
+1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number. The layout below the PEN is nl6's own (see below).
 2. **SSH**: `nvidia-smi` command variants (`nvidia-smi`, `nvidia-smi -q -d MEMORY|UTILIZATION|TEMPERATURE|POWER`, `nvidia-smi topo -m`) and `dcgmi discovery -l`, `dcgmi health -c`
 3. **REST API**: DCGM-shaped HTTP endpoints (`/api/v1/gpu/status`, `/api/v1/gpu/devices`, `/api/v1/dcgm/health`, etc.)
 
-:::warning[The objects below the PEN are nl6's own invention]
-
+**The objects below the PEN are nl6's own invention.**
 `1.3.6.1.4.1.5703` is NVIDIA Corporation's real PEN, so `sysObjectID` correctly identifies a simulated DGX as an NVIDIA system.
 Nothing *below* the PEN is published by NVIDIA.
 **NVIDIA ships no SNMP GPU MIB at all.** Its own GPU telemetry story is DCGM and Prometheus, not SNMP.
@@ -53,8 +52,6 @@ The old arc is no longer served at all.
 An SNMPv2c or v3 GET under `1.3.6.1.4.1.53246` answers the RFC 3416 `noSuchObject` exception.
 An SNMPv1 manager gets `error-status = noSuchName` with the requested names echoed instead, since v1 has no exceptions (RFC 3584 §4.2.2.2.1).
 Either way the response carries no value, so an unmigrated rule collects nothing rather than collecting stale data.
-
-:::
 
 ## Scope
 
@@ -232,10 +229,10 @@ func parseGPUIndexFromOID(oid string) int {
 ```
 
 ### Files Modified
-- `metrics_oids.go` — new metric types + NVIDIA vendor OID mappings
-- `device_profiles.go` — 3 new profiles + GPUProfile struct + profile map entries
-- `metrics_cycler.go` — GPUMetrics struct, GPU data point generation, getter methods
-- `snmp_handlers.go` — GPU metric cases in `getMetricValue()`
+- `metrics_oids.go`, for the new metric types + NVIDIA vendor OID mappings
+- `device_profiles.go`, for the 3 new profiles + GPUProfile struct + profile map entries
+- `metrics_cycler.go`, for the GPUMetrics struct, GPU data point generation, getter methods
+- `snmp_handlers.go`, for the GPU metric cases in `getMetricValue()`
 
 ---
 
@@ -458,7 +455,7 @@ There is no per-GPU `/devices/{id}` path.
 
 ### 5.1 Resource Loading (`resources.go`)
 
-**No changes needed** — the existing directory-based loading and merging already handles new resource directories automatically.
+**No changes needed.** The existing directory-based loading and merging already handles new resource directories automatically.
 The `loadSpecificResourcesFromDir()` function will pick up all JSON files in each NVIDIA directory and merge SNMP + SSH + API resources.
 
 ### 5.2 Device Type Detection (`resources.go`)
@@ -504,15 +501,15 @@ resources := &DeviceResources{
 ```
 
 ### Files Modified
-- `resources.go` — NVIDIA device type detection + API merging in directory loader
-- `types.go` — 3 new entries in `RoundRobinDeviceTypes`
+- `resources.go`, for the NVIDIA device type detection + API merging in directory loader
+- `types.go`, for the 3 new entries in `RoundRobinDeviceTypes`
 
 ---
 
 ## Phase 6: Build and Verify
 
-1. `cd go && go build ./nl6/` — verify compilation
-2. `cd go && go vet ./nl6/` — verify no issues
+1. Verify compilation with `cd go && go build ./nl6/`.
+2. Verify there are no issues with `cd go && go vet ./nl6/`.
 3. Start the simulator and create a single NVIDIA DGX H100 device
 4. Verify SNMP walk returns GPU OIDs with cycling values
 5. Verify SSH `nvidia-smi` returns formatted output

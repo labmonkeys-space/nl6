@@ -22,13 +22,16 @@ For deployment, collector setup, and `rp_filter` tuning see [Flow export (operat
 | sFlow v5    | `5` (XDR)     | n/a (self-describing)    | ~100 B / record typical (variable) | uptime (ms) + `sampling_rate` per sample    |
 
 NetFlow v5, v9, and IPFIX all use the same core field set (bytes, packets, protocol, ToS, TCP flags, src/dst ports, src/dst IPv4, src/dst mask, ingress/egress interface, next-hop, src/dst AS, timestamps).
-The v9 / IPFIX template carries a 19th field, `DIRECTION` / `flowDirection` (field type / IE 61), emitted as a constant `0x00` (**ingress**) on every record — the shape of a real exporter running `ip flow ingress` on all interfaces.
+The v9 / IPFIX template carries a 19th field, `DIRECTION` / `flowDirection` (field type / IE 61), emitted as a constant `0x00` (**ingress**) on every record.
+That is the shape of a real exporter running `ip flow ingress` on all interfaces.
 Collectors that classify flows by direction (some drop direction-less flows from every flow query) ingest nl6 flows as `direction: ingress`.
 NetFlow v5 bakes the core fields into a fixed 48-byte on-wire record (no direction field exists in v5) and has no template mechanism at all, so `-flow-template-interval` is a silent no-op under both v5 and sFlow.
 
 ## sFlow caveat
 
-sFlow is a packet-sampling protocol built for real devices that observe real traffic. nl6 has no packet stream to sample — sFlow output is synthesised from the same `FlowCache` records the other protocols consume, re-wrapped as `FLOW_SAMPLE` records with a fixed, synthetic `sampling_rate` of `10 × FlowProfile.ConcurrentFlows`.
+sFlow is a packet-sampling protocol built for real devices that observe real traffic.
+nl6 has no packet stream to sample.
+sFlow output is synthesised from the same `FlowCache` records the other protocols consume, re-wrapped as `FLOW_SAMPLE` records with a fixed, synthetic `sampling_rate` of `10 × FlowProfile.ConcurrentFlows`.
 Collectors that multiply sample rate by captured packet count to estimate link utilisation will produce plausibly-shaped numbers that do not reflect any real traffic.
 Use sFlow mode for collector-plumbing validation, not for link-volume benchmarks.
 
@@ -38,13 +41,14 @@ On every tick it also emits `COUNTERS_SAMPLE` records (Phase 2) for each interfa
 ### sFlow sub-agent id
 
 Every sFlow datagram header carries a `sub_agent_id` (default `0`, single-agent).
-Set it per device via the REST `flow.sub_agent_id` field — or `-flow-sub-agent-id` for the whole auto-start batch — so collectors that attribute flows by `(agent_address, sub_agent_id)` can be exercised with distinct sub-agent values.
-Both datagram types a device emits (`FLOW_SAMPLE` and `COUNTERS_SAMPLE`) always carry the same value, and sequence numbers are already per-(agent, sub-agent) — each nl6 device is its own agent, so per-group values (`POST` one batch per group) yield distinct `(agent_address, sub_agent_id)` tuples.
+Set it per device via the REST `flow.sub_agent_id` field, or `-flow-sub-agent-id` for the whole auto-start batch, so collectors that attribute flows by `(agent_address, sub_agent_id)` can be exercised with distinct sub-agent values.
+Both datagram types a device emits (`FLOW_SAMPLE` and `COUNTERS_SAMPLE`) always carry the same value, and sequence numbers are already per-(agent, sub-agent).
+Each nl6 device is its own agent, so per-group values (`POST` one batch per group) yield distinct `(agent_address, sub_agent_id)` tuples.
 Ignored by the NetFlow / IPFIX encoders.
 
 ## Interface option records (NetFlow v9 / IPFIX)
 
-With `options_interface_table` set on a device (or `-flow-option-interface-table` for the auto-start batch), the exporter additionally emits a Cisco-style **option interface-table**: on every template-refresh tick, one self-contained datagram carrying an options template (template ID 257; NF9 Options Template FlowSet ID 1 / IPFIX Options Template Set ID 3) plus one option data record per interface — `interfaceName(82)` / `interfaceDescription(83)` resolved from the same `ifDescr` values the SNMP agent serves.
+With `options_interface_table` set on a device (or `-flow-option-interface-table` for the auto-start batch), the exporter additionally emits a Cisco-style **option interface-table**: on every template-refresh tick, one self-contained datagram carrying an options template (template ID 257; NF9 Options Template FlowSet ID 1 / IPFIX Options Template Set ID 3) plus one option data record per interface, with `interfaceName(82)` / `interfaceDescription(83)` resolved from the same `ifDescr` values the SNMP agent serves.
 Collectors use these records to enrich flows with interface names **without polling SNMP**.
 
 Two wire shapes are available; the names describe where the ifIndex lives:
@@ -353,7 +357,7 @@ sudo ./nl6 \
   -flow-collector 192.168.1.10:2055 \
   -flow-protocol netflow9
 
-# Mixed fleet isn't achievable via CLI — use the REST body.
+# Mixed fleet isn't achievable via CLI. Use the REST body.
 ```
 
 ### 2. REST body (per-device)
@@ -375,7 +379,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
     }
   }'
 
-# Second batch of 20 emitting sFlow to collector B — same process,
+# Second batch of 20 emitting sFlow to collector B. Same process,
 # /api/v1/flows/status reports both as separate collector records.
 # sub_agent_id tags this group's datagram headers (default 0).
 curl -X POST http://localhost:8080/api/v1/devices \
@@ -391,10 +395,12 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-The `flow` block is **optional** on every request — omit it and the device doesn't export.
+The `flow` block is **optional** on every request.
+Omit it and the device doesn't export.
 
 **Duration fields** (`active_timeout`, `inactive_timeout`) require **Go duration strings** (`"30s"`, `"1m30s"`).
-Integer seconds (`"active_timeout": 30`) are rejected with 400 — a deliberate mismatch with the `-flow-*-timeout` CLI flags, which take integer seconds.
+Integer seconds (`"active_timeout": 30`) are rejected with 400.
+This is a deliberate mismatch with the `-flow-*-timeout` CLI flags, which take integer seconds.
 A per-device `tick_interval` is rejected with 400 (nl6#445); the fleet-wide cadence is `-flow-tick-interval`.
 
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
@@ -426,7 +432,8 @@ That term matters for pacing.
 A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
 
 `-flow-tick-interval` sets how finely that stream is cut into datagrams, not how much of it there is.
-Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat — bounded by the interval rather than proportional to it.
+Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat.
+The reduction is bounded by the interval rather than proportional to it.
 Measured across a 30x cadence range:
 
 | tick | records/s | mean records per tick |
@@ -440,7 +447,8 @@ Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 re
 Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
 
 The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers.
-At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu` (below). nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented.
+At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu` (below).
+nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented.
 That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
 
 **NetFlow v5 does not scale with the MTU.** Cisco v5 caps a datagram at 30 records regardless of how much space is available, so a v5 exporter stays at 30 records and roughly 1464 bytes whatever `-datagram-mtu` is set to.
@@ -457,12 +465,14 @@ Only sFlow and SNMP traps fit.
 **The flag governs flow export, SNMP trap notifications and SNMP responses.** The SNMP response bound is recomputed from the same value, so a GETBULK truncates to the frame and a GET or GETNEXT that cannot fit answers `tooBig`; see [SNMP → Response size](snmp.md#response-size-max-repetitions-and-truncation).
 Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
 
-On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them — they are disabled at catalog load and named in the startup log with the MTU that would admit them.
+On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them.
+They are disabled at catalog load and named in the startup log with the MTU that would admit them.
 
 The value is validated at startup and an out-of-range one is fatal, so a misconfiguration surfaces immediately rather than as per-datagram encode failures across the fleet.
 
 nl6 does not discover the MTU, deliberately.
-Reading the route's interface MTU would work for flow, traps and syslog, which each have a configured collector known when the exporter attaches — but not for SNMP, which answers whoever polls it and knows the destination only per request.
+Reading the route's interface MTU would work for flow, traps and syslog, which each have a configured collector known when the exporter attaches.
+It would not work for SNMP, which answers whoever polls it and knows the destination only per request.
 Since one value has to cover every subsystem, discovery cannot be the mechanism.
 There is no path-MTU discovery either: a route lookup sees only the first hop, so a tunnel further along the path is invisible either way.
 If you see fragments, check the egress interface MTU and set the flag to match.
@@ -475,24 +485,33 @@ To raise or lower volume, change the concurrent-flow count or the timeouts.
 
 ### Cadence and volume
 
-> **Measured on the wire.** The emission model here was derived by reading the code and simulating the loop. Two of its predictions were then checked against a packet capture, and the rest were not — the distinction matters, so it is drawn explicitly below.
->
-> The capture ran on a **simulated** fleet: one nl6 device of type `cisco_ios` (a simulated device type, not a physical router) on a KVM virtual machine, 300s per cell, netflow9, comparing binaries built from the two commits either side of this change.
->
-> | cell | measured | model | delta |
-> |---|---|---|---|
-> | pre-change, 5s cadence | 6.07 rec/s, **40 of 54 ticks silent** | 6.40 | −5.2 % |
-> | post-change, 5s cadence | 4.12 rec/s, **0 of 58 silent** | 4.24 | −2.8 % |
-> | pre-change, 30s cadence | 6.09 rec/s | — | flag inert, confirmed |
-> | post-change, 30s cadence | 3.03 rec/s | 3.63 | **−16.5 %** |
->
-> The rows of the cadence table above at 1s and 15s were **not** captured; they are model output.
->
-> What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (roughly 3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
->
-> The model runs about 5 % hot in every cell, which is expected — it advances time in exact tick increments with no scheduling jitter or warm-up truncation, so it counts expiries the wire narrowly misses.
->
-> **The 30s cell is the exception and is not explained by that.** A 16.5 % shortfall is larger than jitter accounts for. Capture-side packet loss was the leading alternative and is **excluded**: NetFlow v9 carries a per-exporter datagram sequence number, and all four captures are sequence-continuous with zero gaps, so nothing was dropped between the exporter and the measurement. The remaining candidate is the model's own quantisation — at a 30s cadence against a ~29s mean lifetime the cache turns over wholesale each tick, so a flow whose lifetime lands just past a boundary slips a whole period, which the model resolves identically every time and real timing does not. That is a hypothesis, not a finding. Treat coarse-cadence rate predictions as approximate, which is a further reason to keep the tick well below the mean flow lifetime.
+**Measured on the wire.** The emission model here was derived by reading the code and simulating the loop.
+Two of its predictions were then checked against a packet capture, and the rest were not.
+The distinction matters, so it is drawn explicitly below.
+
+The capture ran on a **simulated** fleet: one nl6 device of type `cisco_ios` (a simulated device type, not a physical router) on a KVM virtual machine, 300s per cell, netflow9, comparing binaries built from the two commits either side of this change.
+
+| cell | measured | model | delta |
+|---|---|---|---|
+| pre-change, 5s cadence | 6.07 rec/s, **40 of 54 ticks silent** | 6.40 | −5.2 % |
+| post-change, 5s cadence | 4.12 rec/s, **0 of 58 silent** | 4.24 | −2.8 % |
+| pre-change, 30s cadence | 6.09 rec/s | n/a | flag inert, confirmed |
+| post-change, 30s cadence | 3.03 rec/s | 3.63 | **−16.5 %** |
+
+The rows of the cadence table above at 1s and 15s were **not** captured; they are model output.
+
+What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (roughly 3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
+
+The model runs about 5 % hot in every cell, which is expected.
+It advances time in exact tick increments with no scheduling jitter or warm-up truncation, so it counts expiries the wire narrowly misses.
+
+**The 30s cell is the exception and is not explained by that.**
+A 16.5 % shortfall is larger than jitter accounts for.
+Capture-side packet loss was the leading alternative and is **excluded**: NetFlow v9 carries a per-exporter datagram sequence number, and all four captures are sequence-continuous with zero gaps, so nothing was dropped between the exporter and the measurement.
+The remaining candidate is the model's own quantisation.
+At a 30s cadence against a ~29s mean lifetime the cache turns over wholesale each tick, so a flow whose lifetime lands slightly past a boundary slips a whole period, which the model resolves identically every time and real timing does not.
+That is a hypothesis, not a finding.
+Treat coarse-cadence rate predictions as approximate, which is a further reason to keep the tick well below the mean flow lifetime.
 
 Two independent corrections landed together.
 **Both change the load a given configuration offers**, so measurements taken across this boundary are not comparable on the flow axis.
@@ -500,14 +519,15 @@ Reports carry `nl6_version`, so the boundary stays identifiable.
 
 | | before | after |
 |---|---|---|
-| **cadence** — deployments setting `-flow-tick-interval` | flag inert; every deployment ticked at 5s | the configured cadence applies |
-| **volume** — **every** flow deployment, flag or not | ~6.4 records/s per device | **~4.2 records/s** (about 0.66x) |
+| **cadence**, for deployments setting `-flow-tick-interval` | flag inert; every deployment ticked at 5s | the configured cadence applies |
+| **volume**, for **every** flow deployment, flag or not | ~6.4 records/s per device | **~4.2 records/s** (about 0.66x) |
 | **shape** | whole cache exported on one tick, then several silent ticks | records on every tick, at every cadence |
 
 The volume change reaches deployments that set no flag at all, which makes it the wider-reaching of the two.
 
 It happened because a flow's "last seen" time was pinned to its creation instant, so every flow looked idle from birth.
-Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together — a burst followed by silence that no real exporter produces.
+Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together.
+The result was a burst followed by silence that no real exporter produces.
 Flow lifetimes now derive from the duration the profile already sampled.
 
 ### Emission shape
@@ -520,7 +540,7 @@ Volume is unchanged.
 | **volume** | ~4.2 records/s per device | unchanged |
 | **active-timeout deadline** | exactly the configured value | uniform over ±25 % of it |
 | **shape** | a disturbance repeats every flow lifetime, indefinitely | it fades within about four lifetimes |
-| **per-device scenario ceiling** | ~8.5–9.7 records/s | ~8.1–9.2 records/s at the 5s default tick |
+| **per-device scenario ceiling** | ~8.5 to 9.7 records/s | ~8.1 to 9.2 records/s at the 5s default tick |
 
 **Why the deadline was a problem.** Flow creation is driven by expiry.
 The cache refills exactly what it lost.

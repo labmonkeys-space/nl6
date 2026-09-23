@@ -22,7 +22,7 @@ A v3 message carries no community and a v1/v2c message carries no security level
 | v1, v2c | a write community | empty, so no write is admitted |
 | v3 | a minimum security level | `authNoPriv` |
 
-## Whole fleet, SNMPv1 and v2c
+## Enable writes for the whole fleet over SNMPv1 and v2c
 
 Start the simulator with a write community.
 It is separate from the read community, which nl6 never checks.
@@ -42,7 +42,7 @@ snmpset -v2c -c s3cret 192.168.100.1 1.3.6.1.2.1.2.2.1.7.2 i 2
 Reads are unaffected and still need no community match, so `snmpget -c public` keeps working.
 The asymmetry is deliberate: a `SET` changes state, a poll does not.
 
-## Whole fleet, SNMPv3
+## Enable writes for the whole fleet over SNMPv3
 
 Add an engine ID to turn SNMPv3 on.
 The shipped defaults already reach the default minimum, so nothing else is needed:
@@ -76,17 +76,13 @@ snmpset -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
 Running with `-snmpv3-auth none` leaves no reachable level at or above the default minimum, so no v3 `SET` is admitted at all.
 The startup log says so in the line that begins `SNMP write admission`.
 
-## One device at a time
+## Enable writes on a single device
 
 Devices created over the REST API carry their own admission settings.
 
-:::note[Wait for the auto-start batch to finish]
-
-Only one device-creation batch runs at a time, and `-auto-start-ip` counts as one.
+**Wait for the auto-start batch to finish.** Only one device-creation batch runs at a time, and `-auto-start-ip` counts as one.
 A `POST /api/v1/devices` issued while the fleet is still coming up is refused with `409 Conflict` and a `Retry-After` header.
-Poll `GET /api/v1/status` and wait for `create_batch_in_progress` to clear, or just retry.
-
-:::
+Poll `GET /api/v1/status` and wait for `create_batch_in_progress` to clear, or retry.
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/devices \
@@ -176,6 +172,13 @@ snmpget -v2c -c public 192.168.100.1 \
   1.3.6.1.2.1.2.2.1.7.2 1.3.6.1.2.1.2.2.1.8.2
 ```
 
+Expected output, since `down(2)` forces `ifOperStatus` (`deriveOper` in `go/nl6/interface_state.go`):
+
+```
+IF-MIB::ifAdminStatus.2 = INTEGER: down(2)
+IF-MIB::ifOperStatus.2 = INTEGER: down(2)
+```
+
 SNMPv1 works the same way with `-v1`, but reports fewer distinct errors.
 See [when a write is refused](#when-a-write-is-refused).
 
@@ -196,9 +199,7 @@ snmpget -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin 192.168.100.1 \
 Shutting an interface moves `ifOperStatus` too, stamps `ifLastChange`, and pushes an update to any gNMI `ON_CHANGE` subscriber.
 The gNMI listener is on by default, so that part needs no extra flag.
 
-:::caution[Link traps and syslog need a collector]
-
-The state change also fires the device's link-down trap and syslog message, but only on a device that has somewhere to send them.
+**Link traps and syslog need a collector.** The state change also fires the device's link-down trap and syslog message, but only on a device that has somewhere to send them.
 None of the startup commands above configure one, so nothing is emitted.
 
 To watch the telemetry, start the fleet with a collector address:
@@ -212,11 +213,7 @@ sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
 
 Shutting an interface then sends `linkDown`, and unshutting it sends `linkUp`.
 
-:::
-
-:::note[Re-enabling does not always bring the interface back up]
-
-`ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and the rule is asymmetric:
+**Re-enabling does not always bring the interface back up.** `ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and the rule is asymmetric:
 
 | `SET ifAdminStatus` | `ifOperStatus` becomes |
 |---|---|
@@ -228,8 +225,6 @@ So on an interface whose link is down, a `SET` of `up(1)` succeeds and `ifOperSt
 That is not a rejected write.
 `ifAdminStatus` reads back `1`, and an administrative bounce does not repair a simulated cable fault.
 A fleet started with `-if-scenario 3` behaves this way on every interface.
-
-:::
 
 ## When a write is refused
 
@@ -244,7 +239,7 @@ A fleet started with `-if-scenario 3` behaves this way on every interface.
 
 SNMPv1 has a smaller set of error values, so those four collapse under `-v1`: `wrongValue` and `wrongType` both report `badValue`, while `notWritable` and `noCreation` both report `noSuchName`.
 
-### Confirming the policy took effect
+### Confirm the policy took effect
 
 Every boot prints the policy in one line, before any device exists:
 
@@ -255,7 +250,7 @@ SNMP write admission (auto-start batch; REST-created devices use the create body
 Grep the startup output for `SNMP write admission`.
 It reports what the auto-start batch got, so it is the fastest way to tell a configuration mistake from a network one.
 
-### Turning the gates off
+### Turn the gates off
 
 Earlier releases admitted a write from any manager that could reach the port.
 To get that back:

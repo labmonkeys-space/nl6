@@ -84,7 +84,7 @@ A push the SDK refuses to start answers `500` with the state attached (`enabled:
 Every error the SDK reports (a failed upload, a refused CPU collector, a full upload queue) shows on `GET` as `sdk_errors`, a count for the current push, and `last_error`.
 It is logged once per push, on the first occurrence: `[profiling] push to ... failing`.
 
-### Switching off
+### Switch profiling off
 
 Off first asks the SDK to flush (a final CPU and heap snapshot, then the queued uploads) and then stops it; `Profiler.Stop` alone uploads nothing.
 The flush is bounded by two upload timeouts (20 s).
@@ -110,7 +110,8 @@ A Go heap profile carries allocation sites and sizes, not object contents; a CPU
 ### Threat statement
 
 `POST /api/v1/profiling` and `/debug/pprof/` are exactly as unauthenticated as the rest of the REST API.
-Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile. nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
+Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile.
+nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
 The basic-auth flag value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is listed under [Follow-ups](#follow-ups).
 
 ## The CPU-contention rule
@@ -139,7 +140,7 @@ Re-labelling live goroutines on toggle would need every long-lived loop to poll 
 Everything else, the SDK, its goroutines, the forced GC, the upload connection, and the pull handlers, exists only while the gate is open.
 The feature opens no listener of its own by construction: the two files that implement it never call anything that opens a socket, and a test scans them for that.
 
-## Alloy scrape
+## Scrape with Alloy
 
 [`examples/pyroscope/alloy-scrape.alloy`](https://github.com/labmonkeys-space/nl6/tree/main/examples/pyroscope) is Alloy's unmodified default `pyroscope.scrape` profiling block plus the three `godeltaprof` endpoints.
 Simplified here (the file reads its target and the Pyroscope URL from `NL6_SCRAPE_TARGET` and `PYROSCOPE_URL`, defaulting to `127.0.0.1:18080` and `http://127.0.0.1:4040`, and labels the scraped profiles `service_name=nl6-interop-scrape`):
@@ -170,6 +171,7 @@ In production, disable them when the delta variants are on, so each profile is s
     profile.godeltaprof_block  { enabled = true }
   }
 ```
+
 `make test-interop-pyroscope` runs this exact file against real `grafana/pyroscope` and `grafana/alloy` containers and asserts, through Pyroscope's query API, that the pushed CPU and `alloc_space` profiles and the scraped `process_cpu` and `goroutine` series arrive, that the `subsystem` label filters on both the pushed and the scraped service, and that a `service_name` nothing pushed under returns nothing (the control without which the other rows prove reachability, not ingestion).
 It is a CI gate.
 

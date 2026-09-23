@@ -93,7 +93,7 @@ Loss instruments must read zero on runs that **claim a rate**: the loss-isolatio
 
 They will **not** read zero while searching above the ceiling, and that is expected.
 Probing above the ceiling is how the search finds it, and on a UDP path an overrun receiver is the signal you are looking for.
-An above-ceiling probe with loss is a valid probe; it is simply not a result.
+An above-ceiling probe with loss is a valid probe; it is not a result.
 
 ### The loss-isolation control
 
@@ -212,7 +212,7 @@ Measured on Horizon 36.0.3, whose syslog sink keys aggregation per host and flus
 | 63 | 47/s | 24.0 |
 
 **More devices at the same aggregate rate makes the collector slower**, because it shreds the batches.
-That is the opposite of the intuition that a fleet is just a rate.
+That is the opposite of the intuition that a fleet is only a rate.
 
 Two consequences for any result:
 
@@ -365,11 +365,13 @@ Both rows below were measured on the same 500-device fleet at the same 4 partiti
 | 3000/s | 6/s | ~4 | ~320/s |
 
 **The obvious explanation does not survive this page's own model, and that is worth stating rather than smoothing over.** Batch size tracks per-device rate, so batching is the natural suspect for the 2.2x jump.
-But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s per worker — about 30%, and [the ordering section](#the-check-is-not-a-formality-it-fired) puts it at 12% against the asymptote.
+But at `3 ms + 6.7 ms/message`, going from batch 1 to batch 4 is 103/s to 134/s per worker, about 30%.
+[The ordering section](#the-check-is-not-a-formality-it-fired) puts it at 12% against the asymptote.
 Neither is 2.2x.
 Held the other way the model overshoots: four workers at batch 1 predicts ~412/s against a measured 144/s.
 
-So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood** — the offered-rate effect is real and measured, but its cause is not established as batch size.
+So the identity does not reproduce either row, and by [this method's own rule](#making-the-identity-reproduce) that means the mechanism is **not yet understood**.
+The offered-rate effect is real and measured, but its cause is not established as batch size.
 The database was the most loaded component at these rates and is the standing candidate.
 Resolving it needs a run that varies per-device rate with batch size pinned, which this session did not do.
 
@@ -385,7 +387,8 @@ The number to check is not "how many messages per second will the fleet send" bu
 
 Two honest limits on the above.
 The three rows are measured; the 10,000-device extrapolation is **inference from them** and has not been run.
-It assumes only that the measured dependence on per-device rate continues down to 0.03/s — deliberately not that batching causes it, since the paragraph above shows that attribution failing.
+It assumes only that the measured dependence on per-device rate continues down to 0.03/s.
+It deliberately does not assume that batching causes it, since the paragraph above shows that attribution failing.
 It is consistent with the 160/s row (batch exactly 1.0) but unconfirmed at fleet scale.
 And the 320/s configuration is disqualified anyway on ordering grounds ([the check fired](#the-check-is-not-a-formality-it-fired)), so it bounds what the tuning *could* buy, not what it is safe to run.
 

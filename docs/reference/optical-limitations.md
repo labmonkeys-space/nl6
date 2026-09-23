@@ -47,7 +47,7 @@ Do not use it to characterise what shapes real hardware produces.
 | Absent | Why |
 |---|---|
 | `post-fec-ber` | Defined by OpenConfig, but **Ciena removed it** from their model. Serving it would let a rule pass here that could never fire against real hardware. Deliberate; a test asserts its absence. |
-| Per-counter `supported` / `invalid-data-flag` | Present on every counter in `ciena-waveserver-pm`. The `supported` equivalent on the OpenConfig surface **is leaf absence** (the `post-fec-ber` precedent above — absent, tested, distinguishable from zero). `invalid-data-flag` **will not be implemented**: no faithful expression exists on this surface, and every candidate is a guess about portal-gated hardware behaviour — the `post-fec-ber` reasoning applied symmetrically. |
+| Per-counter `supported` / `invalid-data-flag` | Present on every counter in `ciena-waveserver-pm`. The `supported` equivalent on the OpenConfig surface **is leaf absence** (the `post-fec-ber` precedent above: absent, tested, distinguishable from zero). `invalid-data-flag` **will not be implemented**: no faithful expression exists on this surface, and every candidate is a guess about portal-gated hardware behaviour. This is the `post-fec-ber` reasoning applied symmetrically. |
 | NETCONF, and the native `ciena-waveserver-*` models | nl6 serves the OpenConfig surface over gNMI only. A team that talks to real Waveservers over NETCONF with Ciena's own models is exercising a different interface entirely. |
 | Flow export (NetFlow / IPFIX / sFlow) | Correct, not missing. A layer-1 transport platform performs no layer-3/4 inspection and exports no flow records, so nl6 must not either. A batch flow seed skips this type; an explicit `flow` block naming it is rejected with 400. |
 | gNMI dial-out | The shipped dial-out flavor is `gnmireverse`, which is Arista-specific. This device serves dial-in only. |
@@ -86,8 +86,8 @@ If you need machine-correlatable clears, the syslog surface is the better target
 | Layer | Status |
 |---|---|
 | OpenConfig schema | Pinned: terminal-device 2026-01-14, platform-transceiver 2026-03-25, platform 2025-07-15. Served paths were traced against these. |
-| Waveserver native schema | Verified leaf by leaf against the ONOS mirror of `ciena-waveserver-{pm,xcvr-modem}` — **Waveserver Ai vintage, 2017 to 2018**. Newer firmware may differ. |
-| Waveserver SNMP MIBs | Publicly mirrored (`kcsinclair/mibs`), traced module by module for the notification content. The mirror is unversioned, but the modules are dated: `CIENA-WS-NOTIFICATION-MIB` `LAST-UPDATED "201611140000Z"` and `CIENA-WS-MIB` `201612140000Z`, "Release 1.3" — Waveserver Ai 1.x, matching the YANG vintage above. |
+| Waveserver native schema | Verified leaf by leaf against the ONOS mirror of `ciena-waveserver-{pm,xcvr-modem}`, **Waveserver Ai vintage, 2017 to 2018**. Newer firmware may differ. |
+| Waveserver SNMP MIBs | Publicly mirrored (`kcsinclair/mibs`), traced module by module for the notification content. The mirror is unversioned, but the modules are dated: `CIENA-WS-NOTIFICATION-MIB` `LAST-UPDATED "201611140000Z"` and `CIENA-WS-MIB` `201612140000Z`, "Release 1.3". That is Waveserver Ai 1.x, matching the YANG vintage above. |
 | Waveserver values | Not public. The Command Reference with real operating values is portal-gated, so no shipped value is derived from documented hardware output. |
 
 Path validation is by an in-repo manifest, not by compiling the YANG.

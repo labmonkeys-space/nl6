@@ -10,7 +10,8 @@ There are currently 391 JSON files across 29 device-type directories, plus 3 sha
 Trap and syslog catalogs (`traps.json`, `syslog.json`) are not covered and still need a restart.
 See [Web API → Reload device profiles](web-api.md#reload-device-profiles).
 
-OIDs in the `snmp` section may be written with or without a leading dot — the loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
+OIDs in the `snmp` section may be written with or without a leading dot.
+The loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
 
 ## JSON schema
 
@@ -43,7 +44,8 @@ Each file is a JSON object with up to three top-level keys:
 An `api` entry has `method`, `path`, `response` and an optional `request` (an example body for a POST/PUT entry; documentation only, nothing reads it when serving).
 There is no `status` field.
 
-The `api` section is optional and used primarily for storage device simulation — see [Device types → Storage systems](device-types.md#storage-systems).
+The `api` section is optional and used primarily for storage device simulation.
+See [Device types → Storage systems](device-types.md#storage-systems).
 
 ## Directory layout
 
@@ -68,7 +70,11 @@ Browse [`go/nl6/resources/asr9k/`](https://github.com/labmonkeys-space/nl6/tree/
 ## Unknown keys are ignored
 
 The resource decoder is not strict, so a key it does not recognise is dropped silently.
-That is a hazard for a typo'd `snmp` array — an optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check — and it is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments. 26 shipped parts carry one today. 19 of them carry the marker `UNAUDITED-ARC(<pen>)`, which labels a vendor enterprise subtree nobody has checked against its MIB; a part serving a vendor arc must be audited, carry that marker, or be excluded by name, and a test fails otherwise.
+That is a hazard for a typo'd `snmp` array.
+An optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check.
+It is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments.
+26 shipped parts carry one today.
+19 of them carry the marker `UNAUDITED-ARC(<pen>)`, which labels a vendor enterprise subtree nobody has checked against its MIB; a part serving a vendor arc must be audited, carry that marker, or be excluded by name, and a test fails otherwise.
 Such a key changes nothing that loads, and that is pinned, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
 
 ## Load-time validation
@@ -88,10 +94,10 @@ Values on typed leaves carry a second requirement, described under [Typed values
 Where the rejection surfaces matters:
 
 - Resource files are also loaded on REST device creation, so a bad file is a failed API call in the middle of a run, not only a refusal at startup. It answers **HTTP 400**. The body names the file's base name; for a fault attributable to one entry it also names the OID and the value. A parse failure, a `null` document, an empty directory, an optical-inventory mismatch and a rejected file name have no single entry to name, so they carry neither.
-- The 400 body never contains a directory path — not in the file name, and not inside an interpolated cause such as a failed read — and control characters and bidi formatting runes in it are stripped and its length capped. The full path is written to the **server log** instead, so it is not lost. That guarantee covers the classified rejections above only. Faults the loader does not classify — a file it cannot open, a directory it cannot list — still answer 500 with the raw error, and some of those embed the full path.
+- The 400 body never contains a directory path, neither in the file name nor inside an interpolated cause such as a failed read. Control characters and bidi formatting runes in it are stripped and its length capped. The full path is written to the **server log** instead, so it is not lost. That guarantee covers the classified rejections above only. Faults the loader does not classify, such as a file it cannot open or a directory it cannot list, still answer 500 with the raw error, and some of those embed the full path.
 - In a device-type directory each JSON part is validated separately, so the error names the part that is wrong rather than the directory.
-- A rejection is never downgraded to a log line. At startup an invalid default resource file is fatal: the simulator exits rather than serving a substituted profile. In round-robin device creation an invalid device type fails the whole call rather than being skipped, because skipping it silently changes the mix of device types you asked for. So does any other failure to load one, such as an unreadable file — that is not evidence the device type is not shipped.
-- A file that is simply **absent** is a different kind of fault. Round-robin still skips a device type that is not shipped, with a warning, and the other types still load. Over REST an absent file is also a 400: `resource_file` is your field, and naming a device type that does not exist is a request that cannot be satisfied, not a server fault. A round-robin batch in which **every** requested type is absent gets that same 400, not a 500.
+- A rejection is never downgraded to a log line. At startup an invalid default resource file is fatal: the simulator exits rather than serving a substituted profile. In round-robin device creation an invalid device type fails the whole call rather than being skipped, because skipping it silently changes the mix of device types you asked for. So does any other failure to load one, such as an unreadable file. That is not evidence the device type is not shipped.
+- A file that is **absent** is a different kind of fault. Round-robin still skips a device type that is not shipped, with a warning, and the other types still load. Over REST an absent file is also a 400: `resource_file` is your field, and naming a device type that does not exist is a request that cannot be satisfied, not a server fault. A round-robin batch in which **every** requested type is absent gets that same 400, not a 500.
 - At startup, a missing `resources/asr9k.json` is **not** a fallback to `cisco_ios`. The simulator writes a synthesised default profile of about 30 compiled-in OIDs to that path and serves it. The `cisco_ios` fallback runs only when that file cannot be written, for example into a read-only `resources/` directory.
 - A file containing the literal `null`, a file whose JSON does not parse, a file with data trailing the JSON document, a single file with no resource entries at all, and a device-type directory that has no JSON part **or whose parts hold no entries between them** are treated as invalid content and take the same route. The directory rule is a property of the merged set, not of the file count: a directory whose only part is `{}` produces a device type that answers no OID at all, which is exactly what the single-file rule refuses. A `null` or otherwise empty **part** inside a directory that has entries elsewhere is fine: a part legitimately carries only some sections.
 - A failed load never replaces the resource set already in memory, not even partially.
@@ -99,7 +105,8 @@ Where the rejection surfaces matters:
 
 ### Behaviour change
 
-Six file or request shapes that previously loaded are now refused — fatal at startup, `400` at REST.
+Six file or request shapes that previously loaded are now refused.
+They are fatal at startup and a `400` at REST.
 If you have hand-written resource files or scripts, check for these before upgrading:
 
 | Shape | Previously | Now |
@@ -127,27 +134,31 @@ Every rule is decided by calling the SNMP encoder and looking at what it emits, 
 ### Typed values
 
 A leaf the encoder's type table types must carry a value that type can hold, or the file is rejected with the file, the OID, the declared type and the value named.
-One shipped example: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB — OpenNMS does, as a gauge — logged a conversion error on every poll of every device.
+One shipped example: a `freeMem` entry carrying the device's own name was served as an OCTET STRING, and a collector typing that OID per its MIB (OpenNMS does, as a gauge) logged a conversion error on every poll of every device.
 
 - `Counter32`, `Gauge32`, `TimeTicks`: an unsigned decimal that fits 32 bits. A negative loads with a warning (the encoder wrap-casts, so `-1` is served as `4294967295` under the declared tag), but anything the encoder cannot parse does not.
 - `Counter64`: an unsigned decimal that fits 64 bits. `-1` is **refused** here, unlike the 32-bit types, because that branch of the encoder has no signed fallback.
 - `IpAddress`: a dotted-quad IPv4 address. `1`, `host`, `10.0.0.256` and `::1` are all refused.
 - No surrounding whitespace, no units, no hex, no fractions: `strconv` does not trim or interpret, so `" 42"` and `"42 packets"` would go on the wire as strings.
 
-A leaf the table does **not** type is not checked, because its default encoding — INTEGER for a number, OCTET STRING for anything else — is legitimate either way.
+A leaf the table does **not** type is not checked, because its default encoding (INTEGER for a number, OCTET STRING for anything else) is legitimate either way.
 One bound still applies to it: an untyped numeric value must fit `Integer32`, since that is what RFC 2578 makes an SMI INTEGER, and a value outside it is legal BER that no manager can represent.
 That is asserted over the shipped set rather than at load.
 `sysName` and `sysLocation` are served from elsewhere and are not checked here.
 `sysLocation` is filtered once at load, where the city dataset is assembled, so a sentinel-valued row never reaches a device.
 `sysName` is generated, but it does carry the operator's `resource_file` slug; it cannot compose to a sentinel because every pattern embeds `-` and the result is lower-cased while both sentinels are camelCase.
-A malformed OID **key** is still accepted, and so is a value that encodes cleanly but names an object the MIB does not define there — these rules check encodability, not faithfulness to the MIB.
+A malformed OID **key** is still accepted, and so is a value that encodes cleanly but names an object the MIB does not define there.
+These rules check encodability, not faithfulness to the MIB.
 
 Two whole classes of wrong data therefore load without a word, and both were swept by hand rather than by a rule:
 
-- **An OID with the wrong number of instance sub-identifiers** — a bare table column (too few) or an over-specified instance (too many). Neither is a legal varbind name. A hand audit deleted 61 such entries: 57 bare columns, four of which were the only `hrStorageTable` row their profile had (those profiles now model no storage, which is the intended outcome rather than a gap to fill), plus 4 over-specified `ciscoImageString` instances. Deciding which of a prefix/extension pair is the legal one needs the table's INDEX arity, so it needs the MIB — the guards flag candidates, not verdicts. See [SNMP data fidelity → Bare column OIDs](../explanation/snmp-data-fidelity.md#bare-column-oids).
+- **An OID with the wrong number of instance sub-identifiers**, meaning a bare table column (too few) or an over-specified instance (too many). Neither is a legal varbind name. A hand audit deleted 61 such entries: 57 bare columns, four of which were the only `hrStorageTable` row their profile had (those profiles now model no storage, which is the intended outcome rather than a gap to fill), plus 4 over-specified `ciscoImageString` instances. Deciding which of a prefix/extension pair is the legal one needs the table's INDEX arity, so it needs the MIB. The guards flag candidates, not verdicts. See [SNMP data fidelity → Bare column OIDs](../explanation/snmp-data-fidelity.md#bare-column-oids).
 - **A value of the wrong semantic kind on a real vendor OID, or a whole vendor subtree on the wrong vendor's device.** A hand audit found 8 of 11 Palo Alto enterprise OIDs wrong or invalid in `palo_alto_pa3220`, all passing every rule, and twelve profiles that are not Palo Alto devices serving that subtree as well. Five vendor arcs have been audited this way; fourteen have not. See [SNMP data fidelity → Semantic faithfulness](../explanation/snmp-data-fidelity.md#semantic-faithfulness).
 
-**A static entry on an OID the cycler serves is dead, not authoritative.** `findResponse` consults the dynamic cyclers before the static map, so an entry on any `ifTable`/`ifXTable` column in `ifCyclerColumns` is unreachable — writing one is a silent no-op, and reading a profile's JSON to learn what a device answers will mislead you. 2064 such rows were deleted for exactly that reason.
+**A static entry on an OID the cycler serves is dead, not authoritative.**
+`findResponse` consults the dynamic cyclers before the static map, so an entry on any `ifTable`/`ifXTable` column in `ifCyclerColumns` is unreachable.
+Writing one is a silent no-op, and reading a profile's JSON to learn what a device answers will mislead you.
+2064 such rows were deleted for exactly that reason.
 The two exceptions are `ifAdminStatus` (`.7`) and `ifOperStatus` (`.8`), whose static rows *seed* the interface-state engine and are load-bearing.
 
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
@@ -168,7 +179,7 @@ Anything else matches no device type and is rejected with 400. The catalog of ca
 Not every OID is static.
 The following are computed at query time regardless of what the resource files contain:
 
-- **CPU, memory, temperature** — cycle through a 100-point sine-wave pattern per device. See [SNMP reference → Dynamic metrics](snmp.md#dynamic-cpu--memory--temperature-metrics).
-- **Dynamic IF-MIB counters** — every per-interface counter in `ifTable` and `ifXTable` (octets, HC packets, Counter32 shadows, errors, discards) is computed analytically from the octet sine wave, phase-offset per interface. See [SNMP reference → Dynamic IF-MIB counters](snmp.md#dynamic-if-mib-counters).
-- **Interface state** — the `ifAdminStatus` / `ifOperStatus` rows seed the state engine at device creation, overlaid by [`-if-scenario`](cli-flags.md#interface-state-scenarios); from then on the engine owns the value and the rows are not read again.
-- **GPU metrics** — per-GPU utilization, VRAM, temp, power, fan, clocks. See [GPU simulation](gpu/index.md).
+- **CPU, memory, temperature.** These cycle through a 100-point sine-wave pattern per device. See [SNMP reference → Dynamic metrics](snmp.md#dynamic-cpu--memory--temperature-metrics).
+- **Dynamic IF-MIB counters.** Every per-interface counter in `ifTable` and `ifXTable` (octets, HC packets, Counter32 shadows, errors, discards) is computed analytically from the octet sine wave, phase-offset per interface. See [SNMP reference → Dynamic IF-MIB counters](snmp.md#dynamic-if-mib-counters).
+- **Interface state.** The `ifAdminStatus` / `ifOperStatus` rows seed the state engine at device creation, overlaid by [`-if-scenario`](cli-flags.md#interface-state-scenarios); from then on the engine owns the value and the rows are not read again.
+- **GPU metrics.** Per-GPU utilization, VRAM, temp, power, fan, clocks. See [GPU simulation](gpu/index.md).

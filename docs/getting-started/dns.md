@@ -1,7 +1,8 @@
 # Resolve devices with DNS
 
 Out of the box you address simulated devices by their `10.42.x.x` management IPs.
-With the **CoreDNS sidecar** you can resolve them by name instead — forward `<device-name>.nl6.local` and reverse `PTR`s — kept up to date automatically as devices come and go.
+With the **CoreDNS sidecar** you can resolve them by name instead, with forward `<device-name>.nl6.local` records and reverse `PTR`s.
+The records update automatically as devices come and go.
 
 nl6 runs an authoritative DNS server as a **hidden primary**; a stock [CoreDNS](https://coredns.io) runs as a **secondary**, transferring the zones via AXFR and refreshing on NOTIFY.
 No custom CoreDNS plugin.
@@ -17,7 +18,7 @@ No custom CoreDNS plugin.
 
 ## Prerequisites
 
-- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup — see [Docker](./docker.md).
+- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup. See [Docker](./docker.md).
 - `dig` (or any DNS client) and `curl` on the host to verify.
 
 ## Run the stack
@@ -30,7 +31,7 @@ cd nl6/examples/coredns-sidecar
 docker compose up -d
 ```
 
-It auto-starts a 10-device demo fleet (`10.42.0.1`–`10.42.0.10`) with the DNS subsystem enabled.
+It auto-starts a 10-device demo fleet (`10.42.0.1` to `10.42.0.10`) with the DNS subsystem enabled.
 On every device create/delete nl6 bumps the zone serial (debounced ~1s) and NOTIFYs CoreDNS, which re-transfers.
 
 The `nl6` service runs with these DNS flags (see the [CLI flags](../reference/cli-flags.md) for the full set):
@@ -62,7 +63,7 @@ nl6.local:53 {
 }
 ```
 
-## Verify
+## Verify name resolution
 
 ```bash
 # List the running fleet to pick a real name/IP (names are random per run):
@@ -77,16 +78,15 @@ dig @localhost -x 10.42.0.5 +short                   # 10.42.0.5  -> ip4.mgmt.<n
 curl -s localhost:8080/api/v1/dns/status | jq
 ```
 
-:::tip[Names are synthesised]
-nl6 generates each device's `sysName` randomly, so the exact forward names change per run.
+**Names are synthesised.** nl6 generates each device's `sysName` randomly, so the exact forward names change per run.
 Read them from the AXFR (`dig @localhost -p 5353 nl6.local AXFR`) or from `/api/v1/devices`.
 Duplicate names are disambiguated deterministically (lowest IP keeps the bare label).
-:::
 
 ## How it stays current
 
 Creating or deleting a device marks the zones dirty.
-A debounced worker waits for a quiescence window (`-dns-debounce`, default 1s), then bumps the SOA serial **once** and NOTIFYs each secondary — so a large batch coalesces into a single transfer rather than one per device.
+A debounced worker waits for a quiescence window (`-dns-debounce`, default 1s), then bumps the SOA serial **once** and NOTIFYs each secondary.
+A large batch therefore coalesces into a single transfer rather than one per device.
 Try it:
 
 ```bash
@@ -97,11 +97,11 @@ curl -s -XPOST localhost:8080/api/v1/devices \
 curl -s localhost:8080/api/v1/dns/status | jq '.zones, .zone_bumps'
 ```
 
-## Adjust
+## Adjust the configuration
 
-- **Different domain / subnets** — change `-dns-domain` and `-dns-reverse-zone` on the `nl6` service, and add/rename the matching `secondary` blocks in the `Corefile`. A CoreDNS secondary needs one block per zone. Device IPs outside every configured reverse zone resolve forward-only (no PTR).
-- **No NOTIFY** — drop `-dns-notify`; CoreDNS still picks up changes on its SOA refresh interval, just less promptly.
+- **Different domain / subnets.** Change `-dns-domain` and `-dns-reverse-zone` on the `nl6` service, and add/rename the matching `secondary` blocks in the `Corefile`. A CoreDNS secondary needs one block per zone. Device IPs outside every configured reverse zone resolve forward-only (no PTR).
+- **No NOTIFY.** Drop `-dns-notify`; CoreDNS still picks up changes on its SOA refresh interval, but less promptly.
 
 ## Next
 
-- [DNS service discovery reference](../reference/dns-service-discovery.md) — the full naming scheme, flags, zone boundaries, and operational caveats.
+- [DNS service discovery reference](../reference/dns-service-discovery.md) covers the full naming scheme, flags, zone boundaries, and operational caveats.

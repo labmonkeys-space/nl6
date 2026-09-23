@@ -11,10 +11,10 @@ See [Architecture](../explanation/architecture.md) for the component map.
 
 ### Verified against net-snmp, not only against nl6's own parser
 
-:::note[Why this check counts for more than the rest of the suite]
-
+**Why this check counts for more than the rest of the suite.**
 Every security level below was polled with `snmpget` from net-snmp, which discovers the engine, derives its own key from the password and the engine ID it received, verifies nl6's digest, and builds its own decryption IV.
-That check runs on every push, against net-snmp 5.9.4. To run it yourself:
+That check runs on every push, against net-snmp 5.9.4.
+To run it yourself:
 
 ```
 make test-interop
@@ -23,8 +23,6 @@ make test-interop
 It matters more than the rest of the suite put together.
 Every other v3 test reads nl6's output with nl6's own parser, so a shared misreading of RFC 3414 passes all of them.
 Only an outside manager can catch that class of fault.
-
-:::
 
 ### SNMPv3 USM conformance
 
@@ -119,7 +117,7 @@ It honours `max-repetitions` and `non-repeaters` as sent, and it answers every c
 A request for zero repetitions is answered with an empty binding list, not an `endOfMibView`.
 
 The exceptions are carried as sentinel strings (`noSuchObject`, `endOfMibView`) from the lookup to the encoder, where `encodeTypedValue` turns them into tags.
-That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception, and a v1 manager would get `noSuchName` for a value that is simply a string.
+That puts them in the value space: a resource file whose legitimate value were literally `noSuchObject` would encode as an exception, and a v1 manager would get `noSuchName` for a value that is a plain string.
 Removing the hazard at the root needs a typed value rather than a string, which is a larger change.
 Until then the resource-file route to it is closed at load time.
 
@@ -138,7 +136,7 @@ The round-trip held only while the second arc stayed below 40, and fabricated si
 
 That is valid-looking BER carrying an OID nobody wrote, which a collector has no way to detect.
 `2.999` is the ITU test arc and is perfectly legal.
-It simply could not be expressed before.
+It could not be expressed before.
 
 An OID the encoder cannot represent faithfully now takes a degenerate encoding, `06 00`, rather than becoming a different OID.
 That encoding is itself non-conformant: X.690 §8.19.1 requires at least one sub-identifier, so nl6 emits bytes its own decoder refuses.
@@ -638,7 +636,7 @@ Every per-interface counter listed below is generated dynamically, not read from
 
 | Column | OID column | Derivation |
 |--------|-----------|------------|
-| `ifHCInOctets` | `.6` | master dial (sine wave, 60 – 100 % of `ifHighSpeed` / `ifSpeed`, 1 h period) |
+| `ifHCInOctets` | `.6` | master dial (sine wave, 60 to 100 % of `ifHighSpeed` / `ifSpeed`, 1 h period) |
 | `ifHCInUcastPkts` | `.7` | `baseInUcast + (inDeltaOctets / pktSizeIn) × ucastRatioIn` |
 | `ifHCInMulticastPkts` | `.8` | same shape, `mcastRatioIn` |
 | `ifHCInBroadcastPkts` | `.9` | same shape, `bcastRatioIn` |
@@ -726,7 +724,7 @@ Properties common to every dynamic counter:
 - **Zero-goroutine cost.** Every counter is computed on-demand from the current time against analytic formulas. There is no per-interface goroutine, no polling loop.
 - Values are visible on both `GET` and `GETNEXT` / `GETBULK`.
 
-**Counter32 wrap guidance.** The fastest-wrapping objects on the device are the two octet columns, and they are the first a collector trips over: `ifInOctets` / `ifOutOctets` cover 2³² octets in about **3.4 s at 10 Gb/s** and about **86 ms at 400 Gb/s** at line rate (the dial's 60–100 % duty cycle stretches that by at most two thirds).
+**Counter32 wrap guidance.** The fastest-wrapping objects on the device are the two octet columns, and they are the first a collector trips over: `ifInOctets` / `ifOutOctets` cover 2³² octets in about **3.4 s at 10 Gb/s** and about **86 ms at 400 Gb/s** at line rate (the dial's 60 to 100 % duty cycle stretches that by at most two thirds).
 No poll interval makes a 32-bit octet counter usable at those speeds, which is exactly why RFC 2863 §3.1.6 requires the 64-bit octet counters above 20 Mb/s.
 Poll `ifHCInOctets` / `ifHCOutOctets` instead. nl6 serves the 32-bit columns for fidelity, not because they are useful there.
 
@@ -742,9 +740,9 @@ The `ifInErrors` / `ifOutErrors` / `ifInDiscards` / `ifOutDiscards` rates are dr
 | Scenario | `errPpm` | `discPpm` | Typical dashboard appearance |
 |----------|----------|-----------|------------------------------|
 | `clean` *(default)* | `0` | `0` | Flat line at the baseline |
-| `typical` | `10 – 100` | `20 – 200` | Faint steady slope (good production gear) |
-| `degraded` | `1 000 – 10 000` | `2 000 – 20 000` | Visible error-rate alert candidates (0.1 – 1 %) |
-| `failing` | `10 000 – 100 000` | `20 000 – 200 000` | Link-flap / bad-cable alarms (1 – 10 %) |
+| `typical` | `10 to 100` | `20 to 200` | Faint steady slope (good production gear) |
+| `degraded` | `1 000 to 10 000` | `2 000 to 20 000` | Visible error-rate alert candidates (0.1 to 1 %) |
+| `failing` | `10 000 to 100 000` | `20 000 to 200 000` | Link-flap / bad-cable alarms (1 to 10 %) |
 
 Set for the auto-start batch via the CLI flag `-if-error-scenario <name>`, or per-device via `if_error_scenario` in the `POST /api/v1/devices` body.
 See [CLI flags reference](cli-flags.md#interface-state-scenarios) and [Web API reference](web-api.md#create-devices).
@@ -752,10 +750,10 @@ See [CLI flags reference](cli-flags.md#interface-state-scenarios) and [Web API r
 ### Example walks
 
 ```bash
-# Walk ifXTable — covers all HC counters, Counter32 shadows, and ifHighSpeed
+# Walk ifXTable: covers all HC counters, Counter32 shadows, and ifHighSpeed
 snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.31.1.1
 
-# Walk ifTable — covers ifInOctets, ifInUcastPkts, ifInDiscards, ifInErrors,
+# Walk ifTable: covers ifInOctets, ifInUcastPkts, ifInDiscards, ifInErrors,
 # ifOutOctets, ifOutUcastPkts, ifOutDiscards, ifOutErrors
 # (.10 and .16 are cycler-driven, not frozen JSON values)
 snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1

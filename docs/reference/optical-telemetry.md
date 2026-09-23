@@ -183,7 +183,7 @@ gnmic -a 10.42.0.1:9339 --skip-verify subscribe \
   --sample-interval 10s
 ```
 
-Check units and precision on the wire, not just presence: dBm and dB at two fraction digits, and negative power values rendered correctly.
+Check units and precision on the wire, not only presence: dBm and dB at two fraction digits, and negative power values rendered correctly.
 
 ### 3. Threshold and alarm rules
 
@@ -206,7 +206,8 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degr
 The crossing also raises a **real Ciena notification**: a trap (`wsLinkStateAlarmNotification`, `1.3.6.1.4.1.1271.3.2.12`, with `OtuPreFecSd`/`OtuPreFecSf` condition flags and the MIB's non-contiguous severity enum) and a matching syslog line, with a distinct clear on recovery.
 Detection runs in a shared evaluator with 0.5 dB hysteresis and a 30 s soak, so a channel resting near a threshold does not flap.
 SD is predictive (below ~14.3 dB OSNR, below every healthy tier's excursion envelope); SF is service-affecting and is by construction the same threshold that starts the `fec-uncorrectable-blocks` counter.
-Note the clear-correlation caveat in the [limitations doc](optical-limitations.md): a clear names its condition only in the Description text — that is Ciena's model, reproduced faithfully.
+Note the clear-correlation caveat in the [limitations doc](optical-limitations.md): a clear names its condition only in the Description text.
+That is Ciena's model, reproduced faithfully.
 
 ### 4. Correlation and root cause
 
@@ -261,10 +262,19 @@ gnmic -a 10.42.0.2:9339 --skip-verify get \
   --path '/components/component[name=*]/optical-channel/state/osnr/avg'
 ```
 
+Expected output (the gRPC status each command reports, in order; source `go/nl6/gnmi_paths.go`):
+
+```
+rpc error: code = NotFound desc = unknown component name "OCH-9-9"
+rpc error: code = NotFound desc = optical leaf "fec-uncorrectable-blocks" is a bare counter with no statistics container; drop the "instant" selector
+rpc error: code = NotFound desc = device serves no optical channels
+```
+
 `NotFound` means permanently absent; `Unavailable` is reserved for an optical device still initialising, and is retryable.
 A client that conflates the two will either retry forever or give up too early.
 
-Per-counter `supported` and `invalid-data-flag` have no leaves here, by decision: on the OpenConfig surface the `supported` equivalent **is leaf absence** — exactly what the three checks above exercise — and `invalid-data-flag` is inexpressible without inventing behaviour, so it is deliberately not simulated.
+Per-counter `supported` and `invalid-data-flag` have no leaves here, by decision: on the OpenConfig surface the `supported` equivalent **is leaf absence**, which is exactly what the three checks above exercise.
+`invalid-data-flag` is inexpressible without inventing behaviour, so it is deliberately not simulated.
 See the limitations doc for the full rationale.
 
 ## Example configuration

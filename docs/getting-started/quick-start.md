@@ -10,12 +10,12 @@ For full flag docs see [CLI flags](../reference/cli-flags.md); for container wor
 - Basic networking tools: `ip`, `iptables`.
 - net-snmp client tools (`snmpget`, `snmpwalk`, `snmpset`) to poll and write to the devices. On Debian and Ubuntu these are the `snmp` package.
 
-:::tip[Skip host setup]
-For a zero-prerequisite path, run the published container image — see [Docker](./docker.md), which bundles the dependencies and TUN/TAP support.
+**Skip host setup.** For a zero-prerequisite path, run the published container image.
+See [Docker](./docker.md).
+The image bundles the dependencies and TUN/TAP support.
 On bare metal, install the prerequisites above; for large fleets see the host tuning in [Scaling](../ops/scaling.md).
-:::
 
-## Build
+## Build the simulator
 
 ```bash
 git clone https://github.com/labmonkeys-space/nl6.git
@@ -25,19 +25,20 @@ cd nl6
 go build -o nl6 .
 ```
 
-## Run
+## Run the simulator
 
 ```bash
-# Server only — create devices later via the REST API.
+# Server only. Create devices later via the REST API.
 sudo ./nl6
 
 # Auto-create 5 devices starting from 192.168.100.1 on a flat /16 (the default).
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5
 ```
 
-Once the simulator is up, open the web UI at [http://localhost:8080/](http://localhost:8080/) or drive it via the REST API — see [Web API](../reference/web-api.md).
+Once the simulator is up, open the web UI at [http://localhost:8080/](http://localhost:8080/) or drive it via the REST API.
+See [Web API](../reference/web-api.md).
 
-## Verify
+## Query the devices
 
 ```bash
 # SNMP v2c query against the first auto-created device

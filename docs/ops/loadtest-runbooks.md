@@ -1,45 +1,40 @@
 # Runbooks
 
-Worked, copy-pasteable recipes — one per use case.
+Worked, copy-pasteable recipes, one per use case.
 Each is complete: how to start nl6 so the target protocol is exporting, the scenario to submit, and what to read back.
 They build on the operating guide: the [lifecycle](./loadtest-scenarios.md#run-a-fidelity-check) and [fidelity mode](./loadtest-scenarios.md#fidelity-mode).
 All assume `NL6=http://localhost:8080`, that every `POST` sends `Content-Type: application/json`, and that nl6 runs as root (TUN / network namespace).
 For a clean window with no background noise, add [`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
 
-> **A long per-device `interval` will not silence a fleet.** The per-device
-> `interval` / `tick_interval` fields are **rejected with `400`**: every device
-> fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence,
-> and a flow device ticks at `-flow-tick-interval`. Before that rejection the
-> fields were accepted, echoed back and ignored, so `"interval": "24h"` on 500
-> devices left ~50 events/s of background running while every surface reported
-> success. `-fidelity` is the supported way. Set it
-> at launch, or toggle it at runtime with `POST /api/v1/fidelity` (optional
-> `duration` auto-reverts, capped at 24h), which is what you want when
-> bracketing a measurement on a fleet you do not wish to rebuild.
-> `GET /api/v1/fidelity` reports the value in force alongside the startup flag,
-> because once the value is mutable the flag is only a default.
+**A long per-device `interval` will not silence a fleet.**
+The per-device `interval` / `tick_interval` fields are **rejected with `400`**: every device fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence, and a flow device ticks at `-flow-tick-interval`.
+Before that rejection the fields were accepted, echoed back and ignored, so `"interval": "24h"` on 500 devices left ~50 events/s of background running while every surface reported success.
+`-fidelity` is the supported way.
+Set it at launch, or toggle it at runtime with `POST /api/v1/fidelity` (optional `duration` auto-reverts, capped at 24h), which is what you want when bracketing a measurement on a fleet you do not wish to rebuild.
+`GET /api/v1/fidelity` reports the value in force alongside the startup flag, because once the value is mutable the flag is only a default.
 
-A scenario **gates an export that already exists** — it never configures the wire.
+A scenario **gates an export that already exists**.
+It never configures the wire.
 So each device must have the target protocol's exporter enabled first, via the seed flags shown (auto-start batch) or a per-device block in `POST /api/v1/devices`.
 A device without that exporter lands in the arm `excluded[]` list, never in the run.
 
 | # | Use this when you want to… | Protocol |
 |---|-----------------------------|----------|
-| [1](#1-fixed-rate-syslog-fidelity-the-baseline) | prove a pipeline loses nothing at a steady rate | syslog |
-| [2](#2-netflow-v9-flow-export-fidelity) | check a flow-export pipeline | NetFlow v9 |
-| [3](#3-production-shaped-ramp--loss-localization) | see *where* loss lands under ramping load | syslog + rate profile |
-| [4](#4-self-aborting-experiment-abort-predicate) | stop a bad run before it floods a collector | SNMP trap |
-| [5](#5-coordinated-start-across-systems-scheduled-t0) | line the window up with an external capture | any |
+| [1](#1-check-syslog-fidelity-at-a-fixed-rate-the-baseline) | prove a pipeline loses nothing at a steady rate | syslog |
+| [2](#2-check-netflow-v9-flow-export-fidelity) | check a flow-export pipeline | NetFlow v9 |
+| [3](#3-ramp-production-shaped-load-and-localize-loss) | see *where* loss lands under ramping load | syslog + rate profile |
+| [4](#4-abort-an-experiment-automatically-abort-predicate) | stop a bad run before it floods a collector | SNMP trap |
+| [5](#5-coordinate-the-start-across-systems-scheduled-t0) | line the window up with an external capture | any |
 | [6](#6-diff-the-report-in-one-command) | diff the report against received counts in CI | any |
-| [7](#7-ipfix-only-fidelity) | a clean IPFIX-only run | IPFIX |
-| [8](#8-mixed-flow-protocol-fleet-20-v5--20-v9--60-ipfix) | measure a mixed-protocol fleet | NetFlow v5/v9 + IPFIX |
+| [7](#7-check-ipfix-only-fidelity) | a clean IPFIX-only run | IPFIX |
+| [8](#8-measure-a-mixed-flow-protocol-fleet-20-v5--20-v9--60-ipfix) | measure a mixed-protocol fleet | NetFlow v5/v9 + IPFIX |
 
-### 1. Fixed-rate syslog fidelity (the baseline)
+### 1. Check syslog fidelity at a fixed rate (the baseline)
 
 Prove a syslog pipeline loses nothing at a steady 10 msg/s per device.
 
 ```bash
-# 3 auto-start devices (10.42.0.1–3), each exporting syslog to your collector.
+# 3 auto-start devices (10.42.0.1 to 10.42.0.3), each exporting syslog to your collector.
 sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 3 -syslog-collector 10.0.0.9:514
 
 ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
@@ -55,9 +50,9 @@ curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq .summary
 A `constant` profile is deterministic: `summary.sent` is exactly `rate × window × devices = 10 × 30 × 3 = 900`.
 Reconcile that against your collector; `loss_ratio` should be `0`.
 
-### 2. NetFlow v9 flow-export fidelity
+### 2. Check NetFlow v9 flow-export fidelity
 
-A different protocol — the device needs **flow** export, not syslog.
+A different protocol: the device needs **flow** export, not syslog.
 
 ```bash
 sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5 \
@@ -70,18 +65,18 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 ```
 
 Swap `-flow-protocol` (and the scenario `protocol`) for `ipfix`, `sflow`, or `netflow5` to exercise the others.
-On a shared collector, isolate the run by its lever (v9 Source ID, IPFIX ODID, sFlow `sub_agent_id`) — see [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic); the report's `metadata.run_tags` records which one and how.
+On a shared collector, isolate the run by its lever (v9 Source ID, IPFIX ODID, sFlow `sub_agent_id`).
+See [Run tagging](./loadtest-scenarios.md#isolate-experiment-traffic-with-run-tags); the report's `metadata.run_tags` records which one and how.
 
-### 3. Production-shaped ramp + loss localization
+### 3. Ramp production-shaped load and localize loss
 
 Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how much.
 
-> **Flow rate is per device and capped.** Flow protocols are paced by sizing each
-> device's flow cache, which bounds the per-device rate at roughly 8.1–9.2 records/s
-> at the default 5s tick (lower on a longer one).
-> A rate above a participant's ceiling excludes it at arm. Earlier revisions of this
-> runbook used `"rate": 20`, which every shipped profile now refuses. Scale a run
-> with participants rather than per-device rate.
+**Flow rate is per device and capped.**
+Flow protocols are paced by sizing each device's flow cache, which bounds the per-device rate at roughly 8.1 to 9.2 records/s at the default 5s tick (lower on a longer one).
+A rate above a participant's ceiling excludes it at arm.
+Earlier revisions of this runbook used `"rate": 20`, which every shipped profile now refuses.
+Scale a run with participants rather than per-device rate.
 
 ```bash
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
@@ -90,12 +85,12 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-After stop, read `summary.sub_windows` — 10 equal time buckets over the window (see [Loss localization](../reference/loadtest-report-schema.md#loss-localization)).
+After stop, read `summary.sub_windows`, which holds 10 equal time buckets over the window (see [Loss localization](../reference/loadtest-report-schema.md#loss-localization)).
 Loss concentrated in the **late, high-rate** buckets points at collector overload under burst rather than steady-state loss.
 Bucket your collector's received data the same way (receive-time relative to `metadata.t0`) and diff per bucket.
 Try `"kind": "sine"` (`mean_rate`, `amplitude`, `period`) for a cyclic load or `"kind": "staged"` (`stages: [{duration, rate}, …]`) for step changes.
 
-### 4. Self-aborting experiment (abort predicate)
+### 4. Abort an experiment automatically (abort predicate)
 
 Stop the run automatically before it floods an unhealthy collector.
 
@@ -108,10 +103,11 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-If the fleet-wide `send_failures` stays over `100` for `5s`, the scenario aborts through the normal drain-and-finalize pipeline and produces an `aborted` report (`phase: "aborted"`) — same schema, still reconcilable.
+If the fleet-wide `send_failures` stays over `100` for `5s`, the scenario aborts through the normal drain-and-finalize pipeline and produces an `aborted` report (`phase: "aborted"`).
+It has the same schema and is still reconcilable.
 Watch `metric` be any of `send_failures` / `dropped` / `deferred` / `sent`.
 
-### 5. Coordinated start across systems (scheduled T0)
+### 5. Coordinate the start across systems (scheduled T0)
 
 Line nl6's window up with a load generator or a monitoring capture window: arm now, but open the window at a precise absolute `T0`.
 
@@ -126,25 +122,27 @@ A past timestamp is rejected `400`.
 
 ### 6. Diff the report in one command
 
-Skip the manual join — feed the report and your collector's counts to [`nl6-reconcile`](./loadtest-scenarios.md#nl6-reconcile--one-command-not-a-spreadsheet):
+Skip the manual join.
+Feed the report and your collector's counts to [`nl6-reconcile`](./loadtest-scenarios.md#reconcile-with-nl6-reconcile):
 
 ```bash
 curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
 nl6-reconcile -report report.json -received collector.csv
-# exit 1 (and a RESIDUAL / PHANTOM row) if anything is off — drop it into CI.
+# exit 1 (and a RESIDUAL / PHANTOM row) if anything is off. Drop it into CI.
 
 # A shortfall is RESIDUAL until you assert the collector's queue has drained.
 # Backlog resolves itself; loss does not. Re-run once the queue is empty:
 nl6-reconcile -report report.json -received collector.csv -drained
 ```
 
-### 7. IPFIX-only fidelity
+### 7. Check IPFIX-only fidelity
 
-IPFIX carries the cleanest run-isolation lever — the Observation Domain ID — and, unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at T0** (templates are counted separately), so a collector sees no pre-window sequence advance.
+IPFIX carries the cleanest run-isolation lever, the Observation Domain ID.
+Unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at T0** (templates are counted separately), so a collector sees no pre-window sequence advance.
 
 ```bash
 # -fidelity keeps the 5 devices silent until the scenario window opens, so the
-# collector sees IPFIX only for [T0,T1) — no startup or post-run background.
+# collector sees IPFIX only for [T0,T1), with no startup or post-run background.
 sudo ./nl6 -fidelity -auto-start-ip 10.42.0.1 -auto-count 5 \
   -flow-collector 10.0.0.9:4739 -flow-protocol ipfix
 
@@ -156,14 +154,15 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 
 Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the collector's records by each device's Observation Domain ID within `[T0,T1)`.
 
-### 8. Mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
+### 8. Measure a mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
 A scenario targets **one protocol**, so a mixed fleet is measured with **one scenario per protocol** over that protocol's device subset.
 The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone.
-The 20 / 20 / 60 split is just how many devices you configure for each protocol.
+The 20 / 20 / 60 split is how many devices you configure for each protocol.
 Seed flags apply a single protocol to the whole auto-start batch, so build the mix with per-device `flow` blocks instead.
 
-With nl6 running (no flow seed flags needed), create the three groups — here a 10-device fleet split 2 / 2 / 6:
+With nl6 running (no flow seed flags needed), create the three groups.
+This example splits a 10-device fleet 2 / 2 / 6:
 
 ```bash
 # start_ip  count  protocol  collector
@@ -199,5 +198,6 @@ run ipfix    '"10.0.4.1","10.0.4.2","10.0.4.3","10.0.4.4","10.0.4.5","10.0.4.6"'
 ```
 
 Each run produces its own report keyed by `(protocol, source_ip, collector)`; reconcile the three independently (`nl6-reconcile -report report-ipfix.json …` per protocol).
-The fleet exports all three protocols the whole time — a scenario just measures one subset's window at a time.
+The fleet exports all three protocols the whole time.
+A scenario measures one subset's window at a time.
 To weight the mix by **traffic** rather than device count, keep the device split and give each protocol's scenario a proportional `rate`.

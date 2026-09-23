@@ -1,7 +1,8 @@
 # Flow export (operator guide)
 
 nl6 can emit synthetic flow telemetry to any NetFlow v5 (Cisco), NetFlow v9 (RFC 3954), IPFIX (RFC 7011), or sFlow v5 collector.
-Each device generates flows appropriate to its role — an edge router emits different traffic shapes than a firewall or a data-center switch.
+Each device generates flows appropriate to its role.
+An edge router emits different traffic shapes than a firewall or a data-center switch.
 
 This page is the operator-facing setup guide.
 For the CLI flags see [CLI flags → Flow export](../reference/cli-flags.md#flow-export-flags); for protocol-level details and the sFlow caveat see [Flow export reference](../reference/flow-export.md).
@@ -11,9 +12,10 @@ For the CLI flags see [CLI flags → Flow export](../reference/cli-flags.md#flow
 By default, each device binds its **own** UDP socket inside the `nl6sim` namespace, so the collector sees flow packets arriving from the device's IP rather than the simulator host's.
 This is what makes per-device attribution work on collectors that key on the exporter source IP (OpenNMS, Elastiflow, nfcapd, etc.).
 
-Disable by setting `-flow-source-per-device=false` — that falls back to a single shared socket bound in the host namespace.
+Disable it by setting `-flow-source-per-device=false`.
+That falls back to a single shared socket bound in the host namespace.
 
-## Starting flow export
+## Start flow export
 
 ```bash
 # NetFlow v9 to a local collector on port 2055
@@ -24,7 +26,7 @@ sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
 sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:4739 -flow-protocol ipfix
 
-# NetFlow v5 (Cisco — 30 records per PDU, no template)
+# NetFlow v5 (Cisco; 30 records per PDU, no template)
 sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 -flow-protocol netflow5
 
@@ -41,15 +43,15 @@ sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
   -flow-collector 192.168.1.10:2055 -flow-source-per-device=false
 ```
 
-## Heterogeneous-fleet operation (multiple collectors / protocols)
+## Run a heterogeneous fleet (multiple collectors / protocols)
 
 The `-flow-*` CLI flags seed a **single** collector / protocol for the auto-start batch.
-To stand up a fleet that points at more than one collector — or mixes protocols — start the simulator with just the global flags and drive device creation via [`POST /api/v1/devices`](../reference/web-api.md#per-device-export-blocks), one batch per collector / protocol.
+To stand up a fleet that points at more than one collector, or mixes protocols, start the simulator with only the global flags and drive device creation via [`POST /api/v1/devices`](../reference/web-api.md#per-device-export-blocks), one batch per collector / protocol.
 
 ### Example: two collectors, three protocols
 
 ```bash
-# 1. Boot with NO flow seed — only the global knobs (tick cadence,
+# 1. Boot with NO flow seed, only the global knobs (tick cadence,
 #    template cadence, source-per-device policy).
 sudo ./nl6 \
   -flow-tick-interval 1 \
@@ -106,10 +108,10 @@ A datagram the kernel refused lands in `send_failures` instead.
 
 ### Notes
 
-- The same device IP can belong to only one flow config (one `flow` block per device). If you need the same device to appear on multiple collectors, run multiple simulator processes — the `nl6sim` netns + per-device-source-IP scheme isn't designed to multicast.
+- The same device IP can belong to only one flow config (one `flow` block per device). If you need the same device to appear on multiple collectors, run multiple simulator processes. The `nl6sim` netns + per-device-source-IP scheme isn't designed to multicast.
 - `-flow-tick-interval` is simulator-wide. One ticker drives every exporter regardless of batch. A per-device `tick_interval` in the REST body is **rejected with 400** (nl6#445). No `warnings` entry is emitted; the request does not create any device.
 - `-flow-tick-interval` sets the simulator-wide cadence and **is** honored. It controls **batching, not volume**: a slower tick puts more records in each datagram rather than proportionally reducing the record rate. Volume is set by the profile's concurrent-flow count and the expiry timeouts. Values outside `(0, 1h]` are rejected with a log line and the 5s default applies. `effective_intervals.flow_tick_interval` in the device read-back reports the period actually latched.
-- Collector-side `rp_filter` tuning applies per collector host, not per protocol — see the next section.
+- Collector-side `rp_filter` tuning applies per collector host, not per protocol. See the next section.
 
 ## Prerequisites for per-device source IP
 
@@ -127,7 +129,8 @@ Three things have to be in place:
   sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
   ```
   `2` is loose mode; `0` disables filtering entirely.
-  The simulator auto-configures its own `rp_filter` sysctls — no user action needed there.
+  The simulator auto-configures its own `rp_filter` sysctls.
+No user action is needed there.
 
 ## Flow troubleshooting
 

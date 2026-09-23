@@ -1,7 +1,7 @@
 # Architecture
 
 nl6 is a single Go program that stands up thousands of simulated devices inside a dedicated Linux network namespace.
-Each simulated device has its own IP address on a TUN interface, its own SNMP listener, its own SSH server, and — for storage devices — its own HTTPS REST endpoint.
+Each simulated device has its own IP address on a TUN interface, its own SNMP listener, its own SSH server, and, for storage devices, its own HTTPS REST endpoint.
 
 This page covers the package layout, core components, and the key design decisions that make the 30,000-device target tractable.
 
@@ -39,13 +39,14 @@ flowchart LR
 ```
 
 The namespace was historically `opensim` (from the `l8opensim` fork origin) and is now `nl6sim`.
-A build only cleans up its own `nl6sim` namespace, so after upgrading remove a leftover `opensim` once with `sudo ip netns delete opensim` — see [Network namespace](../ops/network-namespace.md).
+A build only cleans up its own `nl6sim` namespace, so after upgrading remove a leftover `opensim` once with `sudo ip netns delete opensim`.
+See [Network namespace](../ops/network-namespace.md).
 
 ## Package layout
 
 | Path | Purpose |
 |------|---------|
-| `go/nl6/` | Core simulator — all device simulation logic and tests. |
+| `go/nl6/` | Core simulator, with all device simulation logic and tests. |
 | `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 29 device-type directories, plus the shared trap, syslog and NBAR2 catalogs under `_common/`. |
 | `go/nl6/worldcities/` | The `sysLocation` city dataset: 97 CSV shards plus `header.csv`, about 47,000 rows. |
 
@@ -97,7 +98,8 @@ See [gNMI dial-in reference](../reference/gnmi.md).
 
 `gnmi_dialout_transport.go` (`DialoutTransport` seam + Arista `gNMIReverse` flavor), `gnmi_dialout_exporter.go` (per-device gRPC client: one `ClientConn` + one `Publish` stream per device, reconnect loop with dwell-gated backoff, SAMPLE / ON_CHANGE pacing), `gnmi_dialout_manager.go` (lifecycle, TLS credentials, per-(collector, flavor) status aggregates).
 Reverses the gRPC role, not the data direction: the device dials the collector and streams the same `SubscribeResponse` payload the dial-in target serves, with `Prefix.Target` = device IP for in-band attribution.
-Opt-in per device via the `-gnmi-dialout-*` seed flags or the `gnmi_dialout` REST block — the fleet can mix dial-in and dial-out.
+Opt-in per device via the `-gnmi-dialout-*` seed flags or the `gnmi_dialout` REST block.
+The fleet can mix dial-in and dial-out.
 See [gNMI dial-out reference](../reference/gnmi-dial-out.md).
 
 ### Resource loading
@@ -109,14 +111,15 @@ See [Resource files](../reference/resource-files.md).
 
 ## Key design decisions
 
-- **`sync.Map` for OID lookups** — lock-free O(1) access during concurrent SNMP queries.
-- **Pre-computed next-OID mappings** — efficient SNMP `GETNEXT` / `WALK` without scanning the table.
-- **Buffer pool** — reduces GC pressure on SNMP request handling.
-- **Shared SSH / TLS keys** across all devices — avoids per-device key generation overhead.
-- **Analytic IF-MIB counters** — every per-interface counter in `ifTable` and `ifXTable` computed on demand from a single per-direction octet sine wave, instead of maintained by a polling loop; see [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters).
-- **Network namespace isolation** — the `nl6sim` namespace prevents systemd-networkd interference on many Linux distros.
-- **Per-device flow egress** — a `FORWARD -i veth-sim-host -j ACCEPT` iptables rule lets per-device flow exporters send UDP out of the namespace through the host's routing table (Docker-present hosts default `FORWARD` to `DROP`). The rule is removed in `NetNamespace.Close`.
+- **`sync.Map` for OID lookups.** Lock-free O(1) access during concurrent SNMP queries.
+- **Pre-computed next-OID mappings.** Efficient SNMP `GETNEXT` / `WALK` without scanning the table.
+- **Buffer pool.** Reduces GC pressure on SNMP request handling.
+- **Shared SSH / TLS keys across all devices.** Avoids per-device key generation overhead.
+- **Analytic IF-MIB counters.** Every per-interface counter in `ifTable` and `ifXTable` is computed on demand from a single per-direction octet sine wave, instead of maintained by a polling loop. See [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters).
+- **Network namespace isolation.** The `nl6sim` namespace prevents systemd-networkd interference on many Linux distros.
+- **Per-device flow egress.** A `FORWARD -i veth-sim-host -j ACCEPT` iptables rule lets per-device flow exporters send UDP out of the namespace through the host's routing table (Docker-present hosts default `FORWARD` to `DROP`). The rule is removed in `NetNamespace.Close`.
 
 ## Container image
 
-The simulator is published as `ghcr.io/labmonkeys-space/nl6` on push to `main` and on release tags — see the project's CI workflow files.
+The simulator is published as `ghcr.io/labmonkeys-space/nl6` on push to `main` and on release tags.
+See the project's CI workflow files.

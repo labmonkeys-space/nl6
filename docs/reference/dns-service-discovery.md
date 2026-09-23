@@ -1,7 +1,9 @@
 # DNS service discovery
 
-nl6 can publish the simulated fleet to DNS so consumers refer to devices by name instead of raw `10.42.x.x` management IPs, and reverse lookups resolve to a hostname. nl6 acts as a **hidden DNS primary**: a [CoreDNS](https://coredns.io) secondary transfers the zones and serves clients.
-The subsystem is **off by default** — enable it with `-dns-enable`.
+nl6 can publish the simulated fleet to DNS so consumers refer to devices by name instead of raw `10.42.x.x` management IPs, and reverse lookups resolve to a hostname.
+nl6 acts as a **hidden DNS primary**: a [CoreDNS](https://coredns.io) secondary transfers the zones and serves clients.
+The subsystem is **off by default**.
+Enable it with `-dns-enable`.
 
 ```
                      device create/delete
@@ -22,11 +24,12 @@ The subsystem is **off by default** — enable it with `-dns-enable`.
 | Lookup | Name | Answer |
 |--------|------|--------|
 | Forward | `<device-name>.nl6.local` | device management IP (`A`) |
-| Forward | `ip4.mgmt.<device-name>.nl6.local` | same IP (`A`) — the PTR target, so reverse round-trips |
+| Forward | `ip4.mgmt.<device-name>.nl6.local` | same IP (`A`). This is the PTR target, so reverse round-trips |
 | Reverse | `<ip>.in-addr.arpa` | `ip4.mgmt.<device-name>.nl6.local` (`PTR`) |
 
 `<device-name>` is the device's `sysName`, sanitised to a valid DNS label (lowercased; characters outside `[a-z0-9-]` become `-`; runs of `-` collapse to one; leading and trailing `-` are trimmed; truncated to 63 octets and trimmed again so the label never ends on `-`).
-The `ip4` and `mgmt` labels denote the address family and the (single) management interface the IP lives on — forward-compatible seams for a future `ip6.` / real-interface-name expansion.
+The `ip4` and `mgmt` labels denote the address family and the (single) management interface the IP lives on.
+They are forward-compatible seams for a future `ip6.` / real-interface-name expansion.
 
 Because `sysName` is randomly assembled and can repeat across the fleet, duplicate names are **disambiguated deterministically**: ordered by ascending management IP, the first device keeps the bare label and each subsequent collider gets an IP-derived suffix (e.g. `edge-swh-01-0-9`).
 Every forward name and every PTR target is therefore unique.
@@ -56,13 +59,12 @@ The server binds in the container's **default** network namespace (like the `:80
 
 Every device create/delete marks the zones dirty.
 A debounced worker waits for `-dns-debounce` of quiescence, then bumps the SOA serial **once** and sends a DNS `NOTIFY` to each secondary, which responds with an SOA probe and pulls a full `AXFR`.
-A 30,000-device auto-start batch thus produces a single serial bump and a single transfer, not 30,000. `IXFR` requests are answered with a full `AXFR`.
+A 30,000-device auto-start batch thus produces a single serial bump and a single transfer, not 30,000.
+`IXFR` requests are answered with a full `AXFR`.
 
-> **Serial caveat.** The SOA serial is epoch-seeded at start and **not
-> persisted**. If the process restarts while the system clock is rolled back, a
-> secondary that cached the older-but-numerically-higher serial may treat the
-> new zone as stale (RFC 1982). This is inherent to stateless epoch serials and
-> acceptable for a simulator; restart the secondary if it diverges.
+**Serial caveat.** The SOA serial is epoch-seeded at start and **not persisted**.
+If the process restarts while the system clock is rolled back, a secondary that cached the older-but-numerically-higher serial may treat the new zone as stale (RFC 1982).
+This is inherent to stateless epoch serials and acceptable for a simulator; restart the secondary if it diverges.
 
 ## Status
 

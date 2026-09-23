@@ -12,7 +12,7 @@ Under tls a bare collector hostname defaults to port 6514 instead of 514. See [S
 This page is the operator-facing setup guide.
 For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export reference](../reference/syslog-export.md).
 
-## Enabling syslog export
+## Enable syslog export
 
 The feature is off by default.
 Pass `-syslog-collector <host:port>` to enable it; the other flags have sensible defaults for modern collectors.
@@ -49,7 +49,7 @@ The shared-socket pool is keyed by `(collector, format)`, so 5424 and 3164 never
 | Timestamp | ISO 8601 with fractional seconds (`2026-04-21T13:30:45.123Z`) | BSD-style (`Apr 21 13:30:45`) |
 | HOSTNAME | Explicit field | Explicit field |
 | APP-NAME / TAG | `APP-NAME` required; `PROCID` and `MSGID` distinct | Single `TAG` only, no structured MSGID |
-| Structured data | `[key="value" ...]` SD-PARAM blocks | Not supported — `structuredData` in catalog entries is dropped |
+| Structured data | `[key="value" ...]` SD-PARAM blocks | Not supported. `structuredData` in catalog entries is dropped |
 | Max message size | 1400 bytes (enforced at load time via dry-render) | Same |
 | Year in timestamp | Included | Absent (RFC 3164 omits the year) |
 
@@ -59,19 +59,23 @@ Choose 3164 for downstream testing against legacy collectors or when the message
 ## Per-device source IP binding
 
 `-syslog-source-per-device=true` (the default) binds a UDP socket per device inside the `nl6sim` network namespace so the UDP source address on the wire matches the simulated device's IP.
-Per-device bind failures are **non-fatal** — unlike trap export's INFORM mode, syslog has no ack path that depends on symmetric source IPs.
+Per-device bind failures are **non-fatal**.
+Unlike trap export's INFORM mode, syslog has no ack path that depends on symmetric source IPs.
 When a bind fails:
 
 1. The simulator logs a warning naming the device IP and the bind error.
 2. That device's exporter falls back to the shared simulator-process UDP socket.
 3. The collector sees the simulator host's IP as the source for that device's messages (breaks source-IP → node mapping for the affected device only).
 
-Setting `-syslog-source-per-device=false` skips per-device binding entirely — every device's messages arrive with the simulator host's IP as the source.
+Setting `-syslog-source-per-device=false` skips per-device binding entirely.
+Every device's messages arrive with the simulator host's IP as the source.
 Use this if the collector side doesn't care about source IP (e.g., it keys on `HOSTNAME` field or `structuredData` instead).
 
 ## Rate cap and scheduling
 
-Per-device firing follows a **Poisson process** with mean `-syslog-interval` (default 10s) — the same design as trap export, for the same reason: naïve periodic scheduling causes synchronised-burst artefacts that don't reflect real-world syslog traffic shapes.
+Per-device firing follows a **Poisson process** with mean `-syslog-interval` (default 10s).
+This is the same design as trap export, for the same reason.
+Naïve periodic scheduling causes synchronised-burst artefacts that don't reflect real-world syslog traffic shapes.
 
 `-syslog-global-cap <rate>` adds a hard ceiling across all devices.
 Sizing guidance:
@@ -82,7 +86,8 @@ Sizing guidance:
 
 ## Prerequisites inherited from flow / trap export
 
-Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow and trap export — no new `iptables` rules and no new netns setup.
+Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow and trap export.
+It adds no new `iptables` rules and no new netns setup.
 Three conditions apply:
 
 - **`iptables FORWARD` rule.** At startup the simulator inserts `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which default FORWARD to drop) allow per-device egress. Walkthrough: [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
@@ -93,15 +98,15 @@ Three conditions apply:
   sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
   ```
 
-## Smoke test
+## Run a smoke test
 
 The simplest end-to-end check uses `netcat` (or `socat`) as a trivial UDP sink:
 
 ```bash
-# In one terminal — dump every received datagram to stdout
+# In one terminal: dump every received datagram to stdout
 nc -ul 514 | sed -u 's/^/recv: /'
 
-# In another terminal — point the simulator at it
+# In another terminal: point the simulator at it
 sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
   -syslog-collector 127.0.0.1:514 -syslog-interval 2s
 ```
@@ -112,7 +117,8 @@ Only the untagged universal entries are scheduled: `auth-success` (weight 20), `
 They fire on an interface oper-status transition.
 To see them, add `-if-flap-scenario typical` or `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`.
 
-For vendor-flavoured content (e.g., Cisco `%LINK-3-UPDOWN:` or Juniper `MIB2D_IFD_IFL_ENCAPS_MISMATCH:`), select a device type with a per-type overlay — see [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays).
+For vendor-flavoured content (e.g., Cisco `%LINK-3-UPDOWN:` or Juniper `MIB2D_IFD_IFL_ENCAPS_MISMATCH:`), select a device type with a per-type overlay.
+See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays).
 Shipped overlays: `cisco_ios` (8 entries), `juniper_mx240` (7) and `ciena_waveserver5` (4 role-tagged optical pre-FEC alarms).
 
 If you need a specific message on demand:
@@ -124,6 +130,12 @@ curl -X POST http://localhost:8080/api/v1/devices/127.0.0.1/syslog \
   -d '{"name":"interface-down","templateOverrides":{"IfIndex":"3"}}'
 ```
 
+Expected output (HTTP `202 Accepted`, from `fireSyslogHandler` in `go/nl6/web.go`):
+
+```json
+{}
+```
+
 See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand) for the full request / response shape.
 
 ## Troubleshooting
@@ -132,10 +144,10 @@ See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a
 |---------|--------------|-----|
 | `subsystem_active: true` with `collectors: []` in `/api/v1/syslog/status` | No device has a `syslog` block | Pass `-syslog-collector` for the auto-start batch, or add a `syslog` block to the REST request |
 | `subsystem_active: true`, `sent` is 0 | Scheduler idle (no devices yet) | Wait for device creation to finish |
-| Messages sent but collector sees nothing | FORWARD rule missing or `rp_filter` blocking | See [Flow export → Flow troubleshooting](flow-export.md#flow-troubleshooting) — the netns diagnostic steps apply verbatim |
+| Messages sent but collector sees nothing | FORWARD rule missing or `rp_filter` blocking | See [Flow export → Flow troubleshooting](flow-export.md#flow-troubleshooting). The netns diagnostic steps apply verbatim |
 | Source IP on the wire is the host, not the device | Per-device bind failed for that device (non-fatal) | Check simulator logs for `per-device bind failed`; expected when run without netns (`-no-namespace`) |
 | Collector parser chokes on the message format | Collector and simulator disagree on 5424 vs 3164 | Match `-syslog-format` to the collector's expected form |
-| `structuredData` missing from emitted messages | Running `-syslog-format 3164` — RFC 3164 doesn't support SD | Switch to 5424 or accept the loss |
+| `structuredData` missing from emitted messages | Running `-syslog-format 3164`. RFC 3164 doesn't support SD | Switch to 5424 or accept the loss |
 | `send_failures` climbing | Collector unreachable or firewalled | Verify collector listening on UDP/514; check firewall rules |
 | Catalog load fails at startup naming a `resources/<slug>/syslog.json` | Malformed per-type JSON or a reserved template field | See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays) for the schema and vocabulary |
 
@@ -143,8 +155,8 @@ For generic bring-up failures (TUN module missing, `sudo` required, port conflic
 
 ## Related
 
-- [Syslog export reference](../reference/syslog-export.md) — wire format, catalog JSON, HTTP endpoints, per-type catalog overlays
+- [Syslog export reference](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
-- [SNMP trap export (operator guide)](snmp-traps.md) — sibling feature; shared overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md) — shared `nl6sim` namespace plumbing
+- [SNMP trap export (operator guide)](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Flow export (operator guide)](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)

@@ -3,13 +3,10 @@
 By default, nl6 runs every simulated device inside a dedicated Linux network namespace named `nl6sim`.
 This page covers what that namespace contains, why the simulator prefers it over the root namespace, and the `rp_filter` / `FORWARD` knobs you may need to tune.
 
-> **Note on the namespace name.** The namespace was historically `opensim`
-> (inherited from the `l8opensim` fork origin) and is now `nl6sim`, to match the
-> project. The simulator only creates and cleans up its own `nl6sim` namespace —
-> after upgrading a deployment that previously ran under `opensim`, remove the
-> orphaned namespace once with `sudo ip netns delete opensim` (and
-> `sudo ip link delete veth-sim-host` if it lingers). Update any operator
-> scripts or rescue tooling that grep `ip netns list` for `opensim`.
+**The namespace name.** The namespace was historically `opensim` (inherited from the `l8opensim` fork origin) and is now `nl6sim`, to match the project.
+The simulator only creates and cleans up its own `nl6sim` namespace.
+After upgrading a deployment that previously ran under `opensim`, remove the orphaned namespace once with `sudo ip netns delete opensim` (and `sudo ip link delete veth-sim-host` if it lingers).
+Update any operator scripts or rescue tooling that grep `ip netns list` for `opensim`.
 
 ## Why the namespace?
 
@@ -20,7 +17,7 @@ The `nl6sim` namespace gives the simulator a clean room with a single controlled
 ## Anatomy
 
 - **Namespace:** `nl6sim` (created and torn down by the simulator).
-- **Bridge:** a veth pair — `veth-sim-host` in the host namespace, `veth-sim-ns` inside `nl6sim`.
+- **Bridge:** a veth pair, `veth-sim-host` in the host namespace, `veth-sim-ns` inside `nl6sim`.
 - **Host end:** `veth-sim-host` carries `10.254.0.1/30`.
 - **Namespace end:** `veth-sim-ns` carries `10.254.0.2/30` and the namespace's default route points at `10.254.0.1`.
 - **Per-device TUNs:** each simulated device gets a TUN interface inside the namespace with its configured IP address.
@@ -37,20 +34,20 @@ iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT
 The rule exists because hosts with Docker installed default the `FORWARD` chain to `DROP`, which silently blocks per-device flow-export UDP from reaching the collector.
 Without the rule the simulator logs a warning and flows disappear on such hosts.
 
-:::note[iptables is required on the host]
-The container image ships `iptables` for this reason.
+**iptables is required on the host.** The container image ships `iptables` for this reason.
 Bare-metal hosts need `iptables` (or `iptables-nft`) available and on the simulator's `PATH`.
-:::
 
-See [Flow export (operator guide)](flow-export.md#prerequisites-for-per-device-source-ip) for the full context — per-device source IPs route out of the namespace via this FORWARD rule.
+See [Flow export (operator guide)](flow-export.md#prerequisites-for-per-device-source-ip) for the full context.
+Per-device source IPs route out of the namespace via this FORWARD rule.
 
-## Escape hatch: `-no-namespace`
+## Run without the namespace: `-no-namespace`
 
 Pass [`-no-namespace`](../reference/cli-flags.md#core-flags) to run everything in the root namespace.
 Useful for one-off debugging.
-Don't use this at scale — `systemd-networkd` interference will destroy throughput.
+Don't use this at scale.
+`systemd-networkd` interference will destroy throughput.
 
-## Inspecting the namespace
+## Inspect the namespace
 
 ```bash
 # List namespaces
@@ -86,4 +83,4 @@ sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
 
 ## When bring-up fails
 
-See [Troubleshooting](troubleshooting.md) for common failures — missing `iptables` binary, TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
+See [Troubleshooting](troubleshooting.md) for common failures: missing `iptables` binary, TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
