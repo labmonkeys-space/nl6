@@ -28,8 +28,8 @@ wire/collector loss, not measurement noise.
   `suppressed_pre_window`); `sent = in_window + drain` is the reconciliation
   denominator.
 - **Seven protocols, one shape.** Any one of **syslog · SNMP trap/inform ·
-  NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out** — one active scenario at a
-  time. Each device opts in via its own export config; the scenario gates
+  NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out** — up to 8 concurrent
+  scenarios, with exclusivity per device. Each device opts in via its own export config; the scenario gates
   whichever protocol it targets.
 - **Localize, don't just total.** The report splits in-window sends into equal
   time sub-windows (loss localization) and tags each run per protocol so you can
@@ -53,7 +53,9 @@ result.
 
 ## Limits
 
-- **One active scenario at a time**.
+- **Up to 8 concurrent scenarios**, each over one protocol.
+  Exclusivity is per device: a device claimed by one scenario is refused at another scenario's `arm`.
+  The 8 most recent terminal scenarios stay listed and queryable; older ones are reaped.
 - **In-memory only** — a scenario, its ledger, and its report do not survive a
   restart; fetch the report before restarting. See
   [Scenarios → Non-goal](./loadtest-scenarios.md#non-goal-scenarios-are-in-memory).

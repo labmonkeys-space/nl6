@@ -151,10 +151,11 @@ If the identity does not reproduce the measured rate, something is missing from 
 Background emission inflates (3) without touching (1).
 It is the one failure mode three-point reconciliation cannot self-detect, because it makes the pipeline look like it is running *ahead* of the load.
 
-nl6's per-device `interval` and `tick_interval` are accepted, echoed back, and **not honored**: every device fires at the simulator-wide cadence regardless.
-A long per-device interval therefore does not silence anything, and reading the value back confirms a setting that is not in force.
+nl6 rejects a per-device `interval` or `tick_interval` with `400`: every device fires at the simulator-wide cadence, and there is no per-device knob to slow one down.
+A long per-device interval therefore cannot silence anything.
 
 Start nl6 with `-fidelity`, then verify the generator is actually silent before offering load: its sent counter must not move while idle.
+The report discloses the answer too: `metadata.fidelity.silent_at_start` says whether the fleet was silent at T0, and `metadata.fidelity.changed_during_window` says whether that changed before finalize.
 A measurement that skips this check is measuring its own background noise.
 
 ## Staged gates

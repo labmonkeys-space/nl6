@@ -83,9 +83,10 @@ flag alone would assert something the engine may have stopped honouring.
 
 - Devices still answer **polls** (SNMP / SSH / HTTPS) normally — fidelity mutes
   only autonomous *push* telemetry.
-- Explicit **on-demand** fires (`POST /devices/{ip}/{trap,syslog}`) still go
+- Explicit **on-demand** fires (`POST /api/v1/devices/{ip}/{trap,syslog}`) still go
   through — a deliberate action, not background chatter.
-- Fleet-wide and static: set once at startup, **off by default**.
+- Fleet-wide, **off by default**. Set at startup with `-fidelity` or toggled at
+  runtime via `POST /api/v1/fidelity`.
 - It mutes **autonomous** push. A gNMI **dial-in** subscription is
   client-initiated (the collector `Subscribe`d), so it keeps streaming — cancel
   the subscription if you need the gNMI path quiet too.
@@ -458,13 +459,11 @@ order before suspecting the collector:
    the hundreds of thousands per second.
 
 This arithmetic applies to **`syslog` and `snmp-trap` only** — protocols where
-one scheduled fire is one event. Do not apply it to flow protocols: there `rate`
-is the flow-*tick* cadence, not an event rate, and the ledger counts flow
-**records**. A tick emits however many records expired under the active/inactive
-timeouts, which is frequently **zero** at a fast tick cadence, so `sent` bears no
-fixed relationship to `participants × rate × window` in either direction. For a
-flow run, reconcile the report's `sent` against the collector directly rather
-than against a predicted total.
+one scheduled fire is one event. Do not apply it exactly to flow protocols.
+There `rate` sizes the device's flow cache, and the ledger counts flow **records**.
+The tick cadence follows `-flow-tick-interval`, and a tick emits the records that expired since the last one.
+The achieved rate lands near the request, not on it, because the cache holds an integer number of flows and the rate follows with a lag of about one mean flow lifetime.
+Read `metadata.rate.achieved_per_device` for what the run did, and reconcile the report's `sent` against the collector directly rather than against a predicted total.
 
 ## Graceful abort produces a finalized report
 

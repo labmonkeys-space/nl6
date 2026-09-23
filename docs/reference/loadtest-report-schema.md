@@ -29,14 +29,16 @@ is built once at stop/abort, immutable thereafter, and served by
         "protocol": "syslog", "mechanism": "window_source_ip", "value": "",
         "pen": 0, "pen_required": true, "degraded": true,
         "note": "no PEN configured (-scenario-pen); SD-PARAM lever unavailable, isolate by source IP + [t0,t1)"
-      }
+      },
+      "fidelity": {"silent_at_start": true, "changed_during_window": false}
     },
     "duration": "2s",
     "participants_armed": 2,
     "participants_excluded": 1,
     "emitted": 40, "in_window": 40, "drain": 0,
     "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-    "informational": {"background_suppressed": 0},
+    "informational": {"background_suppressed": 0, "requested": 40, "deferred": 0,
+                      "informs_acked": 0, "informs_pending": 0},
     "sub_windows": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
     "excluded": [
       {"device": "10.42.0.9", "reason": "device not found",
@@ -47,20 +49,23 @@ is built once at stop/abort, immutable thereafter, and served by
     {"protocol": "syslog", "source_ip": "10.42.0.1", "collector": "10.0.0.9:514",
      "emitted": 20, "sent": 20, "in_window": 20, "drain": 0,
      "suppressed_pre_window": 0, "send_failures": 0, "dropped": 0,
-     "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0},
+     "informational": {"background_suppressed": 0, "requested": 20, "deferred": 0,
+                       "informs_acked": 0, "informs_pending": 0},
      "sub_windows": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]}
   ],
-  "applications": []
+  "applications": [],
+  "l7_values": []
 }
 ```
 
-(The example is a **syslog** run, so `applications` is empty — see
-[`applications[]`](#applications--fleet-wide-flow-traffic-ground-truth) for a
-populated flow-scenario example.)
+(The example is a **syslog** run, so `applications` and `l7_values` are empty — see
+[`applications[]`](#applications--fleet-wide-flow-traffic-ground-truth) and
+[`l7_values[]`](#l7_values--layer-7-values-from-nbar2-records) for
+populated flow-scenario examples.)
 
 The top-level blocks always serialize in the order `summary`, `counters`,
-`applications`, so a streaming consumer sees the aggregate first and can rely
-on the trailer position of the applications block.
+`applications`, `l7_values`, so a streaming consumer sees the aggregate first and can rely
+on the trailer position of the two flow blocks.
 
 ## `summary`
 
@@ -115,6 +120,7 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
 | `sub_window_duration` | string | Width of one bucket as a Go duration — the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are simply empty (bucketing uses the planned t1, not the shortened actual one). |
 | `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
+| `fidelity` | object | **Fleet-silence disclosure**, always present: `{silent_at_start, changed_during_window}`. `silent_at_start` is the fidelity value in force at `t0`. `changed_during_window` is true when fidelity was toggled, or a timed revert fired, between `t0` and finalize. A true there means non-participant devices resumed or ceased autonomous push part-way through the window, so the collector-side accept rate covers a mixture. The ledger stays exact either way, which is why this needs saying out loud. |
 | `rate_cap` | object | **Shared-cap disclosure**, present only when this run's protocol has a fleet-wide ceiling in force (`{per_second, shared_with}`). Rate limiters are **per protocol** — syslog and SNMP trap each own one, flow protocols and gNMI dial-out have none — so only *same-protocol* runs contend. `shared_with` names the same-protocol *scenarios* whose windows overlapped this one, sequence-ordered. An empty list means no peer scenario overlapped — **not** that the bucket was uncontended: the scenario scheduler shares the fleet limiter, and background firing spends a token per pop even for fires the scenario gate suppresses, so on a busy non-`-fidelity` fleet a solo run is still throttled by background traffic. The cap is the one in force when the run **began**, not when the report was fetched. Currently emitted for `syslog` only — it is the one protocol whose scenario emission provably passes through the fleet limiter; `-trap-global-cap` governs background trap firing, which the scenario trap path does not go through. A run that shared its bucket did not measure what it would have measured alone, and this is what makes that visible in the artifact instead of silently changing the numbers. Overlaps are recorded as they begin, not reconstructed at finalize, so a peer stopped and deleted before this run finishes is still named. |
 | `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
@@ -230,8 +236,8 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 | `informational.deferred` | Fires the **shared global cap** had no token for — throttled, **not fired, NOT lost**. Outside the identity and the loss denominator, so a cap throttle never masquerades as pipeline loss. |
 | `sub_windows` | **Loss localization**: this participant's in-window sends per time bucket. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
 
-The six identity fields (`emitted` + the five loss buckets) are flat siblings;
-the disclosure counter is the sole member of the nested `informational` object.
+The six identity fields (`emitted` + the five loss buckets) are flat siblings.
+The nested `informational` object carries five disclosure counters, always present: `background_suppressed`, `requested`, `deferred`, `informs_acked`, `informs_pending`.
 A consumer computing the identity iterates the flat fields and never has to
 know which keys to exclude.
 
