@@ -4,8 +4,8 @@ Every device type has a directory under `go/nl6/resources/` containing
 one or more JSON files. `resources.go` loads and caches a device type the
 first time a device of that type is created (the startup default, `asr9k`, at
 startup), merging the `snmp`, `ssh`, and (optionally) `api` sections of every
-`*.json` file in its directory. There are currently 379 JSON files across 28
-device-type directories.
+`*.json` file in its directory. There are currently 391 JSON files across 29
+device-type directories, plus 3 shared catalogs under `_common/`.
 
 **Editing a profile on a running simulator.** A cached profile is not re-read
 on its own. `POST /api/v1/resources/reload` evicts the cache so the next device
@@ -40,12 +40,14 @@ Each file is a JSON object with up to three top-level keys:
     {
       "method": "GET",
       "path": "/api/v1/system",
-      "status": 200,
       "response": "{\"name\": \"device-01\", \"status\": \"healthy\"}"
     }
   ]
 }
 ```
+
+An `api` entry has `method`, `path`, `response` and an optional `request` (an example body for a POST/PUT entry; documentation only, nothing reads it when serving).
+There is no `status` field.
 
 The `api` section is optional and used primarily for storage device
 simulation — see [Device types → Storage systems](device-types.md#storage-systems).
@@ -75,7 +77,8 @@ for a representative example.
 
 The resource decoder is not strict, so a key it does not recognise is dropped silently.
 That is a hazard for a typo'd `snmp` array — an optical part with a wrong key loads as an empty one, which is why optical inventory has its own load-time check — and it is also useful: a top-level `"_comment"` string carries a note next to the data it is about, since JSON has no comments.
-`palo_alto_pa3220_snmp_4.json` carried one recording an unresolved question about a vendor OID subtree; that one is resolved and the note is gone, so no shipped part uses the key today.
+26 shipped parts carry one today.
+19 of them carry the marker `UNAUDITED-ARC(<pen>)`, which labels a vendor enterprise subtree nobody has checked against its MIB; a part serving a vendor arc must be audited, carry that marker, or be excluded by name, and a test fails otherwise.
 Such a key changes nothing that loads, and that is pinned, so if the decoder is ever made strict the profiles relying on it fail with an explanation rather than one by one.
 
 ## Load-time validation
@@ -186,8 +189,9 @@ See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-fi
 The REST API's [`/api/v1/devices`](web-api.md#create-devices) endpoint
 supports `round_robin: true` (spread device creation across every
 registered resource file) and `category: "<name>"` (restrict to a single
-category — e.g. `"GPU Servers"`). The catalog of categories and per-category
-device lists lives in [Device types](device-types.md).
+category). `category` accepts exactly five strings: `Network Devices`, `GPU Servers`, `Storage`, `Servers`, `Optical Transport`.
+Anything else matches no device type and is rejected with 400.
+The catalog of categories and per-category device lists lives in [Device types](device-types.md).
 
 ## Dynamic values
 

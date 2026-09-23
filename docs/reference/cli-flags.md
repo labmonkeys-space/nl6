@@ -33,7 +33,7 @@ Omit the engine-id flag to run in v2c-only mode.
 
 | Flag | Values | Default | Purpose |
 |------|--------|---------|---------|
-| `-snmpv3-engine-id` | string | — | Enable SNMPv3 with the specified engine ID (e.g. `0x80001234`). |
+| `-snmpv3-engine-id` | string | — | Enable SNMPv3 with the specified engine ID (e.g. `800000090300AABBCCDD`). |
 | `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 authentication protocol (RFC 3414 USM). Verified against net-snmp: the key is derived by §A.2 password-to-key plus localization, and the HMAC is truncated to 12 octets. It also selects the hash used to localize the **privacy** key (§2.6). Inbound messages are verified, so a wrong password is answered with a `usmStatsWrongDigests` Report. |
 | `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. Requires `-snmpv3-auth`, since USM defines no privacy-without-authentication level. The key comes from the per-device `snmpv3.priv_password` REST field, falling back to the auth password — a CLI-started fleet has no separate privacy-password flag and reuses the shared password; DES builds `IV = salt XOR pre-IV` (RFC 3414 §8.1.1.1) and AES128 builds its IV from the advertised engine boots and time (RFC 3826 §3.1.2.1). Both conformant. |
 
@@ -245,12 +245,12 @@ Export flags (flow / trap / syslog) fall into two categories:
   created. Shared sockets, catalogs, rate-limiter, and network-namespace
   bind policy sit here.
 
-**Duration units differ between CLI and REST:** CLI flags that express a
-duration take **integer seconds** (e.g. `-flow-tick-interval 5`,
-`-trap-interval 30`), while the REST per-device blocks require **Go
-duration strings** (`"tick_interval": "5s"`, `"interval": "30s"`).
-Passing an integer in the REST body (`"interval": 30`) is rejected with
-400 by design — the two forms are not interchangeable.
+**Duration flags come in two types.**
+The flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` take **integer seconds** (`-flow-tick-interval 5`).
+Every other duration flag is a Go duration and **requires a unit**: `-trap-interval 30s`, `-trap-inform-timeout 5s`, `-syslog-interval 10s`, `-gnmi-dialout-interval 10s`, `-dns-debounce 1s`.
+A bare `-trap-interval 30` does not parse.
+The REST per-device blocks carry **no cadence field at all**: `flow.tick_interval`, `traps.interval` and `syslog.interval` are rejected with 400, and the error names the flag to use instead.
+The other REST durations (`active_timeout`, `inactive_timeout`, `inform_timeout`, `sample_interval`) are Go duration strings (`"30s"`); a bare integer is rejected with 400.
 
 See [Web API](web-api.md) for the per-device block schema and
 [Migration](../ops/migration-per-device-exports.md) for converting
@@ -266,16 +266,16 @@ details.
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | — | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. The per-device `tick_interval` is still accepted and not honored. |
+| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume** — see the note below. Applied at construction and not runtime-mutable. This flag is the only cadence: a per-device `tick_interval` in a REST `flow` block is rejected with 400. |
 | `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#emission-shape). |
 | `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Idle time after a flow's last packet before it is exported. |
-
 | `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
 | `-flow-sub-agent-id` | uint | `0` | **seed** | sFlow `sub_agent_id` emitted in every datagram header by the auto-start batch (one value for the whole batch; per-group values via the REST `flow.sub_agent_id` field). Ignored by non-sFlow protocols. See [Flow export reference → sFlow sub-agent id](flow-export.md#sflow-sub-agent-id). |
 | `-flow-option-interface-table` | `if-scoped` \| `system-scoped` | — (off) | **seed** | Emit v9/IPFIX interface option records ("option interface-table") for the auto-start batch: `if-scoped` carries the ifIndex in the scope with fields 82+83; `system-scoped` carries it as option field `INPUT_SNMP(10)` with field 83 only (the IOS-XR shape). Requires `-flow-protocol netflow9` or `ipfix` — other protocols fail startup validation. Per-group shapes via the REST `flow.options_interface_table` field. See [Flow export reference → Interface option records](flow-export.md#interface-option-records-netflow-v9--ipfix). |
 | `-flow-nbar2` | bool | `false` | **seed** | Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from NBAR2-capable auto-start devices (`cisco_ios`, `cisco_catalyst_9500`). Requires `-flow-protocol ipfix`, `-flow-collector` and an NBAR2-capable auto-start type; fatal at startup otherwise. **The auto-start batch is built as `asr9k` and no flag selects another type, so the flag is refused on every boot today**; create NBAR2 devices over REST with `resource_file: "cisco_ios.json"` and `flow.nbar2` instead. Incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Per-device via the REST `flow.nbar2` field. See [Flow export reference → NBAR2](flow-export.md#nbar2-application-records-ipfix-only). |
 | `-nbar2-catalog` | path | — (embedded) | global | Replace the embedded universal NBAR2 application catalog (`resources/_common/nbar2.json`) and suppress every per-type overlay (`resources/<type>/nbar2.json`). Read once at startup; not reloaded by `POST /api/v1/resources/reload`. Entries too large for the `-datagram-mtu` budget are disabled and named at startup, never a boot failure. |
 | `-flow-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. |
+| `-datagram-mtu` | int (bytes) | `1500` | **global** | Assumed MTU of the egress path to collectors. Every UDP-emitting subsystem derives its budget from it: flow datagrams, trap PDUs and the SNMP response bound, GETBULK included. Validated at startup (`576..65535`); an out-of-range value is fatal, after `-help` / `-version`. Lower it when the collector path is not standard Ethernet (a Docker overlay is typically `1450`). Lowering it far enough disables shipped optical trap entries, which are named in the startup log. |
 
 :::note[Tick interval sets batching, not volume]
 
@@ -308,7 +308,7 @@ prerequisites and `snmptrapd` smoke-test, and
 |------|------|---------|-------|---------|
 | `-trap-collector` | string | — | **seed** | Enable trap export to this UDP collector (e.g. `192.168.1.10:162`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `traps` block. |
 | `-trap-mode` | `trap` \| `inform` | `trap` | **seed** | Notification mode. TRAP is fire-and-forget; INFORM is acknowledged and retried. |
-| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence; the per-device `interval` in a REST `traps` block is accepted, echoed by `GET /api/v1/devices`, and **not honored**. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-trap-interval` | duration | `30s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every trap-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `traps` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-trap-global-cap` | int (tps) | `0` | **global** | Simulator-wide rate ceiling across fires + INFORM retries. `0` is unlimited. |
 | `-trap-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 5-trap catalog + per-type overlays from `resources/<slug>/traps.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-trap-community` | string | `public` | **seed** | SNMPv2c community string. **Ignored under `-trap-snmp-version=v3`** — an SNMPv3 message carries no community string anywhere; nl6 warns at startup if you set it explicitly. |
@@ -400,11 +400,11 @@ prerequisites and `netcat` smoke-test, and
 |------|------|---------|-------|---------|
 | `-syslog-collector` | string | — | **seed** | Enable syslog export to this UDP collector (e.g. `192.168.1.10:514`) for the auto-start batch. Empty disables seeding; REST-created devices can still opt in via the `syslog` block. |
 | `-syslog-format` | `5424` \| `3164` | `5424` | **seed** | Wire format. RFC 5424 is structured (recommended); RFC 3164 is legacy BSD. Per-device as of phase 5 — different devices can emit different formats to the same collector; the shared-socket pool is keyed by `(collector, format)` so streams never interleave. |
-| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence; the per-device `interval` in a REST `syslog` block is accepted, echoed by `GET /api/v1/devices`, and **not honored**. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
+| `-syslog-interval` | duration | `10s` | **seed** | **Simulator-wide** mean firing interval (Poisson-distributed, not periodic). Every syslog-enabled device fires at this cadence. This flag is the only cadence: a per-device `interval` in a REST `syslog` block is rejected with 400. To silence a fleet use `-fidelity` (or `POST /api/v1/fidelity` at runtime), not a long interval. |
 | `-syslog-global-cap` | int (rate) | `0` | **global** | Simulator-wide rate ceiling across scheduled fires. On-demand HTTP fires bypass the cap. `0` is unlimited. |
 | `-syslog-catalog` | string | — | **global** | Path to a JSON catalog; empty uses the embedded universal 6-entry catalog + per-type overlays from `resources/<slug>/syslog.json`. Setting this flag **disables per-type overlays** — the file becomes the sole catalog for every device. |
 | `-syslog-transport` | `udp` \| `tcp` \| `tls` | `udp` | **seed** | Transport for the auto-start batch. `tls` is RFC 5425 (TCP inside TLS, port **6514** by default, octet-counting forced); it verifies the collector and presents no certificate of its own. `tcp` is RFC 6587 syslog-over-TCP: one connection per device, reconnecting with capped backoff. Per-device via the REST `syslog.transport` field. See [Syslog export → TCP transport](syslog-export.md#tcp-transport-rfc-6587). |
-| `-syslog-framing` | `octet-counting` \| `non-transparent` | `octet-counting` | **seed** | RFC 6587 framing, used only when the transport is `tcp`. Under `tls` it is forced to `octet-counting` (RFC 5425 §4.3.1) and anything else is rejected. Setting it while the transport is `udp` is **rejected at startup** rather than ignored — framing is a stream concept, and echoing back a setting nothing reads would be worse than refusing it. |
+| `-syslog-framing` | `octet-counting` \| `non-transparent` | empty (`octet-counting` under `tcp`) | **seed** | RFC 6587 framing, used only when the transport is `tcp`. Under `tls` it is forced to `octet-counting` (RFC 5425 §4.3.1) and anything else is rejected. Setting it while the transport is `udp` is **rejected at startup** rather than ignored — framing is a stream concept, and echoing back a setting nothing reads would be worse than refusing it. |
 | `-syslog-tls-ca` | path | — | **seed** | PEM CA bundle verifying the syslog collector under `-syslog-transport tls`. Empty uses the host's root store. Read **once at startup**; the per-device REST config carries the PEM inline (`tls.ca_pem`) rather than a path, so no HTTP request can name a file for the simulator to open. |
 | `-syslog-tls-insecure` | bool | `false` | **seed** | Skip verification of the collector's certificate. Development only. Requires `-syslog-transport tls`. |
 | `-syslog-source-per-device` | bool | `true` | **global** | Use each device's IP as the source address. Per-device bind failures are non-fatal under **udp** (unlike INFORM mode on the trap side) — the exporter falls back to the shared socket with a warning. Under **tcp** there is no shared-socket fallback, so setting this to `false` makes a TCP attach **fail** rather than degrade; see [Syslog export → TCP transport](syslog-export.md#tcp-transport-rfc-6587). |
