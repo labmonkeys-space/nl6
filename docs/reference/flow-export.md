@@ -400,7 +400,7 @@ Omit it and the device doesn't export.
 
 **Duration fields** (`active_timeout`, `inactive_timeout`) require **Go duration strings** (`"30s"`, `"1m30s"`).
 Integer seconds (`"active_timeout": 30`) are rejected with 400.
-This is a deliberate mismatch with the `-flow-*-timeout` CLI flags, which take integer seconds.
+The matching `-flow-*-timeout` CLI flags accept the same duration strings, and also a bare integer as seconds.
 A per-device `tick_interval` is rejected with 400 (nl6#445); the fleet-wide cadence is `-flow-tick-interval`.
 
 See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.

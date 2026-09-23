@@ -184,9 +184,12 @@ Export flags (flow / trap / syslog) fall into two categories:
 - **seed**: applies only to devices created by the `-auto-start-ip` batch at startup. Devices subsequently created via `POST /api/v1/devices` do NOT inherit these values; they must opt in by including a `flow` / `traps` / `syslog` block in the request body.
 - **global**: applies simulator-wide regardless of how the device was created. Shared sockets, catalogs, rate-limiter, and network-namespace bind policy sit here.
 
-**Duration flags come in two types.** The flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` take **integer seconds** (`-flow-tick-interval 5`).
-Every other duration flag is a Go duration and **requires a unit**: `-trap-interval 30s`, `-trap-inform-timeout 5s`, `-syslog-interval 10s`, `-gnmi-dialout-interval 10s`, `-dns-debounce 1s`.
-A bare `-trap-interval 30` does not parse.
+**Duration flags.** Every time-valued CLI flag accepts a Go duration string: `-trap-interval 30s`, `-trap-inform-timeout 5s`, `-syslog-interval 10s`, `-gnmi-dialout-interval 10s`, `-dns-debounce 1s`, `-flow-tick-interval 5s`.
+The four flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` also accept a bare integer, read as seconds (`-flow-tick-interval 5`), because that was their only form in earlier releases.
+Every other duration flag **requires a unit**: a bare `-trap-interval 30` does not parse.
+On the four flow flags a value of zero or less, or a bare number with a fraction (`1.5`), is refused at startup.
+Sub-second values are accepted and have no floor, so `-flow-tick-interval 500ms` drives every device's export tick at that cadence.
+The tick interval's upper bound stays a logged fallback: a value above 1h is replaced by the 5s default at manager construction.
 The REST per-device blocks carry **no cadence field at all**: `flow.tick_interval`, `traps.interval` and `syslog.interval` are rejected with 400, and the error names the flag to use instead.
 The other REST durations (`active_timeout`, `inactive_timeout`, `inform_timeout`, `sample_interval`) are Go duration strings (`"30s"`); a bare integer is rejected with 400.
 
@@ -200,10 +203,10 @@ See [Flow export (operator guide)](../ops/flow-export.md) for prerequisites and 
 |------|------|---------|-------|---------|
 | `-flow-collector` | string | empty | **seed** | Enable flow export to this UDP collector (e.g. `192.168.1.10:2055`) for the auto-start batch. |
 | `-flow-protocol` | `netflow9` \| `ipfix` \| `netflow5` \| `sflow` | `netflow9` | **seed** | Flow export protocol (alias: `sflow5`). |
-| `-flow-tick-interval` | int (seconds) | `5` | **seed** | Flow ticker cadence. Sets **batching, not volume**. See the note below. Applied at construction and not runtime-mutable. This flag is the only cadence: a per-device `tick_interval` in a REST `flow` block is rejected with 400. |
-| `-flow-active-timeout` | int (seconds) | `30` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#emission-shape). |
-| `-flow-inactive-timeout` | int (seconds) | `15` | **seed** | Idle time after a flow's last packet before it is exported. |
-| `-flow-template-interval` | int (seconds) | `60` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
+| `-flow-tick-interval` | seconds or duration | `5s` | **seed** | Flow ticker cadence. Sets **batching, not volume**. See the note below. Applied at construction and not runtime-mutable. This flag is the only cadence: a per-device `tick_interval` in a REST `flow` block is rejected with 400. |
+| `-flow-active-timeout` | seconds or duration | `30s` | **seed** | Cap on how long a still-running flow stays cached before it is exported. Sets a **mean, not an exact deadline**: each flow's deadline is jittered by ±25 %, so `30s` spreads expiry over 22.5s to 37.5s. See [Flow export → emission shape](flow-export.md#emission-shape). |
+| `-flow-inactive-timeout` | seconds or duration | `15s` | **seed** | Idle time after a flow's last packet before it is exported. |
+| `-flow-template-interval` | seconds or duration | `1m0s` | **global** | Template retransmission interval (NetFlow v9 / IPFIX only). |
 | `-flow-sub-agent-id` | uint | `0` | **seed** | sFlow `sub_agent_id` emitted in every datagram header by the auto-start batch (one value for the whole batch; per-group values via the REST `flow.sub_agent_id` field). Ignored by non-sFlow protocols. See [Flow export reference → sFlow sub-agent id](flow-export.md#sflow-sub-agent-id). |
 | `-flow-option-interface-table` | `if-scoped` \| `system-scoped` | empty (off) | **seed** | Emit v9/IPFIX interface option records ("option interface-table") for the auto-start batch: `if-scoped` carries the ifIndex in the scope with fields 82+83; `system-scoped` carries it as option field `INPUT_SNMP(10)` with field 83 only (the IOS-XR shape). Requires `-flow-protocol netflow9` or `ipfix`. Other protocols fail startup validation. Per-group shapes via the REST `flow.options_interface_table` field. See [Flow export reference → Interface option records](flow-export.md#interface-option-records-netflow-v9--ipfix). |
 | `-flow-nbar2` | bool | `false` | **seed** | Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from NBAR2-capable auto-start devices (`cisco_ios`, `cisco_catalyst_9500`). Requires `-flow-protocol ipfix`, `-flow-collector` and an NBAR2-capable auto-start type; fatal at startup otherwise. **The auto-start batch is built as `asr9k` and no flag selects another type, so the flag is refused on every boot today**; create NBAR2 devices over REST with `resource_file: "cisco_ios.json"` and `flow.nbar2` instead. Incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Per-device via the REST `flow.nbar2` field. See [Flow export reference → NBAR2](flow-export.md#nbar2-application-records-ipfix-only). |
