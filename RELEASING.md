@@ -161,8 +161,9 @@ publish:
       Check: the main module `github.com/labmonkeys-space/nl6/go` carries the tag's version, no package has version `UNKNOWN`, there are zero npm packages, and no package has `licenseConcluded: NOASSERTION` (syft concludes cache-resolved modules; the main module, stdlib, and the file-root package are filled by `make sbom-curate`, which fails the release if they go missing).
       Note `licenseDeclared` stays `NOASSERTION` on most Go modules by design — buildinfo carries no declarations — so grep the concluded field, not the whole file.
       The website has its own SBOM, retained as a workflow artifact (`nl6-website-sbom`) on each docs-deploy run — it is not a release asset and deliberately not published on the site.
-- [ ] Curate the release notes — the auto-generated list is a starting point;
-      trim `chore:`/`docs:`/deps noise down to user-visible highlights.
+- [ ] Curate the release notes.
+      The auto-generated list is a starting point; trim `chore:`/`docs:`/deps noise down to user-visible highlights.
+      Every merged PR labelled `breaking-change` (`gh pr list --state merged --label breaking-change`) gets an entry under **Upgrade notes**; its body carries the text to lift.
 - [ ] `ghcr.io/labmonkeys-space/nl6:vX.Y.Z` and `:latest` both updated
       (check the "Packages" panel on the repo page).
 - [ ] **Publish** the draft:
