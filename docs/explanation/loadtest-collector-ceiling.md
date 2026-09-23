@@ -80,7 +80,7 @@ Three can.
 
 Point (1) is the report's **`sent`** field, which is `in_window + drain`.
 It is deliberately **not** `emitted`: that also counts `send_failures`, `dropped` and `suppressed_pre_window`, none of which reached the wire, so using it would charge nl6-side non-sends to the network.
-See the [report schema](./loadtest-report-schema.md), which names `sent` as the loss denominator.
+See the [report schema](../reference/loadtest-report-schema.md), which names `sent` as the loss denominator.
 
 Report all three.
 A run that reports only (1) and (3) cannot tell a lossy pipeline from a slow one, and those have opposite fixes.
@@ -390,6 +390,6 @@ And the 320/s configuration is disqualified anyway on ordering grounds ([the che
 
 ## Related
 
-- [Runbooks](./loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
-- [Scenarios](./loadtest-scenarios.md) for the lifecycle and fidelity mode
-- [Report schema](./loadtest-report-schema.md) for `sent` versus `emitted`, and what nl6 reports about its own side of the measurement
+- [Runbooks](../ops/loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
+- [Scenarios](../ops/loadtest-scenarios.md) for the lifecycle and fidelity mode
+- [Report schema](../reference/loadtest-report-schema.md) for `sent` versus `emitted`, and what nl6 reports about its own side of the measurement

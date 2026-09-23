@@ -67,7 +67,7 @@ JSON format.
 | NVIDIA HGX-H200 | 8 | 141 GB | H200 GPU inference system |
 
 See [GPU simulation](gpu/index.md) for the DCGM OID layout, per-GPU metric
-cycling, and the pollaris / parser integration.
+cycling, and the collector OID contract.
 
 ## Storage systems
 
@@ -127,7 +127,7 @@ It takes exactly one of five strings; any other value matches no device type and
   chassis, line cards, power supplies, fans, and temperature sensors.
 - **`entAliasMappingTable`** — physical-to-logical port mappings.
 - **Dynamic metrics** — CPU, memory, and temperature cycle through a 100-point
-  sine-wave pattern per device. See [Architecture](architecture.md).
+  sine-wave pattern per device. See [Architecture](../explanation/architecture.md).
 - **Dynamic HC interface counters** — `ifHCInOctets` / `ifHCOutOctets` are
   computed on-demand as monotonically increasing Counter64 values, with
   per-interface phase offsets. See [SNMP reference](snmp.md).

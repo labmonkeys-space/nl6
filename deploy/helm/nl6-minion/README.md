@@ -10,7 +10,7 @@ Minion talks back to the OpenNMS core over **Kafka**.
 
 > [!WARNING]
 > Kubernetes is **not an officially supported** nl6 target. See
-> [`docs/ops/kubernetes.md`](../../../docs/ops/kubernetes.md) for the full list
+> [`docs/explanation/kubernetes.md`](../../../docs/explanation/kubernetes.md) for the full list
 > of reasons (privileges, host-network mutation, singleton host resources,
 > non-routable device CIDR). This chart is a **single-node lab convenience**,
 > not a production deployment. `replicas` is fixed at 1.
@@ -34,7 +34,7 @@ The sidecar pattern works **because** the pod uses `hostNetwork: true`. nl6
 installs `/24` host routes toward the `nl6sim` namespace (`AddRouteForDevices`
 in `go/nl6/netns.go`); since the Minion shares the node's network namespace, it
 inherits those routes and reaches the device IPs with no extra `ip route` of its
-own. This is "Option A" (co-location) from `docs/ops/kubernetes.md` §4.
+own. This is "Option A" (co-location) from `docs/explanation/kubernetes.md` §4.
 
 ## Prerequisites
 

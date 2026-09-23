@@ -102,7 +102,7 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 ```
 
 After stop, read `summary.sub_windows` — 10 equal time buckets over the window
-(see [Loss localization](./loadtest-report-schema.md#loss-localization)). Loss
+(see [Loss localization](../reference/loadtest-report-schema.md#loss-localization)). Loss
 concentrated in the **late, high-rate** buckets points at collector overload
 under burst rather than steady-state loss. Bucket your collector's received
 data the same way (receive-time relative to `metadata.t0`) and diff per bucket.

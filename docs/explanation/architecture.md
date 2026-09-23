@@ -92,7 +92,7 @@ guide.
 
 `web.go` (route setup) + `api.go` (handlers) + `web_routes*.go` (Linux route
 script generation). Serves device CRUD, CSV export, system stats, and flow
-export status (`GET /api/v1/flows/status`). See [Web API](web-api.md) for
+export status (`GET /api/v1/flows/status`). See [Web API](../reference/web-api.md) for
 the endpoint catalog.
 
 ### Flow export
@@ -100,7 +100,7 @@ the endpoint catalog.
 `flow_exporter.go` (`FlowExporter`, `FlowEncoder` interface, `SimulatorManager`
 integration) + `netflow5.go` / `netflow9.go` / `ipfix.go` / `sflow.go`.
 One shared UDP socket and ticker goroutine; per-device `FlowExporter` owns
-a `FlowCache`. See [Flow export reference](flow-export.md).
+a `FlowCache`. See [Flow export reference](../reference/flow-export.md).
 
 ### gNMI dial-in
 
@@ -110,7 +110,7 @@ buffer), `gnmi_server.go` (per-device gRPC + TLS listener lifecycle),
 `gnmi_manager.go` (subsystem config + status). Counter values come from the
 same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow,
 so all three protocols agree byte-for-byte at the same instant. Read-only;
-`Set` returns `Unimplemented`. See [gNMI dial-in reference](gnmi.md).
+`Set` returns `Unimplemented`. See [gNMI dial-in reference](../reference/gnmi.md).
 
 ### gNMI dial-out
 
@@ -124,13 +124,13 @@ collector and streams the same `SubscribeResponse` payload the dial-in
 target serves, with `Prefix.Target` = device IP for in-band attribution.
 Opt-in per device via the `-gnmi-dialout-*` seed flags or the
 `gnmi_dialout` REST block — the fleet can mix dial-in and dial-out. See
-[gNMI dial-out reference](gnmi-dial-out.md).
+[gNMI dial-out reference](../reference/gnmi-dial-out.md).
 
 ### Resource loading
 
 `resources.go` loads and caches the 379 JSON files at startup. Each device
 type directory has split JSON files for SNMP, SSH, and REST responses that
-are merged at load time. See [Resource files](resource-files.md).
+are merged at load time. See [Resource files](../reference/resource-files.md).
 
 ## Key design decisions
 
@@ -144,7 +144,7 @@ are merged at load time. See [Resource files](resource-files.md).
 - **Analytic IF-MIB counters** — every per-interface counter in `ifTable`
   and `ifXTable` computed on demand from a single per-direction octet
   sine wave, instead of maintained by a polling loop; see
-  [SNMP reference](snmp.md#dynamic-if-mib-counters).
+  [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters).
 - **Network namespace isolation** — the `nl6sim` namespace prevents
   systemd-networkd interference on many Linux distros.
 - **Per-device flow egress** — a `FORWARD -i veth-sim-host -j ACCEPT`

@@ -5,7 +5,7 @@ name: nl6-minion
 description: |
   nl6 network-device simulator with an OpenNMS Minion sidecar (Kafka transport).
   Single-node lab convenience deployment — Kubernetes is NOT an officially
-  supported target for nl6 (see docs/ops/kubernetes.md). The Minion shares the
+  supported target for nl6 (see docs/explanation/kubernetes.md). The Minion shares the
   pod's hostNetwork so it inherits the host routes nl6 installs into the
   nl6sim namespace and can poll the simulated devices directly.
 type: application

@@ -40,13 +40,13 @@ wire/collector loss, not measurement noise.
 | Page | What it covers |
 |------|----------------|
 | [REST API](./loadtest-api.md) | Every endpoint, request/response shape, and error code. |
-| [Scenarios](./loadtest-scenarios.md) | The operating guide — lifecycle, fidelity mode, run tagging, reconciliation, troubleshooting. |
-| [Runbooks](./loadtest-runbooks.md) | Copy-pasteable worked recipes, one per use case. |
+| [Scenarios](../ops/loadtest-scenarios.md) | The operating guide — lifecycle, fidelity mode, run tagging, reconciliation, troubleshooting. |
+| [Runbooks](../ops/loadtest-runbooks.md) | Copy-pasteable worked recipes, one per use case. |
 | [Report schema](./loadtest-report-schema.md) | Every field, the ledger identity, loss localization, and the semver policy. |
-| [Collector ceiling](./loadtest-collector-ceiling.md) | Method for measuring what a collector actually accepts, and not mistaking a drain rate for a capacity. |
+| [Collector ceiling](../explanation/loadtest-collector-ceiling.md) | Method for measuring what a collector actually accepts, and not mistaking a drain rate for a capacity. |
 
-New to it? Walk the [lifecycle](./loadtest-scenarios.md#run-a-fidelity-check),
-then pick a matching [runbook](./loadtest-runbooks.md). There is a runnable
+New to it? Walk the [lifecycle](../ops/loadtest-scenarios.md#run-a-fidelity-check),
+then pick a matching [runbook](../ops/loadtest-runbooks.md). There is a runnable
 end-to-end example under `examples/scenario-syslog-fidelity/` — a compose stack
 (nl6 + a counting collector) and a `run.sh` that reproduces a documented known
 result.
@@ -58,4 +58,4 @@ result.
   The 8 most recent terminal scenarios stay listed and queryable; older ones are reaped.
 - **In-memory only** — a scenario, its ledger, and its report do not survive a
   restart; fetch the report before restarting. See
-  [Scenarios → Non-goal](./loadtest-scenarios.md#non-goal-scenarios-are-in-memory).
+  [Scenarios → Non-goal](../ops/loadtest-scenarios.md#non-goal-scenarios-are-in-memory).

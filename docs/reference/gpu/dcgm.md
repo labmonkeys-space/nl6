@@ -3,9 +3,8 @@
 :::note[Simulator side of the GPU story]
 This page covers the **simulator** — the metric OID types, the GPU
 cycler extension, device profiles, resource file layout, and
-integration points. Pair it with [Protobuf model](proto-model.md) (the
-shape of the output data) and [Pollaris and parsing rules](pollaris.mdx)
-(the collector side).
+integration points. The OIDs a collector polls are in
+[GPU simulation → Collector OID contract](index.md#collector-oid-contract).
 :::
 
 ## Overview

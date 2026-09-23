@@ -24,4 +24,4 @@ CHECKLIST (things this chart can NOT verify for you):
   - Provision a device (e.g. 10.42.0.1) against location "{{ .Values.minion.location }}"
     so the Minion actually polls the simulated fleet.
 
-Kubernetes is NOT an officially supported nl6 target — see docs/ops/kubernetes.md.
+Kubernetes is NOT an officially supported nl6 target — see docs/explanation/kubernetes.md.

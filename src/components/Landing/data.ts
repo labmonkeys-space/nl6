@@ -45,8 +45,7 @@ export const DOCS: DocGroup[] = [
     { t: 'SNMP traps',        h: '/ops/snmp-traps' },
     { t: 'Troubleshooting',   h: '/ops/troubleshooting' },
   ]},
-  { group: 'Reference', body: 'Architecture, CLI flags, REST API, device-type tables, protocol details.', links: [
-    { t: 'Architecture',     h: '/reference/architecture' },
+  { group: 'Reference', body: 'CLI flags, REST API, device-type tables, protocol details.', links: [
     { t: 'Load-test scenarios', h: '/reference/loadtest-overview' },
     { t: 'CLI flags',        h: '/reference/cli-flags' },
     { t: 'Web API',          h: '/reference/web-api' },
@@ -58,11 +57,15 @@ export const DOCS: DocGroup[] = [
     { t: 'Interface state',  h: '/reference/interface-state' },
     { t: 'Resource files',   h: '/reference/resource-files' },
   ]},
-  { group: 'GPU simulation', body: 'DGX/HGX simulation, DCGM OID layout, pollaris parser.', links: [
+  { group: 'GPU simulation', body: 'DGX/HGX simulation, DCGM OID layout, collector OID contract.', links: [
     { t: 'GPU overview',     h: '/reference/gpu' },
-    { t: 'Protobuf model',   h: '/reference/gpu/proto-model' },
-    { t: 'Pollaris & parsing', h: '/reference/gpu/pollaris' },
     { t: 'DCGM simulation',  h: '/reference/gpu/dcgm' },
+  ]},
+  { group: 'Explanation', body: 'Why it is built this way: architecture, Kubernetes, SNMP data fidelity, collector ceilings.', links: [
+    { t: 'Architecture',       h: '/explanation/architecture' },
+    { t: 'Kubernetes',         h: '/explanation/kubernetes' },
+    { t: 'SNMP data fidelity', h: '/explanation/snmp-data-fidelity' },
+    { t: 'Collector ceiling',  h: '/explanation/loadtest-collector-ceiling' },
   ]},
 ];
 

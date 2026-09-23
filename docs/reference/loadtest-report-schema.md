@@ -5,7 +5,7 @@ authoritative record of what nl6 **sent**, which an operator diffs against a
 monitor's **received** counts to localize missed or duplicated telemetry. It
 is built once at stop/abort, immutable thereafter, and served by
 `GET /api/v1/scenarios/{id}/report` (also returned by `stop`). See the
-[API reference](./loadtest-api.md) and the [scenarios guide](./loadtest-scenarios.md).
+[API reference](./loadtest-api.md) and the [scenarios guide](../ops/loadtest-scenarios.md).
 
 ## Shape
 
@@ -122,7 +122,7 @@ whether you are looking at a pipeline change or simply a different fleet.
 | `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
 | `fidelity` | object | **Fleet-silence disclosure**, always present: `{silent_at_start, changed_during_window}`. `silent_at_start` is the fidelity value in force at `t0`. `changed_during_window` is true when fidelity was toggled, or a timed revert fired, between `t0` and finalize. A true there means non-participant devices resumed or ceased autonomous push part-way through the window, so the collector-side accept rate covers a mixture. The ledger stays exact either way, which is why this needs saying out loud. |
 | `rate_cap` | object | **Shared-cap disclosure**, present only when this run's protocol has a fleet-wide ceiling in force (`{per_second, shared_with}`). Rate limiters are **per protocol** — syslog and SNMP trap each own one, flow protocols and gNMI dial-out have none — so only *same-protocol* runs contend. `shared_with` names the same-protocol *scenarios* whose windows overlapped this one, sequence-ordered. An empty list means no peer scenario overlapped — **not** that the bucket was uncontended: the scenario scheduler shares the fleet limiter, and background firing spends a token per pop even for fires the scenario gate suppresses, so on a busy non-`-fidelity` fleet a solo run is still throttled by background traffic. The cap is the one in force when the run **began**, not when the report was fetched. Currently emitted for `syslog` only — it is the one protocol whose scenario emission provably passes through the fleet limiter; `-trap-global-cap` governs background trap firing, which the scenario trap path does not go through. A run that shared its bucket did not measure what it would have measured alone, and this is what makes that visible in the artifact instead of silently changing the numbers. Overlaps are recorded as they begin, not reconstructed at finalize, so a peer stopped and deleted before this run finishes is still named. |
-| `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+| `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever — `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](../ops/loadtest-scenarios.md#run-tagging--isolating-experiment-traffic). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
 
 #### `achieved_per_device` is an in-window rate
 
@@ -211,6 +211,25 @@ before `10.42.0.2` looks broken; this is input to a hash function, where any
 total order does, and byte order is the one every language sorts strings in by
 default. The trailing newline after the final address is part of the encoding.
 
+## Run-tag levers
+
+`metadata.run_tags.mechanism` names the in-band lever a run's traffic can be filtered by on a shared collector.
+Every protocol is also bounded by the window `[T0,T1)` and the participant source IPs; the lever is the second discriminator where the wire format has one.
+
+| Protocol | `mechanism` | Lever | PEN? |
+|----------|-------------|-------|------|
+| NetFlow v9 | `netflow9_source_id` | filter received flows by the device's **Source ID** | no |
+| IPFIX | `ipfix_odid` | filter by the **Observation Domain ID** (enterprise IE is a secondary, PEN-only lever) | no |
+| sFlow v5 | `sflow_sub_agent_id` | filter by **`sub_agent_id`** | no |
+| gNMI dial-out | `gnmi_synthetic_path` | dial-out stamps the device IP in `Notification.Prefix.Target`; filter by target | no |
+| Syslog 5424 | `syslog_sd_param` | RFC 5424 SD-PARAM `[nl6@<PEN> runId="<id>"]` | **yes** |
+| SNMP trap/inform | `snmp_enterprise_varbind` | enterprise varbind under the nl6 PEN | **yes** |
+| NetFlow v5 | `window_source_ip` | no taggable field — isolate by participant source IPs + `[T0,T1)` | n/a |
+
+A PEN-dependent lever needs `-scenario-pen`.
+Without it, `mechanism` is `window_source_ip` and `degraded` is `true`.
+How to use the levers when reconciling is in [Scenarios → Run tagging](../ops/loadtest-scenarios.md#run-tagging--isolating-experiment-traffic).
+
 ## `counters[]` — per participant
 
 One row per participant, keyed by the **join tuple** `(protocol, source_ip,
@@ -283,7 +302,7 @@ A collector that decodes `applicationId` as a big-endian integer (IPFIXcol2 with
 | `bytes` | number | Sum of the records' flow byte counters, exactly what a conforming collector sums for the same window. |
 | `packets` | number | Sum of the records' flow packet counters. |
 | `avg_bytes_per_second` | number | **In-window** bytes ÷ `(t1 − t0)` (actual window). The headline rate reference. Drain bytes stay in `bytes` (the reconciliation total) but are excluded here: the denominator is the window, and a drain byte was written outside it, so counting it would credit the window with bytes it did not carry. (There is no "drain time" to add to the denominator; the tail is a barrier, not a span.) In-window bytes = `Σ sub_window_bytes`. |
-| `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded, the same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](./loadtest-scenarios.md#validating-a-collector-against-the-report)). |
+| `sub_window_bytes` | array | In-window bytes per localization bucket (drain bytes excluded, the same convention as `sub_windows` vs `sent`). **Informational**: collectors interpolate a flow's bytes across its `[start, end]` interval, so per-bucket comparison is approximate; reconcile on totals (see [validation methodology](../ops/loadtest-scenarios.md#validating-a-collector-against-the-report)). |
 
 `sflow` scenarios are excluded by design: an sFlow collector derives byte volumes by sampling extrapolation (`frame_length × sampling_rate`), not by summing record byte counters, so these totals are not the numbers a correct sFlow collector would report.
 

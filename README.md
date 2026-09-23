@@ -148,10 +148,10 @@ Deployment recipes & worked examples: [`examples/`](examples/) — Clos fabrics 
 
 The docs site has four top-level sections:
 
-- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/) — build, first run, package install, Docker.
-- [Operations](https://labmonkeys-space.github.io/nl6/ops/scaling/) — scaling, network namespace, flow export, troubleshooting.
-- [Reference](https://labmonkeys-space.github.io/nl6/reference/architecture/) — architecture, CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
-- [GPU simulation](https://labmonkeys-space.github.io/nl6/reference/gpu/) — NVIDIA DCGM OID layout, per-GPU metrics, and the pollaris / parser integration notes (formerly `plans/`).
+- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/): build, first run, package install, Docker.
+- [Operations](https://labmonkeys-space.github.io/nl6/ops/scaling/): scaling, network namespace, flow export, load-test scenarios, troubleshooting.
+- [Reference](https://labmonkeys-space.github.io/nl6/reference/cli-flags/): CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
+- [Explanation](https://labmonkeys-space.github.io/nl6/explanation/architecture/): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling.
 
 Reference content that used to live in this README now lives in the docs
 site. A bare `README.md` on GitHub is intentional: the site is the canonical

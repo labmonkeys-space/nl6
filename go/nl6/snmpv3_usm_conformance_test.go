@@ -41,7 +41,7 @@ import (
 var docsDescribingUSMAuth = []string{
 	"docs/reference/snmp.md",
 	"docs/reference/cli-flags.md",
-	"docs/reference/architecture.md",
+	"docs/explanation/architecture.md",
 	"docs/reference/device-types.md",
 	"docs/reference/web-api.md",
 	"README.md",
