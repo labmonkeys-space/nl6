@@ -352,6 +352,7 @@ of the schema:
       "name": "linkDown",
       "snmpTrapOID": "1.3.6.1.6.3.1.1.5.3",
       "weight": 40,
+      "role": "link-down",
       "varbinds": [
         { "oid": "1.3.6.1.2.1.2.2.1.1.{{.IfIndex}}", "type": "integer", "value": "{{.IfIndex}}" },
         { "oid": "1.3.6.1.2.1.2.2.1.7.{{.IfIndex}}", "type": "integer", "value": "2" },
@@ -376,7 +377,8 @@ Per-entry object:
 | `name` | string | yes | Unique within the catalog. Used by the HTTP fire-on-demand endpoint and for log attribution. |
 | `snmpTrapOID` | string | yes | Dotted-decimal OID. Becomes the value of the auto-prepended `snmpTrapOID.0` varbind. |
 | `snmpTrapEnterprise` | string | no | Dotted-decimal OID for the optional `snmpTrapEnterprise.0` varbind. When set, the encoder emits a third prepended varbind after `snmpTrapOID.0` and before body varbinds. Useful for v1↔v2c proxy compatibility (RFC 3584 §4.1); conventionally the MIB module root. |
-| `weight` | integer | no (default `1`) | Relative weight for weighted-random selection by the scheduler. Zero means omit the entry from scheduled firing (still reachable via the HTTP endpoint). |
+| `weight` | integer | no (default `1`) | Relative weight for weighted-random selection by the scheduler. `0` or omitted is coerced to `1`; a negative value fails catalog load. To keep an entry out of scheduled firing, give it a `role`. |
+| `role` | string | no | Tags the entry as state-driven. Allowed: `link-down`, `link-up`, `optical-sd-raise`, `optical-sd-clear`, `optical-sf-raise`, `optical-sf-clear`. Unknown values fail catalog load. A role-tagged entry is excluded from the scheduler's weighted pick and fires only through `EntriesByRole` on the matching transition (link roles on an interface oper-status change, optical roles on a pre-FEC threshold crossing). Empty means untagged, scheduler-driven. |
 | `varbinds` | array | yes (may be empty) | Body varbinds following the auto-prepended ones. |
 
 Per-varbind object:
@@ -411,23 +413,23 @@ The failure is logged once per device and counted in `send_failures` on `GET /ap
 
 Ships five entries, all from `SNMPv2-MIB`:
 
-| Name | `snmpTrapOID` | Weight | Body varbinds |
-|------|---------------|--------|---------------|
-| `linkDown` | `1.3.6.1.6.3.1.1.5.3` | 40 | `ifIndex`, `ifAdminStatus` = 2, `ifOperStatus` = 2 |
-| `linkUp` | `1.3.6.1.6.3.1.1.5.4` | 40 | `ifIndex`, `ifAdminStatus` = 1, `ifOperStatus` = 1 |
-| `authenticationFailure` | `1.3.6.1.6.3.1.1.5.5` | 10 | _(none)_ |
-| `coldStart` | `1.3.6.1.6.3.1.1.5.1` | 5 | _(none)_ |
-| `warmStart` | `1.3.6.1.6.3.1.1.5.2` | 5 | _(none)_ |
+| Name | `snmpTrapOID` | Weight | Role | Body varbinds |
+|------|---------------|--------|------|---------------|
+| `linkDown` | `1.3.6.1.6.3.1.1.5.3` | 40 | `link-down` | `ifIndex`, `ifAdminStatus` = 2, `ifOperStatus` = 2 |
+| `linkUp` | `1.3.6.1.6.3.1.1.5.4` | 40 | `link-up` | `ifIndex`, `ifAdminStatus` = 1, `ifOperStatus` = 1 |
+| `authenticationFailure` | `1.3.6.1.6.3.1.1.5.5` | 10 | _(none)_ | _(none)_ |
+| `coldStart` | `1.3.6.1.6.3.1.1.5.1` | 5 | _(none)_ | _(none)_ |
+| `warmStart` | `1.3.6.1.6.3.1.1.5.2` | 5 | _(none)_ | _(none)_ |
 
-Weights bias scheduled firing toward link-state notifications (the most
-common interesting traps for monitoring-pipeline validation) while still
-exercising the other three types.
+`linkDown` and `linkUp` are role-tagged and never fire from the scheduler.
+They fire on an interface oper-status transition: a flap scenario (`-if-flap-scenario`), a REST `oper-status` or `admin-status` POST, or an SNMP SET of `ifAdminStatus`.
+The scheduler draws from the three untagged entries only, so the scheduled weight is 20.
 
 ### Template vocabulary
 
 Both `oid` and `value` fields are evaluated as Go `text/template`
 strings per fire. The vocabulary is **unified with the syslog
-subsystem** — the same nine fields work on both sides:
+subsystem** — the same eleven fields work on both sides:
 
 | Field | Evaluation |
 |-------|-----------|
@@ -440,6 +442,8 @@ subsystem** — the same nine fields work on both sides:
 | `{{.Model}}` | Human-readable model string derived from device-type slug (e.g., `cisco_ios` → `Cisco IOS`) |
 | `{{.Serial}}` | Deterministic `SN` + 8-hex-digit serial synthesised from the device's IPv4 |
 | `{{.ChassisID}}` | Deterministic locally-administered MAC-style chassis ID synthesised from the device's IPv4 (`02:42:xx:xx:xx:xx`) |
+| `{{.NowLocal}}` | Fire time as local `2006-01-02 15:04:05`, for DisplayString date varbinds such as CIENA-WS `DateAndTime` |
+| `{{.Detail}}` | Per-fire free-form measurement suffix. Empty unless the firing site supplies it (the optical alarms carry the triggering OSNR this way) |
 
 References to any other field are rejected at catalog load — the
 simulator refuses to start rather than silently emitting a trap with
@@ -471,6 +475,7 @@ entry counts.
 |------|-------|-----------------|
 | `cisco_ios` | 7 Cisco-MIB entries (merged total 12) | `ciscoConfigManEvent`, `ciscoEnvMonSupplyStatusChangeNotif`, `ciscoEnvMonTemperatureNotification`, `cefcModuleStatusChange`, `cefcFanTrayStatusChangeNotif`, `ciscoEntSensorThresholdNotification`, `ciscoFlashDeviceChangeTrap`. All with `snmpTrapEnterprise` set to `1.3.6.1.4.1.9.9.<mib-root>`. |
 | `juniper_mx240` | 7 JUNIPER-MIB entries (merged total 12) | `jnxPowerSupplyFailure`, `jnxFanFailure`, `jnxOverTemperature`, `jnxFruRemoval`, `jnxFruInsertion`, `jnxFruPowerOff`, `jnxFruFailed` (all `jnxChassisTraps` family). `snmpTrapEnterprise` = `1.3.6.1.4.1.2636` on all entries. |
+| `ciena_waveserver5` | 4 CIENA-WS entries (merged total 9) | `opticalPreFecSdRaise`, `opticalPreFecSdClear`, `opticalPreFecSfRaise`, `opticalPreFecSfClear`. All role-tagged (`optical-sd-*`, `optical-sf-*`), so they fire on a pre-FEC threshold crossing and never from the scheduler. |
 
 Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`,
 `cisco_nexus_9500`, `asr9k`), `juniper_mx960`, Arista, Linux, and
@@ -530,8 +535,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "traps": {
       "collector": "192.168.1.10:162",
       "mode": "trap",
-      "community": "public",
-      "interval": "30s"
+      "community": "public"
     }
   }'
 
@@ -545,14 +549,13 @@ curl -X POST http://localhost:8080/api/v1/devices \
       "collector": "192.168.1.20:162",
       "mode": "inform",
       "community": "private",
-      "interval": "60s",
       "inform_timeout": "2s",
       "inform_retries": 3
     }
   }'
 ```
 
-> **Note:** the `interval` field above is accepted and stored but **not honored** — every device fires at the simulator-wide `-trap-interval` cadence. The create response returns a `warnings` entry saying so. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
+> **Note:** a per-device `interval` in the `traps` block is **rejected with 400** (nl6#445). Every device fires at the simulator-wide `-trap-interval` cadence, which the device read-back reports under `effective_intervals`. To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
 
 `/api/v1/traps/status` reports both batches as separate records keyed by
 `(collector, mode)`.
@@ -562,10 +565,10 @@ device doesn't fire traps. See
 [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full
 per-device schema.
 
-**Duration fields** (`interval`, `inform_timeout`) require **Go duration
-strings** (`"30s"`, `"5m"`, `"1m30s"`). Integer seconds (`"interval": 30`)
-are rejected with 400 — a deliberate mismatch with the `-trap-interval`
-CLI flag, which takes integer seconds.
+**Duration fields** (`inform_timeout`) require **Go duration
+strings** (`"2s"`, `"5s"`, `"1m30s"`). Integer seconds (`"inform_timeout": 5`)
+are rejected with 400. The `-trap-interval` and `-trap-inform-timeout` CLI
+flags take the same Go duration syntax.
 
 ## HTTP endpoints
 
@@ -613,6 +616,15 @@ directly at the top level.
 ```json
 {
   "subsystem_active": true,
+  "snmp_version": "v3",
+  "snmpv3": {
+    "user": "nl6trap",
+    "security_level": "authPriv",
+    "auth_protocol": "sha1",
+    "priv_protocol": "aes128",
+    "engine_id_format": "RFC 3411 section 5 format 3: 80007ed9 (PEN 32473) || 03 || 0242 || the device's IPv4 in hex",
+    "engine_ids_by_device": {"10.0.0.1": "80007ed90302420a000001"}
+  },
   "collectors": [
     {
       "collector": "192.168.1.10:162",
@@ -645,6 +657,9 @@ directly at the top level.
 
 The **four `informs_*` fields appear only on records whose `mode == inform`**.
 TRAP-mode records omit them.
+`send_failures` counts fires that did not reach the kernel: a resolve or encode failure, a refused write, or a failed INFORM retransmission.
+`snmp_version` (`v2c`, `v1` or `v3`) is present once the subsystem is active.
+`snmpv3` is present only under `-trap-snmp-version v3` and reports what a receiver needs: `user`, `security_level`, `auth_protocol`, `priv_protocol`, `engine_id_format` and `engine_ids_by_device` (device IP to lowercase hex engine ID, the string `createUser -e 0x...` wants). No password or localized key is reported.
 
 `sent` means the datagram reached the kernel; a fire that did not lands in `send_failures` instead — a template that resolves or renders to something unencodable, a refused write, or a failed INFORM retransmission.
 The counter moves on every occurrence even though the matching log line is emitted only once per exporter.

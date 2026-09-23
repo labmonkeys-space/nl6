@@ -101,15 +101,21 @@ per `(collector, protocol)` tuple:
 
 ```json
 {
-  "subsystem_active": true,
-  "collectors": [
-    {"collector": "192.168.1.10:2055", "protocol": "netflow9", "devices": 50, "..." },
-    {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 30, "..." },
-    {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "..." }
-  ],
-  "devices_exporting": 100
+  "success": true,
+  "message": "Success",
+  "data": {
+    "collectors": [
+      {"collector": "192.168.1.10:2055", "protocol": "netflow9", "devices": 50, "sent_packets": 8123, "sent_bytes": 12123456, "sent_records": 243690, "send_failures": 0},
+      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 30, "..." },
+      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "..." }
+    ],
+    "devices_exporting": 100
+  }
 }
 ```
+
+`sent_*` counts datagrams that reached the kernel.
+A datagram the kernel refused lands in `send_failures` instead.
 
 ### Notes
 
@@ -117,11 +123,10 @@ per `(collector, protocol)` tuple:
   per device). If you need the same device to appear on multiple
   collectors, run multiple simulator processes — the `nl6sim` netns +
   per-device-source-IP scheme isn't designed to multicast.
-- `-flow-template-interval` is simulator-wide — every exporter ticks at the
-  same cadence regardless of batch. Per-device `tick_interval` in the REST body
-  is accepted and validated but **not honored**; a single warning is logged per
-  subsystem lifecycle the first time any device SETS it (not only when it
-  diverges), and the create response carries the same disclosure.
+- `-flow-tick-interval` is simulator-wide.
+  One ticker drives every exporter regardless of batch.
+  A per-device `tick_interval` in the REST body is **rejected with 400** (nl6#445).
+  No `warnings` entry is emitted; the request does not create any device.
 - `-flow-tick-interval` sets the simulator-wide cadence and **is** honored. It
   controls **batching, not volume**: a slower tick puts more records in each
   datagram rather than proportionally reducing the record rate. Volume is set
@@ -170,8 +175,9 @@ If the collector isn't seeing flows, walk through these in order:
    ```bash
    curl http://localhost:8080/api/v1/flows/status
    ```
-   Expect `enabled: true`, `devices_exporting > 0`, and
-   `total_packets_sent` steadily increasing.
+   Expect `data.devices_exporting > 0` and `sent_packets` on each
+   `data.collectors[]` record steadily increasing.
+   A climbing `send_failures` means the kernel refused the datagrams.
 2. **Sniff on the simulator host.** Packets should appear with device IPs
    as sources:
    ```bash
