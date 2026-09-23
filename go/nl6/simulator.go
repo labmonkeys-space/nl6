@@ -114,17 +114,16 @@ func main() {
 		ifFlapGlobalCap    = flag.Int("if-flap-global-cap", 0, "Simulator-wide tps ceiling for flap events (0 = unlimited)")
 
 		// Flow export flags
-		flowCollector            = flag.String("flow-collector", "", "NetFlow/IPFIX collector address (host:port, e.g. 192.168.1.100:2055); disables flow export when empty")
-		flowProtocol             = flag.String("flow-protocol", "netflow9", "Flow export protocol: netflow9 (default), ipfix, netflow5, sflow (alias sflow5). Under netflow5, -flow-template-interval is accepted but has no effect (v5 has no template mechanism). Under sflow, -flow-template-interval is accepted but has no effect (sFlow records are self-describing); flow-samples carry a synthetic sampling_rate of 10 × FlowProfile.ConcurrentFlows — see CLAUDE.md and README.md for caveats")
-		flowActiveSecs           = flag.Int("flow-active-timeout", 30, "Active flow timeout in seconds (default: 30)")
-		flowInactiveSecs         = flag.Int("flow-inactive-timeout", 15, "Inactive flow timeout in seconds (default: 15)")
-		flowTemplateIntervalSecs = flag.Int("flow-template-interval", 60, "Template retransmission interval in seconds (default: 60)")
-		flowTickSecs             = flag.Int("flow-tick-interval", 5, "Flow ticker interval in seconds (default: 5)")
-		flowSubAgentID           = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
-		flowOptionIfaceTable     = flag.String("flow-option-interface-table", "", "[seed] Emit v9/IPFIX interface option records for every auto-start device: if-scoped (ifIndex in the scope, fields 82+83) or system-scoped (system scope, ifIndex as option field, field 83 only). Empty = off (default). Requires -flow-protocol netflow9 or ipfix; use the per-device REST flow.options_interface_table field for per-group shapes")
-		flowSourcePerDevice      = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
-		flowNbar2                = flag.Bool("flow-nbar2", false, "[seed] Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from every NBAR2-capable auto-start device (cisco_ios, cisco_catalyst_9500); incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Requires -flow-protocol ipfix and -flow-collector; fatal at startup otherwise. Per-device via REST flow.nbar2")
-		nbar2CatalogPath         = flag.String("nbar2-catalog", "", "[global] Path to a JSON NBAR2 application catalog; replaces the embedded universal catalog AND every per-type overlay (resources/<type>/nbar2.json) when set. Read once at startup")
+		flowCollector = flag.String("flow-collector", "", "NetFlow/IPFIX collector address (host:port, e.g. 192.168.1.100:2055); disables flow export when empty")
+		flowProtocol  = flag.String("flow-protocol", "netflow9", "Flow export protocol: netflow9 (default), ipfix, netflow5, sflow (alias sflow5). Under netflow5, -flow-template-interval is accepted but has no effect (v5 has no template mechanism). Under sflow, -flow-template-interval is accepted but has no effect (sFlow records are self-describing); flow-samples carry a synthetic sampling_rate of 10 × FlowProfile.ConcurrentFlows — see CLAUDE.md and README.md for caveats")
+		// -flow-tick-interval, -flow-active-timeout, -flow-inactive-timeout and
+		// -flow-template-interval: seconds or a duration string (nl6#723).
+		flowDurations        = registerFlowDurationFlags(flag.CommandLine)
+		flowSubAgentID       = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
+		flowOptionIfaceTable = flag.String("flow-option-interface-table", "", "[seed] Emit v9/IPFIX interface option records for every auto-start device: if-scoped (ifIndex in the scope, fields 82+83) or system-scoped (system scope, ifIndex as option field, field 83 only). Empty = off (default). Requires -flow-protocol netflow9 or ipfix; use the per-device REST flow.options_interface_table field for per-group shapes")
+		flowSourcePerDevice  = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
+		flowNbar2            = flag.Bool("flow-nbar2", false, "[seed] Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from every NBAR2-capable auto-start device (cisco_ios, cisco_catalyst_9500); incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Requires -flow-protocol ipfix and -flow-collector; fatal at startup otherwise. Per-device via REST flow.nbar2")
+		nbar2CatalogPath     = flag.String("nbar2-catalog", "", "[global] Path to a JSON NBAR2 application catalog; replaces the embedded universal catalog AND every per-type overlay (resources/<type>/nbar2.json) when set. Read once at startup")
 
 		// SNMP trap / INFORM export flags. See CLAUDE.md "SNMP Trap export" for detail.
 		trapCollector   = flag.String("trap-collector", "", "SNMP trap collector address (host:port, e.g. 10.0.0.50:162); enables trap export when non-empty")
@@ -370,7 +369,7 @@ func main() {
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
 	manager = NewSimulatorManagerWithOptions(useNamespace,
-		WithFlowTickInterval(time.Duration(*flowTickSecs)*time.Second))
+		WithFlowTickInterval(flowDurations.Tick.Duration()))
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 	fidelitySilent.Store(*fidelity)
 	// Remember what the flag said, so GET /api/v1/fidelity can report the
@@ -416,7 +415,7 @@ func main() {
 	// design §D5. Always applied so operators can tune the ticker cadence
 	// even when no CLI-seed flow export is configured.
 	manager.SetFlowSourcePerDevice(*flowSourcePerDevice)
-	manager.SetFlowTemplateInterval(time.Duration(*flowTemplateIntervalSecs) * time.Second)
+	manager.SetFlowTemplateInterval(flowDurations.Template.Duration())
 
 	// Build the CLI-seed flow config for the auto-start batch. Phase 3 of
 	// per-device-export-config: flags seed auto-start devices only;
@@ -431,9 +430,9 @@ func main() {
 		flowSeed = &DeviceFlowConfig{
 			Collector:       *flowCollector,
 			Protocol:        *flowProtocol,
-			TickInterval:    jsonDuration(time.Duration(*flowTickSecs) * time.Second),
-			ActiveTimeout:   jsonDuration(time.Duration(*flowActiveSecs) * time.Second),
-			InactiveTimeout: jsonDuration(time.Duration(*flowInactiveSecs) * time.Second),
+			TickInterval:    jsonDuration(flowDurations.Tick.Duration()),
+			ActiveTimeout:   jsonDuration(flowDurations.Active.Duration()),
+			InactiveTimeout: jsonDuration(flowDurations.Inactive.Duration()),
 			SubAgentID:      uint32(*flowSubAgentID),
 			// Protocol compatibility (netflow9/ipfix only) is enforced by
 			// the Validate call below — an incompatible seed is a startup fatal.
