@@ -36,7 +36,7 @@ flags, and troubleshooting see
 ## Scope
 
 UDP is the default transport and the one most collector tests exercise.
-TCP (RFC 6587, [#92](https://github.com/labmonkeys-space/nl6/issues/92)) and TLS (RFC 5425, [#93](https://github.com/labmonkeys-space/nl6/issues/93)) are documented under [TCP transport](#tcp-transport-rfc-6587) below.
+TCP (RFC 6587) and TLS (RFC 5425) are documented under [TCP transport](#tcp-transport-rfc-6587) below.
 They are deliberately not symmetric with UDP: a TCP or TLS device owns one connection, refuses to attach when the collector is unreachable, and has no shared-socket fallback.
 
 ## RFC 5424 wire format
@@ -631,4 +631,3 @@ Documented with types, defaults, and purposes at
 - [Syslog export (operator guide)](../ops/syslog-export.md) — enabling, per-device source binding, smoke test
 - [SNMP trap reference](snmp-traps.md) — sibling feature; unified template vocabulary and catalog overlay semantics
 - [Web API](web-api.md) — control-plane REST surface
-- Epic [#76](https://github.com/labmonkeys-space/nl6/issues/76) for original design and implementation context; epic [#103](https://github.com/labmonkeys-space/nl6/issues/103) for per-type catalogs + unified vocabulary

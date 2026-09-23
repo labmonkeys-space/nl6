@@ -402,8 +402,8 @@ An earlier version of this section attributed all eight to `OLD-CISCO-CHASSIS-MI
 | `…9.2.1.8.0` | not defined in the OLD-CISCO-SYSTEM-MIB copy obtained (a v2 conversion that drops the deprecated memory objects) |
 
 **No MIB file or extracted fixture is checked in, and that is a decision.**
-the checked-in MIB fixtures are IETF standards-track modules. A vendor MIB is a different legal object.
-The the arc programme obtainability research found no published redistribution grant for any of nineteen vendors (Cisco's own header asserts copyright and grants nothing), and LibreNMS, which has shipped vendor MIBs for years, classifies its own MIB tree as a GPL-non-compliant component rather than claiming the right.
+The checked-in MIB fixtures are IETF standards-track modules. A vendor MIB is a different legal object.
+The obtainability research found no published redistribution grant for any of nineteen vendors (Cisco's own header asserts copyright and grants nothing), and LibreNMS, which has shipped vendor MIBs for years, classifies its own MIB tree as a GPL-non-compliant component rather than claiming the right.
 So each audit is recorded as a **pinned reading** citing the module and revision consulted, never as a live check.
 The asymmetry is the point: if the licensing question later resolves permissively a fixture can be added, and if it resolves restrictively nothing has to be removed.
 
@@ -447,7 +447,7 @@ The arc, resolved out of ARISTA-SMI-MIB rather than assumed:
 **Deletion, not correction, for all five.**
 Four of them name objects that do not exist and the fifth names one that cannot be read, so there is no correct value to supply.
 Inventing one for an object the MIB does not define is the Palo Alto audit's defect with the guessing turned up.
-That leaves `arista_7280r3` serving **no object at all** under its own vendor's arc, and The pinned Arista reading asserts it as a **walk** from the PEN root rather than as five named absences, so a sixth invented Arista object fails instead of arriving unguarded.
+That leaves `arista_7280r3` serving **no object at all** under its own vendor's arc, and the pinned Arista reading asserts it as a **walk** from the PEN root rather than as five named absences, so a sixth invented Arista object fails instead of arriving unguarded.
 
 That walk needs a positive control, and finding out why is worth recording.
 OIDs sort as strings, so `1.3.6.1.4.1.30065` sorts *above* every mib-2 OID the profile serves. Once the five Arista rows are gone the arc root has **no successor at all**, and `findNextOIDWithServed` answers with an empty string.
@@ -513,7 +513,7 @@ Stated with counts, per the octet-shadow sweep's convention, because this change
 
 **One defect of the same class is recorded and not fixed.**
 `entPhysicalVendorType.1` answers `1.3.6.1.4.1.30065.1.3082.7280.3714.3`, and `3082` is not among the sixteen first sub-identifiers either. The same unresolvable-product-OID defect, in the value slot of a different object.
-It is a **subclass this audit newly surfaced**: an OID-typed value under a *correct* PEN that resolves to no assignment, which the earlier research census/#589's guards pass by construction and no load rule can see.
+It is a **subclass this audit newly surfaced**: an OID-typed value under a *correct* PEN that resolves to no assignment, which the census and the PEN guards pass by construction and no load rule can see.
 It is left alone because it is an ENTITY-MIB question rather than an Arista-arc one: 224 shipped values sit in that column across the corpus, 208 of them the reserved-PEN placeholder, and correcting one profile's while the class goes unexamined would be arbitrary.
 The pinned Arista reading asserts its current value as a **presence**, so a later fix has to edit that assertion deliberately.
 
@@ -530,7 +530,7 @@ This is the same provenance convention applied to a file that cannot be checked 
 | ARISTA-ENTITY-SENSOR-MIB | `202302100000Z` | `c879299d934dea06b4b31f72d815a1b4c2ba5e42fd9c35cabeef1117d0ed1236` |
 
 All five carry a MODULE-IDENTITY, so unlike the access-mode audit's SMIv1 OLD-CISCO-SYSTEM-MIB there is a revision string to quote for each.
-Arista's header asserts copyright and grants nothing, so The pinned Arista reading is a record of that reading, never a live check.
+Arista's header asserts copyright and grants nothing, so the pinned Arista reading is a record of that reading, never a live check.
 
 ### The Ciena arc audited against its MIBs
 
@@ -718,7 +718,7 @@ That is the argument for auditing every arc rather than generalising from one.
 #### The `jnxOperating` INDEX arity, closed
 
 `jnxOperatingEntry`'s INDEX clause is `{ jnxOperatingContentsIndex, jnxOperatingL1Index, jnxOperatingL2Index, jnxOperatingL3Index }`: **four** sub-identifiers.
-(the Juniper audit's own issue text named the first column `jnxContainersIndex`. The arity is four either way, but a reading is worth what its accuracy is worth.)
+(The Juniper audit's own issue text named the first column `jnxContainersIndex`. The arity is four either way, but a reading is worth what its accuracy is worth.)
 
 **Both shipped spellings were wrong, not one of them.**
 The issue observed that most rows used `.5.0.0` while two used `.1.1.0` and `.1.2.0`, and asked which was right.

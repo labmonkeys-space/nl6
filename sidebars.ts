@@ -56,6 +56,7 @@ const sidebars: SidebarsConfig = {
         'reference/gnmi',
         'reference/gnmi-dial-out',
         'reference/optical-telemetry',
+        'reference/optical-limitations',
         'reference/interface-state',
         'reference/lldp-topology',
         'reference/dns-service-discovery',

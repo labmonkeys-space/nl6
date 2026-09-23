@@ -725,4 +725,3 @@ documented with their types, defaults, and purposes at
 - [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) — how to enable, INFORM constraints, `snmptrapd` smoke test
 - [SNMP reference](snmp.md) — polling-side SNMP (v2c/v3 GETs, GETNEXTs, OID lookup, HC counters)
 - [Web API](web-api.md) — control-plane REST surface
-- Epic [#52](https://github.com/labmonkeys-space/nl6/issues/52) and PR [#65](https://github.com/labmonkeys-space/nl6/pull/65) for the original design and implementation context

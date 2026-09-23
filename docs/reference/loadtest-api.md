@@ -453,5 +453,3 @@ dropped, releasing any devices it held. A `running` scenario is refused
 | `stopped` / `aborted` | 409 | 409 | 200 (idempotent) | 200 | drop |
 | `canceled` | 409 | 409 | 409 | 409 | drop |
 
-This matrix is enforced by the table-driven contract test
-.

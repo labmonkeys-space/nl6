@@ -6,9 +6,6 @@ participating device, plus a transparent `ifAlias` link label. The intended
 consumer is an NMS's LLDP link-discovery daemon: point it at the simulator
 and it builds a topology map of the fleet.
 
-This is the capability reference. For the design rationale see
-[`openspec/specs/lldp-topology/spec.md`](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/lldp-topology/spec.md).
-
 ## Quick example — a fleet with a topology
 
 ### One command: 4 devices, 2 point-to-point links

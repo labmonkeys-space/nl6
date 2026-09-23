@@ -105,7 +105,7 @@ Optical state is served over gNMI under
 [Optical telemetry](optical-telemetry.md) for the served paths, the health
 bands, the on-demand degradation endpoint and a per-use-case validation
 walkthrough, and the
-[limitations doc](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md)
+[limitations doc](optical-limitations.md)
 for where the simulation stops.
 
 ## API `category` values

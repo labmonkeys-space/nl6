@@ -5,7 +5,7 @@ consumes the optical surface of a simulated Ciena Waveserver 5, plus the
 two-command loop for exercising a threshold crossing on demand.
 
 Full reference: [`docs/reference/optical-telemetry.md`](../../docs/reference/optical-telemetry.md).
-Where the simulation stops: [`ciena_waveserver5_limitations.md`](../../go/nl6/resources/ciena_waveserver5_limitations.md).
+Where the simulation stops: [`docs/reference/optical-limitations.md`](../../docs/reference/optical-limitations.md).
 
 ## 1. Create an optical device
 

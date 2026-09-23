@@ -96,7 +96,7 @@ per subsystem per process.
 protocol / mode / format combination. `/api/v1/X/status` reports each
 tuple as its own record.
 
-See [Web API → Heterogeneous fleet](../reference/web-api.md#create-devices)
+See [Web API → Create devices](../reference/web-api.md#create-devices)
 for a worked example.
 
 ### Case 4: status-endpoint consumers
