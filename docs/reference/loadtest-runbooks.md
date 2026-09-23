@@ -11,13 +11,12 @@ namespace). For a clean window with no background noise, add
 [`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
 
 > **A long per-device `interval` will not silence a fleet.** The per-device
-> `interval` / `tick_interval` fields are accepted, echoed back by
-> `GET /api/v1/devices`, and **not honored**
->: every device
-> fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence
-> regardless. Setting `"interval": "24h"` on 500 devices leaves ~50 events/s of
-> background running, which is enough to contaminate an accept-rate measurement
-> while every surface reports success. `-fidelity` is the supported way. Set it
+> `interval` / `tick_interval` fields are **rejected with `400`**: every device
+> fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence,
+> and a flow device ticks at `-flow-tick-interval`. Before that rejection the
+> fields were accepted, echoed back and ignored, so `"interval": "24h"` on 500
+> devices left ~50 events/s of background running while every surface reported
+> success. `-fidelity` is the supported way. Set it
 > at launch, or toggle it at runtime with `POST /api/v1/fidelity` (optional
 > `duration` auto-reverts, capped at 24h), which is what you want when
 > bracketing a measurement on a fleet you do not wish to rebuild.
@@ -182,9 +181,9 @@ collector's records by each device's Observation Domain ID within `[T0,T1)`.
 
 ### 8. Mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
-A scenario targets **one protocol** (one active scenario at a time), so a
+A scenario targets **one protocol**, so a
 mixed fleet is measured with **one scenario per protocol** over that protocol's
-device subset, run **back-to-back**. The 20 / 20 / 60 split is just how many
+device subset. The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone. The 20 / 20 / 60 split is just how many
 devices you configure for each protocol. Seed flags apply a single protocol to
 the whole auto-start batch, so build the mix with per-device `flow` blocks
 instead.
@@ -206,14 +205,13 @@ for grp in \
 done
 ```
 
-Then run one scenario per protocol, in sequence — each finalizes before the
-next submits (a terminal scenario is transparently replaced, so the single
-active slot is free):
+Then run one scenario per protocol, in sequence. Each finalizes before the
+next submits, and finished scenarios stay listed and queryable (the 8 most recent are retained):
 
 ```bash
 run() { # $1=protocol  $2=participants-csv
   ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d "{
-    \"participants\": [$2], \"protocol\": \"$1\", \"rate\": 20, \"window\": \"1m\", \"seed\": 7
+    \"participants\": [$2], \"protocol\": \"$1\", \"rate\": 4, \"window\": \"1m\", \"seed\": 7
   }" | jq -r .id)
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm   >/dev/null
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/start >/dev/null

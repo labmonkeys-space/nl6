@@ -170,7 +170,7 @@ JSON, so two byte-different-but-equal submissions fingerprint identically.
 `400` examples:
 
 ```json
-{"error": "scenario: unknown protocol \"snmp\" (supported: syslog)"}
+{"error": "scenario: unknown protocol \"snmp\" (supported: syslog, netflow9, ipfix, gnmi-dialout, snmp-trap, sflow, netflow5)"}
 {"error": "invalid window \"nope\": …", "field": "window"}
 {"error": "json: unknown field \"bogus\""}
 ```
@@ -431,8 +431,9 @@ actual window bounds (the running gate's, or the finalized result's).
 {"scenarios": [{"id": "s-000001", "phase": "running"}]}
 ```
 
-Lists the active scenarios with their phases (0 or 1 — one active at a
-time). Empty `scenarios: []` when none.
+Lists every registered scenario with its phase, in ID order.
+That is up to 8 non-terminal scenarios plus up to 8 retained terminal ones.
+Empty `scenarios: []` when none.
 
 ### `DELETE /api/v1/scenarios/{id}` — cancel / release
 
