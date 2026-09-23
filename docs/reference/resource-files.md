@@ -1,7 +1,8 @@
 # Resource files
 
-Every device type has a directory under `go/nl6/resources/` containing
-one or more JSON files. `resources.go` loads and caches a device type the
+A device type ships as a directory under `go/nl6/resources/<slug>/` holding
+one or more JSON files, or as a legacy single file `go/nl6/resources/<slug>.json`.
+The directory wins when both exist. `resources.go` loads and caches a device type the
 first time a device of that type is created (the startup default, `asr9k`, at
 startup), merging the `snmp`, `ssh`, and (optionally) `api` sections of every
 `*.json` file in its directory. There are currently 391 JSON files across 29
@@ -56,7 +57,8 @@ simulation — see [Device types → Storage systems](device-types.md#storage-sy
 
 Each device type directory is split by concern so the files stay small and
 reviewable. The loader is directory-based: any `*.json` file inside is
-merged, so split files however you like.
+merged, so split files however you like. A single `<slug>.json` beside the
+directories is still accepted and goes through the same load rules.
 
 A typical naming convention:
 

@@ -68,4 +68,4 @@ dynamic HC counter layout.
 - **Flow export**: [Flow export (operator guide)](../ops/flow-export.md) to
   plug nl6 into a NetFlow / IPFIX / sFlow collector.
 - **Device types**: [Device types](../reference/device-types.md) lists the
-  28 simulated devices across 8 categories.
+  29 simulated devices across 9 categories.

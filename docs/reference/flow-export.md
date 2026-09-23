@@ -488,7 +488,7 @@ The MTU defaults to 1500 and is set with `-datagram-mtu`. That default holds for
 
 **Lower it when the collector path is not standard Ethernet.** A Docker overlay or VXLAN network is typically 1450 and a tunnelled path lower still. Measured at 1450 against a 1500-derived build, NetFlow v9 (1480 B frame), IPFIX (1484) and NetFlow v5 (1492) all fragment, as does an SNMP GETBULK at OpenNMS's default collector settings (1464). Only sFlow and SNMP traps fit.
 
-**The flag governs flow export and SNMP trap notifications.** SNMP GETBULK responses still carry their own fixed bound and are not yet derived from it, so on a 1450 path a default-settings GETBULK keeps fragmenting even with `-datagram-mtu 1450` set; that subsystem does not yet join the shared value. Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
+**The flag governs flow export, SNMP trap notifications and SNMP responses.** The SNMP response bound is recomputed from the same value, so a GETBULK truncates to the frame and a GET or GETNEXT that cannot fit answers `tooBig`; see [SNMP → Response size](snmp.md#response-size-max-repetitions-and-truncation). Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
 
 On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them — they are disabled at catalog load and named in the startup log with the MTU that would admit them.
 
@@ -496,7 +496,7 @@ The value is validated at startup and an out-of-range one is fatal, so a misconf
 
 nl6 does not discover the MTU, deliberately. Reading the route's interface MTU would work for flow, traps and syslog, which each have a configured collector known when the exporter attaches — but not for SNMP, which answers whoever polls it and knows the destination only per request. Since one value has to cover every subsystem, discovery cannot be the mechanism. There is no path-MTU discovery either: a route lookup sees only the first hop, so a tunnel further along the path is invisible either way. If you see fragments, check the egress interface MTU and set the flag to match.
 
-Setting the tick close to or above the mean flow lifetime is not useful — every flow then lives about one tick and the cache turns over wholesale. Values above 1h are rejected.
+Setting the tick close to or above the mean flow lifetime is not useful. Every flow then lives about one tick and the cache turns over wholesale. A value of zero or above 1h is not rejected: nl6 logs `flow export: ignoring out-of-range tick interval` at startup and runs at the 5s default.
 
 To raise or lower volume, change the concurrent-flow count or the timeouts.
 

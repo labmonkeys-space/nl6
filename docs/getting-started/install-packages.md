@@ -50,8 +50,8 @@ Tested on Debian 13 and Ubuntu 26.04 LTS (`amd64` and `arm64`).
 
 ## CentOS Stream / Rocky / AlmaLinux (`.rpm`)
 
-Tested on CentOS Stream 10, Rocky Linux 10, and AlmaLinux 10 (`amd64` and
-`arm64`).
+Tested on Rocky Linux 10 and AlmaLinux 10 (`amd64` and `arm64`). CentOS
+Stream 10 is not in the smoke matrix.
 
 1. Download the `.rpm` for your architecture from the
    [latest release](https://github.com/labmonkeys-space/nl6/releases/latest) —
@@ -69,7 +69,8 @@ Tested on CentOS Stream 10, Rocky Linux 10, and AlmaLinux 10 (`amd64` and
 
 The package installs the `nl6` systemd unit but does **not** enable or start it
 automatically — the simulator needs root and operator-chosen flags first. These
-steps are the same on Debian/Ubuntu and the RHEL family.
+steps are the same on Debian/Ubuntu and the RHEL family. The unit ships with
+`LimitNOFILE=1048576`, so a packaged install needs no file-descriptor tuning.
 
 1. Set the flags. `NL6_OPTS` is passed verbatim to `nl6`; see the
    [CLI flags reference](../reference/cli-flags.md) for the full list.

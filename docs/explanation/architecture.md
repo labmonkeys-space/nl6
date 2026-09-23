@@ -23,7 +23,7 @@ flowchart LR
 
     subgraph nl6 ["nl6 (Go process)"]
         simulator["<b>Simulator</b><br/><small>Go binary</small><br/>Device lifecycle,<br/>SNMP v2c/v3 + SSH + HTTPS REST,<br/>metrics engine, flow exporter"]
-        resources[("<b>Resources</b><br/><small>379 JSON files</small><br/>28 device-type directories<br/>SNMP / SSH / REST fixtures")]
+        resources[("<b>Resources</b><br/><small>394 JSON files</small><br/>29 device-type directories + _common<br/>SNMP / SSH / REST fixtures")]
     end
 
     subgraph kernel ["Linux kernel (host)"]
@@ -54,7 +54,8 @@ see [Network namespace](../ops/network-namespace.md).
 | Path | Purpose |
 |------|---------|
 | `go/nl6/` | Core simulator — all device simulation logic and tests. |
-| `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 28 device-type directories, plus the `worldcities/` datasets used for `sysLocation`. |
+| `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 29 device-type directories, plus the shared trap, syslog and NBAR2 catalogs under `_common/`. |
+| `go/nl6/worldcities/` | The `sysLocation` city dataset: 97 CSV shards plus `header.csv`, about 47,000 rows. |
 
 The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile)
 is the canonical build entry point.
@@ -84,7 +85,7 @@ baselines.
 
 `tun.go` creates TUN interfaces, `netns.go` manages the `nl6sim` network
 namespace, `prealloc.go` does parallel pre-allocation of TUN interfaces
-(configurable worker count 100–200) for fast scaling. See
+(100 to 200 workers by default, sized by batch; `max_workers` in the create request overrides it and is clamped to 500) for fast scaling. See
 [Network namespace](../ops/network-namespace.md) for the namespace operator
 guide.
 
@@ -128,9 +129,11 @@ Opt-in per device via the `-gnmi-dialout-*` seed flags or the
 
 ### Resource loading
 
-`resources.go` loads and caches the 379 JSON files at startup. Each device
-type directory has split JSON files for SNMP, SSH, and REST responses that
-are merged at load time. See [Resource files](../reference/resource-files.md).
+`resources.go` loads and caches a device type the first time a device of that
+type is created; only the auto-start default, `asr9k`, is loaded at startup.
+There are 394 JSON files: 391 across 29 device-type directories plus 3 shared
+catalogs under `_common/`. Each device type directory has split JSON files for
+SNMP, SSH, and REST responses that are merged at load time. See [Resource files](../reference/resource-files.md).
 
 ## Key design decisions
 

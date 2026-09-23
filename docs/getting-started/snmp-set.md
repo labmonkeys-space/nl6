@@ -281,10 +281,13 @@ Earlier releases admitted a write from any manager that could reach the port.
 To get that back:
 
 ```bash
-sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
+sudo ./nl6 -snmpv3-engine-id 800000090300AABBCCDD \
+  -snmp-write-community public -snmp-set-min-security-level none
 ```
 
 That makes every simulated device writable by anything that can route to it.
+The v3 half only matters when `-snmpv3-engine-id` is set; without it SNMPv3 is
+off and `-snmp-set-min-security-level` changes nothing.
 It is reasonable on an isolated lab network and when a harness predates the
 gates. It is not a setting to carry into a shared environment.
 

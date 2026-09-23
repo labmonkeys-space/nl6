@@ -29,8 +29,9 @@ default** — enable it with `-dns-enable`.
 | Reverse | `<ip>.in-addr.arpa` | `ip4.mgmt.<device-name>.nl6.local` (`PTR`) |
 
 `<device-name>` is the device's `sysName`, sanitised to a valid DNS label
-(lowercased; characters outside `[a-z0-9-]` become `-`; truncated to 63
-octets). The `ip4` and `mgmt` labels denote the address family and the (single)
+(lowercased; characters outside `[a-z0-9-]` become `-`; runs of `-` collapse
+to one; leading and trailing `-` are trimmed; truncated to 63 octets and
+trimmed again so the label never ends on `-`). The `ip4` and `mgmt` labels denote the address family and the (single)
 management interface the IP lives on — forward-compatible seams for a future
 `ip6.` / real-interface-name expansion.
 

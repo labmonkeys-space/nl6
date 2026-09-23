@@ -285,8 +285,12 @@ namespace / airgapped).
 - **Live liveness.** Edges are **green** when up, **red** when down; nodes are
   labeled by `sysName` (type + degree on hover), and dangling endpoints render
   grey. The view refreshes on the console's poll cadence — it **recolors in
-  place** on a state change and only re-runs the (deterministic, seeded) force
-  layout when the graph *structure* changes, so nodes don't jump every tick.
+  place** on a state change and only re-runs the layout when the graph
+  *structure* changes, so nodes don't jump every tick.
+- **Two layouts.** *Tiered* (the default) places devices in horizontal fabric
+  bands ranked by device model, so a Clos fabric reads top-down; *Force* is a
+  deterministic, seeded Fruchterman-Reingold layout. A Force/Tiered toggle in
+  the topology panel switches between them.
 - **Click-to-flap.** Click an edge to toggle the link (down one end; click
   again to restore) — the edge thickens on hover so it's an easy target.
   Click a node to **fail the device** (downs all its links) after a confirm
@@ -301,5 +305,5 @@ namespace / airgapped).
 Capability bitmaps (`lldpRemSysCapSupported`/`Enabled`),
 `lldpStatistics` / `lldpConfiguration`, gNMI/openconfig-lldp, multi-neighbor
 (shared-segment) ports, and operator-supplied custom alias text. The
-visualization is poll-driven (no SSE push), uses a general force layout (no
-tier-aware placement), and does not persist layout positions.
+visualization is poll-driven (no SSE push) and does not persist layout
+positions.

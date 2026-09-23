@@ -86,8 +86,9 @@ Reverse-path filtering in the kernel can silently drop packets whose source
 IP isn't reachable back through the receiving interface. Two sides are
 relevant:
 
-- **Simulator side.** The simulator auto-configures `rp_filter` and
-  `forwarding` sysctls inside the namespace and on `veth-sim-host`. No user
+- **Simulator side.** At namespace setup the simulator sets, on the **host**,
+  `net.ipv4.ip_forward=1`, `rp_filter=0` on `all` and on `veth-sim-host`, and
+  `forwarding=1` on `veth-sim-host`. Nothing is set inside `nl6sim`. No user
   action needed.
 - **Collector side.** On the machine receiving flow packets, `rp_filter`
   may need to be relaxed per-interface because the packets carry

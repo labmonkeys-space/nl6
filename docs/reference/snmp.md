@@ -713,7 +713,9 @@ Properties common to every dynamic counter:
   floor is 60 % of `ifSpeed`), and every derivation is
   base-plus-growth, so Counter64 columns are strictly increasing.
   Counter32 shadow columns wrap naturally at 2³². `ifCounterDiscontinuityTime`
-  stays at 0. Wrap is inherent, not a discontinuity.
+  (`.19`) is not served: no shipped profile carries it and the cycler does not
+  synthesise it, so a GET answers `noSuchObject`. Wrap is inherent, not a
+  discontinuity.
 - **Pre-seeded.** Each counter starts at a base derived from ~24 h
   of traffic, ratios, and the active error scenario (see below) so a
   fresh device doesn't look unrealistically pristine.
