@@ -805,10 +805,12 @@ see [GPU simulation](gpu/index.md).
 
 ## Interface-state scenarios
 
-The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag sets the
-*initial* `ifAdminStatus` / `ifOperStatus` values across every simulated
-interface. Scenario 4 uses a deterministic `ifIndex % 100 < n`
-rule so results are reproducible across restarts.
+The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag seeds the state engine's `ifAdminStatus` and link state once per interface.
+`ifOperStatus` is never seeded; it is derived from admin and link.
+Scenario 1 seeds admin `down(2)` and preserves the link the profile declares, so unshutting a port restores it.
+Scenario 2 is the identity and serves whatever the profile declares.
+Scenario 3 seeds admin `up(1)` and link down on every interface.
+Scenario 4 seeds admin `up(1)` on every interface, with link down where `ifIndex % 100 < n` and link up elsewhere, so results are reproducible across restarts.
 
 The scenario is applied once per device, when the state engine below is
 built, and there is no read-time override anywhere on the SNMP path.
@@ -828,9 +830,10 @@ snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.8
 ```
 
 **Dynamic state engine.** `ifOperStatus.<N>` (`.8`),
-`ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are now served
-live from the per-device interface state engine, not from the cached
-JSON value. Three mutation sources update them at runtime:
+`ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are served
+from the per-device interface state engine.
+The JSON rows are read once as the engine's seed.
+Three mutation sources update them at runtime:
 
 - **Flap scheduler**: `-if-flap-scenario {clean|rare|typical|aggressive}`
   drives Poisson-distributed link flaps per (device, ifIndex). See the

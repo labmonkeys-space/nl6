@@ -126,7 +126,7 @@ Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes
 | `state/last-change` | ✓ | ✓ |
 | `state/counters/*` (12 leaves) | ✗ (rejected with InvalidArgument) | ✓ |
 
-**ON_CHANGE event sources.** Mutations come from the per-device flap scheduler (`-if-flap-scenario`) and the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`). Every transition fans out as a `SubscribeResponse{update}` to every matching subscriber within ~milliseconds. See [interface state engine](interface-state.md) for the full picture.
+**ON_CHANGE event sources.** Mutations come from the per-device flap scheduler (`-if-flap-scenario`), the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`) and its auto-revert, and an SNMP `SET` of `ifAdminStatus.<N>`. Every transition fans out as a `SubscribeResponse{update}` to every matching subscriber within ~milliseconds. See [interface state engine](interface-state.md) for the full picture.
 
 **Heartbeat.** Per gNMI §3.5.1.5.2, `heartbeat_interval` lets a client request periodic re-emission of the current value even when nothing has changed. Set the field on an ON_CHANGE subscription to enable; sub-second values are clamped to 1 second. `heartbeat_interval=0` (unset) means no heartbeat — emit only on actual state transitions.
 
@@ -393,7 +393,7 @@ going from 0 to non-zero is this fix working, not a new fault. The
 | `code = InvalidArgument desc = unsupported encoding ASCII` | Only `JSON_IETF` and `PROTO` are advertised; `gnmic` defaults to `JSON_IETF` so this only triggers if you passed `-e ASCII` / `-e BYTES` |
 | Subscribe drops after ~5 min idle | Hit the keepalive limit — server closes idle connections after 5 m by default (see [Operational notes](#operational-notes)) |
 | `code = DeadlineExceeded desc = no SubscribeRequest received within 30s` | The slowloris guard fired — your client opened a stream and didn't send the SubscribeRequest within 30 s |
-| `Get` with `--type config` returns empty | Expected — the simulator exposes only the state subtree; no config tree exists |
+| `Get` with `--type config` returns empty | Expected on packet device types, whose interface surface is state-only. On optical transport types `CONFIG` returns the four optical config scalars (see [Optical channel paths](#optical-channel-paths-optical-transport-types)) |
 | `code = NotFound desc = origin "junos" not supported` | The simulator only serves OpenConfig; drop the `origin` field or set it to `openconfig` (or empty) |
 | `code = Unimplemented desc = POLL ...` / `Set ...` | Expected — see [Subscribe semantics](#subscribe-semantics) for the supported RPC surface |
 
@@ -406,24 +406,27 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 ```json
 {
   "subsystem_active": true,
+  "tls_enabled": true,
   "listeners": 1,
   "active_subscriptions": 0,
   "updates_sent": 0,
-  "updates_dropped": 0
+  "updates_dropped": 0,
+  "tls_handshake_failures": 0,
+  "listener_accept_failures": 0,
+  "state_events_emitted": 0,
+  "state_events_dropped": 0
 }
 ```
 
-`subsystem_active` is `false` when `-gnmi-disable` is set. `listeners` equals the device count when active. The three counters are aggregates across the simulator's lifetime; `updates_dropped` increments per backpressure-discard event.
+`subsystem_active` is `false` when `-gnmi-disable` is set. `listeners` equals the device count when active. Every counter is cumulative since process start; `updates_dropped` increments per backpressure-discard event. The TLS counters are explained under [Troubleshooting](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
 
 ## Known limitations
 
 - **Read-only.** `Set` returns `Unimplemented`. The simulator's deterministic-state guarantee is incompatible with mutation.
-- **No ON_CHANGE.** All counter values are continuously changing; `oper-status` is static. ON_CHANGE has no useful semantic in v1.
 - **No POLL.** Returns `Unimplemented`. STREAM/SAMPLE and ONCE cover the common cases.
-- **Static `oper-status` and `admin-status`.** Always `UP`. Will become dynamic when link-state simulation is added.
 - **Single shared certificate.** All devices present the same self-signed cert. Real fleets have per-device PKI; the simulator does not.
 - **No client-cert auth.** The simulator runs in lab contexts; mutual-TLS is out of scope.
-- **No subinterfaces, no config tree, no `/system`, no LLDP, no platform/components.** Only the interfaces leaves listed above.
+- **No subinterfaces, no `/system`, no LLDP.** The interface surface serves only the state leaves listed above. `/components` is served only for `optical-channel` on optical transport types.
 
 ## Operational notes
 
@@ -432,7 +435,7 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 - **Collector-side `rp_filter`.** If your collector rejects packets from the `10.42.0.0/16` (or whatever device subnet) range, set `net.ipv4.conf.*.rp_filter=0` or `2`. Same caveat already documented for flow / trap / syslog.
 - **Slowloris hardening.** Per-device gRPC servers cap concurrent streams at 16 (lowered from 64 by the add-interface-state change — see [§D9](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/gnmi-target/spec.md) for rationale), reap idle connections after 5 minutes, and ping clients every 30s with a 10s ack timeout. The `Subscribe` handler enforces a 30-second deadline on the initial `SubscribeRequest` — clients that open a stream and never send the `subscription_list` are rejected with `DeadlineExceeded`. The 17th concurrent stream on a single TCP connection is queued at the HTTP/2 SETTINGS_MAX_CONCURRENT_STREAMS layer until a slot frees — gRPC does not surface a status code in this case; the client's `Subscribe.Recv` simply blocks until a slot frees. A collector holding more than 16 streams on one connection will see the 17th hang silently. To service >16 parallel streams, open a second `grpc.ClientConn` (multiple TCP connections each get their own quota).
 - **Observable to clients:** the 16-stream cap per connection is observable to clients that previously opened more than 16 parallel streams per device-connection. The realistic ceiling is 2–3 (one primary collector + maybe a debug session); 16 is conservative.
-- **ON_CHANGE on subtree paths is rejected.** The `/interfaces/interface[name=*]/state` subtree includes 12 counter leaves; ON_CHANGE on a subtree that touches a counter leaf is rejected with `InvalidArgument` (the error names the offending leaf and recommends SAMPLE). Subscribers wanting ON_CHANGE coverage of the static leaves should enumerate them explicitly: e.g., one sub per `state/oper-status`, `state/admin-status`, `state/last-change`. The whole-`/state` subtree is incompatible with ON_CHANGE under the analytical counter engine because counter values change continuously.
+- **ON_CHANGE on subtree paths is rejected.** The `/interfaces/interface[name=*]/state` subtree includes 12 counter leaves; ON_CHANGE on a subtree that touches a counter leaf is rejected with `InvalidArgument` (the error names the offending leaf and recommends SAMPLE). Subscribers wanting ON_CHANGE coverage of the state leaves should enumerate them explicitly: e.g., one sub per `state/oper-status`, `state/admin-status`, `state/last-change`. The whole-`/state` subtree is incompatible with ON_CHANGE under the analytical counter engine because counter values change continuously.
 
 ## See also
 

@@ -4,9 +4,9 @@ nl6 maintains a per-device, in-memory **interface state engine** that owns
 `oper-status`, `admin-status`, and `last-change` for every known ifIndex.
 SNMP, gNMI `Get`, and gNMI `Subscribe ON_CHANGE` all read from the same
 slot table — values agree byte-for-byte at every instant. State can be
-mutated by a scheduled link-flap scenario or by a REST control plane;
-counter cycling and other protocols are unaffected by state changes in
-Tier B.
+mutated by a scheduled link-flap scenario, by a REST control plane or by an SNMP `SET` of `ifAdminStatus.<N>`.
+A derived `ifOperStatus` transition also fires the device's role-tagged link trap and syslog entries for that interface.
+Counter cycling is unaffected by state changes.
 
 This is the capability reference. For the design rationale see
 [`openspec/specs/interface-state/spec.md`](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/interface-state/spec.md);
@@ -14,7 +14,7 @@ for the gNMI subscribe semantics see [gNMI reference](gnmi.md#subscribe-semantic
 
 ## Scope
 
-In Tier B (the current shipping version):
+Current behaviour:
 
 - The state engine is the **single source of truth** for `ifOperStatus.<N>`,
   `ifAdminStatus.<N>`, and `ifLastChange.<N>`. SNMP reads pass through
@@ -28,16 +28,12 @@ In Tier B (the current shipping version):
   `ifAdminStatus.<N>`. The first two move the link; the last two move admin.
 - **No gNMI `Set`.**
 
-Out of scope for Tier B (deferred to Tier C):
+State-driven telemetry: every derived `ifOperStatus` transition fires the role-tagged `linkDown` / `linkUp` trap and `interface-down` / `interface-up` syslog entries of the device's catalog for that ifIndex (`InterfaceState.SetNotify`, wired at trap and syslog attach time).
 
-- Tying link-state transitions to `linkDown` / `linkUp` SNMP traps
-- Tying transitions to `interface-up` / `interface-down` syslog messages
+Out of scope:
+
 - Pausing the counter cycler when `oper-status` is `DOWN`
 - Per-interface bandwidth scaling on admin-status changes
-
-In Tier B SNMP and gNMI agree on state; trap / syslog firings remain on
-their independent random schedule (decoupled). The Tier C follow-up
-wires them together.
 
 ## Architecture
 
@@ -255,13 +251,11 @@ All three read from the same `atomic.Uint64` slot, so the values match
 byte-for-byte at every instant. The smoke test on the Linux deploy host
 verified this end-to-end (`smoke-results-linux.md`).
 
-In Tier B, **trap and syslog firings do NOT automatically follow state
-transitions** — `linkDown` traps and `interface-down` syslog messages
-still fire on their independent random Poisson schedule, decoupled from
-the actual `InterfaceState`. Tier C will wire them together. Until then,
-operators expecting one-to-one correlation between a `POST DOWN` and a
-`linkDown` trap on the wire should drive both via the existing
-on-demand endpoints (`POST .../trap`, `POST .../syslog`).
+**Trap and syslog firings follow state transitions.**
+Every derived `ifOperStatus` transition also fires the device's role-tagged link trap and syslog entries for that ifIndex, so a `POST DOWN` puts a `linkDown` trap and an `interface-down` syslog message on the wire.
+A vendor overlay may fire more than one entry per role; `cisco_ios` fires both `%LINK-3-UPDOWN` and `%LINEPROTO-5-UPDOWN`.
+Role-tagged entries are excluded from the random Poisson pick, so a link trap on the wire always corresponds to a state transition.
+The on-demand endpoints (`POST .../trap`, `POST .../syslog`) still fire an entry without moving state.
 
 ## Status endpoint
 
@@ -298,10 +292,9 @@ on-demand endpoints (`POST .../trap`, `POST .../syslog`).
 - **Cap sizing.** `-if-flap-global-cap` should leave headroom for
   expected steady-state. At 30k devices × `typical` (~15 min mean) =
   ~33 events/s; a cap of 50 leaves 50% headroom for burst.
-- **Snapshot is internal-only.** The state engine's `Snapshot()` /
-  `Reset()` are intentionally absent in Tier B. A future "reload
-  scenario" feature would require both; today the only state-engine
-  transition path is the mutator API.
+- **No `Reset()`.** `Snapshot(ifIndex)` exists and the REST auto-revert reads it; there is no `Reset()`.
+  A "reload scenario" feature would need one.
+  Today the only transition paths are the one-time seed at construction and the mutator API.
 - **`InitIfCountersWithScenario` panics on re-init.** The engine
   enforces single-init per device to prevent silently orphaning gNMI
   ON_CHANGE listeners. Any future code path that needs to re-init must
