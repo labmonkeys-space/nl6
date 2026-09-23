@@ -8,7 +8,7 @@ to validate a monitoring use case end to end.
 
 Two companion documents matter as much as this one:
 
-- [Waveserver 5 limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md)
+- [Waveserver 5 limitations](optical-limitations.md)
   states where the simulation stops. Read it before building anything you
   intend to deploy against real hardware.
 - [gNMI reference](gnmi.md) covers the transport, TLS, subscribe modes and
@@ -258,7 +258,7 @@ so a channel resting near a threshold does not flap. SD is predictive (below
 ~14.3 dB OSNR, below every healthy tier's excursion envelope); SF is
 service-affecting and is by construction the same threshold that starts the
 `fec-uncorrectable-blocks` counter. Note the clear-correlation caveat in the
-[limitations doc](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md):
+[limitations doc](optical-limitations.md):
 a clear names its condition only in the Description text — that is Ciena's
 model, reproduced faithfully.
 
@@ -324,7 +324,7 @@ device still initialising, and is retryable. A client that conflates the two
 will either retry forever or give up too early.
 
 Per-counter `supported` and `invalid-data-flag` have no leaves here, by
-decision ([#334](https://github.com/labmonkeys-space/nl6/issues/334)): on the
+decision: on the
 OpenConfig surface the `supported` equivalent **is leaf absence** — exactly
 what the three checks above exercise — and `invalid-data-flag` is
 inexpressible without inventing behaviour, so it is deliberately not

@@ -250,12 +250,9 @@ Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which
 has no defined result for an empty one, so the block is checked at creation
 rather than at the first encrypted request — a 201 followed by every encrypted
 poll to that device failing gives the operator nothing to act on.
-Either `password` or `priv_password` satisfies it; `priv_password` wins when
-both are set **on the DES path only**. The AES128 path ignores `priv_password`
-and always derives from `password`, so a device
-configured with two distinct passwords and `"priv_protocol": 2` encrypts under
-a key no RFC 3414 manager derives. `Validate` accepts the configuration
-regardless.
+Either `password` or `priv_password` satisfies it; `priv_password` wins when both are set **on the DES path only**.
+The AES128 path ignores `priv_password` and always derives from `password`, so a device configured with two distinct passwords and `"priv_protocol": 2` encrypts under a key no RFC 3414 manager derives.
+`Validate` accepts the configuration regardless.
 
 The `if_error_scenario` field controls the per-device ppm bands used to
 derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards`

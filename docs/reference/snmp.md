@@ -91,7 +91,7 @@ hash and fatal under the other.
 `-snmpv3-priv` requires `-snmpv3-auth`. USM defines no
 privacy-without-authentication level, and since the privacy key is localized
 with the authentication protocol's hash there is no key to derive without one.
-a device created over REST with that combination is refused with a 400. The
+A device created over REST with that combination is refused with a 400. The
 CLI flags are **not** validated together, so `-snmpv3-priv aes128` with
 `-snmpv3-auth none` starts and then fails on every encrypted request.
 
@@ -315,8 +315,6 @@ The 30 × 2 row is the OpenNMS collector default (`max-vars-per-pdu` 30, `max-re
 
 Any value is accepted and used, at any BER width.
 
-
-
 A negative value is treated as 0, per RFC 3416's definition of the field as non-negative.
 
 ### SNMPv3 values are typed like v2c
@@ -330,7 +328,7 @@ A manager bundling `ifDescr`/`ifName`/`ifAlias` in one GETBULK gets successors f
 That single-column shape also forced `non-repeaters` to collapse into `max-repetitions = 1`, which is not what the field means: with non-repeaters present and `max-repetitions` zero, the non-repeater bindings are now returned rather than an empty list.
 
 A column that reaches the end of its MIB view is padded with its OWN requested OID and `endOfMibView`, so the interleave stays aligned and a manager can still tell which column a slot belongs to.
-The order and the padding match the v2c path, and the two are pinned against each other rather than each being separately plausible .
+The order and the padding match the v2c path, and the two are pinned against each other rather than each being separately plausible.
 
 **A multi-column response is byte-identical to v2c, tail included.**
 The padding continues for every remaining repetition, exactly as v2c pads.
@@ -801,7 +799,7 @@ CPU, memory, and temperature OIDs cycle through a 100-point pre-generated
 sine-wave pattern per device, driven by `metrics_cycler.go`. Per-category
 device profiles define the baseline ranges and spike amplitudes. See
 `device_profiles.go`. GPU servers add per-GPU metric cycling on top of this.
-see [GPU simulation](gpu/index.md).
+See [GPU simulation](gpu/index.md).
 
 ## Interface-state scenarios
 

@@ -129,7 +129,6 @@ Only two device types have NBAR2.
 The export is conformant to RFC 7011 and RFC 6759 and is interop-tested against open decoders.
 It is not Cisco-faithful.
 A real IOS-XE router differs from nl6 in five recorded ways, listed under [Differences from IOS-XE](#differences-from-ios-xe-260102).
-The engineering record behind every claim in this section is in `context/nbar2-evidence.md`.
 
 ### Enabling NBAR2
 

@@ -8,9 +8,7 @@ mutated by a scheduled link-flap scenario, by a REST control plane or by an SNMP
 A derived `ifOperStatus` transition also fires the device's role-tagged link trap and syslog entries for that interface.
 Counter cycling is unaffected by state changes.
 
-This is the capability reference. For the design rationale see
-[`openspec/specs/interface-state/spec.md`](https://github.com/labmonkeys-space/nl6/blob/main/openspec/specs/interface-state/spec.md);
-for the gNMI subscribe semantics see [gNMI reference](gnmi.md#subscribe-semantics).
+This is the capability reference. For the gNMI subscribe semantics see [gNMI reference](gnmi.md#subscribe-semantics).
 
 ## Scope
 
