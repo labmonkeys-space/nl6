@@ -10,11 +10,9 @@ shape of the output data) and [Pollaris and parsing rules](pollaris.mdx)
 
 ## Overview
 
-nl6 simulates NVIDIA Data Center GPU Manager (DCGM) servers. Each
-simulated device represents a GPU server (e.g. DGX A100, DGX H100, HGX
-H200) with multiple GPUs. The simulation exposes GPU metrics via all three
-existing protocols: SNMP (enterprise MIB OIDs), SSH (`nvidia-smi` CLI), and
-REST API (DCGM HTTP endpoints).
+nl6 simulates NVIDIA GPU servers (DGX A100, DGX H100, HGX H200) with eight GPUs each.
+The metric vocabulary and the `nvidia-smi` / `dcgmi` command output are modelled on NVIDIA Data Center GPU Manager (DCGM).
+The simulation exposes GPU metrics via all three existing protocols: SNMP (per-GPU objects under NVIDIA's PEN, in a layout nl6 defines), SSH (`nvidia-smi` and `dcgmi` CLI), and REST API (DCGM-shaped HTTP endpoints).
 
 ## What DCGM Exposes in the Real World
 
@@ -31,10 +29,11 @@ NVIDIA DCGM provides:
 - **GPU health status** (healthy, warning, critical)
 - **Process/job info** (running PIDs, memory per process)
 
-These are accessible via:
-1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number
-2. **SSH**: `nvidia-smi` command variants (e.g., `nvidia-smi`, `nvidia-smi -q`, `nvidia-smi dmon`, `dcgmi diag`, `dcgmi health`)
-3. **REST API**: DCGM exporter HTTP endpoints (`/api/v1/gpu/status`, `/api/v1/gpu/{id}/metrics`, etc.)
+Real DCGM exposes these through its API and the DCGM exporter's Prometheus `/metrics` endpoint, not through SNMP.
+nl6 exposes them via:
+1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number. The layout below the PEN is nl6's own (see the warning below).
+2. **SSH**: `nvidia-smi` command variants (`nvidia-smi`, `nvidia-smi -q -d MEMORY|UTILIZATION|TEMPERATURE|POWER`, `nvidia-smi topo -m`) and `dcgmi discovery -l`, `dcgmi health -c`
+3. **REST API**: DCGM-shaped HTTP endpoints (`/api/v1/gpu/status`, `/api/v1/gpu/devices`, `/api/v1/dcgm/health`, etc.)
 
 :::warning[The objects below the PEN are nl6's own invention]
 
@@ -90,7 +89,6 @@ Add new `MetricOIDType` constants:
 MetricGPUUtil       MetricOIDType = iota + 10  // GPU compute utilization %
 MetricGPUMemUsed                                // GPU memory used (MB)
 MetricGPUMemTotal                               // GPU memory total (MB, constant)
-MetricGPUMemUtil                                // GPU memory utilization %
 MetricGPUTemp                                   // GPU temperature (Celsius)
 MetricGPUPower                                  // GPU power draw (Watts)
 MetricGPUFanSpeed                               // GPU fan speed %
@@ -107,11 +105,13 @@ Add `vendorOIDs` entries for each NVIDIA resource file, using NVIDIA's enterpris
 1.3.6.1.4.1.5703.1.1.1.1.8.0  → MetricGPUTemp       (GPU 0 temperature)
 1.3.6.1.4.1.5703.1.1.1.1.9.0  → MetricGPUPower      (GPU 0 power draw)
 1.3.6.1.4.1.5703.1.1.1.1.10.0 → MetricGPUFanSpeed   (GPU 0 fan speed)
+1.3.6.1.4.1.5703.1.1.1.1.11.0 → MetricGPUClockSM    (GPU 0 SM clock)
+1.3.6.1.4.1.5703.1.1.1.1.12.0 → MetricGPUClockMem   (GPU 0 memory clock)
 ...
 1.3.6.1.4.1.5703.1.1.1.1.5.7  → MetricGPUUtil       (GPU 7 utilization)
 ```
 
-That's 6 metric OIDs × 8 GPUs = 48 dynamic metric OIDs per device, plus the existing CPU/memory/temperature host metrics.
+That's 8 metric OIDs × 8 GPUs = 64 dynamic metric OIDs per device, plus the existing CPU/memory/temperature host metrics.
 
 ### 1.2 GPU Device Profile (`device_profiles.go`)
 
@@ -211,7 +211,6 @@ Add methods to `MetricsCycler`:
 func (c *MetricsCycler) GetGPUUtil(gpuIndex int) string
 func (c *MetricsCycler) GetGPUMemUsed(gpuIndex int) string
 func (c *MetricsCycler) GetGPUMemTotal(gpuIndex int) string
-func (c *MetricsCycler) GetGPUMemUtil(gpuIndex int) string
 func (c *MetricsCycler) GetGPUTemp(gpuIndex int) string
 func (c *MetricsCycler) GetGPUPower(gpuIndex int) string
 func (c *MetricsCycler) GetGPUFanSpeed(gpuIndex int) string
@@ -250,19 +249,25 @@ resources/
 ├── nvidia_dgx_a100/
 │   ├── nvidia_dgx_a100_snmp_system.json    # sysDescr, sysObjectID, sysUpTime, sysContact, interfaces
 │   ├── nvidia_dgx_a100_snmp_host.json      # Host Resources MIB (hrStorage, hrProcessor, hrDevice)
-│   ├── nvidia_dgx_a100_snmp_gpu.json       # NVIDIA enterprise GPU MIB OIDs (static baselines)
+│   ├── nvidia_dgx_a100_snmp_gpu.json       # per-GPU objects under NVIDIA's PEN (nl6's own layout, static baselines)
+│   ├── nvidia_dgx_a100_snmp_hcif.json      # IF-MIB ifXTable HC octet counter seed
+│   ├── nvidia_dgx_a100_snmp_ifxtable.json  # IF-MIB ifXTable
 │   ├── nvidia_dgx_a100_ssh.json            # SSH command/response pairs
 │   └── nvidia_dgx_a100_api.json            # REST API endpoint responses
 ├── nvidia_dgx_h100/
 │   ├── nvidia_dgx_h100_snmp_system.json
 │   ├── nvidia_dgx_h100_snmp_host.json
 │   ├── nvidia_dgx_h100_snmp_gpu.json
+│   ├── nvidia_dgx_h100_snmp_hcif.json
+│   ├── nvidia_dgx_h100_snmp_ifxtable.json
 │   ├── nvidia_dgx_h100_ssh.json
 │   └── nvidia_dgx_h100_api.json
 └── nvidia_hgx_h200/
     ├── nvidia_hgx_h200_snmp_system.json
     ├── nvidia_hgx_h200_snmp_host.json
     ├── nvidia_hgx_h200_snmp_gpu.json
+    ├── nvidia_hgx_h200_snmp_hcif.json
+    ├── nvidia_hgx_h200_snmp_ifxtable.json
     ├── nvidia_hgx_h200_ssh.json
     └── nvidia_hgx_h200_api.json
 ```
@@ -322,28 +327,21 @@ Each flavor's SSH resource file provides responses for these commands:
 | Command | Description |
 |---|---|
 | `nvidia-smi` | Default GPU summary table (all 8 GPUs, utilization, memory, temp, power) |
-| `nvidia-smi -q` | Detailed query (full GPU specs, clocks, ECC, power, thermals per GPU) |
 | `nvidia-smi -q -d MEMORY` | Memory details (used/free/total per GPU) |
 | `nvidia-smi -q -d UTILIZATION` | Utilization details (GPU%, memory controller%, encoder%, decoder%) |
 | `nvidia-smi -q -d TEMPERATURE` | Temperature details (current, shutdown, slowdown thresholds) |
 | `nvidia-smi -q -d POWER` | Power details (draw, limit, default limit, min/max limits) |
-| `nvidia-smi -q -d CLOCK` | Clock details (current, max, SM, memory, video clocks) |
-| `nvidia-smi -q -d ECC` | ECC error counts |
 | `nvidia-smi topo -m` | GPU topology matrix (NVLink connections) |
-| `nvidia-smi nvlink -s` | NVLink status |
 | `dcgmi discovery -l` | DCGM discovered GPUs |
-| `dcgmi diag -r 1` | DCGM quick diagnostic (level 1) |
 | `dcgmi health -c` | DCGM health check |
-| `dcgmi stats -e` | DCGM stats enable |
 | `show version` | Linux OS version with NVIDIA driver info |
 | `uname -a` | Linux kernel info |
-| `lspci \| grep -i nvidia` | PCI device listing for GPUs |
-| `cat /proc/driver/nvidia/version` | NVIDIA kernel module version |
+| `hostname` | Hostname |
 | `free -h` | System memory summary |
 | `lscpu` | CPU info (AMD EPYC / Intel Xeon for DGX) |
-| `ip addr` | Network interfaces (management, InfiniBand) |
-| `ibstat` | InfiniBand HCA status |
-| `hostname` | Hostname |
+| `lspci \| grep -i nvidia` | PCI device listing for GPUs |
+
+Fourteen commands per flavor. Nothing else is answered.
 
 ### 3.2 Example `nvidia-smi` Output (H100)
 
@@ -389,16 +387,13 @@ Each device exposes a REST API on its `APIPort` with these endpoints:
 |---|---|---|
 | `GET` | `/api/v1/gpu/status` | Overall GPU cluster health and summary |
 | `GET` | `/api/v1/gpu/devices` | List of all GPUs with IDs, names, UUIDs |
-| `GET` | `/api/v1/gpu/devices/{id}` | Single GPU detailed info |
-| `GET` | `/api/v1/gpu/devices/{id}/metrics` | GPU metrics (util, memory, temp, power, clocks) |
 | `GET` | `/api/v1/gpu/topology` | NVLink/NVSwitch topology |
-| `GET` | `/api/v1/gpu/processes` | Running GPU processes |
 | `GET` | `/api/v1/dcgm/health` | DCGM health check results |
-| `GET` | `/api/v1/dcgm/diag` | DCGM diagnostic results |
 | `GET` | `/api/v1/dcgm/config` | DCGM configuration |
 | `GET` | `/api/v1/system/info` | System info (OS, driver, CUDA, hostname) |
 | `GET` | `/api/v1/system/memory` | System memory stats |
-| `GET` | `/api/v1/system/network` | Network interface info |
+
+Seven endpoints per flavor. There is no per-GPU `/devices/{id}` path.
 
 ### 4.2 Example Response: `/api/v1/gpu/status`
 
@@ -480,14 +475,14 @@ Add the 3 NVIDIA resource files to `RoundRobinDeviceTypes`:
 
 ```go
 var RoundRobinDeviceTypes = []string{
-    // ... existing 19 types ...
+    // ... other types ...
     "nvidia_dgx_a100.json",
     "nvidia_dgx_h100.json",
     "nvidia_hgx_h200.json",
 }
 ```
 
-This brings the total to 22 device types in round-robin mode.
+The shipped list has 29 device types in round-robin mode.
 
 ### 5.4 API Resource Merging (`resources.go`)
 
@@ -520,20 +515,22 @@ resources := &DeviceResources{
 4. Verify SNMP walk returns GPU OIDs with cycling values
 5. Verify SSH `nvidia-smi` returns formatted output
 6. Verify REST API `/api/v1/gpu/status` returns GPU data
-7. Create devices in round-robin mode — verify NVIDIA types appear among the 22 types
+7. Create devices in round-robin mode. Verify NVIDIA types appear among the 29 types
 8. Verify web UI shows "NVIDIA GPU Server" as device type
 
 ---
 
 ## File Change Summary
 
-### New Files (15 resource JSON files)
+### New Files (21 resource JSON files)
 
 ```
 resources/nvidia_dgx_a100/
     nvidia_dgx_a100_snmp_system.json
     nvidia_dgx_a100_snmp_host.json
     nvidia_dgx_a100_snmp_gpu.json
+    nvidia_dgx_a100_snmp_hcif.json
+    nvidia_dgx_a100_snmp_ifxtable.json
     nvidia_dgx_a100_ssh.json
     nvidia_dgx_a100_api.json
 
@@ -541,6 +538,8 @@ resources/nvidia_dgx_h100/
     nvidia_dgx_h100_snmp_system.json
     nvidia_dgx_h100_snmp_host.json
     nvidia_dgx_h100_snmp_gpu.json
+    nvidia_dgx_h100_snmp_hcif.json
+    nvidia_dgx_h100_snmp_ifxtable.json
     nvidia_dgx_h100_ssh.json
     nvidia_dgx_h100_api.json
 
@@ -548,6 +547,8 @@ resources/nvidia_hgx_h200/
     nvidia_hgx_h200_snmp_system.json
     nvidia_hgx_h200_snmp_host.json
     nvidia_hgx_h200_snmp_gpu.json
+    nvidia_hgx_h200_snmp_hcif.json
+    nvidia_hgx_h200_snmp_ifxtable.json
     nvidia_hgx_h200_ssh.json
     nvidia_hgx_h200_api.json
 ```
@@ -556,7 +557,7 @@ resources/nvidia_hgx_h200/
 
 | File | Changes |
 |---|---|
-| `metrics_oids.go` | 9 new MetricOIDType constants + 3 NVIDIA vendor OID map entries (48 OIDs each) |
+| `metrics_oids.go` | 8 MetricOIDType constants + 3 NVIDIA vendor OID map entries (64 GPU OIDs each) |
 | `device_profiles.go` | GPUProfile struct + 3 GPU device profiles + profile map entries |
 | `metrics_cycler.go` | GPUMetrics struct + GPU data generation in NewMetricsCycler + 9 GPU getter methods |
 | `snmp_handlers.go` | GPU metric cases in getMetricValue() + parseGPUIndexFromOID helper |

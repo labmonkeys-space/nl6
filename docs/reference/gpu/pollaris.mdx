@@ -90,7 +90,7 @@ NVIDIA publishes no SNMP GPU MIB, so nothing here resolves against a vendor MIB.
 | `.14.{gpu}` | 14 | CUDA Version |
 | `.15.{gpu}` | 15 | ECC Corrected Count |
 | `.16.{gpu}` | 16 | ECC Uncorrected Count |
-| `.17.{gpu}` | 17 | Power State |
+| `.17.{gpu}` | 17 | NVLink active links |
 
 #### Per-GPU dynamic metrics (OIDs 5-12)
 
@@ -98,12 +98,12 @@ NVIDIA publishes no SNMP GPU MIB, so nothing here resolves against a vendor MIB.
 |---|---|---|---|
 | `.5.{gpu}` | 5 | GPU Utilization % | SetTimeSeries |
 | `.6.{gpu}` | 6 | VRAM Used MiB | SetTimeSeries |
-| `.7.{gpu}` | 7 | Temperature C | SetTimeSeries |
-| `.8.{gpu}` | 8 | Power Draw W | SetTimeSeries |
-| `.9.{gpu}` | 9 | Fan Speed % | SetTimeSeries |
-| `.10.{gpu}` | 10 | SM Clock MHz | SetTimeSeries |
-| `.11.{gpu}` | 11 | Memory Clock MHz | SetTimeSeries |
-| `.12.{gpu}` | 12 | Memory Utilization % | SetTimeSeries |
+| `.7.{gpu}` | 7 | VRAM Total MiB (constant) | Set |
+| `.8.{gpu}` | 8 | Temperature C | SetTimeSeries |
+| `.9.{gpu}` | 9 | Power Draw W | SetTimeSeries |
+| `.10.{gpu}` | 10 | Fan Speed % | SetTimeSeries |
+| `.11.{gpu}` | 11 | SM Clock MHz | SetTimeSeries |
+| `.12.{gpu}` | 12 | Memory Clock MHz | SetTimeSeries |
 
 #### Standard MIBs (system, host resources, interfaces)
 
@@ -189,7 +189,8 @@ Groups: ["nvidia", "nvidia-gpu"]
 - **Operation:** `L8C_Map`
 - **Cadence:** DEFAULT_CADENCE
 - **Attributes:** single attribute using `SnmpGpuTable` with static mapping:
-  - `gpudevice.gpus` ← `SnmpGpuTable(mapping: "1:devicename:set,2:deviceuuid:set,3:serialnumber:set,4:pcibusid:set,13:driverversion:set,14:cudaversion:set,15:ecccorrectedcount:set,16:eccuncorrectedcount:set,17:powerstate:set")`
+  - `gpudevice.gpus` ← `SnmpGpuTable(mapping: "1:devicename:set,2:deviceuuid:set,3:serialnumber:set,4:pcibusid:set,13:driverversion:set,14:cudaversion:set,15:ecccorrectedcount:set,16:eccuncorrectedcount:set")`
+  - `.17.{gpu}` (NVLink active links) has no per-GPU field in `Gpu`. The device-level `topology.nvlink_count` comes from REST.
 
 </TabItem>
 <TabItem value="poll4" label="Poll 4: nvidiaGpuMetrics">
@@ -200,7 +201,7 @@ Groups: ["nvidia", "nvidia-gpu"]
 - **Operation:** `L8C_Map`
 - **Cadence:** EVERY_5_MINUTES_ALWAYS (metrics need frequent polling)
 - **Attributes:** single attribute using `SnmpGpuTable` with time-series mapping:
-  - `gpudevice.gpus` ← `SnmpGpuTable(mapping: "5:gpuutilizationpercent:ts,6:vramusedmib:ts,7:temperaturecelsius:ts,8:powerdrawwatts:ts,9:fanspeedpercent:ts,10:smclockmhz:ts,11:memclockmhz:ts,12:memoryutilizationpercent:ts")`
+  - `gpudevice.gpus` ← `SnmpGpuTable(mapping: "5:gpuutilizationpercent:ts,6:vramusedmib:ts,7:vramtotalmib:set,8:temperaturecelsius:ts,9:powerdrawwatts:ts,10:fanspeedpercent:ts,11:smclockmhz:ts,12:memclockmhz:ts")`
 
 </TabItem>
 <TabItem value="poll5" label="Poll 5: nvidiaHostResources">
@@ -315,8 +316,8 @@ rules.
 **Data sources (from opensim mock data):**
 
 - SNMP: OIDs under `1.3.6.1.4.1.5703.*` + standard MIBs.
-- SSH: 10 commands (`nvidia-smi`, `nvidia-smi -q -d *`, `dcgmi *`,
-  `show version`, `lscpu`).
+- SSH: 14 commands (`nvidia-smi`, `nvidia-smi -q -d *`, `nvidia-smi topo -m`, `dcgmi *`,
+  `show version`, `uname -a`, `hostname`, `free -h`, `lscpu`, `lspci | grep -i nvidia`).
 - REST: 7 endpoints (`/api/v1/gpu/*`, `/api/v1/dcgm/*`, `/api/v1/system/*`).
 
 ### Gap analysis
@@ -326,7 +327,7 @@ rules.
 | Field | Source | Protocol | Command/OID/Endpoint |
 |-------|--------|----------|---------------------|
 | model | REST | RESTCONF | `/api/v1/system/info` → `gpu_model` |
-| serial_number | SSH | SSH | `dmidecode -s system-serial-number` or from `show version` |
+| serial_number | SSH | SSH | `show version` |
 | ip_address | — | — | Set by collector (not polled) |
 | kernel_version | SSH | SSH | `uname -a` → parse kernel version |
 | cuda_version | SNMP | SNMPV2 | OID `.5703.1.1.1.1.14.0` (GPU 0, already in table but not at device level) |

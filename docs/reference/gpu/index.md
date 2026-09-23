@@ -1,9 +1,10 @@
 # GPU simulation
 
-nl6 simulates NVIDIA DGX and HGX GPU servers — complete with NVIDIA
-DCGM OIDs, `nvidia-smi` SSH output, and DCGM-shaped REST endpoints. This
-section consolidates the GPU-specific design notes originally kept under
-`plans/`.
+nl6 simulates NVIDIA DGX and HGX GPU servers with per-GPU SNMP metrics, `nvidia-smi` and `dcgmi` SSH output, and DCGM-shaped REST endpoints.
+The SNMP OID layout under NVIDIA's PEN (`1.3.6.1.4.1.5703`) is defined by nl6.
+NVIDIA publishes no SNMP GPU MIB; real DCGM exposes a Prometheus `/metrics` endpoint, not SNMP.
+The metric vocabulary and the command output are modelled on DCGM.
+This section consolidates the GPU-specific design notes originally kept under `plans/`.
 
 ## Pages
 
