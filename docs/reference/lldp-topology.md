@@ -1,19 +1,15 @@
 # LLDP topology
 
-nl6 can model **inter-device links** and expose them as a standards-compliant
-LLDP-MIB (IEEE 802.1AB, OID root `1.0.8802.1.1.2`) neighbor table on every
-participating device, plus a transparent `ifAlias` link label. The intended
-consumer is an NMS's LLDP link-discovery daemon: point it at the simulator
-and it builds a topology map of the fleet.
+nl6 can model **inter-device links** and expose them as a standards-compliant LLDP-MIB (IEEE 802.1AB, OID root `1.0.8802.1.1.2`) neighbor table on every participating device, plus a transparent `ifAlias` link label.
+The intended consumer is an NMS's LLDP link-discovery daemon: point it at the simulator and it builds a topology map of the fleet.
 
 ## Quick example — a fleet with a topology
 
 ### One command: 4 devices, 2 point-to-point links
 
-The simplest fleet: four auto-start devices wired into two point-to-point
-pairs on `ifIndex 1`. (Auto-start devices use the default `asr9k` profile;
-`ifIndex 1` is its management port, which is fine for a link.) Create
-`pairs.json`:
+The simplest fleet: four auto-start devices wired into two point-to-point pairs on `ifIndex 1`.
+(Auto-start devices use the default `asr9k` profile; `ifIndex 1` is its management port, which is fine for a link.)
+Create `pairs.json`:
 
 ```json
 {
@@ -28,8 +24,8 @@ pairs on `ifIndex 1`. (Auto-start devices use the default `asr9k` profile;
 sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 4 -topology-config pairs.json
 ```
 
-The graph loads at startup; the four devices come up in the background and the
-links resolve lazily. Verify:
+The graph loads at startup; the four devices come up in the background and the links resolve lazily.
+Verify:
 
 ```bash
 snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2          # local + neighbor (10.0.0.2)
@@ -40,11 +36,8 @@ curl -s http://localhost:8080/api/v1/topology/status | jq # {subsystem_active:tr
 
 ### A 5-stage Clos fabric over REST
 
-A realistic example: the minimal 5-stage Clos from
-[containerlab's `min-5clos`](https://containerlab.dev/lab-examples/min-5clos/)
-— two superspines, two pods of two spines + two leaves each, and a client on a
-leaf in each pod. Twelve devices, eighteen links, with a sensible device type
-per tier:
+A realistic example: the minimal 5-stage Clos from [containerlab's `min-5clos`](https://containerlab.dev/lab-examples/min-5clos/) — two superspines, two pods of two spines + two leaves each, and a client on a leaf in each pod.
+Twelve devices, eighteen links, with a sensible device type per tier:
 
 | Tier | Device type | Nodes | IPs | Ports used |
 |------|-------------|-------|-----|------------|
@@ -110,9 +103,8 @@ curl -X POST http://localhost:8080/api/v1/topology \
   -H 'Content-Type: application/json' --data @clos.json
 ```
 
-Now each tier shows its fabric neighbors. A spine (`10.0.1.1`) has **4**
-neighbors — two superspines (ports 1–2) and two leaves (ports 3–4); a leaf
-(`10.0.2.1`) has **3** — two spines and its client:
+Now each tier shows its fabric neighbors.
+A spine (`10.0.1.1`) has **4** neighbors — two superspines (ports 1–2) and two leaves (ports 3–4); a leaf (`10.0.2.1`) has **3** — two spines and its client:
 
 ```bash
 snmpwalk -v2c -c public 10.0.1.1 1.0.8802.1.1.2.1.4      # spine: 4 lldpRem rows
@@ -120,15 +112,12 @@ snmpwalk -v2c -c public 10.0.2.1 1.0.8802.1.1.2.1.4      # leaf:  3 lldpRem rows
 curl -s http://localhost:8080/api/v1/topology/status | jq # configured_links:18, active_links:18
 ```
 
-Each device's `sysName` is randomly generated at creation (e.g. `SPINE-AB12`),
-so the `ifAlias` labels (`to_<peer-sysName>_<peer-port>`) and `lldpRemSysName`
-values uniquely identify the far end of every fabric link. Read a device's own
-name with `snmpget … 1.3.6.1.2.1.1.5.0`.
+Each device's `sysName` is randomly generated at creation (e.g. `SPINE-AB12`), so the `ifAlias` labels (`to_<peer-sysName>_<peer-port>`) and `lldpRemSysName` values uniquely identify the far end of every fabric link.
+Read a device's own name with `snmpget … 1.3.6.1.2.1.1.5.0`.
 
 ### Watch a link go down
 
-Take one end of the spine1↔leaf1 link down and its neighbor rows disappear on
-**both** sides, while the `ifAlias` (configured intent) stays:
+Take one end of the spine1↔leaf1 link down and its neighbor rows disappear on **both** sides, while the `ifAlias` (configured intent) stays:
 
 ```bash
 # leaf1 (10.0.2.1) port 1 faces spine1 (10.0.1.1) port 3
@@ -146,19 +135,11 @@ snmpget  -v2c -c public 10.0.2.1 1.3.6.1.2.1.31.1.1.1.18.1                   # l
 
 ## Model
 
-A link is a single **undirected** edge between two endpoints, each an
-`(deviceIP, ifIndex)` pair. The graph is simulator-wide and owned by the
-manager — it is the single source of truth, and each device derives its own
-LLDP local-system data, local-port table, and remote (neighbor) table from
-the edges touching it.
+A link is a single **undirected** edge between two endpoints, each an `(deviceIP, ifIndex)` pair.
+The graph is simulator-wide and owned by the manager — it is the single source of truth, and each device derives its own LLDP local-system data, local-port table, and remote (neighbor) table from the edges touching it.
 
-- **One link per local port** (point-to-point). A second link on a port that
-  is already used is rejected.
-- **Lazy resolution.** A link is validated *syntactically* at add time
-  (no self-loop, no duplicate, one link per port). Device existence and
-  ifIndex ownership are resolved later, when SNMP is served — so a link may
-  reference a device that hasn't been created yet (e.g. an auto-start batch
-  still spinning up). The edge stays inert until both ends resolve.
+- **One link per local port** (point-to-point). A second link on a port that is already used is rejected.
+- **Lazy resolution.** A link is validated *syntactically* at add time (no self-loop, no duplicate, one link per port). Device existence and ifIndex ownership are resolved later, when SNMP is served — so a link may reference a device that hasn't been created yet (e.g. an auto-start batch still spinning up). The edge stays inert until both ends resolve.
 - **Edges are pruned** automatically when a referenced device is deleted.
 
 ## Configuration
@@ -178,8 +159,8 @@ sudo ./nl6 -topology-config links.json
 }
 ```
 
-Syntactic validation failures are fatal at startup. Unknown JSON fields are
-rejected.
+Syntactic validation failures are fatal at startup.
+Unknown JSON fields are rejected.
 
 ### Runtime REST
 
@@ -191,16 +172,12 @@ rejected.
 | `GET /api/v1/topology/status` | — | `200` `{"subsystem_active", "configured_links", "active_links"}` |
 | `GET /api/v1/topology/graph` | — | `200` `{"nodes":[…], "edges":[…]}` — viz-ready, with live per-link state |
 
-`active_links` counts links whose both endpoints are resolvable and
-operationally up — i.e. those currently producing a neighbor row. The
-difference between `configured_links` and `active_links` is your down-link
-count.
+`active_links` counts links whose both endpoints are resolvable and operationally up — i.e. those currently producing a neighbor row.
+The difference between `configured_links` and `active_links` is your down-link count.
 
 ### Graph endpoint
 
-`GET /api/v1/topology/graph` returns the topology as a single viz-ready
-object — the join of the link graph with device identity and live per-link
-state, so a client renders from one fetch:
+`GET /api/v1/topology/graph` returns the topology as a single viz-ready object — the join of the link graph with device identity and live per-link state, so a client renders from one fetch:
 
 ```jsonc
 {
@@ -217,13 +194,9 @@ state, so a client renders from one fetch:
 }
 ```
 
-The graph is **edge-driven** — nodes are the distinct endpoints of configured
-links (a link-less device does not appear); a link endpoint with no live
-device is flagged `missing: true`. `active` uses the same liveness rule as
-`/topology/status`; `downEnd` is omitted when the edge is active. This is the
-data source for the web-console visualization, and is handy on its own for
-reconciling a deployed topology against intent (`missing` nodes + inactive
-edges surface dangling links automatically).
+The graph is **edge-driven** — nodes are the distinct endpoints of configured links (a link-less device does not appear); a link endpoint with no live device is flagged `missing: true`.
+`active` uses the same liveness rule as `/topology/status`; `downEnd` is omitted when the edge is active.
+This is the data source for the web-console visualization, and is handy on its own for reconciling a deployed topology against intent (`missing` nodes + inactive edges surface dangling links automatically).
 
 ## What is served
 
@@ -239,35 +212,21 @@ Per device with at least one configured link:
 | `lldpRemTable` (`…1.4.1.1.{4..10}.0.<localPort>.1`) | the peer's chassis id, port id, sysName, sysDesc |
 | `ifAlias` (`1.3.6.1.2.1.31.1.1.1.18.<ifIndex>`) | `to_<peerSysName>_<peerIfDescr>` |
 
-The neighbor row index is `{lldpRemTimeMark=0, lldpRemLocalPortNum=ifIndex,
-lldpRemIndex=1}`.
+The neighbor row index is `{lldpRemTimeMark=0, lldpRemLocalPortNum=ifIndex, lldpRemIndex=1}`.
 
-**Stitching.** `lldpRemChassisId`/`lldpRemPortId` on one device are derived
-from the peer's own canonical sources (the `02:42:<ipv4>` chassis MAC and the
-peer's `ifDescr`) — identical to what the peer advertises in its local data —
-so Enlinkd matches the two half-links.
+**Stitching.** `lldpRemChassisId`/`lldpRemPortId` on one device are derived from the peer's own canonical sources (the `02:42:<ipv4>` chassis MAC and the peer's `ifDescr`) — identical to what the peer advertises in its local data — so Enlinkd matches the two half-links.
 
 ## Liveness vs. intent
 
-- **`lldpRemTable` rows are oper-status-aware.** A neighbor row is served only
-  while both endpoints are operationally up. Take either port down (flap
-  scenario, or `POST .../oper-status DOWN`) and the row disappears on both
-  sides; bring it back up and the row returns. A device type with no
-  interface-state engine is treated as up. Because the two ends live on
-  different devices, the both-sides property is eventually-consistent.
-- **`ifAlias` reflects configured intent** and is present regardless of
-  oper-status. So `ifXTable` shows what *should* be connected and the LLDP
-  table shows what is *actually up* — diff the two to find down links.
+- **`lldpRemTable` rows are oper-status-aware.** A neighbor row is served only while both endpoints are operationally up. Take either port down (flap scenario, or `POST .../oper-status DOWN`) and the row disappears on both sides; bring it back up and the row returns. A device type with no interface-state engine is treated as up. Because the two ends live on different devices, the both-sides property is eventually-consistent.
+- **`ifAlias` reflects configured intent** and is present regardless of oper-status. So `ifXTable` shows what *should* be connected and the LLDP table shows what is *actually up* — diff the two to find down links.
 
-An `ifAlias` is emitted only for a link whose peer is resolvable; an
-unresolvable peer yields no label (never a malformed `to__`), leaving any
-static `ifAlias` in place.
+An `ifAlias` is emitted only for a link whose peer is resolvable; an unresolvable peer yields no label (never a malformed `to__`), leaving any static `ifAlias` in place.
 
 ## Walking it
 
-LLDP lives at `1.0.8802.1.1.2`, which sorts **before** the standard mib-2
-tree — a walk anchored at `1.3.6.1` will never reach it. Anchor at the LLDP
-root:
+LLDP lives at `1.0.8802.1.1.2`, which sorts **before** the standard mib-2 tree — a walk anchored at `1.3.6.1` will never reach it.
+Anchor at the LLDP root:
 
 ```bash
 snmpwalk -v2c -c public 10.0.0.1 1.0.8802.1.1.2
@@ -276,34 +235,15 @@ snmpget  -v2c -c public 10.0.0.1 1.3.6.1.2.1.31.1.1.1.18.1   # ifAlias link labe
 
 ## Visualization (web console)
 
-When a topology is deployed, the web console (`http://<host>:8080/`) shows an
-**Inter-device topology** panel. It is gated on `configured_links > 0` — no
-topology, no panel — and renders `GET /api/v1/topology/graph` with a
-locally-vendored sigma.js + graphology stack (no CDN; works in the `nl6sim`
-namespace / airgapped).
+When a topology is deployed, the web console (`http://<host>:8080/`) shows an **Inter-device topology** panel.
+It is gated on `configured_links > 0` — no topology, no panel — and renders `GET /api/v1/topology/graph` with a locally-vendored sigma.js + graphology stack (no CDN; works in the `nl6sim` namespace / airgapped).
 
-- **Live liveness.** Edges are **green** when up, **red** when down; nodes are
-  labeled by `sysName` (type + degree on hover), and dangling endpoints render
-  grey. The view refreshes on the console's poll cadence — it **recolors in
-  place** on a state change and only re-runs the layout when the graph
-  *structure* changes, so nodes don't jump every tick.
-- **Two layouts.** *Tiered* (the default) places devices in horizontal fabric
-  bands ranked by device model, so a Clos fabric reads top-down; *Force* is a
-  deterministic, seeded Fruchterman-Reingold layout. A Force/Tiered toggle in
-  the topology panel switches between them.
-- **Click-to-flap.** Click an edge to toggle the link (down one end; click
-  again to restore) — the edge thickens on hover so it's an easy target.
-  Click a node to **fail the device** (downs all its links) after a confirm
-  dialog. Both reuse `POST .../oper-status`; the canvas refreshes immediately
-  after.
-- **Scale guard.** Above 500 nodes / 2000 links the panel shows a summary
-  (device/link/active counts) with a *render anyway* control instead of
-  drawing the graph.
+- **Live liveness.** Edges are **green** when up, **red** when down; nodes are labeled by `sysName` (type + degree on hover), and dangling endpoints render grey. The view refreshes on the console's poll cadence — it **recolors in place** on a state change and only re-runs the layout when the graph *structure* changes, so nodes don't jump every tick.
+- **Two layouts.** *Tiered* (the default) places devices in horizontal fabric bands ranked by device model, so a Clos fabric reads top-down; *Force* is a deterministic, seeded Fruchterman-Reingold layout. A Force/Tiered toggle in the topology panel switches between them.
+- **Click-to-flap.** Click an edge to toggle the link (down one end; click again to restore) — the edge thickens on hover so it's an easy target. Click a node to **fail the device** (downs all its links) after a confirm dialog. Both reuse `POST .../oper-status`; the canvas refreshes immediately after.
+- **Scale guard.** Above 500 nodes / 2000 links the panel shows a summary (device/link/active counts) with a *render anyway* control instead of drawing the graph.
 
 ## Out of scope
 
-Capability bitmaps (`lldpRemSysCapSupported`/`Enabled`),
-`lldpStatistics` / `lldpConfiguration`, gNMI/openconfig-lldp, multi-neighbor
-(shared-segment) ports, and operator-supplied custom alias text. The
-visualization is poll-driven (no SSE push) and does not persist layout
-positions.
+Capability bitmaps (`lldpRemSysCapSupported`/`Enabled`), `lldpStatistics` / `lldpConfiguration`, gNMI/openconfig-lldp, multi-neighbor (shared-segment) ports, and operator-supplied custom alias text.
+The visualization is poll-driven (no SSE push) and does not persist layout positions.

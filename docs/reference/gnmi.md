@@ -1,14 +1,16 @@
 # gNMI dial-in
 
-Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. The target serves OpenConfig interface state and counter telemetry, scoped to `/interfaces/interface[name=*]/state/*`. Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
+Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339. The target serves OpenConfig interface state and counter telemetry, scoped to `/interfaces/interface[name=*]/state/*`.
+Counter values come from the same `IfCounterCycler.GetDynamicAt` dispatcher that drives SNMP and sFlow, so gNMI / SNMP / sFlow agree byte-for-byte at the same instant.
 
-This page covers **dial-in** (the collector connects to the device — the
-default). Devices can additionally **push** telemetry to a collector over an
-outbound gRPC stream; see [gNMI dial-out](gnmi-dial-out.md).
+This page covers **dial-in** (the collector connects to the device — the default).
+Devices can additionally **push** telemetry to a collector over an outbound gRPC stream; see [gNMI dial-out](gnmi-dial-out.md).
 
 ## Enablement
 
-The gNMI subsystem is **always-on by default**. Every device gets a listener; no per-device opt-in. To turn the subsystem off simulator-wide, pass `-gnmi-disable`.
+The gNMI subsystem is **always-on by default**.
+Every device gets a listener; no per-device opt-in.
+To turn the subsystem off simulator-wide, pass `-gnmi-disable`.
 
 | Flag | Default | Purpose |
 |------|---------|---------|
@@ -18,15 +20,21 @@ The gNMI subsystem is **always-on by default**. Every device gets a listener; no
 
 ## TLS
 
-**Dial-in is TLS by default.** The server presents the simulator's shared self-signed certificate (the same cert used by the HTTPS REST surface). Client-certificate authentication is **not required**. Connect with `gnmic --skip-verify` for the easy path, or `gnmic --tls-ca <path>` if you want the cert chain validated.
+**Dial-in is TLS by default.** The server presents the simulator's shared self-signed certificate (the same cert used by the HTTPS REST surface).
+Client-certificate authentication is **not required**.
+Connect with `gnmic --skip-verify` for the easy path, or `gnmic --tls-ca <path>` if you want the cert chain validated.
 
 > The shared-cert model is a simulator convention — every simulated device presents the same certificate. The simulator does not pretend to model PKI.
 
 ### Plaintext dial-in
 
-`-gnmi-tls=false` binds the per-device listener without transport credentials, for collectors that dial plaintext gRPC. This mirrors the dial-out side's `-gnmi-dialout-tls=false`. The mode is simulator-wide: every device serves the same transport, and there is no per-device override.
+`-gnmi-tls=false` binds the per-device listener without transport credentials, for collectors that dial plaintext gRPC.
+This mirrors the dial-out side's `-gnmi-dialout-tls=false`.
+The mode is simulator-wide: every device serves the same transport, and there is no per-device override.
 
-The two modes do not coexist on one port, by design — a client that dialed the wrong one could not tell from the port which it got. A transport mismatch in either direction looks the same from the client: TCP connects, the server sends nothing, and the connection closes. See [Troubleshooting](#troubleshooting).
+The two modes do not coexist on one port, by design — a client that dialed the wrong one could not tell from the port which it got.
+A transport mismatch in either direction looks the same from the client: TCP connects, the server sends nothing, and the connection closes.
+See [Troubleshooting](#troubleshooting).
 
 ## Supported paths
 
@@ -52,7 +60,9 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 | `/interfaces/interface[name=*]/state/counters/out-discards` | uint64 | `ifOutDiscards.<N>` |
 | `/interfaces/interface[name=*]/state/counters/out-errors` | uint64 | `ifOutErrors.<N>` |
 
-Wildcards (`name=*`) enumerate every ifIndex known to the device. Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick. Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
+Wildcards (`name=*`) enumerate every ifIndex known to the device.
+Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick.
+Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
 
 Paths outside the tables on this page — including `/interfaces/interface/config/*`, `/interfaces/interface/subinterfaces`, and anything outside `/interfaces/` and `/components/` — return `codes.NotFound`.
 
@@ -82,20 +92,24 @@ Devices whose type carries coherent optical channels (today `ciena_waveserver5`)
 | `…/optical-channel/state/polarization-dependent-loss/{instant,avg,min,max}` | decimal64 (2 fd) | dB |
 | `…/optical-channel/state/fec-uncorrectable-blocks` | uint64 | **bare counter — no statistics container** |
 
-See [Optical telemetry](optical-telemetry.md) for the value model, health
-bands, the degradation endpoint and a validation walkthrough.
+See [Optical telemetry](optical-telemetry.md) for the value model, health bands, the degradation endpoint and a validation walkthrough.
 
-Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes flatten as on the interface side. Asking for a statistic on `fec-uncorrectable-blocks` (e.g. `/instant`) returns `codes.NotFound` — the pinned model defines it as a bare leaf.
+Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes flatten as on the interface side.
+Asking for a statistic on `fec-uncorrectable-blocks` (e.g. `/instant`) returns `codes.NotFound` — the pinned model defines it as a bare leaf.
 
-**`post-fec-ber` is deliberately not served.** OpenConfig defines it, but Ciena removed it from their model, so a collector rule keyed on it would never fire against real hardware. Serving it would produce exactly the false pass this device type exists to prevent.
+**`post-fec-ber` is deliberately not served.** OpenConfig defines it, but Ciena removed it from their model, so a collector rule keyed on it would never fire against real hardware.
+Serving it would produce exactly the false pass this device type exists to prevent.
 
-**Not an optical device?** Optical paths return `codes.NotFound` on device types with no channels — permanent, not retryable — and those devices do not advertise the optical models in `Capabilities`. `codes.Unavailable` is reserved for an optical device still initialising.
+**Not an optical device?** Optical paths return `codes.NotFound` on device types with no channels — permanent, not retryable — and those devices do not advertise the optical models in `Capabilities`.
+`codes.Unavailable` is reserved for an optical device still initialising.
 
 **ON_CHANGE is rejected for optical paths** (`InvalidArgument`): these are analog measurements that change continuously, so use SAMPLE with `sample_interval`.
 
-**Precision caveat:** `pre-fec-ber` carries 18 fraction digits, which exceeds a float64 significand — `PROTO`'s `double_val` is lossy for it. Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a string).
+**Precision caveat:** `pre-fec-ber` carries 18 fraction digits, which exceeds a float64 significand — `PROTO`'s `double_val` is lossy for it.
+Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a string).
 
-**`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything. The interface surface is state-only, so it is unaffected.
+**`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything.
+The interface surface is state-only, so it is unaffected.
 
 ## Subscribe semantics
 
@@ -111,11 +125,15 @@ Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes
 | `Subscribe` (POLL) | rejected with `Unimplemented` |
 | `Set` | rejected with `Unimplemented` (read-only simulator) |
 
-**Sample-interval clamp:** any `sample_interval` below 1 second is silently clamped to 1 second. The same clamp applies to `heartbeat_interval` on ON_CHANGE subscriptions.
+**Sample-interval clamp:** any `sample_interval` below 1 second is silently clamped to 1 second.
+The same clamp applies to `heartbeat_interval` on ON_CHANGE subscriptions.
 
-**Backpressure:** each STREAM/SAMPLE stream owns a 100-deep send buffer with oldest-drop on overflow. ON_CHANGE streams own a 16-deep listener channel (state events are rare; depth 16 absorbs multi-second collector stalls). Both drop counters are simulator-wide and exposed via `GET /api/v1/gnmi/status` as `updates_dropped` and `state_events_dropped` respectively.
+**Backpressure:** each STREAM/SAMPLE stream owns a 100-deep send buffer with oldest-drop on overflow.
+ON_CHANGE streams own a 16-deep listener channel (state events are rare; depth 16 absorbs multi-second collector stalls).
+Both drop counters are simulator-wide and exposed via `GET /api/v1/gnmi/status` as `updates_dropped` and `state_events_dropped` respectively.
 
-**Per-leaf ON_CHANGE acceptance.** ON_CHANGE is accepted only when every subscription's resolved path touches the state-engine-backed leaves; counter leaves are rejected because counters change continuously under the analytical engine (every observation produces a different value, which would degenerate to unbounded fan-out). The rejection error names the offending leaf and recommends SAMPLE.
+**Per-leaf ON_CHANGE acceptance.** ON_CHANGE is accepted only when every subscription's resolved path touches the state-engine-backed leaves; counter leaves are rejected because counters change continuously under the analytical engine (every observation produces a different value, which would degenerate to unbounded fan-out).
+The rejection error names the offending leaf and recommends SAMPLE.
 
 | Leaf | ON_CHANGE | SAMPLE |
 |---|---|---|
@@ -126,11 +144,17 @@ Wildcards (`name=*`) enumerate every channel in sorted order; subtree subscribes
 | `state/last-change` | ✓ | ✓ |
 | `state/counters/*` (12 leaves) | ✗ (rejected with InvalidArgument) | ✓ |
 
-**ON_CHANGE event sources.** Mutations come from the per-device flap scheduler (`-if-flap-scenario`), the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`) and its auto-revert, and an SNMP `SET` of `ifAdminStatus.<N>`. Every transition fans out as a `SubscribeResponse{update}` to every matching subscriber within ~milliseconds. See [interface state engine](interface-state.md) for the full picture.
+**ON_CHANGE event sources.** Mutations come from the per-device flap scheduler (`-if-flap-scenario`), the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`) and its auto-revert, and an SNMP `SET` of `ifAdminStatus.<N>`.
+Every transition fans out as a `SubscribeResponse{update}` to every matching subscriber within ~milliseconds.
+See [interface state engine](interface-state.md) for the full picture.
 
-**Heartbeat.** Per gNMI §3.5.1.5.2, `heartbeat_interval` lets a client request periodic re-emission of the current value even when nothing has changed. Set the field on an ON_CHANGE subscription to enable; sub-second values are clamped to 1 second. `heartbeat_interval=0` (unset) means no heartbeat — emit only on actual state transitions.
+**Heartbeat.** Per gNMI §3.5.1.5.2, `heartbeat_interval` lets a client request periodic re-emission of the current value even when nothing has changed.
+Set the field on an ON_CHANGE subscription to enable; sub-second values are clamped to 1 second.
+`heartbeat_interval=0` (unset) means no heartbeat — emit only on actual state transitions.
 
-**Mixed-mode rejection.** A single `SubscribeRequest` that mixes ON_CHANGE and SAMPLE subscriptions is rejected with `InvalidArgument`. The two paths have different emission models (event-driven vs ticker-driven); weaving them in one stream would inflate complexity for negligible value. Standard collectors (e.g. `gnmic`) naturally issue two separate requests.
+**Mixed-mode rejection.** A single `SubscribeRequest` that mixes ON_CHANGE and SAMPLE subscriptions is rejected with `InvalidArgument`.
+The two paths have different emission models (event-driven vs ticker-driven); weaving them in one stream would inflate complexity for negligible value.
+Standard collectors (e.g. `gnmic`) naturally issue two separate requests.
 
 ## gnmic invocation examples
 
@@ -167,23 +191,19 @@ gnmic -a 192.168.100.1:9339 --skip-verify subscribe \
 
 ## Quick validation with gnmic
 
-A typical "is the gNMI surface working?" check takes about a minute. The
-sequence below walks capability discovery, one-shot `Get`, streaming
-`Subscribe`, and a counter cross-check against SNMP — useful as both a
-smoke test after a deployment and a regression check after touching the
-gNMI code path.
+A typical "is the gNMI surface working?" check takes about a minute.
+The sequence below walks capability discovery, one-shot `Get`, streaming `Subscribe`, and a counter cross-check against SNMP — useful as both a smoke test after a deployment and a regression check after touching the gNMI code path.
 
 ### Install gnmic
 
-`gnmic` ships from the OpenConfig project. The Go toolchain install is
-the most portable form:
+`gnmic` ships from the OpenConfig project.
+The Go toolchain install is the most portable form:
 
 ```bash
 go install github.com/openconfig/gnmic/cmd/gnmic@latest
 ```
 
-Pre-built binaries are also published on the
-[`openconfig/gnmic` GitHub releases page](https://github.com/openconfig/gnmic/releases).
+Pre-built binaries are also published on the [`openconfig/gnmic` GitHub releases page](https://github.com/openconfig/gnmic/releases).
 
 ### 1. Boot the simulator with a small fleet
 
@@ -191,8 +211,7 @@ Pre-built binaries are also published on the
 sudo ./nl6 -auto-start-ip 10.42.0.1 -auto-count 5
 ```
 
-Five devices come up at `10.42.0.1` through `10.42.0.5`, each listening
-on port 9339.
+Five devices come up at `10.42.0.1` through `10.42.0.5`, each listening on port 9339.
 
 ### 2. Capabilities — sanity-check the target is reachable
 
@@ -211,15 +230,10 @@ supported encodings:
   - PROTO
 ```
 
-On an optical transport device the model list carries three more entries —
-`openconfig-terminal-device` (2026-01-14), `openconfig-platform`
-(2025-07-15) and `openconfig-platform-transceiver` (2026-03-25). Packet
-device types advertise only `openconfig-interfaces`, so a collector that
-generates subscriptions from `Capabilities` never subscribes optical paths
-against a device that cannot serve them.
+On an optical transport device the model list carries three more entries — `openconfig-terminal-device` (2026-01-14), `openconfig-platform` (2025-07-15) and `openconfig-platform-transceiver` (2026-03-25).
+Packet device types advertise only `openconfig-interfaces`, so a collector that generates subscriptions from `Capabilities` never subscribes optical paths against a device that cannot serve them.
 
-`--skip-verify` is required because every device presents the simulator's
-shared self-signed cert (see [TLS](#tls) above).
+`--skip-verify` is required because every device presents the simulator's shared self-signed cert (see [TLS](#tls) above).
 
 ### 3. Get — confirm path resolution and counter shape
 
@@ -230,8 +244,7 @@ gnmic -a 10.42.0.1:9339 --skip-verify get \
     --path '/interfaces/interface[name=GigabitEthernet0/0]/state/counters/in-octets'
 ```
 
-Expected output (timestamp + value will differ each call — the counter
-is a sine-wave function of time):
+Expected output (timestamp + value will differ each call — the counter is a sine-wave function of time):
 
 ```json
 [
@@ -257,13 +270,11 @@ gnmic -a 10.42.0.1:9339 --skip-verify get \
     --path '/interfaces/interface[name=*]/state/counters'
 ```
 
-Returns one notification per interface, each carrying all 12 counter
-leaves.
+Returns one notification per interface, each carrying all 12 counter leaves.
 
 ### 4. Subscribe — streaming telemetry
 
-The high-value test: confirm SAMPLE-mode streaming works at the configured
-cadence.
+The high-value test: confirm SAMPLE-mode streaming works at the configured cadence.
 
 ```bash
 gnmic -a 10.42.0.1:9339 --skip-verify subscribe \
@@ -271,7 +282,8 @@ gnmic -a 10.42.0.1:9339 --skip-verify subscribe \
     --sample-interval 5s
 ```
 
-A line per interface streams every 5 seconds. Stop with `Ctrl-C`.
+A line per interface streams every 5 seconds.
+Stop with `Ctrl-C`.
 
 Multi-target subscribe across the whole fleet:
 
@@ -282,8 +294,7 @@ gnmic --skip-verify subscribe \
     --sample-interval 5s
 ```
 
-`gnmic` opens parallel streams to each target; the `source:` field in
-each output line identifies the originating device.
+`gnmic` opens parallel streams to each target; the `source:` field in each output line identifies the originating device.
 
 Mixed-cadence streams in one Subscribe (post-D1 per-sub tickers):
 
@@ -293,8 +304,7 @@ gnmic -a 10.42.0.1:9339 --skip-verify subscribe \
     --path '/interfaces/interface[name=*]/state/ifindex'              --sample-interval 30s
 ```
 
-The `in-octets` path streams every second, the `ifindex` path every
-30 seconds — each subscription has its own ticker.
+The `in-octets` path streams every second, the `ifindex` path every 30 seconds — each subscription has its own ticker.
 
 ONCE mode (snapshot, no streaming):
 
@@ -306,9 +316,7 @@ gnmic -a 10.42.0.1:9339 --skip-verify subscribe \
 
 ### 5. Cross-check counter values against SNMP
 
-The gNMI / SNMP / sFlow surfaces all read from the same
-`IfCounterCycler.GetDynamicAt` dispatcher, so values agree byte-for-byte
-at the same instant:
+The gNMI / SNMP / sFlow surfaces all read from the same `IfCounterCycler.GetDynamicAt` dispatcher, so values agree byte-for-byte at the same instant:
 
 ```bash
 # Read ifHCInOctets.1 via SNMP
@@ -319,15 +327,12 @@ gnmic -a 10.42.0.1:9339 --skip-verify get \
     --path '/interfaces/interface[name=GigabitEthernet0/0]/state/counters/in-octets'
 ```
 
-The two values should agree within the sub-second elapsed between the
-two commands. If they differ by more than the natural ramp rate of the
-sine wave at that instant, the resolver and the SNMP path have drifted
-— investigate `gnmi_paths.go:resolveLeaf` and `snmp_handlers.go`.
+The two values should agree within the sub-second elapsed between the two commands.
+If they differ by more than the natural ramp rate of the sine wave at that instant, the resolver and the SNMP path have drifted — investigate `gnmi_paths.go:resolveLeaf` and `snmp_handlers.go`.
 
 ### 6. Confirm subsystem-level metrics
 
-After running a Subscribe for ~30 seconds, check the simulator's
-accounting:
+After running a Subscribe for ~30 seconds, check the simulator's accounting:
 
 ```bash
 curl -s http://localhost:8080/api/v1/gnmi/status | jq
@@ -348,39 +353,25 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 }
 ```
 
-`active_subscriptions` is non-zero only while a Subscribe is live;
-`updates_sent` is monotonic across the simulator's lifetime. The exact
-`updates_sent` count depends on how many interfaces each device has and
-how long the stream ran.
+`active_subscriptions` is non-zero only while a Subscribe is live; `updates_sent` is monotonic across the simulator's lifetime.
+The exact `updates_sent` count depends on how many interfaces each device has and how long the stream ran.
 
-`tls_enabled` reports the dial-in transport the subsystem is configured
-for, so you can tell a TLS fleet from a plaintext one without reading the
-simulator's flags. It describes the configuration rather than any live
-listener, so read it alongside `subsystem_active`: when that is `false`
-there are no listeners for it to apply to.
+`tls_enabled` reports the dial-in transport the subsystem is configured for, so you can tell a TLS fleet from a plaintext one without reading the simulator's flags.
+It describes the configuration rather than any live listener, so read it alongside `subsystem_active`: when that is `false` there are no listeners for it to apply to.
 
-`updates_dropped > 0` means the send buffer overflowed — typically
-indicates a slow consumer or a sample interval too aggressive for the
-path coverage.
+`updates_dropped > 0` means the send buffer overflowed — typically indicates a slow consumer or a sample interval too aggressive for the path coverage.
 
-`tls_handshake_failures` counts connections that were accepted and whose
-TLS handshake then failed. The usual causes are a client connecting
-without `--skip-verify` (or with a wrong `--tls-ca`), and a client
-dialing **plaintext** against the TLS listener. It stays 0 under
-`-gnmi-tls=false`, where no handshake happens. The first failure is
-logged once per process; the counter keeps moving after that.
+`tls_handshake_failures` counts connections that were accepted and whose TLS handshake then failed.
+The usual causes are a client connecting without `--skip-verify` (or with a wrong `--tls-ca`), and a client dialing **plaintext** against the TLS listener.
+It stays 0 under `-gnmi-tls=false`, where no handshake happens.
+The first failure is logged once per process; the counter keeps moving after that.
 
-`listener_accept_failures` counts `Accept` errors on the per-device
-listener — a fault on the simulator's side, file-descriptor exhaustion
-being the realistic one at fleet scale, not a client misconfiguration.
+`listener_accept_failures` counts `Accept` errors on the per-device listener — a fault on the simulator's side, file-descriptor exhaustion being the realistic one at fleet scale, not a client misconfiguration.
 
 :::note[What `tls_handshake_failures` counts]
-Before that fix the field carried `Accept` errors. gRPC runs the TLS
-handshake *after* `Accept` returns, so the field could never report a
-handshake failure and read 0 in every situation the paragraph above
-describes. If you are comparing against an older deployment, a value
-going from 0 to non-zero is this fix working, not a new fault. The
-`Accept` signal now lives in `listener_accept_failures`.
+Before that fix the field carried `Accept` errors. gRPC runs the TLS handshake *after* `Accept` returns, so the field could never report a handshake failure and read 0 in every situation the paragraph above describes.
+If you are comparing against an older deployment, a value going from 0 to non-zero is this fix working, not a new fault.
+The `Accept` signal now lives in `listener_accept_failures`.
 :::
 
 ### Troubleshooting
@@ -418,7 +409,10 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 }
 ```
 
-`subsystem_active` is `false` when `-gnmi-disable` is set. `listeners` equals the device count when active. Every counter is cumulative since process start; `updates_dropped` increments per backpressure-discard event. The TLS counters are explained under [Troubleshooting](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
+`subsystem_active` is `false` when `-gnmi-disable` is set.
+`listeners` equals the device count when active.
+Every counter is cumulative since process start; `updates_dropped` increments per backpressure-discard event.
+The TLS counters are explained under [Troubleshooting](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
 
 ## Known limitations
 

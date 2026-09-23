@@ -1,14 +1,11 @@
 # Waveserver 5 limitations
 
-**Read this before building anything against `ciena_waveserver5` that you
-intend to run against real hardware.**
+**Read this before building anything against `ciena_waveserver5` that you intend to run against real hardware.**
 
-This device type exists so a monitoring team can implement and validate
-optical use cases without a lab. The failure mode that matters is not
-synthetic-looking values, it is the **false pass**: you build against nl6, it
-works, you deploy against a real Waveserver, and it breaks. A team that cannot
-see where the simulation ends will trust it past its edges. This file is where
-it ends.
+This device type exists so a monitoring team can implement and validate optical use cases without a lab.
+The failure mode that matters is not synthetic-looking values, it is the **false pass**: you build against nl6, it works, you deploy against a real Waveserver, and it breaks.
+A team that cannot see where the simulation ends will trust it past its edges.
+This file is where it ends.
 
 ## Loud ones first
 
@@ -20,39 +17,30 @@ The shipped value is:
 1.3.6.1.4.1.1271.3
 ```
 
-That is the **`waveserver` subtree node**, confirmed from the public MIB
-mirror. It is *not* the per-model product OID a real Waveserver 5 returns,
-because `CIENA-PRODUCTS-MIB` is not in the public mirror and the real value is
-behind the Ciena support portal.
+That is the **`waveserver` subtree node**, confirmed from the public MIB mirror.
+It is *not* the per-model product OID a real Waveserver 5 returns, because `CIENA-PRODUCTS-MIB` is not in the public mirror and the real value is behind the Ciena support portal.
 
-Consequence: **sysObjectID-based device detection will not match** what your
-system learns from real hardware. If your provisioning keys on sysObjectID,
-treat this value as unknown rather than as ground truth. Replace it here if
-you can confirm the product OID.
+Consequence: **sysObjectID-based device detection will not match** what your system learns from real hardware.
+If your provisioning keys on sysObjectID, treat this value as unknown rather than as ground truth.
+Replace it here if you can confirm the product OID.
 
 ### Statistics are instantaneous, not 15-minute PM bins
 
-nl6 computes `{instant, avg, min, max}` over a trailing window and answers
-every request live. A real Waveserver accumulates **15-minute PM bins with 96
-bins of history**, plus 24-hour bins, and exposes bin boundaries, bin state
-and suspect-interval flags.
+nl6 computes `{instant, avg, min, max}` over a trailing window and answers every request live.
+A real Waveserver accumulates **15-minute PM bins with 96 bins of history**, plus 24-hour bins, and exposes bin boundaries, bin state and suspect-interval flags.
 
-Consequence: anything that consumes bin semantics does not exist here. There
-is no bin rollover to observe, no historical bin retrieval, and no
-suspect-interval marking. A rule that waits for a bin to close will never
-fire.
+Consequence: anything that consumes bin semantics does not exist here.
+There is no bin rollover to observe, no historical bin retrieval, and no suspect-interval marking.
+A rule that waits for a bin to close will never fire.
 
 ### Values are analytic, not captured from hardware
 
-Every value is a deterministic function of elapsed time: sinusoidal dials, a
-closed-form cascade, per-channel jitter from a fixed seed. They are shaped to
-be *physically coherent* (OSNR drives Q drives BER drives uncorrectable
-blocks; attenuation moves power but not OSNR), not to reproduce any measured
-trace. Real coherent optics exhibit noise, transients and correlations this
-model does not attempt.
+Every value is a deterministic function of elapsed time: sinusoidal dials, a closed-form cascade, per-channel jitter from a fixed seed.
+They are shaped to be *physically coherent* (OSNR drives Q drives BER drives uncorrectable blocks; attenuation moves power but not OSNR), not to reproduce any measured trace.
+Real coherent optics exhibit noise, transients and correlations this model does not attempt.
 
-Use nl6 to validate that your logic reacts correctly to a given shape. Do not
-use it to characterise what shapes real hardware produces.
+Use nl6 to validate that your logic reacts correctly to a given shape.
+Do not use it to characterise what shapes real hardware produces.
 
 ## Not served, and why
 
@@ -69,32 +57,20 @@ use it to characterise what shapes real hardware produces.
 
 ## A clear names its condition only in text
 
-This one is a property of Ciena's model that nl6 reproduces faithfully, and it
-will shape how you write correlation rules.
+This one is a property of Ciena's model that nl6 reproduces faithfully, and it will shape how you write correlation rules.
 
-Ciena publishes an optical alarm as **one** notification type,
-`wsLinkStateAlarmNotification`, whose varbinds carry the *current state of
-every condition flag*. It is not a raise/clear pair of distinct traps the way
-`linkDown` and `linkUp` are. So a raise is identifiable from its varbinds
-(`OtuPreFecSd` = `active(1)`, or `OtuPreFecSf` = `active(1)`), but a **clear
-sets every flag back to `inactive(0)`**, with `Severity` = `cleared(1)`.
+Ciena publishes an optical alarm as **one** notification type, `wsLinkStateAlarmNotification`, whose varbinds carry the *current state of every condition flag*.
+It is not a raise/clear pair of distinct traps the way `linkDown` and `linkUp` are.
+So a raise is identifiable from its varbinds (`OtuPreFecSd` = `active(1)`, or `OtuPreFecSf` = `active(1)`), but a **clear sets every flag back to `inactive(0)`**, with `Severity` = `cleared(1)`.
 
-The consequence: an SD clear and an SF clear are byte-identical on the wire
-apart from the `Description` (`.9`) and `Instance` (`.8`) strings. A collector
-cannot machine-correlate a clear back to the specific raise it resolves
-without parsing that text.
+The consequence: an SD clear and an SF clear are byte-identical on the wire apart from the `Description` (`.9`) and `Instance` (`.8`) strings.
+A collector cannot machine-correlate a clear back to the specific raise it resolves without parsing that text.
 
-nl6 does **not** paper over this. Setting the condition flag on a clear would
-make the varbinds contradict each other, asserting the condition is
-simultaneously `active(1)` and `cleared(1)`, and a rule built against that
-invention would misfire against real hardware. That is the false pass this
-device type exists to prevent, so the faithful shape is kept and the awkwardness
-is documented here instead.
+nl6 does **not** paper over this.
+Setting the condition flag on a clear would make the varbinds contradict each other, asserting the condition is simultaneously `active(1)` and `cleared(1)`, and a rule built against that invention would misfire against real hardware.
+That is the false pass this device type exists to prevent, so the faithful shape is kept and the awkwardness is documented here instead.
 
-If you need machine-correlatable clears, the syslog surface is the better
-target: those messages carry structured data naming the condition
-(`condition=OtuPreFecSd`, `state=inactive`), because syslog has no wire format
-to be faithful to.
+If you need machine-correlatable clears, the syslog surface is the better target: those messages carry structured data naming the condition (`condition=OtuPreFecSd`, `state=inactive`), because syslog has no wire format to be faithful to.
 
 ## Divergences you can observe on the wire
 
@@ -114,31 +90,18 @@ to be faithful to.
 | Waveserver SNMP MIBs | Publicly mirrored (`kcsinclair/mibs`), traced module by module for the notification content. The mirror is unversioned, but the modules are dated: `CIENA-WS-NOTIFICATION-MIB` `LAST-UPDATED "201611140000Z"` and `CIENA-WS-MIB` `201612140000Z`, "Release 1.3" — Waveserver Ai 1.x, matching the YANG vintage above. |
 | Waveserver values | Not public. The Command Reference with real operating values is portal-gated, so no shipped value is derived from documented hardware output. |
 
-Path validation is by an in-repo manifest, not by compiling the YANG. The test
-pins served paths against a hand-transcribed table in both directions, so it
-catches drift and invented paths, but it does **not** prove the table itself
-matches the models. A true schema check would need the YANG vendored plus
-ygot.
+Path validation is by an in-repo manifest, not by compiling the YANG.
+The test pins served paths against a hand-transcribed table in both directions, so it catches drift and invented paths, but it does **not** prove the table itself matches the models.
+A true schema check would need the YANG vendored plus ygot.
 
 ## What is faithful
 
-Stated so the limitations above are read in proportion, not as a disclaimer on
-everything:
+Stated so the limitations above are read in proportion, not as a disclaimer on everything:
 
-- **Paths, types and encodings** come from the pinned models, not from
-  invention. A path whose existence could not be confirmed was omitted.
-- **The cascade is physically coherent.** OSNR to Q to pre-FEC BER to
-  uncorrectable blocks, with the erfc tail's real shallowness at the SD-FEC
-  threshold rather than a convenient decade-scale cliff.
-- **The two-dial model reproduces the real diagnostic split.** Attenuation
-  moves power without moving OSNR; ASE accumulation moves OSNR without moving
-  power. Both quadrants are reachable, and off-spine leaves stay flat under a
-  receive-side fault.
-- **`fec-uncorrectable-blocks` is monotonic** across any sequence of
-  degradations and reverts, which is the property a collector actually depends
-  on.
-- **Cross-surface agreement.** Every surface reads one dispatcher, so two
-  reads at the same instant agree.
+- **Paths, types and encodings** come from the pinned models, not from invention. A path whose existence could not be confirmed was omitted.
+- **The cascade is physically coherent.** OSNR to Q to pre-FEC BER to uncorrectable blocks, with the erfc tail's real shallowness at the SD-FEC threshold rather than a convenient decade-scale cliff.
+- **The two-dial model reproduces the real diagnostic split.** Attenuation moves power without moving OSNR; ASE accumulation moves OSNR without moving power. Both quadrants are reachable, and off-spine leaves stay flat under a receive-side fault.
+- **`fec-uncorrectable-blocks` is monotonic** across any sequence of degradations and reverts, which is the property a collector actually depends on.
+- **Cross-surface agreement.** Every surface reads one dispatcher, so two reads at the same instant agree.
 
-See [`docs/reference/optical-telemetry.md`](optical-telemetry.md)
-for the served surface and a per-use-case validation walkthrough.
+See [`docs/reference/optical-telemetry.md`](optical-telemetry.md) for the served surface and a per-use-case validation walkthrough.

@@ -110,8 +110,7 @@ A Go heap profile carries allocation sites and sizes, not object contents; a CPU
 ### Threat statement
 
 `POST /api/v1/profiling` and `/debug/pprof/` are exactly as unauthenticated as the rest of the REST API.
-Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile.
-nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
+Anyone who can reach `-port` can start CPU sampling and a forced GC every 15 s, or a 30 s execution trace, and can read every profile. nl6 is a lab tool; the scope is stated in [`SECURITY.md`](https://github.com/labmonkeys-space/nl6/blob/main/SECURITY.md), and the gate is off by default for that reason.
 The basic-auth flag value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is listed under [Follow-ups](#follow-ups).
 
 ## The CPU-contention rule
@@ -133,8 +132,7 @@ What is pinned **behaviourally** (read back from the goroutine profile or from i
 Not pinned behaviourally: the syslog TCP reconnect loop and `startLocked` on the non-scheduled path (the same helper, covered by the helper's own test).
 The interop test proves only that a label set through the helper reaches Pyroscope and is filterable, over both the push and the Alloy scrape.
 
-**What "off by default pays nothing" means.**
-The labels are set whether or not profiling is on.
+**What "off by default pays nothing" means.** The labels are set whether or not profiling is on.
 A goroutine label is a pointer swap set once per long-lived goroutine, from a context built once per subsystem; `pprof.Do` on a shared scheduler goroutine allocates one small map per fire.
 The delta on a syslog-fire benchmark (CI runner class, `main` versus this branch): **+3 allocs, +104 B, about +6% wall time** per fire (23 allocs / 2662 B / 8835 ns on `main` against 26 / 2766 / 9428 ns).
 Re-labelling live goroutines on toggle would need every long-lived loop to poll the gate, which costs more than the label, so that cost is paid unconditionally and this sentence is the disclosure.
@@ -175,8 +173,7 @@ In production, disable them when the delta variants are on, so each profile is s
 `make test-interop-pyroscope` runs this exact file against real `grafana/pyroscope` and `grafana/alloy` containers and asserts, through Pyroscope's query API, that the pushed CPU and `alloc_space` profiles and the scraped `process_cpu` and `goroutine` series arrive, that the `subsystem` label filters on both the pushed and the scraped service, and that a `service_name` nothing pushed under returns nothing (the control without which the other rows prove reachability, not ingestion).
 It is a CI gate.
 
-**Do pprof labels survive an Alloy scrape?**
-Yes.
+**Do pprof labels survive an Alloy scrape?** Yes.
 A pprof label is a sample label inside the pprof body, so a scrape carries it exactly as a push does; the interop test's second row runs a labelled CPU burn while Alloy scrapes and requires `{service_name="nl6-interop-scrape",subsystem="interop-probe"}` to return ticks and a bogus label to return none.
 
 ## The forced-GC default, measured

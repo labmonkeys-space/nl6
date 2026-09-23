@@ -1,14 +1,10 @@
 # Runbooks
 
-Worked, copy-pasteable recipes — one per use case. Each is complete: how to
-start nl6 so the target protocol is exporting, the scenario to submit, and what
-to read back. They build on the operating guide: the
-[lifecycle](./loadtest-scenarios.md#run-a-fidelity-check) and
-[fidelity mode](./loadtest-scenarios.md#fidelity-mode). All assume
-`NL6=http://localhost:8080`, that every `POST` sends
-`Content-Type: application/json`, and that nl6 runs as root (TUN / network
-namespace). For a clean window with no background noise, add
-[`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
+Worked, copy-pasteable recipes — one per use case.
+Each is complete: how to start nl6 so the target protocol is exporting, the scenario to submit, and what to read back.
+They build on the operating guide: the [lifecycle](./loadtest-scenarios.md#run-a-fidelity-check) and [fidelity mode](./loadtest-scenarios.md#fidelity-mode).
+All assume `NL6=http://localhost:8080`, that every `POST` sends `Content-Type: application/json`, and that nl6 runs as root (TUN / network namespace).
+For a clean window with no background noise, add [`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
 
 > **A long per-device `interval` will not silence a fleet.** The per-device
 > `interval` / `tick_interval` fields are **rejected with `400`**: every device
@@ -23,11 +19,9 @@ namespace). For a clean window with no background noise, add
 > `GET /api/v1/fidelity` reports the value in force alongside the startup flag,
 > because once the value is mutable the flag is only a default.
 
-A scenario **gates an export that already exists** — it never configures the
-wire. So each device must have the target protocol's exporter enabled first, via
-the seed flags shown (auto-start batch) or a per-device block in
-`POST /api/v1/devices`. A device without that exporter lands in the arm
-`excluded[]` list, never in the run.
+A scenario **gates an export that already exists** — it never configures the wire.
+So each device must have the target protocol's exporter enabled first, via the seed flags shown (auto-start batch) or a per-device block in `POST /api/v1/devices`.
+A device without that exporter lands in the arm `excluded[]` list, never in the run.
 
 | # | Use this when you want to… | Protocol |
 |---|-----------------------------|----------|
@@ -58,9 +52,8 @@ sleep 33
 curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq .summary
 ```
 
-A `constant` profile is deterministic: `summary.sent` is exactly
-`rate × window × devices = 10 × 30 × 3 = 900`. Reconcile that against your
-collector; `loss_ratio` should be `0`.
+A `constant` profile is deterministic: `summary.sent` is exactly `rate × window × devices = 10 × 30 × 3 = 900`.
+Reconcile that against your collector; `loss_ratio` should be `0`.
 
 ### 2. NetFlow v9 flow-export fidelity
 
@@ -76,16 +69,12 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-Swap `-flow-protocol` (and the scenario `protocol`) for `ipfix`, `sflow`, or
-`netflow5` to exercise the others. On a shared collector, isolate the run by
-its lever (v9 Source ID, IPFIX ODID, sFlow `sub_agent_id`) — see
-[Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic);
-the report's `metadata.run_tags` records which one and how.
+Swap `-flow-protocol` (and the scenario `protocol`) for `ipfix`, `sflow`, or `netflow5` to exercise the others.
+On a shared collector, isolate the run by its lever (v9 Source ID, IPFIX ODID, sFlow `sub_agent_id`) — see [Run tagging](./loadtest-scenarios.md#run-tagging--isolating-experiment-traffic); the report's `metadata.run_tags` records which one and how.
 
 ### 3. Production-shaped ramp + loss localization
 
-Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how
-much.
+Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how much.
 
 > **Flow rate is per device and capped.** Flow protocols are paced by sizing each
 > device's flow cache, which bounds the per-device rate at roughly 8.1–9.2 records/s
@@ -101,13 +90,10 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-After stop, read `summary.sub_windows` — 10 equal time buckets over the window
-(see [Loss localization](../reference/loadtest-report-schema.md#loss-localization)). Loss
-concentrated in the **late, high-rate** buckets points at collector overload
-under burst rather than steady-state loss. Bucket your collector's received
-data the same way (receive-time relative to `metadata.t0`) and diff per bucket.
-Try `"kind": "sine"` (`mean_rate`, `amplitude`, `period`) for a cyclic load or
-`"kind": "staged"` (`stages: [{duration, rate}, …]`) for step changes.
+After stop, read `summary.sub_windows` — 10 equal time buckets over the window (see [Loss localization](../reference/loadtest-report-schema.md#loss-localization)).
+Loss concentrated in the **late, high-rate** buckets points at collector overload under burst rather than steady-state loss.
+Bucket your collector's received data the same way (receive-time relative to `metadata.t0`) and diff per bucket.
+Try `"kind": "sine"` (`mean_rate`, `amplitude`, `period`) for a cyclic load or `"kind": "staged"` (`stages: [{duration, rate}, …]`) for step changes.
 
 ### 4. Self-aborting experiment (abort predicate)
 
@@ -122,15 +108,12 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-If the fleet-wide `send_failures` stays over `100` for `5s`, the scenario
-aborts through the normal drain-and-finalize pipeline and produces an
-`aborted` report (`phase: "aborted"`) — same schema, still reconcilable. Watch
-`metric` be any of `send_failures` / `dropped` / `deferred` / `sent`.
+If the fleet-wide `send_failures` stays over `100` for `5s`, the scenario aborts through the normal drain-and-finalize pipeline and produces an `aborted` report (`phase: "aborted"`) — same schema, still reconcilable.
+Watch `metric` be any of `send_failures` / `dropped` / `deferred` / `sent`.
 
 ### 5. Coordinated start across systems (scheduled T0)
 
-Line nl6's window up with a load generator or a monitoring capture window: arm
-now, but open the window at a precise absolute `T0`.
+Line nl6's window up with a load generator or a monitoring capture window: arm now, but open the window at a precise absolute `T0`.
 
 ```bash
 # … submit + arm as usual, then:
@@ -138,14 +121,12 @@ curl -sf -X POST $NL6/api/v1/scenarios/$ID/start \
   -H 'Content-Type: application/json' -d '{"at":"2026-07-20T09:00:00Z"}'
 ```
 
-The scenario stays `armed` (transports connected, **no data on the wire**)
-until the RFC3339 `at` instant, then runs its window. A past timestamp is
-rejected `400`.
+The scenario stays `armed` (transports connected, **no data on the wire**) until the RFC3339 `at` instant, then runs its window.
+A past timestamp is rejected `400`.
 
 ### 6. Diff the report in one command
 
-Skip the manual join — feed the report and your collector's counts to
-[`nl6-reconcile`](./loadtest-scenarios.md#nl6-reconcile--one-command-not-a-spreadsheet):
+Skip the manual join — feed the report and your collector's counts to [`nl6-reconcile`](./loadtest-scenarios.md#nl6-reconcile--one-command-not-a-spreadsheet):
 
 ```bash
 curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
@@ -159,10 +140,7 @@ nl6-reconcile -report report.json -received collector.csv -drained
 
 ### 7. IPFIX-only fidelity
 
-IPFIX carries the cleanest run-isolation lever — the Observation Domain ID —
-and, unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at
-T0** (templates are counted separately), so a collector sees no pre-window
-sequence advance.
+IPFIX carries the cleanest run-isolation lever — the Observation Domain ID — and, unlike NetFlow v9, its **data-record sequence legitimately starts at 0 at T0** (templates are counted separately), so a collector sees no pre-window sequence advance.
 
 ```bash
 # -fidelity keeps the 5 devices silent until the scenario window opens, so the
@@ -176,20 +154,16 @@ curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the
-collector's records by each device's Observation Domain ID within `[T0,T1)`.
+Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the collector's records by each device's Observation Domain ID within `[T0,T1)`.
 
 ### 8. Mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
-A scenario targets **one protocol**, so a
-mixed fleet is measured with **one scenario per protocol** over that protocol's
-device subset. The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone. The 20 / 20 / 60 split is just how many
-devices you configure for each protocol. Seed flags apply a single protocol to
-the whole auto-start batch, so build the mix with per-device `flow` blocks
-instead.
+A scenario targets **one protocol**, so a mixed fleet is measured with **one scenario per protocol** over that protocol's device subset.
+The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone.
+The 20 / 20 / 60 split is just how many devices you configure for each protocol.
+Seed flags apply a single protocol to the whole auto-start batch, so build the mix with per-device `flow` blocks instead.
 
-With nl6 running (no flow seed flags needed), create the three groups — here a
-10-device fleet split 2 / 2 / 6:
+With nl6 running (no flow seed flags needed), create the three groups — here a 10-device fleet split 2 / 2 / 6:
 
 ```bash
 # start_ip  count  protocol  collector
@@ -205,8 +179,8 @@ for grp in \
 done
 ```
 
-Then run one scenario per protocol, in sequence. Each finalizes before the
-next submits, and finished scenarios stay listed and queryable (the 8 most recent are retained):
+Then run one scenario per protocol, in sequence.
+Each finalizes before the next submits, and finished scenarios stay listed and queryable (the 8 most recent are retained):
 
 ```bash
 run() { # $1=protocol  $2=participants-csv
@@ -224,9 +198,6 @@ run netflow9 '"10.0.3.1","10.0.3.2"'
 run ipfix    '"10.0.4.1","10.0.4.2","10.0.4.3","10.0.4.4","10.0.4.5","10.0.4.6"'
 ```
 
-Each run produces its own report keyed by `(protocol, source_ip, collector)`;
-reconcile the three independently (`nl6-reconcile -report report-ipfix.json …`
-per protocol). The fleet exports all three protocols the whole time — a
-scenario just measures one subset's window at a time. To weight the mix by
-**traffic** rather than device count, keep the device split and give each
-protocol's scenario a proportional `rate`.
+Each run produces its own report keyed by `(protocol, source_ip, collector)`; reconcile the three independently (`nl6-reconcile -report report-ipfix.json …` per protocol).
+The fleet exports all three protocols the whole time — a scenario just measures one subset's window at a time.
+To weight the mix by **traffic** rather than device count, keep the device split and give each protocol's scenario a proportional `rate`.

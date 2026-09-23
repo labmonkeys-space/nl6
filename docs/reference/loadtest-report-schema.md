@@ -1,11 +1,8 @@
 # Load-test scenario report schema
 
-The report is the machine-readable output of a finalized scenario — the
-authoritative record of what nl6 **sent**, which an operator diffs against a
-monitor's **received** counts to localize missed or duplicated telemetry. It
-is built once at stop/abort, immutable thereafter, and served by
-`GET /api/v1/scenarios/{id}/report` (also returned by `stop`). See the
-[API reference](./loadtest-api.md) and the [scenarios guide](../ops/loadtest-scenarios.md).
+The report is the machine-readable output of a finalized scenario — the authoritative record of what nl6 **sent**, which an operator diffs against a monitor's **received** counts to localize missed or duplicated telemetry.
+It is built once at stop/abort, immutable thereafter, and served by `GET /api/v1/scenarios/{id}/report` (also returned by `stop`).
+See the [API reference](./loadtest-api.md) and the [scenarios guide](../ops/loadtest-scenarios.md).
 
 ## Shape
 
@@ -58,14 +55,9 @@ is built once at stop/abort, immutable thereafter, and served by
 }
 ```
 
-(The example is a **syslog** run, so `applications` and `l7_values` are empty — see
-[`applications[]`](#applications--fleet-wide-flow-traffic-ground-truth) and
-[`l7_values[]`](#l7_values--layer-7-values-from-nbar2-records) for
-populated flow-scenario examples.)
+(The example is a **syslog** run, so `applications` and `l7_values` are empty — see [`applications[]`](#applications--fleet-wide-flow-traffic-ground-truth) and [`l7_values[]`](#l7_values--layer-7-values-from-nbar2-records) for populated flow-scenario examples.)
 
-The top-level blocks always serialize in the order `summary`, `counters`,
-`applications`, `l7_values`, so a streaming consumer sees the aggregate first and can rely
-on the trailer position of the two flow blocks.
+The top-level blocks always serialize in the order `summary`, `counters`, `applications`, `l7_values`, so a streaming consumer sees the aggregate first and can rely on the trailer position of the two flow blocks.
 
 ## `summary`
 
@@ -88,23 +80,17 @@ on the trailer position of the two flow blocks.
 ### `summary.metadata`
 
 The reproducibility fingerprint plus the timestamps the run actually observed.
-Copy the `(config_sha256, seed)` back into a resubmit on the same
-`nl6_version` to re-run a scenario exactly.
+Copy the `(config_sha256, seed)` back into a resubmit on the same `nl6_version` to re-run a scenario exactly.
 
-**Resubmitting an archived body:** if it carries a `drain` key,
-strip it. That field is refused with a `400` — it
-configured nothing. A body that never carried one hashes to the same
-`config_sha256` as it always did, so baselines stay comparable.
+**Resubmitting an archived body:** if it carries a `drain` key, strip it.
+That field is refused with a `400` — it configured nothing.
+A body that never carried one hashes to the same `config_sha256` as it always did, so baselines stay comparable.
 
 Two fingerprints appear here and they answer **different questions**.
 `config_sha256` pins what you *declared* — it is the submit-time idempotency key.
 `resolved_participants_sha256` pins what actually *ran*.
-They diverge as soon as membership is derived rather than enumerated: a
-`participants_cidr` scenario resolves against the live fleet, so one
-`config_sha256` legitimately produces different participant sets on different
-days, or against a half-built fleet. When two runs share a config fingerprint
-but disagree on counts, comparing the resolved digest tells you in one step
-whether you are looking at a pipeline change or simply a different fleet.
+They diverge as soon as membership is derived rather than enumerated: a `participants_cidr` scenario resolves against the live fleet, so one `config_sha256` legitimately produces different participant sets on different days, or against a half-built fleet.
+When two runs share a config fingerprint but disagree on counts, comparing the resolved digest tells you in one step whether you are looking at a pipeline change or simply a different fleet.
 
 | Field | Type | Meaning |
 |-------|------|---------|
@@ -130,15 +116,23 @@ whether you are looking at a pipeline change or simply a different fleet.
 achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
 ```
 
-Both halves of that are deliberate. `in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window. Nothing else belongs in either half.
+Both halves of that are deliberate.
+`in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window.
+Nothing else belongs in either half.
 
-`in_window` excludes records that were produced during the window but written after it. Those are counted under `drain` instead. Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit. So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`). On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0.
+`in_window` excludes records that were produced during the window but written after it.
+Those are counted under `drain` instead.
+Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit.
+So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant — one write on the syslog and trap paths, one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`).
+On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0.
 
-**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction. Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and `drain` is not a configurable field: submitting one is a 400.
+**To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction.
+Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent, and `drain` is not a configurable field: submitting one is a 400.
 
 ### The drain barrier is bounded
 
-The barrier that produces `drain_end` waits for every send admitted before `T1` to return, and the shutdown path runs it — so the wait is capped. Uncapped, one admitted send that never returned would hold shutdown open indefinitely.
+The barrier that produces `drain_end` waits for every send admitted before `T1` to return, and the shutdown path runs it — so the wait is capped.
+Uncapped, one admitted send that never returned would hold shutdown open indefinitely.
 Two cases reach that state.
 A stream transport whose write sets no deadline blocks for as long as it blocks.
 And an admitted send that never completes at all, because its write path panicked or a callback was dropped, would never return no matter what deadline the transport carried.
@@ -146,8 +140,7 @@ And an admitted send that never completes at all, because its write path panicke
 That second case is why the **barrier** is bounded rather than the transports.
 A per-transport write deadline cannot see it, and it could not bound the total anyway: syslog TCP serialises behind a per-connection mutex, so a device's worst case is its own 2 s write timeout times the sends queued behind it.
 
-**The whole waiting phase shares one budget.**
-Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and every one of those joins is bounded too: the syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parked finalize with the barrier ceiling never armed.
+**The whole waiting phase shares one budget.** Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and every one of those joins is bounded too: the syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parked finalize with the barrier ceiling never armed.
 All four waits share a single 60 s budget, and whatever did not complete is named in `incomplete_joins`.
 Nothing is cancelled in either case, so a report carrying `incomplete_joins` or `drain_stragglers` is a lower bound over a set that was still moving.
 
@@ -161,13 +154,19 @@ The counters are atomics, so nothing is corrupted and no participant's row is in
 A straggler sits between those two increments at the instant of the snapshot.
 On a healthy run the field is absent and none of this applies.
 
-An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead. Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`. On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error. (The superseded sentence quoted 4.2 %, which is 5/120 — the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
+An earlier version of this section claimed the figure carried a bias proportional to the drain's share of the window, and advised dividing `sent` by the window plus the drain instead.
+Both were wrong, and the advice made measurements worse rather than better: `sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`.
+On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error.
+(The superseded sentence quoted 4.2 %, which is 5/120 — the drain's share of the *window*, the quantity its own wrong model was about, not the error its own remedy introduced.)
 
-Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled). Template FlowSets subtracted, non-first fragments skipped.
+Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment, which is why an earlier capture misled).
+Template FlowSets subtracted, non-first fragments skipped.
 
 Part one, at rate 4/device, seed 42, with capture and report taken on the same clock — **2349 wire data records against 2349 ledger records in `[t0, t1)`, zero ledger error**, with 0 records in `[t1, drain_end)` and 0 after it.
 
-Part two re-analysed the four original cells that had produced the −3 % to −8 % figures. Every one of them lands on its published `achieved_per_device` at published precision once three measurement-side terms are removed. Taking the rate-8 cell, whose capture holds **4327 data records** — the denominator for both percentages below:
+Part two re-analysed the four original cells that had produced the −3 % to −8 % figures.
+Every one of them lands on its published `achieved_per_device` at published precision once three measurement-side terms are removed.
+Taking the rate-8 cell, whose capture holds **4327 data records** — the denominator for both percentages below:
 
 | term | records | share of the 4327 captured |
 |---|---|---|
@@ -175,41 +174,36 @@ Part two re-analysed the four original cells that had produced the −3 % to −
 | emission after the window, counted as wire¹ | 320 | 7.4 % |
 | **ledger error** | **0** | **0 %** |
 
-¹ Those 320 were separated by a rule fixed before the comparison — records after the largest inter-datagram gap past 80 % of the window — because these older captures have no report JSON alongside them, so `t1` is inferred rather than read. Four independent cells landing on four different published values is what carries the conclusion, not the rule.
+¹ Those 320 were separated by a rule fixed before the comparison — records after the largest inter-datagram gap past 80 % of the window — because these older captures have no report JSON alongside them, so `t1` is inferred rather than read.
+Four independent cells landing on four different published values is what carries the conclusion, not the rule.
 
 The third term is not a record count and so is not a row above: the capture *span* was used as the denominator instead of the window — 121.2 s against 120 s, a further 1 % deflation.
 
-The post-window burst is not drain. It is traffic emitted after the scenario stopped and the gate came off, which the ledger never counts and should not: it belongs to no window.
+The post-window burst is not drain.
+It is traffic emitted after the scenario stopped and the gate came off, which the ledger never counts and should not: it belongs to no window.
 
-**What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length. What a short window still costs is precision, not bias — fewer records, so first-fire alignment and scheduler jitter are a larger share of the total. For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
+**What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length.
+What a short window still costs is precision, not bias — fewer records, so first-fire alignment and scheduler jitter are a larger share of the total.
+For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
 
 #### Reproducing `resolved_participants_sha256`
 
-The encoding is deliberately the dumbest one that a checker can reproduce
-without a parser: each participating address followed by `\n`, in **byte order**,
-SHA-256, hex. So a collector that recorded which sources it received from can
-answer "did I receive from the same fleet nl6 sent from?" with one string
-comparison:
+The encoding is deliberately the dumbest one that a checker can reproduce without a parser: each participating address followed by `\n`, in **byte order**, SHA-256, hex.
+So a collector that recorded which sources it received from can answer "did I receive from the same fleet nl6 sent from?" with one string comparison:
 
 ```sh
 # "$IPS" = the source addresses your collector saw during [t0,t1)
 printf '%s\n' "$IPS" | LC_ALL=C sort | sha256sum
 ```
 
-`LC_ALL=C` is **required, not decoration**. Under a UTF-8 locale, glibc's
-collation ignores punctuation at the primary level, so `sort` orders
-`10.42.10.1` *before* `10.42.1.2` while byte order puts `10.42.1.2` first. That
-yields a different digest and an operator reads a false "different fleet" from
-the very comparison this section exists to enable. macOS/BSD `sort` happens to
-agree with byte order, so the mistake reproduces only on the Linux collector
-hosts that are the actual audience.
+`LC_ALL=C` is **required, not decoration**.
+Under a UTF-8 locale, glibc's collation ignores punctuation at the primary level, so `sort` orders `10.42.10.1` *before* `10.42.1.2` while byte order puts `10.42.1.2` first.
+That yields a different digest and an operator reads a false "different fleet" from the very comparison this section exists to enable. macOS/BSD `sort` happens to agree with byte order, so the mistake reproduces only on the Linux collector hosts that are the actual audience.
 
-Byte order is a deliberate departure from the **address** order used for the
-`excluded[]` rows. Those rows are read by humans, where `10.42.0.10` sorting
-before `10.42.0.2` looks broken; this is input to a hash function, where any
-total order does, and byte order is the one every language sorts strings in by
-default. The trailing newline after the final address is part of the encoding.
+Byte order is a deliberate departure from the **address** order used for the `excluded[]` rows.
+Those rows are read by humans, where `10.42.0.10` sorting before `10.42.0.2` looks broken; this is input to a hash function, where any total order does, and byte order is the one every language sorts strings in by default.
+The trailing newline after the final address is part of the encoding.
 
 ## Run-tag levers
 
@@ -232,10 +226,8 @@ How to use the levers when reconciling is in [Scenarios → Run tagging](../ops/
 
 ## `counters[]` — per participant
 
-One row per participant, keyed by the **join tuple** `(protocol, source_ip,
-collector)` — the same tuple a collector groups its received counts by, so the
-two sides line up row-for-row. Every ledger field is always present (explicit
-zeros, never omitted), so a zero-valued row still diffs cleanly.
+One row per participant, keyed by the **join tuple** `(protocol, source_ip, collector)` — the same tuple a collector groups its received counts by, so the two sides line up row-for-row.
+Every ledger field is always present (explicit zeros, never omitted), so a zero-valued row still diffs cleanly.
 
 | Field | Meaning |
 |-------|---------|
@@ -257,8 +249,7 @@ zeros, never omitted), so a zero-valued row still diffs cleanly.
 
 The six identity fields (`emitted` + the five loss buckets) are flat siblings.
 The nested `informational` object carries five disclosure counters, always present: `background_suppressed`, `requested`, `deferred`, `informs_acked`, `informs_pending`.
-A consumer computing the identity iterates the flat fields and never has to
-know which keys to exclude.
+A consumer computing the identity iterates the flat fields and never has to know which keys to exclude.
 
 ## `applications[]` — fleet-wide flow traffic ground truth
 
@@ -283,8 +274,7 @@ Additive block per the evolution policy below.
 
 (A 6-second window carrying 3000 in-window bytes → `3000 / 6 = 500.0` B/s.)
 
-**The join key has three parts, and the third is what separates NBAR2 traffic from plain traffic on the same port.**
-The first row above is plain IPFIX (or NetFlow) traffic to 443/tcp; the second is Cisco AVC traffic to the same port whose records carried an `applicationId`.
+**The join key has three parts, and the third is what separates NBAR2 traffic from plain traffic on the same port.** The first row above is plain IPFIX (or NetFlow) traffic to 443/tcp; the second is Cisco AVC traffic to the same port whose records carried an `applicationId`.
 A consumer that groups only on `(l4_proto, dst_port)` sees both rows for one port and must sum them to get the old single row.
 
 `application_id` is the 32-bit value the record's IE 95 carries: the RFC 6759 classification engine id in the top 8 bits and the selector in the low 24, so engine 3 (IANA-L4, port-based) with selector 443 is `3 × 2^24 + 443 = 50332091`.
@@ -333,12 +323,10 @@ The block is always present and is `[]` unless an NBAR2 participant sent a recor
 | `records` / `bytes` / `packets` | number | Sent-basis totals of the records carrying this value, the `applications[]` convention. |
 | `avg_bytes_per_second` | number | In-window bytes ÷ actual window, the `applications[]` convention. |
 
-**The invariant is an inequality.**
-For each `field`, `Σ l7_values[field].records ≤ Σ applications[].records`, and equality is not required: a DNS or SSL record carries no host and no URI, so it contributes to `applications[]` and to no row here.
+**The invariant is an inequality.** For each `field`, `Σ l7_values[field].records ≤ Σ applications[].records`, and equality is not required: a DNS or SSL record carries no host and no URI, so it contributes to `applications[]` and to no row here.
 Equality holds only when every sent record carried exactly one value of that field.
 
-To reconcile `http_host` against a collector, strip the six-byte prefix from the decoded IE 12235 value first; a record whose value is exactly the six bytes carried no host and belongs to no `http_host` row.
-libfds types both IE 12235 and IE 9357 as strings, and IPFIXcol2 drops non-printable bytes from a string unless its `nonPrintableChar` output option is on: off, it shows the URI alone (the NUL and count vanish) and a host as `P4www.example.com` (the prefix's two printable bytes and then the name); on, every byte is a `\u00XX` escape.
+To reconcile `http_host` against a collector, strip the six-byte prefix from the decoded IE 12235 value first; a record whose value is exactly the six bytes carried no host and belongs to no `http_host` row. libfds types both IE 12235 and IE 9357 as strings, and IPFIXcol2 drops non-printable bytes from a string unless its `nonPrintableChar` output option is on: off, it shows the URI alone (the NUL and count vanish) and a host as `P4www.example.com` (the prefix's two printable bytes and then the name); on, every byte is a `\u00XX` escape.
 The 2-byte hit count that follows the URI on the wire is not part of the key.
 
 ## The ledger identity
@@ -350,78 +338,42 @@ emitted = in_window + drain + send_failures + dropped + suppressed_pre_window
 sent    = in_window + drain
 ```
 
-`informational.background_suppressed` sits **outside** this identity by design
-— it counts generation-suppressed background fires that were never generated as
-scenario records, which is exactly why it lives in its own sub-object rather
-than as a flat sibling. Use `sent` (`in_window + drain`) as the number to
-reconcile against a collector's received count.
+`informational.background_suppressed` sits **outside** this identity by design — it counts generation-suppressed background fires that were never generated as scenario records, which is exactly why it lives in its own sub-object rather than as a flat sibling.
+Use `sent` (`in_window + drain`) as the number to reconcile against a collector's received count.
 
 ## Field / semver evolution policy
 
-The report is a versioned contract. Consumers should tolerate unknown fields.
+The report is a versioned contract.
+Consumers should tolerate unknown fields.
 
-- **Patch / minor (backward-compatible):** new fields may be **added** to
-  `summary` or `counters`; a new top-level block may be added **after**
-  `counters`. Existing field names, types, units, and the `summary`-before-
-  `counters` order never change within a major.
-- **Major (breaking):** renaming/removing a field, changing a type or unit, or
-  reordering the top-level blocks. Breaking changes are gated on a major
-  `nl6_version` bump and called out in the changelog.
-- The **ledger identity** above is a stability guarantee — it holds in every
-  version that ships these fields.
-- `config_sha256` covers only the **submit config**, not the report shape; the
-  report contract is tracked by `nl6_version`.
-- The **submit config** has no separate version of its own; it moves with
-  `nl6_version` too, and a removed request field is a breaking change for
-  harnesses. Removals are listed in the API reference's [Removed request
-  fields](./loadtest-api.md#removed-request-fields) with the release that
-  removed them, so a reader on an older binary can tell which one changed.
-  So far: `drain`, refused with a `400`.
+- **Patch / minor (backward-compatible):** new fields may be **added** to `summary` or `counters`; a new top-level block may be added **after** `counters`. Existing field names, types, units, and the `summary`-before- `counters` order never change within a major.
+- **Major (breaking):** renaming/removing a field, changing a type or unit, or reordering the top-level blocks. Breaking changes are gated on a major `nl6_version` bump and called out in the changelog.
+- The **ledger identity** above is a stability guarantee — it holds in every version that ships these fields.
+- `config_sha256` covers only the **submit config**, not the report shape; the report contract is tracked by `nl6_version`.
+- The **submit config** has no separate version of its own; it moves with `nl6_version` too, and a removed request field is a breaking change for harnesses. Removals are listed in the API reference's [Removed request fields](./loadtest-api.md#removed-request-fields) with the release that removed them, so a reader on an older binary can tell which one changed. So far: `drain`, refused with a `400`.
 
-Future projections (additional protocols in `counters`, richer
-loss-localization blocks) are **additive** under this policy.
+Future projections (additional protocols in `counters`, richer loss-localization blocks) are **additive** under this policy.
 
-One assumption a consumer may have held is now false, and is called out rather
-than left to be discovered: **`participants_excluded == len(excluded)` no longer
-holds** once the 1,000-row exclusion cap bites. `excluded_truncated` marks
-exactly that case and `excluded_by_reason` carries the complete breakdown. The
-field names, types and order are unchanged, so this is minor under the policy
-above — but read the count from `participants_excluded`, never from the array
-length.
+One assumption a consumer may have held is now false, and is called out rather than left to be discovered: **`participants_excluded == len(excluded)` no longer holds** once the 1,000-row exclusion cap bites.
+`excluded_truncated` marks exactly that case and `excluded_by_reason` carries the complete breakdown.
+The field names, types and order are unchanged, so this is minor under the policy above — but read the count from `participants_excluded`, never from the array length.
 
 ## Loss localization
 
-A fleet total answers *how much* was lost; `sub_windows` answers *where* — by
-**device-set** (the per-participant `counters[]` rows, keyed on the join tuple)
-and by **time** (the array within each row). The **planned** window `[T0,T1)`
-is sliced into `metadata.sub_window_count` equal buckets, each
-`metadata.sub_window_duration` wide; `sub_windows[i]` counts the in-window sends
-whose write-return time fell in bucket `i` (`[T0 + i·d, T0 + (i+1)·d)`). An early
-**abort** shortens the run but not the bucket basis — buckets past the abort
-instant are simply empty.
+A fleet total answers *how much* was lost; `sub_windows` answers *where* — by **device-set** (the per-participant `counters[]` rows, keyed on the join tuple) and by **time** (the array within each row).
+The **planned** window `[T0,T1)` is sliced into `metadata.sub_window_count` equal buckets, each `metadata.sub_window_duration` wide; `sub_windows[i]` counts the in-window sends whose write-return time fell in bucket `i` (`[T0 + i·d, T0 + (i+1)·d)`).
+An early **abort** shortens the run but not the bucket basis — buckets past the abort instant are simply empty.
 
-- **Bucketing choice.** A fixed *count* (10), not a fixed duration — the report
-  stays bounded and window-length-independent (a 10 s window → 1 s buckets; a
-  10 min window → 60 s buckets).
-- **Scope.** Localizes **in-window** sends only: `sum(sub_windows) == in_window`
-  for every row and the summary. Drain-tail sends are post-`T1` by definition
-  and carry no sub-window (reconcile them via the `drain` total).
-- **How to use it.** Bucket your collector's *received* records the same way
-  (receive-time relative to `T0`, same bucket width) and diff per bucket:
-  *"1,204 records lost, all from `[T0+30s, T0+45s]`"* points at a time window,
-  not just a fleet total. Combined with the per-row `source_ip`, loss narrows to
-  a device-set **and** a time span.
-- **JSON only.** The flat [CSV projection](#csv-projection) is unchanged, so
-  index-keyed CSV parsers keep working; localization lives in the JSON report.
+- **Bucketing choice.** A fixed *count* (10), not a fixed duration — the report stays bounded and window-length-independent (a 10 s window → 1 s buckets; a 10 min window → 60 s buckets).
+- **Scope.** Localizes **in-window** sends only: `sum(sub_windows) == in_window` for every row and the summary. Drain-tail sends are post-`T1` by definition and carry no sub-window (reconcile them via the `drain` total).
+- **How to use it.** Bucket your collector's *received* records the same way (receive-time relative to `T0`, same bucket width) and diff per bucket: *"1,204 records lost, all from `[T0+30s, T0+45s]`"* points at a time window, not just a fleet total. Combined with the per-row `source_ip`, loss narrows to a device-set **and** a time span.
+- **JSON only.** The flat [CSV projection](#csv-projection) is unchanged, so index-keyed CSV parsers keep working; localization lives in the JSON report.
 
-Additive under the [semver policy](#field--semver-evolution-policy) — the
-policy explicitly anticipates "richer loss-localization blocks."
+Additive under the [semver policy](#field--semver-evolution-policy) — the policy explicitly anticipates "richer loss-localization blocks."
 
 ## CSV projection
 
-`GET /api/v1/scenarios/{id}/report?format=csv` serves a flat `text/csv`
-projection of `counters[]` — one header row plus one row per participant,
-join-ready on the first three columns:
+`GET /api/v1/scenarios/{id}/report?format=csv` serves a flat `text/csv` projection of `counters[]` — one header row plus one row per participant, join-ready on the first three columns:
 
 ```csv
 protocol,source_ip,collector,emitted,in_window,drain,suppressed_pre_window,send_failures,dropped,background_suppressed
@@ -429,7 +381,5 @@ syslog,10.42.0.1,10.0.0.9:514,20,20,0,0,0,0,0
 syslog,10.42.0.2,10.0.0.9:514,20,20,0,0,0,0,0
 ```
 
-The `informational.background_suppressed` counter flattens to a trailing
-`background_suppressed` column. `summary`-level fields are not in the CSV — it
-is purely the per-device counter projection, so it joins directly against a
-collector's received-counts export on `(protocol, source_ip, collector)`.
+The `informational.background_suppressed` counter flattens to a trailing `background_suppressed` column.
+`summary`-level fields are not in the CSV — it is purely the per-device counter projection, so it joins directly against a collector's received-counts export on `(protocol, source_ip, collector)`.

@@ -1,26 +1,18 @@
 # SNMP trap / INFORM export (operator guide)
 
-nl6 emits notifications from every simulated device to a single collector such
-as `snmptrapd` or an NMS trap daemon, in whichever SNMP version
-`-trap-snmp-version` selects — **v2c** (the default), **v1** RFC 1157 Trap-PDUs,
-or **v3** with RFC 3414 USM authentication and privacy. One version per fleet.
-Both fire-and-forget **TRAP**s (PDU `0xA7`) and acknowledged **INFORM**s (PDU
-`0xA6`) are available under v2c; INFORM is v2c only.
+nl6 emits notifications from every simulated device to a single collector such as `snmptrapd` or an NMS trap daemon, in whichever SNMP version `-trap-snmp-version` selects — **v2c** (the default), **v1** RFC 1157 Trap-PDUs, or **v3** with RFC 3414 USM authentication and privacy.
+One version per fleet.
+Both fire-and-forget **TRAP**s (PDU `0xA7`) and acknowledged **INFORM**s (PDU `0xA6`) are available under v2c; INFORM is v2c only.
 
-Each device generates its own notifications with its own IP as the UDP source,
-so collectors that key on the agent source IP attribute correctly without extra
-work.
+Each device generates its own notifications with its own IP as the UDP source, so collectors that key on the agent source IP attribute correctly without extra work.
 
-This page is the operator-facing setup guide. For the CLI flags see
-[CLI flags → SNMP trap / INFORM export](../reference/cli-flags.md#snmp-trap--inform-export-flags);
-for wire format, catalog JSON, and HTTP endpoints see
-[SNMP trap reference](../reference/snmp-traps.md).
+This page is the operator-facing setup guide.
+For the CLI flags see [CLI flags → SNMP trap / INFORM export](../reference/cli-flags.md#snmp-trap--inform-export-flags); for wire format, catalog JSON, and HTTP endpoints see [SNMP trap reference](../reference/snmp-traps.md).
 
 ## Enabling trap export
 
-The feature is off by default. Pass `-trap-collector <host:port>` to enable
-it; every other `-trap-*` flag has a sensible default for common trap
-collectors.
+The feature is off by default.
+Pass `-trap-collector <host:port>` to enable it; every other `-trap-*` flag has a sensible default for common trap collectors.
 
 ```bash
 # 100 devices firing a random scheduled catalog trap every ~30s (Poisson-distributed)
@@ -50,68 +42,44 @@ sudo ./nl6 -auto-start-ip 10.0.0.1 -auto-count 100 \
 | `trap` (default) | `0xA7` | Fire-and-forget | None | n/a | Sustained load testing at high rates. Simplest to reason about. |
 | `inform` | `0xA6` | Acknowledged | GetResponse-PDU (`0xA2`) | `-trap-inform-retries` (default 2) | Exercising the collector's ack path and retry semantics. |
 
-**INFORM requires `-trap-source-per-device=true`** (the default). The
-simulator uses each device's per-device UDP socket to demultiplex ack
-traffic back to the originating device — there is no single shared
-request-id table. If you explicitly set `-trap-source-per-device=false`
-while in INFORM mode, startup succeeds but no device attaches:
-each auto-start device fails its trap attach and its `traps` block is cleared.
+**INFORM requires `-trap-source-per-device=true`** (the default).
+The simulator uses each device's per-device UDP socket to demultiplex ack traffic back to the originating device — there is no single shared request-id table.
+If you explicitly set `-trap-source-per-device=false` while in INFORM mode, startup succeeds but no device attaches: each auto-start device fails its trap attach and its `traps` block is cleared.
 A REST `traps` block with `"mode": "inform"` is refused with 400.
 
 ## Pending informs and retries
 
-Each device keeps up to **100 outstanding INFORMs** waiting for a collector
-ack. On overflow, the oldest pending entry is dropped (and counted as
-`informs_dropped` in `/api/v1/traps/status`). This bounds memory when the
-collector is unreachable.
+Each device keeps up to **100 outstanding INFORMs** waiting for a collector ack.
+On overflow, the oldest pending entry is dropped (and counted as `informs_dropped` in `/api/v1/traps/status`).
+This bounds memory when the collector is unreachable.
 
-When the collector ack doesn't arrive within `-trap-inform-timeout`
-(default 5s), the simulator retransmits the INFORM up to
-`-trap-inform-retries` times (default 2). **Retransmissions consume global
-rate-cap tokens** — by design, so a collector outage can't amplify wire
-traffic via retry storms. After all retries expire without ack, the
-pending entry is removed and counted as `informs_failed`.
+When the collector ack doesn't arrive within `-trap-inform-timeout` (default 5s), the simulator retransmits the INFORM up to `-trap-inform-retries` times (default 2).
+**Retransmissions consume global rate-cap tokens** — by design, so a collector outage can't amplify wire traffic via retry storms.
+After all retries expire without ack, the pending entry is removed and counted as `informs_failed`.
 
 ## Rate cap and scheduling
 
-Per-device firing follows a **Poisson process** with mean
-`-trap-interval` (default 30s) rather than fixed periodic ticks — each
-device draws an exponential inter-arrival offset after every fire.
-Naïve periodic scheduling causes synchronised-burst artefacts at tick
-boundaries that stress the collector's ingest queue without reflecting
-real-world trap shapes. Poisson produces the clustered-but-not-synchronous
-pattern that misbehaving device fleets actually look like.
+Per-device firing follows a **Poisson process** with mean `-trap-interval` (default 30s) rather than fixed periodic ticks — each device draws an exponential inter-arrival offset after every fire.
+Naïve periodic scheduling causes synchronised-burst artefacts at tick boundaries that stress the collector's ingest queue without reflecting real-world trap shapes.
+Poisson produces the clustered-but-not-synchronous pattern that misbehaving device fleets actually look like.
 
-`-trap-global-cap <tps>` adds a hard ceiling across all devices. Sizing
-guidance:
+`-trap-global-cap <tps>` adds a hard ceiling across all devices.
+Sizing guidance:
 
-- **Steady-state estimate:** `devices / trap_interval_seconds`.
-  30,000 devices at `-trap-interval 30s` ≈ 1000 tps average.
-- **Under-cap deliberately** to leave headroom for INFORM retransmissions
-  and for any on-demand fires you inject through the HTTP endpoint.
+- **Steady-state estimate:** `devices / trap_interval_seconds`. 30,000 devices at `-trap-interval 30s` ≈ 1000 tps average.
+- **Under-cap deliberately** to leave headroom for INFORM retransmissions and for any on-demand fires you inject through the HTTP endpoint.
 - `-trap-global-cap 0` (the default) means unlimited.
 
 ## Prerequisites inherited from flow export
 
-Per-device source IP binding reuses the same `nl6sim` network namespace
-plumbing as flow export — no new `iptables` rules and no new netns setup.
-In TRAP mode, a per-device bind failure for any device is survivable: the
-simulator logs a warning and that device falls back to the shared UDP
-socket (its traps arrive at the collector with the simulator host's IP as
-the source). In INFORM mode, the same failure is fatal for that device —
-no ack demux without a per-device socket. The same three conditions apply:
+Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow export — no new `iptables` rules and no new netns setup.
+In TRAP mode, a per-device bind failure for any device is survivable: the simulator logs a warning and that device falls back to the shared UDP socket (its traps arrive at the collector with the simulator host's IP as the source).
+In INFORM mode, the same failure is fatal for that device — no ack demux without a per-device socket.
+The same three conditions apply:
 
-- **`iptables FORWARD` rule.** At startup the simulator inserts
-  `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which
-  default FORWARD to drop) allow per-device egress. Walkthrough:
-  [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
-- **Route to the collector from inside the namespace.** Same default route
-  via `veth-sim-host` (`10.254.0.1`); if you've customised host routing,
-  verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
-- **Collector-side `rp_filter`.** Reverse-path filtering on the collector
-  host may drop UDP/162 packets whose source IP (`10.0.0.x`, `10.42.0.x`,
-  whatever subnet your devices live in) isn't reachable back through the
-  receiving interface. Loose mode fixes it:
+- **`iptables FORWARD` rule.** At startup the simulator inserts `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which default FORWARD to drop) allow per-device egress. Walkthrough: [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
+- **Route to the collector from inside the namespace.** Same default route via `veth-sim-host` (`10.254.0.1`); if you've customised host routing, verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
+- **Collector-side `rp_filter`.** Reverse-path filtering on the collector host may drop UDP/162 packets whose source IP (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in) isn't reachable back through the receiving interface. Loose mode fixes it:
   ```bash
   sudo sysctl -w net.ipv4.conf.all.rp_filter=2
   sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
@@ -119,8 +87,7 @@ no ack demux without a per-device socket. The same three conditions apply:
 
 ## Smoke test with snmptrapd
 
-The simplest end-to-end check uses `snmptrapd` in foreground mode with
-formatted logging to stdout:
+The simplest end-to-end check uses `snmptrapd` in foreground mode with formatted logging to stdout:
 
 ```bash
 # In one terminal — log every received trap to stdout
@@ -131,27 +98,19 @@ sudo ./nl6 -auto-start-ip 127.0.0.1 -auto-count 5 \
   -trap-collector 127.0.0.1:162 -trap-interval 2s
 ```
 
-You should see lines arriving every few seconds tagged with the simulated
-device IP as the sender and an OID from the universal catalog.
-Only the untagged entries are scheduled: `authenticationFailure` (weight 10),
-`coldStart` (5) and `warmStart` (5).
+You should see lines arriving every few seconds tagged with the simulated device IP as the sender and an OID from the universal catalog.
+Only the untagged entries are scheduled: `authenticationFailure` (weight 10), `coldStart` (5) and `warmStart` (5).
 `linkDown` / `linkUp` carry a `role` and never fire from the scheduler.
 They fire on an interface oper-status transition.
-To see them, add `-if-flap-scenario typical` or
-`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`.
+To see them, add `-if-flap-scenario typical` or `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`.
 
 ### SNMPv3 notifications
 
-`-trap-snmp-version v3` needs a USM user, and the receiver needs to be told
-which **engine** to expect — a trap carries no discovery exchange, so
-`snmptrapd` cannot learn the engine ID by asking.
+`-trap-snmp-version v3` needs a USM user, and the receiver needs to be told which **engine** to expect — a trap carries no discovery exchange, so `snmptrapd` cannot learn the engine ID by asking.
 
-Each device's engine ID is **derived from its IPv4 address** and is not
-configurable: `80007ed9` (IANA's documentation PEN 32473) + `03` (RFC 3411 §5
-MAC format) + `0242` + the address in hex. `10.42.0.9` is therefore
-`0x80007ed90302420a2a0009`. You do not have to compute it —
-`GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every
-exporting device.
+Each device's engine ID is **derived from its IPv4 address** and is not configurable: `80007ed9` (IANA's documentation PEN 32473) + `03` (RFC 3411 §5 MAC format) + `0242` + the address in hex.
+`10.42.0.9` is therefore `0x80007ed90302420a2a0009`.
+You do not have to compute it — `GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every exporting device.
 
 ```bash
 # 1. A scratch persistent dir. net-snmp MOVES each createUser line into its own
@@ -176,26 +135,18 @@ sudo ./nl6 -auto-start-ip 1.0.0.1 -auto-count 1 \
   -trap-snmpv3-priv aes128 -trap-snmpv3-priv-password privpass
 ```
 
-`-C -c` makes `snmptrapd` read only that file, so a host
-`/etc/snmp/snmptrapd.conf` cannot change the result; `-On` prints numeric OIDs
-so no MIBs need to be installed.
+`-C -c` makes `snmptrapd` read only that file, so a host `/etc/snmp/snmptrapd.conf` cannot change the result; `-On` prints numeric OIDs so no MIBs need to be installed.
 
 :::danger[The USM passwords are visible in `ps`]
 
-`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the only secrets
-nl6 takes on the command line. They are readable by every user on the host via
-`ps` and `/proc/<pid>/cmdline`, land in shell history, and are echoed by
-`docker inspect`. Use lab credentials only.
+`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the only secrets nl6 takes on the command line.
+They are readable by every user on the host via `ps` and `/proc/<pid>/cmdline`, land in shell history, and are echoed by `docker inspect`.
+Use lab credentials only.
 :::
 
-For vendor-flavoured content (e.g., Cisco `ciscoConfigManEvent` or
-Juniper `jnxPowerSupplyFailure`), select a device type with a per-type
-overlay — see
-[SNMP trap reference → Per-type catalog overlays](../reference/snmp-traps.md#per-type-catalog-overlays).
-`cisco_ios` devices fire from 12 merged entries (universal 5 + 7 Cisco),
-`juniper_mx240` devices fire from a comparable 12-entry Juniper set.
-`ciena_waveserver5` adds 4 role-tagged optical pre-FEC alarm entries
-(`opticalPreFecSdRaise` / `Clear`, `opticalPreFecSfRaise` / `Clear`).
+For vendor-flavoured content (e.g., Cisco `ciscoConfigManEvent` or Juniper `jnxPowerSupplyFailure`), select a device type with a per-type overlay — see [SNMP trap reference → Per-type catalog overlays](../reference/snmp-traps.md#per-type-catalog-overlays).
+`cisco_ios` devices fire from 12 merged entries (universal 5 + 7 Cisco), `juniper_mx240` devices fire from a comparable 12-entry Juniper set.
+`ciena_waveserver5` adds 4 role-tagged optical pre-FEC alarm entries (`opticalPreFecSdRaise` / `Clear`, `opticalPreFecSfRaise` / `Clear`).
 
 If you need it sooner on demand:
 
@@ -206,8 +157,7 @@ curl -X POST http://localhost:8080/api/v1/devices/127.0.0.1/trap \
   -d '{"name":"linkDown","varbindOverrides":{"IfIndex":"3"}}'
 ```
 
-See [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)
-for the full request / response shape.
+See [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand) for the full request / response shape.
 
 ## Troubleshooting
 
@@ -226,8 +176,7 @@ for the full request / response shape.
 | v3 fleet stopped being accepted after an nl6 restart | `msgAuthoritativeEngineBoots` is always 1 and engine time restarts at 0, and a trap has no discovery, so the receiver's cached `(boots, time)` puts the new traps outside RFC 3414 §3.2's 150-second window | Clear the receiver's persistent USM state and restart it, or wait the window out |
 | Optical alarms went quiet after lowering `-datagram-mtu` on a v3 fleet | The USM envelope adds ~91 bytes, so the Ciena 39-varbind entries cross the budget ~91 B sooner under v3 | The startup log names each disabled entry with its size and the MTU that would admit it; raise `-datagram-mtu` |
 
-For generic bring-up failures (TUN module missing, `sudo` required, port
-conflicts) see [Troubleshooting](troubleshooting.md).
+For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).
 
 ## Related
 

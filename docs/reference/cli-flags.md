@@ -1,7 +1,7 @@
 # CLI flags
 
-The `simulator` binary is driven entirely by command-line flags. This page is
-the authoritative catalog — new flags land here first.
+The `simulator` binary is driven entirely by command-line flags.
+This page is the authoritative catalog — new flags land here first.
 
 Run the simulator with:
 
@@ -9,10 +9,8 @@ Run the simulator with:
 sudo ./nl6 [options]
 ```
 
-Root is required because the simulator creates TUN interfaces and manages the
-`nl6sim` network namespace. See [Network namespace](../ops/network-namespace.md)
-for the namespace details and [Quick start](../getting-started/quick-start.md)
-for a minimal invocation.
+Root is required because the simulator creates TUN interfaces and manages the `nl6sim` network namespace.
+See [Network namespace](../ops/network-namespace.md) for the namespace details and [Quick start](../getting-started/quick-start.md) for a minimal invocation.
 
 ## Core flags
 
@@ -41,7 +39,8 @@ See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
 ### Write admission (`SetRequest`)
 
-Writes are **opt-in**. A fleet booted with neither flag below answers no `SET` at any version.
+Writes are **opt-in**.
+A fleet booted with neither flag below answers no `SET` at any version.
 
 | Flag | Values | Default | Scope | Description |
 |------|--------|---------|-------|-------------|
@@ -59,17 +58,10 @@ sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
 
 ## Interface-state scenarios
 
-The `-if-scenario` flag sets the **initial** admin/oper status of every
-simulated interface, so you can reproduce common network conditions without
-editing resource files.
-It is applied once per device, when the interface-state engine is built, to
-every device the process creates: the auto-start batch and REST-created devices
-alike.
-From then on the engine is the single source every reader agrees on, so an SNMP
-`SET`, a REST `oper-status` or `admin-status` POST, or a link flap moves what
-`GET`, a walk, gNMI and the REST view all report.
-A value outside 1..4, or an `-if-failure-pct` outside 0..100, is refused at
-startup rather than ignored.
+The `-if-scenario` flag sets the **initial** admin/oper status of every simulated interface, so you can reproduce common network conditions without editing resource files.
+It is applied once per device, when the interface-state engine is built, to every device the process creates: the auto-start batch and REST-created devices alike.
+From then on the engine is the single source every reader agrees on, so an SNMP `SET`, a REST `oper-status` or `admin-status` POST, or a link flap moves what `GET`, a walk, gNMI and the REST view all report.
+A value outside 1..4, or an `-if-failure-pct` outside 0..100, is refused at startup rather than ignored.
 
 | Flag | Type | Default | Purpose |
 |------|------|---------|---------|
@@ -84,70 +76,41 @@ startup rather than ignored.
 | 4 | pct-failure | up (1) | down for n% | Partial outage, staged rollout testing |
 
 Scenario 2 does not force anything up.
-It leaves both values exactly as the device's resource files declare them, and
-most shipped profiles declare up.
-Four do not: `cisco_nexus_9500`, `juniper_mx960`, `asr9k` and
-`palo_alto_pa3220` ship some interfaces oper-down, so those boot down under the
-default scenario.
+It leaves both values exactly as the device's resource files declare them, and most shipped profiles declare up.
+Four do not: `cisco_nexus_9500`, `juniper_mx960`, `asr9k` and `palo_alto_pa3220` ship some interfaces oper-down, so those boot down under the default scenario.
 Use scenario 3 if you want every interface down regardless of profile.
 
-Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are
-reproducible across restarts.
+Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are reproducible across restarts.
 
 Three consequences worth knowing before you pick a scenario.
 
-The seed is initial state, not a transition, so it fires no link traps, no
-syslog and no gNMI `ON_CHANGE` updates, and `ifLastChange` reads `0` until
-something actually changes.
+The seed is initial state, not a transition, so it fires no link traps, no syslog and no gNMI `ON_CHANGE` updates, and `ifLastChange` reads `0` until something actually changes.
 
-`lldpRemTable` only emits a row when both ends of a link are oper-up, so
-scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the
-rows whose local or remote port it put down.
+`lldpRemTable` only emits a row when both ends of a link are oper-up, so scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the rows whose local or remote port it put down.
 `ifAlias` reflects configured intent and stays.
 
 Scenario 1 shuts the port and **preserves the link underneath it**.
-`ifOperStatus` is derived from `ifAdminStatus` and the link state, so admin-down
-forces it to `down(2)` while the link keeps whatever the profile declared.
-Interfaces come back the ordinary way — a `SET` of `ifAdminStatus` to `up(1)`,
-or a REST `admin-status` POST — and each one returns to the value its link had
-reached, which for most profiles is up.
+`ifOperStatus` is derived from `ifAdminStatus` and the link state, so admin-down forces it to `down(2)` while the link keeps whatever the profile declared.
+Interfaces come back the ordinary way — a `SET` of `ifAdminStatus` to `up(1)`, or a REST `admin-status` POST — and each one returns to the value its link had reached, which for most profiles is up.
 
 Scenario 3 seeds the **link** down, which is why it survives an admin bounce.
-Shutting and unshutting a port under `-if-scenario 3` leaves
-`ifOperStatus = 2`: the flag models a cable pull, and an administrative bounce
-does not repair a cable.
-This is the behaviour RFC 2863 describes: admin-up releases `ifOperStatus` to
-the physical layer rather than forcing it up.
+Shutting and unshutting a port under `-if-scenario 3` leaves `ifOperStatus = 2`: the flag models a cable pull, and an administrative bounce does not repair a cable.
+This is the behaviour RFC 2863 describes: admin-up releases `ifOperStatus` to the physical layer rather than forcing it up.
 
-**Pairing a non-default scenario with a link-flap scenario now behaves.**
-The flap scheduler moves the **link**, not `ifOperStatus` directly:
+**Pairing a non-default scenario with a link-flap scenario now behaves.** The flap scheduler moves the **link**, not `ifOperStatus` directly:
 
-- Under scenario 1 every flap is **masked**. The link moves beneath the shut
-  port, nothing observable changes, `ifLastChange` does not advance, and no
-  trap, syslog or `ON_CHANGE` update fires. Unshutting a port then shows
-  whatever its link had reached. The fleet can no longer report
-  `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`, which RFC 2863 does
-  not allow — that state is now unrepresentable rather than merely discouraged.
-- Under scenarios 3 and 4 the first up-flap still brings a failed interface
-  back, because those scenarios leave the port administratively up and a flap
-  is a real link event. If you want a fleet that stays down, leave
-  `-if-flap-scenario` at `clean` or use scenario 1.
+- Under scenario 1 every flap is **masked**. The link moves beneath the shut port, nothing observable changes, `ifLastChange` does not advance, and no trap, syslog or `ON_CHANGE` update fires. Unshutting a port then shows whatever its link had reached. The fleet can no longer report `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`, which RFC 2863 does not allow — that state is now unrepresentable rather than merely discouraged.
+- Under scenarios 3 and 4 the first up-flap still brings a failed interface back, because those scenarios leave the port administratively up and a flap is a real link event. If you want a fleet that stays down, leave `-if-flap-scenario` at `clean` or use scenario 1.
 
-The REST `oper-status` endpoint sets the link too, so the same masking applies:
-a POST to an admin-down interface is accepted, moves the link, and reports
-`"masked": true` in its `202` body.
+The REST `oper-status` endpoint sets the link too, so the same masking applies: a POST to an admin-down interface is accepted, moves the link, and reports `"masked": true` in its `202` body.
 
-The scenario reaches the interfaces the counter engine knows, which are those
-with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
-An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from
-the resource file unchanged.
+The scenario reaches the interfaces the counter engine knows, which are those with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
+An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from the resource file unchanged.
 
 ### Error / discard scenario
 
-`-if-scenario` governs **which interfaces are up**. A companion flag,
-`-if-error-scenario`, governs **how clean the interfaces that are up
-behave** — the ppm ranges used to derive `ifInErrors`, `ifOutErrors`,
-`ifInDiscards`, and `ifOutDiscards` from the live packet counters.
+`-if-scenario` governs **which interfaces are up**.
+A companion flag, `-if-error-scenario`, governs **how clean the interfaces that are up behave** — the ppm ranges used to derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards` from the live packet counters.
 
 | Flag | Values | Default | Purpose |
 |------|--------|---------|---------|
@@ -160,24 +123,16 @@ behave** — the ppm ranges used to derive `ifInErrors`, `ifOutErrors`,
 | `degraded` | 1 000 – 10 000 | 2 000 – 20 000 | Congested / faulty optics; 0.1 – 1 % error rate |
 | `failing` | 10 000 – 100 000 | 20 000 – 200 000 | Link-flap / bad cable; 1 – 10 % error rate |
 
-Each interface within a device draws its per-direction ppm deterministically
-from the scenario's band at device creation — so repeated runs with the
-same auto-start layout produce the same per-interface values. `clean`
-(`0/0`) is the backwards-compatible default and leaves all error/discard
-counters at their pre-seeded zero.
+Each interface within a device draws its per-direction ppm deterministically from the scenario's band at device creation — so repeated runs with the same auto-start layout produce the same per-interface values.
+`clean` (`0/0`) is the backwards-compatible default and leaves all error/discard counters at their pre-seeded zero.
 
-Unlike `-if-scenario`, this setting is **per-device**: every device carries
-its own scenario, so one simulator can host 100 `clean` lab devices
-alongside 5 `degraded` ones for alert-threshold testing. See
-[`if-counters` reference](snmp.md#dynamic-if-mib-counters).
+Unlike `-if-scenario`, this setting is **per-device**: every device carries its own scenario, so one simulator can host 100 `clean` lab devices alongside 5 `degraded` ones for alert-threshold testing.
+See [`if-counters` reference](snmp.md#dynamic-if-mib-counters).
 
 ### Link-flap scenario
 
-`-if-flap-scenario` drives Poisson-distributed link flaps per
-`(device, ifIndex)`. Mutations go through the interface state engine
-that powers SNMP `ifOperStatus` / `ifAdminStatus` / `ifLastChange` and
-gNMI ON_CHANGE subscribers, so all three surfaces see the same value at
-the same instant.
+`-if-flap-scenario` drives Poisson-distributed link flaps per `(device, ifIndex)`.
+Mutations go through the interface state engine that powers SNMP `ifOperStatus` / `ifAdminStatus` / `ifLastChange` and gNMI ON_CHANGE subscribers, so all three surfaces see the same value at the same instant.
 
 | Flag | Values | Default | Scope | Purpose |
 |------|--------|---------|-------|---------|
@@ -191,19 +146,12 @@ the same instant.
 | `typical` | ~15 minutes / interface | uniform 1–30 s | Collector alarm-pipeline stress |
 | `aggressive` | ~1 minute / interface | uniform 1–5 s | Chaos / churn measurement |
 
-See [interface state engine reference](interface-state.md) for the REST
-control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`),
-auto-revert semantics, and the cross-protocol consistency contract.
+See [interface state engine reference](interface-state.md) for the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`), auto-revert semantics, and the cross-protocol consistency contract.
 
 ### Optical health band
 
-`-optical-scenario` sets the steady-state health of each coherent optical
-channel on **optical transport device types only** (today
-`ciena_waveserver5`). It is keyed by OCH component name, never by
-`ifIndex`, and it drives the whole receive-side cascade: received power
-and accumulated noise are two independent dials, `osnr = pIn - nAse`, and
-`osnr` feeds `q-value` → `pre-fec-ber` →
-`fec-uncorrectable-blocks`.
+`-optical-scenario` sets the steady-state health of each coherent optical channel on **optical transport device types only** (today `ciena_waveserver5`).
+It is keyed by OCH component name, never by `ifIndex`, and it drives the whole receive-side cascade: received power and accumulated noise are two independent dials, `osnr = pIn - nAse`, and `osnr` feeds `q-value` → `pre-fec-ber` → `fec-uncorrectable-blocks`.
 
 | Flag | Values | Default | Scope | Purpose |
 |------|--------|---------|-------|---------|
@@ -216,51 +164,34 @@ and accumulated noise are two independent dials, `osnr = pIn - nAse`, and
 | `degraded` | 15.60 | 8.72 | 3.2e-03 | never | Visibly elevated BER that FEC still corrects — the window where a proactive alarm has value |
 | `failing` | 10.10 | 3.22 | 7.4e-02 | always | Past the 2e-2 SD-FEC threshold; genuinely service-affecting |
 
-Only `failing` crosses the FEC threshold, and it does so for every channel
-across the entire dial period — so `fec-uncorrectable-blocks > 0` is a
-reliable "service-affecting" signal for a collector rule. `degraded` stays
-clear of the threshold for every channel, which is what makes the
-distinction useful.
+Only `failing` crosses the FEC threshold, and it does so for every channel across the entire dial period — so `fec-uncorrectable-blocks > 0` is a reliable "service-affecting" signal for a collector rule.
+`degraded` stays clear of the threshold for every channel, which is what makes the distinction useful.
 
-Setting a non-`clean` band on a device type that has no optical channels
-is rejected with **400**: the value would silently do nothing, so the
-contradiction is surfaced rather than accepted. For the same reason
-`optical_scenario` is absent from `GET /api/v1/devices` for
-non-optical types. A mixed `round_robin` batch is still accepted — the
-optical devices take the band and the rest ignore it.
+Setting a non-`clean` band on a device type that has no optical channels is rejected with **400**: the value would silently do nothing, so the contradiction is surfaced rather than accepted.
+For the same reason `optical_scenario` is absent from `GET /api/v1/devices` for non-optical types.
+A mixed `round_robin` batch is still accepted — the optical devices take the band and the rest ignore it.
 
-Values are deterministic per `(device, channel)` and analytic — no
-per-channel goroutine — so SNMP and gNMI agree byte-for-byte at the same
-instant. See [gNMI reference](gnmi.md) for the served leaf set.
+Values are deterministic per `(device, channel)` and analytic — no per-channel goroutine — so SNMP and gNMI agree byte-for-byte at the same instant.
+See [gNMI reference](gnmi.md) for the served leaf set.
 
 ## Export flag scope
 
 Export flags (flow / trap / syslog) fall into two categories:
 
-- **seed** — applies only to devices created by the `-auto-start-ip` batch at
-  startup. Devices subsequently created via `POST /api/v1/devices` do NOT
-  inherit these values; they must opt in by including a `flow` / `traps` /
-  `syslog` block in the request body.
-- **global** — applies simulator-wide regardless of how the device was
-  created. Shared sockets, catalogs, rate-limiter, and network-namespace
-  bind policy sit here.
+- **seed** — applies only to devices created by the `-auto-start-ip` batch at startup. Devices subsequently created via `POST /api/v1/devices` do NOT inherit these values; they must opt in by including a `flow` / `traps` / `syslog` block in the request body.
+- **global** — applies simulator-wide regardless of how the device was created. Shared sockets, catalogs, rate-limiter, and network-namespace bind policy sit here.
 
-**Duration flags come in two types.**
-The flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` take **integer seconds** (`-flow-tick-interval 5`).
+**Duration flags come in two types.** The flow flags `-flow-tick-interval`, `-flow-active-timeout`, `-flow-inactive-timeout` and `-flow-template-interval` take **integer seconds** (`-flow-tick-interval 5`).
 Every other duration flag is a Go duration and **requires a unit**: `-trap-interval 30s`, `-trap-inform-timeout 5s`, `-syslog-interval 10s`, `-gnmi-dialout-interval 10s`, `-dns-debounce 1s`.
 A bare `-trap-interval 30` does not parse.
 The REST per-device blocks carry **no cadence field at all**: `flow.tick_interval`, `traps.interval` and `syslog.interval` are rejected with 400, and the error names the flag to use instead.
 The other REST durations (`active_timeout`, `inactive_timeout`, `inform_timeout`, `sample_interval`) are Go duration strings (`"30s"`); a bare integer is rejected with 400.
 
-See [Web API](web-api.md) for the per-device block schema and
-[Migration](../ops/migration-per-device-exports.md) for converting
-pre-per-device-config invocations.
+See [Web API](web-api.md) for the per-device block schema and [Migration](../ops/migration-per-device-exports.md) for converting pre-per-device-config invocations.
 
 ## Flow export flags
 
-See [Flow export (operator guide)](../ops/flow-export.md) for prerequisites and
-collector setup, and [Flow export reference](flow-export.md) for protocol
-details.
+See [Flow export (operator guide)](../ops/flow-export.md) for prerequisites and collector setup, and [Flow export reference](flow-export.md) for protocol details.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -279,7 +210,8 @@ details.
 
 :::note[Tick interval sets batching, not volume]
 
-It is natural to reach for `-flow-tick-interval` to turn flow volume up or down. It is not that knob.
+It is natural to reach for `-flow-tick-interval` to turn flow volume up or down.
+It is not that knob.
 
 Export volume is set by how many flows exist and how long they live:
 
@@ -288,21 +220,25 @@ records/s  ≈  ConcurrentFlows / mean-flow-lifetime
 mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeout)
 ```
 
-The tick interval decides how finely that stream is cut into datagrams. A slower tick sends **bigger datagrams**, not proportionally fewer records. A residual dependence remains, because export polls: a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average. It is bounded by the interval and is not a proportional control.
+The tick interval decides how finely that stream is cut into datagrams.
+A slower tick sends **bigger datagrams**, not proportionally fewer records.
+A residual dependence remains, because export polls: a flow sits cached up to one interval past its deadline, worth roughly `T/2` on average.
+It is bounded by the interval and is not a proportional control.
 
-That `T/2` is not only a rate effect. It is real cache residency, so scenario pacing divides a requested rate by `mean-flow-lifetime + T/2` rather than by the lifetime alone. Omitting it sized every paced cache short and ran every paced run a few percent low.
+That `T/2` is not only a rate effect.
+It is real cache residency, so scenario pacing divides a requested rate by `mean-flow-lifetime + T/2` rather than by the lifetime alone.
+Omitting it sized every paced cache short and ran every paced run a few percent low.
 
 To change volume, change the device profile's concurrent-flow count or the timeouts.
 
-Volume does not step with cadence: the ticker is a batching knob, not a volume knob. See [Flow export](./flow-export.md).
+Volume does not step with cadence: the ticker is a batching knob, not a volume knob.
+See [Flow export](./flow-export.md).
 
 :::
 
 ## SNMP trap / INFORM export flags
 
-See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for
-prerequisites and `snmptrapd` smoke-test, and
-[SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
+See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for prerequisites and `snmptrapd` smoke-test, and [SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -324,44 +260,29 @@ prerequisites and `snmptrapd` smoke-test, and
 
 :::danger[These are the only secrets on nl6's command line]
 
-`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the first
-credentials nl6 accepts as flags — the polling side deliberately has none. A
-command line is not private: it is readable by every user on the host through
-`ps` and `/proc/<pid>/cmdline`, recorded in shell history, and echoed verbatim
-by `docker inspect` and `kubectl describe pod`.
+`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the first credentials nl6 accepts as flags — the polling side deliberately has none.
+A command line is not private: it is readable by every user on the host through `ps` and `/proc/<pid>/cmdline`, recorded in shell history, and echoed verbatim by `docker inspect` and `kubectl describe pod`.
 
-Use lab credentials only, and never a password that protects anything else. An
-environment-variable or file form is recorded as follow-up work; until it
-exists there is no private way to pass these.
+Use lab credentials only, and never a password that protects anything else.
+An environment-variable or file form is recorded as follow-up work; until it exists there is no private way to pass these.
 :::
 
 :::note[There is no `-trap-snmpv3-engine-id`, and that is deliberate]
 
-Each device derives its own authoritative engine ID from its IPv4 address, so
-two devices sharing a user and password still localize **different** keys. A
-configured engine ID would be shared by the whole fleet, which is a
-shared-identity defect: each notification originator derives its own engine ID
-from its own IPv4.
+Each device derives its own authoritative engine ID from its IPv4 address, so two devices sharing a user and password still localize **different** keys.
+A configured engine ID would be shared by the whole fleet, which is a shared-identity defect: each notification originator derives its own engine ID from its own IPv4.
 
-The `-trap-snmpv3-*` flags are also **separate from the `-snmpv3-*` poll flags**
-on purpose. A device polled over SNMPv3 and a trap received from that same
-device report **two different `snmpEngineID` values**: the poll engine's is
-fleet-wide (`-snmpv3-engine-id`), while a notification originator is
-authoritative for its own engine (RFC 3414 §2.1). Correct, and the first thing
-that looks like a bug when you debug it — see
-[SNMP trap reference → SNMPv3 notifications](snmp-traps.md#snmpv3-notifications).
+The `-trap-snmpv3-*` flags are also **separate from the `-snmpv3-*` poll flags** on purpose.
+A device polled over SNMPv3 and a trap received from that same device report **two different `snmpEngineID` values**: the poll engine's is fleet-wide (`-snmpv3-engine-id`), while a notification originator is authoritative for its own engine (RFC 3414 §2.1).
+Correct, and the first thing that looks like a bug when you debug it — see [SNMP trap reference → SNMPv3 notifications](snmp-traps.md#snmpv3-notifications).
 
-`GET /api/v1/traps/status` reports each exporting device's derived engine ID
-under `snmpv3.engine_ids_by_device`, which is what a receiver's `createUser -e`
-line needs.
+`GET /api/v1/traps/status` reports each exporting device's derived engine ID under `snmpv3.engine_ids_by_device`, which is what a receiver's `createUser -e` line needs.
 :::
 
 ## gNMI dial-in flags
 
-The gNMI subsystem is always-on by default and serves a read-only OpenConfig
-interfaces subset over gRPC + TLS on every device. See
-[gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, and
-`gnmic` invocation examples.
+The gNMI subsystem is always-on by default and serves a read-only OpenConfig interfaces subset over gRPC + TLS on every device.
+See [gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, and `gnmic` invocation examples.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -371,11 +292,9 @@ interfaces subset over gRPC + TLS on every device. See
 
 ## gNMI dial-out flags
 
-Dial-out reverses the connection direction: the device dials a collector
-and pushes telemetry over a `gNMIReverse.Publish` stream. Per-device and
-opt-in — the fleet can mix dial-in and dial-out devices. See
-[gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes,
-TLS, and the per-device `gnmi_dialout` REST block.
+Dial-out reverses the connection direction: the device dials a collector and pushes telemetry over a `gNMIReverse.Publish` stream.
+Per-device and opt-in — the fleet can mix dial-in and dial-out devices.
+See [gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes, TLS, and the per-device `gnmi_dialout` REST block.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -392,9 +311,7 @@ TLS, and the per-device `gnmi_dialout` REST block.
 
 ## UDP syslog export flags
 
-See [UDP syslog export (operator guide)](../ops/syslog-export.md) for
-prerequisites and `netcat` smoke-test, and
-[Syslog export reference](syslog-export.md) for wire format and catalog JSON.
+See [UDP syslog export (operator guide)](../ops/syslog-export.md) for prerequisites and `netcat` smoke-test, and [Syslog export reference](syslog-export.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -412,8 +329,7 @@ prerequisites and `netcat` smoke-test, and
 ## Load-test scenario flags
 
 Global switches for the [load-test scenario subsystem](loadtest-overview.md).
-The scenarios themselves are driven over REST (`/api/v1/scenarios`); these
-flags shape the whole fleet at startup.
+The scenarios themselves are driven over REST (`/api/v1/scenarios`); these flags shape the whole fleet at startup.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -422,9 +338,9 @@ flags shape the whole fleet at startup.
 
 ## LLDP topology flag
 
-Pre-load an inter-device LLDP link graph at startup. The graph is also mutable
-at runtime via `POST` / `DELETE /api/v1/topology`. See
-[LLDP topology reference](lldp-topology.md).
+Pre-load an inter-device LLDP link graph at startup.
+The graph is also mutable at runtime via `POST` / `DELETE /api/v1/topology`.
+See [LLDP topology reference](lldp-topology.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -432,8 +348,9 @@ at runtime via `POST` / `DELETE /api/v1/topology`. See
 
 ## DNS service-discovery flags
 
-nl6 acts as a hidden DNS primary; a CoreDNS secondary transfers the zones. Off
-by default. See [DNS service-discovery reference](dns-service-discovery.md).
+nl6 acts as a hidden DNS primary; a CoreDNS secondary transfers the zones.
+Off by default.
+See [DNS service-discovery reference](dns-service-discovery.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|

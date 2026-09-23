@@ -1,9 +1,7 @@
 # Web API
 
-The simulator exposes a REST control-plane on port 8080 (override with
-[`-port`](cli-flags.md#core-flags)) for device CRUD, CSV / route-script
-export, system stats, and flow-export status. The same port also serves the
-management web UI at `/`.
+The simulator exposes a REST control-plane on port 8080 (override with [`-port`](cli-flags.md#core-flags)) for device CRUD, CSV / route-script export, system stats, and flow-export status.
+The same port also serves the management web UI at `/`.
 
 ## Endpoint catalog
 
@@ -82,7 +80,9 @@ curl -X POST .../api/v1/fidelity -H 'Content-Type: application/json' \
 
 `silent` is **required**: omitting it would read as `false` and un-mute the fleet, so a body without it is rejected with `400`.
 
-**Auto-revert restores the value from before the current chain of timed toggles**, not simply the previous value. Shortening or extending a window keeps the same destination; a toggle in the *opposite* direction starts a new chain and reverts to whatever was in force when it was issued. `revert_to` reports the target, because it is not inferable from `silent`.
+**Auto-revert restores the value from before the current chain of timed toggles**, not simply the previous value.
+Shortening or extending a window keeps the same destination; a toggle in the *opposite* direction starts a new chain and reverts to whatever was in force when it was issued.
+`revert_to` reports the target, because it is not inferable from `silent`.
 
 A scenario report records `fidelity.silent_at_start` and `fidelity.changed_during_window`, so an archived measurement can say whether the rest of the fleet was quiet for its window.
 
@@ -135,8 +135,7 @@ Their replacements are `GET /debug/pprof/heap` and `GET /debug/pprof/profile?sec
 
 ## Create devices
 
-Bulk creation supports round-robin across all device types, category-based
-filtering, per-request SNMP port selection, and an optional SNMPv3 block.
+Bulk creation supports round-robin across all device types, category-based filtering, per-request SNMP port selection, and an optional SNMPv3 block.
 
 `category` filters a `round_robin` batch.
 It accepts exactly five strings: `Network Devices`, `GPU Servers`, `Storage`, `Servers`, `Optical Transport`.
@@ -238,33 +237,27 @@ A batch created without `write_community` answers no v1/v2c `SetRequest`, and th
 
 Two properties worth knowing.
 
-`write_community` is **write-only**: it never appears in a response, and `GET /api/v1/devices` does not echo it. There is no way to read a device's write community back out of the API.
+`write_community` is **write-only**: it never appears in a response, and `GET /api/v1/devices` does not echo it.
+There is no way to read a device's write community back out of the API.
 
-Neither field is inherited from the CLI seed. A `POST` that omits them gets the shipped defaults — no v1/v2c write, `authNoPriv` for v3 — even when the simulator was started with `-snmp-write-community`. That is the same opt-in-explicit contract the export blocks and the scenario fields follow.
+Neither field is inherited from the CLI seed.
+A `POST` that omits them gets the shipped defaults — no v1/v2c write, `authNoPriv` for v3 — even when the simulator was started with `-snmp-write-community`.
+That is the same opt-in-explicit contract the export blocks and the scenario fields follow.
 
 Reads are not gated at any version, and that asymmetry is deliberate; see the [SNMP reference](snmp.md#on-a-read-the-community-string-is-echoed-and-never-checked).
 
-A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a
-password is rejected with **400**.
-Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which
-has no defined result for an empty one, so the block is checked at creation
-rather than at the first encrypted request — a 201 followed by every encrypted
-poll to that device failing gives the operator nothing to act on.
+A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a password is rejected with **400**.
+Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which has no defined result for an empty one, so the block is checked at creation rather than at the first encrypted request — a 201 followed by every encrypted poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when both are set **on the DES path only**.
 The AES128 path ignores `priv_password` and always derives from `password`, so a device configured with two distinct passwords and `"priv_protocol": 2` encrypts under a key no RFC 3414 manager derives.
 `Validate` accepts the configuration regardless.
 
-The `if_error_scenario` field controls the per-device ppm bands used to
-derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards`
-from live packet counters. Accepted values: `clean` (default, no error
-growth), `typical`, `degraded`, `failing`. Unknown values reject the
-batch atomically with 400. REST-created devices default to `clean`
-independently of the `-if-error-scenario` CLI flag — you must opt in
-explicitly. See [SNMP reference](snmp.md#per-device-error-scenario) for
-the full scenario bands and counter model.
+The `if_error_scenario` field controls the per-device ppm bands used to derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards` from live packet counters.
+Accepted values: `clean` (default, no error growth), `typical`, `degraded`, `failing`.
+Unknown values reject the batch atomically with 400. REST-created devices default to `clean` independently of the `-if-error-scenario` CLI flag — you must opt in explicitly.
+See [SNMP reference](snmp.md#per-device-error-scenario) for the full scenario bands and counter model.
 
-A specific resource file can be requested directly (useful for storage
-devices):
+A specific resource file can be requested directly (useful for storage devices):
 
 ```bash
 # Create a Pure Storage FlashArray device
@@ -280,10 +273,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 ### On-demand optical degradation
 
-`POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named
-optical channel across the SD-FEC threshold on demand — the tool for
-validating threshold and alarm logic without waiting for a health band to
-wander there.
+`POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named optical channel across the SD-FEC threshold on demand — the tool for validating threshold and alarm logic without waiting for a health band to wander there.
 
 ```bash
 # Drive OCH-1-1 past the FEC threshold for 30 seconds, then back automatically.
@@ -300,39 +290,25 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degr
 | `noise_rise_db` | number | Raises accumulated ASE only. Power holds while OSNR falls — a sick amplifier. |
 | `duration` | Go duration string | Optional. Omitted means open-ended; capped at 24 h. |
 
-Two knobs rather than one severity dial because they select which diagnostic
-quadrant the fault lands in, and collector correlation rules key on exactly
-that difference. Both are optional; **a request with neither (or an empty
-body) clears** active degradation on that channel.
+Two knobs rather than one severity dial because they select which diagnostic quadrant the fault lands in, and collector correlation rules key on exactly that difference.
+Both are optional; **a request with neither (or an empty body) clears** active degradation on that channel.
 
-The whole receive cascade follows — `input-power`, `osnr`, `esnr`, `q-value`,
-`pre-fec-ber` and `fec-uncorrectable-blocks` — while the off-spine leaves
-(`output-power`, `laser-bias-current`, `chromatic-dispersion`,
-`polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
-That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that
-moved every needle together would teach a collector nothing.
+The whole receive cascade follows — `input-power`, `osnr`, `esnr`, `q-value`, `pre-fec-ber` and `fec-uncorrectable-blocks` — while the off-spine leaves (`output-power`, `laser-bias-current`, `chromatic-dispersion`, `polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
+That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that moved every needle together would teach a collector nothing.
 
-**Revert needs no timer.** A degradation window is frozen at publish, and the
-value engine is a pure function of elapsed time, so the channel returns to
-its band by arithmetic when the window ends — there is no scheduled mutation
-to cancel. A second POST on the same channel supersedes the first.
+**Revert needs no timer.** A degradation window is frozen at publish, and the value engine is a pure function of elapsed time, so the channel returns to its band by arithmetic when the window ends — there is no scheduled mutation to cancel.
+A second POST on the same channel supersedes the first.
 
-**`fec-uncorrectable-blocks` never decreases** across a degrade → revert
-cycle. The counter is the time integral of an above-threshold indicator, and
-degradation is stored as append-only immutable episodes precisely so that
-reverting cannot remove already-elapsed degradation from that integral. A
-counter that walked backwards would be read as a device reboot.
+**`fec-uncorrectable-blocks` never decreases** across a degrade → revert cycle.
+The counter is the time integral of an above-threshold indicator, and degradation is stored as append-only immutable episodes precisely so that reverting cannot remove already-elapsed degradation from that integral.
+A counter that walked backwards would be read as a device reboot.
 
-Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes
-`noise_rise_db`** — a pure power sag models a lossy span, not a failing one.
+Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes `noise_rise_db`** — a pure power sag models a lossy span, not a failing one.
 Use both together for the fourth quadrant (power down *and* OSNR down).
 
-Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly*
-constant, which is loss **downstream of the amplifier chain** (a dirty
-receive connector, a patch-panel fault). Loss *upstream* of an amplifier is
-different in reality — the amplifier then adds ASE against a weaker signal,
-so OSNR degrades too. Model that case with both knobs rather than expecting
-`input_power_drop_db` alone to produce it.
+Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly* constant, which is loss **downstream of the amplifier chain** (a dirty receive connector, a patch-panel fault).
+Loss *upstream* of an amplifier is different in reality — the amplifier then adds ASE against a weaker signal, so OSNR degrades too.
+Model that case with both knobs rather than expecting `input_power_drop_db` alone to produce it.
 
 Query what is in force with `GET /api/v1/devices/{ip}/optical`:
 
@@ -343,16 +319,11 @@ Query what is in force with `GET /api/v1/devices/{ip}/optical`:
 ]}
 ```
 
-Responses: `200` with the episode echoed back; `404` for an unknown device,
-an unknown component (the body lists `availableComponents`), or a device type
-with no optical channels; `503` for an optical device still initialising its
-engine (transient — retry); `400` for a malformed body, an unknown field, a
-non-positive or over-cap `duration`, or an out-of-range offset.
+Responses: `200` with the episode echoed back; `404` for an unknown device, an unknown component (the body lists `availableComponents`), or a device type with no optical channels; `503` for an optical device still initialising its engine (transient — retry); `400` for a malformed body, an unknown field, a non-positive or over-cap `duration`, or an out-of-range offset.
 
 ### Optical health band
 
-`optical_scenario` sets the steady-state health of every coherent optical
-channel on an optical transport device:
+`optical_scenario` sets the steady-state health of every coherent optical channel on an optical transport device:
 
 ```bash
 # Two Waveserver 5 devices with a service-affecting optical span
@@ -368,29 +339,20 @@ curl -X POST http://localhost:8080/api/v1/devices \
 ```
 
 Accepted values: `clean` (default), `typical`, `degraded`, `failing`.
-Unknown values reject the batch atomically with 400. As with
-`if_error_scenario`, REST-created devices default to `clean` independently
-of the `-optical-scenario` CLI flag — you must opt in explicitly.
+Unknown values reject the batch atomically with 400. As with `if_error_scenario`, REST-created devices default to `clean` independently of the `-optical-scenario` CLI flag — you must opt in explicitly.
 
-The field applies **only to device types that have optical channels**
-(today `ciena_waveserver5`). Two consequences:
+The field applies **only to device types that have optical channels** (today `ciena_waveserver5`).
+Two consequences:
 
-- A non-`clean` band on any other type is rejected with **400**, rather
-  than accepted and silently ignored. A mixed `round_robin` batch is still
-  accepted — the optical devices take the band and the rest ignore it.
-- `GET /api/v1/devices` omits `optical_scenario` entirely for non-optical
-  types, so the API never advertises a knob that does nothing there.
+- A non-`clean` band on any other type is rejected with **400**, rather than accepted and silently ignored. A mixed `round_robin` batch is still accepted — the optical devices take the band and the rest ignore it.
+- `GET /api/v1/devices` omits `optical_scenario` entirely for non-optical types, so the API never advertises a knob that does nothing there.
 
-Only `failing` crosses the SD-FEC threshold, so
-`fec-uncorrectable-blocks > 0` is a reliable service-affecting signal;
-`degraded` shows an elevated `pre-fec-ber` that FEC still corrects. See
-[CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q /
-BER table.
+Only `failing` crosses the SD-FEC threshold, so `fec-uncorrectable-blocks > 0` is a reliable service-affecting signal; `degraded` shows an elevated `pre-fec-ber` that FEC still corrects.
+See [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q / BER table.
 
 ### One creation batch at a time (`409`)
 
-**Only one device-creation batch runs at a time.**
-A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
+**Only one device-creation batch runs at a time.** A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
 Two such requests used to interleave.
 
 The response carries `Retry-After: 5`, and a body naming the batch in the way:
@@ -435,8 +397,7 @@ Today `409` on this endpoint means a concurrent creation batch or a concurrent p
 
 ### `resource_file` failures
 
-`resource_file` names the device type to load, and a request naming one the
-simulator cannot use is answered **`400`**, not `500`.
+`resource_file` names the device type to load, and a request naming one the simulator cannot use is answered **`400`**, not `500`.
 
 Response:
 
@@ -445,8 +406,8 @@ Response:
 | `400 Bad Request` | `{"success": false, "message": "resource <base-name>: <what is wrong>"}` | The file name is not a device-type slug; no such device type is shipped (including a `round_robin` batch in which none of the requested types is, or a `category` matching none); or the file's content is invalid — JSON that does not parse, a document that is literally `null`, anything trailing the document, no entries at all, a device-type directory with no JSON part or whose parts hold no entries between them, an SNMP value the load-time guard rejects, or an optical inventory disagreeing with the type's channel count. |
 | `500 Internal Server Error` | `{"success": false, "message": "<raw error>"}` | The loader could not classify the failure: a file it cannot open, a directory it cannot list. The raw message may contain a full path. |
 
-The `message` field carries the diagnosis. It names the file's **base name**,
-and for a fault attributable to one entry the OID and the value as well:
+The `message` field carries the diagnosis.
+It names the file's **base name**, and for a fault attributable to one entry the OID and the value as well:
 
 ```json
 {
@@ -455,34 +416,22 @@ and for a fault attributable to one entry the OID and the value as well:
 }
 ```
 
-A parse failure, a `null` document, an empty file or directory, an optical
-mismatch and a rejected file name have no single entry to name, so they carry
-neither OID nor value.
+A parse failure, a `null` document, an empty file or directory, an optical mismatch and a rejected file name have no single entry to name, so they carry neither OID nor value.
 
-The `400` body never contains a directory path — not in the file name, and not
-inside an interpolated cause such as a failed read — control characters and
-bidi formatting runes are stripped from it, and it is length-capped. The full
-path goes to the **server log** instead. That guarantee covers the `400` class
-only; the `500` class returns the raw error.
+The `400` body never contains a directory path — not in the file name, and not inside an interpolated cause such as a failed read — control characters and bidi formatting runes are stripped from it, and it is length-capped.
+The full path goes to the **server log** instead.
+That guarantee covers the `400` class only; the `500` class returns the raw error.
 
-`resource_file` is validated **before** TUN pre-allocation and before the
-privilege check, so a request naming a bad device type gets this `400` without
-allocating anything, whether or not the simulator runs as root. A request
-naming a good one proceeds, and without root gets the pre-existing `500`
-`root privileges required to create TUN interfaces`.
+`resource_file` is validated **before** TUN pre-allocation and before the privilege check, so a request naming a bad device type gets this `400` without allocating anything, whether or not the simulator runs as root.
+A request naming a good one proceeds, and without root gets the pre-existing `500` `root privileges required to create TUN interfaces`.
 
 ### Per-device export blocks
 
-`POST /api/v1/devices` accepts four optional top-level blocks —
-`flow`, `traps`, `syslog`, `gnmi_dialout` — that attach export
-configuration to every device created by the request. Any block can be
-omitted; omitted blocks mean "this batch does not participate in that
+`POST /api/v1/devices` accepts four optional top-level blocks — `flow`, `traps`, `syslog`, `gnmi_dialout` — that attach export configuration to every device created by the request.
+Any block can be omitted; omitted blocks mean "this batch does not participate in that
 export subsystem."
 
-The subsystems are always-on after `main()` — flow / trap / syslog /
-gNMI dial-out scheduler goroutines and catalog loaders run regardless
-of whether any CLI seed was supplied, so REST-created devices can opt
-in to any combination.
+The subsystems are always-on after `main()` — flow / trap / syslog / gNMI dial-out scheduler goroutines and catalog loaders run regardless of whether any CLI seed was supplied, so REST-created devices can opt in to any combination.
 
 **`flow` block:**
 
@@ -498,11 +447,8 @@ in to any combination.
 }
 ```
 
-No per-device override exists for `source_per_device` — the
-`-flow-source-per-device` CLI flag is simulator-wide (see
-[CLI flags → Flow export](cli-flags.md#flow-export-flags)). Setting
-`"source_per_device"` in the REST body is rejected by
-`DisallowUnknownFields`.
+No per-device override exists for `source_per_device` — the `-flow-source-per-device` CLI flag is simulator-wide (see [CLI flags → Flow export](cli-flags.md#flow-export-flags)).
+Setting `"source_per_device"` in the REST body is rejected by `DisallowUnknownFields`.
 
 **`traps` block:**
 
@@ -516,13 +462,9 @@ No per-device override exists for `source_per_device` — the
 }
 ```
 
-INFORM mode requires the simulator-wide `-trap-source-per-device=true`
-(the default). The check is **enforced at device-attach time**: if a
-request sets `mode: "inform"` while the flag is false, the attach
-fails per-device and the device's `trapConfig` is cleared so
-`ListDevices` doesn't show a ghost entry. This is distinct from
-request-level validation (which would fail the whole batch) — INFORM
-without per-device binding is a runtime attach failure, not a 400.
+INFORM mode requires the simulator-wide `-trap-source-per-device=true` (the default).
+The check is **enforced at device-attach time**: if a request sets `mode: "inform"` while the flag is false, the attach fails per-device and the device's `trapConfig` is cleared so `ListDevices` doesn't show a ghost entry.
+This is distinct from request-level validation (which would fail the whole batch) — INFORM without per-device binding is a runtime attach failure, not a 400.
 
 **`syslog` block:**
 
@@ -569,9 +511,11 @@ A block that carried a read-only field would stop being a valid `POST` body, sin
 
 ### A GET block is a valid POST block
 
-Config blocks round-trip: take a `flow` / `traps` / `syslog` object from `GET /api/v1/devices`, change what you like, and POST it back. Nothing needs stripping.
+Config blocks round-trip: take a `flow` / `traps` / `syslog` object from `GET /api/v1/devices`, change what you like, and POST it back.
+Nothing needs stripping.
 
-That is why the effective cadences live in a sibling object rather than inside the blocks. Strict decoding is retained, so a genuine typo is still caught:
+That is why the effective cadences live in a sibling object rather than inside the blocks.
+Strict decoding is retained, so a genuine typo is still caught:
 
 ```console
 # 400 Invalid JSON: unknown field "intervl"
@@ -580,8 +524,7 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
 
 `scripts/fleet.sh export | fleet.sh import` relies on this round trip.
 
-**`gnmi_dialout` block** (see the
-[gNMI dial-out reference](gnmi-dial-out.md) for full semantics):
+**`gnmi_dialout` block** (see the [gNMI dial-out reference](gnmi-dial-out.md) for full semantics):
 
 ```json
 "gnmi_dialout": {
@@ -603,8 +546,7 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
 }
 ```
 
-Durations accept Go duration strings (`"10s"`, `"5m"`, `"1m30s"`);
-integer seconds are rejected.
+Durations accept Go duration strings (`"10s"`, `"5m"`, `"1m30s"`); integer seconds are rejected.
 
 **Combined example — flow + traps + syslog on the same batch:**
 
@@ -662,16 +604,11 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-`GET /api/v1/syslog/status` then reports three collector records keyed
-by `(collector, format)`. See
-[Syslog export status](#syslog-export-status).
+`GET /api/v1/syslog/status` then reports three collector records keyed by `(collector, format)`.
+See [Syslog export status](#syslog-export-status).
 
-**Validation failures return `400` with the underlying error** (e.g.
-`unknown protocol`, `invalid collector address`, unresolvable host,
-explicitly invalid syslog format — non-`5424` / non-`3164`); no device
-from the batch is created (atomic batch failure). Unknown / typo'd JSON
-fields at any level are also rejected via `DisallowUnknownFields` —
-e.g. `"interval_ms": 10000` lands as a 400, not a silent drop.
+**Validation failures return `400` with the underlying error** (e.g. `unknown protocol`, `invalid collector address`, unresolvable host, explicitly invalid syslog format — non-`5424` / non-`3164`); no device from the batch is created (atomic batch failure).
+Unknown / typo'd JSON fields at any level are also rejected via `DisallowUnknownFields` — e.g. `"interval_ms": 10000` lands as a 400, not a silent drop.
 
 ## List devices
 
@@ -679,44 +616,31 @@ e.g. `"interval_ms": 10000` lands as a 400, not a silent drop.
 curl http://localhost:8080/api/v1/devices
 ```
 
-Each device record includes a `resource_file` field (e.g. `"asr9k.json"`)
-— the canonical identifier accepted by `POST /api/v1/devices`. The
-sibling `device_type` field is a human-readable display label and is
-many-to-one (e.g. `cisco_catalyst_9500`, `cisco_crs_x`, and
-`cisco_nexus_9500` all surface as `"Cisco Router/Switch"`), so use
-`resource_file` for any replay or programmatic recreation use case.
+Each device record includes a `resource_file` field (e.g. `"asr9k.json"`) — the canonical identifier accepted by `POST /api/v1/devices`.
+The sibling `device_type` field is a human-readable display label and is many-to-one (e.g. `cisco_catalyst_9500`, `cisco_crs_x`, and `cisco_nexus_9500` all surface as `"Cisco Router/Switch"`), so use `resource_file` for any replay or programmatic recreation use case.
 
-The field is omitted (JSON `omitempty`) for devices whose underlying
-`device.resourceFile` is empty. Two paths produce that:
+The field is omitted (JSON `omitempty`) for devices whose underlying `device.resourceFile` is empty.
+Two paths produce that:
 
-- Devices created via the `-auto-start-ip` CLI flag (no CLI equivalent of
-  `resource_file`).
-- POST requests that omit **both** `resource_file` and `round_robin: true`,
-  falling back to the simulator's default resource set.
+- Devices created via the `-auto-start-ip` CLI flag (no CLI equivalent of `resource_file`).
+- POST requests that omit **both** `resource_file` and `round_robin: true`, falling back to the simulator's default resource set.
 
 POSTs that name a `resource_file` or use `round_robin: true` always carry it.
 
-Each record also echoes the per-device export blocks that were configured at
-creation — `flow`, `traps`, `syslog`, `gnmi_dialout` — so a GET response can
-be replayed against `POST /api/v1/devices` without reconstructing the export
-config. Blocks are omitted (`omitempty`) for devices that don't participate
-in that subsystem.
+Each record also echoes the per-device export blocks that were configured at creation — `flow`, `traps`, `syslog`, `gnmi_dialout` — so a GET response can be replayed against `POST /api/v1/devices` without reconstructing the export config.
+Blocks are omitted (`omitempty`) for devices that don't participate in that subsystem.
 
-Each record also carries the device's geolocation: `location` (the world-city
-string also served as SNMP `sysLocation.0`), and `latitude` / `longitude`
-(decimal degrees, drawn from the same world-cities dataset). The coordinates
-are emitted as a **pair** — both present or both omitted. They are `omitempty`
-on a nullable type so that an *unresolved* location omits them entirely rather
-than reporting a misleading `0`; a device whose true coordinates are `0.0,0.0`
-still reports them as present. `location` is omitted when empty.
+Each record also carries the device's geolocation: `location` (the world-city string also served as SNMP `sysLocation.0`), and `latitude` / `longitude` (decimal degrees, drawn from the same world-cities dataset).
+The coordinates are emitted as a **pair** — both present or both omitted.
+They are `omitempty` on a nullable type so that an *unresolved* location omits them entirely rather than reporting a misleading `0`; a device whose true coordinates are `0.0,0.0` still reports them as present.
+`location` is omitted when empty.
 
 ```json
 { "id": "...", "ip": "10.42.0.100", "resource_file": "cisco_crs_x.json",
   "location": "Amsterdam, Netherlands", "latitude": 52.3676, "longitude": 4.9041 }
 ```
 
-Note: locations are assigned **randomly per device**, so a deployed fabric is
-geographically scattered rather than clustered by site.
+Note: locations are assigned **randomly per device**, so a deployed fabric is geographically scattered rather than clustered by site.
 
 ## Reload device profiles
 
@@ -772,7 +696,8 @@ The reload takes the same one-batch-at-a-time gate as creation, so that ordering
 It is fail-fast, never queued, for the reasons given for the create endpoint; poll `create_batch_in_progress` and `resource_reload_in_progress` on `GET /api/v1/status` and retry.
 While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true` and `create_batch_in_progress: false`, and a create refused in that window is told a reload holds the gate, not that a batch is running.
 
-There is no file watcher. Reload is explicit.
+There is no file watcher.
+Reload is explicit.
 
 ## Export to CSV
 
@@ -780,17 +705,12 @@ There is no file watcher. Reload is explicit.
 curl http://localhost:8080/api/v1/devices/export -o devices.csv
 ```
 
-The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`,
-`SNMP Port`, `SSH Port`, `Status`, `Resource File`. `Resource File` is
-appended at the end so any downstream consumer that indexes columns
-positionally (`awk -F, '{print $2}'`, spreadsheet macros) is unaffected
-by the new column. Devices without a known resource file emit `N/A` in
-that column, matching the `Interface` convention.
+The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`, `SNMP Port`, `SSH Port`, `Status`, `Resource File`.
+`Resource File` is appended at the end so any downstream consumer that indexes columns positionally (`awk -F, '{print $2}'`, spreadsheet macros) is unaffected by the new column.
+Devices without a known resource file emit `N/A` in that column, matching the `Interface` convention.
 
-Note: `N/A` is a display sentinel, not a valid resource filename. A
-re-import tool that POSTs each row back must translate `N/A` to an
-omitted `resource_file` field, not pass it through as a literal value
-(POST would reject `"N/A"` as a non-existent file).
+Note: `N/A` is a display sentinel, not a valid resource filename.
+A re-import tool that POSTs each row back must translate `N/A` to an omitted `resource_file` field, not pass it through as a literal value (POST would reject `"N/A"` as a non-existent file).
 
 ## Generate a route script
 
@@ -798,8 +718,7 @@ omitted `resource_file` field, not pass it through as a literal value
 curl http://localhost:8080/api/v1/devices/routes -o add_routes.sh
 ```
 
-The generated script adds Linux kernel routes for every device IP — handy
-when running the simulator inside a VM and testing from the host.
+The generated script adds Linux kernel routes for every device IP — handy when running the simulator inside a VM and testing from the host.
 
 ## Delete devices
 
@@ -813,17 +732,12 @@ curl -X DELETE http://localhost:8080/api/v1/devices
 
 ## Version
 
-Report the running simulator's version. The value is baked into the binary
-at build time via the Makefile's `APP_VERSION` variable (resolution order:
-`APP_VERSION` env > `git describe --tags` > `dev`) and passed to `go build`
-as `-ldflags "-X main.Version=…"`. It never changes for the lifetime of the
-process, so the endpoint sets `Cache-Control: max-age=3600` — reloads of
-the web UI within a browser session will reuse the cached value.
+Report the running simulator's version.
+The value is baked into the binary at build time via the Makefile's `APP_VERSION` variable (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`) and passed to `go build` as `-ldflags "-X main.Version=…"`.
+It never changes for the lifetime of the process, so the endpoint sets `Cache-Control: max-age=3600` — reloads of the web UI within a browser session will reuse the cached value.
 
-Release binaries report the clean tag (e.g., `v0.5.0`). A `make build`
-from a HEAD that is ahead of the last tag reports the commit-distance
-form (e.g., `v0.4.1-11-g0356c42`), so a post-release dev binary never
-masquerades as the tagged release.
+Release binaries report the clean tag (e.g., `v0.5.0`).
+A `make build` from a HEAD that is ahead of the last tag reports the commit-distance form (e.g., `v0.4.1-11-g0356c42`), so a post-release dev binary never masquerades as the tagged release.
 
 ```bash
 curl http://localhost:8080/api/v1/version
@@ -833,10 +747,8 @@ curl http://localhost:8080/api/v1/version
 {"version": "v0.5.0"}
 ```
 
-For an untagged development build (or any build produced by `go build`
-directly, bypassing the Makefile), the reported version is the literal
-string `dev`. Operators troubleshooting a version mismatch can call the
-same string from the CLI without starting the server:
+For an untagged development build (or any build produced by `go build` directly, bypassing the Makefile), the reported version is the literal string `dev`.
+Operators troubleshooting a version mismatch can call the same string from the CLI without starting the server:
 
 ```bash
 ./nl6 -version
@@ -880,13 +792,9 @@ Response fields:
 | `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 / IPFIX only). |
 
 Clients detect "no flow export configured" via `len(collectors) == 0`.
-The retired scalar fields (`enabled`, `protocol`, `collector`,
-`total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were
-removed in phase 3; callers that depended on them must migrate to the
-array-of-collectors shape.
+The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.
 
-See [Flow export (operator guide)](../ops/flow-export.md) and
-[Flow export reference](flow-export.md) for protocol-specific details.
+See [Flow export (operator guide)](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
 
 ## Trap export status
 
@@ -894,9 +802,7 @@ See [Flow export (operator guide)](../ops/flow-export.md) and
 curl http://localhost:8080/api/v1/traps/status
 ```
 
-Unlike the flow-status endpoint, this response is **not** wrapped in the
-`{success, message, data}` envelope — the handler serialises `TrapStatus`
-directly.
+Unlike the flow-status endpoint, this response is **not** wrapped in the `{success, message, data}` envelope — the handler serialises `TrapStatus` directly.
 
 ```json
 {
@@ -944,39 +850,30 @@ The four `informs_*` fields **only appear on records whose `mode == inform`**.
 TRAP-mode records omit them.
 `send_failures` counts fires that did not reach the kernel (resolve or encode failure, refused write, failed INFORM retransmission).
 `snmp_version` is the fleet's notification wire format (`v2c`, `v1`, `v3`).
-`snmpv3` is present only under `-trap-snmp-version=v3`: it reports the USM user, security level and protocols, and `engine_ids_by_device` maps each exporting device IP to its derived engine ID, the value `snmptrapd`'s `createUser -e` needs. No password is reported.
+`snmpv3` is present only under `-trap-snmp-version=v3`: it reports the USM user, security level and protocols, and `engine_ids_by_device` maps each exporting device IP to its derived engine ID, the value `snmptrapd`'s `createUser -e` needs.
+No password is reported.
 
-`subsystem_active` is the authoritative feature-on signal — `true`
-after `StartTrapSubsystem` runs. In normal operation, the HTTP
-endpoint always returns `true`: the subsystem initialises from `main()`
-and the only path that sets `subsystem_active=false` is `StopTrapExport`,
-which is invoked at process shutdown alongside the HTTP server. A
-`false` value is therefore only observable programmatically (e.g.
-from a test harness calling `GetTrapStatus` without starting the
-subsystem). Clients that previously branched on the retired `enabled`
-scalar should use `subsystem_active`. `len(collectors) == 0` with
-`subsystem_active=true` means the subsystem is running but no device
-has opted in.
+`subsystem_active` is the authoritative feature-on signal — `true` after `StartTrapSubsystem` runs.
+In normal operation, the HTTP endpoint always returns `true`: the subsystem initialises from `main()` and the only path that sets `subsystem_active=false` is `StopTrapExport`, which is invoked at process shutdown alongside the HTTP server.
+A `false` value is therefore only observable programmatically (e.g. from a test harness calling `GetTrapStatus` without starting the subsystem).
+Clients that previously branched on the retired `enabled` scalar should use `subsystem_active`.
+`len(collectors) == 0` with `subsystem_active=true` means the subsystem is running but no device has opted in.
 
-`catalogs_by_type` keys are device-type slugs (plus the reserved
-`_universal` entry for the fallback catalog). `source` is
-`"embedded"`, `"file:<path>"`, or `"override:<path>"` when
-`-trap-catalog` was supplied. When disabled:
+`catalogs_by_type` keys are device-type slugs (plus the reserved `_universal` entry for the fallback catalog).
+`source` is `"embedded"`, `"file:<path>"`, or `"override:<path>"` when `-trap-catalog` was supplied.
+When disabled:
 
 ```json
 {"subsystem_active": false, "collectors": [], "devices_exporting": 0}
 ```
 
-`rate_limiter_tokens_available` is only present when `-trap-global-cap` is
-set. The `sent` counter increments on **every wire emission including
-INFORM retransmissions**, so it can exceed `informs_acked + informs_failed
+`rate_limiter_tokens_available` is only present when `-trap-global-cap` is set.
+The `sent` counter increments on **every wire emission including INFORM retransmissions**, so it can exceed `informs_acked + informs_failed
 + informs_dropped + informs_pending` under retry churn.
 
-Counters are **monotonic within a subsystem lifecycle**: deleting a
-device does not zero its collector's `sent`; the aggregate survives.
+Counters are **monotonic within a subsystem lifecycle**: deleting a device does not zero its collector's `sent`; the aggregate survives.
 
-See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and
-[SNMP trap reference](snmp-traps.md) for the full feature details.
+See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
 
 ## Fire a trap on demand
 
@@ -1003,8 +900,7 @@ Response:
 | `500 Internal Server Error` | error JSON | Template resolve error, catalog resolution returned nil despite feature active (pathological manager state), or write failure. |
 | `503 Service Unavailable` | error JSON | The trap subsystem has not started **or** the target device has no trap config. |
 
-The endpoint does not block waiting for an INFORM ack — use
-`/api/v1/traps/status` to observe INFORM lifecycle counters.
+The endpoint does not block waiting for an INFORM ack — use `/api/v1/traps/status` to observe INFORM lifecycle counters.
 
 ## Syslog export status
 
@@ -1031,26 +927,22 @@ When syslog export is enabled:
 }
 ```
 
-Tuples are keyed by `(collector, format)`: a single collector receiving
-5424 from some devices and 3164 from others surfaces as two separate
-records. Each record also carries its `transport` (`udp`, `tcp` or `tls`), so a TCP outage is not hidden inside a row of healthy UDP devices. Per-device bind failures are non-fatal — the exporter falls
-back to the shared-pool socket with a warning and the `sent` counter
-still increments.
+Tuples are keyed by `(collector, format)`: a single collector receiving 5424 from some devices and 3164 from others surfaces as two separate records.
+Each record also carries its `transport` (`udp`, `tcp` or `tls`), so a TCP outage is not hidden inside a row of healthy UDP devices.
+Per-device bind failures are non-fatal — the exporter falls back to the shared-pool socket with a warning and the `sent` counter still increments.
 
-`subsystem_active` has the same semantics as on the trap status
-endpoint; `len(collectors) == 0` is **not** sufficient on its own to
-imply "feature off." When disabled:
+`subsystem_active` has the same semantics as on the trap status endpoint; `len(collectors) == 0` is **not** sufficient on its own to imply "feature off."
+When disabled:
 
 ```json
 {"subsystem_active": false, "collectors": [], "devices_exporting": 0}
 ```
 
-`format` is `"5424"` or `"3164"`. `catalogs_by_type` follows the same
-shape as the trap endpoint. `rate_limiter_tokens_available` is present
-only when `-syslog-global-cap` is set.
+`format` is `"5424"` or `"3164"`.
+`catalogs_by_type` follows the same shape as the trap endpoint.
+`rate_limiter_tokens_available` is present only when `-syslog-global-cap` is set.
 
-See [UDP syslog export (operator guide)](../ops/syslog-export.md) and
-[Syslog export reference](syslog-export.md) for the full feature details.
+See [UDP syslog export (operator guide)](../ops/syslog-export.md) and [Syslog export reference](syslog-export.md) for the full feature details.
 
 ## Fire a syslog message on demand
 
@@ -1079,9 +971,7 @@ Response:
 
 ## Device interaction
 
-The control-plane only manages devices — once a device is up, you interact
-with it via its own IP on port 22 (SSH), 161 (SNMP), and, for storage
-devices, 8443 (HTTPS).
+The control-plane only manages devices — once a device is up, you interact with it via its own IP on port 22 (SSH), 161 (SNMP), and, for storage devices, 8443 (HTTPS).
 
 ```bash
 # SSH (VT100 terminal emulation)
@@ -1106,13 +996,11 @@ snmpget -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
   192.168.100.1 1.3.6.1.2.1.1.1.0
 ```
 
-See [SNMP reference](snmp.md) for the OID coverage, including the dynamic HC
-interface counters on `ifXTable`.
+See [SNMP reference](snmp.md) for the OID coverage, including the dynamic HC interface counters on `ifXTable`.
 
 ### Storage HTTPS endpoints
 
-Storage devices expose vendor-shaped REST APIs on port 8443 with shared TLS
-certificates generated at simulator startup.
+Storage devices expose vendor-shaped REST APIs on port 8443 with shared TLS certificates generated at simulator startup.
 
 ```bash
 # Pure Storage FlashArray

@@ -1,24 +1,21 @@
 # Enable SNMP SET
 
-nl6 serves `SetRequest` at SNMPv1, v2c and v3, on one writable object:
-`ifAdminStatus`. That is enough to shut and unshut a simulated interface from a
-collector and watch the link telemetry that follows.
+nl6 serves `SetRequest` at SNMPv1, v2c and v3, on one writable object: `ifAdminStatus`.
+That is enough to shut and unshut a simulated interface from a collector and watch the link telemetry that follows.
 
 :::caution[Writes are off by default]
 
-A stock fleet answers **no** `SET` at any version. `snmpset` against it reports
-`Timeout: No Response`, not an SNMP error, because a refused write is discarded
-rather than answered. That is what real hardware does with a community it does
-not accept.
+A stock fleet answers **no** `SET` at any version.
+`snmpset` against it reports `Timeout: No Response`, not an SNMP error, because a refused write is discarded rather than answered.
+That is what real hardware does with a community it does not accept.
 
-The device logs the reason once. If `snmpset` times out while `snmpget` works,
-that log line is the answer.
+The device logs the reason once.
+If `snmpset` times out while `snmpget` works, that log line is the answer.
 
 :::
 
-Two separate gates, one per protocol family. A v3 message carries no community
-and a v1/v2c message carries no security level, so you configure whichever
-applies to the version you poll with.
+Two separate gates, one per protocol family.
+A v3 message carries no community and a v1/v2c message carries no security level, so you configure whichever applies to the version you poll with.
 
 | Version | Gate | Default |
 |---------|------|---------|
@@ -27,9 +24,9 @@ applies to the version you poll with.
 
 ## Whole fleet, SNMPv1 and v2c
 
-Start the simulator with a write community. It is separate from the read
-community, which nl6 never checks. Nothing validates the value, so keep it to
-characters your shell will not reinterpret when you pass it to `snmpset`.
+Start the simulator with a write community.
+It is separate from the read community, which nl6 never checks.
+Nothing validates the value, so keep it to characters your shell will not reinterpret when you pass it to `snmpset`.
 
 ```bash
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
@@ -42,30 +39,29 @@ Every device in that fleet now accepts a `SET` carrying `s3cret`:
 snmpset -v2c -c s3cret 192.168.100.1 1.3.6.1.2.1.2.2.1.7.2 i 2
 ```
 
-Reads are unaffected and still need no community match, so `snmpget -c public`
-keeps working. The asymmetry is deliberate: a `SET` changes state, a poll does
-not.
+Reads are unaffected and still need no community match, so `snmpget -c public` keeps working.
+The asymmetry is deliberate: a `SET` changes state, a poll does not.
 
 ## Whole fleet, SNMPv3
 
-Add an engine ID to turn SNMPv3 on. The shipped defaults already reach the
-default minimum, so nothing else is needed:
+Add an engine ID to turn SNMPv3 on.
+The shipped defaults already reach the default minimum, so nothing else is needed:
 
 ```bash
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
   -snmpv3-engine-id 800000090300AABBCCDD
 ```
 
-`-snmpv3-auth` defaults to `md5`, which reaches `authNoPriv`, and the minimum
-for a `SET` is `authNoPriv`. The user and password both default to `simadmin`:
+`-snmpv3-auth` defaults to `md5`, which reaches `authNoPriv`, and the minimum for a `SET` is `authNoPriv`.
+The user and password both default to `simadmin`:
 
 ```bash
 snmpset -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin \
   192.168.100.1 1.3.6.1.2.1.2.2.1.7.2 i 2
 ```
 
-To require encryption as well, raise the minimum and give the fleet a privacy
-protocol. Both are needed: a minimum the fleet cannot reach admits nothing.
+To require encryption as well, raise the minimum and give the fleet a privacy protocol.
+Both are needed: a minimum the fleet cannot reach admits nothing.
 
 ```bash
 sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
@@ -77,9 +73,8 @@ snmpset -v3 -l authPriv -u simadmin -a SHA -A simadmin -x AES -X simadmin \
   192.168.100.1 1.3.6.1.2.1.2.2.1.7.2 i 2
 ```
 
-Running with `-snmpv3-auth none` leaves no reachable level at or above the
-default minimum, so no v3 `SET` is admitted at all. The startup log says so in
-the line that begins `SNMP write admission`.
+Running with `-snmpv3-auth none` leaves no reachable level at or above the default minimum, so no v3 `SET` is admitted at all.
+The startup log says so in the line that begins `SNMP write admission`.
 
 ## One device at a time
 
@@ -87,11 +82,9 @@ Devices created over the REST API carry their own admission settings.
 
 :::note[Wait for the auto-start batch to finish]
 
-Only one device-creation batch runs at a time, and `-auto-start-ip` counts as
-one. A `POST /api/v1/devices` issued while the fleet is still coming up is
-refused with `409 Conflict` and a `Retry-After` header. Poll
-`GET /api/v1/status` and wait for `create_batch_in_progress` to clear, or just
-retry.
+Only one device-creation batch runs at a time, and `-auto-start-ip` counts as one.
+A `POST /api/v1/devices` issued while the fleet is still coming up is refused with `409 Conflict` and a `Retry-After` header.
+Poll `GET /api/v1/status` and wait for `create_batch_in_progress` to clear, or just retry.
 
 :::
 
@@ -115,12 +108,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
 ```
 
 `auth_protocol` is `0` for none, `1` for MD5, `2` for SHA1.
-`set_min_security_level` takes `none`, `auth` or `priv`, and `auth` is already
-the default. It is spelled out above so the field is visible, not because
-omitting it would change anything.
+`set_min_security_level` takes `none`, `auth` or `priv`, and `auth` is already the default.
+It is spelled out above so the field is visible, not because omitting it would change anything.
 
-Raising it to `priv` needs a privacy protocol on the same block, or the device
-admits no v3 `SET` at all:
+Raising it to `priv` needs a privacy protocol on the same block, or the device admits no v3 `SET` at all:
 
 ```json
 "auth_protocol": 2,
@@ -143,22 +134,20 @@ snmpset -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin \
 :::warning[REST devices do not inherit the CLI flags]
 
 A device created over REST takes its admission from the request body alone.
-Omit `write_community` there and that device refuses every v1/v2c `SET`, even
-on a fleet started with `-snmp-write-community`. The startup log describes the
-auto-start batch only.
+Omit `write_community` there and that device refuses every v1/v2c `SET`, even on a fleet started with `-snmp-write-community`.
+The startup log describes the auto-start batch only.
 
-The write community is write-only. `GET /api/v1/devices` never echoes it, so
-there is no way to read back what a device was configured with.
+The write community is write-only.
+`GET /api/v1/devices` never echoes it, so there is no way to read back what a device was configured with.
 
 :::
 
 ## Disable a network interface
 
 `ifAdminStatus.<N>` is `1.3.6.1.2.1.2.2.1.7.<N>`, where `<N>` is the ifIndex.
-The values are `up(1)`, `down(2)` and `testing(3)`. Its read-only companion
-`ifOperStatus.<N>` is `1.3.6.1.2.1.2.2.1.8.<N>`, and the examples read both back
-so you can see the derivation below at work. Walk the column first to
-see which interfaces a device has:
+The values are `up(1)`, `down(2)` and `testing(3)`.
+Its read-only companion `ifOperStatus.<N>` is `1.3.6.1.2.1.2.2.1.8.<N>`, and the examples read both back so you can see the derivation below at work.
+Walk the column first to see which interfaces a device has:
 
 ```bash
 snmpwalk -v2c -c public 192.168.100.1 1.3.6.1.2.1.2.2.1.7
@@ -174,9 +163,7 @@ IF-MIB::ifAdminStatus.48 = INTEGER: up(1)
 ```
 
 The examples below use ifIndex 2, which on that profile is `TenGigE0/0/0/0`.
-Interface numbering is a property of the device profile, so check the walk
-before picking an index on a fleet built with `-round-robin` or your own
-resource files.
+Interface numbering is a property of the device profile, so check the walk before picking an index on a fleet built with `-round-robin` or your own resource files.
 
 ### With SNMPv1 or v2c
 
@@ -189,8 +176,8 @@ snmpget -v2c -c public 192.168.100.1 \
   1.3.6.1.2.1.2.2.1.7.2 1.3.6.1.2.1.2.2.1.8.2
 ```
 
-SNMPv1 works the same way with `-v1`, but reports fewer distinct errors. See
-[when a write is refused](#when-a-write-is-refused).
+SNMPv1 works the same way with `-v1`, but reports fewer distinct errors.
+See [when a write is refused](#when-a-write-is-refused).
 
 ### With SNMPv3
 
@@ -206,15 +193,13 @@ snmpget -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin 192.168.100.1 \
 
 ### What the device does with it
 
-Shutting an interface moves `ifOperStatus` too, stamps `ifLastChange`, and
-pushes an update to any gNMI `ON_CHANGE` subscriber. The gNMI listener is on by
-default, so that part needs no extra flag.
+Shutting an interface moves `ifOperStatus` too, stamps `ifLastChange`, and pushes an update to any gNMI `ON_CHANGE` subscriber.
+The gNMI listener is on by default, so that part needs no extra flag.
 
 :::caution[Link traps and syslog need a collector]
 
-The state change also fires the device's link-down trap and syslog message, but
-only on a device that has somewhere to send them. None of the startup commands
-above configure one, so nothing is emitted.
+The state change also fires the device's link-down trap and syslog message, but only on a device that has somewhere to send them.
+None of the startup commands above configure one, so nothing is emitted.
 
 To watch the telemetry, start the fleet with a collector address:
 
@@ -231,8 +216,7 @@ Shutting an interface then sends `linkDown`, and unshutting it sends `linkUp`.
 
 :::note[Re-enabling does not always bring the interface back up]
 
-`ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and
-the rule is asymmetric:
+`ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and the rule is asymmetric:
 
 | `SET ifAdminStatus` | `ifOperStatus` becomes |
 |---|---|
@@ -240,11 +224,10 @@ the rule is asymmetric:
 | `testing(3)` | `testing(3)`, forced |
 | `up(1)` | whatever the link state is, released rather than forced |
 
-So on an interface whose link is down, a `SET` of `up(1)` succeeds and
-`ifOperStatus` still reads `2`. That is not a rejected write. `ifAdminStatus`
-reads back `1`, and an administrative bounce does not repair a simulated cable
-fault. A fleet started with `-if-scenario 3` behaves this way on every
-interface.
+So on an interface whose link is down, a `SET` of `up(1)` succeeds and `ifOperStatus` still reads `2`.
+That is not a rejected write.
+`ifAdminStatus` reads back `1`, and an administrative bounce does not repair a simulated cable fault.
+A fleet started with `-if-scenario 3` behaves this way on every interface.
 
 :::
 
@@ -259,9 +242,7 @@ interface.
 | `wrongType` | The value is not an INTEGER. |
 | `noCreation` | The ifIndex does not exist on that device, or the name has the wrong number of sub-identifiers. |
 
-SNMPv1 has a smaller set of error values, so those four collapse under `-v1`:
-`wrongValue` and `wrongType` both report `badValue`, while `notWritable` and
-`noCreation` both report `noSuchName`.
+SNMPv1 has a smaller set of error values, so those four collapse under `-v1`: `wrongValue` and `wrongType` both report `badValue`, while `notWritable` and `noCreation` both report `noSuchName`.
 
 ### Confirming the policy took effect
 
@@ -271,9 +252,8 @@ Every boot prints the policy in one line, before any device exists:
 SNMP write admission (auto-start batch; REST-created devices use the create body, not these flags) — v1/v2c SET: admitted with the configured write community; v3 SET: minimum security level authNoPriv
 ```
 
-Grep the startup output for `SNMP write admission`. It reports what the
-auto-start batch got, so it is the fastest way to tell a configuration mistake
-from a network one.
+Grep the startup output for `SNMP write admission`.
+It reports what the auto-start batch got, so it is the fastest way to tell a configuration mistake from a network one.
 
 ### Turning the gates off
 
@@ -286,16 +266,12 @@ sudo ./nl6 -snmpv3-engine-id 800000090300AABBCCDD \
 ```
 
 That makes every simulated device writable by anything that can route to it.
-The v3 half only matters when `-snmpv3-engine-id` is set; without it SNMPv3 is
-off and `-snmp-set-min-security-level` changes nothing.
-It is reasonable on an isolated lab network and when a harness predates the
-gates. It is not a setting to carry into a shared environment.
+The v3 half only matters when `-snmpv3-engine-id` is set; without it SNMPv3 is off and `-snmp-set-min-security-level` changes nothing.
+It is reasonable on an isolated lab network and when a harness predates the gates.
+It is not a setting to carry into a shared environment.
 
 ## Next steps
 
-- [SNMP reference](../reference/snmp.md) for the full `SetRequest` error ladder
-  and the write-admission rules.
+- [SNMP reference](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
 - [CLI flags](../reference/cli-flags.md) for every flag used above.
-- [Web API](../reference/web-api.md) for the REST control plane, including
-  `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`, which does the
-  same job over HTTP.
+- [Web API](../reference/web-api.md) for the REST control plane, including `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`, which does the same job over HTTP.

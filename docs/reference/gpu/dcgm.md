@@ -1,10 +1,8 @@
 # NVIDIA DCGM simulation
 
 :::note[Simulator side of the GPU story]
-This page covers the **simulator** — the metric OID types, the GPU
-cycler extension, device profiles, resource file layout, and
-integration points. The OIDs a collector polls are in
-[GPU simulation → Collector OID contract](index.md#collector-oid-contract).
+This page covers the **simulator** — the metric OID types, the GPU cycler extension, device profiles, resource file layout, and integration points.
+The OIDs a collector polls are in [GPU simulation → Collector OID contract](index.md#collector-oid-contract).
 :::
 
 ## Overview
@@ -28,8 +26,7 @@ NVIDIA DCGM provides:
 - **GPU health status** (healthy, warning, critical)
 - **Process/job info** (running PIDs, memory per process)
 
-Real DCGM exposes these through its API and the DCGM exporter's Prometheus `/metrics` endpoint, not through SNMP.
-nl6 exposes them via:
+Real DCGM exposes these through its API and the DCGM exporter's Prometheus `/metrics` endpoint, not through SNMP. nl6 exposes them via:
 1. **SNMP**: OIDs under `1.3.6.1.4.1.5703`, NVIDIA Corporation's IANA-registered Private Enterprise Number. The layout below the PEN is nl6's own (see the warning below).
 2. **SSH**: `nvidia-smi` command variants (`nvidia-smi`, `nvidia-smi -q -d MEMORY|UTILIZATION|TEMPERATURE|POWER`, `nvidia-smi topo -m`) and `dcgmi discovery -l`, `dcgmi health -c`
 3. **REST API**: DCGM-shaped HTTP endpoints (`/api/v1/gpu/status`, `/api/v1/gpu/devices`, `/api/v1/dcgm/health`, etc.)
@@ -38,8 +35,7 @@ nl6 exposes them via:
 
 `1.3.6.1.4.1.5703` is NVIDIA Corporation's real PEN, so `sysObjectID` correctly identifies a simulated DGX as an NVIDIA system.
 Nothing *below* the PEN is published by NVIDIA.
-**NVIDIA ships no SNMP GPU MIB at all.**
-Its own GPU telemetry story is DCGM and Prometheus, not SNMP.
+**NVIDIA ships no SNMP GPU MIB at all.** Its own GPU telemetry story is DCGM and Prometheus, not SNMP.
 So `1.3.6.1.4.1.5703.1.1.1.*` names no registered object and cannot be resolved against a real MIB.
 Treat the layout as nl6's own contract with its collectors, never as a vendor specification.
 
@@ -95,7 +91,9 @@ MetricGPUClockSM                                // GPU SM clock (MHz)
 MetricGPUClockMem                               // GPU memory clock (MHz)
 ```
 
-Add `vendorOIDs` entries for each NVIDIA resource file, using NVIDIA's enterprise OID prefix `1.3.6.1.4.1.5703`. Each GPU (0-7) gets its own OID suffix. Example for GPU 0:
+Add `vendorOIDs` entries for each NVIDIA resource file, using NVIDIA's enterprise OID prefix `1.3.6.1.4.1.5703`.
+Each GPU (0-7) gets its own OID suffix.
+Example for GPU 0:
 
 ```
 1.3.6.1.4.1.5703.1.1.1.1.5.0  → MetricGPUUtil       (GPU 0 utilization)
@@ -169,7 +167,8 @@ type GPUMetrics struct {
 }
 ```
 
-Add `gpuMetrics [8]*GPUMetrics` field to `MetricsCycler`. These are only allocated when the device profile is a GPU server (checked by resource file name).
+Add `gpuMetrics [8]*GPUMetrics` field to `MetricsCycler`.
+These are only allocated when the device profile is a GPU server (checked by resource file name).
 
 Each GPU gets its own seed (`baseSeed + gpuIndex`) so GPUs within the same server have different but correlated curves (e.g., GPU 0 might run hotter when GPU 1 is under heavy compute load).
 
@@ -219,7 +218,8 @@ func (c *MetricsCycler) GetGPUClockMem(gpuIndex int) string
 
 ### 1.5 SNMP Handler Extension (`snmp_handlers.go`)
 
-Update `getMetricValue()` to handle the new GPU metric types. The OID encodes the GPU index in the last component (e.g., `.0` for GPU 0, `.7` for GPU 7), so the handler must extract the GPU index from the OID suffix and call the appropriate getter.
+Update `getMetricValue()` to handle the new GPU metric types.
+The OID encodes the GPU index in the last component (e.g., `.0` for GPU 0, `.7` for GPU 7), so the handler must extract the GPU index from the OID suffix and call the appropriate getter.
 
 Add a helper to parse GPU index from OID:
 ```go
@@ -340,7 +340,8 @@ Each flavor's SSH resource file provides responses for these commands:
 | `lscpu` | CPU info (AMD EPYC / Intel Xeon for DGX) |
 | `lspci \| grep -i nvidia` | PCI device listing for GPUs |
 
-Fourteen commands per flavor. Nothing else is answered.
+Fourteen commands per flavor.
+Nothing else is answered.
 
 ### 3.2 Example `nvidia-smi` Output (H100)
 
@@ -392,7 +393,8 @@ Each device exposes a REST API on its `APIPort` with these endpoints:
 | `GET` | `/api/v1/system/info` | System info (OS, driver, CUDA, hostname) |
 | `GET` | `/api/v1/system/memory` | System memory stats |
 
-Seven endpoints per flavor. There is no per-GPU `/devices/{id}` path.
+Seven endpoints per flavor.
+There is no per-GPU `/devices/{id}` path.
 
 ### 4.2 Example Response: `/api/v1/gpu/status`
 
@@ -456,7 +458,8 @@ Seven endpoints per flavor. There is no per-GPU `/devices/{id}` path.
 
 ### 5.1 Resource Loading (`resources.go`)
 
-**No changes needed** — the existing directory-based loading and merging already handles new resource directories automatically. The `loadSpecificResourcesFromDir()` function will pick up all JSON files in each NVIDIA directory and merge SNMP + SSH + API resources.
+**No changes needed** — the existing directory-based loading and merging already handles new resource directories automatically.
+The `loadSpecificResourcesFromDir()` function will pick up all JSON files in each NVIDIA directory and merge SNMP + SSH + API resources.
 
 ### 5.2 Device Type Detection (`resources.go`)
 

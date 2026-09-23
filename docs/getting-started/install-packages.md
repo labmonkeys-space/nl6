@@ -1,8 +1,6 @@
 # Install packages
 
-Prebuilt native packages let you install nl6 with your system package manager
-and run it as a managed `systemd` service — no Go toolchain or source checkout
-required.
+Prebuilt native packages let you install nl6 with your system package manager and run it as a managed `systemd` service — no Go toolchain or source checkout required.
 
 | Platform | Format | Package manager |
 | --- | --- | --- |
@@ -10,9 +8,8 @@ required.
 | CentOS Stream, Rocky Linux, AlmaLinux | `.rpm` | `dnf` |
 | NixOS | flake | `nix` |
 
-Both `amd64` and `arm64` builds are published. The `.deb`/`.rpm` packages are
-attached to each [GitHub Release](https://github.com/labmonkeys-space/nl6/releases/latest);
-NixOS consumes the flake directly from the repository.
+Both `amd64` and `arm64` builds are published.
+The `.deb`/`.rpm` packages are attached to each [GitHub Release](https://github.com/labmonkeys-space/nl6/releases/latest); NixOS consumes the flake directly from the repository.
 
 ## What the package installs
 
@@ -25,22 +22,17 @@ NixOS consumes the flake directly from the repository.
 | `/etc/nl6/nl6.conf` | flag file (`NL6_OPTS`), preserved across upgrades |
 
 :::info[Runtime requirements]
-The simulator runs as **root** — it creates TUN interfaces, manages the
-`nl6sim` network namespace, and installs an iptables rule. The `iproute2`
-(`ip`), `iptables`, and `procps` (`sysctl`) dependencies are pulled in
-automatically by `apt`/`dnf`.
+The simulator runs as **root** — it creates TUN interfaces, manages the `nl6sim` network namespace, and installs an iptables rule.
+The `iproute2` (`ip`), `iptables`, and `procps` (`sysctl`) dependencies are pulled in automatically by `apt`/`dnf`.
 :::
 
 ## Debian / Ubuntu (`.deb`)
 
 Tested on Debian 13 and Ubuntu 26.04 LTS (`amd64` and `arm64`).
 
-1. Download the `.deb` for your architecture from the
-   [latest release](https://github.com/labmonkeys-space/nl6/releases/latest) —
-   `nl6_<version>_amd64.deb` or `nl6_<version>_arm64.deb`.
+1. Download the `.deb` for your architecture from the [latest release](https://github.com/labmonkeys-space/nl6/releases/latest) — `nl6_<version>_amd64.deb` or `nl6_<version>_arm64.deb`.
 
-2. Install it (the leading `./` tells `apt` it is a local file, so it still
-   resolves dependencies):
+2. Install it (the leading `./` tells `apt` it is a local file, so it still resolves dependencies):
 
    ```bash
    sudo apt install ./nl6_<version>_amd64.deb
@@ -50,12 +42,10 @@ Tested on Debian 13 and Ubuntu 26.04 LTS (`amd64` and `arm64`).
 
 ## CentOS Stream / Rocky / AlmaLinux (`.rpm`)
 
-Tested on Rocky Linux 10 and AlmaLinux 10 (`amd64` and `arm64`). CentOS
-Stream 10 is not in the smoke matrix.
+Tested on Rocky Linux 10 and AlmaLinux 10 (`amd64` and `arm64`).
+CentOS Stream 10 is not in the smoke matrix.
 
-1. Download the `.rpm` for your architecture from the
-   [latest release](https://github.com/labmonkeys-space/nl6/releases/latest) —
-   `nl6-<version>-1.x86_64.rpm` or `nl6-<version>-1.aarch64.rpm`.
+1. Download the `.rpm` for your architecture from the [latest release](https://github.com/labmonkeys-space/nl6/releases/latest) — `nl6-<version>-1.x86_64.rpm` or `nl6-<version>-1.aarch64.rpm`.
 
 2. Install it:
 
@@ -67,13 +57,11 @@ Stream 10 is not in the smoke matrix.
 
 ## Configure and start the service
 
-The package installs the `nl6` systemd unit but does **not** enable or start it
-automatically — the simulator needs root and operator-chosen flags first. These
-steps are the same on Debian/Ubuntu and the RHEL family. The unit ships with
-`LimitNOFILE=1048576`, so a packaged install needs no file-descriptor tuning.
+The package installs the `nl6` systemd unit but does **not** enable or start it automatically — the simulator needs root and operator-chosen flags first.
+These steps are the same on Debian/Ubuntu and the RHEL family.
+The unit ships with `LimitNOFILE=1048576`, so a packaged install needs no file-descriptor tuning.
 
-1. Set the flags. `NL6_OPTS` is passed verbatim to `nl6`; see the
-   [CLI flags reference](../reference/cli-flags.md) for the full list.
+1. Set the flags. `NL6_OPTS` is passed verbatim to `nl6`; see the [CLI flags reference](../reference/cli-flags.md) for the full list.
 
    ```bash
    sudoedit /etc/nl6/nl6.conf
@@ -99,12 +87,10 @@ steps are the same on Debian/Ubuntu and the RHEL family. The unit ships with
    curl -s localhost:8080/api/v1/version
    ```
 
-After editing `/etc/nl6/nl6.conf`, apply changes with
-`sudo systemctl restart nl6`.
+After editing `/etc/nl6/nl6.conf`, apply changes with `sudo systemctl restart nl6`.
 
 :::tip[Running without the service]
-`nl6` loads `resources/` and `web/` relative to its working directory, so to run
-it by hand (instead of via the service) start it from the data directory:
+`nl6` loads `resources/` and `web/` relative to its working directory, so to run it by hand (instead of via the service) start it from the data directory:
 
 ```bash
 cd /usr/share/nl6 && sudo nl6 -port 8080
@@ -125,14 +111,10 @@ sudo dnf remove nl6                                 # RHEL family
 
 ## NixOS (flake)
 
-nl6 ships a flake exposing a package and a NixOS module. The recommended way to
-run it on NixOS is the **module** — it's fully declarative, needs no `cachix`
-CLI, and (with the cache below) installs the prebuilt binary instead of
-compiling.
+nl6 ships a flake exposing a package and a NixOS module.
+The recommended way to run it on NixOS is the **module** — it's fully declarative, needs no `cachix` CLI, and (with the cache below) installs the prebuilt binary instead of compiling.
 
-1. Add the flake input, the binary cache, and the service to your system flake.
-   Because your system is already flake-based, no experimental-feature flags or
-   extra tools are needed:
+1. Add the flake input, the binary cache, and the service to your system flake. Because your system is already flake-based, no experimental-feature flags or extra tools are needed:
 
    ```nix
    {
@@ -161,44 +143,36 @@ compiling.
    }
    ```
 
-2. Rebuild: `sudo nixos-rebuild switch`. The service is now managed by systemd
-   (`systemctl status nl6`).
+2. Rebuild: `sudo nixos-rebuild switch`. The service is now managed by systemd (`systemctl status nl6`).
 
 ### Building the binary imperatively (optional)
 
-To build or run the package directly with the `nix` CLI, that CLI needs the
-`nix-command` and `flakes` experimental features. If you see
-`experimental Nix feature 'nix-command' is disabled`, enable them — in
-`configuration.nix`:
+To build or run the package directly with the `nix` CLI, that CLI needs the `nix-command` and `flakes` experimental features.
+If you see `experimental Nix feature 'nix-command' is disabled`, enable them — in `configuration.nix`:
 
 ```nix
 nix.settings.experimental-features = [ "nix-command" "flakes" ];
 ```
 
-then `sudo nixos-rebuild switch` (or, for a one-off, prepend
-`nix --extra-experimental-features 'nix-command flakes' …`). After that:
+then `sudo nixos-rebuild switch` (or, for a one-off, prepend `nix --extra-experimental-features 'nix-command flakes' …`).
+After that:
 
 ```bash
 nix build "github:labmonkeys-space/nl6?dir=deploy/packages/nix#nl6" --accept-flake-config
 ```
 
-`--accept-flake-config` lets Nix use the cache the flake advertises — but only
-for **trusted** users (root or `trusted-users`). If you are not trusted, use the
-declarative `nix.settings` cache from step 1 instead.
+`--accept-flake-config` lets Nix use the cache the flake advertises — but only for **trusted** users (root or `trusted-users`).
+If you are not trusted, use the declarative `nix.settings` cache from step 1 instead.
 
 ## Building the packages yourself
 
-If a release does not yet carry packages for your platform, or you want to build
-from a specific commit, produce them locally with `make packages` (needs Go;
-nfpm is fetched automatically):
+If a release does not yet carry packages for your platform, or you want to build from a specific commit, produce them locally with `make packages` (needs Go; nfpm is fetched automatically):
 
 ```bash
 make packages          # → dist/*.deb and dist/*.rpm for amd64 + arm64
 ```
 
-Full packaging reference — layout, `nfpm.yaml`, the NixOS flake/module, the
-Cachix cache, and the container-based install smoke test — lives in
-[`deploy/packages/README.md`](https://github.com/labmonkeys-space/nl6/blob/main/deploy/packages/README.md).
+Full packaging reference — layout, `nfpm.yaml`, the NixOS flake/module, the Cachix cache, and the container-based install smoke test — lives in [`deploy/packages/README.md`](https://github.com/labmonkeys-space/nl6/blob/main/deploy/packages/README.md).
 
 ## See also
 
