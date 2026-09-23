@@ -42,7 +42,8 @@ If `modprobe` fails the host kernel may be missing TUN support entirely
 Each device opens several sockets, so large fleets need a high `nofile`. The Go
 runtime nl6 is built on raises the soft limit to the **hard** limit at startup,
 so this is usually handled automatically. If you still hit `too many open files`, the *hard* limit
-is capped (restrictive container or systemd `LimitNOFILE=…:1024`) — raise it:
+is capped (restrictive container or a hand-written systemd unit with
+`LimitNOFILE=…:1024`; the packaged unit sets `LimitNOFILE=1048576`) — raise it:
 
 ```bash
 ulimit -Hn 1048576          # current shell; nl6 then lifts the soft limit to it
@@ -61,12 +62,13 @@ negative integer values on a tagged release, upgrade to a newer build.
 ## Debug commands
 
 ```bash
-# Check TUN interfaces
-ip addr show | grep sim
+# Check TUN interfaces (named sim<N>; they live inside the nl6sim namespace)
 sudo ip netns exec nl6sim ip addr | grep sim
+ip addr show | grep sim                       # only with -no-namespace
 
-# Verify device processes (adjust port if using -snmp-port)
-ss -tulpn | grep -E "(161|1161|22)"
+# Verify device sockets (adjust port if using -snmp-port). The sockets are
+# bound inside nl6sim, so a plain `ss` on the host shows none of them.
+sudo ip netns exec nl6sim ss -tulpn | grep -E "(161|1161|22)"
 
 # Monitor system resources
 htop

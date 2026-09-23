@@ -1126,6 +1126,6 @@ curl -k https://192.168.100.1:8443/api/storage/volumes
 curl -k https://192.168.100.1:8443/api/storage/aggregates
 
 # AWS S3
-curl http://192.168.100.1:8443/            # list buckets
-curl http://192.168.100.1:8443/my-bucket   # bucket contents
+curl -k https://192.168.100.1:8443/            # list buckets
+curl -k https://192.168.100.1:8443/my-bucket   # bucket contents
 ```

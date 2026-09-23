@@ -9,9 +9,9 @@ runtime's goroutine / heap footprint rather than raw CPU.
 
 | Dimension | Footprint |
 |-----------|-----------|
-| **Memory** | ~50 MB base + ~1 KB per device. |
+| **Memory** | About 16 KiB of live heap per device: 78.5 MiB measured at 5,000 devices, see [Profiling](profiling.md#the-forced-gc-default-measured). |
 | **CPU** | Minimal during steady state; bursts during device bring-up. |
-| **File descriptors** | Dominated by per-device sockets — raise `ulimit -n` well above the device count. |
+| **File descriptors** | Dominated by per-device sockets. nl6 raises its soft limit to the hard limit at startup and the packaged systemd unit sets `LimitNOFILE=1048576`; intervene only when the hard limit is capped (see below). |
 | **Network** | `nl6sim` namespace isolation prevents systemd-networkd overhead. |
 
 ## Optimisations already in place
@@ -26,8 +26,9 @@ The simulator ships the following out of the box — no tuning required:
 - **Buffer pool** for SNMP reads — reduces GC pressure on sustained traffic.
 - **Shared SSH / TLS keys** across all devices — avoids per-device key
   generation.
-- **Parallel TUN pre-allocation** — `prealloc.go` spins up 100–200 workers
-  to bring a large fleet online in seconds.
+- **Parallel TUN pre-allocation** — `prealloc.go` spins up 100 to 200 workers
+  by default (sized by batch; `max_workers` in the create request overrides it,
+  clamped to 500) to bring a large fleet online in seconds.
 
 See [Architecture](../explanation/architecture.md) for the component map.
 
@@ -40,7 +41,9 @@ Run these before a large deployment:
   process's soft limit to the **hard** limit at startup, so on a typical host no
   action is needed. You only have to intervene when the *hard* limit is
   capped low — e.g. a restrictive container or a systemd unit with
-  `LimitNOFILE=…:1024`. In that case raise the hard ceiling:
+  `LimitNOFILE=…:1024`. The packaged unit under `deploy/packages/systemd/` sets
+  `LimitNOFILE=1048576`, so a `.deb` / `.rpm` install is covered. Otherwise
+  raise the hard ceiling:
   ```bash
   ulimit -Hn 1048576         # current shell (then nl6 lifts the soft limit to it)
   ```
@@ -75,8 +78,8 @@ When running under Docker, pair the host tuning above with:
   manage TUN / netns.
 - `--network=host` so per-device TUN IPs are reachable from outside the
   container.
-- A memory budget of `~50 MB base + ~1 KiB * device_count` plus a
-  comfortable buffer.
+- A memory budget of about `16 KiB * device_count` of live heap plus a
+  comfortable buffer for the Go runtime.
 
 See [Docker](../getting-started/docker.md) for the full bring-up recipe and
 [Troubleshooting](troubleshooting.md) for bring-up failures.

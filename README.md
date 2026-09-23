@@ -42,20 +42,22 @@ network namespaces.
 - **Per-device flow export** (NetFlow v5 / v9, IPFIX, sFlow v5) with
   per-device source IPs — see
   [Flow export](https://labmonkeys-space.github.io/nl6/ops/flow-export/).
-- **Per-device SNMPv2c trap / INFORM export** — central Poisson scheduler
-  with a global rate cap, a user-overridable JSON catalog, and per-device
-  UDP source IPs. Suited to trap-daemon scale testing. Configure with
-  `-trap-collector <host:port>`; full flag list and catalog schema in
-  [CLAUDE.md](CLAUDE.md) → "SNMP trap export".
-- **Per-device UDP syslog export** (RFC 5424 / RFC 3164) — central
-  Poisson scheduler with a global rate cap, user-overridable JSON
-  catalog, and per-device UDP source IPs. Ships six generic entries
+- **Per-device SNMP trap / INFORM export** (v1, v2c, v3 USM) — central
+  Poisson scheduler with a global rate cap, a user-overridable JSON catalog,
+  and per-device UDP source IPs. Suited to trap-daemon scale testing.
+  Configure with `-trap-collector <host:port>`; see
+  [SNMP traps](https://labmonkeys-space.github.io/nl6/ops/snmp-traps/) and the
+  [catalog reference](https://labmonkeys-space.github.io/nl6/reference/snmp-traps/).
+- **Per-device syslog export** (RFC 5424 / RFC 3164 over UDP, TCP or TLS) —
+  central Poisson scheduler with a global rate cap, user-overridable JSON
+  catalog, and per-device source IPs. Ships six generic entries
   (interface up/down, auth success/failure, config change, system
   restart) spanning `local7` and `authpriv`; select format with
-  `-syslog-format 5424|3164`. Suited to syslog-collector scale
-  testing — configure with `-syslog-collector <host:port>`; full flag
-  list and catalog schema in [CLAUDE.md](CLAUDE.md) →
-  "UDP syslog export".
+  `-syslog-format 5424|3164` and transport with `-syslog-transport udp|tcp|tls`.
+  Suited to syslog-collector scale testing — configure with
+  `-syslog-collector <host:port>`; see
+  [Syslog export](https://labmonkeys-space.github.io/nl6/ops/syslog-export/) and the
+  [catalog reference](https://labmonkeys-space.github.io/nl6/reference/syslog-export/).
 - **gNMI streaming telemetry** — every device serves a read-only
   OpenConfig dial-in target (gRPC + TLS on `:9339`, SAMPLE / ON_CHANGE /
   ONCE), and can additionally **push** telemetry to a collector via
