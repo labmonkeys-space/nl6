@@ -1,6 +1,7 @@
 # Device types
 
 nl6 ships resource files for **29 device types across 9 categories**.
+The REST API's `category` filter uses a coarser set of five values, shown below.
 Each device type has its own directory under `go/nl6/resources/`
 containing JSON responses for SNMP OIDs, SSH commands, and (for storage
 devices) REST API endpoints. See [Resource files](resource-files.md) for the
@@ -14,7 +15,7 @@ JSON format.
 | Cisco CRS-X | 144 | Carrier-class router |
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |
-| Juniper MX960 | 96 | Service provider edge router |
+| Juniper MX960 | 80 | Service provider edge router |
 
 ## Edge routers
 
@@ -28,7 +29,7 @@ JSON format.
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Cisco Nexus 9500 | 48 | Data center spine switch |
+| Cisco Nexus 9500 | 64 | Data center spine switch |
 | Arista 7280R3 | 32 | High-performance switch |
 
 ## Campus switches
@@ -43,7 +44,7 @@ JSON format.
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Palo Alto PA-3220 | 12 | Next-gen firewall |
+| Palo Alto PA-3220 | 16 | Next-gen firewall |
 | Fortinet FortiGate-600E | 20 | Enterprise firewall |
 | SonicWall NSa 6700 | 16 | Next-gen firewall |
 | Check Point 15600 | 24 | Security gateway |
@@ -55,7 +56,7 @@ JSON format.
 | Dell PowerEdge R750 | 4 | Server BMC/iDRAC |
 | HPE ProLiant DL380 | 4 | Server iLO interface |
 | IBM Power S922 | 4 | Power Systems server |
-| Linux Server | — | Ubuntu 24.04 LTS (SNMP, SSH) |
+| Linux Server | 3 | Ubuntu 24.04 LTS (SNMP, SSH) |
 
 ## GPU servers
 
@@ -87,7 +88,7 @@ directory.
 
 | Device | Channels | Protocols |
 |--------|----------|-----------|
-| Ciena Waveserver 5 | 2 × WaveLogic 5 Extreme | SNMP, SSH |
+| Ciena Waveserver 5 | 2 × WaveLogic 5 Extreme | SNMP, SSH, gNMI |
 
 A coherent DWDM transport platform rather than a packet device. Its
 per-channel discovery key is the optical-channel (OCH) **component name**
@@ -106,6 +107,19 @@ bands, the on-demand degradation endpoint and a per-use-case validation
 walkthrough, and the
 [limitations doc](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/ciena_waveserver5_limitations.md)
 for where the simulation stops.
+
+## API `category` values
+
+`POST /api/v1/devices` with `round_robin: true` accepts a `category` filter.
+It takes exactly one of five strings; any other value matches no device type and is rejected with 400.
+
+| API `category` | Doc categories above |
+|----------------|----------------------|
+| `Network Devices` | Core routers, Edge routers, Data center switches, Campus switches, Firewalls |
+| `Servers` | Servers |
+| `GPU Servers` | GPU servers |
+| `Storage` | Storage systems |
+| `Optical Transport` | Optical transport |
 
 ## Enhanced features (all network devices)
 
@@ -128,9 +142,9 @@ for where the simulation stops.
 
 ## World cities for `sysLocation`
 
-Device `sysLocation` values are drawn from a bundled 98-city dataset so large
+Device `sysLocation` values are drawn from a bundled world-cities dataset of about 47,000 rows so large
 fleets have plausible geographic spread. The dataset ships under
-`go/nl6/resources/worldcities/`.
+`go/nl6/worldcities/` as 97 CSV shards plus a `header.csv`.
 
 Each entry's **latitude/longitude** are retained from the dataset and exposed
 per device via `GET /api/v1/devices` (`location` / `latitude` / `longitude`) —

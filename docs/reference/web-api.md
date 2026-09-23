@@ -27,6 +27,22 @@ management web UI at `/`.
 | `/api/v1/devices/{ip}/syslog` | POST | Fire a named catalog syslog message on a specific device. |
 | `/api/v1/devices/{ip}/optical/{component}/degrade` | POST | Degrade one optical channel on demand (optional auto-expiring window). |
 | `/api/v1/devices/{ip}/optical` | GET | Current degradation state of every optical channel on a device. |
+| `/api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status` | POST | Move one interface's link state, with optional `duration` auto-revert. See [Interface state](./interface-state.md). |
+| `/api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status` | POST | Set one interface's admin status, with optional `duration` auto-revert. See [Interface state](./interface-state.md). |
+| `/api/v1/topology` | POST | Add inter-device LLDP links. See [LLDP topology](./lldp-topology.md). |
+| `/api/v1/topology` | GET | List configured links. |
+| `/api/v1/topology` | DELETE | Remove links. |
+| `/api/v1/topology/status` | GET | `{subsystem_active, configured_links, active_links}`. |
+| `/api/v1/topology/graph` | GET | Node and edge graph for the web console's topology view. |
+| `/api/v1/scenarios` | POST | Create a load-test scenario. See [Load-test scenario REST API](./loadtest-api.md). |
+| `/api/v1/scenarios` | GET | List scenarios. |
+| `/api/v1/scenarios/{id}` | GET | Scenario status. |
+| `/api/v1/scenarios/{id}` | DELETE | Delete a scenario. |
+| `/api/v1/scenarios/{id}/arm` | POST | Arm a scenario. |
+| `/api/v1/scenarios/{id}/start` | POST | Start an armed scenario. |
+| `/api/v1/scenarios/{id}/stop` | POST | Stop a running scenario. |
+| `/api/v1/scenarios/{id}/report` | GET | Scenario report. |
+| `/api/v1/scenarios/{id}/metrics` | GET | Scenario metrics. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
@@ -36,6 +52,8 @@ management web UI at `/`.
 | `/api/v1/profiling` | POST | Open or close the gate at runtime, optionally with a push `server_address` and a `duration` auto-revert (24h cap). |
 | `/debug/pprof/` | GET | The Go `net/http/pprof` surface plus `godeltaprof`'s `delta_heap` / `delta_block` / `delta_mutex`, for a Grafana Alloy scrape. `503` while the gate is closed. |
 | `/health` | GET | Health check endpoint. |
+| `/` and `/ui` | GET | The management web console. |
+| `/web/*` | GET | Static assets (CSS, JS) for the console. |
 
 ## Fidelity mode
 
@@ -119,6 +137,10 @@ Their replacements are `GET /debug/pprof/heap` and `GET /debug/pprof/profile?sec
 
 Bulk creation supports round-robin across all device types, category-based
 filtering, per-request SNMP port selection, and an optional SNMPv3 block.
+
+`category` filters a `round_robin` batch.
+It accepts exactly five strings: `Network Devices`, `GPU Servers`, `Storage`, `Servers`, `Optical Transport`.
+Any other value matches no device type and is rejected with 400.
 
 > **Addressing.** Device IPs are *management* addresses on a flat `/16` plane.
 > `netmask` is optional and **defaults to `/16`** — only the `/16` network and
@@ -230,8 +252,7 @@ rather than at the first encrypted request — a 201 followed by every encrypted
 poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when
 both are set **on the DES path only**. The AES128 path ignores `priv_password`
-and always derives from `password`
-, so a device
+and always derives from `password`, so a device
 configured with two distinct passwords and `"priv_protocol": 2` encrypts under
 a key no RFC 3414 manager derives. `Validate` accepts the configuration
 regardless.
@@ -371,7 +392,7 @@ BER table.
 
 ### One creation batch at a time (`409`)
 
-**Only one device-creation batch runs at a time.** It at a time.
+**Only one device-creation batch runs at a time.**
 A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
 Two such requests used to interleave.
 
@@ -472,7 +493,6 @@ in to any combination.
 "flow": {
   "collector":        "192.168.1.10:2055",      // required; host:port
   "protocol":         "netflow9",               // optional; "netflow9" | "ipfix" | "netflow5" | "sflow" (alias: "sflow5"); default "netflow9"
-  "tick_interval":    "5s",                      // optional; global ticker used, per-device value validated and logged if divergent
   "active_timeout":   "30s",                     // optional; default 30s
   "inactive_timeout": "15s",                     // optional; default 15s
   "sub_agent_id":     0,                         // optional; sFlow datagram sub_agent_id, default 0; ignored by non-sFlow protocols
@@ -494,7 +514,6 @@ No per-device override exists for `source_per_device` — the
   "collector":       "192.168.1.10:162",        // required; host:port
   "mode":            "trap",                     // optional; "trap" | "inform"; default "trap"
   "community":       "public",                   // optional; SNMPv2c community; default "public"
-  "interval":        "30s",                      // optional; ACCEPTED AND STORED BUT NOT HONORED (see below); default 30s
   "inform_timeout":  "5s",                       // optional; INFORM retry timeout; default 5s
   "inform_retries":  2                           // optional; max retransmissions per INFORM; default 2
 }
@@ -513,81 +532,43 @@ without per-device binding is a runtime attach failure, not a 400.
 ```json
 "syslog": {
   "collector": "192.168.1.10:514",              // required; host:port
-  "format":    "5424",                           // optional; "5424" | "3164"; default "5424"
-  "interval":  "10s"                             // optional; ACCEPTED AND STORED BUT NOT HONORED (see below); default 10s
+  "format":    "5424"                            // optional; "5424" | "3164"; default "5424"
 }
 ```
 
-### Interval fields are not honored
+### No per-device cadence
 
-Three per-device cadence settings are accepted, stored, and echoed back, but the engine ignores them: `syslog.interval`, `traps.interval`, and `flow.tick_interval`.
+The REST blocks carry no cadence field.
+`syslog.interval`, `traps.interval` and `flow.tick_interval` are rejected with 400, and the error names the flag that sets the fleet-wide value:
 
-The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`). Flow drives every device from one simulator-wide ticker. Setting a per-device value changes nothing. The simulator-wide `-flow-tick-interval` **is** honored; it is the per-device override that is not.
+```
+syslog: interval is not supported per device — one central scheduler fires every device at the simulator-wide mean; use -syslog-interval
+traps: interval is not supported per device — one central scheduler fires every device at the simulator-wide mean; use -trap-interval
+flow: tick_interval is not supported per device — one simulator-wide ticker drives every device; use -flow-tick-interval
+```
 
-So that the API does not confirm a wrong belief, both values are reported:
+The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`).
+Flow drives every device from one simulator-wide ticker (`-flow-tick-interval`).
+No `warnings` entry is emitted for these fields any more; the request fails instead.
 
-| field | means |
-|---|---|
-| `interval` / `tick_interval` | what you **asked for** (inert) |
-| `effective_intervals.*` (sibling object) | the cadence the scheduler is **configured** with |
-
-Omitted for subsystems a device does not use. Present only when the device exports something.
-
-**`*_effective` is not an observed emission rate.** It is strictly more truthful than the inert `interval`, but three things modulate real output without changing it:
-
-- **`-syslog-global-cap` / `-trap-global-cap`** throttle by *blocking*, so a cap of 5/s across 30,000 devices gives a real cadence near 100 minutes while the field still reports `10s`.
-- **`-fidelity`** (and `POST /api/v1/fidelity` at runtime) suppresses background emission entirely — the device emits nothing while the field still reports the mean.
-- **A running scenario** drives its participants from a scenario-owned scheduler at the scenario's own rate, which this field never sees.
-
-Use it to answer "is my per-device setting doing anything?" (it is not), not to compute expected event volume.
-
-For flow specifically, `effective_intervals.flow_tick_interval` reports the period the ticker actually latched — the simulator-wide cadence in force, which is `-flow-tick-interval` when set and `5s` otherwise.
+`GET /api/v1/devices` still reports the cadence in force in a sibling object, `effective_intervals`, present only on devices that export something:
 
 ```json
 "syslog": {
   "collector": "192.0.2.144:1514",
-  "format":    "5424",
-  "interval":  "24h0m0s"            // what was requested (inert)
+  "format":    "5424"
 },
 "effective_intervals": {
   "syslog_interval": "10s"          // what the scheduler is configured with
 }
 ```
 
-An interval you did **not** set is omitted from the echo entirely: the stored value would just be the package default, and reporting it would attribute a choice to you that you never made (and make a re-POST of the body warn about it). `effective_intervals` tells you the cadence in force either way.
+`effective_intervals.*` is a configured mean, not an observed emission rate.
+`-syslog-global-cap` / `-trap-global-cap` throttle by blocking, `-fidelity` suppresses background emission entirely, and a running scenario drives its participants at its own rate.
+None of those change the reported value.
 
-The effective values sit in a **sibling object**, deliberately not inside the config blocks. A block that carried a read-only field would stop being a valid `POST` body — `POST /api/v1/devices` rejects unknown fields and that strictness reaches into nested objects — which would break every read-modify-write client, `scripts/fleet.sh import` included.
-
-A create request that SETS any of these fields gets a `warnings` entry in the response — including when the value happens to match the simulator-wide cadence, because the field is inert either way. Note it sits under `data`, inside the standard response envelope, so a scripted client reads `.data.warnings` and not `.warnings`:
-
-A **rejected** request carries the same disclosure. If a body is both invalid and sets an inert interval, the `400` reports the validation error in `message` and the disclosure in `data.warnings`, so both facts arrive in one round trip:
-
-```json
-{
-  "success": false,
-  "message": "syslog: invalid collector \"not-a-host-port\"",
-  "data": {
-    "requested": 1,
-    "warnings": [{ "field": "syslog.interval", "message": "syslog.interval is not honored: ..." }]
-  }
-}
-```
-
-The warning text describes the **field**, never the request's outcome, which is what lets the identical message ride a success, a partial batch, and a rejection alike.
-
-```json
-{
-  "success": true,
-  "message": "Created 500 devices starting from 10.42.0.1",
-  "data": {
-    "created": 500, "requested": 500, "failed": 0,
-    "warnings": [{
-      "field": "syslog.interval", "requested": "24h0m0s", "effective": "10s",
-      "message": "syslog.interval is not honored: every device is scheduled at the simulator-wide 10s, not the 24h0m0s given. ..."
-    }]
-  }
-}
-```
+The effective values sit in a sibling object, deliberately not inside the config blocks.
+A block that carried a read-only field would stop being a valid `POST` body, since `POST /api/v1/devices` rejects unknown fields, and that would break every read-modify-write client, `scripts/fleet.sh import` included.
 
 ### A GET block is a valid POST block
 
@@ -880,8 +861,8 @@ When flow export is enabled:
   "data": {
     "subsystem_active": true,
     "collectors": [
-      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "sent_bytes": 12123456, "sent_records": 243690},
-      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "sent_bytes":  5560000, "sent_records":  62000}
+      {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "send_failures": 0, "sent_bytes": 12123456, "sent_records": 243690},
+      {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "send_failures": 2, "sent_bytes":  5560000, "sent_records":  62000}
     ],
     "devices_exporting": 70,
     "last_template_send": "2026-04-23T10:35:00Z"
@@ -896,7 +877,8 @@ Response fields:
 | `subsystem_active` | `true` after `main()` boots the flow ticker goroutine — always-on. Not reachable as `false` via the HTTP endpoint during normal operation: the subsystem initialises with the rest of the process and only stops at process exit, alongside the HTTP server itself. |
 | `collectors[]` | One record per `(collector, protocol)` tuple that ever had a device. Deleted-device counters persist in the aggregate until process exit. |
 | `collectors[].devices` | Count of LIVE exporters for this tuple. `0` means no live device but the aggregate remembers prior fires. |
-| `collectors[].sent_packets` / `sent_bytes` / `sent_records` | Cumulative across live + historical exporters for this tuple (monotonic within subsystem lifecycle). |
+| `collectors[].sent_packets` / `sent_bytes` / `sent_records` | Cumulative across live + historical exporters for this tuple (monotonic within subsystem lifecycle). `sent_*` means the datagram **reached the kernel**; a refused write counts in `send_failures` instead. |
+| `collectors[].send_failures` | Datagrams the kernel refused. A down collector shows up here, not in `sent_*`. |
 | `devices_exporting` | Total LIVE exporters across all tuples. |
 | `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 / IPFIX only). |
 
@@ -928,6 +910,7 @@ directly.
       "mode":      "inform",
       "devices":   80,
       "sent":      182430,
+      "send_failures": 0,
       "informs_pending": 17,
       "informs_acked":   182380,
       "informs_failed":  33,
@@ -937,9 +920,19 @@ directly.
       "collector": "192.168.1.20:162",
       "mode":      "trap",
       "devices":   20,
-      "sent":      6000
+      "sent":      6000,
+      "send_failures": 4
     }
   ],
+  "snmp_version": "v3",
+  "snmpv3": {
+    "user": "nl6trap",
+    "security_level": "authPriv",
+    "auth_protocol": "sha1",
+    "priv_protocol": "aes128",
+    "engine_id_format": "RFC 3411 section 5 format 3: 80007ed9 (PEN 32473) || 03 || 0242 || the device's IPv4 in hex",
+    "engine_ids_by_device": {"192.168.100.1": "80007ed9030242c0a86401"}
+  },
   "devices_exporting": 100,
   "rate_limiter_tokens_available": 94,
   "catalogs_by_type": {
@@ -952,6 +945,9 @@ directly.
 
 The four `informs_*` fields **only appear on records whose `mode == inform`**.
 TRAP-mode records omit them.
+`send_failures` counts fires that did not reach the kernel (resolve or encode failure, refused write, failed INFORM retransmission).
+`snmp_version` is the fleet's notification wire format (`v2c`, `v1`, `v3`).
+`snmpv3` is present only under `-trap-snmp-version=v3`: it reports the USM user, security level and protocols, and `engine_ids_by_device` maps each exporting device IP to its derived engine ID, the value `snmptrapd`'s `createUser -e` needs. No password is reported.
 
 `subsystem_active` is the authoritative feature-on signal — `true`
 after `StartTrapSubsystem` runs. In normal operation, the HTTP
@@ -998,7 +994,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `name` | string | yes | Catalog entry name (e.g. `linkDown`, `ciscoConfigManEvent`). Must match an entry in the **device's resolved catalog** (per-type overlay if present, universal otherwise) — not the universal catalog globally. |
-| `varbindOverrides` | object | no | Map of template-field → string-value overrides. Only fields from the nine-field unified vocabulary are accepted (`IfIndex`, `IfName`, `Uptime`, `Now`, `DeviceIP`, `SysName`, `Model`, `Serial`, `ChassisID`). |
+| `varbindOverrides` | object | no | Map of template-field → string-value overrides. Only fields from the eleven-field unified vocabulary are accepted (`IfIndex`, `IfName`, `Uptime`, `Now`, `NowLocal`, `DeviceIP`, `SysName`, `Model`, `Serial`, `ChassisID`, `Detail`). See [SNMP trap reference → Template vocabulary](snmp-traps.md#template-vocabulary). |
 
 Response:
 
@@ -1025,8 +1021,8 @@ When syslog export is enabled:
 {
   "subsystem_active": true,
   "collectors": [
-    {"collector": "192.168.1.10:514", "format": "5424", "devices": 50, "sent": 18240, "send_failures": 3},
-    {"collector": "192.168.1.10:514", "format": "3164", "devices": 20, "sent":  6130, "send_failures": 0}
+    {"collector": "192.168.1.10:514", "format": "5424", "transport": "udp", "devices": 50, "sent": 18240, "send_failures": 3},
+    {"collector": "192.168.1.10:514", "format": "3164", "transport": "tcp", "devices": 20, "sent":  6130, "send_failures": 0}
   ],
   "devices_exporting": 70,
   "rate_limiter_tokens_available": 380,
@@ -1040,7 +1036,7 @@ When syslog export is enabled:
 
 Tuples are keyed by `(collector, format)`: a single collector receiving
 5424 from some devices and 3164 from others surfaces as two separate
-records. Per-device bind failures are non-fatal — the exporter falls
+records. Each record also carries its `transport` (`udp`, `tcp` or `tls`), so a TCP outage is not hidden inside a row of healthy UDP devices. Per-device bind failures are non-fatal — the exporter falls
 back to the shared-pool socket with a warning and the `sent` counter
 still increments.
 
@@ -1054,8 +1050,7 @@ imply "feature off." When disabled:
 
 `format` is `"5424"` or `"3164"`. `catalogs_by_type` follows the same
 shape as the trap endpoint. `rate_limiter_tokens_available` is present
-only when `-syslog-global-cap` is set. When disabled the response is
-`{"enabled": false}`.
+only when `-syslog-global-cap` is set.
 
 See [UDP syslog export (operator guide)](../ops/syslog-export.md) and
 [Syslog export reference](syslog-export.md) for the full feature details.
@@ -1073,7 +1068,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `name` | string | yes | Catalog entry name. Same device's-catalog resolution rule as the trap endpoint. |
-| `templateOverrides` | object | no | Nine-field unified vocabulary (same set as `varbindOverrides` on the trap side). |
+| `templateOverrides` | object | no | Eleven-field unified vocabulary (same set as `varbindOverrides` on the trap side). |
 
 Response:
 
