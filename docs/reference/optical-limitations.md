@@ -1,4 +1,4 @@
-# Ciena Waveserver 5 — simulation limitations
+# Waveserver 5 limitations
 
 **Read this before building anything against `ciena_waveserver5` that you
 intend to run against real hardware.**
