@@ -14,8 +14,8 @@ OID means what the vendor's MIB says it means. Five vendor subtrees have been
 read against a MIB. Fourteen have not, and are labelled as such in the files
 themselves.
 
-For how the agent answers a request, see the [SNMP reference](snmp.md).
-For writing your own profiles, see [resource files](resource-files.md).
+For how the agent answers a request, see the [SNMP reference](../reference/snmp.md).
+For writing your own profiles, see [resource files](../reference/resource-files.md).
 
 ## Resource values are validated at load
 
@@ -82,10 +82,10 @@ The startup load exits rather than substituting another profile, and round-robin
 An absent file is a different kind of fault: round-robin still skips it, while over REST it is also a 400, because naming a device type that does not exist is an unsatisfiable request rather than a server fault.
 The no-path guarantee covers these classified rejections only. An unclassified loader failure still answers 500 with the raw error text.
 The full path is logged server-side on every rejection, so base-naming the body loses nothing.
-Full detail, including the response envelope, is in [Web API → `resource_file` failures](web-api.md#resource_file-failures).
+Full detail, including the response envelope, is in [Web API → `resource_file` failures](../reference/web-api.md#resource_file-failures).
 
 Rule 2 covers a value on an OID-typed leaf, today only `sysObjectID`: it must be an OID the encoder can represent.
-Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire. See [The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
+Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire. See [The first OID sub-identifier is a varint](../reference/snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
 The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
 
 What remains uncovered, stated in one place:
@@ -850,7 +850,7 @@ A new device type that serves a vendor subtree and does none of the three fails 
 Nothing previously stopped the corpus regrowing the problem, and that is how it got here.
 
 **Fourteen arcs were closed by decision rather than by audit, and that is the honest call rather than a shortcut.**
-The scope measurement cross-referenced every enterprise arc the corpus serves, in both the OID-name and the OID-typed-value positions, against every consumer in this repository: the polling rules published in the [Pollaris GPU contract](gpu/pollaris.mdx), the trap catalogs (`_common` plus per-type overlays), and the docs.
+The scope measurement cross-referenced every enterprise arc the corpus serves, in both the OID-name and the OID-typed-value positions, against every consumer in this repository: the polling rules published in the [GPU collector OID contract](../reference/gpu/index.md#collector-oid-contract), the trap catalogs (`_common` plus per-type overlays), and the docs.
 Of the arcs served, only four have any consumer at all, and all four are now audited or were already correct.
 **The remaining arcs are read by nothing here.** No polling rule, no trap varbind, no doc keys on any of them.
 
@@ -900,7 +900,7 @@ A staleness guard is the mirror, since the guard says every arc is accounted for
 The label lives in a `_comment` key the decoder ignores, so nothing a device serves changes. As with the Ciena audit, the deliverable is a reading, not a data change.
 
 **The scope measurement's two caveats stand.**
-Absence of a consumer *in this repository* is not absence in the world, and the [Pollaris GPU contract](gpu/pollaris.mdx) is simply the only one nl6 publishes: if an operator reports keying on one of the fourteen, that arc moves up.
+Absence of a consumer *in this repository* is not absence in the world, and the [GPU collector OID contract](../reference/gpu/index.md#collector-oid-contract) is simply the only one nl6 publishes: if an operator reports keying on one of the fourteen, that arc moves up.
 And the four arcs that do have a consumer are consumed by nl6 *emitting* those OIDs in a trap, not by a collector keying on them, which is what makes disagreement between the two surfaces possible there and nowhere else.
 
 ### Access modes are not modelled

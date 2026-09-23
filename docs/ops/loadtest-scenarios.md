@@ -2,9 +2,9 @@
 
 The operating guide for the nl6 load-test scenario subsystem — the lifecycle,
 fidelity mode, run isolation, reconciliation, and troubleshooting. New to the
-feature? Start with the [overview](./loadtest-overview.md). For copy-pasteable
+feature? Start with the [overview](../reference/loadtest-overview.md). For copy-pasteable
 recipes by use case, see the [runbooks](./loadtest-runbooks.md); for endpoints
-and shapes, the [REST API](./loadtest-api.md) and [report schema](./loadtest-report-schema.md).
+and shapes, the [REST API](../reference/loadtest-api.md) and [report schema](../reference/loadtest-report-schema.md).
 
 Scope: **up to 8 concurrent scenarios**, each over any one of the seven shipped
 push protocols — **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**,
@@ -44,7 +44,7 @@ To **reconcile**, sum `in_window + drain` per `counters[]` row and compare to
 your monitor's received count for the same `(protocol, source_ip, collector)`
 tuple. `send_failures` vs `dropped` separates "nl6 could not send" from "nl6
 sent but the wire lost it". See the
-[report schema](./loadtest-report-schema.md#the-ledger-identity).
+[report schema](../reference/loadtest-report-schema.md#the-ledger-identity).
 
 **Prefer a browser?** Add `?format=html` for a self-contained page (stat cards,
 a loss-localization bar chart, and the participant table) you can eyeball or
@@ -116,15 +116,7 @@ reconciling. Each protocol is isolated by its **native lever**; the report's
 This is *tag-what-exists*: the levers below are already carried by the wire
 encoders (or, for PEN-dependent ones, degrade cleanly).
 
-| Protocol | `mechanism` | Lever | PEN? |
-|----------|-------------|-------|------|
-| NetFlow v9 | `netflow9_source_id` | filter received flows by the device's **Source ID** | no |
-| IPFIX | `ipfix_odid` | filter by the **Observation Domain ID** (enterprise IE is a secondary, PEN-only lever) | no |
-| sFlow v5 | `sflow_sub_agent_id` | filter by **`sub_agent_id`** | no |
-| gNMI dial-out | `gnmi_synthetic_path` | dial-out stamps the device IP in `Notification.Prefix.Target`; filter by target | no |
-| Syslog 5424 | `syslog_sd_param` | RFC 5424 SD-PARAM `[nl6@<PEN> runId="<id>"]` | **yes** |
-| SNMP trap/inform | `snmp_enterprise_varbind` | enterprise varbind under the nl6 PEN | **yes** |
-| NetFlow v5 | `window_source_ip` | no taggable field — isolate by participant source IPs + `[T0,T1)` | n/a |
+The table of levers, one row per protocol, is [Run-tag levers](../reference/loadtest-report-schema.md#run-tag-levers) in the report schema.
 
 - **In every case** the measurement window `[T0,T1)` plus the participant source
   IPs already narrow the traffic; the per-protocol lever adds a second, in-band
@@ -197,7 +189,7 @@ nl6-reconcile -report report.json -received collector.csv
   shortfall as `RESIDUAL`. Pass `-drained` once the queue has emptied to assert
   the run is over and get `LOSS`. Reporting a single unclassified residual as
   loss is the defect this flag exists to prevent — see
-  [Collector ceiling](./loadtest-collector-ceiling.md).
+  [Collector ceiling](../explanation/loadtest-collector-ceiling.md).
 - **Compatibility note.** `-drained` changed the DEFAULT output: a shortfall that
   previously printed `LOSS` now prints `RESIDUAL`, in text, CSV and JSON alike,
   and the summary reads `fleet_residual` (or `fleet_delta` when the figure is
@@ -234,7 +226,7 @@ version together pin a reconciliation).
 To reconcile **by hand** instead:
 
 1. **Join** the report's `counters[]` (or the [CSV
-   projection](./loadtest-report-schema.md#csv-projection)) against your
+   projection](../reference/loadtest-report-schema.md#csv-projection)) against your
    monitor's received-counts export **on `(protocol, source_ip, collector)`** —
    the report is keyed by exactly that tuple so the join is 1:1.
 2. **Per row**, compute `loss_ratio`. `0` = perfect fidelity. A positive ratio
@@ -270,7 +262,7 @@ To reconcile **by hand** instead:
 ## Validating a collector against the report
 
 For flow scenarios (`netflow5` / `netflow9` / `ipfix`) the report's
-[`applications[]`](./loadtest-report-schema.md#applications--fleet-wide-flow-traffic-ground-truth)
+[`applications[]`](../reference/loadtest-report-schema.md#applications--fleet-wide-flow-traffic-ground-truth)
 block is the trusted-sender ground truth for per-application traffic: total
 `bytes` / `packets` / `records` and `avg_bytes_per_second` per
 `(l4_proto, dst_port)`. To validate a collector's per-application view
@@ -310,9 +302,9 @@ block is the trusted-sender ground truth for per-application traffic: total
    misclassification.
 
 5. **For NBAR2 participants, reconcile the decoded AVC fields on the same totals basis.**
-   Sum the collector's decoded records by `(protocol, destination port, applicationId)` and compare `records`, `octetDeltaCount` and `packetDeltaCount` sums against `applications[]`; then sum by `(applicationId, HTTP host)` and `(applicationId, URI)` and compare against the [`l7_values[]`](./loadtest-report-schema.md#l7_values--layer-7-values-from-nbar2-records) rows.
+   Sum the collector's decoded records by `(protocol, destination port, applicationId)` and compare `records`, `octetDeltaCount` and `packetDeltaCount` sums against `applications[]`; then sum by `(applicationId, HTTP host)` and `(applicationId, URI)` and compare against the [`l7_values[]`](../reference/loadtest-report-schema.md#l7_values--layer-7-values-from-nbar2-records) rows.
    Per field, the `l7_values` total is at most the `applications` total, never necessarily equal, because a record without a host or URI has no `l7_values` row.
-   `make test-interop-ipfix` does exactly this against a real IPFIXcol2 with no tolerance band and is the reference for the method; see [flow export](./flow-export.md#interoperability).
+   `make test-interop-ipfix` does exactly this against a real IPFIXcol2 with no tolerance band and is the reference for the method; see [flow export](../reference/flow-export.md#interoperability).
 
 `sflow` scenarios have no `applications` rows: sFlow byte volumes are derived
 by sampling extrapolation at the collector, which is not comparable to
@@ -321,7 +313,7 @@ record-byte totals.
 ## Clock sync (chrony/NTP) — required for time localization
 
 Reconciliation totals (`sent` vs `received`) need **no** clock agreement — a
-counter is a counter. But **time localization** ([`sub_windows`](./loadtest-report-schema.md#loss-localization))
+counter is a counter. But **time localization** ([`sub_windows`](../reference/loadtest-report-schema.md#loss-localization))
 does: nl6 buckets each send by its write-return time relative to `T0`, and to
 line your received data up against those buckets you must bucket **your**
 records by receive-time relative to the **same** `T0`. If nl6's host and the
@@ -366,7 +358,7 @@ Above 900 arm-time exclusions the list is a **sample**: `excluded_truncated` is 
 | `start` → `409 expected N participants, M armed: M−N more than declared` | The fleet holds devices your selectors match but your expectation omits. | Either the fleet grew or the expectation is stale. Update `expect_participants` — an over-sized run is refused because it is no longer comparable to the baseline it would be measured against. |
 | `POST /scenarios` → `409 too many active scenarios` | 8 scenarios are already non-terminal. | Stop / abort / `DELETE` one first (`GET /api/v1/scenarios` lists them with their phases). |
 | `arm` → `409 … participant(s) are claimed by scenario …` | Those devices belong to another non-terminal scenario. A device participates in at most one scenario at a time. | Stop or delete the named scenario, or narrow this one's participants. Note an **armed** scenario already holds its fleet — it does not have to be running — so cancelling it releases the devices. |
-| `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](./loadtest-api.md#phase--verb-matrix). |
+| `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](../reference/loadtest-api.md#phase--verb-matrix). |
 | `report` → `409 … available only after stop or abort` | The scenario has not finalized yet. | Stop it (or wait for the window to auto-close at `T1`), then re-request the report. |
 | Device create/delete → `409 fleet … frozen by running scenario` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |
 

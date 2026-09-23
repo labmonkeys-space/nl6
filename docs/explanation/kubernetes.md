@@ -26,8 +26,9 @@ Out of the box the simulator needs:
   installation.
 - `CAP_SYS_ADMIN` — `setns(CLONE_NEWNET)` to enter the `nl6sim`
   namespace, plus the `ip netns` operations that depend on it.
-- `CAP_NET_BIND_SERVICE` (or root) — bind UDP/161, UDP/162, UDP/514,
-  TCP/22 on every device IP.
+- `CAP_NET_BIND_SERVICE` (or root) — bind UDP/161, TCP/22, TCP/9339 and
+  the HTTPS REST port on every device IP. Trap and syslog export bind an
+  ephemeral source port; 162 and 514 are the collector's ports, not nl6's.
 - `/dev/net/tun` mounted into the container.
 
 `CAP_SYS_ADMIN` is effectively the "new root". Restricted-profile
@@ -76,8 +77,9 @@ density, reschedulability, replicas).
 
 ### 4. Device CIDR is not cluster-routable
 
-Each simulated device gets its own IP — by default in `10.42.0.0/16` — on
-a TUN interface inside the `nl6sim` namespace on one node. From the
+Each simulated device gets its own IP (`-auto-start-ip` sets the first one;
+`10.42.0.0/16` is the convention the examples use) on a TUN interface
+inside the `nl6sim` namespace on one node. From the
 **host** of that node, traffic to those IPs routes via veth into the
 namespace and reaches the device. From **any other pod or node** on the
 cluster, `10.42.0.0/16` is unknown and unreachable.
@@ -98,6 +100,11 @@ cluster network. To make device IPs reachable from them you need one of:
 
 All three are real network engineering on the cluster operator's side —
 not configuration the simulator can ship as a Helm chart.
+
+`deploy/helm/nl6-minion/` exists despite this. It is a single-node lab
+chart that co-locates nl6 with an OpenNMS Minion in one `hostNetwork` pod
+(option one above), fixed at one replica. It is a convenience, not a
+supported deployment, and its own README says so.
 
 ## What it would take to make Kubernetes a first-class target
 
@@ -120,7 +127,7 @@ than on a dedicated lab host.
 
 - **Bare-metal Linux** — the canonical environment.
   [Quick start](../getting-started/quick-start.md),
-  [Scaling](scaling.md).
+  [Scaling](../ops/scaling.md).
 - **Docker on a single host** — same privileges, isolated filesystem.
   [Docker](../getting-started/docker.md).
 

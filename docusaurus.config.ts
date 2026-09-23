@@ -99,6 +99,26 @@ const config: Config = {
       }),
     }),
 
+    // Old URLs from before the docs/explanation/ section existed. Each entry
+    // emits a static HTML page at the old path that forwards to the new one,
+    // so bookmarks and search-engine results keep working. Must run BEFORE
+    // csp-meta (below), which hashes the inline script those pages carry.
+    [
+      '@docusaurus/plugin-client-redirects',
+      {
+        redirects: [
+          {from: '/reference/architecture', to: '/explanation/architecture'},
+          {from: '/ops/kubernetes', to: '/explanation/kubernetes'},
+          {from: '/reference/snmp-data-fidelity', to: '/explanation/snmp-data-fidelity'},
+          {from: '/reference/loadtest-collector-ceiling', to: '/explanation/loadtest-collector-ceiling'},
+          {from: '/reference/loadtest-scenarios', to: '/ops/loadtest-scenarios'},
+          {from: '/reference/loadtest-runbooks', to: '/ops/loadtest-runbooks'},
+          // Retired: design plans for external repositories (probler, l8parser).
+          {from: ['/reference/gpu/proto-model', '/reference/gpu/pollaris'], to: '/reference/gpu'},
+        ],
+      },
+    ],
+
     // Content-Security-Policy as a <meta http-equiv> on every built page.
     // GitHub Pages serves the site and cannot be given custom response
     // headers, so meta delivery is the only option. Must stay LAST: it
@@ -182,6 +202,12 @@ const config: Config = {
           sidebarId: 'reference',
           position: 'left',
           label: 'Reference',
+        },
+        {
+          type: 'docSidebar',
+          sidebarId: 'explanation',
+          position: 'left',
+          label: 'Explanation',
         },
         {
           href: 'https://github.com/labmonkeys-space/nl6',

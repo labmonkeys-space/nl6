@@ -2,7 +2,7 @@
 
 nl6 answers SNMP v1, v2c and v3 queries on UDP port 161 (override with
 [`-snmp-port`](cli-flags.md#core-flags)) for every simulated device.
-See [Architecture](architecture.md) for the component map.
+See [Architecture](../explanation/architecture.md) for the component map.
 
 ## Protocol coverage
 
@@ -283,7 +283,7 @@ The distinction is worth 4x: that profile ships static rows for `ifXTable` colum
 
 Whether a value is *encodable* is checked at load. Whether it is *faithful to
 the vendor's MIB* is a separate question with a separate answer. Both are on
-the [SNMP data fidelity](snmp-data-fidelity.md) page.
+the [SNMP data fidelity](../explanation/snmp-data-fidelity.md) page.
 
 ## Response size, `max-repetitions` and truncation
 

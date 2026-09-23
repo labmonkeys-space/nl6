@@ -7,7 +7,7 @@ The load-test scenario subsystem is driven entirely over REST under
 [report](./loadtest-report-schema.md) an operator diffs against a monitor's
 received counts.
 
-See the [scenarios guide](./loadtest-scenarios.md) for how to use these
+See the [scenarios guide](../ops/loadtest-scenarios.md) for how to use these
 endpoints to run a fidelity check and troubleshoot failures.
 
 ## Conventions
@@ -130,7 +130,7 @@ drowning the collector.
 
 The predicate is evaluated on a 1 s cadence using **approximate mid-run
 reads** of the live atomics (no drain barrier). The resulting report is a
-normal `aborted` artifact (see the [scenarios guide](./loadtest-scenarios.md)).
+normal `aborted` artifact (see the [scenarios guide](../ops/loadtest-scenarios.md)).
 
 #### Rate profiles — `rate_profile`
 

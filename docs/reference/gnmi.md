@@ -440,5 +440,5 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 ## See also
 
 - [SNMP reference](snmp.md) — the IF-MIB counter source, including the analytical sine-wave model.
-- [Architecture](architecture.md) — where the gNMI dial-in server sits in the simulator's component map.
+- [Architecture](../explanation/architecture.md) — where the gNMI dial-in server sits in the simulator's component map.
 - [CLI flags](cli-flags.md) — the canonical flag catalog.

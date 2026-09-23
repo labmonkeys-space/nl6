@@ -29,7 +29,7 @@ The simulator ships the following out of the box — no tuning required:
 - **Parallel TUN pre-allocation** — `prealloc.go` spins up 100–200 workers
   to bring a large fleet online in seconds.
 
-See [Architecture](../reference/architecture.md) for the component map.
+See [Architecture](../explanation/architecture.md) for the component map.
 
 ## Host preparation
 
@@ -51,9 +51,8 @@ Run these before a large deployment:
   running in the root namespace pulls systemd-networkd into every interface
   change and kills throughput.
 - **Prefer the container path** for repeatable setup — the
-  [Docker](../getting-started/docker.md) image and
-  [Kubernetes](kubernetes.md) deployment bundle the dependencies and the
-  tuning above.
+  [Docker](../getting-started/docker.md) image bundles the dependencies and
+  the tuning above.
 
 ## What to watch
 
@@ -82,6 +81,5 @@ When running under Docker, pair the host tuning above with:
 See [Docker](../getting-started/docker.md) for the full bring-up recipe and
 [Troubleshooting](troubleshooting.md) for bring-up failures.
 
-Kubernetes is not currently supported as a deployment target — see
-[Kubernetes (not supported)](kubernetes.md) for the constraints that put it
-out of scope.
+Kubernetes is not a supported deployment target. `deploy/helm/nl6-minion/` is a single-node lab chart, not a supported path.
+[Why Kubernetes is out of scope](../explanation/kubernetes.md) lists the constraints.

@@ -75,7 +75,7 @@ _bmad/
 
 # Scenario report captured from the running simulator. The loadtest runbooks
 # tell operators to write it into the CWD (`curl .../report > report.json`,
-# docs/reference/loadtest-runbooks.md), so it lands at the repo root and
+# docs/ops/loadtest-runbooks.md), so it lands at the repo root and
 # otherwise shows up in `git status` after every load test.
 /report.json
 /collector.csv

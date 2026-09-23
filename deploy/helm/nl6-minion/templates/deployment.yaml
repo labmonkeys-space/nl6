@@ -11,7 +11,7 @@ metadata:
 spec:
   # Singleton by design: nl6 owns host-global names (nl6sim netns, veth pair,
   # 10.254.0.0/30 bridge). Two replicas on one node collide; see
-  # docs/ops/kubernetes.md. Recreate avoids a rollout running two at once.
+  # docs/explanation/kubernetes.md. Recreate avoids a rollout running two at once.
   replicas: 1
   strategy:
     type: Recreate

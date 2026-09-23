@@ -868,8 +868,8 @@ func TestNoNvidiaOIDsShipUnderMailteck(t *testing.T) {
 
 	// And the NEW arc must actually be served, or this test would also pass on a
 	// corpus that had lost the GPU surface entirely — which nl6#576 explicitly
-	// rejected as an option, because docs/reference/gpu/pollaris.mdx publishes
-	// polling rules against these OIDs.
+	// rejected as an option, because docs/reference/gpu/index.md publishes
+	// the collector OID contract for these OIDs.
 	//
 	// Counted per POSITION, so losing the three sysObjectID values while keeping
 	// the 222 names is reported rather than absorbed into one total: those three

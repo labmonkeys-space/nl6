@@ -1,6 +1,6 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
-// Three independent sidebars, one per top-level section. The navbar items in
+// Four independent sidebars, one per top-level section. The navbar items in
 // docusaurus.config.ts select which sidebar to render via `sidebarId`.
 const sidebars: SidebarsConfig = {
   gettingStarted: [
@@ -31,9 +31,29 @@ const sidebars: SidebarsConfig = {
         'ops/snmp-traps',
         'ops/syslog-export',
         'ops/migration-per-device-exports',
-        'ops/kubernetes',
         'ops/profiling',
         'ops/troubleshooting',
+        {
+          type: 'category',
+          label: 'Load-test scenarios',
+          // The operating guide and the worked recipes. The feature overview,
+          // REST API and report schema stay under Reference.
+          items: ['ops/loadtest-scenarios', 'ops/loadtest-runbooks'],
+        },
+      ],
+    },
+  ],
+
+  explanation: [
+    {
+      type: 'category',
+      label: 'Explanation',
+      collapsed: false,
+      items: [
+        'explanation/architecture',
+        'explanation/kubernetes',
+        'explanation/snmp-data-fidelity',
+        'explanation/loadtest-collector-ceiling',
       ],
     },
   ],
@@ -44,12 +64,11 @@ const sidebars: SidebarsConfig = {
       label: 'Reference',
       collapsed: false,
       items: [
-        'reference/architecture',
         'reference/cli-flags',
         'reference/web-api',
         'reference/device-types',
         'reference/snmp',
-        'reference/snmp-data-fidelity',
+        'reference/snmp-data-validation',
         'reference/snmp-traps',
         'reference/syslog-export',
         'reference/flow-export',
@@ -63,15 +82,13 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Load-test scenarios',
-          // Landing = the feature overview; the operating guide is "Scenarios"
-          // (loadtest-scenarios.md), the worked recipes are "Runbooks".
+          // Landing = the feature overview. The operating guide and the
+          // runbooks are under Ops; the collector-ceiling method is under
+          // Explanation.
           link: {type: 'doc', id: 'reference/loadtest-overview'},
           items: [
             'reference/loadtest-api',
-            'reference/loadtest-scenarios',
-            'reference/loadtest-runbooks',
             'reference/loadtest-report-schema',
-            'reference/loadtest-collector-ceiling',
           ],
         },
         'reference/resource-files',
@@ -82,11 +99,7 @@ const sidebars: SidebarsConfig = {
           // page directly; the nested children become the sub-pages below it.
           // Avoids the confusing "GPU Simulation > index" sidebar shape.
           link: {type: 'doc', id: 'reference/gpu/index'},
-          items: [
-            'reference/gpu/proto-model',
-            'reference/gpu/pollaris',
-            'reference/gpu/dcgm',
-          ],
+          items: ['reference/gpu/dcgm'],
         },
       ],
     },

@@ -429,7 +429,7 @@ So a create that overlaps a delete-all, or that follows a batch which timed out 
 The gate sits above every other check in the batch, the `resource_file` validation below and the privilege check included: a concurrency verdict must not depend on caller data.
 When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
 
-**One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](loadtest-scenarios.md) documents it as a `409`.
+**One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](../ops/loadtest-scenarios.md) documents it as a `409`.
 That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
 Today `409` on this endpoint means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
