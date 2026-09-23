@@ -64,6 +64,7 @@ Counts are distinct OIDs found wrong or unresolvable, out of distinct OIDs read.
 | Arista | 30065 | 6 of 6 |
 | Ciena | 1271 | 0 of 1 |
 | Juniper | 2636 | 13 of 15 (19 of 22 entries) |
+| NVIDIA | 5703 | not applicable: NVIDIA publishes no SNMP GPU MIB, so every object below the PEN is nl6's own definition |
 
 ### Labelled arcs
 
@@ -92,4 +93,3 @@ Fourteen profiles, one arc each, nineteen parts carrying the marker.
 |---|---|---|
 | `aws_s3_storage` | 32473 | RFC 5612 documentation PEN; no vendor MIB exists to audit against |
 | `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960`, `palo_alto_pa3220` | 0 | `1.3.6.1.4.1.0.0` is the `entPhysicalVendorType` placeholder; PEN 0 is IANA-reserved |
-| `nvidia_dgx_a100`, `nvidia_dgx_h100`, `nvidia_hgx_h200` | 5703 | in the audited set: NVIDIA publishes no SNMP GPU MIB, so every object below the PEN is nl6's own |
