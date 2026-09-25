@@ -683,15 +683,15 @@ check-linux:
 check-node:
 	@command -v $(NPM) >/dev/null 2>&1 || { \
 	  echo "Error: '$(NPM)' not found."; \
-	  echo "       Install Node 20 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
-	  echo "       or 'brew install node@20' / the installer at https://nodejs.org/."; \
+	  echo "       Install Node 22 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
+	  echo "       or 'brew install node@22' / the installer at https://nodejs.org/."; \
 	  exit 1; \
 	}
 
 check-node-runtime:
 	@command -v $(NODE) >/dev/null 2>&1 || { \
 	  echo "Error: '$(NODE)' not found."; \
-	  echo "       Install Node 20 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
-	  echo "       or 'brew install node@20' / the installer at https://nodejs.org/."; \
+	  echo "       Install Node 22 LTS (see .nvmrc) — e.g. 'nvm install && nvm use'"; \
+	  echo "       or 'brew install node@22' / the installer at https://nodejs.org/."; \
 	  exit 1; \
 	}
