@@ -39,6 +39,7 @@ Values that used to drift between releases are now derived at build time:
 | Docker `:rc` tag on GHCR            | pushed by `ci.yml` on every main push   | **automatic**               |
 | `.deb` / `.rpm` package version     | `APP_VERSION` (= tag) → `make packages` | **automatic**               |
 | Nix package version                 | hardcoded in `deploy/packages/nix/package.nix` | **manual bump before tagging** (asserted in `release.yml`) |
+| Helm chart `appVersion` / `version` | hardcoded in `deploy/helm/nl6-minion/Chart.yaml` | **manual bump before tagging** (not asserted) |
 
 The checklist below covers only what a human still has to decide or verify.
 
@@ -95,6 +96,13 @@ with `workflow_dispatch`, or locally and read-only with
    asserts it equals the tag and fails the release if it drifts. The `.deb`/
    `.rpm` and Docker versions need no edit. Note: `vendorHash` in the same file
    is **not** a release step — only touch it when `go.mod`/`go.sum` changes.
+
+   In the same commit, set `appVersion` in
+   [`deploy/helm/nl6-minion/Chart.yaml`](deploy/helm/nl6-minion/Chart.yaml) to
+   `vX.Y.Z` **with** the `v` prefix, and bump the chart `version`. The chart
+   pulls `nl6:<appVersion>` when `nl6.image.tag` is empty, and GHCR publishes
+   only `v`-prefixed tags, so `X.Y.Z` pulls an image that does not exist.
+   Nothing asserts this, and it drifted from v0.29.1 to v0.31.0 unnoticed.
 5. **Optional: skim the auto-generated release notes.** On GitHub, draft a
    release against `main` without publishing to preview what
    `generate_release_notes: true` will produce. If the output is noisy (lots
