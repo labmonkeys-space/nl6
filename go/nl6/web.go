@@ -30,6 +30,44 @@ import (
 
 // Web handlers for HTTP API endpoints
 
+// validatePrivateIPv4 ensures the given IP string is a valid IPv4 address
+// within an RFC 1918 private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).
+// The simulator runs with root privileges and configures TUN interfaces and
+// host routes using caller-supplied addresses, so restricting to private ranges
+// prevents an unauthenticated attacker from manipulating host networking for
+// arbitrary public or reserved addresses.
+func validatePrivateIPv4(ipStr string) error {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return fmt.Errorf("invalid IP address: %s", ipStr)
+	}
+	
+	// Require IPv4 (reject IPv6 and IPv4-mapped IPv6)
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return fmt.Errorf("start_ip must be an IPv4 address, got: %s", ipStr)
+	}
+	
+	// RFC 1918 private address ranges:
+	// 10.0.0.0/8        (10.0.0.0 - 10.255.255.255)
+	// 172.16.0.0/12     (172.16.0.0 - 172.31.255.255)
+	// 192.168.0.0/16    (192.168.0.0 - 192.168.255.255)
+	first := ip4[0]
+	second := ip4[1]
+	
+	if first == 10 {
+		return nil // 10.0.0.0/8
+	}
+	if first == 172 && second >= 16 && second <= 31 {
+		return nil // 172.16.0.0/12
+	}
+	if first == 192 && second == 168 {
+		return nil // 192.168.0.0/16
+	}
+	
+	return fmt.Errorf("start_ip must be within RFC 1918 private ranges (10.0.0.0/8, 172.16.0.0/12, or 192.168.0.0/16), got: %s", ipStr)
+}
+
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
 	// 64 KiB cap is generous for the create-devices schema (most
@@ -47,6 +85,16 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.DeviceCount <= 0 {
 		sendErrorResponse(w, "Device count must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	
+	// Validate start_ip is a syntactically valid IPv4 address and belongs to
+	// an RFC 1918 private range before any privileged TUN/routing operations.
+	// The simulator configures host networking with root privileges, so
+	// accepting arbitrary addresses would let an unauthenticated caller
+	// manipulate the host routing table and TUN interfaces for any range.
+	if err := validatePrivateIPv4(req.StartIP); err != nil {
+		sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// Upper bound: per-count allocations (device IP slices, worker pools)

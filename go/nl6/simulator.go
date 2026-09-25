@@ -752,6 +752,14 @@ func main() {
 		log.Println("WARNING: -auto-start-ip provided but -auto-count is 0 or negative. No devices will be auto-created.")
 	} else if *autoStartIP == "" && *autoCount > 0 {
 		log.Println("WARNING: -auto-count provided but -auto-start-ip is empty. No devices will be auto-created.")
+	} else if *autoStartIP != "" && *autoCount > 0 {
+		// Validate that auto-start IP is within RFC 1918 private ranges.
+		// The simulator configures host networking with root privileges, so
+		// restricting to private ranges prevents misconfiguration that could
+		// affect production networks.
+		if err := validatePrivateIPv4(*autoStartIP); err != nil {
+			log.Fatalf("auto-start-ip validation failed: %v", err)
+		}
 	}
 
 	// Setup REST API first
