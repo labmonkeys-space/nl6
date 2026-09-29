@@ -85,6 +85,15 @@ func WithFlowTickInterval(d time.Duration) ManagerOption {
 	}
 }
 
+// WithFlowTickSync selects the synchronized fleet sweep: every device is
+// swept on the same ticker firing, producing one fleet-wide burst per period
+// (the restart-storm pattern). Off by default; the desynchronized sweep is
+// what a real fleet looks like (flow_tick_phase.go). Construction-time only,
+// like WithFlowTickInterval.
+func WithFlowTickSync(sync bool) ManagerOption {
+	return func(sm *SimulatorManager) { sm.flowTickSync = sync }
+}
+
 // NewSimulatorManagerWithOptions creates a manager with configurable namespace isolation
 func NewSimulatorManagerWithOptions(useNamespace bool, opts ...ManagerOption) *SimulatorManager {
 	// Go 1.20+ auto-seeds the math/rand package, so an explicit Seed call

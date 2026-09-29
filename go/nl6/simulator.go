@@ -121,6 +121,7 @@ func main() {
 		flowDurations        = registerFlowDurationFlags(flag.CommandLine)
 		flowSubAgentID       = flag.Uint("flow-sub-agent-id", 0, "[seed] sFlow sub_agent_id emitted by every auto-start device (default: 0). Applies to the whole -auto-start batch; use the per-device REST flow.sub_agent_id field for per-group values. Ignored by non-sFlow protocols")
 		flowOptionIfaceTable = flag.String("flow-option-interface-table", "", "[seed] Emit v9/IPFIX interface option records for every auto-start device: if-scoped (ifIndex in the scope, fields 82+83) or system-scoped (system scope, ifIndex as option field, field 83 only). Empty = off (default). Requires -flow-protocol netflow9 or ipfix; use the per-device REST flow.options_interface_table field for per-group shapes")
+		flowTickSync         = flag.Bool("flow-tick-sync", false, "[global] Sweep every device's flow cache on the same ticker firing, so the whole fleet exports in one burst per -flow-tick-interval (the restart-storm pattern). Default false: each device keeps the tick cadence but is swept at its own phase within the period, so the collector sees a near-flat arrival rate as it would from a real fleet. Reported as tick_synchronized on GET /api/v1/flows/status")
 		flowSourcePerDevice  = flag.Bool("flow-source-per-device", true, "Bind a per-device UDP socket inside the nl6sim namespace so flow packets use the device's IP as the source address (default: true). Requires the nl6sim ns to have a route to the collector; set to false to use a single shared socket from the host namespace")
 		flowNbar2            = flag.Bool("flow-nbar2", false, "[seed] Emit Cisco AVC (NBAR2) IPFIX records (template 258) and the RFC 6759 application table (259) from every NBAR2-capable auto-start device (cisco_ios, cisco_catalyst_9500); incapable devices in a mixed batch keep their flow block and emit plain IPFIX. Requires -flow-protocol ipfix and -flow-collector; fatal at startup otherwise. Per-device via REST flow.nbar2")
 		nbar2CatalogPath     = flag.String("nbar2-catalog", "", "[global] Path to a JSON NBAR2 application catalog; replaces the embedded universal catalog AND every per-type overlay (resources/<type>/nbar2.json) when set. Read once at startup")
@@ -369,7 +370,8 @@ func main() {
 	// Initialize manager with namespace support (unless disabled)
 	useNamespace := !*noNamespace
 	manager = NewSimulatorManagerWithOptions(useNamespace,
-		WithFlowTickInterval(flowDurations.Tick.Duration()))
+		WithFlowTickInterval(flowDurations.Tick.Duration()),
+		WithFlowTickSync(*flowTickSync))
 	manager.scenarioPEN = uint32(*scenarioPEN) // 0 = unset (PEN-dependent run tags degrade)
 	fidelitySilent.Store(*fidelity)
 	// Remember what the flag said, so GET /api/v1/fidelity can report the

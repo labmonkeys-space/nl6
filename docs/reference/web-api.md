@@ -789,7 +789,9 @@ When flow export is enabled:
       {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "send_failures": 2, "sent_bytes":  5560000, "sent_records":  62000}
     ],
     "devices_exporting": 70,
-    "last_template_send": "2026-04-23T10:35:00Z"
+    "last_template_send": "2026-04-23T10:35:00Z",
+    "tick_synchronized": false,
+    "tick_phase_slots": 50
   }
 }
 ```
@@ -805,6 +807,8 @@ Response fields:
 | `collectors[].send_failures` | Datagrams the kernel refused. A down collector shows up here, not in `sent_*`. |
 | `devices_exporting` | Total LIVE exporters across all tuples. |
 | `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 / IPFIX only). |
+| `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Read from what the ticker latched, not from the flag. See [Flow export → fleet arrival shape](flow-export.md#fleet-arrival-shape). |
+| `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized; `0` only if the ticker has not started, which the HTTP endpoint cannot observe). |
 
 Clients detect "no flow export configured" via `len(collectors) == 0`.
 The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.

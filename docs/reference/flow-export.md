@@ -592,6 +592,29 @@ The old figure was not wrong by accident.
 With a deterministic deadline, flows created on a tick boundary expired on a tick boundary, so the sweep genuinely cost nothing.
 That alignment was an artifact of synthetic timing, and the jitter removed it.
 
+### Fleet arrival shape
+
+Per-device jitter spreads when one device's flows expire.
+It does not spread when the fleet exports, because expiry is only noticed by the sweep, and one ticker used to sweep every device on the same firing.
+Every device then emitted everything that had come due in the last tick interval, at the same instant as every other device.
+At 13,600 flows/s on the 5s default that is about 68,000 records arriving at the collector at once, then nothing for 5s.
+A capacity test against that pattern measures burst absorption, not sustained throughput.
+
+Real exporters run independent cache timers whose phases are random across the fleet, so a collector sees a near-flat stream of small bursts.
+nl6 models that by giving each device a phase within the tick period.
+The ticker fires 50 times per period (100ms at the 5s default) and each firing sweeps only the devices whose phase falls in that slot.
+Each device is still swept exactly once per period, so its batching, its datagram sizes and the sweep term above are unchanged.
+Only the fleet-wide alignment is gone.
+
+The phase is derived from the device IP, not drawn from the device RNG, so a seeded device still reproduces its stream and the flow digest does not move.
+Consecutive IPs, which is what an auto-start batch is, land spread across the slots.
+The sub-period is floored at 50ms, so a sub-second `-flow-tick-interval` gets fewer slots and a period at or under 50ms is a single slot.
+
+`-flow-tick-sync` restores the synchronized sweep.
+Keep it for the case it models: a restart storm or a traffic event, where many real routers flush their caches together.
+Label a run taken under it as that scenario rather than as the headline capacity figure.
+The scenario-owned ticker follows the same rule, so a load-test window is spread the same way as the fleet.
+
 ## Status API
 
 ```bash
@@ -611,6 +634,8 @@ Returns an array-of-collectors aggregated by `(collector, protocol)`:
     ],
     "devices_exporting": 70,
     "last_template_send": "2026-04-23T10:35:00Z",
+    "tick_synchronized": false,
+    "tick_phase_slots": 50,
     "nbar2_catalogs_by_type": {
       "_universal": {"entries": 7, "source": "embedded"},
       "cisco_ios":  {"entries": 8, "source": "file:resources/cisco_ios/nbar2.json"}
