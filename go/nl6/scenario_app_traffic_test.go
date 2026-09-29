@@ -59,8 +59,11 @@ func TestScenarioAppTraffic_RowsAndLedgerReconciliation(t *testing.T) {
 	}
 
 	base := time.Unix(1_700_000_000, 0)
-	clockNow := base
-	c := newScenarioController(sm, func() time.Time { return clockNow })
+	// Atomic: the scenario flow ticker reads the clock on every slot firing
+	// (100ms), concurrently with the test advancing it below.
+	var clockNow atomic.Int64
+	clockNow.Store(base.UnixNano())
+	c := newScenarioController(sm, func() time.Time { return time.Unix(0, clockNow.Load()) })
 	spec := &Scenario{Participants: []string{"10.42.0.1"}, Protocol: "netflow9", Rate: 1, Window: time.Hour, Seed: 1}
 	if err := c.Submit(spec, "s-000001"); err != nil {
 		t.Fatal(err)
@@ -79,7 +82,7 @@ func TestScenarioAppTraffic_RowsAndLedgerReconciliation(t *testing.T) {
 	for receivePacket(ch) != nil { // drain the wire
 	}
 
-	clockNow = base.Add(time.Hour) // advance so T1Actual−T0Actual = the window
+	clockNow.Store(base.Add(time.Hour).UnixNano()) // advance so T1Actual−T0Actual = the window
 	if _, err := c.Stop(); err != nil {
 		t.Fatal(err)
 	}
