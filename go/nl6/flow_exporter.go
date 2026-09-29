@@ -191,6 +191,7 @@ type FlowExporter struct {
 	rng                *rand.Rand
 	seqNo              uint32
 	domainID           uint32    // device IPv4 as uint32 (RFC 7011 §3.1)
+	phase              uint32    // tick phase, flowTickPhase(domainID); see flow_tick_phase.go
 	subAgentID         uint32    // sFlow sub_agent_id (0 = single-agent default)
 	startTime          time.Time // reference point for SysUptime
 	lastTempl          time.Time // last template transmission time
@@ -414,6 +415,7 @@ func NewFlowExporter(device *DeviceSimulator, profile *FlowProfile,
 		profile:          profile,
 		rng:              rand.New(rand.NewSource(int64(domainID))),
 		domainID:         domainID,
+		phase:            flowTickPhase(domainID),
 		subAgentID:       subAgentID,
 		startTime:        time.Now(),
 		templateInterval: templateInterval,
@@ -1367,17 +1369,30 @@ func (sm *SimulatorManager) startFlowTicker() {
 		period = defaultFlowTickInterval
 	}
 	sm.flowTickerPeriod.Store(int64(period))
+	// The period is what each DEVICE is swept at; the ticker itself fires
+	// once per slot so the fleet's sweeps are spread across the period (see
+	// flow_tick_phase.go). Latched beside the period for the same reasons.
+	slots := flowTickSlots(period, sm.flowTickSync)
+	sm.flowTickerSlots.Store(int64(slots))
 	sm.flowWg.Add(1)
 	go func() {
 		defer sm.flowWg.Done()
 		// Once per goroutine (nl6#635): the fleet's own flow ticker.
 		ctx := labelSubsystem(subsystemFlow)
-		ticker := time.NewTicker(period)
+		// A firing has period/slots to sweep 1/slots of the fleet: the same
+		// per-device budget the single firing had for the whole fleet. If a
+		// firing overruns, time.Ticker drops ticks and the slot counter falls
+		// behind the wall clock, which stretches the swept devices' real
+		// period past the latched one, exactly as a full-fleet overrun did
+		// before the slots existed. Not counted; it was not counted then.
+		ticker := time.NewTicker(period / time.Duration(slots))
 		defer ticker.Stop()
+		slot := 0
 		for {
 			select {
 			case now := <-ticker.C:
-				sm.tickAllFlowExporters(ctx, now)
+				sm.tickAllFlowExporters(ctx, now, slot, slots)
+				slot = (slot + 1) % slots
 			case <-sm.flowStopCh:
 				return
 			}
@@ -1385,16 +1400,22 @@ func (sm *SimulatorManager) startFlowTicker() {
 	}()
 }
 
-// tickAllFlowExporters calls Tick on every device that has a FlowExporter.
+// tickAllFlowExporters calls Tick on every device that has a FlowExporter
+// and whose phase falls in slot (of slots; slots <= 1 sweeps everyone).
 // Each exporter supplies its own encoder / collectorAddr; the manager
 // supplies the shared-pool fallback socket (looked up by the exporter's
 // (collector, protocol) key). Stats are accumulated per-exporter and
 // aggregated at status-endpoint read time.
-func (sm *SimulatorManager) tickAllFlowExporters(ctx context.Context, now time.Time) {
+func (sm *SimulatorManager) tickAllFlowExporters(ctx context.Context, now time.Time, slot, slots int) {
+	// The slot filter runs INSIDE the lock so the snapshot is sized to the
+	// slot, not the fleet: this now fires `slots` times per period, and a
+	// 30k-entry copy per firing would be 50x the allocation to sweep 1/50 of
+	// the devices. The map walk itself is still per firing, which is the
+	// price of a device created mid-period joining its slot immediately.
 	sm.mu.RLock()
-	exporters := make([]*FlowExporter, 0, len(sm.devices))
+	exporters := make([]*FlowExporter, 0, len(sm.devices)/max(slots, 1)+1)
 	for _, d := range sm.devices {
-		if d.flowExporter != nil {
+		if d.flowExporter != nil && d.flowExporter.inTickSlot(slot, slots) {
 			exporters = append(exporters, d.flowExporter)
 		}
 	}
@@ -1542,10 +1563,16 @@ func (sm *SimulatorManager) GetFlowStatus() FlowStatus {
 	}
 	sm.mu.RUnlock()
 
+	// The latched count describes what runs; a bare manager (ticker never
+	// started) reads 0 and is reported as it is.
+	slots := int(sm.flowTickerSlots.Load())
+
 	return FlowStatus{
 		Collectors:          collectors,
 		DevicesExporting:    totalDevices,
 		LastTemplateSend:    lastTemplate,
+		TickSynchronized:    slots <= 1,
+		TickPhaseSlots:      slots,
 		Nbar2CatalogsByType: nbar2Cats,
 	}
 }

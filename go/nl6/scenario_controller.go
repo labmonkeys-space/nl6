@@ -711,6 +711,10 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 	// not set the RATE — the cache does — so varying it here changes only how
 	// finely the run is chopped up.
 	interval := scenarioFlowTickInterval(c.sm.effectiveFlowTickInterval(), c.spec.Window)
+	// Same phase-slot scheme as the fleet ticker (flow_tick_phase.go): a
+	// scenario at fleet cadence would otherwise put the fleet-wide burst
+	// inside the measured window, which is where it matters most.
+	slots := flowTickSlots(interval, c.sm.flowTickSync)
 	done := make(chan struct{})
 	c.flowTickerDone = done
 	go func() {
@@ -719,29 +723,40 @@ func (c *ScenarioController) startScenarioFlowTicker(ctx context.Context) {
 		// context is handed to every tick so the funnel's label reverts to
 		// this one rather than erasing it.
 		tickCtx := labelSubsystem(subsystemScenario)
-		ticker := time.NewTicker(interval)
+		ticker := time.NewTicker(interval / time.Duration(slots))
 		defer ticker.Stop()
+		slot := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				now := c.now()
-				for _, fe := range feList {
-					// Re-checked per participant, not just per tick: at fleet
-					// scale one pass is not instant, and finalize now blocks on
-					// this goroutine WHILE HOLDING c.mu, so a cancelled pass
-					// that ran to the end would extend every stop — and every
-					// concurrent Phase/Result/LiveCounts read — by up to a full
-					// pass of UDP writes. Load-bearing, not an optimisation.
-					if ctx.Err() != nil {
-						return
-					}
-					c.sm.tickFlowExporter(tickCtx, fe, now)
-				}
+				c.tickScenarioFlowSlot(ctx, tickCtx, feList, c.now(), slot, slots)
+				slot = (slot + 1) % slots
 			}
 		}
 	}()
+}
+
+// tickScenarioFlowSlot is one firing of the scenario flow ticker: it sweeps
+// the participants whose phase falls in slot (of slots). ctx is the run's
+// cancellation; tickCtx is the goroutine's pprof-labelled context.
+func (c *ScenarioController) tickScenarioFlowSlot(ctx, tickCtx context.Context, feList []*FlowExporter, now time.Time, slot, slots int) {
+	for _, fe := range feList {
+		// Re-checked per participant, not just per tick: at fleet
+		// scale one pass is not instant, and finalize now blocks on
+		// this goroutine WHILE HOLDING c.mu, so a cancelled pass
+		// that ran to the end would extend every stop — and every
+		// concurrent Phase/Result/LiveCounts read — by up to a full
+		// pass of UDP writes. Load-bearing, not an optimisation.
+		if ctx.Err() != nil {
+			return
+		}
+		if !fe.inTickSlot(slot, slots) {
+			continue
+		}
+		c.sm.tickFlowExporter(tickCtx, fe, now)
+	}
 }
 
 // Arm resolves participants against the live fleet, installs participation

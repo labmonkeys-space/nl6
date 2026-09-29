@@ -535,7 +535,13 @@ type SimulatorManager struct {
 	// restarted. Reporting flowTickInterval as "effective" would therefore
 	// state a cadence nothing runs at. Written once, before the ticker
 	// goroutine starts; read concurrently by the device read-back.
-	flowTickerPeriod     atomic.Int64
+	flowTickerPeriod atomic.Int64
+	// flowTickSync forces the ticker to sweep every device on one firing
+	// (the fleet-wide burst); construction-time only, like flowTickInterval.
+	// flowTickerSlots is the slot count the running ticker LATCHED, reported
+	// by status the same way flowTickerPeriod is. See flow_tick_phase.go.
+	flowTickSync         bool
+	flowTickerSlots      atomic.Int64
 	flowTemplateInterval time.Duration
 	flowSourcePerDevice  bool // bind per-device UDP socket in nl6sim ns so src IP = device IP
 
@@ -1005,6 +1011,12 @@ type FlowStatus struct {
 	Collectors       []FlowCollectorStatus `json:"collectors"`
 	DevicesExporting int                   `json:"devices_exporting"`
 	LastTemplateSend string                `json:"last_template_send,omitempty"`
+	// TickSynchronized is true when the running ticker sweeps every device
+	// on one firing (-flow-tick-sync, or a period at or under the sub-period
+	// floor); false when devices are spread over TickPhaseSlots slots. Read
+	// from the latched slot count, so it describes what runs.
+	TickSynchronized bool `json:"tick_synchronized"`
+	TickPhaseSlots   int  `json:"tick_phase_slots"`
 	// Nbar2CatalogsByType reports the resolved NBAR2 application catalogs
 	// (`_universal` plus per-type slugs) with entry counts, how many the
 	// load-time dry render disabled, and where each came from. Absent when
