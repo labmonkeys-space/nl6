@@ -9,9 +9,9 @@ description: |
   pod's hostNetwork so it inherits the host routes nl6 installs into the
   nl6sim namespace and can poll the simulated devices directly.
 type: application
-version: 0.1.9
+version: 0.1.10
 # appVersion is the nl6 image tag this chart defaults to. GHCR tags keep the v prefix.
-appVersion: "v0.34.0"
+appVersion: "v0.34.1"
 keywords:
   - nl6
   - opennms
