@@ -79,6 +79,7 @@ const sidebars: SidebarsConfig = {
         'reference/interface-state',
         'reference/lldp-topology',
         'reference/dns-service-discovery',
+        'reference/prometheus-sd',
         {
           type: 'category',
           label: 'Load-test scenarios',
