@@ -526,6 +526,7 @@ func (sm *SimulatorManager) DeleteDevice(deviceID string) error {
 	// Matches DeleteAllDevices's log-and-continue behaviour. The tun
 	// delete error is still surfaced to the caller below.
 	delete(sm.devices, deviceID)
+	sm.releaseSysNameLocked(device.sysName)
 	deregisterOpticalIP = device.IP // committed: safe to drop alarm enrolment
 	delete(sm.deviceIPs, device.IP.String())
 	delete(sm.deviceTypesByIP, device.IP.String())
@@ -570,6 +571,8 @@ func (sm *SimulatorManager) DeleteAllDevices() error {
 	for deviceID, device := range sm.devices {
 		devices = append(devices, device)
 		deviceIDs = append(deviceIDs, deviceID)
+		// Release per device, never reset: see sysNamesInUse.
+		sm.releaseSysNameLocked(device.sysName)
 	}
 	sm.devices = make(map[string]*DeviceSimulator)
 	sm.deviceIPs = make(map[string]struct{})
@@ -769,6 +772,7 @@ func (sm *SimulatorManager) shutdownFast() {
 	sm.deviceIPs = make(map[string]struct{})
 	sm.deviceTypesByIP = make(map[string]string)
 	sm.devicesByIP = make(map[string]*DeviceSimulator)
+	sm.sysNamesInUse = nil
 	sm.tunPoolMutex.Lock()
 	// Close pre-allocated TUN FDs
 	for _, tunIface := range sm.tunInterfacePool {

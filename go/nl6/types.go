@@ -353,6 +353,16 @@ type SimulatorManager struct {
 	// in sync with `devices` / `deviceIPs` / `deviceTypesByIP`: written when a
 	// device is added to `devices`, removed on deletion. Guarded by sm.mu.
 	devicesByIP map[string]*DeviceSimulator
+	// sysNamesInUse holds every sysName reserved by a live device, so no two
+	// live devices serve the same name (nl6#743: a random draw collided 68
+	// times in 2,000 devices). Guarded by sm.mu; see reserveSysName. A name
+	// is reserved BEFORE the device reaches `devices`, so an in-flight
+	// parallel worker holds its name here and nowhere else. That is why
+	// DeleteAllDevices releases per deleted device and never resets the map:
+	// it is not gated against a running batch, and a reset would free names
+	// the batch has reserved but not yet published. Lazily created, so a
+	// directly constructed manager needs no initialisation.
+	sysNamesInUse map[string]struct{}
 	// topology is the simulator-wide inter-device link graph (LLDP
 	// topology). Owns its own mutex; safe to call under or outside sm.mu.
 	// Populated from -topology-config at startup and the

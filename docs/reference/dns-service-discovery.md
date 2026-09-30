@@ -31,7 +31,8 @@ Enable it with `-dns-enable`.
 The `ip4` and `mgmt` labels denote the address family and the (single) management interface the IP lives on.
 They are forward-compatible seams for a future `ip6.` / real-interface-name expansion.
 
-Because `sysName` is randomly assembled and can repeat across the fleet, duplicate names are **disambiguated deterministically**: ordered by ascending management IP, the first device keeps the bare label and each subsequent collider gets an IP-derived suffix (e.g. `edge-swh-01-0-9`).
+The simulator keeps `sysName` unique among running devices, but sanitising and truncating to 63 octets can still map two names to one label.
+Duplicate labels are therefore **disambiguated deterministically**: ordered by ascending management IP, the first device keeps the bare label and each subsequent collider gets an IP-derived suffix (e.g. `edge-swh-01-0-9`).
 Every forward name and every PTR target is therefore unique.
 
 ## Zones and boundaries

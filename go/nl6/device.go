@@ -539,7 +539,7 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 
 			locationValue := getRandomLocation()
 			sysLocationValue := locationValue.Name
-			sysNameValue := getRandomDeviceName(typeSlug)
+			sysNameValue := sm.reserveSysName(typeSlug, deviceIP)
 
 			device := &DeviceSimulator{
 				ID:           deviceID,
@@ -706,6 +706,7 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 			if err := device.Start(); err != nil {
 				log.Printf("Failed to start device %s: %v", deviceID, err)
 				device.Stop() // Clean up
+				sm.releaseSysName(sysNameValue)
 				sm.mu.Lock()
 				sm.incrementIP(prefix)
 				sm.mu.Unlock()
@@ -912,7 +913,7 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 
 	locationValue := getRandomLocation()
 	sysLocationValue := locationValue.Name
-	sysNameValue := getRandomDeviceName(slugifyDeviceType(resourceFile))
+	sysNameValue := sm.reserveSysName(slugifyDeviceType(resourceFile), deviceIP)
 
 	device := &DeviceSimulator{
 		ID:           deviceID,
@@ -1051,6 +1052,7 @@ func (sm *SimulatorManager) createSingleDevice(deviceIndex int, deviceIP net.IP,
 	if err := device.Start(); err != nil {
 		log.Printf("Failed to start device %s: %v", deviceID, err)
 		device.Stop() // Clean up
+		sm.releaseSysName(sysNameValue)
 		return false
 	}
 
