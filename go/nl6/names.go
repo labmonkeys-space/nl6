@@ -18,6 +18,7 @@ package main
 import (
 	"fmt"
 	mathrand "math/rand"
+	"net"
 	"path/filepath"
 	"strings"
 )
@@ -110,6 +111,57 @@ var mythNames = []string{
 	"ATLAS", "TITAN", "HERCULES", "APOLLO", "ARES", "ZEUS", "THOR", "ODIN", "LOKI", "FREYA",
 	"ARTEMIS", "ATHENA", "DIANA", "MARS", "VENUS", "NEPTUNE", "PLUTO", "MERCURY", "SATURN", "JUPITER",
 	"ORION", "ANDROMEDA", "CASSIOPEIA", "VEGA", "ALTAIR", "SIRIUS", "RIGEL", "BETELGEUSE", "POLARIS", "ANTARES",
+}
+
+// randomDeviceName is the sysName generator reserveSysName draws from. A
+// package-level var so a test can substitute a tiny or constant pool and
+// force the redraw and fallback branches, which the real generator reaches
+// only at fleet scale.
+var randomDeviceName = getRandomDeviceName
+
+// maxSysNameDraws bounds the redraws in reserveSysName. At 30,000 devices of
+// one type a draw hits a held name with probability about 0.37, so 64 misses
+// in a row is below 1e-27; the bound exists so the loop provably terminates
+// if the word lists ever shrink.
+const maxSysNameDraws = 64
+
+// reserveSysName draws a sysName that no live device holds and reserves it
+// (nl6#743). A held draw is redrawn; if every draw within maxSysNameDraws is
+// held, the first draw gets the device IPv4 appended as "-a-b-c-d", which is
+// unique because live device IPs are. Both creation paths MUST reserve here
+// and nowhere else, and release on every exit that drops the device.
+func (sm *SimulatorManager) reserveSysName(typeSlug string, ip net.IP) string {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.sysNamesInUse == nil {
+		sm.sysNamesInUse = make(map[string]struct{})
+	}
+	var first string
+	for i := 0; i < maxSysNameDraws; i++ {
+		name := randomDeviceName(typeSlug)
+		if i == 0 {
+			first = name
+		}
+		if _, held := sm.sysNamesInUse[name]; !held {
+			sm.sysNamesInUse[name] = struct{}{}
+			return name
+		}
+	}
+	name := first + "-" + strings.ReplaceAll(ip.String(), ".", "-")
+	sm.sysNamesInUse[name] = struct{}{}
+	return name
+}
+
+// releaseSysName returns a device's sysName to the pool.
+func (sm *SimulatorManager) releaseSysName(name string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.releaseSysNameLocked(name)
+}
+
+// releaseSysNameLocked is releaseSysName for a caller already holding sm.mu.
+func (sm *SimulatorManager) releaseSysNameLocked(name string) {
+	delete(sm.sysNamesInUse, name)
 }
 
 // getRandomDeviceName generates a random device name using various patterns.

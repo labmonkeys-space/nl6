@@ -38,7 +38,7 @@ The body is a JSON array with one target group per running device, sorted by IP:
 | `targets` | The device IP. On a port other than 161 it is `ip:port`. snmp_exporter accepts both forms. |
 | `__meta_nl6_resource` | The device's resource file, lower-cased and without `.json` (for example `cisco_ios`). Add `.json` to use it in `POST /api/v1/devices`. Devices created with no resource file, such as the `-auto-start-ip` batch, report the startup default profile they serve (`asr9k`). Use it to pick an snmp_exporter module. |
 | `__meta_nl6_device_type` | The human-readable device type label. |
-| `__meta_nl6_sys_name` | The device's `sysName`. |
+| `__meta_nl6_sys_name` | The device's `sysName`. No two running devices in one simulator share a name, so you can use it as a device key. See [Name uniqueness](#name-uniqueness). |
 | `__meta_nl6_snmp_port` | The SNMP UDP port. |
 
 An empty fleet returns `[]`.
@@ -46,6 +46,15 @@ Stopped devices are not listed.
 
 Prometheus drops every `__meta_*` label after relabeling.
 Keep the ones you want by copying them to a plain label, as the example below does.
+
+### Name uniqueness
+
+Each device draws a random `sysName` at creation.
+A draw that matches a name held by a running device is drawn again.
+If 64 draws in a row are taken, the device gets the first draw with its IP appended, for example `loki-van-cisco-crs-x-172-27-0-1`.
+A deleted device frees its name for later devices.
+Names are not stable across restarts.
+Uniqueness holds within one simulator process, not across several.
 
 ## What the body does not carry
 
