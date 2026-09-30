@@ -109,3 +109,25 @@ func TestPromSDDevice_FieldSetIsExact(t *testing.T) {
 		t.Fatalf("promSDDevice fields = %v, want %v", got, want)
 	}
 }
+
+// An -auto-start-ip device carries an empty resource file but serves the
+// startup default profile. The label must name that profile, or a
+// __param_module mapping or keep rule silently misses the whole default fleet.
+func TestPromSDDevices_EmptyResourceFileReportsDefaultProfile(t *testing.T) {
+	for _, tc := range []struct{ key, want string }{
+		{"asr9k.json", "asr9k"},
+		{"cisco_ios.json", "cisco_ios"}, // loadDefaultResources' fallback
+		{"", "asr9k"},                   // compiled-in default, never cached
+	} {
+		mgr := newTestManager()
+		mgr.defaultResourceKey = tc.key
+		mgr.devices["d"] = &DeviceSimulator{IP: net.ParseIP("10.42.0.1"), SNMPPort: 161, running: true}
+		got := buildPrometheusSDTargets(mgr.promSDDevices())
+		if r := got[0].Labels["__meta_nl6_resource"]; r != tc.want {
+			t.Errorf("defaultResourceKey %q: resource = %q, want %q", tc.key, r, tc.want)
+		}
+		if dt := got[0].Labels["__meta_nl6_device_type"]; dt == "Default" {
+			t.Errorf("defaultResourceKey %q: device_type = Default", tc.key)
+		}
+	}
+}

@@ -40,6 +40,13 @@ type promSDTargetGroup struct {
 func (sm *SimulatorManager) promSDDevices() []promSDDevice {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
+	// A device created with no resource file (the -auto-start-ip batch) serves
+	// the startup default profile. defaultResourceKey names it; it is empty
+	// only when the compiled-in asr9k default was synthesised.
+	defaultRF := sm.defaultResourceKey
+	if defaultRF == "" {
+		defaultRF = defaultResourceFile
+	}
 	out := make([]promSDDevice, 0, len(sm.devices))
 	for _, d := range sm.devices {
 		if !d.running {
@@ -49,11 +56,15 @@ func (sm *SimulatorManager) promSDDevices() []promSDDevice {
 		if v, ok := d.cachedSysName.Load().(string); ok && v != "" {
 			name = v
 		}
+		rf := d.resourceFile
+		if rf == "" {
+			rf = defaultRF
+		}
 		out = append(out, promSDDevice{
 			IP:           d.IP.String(),
 			SNMPPort:     d.SNMPPort,
-			ResourceFile: d.resourceFile,
-			DeviceType:   getDeviceTypeFromResourceFile(d.resourceFile),
+			ResourceFile: rf,
+			DeviceType:   getDeviceTypeFromResourceFile(rf),
 			SysName:      name,
 		})
 	}

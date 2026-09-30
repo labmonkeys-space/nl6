@@ -36,7 +36,7 @@ The body is a JSON array with one target group per running device, sorted by IP:
 | Field | Meaning |
 |-------|---------|
 | `targets` | The device IP. On a port other than 161 it is `ip:port`. snmp_exporter accepts both forms. |
-| `__meta_nl6_resource` | The device's resource file without `.json`, as accepted by `POST /api/v1/devices`. Use it to pick an snmp_exporter module. |
+| `__meta_nl6_resource` | The device's resource file, lower-cased and without `.json` (for example `cisco_ios`). Add `.json` to use it in `POST /api/v1/devices`. Devices created with no resource file, such as the `-auto-start-ip` batch, report the startup default profile they serve (`asr9k`). Use it to pick an snmp_exporter module. |
 | `__meta_nl6_device_type` | The human-readable device type label. |
 | `__meta_nl6_sys_name` | The device's `sysName`. |
 | `__meta_nl6_snmp_port` | The SNMP UDP port. |
