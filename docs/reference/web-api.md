@@ -44,6 +44,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
+| `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |
 | `/api/v1/fidelity` | GET | Fidelity mode: the value **in force**, the startup flag it began from, and any pending auto-revert. |
 | `/api/v1/fidelity` | POST | Toggle fleet silence at runtime, with optional `duration` auto-revert (24h cap). |
 | `/api/v1/profiling` | GET | Continuous-profiling gate: the value **in force**, the startup flag, whether the SDK is pushing, and any pending auto-revert. |
