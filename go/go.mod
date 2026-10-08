@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/pyroscope-go v1.4.2
+	github.com/grafana/pyroscope-go v1.4.3
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
 	github.com/miekg/dns v1.1.73
 	github.com/openconfig/gnmi v0.14.1
