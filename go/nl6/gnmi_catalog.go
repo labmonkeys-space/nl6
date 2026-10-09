@@ -357,15 +357,3 @@ func scanPerTypeGnmiCatalogs(resourceDir string, base map[string]*gnmiCatalog) (
 	}
 	return out, nil
 }
-
-// gnmiLeafGen is defined for real in gnmi_catalog_gen.go (Task 2).
-type gnmiLeafGen func(ctx *gnmiGenCtx) (any, bool)
-
-type gnmiGenCtx struct{}
-
-func compileGnmiBinding(spec string) (gnmiLeafGen, error) {
-	if spec == "" {
-		return nil, errors.New("empty binding")
-	}
-	return func(*gnmiGenCtx) (any, bool) { return nil, false }, nil
-}
