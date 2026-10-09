@@ -359,6 +359,18 @@ Two consequences:
 Only `failing` crosses the SD-FEC threshold, so `fec-uncorrectable-blocks > 0` is a reliable service-affecting signal; `degraded` shows an elevated `pre-fec-ber` that FEC still corrects.
 See [CLI flags](cli-flags.md#optical-health-band) for the per-tier OSNR / Q / BER table.
 
+### A create call blocks until the batch ends
+
+`POST /api/v1/devices` answers when the whole batch has been created, not when it has been accepted.
+At fleet scale that takes minutes: thousands of devices can run well past 30 seconds.
+The server-wide 30-second write timeout does not apply to this response, so a client that waits gets its `200` (or its error) however long the batch runs.
+Set a long or no read timeout on the client.
+Once the batch ends, the response must be read within 10 seconds.
+
+If the connection drops anyway, for example because a proxy or the client gave up, the batch still runs to completion.
+Treat the request as submitted: poll `GET /api/v1/status` until `create_batch_in_progress` is `false`, then compare `total_devices` with the count you expected.
+Do not re-send the request while the batch runs; it is refused with `409` (next section).
+
 ### One creation batch at a time (`409`)
 
 **Only one device-creation batch runs at a time.** A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
