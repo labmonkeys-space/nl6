@@ -147,13 +147,19 @@ func genIfState(arg string) (gnmiLeafGen, error) {
 		st := ic.State()
 		switch arg {
 		case "oper":
-			return operStatusOpenConfig(st.OperStatus(ctx.ifIndex)), true
+			return bareGnmiIdentity(operStatusOpenConfig(st.OperStatus(ctx.ifIndex))), true
 		case "admin":
-			return adminStatusOpenConfig(st.AdminStatus(ctx.ifIndex)), true
+			return bareGnmiIdentity(adminStatusOpenConfig(st.AdminStatus(ctx.ifIndex))), true
 		default:
 			return st.LastChangeNs(ctx.ifIndex), true
 		}
 	}, nil
+}
+
+// bareGnmiIdentity drops any module prefix. Catalogue devices emit the
+// bare identity like the Junos capture; the legacy resolver keeps its prefixed form.
+func bareGnmiIdentity(s string) string {
+	return s[strings.LastIndexByte(s, ':')+1:]
 }
 
 // gnmiSeed hashes the device IP and a per-entry key into a phase so a

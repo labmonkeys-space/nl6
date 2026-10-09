@@ -57,7 +57,7 @@ func TestGnmiBindings(t *testing.T) {
 	if v := get("ifstate:ifindex"); v != uint64(1) {
 		t.Errorf("ifstate:ifindex = %v (%T)", v, v)
 	}
-	if v := get("ifstate:oper"); v != "openconfig-interfaces:UP" && v != "openconfig-interfaces:DOWN" {
+	if v := get("ifstate:oper"); v != "UP" && v != "DOWN" {
 		t.Errorf("ifstate:oper = %v", v)
 	}
 	ic := ctx.dev.metricsCycler.ifCounters.Load()
