@@ -1,7 +1,7 @@
 # Copyright 2026 Ronny Trommer <ronny@no42.org>
 # SPDX-License-Identifier: Apache-2.0
 { lib
-, buildGo127Module  # go.mod requires Go >= 1.27.0
+, buildGo127Module  # go.mod requires Go >= 1.27.2
 , makeWrapper
 , iproute2
 , iptables
@@ -38,7 +38,7 @@ buildGo127Module {
   # main, so a stale hash blocks the merge. On a Dependabot go_modules PR the
   # Dependabot vendorHash workflow pushes the corrected value onto the branch
   # by itself.
-  vendorHash = "sha256-qPgAJpQ+Pp9L1FmN4k5LqLTl6wJHA9vyknL0wls4VVs=";
+  vendorHash = "sha256-xS1/CSHZypEgfo0j36R1ksIEUHAKG/JMAdBh0w2RBss=";
 
   ldflags = [ "-s" "-w" "-X main.Version=v${version}" ];
 

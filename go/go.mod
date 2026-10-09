@@ -1,6 +1,6 @@
 module github.com/labmonkeys-space/nl6/go
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/aristanetworks/goarista v0.0.0-20251201112602-a373d7c9f0d9
@@ -18,7 +18,7 @@ require (
 
 require (
 	github.com/klauspost/compress v1.18.7 // indirect
-	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )
