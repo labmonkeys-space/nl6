@@ -7,6 +7,7 @@ package main
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func pathWithOrigin(t *testing.T, origin, s string) *gnmipb.Path {
 
 func TestCatalogResolver_Match(t *testing.T) {
 	r := newTestCatalogResolver(t)
-	yes := []string{"/interfaces", "/interfaces/interface", "/interfaces/interface[name=*]/state/counters", "/interfaces/interface[name=TestIf1]/state/oper-status", "/components/component[name=FPC0]/state/temperature/instant"}
+	yes := []string{"/interfaces", "/interfaces/interface", "/interfaces/interface[name=*]", "/interfaces/interface[name=TestIf1]/state/oper-status", "/components/component[name=FPC0]/state/temperature/instant"}
 	no := []string{"/system", "/interfaces/interface[name=TestIf1]/state/counters/out-octets"}
 	for _, s := range yes {
 		if !r.Match(pathFromString(t, s)) {
@@ -146,5 +147,74 @@ func TestCatalogResolver_AllLeafPathsAndModels(t *testing.T) {
 	}
 	if m := r.Models(); len(m) != 1 || m[0].Name != "openconfig-interfaces" || m[0].Version != "3.11.1" {
 		t.Fatalf("models = %v", m)
+	}
+}
+
+func TestCatalogResolver_IfIndexFromCycler(t *testing.T) {
+	d := newTestGnmiDevice(t, 2)
+	cat, err := parseGnmiCatalog(readTestCatalog(t), "min")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(d, cat)
+	now := r.start.Add(5 * time.Second)
+	got, err := r.Resolve(pathFromString(t, "/interfaces/interface/state/counters"), now)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %v err %v", got, err)
+	}
+	ic := d.metricsCycler.ifCounters.Load()
+	vals := map[string]uint64{}
+	for _, n := range got {
+		vals[pathToString(n.Prefix)] = n.Updates[0].Value.(uint64)
+	}
+	for idx, name := range map[int]string{1: "TestIf1", 2: "TestIf2"} {
+		want := ic.GetDynamicAt(ifXTablePrefix+"6."+strconv.Itoa(idx), 5)
+		if v := strconv.FormatUint(vals["/interfaces/interface[name="+name+"]"], 10); v != want {
+			t.Errorf("%s in-octets = %s, want %s (ifIndex %d)", name, v, want, idx)
+		}
+	}
+	if len(vals) == 2 && vals["/interfaces/interface[name=TestIf1]"] == vals["/interfaces/interface[name=TestIf2]"] {
+		t.Error("both interfaces returned the same value")
+	}
+}
+
+func TestCatalogResolver_IfIndexNotFirstKeySource(t *testing.T) {
+	src := string(readTestCatalog(t))
+	old := `"path": "/interfaces/interface[name=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "interfaces"}],`
+	if !strings.Contains(src, old) {
+		t.Fatal("fixture changed")
+	}
+	src = strings.Replace(src, old, `"path": "/grp/g[id=*]/interfaces/interface[name=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["g1"]}, {"source": "interfaces"}],`, 1)
+	cat, err := parseGnmiCatalog([]byte(src), "order")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 2), cat)
+	got, err := r.Resolve(pathFromString(t, "/grp/g/interfaces/interface/state/counters"), time.Now())
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %v err %v", got, err)
+	}
+	for _, n := range got {
+		if len(n.Updates) != 1 {
+			t.Fatalf("interface leaf missing (ifIndex 0?): %v", n.Updates)
+		}
+	}
+}
+
+func TestParseGnmiCatalog_TwoInterfacesKeySources(t *testing.T) {
+	src := string(readTestCatalog(t))
+	old := `"path": "/interfaces/interface[name=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "interfaces"}],`
+	src = strings.Replace(src, old, `"path": "/a/x[id=*]/interface[name=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "interfaces"}, {"source": "interfaces"}],`, 1)
+	_, err := parseGnmiCatalog([]byte(src), "dup")
+	if err == nil || !strings.Contains(err.Error(), "at most one interfaces key source") {
+		t.Fatalf("err = %v", err)
 	}
 }

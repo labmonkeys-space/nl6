@@ -25,29 +25,15 @@ type catalogNotification struct {
 
 // catalogResolver answers gNMI paths from a per-type catalogue. One
 // catalogue is shared by every device of the type; the resolver holds
-// only the device pointer and a reverse ifDescr map.
+// only the device pointer.
 type catalogResolver struct {
-	dev          *DeviceSimulator
-	cat          *gnmiCatalog
-	descrToIndex map[string]int
-	start        time.Time
+	dev   *DeviceSimulator
+	cat   *gnmiCatalog
+	start time.Time
 }
 
 func newCatalogResolver(d *DeviceSimulator, cat *gnmiCatalog) *catalogResolver {
-	r := &catalogResolver{dev: d, cat: cat, descrToIndex: map[string]int{}, start: time.Now()}
-	if d == nil || d.metricsCycler == nil {
-		return r
-	}
-	if ic := d.metricsCycler.ifCounters.Load(); ic != nil {
-		for _, idx := range ic.IfIndices() {
-			if name := lookupIfDescr(d, idx); name != "" {
-				if prev, dup := r.descrToIndex[name]; !dup || idx < prev {
-					r.descrToIndex[name] = idx
-				}
-			}
-		}
-	}
-	return r
+	return &catalogResolver{dev: d, cat: cat, start: time.Now()}
 }
 
 // originAccepted reports whether the request origin is one the
@@ -141,39 +127,46 @@ type catalogEntry struct {
 func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry, error) {
 	entries := []catalogEntry{{}}
 	for _, k := range st.Keys {
-		var names []string
+		type keyVal struct {
+			name string
+			idx  int
+		}
+		var vals []keyVal
 		switch k.Source {
 		case gnmiKeySourceInterfaces:
-			if r.dev == nil || r.dev.metricsCycler == nil || r.dev.metricsCycler.ifCounters.Load() == nil {
+			var ic *IfCounterCycler
+			if r.dev != nil && r.dev.metricsCycler != nil {
+				ic = r.dev.metricsCycler.ifCounters.Load()
+			}
+			if ic == nil {
 				return nil, status.Error(codes.Unavailable, "interface counters not initialized")
 			}
-			for _, idx := range r.dev.metricsCycler.ifCounters.Load().IfIndices() {
+			for _, idx := range ic.IfIndices() {
 				n := lookupIfDescr(r.dev, idx)
 				if n == "" {
 					n = synthIfName(idx)
 				}
-				names = append(names, n)
+				vals = append(vals, keyVal{n, idx})
 			}
 		case gnmiKeySourceComponents:
 			for _, c := range r.cat.components(k.Filter) {
-				names = append(names, c.Name)
+				vals = append(vals, keyVal{name: c.Name})
 			}
 		case gnmiKeySourceNeighbors:
 			for _, n := range r.cat.Neighbors {
-				names = append(names, n.Address)
+				vals = append(vals, keyVal{name: n.Address})
 			}
 		case gnmiKeySourceStatic:
-			names = k.Names
+			for _, n := range k.Names {
+				vals = append(vals, keyVal{name: n})
+			}
 		}
 		var next []catalogEntry
 		for _, e := range entries {
-			for _, n := range names {
-				ne := catalogEntry{keys: append(append([]string{}, e.keys...), n), ifIndex: e.ifIndex}
-				if len(ne.keys) == 1 && k.Source == gnmiKeySourceInterfaces {
-					ne.ifIndex = r.descrToIndex[n]
-					if ne.ifIndex == 0 {
-						ne.ifIndex = 0
-					}
+			for _, v := range vals {
+				ne := catalogEntry{keys: append(append([]string{}, e.keys...), v.name), ifIndex: e.ifIndex}
+				if k.Source == gnmiKeySourceInterfaces {
+					ne.ifIndex = v.idx
 				}
 				next = append(next, ne)
 			}

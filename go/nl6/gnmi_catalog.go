@@ -188,6 +188,15 @@ func (c *gnmiCatalog) validate(source string) error {
 		if wild != len(st.Keys) {
 			return fail("subtree %d (%s): %d wildcard keys but %d key sources", i, st.Path, wild, len(st.Keys))
 		}
+		ifaceKeys := 0
+		for _, k := range st.Keys {
+			if k.Source == gnmiKeySourceInterfaces {
+				ifaceKeys++
+			}
+		}
+		if ifaceKeys > 1 {
+			return fail("subtree %d (%s): at most one interfaces key source", i, st.Path)
+		}
 		for j, k := range st.Keys {
 			switch k.Source {
 			case gnmiKeySourceInterfaces, gnmiKeySourceComponents, gnmiKeySourceNeighbors:
