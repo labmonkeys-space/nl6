@@ -427,9 +427,15 @@ run: check-linux build
 # Tool versions are pinned here so local developers and CI run the same
 # binaries. Bump in lockstep across all environments; Dependabot does not
 # track these `go install` versions today.
-GOLANGCI_LINT_VERSION ?= v2.13.1
+#
+# gosec is the exception: it is pinned in tools/gosec/go.mod, which Dependabot
+# does track. Every gosec release up to v2.29.0 bundles golang.org/x/tools
+# v0.49.0, which cannot read the export data Go 1.27.2 writes ("export data
+# version 5 is greater than maximum supported version 4"), so the module forces
+# x/tools v0.50.0. Once a gosec release requires x/tools >= v0.50.0 on its
+# own, this can go back to a plain `go install ...@version`.
+GOLANGCI_LINT_VERSION ?= v2.14.0
 GOVULNCHECK_VERSION   ?= v1.7.0
-GOSEC_VERSION         ?= v2.26.1
 GOIMPORTS_VERSION     ?= v0.45.0
 
 GOBIN_DIR := $(shell go env GOPATH)/bin
@@ -438,7 +444,7 @@ GOBIN_DIR := $(shell go env GOPATH)/bin
 tools-quality: check-go
 	GOBIN=$(GOBIN_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	GOBIN=$(GOBIN_DIR) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	GOBIN=$(GOBIN_DIR) go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	cd tools/gosec && GOBIN=$(GOBIN_DIR) go install github.com/securego/gosec/v2/cmd/gosec
 	GOBIN=$(GOBIN_DIR) go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION)
 
 ## fmt-check: Verify Go sources are gofmt- and goimports-clean
