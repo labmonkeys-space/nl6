@@ -357,8 +357,14 @@ func encodeUpdates(updates []resolvedUpdate, enc gnmipb.Encoding) ([]*gnmipb.Upd
 	return out, nil
 }
 
+// gnmiEncodingJSONVal is an internal sentinel: encode exactly as
+// JSON_IETF but carry the bytes in `json_val`, which is what Junos
+// returns for a JSON subscription. Never advertised; the catalogue
+// server maps a client's Encoding_JSON to it (Task 6).
+const gnmiEncodingJSONVal gnmipb.Encoding = -1
+
 // gnmiEncodeTypedValue encodes a single Go value into a gNMI TypedValue.
-// Supported Go types: string, uint32, uint64. Other types are a
+// Supported Go types: string, uint32, uint64, int64, bool, gnmiDecimal. Other types are a
 // programming error in the resolver; surface them as Internal.
 //
 // Named with a `gnmi` prefix to avoid collision with the SNMP-side
@@ -372,6 +378,10 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: uint64(x)}}, nil
 		case uint64:
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_UintVal{UintVal: x}}, nil
+		case bool:
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_BoolVal{BoolVal: x}}, nil
+		case int64:
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_IntVal{IntVal: x}}, nil
 		case gnmiDecimal:
 			// double_val, not string_val: a decimal encoded as a string
 			// would be a type error for the client. Not decimal_val
@@ -397,6 +407,11 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 	case uint64:
 		// RFC 7951: uint64 / int64 are JSON strings.
 		b, err = json.Marshal(strconv.FormatUint(x, 10))
+	case bool:
+		b, err = json.Marshal(x)
+	case int64:
+		// RFC 7951: int64 is a JSON string.
+		b, err = json.Marshal(strconv.FormatInt(x, 10))
 	case gnmiDecimal:
 		// RFC 7951 §6.1: decimal64 is a JSON string, so the full
 		// declared precision survives (unlike a JSON number, which a
@@ -407,6 +422,9 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "json marshal: %v", err)
+	}
+	if enc == gnmiEncodingJSONVal {
+		return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_JsonVal{JsonVal: b}}, nil
 	}
 	return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_JsonIetfVal{JsonIetfVal: b}}, nil
 }

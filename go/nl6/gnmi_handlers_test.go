@@ -689,3 +689,31 @@ func TestGnmiEncodeTypedValueAllTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestGnmiEncodeTypedValue_BoolInt64AndJsonVal(t *testing.T) {
+	tv, err := gnmiEncodeTypedValue(true, gnmipb.Encoding_PROTO)
+	if err != nil || !tv.GetBoolVal() {
+		t.Fatalf("PROTO bool: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(int64(-5), gnmipb.Encoding_PROTO)
+	if err != nil || tv.GetIntVal() != -5 {
+		t.Fatalf("PROTO int64: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(true, gnmipb.Encoding_JSON_IETF)
+	if err != nil || string(tv.GetJsonIetfVal()) != "true" {
+		t.Fatalf("JSON_IETF bool: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(int64(-5), gnmipb.Encoding_JSON_IETF)
+	if err != nil || string(tv.GetJsonIetfVal()) != `"-5"` {
+		t.Fatalf("JSON_IETF int64 must be a JSON string: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(uint64(7), gnmiEncodingJSONVal)
+	if err != nil || string(tv.GetJsonVal()) != `"7"` || tv.GetJsonIetfVal() != nil {
+		t.Fatalf("JSON must use json_val: %v %v", tv, err)
+	}
+	// Unset encoding (zero value) still means JSON_IETF for clients that omit it.
+	tv, err = gnmiEncodeTypedValue(uint32(3), gnmipb.Encoding(0))
+	if err != nil || tv.GetJsonIetfVal() == nil {
+		t.Fatalf("zero encoding: %v %v", tv, err)
+	}
+}
