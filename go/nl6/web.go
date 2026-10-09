@@ -23,12 +23,41 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 )
 
 // Web handlers for HTTP API endpoints
+
+// createResponseWriteTimeout is the write deadline the create handler re-arms
+// once its batch returns (nl6#746). The batch can run for minutes, past the
+// server's 30 s WriteTimeout; the re-arm replaces the expired deadline so the
+// response is delivered, and still bounds the write so a client that stopped
+// reading cannot pin the connection. The body is under 1 KiB, so 10 s is
+// generous for any reader that is reading.
+const createResponseWriteTimeout = 10 * time.Second
+
+// armCreateResponseDeadline is the re-arm. A var only so a test can observe the
+// call, which a well-behaved client never can.
+var armCreateResponseDeadline = func(rc *http.ResponseController, deadline time.Time) error {
+	return rc.SetWriteDeadline(deadline)
+}
+
+var logCreateDeadlineErr sync.Once
+
+// adjustCreateDeadline never fails the request: the batch is worth more than
+// the deadline. http.ErrNotSupported is expected from writers with no
+// connection (httptest.ResponseRecorder), so only other errors are logged, once.
+func adjustCreateDeadline(err error) {
+	if err == nil || errors.Is(err, http.ErrNotSupported) {
+		return
+	}
+	logCreateDeadlineErr.Do(func() {
+		log.Printf("create devices: cannot adjust the connection deadline, a long batch may lose its response: %v", err)
+	})
+}
 
 func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateDevicesRequest
@@ -274,7 +303,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	// the former CreateDevices fallback was exactly CreateDevicesWithOptions
 	// with preAllocate=true, maxWorkers=0, so this preserves behaviour while
 	// giving us the actual created count (req.MaxWorkers is 0 when unset).
+	//
+	// The batch can run for minutes at fleet scale, past the server's 30 s
+	// WriteTimeout, which closed the connection with no response while the
+	// batch went on to succeed (nl6#746). Nothing is written during the batch,
+	// so an expired deadline costs nothing until the response: re-arming it
+	// once the batch returns, above the branch, delivers and bounds both
+	// responses. net.Conn documents that a passed deadline can be extended.
 	created, err := manager.CreateDevicesWithOptions(req.StartIP, req.DeviceCount, req.Netmask, req.ResourceFile, req.SNMPv3, true, req.MaxWorkers, req.RoundRobin, req.Category, snmpPort, seed)
+	adjustCreateDeadline(armCreateResponseDeadline(http.NewResponseController(w), time.Now().Add(createResponseWriteTimeout)))
 	if err != nil {
 		msg, status := createDevicesErrorResponse(err)
 		// The full path goes to the LOG here, and only here (nl6#538). The

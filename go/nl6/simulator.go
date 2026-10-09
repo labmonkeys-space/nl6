@@ -770,8 +770,10 @@ func main() {
 
 	// Start web server in background. Use http.Server with explicit
 	// timeouts (gosec G114) rather than the bare ListenAndServe.
-	// 30s covers the slowest local handler today (device-create
-	// preallocation); operators driving heavier writes can tune this.
+	// POST /api/v1/devices outlasts 30s at fleet scale and re-arms its
+	// own deadline after the batch (nl6#746), so this value stays the
+	// bound for every other route. It also caps net/http/pprof's
+	// seconds=N, which docs/reference/web-api.md states.
 	go func() {
 		srv := &http.Server{
 			Addr:              apiPort,
