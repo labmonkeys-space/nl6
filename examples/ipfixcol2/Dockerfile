@@ -10,7 +10,7 @@
 #
 # Pinned by digest so the gate's collector cannot move under a green CI;
 # Dependabot (docker ecosystem, /examples/ipfixcol2) bumps the pin.
-FROM debian:forky-slim@sha256:7bb96d9b4ccd7f46f54853c258a56df0c6b628a63e65c2317959da18fd36932c
+FROM debian:forky-slim@sha256:3c80e257eff6274d593eb33a94bda5174ccd619836e6a728a73e11c97f2213e3
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ipfixcol2 \
