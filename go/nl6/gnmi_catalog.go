@@ -1,0 +1,365 @@
+package main
+
+import (
+	"bytes"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+
+	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+)
+
+// Per-type gNMI catalogues ship as resources/<slug>/gnmi.json. The
+// pattern mirrors the trap catalogue: embedded by default, a file in
+// the resource directory replaces the embedded one for that type, and
+// -gnmi-catalog replaces every type's catalogue with one file.
+//
+//go:embed resources/*/gnmi.json
+var embeddedGnmiCatalogFS embed.FS
+
+const gnmiCatalogFileName = "gnmi.json"
+
+const (
+	gnmiPrefixListEntry = "list-entry"
+	gnmiPrefixFlat      = "flat"
+
+	gnmiExtensionNone          = "none"
+	gnmiExtensionJuniperHeader = "juniper-header"
+
+	gnmiKeySourceInterfaces = "interfaces"
+	gnmiKeySourceComponents = "components"
+	gnmiKeySourceNeighbors  = "neighbors"
+	gnmiKeySourceStatic     = "static"
+)
+
+type gnmiCatalog struct {
+	Comment      string                  `json:"comment"`
+	Vendor       string                  `json:"vendor"`
+	Notification gnmiCatalogNotification `json:"notification"`
+	Models       []gnmiCatalogModel      `json:"models"`
+	Components   []gnmiCatalogComponent  `json:"components"`
+	Neighbors    []gnmiCatalogNeighbor   `json:"neighbors"`
+	Subtrees     []*gnmiCatalogSubtree   `json:"subtrees"`
+
+	encodings map[gnmipb.Encoding]bool
+}
+
+type gnmiCatalogNotification struct {
+	Origin       string   `json:"origin"`
+	NativeOrigin string   `json:"native_origin"`
+	Prefix       string   `json:"prefix"`
+	Encodings    []string `json:"encodings"`
+	Extension    string   `json:"extension"`
+}
+
+type gnmiCatalogModel struct {
+	Name         string `json:"name"`
+	Organization string `json:"organization"`
+	Version      string `json:"version"`
+}
+
+type gnmiCatalogComponent struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Parent      string `json:"parent"`
+	PartNo      string `json:"part_no"`
+	Description string `json:"description"`
+	SerialNo    string `json:"serial_no"`
+	Temperature bool   `json:"temperature"`
+}
+
+type gnmiCatalogNeighbor struct {
+	Address string `json:"address"`
+	PeerAS  uint32 `json:"peer_as"`
+	LocalAS uint32 `json:"local_as"`
+	State   string `json:"state"`
+}
+
+type gnmiCatalogKey struct {
+	Source string   `json:"source"`
+	Filter string   `json:"filter,omitempty"`
+	Names  []string `json:"names,omitempty"`
+}
+
+// gnmiCatalogSubtree is one list entry: `path` is the entry path that
+// becomes the notification prefix under `prefix: list-entry`; leaves
+// are relative to it.
+type gnmiCatalogSubtree struct {
+	Path   string             `json:"path"`
+	Origin string             `json:"origin"`
+	Keys   []gnmiCatalogKey   `json:"keys"`
+	Leaves []*gnmiCatalogLeaf `json:"leaves"`
+
+	elems []*gnmipb.PathElem // compiled from Path; wildcard keys hold "*"
+}
+
+type gnmiCatalogLeaf struct {
+	Name string   `json:"name"`
+	Type string   `json:"type"`
+	Enum []string `json:"enum,omitempty"`
+	Gen  string   `json:"gen"`
+
+	elems []*gnmipb.PathElem // compiled from Name
+	gen   gnmiLeafGen        // compiled from Gen (Task 2)
+}
+
+var gnmiEncodingNames = map[string]gnmipb.Encoding{
+	"PROTO":     gnmipb.Encoding_PROTO,
+	"JSON":      gnmipb.Encoding_JSON,
+	"JSON_IETF": gnmipb.Encoding_JSON_IETF,
+}
+
+func parseGnmiCatalog(data []byte, source string) (*gnmiCatalog, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var c gnmiCatalog
+	if err := dec.Decode(&c); err != nil {
+		return nil, fmt.Errorf("gnmi catalog %s: %w", source, err)
+	}
+	if err := c.validate(source); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (c *gnmiCatalog) validate(source string) error {
+	fail := func(format string, args ...any) error {
+		return fmt.Errorf("gnmi catalog %s: "+format, append([]any{source}, args...)...)
+	}
+	if c.Vendor == "" {
+		return fail("vendor is required")
+	}
+	n := c.Notification
+	if n.Prefix != gnmiPrefixListEntry && n.Prefix != gnmiPrefixFlat {
+		return fail("notification.prefix %q: want %q or %q", n.Prefix, gnmiPrefixListEntry, gnmiPrefixFlat)
+	}
+	if n.Extension != gnmiExtensionNone && n.Extension != gnmiExtensionJuniperHeader {
+		return fail("notification.extension %q unknown", n.Extension)
+	}
+	if n.Origin == "" {
+		return fail("notification.origin is required")
+	}
+	if len(n.Encodings) == 0 {
+		return fail("notification.encodings is empty")
+	}
+	c.encodings = map[gnmipb.Encoding]bool{}
+	for _, e := range n.Encodings {
+		enc, ok := gnmiEncodingNames[e]
+		if !ok {
+			return fail("notification.encodings: unknown encoding %q", e)
+		}
+		c.encodings[enc] = true
+	}
+	names := map[string]bool{}
+	for _, comp := range c.Components {
+		if comp.Name == "" || names[comp.Name] {
+			return fail("components: empty or duplicate name %q", comp.Name)
+		}
+		names[comp.Name] = true
+	}
+	for i, st := range c.Subtrees {
+		if st.Origin != n.Origin && st.Origin != n.NativeOrigin {
+			return fail("subtree %d (%s): origin %q is neither %q nor %q", i, st.Path, st.Origin, n.Origin, n.NativeOrigin)
+		}
+		elems, err := parseCatalogPath(st.Path)
+		if err != nil {
+			return fail("subtree %d: %v", i, err)
+		}
+		st.elems = elems
+		wild := 0
+		for _, e := range elems {
+			for _, v := range e.Key {
+				if v == "*" {
+					wild++
+				}
+			}
+		}
+		if wild != len(st.Keys) {
+			return fail("subtree %d (%s): %d wildcard keys but %d key sources", i, st.Path, wild, len(st.Keys))
+		}
+		for j, k := range st.Keys {
+			switch k.Source {
+			case gnmiKeySourceInterfaces, gnmiKeySourceComponents, gnmiKeySourceNeighbors:
+			case gnmiKeySourceStatic:
+				if len(k.Names) == 0 {
+					return fail("subtree %d key %d: static key source needs names", i, j)
+				}
+			default:
+				return fail("subtree %d key %d: unknown key source %q", i, j, k.Source)
+			}
+		}
+		seen := map[string]bool{}
+		for _, leaf := range st.Leaves {
+			if seen[leaf.Name] {
+				return fail("subtree %d (%s): duplicate leaf %q", i, st.Path, leaf.Name)
+			}
+			seen[leaf.Name] = true
+			le, err := parseCatalogPath(leaf.Name)
+			if err != nil {
+				return fail("subtree %d leaf %q: %v", i, leaf.Name, err)
+			}
+			leaf.elems = le
+			if leaf.Type == "" {
+				return fail("subtree %d leaf %q: type is required", i, leaf.Name)
+			}
+			g, err := compileGnmiBinding(leaf.Gen)
+			if err != nil {
+				return fail("subtree %d leaf %q: binding: %v", i, leaf.Name, err)
+			}
+			leaf.gen = g
+		}
+	}
+	return nil
+}
+
+func (c *gnmiCatalog) acceptsEncoding(enc gnmipb.Encoding) bool {
+	return c.encodings[enc]
+}
+
+// components returns the component list filtered by `filter`: "" for
+// all, "temperature" for sensors, or a component type such as "FAN".
+func (c *gnmiCatalog) components(filter string) []gnmiCatalogComponent {
+	if filter == "" {
+		return c.Components
+	}
+	var out []gnmiCatalogComponent
+	for _, comp := range c.Components {
+		if (filter == "temperature" && comp.Temperature) || comp.Type == filter {
+			out = append(out, comp)
+		}
+	}
+	return out
+}
+
+// parseCatalogPath parses "/a/b[name=*]/c" into PathElems. Key values
+// may not contain ']' or '/'; that is enough for the catalogue grammar.
+func parseCatalogPath(s string) ([]*gnmipb.PathElem, error) {
+	if s == "/" {
+		// Root entry: Junos streams container-level subtrees such as
+		// /system/state with an empty prefix and absolute update paths.
+		return nil, nil
+	}
+	s = strings.Trim(s, "/")
+	if s == "" {
+		return nil, errors.New("empty path")
+	}
+	var elems []*gnmipb.PathElem
+	for _, part := range strings.Split(s, "/") {
+		name := part
+		var keys map[string]string
+		if i := strings.IndexByte(part, '['); i >= 0 {
+			name = part[:i]
+			rest := part[i:]
+			keys = map[string]string{}
+			for rest != "" {
+				if rest[0] != '[' {
+					return nil, fmt.Errorf("path %q: bad key syntax at %q", s, rest)
+				}
+				end := strings.IndexByte(rest, ']')
+				if end < 0 {
+					return nil, fmt.Errorf("path %q: unterminated key", s)
+				}
+				kv := rest[1:end]
+				eq := strings.IndexByte(kv, '=')
+				if eq <= 0 {
+					return nil, fmt.Errorf("path %q: key %q lacks '='", s, kv)
+				}
+				keys[kv[:eq]] = kv[eq+1:]
+				rest = rest[end+1:]
+			}
+		}
+		if name == "" {
+			return nil, fmt.Errorf("path %q: empty element", s)
+		}
+		elems = append(elems, &gnmipb.PathElem{Name: name, Key: keys})
+	}
+	return elems, nil
+}
+
+// loadEmbeddedGnmiCatalogs parses every resources/<slug>/gnmi.json
+// compiled into the binary, keyed by slug.
+func loadEmbeddedGnmiCatalogs() (map[string]*gnmiCatalog, error) {
+	out := map[string]*gnmiCatalog{}
+	entries, err := fs.ReadDir(embeddedGnmiCatalogFS, "resources")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return out, nil
+		}
+		return nil, fmt.Errorf("gnmi catalog: embedded read: %w", err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p := "resources/" + e.Name() + "/" + gnmiCatalogFileName
+		data, err := embeddedGnmiCatalogFS.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		c, err := parseGnmiCatalog(data, "<embedded "+p+">")
+		if err != nil {
+			return nil, err
+		}
+		out[e.Name()] = c
+	}
+	return out, nil
+}
+
+func loadGnmiCatalogFile(path string) (*gnmiCatalog, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("gnmi catalog: reading %q: %w", path, err)
+	}
+	return parseGnmiCatalog(data, path)
+}
+
+// scanPerTypeGnmiCatalogs overlays resourceDir/<slug>/gnmi.json files
+// on `base` (the embedded set). A directory file replaces the embedded
+// catalogue for its slug; slugs with neither do not appear.
+func scanPerTypeGnmiCatalogs(resourceDir string, base map[string]*gnmiCatalog) (map[string]*gnmiCatalog, error) {
+	out := make(map[string]*gnmiCatalog, len(base))
+	for k, v := range base {
+		out[k] = v
+	}
+	entries, err := os.ReadDir(resourceDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+			log.Printf("gnmi catalog scan: resource dir %q unreadable (%v); per-type overrides disabled", resourceDir, err)
+			return out, nil
+		}
+		return nil, fmt.Errorf("gnmi catalog scan: reading %q: %w", resourceDir, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
+			continue
+		}
+		p := filepath.Join(resourceDir, e.Name(), gnmiCatalogFileName)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		c, err := loadGnmiCatalogFile(p)
+		if err != nil {
+			return nil, err
+		}
+		out[e.Name()] = c
+	}
+	return out, nil
+}
+
+// gnmiLeafGen is defined for real in gnmi_catalog_gen.go (Task 2).
+type gnmiLeafGen func(ctx *gnmiGenCtx) (any, bool)
+
+type gnmiGenCtx struct{}
+
+func compileGnmiBinding(spec string) (gnmiLeafGen, error) {
+	if spec == "" {
+		return nil, errors.New("empty binding")
+	}
+	return func(*gnmiGenCtx) (any, bool) { return nil, false }, nil
+}
