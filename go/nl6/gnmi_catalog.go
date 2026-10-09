@@ -294,7 +294,8 @@ func loadEmbeddedGnmiCatalogs() (map[string]*gnmiCatalog, error) {
 		return nil, fmt.Errorf("gnmi catalog: embedded read: %w", err)
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		// Skip "_"-prefixed dirs (placeholders, shared data), as the scan does.
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
 			continue
 		}
 		p := "resources/" + e.Name() + "/" + gnmiCatalogFileName

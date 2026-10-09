@@ -109,6 +109,9 @@ func TestLoadEmbeddedGnmiCatalogs_ParsesEveryShippedFile(t *testing.T) {
 	// Until Task 8 ships juniper_mx10004 this may be empty; the loader
 	// must still succeed.
 	for slug, c := range got {
+		if strings.HasPrefix(slug, "_") {
+			t.Errorf("%s: underscore-prefixed dir must not load", slug)
+		}
 		if c.Vendor == "" {
 			t.Errorf("%s: empty vendor", slug)
 		}

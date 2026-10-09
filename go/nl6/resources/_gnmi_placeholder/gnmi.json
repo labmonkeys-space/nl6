@@ -1,5 +1,5 @@
 {
-  "comment": "Minimal catalogue for loader tests.",
+  "comment": "Placeholder: exists only so the go:embed glob matches until a real catalogue ships. Task 8 deletes it.",
   "vendor": "testvendor",
   "notification": {
     "origin": "openconfig",
