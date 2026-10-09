@@ -1,0 +1,39 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "cpu",
+  "prefixes": [
+    "openconfig:/components/component[name=*]"
+  ],
+  "notifications": 1,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/interval",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/max-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state/min-time",
+      "kind": "uint"
+    }
+  ]
+}

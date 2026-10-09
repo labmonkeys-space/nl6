@@ -1,0 +1,87 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "components",
+  "prefixes": [
+    "openconfig:/components/component[name=*]"
+  ],
+  "notifications": 10,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/state/allocated-power",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/description",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/empty",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/state/hardware-version",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/id",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/location",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/memory/available",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/memory/utilized",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/mfg-date",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/mfg-name",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/name",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/oper-status",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/parent",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/part-no",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/removable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/state/serial-no",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/software-version",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/type",
+      "kind": "string"
+    }
+  ]
+}

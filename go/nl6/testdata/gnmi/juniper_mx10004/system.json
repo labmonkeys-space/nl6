@@ -1,0 +1,31 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "system",
+  "prefixes": [
+    "openconfig:/"
+  ],
+  "notifications": 1,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/system/state/domain-name",
+      "kind": "string"
+    },
+    {
+      "path": "/system/state/hostname",
+      "kind": "string"
+    },
+    {
+      "path": "/system/state/last-configuration-timestamp",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/state/login-banner",
+      "kind": "string"
+    },
+    {
+      "path": "/system/state/motd-banner",
+      "kind": "string"
+    }
+  ]
+}

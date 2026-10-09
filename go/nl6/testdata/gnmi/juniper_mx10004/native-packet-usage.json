@@ -1,0 +1,175 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "native-packet-usage",
+  "prefixes": [
+    "juniper:/components/component[name=*]"
+  ],
+  "notifications": 3,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-bits-to-test]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-data-error]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-dlu-not-routable]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-extended]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-fabric]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-filter-discard]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-inet-bad-route]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-inet6-bad-route]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-info-cell]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-input-checksum]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-invalid-iif]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-normal]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-output-mtu]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-stack-overflow]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-stack-underflow]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-timeout]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=hwds-truncated-key]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-drop-packets-bps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-drop-packets-bytes]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-drop-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-drop-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-packets-bps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-packets-bytes]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lpbk-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-hw-input-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-input-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-output-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-sw-input-control-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-sw-input-high-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-sw-input-low-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-sw-input-medium-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=lts-sw-output-low-drops]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-fabric-input-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-fabric-input-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-fabric-output-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-fabric-output-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-input-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-input-packets]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-output-packets-pps]/state/value",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=ts-output-packets]/state/value",
+      "kind": "uint"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "component-temp",
+  "prefixes": [
+    "openconfig:/components/component[name=*]"
+  ],
+  "notifications": 2,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/state/temperature/instant",
+      "kind": "uint"
+    }
+  ]
+}

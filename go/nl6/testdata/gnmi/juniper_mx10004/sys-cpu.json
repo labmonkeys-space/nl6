@@ -1,0 +1,123 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "sys-cpu",
+  "prefixes": [
+    "openconfig:/system/cpus/cpu[index=*]"
+  ],
+  "notifications": 1,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/system/cpus/cpu[index=*]/state/idle/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/idle/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/idle/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/idle/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/index",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/kernel/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/kernel/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/kernel/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/kernel/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/nice/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/nice/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/nice/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/nice/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/software-interrupt/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/software-interrupt/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/software-interrupt/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/software-interrupt/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/interval",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/max-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/min",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/total/min-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/user/avg",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/user/instant",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/user/max",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]/state/user/min",
+      "kind": "uint"
+    }
+  ]
+}

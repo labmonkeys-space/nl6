@@ -1,0 +1,253 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "component-props",
+  "prefixes": [
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-background]",
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-idle]",
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-interrupt]",
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-kernel]",
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-total]",
+    "openconfig:/components/component[name=*]/properties/property[name=cpu-utilization-user]",
+    "openconfig:/components/component[name=*]/properties/property[name=firmware-rev]",
+    "openconfig:/components/component[name=*]/properties/property[name=fru-failed]",
+    "openconfig:/components/component[name=*]/properties/property[name=fru-model-number]",
+    "openconfig:/components/component[name=*]/properties/property[name=manufacture-date]",
+    "openconfig:/components/component[name=*]/properties/property[name=mastership-priority]",
+    "openconfig:/components/component[name=*]/properties/property[name=mastership-state]",
+    "openconfig:/components/component[name=*]/properties/property[name=memory-dram-installed]",
+    "openconfig:/components/component[name=*]/properties/property[name=memory-dram-used]",
+    "openconfig:/components/component[name=*]/properties/property[name=memory-utilization-buffer]",
+    "openconfig:/components/component[name=*]/properties/property[name=memory-utilization-heap]",
+    "openconfig:/components/component[name=*]/properties/property[name=over-temperature]",
+    "openconfig:/components/component[name=*]/properties/property[name=power-maximum]",
+    "openconfig:/components/component[name=*]/properties/property[name=reboot-reason]",
+    "openconfig:/components/component[name=*]/properties/property[name=rom-software-rev-chassis]",
+    "openconfig:/components/component[name=*]/properties/property[name=software-rev]",
+    "openconfig:/components/component[name=*]/properties/property[name=state]",
+    "openconfig:/components/component[name=*]/properties/property[name=temperature-back-to-normal]",
+    "openconfig:/components/component[name=*]/properties/property[name=temperature-exhaust-a]",
+    "openconfig:/components/component[name=*]/properties/property[name=temperature-exhaust-b]",
+    "openconfig:/components/component[name=*]/properties/property[name=temperature-intake]",
+    "openconfig:/components/component[name=*]/properties/property[name=uptime]"
+  ],
+  "notifications": 41,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-background]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-background]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-idle]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-idle]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-interrupt]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-interrupt]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-kernel]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-kernel]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-total]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-total]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-user]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=cpu-utilization-user]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=firmware-rev]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=firmware-rev]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=fru-failed]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=fru-failed]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=fru-model-number]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=fru-model-number]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=manufacture-date]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=manufacture-date]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=mastership-priority]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=mastership-priority]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=mastership-state]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=mastership-state]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-dram-installed]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-dram-installed]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-dram-used]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-dram-used]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-utilization-buffer]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-utilization-buffer]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-utilization-heap]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=memory-utilization-heap]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=over-temperature]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=over-temperature]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=power-maximum]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=power-maximum]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=reboot-reason]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=reboot-reason]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=rom-software-rev-chassis]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=rom-software-rev-chassis]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=software-rev]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=software-rev]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=state]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=state]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-back-to-normal]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-back-to-normal]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-exhaust-a]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-exhaust-a]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-exhaust-b]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-exhaust-b]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-intake]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=temperature-intake]/state/value",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=uptime]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=uptime]/state/value",
+      "kind": "string"
+    }
+  ]
+}
