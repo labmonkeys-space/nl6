@@ -218,3 +218,63 @@ func TestParseGnmiCatalog_TwoInterfacesKeySources(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// keyPositionCatalog puts the neighbour and component key sources after
+// static keys, the way the BGP subtree does.
+const keyPositionCatalog = `{
+  "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "components": [{"name": "FPC0", "type": "LINECARD", "serial_no": "SN000002"}],
+  "neighbors": [{"address": "203.0.113.1", "peer_as": 64496, "local_as": 64500, "state": "ESTABLISHED"}],
+  "subtrees": [
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/neighbors/neighbor[neighbor-address=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["DEFAULT"]}, {"source": "static", "names": ["BGP"]}, {"source": "static", "names": ["DEFAULT"]}, {"source": "neighbors"}],
+      "leaves": [
+        {"name": "state/neighbor-address", "type": "union", "gen": "neighbor:address"},
+        {"name": "state/peer-as", "type": "uint32", "gen": "neighbor:peer_as"},
+        {"name": "state/session-state", "type": "string", "gen": "neighbor:state"}
+      ]
+    },
+    {
+      "path": "/slots/slot[id=*]/component[name=*]",
+      "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["0"]}, {"source": "components"}],
+      "leaves": [{"name": "serial-no", "type": "string", "gen": "inventory:serial_no"}]
+    }
+  ]
+}`
+
+func TestCatalogResolver_NeighborAndComponentKeyPosition(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(keyPositionCatalog), "keypos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	got, err := r.Resolve(pathFromString(t, "/network-instances"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(got))
+	}
+	vals := map[string]any{}
+	for _, u := range got[0].Updates {
+		vals[pathToString(u.Path)] = u.Value
+	}
+	want := map[string]any{
+		"/state/neighbor-address": "203.0.113.1",
+		"/state/peer-as":          uint32(64496),
+		"/state/session-state":    "ESTABLISHED",
+	}
+	for p, w := range want {
+		if vals[p] != w {
+			t.Errorf("%s = %v, want %v", p, vals[p], w)
+		}
+	}
+	got, err = r.Resolve(pathFromString(t, "/slots"), time.Now())
+	if err != nil || len(got) != 1 || len(got[0].Updates) != 1 || got[0].Updates[0].Value != "SN000002" {
+		t.Fatalf("component behind a static key: %v %v", got, err)
+	}
+}

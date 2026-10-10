@@ -21,13 +21,26 @@ import (
 // (for example ["xe-0/0/0", "3"]); ifIndex is set when the first key
 // source is `interfaces`, else 0; t is seconds since the device epoch
 // (catalogResolver.epoch), shared by every time-based binding.
+//
+// componentKey and neighborKey index keys for the inventory and
+// neighbor bindings (gnmiCatalogSubtree.componentKey/neighborKey).
 type gnmiGenCtx struct {
-	dev     *DeviceSimulator
-	cat     *gnmiCatalog
-	keys    []string
-	ifIndex int
-	t       float64
-	now     time.Time
+	dev          *DeviceSimulator
+	cat          *gnmiCatalog
+	keys         []string
+	ifIndex      int
+	componentKey int
+	neighborKey  int
+	t            float64
+	now          time.Time
+}
+
+// keyAt returns keys[i], or false when i is out of range.
+func (ctx *gnmiGenCtx) keyAt(i int) (string, bool) {
+	if i < 0 || i >= len(ctx.keys) {
+		return "", false
+	}
+	return ctx.keys[i], true
 }
 
 type gnmiLeafGen func(ctx *gnmiGenCtx) (any, bool)
@@ -223,11 +236,12 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 		return nil, fmt.Errorf("unknown inventory field %q", arg)
 	}
 	return func(ctx *gnmiGenCtx) (any, bool) {
-		if ctx.cat == nil || len(ctx.keys) == 0 {
+		name, ok := ctx.keyAt(ctx.componentKey)
+		if ctx.cat == nil || !ok {
 			return nil, false
 		}
 		for _, c := range ctx.cat.Components {
-			if c.Name != ctx.keys[0] {
+			if c.Name != name {
 				continue
 			}
 			switch arg {
@@ -256,11 +270,12 @@ func genNeighbor(arg string) (gnmiLeafGen, error) {
 		return nil, fmt.Errorf("unknown neighbor field %q", arg)
 	}
 	return func(ctx *gnmiGenCtx) (any, bool) {
-		if ctx.cat == nil || len(ctx.keys) == 0 {
+		addr, ok := ctx.keyAt(ctx.neighborKey)
+		if ctx.cat == nil || !ok {
 			return nil, false
 		}
 		for _, n := range ctx.cat.Neighbors {
-			if n.Address != ctx.keys[0] {
+			if n.Address != addr {
 				continue
 			}
 			switch arg {

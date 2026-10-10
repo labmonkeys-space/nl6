@@ -243,7 +243,8 @@ func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotif
 				if !pathCovers(q, full) {
 					continue
 				}
-				ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex, t: t, now: now}
+				ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex,
+					componentKey: st.componentKey, neighborKey: st.neighborKey, t: t, now: now}
 				raw, ok := leaf.gen(ctx)
 				if !ok {
 					continue

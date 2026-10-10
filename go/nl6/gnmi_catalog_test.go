@@ -57,6 +57,8 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"bad encoding", strings.Replace(base, `"PROTO"`, `"XML"`, 1), "encoding"},
 		{"empty binding", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": ""`, 1), "binding"},
 		{"key count mismatch", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": []`, 1), "wildcard"},
+		{"inventory without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "inventory:name"`, 1), "needs a components key source"},
+		{"neighbor without neighbors key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "neighbor:state"`, 1), "needs a neighbors key source"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

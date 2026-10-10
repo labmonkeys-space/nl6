@@ -343,3 +343,33 @@ func TestMX10004CountersAgreeWithSNMP(t *testing.T) {
 		t.Fatalf("boot timestamp is %v off the cycler start", time.Duration(d))
 	}
 }
+
+// TestMX10004ServesBGPNeighbors: the captures carry no BGP subtree, so
+// this pins the neighbour leaves directly: all eight per neighbour.
+func TestMX10004ServesBGPNeighbors(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	perNeighbor := map[string]map[string]bool{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		addr := n.GetPrefix().GetElem()[len(n.GetPrefix().GetElem())-1].GetKey()["neighbor-address"]
+		if perNeighbor[addr] == nil {
+			perNeighbor[addr] = map[string]bool{}
+		}
+		for _, u := range n.GetUpdate() {
+			perNeighbor[addr][pathToString(u.GetPath())] = true
+		}
+	}
+	for _, a := range []string{"203.0.113.1", "203.0.113.2"} {
+		if len(perNeighbor[a]) != 8 {
+			t.Errorf("neighbor %s: %d leaves, want 8: %v", a, len(perNeighbor[a]), perNeighbor[a])
+		}
+	}
+}

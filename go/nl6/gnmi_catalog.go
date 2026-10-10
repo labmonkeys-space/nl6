@@ -102,6 +102,11 @@ type gnmiCatalogSubtree struct {
 	Leaves []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems []*gnmipb.PathElem // compiled from Path; wildcard keys hold "*"
+	// componentKey and neighborKey are the positions of the first
+	// components and neighbors key sources in Keys, or -1. inventory and
+	// neighbor bindings read the entry key at that position.
+	componentKey int
+	neighborKey  int
 }
 
 type gnmiCatalogLeaf struct {
@@ -197,9 +202,18 @@ func (c *gnmiCatalog) validate(source string) error {
 		if ifaceKeys > 1 {
 			return fail("subtree %d (%s): at most one interfaces key source", i, st.Path)
 		}
+		st.componentKey, st.neighborKey = -1, -1
 		for j, k := range st.Keys {
 			switch k.Source {
-			case gnmiKeySourceInterfaces, gnmiKeySourceComponents, gnmiKeySourceNeighbors:
+			case gnmiKeySourceInterfaces:
+			case gnmiKeySourceComponents:
+				if st.componentKey < 0 {
+					st.componentKey = j
+				}
+			case gnmiKeySourceNeighbors:
+				if st.neighborKey < 0 {
+					st.neighborKey = j
+				}
 			case gnmiKeySourceStatic:
 				if len(k.Names) == 0 {
 					return fail("subtree %d key %d: static key source needs names", i, j)
@@ -225,6 +239,12 @@ func (c *gnmiCatalog) validate(source string) error {
 			g, err := compileGnmiBinding(leaf.Gen)
 			if err != nil {
 				return fail("subtree %d leaf %q: binding: %v", i, leaf.Name, err)
+			}
+			switch prefix, _, _ := strings.Cut(leaf.Gen, ":"); {
+			case prefix == "inventory" && st.componentKey < 0:
+				return fail("subtree %d leaf %q: inventory binding needs a components key source", i, leaf.Name)
+			case prefix == "neighbor" && st.neighborKey < 0:
+				return fail("subtree %d leaf %q: neighbor binding needs a neighbors key source", i, leaf.Name)
 			}
 			leaf.gen = g
 		}
