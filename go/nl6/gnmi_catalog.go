@@ -123,17 +123,17 @@ type gnmiCatalogKey struct {
 // any (the MX10004 subinterface counters sensor sends no
 // subinterface state leaves, nl6#787).
 type gnmiCatalogSubtree struct {
-	Path        string             `json:"path"`
-	Origin      string             `json:"origin"`
-	Aliases     []string           `json:"aliases,omitempty"`
-	AliasLeaves []string           `json:"alias_leaves,omitempty"`
+	Path        string   `json:"path"`
+	Origin      string   `json:"origin"`
+	Aliases     []string `json:"aliases,omitempty"`
+	AliasLeaves []string `json:"alias_leaves,omitempty"`
 	// AliasOnly keeps the subtree out of path coverage: only an alias
 	// request reaches it. The MX10004 transceiver sensor sends
 	// oper-status under a .../state prefix that /components/component/state
 	// must not repeat (nl6#790).
-	AliasOnly bool `json:"alias_only,omitempty"`
-	Keys        []gnmiCatalogKey   `json:"keys"`
-	Leaves      []*gnmiCatalogLeaf `json:"leaves"`
+	AliasOnly bool               `json:"alias_only,omitempty"`
+	Keys      []gnmiCatalogKey   `json:"keys"`
+	Leaves    []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
 	aliases [][]*gnmipb.PathElem // compiled from Aliases
