@@ -783,7 +783,7 @@
       ]
     },
     {
-      "path": "/components/component[name=*]/cpu/utilization/state",
+      "path": "/components/component[name=*]",
       "origin": "openconfig",
       "keys": [
         {
@@ -795,37 +795,37 @@
       ],
       "leaves": [
         {
-          "name": "avg",
+          "name": "cpu/utilization/state/avg",
           "type": "uint32",
           "gen": "sine:20,4,600"
         },
         {
-          "name": "instant",
+          "name": "cpu/utilization/state/instant",
           "type": "uint32",
           "gen": "sine:20,8,600"
         },
         {
-          "name": "interval",
+          "name": "cpu/utilization/state/interval",
           "type": "uint64",
           "gen": "const:60000000000"
         },
         {
-          "name": "max",
+          "name": "cpu/utilization/state/max",
           "type": "uint32",
           "gen": "const:45"
         },
         {
-          "name": "max-time",
+          "name": "cpu/utilization/state/max-time",
           "type": "uint64",
           "gen": "timestamp:boot"
         },
         {
-          "name": "min",
+          "name": "cpu/utilization/state/min",
           "type": "uint32",
           "gen": "const:5"
         },
         {
-          "name": "min-time",
+          "name": "cpu/utilization/state/min-time",
           "type": "uint64",
           "gen": "timestamp:boot"
         }

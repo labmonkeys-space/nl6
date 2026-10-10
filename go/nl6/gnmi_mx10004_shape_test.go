@@ -1,0 +1,332 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type shapeFixture struct {
+	Subtree   string   `json:"subtree"`
+	Prefixes  []string `json:"prefixes"`
+	Extension string   `json:"extension"`
+	Leaves    []struct {
+		Path string `json:"path"`
+		Kind string `json:"kind"`
+	} `json:"leaves"`
+}
+
+// fixtureSubscriptions maps fixture file stems to the path gnmic
+// subscribed to when the capture was taken.
+var fixtureSubscriptions = map[string]string{
+	"if-counters":         "/interfaces/interface/state/counters",
+	"if-state":            "/interfaces/interface/state",
+	"subif":               "/interfaces/interface/subinterfaces/subinterface/state",
+	"components":          "/components/component/state",
+	"component-temp":      "/components/component/state/temperature",
+	"component-props":     "/components/component/properties/property/state",
+	"cpu":                 "/components/component/cpu/utilization/state",
+	"sys-cpu":             "/system/cpus/cpu/state",
+	"sys-mem":             "/system/memory/state",
+	"system":              "/system/state",
+	"native-packet-usage": "juniper:/components/component/properties/property/state/value",
+}
+
+var keyValueRe = regexp.MustCompile(`\[([a-z-]+)=[^\]]*\]`)
+
+func wildcardKeys(p string) string { return keyValueRe.ReplaceAllString(p, "[$1=*]") }
+
+func stripKeys(p string) string { return keyValueRe.ReplaceAllString(p, "") }
+
+// Junos property keys are identity, not instance: keep them.
+func wildcardKeysKeepProperty(p string) string {
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		if !strings.HasPrefix(part, "property[") {
+			parts[i] = wildcardKeys(part)
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
+// underPath reports whether leaf (keys stripped) lies at or below sub.
+func underPath(leaf, sub string) bool {
+	l, s := stripKeys(leaf), strings.TrimSuffix(stripKeys(sub), "/")
+	return l == s || strings.HasPrefix(l, s+"/")
+}
+
+// fixtureOrigin is the origin of a fixture's prefixes ("openconfig" or
+// "juniper"); every fixture uses a single origin.
+func fixtureOrigin(fx shapeFixture) string {
+	if len(fx.Prefixes) == 0 {
+		return ""
+	}
+	o, _, _ := strings.Cut(fx.Prefixes[0], ":")
+	return o
+}
+
+func readShapeFixtures(t *testing.T) map[string]shapeFixture {
+	t.Helper()
+	files, _ := filepath.Glob("testdata/gnmi/juniper_mx10004/*.json")
+	if len(files) == 0 {
+		t.Fatal("no fixtures")
+	}
+	out := map[string]shapeFixture{}
+	for _, f := range files {
+		var fx shapeFixture
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &fx); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		out[strings.TrimSuffix(filepath.Base(f), ".json")] = fx
+	}
+	return out
+}
+
+func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
+	t.Helper()
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := cats["juniper_mx10004"]
+	if cat == nil {
+		t.Fatal("embedded juniper_mx10004 catalogue missing")
+	}
+	_, _, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
+	return addr, cleanup
+}
+
+// TestMX10004ShapeMatchesCapture compares what nl6 serves per captured
+// subscription with the vJunos capture. Junos picks different leaf
+// subsets of one subtree per subscription, while nl6 serves the whole
+// catalogue subtree, so the expected set is the union of every
+// fixture's leaves (same origin) under the subscription path.
+func TestMX10004ShapeMatchesCapture(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	fixtures := readShapeFixtures(t)
+	unionLeaves := map[string]map[string]bool{} // origin -> leaf path
+	unionPrefixes := map[string]bool{}
+	for _, fx := range fixtures {
+		o := fixtureOrigin(fx)
+		if unionLeaves[o] == nil {
+			unionLeaves[o] = map[string]bool{}
+		}
+		for _, l := range fx.Leaves {
+			unionLeaves[o][l.Path] = true
+		}
+		for _, p := range fx.Prefixes {
+			unionPrefixes[p] = true
+		}
+	}
+	stems := make([]string, 0, len(fixtures))
+	for stem := range fixtures {
+		stems = append(stems, stem)
+	}
+	sort.Strings(stems)
+	for _, stem := range stems {
+		fx := fixtures[stem]
+		sub, ok := fixtureSubscriptions[stem]
+		if !ok {
+			t.Fatalf("no subscription mapping for fixture %s", stem)
+		}
+		t.Run(stem, func(t *testing.T) {
+			origin, p := "", sub
+			if i := strings.Index(sub, ":/"); i > 0 {
+				origin, p = sub[:i], sub[i+1:]
+			}
+			fxKinds := map[string]string{}
+			for _, l := range fx.Leaves {
+				fxKinds[l.Path] = l.Kind
+			}
+			wantLeaves := map[string]bool{}
+			for l := range unionLeaves[fixtureOrigin(fx)] {
+				if underPath(l, p) {
+					wantLeaves[l] = true
+				}
+			}
+			for _, enc := range []gnmipb.Encoding{gnmipb.Encoding_PROTO, gnmipb.Encoding_JSON} {
+				resps, err := subscribeOnceOrigin(t, addr, enc, origin, p)
+				if err != nil {
+					t.Fatalf("%v: %v", enc, err)
+				}
+				gotLeaves := map[string]string{}
+				gotPrefixes := map[string]bool{}
+				for _, r := range resps {
+					n := r.GetUpdate()
+					if n == nil {
+						continue
+					}
+					pfx := pathToString(n.GetPrefix())
+					gotPrefixes[n.GetPrefix().GetOrigin()+":"+wildcardKeysKeepProperty(pfx)] = true
+					if fx.Extension == "juniper-header" {
+						if len(r.GetExtension()) != 1 {
+							t.Fatalf("notification without Juniper header: %v", r)
+						}
+						h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
+						if err != nil || h.SystemID == "" {
+							t.Fatalf("header decode: %+v %v", h, err)
+						}
+					}
+					for _, u := range n.GetUpdate() {
+						full := strings.TrimSuffix(pfx, "/") + "/" + strings.TrimPrefix(pathToString(u.GetPath()), "/")
+						gotLeaves[wildcardKeysKeepProperty(full)] = typedValueKind(u.GetVal(), enc)
+					}
+				}
+				var missing, extra, wrongKind []string
+				for l := range wantLeaves {
+					gk, ok := gotLeaves[l]
+					switch {
+					case !ok:
+						missing = append(missing, l)
+					case enc == gnmipb.Encoding_PROTO && fxKinds[l] != "" && gk != fxKinds[l]:
+						wrongKind = append(wrongKind, l+" got "+gk+" want "+fxKinds[l])
+					}
+				}
+				for l := range gotLeaves {
+					if !wantLeaves[l] {
+						extra = append(extra, l)
+					}
+				}
+				sort.Strings(missing)
+				sort.Strings(extra)
+				sort.Strings(wrongKind)
+				if len(missing)+len(extra)+len(wrongKind) > 0 {
+					t.Fatalf("%v shape mismatch\nmissing: %v\nextra: %v\nkind: %v", enc, missing, extra, wrongKind)
+				}
+				for gp := range gotPrefixes {
+					if !unionPrefixes[gp] {
+						t.Fatalf("prefix form %q not in any fixture", gp)
+					}
+				}
+			}
+		})
+	}
+}
+
+func typedValueKind(tv *gnmipb.TypedValue, enc gnmipb.Encoding) string {
+	if enc == gnmipb.Encoding_JSON {
+		return "json"
+	}
+	switch tv.GetValue().(type) {
+	case *gnmipb.TypedValue_UintVal:
+		return "uint"
+	case *gnmipb.TypedValue_IntVal:
+		return "int"
+	case *gnmipb.TypedValue_StringVal:
+		return "string"
+	case *gnmipb.TypedValue_BoolVal:
+		return "bool"
+	case *gnmipb.TypedValue_DoubleVal:
+		return "double"
+	}
+	return "other"
+}
+
+func subscribeOnceOrigin(t *testing.T, addr string, enc gnmipb.Encoding, origin, path string) ([]*gnmipb.SubscribeResponse, error) {
+	t.Helper()
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := gnmipb.NewGNMIClient(conn).Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pathFromString(t, path)
+	p.Origin = origin
+	if err := stream.Send(&gnmipb.SubscribeRequest{Request: &gnmipb.SubscribeRequest_Subscribe{Subscribe: &gnmipb.SubscriptionList{
+		Mode: gnmipb.SubscriptionList_ONCE, Encoding: enc, Subscription: []*gnmipb.Subscription{{Path: p}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	var out []*gnmipb.SubscribeResponse
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			return out, err
+		}
+		out = append(out, resp)
+		if resp.GetSyncResponse() {
+			return out, nil
+		}
+	}
+}
+
+func TestMX10004RefusesJSONIETFLikeJunos(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	_, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_JSON_IETF, "", "/system/state")
+	if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), "Encoding 4 not supported, Only PROTO/JSON encoding supported") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// TestMX10004Manifest pins the served leaf set to the catalogue, the
+// way TestOpticalPathManifest pins the optical surface.
+func TestMX10004Manifest(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cats["juniper_mx10004"])
+	served := r.AllLeafPaths()
+	fromFixtures := map[string]bool{}
+	for _, fx := range readShapeFixtures(t) {
+		for _, l := range fx.Leaves {
+			// The catalogue expands property names per component, so
+			// AllLeafPaths reports them as property[name=*].
+			fromFixtures[l.Path] = true
+			fromFixtures[wildcardKeys(l.Path)] = true
+		}
+	}
+	for _, p := range served {
+		if !fromFixtures[p] && !strings.Contains(p, "/bgp/") {
+			t.Errorf("served leaf %s has no capture behind it", p)
+		}
+	}
+	if len(served) < 150 {
+		t.Fatalf("only %d leaves served", len(served))
+	}
+}
+
+// TestMX10004CountersAgreeWithSNMP: the gNMI in-octets for TestIf1
+// equals ifHCInOctets.1 from the same cycler at the same instant.
+func TestMX10004CountersAgreeWithSNMP(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newTestGnmiDevice(t, 2)
+	r := newCatalogResolver(dev, cats["juniper_mx10004"])
+	now := time.Now()
+	got, err := r.Resolve(pathFromString(t, "/interfaces/interface[name=TestIf1]/state/counters/in-octets"), now)
+	if err != nil || len(got) != 1 || len(got[0].Updates) != 1 {
+		t.Fatalf("%v %v", got, err)
+	}
+	ic := dev.metricsCycler.ifCounters.Load()
+	want := ic.GetDynamicAt(ifXTablePrefix+"6.1", now.Sub(r.start).Seconds())
+	if gotV := got[0].Updates[0].Value.(uint64); strconv.FormatUint(gotV, 10) != want {
+		t.Fatalf("gNMI %d != SNMP %s", gotV, want)
+	}
+}

@@ -96,9 +96,9 @@
       "types": {"state/value": "string"}
     },
     {
-      "path": "/components/component[name=*]/cpu/utilization/state", "origin": "openconfig", "keys": [{"source": "static", "names": ["CPU0:CORE0"]}], "module": "openconfig-platform",
-      "leaves": {"instant": "sine:20,8,600", "avg": "sine:20,4,600", "min": "const:5", "max": "const:45", "interval": "const:60000000000", "min-time": "timestamp:boot", "max-time": "timestamp:boot"},
-      "types": {"instant": "uint32", "avg": "uint32", "min": "uint32", "max": "uint32", "interval": "uint64", "min-time": "uint64", "max-time": "uint64"}
+      "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["CPU0:CORE0"]}], "module": "openconfig-platform",
+      "leaves": {"cpu/utilization/state/instant": "sine:20,8,600", "cpu/utilization/state/avg": "sine:20,4,600", "cpu/utilization/state/min": "const:5", "cpu/utilization/state/max": "const:45", "cpu/utilization/state/interval": "const:60000000000", "cpu/utilization/state/min-time": "timestamp:boot", "cpu/utilization/state/max-time": "timestamp:boot"},
+      "types": {"cpu/utilization/state/instant": "uint32", "cpu/utilization/state/avg": "uint32", "cpu/utilization/state/min": "uint32", "cpu/utilization/state/max": "uint32", "cpu/utilization/state/interval": "uint64", "cpu/utilization/state/min-time": "uint64", "cpu/utilization/state/max-time": "uint64"}
     },
     {
       "path": "/system/cpus/cpu[index=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["0", "1", "2", "3"]}], "module": "openconfig-system",
