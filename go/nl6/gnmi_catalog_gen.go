@@ -59,6 +59,7 @@ var gnmiGenRegistry = map[string]gnmiGenFactory{
 	"inventory": genInventory,
 	"neighbor":  genNeighbor,
 	"timestamp": genTimestamp,
+	"device":    genDevice,
 }
 
 func compileGnmiBinding(spec string) (gnmiLeafGen, error) {
@@ -290,6 +291,32 @@ func genNeighbor(arg string) (gnmiLeafGen, error) {
 			}
 		}
 		return nil, false
+	}, nil
+}
+
+// gnmiDeviceSysName is the device's sysName, or its ID when no sysName
+// is cached. The Juniper header's system_id uses the same value.
+func gnmiDeviceSysName(d *DeviceSimulator) string {
+	if v, ok := d.cachedSysName.Load().(string); ok && v != "" {
+		return v
+	}
+	return d.ID
+}
+
+func genDevice(arg string) (gnmiLeafGen, error) {
+	switch arg {
+	case "sysname", "id":
+	default:
+		return nil, fmt.Errorf("device wants sysname or id, got %q", arg)
+	}
+	return func(ctx *gnmiGenCtx) (any, bool) {
+		if ctx.dev == nil {
+			return nil, false
+		}
+		if arg == "id" {
+			return ctx.dev.ID, true
+		}
+		return gnmiDeviceSysName(ctx.dev), true
 	}, nil
 }
 

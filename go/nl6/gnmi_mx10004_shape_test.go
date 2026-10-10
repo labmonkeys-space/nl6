@@ -102,6 +102,9 @@ func readShapeFixtures(t *testing.T) map[string]shapeFixture {
 	return out
 }
 
+// mx10004TestSysName is the sysName startMX10004Server gives the device.
+const mx10004TestSysName = "mx10004-test"
+
 func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 	t.Helper()
 	cats, err := loadEmbeddedGnmiCatalogs()
@@ -112,7 +115,9 @@ func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 	if cat == nil {
 		t.Fatal("embedded juniper_mx10004 catalogue missing")
 	}
-	_, _, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
+	var dev *DeviceSimulator
+	_, dev, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
+	dev.cachedSysName.Store(mx10004TestSysName)
 	return addr, cleanup
 }
 
@@ -184,8 +189,8 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 							t.Fatalf("notification without Juniper header: %v", r)
 						}
 						h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
-						if err != nil || h.SystemID == "" {
-							t.Fatalf("header decode: %+v %v", h, err)
+						if err != nil || h.SystemID != mx10004TestSysName {
+							t.Fatalf("header decode: %+v %v; want system_id %q", h, err, mx10004TestSysName)
 						}
 					}
 					for _, u := range n.GetUpdate() {
@@ -371,5 +376,39 @@ func TestMX10004ServesBGPNeighbors(t *testing.T) {
 		if len(perNeighbor[a]) != 8 {
 			t.Errorf("neighbor %s: %d leaves, want 8: %v", a, len(perNeighbor[a]), perNeighbor[a])
 		}
+	}
+}
+
+// TestMX10004HostnameMatchesHeader: system/state/hostname carries the
+// device sysName, the same value as the Juniper header's system_id.
+func TestMX10004HostnameMatchesHeader(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/system/state/hostname")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range n.GetUpdate() {
+			if pathToString(u.GetPath()) != "/system/state/hostname" {
+				continue
+			}
+			found = true
+			if got := u.GetVal().GetStringVal(); got != h.SystemID || got != mx10004TestSysName {
+				t.Errorf("hostname %q, header system_id %q, want both %q", got, h.SystemID, mx10004TestSysName)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no hostname leaf served")
 	}
 }

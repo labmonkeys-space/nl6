@@ -117,7 +117,7 @@
       "path": "/", "origin": "openconfig", "keys": [], "module": "openconfig-system",
       "leaves": {
         "system/memory/state/physical": "const:34359738368", "system/memory/state/reserved": "const:0", "system/memory/state/used": "sine:17179869184,2147483648,1800", "system/memory/state/free": "sine:17179869184,-2147483648,1800",
-        "system/state/hostname": "const:nl6-mx10004", "system/state/domain-name": "const:nl6.local", "system/state/login-banner": "const:", "system/state/motd-banner": "const:", "system/state/last-configuration-timestamp": "timestamp:boot"
+        "system/state/hostname": "device:sysname", "system/state/domain-name": "const:nl6.local", "system/state/login-banner": "const:", "system/state/motd-banner": "const:", "system/state/last-configuration-timestamp": "timestamp:boot"
       },
       "types": {"system/state/last-configuration-timestamp": "uint64"}
     },

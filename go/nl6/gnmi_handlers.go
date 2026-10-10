@@ -125,12 +125,8 @@ func (s *gnmiServer) catalogExtension(sensor, subscribed string, seq uint64, now
 	if s.catalog.cat.Notification.Extension != gnmiExtensionJuniperHeader {
 		return nil
 	}
-	host := s.device.ID
-	if v, ok := s.device.cachedSysName.Load().(string); ok && v != "" {
-		host = v
-	}
 	return juniperHeaderExtension(juniperHeader{
-		SystemID: host, ComponentID: 65535, SensorName: sensor,
+		SystemID: gnmiDeviceSysName(s.device), ComponentID: 65535, SensorName: sensor,
 		SubscribedPath: subscribed, StreamedPath: subscribed, Component: "xmlproxyd_TM_Thread_1",
 		SequenceNumber: seq, ExportTimestamp: now.UnixMilli(),
 	})

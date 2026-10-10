@@ -159,3 +159,26 @@ func TestCastGnmiLeaf(t *testing.T) {
 		t.Fatal("unreachable")
 	}
 }
+
+func TestGnmiBindings_Device(t *testing.T) {
+	ctx := genCtxForTest(t)
+	if _, err := compileGnmiBinding("device:serial"); err == nil {
+		t.Fatal("unknown device field accepted")
+	}
+	sysname, _ := compileGnmiBinding("device:sysname")
+	id, _ := compileGnmiBinding("device:id")
+	if v, ok := sysname(ctx); !ok || v != ctx.dev.ID {
+		t.Errorf("sysname without a cached sysName = %v, want the device ID %q", v, ctx.dev.ID)
+	}
+	ctx.dev.cachedSysName.Store("edge-r1")
+	if v, _ := sysname(ctx); v != "edge-r1" {
+		t.Errorf("sysname = %v, want edge-r1", v)
+	}
+	if v, _ := id(ctx); v != ctx.dev.ID {
+		t.Errorf("id = %v, want %q", v, ctx.dev.ID)
+	}
+	ctx.dev = nil
+	if _, ok := sysname(ctx); ok {
+		t.Error("sysname without a device reported ok")
+	}
+}

@@ -1021,7 +1021,7 @@
         {
           "name": "system/state/hostname",
           "type": "string",
-          "gen": "const:nl6-mx10004"
+          "gen": "device:sysname"
         },
         {
           "name": "system/state/last-configuration-timestamp",
