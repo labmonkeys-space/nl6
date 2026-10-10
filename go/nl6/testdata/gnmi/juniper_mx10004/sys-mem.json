@@ -1,0 +1,27 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "sys-mem",
+  "prefixes": [
+    "openconfig:/"
+  ],
+  "notifications": 1,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/system/memory/state/free",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/memory/state/physical",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/memory/state/reserved",
+      "kind": "uint"
+    },
+    {
+      "path": "/system/memory/state/used",
+      "kind": "uint"
+    }
+  ]
+}

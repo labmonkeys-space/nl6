@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/gnmi/proto/gnmi_ext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -20,8 +21,73 @@ import (
 // subscribeBufferDepth is the per-stream send-channel depth. Drop-oldest
 // on overflow (design.md §D8) bounds memory at 30k devices × 100 deep
 // × ~few KiB per response → at most a handful of MiB even when every
-// collector is wedged.
+// collector is wedged. On a Subscribe stream one element is one tick:
+// a single response for a legacy path, every list entry's response for
+// a catalogue path, so a catalogue stream's bound scales with its
+// entries per tick.
 const subscribeBufferDepth = 100
+
+// catalogSubscription carries what one Subscribe stream needs to serve
+// catalogue paths: the resolver, the catalogue-side encoding (client
+// JSON already mapped to the json_val sentinel), the extension factory,
+// and the stream's response sequence counter. nil on a legacy device.
+type catalogSubscription struct {
+	resolver *catalogResolver
+	enc      gnmipb.Encoding
+	extFor   func(subscribed, streamed string, seq uint64, now time.Time) *gnmi_ext.Extension
+	seq      atomic.Uint64
+}
+
+// serves reports whether the catalogue owns sub's path.
+func (c *catalogSubscription) serves(sub *gnmipb.Subscription) bool {
+	return c != nil && c.resolver.Match(sub.GetPath())
+}
+
+// responses resolves sub through the catalogue and builds one
+// SubscribeResponse per list entry, each with its own sequence number.
+// The streamed path is the client's path, except for a subtree alias,
+// where it is the entry's rendered prefix path.
+func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time) ([]*gnmipb.SubscribeResponse, error) {
+	notifs, err := c.resolver.Resolve(sub.GetPath(), now)
+	if err != nil {
+		return nil, err
+	}
+	subscribed := pathToString(sub.GetPath())
+	alias := c.resolver.aliasSubtree(sub.GetPath()) != nil
+	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
+	for _, n := range notifs {
+		streamed := subscribed
+		if alias {
+			streamed = pathToString(n.Prefix)
+		}
+		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.extFor(subscribed, streamed, c.seq.Add(1), now))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r...)
+	}
+	return out, nil
+}
+
+// catalogSubscribeResponses turns catalogue notifications into one
+// SubscribeResponse per list entry, each carrying ext when non-nil.
+func catalogSubscribeResponses(now time.Time, notifs []catalogNotification, enc gnmipb.Encoding, ext *gnmi_ext.Extension) ([]*gnmipb.SubscribeResponse, error) {
+	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
+	for _, n := range notifs {
+		ups, err := encodeUpdates(n.Updates, enc)
+		if err != nil {
+			return nil, err
+		}
+		resp := &gnmipb.SubscribeResponse{Response: &gnmipb.SubscribeResponse_Update{Update: &gnmipb.Notification{
+			Timestamp: now.UnixNano(), Prefix: n.Prefix, Update: ups,
+		}}}
+		if ext != nil {
+			resp.Extension = []*gnmi_ext.Extension{ext}
+		}
+		out = append(out, resp)
+	}
+	return out, nil
+}
 
 // runOnceSubscribe handles SubscribeRequest with mode=ONCE: assemble
 // one batch synchronously, send sync_response, return (gRPC closes the
@@ -32,16 +98,38 @@ const subscribeBufferDepth = 100
 // updates, sharing one timestamp (P24). Earlier revisions emitted one
 // SubscribeResponse per subscription which over-counted notifications
 // on the client side and broke gnmic's `--format proto` rendering.
+//
+// Catalogue-served subscriptions (cs non-nil and matching) are the
+// exception: Junos sends one notification per list entry, so each entry
+// is sent as its own SubscribeResponse as soon as it resolves. Legacy
+// subscriptions still accumulate into the one combined notification,
+// sent only when non-empty or when no catalogue path was served.
 func runOnceSubscribe(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	subs []*gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesSent *uint64,
 ) error {
 	now := time.Now()
 	combined := make([]*gnmipb.Update, 0, len(subs))
+	catalogServed := false
 	for _, sub := range subs {
+		if cs.serves(sub) {
+			catalogServed = true
+			resps, err := cs.responses(sub, now)
+			if err != nil {
+				return err
+			}
+			for _, r := range resps {
+				if err := stream.Send(r); err != nil {
+					return err
+				}
+				atomic.AddUint64(updatesSent, uint64(len(r.GetUpdate().GetUpdate())))
+			}
+			continue
+		}
 		updates, err := resolver.Resolve(sub.GetPath(), now)
 		if err != nil {
 			return err
@@ -52,10 +140,12 @@ func runOnceSubscribe(
 		}
 		combined = append(combined, gnmiUpdates...)
 	}
-	if err := stream.Send(notificationResponse(now, combined)); err != nil {
-		return err
+	if len(combined) > 0 || !catalogServed {
+		if err := stream.Send(notificationResponse(now, combined)); err != nil {
+			return err
+		}
+		atomic.AddUint64(updatesSent, uint64(len(combined)))
 	}
-	atomic.AddUint64(updatesSent, uint64(len(combined)))
 	// sync_response signals "initial state delivered".
 	return stream.Send(&gnmipb.SubscribeResponse{
 		Response: &gnmipb.SubscribeResponse_SyncResponse{SyncResponse: true},
@@ -85,6 +175,7 @@ func runOnceSubscribe(
 func runStreamSubscribe(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	subs []*gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesSent *uint64,
@@ -96,7 +187,11 @@ func runStreamSubscribe(
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
-	ch := make(chan *gnmipb.SubscribeResponse, subscribeBufferDepth)
+	// Each queue element is one tick's responses: a legacy tick is one
+	// response, a catalogue tick is one response per list entry. A tick
+	// is therefore dropped whole or delivered whole, and the initial
+	// snapshot is complete before sync_response.
+	ch := make(chan []*gnmipb.SubscribeResponse, subscribeBufferDepth)
 	errCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	var initialFired atomic.Int64
@@ -112,17 +207,19 @@ func runStreamSubscribe(
 			case <-ctx.Done():
 				errCh <- ctx.Err()
 				return
-			case resp, ok := <-ch:
+			case batch, ok := <-ch:
 				if !ok {
 					errCh <- nil
 					return
 				}
-				if err := stream.Send(resp); err != nil {
-					errCh <- err
-					return
-				}
-				if upd := resp.GetUpdate(); upd != nil {
-					atomic.AddUint64(updatesSent, uint64(len(upd.GetUpdate())))
+				for _, resp := range batch {
+					if err := stream.Send(resp); err != nil {
+						errCh <- err
+						return
+					}
+					if upd := resp.GetUpdate(); upd != nil {
+						atomic.AddUint64(updatesSent, uint64(len(upd.GetUpdate())))
+					}
 				}
 			}
 		}
@@ -137,11 +234,11 @@ func runStreamSubscribe(
 			interval := clampSampleInterval(time.Duration(sub.GetSampleInterval()))
 
 			// Initial snapshot (tick #0).
-			pushSubUpdate(ctx, ch, resolver, sub, enc, updatesDropped)
+			pushSubUpdate(ctx, ch, resolver, cs, sub, enc, updatesDropped)
 			if initialFired.Add(1) == totalSubs {
-				pushOrDrop(ctx, ch, &gnmipb.SubscribeResponse{
+				pushBatchOrDrop(ctx, ch, []*gnmipb.SubscribeResponse{{
 					Response: &gnmipb.SubscribeResponse_SyncResponse{SyncResponse: true},
-				}, updatesDropped)
+				}}, updatesDropped)
 			}
 
 			ticker := time.NewTicker(interval)
@@ -151,7 +248,7 @@ func runStreamSubscribe(
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					pushSubUpdate(ctx, ch, resolver, sub, enc, updatesDropped)
+					pushSubUpdate(ctx, ch, resolver, cs, sub, enc, updatesDropped)
 				}
 			}
 		}(sub)
@@ -167,7 +264,7 @@ func runStreamSubscribe(
 }
 
 // pushSubUpdate resolves a single subscription's path at "now" and
-// enqueues one SubscribeResponse{update} via pushOrDrop. Per-subscription
+// enqueues one SubscribeResponse{update} via pushBatchOrDrop. Per-subscription
 // `codes.NotFound` is *not* fatal (P3): if an interface name disappeared
 // between Subscribe-time and this tick we log and skip the tick. Other
 // resolver errors (InvalidArgument, Internal, …) are also logged here —
@@ -175,15 +272,30 @@ func runStreamSubscribe(
 // per ticker, which is over-engineered for a read-only resolver where
 // these errors indicate programming bugs, not transient runtime
 // conditions.
+//
+// A catalogue-served subscription enqueues one response per list entry
+// instead of one combined notification, as a single queue element.
 func pushSubUpdate(
 	ctx context.Context,
-	ch chan *gnmipb.SubscribeResponse,
+	ch chan []*gnmipb.SubscribeResponse,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	sub *gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesDropped *uint64,
 ) {
 	now := time.Now()
+	if cs.serves(sub) {
+		resps, err := cs.responses(sub, now)
+		if err != nil {
+			log.Printf("gNMI: catalogue subscribe error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
+			return
+		}
+		if len(resps) > 0 {
+			pushBatchOrDrop(ctx, ch, resps, updatesDropped)
+		}
+		return
+	}
 	updates, err := resolver.Resolve(sub.GetPath(), now)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -198,7 +310,7 @@ func pushSubUpdate(
 		log.Printf("gNMI: subscribe encode error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
 		return
 	}
-	pushOrDrop(ctx, ch, notificationResponse(now, gnmiUpdates), updatesDropped)
+	pushBatchOrDrop(ctx, ch, []*gnmipb.SubscribeResponse{notificationResponse(now, gnmiUpdates)}, updatesDropped)
 }
 
 // clampSampleInterval applies the §D7 floor: any interval below
@@ -221,9 +333,22 @@ func clampSampleInterval(raw time.Duration) time.Duration {
 // buffer full. The drop counter is incremented per dropped item, not
 // per overflow event.
 func pushOrDrop(ctx context.Context, ch chan *gnmipb.SubscribeResponse, resp *gnmipb.SubscribeResponse, updatesDropped *uint64) {
+	enqueueDropOldest(ctx, ch, resp, func(*gnmipb.SubscribeResponse) uint64 { return 1 }, updatesDropped)
+}
+
+// pushBatchOrDrop is pushOrDrop for a queue of whole ticks. A dropped
+// batch adds one to the drop counter per response it held.
+func pushBatchOrDrop(ctx context.Context, ch chan []*gnmipb.SubscribeResponse, batch []*gnmipb.SubscribeResponse, updatesDropped *uint64) {
+	enqueueDropOldest(ctx, ch, batch, func(b []*gnmipb.SubscribeResponse) uint64 { return uint64(len(b)) }, updatesDropped)
+}
+
+// enqueueDropOldest implements the drop-oldest policy for pushOrDrop
+// and pushBatchOrDrop; weight is what one dropped item adds to the
+// drop counter.
+func enqueueDropOldest[T any](ctx context.Context, ch chan T, item T, weight func(T) uint64, updatesDropped *uint64) {
 	// Fast path: enqueue without dropping.
 	select {
-	case ch <- resp:
+	case ch <- item:
 		return
 	case <-ctx.Done():
 		return
@@ -235,12 +360,12 @@ func pushOrDrop(ctx context.Context, ch chan *gnmipb.SubscribeResponse, resp *gn
 		select {
 		case <-ctx.Done():
 			return
-		case <-ch:
-			atomic.AddUint64(updatesDropped, 1)
+		case old := <-ch:
+			atomic.AddUint64(updatesDropped, weight(old))
 		default:
 		}
 		select {
-		case ch <- resp:
+		case ch <- item:
 			return
 		case <-ctx.Done():
 			return

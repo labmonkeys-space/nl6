@@ -687,7 +687,7 @@ func TestSetSNMPAndGnmiAgree(t *testing.T) {
 	if got := v2cGet(t, s, oidIfOperStatus+".2"); got != "2" {
 		t.Errorf("SNMP GET ifOperStatus.2 = %s, want 2", got)
 	}
-	srv := newGnmiServer(device, new(int64), new(uint64), new(uint64))
+	srv := newGnmiServer(device, nil, new(int64), new(uint64), new(uint64))
 	srv.resolver = newPathResolver(device)
 	resp, err := srv.Get(context.Background(), &gnmipb.GetRequest{
 		Path: []*gnmipb.Path{pathFromString(t, "/interfaces/interface[name=TestIf2]/state/oper-status")},

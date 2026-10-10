@@ -17,7 +17,7 @@ flowchart LR
 
     subgraph nl6 ["nl6 (Go process)"]
         simulator["<b>Simulator</b><br/><small>Go binary</small><br/>Device lifecycle,<br/>SNMP v2c/v3 + SSH + HTTPS REST,<br/>metrics engine, flow exporter"]
-        resources[("<b>Resources</b><br/><small>394 JSON files</small><br/>29 device-type directories + _common<br/>SNMP / SSH / REST fixtures")]
+        resources[("<b>Resources</b><br/><small>411 JSON files</small><br/>30 device-type directories + _common<br/>SNMP / SSH / REST fixtures")]
     end
 
     subgraph kernel ["Linux kernel (host)"]
@@ -47,7 +47,7 @@ See [Network namespace](../ops/network-namespace.md).
 | Path | Purpose |
 |------|---------|
 | `go/nl6/` | Core simulator, with all device simulation logic and tests. |
-| `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 29 device-type directories, plus the shared trap, syslog and NBAR2 catalogs under `_common/`. |
+| `go/nl6/resources/` | Per-device-type JSON resource files (SNMP / SSH / REST) across 30 device-type directories, plus the shared trap, syslog and NBAR2 catalogs under `_common/`. |
 | `go/nl6/worldcities/` | The `sysLocation` city dataset: 97 CSV shards plus `header.csv`, about 47,000 rows. |
 
 The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is the canonical build entry point.
@@ -105,7 +105,7 @@ See [gNMI dial-out reference](../reference/gnmi-dial-out.md).
 ### Resource loading
 
 `resources.go` loads and caches a device type the first time a device of that type is created; only the auto-start default, `asr9k`, is loaded at startup.
-There are 394 JSON files: 391 across 29 device-type directories plus 3 shared catalogs under `_common/`.
+There are 411 JSON files: 408 across 30 device-type directories plus 3 shared catalogs under `_common/`.
 Each device type directory has split JSON files for SNMP, SSH, and REST responses that are merged at load time.
 See [Resource files](../reference/resource-files.md).
 

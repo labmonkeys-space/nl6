@@ -76,7 +76,7 @@ func newTestGnmiServer(t *testing.T, ifCount int) (*gnmiServer, *int64, *uint64,
 	resolver := newTestPathResolver(t, ifCount)
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(resolver.device, &active, &sent, &dropped)
+	srv := newGnmiServer(resolver.device, nil, &active, &sent, &dropped)
 	srv.resolver = resolver
 	return srv, &active, &sent, &dropped
 }
@@ -550,7 +550,7 @@ func TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers(t *testing.T) {
 	}
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(device, &active, &sent, &dropped)
+	srv := newGnmiServer(device, nil, &active, &sent, &dropped)
 	srv.resolver = newPathResolver(device)
 
 	// Verify synth name is in descrToIndex.
@@ -687,5 +687,33 @@ func TestGnmiEncodeTypedValueAllTypes(t *testing.T) {
 		if _, err := gnmiEncodeTypedValue(struct{}{}, enc); err == nil {
 			t.Errorf("encoding %v: unsupported type did not error", enc)
 		}
+	}
+}
+
+func TestGnmiEncodeTypedValue_BoolInt64AndJsonVal(t *testing.T) {
+	tv, err := gnmiEncodeTypedValue(true, gnmipb.Encoding_PROTO)
+	if err != nil || !tv.GetBoolVal() {
+		t.Fatalf("PROTO bool: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(int64(-5), gnmipb.Encoding_PROTO)
+	if err != nil || tv.GetIntVal() != -5 {
+		t.Fatalf("PROTO int64: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(true, gnmipb.Encoding_JSON_IETF)
+	if err != nil || string(tv.GetJsonIetfVal()) != "true" {
+		t.Fatalf("JSON_IETF bool: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(int64(-5), gnmipb.Encoding_JSON_IETF)
+	if err != nil || string(tv.GetJsonIetfVal()) != `"-5"` {
+		t.Fatalf("JSON_IETF int64 must be a JSON string: %v %v", tv, err)
+	}
+	tv, err = gnmiEncodeTypedValue(uint64(7), gnmiEncodingJSONVal)
+	if err != nil || string(tv.GetJsonVal()) != `"7"` || tv.GetJsonIetfVal() != nil {
+		t.Fatalf("JSON must use json_val: %v %v", tv, err)
+	}
+	// Unset encoding (zero value) still means JSON_IETF for clients that omit it.
+	tv, err = gnmiEncodeTypedValue(uint32(3), gnmipb.Encoding(0))
+	if err != nil || tv.GetJsonIetfVal() == nil {
+		t.Fatalf("zero encoding: %v %v", tv, err)
 	}
 }

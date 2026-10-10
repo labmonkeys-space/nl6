@@ -382,7 +382,12 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // snmp_shipped_juniper_arc_ledger_test.go as
 // shippedOIDEncodingDigestBeforeJuniperArcAudit, and
 // TestJuniperArcRePinIsOnlyTheAudit reverses the ledger and requires it back.
-const shippedOIDEncodingDigest = "be01d6c675b2cf2950bfc00c3e02c37c878467e5c918a9ccb6f1b2c39b4aca56"
+//
+// Re-pinned again by the juniper_mx10004 device type, which added one distinct
+// OID string, its sysObjectID value. The pre-change value is
+// shippedOIDEncodingDigestBeforeJuniperMx10004, required back by
+// TestJuniperMx10004RePinIsOnlyTheAddition.
+const shippedOIDEncodingDigest = "c72b443dc6468e7b1c214aae0404cb435230ba656cf3a9295bec9fc71e9d506a"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

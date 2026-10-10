@@ -1,6 +1,6 @@
 # Device types
 
-nl6 ships resource files for **29 device types across 9 categories**.
+nl6 ships resource files for **30 device types across 9 categories**.
 The REST API's `category` filter uses a coarser set of five values, shown below.
 Each device type has its own directory under `go/nl6/resources/` containing JSON responses for SNMP OIDs, SSH commands, and (for storage devices) REST API endpoints.
 See [Resource files](resource-files.md) for the JSON format.
@@ -14,6 +14,12 @@ See [Resource files](resource-files.md) for the JSON format.
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |
 | Juniper MX960 | 80 | Service provider edge router |
+| Juniper MX10004 | 48 | Modular edge router with gNMI catalogue (OpenConfig platform, system, BGP, Junos native sensors) |
+
+The Juniper MX10004 also serves a gNMI catalogue: interface state and counters with Junos per-queue counters, subinterfaces, platform components with temperature and properties, CPU, system CPU and memory, system state, BGP neighbours, and the native packet-usage sensor under the `juniper` origin.
+The Junos fabric and FPC environment sensors are not served, because no public sample of them exists for a virtual PFE.
+The MX10004 is not in the round-robin list.
+Request it by name.
 
 ## Edge routers
 

@@ -187,8 +187,9 @@ import (
 const (
 	// trapCatalogVarbindsShipped is the distinct catalog varbinds across every
 	// shipped traps.json, counted as they appear in the profiles' EFFECTIVE
-	// catalogs: _common's 6, ciena's 156, cisco_ios's 14, juniper_mx240's 15.
-	trapCatalogVarbindsShipped = 191
+	// catalogs: _common's 6, ciena's 156, cisco_ios's 14, juniper_mx240's 15,
+	// juniper_mx10004's 15 (a copy of juniper_mx240's catalog).
+	trapCatalogVarbindsShipped = 206
 
 	// trapVarbindsWithTemplatedOID is how many of those name no fixed object.
 	// All six are _common's link-trap ifTable varbinds.
@@ -198,11 +199,11 @@ const (
 	// every template-free varbind of every profile's effective catalog. It
 	// equals the non-_common total only because all six _common varbinds are
 	// templated; a literal one would be examined 29 times, once per profile.
-	trapPollJoinOccurrences = 185
+	trapPollJoinOccurrences = 200
 
 	// trapPollUnservedVarbinds is the rest: the profile serves no resource entry
 	// for them. Counted, never flagged (rule 4).
-	trapPollUnservedVarbinds = 182
+	trapPollUnservedVarbinds = 195
 
 	// trapPollTypedUnservedVarbinds is the subset of those that oidTypeTable
 	// nonetheless types, and which rule 6 therefore compares against the leaf's
@@ -223,8 +224,8 @@ const (
 	// entries UNCHANGED in their effective catalog. A profile declaring
 	// `extends: false`, or an overlay that overrides a universal entry name with
 	// different varbinds, would legitimately move the second number.
-	trapCatalogProfiles           = 29
-	trapProfilesCarryingUniversal = 29
+	trapCatalogProfiles           = 30
+	trapProfilesCarryingUniversal = 30
 )
 
 // trapPollJoinedPairsShipped is the joined set BY IDENTITY, not by count.
@@ -235,6 +236,10 @@ var trapPollJoinedPairsShipped = [][2]string{
 	{"cisco_ios.json", ".1.3.6.1.4.1.9.9.13.1.5.1.2.1"}, // ciscoEnvMonSupplyStatusDescr.1, nl6#592
 	{"juniper_mx240.json", ".1.3.6.1.4.1.2636.3.1.2.0"}, // jnxBoxDescr
 	{"juniper_mx240.json", ".1.3.6.1.4.1.2636.3.1.3.0"}, // jnxBoxSerialNo
+	// juniper_mx10004 is cloned from juniper_mx240 and joins the same two
+	// JUNIPER-MIB objects, already read against the MIB by nl6#602.
+	{"juniper_mx10004.json", ".1.3.6.1.4.1.2636.3.1.2.0"}, // jnxBoxDescr
+	{"juniper_mx10004.json", ".1.3.6.1.4.1.2636.3.1.3.0"}, // jnxBoxSerialNo
 }
 
 // trapPollPerCatalogCensus is the {examined, joined} breakdown PER CATALOG FILE.
@@ -251,6 +256,7 @@ var trapPollPerCatalogCensus = map[string][3]int{
 	"resources/ciena_waveserver5/traps.json": {0, 156, 0},
 	"resources/cisco_ios/traps.json":         {0, 14, 1},
 	"resources/juniper_mx240/traps.json":     {0, 15, 2},
+	"resources/juniper_mx10004/traps.json":   {0, 15, 2},
 }
 
 // trapCatalogSelfCensus is rule 7's comparison surface, per DISTINCT effective
@@ -274,6 +280,7 @@ var trapCatalogSelfCensus = map[string][3]int{
 	"resources/ciena_waveserver5/traps.json": {9, 42, 42},
 	"resources/cisco_ios/traps.json":         {12, 17, 3},
 	"resources/juniper_mx240/traps.json":     {12, 16, 5},
+	"resources/juniper_mx10004/traps.json":   {12, 16, 5},
 }
 
 // trapUniversalCatalogLabel names the effective catalog carried by every profile
@@ -291,8 +298,8 @@ const trapUniversalCatalogLabel = "<universal, as carried by profiles with no ov
 // anything under 1.3.6.1.6.3.1.1.4, so the two OID-valued prepends never join.
 // This is coverage of a surface the catalog does not control, not a near-miss.
 const (
-	trapPrependedJoinedPairs   = 24
-	trapPrependedUnservedPairs = 37 // 29x2 prepends + 3 profiles whose catalog sets snmpTrapEnterprise, less the 24
+	trapPrependedJoinedPairs   = 25
+	trapPrependedUnservedPairs = 39 // 30x2 prepends + 4 profiles whose catalog sets snmpTrapEnterprise, less the 25
 )
 
 // ── the type vocabulary, driven off the PRODUCTION accept-set ───────────────

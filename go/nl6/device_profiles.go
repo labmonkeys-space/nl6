@@ -181,6 +181,7 @@ var deviceProfileMap = map[string]DeviceProfile{
 	"huawei_ne8000.json":   profileCoreRouter,
 	"nokia_7750_sr12.json": profileCoreRouter,
 	"juniper_mx960.json":   profileCoreRouter,
+	"juniper_mx10004.json": profileCoreRouter,
 
 	// Edge Routers
 	"juniper_mx240.json": profileEdgeRouter,

@@ -153,6 +153,7 @@ var ownVendorPENs = map[string]ownVendorPEN{
 	"ibm_power_s922.json":          {"2", "IBM. A bare single-digit PEN, and a string prefix of three other shipped ones (2011, 2620, 2636); the boundary match in arcPENOf is what keeps those apart"},
 	"juniper_mx240.json":           {"2636", "Juniper Networks, Inc."},
 	"juniper_mx960.json":           {"2636", "Juniper Networks, Inc."},
+	"juniper_mx10004.json":         {"2636", "Juniper Networks, Inc."},
 	"linux_server.json":            {"", "A generic Linux host. It serves the standard MIB-II and HOST-RESOURCES trees and NO enterprise arc at all — not even net-snmp's 8072 — so the guard requires it to keep serving none. Giving it one would be an identity claim about a device that has no manufacturer"},
 	"nec_ix3315.json":              {"119", "NEC Corporation"},
 	"netapp_ontap.json":            {"789", "Network Appliance Corporation — NetApp's former legal name, which is what the registry still records"},
@@ -272,9 +273,13 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // from jnxProductNameMX480 to jnxProductNameMX960. Both are under Juniper's own
 // PEN, so this guard has nothing to say about either, and "resolves to the RIGHT
 // product" is even further outside what it can see than "resolves at all" was.
+//
+// The juniper_mx10004 profile raised both counts, names 316 to 321 and values 28
+// to 29. It is cloned from juniper_mx240, so it serves the same five jnx names,
+// and its sysObjectID.0 is jnxProductNameMX10004 under Juniper's own PEN.
 const (
-	ownVendorArcNamesShipped  = 316
-	ownVendorArcValuesShipped = 28
+	ownVendorArcNamesShipped  = 321
+	ownVendorArcValuesShipped = 29
 )
 
 // TestOwnVendorPENMapIsCuratedAndComplete pins the map itself before anything
@@ -729,9 +734,12 @@ func codeServedVendorArcHits() []arcHit {
 // entry is entirely standard-MIB (hrProcessorLoad, hrStorage, entPhySensorValue)
 // and touches no enterprise arc at all, so it contributes nothing here. That is a
 // real property of the map, recorded rather than smoothed over.
+//
+// juniper_mx10004 raised the counts to 271 and 23: it serves juniper_mx240's
+// three jnxOperating OIDs live.
 const (
-	codeServedVendorArcOIDs     = 268
-	codeServedVendorArcProfiles = 22
+	codeServedVendorArcOIDs     = 271
+	codeServedVendorArcProfiles = 23
 )
 
 // TestEveryCodeServedVendorOIDIsItsOwnVendorArc is P2: the same rule as the

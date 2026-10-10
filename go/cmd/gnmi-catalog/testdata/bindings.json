@@ -1,0 +1,20 @@
+{
+  "comment": "generator test",
+  "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "testvendor", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "components": [],
+  "neighbors": [],
+  "subtrees": [
+    {
+      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces"}], "module": "test-a",
+      "leaves": {"state/oper-status": "ifstate:oper", "state/mtu": "const:1514", "state/enabled": "const:true", "state/counters/in-octets": "ifcounter:ifHCInOctets"},
+      "types": {"state/mtu": "uint32"},
+      "extra": {"properties/property[name=x]/state/value": {"type": "uint64", "gen": "counter:10"}}
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
+      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1"]}], "module": "test-a",
+      "leaves": {"pkts": "counter:5"}
+    }
+  ]
+}

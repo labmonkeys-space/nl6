@@ -1,0 +1,111 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "subtree": "subif",
+  "prefixes": [
+    "openconfig:/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]"
+  ],
+  "notifications": 36,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/admin-status",
+      "kind": "string"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-unicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-unicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/description",
+      "kind": "string"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/enabled",
+      "kind": "bool"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/ifindex",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/index",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/last-change",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/logical",
+      "kind": "bool"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/name",
+      "kind": "string"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/oper-status",
+      "kind": "string"
+    }
+  ]
+}

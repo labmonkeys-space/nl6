@@ -469,7 +469,9 @@ func TestV2cOutputUnchangedByV1Encoder(t *testing.T) {
 		t.Fatalf("only %d shipped entries encoded; the walk collapsed and the digest below would "+
 			"pin nothing", encoded)
 	}
-	const want = "a414471f8d5045f5fc35c523f97845a628f4ec9aff18c6ef0a2ec4ef24b53cb6"
+	// Re-pinned from the current output after 725b0f60 changed the
+	// juniper_mx10004 traps.json (the FRU varbinds name "MX10004 SFB 0").
+	const want = "fe93f73691b4535e07bd3589fde713c5b2a1827999acb6f34a6ccf26ff28a1cc"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("v2c encoding of %d shipped entries digests to %s, recorded as %s.\nAdding the v1 "+
 			"encoder must not perturb v2c output by one byte. If this moved deliberately, say which "+

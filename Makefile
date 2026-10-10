@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile gen-gnmi-catalog run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -92,6 +92,27 @@ build: check-go
 ## reconcile: Build the nl6-reconcile CLI (report ⋈ received-counts loss diff)
 reconcile: check-go
 	cd $(GO_DIR) && CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o nl6-reconcile ./cmd/nl6-reconcile
+
+# Pinned Juniper/yang commit for the MX10004 catalogue; bump deliberately.
+JUNIPER_YANG_COMMIT ?= 96ad7badc2603aa1033476103aeded2632db9a9a
+YANG_CACHE ?= $(HOME)/.cache/nl6-yang
+
+$(YANG_CACHE)/juniper:
+	git clone --filter=blob:none --sparse https://github.com/Juniper/yang $@
+	cd $@ && git sparse-checkout set 24.2/24.2R1.17 && git checkout $(JUNIPER_YANG_COMMIT)
+
+## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
+gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
+	@if [ "$$(git -C $(YANG_CACHE)/juniper rev-parse HEAD)" != "$(JUNIPER_YANG_COMMIT)" ]; then \
+	  echo "YANG cache not at $(JUNIPER_YANG_COMMIT); fetching"; \
+	  git -C $(YANG_CACHE)/juniper fetch --depth 1 origin $(JUNIPER_YANG_COMMIT) && \
+	  git -C $(YANG_CACHE)/juniper checkout $(JUNIPER_YANG_COMMIT); \
+	fi
+	cd go && go run ./cmd/gnmi-catalog \
+	  -yang $(YANG_CACHE)/juniper/24.2/24.2R1.17/openconfig/models,$(YANG_CACHE)/juniper/24.2/24.2R1.17/ietf \
+	  -path $(YANG_CACHE)/juniper/24.2/24.2R1.17/native/jti/models \
+	  -bindings nl6/resources/juniper_mx10004/gnmi-bindings.json \
+	  -out nl6/resources/juniper_mx10004/gnmi.json
 
 ## version: Print the resolved version string (useful for CI diagnostics)
 version:

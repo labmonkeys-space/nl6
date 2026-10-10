@@ -67,6 +67,21 @@ func generateTestTLSCert(t *testing.T) *tls.Certificate {
 // server's listening address and a cleanup func.
 func startTestGnmiServer(t *testing.T) (mgr *SimulatorManager, dev *DeviceSimulator, addr string, cleanup func()) {
 	t.Helper()
+	return startTestGnmiServerWithCatalog(t, nil)
+}
+
+// startTestGnmiServerWithCatalog is startTestGnmiServer with cat (when
+// non-nil) registered for the device's type before the gNMI server is
+// built, so newGnmiServer sees it through gnmiCatalogFor.
+func startTestGnmiServerWithCatalog(t *testing.T, cat *gnmiCatalog) (mgr *SimulatorManager, dev *DeviceSimulator, addr string, cleanup func()) {
+	t.Helper()
+	return startTestGnmiServerWithCatalogN(t, cat, 2)
+}
+
+// startTestGnmiServerWithCatalogN is startTestGnmiServerWithCatalog
+// with ifCount interfaces on the synthetic device.
+func startTestGnmiServerWithCatalogN(t *testing.T, cat *gnmiCatalog, ifCount int) (mgr *SimulatorManager, dev *DeviceSimulator, addr string, cleanup func()) {
+	t.Helper()
 
 	// Manager with shared TLS cert, gNMI subsystem enabled.
 	mgr = &SimulatorManager{
@@ -87,9 +102,12 @@ func startTestGnmiServer(t *testing.T) (mgr *SimulatorManager, dev *DeviceSimula
 	manager = mgr
 
 	// Synthetic device with cycler.
-	resolver := newTestPathResolver(t, 2)
+	resolver := newTestPathResolver(t, ifCount)
 	dev = resolver.device
 	mgr.devices["test"] = dev
+	if cat != nil {
+		mgr.gnmiCatalogsByType = map[string]*gnmiCatalog{resourceDirName(dev.resourceFile): cat}
+	}
 
 	// Pick an ephemeral port. We can't use mgr.gnmiPort=0 with
 	// startGnmiServer because the listener is created internally; bind
@@ -103,6 +121,7 @@ func startTestGnmiServer(t *testing.T) (mgr *SimulatorManager, dev *DeviceSimula
 	server := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(mgr.sharedTLSCert)))
 	gnmipb.RegisterGNMIServer(server, newGnmiServer(
 		dev,
+		mgr.gnmiCatalogFor(dev),
 		&mgr.gnmiActiveSubscriptions,
 		&mgr.gnmiUpdatesSent,
 		&mgr.gnmiUpdatesDropped,
@@ -219,7 +238,7 @@ func TestGnmiServer_MaxConcurrentStreams_Cap16(t *testing.T) {
 	resolver := newTestPathResolver(t, 1)
 	var active int64
 	var sent, dropped uint64
-	gnmipb.RegisterGNMIServer(server, newGnmiServer(resolver.device, &active, &sent, &dropped))
+	gnmipb.RegisterGNMIServer(server, newGnmiServer(resolver.device, nil, &active, &sent, &dropped))
 	go func() { _ = server.Serve(listener) }()
 	defer server.Stop()
 

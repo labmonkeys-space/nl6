@@ -1,0 +1,13 @@
+{
+  "snmp": null,
+  "ssh": [
+    {
+      "command": "show route instance",
+      "response": "Instance             Type\n  Primary RIB                                     Active/holddown/hidden\nCUSTOMER-A           vrf\n  CUSTOMER-A.inet.0                               10/0/0\nMGMT                 vrf\n  MGMT.inet.0                                     3/0/0\nINTERNET             vrf\n  INTERNET.inet.0                                 6/0/0\nmaster               forwarding\n  inet.0                                          18/0/0\n  inet6.0                                         4/0/0"
+    },
+    {
+      "command": "show route instance detail",
+      "response": "CUSTOMER-A:\n  Router ID: 10.100.0.2\n  Type: vrf    State: Active\n  Interfaces:\n    ge-0/0/0.100\n  Route-distinguisher: 65001:100\n  Vrf-import: [ CUSTOMER-A-import ]\n  Vrf-export: [ CUSTOMER-A-export ]\n  Vrf-import-target: [ target:65001:100 ]\n  Vrf-export-target: [ target:65001:100 ]\n  Fast-external-fallover enabled\n  Tables:\n    CUSTOMER-A.inet.0        : 10 routes (10 active, 0 holddown, 0 hidden)\n\nMGMT:\n  Router ID: 10.200.0.2\n  Type: vrf    State: Active\n  Interfaces:\n    ge-0/0/0.999\n  Route-distinguisher: 65001:999\n  Vrf-import: [ MGMT-import ]\n  Vrf-export: [ MGMT-export ]\n  Vrf-import-target: [ target:65001:999 ]\n  Vrf-export-target: [ target:65001:999 ]\n  Fast-external-fallover enabled\n  Tables:\n    MGMT.inet.0              : 3 routes (3 active, 0 holddown, 0 hidden)\n\nINTERNET:\n  Router ID: 10.150.0.2\n  Type: vrf    State: Active\n  Interfaces:\n    ge-0/0/0.200\n  Route-distinguisher: 65001:200\n  Vrf-import: [ INTERNET-import ]\n  Vrf-export: [ INTERNET-export ]\n  Vrf-import-target: [ target:65001:200 ]\n  Vrf-export-target: [ target:65001:200 ]\n  Fast-external-fallover enabled\n  Tables:\n    INTERNET.inet.0          : 6 routes (6 active, 0 holddown, 0 hidden)"
+    }
+  ]
+}

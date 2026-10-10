@@ -116,11 +116,67 @@ Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a 
 **`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything.
 The interface surface is state-only, so it is unaffected.
 
+## Catalogue-driven paths
+
+Device types that ship `resources/<type>/gnmi.json` serve the subtrees that file lists, in addition to the interface and optical paths above.
+The first such type is `juniper_mx10004`; see [Device types](device-types.md).
+A catalogue is parsed once per type and shared by every device of that type.
+Each device adds a 48-byte resolver.
+`BenchmarkCatalogResolverMemory` measures about 460 bytes per device for the resolver plus a minimal device struct.
+
+### File format
+
+| Key | Meaning |
+|---|---|
+| `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
+| `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
+| `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
+| `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
+| `models` | `ModelData` entries Capabilities advertises |
+| `components`, `neighbors` | chassis inventory and BGP peers, the key sources for component and neighbour subtrees |
+| `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
+| `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin |
+| `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
+| `subtrees[].leaves` | relative path, YANG type, optional enum, and a generator binding |
+
+### Generator bindings
+
+| Binding | Value |
+|---|---|
+| `ifcounter:<IF-MIB column>` | the same counter SNMP serves, e.g. `ifHCInOctets` |
+| `ifstate:name\|ifindex\|oper\|admin\|last-change` | interface state engine |
+| `sine:base,amplitude,period_s` | deterministic wave seeded by device IP and entry key |
+| `counter:rate_per_s` | monotonic counter with seeded jitter |
+| `inventory:<field>` / `neighbor:<field>` | from `components` / `neighbors` |
+| `const:<literal>` / `key:<n>` / `timestamp:now\|boot` | literal, the n-th key value, nanosecond timestamps |
+| `device:sysname\|id` | the device sysName (falling back to the device ID), or the device ID |
+
+Time-based bindings share the interface counter cycler's start as their epoch, so a catalogue counter equals the SNMP counter read at the same instant.
+
+### Overrides
+
+`-gnmi-catalog <file>` replaces every type's catalogue with one file.
+A `gnmi.json` in a resource directory replaces that type's embedded catalogue, including for types that ship none.
+Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout and `gnmi-bindings.json`.
+The generator's `-path` flag adds directories that are searched only to resolve imports, and the Makefile passes `native/jti/models` because Juniper's augments and deviations import `junos-*` modules.
+A drift test regenerates the file and fails when the committed copy differs.
+It runs only where the YANG cache exists, which `make gen-gnmi-catalog` populates, and skips elsewhere.
+
+### Junos shape
+
+The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
+It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
+It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
+Native sensors sit under the `juniper` origin.
+A subscription to `/junos/system/linecard/packet/usage/`, with origin `juniper` or none, returns the packet-usage counters under the component paths Junos renders them at.
+The header extension carries the hostname and sensor name.
+ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
+
 ## Subscribe semantics
 
 | RPC | Status |
 |---|---|
-| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces`, plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types |
+| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces`, plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types; catalogue types add their own models and encodings |
 | `Get` | implemented for any supported path |
 | `Subscribe` (STREAM/SAMPLE) | implemented |
 | `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths; rejected for counter paths |
@@ -134,6 +190,7 @@ The interface surface is state-only, so it is unaffected.
 The same clamp applies to `heartbeat_interval` on ON_CHANGE subscriptions.
 
 **Backpressure:** each STREAM/SAMPLE stream owns a 100-deep send buffer with oldest-drop on overflow.
+One buffer element is one tick, so a catalogue tick with one notification per list entry is dropped or delivered whole.
 ON_CHANGE streams own a 16-deep listener channel (state events are rare; depth 16 absorbs multi-second collector stalls).
 Both drop counters are simulator-wide and exposed via `GET /api/v1/gnmi/status` as `updates_dropped` and `state_events_dropped` respectively.
 

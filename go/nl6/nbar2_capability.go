@@ -39,6 +39,7 @@ var nbar2IncapableTypes = map[string]string{
 	"arista_7280r3.json":           "EOS: no Cisco AVC export",
 	"juniper_mx240.json":           "Junos: no Cisco AVC export",
 	"juniper_mx960.json":           "Junos: no Cisco AVC export",
+	"juniper_mx10004.json":         "Junos: no Cisco AVC export",
 	"nokia_7750_sr12.json":         "SR OS: no Cisco AVC export",
 	"huawei_ne8000.json":           "VRP: no Cisco AVC export",
 	"nec_ix3315.json":              "NEC IX: no Cisco AVC export",
