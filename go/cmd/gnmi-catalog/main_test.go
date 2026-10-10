@@ -101,7 +101,9 @@ func TestGenerateRejectsUnknownBindingsField(t *testing.T) {
 
 func TestGenerateCopiesLeafFilter(t *testing.T) {
 	b, _ := os.ReadFile("testdata/bindings.json")
-	withFilter := strings.Replace(string(b), `"module"`, `"filters": {"state/mtu": "LINECARD"}, "module"`, 1)
+	withFilter := strings.Replace(strings.Replace(strings.Replace(string(b), `"components": []`, `"components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": true}]`, 1),
+		`"keys": [{"source": "interfaces"}], "module"`, `"keys": [{"source": "components"}], "module"`, 1),
+		`"module"`, `"filters": {"state/mtu": "LINECARD"}, "module"`, 1)
 	p := filepath.Join(t.TempDir(), "b.json")
 	_ = os.WriteFile(p, []byte(withFilter), 0o644)
 	out := filepath.Join(t.TempDir(), "o.json")
@@ -126,5 +128,24 @@ func TestGenerateRejectsFilterOnUnknownLeaf(t *testing.T) {
 	err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
 	if err == nil || !strings.Contains(err.Error(), "state/nope") {
 		t.Fatalf("filter on unknown leaf accepted: %v", err)
+	}
+}
+
+func TestGenerateRejectsFilterWithoutComponentsKeyOrVocabulary(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	for _, tc := range []struct{ name, mutate, wantErr string }{
+		{"no components key", strings.Replace(string(b), `"module"`, `"filters": {"state/mtu": "LINECARD"}, "module"`, 1), "needs a components key source"},
+		{"filter outside the vocabulary", strings.Replace(strings.Replace(strings.Replace(string(b), `"components": []`, `"components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": true}]`, 1),
+			`"keys": [{"source": "interfaces"}], "module"`, `"keys": [{"source": "components"}], "module"`, 1),
+			`"module"`, `"filters": {"state/mtu": "FAN"}, "module"`, 1), `filter "FAN" on leaf state/mtu matches no component`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "b.json")
+			_ = os.WriteFile(p, []byte(tc.mutate), 0o644)
+			err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tc.wantErr)
+			}
+		})
 	}
 }

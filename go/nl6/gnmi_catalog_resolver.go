@@ -278,11 +278,11 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 		for _, e := range entries {
 			var updates []resolvedUpdate
 			for _, leaf := range st.Leaves {
-				full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
-				if !pathCovers(q, full) {
+				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
 					continue
 				}
-				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
+				full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
+				if !pathCovers(q, full) {
 					continue
 				}
 				ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex,

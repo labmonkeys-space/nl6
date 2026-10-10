@@ -163,14 +163,21 @@ func run(args []string) error {
 		for _, n := range extraNames {
 			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n]})
 		}
-		for n := range st.Filters {
-			if _, ok := st.Leaves[n]; ok {
-				continue
+		for n, f := range st.Filters {
+			_, inLeaves := st.Leaves[n]
+			_, inExtra := st.Extra[n]
+			if !inLeaves && !inExtra {
+				return fmt.Errorf("subtree %s: filter on leaf %s, which is in neither leaves nor extra", st.Path, n)
 			}
-			if _, ok := st.Extra[n]; ok {
-				continue
+			// Mirror the loader's rules here, where the bindings are
+			// edited, so a bad filter fails the generator rather than the
+			// first simulator boot two steps later.
+			if !hasComponentsKey(st.Keys) {
+				return fmt.Errorf("subtree %s: filter on leaf %s needs a components key source", st.Path, n)
 			}
-			return fmt.Errorf("subtree %s: filter on leaf %s, which is in neither leaves nor extra", st.Path, n)
+			if !filterMatchesAComponent(b.Components, f) {
+				return fmt.Errorf("subtree %s: filter %q on leaf %s matches no component", st.Path, f, n)
+			}
 		}
 		keys := st.Keys
 		if keys == nil {
@@ -342,4 +349,39 @@ func latestRevision(m *yang.Module) string {
 		}
 	}
 	return best
+}
+
+// hasComponentsKey reports whether a subtree's raw keys carry a
+// components source.
+func hasComponentsKey(keys json.RawMessage) bool {
+	var ks []struct {
+		Source string `json:"source"`
+	}
+	if json.Unmarshal(keys, &ks) != nil {
+		return false
+	}
+	for _, k := range ks {
+		if k.Source == "components" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterMatchesAComponent applies the loader's filter vocabulary:
+// "temperature" for sensor-bearing components, else a component type.
+func filterMatchesAComponent(components json.RawMessage, filter string) bool {
+	var cs []struct {
+		Type        string `json:"type"`
+		Temperature bool   `json:"temperature"`
+	}
+	if json.Unmarshal(components, &cs) != nil {
+		return false
+	}
+	for _, c := range cs {
+		if (filter == "temperature" && c.Temperature) || c.Type == filter {
+			return true
+		}
+	}
+	return false
 }

@@ -67,6 +67,7 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"neighbor without neighbors key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "neighbor:state"`, 1), "needs a neighbors key source"},
 		{"leaf filter without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "ifstate:oper", "filter": "temperature"`, 1), "filter needs a components key source"},
 		{"leaf filter matching nothing", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "inventory:serial_no", "filter": "FAN"`, 1), `filter "FAN" matches no component`},
+		{"leaf filter outside the key filter", strings.Replace(strings.Replace(base, `"keys": [{"source": "components", "filter": "temperature"}]`, `"keys": [{"source": "components", "filter": "CHASSIS"}]`, 1), `"gen": "sine:40,5,600"`, `"gen": "sine:40,5,600", "filter": "temperature"`, 1), `matches no component of this subtree`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -236,6 +237,9 @@ func TestParseGnmiCatalog_SamePathOverlappingKeysRefused(t *testing.T) {
 		{"different origin loads", twoSubtreeCatalog("openconfig", static(`"A", "B"`), "testvendor", static(`"B"`)), ""},
 		{"overlapping static keys", twoSubtreeCatalog("openconfig", static(`"A", "B"`), "openconfig", static(`"B", "C"`)), `entry "B"`},
 		{"components against filtered components", twoSubtreeCatalog("openconfig", `[{"source": "components"}]`, "openconfig", `[{"source": "components", "filter": "temperature"}]`), `entry "FPC0"`},
+		{"trailing-slash spelling of one path", []byte(strings.Replace(string(twoSubtreeCatalog("openconfig", static(`"A"`), "openconfig", static(`"A"`))), `"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["A"]}],
+     "leaves": [{"name": "state/temperature/instant"`, `"path": "/components/component[name=*]/", "origin": "openconfig", "keys": [{"source": "static", "names": ["A"]}],
+     "leaves": [{"name": "state/temperature/instant"`, 1)), `entry "A"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -246,8 +250,11 @@ func TestParseGnmiCatalog_SamePathOverlappingKeysRefused(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0") || !strings.Contains(err.Error(), "subtree 1") || !strings.Contains(err.Error(), "filter") {
-				t.Fatalf("err = %v, want naming both subtrees, %q and the leaf filter remedy", err, tc.wantErr)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0") || !strings.Contains(err.Error(), "subtree 1") || !strings.Contains(err.Error(), "fold the leaves") {
+				t.Fatalf("err = %v, want naming both subtrees, %q and the fold remedy", err, tc.wantErr)
+			}
+			if strings.Contains(tc.name, "components") != strings.Contains(err.Error(), "leaf filter") {
+				t.Fatalf("err = %v: the leaf-filter remedy belongs only to a subtree with a components key", err)
 			}
 		})
 	}

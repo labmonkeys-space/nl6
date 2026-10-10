@@ -283,13 +283,21 @@ func (c *gnmiCatalog) validate(source string) error {
 				if st.componentKey < 0 {
 					return fail("subtree %d leaf %q: filter needs a components key source", i, leaf.Name)
 				}
-				matched := c.components(leaf.Filter)
-				if len(matched) == 0 {
-					return fail("subtree %d leaf %q: filter %q matches no component", i, leaf.Name, leaf.Filter)
+				// Intersect with what the subtree's own components key
+				// expands to: a filter the key can never satisfy would load
+				// as a leaf nothing serves while AllLeafPaths still lists it.
+				keyed := map[string]bool{}
+				for _, comp := range c.components(st.Keys[st.componentKey].Filter) {
+					keyed[comp.Name] = true
 				}
-				leaf.filterNames = make(map[string]bool, len(matched))
-				for _, c := range matched {
-					leaf.filterNames[c.Name] = true
+				leaf.filterNames = map[string]bool{}
+				for _, comp := range c.components(leaf.Filter) {
+					if keyed[comp.Name] {
+						leaf.filterNames[comp.Name] = true
+					}
+				}
+				if len(leaf.filterNames) == 0 {
+					return fail("subtree %d leaf %q: filter %q matches no component of this subtree", i, leaf.Name, leaf.Filter)
 				}
 			}
 		}
@@ -328,8 +336,8 @@ func (c *gnmiCatalog) keyValues(k gnmiCatalogKey) (vals []string, ok bool) {
 func (c *gnmiCatalog) entryTuples(st *gnmiCatalogSubtree) (tuples []string, ok bool) {
 	tuples = []string{""}
 	for _, k := range st.Keys {
-		vals, ok := c.keyValues(k)
-		if !ok {
+		vals, found := c.keyValues(k)
+		if !found {
 			return nil, false
 		}
 		var next []string
@@ -349,34 +357,67 @@ func (c *gnmiCatalog) entryTuples(st *gnmiCatalogSubtree) (tuples []string, ok b
 // resolvable at load are compared; a pair with an interfaces key on
 // either side is not checked, because the interface name set exists
 // only per device.
+//
+// Same-path subtrees with DISJOINT entries are allowed (the shipped
+// MX10004 keeps `CPU0:CORE0` beside the inventory on one path). Paths
+// are compared compiled, since parseCatalogPath trims slashes. A pair
+// of key-less root subtrees is refused too: both render the origin-only
+// prefix, so their leaves belong in one root subtree.
 func (c *gnmiCatalog) checkSamePathSubtrees() error {
 	for i, a := range c.Subtrees {
-		ta, ok := c.entryTuples(a)
-		if !ok {
-			continue
-		}
-		seen := make(map[string]bool, len(ta))
-		for _, t := range ta {
-			seen[t] = true
-		}
+		var seen map[string]bool // expanded on the first same-path partner
 		for j := i + 1; j < len(c.Subtrees); j++ {
 			b := c.Subtrees[j]
-			if b.Origin != a.Origin || b.Path != a.Path {
+			if b.Origin != a.Origin || !pathElemsEqual(a.elems, b.elems) {
 				continue
+			}
+			if seen == nil {
+				ta, ok := c.entryTuples(a)
+				if !ok {
+					break
+				}
+				seen = make(map[string]bool, len(ta))
+				for _, t := range ta {
+					seen[t] = true
+				}
 			}
 			tb, ok := c.entryTuples(b)
 			if !ok {
 				continue
 			}
 			for _, t := range tb {
-				if seen[t] {
-					return fmt.Errorf("subtree %d and subtree %d both serve %s %s at entry %q, which would render one prefix twice; fold the leaves into one subtree and narrow a per-component leaf with a leaf filter",
-						i, j, a.Origin, a.Path, strings.ReplaceAll(strings.TrimPrefix(t, "\x00"), "\x00", ","))
+				if !seen[t] {
+					continue
 				}
+				remedy := "fold the leaves into one subtree"
+				if a.componentKey >= 0 {
+					remedy += " and narrow a per-component leaf with a leaf filter"
+				}
+				return fmt.Errorf("subtree %d and subtree %d both serve %s %s at entry %q, which would render one prefix twice; %s",
+					i, j, a.Origin, a.Path, strings.ReplaceAll(strings.TrimPrefix(t, "\x00"), "\x00", ","), remedy)
 			}
 		}
 	}
 	return nil
+}
+
+// pathElemsEqual compares compiled entry paths element by element,
+// keys included.
+func pathElemsEqual(a, b []*gnmipb.PathElem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || len(a[i].Key) != len(b[i].Key) {
+			return false
+		}
+		for k, v := range a[i].Key {
+			if b[i].Key[k] != v {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (c *gnmiCatalog) acceptsEncoding(enc gnmipb.Encoding) bool {
