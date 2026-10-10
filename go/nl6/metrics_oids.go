@@ -85,6 +85,11 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 		".1.3.6.1.4.1.2636.3.1.13.1.11.9.1.0.0": MetricMemUsedPct,
 		".1.3.6.1.4.1.2636.3.1.13.1.7.9.1.0.0":  MetricTemperature,
 	},
+	"juniper_mx10004.json": {
+		".1.3.6.1.4.1.2636.3.1.13.1.8.9.1.0.0":  MetricCPUPercent,
+		".1.3.6.1.4.1.2636.3.1.13.1.11.9.1.0.0": MetricMemUsedPct,
+		".1.3.6.1.4.1.2636.3.1.13.1.7.9.1.0.0":  MetricTemperature,
+	},
 
 	// --- Palo Alto ---
 	"palo_alto_pa3220.json": {

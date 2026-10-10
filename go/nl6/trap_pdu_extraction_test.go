@@ -158,7 +158,12 @@ var syntheticRefusalRows = []notificationRow{
 //
 // Raise or lower it when the shipped catalogs change, in the same commit, and
 // re-measure the three digests at the baseline the header names.
-const shippedNotificationRows = 38
+//
+// 38 -> 50 with the juniper_mx10004 device type, whose traps.json is a copy of
+// juniper_mx240's (12 effective entries). The three digests were re-measured at
+// 449280dd in a worktree by the header's recipe, against the new catalogs; the
+// same recipe reproduced the old three values before juniper_mx10004 was added.
+const shippedNotificationRows = 50
 
 // syntheticNotificationRows is the refusal set's size, pinned separately so a
 // deleted synthetic row cannot be absorbed by a catalog gaining an entry. It is
@@ -299,7 +304,7 @@ func TestV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 			refused, want)
 	}
 
-	const want = "788e75e09e93dbcb6f5615269004d0d4924ba1034f1b6a28e1701202077cf79b"
+	const want = "9971abb20b7252af1f3556bfb0852cdf04e1c6fec3c67c327b7202f6e2f1c9b6"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv2c encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
@@ -375,7 +380,7 @@ func TestFastV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d; the fault-parity arm is not being exercised", refused, want)
 	}
 
-	const want = "9153d4cfa67073f4f7027a805585943261cffbbfc88156973ab2ef8842bb3233"
+	const want = "a158b0e60bed87742f6a3bd695583c9b5bb957f9255e856007c939160401ae5f"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the fast encoder's output over %d shipped notifications digests to %s, measured at "+
 			"the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a catalog DATA "+
@@ -420,7 +425,7 @@ func TestV1NotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d", refused, want)
 	}
 
-	const want = "19f91e2e7df38b63e1148c2cc8836d232fb3211321e513805650b72735fe7a34"
+	const want = "186470c4e9635f230478ab8e327c911d7e6cc4d3b8294633f78ae736e9f5e36f"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv1 encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+

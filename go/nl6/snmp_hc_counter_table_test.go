@@ -150,7 +150,12 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // shippedTagDigestBeforeJuniperArcAudit, and
 // TestJuniperArcAuditReproducesTheParentCorpus reverses the ledger against this
 // tree and requires it back byte for byte.
-const shippedTagDigest = "17e2773527d4329fd50c1fc323488eb809e11e899689a04c0c6cbf752a765da2"
+//
+// Re-pinned again by the juniper_mx10004 device type, a new profile. The
+// pre-change value is shippedTagDigestBeforeJuniperMx10004 in
+// snmp_shipped_juniper_mx10004_ledger_test.go, and
+// TestJuniperMx10004AdditionReproducesTheParentCorpus requires it back.
+const shippedTagDigest = "3003c79f424bfe3a7d9ca3888ecef2fc7a563fc466f79742ad216fa9e2aa2cb4"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

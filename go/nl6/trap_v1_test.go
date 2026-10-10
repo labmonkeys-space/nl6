@@ -469,7 +469,10 @@ func TestV2cOutputUnchangedByV1Encoder(t *testing.T) {
 		t.Fatalf("only %d shipped entries encoded; the walk collapsed and the digest below would "+
 			"pin nothing", encoded)
 	}
-	const want = "a414471f8d5045f5fc35c523f97845a628f4ec9aff18c6ef0a2ec4ef24b53cb6"
+	// Re-measured for the juniper_mx10004 catalog at 295c0b1 (the parent of the
+	// v1 encoder commit) in a worktree, with this function copied in and the
+	// new catalogs; the previous value reproduced there before it was added.
+	const want = "a32991a840ebaf2e51dff09035db4c7b6eac358cddedee7a69aafd3d4a304883"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("v2c encoding of %d shipped entries digests to %s, recorded as %s.\nAdding the v1 "+
 			"encoder must not perturb v2c output by one byte. If this moved deliberately, say which "+

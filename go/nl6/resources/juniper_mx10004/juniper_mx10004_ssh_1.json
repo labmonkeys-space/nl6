@@ -1,0 +1,49 @@
+{
+  "snmp": null,
+  "ssh": [
+    {
+      "command": "show version",
+      "response": "Hostname: NY-CORE-01\nModel: mx10004\nJunos: 24.2R1.17\nJUNOS OS Kernel 64-bit [20240618.0000_builder_stable_11]"
+    },
+    {
+      "command": "show interfaces terse",
+      "response": "Interface               Admin Link Proto    Local                 Remote\nge-0/0/0                up    up\nge-0/0/0.0              up    up   inet     192.168.1.1/24\nge-0/0/1                up    down\nge-0/0/2                up    up"
+    },
+    {
+      "command": "show route",
+      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    > to 192.168.1.254 via ge-0/0/0.0"
+    },
+    {
+      "command": "show configuration",
+      "response": "system {\n    host-name NY-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$abc123\";\n    }\n}\ninterfaces {\n    ge-0/0/0 {\n        unit 0 {\n            family inet {\n                address 192.168.1.1/24;\n            }\n        }\n    }\n}"
+    },
+    {
+      "command": "show chassis environment",
+      "response": "Class Item                           Status     Measurement\nTemp  Routing Engine 0                OK         38 degrees C / 100 degrees F\nTemp  Routing Engine 1                Absent     \nTemp  FPC 0 CPU                       OK         45 degrees C / 113 degrees F\nTemp  PIC 0 in FPC 0                  OK         42 degrees C / 107 degrees F\n\nFans and power supplies status:\nItem                      Status     RPM        Measurement\nTop Rear Fan              OK         3000 RPM   \nTop Middle Fan             OK         2980 RPM   \nTop Front Fan             OK         3020 RPM   \nBottom Rear Fan           OK         2960 RPM   \nBottom Middle Fan         OK         2990 RPM   \nBottom Front Fan          OK         3010 RPM"
+    },
+    {
+      "command": "show chassis hardware",
+      "response": "Hardware inventory:\nItem             Version  Part number  Serial number     Description\nChassis                                JNP-MX10004-002     MX10004\nMidplane         REV 05   750-021308   ABCD123456        MX10004 Backplane\nFPC 0            REV 07   750-028467   FPC0123456        MPC Type 2 3D\n  CPU            REV 08   711-028467   CPU0123456        AMCC PowerPC 8544E\n  MIC 0          REV 02   750-028393   MIC0123456        4x 10GE SFP+\n    PIC 0        REV 03   750-028393   PIC0123456        4x 10GE SFP+\n      Xcvr 0     REV 01   740-021308   SFP0123456        SFP+-10G-LR\n      Xcvr 1     REV 01   740-021308   SFP0123457        SFP+-10G-LR\nPower Supply 0   REV 03   740-029721   PWR0123456        AC 2500W\nPower Supply 1   REV 03   740-029721   PWR0123457        AC 2500W\nRouting Engine 0 REV 05   750-031092   RE0123456         RE-S-2000-4096\nCB 0             REV 08   750-031089   CB0123456         Enhanced MX SCB"
+    },
+    {
+      "command": "show chassis fpc",
+      "response": "                     Temp  CPU Utilization (%)   Memory    Utilization (%)\nSlot State            (C)  Total  Interrupt      DRAM (MB) Heap     Buffer\n  0  Online            45     67          8      4096        78         15\n\nFPC 0 Details:\n  Type: MPC Type 2 3D\n  CPU: AMCC PowerPC 8544E\n  Cores: 6\n  Frequency: 3200 MHz\n  Memory: 4096 MB DDR3\n  State: Online\n  Temperature: 45°C\n  CPU Utilization: 67%\n  Memory Utilization: 78%"
+    },
+    {
+      "command": "show chassis routing-engine",
+      "response": "Routing Engine status:\nSlot 0:\n    Current state                  Master\n    Election priority              Master (default)\n    Temperature                 38 degrees C / 100 degrees F\n    CPU temperature             55 degrees C / 131 degrees F\n    DRAM                        4096 MB (4094 MB available)\n    Memory utilization          78 percent\n    CPU utilization:\n      User                       45 percent\n      Background                  8 percent\n      Kernel                     12 percent\n      Interrupt                   2 percent\n      Idle                       33 percent\n    Model                          RE-S-2000-4096\n    Serial ID                      RE0123456\n    Start time                     2025-07-11 06:14:30 PDT\n    Uptime                         23 days, 8 hours, 15 minutes, 15 seconds\n    Load averages:                 1 minute   5 minute  15 minute\n                                       0.67       0.65       0.68"
+    },
+    {
+      "command": "show chassis pic fpc-slot 0 pic-slot 0",
+      "response": "FPC slot 0, PIC slot 0 information:\n  Type                             4x 10GE SFP+\n  State                            Online\n  PIC version                      750-028393\n  Uptime                          23 days, 8 hours, 15 minutes\n\nPort status:\nPort 0: SFP+-10G-LR (Online) - 10GBASE-LR\nPort 1: SFP+-10G-LR (Online) - 10GBASE-LR\nPort 2: SFP+ (Offline) - No transceiver\nPort 3: SFP+ (Offline) - No transceiver\n\nTransceiver information:\nPort 0: 10GBASE-LR, Serial: SFP0123456, Part: 740-021308\nPort 1: 10GBASE-LR, Serial: SFP0123457, Part: 740-021308"
+    },
+    {
+      "command": "show chassis power",
+      "response": "Power supplies status:\nPower supply 0 status:\n  State                  Online\n  DC Output              48V, 52.08A\n  Temperature            42 degrees C / 107 degrees F\n  Power                  2500W\n  Load                   48 percent (1200W)\n  Part number            740-029721\n  Serial number          PWR0123456\n\nPower supply 1 status:\n  State                  Online\n  DC Output              48V, 50.12A\n  Temperature            44 degrees C / 111 degrees F\n  Power                  2500W\n  Load                   46 percent (1150W)\n  Part number            740-029721\n  Serial number          PWR0123457\n\nTotal power consumption: 2350W\nTotal power available: 5000W\nPower redundancy status: OK"
+    },
+    {
+      "command": "show system memory",
+      "response": "System memory information:\n\nRouting Engine:\n  Total physical memory: 4096 MB\n  Available memory: 896 MB\n  Used memory: 3200 MB (78%)\n  Memory utilization: 78%\n\nForwarding Engine (FPC 0):\n  Total physical memory: 4096 MB\n  Available memory: 901 MB\n  Used memory: 3195 MB (78%)\n  Memory utilization: 78%\n\nOverall system memory utilization: 78%\nMemory type: DDR3-1600\nMemory frequency: 1600 MHz"
+    }
+  ]
+}

@@ -42,7 +42,11 @@ import (
 // right move ONLY for an intended wire change, and the diff is the review
 // evidence for it. Re-pinning to silence a failure is how a defect gets
 // absorbed — see the same warning on shippedTagDigest.
-const shippedServedStateDigest = "182da76a7ef8109cf831a2bcc340031796f857be95906f324534ba07b3ca85b0"
+//
+// Re-pinned by the juniper_mx10004 device type: it adds 48 rows, all admin=1
+// oper=1. With those 48 rows filtered out the digest is exactly the previous
+// value, 182da76a7ef8109cf831a2bcc340031796f857be95906f324534ba07b3ca85b0.
+const shippedServedStateDigest = "faf7833ad0716139c2d777172269bf380c862ab9193711b2e05ffbbdef0514a5"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

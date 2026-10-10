@@ -1,0 +1,76 @@
+{
+  "comment": "Per-device-type trap catalog for Juniper MX240 devices. Overlays the universal catalog (extends=true default): universal linkDown/linkUp/coldStart/warmStart/authenticationFailure carry through; Juniper-specific entries are added alongside. All entries use Class-1-only template vocabulary — entries that would want BGP/OSPF peer fields (PeerIP, PeerAS, NeighborRouterID) are explicitly deferred to a follow-up Class 2 epic. OIDs sourced from JUNIPER-MIB under jnxChassisTraps (1.3.6.1.4.1.2636.4.1); all seven are real NOTIFICATION-TYPEs registered in the MIB (verified against oidref.com and Observium's JUNIPER-MIB mirror). snmpTrapEnterprise = 1.3.6.1.4.1.2636 (Juniper Networks enterprise root) per RFC 3584 §4.1 v1↔v2c proxy convention. jnxFruEntry is indexed by 4 columns (container, L1, L2, L3), giving 4-number suffixes on varbind OIDs — not the 5-number suffixes a casual reader might infer from the visible slot/subslot encoding.",
+  "traps": [
+    {
+      "name": "jnxPowerSupplyFailure",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.1",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 15,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.2.0", "type": "octet-string", "value": "{{.Model}}" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.3.0", "type": "octet-string", "value": "{{.Serial}}" }
+      ]
+    },
+    {
+      "name": "jnxFanFailure",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.2",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 10,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.13.1.5.4.1.1.0", "type": "octet-string", "value": "Fan 1" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.13.1.6.4.1.1.0", "type": "integer", "value": "7" }
+      ]
+    },
+    {
+      "name": "jnxOverTemperature",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.3",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 10,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.13.1.5.9.1.1.0", "type": "octet-string", "value": "Routing Engine 0 temperature sensor" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.13.1.7.9.1.1.0", "type": "gauge32", "value": "75" }
+      ]
+    },
+    {
+      "name": "jnxFruRemoval",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.5",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 8,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.5.7.1.1.0", "type": "octet-string", "value": "MX240 SCB" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.8.7.1.1.0", "type": "integer", "value": "2" }
+      ]
+    },
+    {
+      "name": "jnxFruInsertion",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.6",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 8,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.5.7.1.1.0", "type": "octet-string", "value": "MX240 SCB" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.8.7.1.1.0", "type": "integer", "value": "6" }
+      ]
+    },
+    {
+      "name": "jnxFruPowerOff",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.7",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 10,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.5.2.1.1.0", "type": "octet-string", "value": "PEM-{{.Serial}}" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.8.2.1.1.0", "type": "integer", "value": "4" }
+      ]
+    },
+    {
+      "name": "jnxFruFailed",
+      "snmpTrapOID": "1.3.6.1.4.1.2636.4.1.9",
+      "snmpTrapEnterprise": "1.3.6.1.4.1.2636",
+      "weight": 9,
+      "varbinds": [
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.5.4.1.1.0", "type": "octet-string", "value": "FPC 0 (Model {{.Model}})" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.8.4.1.1.0", "type": "integer", "value": "7" },
+        { "oid": "1.3.6.1.4.1.2636.3.1.15.1.9.4.1.1.0", "type": "timeticks", "value": "{{.Uptime}}" }
+      ]
+    }
+  ]
+}

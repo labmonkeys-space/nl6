@@ -259,6 +259,9 @@ var flowProfileMap = map[string]*FlowProfile{
 	"nokia_7750_sr12.json": flowProfileCoreRouter,
 	"juniper_mx960.json":   flowProfileCoreRouter,
 
+	// juniper_mx10004 carries juniper_mx240's flow profile: it is cloned from it.
+	"juniper_mx10004.json": flowProfileEdgeRouter,
+
 	// Edge Routers
 	"juniper_mx240.json": flowProfileEdgeRouter,
 	"nec_ix3315.json":    flowProfileEdgeRouter,
