@@ -9,7 +9,14 @@
       "PROTO",
       "JSON"
     ],
-    "extension": "juniper-header"
+    "extension": "juniper-header",
+    "origin_aliases": {
+      "Native": "juniper",
+      "openconfig-interfaces": "openconfig",
+      "openconfig-network-instance": "openconfig",
+      "openconfig-platform": "openconfig",
+      "openconfig-system": "openconfig"
+    }
   },
   "models": [
     {

@@ -15,6 +15,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -61,6 +63,12 @@ type gnmiCatalogNotification struct {
 	Prefix       string   `json:"prefix"`
 	Encodings    []string `json:"encodings"`
 	Extension    string   `json:"extension"`
+	// OriginAliases maps a request origin an operator types (a YANG
+	// module name such as `openconfig-interfaces`, or Junos's `Native`)
+	// to Origin or NativeOrigin. Responses carry the canonical origin,
+	// as hardware does (nl6#770). Declared per catalogue so a type
+	// without aliases keeps refusing unknown origins.
+	OriginAliases map[string]string `json:"origin_aliases,omitempty"`
 }
 
 type gnmiCatalogModel struct {
@@ -165,6 +173,24 @@ func (c *gnmiCatalog) validate(source string) error {
 	}
 	if n.Origin == "" {
 		return fail("notification.origin is required")
+	}
+	aliases := make([]string, 0, len(n.OriginAliases))
+	for alias := range n.OriginAliases {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases) // the first bad alias reported is the same on every run
+	for _, alias := range aliases {
+		target := n.OriginAliases[alias]
+		if alias == "" || alias == n.Origin || alias == n.NativeOrigin {
+			return fail("notification.origin_aliases: %q is a canonical origin, not an alias", alias)
+		}
+		canonical := []string{n.Origin}
+		if n.NativeOrigin != "" {
+			canonical = append(canonical, n.NativeOrigin)
+		}
+		if !slices.Contains(canonical, target) {
+			return fail("notification.origin_aliases: %q maps to %q, want one of %q", alias, target, canonical)
+		}
 	}
 	if len(n.Encodings) == 0 {
 		return fail("notification.encodings is empty")

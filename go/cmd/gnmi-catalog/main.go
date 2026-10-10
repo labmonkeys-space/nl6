@@ -188,6 +188,11 @@ func run(args []string) error {
 	for _, m := range models {
 		out.Models = append(out.Models, m)
 	}
+	notif, err := withModuleOriginAliases(out.Notification, b.Subtrees)
+	if err != nil {
+		return err
+	}
+	out.Notification = notif
 	sort.Slice(out.Models, func(i, j int) bool { return out.Models[i].Name < out.Models[j].Name })
 	enc, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -384,4 +389,46 @@ func filterMatchesAComponent(components json.RawMessage, filter string) bool {
 		}
 	}
 	return false
+}
+
+// withModuleOriginAliases adds each subtree's YANG module name as an
+// alias of the catalogue's main origin (Junos accepts the module name
+// as origin, nl6#770), so the alias table cannot drift from the
+// subtrees. The main origin, not the subtree's: a native-origin subtree
+// can be modelled under an OpenConfig module (the MX10004 packet-usage
+// sensor renders under openconfig-platform paths), and the module name
+// still spells the OpenConfig namespace. Explicit aliases in the
+// bindings (such as Native) win; a module name that is itself a
+// canonical origin is skipped.
+func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSubtree) (json.RawMessage, error) {
+	// The loader's field set, in the loader's order, so the emitted
+	// block keeps its layout and a misspelt field fails here.
+	var n struct {
+		Origin        string            `json:"origin"`
+		NativeOrigin  string            `json:"native_origin"`
+		Prefix        string            `json:"prefix"`
+		Encodings     []string          `json:"encodings"`
+		Extension     string            `json:"extension"`
+		OriginAliases map[string]string `json:"origin_aliases,omitempty"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(notification))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&n); err != nil {
+		return nil, fmt.Errorf("notification: %w", err)
+	}
+	if n.OriginAliases == nil {
+		n.OriginAliases = map[string]string{}
+	}
+	for _, st := range subtrees {
+		if st.Module == "" || st.Module == n.Origin || st.Module == n.NativeOrigin {
+			continue
+		}
+		if _, explicit := n.OriginAliases[st.Module]; !explicit {
+			n.OriginAliases[st.Module] = n.Origin
+		}
+	}
+	if len(n.OriginAliases) == 0 {
+		n.OriginAliases = nil
+	}
+	return json.Marshal(n) // map keys marshal sorted
 }

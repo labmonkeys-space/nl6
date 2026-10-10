@@ -54,6 +54,9 @@ func newCatalogResolver(d *DeviceSimulator, cat *gnmiCatalog) *catalogResolver {
 // catalogue serves, and returns the catalogue origin it maps to.
 func (r *catalogResolver) originAccepted(origin string) (string, bool) {
 	n := r.cat.Notification
+	if target, ok := n.OriginAliases[origin]; ok {
+		origin = target
+	}
 	switch origin {
 	case "", n.Origin:
 		return n.Origin, true
@@ -63,6 +66,21 @@ func (r *catalogResolver) originAccepted(origin string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Canonicalize returns p with an aliased origin rewritten to the
+// catalogue origin it stands for, so the legacy resolver behind the
+// catalogue sees the same origin the catalogue would (nl6#770 review:
+// an aliased origin on a path the catalogue does not own fell through
+// to a resolver that refused the spelling). Unaliased paths are
+// returned as-is, no copy.
+func (r *catalogResolver) Canonicalize(p *gnmipb.Path) *gnmipb.Path {
+	target, ok := r.cat.Notification.OriginAliases[p.GetOrigin()]
+	if !ok {
+		return p
+	}
+	cp := &gnmipb.Path{Origin: target, Elem: p.GetElem(), Target: p.GetTarget()}
+	return cp
 }
 
 // elemMatches reports whether request element q matches concrete
@@ -134,8 +152,12 @@ func elemsEqual(a, b []*gnmipb.PathElem) bool {
 // aliasSubtree returns the subtree one of whose aliases equals p, or
 // nil. The request origin must be empty or the subtree's origin.
 func (r *catalogResolver) aliasSubtree(p *gnmipb.Path) *gnmiCatalogSubtree {
+	origin, ok := r.originAccepted(p.GetOrigin())
+	if p.GetOrigin() != "" && !ok {
+		return nil
+	}
 	for _, st := range r.cat.Subtrees {
-		if o := p.GetOrigin(); o != "" && o != st.Origin {
+		if p.GetOrigin() != "" && origin != st.Origin {
 			continue
 		}
 		for _, a := range st.aliases {

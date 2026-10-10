@@ -129,6 +129,7 @@ Each device adds a 48-byte resolver.
 | Key | Meaning |
 |---|---|
 | `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
+| `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; responses carry the canonical origin. The generator adds every subtree's `module` as an alias of `origin`, so the bindings list only spellings no module names, such as `Native` |
 | `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
 | `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
 | `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
@@ -175,6 +176,7 @@ The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
 It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
 It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
 Native sensors sit under the `juniper` origin.
+The module names `openconfig-interfaces`, `openconfig-platform`, `openconfig-system` and `openconfig-network-instance` are accepted as the `openconfig` origin and `Native` as `juniper`, which is what an operator types against a real MX; the notifications are the same as for the canonical origin.
 A subscription to `/junos/system/linecard/packet/usage/`, with origin `juniper` or none, returns the packet-usage counters under the component paths Junos renders them at.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
@@ -460,7 +462,7 @@ The `Accept` signal now lives in `listener_accept_failures`.
 | Subscribe drops after ~5 min idle | Hit the keepalive limit. The server closes idle connections after 5 m by default (see [Operational notes](#operational-notes)) |
 | `code = DeadlineExceeded desc = no SubscribeRequest received within 30s` | The slowloris guard fired. Your client opened a stream and didn't send the SubscribeRequest within 30 s |
 | `Get` with `--type config` returns empty | Expected on packet device types, whose interface surface is state-only. On optical transport types `CONFIG` returns the four optical config scalars (see [Optical channel paths](#optical-channel-paths-optical-transport-types)) |
-| `code = NotFound desc = origin "junos" not supported` | The simulator only serves OpenConfig; drop the `origin` field or set it to `openconfig` (or empty) |
+| `code = NotFound desc = origin "junos" not supported` | A device type without a catalogue serves OpenConfig only; drop the `origin` field or set it to `openconfig` (or empty). A catalogue type accepts its `origin_aliases` as well (the MX10004 takes module names and `Native`) |
 | `code = Unimplemented desc = POLL ...` / `Set ...` | Expected. See [Subscribe semantics](#subscribe-semantics) for the supported RPC surface |
 
 ## Status endpoint

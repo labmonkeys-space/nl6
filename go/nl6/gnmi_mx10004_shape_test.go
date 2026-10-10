@@ -541,3 +541,79 @@ func TestMX10004ComponentsOneNotificationPerEntry(t *testing.T) {
 		t.Errorf("Chassis: carries a temperature leaf it has no sensor for")
 	}
 }
+
+// TestMX10004AcceptsModuleNameAndNativeOrigins: Junos accepts the YANG
+// module name as origin and `Native` for junos sensors, which is what
+// an operator types (nl6#770). The aliased request must return the
+// same notifications as the canonical origin, prefixes included.
+func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	digest := func(resps []*gnmipb.SubscribeResponse) []string {
+		var out []string
+		for _, r := range resps {
+			n := r.GetUpdate()
+			if n == nil {
+				continue
+			}
+			var paths []string
+			for _, u := range n.GetUpdate() {
+				paths = append(paths, pathToString(u.GetPath()))
+			}
+			sort.Strings(paths)
+			out = append(out, n.GetPrefix().GetOrigin()+":"+pathToString(n.GetPrefix())+" "+strings.Join(paths, ","))
+		}
+		sort.Strings(out)
+		return out
+	}
+	for _, tc := range []struct{ alias, canonical, path string }{
+		{"openconfig-interfaces", "openconfig", "/interfaces/interface/state/counters"},
+		{"openconfig-platform", "openconfig", "/components/component/state"},
+		{"openconfig-system", "openconfig", "/system/state"},
+		{"openconfig-network-instance", "openconfig", "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/state"},
+		{"Native", "juniper", "/junos/system/linecard/packet/usage/"},
+	} {
+		t.Run(tc.alias, func(t *testing.T) {
+			want, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, tc.canonical, tc.path)
+			if err != nil {
+				t.Fatalf("canonical: %v", err)
+			}
+			got, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, tc.alias, tc.path)
+			if err != nil {
+				t.Fatalf("alias %s: %v", tc.alias, err)
+			}
+			if dw, dg := digest(want), digest(got); strings.Join(dw, "\n") != strings.Join(dg, "\n") {
+				for i := range dw {
+					if i >= len(dg) || dw[i] != dg[i] {
+						t.Fatalf("alias %s: notification %d differs\ncanonical: %s\nalias:     %s", tc.alias, i, dw[i], strings.Join(dg[i:min(i+1, len(dg))], ""))
+					}
+				}
+				t.Fatalf("alias %s: %d notifications, canonical %d", tc.alias, len(dg), len(dw))
+			}
+			if len(digest(got)) == 0 {
+				t.Fatal("no notifications")
+			}
+		})
+	}
+	if _, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "cisco-iosxr", "/interfaces"); status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown origin: got %v, want NotFound", err)
+	}
+	// A path the catalogue does not own falls through to the legacy
+	// resolver, which must see the canonical origin too: the error names
+	// the path, never the alias spelling.
+	_, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "openconfig-interfaces", "/interfaces/interface/state/counters/in-unknown-protos")
+	if err == nil || strings.Contains(err.Error(), "openconfig-interfaces") {
+		t.Fatalf("uncovered path under an alias: %v (must not refuse the origin spelling)", err)
+	}
+	// Get takes the same aliases.
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	gp := pathFromString(t, "/system/state/hostname")
+	gp.Origin = "openconfig-system"
+	resp, err := gnmipb.NewGNMIClient(conn).Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_PROTO, Path: []*gnmipb.Path{gp}})
+	if err != nil || len(resp.GetNotification()) == 0 || resp.GetNotification()[0].GetPrefix().GetOrigin() != "openconfig" {
+		t.Fatalf("Get under module-name origin: err=%v resp=%v", err, resp)
+	}
+}
