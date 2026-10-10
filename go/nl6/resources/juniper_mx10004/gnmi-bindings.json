@@ -302,17 +302,29 @@
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig",
+      "aliases": ["/interfaces/interface/subinterfaces/subinterface/state/counters"],
       "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0"]}], "module": "openconfig-interfaces",
       "leaves": {
-        "state/name": "ifstate:name", "state/index": "key:1", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper",
-        "state/admin-status": "ifstate:admin", "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:true",
-        "state/description": "const:", "state/counters/in-octets": "ifcounter:ifHCInOctets", "state/counters/out-octets": "ifcounter:ifHCOutOctets",
-        "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts",
-        "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts",
-        "state/counters/in-multicast-pkts": "ifcounter:ifHCInMulticastPkts", "state/counters/out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts"
+        "state/name": "ifstate:name", "state/index": "key:1",
+        "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper",
+        "state/admin-status": "ifstate:admin", "state/last-change": "ifstate:last-change",
+        "state/enabled": "const:true", "state/logical": "const:true",
+        "state/description": "const:", "state/counters/in-octets": "ifcounter:ifHCInOctets",
+        "state/counters/out-octets": "ifcounter:ifHCOutOctets", "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts",
+        "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts", "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts",
+        "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts", "state/counters/in-multicast-pkts": "ifcounter:ifHCInMulticastPkts",
+        "state/counters/out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts", "ipv4/state/counters/in-octets": "counter:800000",
+        "ipv4/state/counters/out-octets": "counter:650000", "ipv4/state/counters/in-pkts": "counter:900",
+        "ipv4/state/counters/out-pkts": "counter:720", "ipv4/state/counters/in-multicast-octets": "counter:4000",
+        "ipv4/state/counters/out-multicast-octets": "counter:3000", "ipv4/state/counters/in-multicast-pkts": "counter:4",
+        "ipv4/state/counters/out-multicast-pkts": "counter:3", "ipv6/state/counters/in-octets": "counter:120000",
+        "ipv6/state/counters/out-octets": "counter:95000", "ipv6/state/counters/in-pkts": "counter:150",
+        "ipv6/state/counters/out-pkts": "counter:120", "ipv6/state/counters/in-multicast-octets": "counter:600",
+        "ipv6/state/counters/out-multicast-octets": "counter:450", "ipv6/state/counters/in-multicast-pkts": "counter:1",
+        "ipv6/state/counters/out-multicast-pkts": "counter:1"
       },
       "types": {"state/index": "uint32", "state/last-change": "uint64"},
-      "extra": {"ipv4/state/counters/in-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/in-multicast-octets": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/out-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/out-multicast-octets": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/in-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/in-multicast-octets": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/out-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/out-multicast-octets": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/in-octets": {"type": "uint64", "gen": "ifcounter:ifHCInOctets"}, "ipv4/state/counters/out-octets": {"type": "uint64", "gen": "ifcounter:ifHCOutOctets"}, "ipv4/state/counters/in-pkts": {"type": "uint64", "gen": "ifcounter:ifHCInUcastPkts"}, "ipv4/state/counters/out-pkts": {"type": "uint64", "gen": "ifcounter:ifHCOutUcastPkts"}, "ipv6/state/counters/in-octets": {"type": "uint64", "gen": "counter:120000"}, "ipv6/state/counters/out-octets": {"type": "uint64", "gen": "counter:95000"}, "ipv6/state/counters/in-pkts": {"type": "uint64", "gen": "counter:150"}, "ipv6/state/counters/out-pkts": {"type": "uint64", "gen": "counter:120"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}}
+      "extra": {"init-time": {"type": "uint64", "gen": "timestamp:boot"}}
     },
     {
       "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}], "module": "openconfig-platform",

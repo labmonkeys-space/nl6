@@ -2649,6 +2649,9 @@
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",
       "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
       "keys": [
         {
           "source": "interfaces"
@@ -2661,6 +2664,86 @@
         }
       ],
       "leaves": [
+        {
+          "name": "ipv4/state/counters/in-multicast-octets",
+          "type": "uint64",
+          "gen": "counter:4000"
+        },
+        {
+          "name": "ipv4/state/counters/in-multicast-pkts",
+          "type": "uint64",
+          "gen": "counter:4"
+        },
+        {
+          "name": "ipv4/state/counters/in-octets",
+          "type": "uint64",
+          "gen": "counter:800000"
+        },
+        {
+          "name": "ipv4/state/counters/in-pkts",
+          "type": "uint64",
+          "gen": "counter:900"
+        },
+        {
+          "name": "ipv4/state/counters/out-multicast-octets",
+          "type": "uint64",
+          "gen": "counter:3000"
+        },
+        {
+          "name": "ipv4/state/counters/out-multicast-pkts",
+          "type": "uint64",
+          "gen": "counter:3"
+        },
+        {
+          "name": "ipv4/state/counters/out-octets",
+          "type": "uint64",
+          "gen": "counter:650000"
+        },
+        {
+          "name": "ipv4/state/counters/out-pkts",
+          "type": "uint64",
+          "gen": "counter:720"
+        },
+        {
+          "name": "ipv6/state/counters/in-multicast-octets",
+          "type": "uint64",
+          "gen": "counter:600"
+        },
+        {
+          "name": "ipv6/state/counters/in-multicast-pkts",
+          "type": "uint64",
+          "gen": "counter:1"
+        },
+        {
+          "name": "ipv6/state/counters/in-octets",
+          "type": "uint64",
+          "gen": "counter:120000"
+        },
+        {
+          "name": "ipv6/state/counters/in-pkts",
+          "type": "uint64",
+          "gen": "counter:150"
+        },
+        {
+          "name": "ipv6/state/counters/out-multicast-octets",
+          "type": "uint64",
+          "gen": "counter:450"
+        },
+        {
+          "name": "ipv6/state/counters/out-multicast-pkts",
+          "type": "uint64",
+          "gen": "counter:1"
+        },
+        {
+          "name": "ipv6/state/counters/out-octets",
+          "type": "uint64",
+          "gen": "counter:95000"
+        },
+        {
+          "name": "ipv6/state/counters/out-pkts",
+          "type": "uint64",
+          "gen": "counter:120"
+        },
         {
           "name": "state/admin-status",
           "type": "enumeration",
@@ -2764,86 +2847,6 @@
           "name": "init-time",
           "type": "uint64",
           "gen": "timestamp:boot"
-        },
-        {
-          "name": "ipv4/state/counters/in-multicast-octets",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv4/state/counters/in-multicast-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv4/state/counters/in-octets",
-          "type": "uint64",
-          "gen": "ifcounter:ifHCInOctets"
-        },
-        {
-          "name": "ipv4/state/counters/in-pkts",
-          "type": "uint64",
-          "gen": "ifcounter:ifHCInUcastPkts"
-        },
-        {
-          "name": "ipv4/state/counters/out-multicast-octets",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv4/state/counters/out-multicast-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv4/state/counters/out-octets",
-          "type": "uint64",
-          "gen": "ifcounter:ifHCOutOctets"
-        },
-        {
-          "name": "ipv4/state/counters/out-pkts",
-          "type": "uint64",
-          "gen": "ifcounter:ifHCOutUcastPkts"
-        },
-        {
-          "name": "ipv6/state/counters/in-multicast-octets",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv6/state/counters/in-multicast-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv6/state/counters/in-octets",
-          "type": "uint64",
-          "gen": "counter:120000"
-        },
-        {
-          "name": "ipv6/state/counters/in-pkts",
-          "type": "uint64",
-          "gen": "counter:150"
-        },
-        {
-          "name": "ipv6/state/counters/out-multicast-octets",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv6/state/counters/out-multicast-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "ipv6/state/counters/out-octets",
-          "type": "uint64",
-          "gen": "counter:95000"
-        },
-        {
-          "name": "ipv6/state/counters/out-pkts",
-          "type": "uint64",
-          "gen": "counter:120"
         }
       ]
     },

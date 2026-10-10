@@ -44,7 +44,7 @@ var fixtureSubscriptions = map[string]string{
 	"component-temp-hardware": "/components/component/state/temperature",
 	"transceiver-hardware":    "/components/component/transceiver/state/",
 	"wavelength-hardware":     "/components/component/properties/property[name=wavelength]/state/",
-	"subif-hardware":          "/interfaces/interface/subinterfaces/subinterface/state",
+	"subif-hardware":          "/interfaces/interface/subinterfaces/subinterface/state/counters",
 	"bgp-neighbor-hardware":   "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/",
 	"bgp-peer-group-hardware": "/network-instances/network-instance/protocols/protocol/bgp/peer-groups/peer-group/",
 	"component-props":         "/components/component/properties/property/state",
@@ -60,6 +60,10 @@ var fixtureSubscriptions = map[string]string{
 // subscribed with an empty origin, as collectors often do.
 var fixtureAliasRendered = map[string]string{
 	"native-packet-usage": "/components/component/properties/property/state/value",
+	// The subinterface counters path is a subtree alias (nl6#773): a
+	// subscription to the sensor path renders the whole subinterface,
+	// as Junos does, so the expected set is the entry's full leaf set.
+	"subif-hardware": "/interfaces/interface/subinterfaces/subinterface",
 }
 
 var keyValueRe = regexp.MustCompile(`\[([a-z-]+)=[^\]]*\]`)
@@ -882,7 +886,9 @@ func TestMX10004SubinterfaceFamilyCounters(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newCatalogResolver(newTestGnmiDevice(t, 2), cats["juniper_mx10004"])
-	p := pathFromString(t, "/interfaces/interface/subinterfaces/subinterface")
+	// The issue's acceptance path: a subscription to the counters
+	// container renders the whole subinterface through the subtree alias.
+	p := pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state/counters")
 	now := time.Now()
 	first, err := r.Resolve(p, now)
 	if err != nil || len(first) != 2 {
