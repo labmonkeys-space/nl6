@@ -34,13 +34,19 @@ type bindings struct {
 }
 
 type bindingSubtree struct {
-	Path    string            `json:"path"`
-	Origin  string            `json:"origin"`
-	Aliases []string          `json:"aliases"`
-	Keys    json.RawMessage   `json:"keys"`
-	Module  string            `json:"module"`
-	Leaves  map[string]string `json:"leaves"`
-	Types   map[string]string `json:"types"`
+	Path    string          `json:"path"`
+	Origin  string          `json:"origin"`
+	Aliases []string        `json:"aliases"`
+	Keys    json.RawMessage `json:"keys"`
+	Module  string          `json:"module"`
+	// YangPath is where the leaves live in the model when the rendered
+	// prefix differs from the YANG tree (Junos renders the fabric
+	// sensor under junos/fabric-statistics while junos-fabric.yang
+	// places it under junos/system/linecard/fabric, nl6#767). Empty
+	// means `path`. It never reaches the emitted catalogue.
+	YangPath string            `json:"yang_path"`
+	Leaves   map[string]string `json:"leaves"`
+	Types    map[string]string `json:"types"`
 	// Filters narrows a leaf to the components matching the value
 	// (the `components` key-source vocabulary); copied to the emitted
 	// leaf's `filter`. A per-component leaf belongs in the entry's one
@@ -125,7 +131,11 @@ func run(args []string) error {
 	if *importDirs != "" {
 		imports = strings.Split(*importDirs, ",")
 	}
-	ms, err := loadModules(strings.Split(*yangDirs, ","), imports)
+	var named []string
+	for _, st := range b.Subtrees {
+		named = append(named, st.Module)
+	}
+	ms, err := loadModules(strings.Split(*yangDirs, ","), imports, named)
 	if err != nil {
 		return err
 	}
@@ -151,8 +161,12 @@ func run(args []string) error {
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		modelPath := st.Path
+		if st.YangPath != "" {
+			modelPath = st.YangPath
+		}
 		for _, name := range names {
-			e, err := lookup(root, st.Path, name)
+			e, err := lookup(root, modelPath, name)
 			if err != nil {
 				return fmt.Errorf("subtree %s leaf %s: %w", st.Path, name, err)
 			}
@@ -245,8 +259,10 @@ func isKnownUnbuildableDeviation(err error) bool {
 
 // loadModules reads every .yang file under dirs and processes them.
 // importDirs are only added to the search path, so a module there is
-// loaded when something imports it.
-func loadModules(dirs, importDirs []string) (*yang.Modules, error) {
+// loaded when something imports it, or when a binding subtree names
+// it in `named` (the Junos native sensor models under -path, nl6#767;
+// walking that directory would read every JTI model for two).
+func loadModules(dirs, importDirs, named []string) (*yang.Modules, error) {
 	ms := yang.NewModules()
 	for _, d := range importDirs {
 		ms.AddPath(strings.TrimSpace(d))
@@ -272,6 +288,14 @@ func loadModules(dirs, importDirs []string) (*yang.Modules, error) {
 	for _, f := range files {
 		if err := ms.Read(f); err != nil {
 			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+	}
+	for _, name := range named {
+		if ms.Modules[name] != nil {
+			continue
+		}
+		if err := ms.Read(name + ".yang"); err != nil {
+			return nil, fmt.Errorf("module %q named by a subtree: %w", name, err)
 		}
 	}
 	// Deviations are applied last, and a deviation whose target is
@@ -444,12 +468,26 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 	if n.OriginAliases == nil {
 		n.OriginAliases = map[string]string{}
 	}
+	// A module maps to the origin its subtrees share, so a native
+	// sensor model (junos-fabric under `juniper`, nl6#767) lands on
+	// native_origin; a module used under both origins maps to origin.
+	moduleOrigin := map[string]string{}
 	for _, st := range subtrees {
 		if st.Module == "" || st.Module == n.Origin || st.Module == n.NativeOrigin {
 			continue
 		}
-		if _, explicit := n.OriginAliases[st.Module]; !explicit {
-			n.OriginAliases[st.Module] = n.Origin
+		if o, seen := moduleOrigin[st.Module]; seen && o != st.Origin {
+			moduleOrigin[st.Module] = n.Origin
+			continue
+		}
+		moduleOrigin[st.Module] = st.Origin
+	}
+	for m, o := range moduleOrigin {
+		if o != n.Origin && o != n.NativeOrigin {
+			o = n.Origin
+		}
+		if _, explicit := n.OriginAliases[m]; !explicit {
+			n.OriginAliases[m] = o
 		}
 	}
 	if len(n.OriginAliases) == 0 {

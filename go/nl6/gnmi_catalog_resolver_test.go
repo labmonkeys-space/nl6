@@ -315,6 +315,37 @@ func TestCatalogResolver_AliasServesWholeSubtree(t *testing.T) {
 	}
 }
 
+// TestCatalogResolver_AliasSharedByTwoSubtrees: one sensor alias on
+// two same-path subtrees with disjoint keys resolves to both (the two
+// directions of the MX10004 fabric sensor, nl6#767).
+func TestCatalogResolver_AliasSharedByTwoSubtrees(t *testing.T) {
+	data := strings.Replace(string(twoSubtreeCatalog("testvendor", `[{"source": "static", "names": ["Chassis"]}]`, "testvendor", `[{"source": "static", "names": ["FPC0"]}]`)),
+		`"keys"`, `"aliases": ["/testvendor/parts/"], "keys"`, -1)
+	cat, err := parseGnmiCatalog([]byte(data), "shared-alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	for _, origin := range []string{"", "testvendor"} {
+		p := pathFromString(t, "/testvendor/parts")
+		p.Origin = origin
+		if len(r.aliasSubtrees(p)) != 2 || !r.Match(p) {
+			t.Fatalf("origin %q: alias resolves to %d subtrees, want 2", origin, len(r.aliasSubtrees(p)))
+		}
+		got, err := r.Resolve(p, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		prefixes := map[string]bool{}
+		for _, n := range got {
+			prefixes[pathToString(n.Prefix)] = true
+		}
+		if len(got) != 2 || !prefixes["/components/component[name=Chassis]"] || !prefixes["/components/component[name=FPC0]"] {
+			t.Fatalf("origin %q: got prefixes %v", origin, prefixes)
+		}
+	}
+}
+
 // TestCatalogResolver_LeafFilter: a filtered leaf rides inside the
 // matching components' notifications and is absent from the rest, so
 // one subtree serves every component with one notification each.

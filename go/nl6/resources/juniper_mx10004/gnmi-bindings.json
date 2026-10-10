@@ -479,6 +479,79 @@
         "properties/property[name=hwds-stack-underflow]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-info-cell]/state/value": {"type": "uint64", "gen": "const:0"},
         "properties/property[name=hwds-extended]/state/value": {"type": "uint64", "gen": "const:0"}
       }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["high", "low"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
+        {"source": "static", "names": ["high", "low"]}
+      ],
+      "leaves": {
+        "packets": "counter:11500", "bytes": "counter:9200000", "packets-per-second": "sine:11500,575,900", "bytes-per-second": "sine:9200000,460000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/power-record", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}],
+      "leaves": {"max-fpc-power": "const:1100", "fpc-power": "sine:780,40,900"}
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "components", "filter": "temperature", "parent": "FPC0"}],
+      "leaves": {"temp-sensor-name": "key:1", "temp-value": "sine:42,6,600"},
+      "always": ["temp-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-0V9"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:900,9,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V2"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1200,12,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V8"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1800,18,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-3V3"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:3300,33,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-12V"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:12000,120,600"},
+      "always": ["voltage-sensor-name"]
     }
   ]
 }

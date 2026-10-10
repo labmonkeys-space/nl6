@@ -59,6 +59,10 @@ var fixtureSubscriptions = map[string]string{
 	"sys-mem":                 "/system/memory/state",
 	"system":                  "/system/state",
 	"native-packet-usage":     "juniper:/junos/system/linecard/packet/usage/",
+	"native-fabric-hardware":  "Native:/junos/system/linecard/fabric/",
+	// A -yang fixture is read from the YANG model, not captured: it pins
+	// nl6's shape, not agreement with hardware (nl6#767).
+	"native-fpc-env-yang": "juniper:/junos/system/linecard/environment/",
 }
 
 // fixtureAliasRendered maps fixtures captured through a native sensor
@@ -70,6 +74,9 @@ var fixtureAliasRendered = map[string]string{
 	// subscription to the sensor path renders the whole subinterface,
 	// as Junos does, so the expected set is the entry's full leaf set.
 	"subif-hardware": "/interfaces/interface/subinterfaces/subinterface",
+	// The fabric sensor renders under a path that is neither the
+	// subscription path nor the YANG tree (nl6#767).
+	"native-fabric-hardware": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
 }
 
 var keyValueRe = regexp.MustCompile(`\[([a-z-]+)=[^\]]*\]`)
@@ -506,7 +513,7 @@ func TestMX10004TemperatureOnlyOnSensorComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{}
-	for _, c := range cats["juniper_mx10004"].components("temperature") {
+	for _, c := range cats["juniper_mx10004"].components("temperature", "") {
 		want[c.Name] = true
 	}
 	var raw struct {

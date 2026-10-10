@@ -62,11 +62,15 @@ func pathFromString(t *testing.T, s string) *gnmipb.Path {
 		elem := &gnmipb.PathElem{}
 		if i := strings.IndexByte(part, '['); i >= 0 {
 			elem.Name = part[:i]
-			rest := part[i+1:]
-			rest = strings.TrimSuffix(rest, "]")
-			eq := strings.IndexByte(rest, '=')
-			if eq > 0 {
-				elem.Key = map[string]string{rest[:eq]: rest[eq+1:]}
+			// One [k=v] per bracket pair; the MX10004 fabric prefix carries
+			// six on one element (nl6#767).
+			for _, kv := range strings.Split(strings.TrimSuffix(part[i+1:], "]"), "][") {
+				if eq := strings.IndexByte(kv, '='); eq > 0 {
+					if elem.Key == nil {
+						elem.Key = map[string]string{}
+					}
+					elem.Key[kv[:eq]] = kv[eq+1:]
+				}
 			}
 		} else {
 			elem.Name = part

@@ -149,30 +149,35 @@ func elemsEqual(a, b []*gnmipb.PathElem) bool {
 	return true
 }
 
-// aliasSubtree returns the subtree one of whose aliases equals p, or
-// nil. The request origin must be empty or the subtree's origin.
-func (r *catalogResolver) aliasSubtree(p *gnmipb.Path) *gnmiCatalogSubtree {
+// aliasSubtrees returns every subtree one of whose aliases equals p,
+// or nil. One sensor alias may be carried by several subtrees (the
+// two directions of the MX10004 fabric sensor, nl6#767); the loader
+// requires them to share an origin. The request origin must be empty
+// or that origin.
+func (r *catalogResolver) aliasSubtrees(p *gnmipb.Path) []*gnmiCatalogSubtree {
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if p.GetOrigin() != "" && !ok {
 		return nil
 	}
+	var out []*gnmiCatalogSubtree
 	for _, st := range r.cat.Subtrees {
 		if p.GetOrigin() != "" && origin != st.Origin {
 			continue
 		}
 		for _, a := range st.aliases {
 			if elemsEqual(p.GetElem(), a) {
-				return st
+				out = append(out, st)
+				break
 			}
 		}
 	}
-	return nil
+	return out
 }
 
 // Match is the shape-only check Get and Subscribe use to decide
 // whether the catalogue owns a path.
 func (r *catalogResolver) Match(p *gnmipb.Path) bool {
-	if r.aliasSubtree(p) != nil {
+	if len(r.aliasSubtrees(p)) > 0 {
 		return true
 	}
 	origin, ok := r.originAccepted(p.GetOrigin())
@@ -272,8 +277,8 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 // touches, with leaves narrowed to the request. A request for a
 // subtree alias returns that whole subtree.
 func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotification, error) {
-	if st := r.aliasSubtree(p); st != nil {
-		return r.resolveSubtrees(p, st.Origin, nil, []*gnmiCatalogSubtree{st}, now)
+	if sts := r.aliasSubtrees(p); len(sts) > 0 {
+		return r.resolveSubtrees(p, sts[0].Origin, nil, sts, now)
 	}
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if !ok {

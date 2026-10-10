@@ -1,0 +1,67 @@
+{
+  "comment": "Shape of a gnmic ONCE subscription to Native:/junos/system/linecard/fabric/ against MX10004 hardware (PROTO), transcribed from the capture summary in nl6#767: values and key values removed, prefix and leaf names kept, keys wildcarded. The capture also carried a keyless class-stats/transmit-counts variant (8 of 120 notifications) that nl6 does not model. Edge count follows nl6's inventory (four FPC0 PFEs against six SFBs, both directions, two classes), not the capture's chassis.",
+  "subtree": "native-fabric-hardware",
+  "prefixes": [
+    "juniper:/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts"
+  ],
+  "notifications": 96,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/bytes",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/bytes-per-second",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/drop-bytes",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/drop-bytes-per-second",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/drop-packets",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/drop-packets-per-second",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/error-packets",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/error-packets-per-second",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/packets",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/packets-per-second",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/queue-depth-average",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/queue-depth-current",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/queue-depth-maximum",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts/queue-depth-peak",
+      "kind": "uint"
+    }
+  ]
+}

@@ -53,7 +53,7 @@ func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time)
 		return nil, err
 	}
 	subscribed := pathToString(sub.GetPath())
-	alias := c.resolver.aliasSubtree(sub.GetPath()) != nil
+	alias := len(c.resolver.aliasSubtrees(sub.GetPath())) > 0
 	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
 	for _, n := range notifs {
 		streamed := subscribed

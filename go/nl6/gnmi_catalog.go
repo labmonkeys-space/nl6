@@ -108,6 +108,11 @@ type gnmiCatalogKey struct {
 	Source string   `json:"source"`
 	Filter string   `json:"filter,omitempty"`
 	Names  []string `json:"names,omitempty"`
+	// Parent scopes a `components` source to the children of one
+	// inventory component (the FPC0 sensors behind the Junos
+	// environment sensor, nl6#767), so a subtree keys on the inventory
+	// instead of a hand copy of its names. Narrowed further by Filter.
+	Parent string `json:"parent,omitempty"`
 }
 
 // gnmiCatalogSubtree is one list entry: `path` is the entry path that
@@ -253,6 +258,7 @@ func (c *gnmiCatalog) validate(source string) error {
 		}
 		names[comp.Name] = true
 	}
+	aliasOrigin := map[string]string{} // alias path -> origin of the subtrees listing it
 	for i, st := range c.Subtrees {
 		if st.Origin == "" {
 			return fail("subtree %d (%s): origin is required", i, st.Path)
@@ -271,6 +277,13 @@ func (c *gnmiCatalog) validate(source string) error {
 			if err != nil {
 				return fail("subtree %d (%s): alias %q: %v", i, st.Path, a, err)
 			}
+			// Keyed on the parsed form: aliases match by elements, so
+			// "/x/y/" and "/x/y" are one alias.
+			canon := pathToString(&gnmipb.Path{Elem: ae})
+			if o, seen := aliasOrigin[canon]; seen && o != st.Origin {
+				return fail("subtree %d (%s): alias %q is also listed by a %q subtree; one alias resolves to every subtree carrying it and they must share an origin", i, st.Path, a, o)
+			}
+			aliasOrigin[canon] = st.Origin
 			for _, e := range ae {
 				for _, v := range e.Key {
 					if v == "*" {
@@ -307,6 +320,14 @@ func (c *gnmiCatalog) validate(source string) error {
 			case gnmiKeySourceComponents:
 				if st.componentKey < 0 {
 					st.componentKey = j
+				}
+				if k.Parent != "" {
+					if _, ok := c.componentByName[k.Parent]; !ok {
+						return fail("subtree %d key %d: parent %q names no component", i, j, k.Parent)
+					}
+					if len(c.components(k.Filter, k.Parent)) == 0 {
+						return fail("subtree %d key %d: parent %q with filter %q selects no component", i, j, k.Parent, k.Filter)
+					}
 				}
 			case gnmiKeySourceNeighbors:
 				if st.neighborKey < 0 {
@@ -370,11 +391,12 @@ func (c *gnmiCatalog) validate(source string) error {
 				// expands to: a filter the key can never satisfy would load
 				// as a leaf nothing serves while AllLeafPaths still lists it.
 				keyed := map[string]bool{}
-				for _, comp := range c.components(st.Keys[st.componentKey].Filter) {
+				ck := st.Keys[st.componentKey]
+				for _, comp := range c.components(ck.Filter, ck.Parent) {
 					keyed[comp.Name] = true
 				}
 				leaf.filterNames = map[string]bool{}
-				for _, comp := range c.components(leaf.Filter) {
+				for _, comp := range c.components(leaf.Filter, "") {
 					if keyed[comp.Name] {
 						leaf.filterNames[comp.Name] = true
 					}
@@ -399,7 +421,7 @@ func (c *gnmiCatalog) validate(source string) error {
 func (c *gnmiCatalog) keyValues(k gnmiCatalogKey) (vals []string, ok bool) {
 	switch k.Source {
 	case gnmiKeySourceComponents:
-		for _, comp := range c.components(k.Filter) {
+		for _, comp := range c.components(k.Filter, k.Parent) {
 			vals = append(vals, comp.Name)
 		}
 	case gnmiKeySourceNeighbors:
@@ -508,14 +530,20 @@ func (c *gnmiCatalog) acceptsEncoding(enc gnmipb.Encoding) bool {
 }
 
 // components returns the component list filtered by `filter`: "" for
-// all, "temperature" for sensors, or a component type such as "FAN".
-func (c *gnmiCatalog) components(filter string) []gnmiCatalogComponent {
-	if filter == "" {
+// all, "temperature" for sensors, or a component type such as "FAN";
+// a non-empty `parent` keeps only that component's children. The
+// resolver, the leaf-filter check and the same-path guard all
+// enumerate through here, so load and serve cannot disagree.
+func (c *gnmiCatalog) components(filter, parent string) []gnmiCatalogComponent {
+	if filter == "" && parent == "" {
 		return c.Components
 	}
 	var out []gnmiCatalogComponent
 	for _, comp := range c.Components {
-		if (filter == "temperature" && comp.Temperature) || comp.Type == filter {
+		if parent != "" && comp.Parent != parent {
+			continue
+		}
+		if filter == "" || (filter == "temperature" && comp.Temperature) || comp.Type == filter {
 			out = append(out, comp)
 		}
 	}
