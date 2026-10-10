@@ -116,11 +116,60 @@ Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a 
 **`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything.
 The interface surface is state-only, so it is unaffected.
 
+## Catalogue-driven paths
+
+Device types that ship `resources/<type>/gnmi.json` serve the subtrees that file lists, in addition to the interface and optical paths above.
+The first such type is `juniper_mx10004`; see [Device types](device-types.md).
+A catalogue is parsed once per type and shared by every device of that type.
+A device adds about 460 bytes.
+
+### File format
+
+| Key | Meaning |
+|---|---|
+| `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
+| `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
+| `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
+| `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
+| `models` | `ModelData` entries Capabilities advertises |
+| `components`, `neighbors` | chassis inventory and BGP peers, the key sources for component and neighbour subtrees |
+| `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
+| `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
+| `subtrees[].leaves` | relative path, YANG type, optional enum, and a generator binding |
+
+### Generator bindings
+
+| Binding | Value |
+|---|---|
+| `ifcounter:<IF-MIB column>` | the same counter SNMP serves, e.g. `ifHCInOctets` |
+| `ifstate:name\|ifindex\|oper\|admin\|last-change` | interface state engine |
+| `sine:base,amplitude,period_s` | deterministic wave seeded by device IP and entry key |
+| `counter:rate_per_s` | monotonic counter with seeded jitter |
+| `inventory:<field>` / `neighbor:<field>` | from `components` / `neighbors` |
+| `const:<literal>` / `key:<n>` / `timestamp:now\|boot` | literal, the n-th key value, nanosecond timestamps |
+
+### Overrides
+
+`-gnmi-catalog <file>` replaces every type's catalogue with one file.
+A `gnmi.json` in a resource directory replaces that type's embedded catalogue, including for types that ship none.
+Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout and `gnmi-bindings.json`.
+The generator's `-path` flag adds directories that are searched only to resolve imports, and the Makefile passes `native/jti/models` because Juniper's augments and deviations import `junos-*` modules.
+A test fails when the committed file drifts.
+
+### Junos shape
+
+The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
+It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
+It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
+Native sensors sit under the `juniper` origin.
+The header extension carries the hostname and sensor name.
+ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
+
 ## Subscribe semantics
 
 | RPC | Status |
 |---|---|
-| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces`, plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types |
+| `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces`, plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types; catalogue types add their own models and encodings |
 | `Get` | implemented for any supported path |
 | `Subscribe` (STREAM/SAMPLE) | implemented |
 | `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths; rejected for counter paths |

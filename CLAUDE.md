@@ -39,6 +39,7 @@ sudo ./nl6 [flags]
 -if-flap-global-cap <r> # [global] Simulator-wide tps ceiling on flap events (0 = unlimited)
 -gnmi-port <port>       # TCP port for gNMI listener on each device (default: 9339)
 -gnmi-disable           # Disable the gNMI subsystem; no device listens on the gNMI port (default: false, subsystem on)
+-gnmi-catalog <path>    # [global] JSON gNMI path catalogue; replaces every type's embedded resources/<type>/gnmi.json. Catalogues are GENERATED (make gen-gnmi-catalog); a drift test fails on hand edits.
 
 # gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the auto-start batch;
 # REST-created devices opt in via a per-device `gnmi_dialout` block. Dial-out is per-device
@@ -141,7 +142,7 @@ go test ./nl6/ -run TestSomething
 | Path | Purpose |
 |------|---------|
 | `go/nl6/` | Core simulator — all device simulation logic and tests |
-| `go/nl6/resources/` | 389 JSON files (29 device types) with SNMP/SSH/REST response data |
+| `go/nl6/resources/` | 406 JSON files (30 device types) with SNMP/SSH/REST response data |
 
 ### Core simulator components (`go/nl6/`)
 
@@ -166,6 +167,7 @@ go test ./nl6/ -run TestSomething
 | Continuous profiling | `context/profiling.md` |
 | Scenario drain barrier | `context/scenario-drain-barrier.md` |
 | Profile reload | `context/resource-reload.md` |
+| gNMI vendor profiles, public sources, vJunos capture record | `context/gnmi-vendor-sources.md` |
 
 **SNMP response size (nl6#489).** `maxSNMPResponseSize` is a FRAME bound derived from `linkMTU` and refreshed by `recomputeDatagramBudgets`, so it tracks `-datagram-mtu`; udp4 only. **GETBULK truncates** (RFC 3416 §4.2.3: a walk resumes from the last OID returned) but **GET and GETNEXT return `tooBig` with an empty binding list** (§4.2.1: the requester has no resume point, so a partial answer is an undetectable wrong answer). All three PDU types share `createVarbindResponse` deliberately, so the rule is an explicit `snmpOverflowRule` argument rather than something the encoder infers. Getting it backwards is the most damaging mistake available here. Sizing is exact and incremental via `snmpMessageSizeFor`, never estimated: every bug in this family was a predicted size disagreeing with an emitted one. SNMPv3 GETBULK is bounded by MEASUREMENT rather than arithmetic (its envelope is not fixed), bisecting to the largest prefix that fits. The GETBULK **walk** is separately clamped by `minVarbindSize`, a CPU guard rather than a correctness one (a walk step is expensive: ~29 req/s already saturates cores on the LLDP path), and it is deliberately an under-estimate so it never under-fills.
 
@@ -467,7 +469,7 @@ In every branch the result is run through `sanitiseHostname`: spaces become hyph
 
 ### Device types
 
-29 device types across 9 categories: Core Routers, Edge Routers, Data Center Switches, Campus Switches, Firewalls, Servers, GPU Servers (NVIDIA DGX-A100/H100/HGX-H200), Storage Systems (AWS S3, Pure Storage, NetApp ONTAP, Dell EMC Unity), Optical Transport (Ciena Waveserver 5).
+30 device types across 9 categories: Core Routers, Edge Routers, Data Center Switches, Campus Switches, Firewalls, Servers, GPU Servers (NVIDIA DGX-A100/H100/HGX-H200), Storage Systems (AWS S3, Pure Storage, NetApp ONTAP, Dell EMC Unity), Optical Transport (Ciena Waveserver 5).
 
 **Optical value engine (`optical_cycler.go`):** `OpticalCycler.GetDynamicAt(component, leaf, t)` is the single dispatcher for every coherent-optical leaf, keyed by **OCH component name** (never `ifIndex`). Same contract as `IfCounterCycler`: pure function of elapsed time, no per-channel goroutine, immutable after publish, single-init panic guard, per-channel jitter over a **sorted** channel slice (seed salt `^0x4F43_0000`). **Two independent dials** — received power `pIn` and accumulated noise `nAse`, with `osnr = pIn − nAse` in dB — because a single power dial makes OSNR perfectly correlated with power and leaves the *attenuation* (low power / normal OSNR) and *ASE* (normal power / low OSNR) quadrants unreachable. Cascade: `osnr → q-value → pre-fec-ber` (`½·erfc`, monotonic — the erfc tail is **shallow** at the 2e-2 SD-FEC threshold, ~3× per 2 dB, so decade-scale assertions there are wrong physics) `→ fec-uncorrectable-blocks`. Off-spine leaves (`output-power`, `target-output-power`, `laser-bias-current`, `chromatic-dispersion`, `polarization-mode-dispersion`, `polarization-dependent-loss`, `frequency`, `operational-mode`, `line-port`) read none of the receive dials — that flatness *is* the fibre-vs-transponder diagnostic. Both dials share a period so their difference collapses exactly to one sinusoid, making the above-threshold integral behind the block counter closed-form, O(1) and monotonic by construction. Types come from the **pinned OpenConfig revision** (terminal-device 2026-01-14 + platform-transceiver 2026-03-25), which governs over Ciena's native model: statistics leaves at `fraction-digits 2`, `pre-fec-ber` at `fraction-digits 18`, `fec-uncorrectable-blocks` a bare `uint64` counter with **no** stats container. **`post-fec-ber` is not served** — OpenConfig defines it but Ciena removed it, so a collector rule keyed on it would never fire against real hardware. `-optical-scenario` / per-device `optical_scenario` selects the health band via `opticalBandFor`; only `failing` crosses the FEC threshold. **Band boundaries are sized against the jitter envelope, not the nominal point:** each dial mean is jittered ±`opticalMeanJitterDB`, so the OSNR mean — their *difference* — spreads over ±2× that, stacked on top of the OSNR sine amplitude (≤ `1.1×(pInAmp+nAseAmp)` in antiphase). The tier contracts (`degraded` never accrues uncorrectable blocks, `failing` always does) must hold for every channel of every seed, so changing any mean, amplitude, or the jitter constant invalidates the arithmetic documented at `opticalBandFor` — `TestOpticalBandContractsHoldAcrossSeeds` sweeps seeds because a single-seed test passes while a fleet-sized share of channels violates the contract. **Capability symmetry with flow:** a non-clean `optical_scenario` on a type with no OCH inventory is rejected **400** (`opticalIncapableRequest`, the inverse mirror of `flowIncapableRequest`), and `opticalScenarioFieldFor` omits the field from `GET /api/v1/devices` for non-optical types rather than reporting a knob that does nothing.
 

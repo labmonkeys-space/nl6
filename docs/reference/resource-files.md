@@ -3,7 +3,7 @@
 A device type ships as a directory under `go/nl6/resources/<slug>/` holding one or more JSON files, or as a legacy single file `go/nl6/resources/<slug>.json`.
 The directory wins when both exist.
 `resources.go` loads and caches a device type the first time a device of that type is created (the startup default, `asr9k`, at startup), merging the `snmp`, `ssh`, and (optionally) `api` sections of every `*.json` file in its directory.
-There are currently 391 JSON files across 29 device-type directories, plus 3 shared catalogs under `_common/`.
+There are currently 408 JSON files across 30 device-type directories, plus 3 shared catalogs under `_common/`.
 
 **Editing a profile on a running simulator.** A cached profile is not re-read on its own.
 `POST /api/v1/resources/reload` evicts the cache so the next device creation reads the file as it is now; devices already created keep the set they were built from until they are recreated.

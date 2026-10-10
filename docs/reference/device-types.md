@@ -16,6 +16,11 @@ See [Resource files](resource-files.md) for the JSON format.
 | Juniper MX960 | 80 | Service provider edge router |
 | Juniper MX10004 | 48 | Modular edge router with gNMI catalogue (OpenConfig platform, system, BGP, Junos native sensors) |
 
+The Juniper MX10004 also serves a gNMI catalogue: interface state and counters with Junos per-queue counters, subinterfaces, platform components with temperature and properties, CPU, system CPU and memory, system state, BGP neighbours, and the native packet-usage sensor under the `juniper` origin.
+The Junos fabric and FPC environment sensors are not served, because no public sample of them exists for a virtual PFE.
+The MX10004 is not in the round-robin list.
+Request it by name.
+
 ## Edge routers
 
 | Device | Ports | Description |
