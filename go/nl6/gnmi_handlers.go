@@ -554,7 +554,7 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			// encodings serve one reading at one instant.
 			if x.decimalVal {
 				scale := math.Pow10(x.digits)
-				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: int64(math.RoundToEven(x.val * scale)), Precision: uint32(x.digits)}}}, nil
+				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: int64(math.RoundToEven(x.val * scale)), Precision: uint32(x.digits)}}}, nil //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
 			}
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
 		default:

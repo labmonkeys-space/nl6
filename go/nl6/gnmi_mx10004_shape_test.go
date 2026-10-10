@@ -663,7 +663,7 @@ func TestMX10004ComponentInventory(t *testing.T) {
 		}
 	}
 	for _, leaf := range []string{"instant", "avg", "min", "max"} {
-		d := sensor["/state/temperature/"+leaf].GetDecimalVal()
+		d := sensor["/state/temperature/"+leaf].GetDecimalVal() //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
 		if d == nil || d.GetPrecision() != 1 {
 			t.Errorf("temperature/%s = %v, want Decimal64 precision 1", leaf, sensor["/state/temperature/"+leaf])
 		}
