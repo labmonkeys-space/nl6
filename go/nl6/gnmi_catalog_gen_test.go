@@ -143,6 +143,20 @@ func TestCastGnmiLeaf(t *testing.T) {
 			t.Errorf("cast(%v,%s) = %v,%v want %v", c.in, c.typ, got, err, c.want)
 		}
 	}
+	for _, c := range []struct {
+		in  any
+		typ string
+	}{
+		{"4294967296", "uint32"}, {float64(4294967296), "uint32"}, {"65536", "uint16"}, {"256", "uint8"},
+		{float64(2147483648), "int32"}, {float64(-32769), "int16"}, {float64(128), "int8"},
+	} {
+		if _, err := castGnmiLeaf(c.in, c.typ); err == nil {
+			t.Errorf("cast(%v,%s) accepted an out-of-range value", c.in, c.typ)
+		}
+	}
+	if got, err := castGnmiLeaf("4294967295", "uint32"); err != nil || got != uint32(4294967295) {
+		t.Errorf("cast(max,uint32) = %v,%v", got, err)
+	}
 	if _, err := castGnmiLeaf("abc", "uint64"); err == nil || !strings.Contains(err.Error(), "uint64") {
 		t.Errorf("bad uint accepted: %v", err)
 	}

@@ -360,30 +360,27 @@ func castGnmiLeaf(v any, yangType string) (any, error) {
 	}
 	switch yangType {
 	case "uint64", "uint32", "uint16", "uint8", "counter64", "counter32":
-		if s, ok := v.(string); ok {
-			u, err := strconv.ParseUint(s, 10, 64)
+		var u uint64
+		if str, ok := v.(string); ok {
+			parsed, err := strconv.ParseUint(str, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("%q is not a uint64", s)
+				return nil, fmt.Errorf("%q is not a uint64", str)
 			}
-			if yangType == "uint32" || yangType == "uint16" || yangType == "uint8" || yangType == "counter32" {
-				return uint32(u), nil
+			u = parsed
+		} else {
+			f, ok := toF()
+			if !ok || f < 0 || f > math.MaxUint64 {
+				return nil, fmt.Errorf("%v (%T) is not a %s", v, v, yangType)
 			}
-			return u, nil
+			u = uint64(f)
 		}
-		f, ok := toF()
-		if !ok || f < 0 {
-			return nil, fmt.Errorf("%v (%T) is not a %s", v, v, yangType)
-		}
-		if yangType == "uint32" || yangType == "uint16" || yangType == "uint8" || yangType == "counter32" {
-			return uint32(f), nil
-		}
-		return uint64(f), nil
+		return narrowUint(u, yangType)
 	case "int64", "int32", "int16", "int8":
 		f, ok := toF()
-		if !ok {
+		if !ok || f < math.MinInt64 || f > math.MaxInt64 {
 			return nil, fmt.Errorf("%v (%T) is not an %s", v, v, yangType)
 		}
-		return int64(f), nil
+		return narrowInt(int64(f), yangType)
 	case "decimal64":
 		f, ok := toF()
 		if !ok {
@@ -416,4 +413,41 @@ func castGnmiLeaf(v any, yangType string) (any, error) {
 		return nil, fmt.Errorf("%v (%T) is not a string", v, v)
 	}
 	return nil, fmt.Errorf("unknown YANG type %q", yangType)
+}
+
+// uintBounds and intBounds are the upper (and lower) bounds the narrower
+// YANG integer types admit. The encoder carries uint32 for every narrow
+// unsigned type and int64 for every signed type, so narrowing happens here
+// with an explicit range check instead of a silent wrap.
+var uintBounds = map[string]uint64{
+	"uint32": math.MaxUint32, "counter32": math.MaxUint32,
+	"uint16": math.MaxUint16, "uint8": math.MaxUint8,
+}
+
+var intBounds = map[string][2]int64{
+	"int32": {math.MinInt32, math.MaxInt32},
+	"int16": {math.MinInt16, math.MaxInt16},
+	"int8":  {math.MinInt8, math.MaxInt8},
+}
+
+func narrowUint(u uint64, yangType string) (any, error) {
+	max, narrow := uintBounds[yangType]
+	if !narrow {
+		return u, nil
+	}
+	if u > max {
+		return nil, fmt.Errorf("%d exceeds %s", u, yangType)
+	}
+	return uint32(u), nil // #nosec G115 -- bounded by the check above
+}
+
+func narrowInt(i int64, yangType string) (any, error) {
+	b, narrow := intBounds[yangType]
+	if !narrow {
+		return i, nil
+	}
+	if i < b[0] || i > b[1] {
+		return nil, fmt.Errorf("%d is outside %s", i, yangType)
+	}
+	return i, nil
 }
