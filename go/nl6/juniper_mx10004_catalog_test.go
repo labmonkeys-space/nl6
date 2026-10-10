@@ -376,7 +376,7 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 		case "FAN":
 			return !strings.Contains(c.Name, " Fan ")
 		case "PORT":
-			return !strings.Contains(c.Name, ":PORT")
+			return false // per-port components; the PICs are LINECARD sub-cards and are printed
 		}
 		return true
 	}

@@ -188,7 +188,7 @@
     },
     {
       "name": "FPC0:PIC0",
-      "type": "PORT",
+      "type": "LINECARD",
       "parent": "FPC0:MIC0",
       "part_no": "JNP10K-LC480-PIC",
       "description": "24xSFPP 1/10GE PIC",
@@ -197,7 +197,7 @@
     },
     {
       "name": "FPC0:PIC1",
-      "type": "PORT",
+      "type": "LINECARD",
       "parent": "FPC0:MIC0",
       "part_no": "JNP10K-LC480-PIC",
       "description": "24xSFPP 1/10GE PIC",
@@ -2963,6 +2963,151 @@
           "name": "state/type",
           "type": "string",
           "gen": "inventory:type"
+        },
+        {
+          "name": "transceiver/state/connector-type",
+          "type": "string",
+          "gen": "const:LC_CONNECTOR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/date-code",
+          "type": "string",
+          "gen": "const:2025-01-15T00:00:00Z",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/ethernet-pmd",
+          "type": "string",
+          "gen": "const:ETH_10GBASE_SR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/ethernet-pmd-preconf",
+          "type": "string",
+          "gen": "const:ETH_10GBASE_SR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/form-factor",
+          "type": "string",
+          "gen": "const:SFP_PLUS",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/form-factor-preconf",
+          "type": "string",
+          "gen": "const:SFP_PLUS",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/otn-compliance-code",
+          "type": "string",
+          "gen": "const:OTN_UNDEFINED",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/present",
+          "type": "enumeration",
+          "enum": [
+            "PRESENT",
+            "NOT_PRESENT"
+          ],
+          "gen": "const:PRESENT",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/serial-no",
+          "type": "string",
+          "gen": "inventory:serial_no_per_device",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/sonet-sdh-compliance-code",
+          "type": "string",
+          "gen": "const:SONET_UNDEFINED",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor",
+          "type": "string",
+          "gen": "const:JUNIPER",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor-part",
+          "type": "string",
+          "gen": "inventory:part_no",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor-rev",
+          "type": "string",
+          "gen": "const:01",
+          "filter": "TRANSCEIVER"
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/transceiver",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "components",
+          "filter": "TRANSCEIVER"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/input-power/instant",
+          "type": "decimal64",
+          "gen": "sine:-2.4,0.3,600",
+          "digits": 2
+        },
+        {
+          "name": "state/laser-bias-current/instant",
+          "type": "decimal64",
+          "gen": "sine:6.5,0.4,600",
+          "digits": 2
+        },
+        {
+          "name": "state/output-power/instant",
+          "type": "decimal64",
+          "gen": "sine:-1.1,0.2,600",
+          "digits": 2
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "components",
+          "filter": "PORT"
+        },
+        {
+          "source": "static",
+          "names": [
+            "wavelength"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/configurable",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/value",
+          "type": "string",
+          "gen": "const:850"
         }
       ]
     },
