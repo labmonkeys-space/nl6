@@ -706,8 +706,8 @@ func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 	}
 }
 
-// TestMX10004ComponentInventory pins nl6#772: the hardware's component
-// cardinality and classes, and the full temperature record on a
+// TestMX10004ComponentInventory pins nl6#772 and nl6#789: the hardware's
+// component cardinality, classes and names, and the full temperature record on a
 // sensor, with temperature leaves as Decimal64 precision 1.
 func TestMX10004ComponentInventory(t *testing.T) {
 	addr, cleanup := startMX10004Server(t)
@@ -736,6 +736,47 @@ func TestMX10004ComponentInventory(t *testing.T) {
 			t.Errorf("component %s missing", class)
 		}
 	}
+	// nl6#789: the router's component names. Every FPC sensor outside
+	// the EA HMC family ends in _TEMP_SENSOR, there is no MIC, and each
+	// SFB has ZF0_INTERNAL_REMOTE_0 to _6.
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fpcSensors := 0
+	for _, c := range cats["juniper_mx10004"].Components {
+		if c.Type == "SENSOR" && strings.HasPrefix(c.Parent, "FPC") && !strings.Contains(c.Name, "_HMC") {
+			fpcSensors++
+			if !strings.HasSuffix(c.Name, "_TEMP_SENSOR") || strings.Contains(c.Name, "-") {
+				t.Errorf("FPC sensor %s; the router names them FPCn:<NAME>_TEMP_SENSOR", c.Name)
+			}
+		}
+	}
+	if fpcSensors < 12 {
+		t.Errorf("%d FPC sensors outside the HMC family, want at least 12", fpcSensors)
+	}
+	for _, s := range []string{"EXHAUST_A", "EXHAUST_B", "EXHAUST_C", "INTAKE_A", "INTAKE_B", "PEXSW", "PMB", "CPU"} {
+		if leaves["FPC0:"+s+"_TEMP_SENSOR"] == nil {
+			t.Errorf("FPC0:%s_TEMP_SENSOR missing", s)
+		}
+	}
+	remotes := map[string]int{}
+	for n := range leaves {
+		if strings.HasPrefix(n, "FPC") && strings.Contains(n, ":MIC") {
+			t.Errorf("MIC component %s served; the router reports none", n)
+		}
+		if sfb, rest, ok := strings.Cut(n, ":ZF0_INTERNAL_REMOTE_"); ok {
+			if i, err := strconv.Atoi(rest); err != nil || i < 0 || i > 6 {
+				t.Errorf("unexpected remote sensor %s", n)
+			}
+			remotes[sfb]++
+		}
+	}
+	for i := 0; i < 6; i++ {
+		if sfb := "SFB" + strconv.Itoa(i); remotes[sfb] != 7 {
+			t.Errorf("%s has %d ZF0_INTERNAL_REMOTE sensors, want 7", sfb, remotes[sfb])
+		}
+	}
 	sensor := leaves["SFB0:PCIE_SWITCH_TEMP"]
 	for _, leaf := range []string{"/state/firmware-version", "/state/temperature/alarm-status", "/state/temperature/alarm-threshold", "/state/temperature/interval", "/state/temperature/max-time", "/state/temperature/min-time"} {
 		if sensor[leaf] == nil {
@@ -750,6 +791,55 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	}
 	if fan := leaves["Fan Tray 0 Fan 0"]; fan["/state/temperature/instant"] != nil {
 		t.Errorf("a fan carries a temperature it has no sensor for")
+	}
+}
+
+// TestMX10004OverTemperatureCarriers pins nl6#789: over-temperature
+// rides every PIC, Routing Engine and SFB and nothing else. The
+// expected set is derived from the inventory, so the static key list in
+// the bindings cannot drift from it unnoticed.
+func TestMX10004OverTemperatureCarriers(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{}
+	for _, c := range cats["juniper_mx10004"].Components {
+		isPIC := strings.HasPrefix(c.Name, "FPC") && strings.Count(c.Name, ":") == 1 && strings.Contains(c.Name, ":PIC")
+		if isPIC || strings.HasPrefix(c.Name, "Routing Engine") || c.Type == "FABRIC" {
+			want[c.Name] = true
+		}
+	}
+	if len(want) < 9 {
+		t.Fatalf("inventory yields %d carriers, want at least 9 (2 PICs, 1 Routing Engine, 6 SFBs)", len(want))
+	}
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/properties/property[name=over-temperature]/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		e := n.GetPrefix().GetElem()
+		if len(e) != 4 || e[3].GetKey()["name"] != "over-temperature" {
+			t.Fatalf("unexpected prefix %s", pathToString(n.GetPrefix()))
+		}
+		got[e[1].GetKey()["name"]]++
+	}
+	for c := range want {
+		if got[c] != 1 {
+			t.Errorf("%s: %d over-temperature notifications, want 1", c, got[c])
+		}
+	}
+	for c := range got {
+		if !want[c] {
+			t.Errorf("%s carries over-temperature; the router sends it only on PICs, Routing Engines and SFBs", c)
+		}
 	}
 }
 
