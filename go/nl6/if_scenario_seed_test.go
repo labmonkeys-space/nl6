@@ -297,7 +297,7 @@ func TestIfScenarioWithoutEngineReadsTheStaticRow(t *testing.T) {
 func TestIfScenario3IsVisibleOnGnmiGet(t *testing.T) {
 	withIfScenario(t, IfScenarioAllFailure, 10)
 	device := newTestGnmiDevice(t, 2)
-	srv := newGnmiServer(device, new(int64), new(uint64), new(uint64))
+	srv := newGnmiServer(device, nil, new(int64), new(uint64), new(uint64))
 	srv.resolver = newPathResolver(device)
 	get := func(leaf string) string {
 		resp, err := srv.Get(context.Background(), &gnmipb.GetRequest{

@@ -366,3 +366,41 @@ func scanPerTypeGnmiCatalogs(resourceDir string, base map[string]*gnmiCatalog) (
 	}
 	return out, nil
 }
+
+// LoadGnmiCatalogs populates gnmiCatalogsByType. overridePath, when
+// non-empty, replaces every type's catalogue with that one file.
+func (sm *SimulatorManager) LoadGnmiCatalogs(overridePath, resourceDir string) error {
+	if overridePath != "" {
+		c, err := loadGnmiCatalogFile(overridePath)
+		if err != nil {
+			return err
+		}
+		sm.gnmiCatalogsByType = map[string]*gnmiCatalog{"*": c}
+		log.Printf("gNMI catalog: %s overrides every device type", overridePath)
+		return nil
+	}
+	embedded, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		return err
+	}
+	byType, err := scanPerTypeGnmiCatalogs(resourceDir, embedded)
+	if err != nil {
+		return err
+	}
+	sm.gnmiCatalogsByType = byType
+	for slug, c := range byType {
+		log.Printf("gNMI catalog: %s serves %d subtrees (%s)", slug, len(c.Subtrees), c.Vendor)
+	}
+	return nil
+}
+
+// gnmiCatalogFor returns the catalogue for d's type, or nil.
+func (sm *SimulatorManager) gnmiCatalogFor(d *DeviceSimulator) *gnmiCatalog {
+	if sm == nil || sm.gnmiCatalogsByType == nil {
+		return nil
+	}
+	if c, ok := sm.gnmiCatalogsByType["*"]; ok {
+		return c
+	}
+	return sm.gnmiCatalogsByType[resourceDirName(d.resourceFile)]
+}

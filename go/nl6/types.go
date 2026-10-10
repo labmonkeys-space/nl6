@@ -619,6 +619,11 @@ type SimulatorManager struct {
 	// as a legacy alias for the fallback.
 	trapCatalog        *Catalog
 	trapCatalogsByType map[string]*Catalog
+	// gnmiCatalogsByType maps a device-type slug to its gNMI catalogue
+	// (embedded, overridden by resources/<slug>/gnmi.json, or replaced
+	// for every type by -gnmi-catalog). One object per type; devices
+	// hold a pointer. nil map = no device serves catalogue paths.
+	gnmiCatalogsByType map[string]*gnmiCatalog
 	trapScheduler      atomic.Pointer[TrapScheduler] // lock-free read so device.Stop can deregister without taking sm.mu
 	trapEncoder        TrapEncoder
 	trapSNMPVersion    TrapSNMPVersion

@@ -8,11 +8,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"sync/atomic"
 	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/gnmi/proto/gnmi_ext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -29,6 +31,7 @@ type gnmiServer struct {
 	gnmipb.UnimplementedGNMIServer
 	device   *DeviceSimulator
 	resolver *pathResolver
+	catalog  *catalogResolver // nil when the device type has no catalogue
 	// Aggregate counters (manager-owned, atomic). gnmiServer is
 	// constructed with a pointer to each so increments fan into the
 	// status endpoint without a manager round-trip.
@@ -37,23 +40,69 @@ type gnmiServer struct {
 	updatesDropped      *uint64
 }
 
-// newGnmiServer wires a server for d. The atomic counters MUST point to
-// the manager's gnmiActiveSubscriptions / gnmiUpdatesSent /
+// newGnmiServer wires a server for d. cat is the device type's gNMI
+// catalogue, or nil for the legacy-only surface. The atomic counters
+// MUST point to the manager's gnmiActiveSubscriptions / gnmiUpdatesSent /
 // gnmiUpdatesDropped fields.
-func newGnmiServer(d *DeviceSimulator, active *int64, sent *uint64, dropped *uint64) *gnmiServer {
-	return &gnmiServer{
+func newGnmiServer(d *DeviceSimulator, cat *gnmiCatalog, active *int64, sent *uint64, dropped *uint64) *gnmiServer {
+	s := &gnmiServer{
 		device:              d,
 		resolver:            newPathResolver(d),
 		activeSubscriptions: active,
 		updatesSent:         sent,
 		updatesDropped:      dropped,
 	}
+	if cat != nil {
+		s.catalog = newCatalogResolver(d, cat)
+	}
+	return s
 }
 
 // Capabilities — design §D5: implemented; static response from the
-// resolver. No state.
+// resolver. No state. A device with a catalogue also advertises the
+// catalogue's models, and only the encodings the catalogue accepts.
 func (s *gnmiServer) Capabilities(_ context.Context, _ *gnmipb.CapabilityRequest) (*gnmipb.CapabilityResponse, error) {
-	return s.resolver.Capabilities(), nil
+	resp := s.resolver.Capabilities()
+	if s.catalog == nil {
+		return resp, nil
+	}
+	resp.SupportedModels = append(resp.SupportedModels, s.catalog.Models()...)
+	resp.SupportedEncodings = resp.SupportedEncodings[:0]
+	for _, e := range []gnmipb.Encoding{gnmipb.Encoding_JSON, gnmipb.Encoding_JSON_IETF, gnmipb.Encoding_PROTO} {
+		if s.catalog.cat.acceptsEncoding(e) {
+			resp.SupportedEncodings = append(resp.SupportedEncodings, e)
+		}
+	}
+	return resp, nil
+}
+
+// catalogEncoding applies the catalogue's encoding gate and maps a
+// client JSON request to the json_val sentinel.
+func (s *gnmiServer) catalogEncoding(enc gnmipb.Encoding) (gnmipb.Encoding, error) {
+	if !s.catalog.cat.acceptsEncoding(enc) {
+		return 0, status.Errorf(codes.Unimplemented, "Encoding %d not supported, Only PROTO/JSON encoding supported", enc)
+	}
+	if enc == gnmipb.Encoding_JSON {
+		return gnmiEncodingJSONVal, nil
+	}
+	return enc, nil
+}
+
+// catalogExtension builds the per-response extension the catalogue
+// asks for, or nil.
+func (s *gnmiServer) catalogExtension(subscribed string, seq uint64, now time.Time) *gnmi_ext.Extension {
+	if s.catalog.cat.Notification.Extension != gnmiExtensionJuniperHeader {
+		return nil
+	}
+	host := s.device.ID
+	if v, ok := s.device.cachedSysName.Load().(string); ok && v != "" {
+		host = v
+	}
+	return juniperHeaderExtension(juniperHeader{
+		SystemID: host, ComponentID: 65535, SensorName: fmt.Sprintf("sensor_%d_1_1", 1000+seq%1000),
+		SubscribedPath: subscribed, StreamedPath: subscribed, Component: "xmlproxyd_TM_Thread_1",
+		SequenceNumber: seq, ExportTimestamp: now.UnixMilli(),
+	})
 }
 
 // Get — design §D5: implemented; returns one Notification per requested
@@ -95,6 +144,27 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 	notifs := make([]*gnmipb.Notification, 0, len(req.GetPath()))
 	for _, p := range req.GetPath() {
 		full := joinPathPrefix(prefixElems, p)
+		if s.catalog != nil && s.catalog.Match(full) {
+			cenc, err := s.catalogEncoding(enc)
+			if err != nil {
+				return nil, err
+			}
+			cn, err := s.catalog.Resolve(full, now)
+			if err != nil {
+				return nil, err
+			}
+			for _, n := range cn {
+				ups, err := encodeUpdates(filterByGetType(n.Updates, req.GetType()), cenc)
+				if err != nil {
+					return nil, err
+				}
+				if len(ups) == 0 {
+					continue
+				}
+				notifs = append(notifs, &gnmipb.Notification{Timestamp: now.UnixNano(), Prefix: n.Prefix, Update: ups})
+			}
+			continue
+		}
 		updates, err := s.resolver.Resolve(full, now)
 		if err != nil {
 			return nil, err
@@ -124,7 +194,10 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 // update set. It keys off the `config`/`state` element present in every
 // served path — the interface branch always emits `state`, the optical
 // branch emits both — so the filter needs no per-leaf table and cannot
-// drift from what the resolver serves.
+// drift from what the resolver serves. A path with neither element is
+// state: catalogue leaves under a list-entry prefix are relative, and a
+// leaf such as `instant` under a `.../state/temperature` prefix carries
+// no `state` element of its own.
 //
 // ALL (the proto default, value 0) returns everything, so the common
 // unfiltered request stays allocation-free.
@@ -140,15 +213,15 @@ func filterByGetType(updates []resolvedUpdate, typ gnmipb.GetRequest_DataType) [
 	}
 	out := make([]resolvedUpdate, 0, len(updates))
 	for _, u := range updates {
+		kind := "state"
 		for _, e := range u.Path.GetElem() {
-			name := e.GetName()
-			if name != "config" && name != "state" {
-				continue
+			if name := e.GetName(); name == "config" || name == "state" {
+				kind = name
+				break
 			}
-			if name == want {
-				out = append(out, u)
-			}
-			break
+		}
+		if kind == want {
+			out = append(out, u)
 		}
 	}
 	return out
@@ -278,6 +351,26 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 		subs = merged
 	}
 
+	// Catalogue gate: a device with a catalogue refuses an encoding the
+	// catalogue excludes when any subscription is catalogue-served, and
+	// does not serve ON_CHANGE on catalogue paths. Legacy subscriptions
+	// keep the client encoding; catalogue ones use catEnc.
+	catEnc := enc
+	if s.catalog != nil {
+		for _, sub := range subs {
+			if s.catalog.Match(sub.GetPath()) {
+				if sub.GetMode() == gnmipb.SubscriptionMode_ON_CHANGE && sl.GetMode() == gnmipb.SubscriptionList_STREAM {
+					return status.Error(codes.Unimplemented, "ON_CHANGE is not supported for catalogue paths in this release")
+				}
+				var err error
+				if catEnc, err = s.catalogEncoding(enc); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	cs := s.catalogStream(catEnc)
+
 	// Count both ONCE and STREAM streams in active_subscriptions (P16):
 	// from the operator's perspective they're both live gNMI streams
 	// that consume server-side resources for the duration of the call.
@@ -287,7 +380,7 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 	// ONCE: send one batch + sync_response, return. ONCE ignores
 	// per-sub mode (ON_CHANGE/SAMPLE are STREAM-only concepts).
 	if sl.GetMode() == gnmipb.SubscriptionList_ONCE {
-		return runOnceSubscribe(stream, s.resolver, subs, enc, s.updatesSent)
+		return runOnceSubscribe(stream, s.resolver, cs, subs, enc, s.updatesSent)
 	}
 
 	// STREAM: route by per-sub mode. Mixed-mode requests are rejected.
@@ -310,7 +403,22 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 	case anyOnChange:
 		return runOnChangeSubscribe(stream, s.resolver, s.device, subs, enc, s.updatesSent)
 	default:
-		return runStreamSubscribe(stream, s.resolver, subs, enc, s.updatesSent, s.updatesDropped)
+		return runStreamSubscribe(stream, s.resolver, cs, subs, enc, s.updatesSent, s.updatesDropped)
+	}
+}
+
+// catalogStream bundles what the subscribe loops need to serve
+// catalogue paths on one stream, or returns nil for a legacy device.
+func (s *gnmiServer) catalogStream(enc gnmipb.Encoding) *catalogSubscription {
+	if s.catalog == nil {
+		return nil
+	}
+	return &catalogSubscription{
+		resolver: s.catalog,
+		enc:      enc,
+		extFor: func(sub *gnmipb.Subscription, seq uint64, now time.Time) *gnmi_ext.Extension {
+			return s.catalogExtension(pathToString(sub.GetPath()), seq, now)
+		},
 	}
 }
 

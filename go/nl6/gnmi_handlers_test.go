@@ -76,7 +76,7 @@ func newTestGnmiServer(t *testing.T, ifCount int) (*gnmiServer, *int64, *uint64,
 	resolver := newTestPathResolver(t, ifCount)
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(resolver.device, &active, &sent, &dropped)
+	srv := newGnmiServer(resolver.device, nil, &active, &sent, &dropped)
 	srv.resolver = resolver
 	return srv, &active, &sent, &dropped
 }
@@ -550,7 +550,7 @@ func TestGnmiServer_Subscribe_OnChange_SynthIfNameDelivers(t *testing.T) {
 	}
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(device, &active, &sent, &dropped)
+	srv := newGnmiServer(device, nil, &active, &sent, &dropped)
 	srv.resolver = newPathResolver(device)
 
 	// Verify synth name is in descrToIndex.

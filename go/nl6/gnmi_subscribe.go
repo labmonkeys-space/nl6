@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+	"github.com/openconfig/gnmi/proto/gnmi_ext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -23,6 +24,60 @@ import (
 // collector is wedged.
 const subscribeBufferDepth = 100
 
+// catalogSubscription carries what one Subscribe stream needs to serve
+// catalogue paths: the resolver, the catalogue-side encoding (client
+// JSON already mapped to the json_val sentinel), the extension factory,
+// and the stream's response sequence counter. nil on a legacy device.
+type catalogSubscription struct {
+	resolver *catalogResolver
+	enc      gnmipb.Encoding
+	extFor   func(sub *gnmipb.Subscription, seq uint64, now time.Time) *gnmi_ext.Extension
+	seq      atomic.Uint64
+}
+
+// serves reports whether the catalogue owns sub's path.
+func (c *catalogSubscription) serves(sub *gnmipb.Subscription) bool {
+	return c != nil && c.resolver.Match(sub.GetPath())
+}
+
+// responses resolves sub through the catalogue and builds one
+// SubscribeResponse per list entry, each with its own sequence number.
+func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time) ([]*gnmipb.SubscribeResponse, error) {
+	notifs, err := c.resolver.Resolve(sub.GetPath(), now)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
+	for _, n := range notifs {
+		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.extFor(sub, c.seq.Add(1), now))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r...)
+	}
+	return out, nil
+}
+
+// catalogSubscribeResponses turns catalogue notifications into one
+// SubscribeResponse per list entry, each carrying ext when non-nil.
+func catalogSubscribeResponses(now time.Time, notifs []catalogNotification, enc gnmipb.Encoding, ext *gnmi_ext.Extension) ([]*gnmipb.SubscribeResponse, error) {
+	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
+	for _, n := range notifs {
+		ups, err := encodeUpdates(n.Updates, enc)
+		if err != nil {
+			return nil, err
+		}
+		resp := &gnmipb.SubscribeResponse{Response: &gnmipb.SubscribeResponse_Update{Update: &gnmipb.Notification{
+			Timestamp: now.UnixNano(), Prefix: n.Prefix, Update: ups,
+		}}}
+		if ext != nil {
+			resp.Extension = []*gnmi_ext.Extension{ext}
+		}
+		out = append(out, resp)
+	}
+	return out, nil
+}
+
 // runOnceSubscribe handles SubscribeRequest with mode=ONCE: assemble
 // one batch synchronously, send sync_response, return (gRPC closes the
 // stream when this function returns).
@@ -32,16 +87,38 @@ const subscribeBufferDepth = 100
 // updates, sharing one timestamp (P24). Earlier revisions emitted one
 // SubscribeResponse per subscription which over-counted notifications
 // on the client side and broke gnmic's `--format proto` rendering.
+//
+// Catalogue-served subscriptions (cs non-nil and matching) are the
+// exception: Junos sends one notification per list entry, so each entry
+// is sent as its own SubscribeResponse as soon as it resolves. Legacy
+// subscriptions still accumulate into the one combined notification,
+// sent only when non-empty or when no catalogue path was served.
 func runOnceSubscribe(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	subs []*gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesSent *uint64,
 ) error {
 	now := time.Now()
 	combined := make([]*gnmipb.Update, 0, len(subs))
+	catalogServed := false
 	for _, sub := range subs {
+		if cs.serves(sub) {
+			catalogServed = true
+			resps, err := cs.responses(sub, now)
+			if err != nil {
+				return err
+			}
+			for _, r := range resps {
+				if err := stream.Send(r); err != nil {
+					return err
+				}
+				atomic.AddUint64(updatesSent, uint64(len(r.GetUpdate().GetUpdate())))
+			}
+			continue
+		}
 		updates, err := resolver.Resolve(sub.GetPath(), now)
 		if err != nil {
 			return err
@@ -52,10 +129,12 @@ func runOnceSubscribe(
 		}
 		combined = append(combined, gnmiUpdates...)
 	}
-	if err := stream.Send(notificationResponse(now, combined)); err != nil {
-		return err
+	if len(combined) > 0 || !catalogServed {
+		if err := stream.Send(notificationResponse(now, combined)); err != nil {
+			return err
+		}
+		atomic.AddUint64(updatesSent, uint64(len(combined)))
 	}
-	atomic.AddUint64(updatesSent, uint64(len(combined)))
 	// sync_response signals "initial state delivered".
 	return stream.Send(&gnmipb.SubscribeResponse{
 		Response: &gnmipb.SubscribeResponse_SyncResponse{SyncResponse: true},
@@ -85,6 +164,7 @@ func runOnceSubscribe(
 func runStreamSubscribe(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	subs []*gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesSent *uint64,
@@ -137,7 +217,7 @@ func runStreamSubscribe(
 			interval := clampSampleInterval(time.Duration(sub.GetSampleInterval()))
 
 			// Initial snapshot (tick #0).
-			pushSubUpdate(ctx, ch, resolver, sub, enc, updatesDropped)
+			pushSubUpdate(ctx, ch, resolver, cs, sub, enc, updatesDropped)
 			if initialFired.Add(1) == totalSubs {
 				pushOrDrop(ctx, ch, &gnmipb.SubscribeResponse{
 					Response: &gnmipb.SubscribeResponse_SyncResponse{SyncResponse: true},
@@ -151,7 +231,7 @@ func runStreamSubscribe(
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					pushSubUpdate(ctx, ch, resolver, sub, enc, updatesDropped)
+					pushSubUpdate(ctx, ch, resolver, cs, sub, enc, updatesDropped)
 				}
 			}
 		}(sub)
@@ -175,15 +255,30 @@ func runStreamSubscribe(
 // per ticker, which is over-engineered for a read-only resolver where
 // these errors indicate programming bugs, not transient runtime
 // conditions.
+//
+// A catalogue-served subscription enqueues one response per list entry
+// instead of one combined notification.
 func pushSubUpdate(
 	ctx context.Context,
 	ch chan *gnmipb.SubscribeResponse,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	sub *gnmipb.Subscription,
 	enc gnmipb.Encoding,
 	updatesDropped *uint64,
 ) {
 	now := time.Now()
+	if cs.serves(sub) {
+		resps, err := cs.responses(sub, now)
+		if err != nil {
+			log.Printf("gNMI: catalogue subscribe error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
+			return
+		}
+		for _, r := range resps {
+			pushOrDrop(ctx, ch, r, updatesDropped)
+		}
+		return
+	}
 	updates, err := resolver.Resolve(sub.GetPath(), now)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {

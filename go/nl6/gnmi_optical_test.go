@@ -234,7 +234,7 @@ func TestOpticalOnChangeRejectedAsOptical(t *testing.T) {
 	dev := newTestOpticalDevice(t, true)
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(dev, &active, &sent, &dropped)
+	srv := newGnmiServer(dev, nil, &active, &sent, &dropped)
 	srv.resolver = newPathResolver(dev)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -386,7 +386,7 @@ func TestOpticalGetTypeFilter(t *testing.T) {
 	dev := newTestOpticalDevice(t, true)
 	var active int64
 	var sent, dropped uint64
-	srv := newGnmiServer(dev, &active, &sent, &dropped)
+	srv := newGnmiServer(dev, nil, &active, &sent, &dropped)
 	srv.resolver = newPathResolver(dev)
 
 	get := func(typ gnmipb.GetRequest_DataType, path string) []*gnmipb.Update {
@@ -437,7 +437,7 @@ func TestOpticalGetTypeFilter(t *testing.T) {
 	}
 	// The interface surface is state-only, so CONFIG stays empty there.
 	pdev := newTestGnmiDevice(t, 1)
-	psrv := newGnmiServer(pdev, &active, &sent, &dropped)
+	psrv := newGnmiServer(pdev, nil, &active, &sent, &dropped)
 	psrv.resolver = newPathResolver(pdev)
 	resp, err := psrv.Get(context.Background(), &gnmipb.GetRequest{
 		Path:     []*gnmipb.Path{pathFromString(t, "/interfaces/interface[name=*]/state")},

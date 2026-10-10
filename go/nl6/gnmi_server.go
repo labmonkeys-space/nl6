@@ -122,6 +122,7 @@ func (d *DeviceSimulator) startGnmiServer(port int) error {
 	server := grpc.NewServer(opts...)
 	gnmipb.RegisterGNMIServer(server, newGnmiServer(
 		d,
+		mgr.gnmiCatalogFor(d),
 		&mgr.gnmiActiveSubscriptions,
 		&mgr.gnmiUpdatesSent,
 		&mgr.gnmiUpdatesDropped,
