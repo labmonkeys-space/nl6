@@ -305,6 +305,15 @@ func genTimestamp(arg string) (gnmiLeafGen, error) {
 	return nil, fmt.Errorf("timestamp wants now or boot, got %q", arg)
 }
 
+// gnmiLeafTypes is exactly the set of YANG types castGnmiLeaf handles;
+// catalogue load rejects any other leaf type.
+var gnmiLeafTypes = map[string]bool{
+	"uint64": true, "uint32": true, "uint16": true, "uint8": true, "counter64": true, "counter32": true,
+	"int64": true, "int32": true, "int16": true, "int8": true,
+	"decimal64": true, "boolean": true,
+	"string": true, "enumeration": true, "identityref": true, "leafref": true, "union": true,
+}
+
 // castGnmiLeaf converts a binding's result to the Go type the encoder
 // expects for the leaf's YANG type.
 func castGnmiLeaf(v any, yangType string) (any, error) {

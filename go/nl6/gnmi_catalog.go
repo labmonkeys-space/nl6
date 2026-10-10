@@ -174,6 +174,9 @@ func (c *gnmiCatalog) validate(source string) error {
 		names[comp.Name] = true
 	}
 	for i, st := range c.Subtrees {
+		if st.Origin == "" {
+			return fail("subtree %d (%s): origin is required", i, st.Path)
+		}
 		if st.Origin != n.Origin && st.Origin != n.NativeOrigin {
 			return fail("subtree %d (%s): origin %q is neither %q nor %q", i, st.Path, st.Origin, n.Origin, n.NativeOrigin)
 		}
@@ -235,6 +238,9 @@ func (c *gnmiCatalog) validate(source string) error {
 			leaf.elems = le
 			if leaf.Type == "" {
 				return fail("subtree %d leaf %q: type is required", i, leaf.Name)
+			}
+			if !gnmiLeafTypes[leaf.Type] {
+				return fail("subtree %d leaf %q: type %q is not a supported YANG type", i, leaf.Name, leaf.Type)
 			}
 			g, err := compileGnmiBinding(leaf.Gen)
 			if err != nil {

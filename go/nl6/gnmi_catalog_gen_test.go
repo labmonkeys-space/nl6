@@ -149,6 +149,12 @@ func TestCastGnmiLeaf(t *testing.T) {
 	if _, err := castGnmiLeaf(1, "quaternion"); err == nil {
 		t.Error("unknown type accepted")
 	}
+	// Every type catalogue load accepts must be one castGnmiLeaf handles.
+	for typ := range gnmiLeafTypes {
+		if _, err := castGnmiLeaf("1", typ); err != nil {
+			t.Errorf("load accepts %s but cast fails: %v", typ, err)
+		}
+	}
 	if math.IsNaN(0) {
 		t.Fatal("unreachable")
 	}

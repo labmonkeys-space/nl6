@@ -58,6 +58,10 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"empty binding", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": ""`, 1), "binding"},
 		{"key count mismatch", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": []`, 1), "wildcard"},
 		{"inventory without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "inventory:name"`, 1), "needs a components key source"},
+		{"unknown leaf type", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "float", "gen": "sine:40,5,600"`, 1), "type \"float\""},
+		{"empty subtree origin without native origin", strings.Replace(strings.Replace(base, `"native_origin": "testvendor",`, ``, 1), `"origin": "openconfig",
+      "keys": [{"source": "components"}]`, `"origin": "",
+      "keys": [{"source": "components"}]`, 1), "origin is required"},
 		{"neighbor without neighbors key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "neighbor:state"`, 1), "needs a neighbors key source"},
 	}
 	for _, tc := range cases {
