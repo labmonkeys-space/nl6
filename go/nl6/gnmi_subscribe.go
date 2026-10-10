@@ -21,7 +21,10 @@ import (
 // subscribeBufferDepth is the per-stream send-channel depth. Drop-oldest
 // on overflow (design.md §D8) bounds memory at 30k devices × 100 deep
 // × ~few KiB per response → at most a handful of MiB even when every
-// collector is wedged.
+// collector is wedged. On a Subscribe stream one element is one tick:
+// a single response for a legacy path, every list entry's response for
+// a catalogue path, so a catalogue stream's bound scales with its
+// entries per tick.
 const subscribeBufferDepth = 100
 
 // catalogSubscription carries what one Subscribe stream needs to serve
@@ -176,7 +179,11 @@ func runStreamSubscribe(
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
-	ch := make(chan *gnmipb.SubscribeResponse, subscribeBufferDepth)
+	// Each queue element is one tick's responses: a legacy tick is one
+	// response, a catalogue tick is one response per list entry. A tick
+	// is therefore dropped whole or delivered whole, and the initial
+	// snapshot is complete before sync_response.
+	ch := make(chan []*gnmipb.SubscribeResponse, subscribeBufferDepth)
 	errCh := make(chan error, 1)
 	var wg sync.WaitGroup
 	var initialFired atomic.Int64
@@ -192,17 +199,19 @@ func runStreamSubscribe(
 			case <-ctx.Done():
 				errCh <- ctx.Err()
 				return
-			case resp, ok := <-ch:
+			case batch, ok := <-ch:
 				if !ok {
 					errCh <- nil
 					return
 				}
-				if err := stream.Send(resp); err != nil {
-					errCh <- err
-					return
-				}
-				if upd := resp.GetUpdate(); upd != nil {
-					atomic.AddUint64(updatesSent, uint64(len(upd.GetUpdate())))
+				for _, resp := range batch {
+					if err := stream.Send(resp); err != nil {
+						errCh <- err
+						return
+					}
+					if upd := resp.GetUpdate(); upd != nil {
+						atomic.AddUint64(updatesSent, uint64(len(upd.GetUpdate())))
+					}
 				}
 			}
 		}
@@ -219,9 +228,9 @@ func runStreamSubscribe(
 			// Initial snapshot (tick #0).
 			pushSubUpdate(ctx, ch, resolver, cs, sub, enc, updatesDropped)
 			if initialFired.Add(1) == totalSubs {
-				pushOrDrop(ctx, ch, &gnmipb.SubscribeResponse{
+				pushBatchOrDrop(ctx, ch, []*gnmipb.SubscribeResponse{{
 					Response: &gnmipb.SubscribeResponse_SyncResponse{SyncResponse: true},
-				}, updatesDropped)
+				}}, updatesDropped)
 			}
 
 			ticker := time.NewTicker(interval)
@@ -247,7 +256,7 @@ func runStreamSubscribe(
 }
 
 // pushSubUpdate resolves a single subscription's path at "now" and
-// enqueues one SubscribeResponse{update} via pushOrDrop. Per-subscription
+// enqueues one SubscribeResponse{update} via pushBatchOrDrop. Per-subscription
 // `codes.NotFound` is *not* fatal (P3): if an interface name disappeared
 // between Subscribe-time and this tick we log and skip the tick. Other
 // resolver errors (InvalidArgument, Internal, …) are also logged here —
@@ -257,10 +266,10 @@ func runStreamSubscribe(
 // conditions.
 //
 // A catalogue-served subscription enqueues one response per list entry
-// instead of one combined notification.
+// instead of one combined notification, as a single queue element.
 func pushSubUpdate(
 	ctx context.Context,
-	ch chan *gnmipb.SubscribeResponse,
+	ch chan []*gnmipb.SubscribeResponse,
 	resolver *pathResolver,
 	cs *catalogSubscription,
 	sub *gnmipb.Subscription,
@@ -274,8 +283,8 @@ func pushSubUpdate(
 			log.Printf("gNMI: catalogue subscribe error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
 			return
 		}
-		for _, r := range resps {
-			pushOrDrop(ctx, ch, r, updatesDropped)
+		if len(resps) > 0 {
+			pushBatchOrDrop(ctx, ch, resps, updatesDropped)
 		}
 		return
 	}
@@ -293,7 +302,7 @@ func pushSubUpdate(
 		log.Printf("gNMI: subscribe encode error for %s: %v (skipping tick)", pathToString(sub.GetPath()), err)
 		return
 	}
-	pushOrDrop(ctx, ch, notificationResponse(now, gnmiUpdates), updatesDropped)
+	pushBatchOrDrop(ctx, ch, []*gnmipb.SubscribeResponse{notificationResponse(now, gnmiUpdates)}, updatesDropped)
 }
 
 // clampSampleInterval applies the §D7 floor: any interval below
@@ -316,9 +325,22 @@ func clampSampleInterval(raw time.Duration) time.Duration {
 // buffer full. The drop counter is incremented per dropped item, not
 // per overflow event.
 func pushOrDrop(ctx context.Context, ch chan *gnmipb.SubscribeResponse, resp *gnmipb.SubscribeResponse, updatesDropped *uint64) {
+	enqueueDropOldest(ctx, ch, resp, func(*gnmipb.SubscribeResponse) uint64 { return 1 }, updatesDropped)
+}
+
+// pushBatchOrDrop is pushOrDrop for a queue of whole ticks. A dropped
+// batch adds one to the drop counter per response it held.
+func pushBatchOrDrop(ctx context.Context, ch chan []*gnmipb.SubscribeResponse, batch []*gnmipb.SubscribeResponse, updatesDropped *uint64) {
+	enqueueDropOldest(ctx, ch, batch, func(b []*gnmipb.SubscribeResponse) uint64 { return uint64(len(b)) }, updatesDropped)
+}
+
+// enqueueDropOldest implements the drop-oldest policy for pushOrDrop
+// and pushBatchOrDrop; weight is what one dropped item adds to the
+// drop counter.
+func enqueueDropOldest[T any](ctx context.Context, ch chan T, item T, weight func(T) uint64, updatesDropped *uint64) {
 	// Fast path: enqueue without dropping.
 	select {
-	case ch <- resp:
+	case ch <- item:
 		return
 	case <-ctx.Done():
 		return
@@ -330,12 +352,12 @@ func pushOrDrop(ctx context.Context, ch chan *gnmipb.SubscribeResponse, resp *gn
 		select {
 		case <-ctx.Done():
 			return
-		case <-ch:
-			atomic.AddUint64(updatesDropped, 1)
+		case old := <-ch:
+			atomic.AddUint64(updatesDropped, weight(old))
 		default:
 		}
 		select {
-		case ch <- resp:
+		case ch <- item:
 			return
 		case <-ctx.Done():
 			return

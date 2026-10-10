@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -336,5 +337,74 @@ func TestCatalogServer_MixedOnceOrdering(t *testing.T) {
 	}
 	if !resps[3].GetSyncResponse() {
 		t.Errorf("response 3: want sync_response: %v", resps[3])
+	}
+}
+
+// TestCatalogServer_StreamDeliversWholeTicks: a STREAM subscription
+// whose tick spans far more list entries than the send queue depth
+// still delivers every entry. The snapshot is complete before
+// sync_response, nothing is dropped across two further ticks, and the
+// Juniper header sequence numbers have no gaps.
+func TestCatalogServer_StreamDeliversWholeTicks(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := cats["juniper_mx10004"]
+	mgr, dev, addr, cleanup := startTestGnmiServerWithCatalogN(t, cat, 50)
+	defer cleanup()
+
+	const path = "/interfaces"
+	snap, err := newCatalogResolver(dev, cat).Resolve(pathFromString(t, path), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	perTick := len(snap)
+	if perTick <= subscribeBufferDepth {
+		t.Fatalf("%d entries per tick does not exceed the queue depth %d", perTick, subscribeBufferDepth)
+	}
+
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := gnmipb.NewGNMIClient(conn).Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&gnmipb.SubscribeRequest{Request: &gnmipb.SubscribeRequest_Subscribe{Subscribe: &gnmipb.SubscriptionList{
+		Mode: gnmipb.SubscriptionList_STREAM, Encoding: gnmipb.Encoding_PROTO,
+		Subscription: []*gnmipb.Subscription{{Path: pathFromString(t, path), Mode: gnmipb.SubscriptionMode_SAMPLE, SampleInterval: uint64(time.Second)}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	var lastSeq uint64
+	beforeSync, updates := 0, 0
+	synced := false
+	for updates < 3*perTick {
+		r, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("after %d updates: %v", updates, err)
+		}
+		if r.GetSyncResponse() {
+			synced = true
+			beforeSync = updates
+			continue
+		}
+		updates++
+		h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.SequenceNumber != lastSeq+1 {
+			t.Fatalf("sequence %d after %d", h.SequenceNumber, lastSeq)
+		}
+		lastSeq = h.SequenceNumber
+	}
+	if !synced || beforeSync != perTick {
+		t.Fatalf("snapshot before sync_response: %d entries, want %d (synced=%v)", beforeSync, perTick, synced)
+	}
+	if d := atomic.LoadUint64(&mgr.gnmiUpdatesDropped); d != 0 {
+		t.Fatalf("dropped %d responses", d)
 	}
 }
