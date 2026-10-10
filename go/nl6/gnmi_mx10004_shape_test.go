@@ -759,3 +759,72 @@ func TestMX10004Transceivers(t *testing.T) {
 		t.Fatalf("packet type: %v, want NotFound naming the path", err)
 	}
 }
+
+// TestMX10004ServesBGPAfiSafis pins nl6#774: one notification per
+// neighbour and family with the 28 afi-safi leaves, one per peer-group
+// and family with the 27 peer-group leaves, and prefix counters that
+// move between two resolves.
+func TestMX10004ServesBGPAfiSafis(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	const bgp = "/network-instances/network-instance/protocols/protocol/bgp/"
+	collect := func(path string) map[string]map[string]*gnmipb.TypedValue {
+		resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]map[string]*gnmipb.TypedValue{}
+		for _, r := range resps {
+			n := r.GetUpdate()
+			if n == nil {
+				continue
+			}
+			key := pathToString(n.GetPrefix())
+			if _, dup := out[key]; dup {
+				t.Errorf("%s rendered twice", key)
+			}
+			out[key] = map[string]*gnmipb.TypedValue{}
+			for _, u := range n.GetUpdate() {
+				out[key][pathToString(u.GetPath())] = u.GetVal()
+			}
+		}
+		return out
+	}
+	nb := collect(bgp + "neighbors/neighbor/afi-safis/afi-safi/")
+	if len(nb) != 4 {
+		t.Fatalf("neighbour afi-safi entries = %d, want 2 neighbours x 2 families", len(nb))
+	}
+	for prefix, leaves := range nb {
+		if len(leaves) != 28 || leaves["/state/prefixes/received"] == nil || leaves["/ipv4-unicast/prefix-limit/state/max-prefixes"] == nil {
+			t.Errorf("%s: %d leaves, want 28 with prefixes/received and prefix-limit/max-prefixes", prefix, len(leaves))
+		}
+		if !strings.Contains(prefix, "[afi-safi-name=IPV4_UNICAST]") && !strings.Contains(prefix, "[afi-safi-name=IPV6_UNICAST]") {
+			t.Errorf("%s: family key missing", prefix)
+		}
+	}
+	pg := collect(bgp + "peer-groups/peer-group/afi-safis/afi-safi/")
+	if len(pg) != 4 {
+		t.Fatalf("peer-group afi-safi entries = %d, want 2 groups x 2 families", len(pg))
+	}
+	for prefix, leaves := range pg {
+		if len(leaves) != 27 || leaves["/state/total-paths"] == nil || leaves["/state/total-prefixes"] == nil {
+			t.Errorf("%s: %d leaves, want 27 with total-paths and total-prefixes", prefix, len(leaves))
+		}
+	}
+	// Counters move: a second resolve an hour later reads higher.
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cats["juniper_mx10004"])
+	// pathFromString parses one key per element, so the protocol element stays wildcard.
+	p := pathFromString(t, "/network-instances/network-instance[name=DEFAULT]/protocols/protocol/bgp/neighbors/neighbor[neighbor-address=203.0.113.1]/afi-safis/afi-safi[afi-safi-name=IPV4_UNICAST]/state/prefixes/received")
+	first, err := r.Resolve(p, time.Now())
+	if err != nil || len(first) != 1 || len(first[0].Updates) != 1 {
+		t.Fatalf("first resolve: %v %v", err, first)
+	}
+	second, err := r.Resolve(p, time.Now().Add(time.Hour))
+	if err != nil || second[0].Updates[0].Value.(uint32) <= first[0].Updates[0].Value.(uint32) {
+		t.Fatalf("prefixes/received did not advance: %v -> %v (%v)", first[0].Updates[0].Value, second[0].Updates[0].Value, err)
+	}
+}
