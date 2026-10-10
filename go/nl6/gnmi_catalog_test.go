@@ -104,7 +104,7 @@ func TestScanPerTypeGnmiCatalogs_OverridesAndAdds(t *testing.T) {
 	if _, ok := got["typeb"]; ok {
 		t.Fatalf("type without gnmi.json must not appear")
 	}
-	// A directory with no embedded counterpart still loads (Review Focus 2).
+	// A directory with no embedded counterpart still loads.
 	if err := os.WriteFile(filepath.Join(dir, "typeb", "gnmi.json"), readTestCatalog(t), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +119,6 @@ func TestLoadEmbeddedGnmiCatalogs_ParsesEveryShippedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("embedded catalogues: %v", err)
 	}
-	// Until Task 8 ships juniper_mx10004 this may be empty; the loader
-	// must still succeed.
 	for slug, c := range got {
 		if strings.HasPrefix(slug, "_") {
 			t.Errorf("%s: underscore-prefixed dir must not load", slug)
@@ -144,5 +142,56 @@ func TestParseCatalogPath(t *testing.T) {
 	}
 	if elems, err := parseCatalogPath("/"); err != nil || len(elems) != 0 {
 		t.Fatalf("root path: %v %v", elems, err)
+	}
+}
+
+// TestLoadGnmiCatalogs_OverrideWinsEverywhere: -gnmi-catalog replaces
+// every type's catalogue, including a directory file and the embedded
+// set; without it, directory files and embedded catalogues apply per
+// type and other types get none.
+func TestLoadGnmiCatalogs_OverrideWinsEverywhere(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "typea"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fromDir := strings.Replace(string(readTestCatalog(t)), `"vendor": "testvendor"`, `"vendor": "fromdir"`, 1)
+	if err := os.WriteFile(filepath.Join(dir, "typea", "gnmi.json"), []byte(fromDir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	override := filepath.Join(t.TempDir(), "override.json")
+	if err := os.WriteFile(override, []byte(strings.Replace(string(readTestCatalog(t)), `"vendor": "testvendor"`, `"vendor": "override"`, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	devs := map[string]*DeviceSimulator{
+		"typea":           {resourceFile: "typea.json"},
+		"juniper_mx10004": {resourceFile: "juniper_mx10004.json"},
+		"cisco_ios":       {resourceFile: "cisco_ios.json"},
+	}
+
+	sm := &SimulatorManager{}
+	if err := sm.LoadGnmiCatalogs(override, dir); err != nil {
+		t.Fatal(err)
+	}
+	for slug, d := range devs {
+		if c := sm.gnmiCatalogFor(d); c == nil || c.Vendor != "override" {
+			t.Errorf("override: %s got %v", slug, c)
+		}
+	}
+
+	sm = &SimulatorManager{}
+	if err := sm.LoadGnmiCatalogs("", dir); err != nil {
+		t.Fatal(err)
+	}
+	if c := sm.gnmiCatalogFor(devs["typea"]); c == nil || c.Vendor != "fromdir" {
+		t.Errorf("directory file: got %v", c)
+	}
+	if c := sm.gnmiCatalogFor(devs["juniper_mx10004"]); c == nil || c.Vendor != "juniper" {
+		t.Errorf("embedded: got %v", c)
+	}
+	if c := sm.gnmiCatalogFor(devs["cisco_ios"]); c != nil {
+		t.Errorf("type without a catalogue got %s", c.Vendor)
+	}
+	if err := sm.LoadGnmiCatalogs(filepath.Join(dir, "missing.json"), dir); err == nil {
+		t.Error("missing override file accepted")
 	}
 }

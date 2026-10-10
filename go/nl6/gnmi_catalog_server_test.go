@@ -105,7 +105,7 @@ func TestCatalogServer_LegacyPathStillServedWhenCatalogueDoesNotCover(t *testing
 func TestCatalogServer_CataloguePreemptsLegacyForCoveredLeaf(t *testing.T) {
 	_, addr, cleanup := startTestCatalogServer(t)
 	defer cleanup()
-	// oper-status is served by both; the catalogue wins (Review Focus 1).
+	// oper-status is served by both; the catalogue wins.
 	resps, err := subscribeOnce(t, addr, gnmipb.Encoding_PROTO, "/interfaces/interface[name=TestIf1]/state/oper-status")
 	if err != nil {
 		t.Fatal(err)

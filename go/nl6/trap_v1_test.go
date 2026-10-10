@@ -469,9 +469,8 @@ func TestV2cOutputUnchangedByV1Encoder(t *testing.T) {
 		t.Fatalf("only %d shipped entries encoded; the walk collapsed and the digest below would "+
 			"pin nothing", encoded)
 	}
-	// Re-measured for the juniper_mx10004 catalog at 295c0b1 (the parent of the
-	// v1 encoder commit) in a worktree, with this function copied in and the
-	// new catalogs; the previous value reproduced there before it was added.
+	// Re-pinned from the current output after 725b0f60 changed the
+	// juniper_mx10004 traps.json (the FRU varbinds name "MX10004 SFB 0").
 	const want = "fe93f73691b4535e07bd3589fde713c5b2a1827999acb6f34a6ccf26ff28a1cc"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("v2c encoding of %d shipped entries digests to %s, recorded as %s.\nAdding the v1 "+

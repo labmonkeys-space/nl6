@@ -174,8 +174,7 @@ type catalogEntry struct {
 }
 
 // expandEntries builds the cartesian product of a subtree's key
-// sources. The first key source decides ifIndex when it is
-// `interfaces`.
+// sources. The `interfaces` key source, when present, sets ifIndex.
 func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry, error) {
 	entries := []catalogEntry{{}}
 	for _, k := range st.Keys {

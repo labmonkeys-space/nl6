@@ -113,7 +113,7 @@ func TestGnmiBindings_MissingLookupsAreNotOk(t *testing.T) {
 	if _, ok := g(ctx); ok {
 		t.Error("unknown neighbor reported ok")
 	}
-	ctx.dev = &DeviceSimulator{IP: net.IPv4(10, 42, 0, 3)} // no cycler (Review Focus 3)
+	ctx.dev = &DeviceSimulator{IP: net.IPv4(10, 42, 0, 3)} // no cycler
 	g, _ = compileGnmiBinding("ifcounter:ifHCInOctets")
 	if _, ok := g(ctx); ok {
 		t.Error("ifcounter without cycler reported ok")

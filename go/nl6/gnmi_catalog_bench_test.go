@@ -12,8 +12,8 @@ import (
 )
 
 // BenchmarkCatalogResolverMemory reports the per-device cost of the
-// shared-catalogue design (Review Focus 5): the catalogue is parsed
-// once; each device adds a resolver with a pointer and an ifDescr map.
+// shared-catalogue design: the catalogue is parsed once; each device
+// adds a resolver with a pointer and an ifDescr map.
 func BenchmarkCatalogResolverMemory(b *testing.B) {
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {

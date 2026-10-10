@@ -119,7 +119,7 @@ type gnmiCatalogLeaf struct {
 	Gen  string   `json:"gen"`
 
 	elems []*gnmipb.PathElem // compiled from Name
-	gen   gnmiLeafGen        // compiled from Gen (Task 2)
+	gen   gnmiLeafGen        // compiled from Gen
 }
 
 var gnmiEncodingNames = map[string]gnmipb.Encoding{

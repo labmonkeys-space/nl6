@@ -501,7 +501,7 @@ func encodeUpdates(updates []resolvedUpdate, enc gnmipb.Encoding) ([]*gnmipb.Upd
 // gnmiEncodingJSONVal is an internal sentinel: encode exactly as
 // JSON_IETF but carry the bytes in `json_val`, which is what Junos
 // returns for a JSON subscription. Never advertised; the catalogue
-// server maps a client's Encoding_JSON to it (Task 6).
+// server maps a client's Encoding_JSON to it (catalogEncoding).
 const gnmiEncodingJSONVal gnmipb.Encoding = -1
 
 // gnmiEncodeTypedValue encodes a single Go value into a gNMI TypedValue.

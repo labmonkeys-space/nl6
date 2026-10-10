@@ -18,8 +18,8 @@ import (
 
 // gnmiGenCtx is what a binding sees when a leaf is resolved. keys are
 // the concrete key values of the list entry in catalogue key order
-// (for example ["xe-0/0/0", "3"]); ifIndex is set when the first key
-// source is `interfaces`, else 0; t is seconds since the device epoch
+// (for example ["xe-0/0/0", "3"]); ifIndex is set when the subtree has
+// an `interfaces` key source, else 0; t is seconds since the device epoch
 // (catalogResolver.epoch), shared by every time-based binding.
 //
 // componentKey and neighborKey index keys for the inventory and
@@ -48,7 +48,7 @@ type gnmiLeafGen func(ctx *gnmiGenCtx) (any, bool)
 type gnmiGenFactory func(arg string) (gnmiLeafGen, error)
 
 // gnmiGenRegistry maps binding prefixes to factories. Unknown prefixes
-// fail catalogue load (Task 1 validate), never serve time.
+// fail catalogue load (gnmiCatalog.validate), never serve time.
 var gnmiGenRegistry = map[string]gnmiGenFactory{
 	"const":     genConst,
 	"key":       genKey,
