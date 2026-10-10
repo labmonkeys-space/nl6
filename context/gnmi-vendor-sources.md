@@ -138,7 +138,7 @@ Mark every vendor-native subtree as YANG-derived in the device-type reference so
 
 ## Lab host and first capture (2026-10-09)
 
-VM 220 `clab-gnmi` on the lechuck Proxmox host at 192.168.11.220 runs Ubuntu 24.04 with Docker 29, containerlab 0.79.0, gnmic 0.49.0 and KVM acceleration, reached with `ssh -J root@lechuck.labmonkeys.tech lab@192.168.11.220`.
+A lab VM on the Proxmox host runs Ubuntu 24.04 with Docker 29, containerlab 0.79.0, gnmic 0.49.0 and KVM acceleration, reached over SSH through a jump host.
 Nokia SR Linux (ghcr.io/nokia/srlinux:latest, free) runs there as `clab-srl-srl1` with OpenConfig enabled through `/system/management/openconfig/admin-state`.
 Against it, `gnmic subscribe --mode once -e json_ietf` returns one update per subscribed container with the module name in `Path` and nested string-typed values, while `-e proto` returns one update per leaf with no module name and native numeric types.
 This is the encoding rule from the gNMI specification, which allows only scalar `TypedValue` in PROTO, so the per-leaf layout is expected on every vendor and gap 1 reduces to confirming XR's key and prefix placement. https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md
@@ -148,7 +148,7 @@ The vJunos-router qcow2 is still missing because the Juniper portal is a browser
 ## vJunos-router on Proxmox (2026-10-09)
 
 vJunos-router inside containerlab inside a Proxmox VM is three hypervisor levels deep and the inner Junos VM crawled through its boot loader at minutes per second; Juniper states the product is unsupported in any setup that runs it inside a VM "due to the constraints of deeply nested virtualization". https://www.juniper.net/documentation/us/en/software/vjunos-router/vjunos-router-kvm/topics/vjunos-router-kvm-hw-requirements.html
-Running the qcow2 directly as Proxmox VM 221 on lechuck (4 cores, `cpu: host`, 5120 MB, machine `pc`, SMBIOS product `VM-VMX` family `lab`) boots the vCP in under a minute.
+Running the qcow2 directly as a second lab VM on the Proxmox host (4 cores, `cpu: host`, 5120 MB, machine `pc`, SMBIOS product `VM-VMX` family `lab`) boots the vCP in under a minute.
 The image is a Linux wrapper that spawns a nested FreeBSD vCP (1 vCPU, 2 GB) and a nested Linux vFP running `riot`; the vFP only came online after the VM got data NICs beyond the management NIC, so attach at least one extra virtio NIC.
 The vmm-data config disk was ignored both as a virtio disk and as USB storage attached through `args`, so the base config went in over the serial socket; lines over about 70 columns crash the console CLI, and ZTP must be removed first with `delete chassis auto-image-upgrade`.
 vJunos-router 26.2R1.7 cannot serve gNMI Subscribe: it answers `Unimplemented`, `na-grpcd` dies with "drend directory init failed", and both `junos-decoupled-rendering` and `junos-openconfig` are installed as empty package mounts with no `contents.izo` in `/packages/db`.
@@ -164,4 +164,4 @@ Gap 2 is closed: component temperature streams for `FPC0` and `Routing Engine0`,
 Gap 3 is closed: `/junos/system/linecard/packet/usage/` renders as `juniper:/components/component[name=FPC0:NPU0]/properties/property[name=<counter>]/state/value` with counters such as `ts-input-packets`, `ts-output-packets-pps`, `ts-fabric-input-packets` and `lts-sw-input-high-drops`, plus `FPC0:CC0` and `FPC0:CPU0` components.
 The native `/junos/system/linecard/fabric/` and `/environment/` sensors return no notifications on the virtual PFE, so their leaf sets stay YANG-derived from junos-fabric.yang and junos-fpc-env.yang.
 The native `/junos/system/linecard/interface/` sensor renders per-queue counters under `juniper:/interfaces/interface[name=ge-0/0/x]/state/counters/out-queue[queue-number=N]/`.
-The 31 capture files (PROTO and JSON per subtree, about 1.6 MB) live in the session scratchpad and on VM 220 under `~/labs/vjr/captures`; they are lab output under Juniper's non-production licence and are the seed for the nl6 Juniper profile.
+The 31 capture files (PROTO and JSON per subtree, about 1.6 MB) live in the session scratchpad and on the lab VM; they are lab output under Juniper's non-production licence and are the seed for the nl6 Juniper profile.
