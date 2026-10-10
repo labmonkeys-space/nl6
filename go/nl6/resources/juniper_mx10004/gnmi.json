@@ -132,6 +132,24 @@
       "temperature": false
     },
     {
+      "name": "FPC0:PIC1",
+      "type": "PORT",
+      "parent": "FPC0:MIC0",
+      "part_no": "JNP10K-LC480-PIC",
+      "description": "24xSFPP 1/10GE PIC",
+      "serial_no": "NL6PIC000002",
+      "temperature": false
+    },
+    {
+      "name": "FPD Board",
+      "type": "CHASSIS",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FPD",
+      "description": "Front Panel Display",
+      "serial_no": "NL6FPD000001",
+      "temperature": false
+    },
+    {
       "name": "Fan Tray 0",
       "type": "FAN",
       "parent": "Chassis",

@@ -367,8 +367,22 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range cats["juniper_mx10004"].Components {
-		if !strings.Contains(hw, c.PartNo) {
-			t.Errorf("gNMI component %s part %s absent from show chassis hardware", c.Name, c.PartNo)
+		if !strings.Contains(hw, c.PartNo) || !strings.Contains(hw, c.SerialNo) {
+			t.Errorf("gNMI component %s (part %s, serial %s) absent from show chassis hardware", c.Name, c.PartNo, c.SerialNo)
+		}
+	}
+	// And the reverse: every serial SSH prints for a board is a gNMI
+	// component, so the two inventories agree in both directions
+	// (transceivers are SSH-only until nl6#771).
+	gnmiSerials := map[string]bool{}
+	for _, c := range cats["juniper_mx10004"].Components {
+		gnmiSerials[c.SerialNo] = true
+	}
+	for _, line := range strings.Split(hw, "\n") {
+		for _, f := range strings.Fields(line) {
+			if strings.HasPrefix(f, "NL6") && !strings.HasPrefix(f, "NL6XCV") && !gnmiSerials[f] {
+				t.Errorf("SSH serial %s has no gNMI component", f)
+			}
 		}
 	}
 }
