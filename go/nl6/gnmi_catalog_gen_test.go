@@ -196,3 +196,22 @@ func TestGnmiBindings_Device(t *testing.T) {
 		t.Error("sysname without a device reported ok")
 	}
 }
+
+// TestPerDeviceSerial: the suffix moves with the device IPv4 and keeps
+// the component ordinal, so devices and components never collide.
+func TestPerDeviceSerial(t *testing.T) {
+	a := perDeviceSerial("NL6FPC000001", net.ParseIP("10.42.1.7"))
+	b := perDeviceSerial("NL6FPC000001", net.ParseIP("10.42.1.8"))
+	if a != "NL6FPC010701" || b != "NL6FPC010801" {
+		t.Fatalf("got %s and %s", a, b)
+	}
+	if m0, m1 := perDeviceSerial("NL6MEZ000001", net.ParseIP("10.42.1.7")), perDeviceSerial("NL6MEZ000002", net.ParseIP("10.42.1.7")); m0 == m1 {
+		t.Fatalf("components collide: %s", m0)
+	}
+	if got := perDeviceSerial("NL6FPC000001", nil); got != "NL6FPC000001" {
+		t.Fatalf("no IPv4 must serve the constant, got %s", got)
+	}
+	if got := perDeviceSerial("ABCDEF", net.ParseIP("10.42.1.7")); got != "ABCDEF" {
+		t.Fatalf("no trailing digits must serve the constant, got %s", got)
+	}
+}

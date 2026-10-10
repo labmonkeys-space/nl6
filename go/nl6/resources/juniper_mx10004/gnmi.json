@@ -655,7 +655,7 @@
         {
           "name": "state/id",
           "type": "string",
-          "gen": "inventory:serial_no"
+          "gen": "inventory:serial_no_per_device"
         },
         {
           "name": "state/location",
@@ -710,7 +710,7 @@
         {
           "name": "state/serial-no",
           "type": "string",
-          "gen": "inventory:serial_no"
+          "gen": "inventory:serial_no_per_device"
         },
         {
           "name": "state/software-version",

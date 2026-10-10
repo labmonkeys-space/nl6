@@ -6,6 +6,7 @@
 package main
 
 import (
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -361,5 +362,32 @@ func TestCatalogResolver_LeafFilter(t *testing.T) {
 		if got := strings.Join(leaves, ","); got != want[name] {
 			t.Errorf("%s: leaves %q, want %q", name, got, want[name])
 		}
+	}
+}
+
+// TestCatalogResolver_SerialPerDevice: two MX10004 devices at different
+// addresses report different component serials, and one device's
+// components differ among themselves (nl6#769).
+func TestCatalogResolver_SerialPerDevice(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial := func(ip, component string) string {
+		dev := newTestGnmiDevice(t, 1)
+		dev.IP = net.ParseIP(ip)
+		r := newCatalogResolver(dev, cats["juniper_mx10004"])
+		got, err := r.Resolve(pathFromString(t, "/components/component[name="+component+"]/state/serial-no"), time.Now())
+		if err != nil || len(got) != 1 || len(got[0].Updates) != 1 {
+			t.Fatalf("%s %s: %v %v", ip, component, err, got)
+		}
+		return got[0].Updates[0].Value.(string)
+	}
+	a, b := serial("10.42.1.7", "FPC0"), serial("10.42.1.8", "FPC0")
+	if a == b || !strings.HasPrefix(a, "NL6FPC") {
+		t.Fatalf("two devices: %s vs %s", a, b)
+	}
+	if m0, m1 := serial("10.42.1.7", "FPC0:MEZZ0"), serial("10.42.1.7", "FPC0:MEZZ1"); m0 == m1 {
+		t.Fatalf("two components of one device share %s", m0)
 	}
 }

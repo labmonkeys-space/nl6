@@ -158,6 +158,7 @@ The check enumerates the key sources it can resolve without a device (`component
 | `inventory:<field>` / `neighbor:<field>` | from `components` / `neighbors` |
 | `const:<literal>` / `key:<n>` / `timestamp:now\|boot` | literal, the n-th key value, nanosecond timestamps |
 | `device:sysname\|id` | the device sysName (falling back to the device ID), or the device ID |
+| `inventory:serial_no_per_device` | the component's `serial_no` with its trailing digits replaced by a per-device suffix from the IPv4 (four hex digits of the low 16 bits plus the ordinal's last two digits), so devices and components never share a serial; a device without an IPv4 serves the constant. SSH `show chassis hardware` stays static text and lists the constants |
 
 Time-based bindings share the interface counter cycler's start as their epoch, so a catalogue counter equals the SNMP counter read at the same instant.
 

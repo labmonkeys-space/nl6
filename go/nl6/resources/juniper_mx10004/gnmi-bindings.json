@@ -81,7 +81,7 @@
       "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}], "module": "openconfig-platform",
       "leaves": {
         "state/name": "inventory:name", "state/type": "inventory:type", "state/parent": "inventory:parent", "state/part-no": "inventory:part_no",
-        "state/description": "inventory:description", "state/serial-no": "inventory:serial_no", "state/id": "inventory:serial_no",
+        "state/description": "inventory:description", "state/serial-no": "inventory:serial_no_per_device", "state/id": "inventory:serial_no_per_device",
         "state/mfg-name": "const:Juniper Networks", "state/mfg-date": "const:2025-01-15", "state/hardware-version": "const:REV 06",
         "state/software-version": "const:24.2R1.17", "state/oper-status": "const:ACTIVE", "state/empty": "const:false", "state/removable": "const:true",
         "state/location": "key:0", "state/allocated-power": "const:0", "state/memory/available": "const:0", "state/memory/utilized": "const:0",

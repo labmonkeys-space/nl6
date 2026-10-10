@@ -327,3 +327,48 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		t.Errorf("ifDescr.49 present (%q); the MX10004 type has exactly 48 ports", d)
 	}
 }
+
+// TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI: the SSH resource was
+// byte-copied from the MX240 and named ge- ports and MPC line cards
+// that neither SNMP nor gNMI serve (nl6#769). SSH must name every
+// ifDescr SNMP serves, no ge- port, and every part number the gNMI
+// inventory carries.
+func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := map[string]string{}
+	for _, e := range res.SSH {
+		ssh[e.Command] = e.Response
+	}
+	terse, hw := ssh["show interfaces terse"], ssh["show chassis hardware"]
+	if terse == "" || hw == "" {
+		t.Fatalf("show interfaces terse / show chassis hardware missing from the SSH resource")
+	}
+	if strings.Contains(terse, "ge-") || strings.Contains(hw, "MPC Type 2") || strings.Contains(hw, "RE-S-2000") {
+		t.Errorf("SSH still carries MX240 content")
+	}
+	ports := 0
+	for _, e := range res.SNMP {
+		if strings.HasPrefix(e.OID, "1.3.6.1.2.1.2.2.1.2.") {
+			ports++
+			if !strings.Contains(terse, e.Response+" ") {
+				t.Errorf("ifDescr %s not listed by show interfaces terse", e.Response)
+			}
+		}
+	}
+	if ports != 48 {
+		t.Fatalf("SNMP serves %d ports, want 48", ports)
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cats["juniper_mx10004"].Components {
+		if !strings.Contains(hw, c.PartNo) {
+			t.Errorf("gNMI component %s part %s absent from show chassis hardware", c.Name, c.PartNo)
+		}
+	}
+}
