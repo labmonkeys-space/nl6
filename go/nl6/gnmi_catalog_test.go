@@ -77,8 +77,8 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"parent naming no component", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": [{"source": "components", "parent": "FPC9"}]`, 1), `parent "FPC9" names no component`},
 		{"parent selecting nothing", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": [{"source": "components", "parent": "FPC0"}]`, 1), `parent "FPC0" with filter "" selects no component`},
 		{"alias shared across origins", strings.Replace(strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/shared/"], "keys": [{"source": "components"}]`, 1), `"origin": "openconfig",
-      "keys": [{"source": "components", "filter": "temperature"}]`, `"origin": "testvendor", "aliases": ["/testvendor/shared/"],
-      "keys": [{"source": "components", "filter": "temperature"}]`, 1), `alias "/testvendor/shared/" is also listed by a "openconfig" subtree`},
+      "keys": [{"source": "components", "filter": "temperature"}]`, `"origin": "testvendor", "aliases": ["/testvendor/shared"],
+      "keys": [{"source": "components", "filter": "temperature"}]`, 1), `alias "/testvendor/shared" is also listed by a "openconfig" subtree`},
 		{"leaf filter outside the key filter", strings.Replace(strings.Replace(base, `"keys": [{"source": "components", "filter": "temperature"}]`, `"keys": [{"source": "components", "filter": "CHASSIS"}]`, 1), `"gen": "sine:40,5,600"`, `"gen": "sine:40,5,600", "filter": "temperature"`, 1), `matches no component of this subtree`},
 	}
 	for _, tc := range cases {

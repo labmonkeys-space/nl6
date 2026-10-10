@@ -2,7 +2,7 @@
   "comment": "Juniper MX10004 bindings. Shape verified against vJunos-router 25.4R1.12 (context/gnmi-vendor-sources.md); chassis layout from the MX10004 hardware guide; serials synthetic.",
   "vendor": "juniper",
   "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header", "decimal_encoding": "decimal_val",
-    "origin_aliases": {"Native": "juniper", "junos-fabric": "juniper", "junos-fpc-env": "juniper"}},
+    "origin_aliases": {"Native": "juniper"}},
   "components": [
     {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "JNP10004", "description": "JNP10004 [MX10004]", "serial_no": "NL6MX10004001", "temperature": false},
     {"name": "Midplane", "type": "BACKPLANE", "parent": "Chassis", "part_no": "JNP10004-MIDPLANE", "description": "Midplane", "serial_no": "NL6MP0000001", "temperature": false},
@@ -513,20 +513,44 @@
       }
     },
     {
-      "path": "/junos/system/linecard[name=*]/environment/power-record", "origin": "juniper", "module": "junos-fpc-env",
+      "path": "/junos/system/linecard[name=*]/environment/power-record", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
       "keys": [{"source": "static", "names": ["FPC0"]}],
       "leaves": {"max-fpc-power": "const:1100", "fpc-power": "sine:780,40,900"}
     },
     {
-      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]", "origin": "juniper", "module": "junos-fpc-env",
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
       "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "components", "filter": "temperature", "parent": "FPC0"}],
       "leaves": {"temp-sensor-name": "key:1", "temp-value": "sine:42,6,600"},
       "always": ["temp-sensor-name"]
     },
     {
-      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-0V9", "VDD-1V2", "VDD-1V8", "VDD-3V3", "VDD-12V"]}],
-      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1200,10,600"},
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-0V9"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:900,9,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V2"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1200,12,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V8"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1800,18,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-3V3"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:3300,33,600"},
+      "always": ["voltage-sensor-name"]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-12V"]}],
+      "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:12000,120,600"},
       "always": ["voltage-sensor-name"]
     }
   ]

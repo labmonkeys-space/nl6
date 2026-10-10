@@ -468,12 +468,26 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 	if n.OriginAliases == nil {
 		n.OriginAliases = map[string]string{}
 	}
+	// A module maps to the origin its subtrees share, so a native
+	// sensor model (junos-fabric under `juniper`, nl6#767) lands on
+	// native_origin; a module used under both origins maps to origin.
+	moduleOrigin := map[string]string{}
 	for _, st := range subtrees {
 		if st.Module == "" || st.Module == n.Origin || st.Module == n.NativeOrigin {
 			continue
 		}
-		if _, explicit := n.OriginAliases[st.Module]; !explicit {
-			n.OriginAliases[st.Module] = n.Origin
+		if o, seen := moduleOrigin[st.Module]; seen && o != st.Origin {
+			moduleOrigin[st.Module] = n.Origin
+			continue
+		}
+		moduleOrigin[st.Module] = st.Origin
+	}
+	for m, o := range moduleOrigin {
+		if o != n.Origin && o != n.NativeOrigin {
+			o = n.Origin
+		}
+		if _, explicit := n.OriginAliases[m]; !explicit {
+			n.OriginAliases[m] = o
 		}
 	}
 	if len(n.OriginAliases) == 0 {

@@ -60,7 +60,9 @@ var fixtureSubscriptions = map[string]string{
 	"system":                  "/system/state",
 	"native-packet-usage":     "juniper:/junos/system/linecard/packet/usage/",
 	"native-fabric-hardware":  "Native:/junos/system/linecard/fabric/",
-	"native-fpc-env":          "juniper:/junos/system/linecard/environment/",
+	// A -yang fixture is read from the YANG model, not captured: it pins
+	// nl6's shape, not agreement with hardware (nl6#767).
+	"native-fpc-env-yang": "juniper:/junos/system/linecard/environment/",
 }
 
 // fixtureAliasRendered maps fixtures captured through a native sensor

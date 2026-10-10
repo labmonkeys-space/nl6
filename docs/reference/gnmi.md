@@ -129,7 +129,7 @@ Each device adds a 48-byte resolver.
 | Key | Meaning |
 |---|---|
 | `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
-| `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; responses carry the canonical origin. The generator adds every subtree's `module` as an alias of `origin`, so the bindings list only spellings no module names, such as `Native`, and the native sensor modules, which belong to `native_origin` |
+| `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; responses carry the canonical origin. The generator adds every subtree's `module` as an alias of `origin`, mapped to the origin of the subtrees naming it (`native_origin` for a native sensor model such as `junos-fabric`, `origin` when both use it), so the bindings list only spellings no module names, such as `Native` |
 | `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
 | `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
 | `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
@@ -199,7 +199,7 @@ The module names `openconfig-interfaces`, `openconfig-platform`, `openconfig-sys
 A subscription to `/junos/system/linecard/packet/usage/`, with origin `juniper` or none, returns the packet-usage counters under the component paths Junos renders them at.
 A subscription to `/junos/system/linecard/fabric/`, with origin `juniper`, `Native`, `junos-fabric` or none, returns the fabric sensor under the prefix hardware renders it at, `junos/fabric-statistics/fabric-message/edges[...]/class-stats[priority=*]/transmit-counts`, one notification per edge and class with the 14 `uint64` leaves of `junos-fabric.yang`.
 The prefix, keys and leaf names come from an MX10004 hardware capture; the edges follow nl6's inventory (FPC0's four PFEs against the six SFBs, both directions, classes `high` and `low`, 96 notifications), and the keyless `class-stats/transmit-counts` variant the router also sends is not modelled.
-A subscription to `/junos/system/linecard/environment/` returns FPC0's power record, one temperature record per FPC0 sensor in the inventory and five voltage records, with the leaves of `junos-fpc-env.yang`.
+A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, `Native`, `junos-fpc-env` or none, returns FPC0's power record, one temperature record per FPC0 sensor in the inventory and five voltage records near their rails' nominal voltage, with the leaves of `junos-fpc-env.yang`.
 That subtree is YANG-derived: no capture exists, so the prefix depth, the sensor names and the values are nl6's reading of the model, not what an MX sends.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.

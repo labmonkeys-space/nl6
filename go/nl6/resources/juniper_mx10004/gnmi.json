@@ -5029,6 +5029,9 @@
     {
       "path": "/junos/system/linecard[name=*]/environment/power-record",
       "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
       "keys": [
         {
           "source": "static",
@@ -5053,6 +5056,9 @@
     {
       "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]",
       "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
       "keys": [
         {
           "source": "static",
@@ -5083,6 +5089,9 @@
     {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
       "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
       "keys": [
         {
           "source": "static",
@@ -5093,10 +5102,142 @@
         {
           "source": "static",
           "names": [
-            "VDD-0V9",
-            "VDD-1V2",
-            "VDD-1V8",
-            "VDD-3V3",
+            "VDD-0V9"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "voltage-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "voltage-value",
+          "type": "uint32",
+          "gen": "sine:900,9,600"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "VDD-1V2"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "voltage-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "voltage-value",
+          "type": "uint32",
+          "gen": "sine:1200,12,600"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "VDD-1V8"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "voltage-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "voltage-value",
+          "type": "uint32",
+          "gen": "sine:1800,18,600"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "VDD-3V3"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "voltage-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "voltage-value",
+          "type": "uint32",
+          "gen": "sine:3300,33,600"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
             "VDD-12V"
           ]
         }
@@ -5111,7 +5252,7 @@
         {
           "name": "voltage-value",
           "type": "uint32",
-          "gen": "sine:1200,10,600"
+          "gen": "sine:12000,120,600"
         }
       ]
     }

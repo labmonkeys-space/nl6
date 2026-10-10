@@ -186,3 +186,36 @@ func TestGenerateRejectsYangPathOutsideModel(t *testing.T) {
 		t.Fatalf("bad yang_path accepted: %v", err)
 	}
 }
+
+// TestGenerateMapsNativeModuleToNativeOrigin: a module used only by
+// native-origin subtrees becomes an alias of native_origin (nl6#767),
+// so a native sensor needs no hand-written origin alias.
+func TestGenerateMapsNativeModuleToNativeOrigin(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	native := strings.Replace(string(b), `"path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
+      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1"]}], "module": "test-a",`,
+		`"path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "testvendor",
+      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1"]}], "module": "test-a",`, 1)
+	if native == string(b) {
+		t.Fatal("fixture mutation did not apply")
+	}
+	for _, tc := range []struct{ name, data, want string }{
+		{"shared by both origins", string(b), `"test-a": "openconfig"`},
+		{"module under the native origin only", strings.Replace(strings.Replace(native, `"module": "test-a",
+      "leaves": {"state/oper-status"`, `"module": "test-a",
+      "leaves": {"state/oper-status"`, 1), `"origin": "openconfig", "keys": [{"source": "interfaces"}], "module": "test-a"`, `"origin": "testvendor", "keys": [{"source": "interfaces"}], "module": "test-a"`, 1), `"test-a": "testvendor"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "b.json")
+			_ = os.WriteFile(p, []byte(tc.data), 0o644)
+			out := filepath.Join(t.TempDir(), "o.json")
+			if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+				t.Fatal(err)
+			}
+			got, _ := os.ReadFile(out)
+			if !strings.Contains(string(got), tc.want) {
+				t.Fatalf("want %s in:\n%s", tc.want, got)
+			}
+		})
+	}
+}

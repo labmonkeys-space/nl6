@@ -273,14 +273,17 @@ func (c *gnmiCatalog) validate(source string) error {
 		st.elems = elems
 		st.aliases = nil
 		for _, a := range st.Aliases {
-			if o, seen := aliasOrigin[a]; seen && o != st.Origin {
-				return fail("subtree %d (%s): alias %q is also listed by a %q subtree; one alias resolves to every subtree carrying it and they must share an origin", i, st.Path, a, o)
-			}
-			aliasOrigin[a] = st.Origin
 			ae, err := parseCatalogPath(a)
 			if err != nil {
 				return fail("subtree %d (%s): alias %q: %v", i, st.Path, a, err)
 			}
+			// Keyed on the parsed form: aliases match by elements, so
+			// "/x/y/" and "/x/y" are one alias.
+			canon := pathToString(&gnmipb.Path{Elem: ae})
+			if o, seen := aliasOrigin[canon]; seen && o != st.Origin {
+				return fail("subtree %d (%s): alias %q is also listed by a %q subtree; one alias resolves to every subtree carrying it and they must share an origin", i, st.Path, a, o)
+			}
+			aliasOrigin[canon] = st.Origin
 			for _, e := range ae {
 				for _, v := range e.Key {
 					if v == "*" {

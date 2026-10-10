@@ -112,11 +112,19 @@ func TestMX10004FabricCountersMonotonic(t *testing.T) {
 func TestMX10004FpcEnvironment(t *testing.T) {
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()
-	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "juniper", "/junos/system/linecard/environment/")
+	for _, origin := range []string{"juniper", "Native", "junos-fpc-env", ""} {
+		checkFpcEnvironment(t, addr, origin)
+	}
+}
+
+func checkFpcEnvironment(t *testing.T, addr, origin string) {
+	t.Helper()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, origin, "/junos/system/linecard/environment/")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("origin %q: %v", origin, err)
 	}
 	counts := map[string]int{}
+	railValues := map[uint64]bool{}
 	for _, r := range resps {
 		u := r.GetUpdate()
 		if u == nil {
@@ -148,11 +156,16 @@ func TestMX10004FpcEnvironment(t *testing.T) {
 			if got := vals["/voltage-sensor-name"].GetStringVal(); got != rec.Key["voltage-sensor-name"] {
 				t.Fatalf("voltage-sensor-name %q under key %q", got, rec.Key["voltage-sensor-name"])
 			}
+			railValues[vals["/voltage-value"].GetUintVal()/100] = true
 		default:
 			t.Fatalf("unexpected record %s", rec.Name)
 		}
 	}
 	if counts["power-record"] != 1 || counts["temp-record"] != 36 || counts["voltage-record"] != 5 {
-		t.Fatalf("records = %v, want 1 power, 36 temperature, 5 voltage", counts)
+		t.Fatalf("origin %q: records = %v, want 1 power, 36 temperature, 5 voltage", origin, counts)
+	}
+	// Each rail sits near its nominal voltage, so no two share a value.
+	if len(railValues) != 5 {
+		t.Fatalf("origin %q: the five rails serve %d distinct voltages (in units of 100 mV)", origin, len(railValues))
 	}
 }
