@@ -118,13 +118,17 @@ type gnmiCatalogKey struct {
 // gnmiCatalogSubtree is one list entry: `path` is the entry path that
 // becomes the notification prefix under `prefix: list-entry`; leaves
 // are relative to it. `aliases` are subscription paths, such as a Junos
-// native sensor path, that request the whole subtree.
+// native sensor path, that request the whole subtree, or only the
+// leaves at or below an `alias_leaves` entry when the subtree lists
+// any (the MX10004 subinterface counters sensor sends no
+// subinterface state leaves, nl6#787).
 type gnmiCatalogSubtree struct {
-	Path    string             `json:"path"`
-	Origin  string             `json:"origin"`
-	Aliases []string           `json:"aliases,omitempty"`
-	Keys    []gnmiCatalogKey   `json:"keys"`
-	Leaves  []*gnmiCatalogLeaf `json:"leaves"`
+	Path        string             `json:"path"`
+	Origin      string             `json:"origin"`
+	Aliases     []string           `json:"aliases,omitempty"`
+	AliasLeaves []string           `json:"alias_leaves,omitempty"`
+	Keys        []gnmiCatalogKey   `json:"keys"`
+	Leaves      []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
 	aliases [][]*gnmipb.PathElem // compiled from Aliases
@@ -160,6 +164,7 @@ type gnmiCatalogLeaf struct {
 	gen         gnmiLeafGen        // compiled from Gen
 	filterNames map[string]bool    // component names matching Filter; nil when unfiltered
 	decimalVal  bool               // from notification.decimal_encoding; the cast owns the wire form
+	aliasScoped bool               // rendered under an alias: at or below an alias_leaves entry, or every leaf when there is none
 }
 
 // cast converts a generator's raw value to the leaf's YANG type, with
@@ -352,6 +357,7 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: %v", i, leaf.Name, err)
 			}
 			leaf.elems = le
+			leaf.aliasScoped = len(st.AliasLeaves) == 0 // narrowed below from alias_leaves
 			if leaf.Type == "" {
 				return fail("subtree %d leaf %q: type is required", i, leaf.Name)
 			}
@@ -404,6 +410,37 @@ func (c *gnmiCatalog) validate(source string) error {
 				if len(leaf.filterNames) == 0 {
 					return fail("subtree %d leaf %q: filter %q matches no component of this subtree", i, leaf.Name, leaf.Filter)
 				}
+			}
+		}
+		if len(st.AliasLeaves) > 0 && len(st.Aliases) == 0 {
+			return fail("subtree %d (%s): alias_leaves without aliases scopes nothing", i, st.Path)
+		}
+		for _, al := range st.AliasLeaves {
+			// Plain names only, so the generator's string check and this
+			// element check agree (and "/" cannot scope everything).
+			if strings.Trim(al, "/") == "" || strings.ContainsAny(al, "[]") {
+				return fail("subtree %d (%s): alias_leaves %q must be a non-empty leaf path without keys", i, st.Path, al)
+			}
+			ae, err := parseCatalogPath(al)
+			if err != nil {
+				return fail("subtree %d (%s): alias_leaves %q: %v", i, st.Path, al, err)
+			}
+			covered := false
+			for _, leaf := range st.Leaves {
+				if pathCovers(ae, leaf.elems) {
+					leaf.aliasScoped = true
+					covered = true
+				}
+			}
+			if !covered {
+				return fail("subtree %d (%s): alias_leaves %q covers no leaf", i, st.Path, al)
+			}
+		}
+		for _, leaf := range st.Leaves {
+			// An always leaf left out of the scope would give the alias
+			// and the direct path two identity shapes for one entry.
+			if leaf.Always && !leaf.aliasScoped {
+				return fail("subtree %d (%s): always leaf %q is outside alias_leaves", i, st.Path, leaf.Name)
 			}
 		}
 	}

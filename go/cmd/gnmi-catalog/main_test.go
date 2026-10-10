@@ -219,3 +219,56 @@ func TestGenerateMapsNativeModuleToNativeOrigin(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateAliasLeaves covers nl6#787: alias_leaves is copied
+// through, and the loader's refusals fire here, where the bindings are
+// edited.
+func TestGenerateAliasLeaves(t *testing.T) {
+	b, err := os.ReadFile("testdata/bindings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// inject puts fields before the first subtree's "module" and fails
+	// when nothing was replaced, so a fixture edit cannot make a row
+	// pass for the wrong reason.
+	inject := func(t *testing.T, fields string) string {
+		t.Helper()
+		out := strings.Replace(string(b), `"module"`, fields+`, "module"`, 1)
+		if out == string(b) {
+			t.Fatal(`fixture has no "module" to inject before`)
+		}
+		return out
+	}
+	gen := func(t *testing.T, bindings string) (string, error) {
+		t.Helper()
+		p := filepath.Join(t.TempDir(), "b.json")
+		if err := os.WriteFile(p, []byte(bindings), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out := filepath.Join(t.TempDir(), "o.json")
+		if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+			return "", err
+		}
+		got, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(string(got)), " "), nil
+	}
+	got, err := gen(t, inject(t, `"aliases": ["/vendor/native/sensor/"], "alias_leaves": ["state"]`))
+	if err != nil || !strings.Contains(got, `"alias_leaves": [ "state" ]`) {
+		t.Fatalf("alias_leaves not copied (%v):\n%s", err, got)
+	}
+	for _, tc := range []struct{ name, fields, wantErr string }{
+		{"without aliases", `"alias_leaves": ["state"]`, "alias_leaves without aliases"},
+		{"covering no leaf", `"aliases": ["/vendor/native/sensor/"], "alias_leaves": ["state/nope"]`, `alias_leaves "state/nope" covers no leaf`},
+		{"root entry", `"aliases": ["/vendor/native/sensor/"], "alias_leaves": ["/"]`, "must be a non-empty leaf path without keys"},
+		{"always outside the scope", `"aliases": ["/vendor/native/sensor/"], "alias_leaves": ["state/counters"], "always": ["state/mtu"]`, "always leaf state/mtu is outside alias_leaves"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := gen(t, inject(t, tc.fields)); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}

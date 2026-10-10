@@ -34,11 +34,14 @@ type bindings struct {
 }
 
 type bindingSubtree struct {
-	Path    string          `json:"path"`
-	Origin  string          `json:"origin"`
-	Aliases []string        `json:"aliases"`
-	Keys    json.RawMessage `json:"keys"`
-	Module  string          `json:"module"`
+	Path    string   `json:"path"`
+	Origin  string   `json:"origin"`
+	Aliases []string `json:"aliases"`
+	// AliasLeaves scopes what an alias request renders to the leaves at
+	// or below these entry-relative paths (nl6#787); copied through.
+	AliasLeaves []string        `json:"alias_leaves"`
+	Keys        json.RawMessage `json:"keys"`
+	Module      string          `json:"module"`
 	// YangPath is where the leaves live in the model when the rendered
 	// prefix differs from the YANG tree (Junos renders the fabric
 	// sensor under junos/fabric-statistics while junos-fabric.yang
@@ -75,11 +78,12 @@ type outLeaf struct {
 }
 
 type outSubtree struct {
-	Path    string          `json:"path"`
-	Origin  string          `json:"origin"`
-	Aliases []string        `json:"aliases,omitempty"`
-	Keys    json.RawMessage `json:"keys"`
-	Leaves  []outLeaf       `json:"leaves"`
+	Path        string          `json:"path"`
+	Origin      string          `json:"origin"`
+	Aliases     []string        `json:"aliases,omitempty"`
+	AliasLeaves []string        `json:"alias_leaves,omitempty"`
+	Keys        json.RawMessage `json:"keys"`
+	Leaves      []outLeaf       `json:"leaves"`
 }
 
 type outModel struct {
@@ -212,11 +216,37 @@ func run(args []string) error {
 				return fmt.Errorf("subtree %s: filter %q on leaf %s matches no component", st.Path, f, n)
 			}
 		}
+		// Mirror the loader's alias_leaves rules, as for filters.
+		if len(st.AliasLeaves) > 0 && len(st.Aliases) == 0 {
+			return fmt.Errorf("subtree %s: alias_leaves without aliases scopes nothing", st.Path)
+		}
+		inScope := map[string]bool{}
+		for _, al := range st.AliasLeaves {
+			scope := strings.Trim(al, "/")
+			if scope == "" || strings.ContainsAny(scope, "[]") {
+				return fmt.Errorf("subtree %s: alias_leaves %q must be a non-empty leaf path without keys", st.Path, al)
+			}
+			covered := false
+			for _, l := range leaves {
+				if l.Name == scope || strings.HasPrefix(l.Name, scope+"/") {
+					inScope[l.Name] = true
+					covered = true
+				}
+			}
+			if !covered {
+				return fmt.Errorf("subtree %s: alias_leaves %q covers no leaf", st.Path, al)
+			}
+		}
+		for _, l := range leaves {
+			if len(st.AliasLeaves) > 0 && l.Always && !inScope[l.Name] {
+				return fmt.Errorf("subtree %s: always leaf %s is outside alias_leaves", st.Path, l.Name)
+			}
+		}
 		keys := st.Keys
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)
