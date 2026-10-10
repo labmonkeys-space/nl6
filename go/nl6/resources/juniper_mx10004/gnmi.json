@@ -11,11 +11,11 @@
     ],
     "extension": "juniper-header",
     "origin_aliases": {
+      "Native": "juniper",
       "openconfig-interfaces": "openconfig",
-      "openconfig-platform": "openconfig",
-      "openconfig-system": "openconfig",
       "openconfig-network-instance": "openconfig",
-      "Native": "juniper"
+      "openconfig-platform": "openconfig",
+      "openconfig-system": "openconfig"
     }
   },
   "models": [

@@ -15,6 +15,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -172,12 +174,22 @@ func (c *gnmiCatalog) validate(source string) error {
 	if n.Origin == "" {
 		return fail("notification.origin is required")
 	}
-	for alias, target := range n.OriginAliases {
+	aliases := make([]string, 0, len(n.OriginAliases))
+	for alias := range n.OriginAliases {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases) // the first bad alias reported is the same on every run
+	for _, alias := range aliases {
+		target := n.OriginAliases[alias]
 		if alias == "" || alias == n.Origin || alias == n.NativeOrigin {
 			return fail("notification.origin_aliases: %q is a canonical origin, not an alias", alias)
 		}
-		if target != n.Origin && (n.NativeOrigin == "" || target != n.NativeOrigin) {
-			return fail("notification.origin_aliases: %q maps to %q, which is neither %q nor %q", alias, target, n.Origin, n.NativeOrigin)
+		canonical := []string{n.Origin}
+		if n.NativeOrigin != "" {
+			canonical = append(canonical, n.NativeOrigin)
+		}
+		if !slices.Contains(canonical, target) {
+			return fail("notification.origin_aliases: %q maps to %q, want one of %q", alias, target, canonical)
 		}
 	}
 	if len(n.Encodings) == 0 {

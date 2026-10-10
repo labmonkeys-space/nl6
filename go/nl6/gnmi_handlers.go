@@ -178,6 +178,9 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 	notifs := make([]*gnmipb.Notification, 0, len(req.GetPath()))
 	for _, p := range req.GetPath() {
 		full := joinPathPrefix(prefixElems, p)
+		if s.catalog != nil {
+			full = s.catalog.Canonicalize(full)
+		}
 		if s.catalog != nil && s.catalog.Match(full) {
 			cn, err := s.catalog.Resolve(full, now)
 			if err != nil {
@@ -389,6 +392,21 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 			})
 		}
 		subs = merged
+	}
+	if s.catalog != nil {
+		// Rewrite aliased origins once, before any dispatch, so the
+		// catalogue and the legacy resolver behind it agree.
+		for i, sub := range subs {
+			if cp := s.catalog.Canonicalize(sub.GetPath()); cp != sub.GetPath() {
+				subs[i] = &gnmipb.Subscription{
+					Path:              cp,
+					Mode:              sub.GetMode(),
+					SampleInterval:    sub.GetSampleInterval(),
+					SuppressRedundant: sub.GetSuppressRedundant(),
+					HeartbeatInterval: sub.GetHeartbeatInterval(),
+				}
+			}
+		}
 	}
 
 	// ON_CHANGE is not served on catalogue paths.

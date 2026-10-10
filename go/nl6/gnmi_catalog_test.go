@@ -68,7 +68,7 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"leaf filter without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "ifstate:oper", "filter": "temperature"`, 1), "filter needs a components key source"},
 		{"leaf filter matching nothing", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "inventory:serial_no", "filter": "FAN"`, 1), `filter "FAN" matches no component`},
 		{"alias that is a canonical origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"openconfig": "openconfig"}, "prefix": "list-entry"`, 1), "is a canonical origin, not an alias"},
-		{"alias to an unknown origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"Native": "nokia"}, "prefix": "list-entry"`, 1), `"Native" maps to "nokia"`},
+		{"alias to an unknown origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"Native": "nokia"}, "prefix": "list-entry"`, 1), `"Native" maps to "nokia", want one of ["openconfig" "testvendor"]`},
 		{"leaf filter outside the key filter", strings.Replace(strings.Replace(base, `"keys": [{"source": "components", "filter": "temperature"}]`, `"keys": [{"source": "components", "filter": "CHASSIS"}]`, 1), `"gen": "sine:40,5,600"`, `"gen": "sine:40,5,600", "filter": "temperature"`, 1), `matches no component of this subtree`},
 	}
 	for _, tc := range cases {

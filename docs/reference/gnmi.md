@@ -129,7 +129,7 @@ Each device adds a 48-byte resolver.
 | Key | Meaning |
 |---|---|
 | `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
-| `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; responses carry the canonical origin |
+| `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; responses carry the canonical origin. The generator adds every subtree's `module` as an alias of `origin`, so the bindings list only spellings no module names, such as `Native` |
 | `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
 | `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
 | `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
