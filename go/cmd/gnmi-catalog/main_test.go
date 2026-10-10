@@ -87,3 +87,14 @@ func TestGenerateCopiesAliases(t *testing.T) {
 		t.Fatalf("aliases not copied verbatim:\n%s", got)
 	}
 }
+
+func TestGenerateRejectsUnknownBindingsField(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	bad := strings.Replace(string(b), `"module"`, `"modul": "x", "module"`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(bad), 0o644)
+	err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
+	if err == nil || !strings.Contains(err.Error(), `unknown field "modul"`) {
+		t.Fatalf("misspelt bindings field accepted: %v", err)
+	}
+}

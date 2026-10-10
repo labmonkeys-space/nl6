@@ -10,6 +10,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -101,7 +102,9 @@ func run(args []string) error {
 		return err
 	}
 	var b bindings
-	if err := json.Unmarshal(raw, &b); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil {
 		return fmt.Errorf("bindings: %w", err)
 	}
 	var imports []string
@@ -170,9 +173,6 @@ func run(args []string) error {
 	return os.WriteFile(*outPath, append(enc, '\n'), 0o644) // #nosec G306 -- generated catalogue is committed to the repo; world-readable is intended
 }
 
-// loadModules reads every .yang file under dirs and processes them.
-// importDirs are only added to the search path, so a module there is
-// loaded when something imports it.
 // knownUnbuildableDeviationTargets are deviation targets that exist in
 // the YANG but that goyang never builds: they come from an augment nested
 // inside a uses statement (uses aft-common-entry-state { augment counters
@@ -196,6 +196,9 @@ func isKnownUnbuildableDeviation(err error) bool {
 	return false
 }
 
+// loadModules reads every .yang file under dirs and processes them.
+// importDirs are only added to the search path, so a module there is
+// loaded when something imports it.
 func loadModules(dirs, importDirs []string) (*yang.Modules, error) {
 	ms := yang.NewModules()
 	for _, d := range importDirs {
