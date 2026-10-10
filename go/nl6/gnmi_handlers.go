@@ -66,7 +66,7 @@ func (s *gnmiServer) Capabilities(_ context.Context, _ *gnmipb.CapabilityRequest
 	if s.catalog == nil {
 		return resp, nil
 	}
-	resp.SupportedModels = append(resp.SupportedModels, s.catalog.Models()...)
+	resp.SupportedModels = mergeModels(resp.SupportedModels, s.catalog.Models())
 	resp.SupportedEncodings = resp.SupportedEncodings[:0]
 	for _, e := range []gnmipb.Encoding{gnmipb.Encoding_JSON, gnmipb.Encoding_JSON_IETF, gnmipb.Encoding_PROTO} {
 		if s.catalog.cat.acceptsEncoding(e) {
@@ -76,8 +76,35 @@ func (s *gnmiServer) Capabilities(_ context.Context, _ *gnmipb.CapabilityRequest
 	return resp, nil
 }
 
-// catalogEncoding applies the catalogue's encoding gate and maps a
-// client JSON request to the json_val sentinel.
+// mergeModels returns legacy with each entry whose name the catalogue
+// also lists replaced in place by the catalogue's entry, followed by
+// the catalogue-only entries in catalogue order.
+func mergeModels(legacy, catalog []*gnmipb.ModelData) []*gnmipb.ModelData {
+	byName := make(map[string]*gnmipb.ModelData, len(catalog))
+	for _, m := range catalog {
+		byName[m.GetName()] = m
+	}
+	out := make([]*gnmipb.ModelData, 0, len(legacy)+len(catalog))
+	used := make(map[string]bool, len(catalog))
+	for _, m := range legacy {
+		if c, ok := byName[m.GetName()]; ok {
+			m = c
+			used[m.GetName()] = true
+		}
+		out = append(out, m)
+	}
+	for _, m := range catalog {
+		if !used[m.GetName()] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// catalogEncoding applies the catalogue's encoding gate, which covers
+// every path on a catalogue device, and returns the encoding to use for
+// catalogue paths: a client JSON request maps to the json_val sentinel.
+// Legacy paths on the same device keep the client encoding.
 func (s *gnmiServer) catalogEncoding(enc gnmipb.Encoding) (gnmipb.Encoding, error) {
 	if !s.catalog.cat.acceptsEncoding(enc) {
 		return 0, status.Errorf(codes.Unimplemented, "Encoding %d not supported, Only PROTO/JSON encoding supported", enc)
@@ -126,6 +153,13 @@ func (s *gnmiServer) Get(ctx context.Context, req *gnmipb.GetRequest) (resp *gnm
 // getLabelled is Get's body; see the wrap above.
 func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, error) {
 	enc := req.GetEncoding()
+	catEnc := enc
+	if s.catalog != nil {
+		var err error
+		if catEnc, err = s.catalogEncoding(enc); err != nil {
+			return nil, err
+		}
+	}
 	if !encodingSupported(enc) {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported encoding %v", enc)
 	}
@@ -145,16 +179,12 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 	for _, p := range req.GetPath() {
 		full := joinPathPrefix(prefixElems, p)
 		if s.catalog != nil && s.catalog.Match(full) {
-			cenc, err := s.catalogEncoding(enc)
-			if err != nil {
-				return nil, err
-			}
 			cn, err := s.catalog.Resolve(full, now)
 			if err != nil {
 				return nil, err
 			}
 			for _, n := range cn {
-				ups, err := encodeUpdates(filterByGetType(n.Updates, req.GetType()), cenc)
+				ups, err := encodeUpdates(filterByGetType(n.Updates, req.GetType()), catEnc)
 				if err != nil {
 					return nil, err
 				}
@@ -301,6 +331,16 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 	}
 
 	enc := sl.GetEncoding()
+	// Catalogue gate: a device with a catalogue refuses an encoding the
+	// catalogue excludes on every path. Legacy subscriptions keep the
+	// client encoding; catalogue ones use catEnc.
+	catEnc := enc
+	if s.catalog != nil {
+		var err error
+		if catEnc, err = s.catalogEncoding(enc); err != nil {
+			return err
+		}
+	}
 	if !encodingSupported(enc) {
 		return status.Errorf(codes.InvalidArgument, "unsupported encoding %v", enc)
 	}
@@ -351,21 +391,11 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 		subs = merged
 	}
 
-	// Catalogue gate: a device with a catalogue refuses an encoding the
-	// catalogue excludes when any subscription is catalogue-served, and
-	// does not serve ON_CHANGE on catalogue paths. Legacy subscriptions
-	// keep the client encoding; catalogue ones use catEnc.
-	catEnc := enc
-	if s.catalog != nil {
+	// ON_CHANGE is not served on catalogue paths.
+	if s.catalog != nil && sl.GetMode() == gnmipb.SubscriptionList_STREAM {
 		for _, sub := range subs {
-			if s.catalog.Match(sub.GetPath()) {
-				if sub.GetMode() == gnmipb.SubscriptionMode_ON_CHANGE && sl.GetMode() == gnmipb.SubscriptionList_STREAM {
-					return status.Error(codes.Unimplemented, "ON_CHANGE is not supported for catalogue paths in this release")
-				}
-				var err error
-				if catEnc, err = s.catalogEncoding(enc); err != nil {
-					return err
-				}
+			if sub.GetMode() == gnmipb.SubscriptionMode_ON_CHANGE && s.catalog.Match(sub.GetPath()) {
+				return status.Error(codes.Unimplemented, "ON_CHANGE is not supported for catalogue paths in this release")
 			}
 		}
 	}

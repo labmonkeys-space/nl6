@@ -120,6 +120,15 @@ func TestCatalogServer_EncodingGateAndJsonVal(t *testing.T) {
 	if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), "Only PROTO/JSON encoding supported") {
 		t.Fatalf("JSON_IETF: %v", err)
 	}
+	// The gate is device-wide: a legacy-only path is refused too.
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = gnmipb.NewGNMIClient(conn).Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_JSON_IETF, Path: []*gnmipb.Path{pathFromString(t, "/interfaces/interface/state/counters/in-errors")}})
+	if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), "Encoding 4 not supported, Only PROTO/JSON encoding supported") {
+		t.Fatalf("JSON_IETF Get on legacy path: %v", err)
+	}
 	resps, err := subscribeOnce(t, addr, gnmipb.Encoding_JSON, "/components/component/state/serial-no")
 	if err != nil {
 		t.Fatal(err)
@@ -169,14 +178,14 @@ func TestCatalogServer_GetAndCapabilities(t *testing.T) {
 	if !encs[gnmipb.Encoding_PROTO] || !encs[gnmipb.Encoding_JSON] || encs[gnmipb.Encoding_JSON_IETF] {
 		t.Fatalf("encodings = %v", caps.GetSupportedEncodings())
 	}
-	found := false
+	var ifModels []string
 	for _, m := range caps.GetSupportedModels() {
-		if m.GetName() == "openconfig-interfaces" && m.GetVersion() == "3.11.1" {
-			found = true
+		if m.GetName() == "openconfig-interfaces" {
+			ifModels = append(ifModels, m.GetVersion())
 		}
 	}
-	if !found {
-		t.Fatalf("catalogue model missing: %v", caps.GetSupportedModels())
+	if len(ifModels) != 1 || ifModels[0] != "3.11.1" {
+		t.Fatalf("openconfig-interfaces must appear once as 3.11.1: %v", caps.GetSupportedModels())
 	}
 	resp, err := c.Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_PROTO, Path: []*gnmipb.Path{pathFromString(t, "/components/component[name=FPC0]/state/temperature")}})
 	if err != nil {
