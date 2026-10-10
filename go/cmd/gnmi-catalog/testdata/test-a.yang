@@ -1,0 +1,26 @@
+module test-a {
+  yang-version 1.1;
+  namespace "urn:test:a";
+  prefix ta;
+  revision 2026-01-02 { description "test"; }
+  container interfaces {
+    list interface {
+      key "name";
+      leaf name { type string; }
+      container state {
+        leaf oper-status { type enumeration { enum UP; enum DOWN; } }
+        leaf mtu { type uint16; }
+        leaf enabled { type boolean; }
+        leaf removed-by-deviation { type string; }
+        container counters {
+          leaf in-octets { type uint64; }
+          list out-queue {
+            key "queue-number";
+            leaf queue-number { type uint8; }
+            leaf pkts { type uint64; }
+          }
+        }
+      }
+    }
+  }
+}

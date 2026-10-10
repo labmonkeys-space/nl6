@@ -9,6 +9,7 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12
 	github.com/miekg/dns v1.1.73
 	github.com/openconfig/gnmi v0.14.1
+	github.com/openconfig/goyang v1.6.3
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/time v0.16.0
@@ -17,6 +18,7 @@ require (
 )
 
 require (
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/klauspost/compress v1.18.7 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

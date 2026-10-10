@@ -1,0 +1,159 @@
+{
+  "comment": "Juniper MX10004 bindings. Shape verified against vJunos-router 25.4R1.12 (context/gnmi-vendor-sources.md); chassis layout from the MX10004 hardware guide; serials synthetic.",
+  "vendor": "juniper",
+  "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header"},
+  "components": [
+    {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "JNP10004", "description": "JNP10004 [MX10004]", "serial_no": "NL6MX10004001", "temperature": false},
+    {"name": "Midplane", "type": "BACKPLANE", "parent": "Chassis", "part_no": "JNP10004-MIDPLANE", "description": "Midplane", "serial_no": "NL6MP0000001", "temperature": false},
+    {"name": "CB0", "type": "CONTROLLER_CARD", "parent": "Chassis", "part_no": "JNP10K-RE1", "description": "Control Board", "serial_no": "NL6CB0000001", "temperature": false},
+    {"name": "Routing Engine0", "type": "CONTROLLER_CARD", "parent": "CB0", "part_no": "JNP10K-RE1", "description": "RE-S-X6-64G", "serial_no": "NL6RE0000001", "temperature": true},
+    {"name": "FPC0", "type": "LINECARD", "parent": "Chassis", "part_no": "JNP10K-LC480", "description": "JNP10K-LC480", "serial_no": "NL6FPC000001", "temperature": true},
+    {"name": "FPC0:CPU", "type": "CPU", "parent": "FPC0", "part_no": "JNP10K-LC480-CPU", "description": "LC480 PMB", "serial_no": "NL6CPU000001", "temperature": false},
+    {"name": "FPC0:MEZZ0", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MEZZ", "description": "LC480 Mezz", "serial_no": "NL6MEZ000001", "temperature": false},
+    {"name": "FPC0:MEZZ1", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MEZZ", "description": "LC480 Mezz", "serial_no": "NL6MEZ000002", "temperature": false},
+    {"name": "FPC0:MIC0", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MIC", "description": "24xSFPP 1/10GE MIC", "serial_no": "NL6MIC000001", "temperature": false},
+    {"name": "FPC0:PIC0", "type": "PORT", "parent": "FPC0:MIC0", "part_no": "JNP10K-LC480-PIC", "description": "24xSFPP 1/10GE PIC", "serial_no": "NL6PIC000001", "temperature": false},
+    {"name": "Fan Tray 0", "type": "FAN", "parent": "Chassis", "part_no": "JNP10004-FAN3", "description": "Fan Tray 0", "serial_no": "NL6FT0000001", "temperature": false},
+    {"name": "Fan Tray 1", "type": "FAN", "parent": "Chassis", "part_no": "JNP10004-FAN3", "description": "Fan Tray 1", "serial_no": "NL6FT0000002", "temperature": false},
+    {"name": "PEM0", "type": "POWER_SUPPLY", "parent": "Chassis", "part_no": "JNP10K-PWR-AC2", "description": "JNP10K 5500W AC/HVDC Power Supply", "serial_no": "NL6PEM000001", "temperature": false},
+    {"name": "PEM1", "type": "POWER_SUPPLY", "parent": "Chassis", "part_no": "JNP10K-PWR-AC2", "description": "JNP10K 5500W AC/HVDC Power Supply", "serial_no": "NL6PEM000002", "temperature": false}
+  ],
+  "neighbors": [
+    {"address": "203.0.113.1", "peer_as": 64496, "local_as": 64500, "state": "ESTABLISHED"},
+    {"address": "203.0.113.2", "peer_as": 64497, "local_as": 64500, "state": "ESTABLISHED"}
+  ],
+  "subtrees": [
+    {
+      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces"}], "module": "openconfig-interfaces",
+      "leaves": {
+        "state/name": "ifstate:name", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper", "state/admin-status": "ifstate:admin",
+        "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:false", "state/description": "const:",
+        "state/mtu": "const:1514", "state/type": "const:ethernetCsmacd", "state/loopback-mode": "const:NONE", "state/hardware-port": "key:0",
+        "state/counters/in-octets": "ifcounter:ifHCInOctets", "state/counters/out-octets": "ifcounter:ifHCOutOctets",
+        "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-multicast-pkts": "ifcounter:ifHCInMulticastPkts", "state/counters/out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts",
+        "state/counters/in-broadcast-pkts": "ifcounter:ifHCInBroadcastPkts", "state/counters/out-broadcast-pkts": "ifcounter:ifHCOutBroadcastPkts",
+        "state/counters/in-discards": "ifcounter:ifInDiscards", "state/counters/out-discards": "ifcounter:ifOutDiscards",
+        "state/counters/in-errors": "ifcounter:ifInErrors", "state/counters/out-errors": "ifcounter:ifOutErrors",
+        "state/counters/in-fcs-errors": "const:0", "state/counters/carrier-transitions": "const:1",
+        "state/counters/in-pause-pkts": "const:0", "state/counters/out-pause-pkts": "const:0"
+      },
+      "types": {"state/last-change": "uint64", "state/hardware-port": "string", "state/type": "string", "state/loopback-mode": "string"},
+      "extra": {"state/high-speed": {"type": "uint32", "gen": "const:10000"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}}
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
+      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
+      "leaves": {},
+      "extra": {
+        "pkts": {"type": "uint64", "gen": "counter:50"}, "bytes": {"type": "uint64", "gen": "counter:40000"},
+        "queued-pkts": {"type": "uint64", "gen": "const:0"}, "queued-bytes": {"type": "uint64", "gen": "const:0"},
+        "allocated-buffer-size": {"type": "uint64", "gen": "const:0"}, "avg-buffer-occupancy": {"type": "uint64", "gen": "const:0"},
+        "cur-buffer-occupancy": {"type": "uint64", "gen": "const:0"}, "peak-buffer-occupancy": {"type": "uint64", "gen": "const:0"},
+        "red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "red-drop-bytes": {"type": "uint64", "gen": "const:0"},
+        "hp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "lp-red-drop-pkts": {"type": "uint64", "gen": "const:0"},
+        "rl-drop-pkts": {"type": "uint64", "gen": "const:0"}, "rl-drop-bytes": {"type": "uint64", "gen": "const:0"},
+        "tail-drop-pkts": {"type": "uint64", "gen": "const:0"}
+      }
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig",
+      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0"]}], "module": "openconfig-interfaces",
+      "leaves": {
+        "state/name": "ifstate:name", "state/index": "key:1", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper",
+        "state/admin-status": "ifstate:admin", "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:true",
+        "state/description": "const:", "state/counters/in-octets": "ifcounter:ifHCInOctets", "state/counters/out-octets": "ifcounter:ifHCOutOctets",
+        "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-multicast-pkts": "ifcounter:ifHCInMulticastPkts", "state/counters/out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts"
+      },
+      "types": {"state/index": "uint32", "state/last-change": "uint64"},
+      "extra": {
+        "ipv4/state/counters/in-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/in-multicast-octets": {"type": "uint64", "gen": "const:0"},
+        "ipv4/state/counters/out-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv4/state/counters/out-multicast-octets": {"type": "uint64", "gen": "const:0"},
+        "ipv6/state/counters/in-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/in-multicast-octets": {"type": "uint64", "gen": "const:0"},
+        "ipv6/state/counters/out-multicast-pkts": {"type": "uint64", "gen": "const:0"}, "ipv6/state/counters/out-multicast-octets": {"type": "uint64", "gen": "const:0"}
+      }
+    },
+    {
+      "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}], "module": "openconfig-platform",
+      "leaves": {
+        "state/name": "inventory:name", "state/type": "inventory:type", "state/parent": "inventory:parent", "state/part-no": "inventory:part_no",
+        "state/description": "inventory:description", "state/serial-no": "inventory:serial_no", "state/id": "inventory:serial_no",
+        "state/mfg-name": "const:Juniper Networks", "state/mfg-date": "const:2025-01-15", "state/hardware-version": "const:REV 06",
+        "state/software-version": "const:24.2R1.17", "state/oper-status": "const:ACTIVE", "state/empty": "const:false", "state/removable": "const:true",
+        "state/location": "key:0", "state/allocated-power": "const:0", "state/memory/available": "const:0", "state/memory/utilized": "const:0",
+        "state/temperature/instant": "sine:38,4,900"
+      },
+      "types": {"state/type": "string", "state/oper-status": "string", "state/temperature/instant": "uint64", "state/location": "string", "state/allocated-power": "uint32", "state/memory/available": "uint64", "state/memory/utilized": "uint64"}
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["CB0", "FPC0", "FPC0:MIC0", "FPC0:PIC0", "Routing Engine0"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "over-temperature", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
+      "module": "openconfig-platform",
+      "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
+      "types": {"state/value": "string"}
+    },
+    {
+      "path": "/components/component[name=*]/cpu/utilization/state", "origin": "openconfig", "keys": [{"source": "static", "names": ["CPU0:CORE0"]}], "module": "openconfig-platform",
+      "leaves": {"instant": "sine:20,8,600", "avg": "sine:20,4,600", "min": "const:5", "max": "const:45", "interval": "const:60000000000", "min-time": "timestamp:boot", "max-time": "timestamp:boot"},
+      "types": {"instant": "uint32", "avg": "uint32", "min": "uint32", "max": "uint32", "interval": "uint64", "min-time": "uint64", "max-time": "uint64"}
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["0", "1", "2", "3"]}], "module": "openconfig-system",
+      "leaves": {
+        "state/index": "key:0",
+        "state/total/instant": "sine:20,8,600", "state/total/avg": "sine:20,4,600", "state/total/min": "const:5", "state/total/max": "const:45", "state/total/interval": "const:60000000000", "state/total/min-time": "timestamp:boot", "state/total/max-time": "timestamp:boot",
+        "state/user/instant": "sine:10,4,600", "state/user/avg": "sine:10,2,600", "state/user/min": "const:2", "state/user/max": "const:25",
+        "state/kernel/instant": "sine:6,2,600", "state/kernel/avg": "sine:6,1,600", "state/kernel/min": "const:1", "state/kernel/max": "const:15",
+        "state/nice/instant": "const:0", "state/nice/avg": "const:0", "state/nice/min": "const:0", "state/nice/max": "const:0",
+        "state/idle/instant": "sine:78,8,600", "state/idle/avg": "sine:78,4,600", "state/idle/min": "const:50", "state/idle/max": "const:95",
+        "state/software-interrupt/instant": "sine:2,1,600", "state/software-interrupt/avg": "const:2", "state/software-interrupt/min": "const:0", "state/software-interrupt/max": "const:5"
+      },
+      "types": {"state/index": "uint32"}
+    },
+    {
+      "path": "/", "origin": "openconfig", "keys": [], "module": "openconfig-system",
+      "leaves": {
+        "system/memory/state/physical": "const:34359738368", "system/memory/state/reserved": "const:0", "system/memory/state/used": "sine:17179869184,2147483648,1800", "system/memory/state/free": "sine:17179869184,-2147483648,1800",
+        "system/state/hostname": "const:nl6-mx10004", "system/state/domain-name": "const:nl6.local", "system/state/login-banner": "const:", "system/state/motd-banner": "const:", "system/state/last-configuration-timestamp": "timestamp:boot"
+      },
+      "types": {"system/state/last-configuration-timestamp": "uint64"}
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/neighbors/neighbor[neighbor-address=*]", "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["DEFAULT"]}, {"source": "static", "names": ["BGP"]}, {"source": "static", "names": ["DEFAULT"]}, {"source": "neighbors"}],
+      "module": "openconfig-network-instance",
+      "leaves": {"state/neighbor-address": "neighbor:address", "state/peer-as": "neighbor:peer_as", "state/local-as": "neighbor:local_as", "state/session-state": "neighbor:state", "state/enabled": "const:true", "state/established-transitions": "const:1", "state/last-established": "timestamp:boot", "state/peer-type": "const:EXTERNAL"},
+      "types": {"state/peer-as": "uint32", "state/local-as": "uint32", "state/established-transitions": "uint64", "state/last-established": "uint64", "state/session-state": "string", "state/peer-type": "string"}
+    },
+    {
+      "path": "/components/component[name=*]", "origin": "juniper", "keys": [{"source": "static", "names": ["FPC0:NPU0", "FPC0:CC0", "FPC0:CPU0"]}], "module": "openconfig-platform",
+      "leaves": {},
+      "extra": {
+        "properties/property[name=ts-input-packets]/state/value": {"type": "uint64", "gen": "counter:5000"}, "properties/property[name=ts-input-packets-pps]/state/value": {"type": "uint64", "gen": "const:5000"},
+        "properties/property[name=ts-output-packets]/state/value": {"type": "uint64", "gen": "counter:4900"}, "properties/property[name=ts-output-packets-pps]/state/value": {"type": "uint64", "gen": "const:4900"},
+        "properties/property[name=ts-fabric-input-packets]/state/value": {"type": "uint64", "gen": "counter:4800"}, "properties/property[name=ts-fabric-input-packets-pps]/state/value": {"type": "uint64", "gen": "const:4800"},
+        "properties/property[name=ts-fabric-output-packets]/state/value": {"type": "uint64", "gen": "counter:4800"}, "properties/property[name=ts-fabric-output-packets-pps]/state/value": {"type": "uint64", "gen": "const:4800"},
+        "properties/property[name=lts-input-packets]/state/value": {"type": "uint64", "gen": "counter:30"}, "properties/property[name=lts-output-packets]/state/value": {"type": "uint64", "gen": "counter:30"},
+        "properties/property[name=lts-hw-input-drops]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lts-sw-input-control-drops]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lts-sw-input-high-drops]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lts-sw-input-medium-drops]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lts-sw-input-low-drops]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lts-sw-output-low-drops]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lpbk-packets]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lpbk-packets-pps]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lpbk-packets-bytes]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lpbk-packets-bps]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lpbk-drop-packets]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lpbk-drop-packets-pps]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=lpbk-drop-packets-bytes]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=lpbk-drop-packets-bps]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-normal]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-fabric]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-filter-discard]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-data-error]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-input-checksum]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-output-mtu]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-inet-bad-route]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-inet6-bad-route]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-invalid-iif]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-dlu-not-routable]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-timeout]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-truncated-key]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-bits-to-test]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-stack-overflow]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-stack-underflow]/state/value": {"type": "uint64", "gen": "const:0"}, "properties/property[name=hwds-info-cell]/state/value": {"type": "uint64", "gen": "const:0"},
+        "properties/property[name=hwds-extended]/state/value": {"type": "uint64", "gen": "const:0"}
+      }
+    }
+  ]
+}
