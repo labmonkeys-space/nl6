@@ -48,8 +48,9 @@ type bindingSubtree struct {
 	// path, which the loader refuses (nl6#765).
 	Filters map[string]string `json:"filters"`
 	Extra   map[string]struct {
-		Type string `json:"type"`
-		Gen  string `json:"gen"`
+		Type   string `json:"type"`
+		Gen    string `json:"gen"`
+		Digits int    `json:"digits"` // decimal64 fraction-digits; extra leaves have no YANG to read it from
 	} `json:"extra"`
 }
 
@@ -162,7 +163,7 @@ func run(args []string) error {
 		}
 		sort.Strings(extraNames)
 		for _, n := range extraNames {
-			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n]})
+			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n], Digits: st.Extra[n].Digits})
 		}
 		for n, f := range st.Filters {
 			_, inLeaves := st.Leaves[n]
@@ -299,17 +300,22 @@ func lookup(root *yang.Entry, subtree, leaf string) (*yang.Entry, error) {
 	return e, nil
 }
 
-func typeOf(e *yang.Entry) (string, []string) {
+// resolvedType follows leafrefs until a non-leafref type; each hop
+// resolves its path relative to the entry that declared it.
+func resolvedType(e *yang.Entry) *yang.YangType {
 	t := e.Type
 	for t.Kind == yang.Yleafref && t.Path != "" {
-		// Follow leafrefs until a non-leafref type; each hop resolves
-		// its path relative to the entry that declared it.
 		if target := e.Find(t.Path); target != nil && target.Type != nil {
 			e, t = target, target.Type
 			continue
 		}
 		break
 	}
+	return t
+}
+
+func typeOf(e *yang.Entry) (string, []string) {
+	t := resolvedType(e)
 	switch t.Kind {
 	case yang.Yenum:
 		return "enumeration", enumNames(t.Enum)
@@ -405,11 +411,11 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 	// The loader's field set, in the loader's order, so the emitted
 	// block keeps its layout and a misspelt field fails here.
 	var n struct {
-		Origin        string            `json:"origin"`
-		NativeOrigin  string            `json:"native_origin"`
-		Prefix        string            `json:"prefix"`
-		Encodings     []string          `json:"encodings"`
-		Extension     string            `json:"extension"`
+		Origin          string            `json:"origin"`
+		NativeOrigin    string            `json:"native_origin"`
+		Prefix          string            `json:"prefix"`
+		Encodings       []string          `json:"encodings"`
+		Extension       string            `json:"extension"`
 		OriginAliases   map[string]string `json:"origin_aliases,omitempty"`
 		DecimalEncoding string            `json:"decimal_encoding,omitempty"`
 	}
@@ -436,18 +442,10 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 }
 
 // fractionDigitsOf returns the YANG fraction-digits of a decimal64
-// leaf (following leafrefs like typeOf), 0 for any other type.
+// leaf, 0 for any other type.
 func fractionDigitsOf(e *yang.Entry, typ string) int {
 	if typ != "decimal64" || e == nil || e.Type == nil {
 		return 0
 	}
-	t := e.Type
-	for t.Kind == yang.Yleafref && t.Path != "" {
-		target := e.Find(t.Path)
-		if target == nil || target.Type == nil {
-			break
-		}
-		e, t = target, target.Type
-	}
-	return int(t.FractionDigits)
+	return int(resolvedType(e).FractionDigits)
 }

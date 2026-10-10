@@ -35,17 +35,19 @@ type shapeFixture struct {
 // fixtureSubscriptions maps fixture file stems to the path gnmic
 // subscribed to when the capture was taken.
 var fixtureSubscriptions = map[string]string{
-	"if-counters":         "/interfaces/interface/state/counters",
-	"if-state":            "/interfaces/interface/state",
-	"subif":               "/interfaces/interface/subinterfaces/subinterface/state",
-	"components":          "/components/component/state",
-	"component-temp":      "/components/component/state/temperature",
-	"component-props":     "/components/component/properties/property/state",
-	"cpu":                 "/components/component/cpu/utilization/state",
-	"sys-cpu":             "/system/cpus/cpu/state",
-	"sys-mem":             "/system/memory/state",
-	"system":              "/system/state",
-	"native-packet-usage": "juniper:/junos/system/linecard/packet/usage/",
+	"if-counters":             "/interfaces/interface/state/counters",
+	"if-state":                "/interfaces/interface/state",
+	"subif":                   "/interfaces/interface/subinterfaces/subinterface/state",
+	"components":              "/components/component/state",
+	"component-temp":          "/components/component/state/temperature",
+	"components-hardware":     "/components/component/state",
+	"component-temp-hardware": "/components/component/state/temperature",
+	"component-props":         "/components/component/properties/property/state",
+	"cpu":                     "/components/component/cpu/utilization/state",
+	"sys-cpu":                 "/system/cpus/cpu/state",
+	"sys-mem":                 "/system/memory/state",
+	"system":                  "/system/state",
+	"native-packet-usage":     "juniper:/junos/system/linecard/packet/usage/",
 }
 
 // fixtureAliasRendered maps fixtures captured through a native sensor

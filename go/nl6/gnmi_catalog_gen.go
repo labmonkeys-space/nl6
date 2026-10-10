@@ -260,10 +260,7 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 		if ctx.cat == nil || !ok {
 			return nil, false
 		}
-		for _, c := range ctx.cat.Components {
-			if c.Name != name {
-				continue
-			}
+		if c := ctx.cat.componentByName[name]; c != nil {
 			switch arg {
 			case "name":
 				return c.Name, true

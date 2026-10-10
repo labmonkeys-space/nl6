@@ -328,7 +328,7 @@
         "state/software-version": "const:24.2R1.17", "state/oper-status": "const:ACTIVE", "state/empty": "const:false", "state/removable": "const:true",
         "state/location": "key:0", "state/allocated-power": "const:0", "state/memory/available": "const:0", "state/memory/utilized": "const:0",
         "state/firmware-version": "const:24.2R1.17",
-        "state/temperature/instant": "sine:38,4,900", "state/temperature/avg": "sine:38,1,900", "state/temperature/min": "const:31.5", "state/temperature/max": "const:46.0",
+        "state/temperature/instant": "sine:38,4,900", "state/temperature/avg": "const:38.0", "state/temperature/min": "const:34.0", "state/temperature/max": "const:42.0",
         "state/temperature/alarm-status": "const:false", "state/temperature/alarm-threshold": "const:85", "state/temperature/interval": "const:60000000000",
         "state/temperature/max-time": "timestamp:boot", "state/temperature/min-time": "timestamp:boot"
       },

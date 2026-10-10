@@ -313,11 +313,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 				if !ok {
 					continue
 				}
-				v, err := castGnmiLeafDigits(raw, leaf.Type, leaf.Digits)
-				if d, ok := v.(gnmiDecimal); ok && r.cat.Notification.DecimalEncoding == gnmiDecimalVal {
-					d.decimalVal = true
-					v = d
-				}
+				v, err := leaf.cast(raw)
 				if err != nil {
 					log.Printf("gNMI catalog: %s leaf %s: %v (skipping)", st.Path, leaf.Name, err)
 					continue

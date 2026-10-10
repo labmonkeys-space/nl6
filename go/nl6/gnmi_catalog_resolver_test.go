@@ -425,7 +425,7 @@ func TestCatalogResolver_DecimalWireForm(t *testing.T) {
 		t.Fatalf("default form: %v", tv)
 	}
 	tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`))
-	if d := tv.GetDecimalVal(); d == nil || d.GetPrecision() != 1 || d.GetDigits() != 383 {
+	if d := tv.GetDecimalVal(); d == nil || d.GetPrecision() != 1 || d.GetDigits() != 382 { // half-to-even, as the JSON forms round
 		t.Fatalf("decimal_val form: %v", tv)
 	}
 }

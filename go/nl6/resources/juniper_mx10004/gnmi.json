@@ -2916,7 +2916,7 @@
         {
           "name": "state/temperature/avg",
           "type": "decimal64",
-          "gen": "sine:38,1,900",
+          "gen": "const:38.0",
           "filter": "temperature",
           "digits": 1
         },
@@ -2936,7 +2936,7 @@
         {
           "name": "state/temperature/max",
           "type": "decimal64",
-          "gen": "const:46.0",
+          "gen": "const:42.0",
           "filter": "temperature",
           "digits": 1
         },
@@ -2949,7 +2949,7 @@
         {
           "name": "state/temperature/min",
           "type": "decimal64",
-          "gen": "const:31.5",
+          "gen": "const:34.0",
           "filter": "temperature",
           "digits": 1
         },

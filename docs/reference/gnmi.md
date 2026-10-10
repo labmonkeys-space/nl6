@@ -140,7 +140,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
 | `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way |
-| `subtrees[].leaves[].digits` | `decimal64` fraction-digits, written by the generator from the YANG model; absent means two |
+| `subtrees[].leaves[].digits` | `decimal64` fraction-digits (1..18), written by the generator from the YANG model, or declared on an `extra` binding leaf; absent means two; refused on a non-decimal leaf |
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.

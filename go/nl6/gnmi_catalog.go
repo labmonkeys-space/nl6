@@ -58,6 +58,8 @@ type gnmiCatalog struct {
 	Subtrees     []*gnmiCatalogSubtree   `json:"subtrees"`
 
 	encodings map[gnmipb.Encoding]bool
+
+	componentByName map[string]*gnmiCatalogComponent // built at load; inventory bindings look up here
 }
 
 type gnmiCatalogNotification struct {
@@ -144,6 +146,19 @@ type gnmiCatalogLeaf struct {
 	elems       []*gnmipb.PathElem // compiled from Name
 	gen         gnmiLeafGen        // compiled from Gen
 	filterNames map[string]bool    // component names matching Filter; nil when unfiltered
+	decimalVal  bool               // from notification.decimal_encoding; the cast owns the wire form
+}
+
+// cast converts a generator's raw value to the leaf's YANG type, with
+// the leaf's fraction digits and wire form applied, so every caller
+// that casts a catalogue leaf gets the same gnmiDecimal.
+func (leaf *gnmiCatalogLeaf) cast(v any) (any, error) {
+	out, err := castGnmiLeafDigits(v, leaf.Type, leaf.Digits)
+	if d, ok := out.(gnmiDecimal); ok && err == nil {
+		d.decimalVal = leaf.decimalVal
+		return d, nil
+	}
+	return out, err
 }
 
 var gnmiEncodingNames = map[string]gnmipb.Encoding{
@@ -181,6 +196,13 @@ func (c *gnmiCatalog) validate(source string) error {
 	}
 	if n.Origin == "" {
 		return fail("notification.origin is required")
+	}
+	c.componentByName = make(map[string]*gnmiCatalogComponent, len(c.Components))
+	for i := range c.Components {
+		if _, dup := c.componentByName[c.Components[i].Name]; dup {
+			return fail("components: %q listed twice", c.Components[i].Name)
+		}
+		c.componentByName[c.Components[i].Name] = &c.Components[i]
 	}
 	switch n.DecimalEncoding {
 	case "", gnmiDecimalDouble, gnmiDecimalVal:
@@ -318,6 +340,13 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: neighbor binding needs a neighbors key source", i, leaf.Name)
 			}
 			leaf.gen = g
+			if leaf.Digits != 0 && leaf.Type != "decimal64" {
+				return fail("subtree %d leaf %q: digits is for decimal64 leaves, not %s", i, leaf.Name, leaf.Type)
+			}
+			if leaf.Digits < 0 || leaf.Digits > 18 {
+				return fail("subtree %d leaf %q: digits %d outside YANG's 1..18", i, leaf.Name, leaf.Digits)
+			}
+			leaf.decimalVal = n.DecimalEncoding == gnmiDecimalVal
 			if leaf.Filter != "" {
 				if st.componentKey < 0 {
 					return fail("subtree %d leaf %q: filter needs a components key source", i, leaf.Name)

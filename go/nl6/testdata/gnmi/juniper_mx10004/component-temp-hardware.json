@@ -1,0 +1,47 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for this subscription (nl6#772); values and the capture itself are not public, so this file is hand-written from the issue and is an authoring record, not an observation. Temperature leaves are Decimal64 precision 1 on hardware.",
+  "subtree": "component-temp",
+  "prefixes": [
+    "openconfig:/components/component[name=*]"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/state/temperature/alarm-status",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/alarm-threshold",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/avg",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/instant",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/interval",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/max",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/max-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/min",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/state/temperature/min-time",
+      "kind": "uint"
+    }
+  ]
+}

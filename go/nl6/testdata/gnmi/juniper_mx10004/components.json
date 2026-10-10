@@ -1,5 +1,5 @@
 {
-  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md. Extended for nl6#772: the temperature record (avg, min, max, alarm-status, alarm-threshold, interval, min-time, max-time) and firmware-version come from the MX10004 hardware reference set, and temperature kinds are decimal (Decimal64 precision 1) as the hardware sends them; vJunos 25.4R1.12 sent instant as uint.",
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md. The temperature/instant row carries no kind: vJunos sent uint, the MX10004 hardware sends Decimal64 precision 1 and the -hardware fixture of the same name pins that (nl6#772).",
   "subtree": "components",
   "prefixes": [
     "openconfig:/components/component[name=*]"
@@ -18,10 +18,6 @@
     {
       "path": "/components/component[name=*]/state/empty",
       "kind": "bool"
-    },
-    {
-      "path": "/components/component[name=*]/state/firmware-version",
-      "kind": "string"
     },
     {
       "path": "/components/component[name=*]/state/hardware-version",
@@ -80,40 +76,8 @@
       "kind": "string"
     },
     {
-      "path": "/components/component[name=*]/state/temperature/alarm-status",
-      "kind": "bool"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/alarm-threshold",
-      "kind": "uint"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/avg",
-      "kind": "decimal"
-    },
-    {
       "path": "/components/component[name=*]/state/temperature/instant",
-      "kind": "decimal"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/interval",
-      "kind": "uint"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/max",
-      "kind": "decimal"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/max-time",
-      "kind": "uint"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/min",
-      "kind": "decimal"
-    },
-    {
-      "path": "/components/component[name=*]/state/temperature/min-time",
-      "kind": "uint"
+      "kind": ""
     },
     {
       "path": "/components/component[name=*]/state/type",
