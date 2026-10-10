@@ -2761,6 +2761,11 @@
           "gen": "ifstate:oper"
         },
         {
+          "name": "init-time",
+          "type": "uint64",
+          "gen": "timestamp:boot"
+        },
+        {
           "name": "ipv4/state/counters/in-multicast-octets",
           "type": "uint64",
           "gen": "const:0"
@@ -2769,6 +2774,16 @@
           "name": "ipv4/state/counters/in-multicast-pkts",
           "type": "uint64",
           "gen": "const:0"
+        },
+        {
+          "name": "ipv4/state/counters/in-octets",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCInOctets"
+        },
+        {
+          "name": "ipv4/state/counters/in-pkts",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCInUcastPkts"
         },
         {
           "name": "ipv4/state/counters/out-multicast-octets",
@@ -2781,6 +2796,16 @@
           "gen": "const:0"
         },
         {
+          "name": "ipv4/state/counters/out-octets",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCOutOctets"
+        },
+        {
+          "name": "ipv4/state/counters/out-pkts",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCOutUcastPkts"
+        },
+        {
           "name": "ipv6/state/counters/in-multicast-octets",
           "type": "uint64",
           "gen": "const:0"
@@ -2791,6 +2816,16 @@
           "gen": "const:0"
         },
         {
+          "name": "ipv6/state/counters/in-octets",
+          "type": "uint64",
+          "gen": "counter:120000"
+        },
+        {
+          "name": "ipv6/state/counters/in-pkts",
+          "type": "uint64",
+          "gen": "counter:150"
+        },
+        {
           "name": "ipv6/state/counters/out-multicast-octets",
           "type": "uint64",
           "gen": "const:0"
@@ -2799,6 +2834,16 @@
           "name": "ipv6/state/counters/out-multicast-pkts",
           "type": "uint64",
           "gen": "const:0"
+        },
+        {
+          "name": "ipv6/state/counters/out-octets",
+          "type": "uint64",
+          "gen": "counter:95000"
+        },
+        {
+          "name": "ipv6/state/counters/out-pkts",
+          "type": "uint64",
+          "gen": "counter:120"
         }
       ]
     },
