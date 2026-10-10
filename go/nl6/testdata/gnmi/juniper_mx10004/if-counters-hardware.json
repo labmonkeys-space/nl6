@@ -1,0 +1,24 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for the interface counters subscription (nl6#775); hand-written from the issue, an authoring record, not an observation. Hardware adds name, state/parent-ae-name and out-queue/queue-number to what the vJunos capture showed, and sends none of the eleven buffer and drop leaves nl6 used to add.",
+  "subtree": "if-counters",
+  "prefixes": [
+    "openconfig:/interfaces/interface[name=*]",
+    "openconfig:/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/interfaces/interface[name=*]/name",
+      "kind": "string"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/parent-ae-name",
+      "kind": "string"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/queue-number",
+      "kind": "uint"
+    }
+  ]
+}

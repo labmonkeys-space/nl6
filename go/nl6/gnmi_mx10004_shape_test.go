@@ -45,6 +45,7 @@ var fixtureSubscriptions = map[string]string{
 	"transceiver-hardware":    "/components/component/transceiver/state/",
 	"wavelength-hardware":     "/components/component/properties/property[name=wavelength]/state/",
 	"subif-hardware":          "/interfaces/interface/subinterfaces/subinterface/state/counters",
+	"if-counters-hardware":    "/interfaces/interface/state/counters",
 	"bgp-neighbor-hardware":   "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/",
 	"bgp-peer-group-hardware": "/network-instances/network-instance/protocols/protocol/bgp/peer-groups/peer-group/",
 	"component-props":         "/components/component/properties/property/state",
@@ -922,5 +923,66 @@ func TestMX10004SubinterfaceFamilyCounters(t *testing.T) {
 				t.Errorf("%s %s went from %d to %v", pathToString(n.Prefix), ps, vals[ps], u.Value)
 			}
 		}
+	}
+}
+
+// TestMX10004InterfaceCounterLeafSet pins nl6#775: every out-queue
+// notification carries exactly the five leaves the router sends, and
+// the interface entry serves name, init-time, high-speed and
+// parent-ae-name.
+func TestMX10004InterfaceCounterLeafSet(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/interfaces/interface/state/counters")
+	if err != nil {
+		t.Fatal(err)
+	}
+	queues := 0
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil || !strings.Contains(pathToString(n.GetPrefix()), "/out-queue[") {
+			continue
+		}
+		queues++
+		got := map[string]bool{}
+		for _, u := range n.GetUpdate() {
+			got[pathToString(u.GetPath())] = true
+		}
+		want := []string{"/queue-number", "/queued-bytes", "/queued-pkts", "/hp-red-drop-pkts", "/lp-red-drop-pkts"}
+		if len(got) != len(want) {
+			t.Errorf("%s: %v, want exactly %v", pathToString(n.GetPrefix()), got, want)
+		}
+		for _, w := range want {
+			if !got[w] {
+				t.Errorf("%s: missing %s", pathToString(n.GetPrefix()), w)
+			}
+		}
+	}
+	if queues == 0 {
+		t.Fatal("no out-queue notifications")
+	}
+	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/interfaces/interface")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil || len(n.GetPrefix().GetElem()) != 2 {
+			continue
+		}
+		checked++
+		got := map[string]bool{}
+		for _, u := range n.GetUpdate() {
+			got[pathToString(u.GetPath())] = true
+		}
+		for _, w := range []string{"/name", "/init-time", "/state/high-speed", "/state/parent-ae-name"} {
+			if !got[w] {
+				t.Errorf("%s: missing %s", pathToString(n.GetPrefix()), w)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no interface notifications")
 	}
 }
