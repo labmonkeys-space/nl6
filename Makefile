@@ -103,6 +103,11 @@ $(YANG_CACHE)/juniper:
 
 ## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
 gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
+	@if [ "$$(git -C $(YANG_CACHE)/juniper rev-parse HEAD)" != "$(JUNIPER_YANG_COMMIT)" ]; then \
+	  echo "YANG cache not at $(JUNIPER_YANG_COMMIT); fetching"; \
+	  git -C $(YANG_CACHE)/juniper fetch --depth 1 origin $(JUNIPER_YANG_COMMIT) && \
+	  git -C $(YANG_CACHE)/juniper checkout $(JUNIPER_YANG_COMMIT); \
+	fi
 	cd go && go run ./cmd/gnmi-catalog \
 	  -yang $(YANG_CACHE)/juniper/24.2/24.2R1.17/openconfig/models,$(YANG_CACHE)/juniper/24.2/24.2R1.17/ietf \
 	  -path $(YANG_CACHE)/juniper/24.2/24.2R1.17/native/jti/models \

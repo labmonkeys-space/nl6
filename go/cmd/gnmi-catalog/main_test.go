@@ -44,7 +44,29 @@ func TestGenerateRejectsDeviatedLeaf(t *testing.T) {
 	bad := strings.Replace(string(b), `"state/mtu": "const:1514"`, `"state/removed-by-deviation": "const:x"`, 1)
 	p := filepath.Join(t.TempDir(), "b.json")
 	_ = os.WriteFile(p, []byte(bad), 0o644)
-	if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")}); err == nil {
-		t.Fatal("deviated leaf accepted")
+	err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
+	if err == nil || !strings.Contains(err.Error(), "removed-by-deviation") {
+		t.Fatalf("deviated leaf accepted: %v", err)
+	}
+}
+
+func TestGenerateRejectsUnresolvableDeviation(t *testing.T) {
+	dir := t.TempDir()
+	// test-dev-bogus is stored as .yang.in so the golden run, which
+	// walks all of testdata, does not load it.
+	for src, dst := range map[string]string{
+		"test-a.yang": "test-a.yang", "test-dev.yang": "test-dev.yang", "test-dev-bogus.yang.in": "test-dev-bogus.yang",
+	} {
+		b, err := os.ReadFile(filepath.Join("testdata", src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, dst), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := run([]string{"-yang", dir, "-bindings", "testdata/bindings.json", "-out", filepath.Join(t.TempDir(), "o.json")})
+	if err == nil || !strings.Contains(err.Error(), "/ta:interfaces/ta:interface/ta:state/ta:no-such-leaf") {
+		t.Fatalf("unresolvable deviation accepted: %v", err)
 	}
 }

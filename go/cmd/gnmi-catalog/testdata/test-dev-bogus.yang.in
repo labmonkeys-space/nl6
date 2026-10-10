@@ -1,0 +1,8 @@
+module test-dev-bogus {
+  yang-version 1.1;
+  namespace "urn:test:dev-bogus";
+  prefix tdb;
+  import test-a { prefix ta; }
+  revision 2026-01-04 { description "test"; }
+  deviation /ta:interfaces/ta:interface/ta:state/ta:no-such-leaf { deviate not-supported; }
+}

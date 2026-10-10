@@ -126,7 +126,7 @@ func run(args []string) error {
 		}
 		root := yang.ToEntry(mod)
 		models[mod.Name] = outModel{Name: mod.Name, Organization: strings.TrimSpace(orgOf(mod)), Version: latestRevision(mod)}
-		var leaves []outLeaf
+		leaves := []outLeaf{}
 		names := make([]string, 0, len(st.Leaves))
 		for n := range st.Leaves {
 			names = append(names, n)
@@ -171,6 +171,29 @@ func run(args []string) error {
 // loadModules reads every .yang file under dirs and processes them.
 // importDirs are only added to the search path, so a module there is
 // loaded when something imports it.
+// knownUnbuildableDeviationTargets are deviation targets that exist in
+// the YANG but that goyang never builds: they come from an augment nested
+// inside a uses statement (uses aft-common-entry-state { augment counters
+// { ... } } in openconfig-aft-ipv4/ipv6), which goyang does not expand.
+// Juniper's jnx-openconfig-dev module (24.2R1.17) deviates them.
+var knownUnbuildableDeviationTargets = []string{
+	"/oc-ni:network-instances/oc-ni:network-instance/oc-ni:afts/oc-ni:ipv4-unicast/oc-ni:ipv4-entry/oc-ni:state/oc-ni:counters/oc-ni:octets-forwarded-backup",
+	"/oc-ni:network-instances/oc-ni:network-instance/oc-ni:afts/oc-ni:ipv4-unicast/oc-ni:ipv4-entry/oc-ni:state/oc-ni:counters/oc-ni:packets-forwarded-backup",
+	"/oc-ni:network-instances/oc-ni:network-instance/oc-ni:afts/oc-ni:ipv6-unicast/oc-ni:ipv6-entry/oc-ni:state/oc-ni:counters/oc-ni:octets-forwarded-backup",
+	"/oc-ni:network-instances/oc-ni:network-instance/oc-ni:afts/oc-ni:ipv6-unicast/oc-ni:ipv6-entry/oc-ni:state/oc-ni:counters/oc-ni:packets-forwarded-backup",
+}
+
+// isKnownUnbuildableDeviation reports whether err is goyang's missing
+// deviation target error for exactly one of the allowlisted targets.
+func isKnownUnbuildableDeviation(err error) bool {
+	for _, t := range knownUnbuildableDeviationTargets {
+		if err.Error() == "cannot find target node to deviate, "+t {
+			return true
+		}
+	}
+	return false
+}
+
 func loadModules(dirs, importDirs []string) (*yang.Modules, error) {
 	ms := yang.NewModules()
 	for _, d := range importDirs {
@@ -200,12 +223,12 @@ func loadModules(dirs, importDirs []string) (*yang.Modules, error) {
 		}
 	}
 	// Deviations are applied last, and a deviation whose target is
-	// missing is skipped without touching the rest of the tree. goyang
-	// does not expand an augment nested in a uses statement, so vendor
-	// deviations of such nodes report a missing target; warn on those.
+	// missing is skipped without touching the rest of the tree. Only the
+	// known unbuildable targets are downgraded to warnings; any other
+	// missing target fails generation.
 	var sb strings.Builder
 	for _, e := range ms.Process() {
-		if strings.HasPrefix(e.Error(), "cannot find target node to deviate") {
+		if isKnownUnbuildableDeviation(e) {
 			fmt.Fprintln(os.Stderr, "gnmi-catalog: warning:", e)
 			continue
 		}
@@ -245,9 +268,10 @@ func lookup(root *yang.Entry, subtree, leaf string) (*yang.Entry, error) {
 func typeOf(e *yang.Entry) (string, []string) {
 	t := e.Type
 	for t.Kind == yang.Yleafref && t.Path != "" {
-		// Resolve one hop; good enough for the OpenConfig state leafrefs.
+		// Follow leafrefs until a non-leafref type; each hop resolves
+		// its path relative to the entry that declared it.
 		if target := e.Find(t.Path); target != nil && target.Type != nil {
-			t = target.Type
+			e, t = target, target.Type
 			continue
 		}
 		break
