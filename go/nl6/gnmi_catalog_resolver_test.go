@@ -429,3 +429,45 @@ func TestCatalogResolver_DecimalWireForm(t *testing.T) {
 		t.Fatalf("decimal_val form: %v", tv)
 	}
 }
+
+// TestCatalogResolver_AlwaysLeaf: an always-leaf rides along whenever
+// another leaf of its entry is covered, and never on its own.
+func TestCatalogResolver_AlwaysLeaf(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(`{
+  "comment": "always", "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "models": [], "neighbors": [],
+  "components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": false}],
+  "subtrees": [{"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}],
+    "leaves": [
+      {"name": "name", "type": "string", "gen": "key:0", "always": true},
+      {"name": "state/serial-no", "type": "string", "gen": "inventory:serial_no"},
+      {"name": "state/description", "type": "string", "gen": "inventory:description"}
+    ]}]
+}`), "always.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	leaves := func(path string) []string {
+		got, err := r.Resolve(pathFromString(t, path), time.Now())
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		var out []string
+		for _, u := range got[0].Updates {
+			out = append(out, pathToString(u.Path))
+		}
+		sort.Strings(out)
+		return out
+	}
+	if got := leaves("/components/component/state/serial-no"); strings.Join(got, ",") != "/name,/state/serial-no" {
+		t.Fatalf("covered sibling: %v", got)
+	}
+	if got := leaves("/components/component/name"); strings.Join(got, ",") != "/name" {
+		t.Fatalf("always-leaf alone: %v", got)
+	}
+	if _, err := r.Resolve(pathFromString(t, "/components/component/nothing"), time.Now()); status.Code(err) != codes.NotFound {
+		t.Fatalf("uncovered entry must not render the always-leaf: %v", err)
+	}
+}

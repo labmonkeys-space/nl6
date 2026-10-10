@@ -1,5 +1,5 @@
 {
-  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md. init-time and state/high-speed are marked always: the capture showed them under the counters subscription although the path does not cover them.",
   "subtree": "if-counters",
   "prefixes": [
     "openconfig:/interfaces/interface[name=*]",
@@ -10,7 +10,8 @@
   "leaves": [
     {
       "path": "/interfaces/interface[name=*]/init-time",
-      "kind": "uint"
+      "kind": "uint",
+      "always": true
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/carrier-transitions",
@@ -102,7 +103,8 @@
     },
     {
       "path": "/interfaces/interface[name=*]/state/high-speed",
-      "kind": "uint"
+      "kind": "uint",
+      "always": true
     }
   ]
 }

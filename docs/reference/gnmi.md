@@ -141,6 +141,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
 | `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way |
 | `subtrees[].leaves[].digits` | `decimal64` fraction-digits (1..18), written by the generator from the YANG model, or declared on an `extra` binding leaf; absent means two; refused on a non-decimal leaf |
+| `subtrees[].leaves[].always` | rendered whenever its entry renders at all, even when the request path does not cover it (bindings `always` list); how a Junos sensor sends identity leaves such as `name` and `init-time` with every counters notification |
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
@@ -183,6 +184,10 @@ The component tree carries the MX10004 hardware's cardinality: 256 components ac
 Every port carries a transceiver component serving the static transceiver state (`transceiver/state/{connector-type, date-code, ethernet-pmd, form-factor, present, serial-no, vendor, vendor-part, ...}`) in the component's notification and the analog leaves (`state/enabled`, `state/input-power/instant`, `state/output-power/instant`, `state/laser-bias-current/instant`, decimals) under the `component[name=*]/transceiver` prefix, plus `properties/property[name=wavelength]/state/{configurable,value}` on the port component.
 Hardware also emits `oper-status` alone under a `component[name=*]/state` prefix from the same sensor; nl6 serves `oper-status` in the component's notification and does not emit a leaf the request path does not cover.
 A `/components/component/transceiver` path on a device type without a catalogue is refused with `NotFound` naming the path.
+Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queued-pkts`, `hp-red-drop-pkts` and `lp-red-drop-pkts`.
+That set comes from the MX10004 hardware reference set behind nl6#775, which is not public; the vJunos capture sent eleven buffer and drop leaves more.
+A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
+The router's ONCE chunking of one interface into several notifications is not modelled.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
 A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` renders the whole subinterface, as the Junos sensor does, because that path is a subtree alias.
 The subinterface totals ride the interface's HC counters and agree with SNMP.

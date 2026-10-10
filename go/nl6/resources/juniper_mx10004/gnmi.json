@@ -2538,12 +2538,26 @@
         {
           "name": "init-time",
           "type": "uint64",
-          "gen": "timestamp:boot"
+          "gen": "timestamp:boot",
+          "always": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "gen": "key:0",
+          "always": true
         },
         {
           "name": "state/high-speed",
           "type": "uint32",
-          "gen": "const:10000"
+          "gen": "const:10000",
+          "always": true
+        },
+        {
+          "name": "state/parent-ae-name",
+          "type": "string",
+          "gen": "const:",
+          "always": true
         }
       ]
     },
@@ -2570,26 +2584,6 @@
       ],
       "leaves": [
         {
-          "name": "allocated-buffer-size",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "avg-buffer-occupancy",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "bytes",
-          "type": "uint64",
-          "gen": "counter:40000"
-        },
-        {
-          "name": "cur-buffer-occupancy",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
           "name": "hp-red-drop-pkts",
           "type": "uint64",
           "gen": "const:0"
@@ -2600,14 +2594,9 @@
           "gen": "const:0"
         },
         {
-          "name": "peak-buffer-occupancy",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "pkts",
-          "type": "uint64",
-          "gen": "counter:50"
+          "name": "queue-number",
+          "type": "uint8",
+          "gen": "key:1"
         },
         {
           "name": "queued-bytes",
@@ -2616,31 +2605,6 @@
         },
         {
           "name": "queued-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "red-drop-bytes",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "red-drop-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "rl-drop-bytes",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "rl-drop-pkts",
-          "type": "uint64",
-          "gen": "const:0"
-        },
-        {
-          "name": "tail-drop-pkts",
           "type": "uint64",
           "gen": "const:0"
         }

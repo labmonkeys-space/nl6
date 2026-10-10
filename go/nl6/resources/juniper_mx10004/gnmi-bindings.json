@@ -283,22 +283,14 @@
         "state/counters/in-pause-pkts": "const:0", "state/counters/out-pause-pkts": "const:0"
       },
       "types": {"state/last-change": "uint64", "state/hardware-port": "string", "state/type": "string", "state/loopback-mode": "string"},
-      "extra": {"state/high-speed": {"type": "uint32", "gen": "const:10000"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}}
+      "always": ["name", "init-time", "state/high-speed", "state/parent-ae-name"],
+      "extra": {"state/high-speed": {"type": "uint32", "gen": "const:10000"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}, "name": {"type": "string", "gen": "key:0"}, "state/parent-ae-name": {"type": "string", "gen": "const:"}}
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
       "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
       "leaves": {},
-      "extra": {
-        "pkts": {"type": "uint64", "gen": "counter:50"}, "bytes": {"type": "uint64", "gen": "counter:40000"},
-        "queued-pkts": {"type": "uint64", "gen": "const:0"}, "queued-bytes": {"type": "uint64", "gen": "const:0"},
-        "allocated-buffer-size": {"type": "uint64", "gen": "const:0"}, "avg-buffer-occupancy": {"type": "uint64", "gen": "const:0"},
-        "cur-buffer-occupancy": {"type": "uint64", "gen": "const:0"}, "peak-buffer-occupancy": {"type": "uint64", "gen": "const:0"},
-        "red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "red-drop-bytes": {"type": "uint64", "gen": "const:0"},
-        "hp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "lp-red-drop-pkts": {"type": "uint64", "gen": "const:0"},
-        "rl-drop-pkts": {"type": "uint64", "gen": "const:0"}, "rl-drop-bytes": {"type": "uint64", "gen": "const:0"},
-        "tail-drop-pkts": {"type": "uint64", "gen": "const:0"}
-      }
+      "extra": {"queue-number": {"type": "uint8", "gen": "key:1"}, "queued-bytes": {"type": "uint64", "gen": "const:0"}, "queued-pkts": {"type": "uint64", "gen": "const:0"}, "hp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "lp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}}
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig",
