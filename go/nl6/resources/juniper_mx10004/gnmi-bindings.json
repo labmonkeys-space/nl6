@@ -129,7 +129,7 @@
       "types": {"state/peer-as": "uint32", "state/local-as": "uint32", "state/established-transitions": "uint64", "state/last-established": "uint64", "state/session-state": "string", "state/peer-type": "string"}
     },
     {
-      "path": "/components/component[name=*]", "origin": "juniper", "keys": [{"source": "static", "names": ["FPC0:NPU0", "FPC0:CC0", "FPC0:CPU0"]}], "module": "openconfig-platform",
+      "path": "/components/component[name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/packet/usage/"], "keys": [{"source": "static", "names": ["FPC0:NPU0", "FPC0:CC0", "FPC0:CPU0"]}], "module": "openconfig-platform",
       "leaves": {},
       "extra": {
         "properties/property[name=ts-input-packets]/state/value": {"type": "uint64", "gen": "counter:5000"}, "properties/property[name=ts-input-packets-pps]/state/value": {"type": "uint64", "gen": "const:5000"},

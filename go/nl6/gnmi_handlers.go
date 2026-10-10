@@ -121,13 +121,13 @@ func (s *gnmiServer) catalogEncoding(enc gnmipb.Encoding) (gnmipb.Encoding, erro
 // catalogExtension builds the per-response extension the catalogue
 // asks for, or nil. sensor is fixed for the stream; seq counts the
 // stream's responses from 1.
-func (s *gnmiServer) catalogExtension(sensor, subscribed string, seq uint64, now time.Time) *gnmi_ext.Extension {
+func (s *gnmiServer) catalogExtension(sensor, subscribed, streamed string, seq uint64, now time.Time) *gnmi_ext.Extension {
 	if s.catalog.cat.Notification.Extension != gnmiExtensionJuniperHeader {
 		return nil
 	}
 	return juniperHeaderExtension(juniperHeader{
 		SystemID: gnmiDeviceSysName(s.device), ComponentID: 65535, SensorName: sensor,
-		SubscribedPath: subscribed, StreamedPath: subscribed, Component: "xmlproxyd_TM_Thread_1",
+		SubscribedPath: subscribed, StreamedPath: streamed, Component: "xmlproxyd_TM_Thread_1",
 		SequenceNumber: seq, ExportTimestamp: now.UnixMilli(),
 	})
 }
@@ -449,8 +449,8 @@ func (s *gnmiServer) catalogStream(enc gnmipb.Encoding) *catalogSubscription {
 	return &catalogSubscription{
 		resolver: s.catalog,
 		enc:      enc,
-		extFor: func(sub *gnmipb.Subscription, seq uint64, now time.Time) *gnmi_ext.Extension {
-			return s.catalogExtension(sensor, pathToString(sub.GetPath()), seq, now)
+		extFor: func(subscribed, streamed string, seq uint64, now time.Time) *gnmi_ext.Extension {
+			return s.catalogExtension(sensor, subscribed, streamed, seq, now)
 		},
 	}
 }

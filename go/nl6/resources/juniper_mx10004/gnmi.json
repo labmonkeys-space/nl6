@@ -1112,6 +1112,9 @@
     {
       "path": "/components/component[name=*]",
       "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/packet/usage/"
+      ],
       "keys": [
         {
           "source": "static",

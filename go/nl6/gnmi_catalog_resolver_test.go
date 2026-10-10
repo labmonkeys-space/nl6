@@ -278,3 +278,38 @@ func TestCatalogResolver_NeighborAndComponentKeyPosition(t *testing.T) {
 		t.Fatalf("component behind a static key: %v %v", got, err)
 	}
 }
+
+func TestCatalogResolver_AliasServesWholeSubtree(t *testing.T) {
+	data := strings.Replace(string(readTestCatalog(t)), `"keys": [{"source": "components", "filter": "temperature"}]`,
+		`"aliases": ["/testvendor/temps/"], "keys": [{"source": "components", "filter": "temperature"}]`, 1)
+	data = strings.Replace(data, `"origin": "openconfig",
+      "aliases"`, `"origin": "testvendor",
+      "aliases"`, 1)
+	cat, err := parseGnmiCatalog([]byte(data), "alias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	for _, origin := range []string{"", "testvendor"} {
+		p := pathFromString(t, "/testvendor/temps")
+		p.Origin = origin
+		if !r.Match(p) {
+			t.Fatalf("origin %q: alias not matched", origin)
+		}
+		got, err := r.Resolve(p, time.Now())
+		if err != nil {
+			t.Fatalf("origin %q: %v", origin, err)
+		}
+		if len(got) != 1 || pathToString(got[0].Prefix) != "/components/component[name=FPC0]/state/temperature" || got[0].Prefix.GetOrigin() != "testvendor" || len(got[0].Updates) != 1 {
+			t.Fatalf("origin %q: got %v", origin, got)
+		}
+	}
+	p := pathFromString(t, "/testvendor/temps")
+	p.Origin = "openconfig"
+	if r.Match(p) {
+		t.Error("alias matched under another origin")
+	}
+	if r.Match(pathFromString(t, "/testvendor/temps/instant")) {
+		t.Error("a path below an alias must not match")
+	}
+}

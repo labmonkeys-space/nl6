@@ -62,6 +62,8 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"empty subtree origin without native origin", strings.Replace(strings.Replace(base, `"native_origin": "testvendor",`, ``, 1), `"origin": "openconfig",
       "keys": [{"source": "components"}]`, `"origin": "",
       "keys": [{"source": "components"}]`, 1), "origin is required"},
+		{"wildcard alias", strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/parts[name=*]/"], "keys": [{"source": "components"}]`, 1), "has a wildcard key"},
+		{"malformed alias", strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/parts[name"], "keys": [{"source": "components"}]`, 1), "unterminated key"},
 		{"neighbor without neighbors key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "neighbor:state"`, 1), "needs a neighbors key source"},
 	}
 	for _, tc := range cases {

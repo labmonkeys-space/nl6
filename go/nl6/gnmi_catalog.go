@@ -94,14 +94,17 @@ type gnmiCatalogKey struct {
 
 // gnmiCatalogSubtree is one list entry: `path` is the entry path that
 // becomes the notification prefix under `prefix: list-entry`; leaves
-// are relative to it.
+// are relative to it. `aliases` are subscription paths, such as a Junos
+// native sensor path, that request the whole subtree.
 type gnmiCatalogSubtree struct {
-	Path   string             `json:"path"`
-	Origin string             `json:"origin"`
-	Keys   []gnmiCatalogKey   `json:"keys"`
-	Leaves []*gnmiCatalogLeaf `json:"leaves"`
+	Path    string             `json:"path"`
+	Origin  string             `json:"origin"`
+	Aliases []string           `json:"aliases,omitempty"`
+	Keys    []gnmiCatalogKey   `json:"keys"`
+	Leaves  []*gnmiCatalogLeaf `json:"leaves"`
 
-	elems []*gnmipb.PathElem // compiled from Path; wildcard keys hold "*"
+	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
+	aliases [][]*gnmipb.PathElem // compiled from Aliases
 	// componentKey and neighborKey are the positions of the first
 	// components and neighbors key sources in Keys, or -1. inventory and
 	// neighbor bindings read the entry key at that position.
@@ -185,6 +188,21 @@ func (c *gnmiCatalog) validate(source string) error {
 			return fail("subtree %d: %v", i, err)
 		}
 		st.elems = elems
+		st.aliases = nil
+		for _, a := range st.Aliases {
+			ae, err := parseCatalogPath(a)
+			if err != nil {
+				return fail("subtree %d (%s): alias %q: %v", i, st.Path, a, err)
+			}
+			for _, e := range ae {
+				for _, v := range e.Key {
+					if v == "*" {
+						return fail("subtree %d (%s): alias %q has a wildcard key", i, st.Path, a)
+					}
+				}
+			}
+			st.aliases = append(st.aliases, ae)
+		}
 		wild := 0
 		for _, e := range elems {
 			for _, v := range e.Key {

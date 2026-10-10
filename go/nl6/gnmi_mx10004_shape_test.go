@@ -45,7 +45,14 @@ var fixtureSubscriptions = map[string]string{
 	"sys-cpu":             "/system/cpus/cpu/state",
 	"sys-mem":             "/system/memory/state",
 	"system":              "/system/state",
-	"native-packet-usage": "juniper:/components/component/properties/property/state/value",
+	"native-packet-usage": "juniper:/junos/system/linecard/packet/usage/",
+}
+
+// fixtureAliasRendered maps fixtures captured through a native sensor
+// alias to the path Junos rendered them under. Those fixtures are also
+// subscribed with an empty origin, as collectors often do.
+var fixtureAliasRendered = map[string]string{
+	"native-packet-usage": "/components/component/properties/property/state/value",
 }
 
 var keyValueRe = regexp.MustCompile(`\[([a-z-]+)=[^\]]*\]`)
@@ -160,68 +167,81 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 			if i := strings.Index(sub, ":/"); i > 0 {
 				origin, p = sub[:i], sub[i+1:]
 			}
+			rendered, isAlias := fixtureAliasRendered[stem]
+			if !isAlias {
+				rendered = p
+			}
+			origins := []string{origin}
+			if isAlias {
+				origins = append(origins, "")
+			}
 			fxKinds := map[string]string{}
 			for _, l := range fx.Leaves {
 				fxKinds[l.Path] = l.Kind
 			}
 			wantLeaves := map[string]bool{}
 			for l := range unionLeaves[fixtureOrigin(fx)] {
-				if underPath(l, p) {
+				if underPath(l, rendered) {
 					wantLeaves[l] = true
 				}
 			}
-			for _, enc := range []gnmipb.Encoding{gnmipb.Encoding_PROTO, gnmipb.Encoding_JSON} {
-				resps, err := subscribeOnceOrigin(t, addr, enc, origin, p)
-				if err != nil {
-					t.Fatalf("%v: %v", enc, err)
-				}
-				gotLeaves := map[string]string{}
-				gotPrefixes := map[string]bool{}
-				for _, r := range resps {
-					n := r.GetUpdate()
-					if n == nil {
-						continue
+			for _, run := range origins {
+				for _, enc := range []gnmipb.Encoding{gnmipb.Encoding_PROTO, gnmipb.Encoding_JSON} {
+					resps, err := subscribeOnceOrigin(t, addr, enc, run, p)
+					if err != nil {
+						t.Fatalf("origin %q %v: %v", run, enc, err)
 					}
-					pfx := pathToString(n.GetPrefix())
-					gotPrefixes[n.GetPrefix().GetOrigin()+":"+wildcardKeysKeepProperty(pfx)] = true
-					if fx.Extension == "juniper-header" {
-						if len(r.GetExtension()) != 1 {
-							t.Fatalf("notification without Juniper header: %v", r)
+					gotLeaves := map[string]string{}
+					gotPrefixes := map[string]bool{}
+					for _, r := range resps {
+						n := r.GetUpdate()
+						if n == nil {
+							continue
 						}
-						h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
-						if err != nil || h.SystemID != mx10004TestSysName {
-							t.Fatalf("header decode: %+v %v; want system_id %q", h, err, mx10004TestSysName)
+						pfx := pathToString(n.GetPrefix())
+						gotPrefixes[n.GetPrefix().GetOrigin()+":"+wildcardKeysKeepProperty(pfx)] = true
+						if fx.Extension == "juniper-header" {
+							if len(r.GetExtension()) != 1 {
+								t.Fatalf("notification without Juniper header: %v", r)
+							}
+							h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
+							if err != nil || h.SystemID != mx10004TestSysName {
+								t.Fatalf("header decode: %+v %v; want system_id %q", h, err, mx10004TestSysName)
+							}
+							if h.SubscribedPath != strings.TrimSuffix(p, "/") || (isAlias && h.StreamedPath != pfx) {
+								t.Fatalf("header paths: subscribed %q streamed %q; want %q and the prefix %q", h.SubscribedPath, h.StreamedPath, p, pfx)
+							}
+						}
+						for _, u := range n.GetUpdate() {
+							full := strings.TrimSuffix(pfx, "/") + "/" + strings.TrimPrefix(pathToString(u.GetPath()), "/")
+							gotLeaves[wildcardKeysKeepProperty(full)] = typedValueKind(u.GetVal(), enc)
 						}
 					}
-					for _, u := range n.GetUpdate() {
-						full := strings.TrimSuffix(pfx, "/") + "/" + strings.TrimPrefix(pathToString(u.GetPath()), "/")
-						gotLeaves[wildcardKeysKeepProperty(full)] = typedValueKind(u.GetVal(), enc)
+					var missing, extra, wrongKind []string
+					for l := range wantLeaves {
+						gk, ok := gotLeaves[l]
+						switch {
+						case !ok:
+							missing = append(missing, l)
+						case enc == gnmipb.Encoding_PROTO && fxKinds[l] != "" && gk != fxKinds[l]:
+							wrongKind = append(wrongKind, l+" got "+gk+" want "+fxKinds[l])
+						}
 					}
-				}
-				var missing, extra, wrongKind []string
-				for l := range wantLeaves {
-					gk, ok := gotLeaves[l]
-					switch {
-					case !ok:
-						missing = append(missing, l)
-					case enc == gnmipb.Encoding_PROTO && fxKinds[l] != "" && gk != fxKinds[l]:
-						wrongKind = append(wrongKind, l+" got "+gk+" want "+fxKinds[l])
+					for l := range gotLeaves {
+						if !wantLeaves[l] {
+							extra = append(extra, l)
+						}
 					}
-				}
-				for l := range gotLeaves {
-					if !wantLeaves[l] {
-						extra = append(extra, l)
+					sort.Strings(missing)
+					sort.Strings(extra)
+					sort.Strings(wrongKind)
+					if len(missing)+len(extra)+len(wrongKind) > 0 {
+						t.Fatalf("origin %q %v shape mismatch\nmissing: %v\nextra: %v\nkind: %v", run, enc, missing, extra, wrongKind)
 					}
-				}
-				sort.Strings(missing)
-				sort.Strings(extra)
-				sort.Strings(wrongKind)
-				if len(missing)+len(extra)+len(wrongKind) > 0 {
-					t.Fatalf("%v shape mismatch\nmissing: %v\nextra: %v\nkind: %v", enc, missing, extra, wrongKind)
-				}
-				for gp := range gotPrefixes {
-					if !unionPrefixes[gp] {
-						t.Fatalf("prefix form %q not in any fixture", gp)
+					for gp := range gotPrefixes {
+						if !unionPrefixes[gp] {
+							t.Fatalf("prefix form %q not in any fixture", gp)
+						}
 					}
 				}
 			}

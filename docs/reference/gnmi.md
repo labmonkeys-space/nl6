@@ -134,6 +134,7 @@ A device adds about 460 bytes.
 | `models` | `ModelData` entries Capabilities advertises |
 | `components`, `neighbors` | chassis inventory and BGP peers, the key sources for component and neighbour subtrees |
 | `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
+| `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin |
 | `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, and a generator binding |
 
@@ -162,6 +163,7 @@ The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
 It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
 It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
 Native sensors sit under the `juniper` origin.
+A subscription to `/junos/system/linecard/packet/usage/`, with origin `juniper` or none, returns the packet-usage counters under the component paths Junos renders them at.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
 

@@ -34,7 +34,7 @@ const subscribeBufferDepth = 100
 type catalogSubscription struct {
 	resolver *catalogResolver
 	enc      gnmipb.Encoding
-	extFor   func(sub *gnmipb.Subscription, seq uint64, now time.Time) *gnmi_ext.Extension
+	extFor   func(subscribed, streamed string, seq uint64, now time.Time) *gnmi_ext.Extension
 	seq      atomic.Uint64
 }
 
@@ -45,14 +45,22 @@ func (c *catalogSubscription) serves(sub *gnmipb.Subscription) bool {
 
 // responses resolves sub through the catalogue and builds one
 // SubscribeResponse per list entry, each with its own sequence number.
+// The streamed path is the client's path, except for a subtree alias,
+// where it is the entry's rendered prefix path.
 func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time) ([]*gnmipb.SubscribeResponse, error) {
 	notifs, err := c.resolver.Resolve(sub.GetPath(), now)
 	if err != nil {
 		return nil, err
 	}
+	subscribed := pathToString(sub.GetPath())
+	alias := c.resolver.aliasSubtree(sub.GetPath()) != nil
 	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
 	for _, n := range notifs {
-		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.extFor(sub, c.seq.Add(1), now))
+		streamed := subscribed
+		if alias {
+			streamed = pathToString(n.Prefix)
+		}
+		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.extFor(subscribed, streamed, c.seq.Add(1), now))
 		if err != nil {
 			return nil, err
 		}

@@ -33,13 +33,14 @@ type bindings struct {
 }
 
 type bindingSubtree struct {
-	Path   string            `json:"path"`
-	Origin string            `json:"origin"`
-	Keys   json.RawMessage   `json:"keys"`
-	Module string            `json:"module"`
-	Leaves map[string]string `json:"leaves"`
-	Types  map[string]string `json:"types"`
-	Extra  map[string]struct {
+	Path    string            `json:"path"`
+	Origin  string            `json:"origin"`
+	Aliases []string          `json:"aliases"`
+	Keys    json.RawMessage   `json:"keys"`
+	Module  string            `json:"module"`
+	Leaves  map[string]string `json:"leaves"`
+	Types   map[string]string `json:"types"`
+	Extra   map[string]struct {
 		Type string `json:"type"`
 		Gen  string `json:"gen"`
 	} `json:"extra"`
@@ -53,10 +54,11 @@ type outLeaf struct {
 }
 
 type outSubtree struct {
-	Path   string          `json:"path"`
-	Origin string          `json:"origin"`
-	Keys   json.RawMessage `json:"keys"`
-	Leaves []outLeaf       `json:"leaves"`
+	Path    string          `json:"path"`
+	Origin  string          `json:"origin"`
+	Aliases []string        `json:"aliases,omitempty"`
+	Keys    json.RawMessage `json:"keys"`
+	Leaves  []outLeaf       `json:"leaves"`
 }
 
 type outModel struct {
@@ -155,7 +157,7 @@ func run(args []string) error {
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)

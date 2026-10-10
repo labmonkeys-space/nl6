@@ -112,9 +112,47 @@ func subtreeCandidate(q []*gnmipb.PathElem, st *gnmiCatalogSubtree) bool {
 	return false
 }
 
+// elemsEqual reports whether a and b are the same path: same names and
+// identical keys.
+func elemsEqual(a, b []*gnmipb.PathElem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].GetName() != b[i].GetName() || len(a[i].GetKey()) != len(b[i].GetKey()) {
+			return false
+		}
+		for k, v := range a[i].GetKey() {
+			if bv, ok := b[i].GetKey()[k]; !ok || bv != v {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// aliasSubtree returns the subtree one of whose aliases equals p, or
+// nil. The request origin must be empty or the subtree's origin.
+func (r *catalogResolver) aliasSubtree(p *gnmipb.Path) *gnmiCatalogSubtree {
+	for _, st := range r.cat.Subtrees {
+		if o := p.GetOrigin(); o != "" && o != st.Origin {
+			continue
+		}
+		for _, a := range st.aliases {
+			if elemsEqual(p.GetElem(), a) {
+				return st
+			}
+		}
+	}
+	return nil
+}
+
 // Match is the shape-only check Get and Subscribe use to decide
 // whether the catalogue owns a path.
 func (r *catalogResolver) Match(p *gnmipb.Path) bool {
+	if r.aliasSubtree(p) != nil {
+		return true
+	}
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if !ok {
 		return false
@@ -217,17 +255,26 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 }
 
 // Resolve returns one catalogNotification per list entry the request
-// touches, with leaves narrowed to the request.
+// touches, with leaves narrowed to the request. A request for a
+// subtree alias returns that whole subtree.
 func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotification, error) {
+	if st := r.aliasSubtree(p); st != nil {
+		return r.resolveSubtrees(p, st.Origin, nil, []*gnmiCatalogSubtree{st}, now)
+	}
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "origin %q not served by this device", p.GetOrigin())
 	}
-	q := p.GetElem()
+	return r.resolveSubtrees(p, origin, p.GetElem(), r.cat.Subtrees, now)
+}
+
+// resolveSubtrees resolves request elems q (nil for everything) against
+// the subtrees of the given origin. p is the client's path, for errors.
+func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gnmipb.PathElem, subtrees []*gnmiCatalogSubtree, now time.Time) ([]catalogNotification, error) {
 	t := now.Sub(r.epoch()).Seconds()
 	var out []catalogNotification
 	touched := false
-	for _, st := range r.cat.Subtrees {
+	for _, st := range subtrees {
 		if st.Origin != origin || !subtreeCandidate(q, st) {
 			continue
 		}

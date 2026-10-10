@@ -70,3 +70,20 @@ func TestGenerateRejectsUnresolvableDeviation(t *testing.T) {
 		t.Fatalf("unresolvable deviation accepted: %v", err)
 	}
 }
+
+func TestGenerateCopiesAliases(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	withAlias := strings.Replace(string(b), `"module"`, `"aliases": ["/vendor/native/sensor/"], "module"`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(withAlias), 0o644)
+	out := filepath.Join(t.TempDir(), "o.json")
+	if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if !strings.Contains(string(got), `"aliases": [
+        "/vendor/native/sensor/"
+      ],`) {
+		t.Fatalf("aliases not copied verbatim:\n%s", got)
+	}
+}
