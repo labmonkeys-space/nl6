@@ -356,6 +356,7 @@
     },
     {
       "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}], "module": "openconfig-platform",
+      "aliases": ["/components/component/transceiver/state"], "alias_leaves": ["transceiver/state"],
       "leaves": {
         "state/name": "inventory:name", "state/type": "inventory:type", "state/parent": "inventory:parent", "state/part-no": "inventory:part_no",
         "state/description": "inventory:description", "state/serial-no": "inventory:serial_no_per_device", "state/id": "inventory:serial_no_per_device",
@@ -380,7 +381,21 @@
     },
     {
       "path": "/components/component[name=*]/transceiver", "origin": "openconfig", "keys": [{"source": "components", "filter": "TRANSCEIVER"}], "module": "openconfig-platform",
-      "leaves": {"state/enabled": "const:true", "state/input-power/instant": "sine:-2.4,0.3,600", "state/output-power/instant": "sine:-1.1,0.2,600", "state/laser-bias-current/instant": "sine:6.5,0.4,600"}
+      "aliases": ["/components/component/transceiver/state"],
+      "leaves": {"state/enabled": "const:true", "state/input-power/instant": "sine:-2.4,0.3,600", "state/output-power/instant": "sine:-1.1,0.2,600", "state/laser-bias-current/instant": "sine:6.5,0.4,600"},
+      "decimal_encodings": {"state/input-power/instant": "double", "state/output-power/instant": "double", "state/laser-bias-current/instant": "double"}
+    },
+    {
+      "path": "/components/component[name=*]/state", "origin": "openconfig", "keys": [{"source": "components", "filter": "PORT"}], "module": "openconfig-platform",
+      "aliases": ["/components/component/transceiver/state"], "alias_only": true,
+      "leaves": {"oper-status": "const:ACTIVE"},
+      "types": {"oper-status": "string"}
+    },
+    {
+      "path": "/components/component[name=*]/state", "origin": "openconfig", "keys": [{"source": "components", "filter": "TRANSCEIVER"}], "module": "openconfig-platform",
+      "aliases": ["/components/component/transceiver/state"], "alias_only": true,
+      "leaves": {"oper-status": "const:ACTIVE"},
+      "types": {"oper-status": "string"}
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",

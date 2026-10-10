@@ -74,6 +74,9 @@ var fixtureSubscriptions = map[string]string{
 // subscribed with an empty origin, as collectors often do.
 var fixtureAliasRendered = map[string]string{
 	"native-packet-usage": "/components/component/properties/property/state/value",
+	// The transceiver path is an alias across four subtrees (nl6#790); the
+	// fixture is exact, so this pins the alias header form only.
+	"transceiver-hardware": "/components/component",
 	// The subinterface counters path is a subtree alias (nl6#773)
 	// scoped to the counters and init-time (nl6#787); the fixture is
 	// exact, so this only names where the leaves render.
@@ -628,6 +631,19 @@ func TestMX10004ComponentsOneNotificationPerEntry(t *testing.T) {
 	if hasTemp("Chassis") {
 		t.Errorf("Chassis: carries a temperature leaf it has no sensor for")
 	}
+	// The transceiver sensor's oper-status shape is alias-only (nl6#790):
+	// path coverage must not add a .../state notification per port.
+	for _, p := range []string{"/components", "/components/component/state"} {
+		resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range resps {
+			if el := r.GetUpdate().GetPrefix().GetElem(); len(el) == 3 && el[2].GetName() == "state" {
+				t.Fatalf("%s: alias-only prefix %s rendered by path coverage", p, pathToString(r.GetUpdate().GetPrefix()))
+			}
+		}
+	}
 }
 
 // TestMX10004AcceptsModuleNameAndNativeOrigins: Junos accepts the YANG
@@ -843,8 +859,9 @@ func TestMX10004OverTemperatureCarriers(t *testing.T) {
 	}
 }
 
-// TestMX10004Transceivers pins nl6#771: every transceiver component
-// renders the static and analog hardware shapes, analog leaves as decimals, the
+// TestMX10004Transceivers pins nl6#771 and nl6#790: every transceiver
+// component renders the static, analog and oper-status hardware shapes,
+// every port the oper-status shape, analog leaves as doubles, the
 // wavelength property sits on every port, and a packet type without a
 // catalogue refuses the transceiver path by naming the path.
 func TestMX10004Transceivers(t *testing.T) {
@@ -863,7 +880,7 @@ func TestMX10004Transceivers(t *testing.T) {
 		}
 		el := n.GetPrefix().GetElem()
 		if len(el) < 2 || len(el) > 3 {
-			t.Fatalf("prefix %s: want component[name=*] with an optional transceiver tail", pathToString(n.GetPrefix()))
+			t.Fatalf("prefix %s: want component[name=*] with an optional transceiver or state tail", pathToString(n.GetPrefix()))
 		}
 		name := el[1].GetKey()["name"]
 		tail := ""
@@ -877,14 +894,25 @@ func TestMX10004Transceivers(t *testing.T) {
 		shapes[name][tail] += len(n.GetUpdate())
 		if tail == "transceiver" {
 			for _, u := range n.GetUpdate() {
-				if strings.HasSuffix(pathToString(u.GetPath()), "/instant") && u.GetVal().GetDecimalVal() == nil { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
-					t.Errorf("%s %s is %v, want a decimal", name, pathToString(u.GetPath()), u.GetVal())
+				if _, ok := u.GetVal().GetValue().(*gnmipb.TypedValue_DoubleVal); strings.HasSuffix(pathToString(u.GetPath()), "/instant") && !ok {
+					t.Errorf("%s %s is %v, want a double", name, pathToString(u.GetPath()), u.GetVal())
 				}
 			}
 		}
+		if tail == "state" && (len(n.GetUpdate()) != 1 || pathToString(n.GetUpdate()[0].GetPath()) != "/oper-status") {
+			t.Errorf("%s state notification carries %v, want oper-status alone", name, n.GetUpdate())
+		}
 	}
-	if len(shapes) != 48 {
-		t.Fatalf("%d transceivers, want 48", len(shapes))
+	transceivers, ports := 0, 0
+	for name := range shapes {
+		if strings.Contains(name, ":Xcvr") {
+			transceivers++
+		} else {
+			ports++
+		}
+	}
+	if transceivers != 48 || ports != 48 {
+		t.Fatalf("%d transceivers and %d ports, want 48 each", transceivers, ports)
 	}
 	for k, c := range seen {
 		if c != 1 {
@@ -892,18 +920,21 @@ func TestMX10004Transceivers(t *testing.T) {
 		}
 	}
 	for name, sh := range shapes {
-		// Hardware adds a third shape, oper-status alone under a
-		// .../state prefix; nl6 cannot emit a leaf the request does not
-		// cover and serves oper-status in the inventory notification.
-		if sh[""] != 13 || sh["transceiver"] != 4 || len(sh) != 2 {
-			t.Errorf("%s shapes = %v, want 13 static and 4 analog", name, sh)
+		if !strings.Contains(name, ":Xcvr") {
+			if sh["state"] != 1 || len(sh) != 1 {
+				t.Errorf("port %s shapes = %v, want oper-status alone", name, sh)
+			}
+			continue
+		}
+		if sh[""] != 13 || sh["transceiver"] != 4 || sh["state"] != 1 || len(sh) != 3 {
+			t.Errorf("%s shapes = %v, want 13 static, 4 analog and oper-status", name, sh)
 		}
 	}
 	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/properties/property[name=wavelength]/state/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ports := 0
+	ports = 0
 	for _, r := range resps {
 		if n := r.GetUpdate(); n != nil {
 			ports++

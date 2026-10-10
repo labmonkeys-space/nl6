@@ -123,12 +123,17 @@ type gnmiCatalogKey struct {
 // any (the MX10004 subinterface counters sensor sends no
 // subinterface state leaves, nl6#787).
 type gnmiCatalogSubtree struct {
-	Path        string             `json:"path"`
-	Origin      string             `json:"origin"`
-	Aliases     []string           `json:"aliases,omitempty"`
-	AliasLeaves []string           `json:"alias_leaves,omitempty"`
-	Keys        []gnmiCatalogKey   `json:"keys"`
-	Leaves      []*gnmiCatalogLeaf `json:"leaves"`
+	Path        string   `json:"path"`
+	Origin      string   `json:"origin"`
+	Aliases     []string `json:"aliases,omitempty"`
+	AliasLeaves []string `json:"alias_leaves,omitempty"`
+	// AliasOnly keeps the subtree out of path coverage: only an alias
+	// request reaches it. The MX10004 transceiver sensor sends
+	// oper-status under a .../state prefix that /components/component/state
+	// must not repeat (nl6#790).
+	AliasOnly bool               `json:"alias_only,omitempty"`
+	Keys      []gnmiCatalogKey   `json:"keys"`
+	Leaves    []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
 	aliases [][]*gnmipb.PathElem // compiled from Aliases
@@ -159,6 +164,10 @@ type gnmiCatalogLeaf struct {
 	// counters notification (nl6#775); path coverage alone cannot say
 	// that, and a whole-entry alias says too much.
 	Always bool `json:"always,omitempty"`
+	// DecimalEncoding overrides notification.decimal_encoding for this
+	// decimal64 leaf: Junos sends temperature as Decimal64 and the
+	// transceiver optic readings as doubles (nl6#790).
+	DecimalEncoding string `json:"decimal_encoding,omitempty"`
 
 	elems       []*gnmipb.PathElem // compiled from Name
 	gen         gnmiLeafGen        // compiled from Gen
@@ -386,6 +395,16 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: digits %d outside YANG's 1..18", i, leaf.Name, leaf.Digits)
 			}
 			leaf.decimalVal = n.DecimalEncoding == gnmiDecimalVal
+			switch leaf.DecimalEncoding {
+			case "":
+			case gnmiDecimalDouble, gnmiDecimalVal:
+				if leaf.Type != "decimal64" {
+					return fail("subtree %d leaf %q: decimal_encoding is for decimal64 leaves, not %s", i, leaf.Name, leaf.Type)
+				}
+				leaf.decimalVal = leaf.DecimalEncoding == gnmiDecimalVal
+			default:
+				return fail("subtree %d leaf %q: decimal_encoding %q: want %q or %q", i, leaf.Name, leaf.DecimalEncoding, gnmiDecimalDouble, gnmiDecimalVal)
+			}
 			if leaf.Always {
 				st.hasAlways = true
 			}
@@ -411,6 +430,9 @@ func (c *gnmiCatalog) validate(source string) error {
 					return fail("subtree %d leaf %q: filter %q matches no component of this subtree", i, leaf.Name, leaf.Filter)
 				}
 			}
+		}
+		if st.AliasOnly && len(st.Aliases) == 0 {
+			return fail("subtree %d (%s): alias_only without aliases is unreachable", i, st.Path)
 		}
 		if len(st.AliasLeaves) > 0 && len(st.Aliases) == 0 {
 			return fail("subtree %d (%s): alias_leaves without aliases scopes nothing", i, st.Path)

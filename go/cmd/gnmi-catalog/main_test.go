@@ -272,3 +272,54 @@ func TestGenerateAliasLeaves(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateAliasOnlyAndDecimalEncodings covers nl6#790: alias_only
+// and per-leaf decimal_encodings are copied through, and the loader's
+// refusals fire here, where the bindings are edited.
+func TestGenerateAliasOnlyAndDecimalEncodings(t *testing.T) {
+	b, err := os.ReadFile("testdata/bindings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const extra = `"extra": {"properties/property[name=x]/state/value": {"type": "uint64", "gen": "counter:10"}}`
+	if !strings.Contains(string(b), extra) {
+		t.Fatal("fixture extra block changed; update this test")
+	}
+	withPower := strings.Replace(string(b), extra, `"extra": {"properties/property[name=x]/state/value": {"type": "uint64", "gen": "counter:10"}, "state/power": {"type": "decimal64", "gen": "const:1.5", "digits": 2}}`, 1)
+	gen := func(t *testing.T, fields string) (string, error) {
+		t.Helper()
+		in := strings.Replace(withPower, `"module"`, fields+`, "module"`, 1)
+		p := filepath.Join(t.TempDir(), "b.json")
+		if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out := filepath.Join(t.TempDir(), "o.json")
+		if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+			return "", err
+		}
+		got, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(string(got)), " "), nil
+	}
+	got, err := gen(t, `"aliases": ["/vendor/native/sensor/"], "alias_only": true, "decimal_encodings": {"state/power": "double"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `"alias_only": true`) || !strings.Contains(got, `"name": "state/power", "type": "decimal64", "gen": "const:1.5", "digits": 2, "decimal_encoding": "double"`) {
+		t.Fatalf("alias_only or decimal_encoding not copied:\n%s", got)
+	}
+	for _, tc := range []struct{ name, fields, wantErr string }{
+		{"alias_only without aliases", `"alias_only": true`, "alias_only without aliases"},
+		{"decimal_encoding on a non-decimal leaf", `"decimal_encodings": {"state/mtu": "double"}`, "which is uint32, not decimal64"},
+		{"unknown decimal_encoding", `"decimal_encodings": {"state/power": "float"}`, `decimal_encoding "float"`},
+		{"decimal_encoding on an unknown leaf", `"decimal_encodings": {"state/nope": "double"}`, "in neither leaves nor extra"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := gen(t, tc.fields); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}

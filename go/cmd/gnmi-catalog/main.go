@@ -56,6 +56,13 @@ type bindingSubtree struct {
 	// subtree with a filter, never in a second subtree on the same
 	// path, which the loader refuses (nl6#765).
 	Filters map[string]string `json:"filters"`
+	// DecimalEncodings overrides notification.decimal_encoding per
+	// decimal64 leaf ("double" or "decimal_val"), copied to the emitted
+	// leaf's `decimal_encoding` (nl6#790).
+	DecimalEncodings map[string]string `json:"decimal_encodings"`
+	// AliasOnly keeps the subtree reachable only through its aliases
+	// (nl6#790); copied through.
+	AliasOnly bool `json:"alias_only"`
 	// Always lists leaves rendered whenever the entry renders, even
 	// when the request path does not cover them (a Junos sensor's
 	// identity leaves, nl6#775). Names must be in leaves or extra.
@@ -75,6 +82,8 @@ type outLeaf struct {
 	Filter string   `json:"filter,omitempty"`
 	Digits int      `json:"digits,omitempty"`
 	Always bool     `json:"always,omitempty"`
+	// DecimalEncoding is the leaf's override of the notification's.
+	DecimalEncoding string `json:"decimal_encoding,omitempty"`
 }
 
 type outSubtree struct {
@@ -82,6 +91,7 @@ type outSubtree struct {
 	Origin      string          `json:"origin"`
 	Aliases     []string        `json:"aliases,omitempty"`
 	AliasLeaves []string        `json:"alias_leaves,omitempty"`
+	AliasOnly   bool            `json:"alias_only,omitempty"`
 	Keys        json.RawMessage `json:"keys"`
 	Leaves      []outLeaf       `json:"leaves"`
 }
@@ -200,6 +210,31 @@ func run(args []string) error {
 		for i := range leaves {
 			leaves[i].Always = always[leaves[i].Name]
 		}
+		byName := map[string]*outLeaf{}
+		for i := range leaves {
+			byName[leaves[i].Name] = &leaves[i]
+		}
+		encNames := make([]string, 0, len(st.DecimalEncodings))
+		for n := range st.DecimalEncodings {
+			encNames = append(encNames, n)
+		}
+		sort.Strings(encNames) // the first bad entry reported is the same on every run
+		for _, n := range encNames {
+			enc := st.DecimalEncodings[n]
+			l := byName[n]
+			switch {
+			case l == nil:
+				return fmt.Errorf("subtree %s: decimal_encoding on leaf %s, which is in neither leaves nor extra", st.Path, n)
+			case l.Type != "decimal64":
+				return fmt.Errorf("subtree %s: decimal_encoding on leaf %s, which is %s, not decimal64", st.Path, n, l.Type)
+			case enc != "double" && enc != "decimal_val":
+				return fmt.Errorf("subtree %s: decimal_encoding %q on leaf %s: want double or decimal_val", st.Path, enc, n)
+			}
+			l.DecimalEncoding = enc
+		}
+		if st.AliasOnly && len(st.Aliases) == 0 {
+			return fmt.Errorf("subtree %s: alias_only without aliases is unreachable", st.Path)
+		}
 		for n, f := range st.Filters {
 			_, inLeaves := st.Leaves[n]
 			_, inExtra := st.Extra[n]
@@ -246,7 +281,7 @@ func run(args []string) error {
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)
