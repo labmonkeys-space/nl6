@@ -435,10 +435,12 @@ func narrowUint(u uint64, yangType string) (any, error) {
 	if !narrow {
 		return u, nil
 	}
-	if u > max {
+	// The literal comparison is what static analysis can see; the
+	// per-type bound from the map is the tighter semantic check.
+	if u > math.MaxUint32 || u > max {
 		return nil, fmt.Errorf("%d exceeds %s", u, yangType)
 	}
-	return uint32(u), nil // #nosec G115 -- bounded by the check above
+	return uint32(u), nil
 }
 
 func narrowInt(i int64, yangType string) (any, error) {
