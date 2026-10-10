@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -333,7 +334,11 @@ func (c *gnmiCatalog) validate(source string) error {
 			if err != nil {
 				return fail("subtree %d leaf %q: binding: %v", i, leaf.Name, err)
 			}
-			switch prefix, _, _ := strings.Cut(leaf.Gen, ":"); {
+			switch prefix, arg, _ := strings.Cut(leaf.Gen, ":"); {
+			case prefix == "key":
+				if n, err := strconv.Atoi(arg); err != nil || n >= len(st.Keys) {
+					return fail("subtree %d leaf %q: key index %s is outside the subtree's %d key sources", i, leaf.Name, arg, len(st.Keys))
+				}
 			case prefix == "inventory" && st.componentKey < 0:
 				return fail("subtree %d leaf %q: inventory binding needs a components key source", i, leaf.Name)
 			case prefix == "neighbor" && st.neighborKey < 0:

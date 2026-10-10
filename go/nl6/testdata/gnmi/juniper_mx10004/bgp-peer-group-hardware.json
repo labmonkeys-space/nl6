@@ -1,0 +1,136 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for the bgp-peer-group subscription (nl6#774); hand-written from the issue, an authoring record, not an observation. Leaf sets differ per family: the IPv4 entry carries ipv4-unicast containers, the IPv6 entry ipv6-unicast.",
+  "subtree": "bgp-peer-group",
+  "prefixes": [
+    "openconfig:/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]",
+    "openconfig:/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/add-paths/state/eligible-prefix-policy",
+      "kind": "string"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/add-paths/state/receive",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/add-paths/state/send",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/add-paths/state/send-max",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/afi-safi-name",
+      "kind": "string"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/graceful-restart/state/enabled",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit-received/state/max-prefixes",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit-received/state/prevent-teardown",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit-received/state/warning-threshold-pct",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit/state/max-prefixes",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit/state/prevent-teardown",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/prefix-limit/state/warning-threshold-pct",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv4-unicast/state/extended-next-hop-encoding",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit-received/state/max-prefixes",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit-received/state/prevent-teardown",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit-received/state/warning-threshold-pct",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit/state/max-prefixes",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit/state/prevent-teardown",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/ipv6-unicast/prefix-limit/state/warning-threshold-pct",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/afi-safi-name",
+      "kind": "string"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/enabled",
+      "kind": "bool"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/prefixes/accepted",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/prefixes/installed",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/prefixes/received",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/prefixes/sent",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/total-paths",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]/state/total-prefixes",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/state/local-as",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/state/peer-as",
+      "kind": "uint"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/state/peer-group-name",
+      "kind": "string"
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/state/peer-type",
+      "kind": "string"
+    }
+  ]
+}

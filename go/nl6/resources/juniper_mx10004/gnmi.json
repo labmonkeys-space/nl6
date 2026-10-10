@@ -3487,6 +3487,11 @@
           "gen": "neighbor:peer_as"
         },
         {
+          "name": "state/peer-group",
+          "type": "string",
+          "gen": "const:EBGP-TRANSIT"
+        },
+        {
           "name": "state/peer-type",
           "type": "string",
           "gen": "const:EXTERNAL"
@@ -3495,6 +3500,1017 @@
           "name": "state/session-state",
           "type": "string",
           "gen": "neighbor:state"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/neighbors/neighbor[neighbor-address=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "neighbors"
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV4_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/advertised",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "graceful-restart/state/received",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/prefix-limit-exceeded",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/prefix-limit-exceeded",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/state/extended-next-hop-encoding",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/active",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:3.0"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:2.8"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:4"
+        },
+        {
+          "name": "state/prefixes/received-pre-policy",
+          "type": "uint32",
+          "gen": "counter:4.2"
+        },
+        {
+          "name": "state/prefixes/rejected",
+          "type": "uint32",
+          "gen": "const:0"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:2.0"
+        },
+        {
+          "name": "state/queues/input",
+          "type": "uint32",
+          "gen": "const:0"
+        },
+        {
+          "name": "state/queues/output",
+          "type": "uint32",
+          "gen": "const:0"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/neighbors/neighbor[neighbor-address=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "neighbors"
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV6_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/advertised",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "graceful-restart/state/received",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/prefix-limit-exceeded",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/prefix-limit-exceeded",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "state/active",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:1.5"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:1.4"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:2"
+        },
+        {
+          "name": "state/prefixes/received-pre-policy",
+          "type": "uint32",
+          "gen": "counter:2.1"
+        },
+        {
+          "name": "state/prefixes/rejected",
+          "type": "uint32",
+          "gen": "const:0"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:1.0"
+        },
+        {
+          "name": "state/queues/input",
+          "type": "uint32",
+          "gen": "const:0"
+        },
+        {
+          "name": "state/queues/output",
+          "type": "uint32",
+          "gen": "const:0"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "EBGP-TRANSIT"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/local-as",
+          "type": "uint32",
+          "gen": "const:64500"
+        },
+        {
+          "name": "state/peer-as",
+          "type": "uint32",
+          "gen": "const:64496"
+        },
+        {
+          "name": "state/peer-group-name",
+          "type": "string",
+          "gen": "key:3"
+        },
+        {
+          "name": "state/peer-type",
+          "type": "string",
+          "gen": "const:EXTERNAL"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IBGP-CORE"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/local-as",
+          "type": "uint32",
+          "gen": "const:64500"
+        },
+        {
+          "name": "state/peer-as",
+          "type": "uint32",
+          "gen": "const:64500"
+        },
+        {
+          "name": "state/peer-group-name",
+          "type": "string",
+          "gen": "key:3"
+        },
+        {
+          "name": "state/peer-type",
+          "type": "string",
+          "gen": "const:INTERNAL"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "EBGP-TRANSIT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV4_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/state/extended-next-hop-encoding",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/total-paths",
+          "type": "uint32",
+          "gen": "counter:10"
+        },
+        {
+          "name": "state/total-prefixes",
+          "type": "uint32",
+          "gen": "counter:9"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:6.75"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:6.3"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:9"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:4.5"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "EBGP-TRANSIT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV6_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/total-paths",
+          "type": "uint32",
+          "gen": "counter:5"
+        },
+        {
+          "name": "state/total-prefixes",
+          "type": "uint32",
+          "gen": "counter:4.5"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:3.375"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:3.15"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:4.5"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:2.25"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IBGP-CORE"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV4_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv4-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv4-unicast/state/extended-next-hop-encoding",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/total-paths",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/total-prefixes",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:0.0"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:0.0"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:0.0"
+        }
+      ]
+    },
+    {
+      "path": "/network-instances/network-instance[name=*]/protocols/protocol[identifier=*][name=*]/bgp/peer-groups/peer-group[peer-group-name=*]/afi-safis/afi-safi[afi-safi-name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "BGP"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "DEFAULT"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IBGP-CORE"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "IPV6_UNICAST"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "add-paths/state/eligible-prefix-policy",
+          "type": "string",
+          "gen": "const:ADD-PATH-ELIGIBLE"
+        },
+        {
+          "name": "add-paths/state/receive",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "add-paths/state/send-max",
+          "type": "uint8",
+          "gen": "const:0"
+        },
+        {
+          "name": "afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "graceful-restart/state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit-received/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/max-prefixes",
+          "type": "uint32",
+          "gen": "const:100000"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/prevent-teardown",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "ipv6-unicast/prefix-limit/state/warning-threshold-pct",
+          "type": "uint8",
+          "gen": "const:90"
+        },
+        {
+          "name": "state/afi-safi-name",
+          "type": "string",
+          "gen": "key:4"
+        },
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/total-paths",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/total-prefixes",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/prefixes/accepted",
+          "type": "uint32",
+          "gen": "counter:0.0"
+        },
+        {
+          "name": "state/prefixes/installed",
+          "type": "uint32",
+          "gen": "counter:0.0"
+        },
+        {
+          "name": "state/prefixes/received",
+          "type": "uint32",
+          "gen": "counter:0"
+        },
+        {
+          "name": "state/prefixes/sent",
+          "type": "uint32",
+          "gen": "counter:0.0"
         }
       ]
     },
