@@ -313,7 +313,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 				if !ok {
 					continue
 				}
-				v, err := castGnmiLeaf(raw, leaf.Type)
+				v, err := leaf.cast(raw)
 				if err != nil {
 					log.Printf("gNMI catalog: %s leaf %s: %v (skipping)", st.Path, leaf.Name, err)
 					continue

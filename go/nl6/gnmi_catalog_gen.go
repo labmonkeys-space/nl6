@@ -260,10 +260,7 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 		if ctx.cat == nil || !ok {
 			return nil, false
 		}
-		for _, c := range ctx.cat.Components {
-			if c.Name != name {
-				continue
-			}
+		if c := ctx.cat.componentByName[name]; c != nil {
 			switch arg {
 			case "name":
 				return c.Name, true
@@ -369,6 +366,12 @@ var gnmiLeafTypes = map[string]bool{
 // castGnmiLeaf converts a binding's result to the Go type the encoder
 // expects for the leaf's YANG type.
 func castGnmiLeaf(v any, yangType string) (any, error) {
+	return castGnmiLeafDigits(v, yangType, 0)
+}
+
+// castGnmiLeafDigits is castGnmiLeaf with the leaf's declared
+// fraction-digits for decimal64; 0 keeps the historical two.
+func castGnmiLeafDigits(v any, yangType string, digits int) (any, error) {
 	toF := func() (float64, bool) {
 		switch x := v.(type) {
 		case float64:
@@ -411,7 +414,10 @@ func castGnmiLeaf(v any, yangType string) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("%v (%T) is not a decimal64", v, v)
 		}
-		return gnmiDecimal{val: f, digits: 2}, nil
+		if digits <= 0 {
+			digits = 2
+		}
+		return gnmiDecimal{val: f, digits: digits}, nil
 	case "boolean":
 		switch x := v.(type) {
 		case bool:

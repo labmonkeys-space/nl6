@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -542,12 +543,19 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 		case int64:
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_IntVal{IntVal: x}}, nil
 		case gnmiDecimal:
-			// double_val, not string_val: a decimal encoded as a string
-			// would be a type error for the client. Not decimal_val
-			// either — that field is deprecated in gNMI.
-			//
-			// Lossy for high-precision values (an 18-fraction-digit BER
-			// exceeds a float64 significand); JSON_IETF preserves them.
+			// Two wire forms. The default is double_val, not string_val
+			// (a string would be a type error for the client); it is lossy
+			// for high-precision values (an 18-fraction-digit BER exceeds
+			// a float64 significand), which JSON_IETF preserves. A
+			// catalogue that declares decimal_encoding: decimal_val gets
+			// gNMI's Decimal64 message instead, deprecated in gNMI but
+			// what Junos sends (nl6#772). Rounding is half-to-even, the
+			// same rule FormatFloat applies to the JSON forms, so both
+			// encodings serve one reading at one instant.
+			if x.decimalVal {
+				scale := math.Pow10(x.digits)
+				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: int64(math.RoundToEven(x.val * scale)), Precision: uint32(x.digits)}}}, nil //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
+			}
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)

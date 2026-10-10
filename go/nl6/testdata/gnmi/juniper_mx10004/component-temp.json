@@ -1,5 +1,5 @@
 {
-  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md. The temperature/instant row carries no kind: vJunos sent uint, the MX10004 hardware sends Decimal64 precision 1 and the -hardware fixture of the same name pins that (nl6#772).",
   "subtree": "component-temp",
   "prefixes": [
     "openconfig:/components/component[name=*]"
@@ -9,7 +9,7 @@
   "leaves": [
     {
       "path": "/components/component[name=*]/state/temperature/instant",
-      "kind": "uint"
+      "kind": ""
     }
   ]
 }

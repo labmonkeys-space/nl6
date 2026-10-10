@@ -139,6 +139,8 @@ Each device adds a 48-byte resolver.
 | `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin |
 | `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
+| `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way |
+| `subtrees[].leaves[].digits` | `decimal64` fraction-digits (1..18), written by the generator from the YANG model, or declared on an `extra` binding leaf; absent means two; refused on a non-decimal leaf |
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
@@ -177,6 +179,7 @@ The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
 It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
 It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
 Native sensors sit under the `juniper` origin.
+The component tree carries the MX10004 hardware's cardinality: 256 components across the chassis, control board and routing engine with their sensors, the LC480 with two 24-port PICs, every port and transceiver, the FPC sensors, two PEMs with sensors, two fan tray controllers, 24 fans and six switch fabric boards with eleven sensors each; sensor-bearing components serve the full temperature record with `instant`, `avg`, `min` and `max` as `Decimal64` precision 1.
 The module names `openconfig-interfaces`, `openconfig-platform`, `openconfig-system` and `openconfig-network-instance` are accepted as the `openconfig` origin and `Native` as `juniper`, which is what an operator types against a real MX; the notifications are the same as for the canonical origin.
 A subscription to `/junos/system/linecard/packet/usage/`, with origin `juniper` or none, returns the packet-usage counters under the component paths Junos renders them at.
 The header extension carries the hostname and sensor name.
