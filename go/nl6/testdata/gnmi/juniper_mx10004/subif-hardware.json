@@ -1,14 +1,23 @@
 {
-  "comment": "Shape of the MX10004 hardware reference set for the subinterface counters subscription (nl6#773); hand-written from the issue, an authoring record, not an observation. The family octet and packet counters and init-time are what hardware adds to the vJunos capture.",
+  "comment": "Shape of the MX10004 hardware reference set for the subinterface counters subscription; hand-written from nl6#773 and nl6#787, an authoring record, not an observation. The 25 leaves are the whole set the router sends on this path (exact), so the subinterface state leaves the vJunos state capture records are not expected here.",
   "subtree": "subif",
   "prefixes": [
     "openconfig:/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]"
   ],
   "notifications": 0,
   "extension": "juniper-header",
+  "exact": true,
   "leaves": [
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/init-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-multicast-pkts",
       "kind": "uint"
     },
     {
@@ -20,11 +29,27 @@
       "kind": "uint"
     },
     {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-octets",
       "kind": "uint"
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-multicast-pkts",
       "kind": "uint"
     },
     {
@@ -36,11 +61,51 @@
       "kind": "uint"
     },
     {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-multicast-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-octets",
       "kind": "uint"
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/in-unicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-multicast-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters/out-unicast-pkts",
       "kind": "uint"
     }
   ]

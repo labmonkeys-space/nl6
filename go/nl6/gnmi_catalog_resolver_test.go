@@ -315,6 +315,40 @@ func TestCatalogResolver_AliasServesWholeSubtree(t *testing.T) {
 	}
 }
 
+// TestCatalogResolver_AliasLeavesScopeTheAlias: a subtree with
+// alias_leaves renders only that scope under its alias, while a direct
+// path still reaches every leaf (the MX10004 subinterface counters
+// sensor, nl6#787).
+func TestCatalogResolver_AliasLeavesScopeTheAlias(t *testing.T) {
+	data := strings.Replace(string(readTestCatalog(t)), `"keys": [{"source": "interfaces"}]`,
+		`"aliases": ["/testvendor/ifcounters/"], "alias_leaves": ["state/counters"], "keys": [{"source": "interfaces"}]`, 1)
+	cat, err := parseGnmiCatalog([]byte(data), "alias-leaves")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	leafNames := func(p *gnmipb.Path) map[string]bool {
+		t.Helper()
+		got, err := r.Resolve(p, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := map[string]bool{}
+		for _, n := range got {
+			for _, u := range n.Updates {
+				names[pathToString(u.Path)] = true
+			}
+		}
+		return names
+	}
+	if got := leafNames(pathFromString(t, "/testvendor/ifcounters")); len(got) != 1 || !got["/state/counters/in-octets"] {
+		t.Fatalf("alias rendered %v, want only state/counters/in-octets", got)
+	}
+	if got := leafNames(pathFromString(t, "/interfaces/interface/state")); !got["/state/oper-status"] {
+		t.Fatalf("direct path lost the out-of-scope leaf: %v", got)
+	}
+}
+
 // TestCatalogResolver_AliasSharedByTwoSubtrees: one sensor alias on
 // two same-path subtrees with disjoint keys resolves to both (the two
 // directions of the MX10004 fabric sensor, nl6#767).

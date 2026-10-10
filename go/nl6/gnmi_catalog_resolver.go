@@ -275,21 +275,22 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 
 // Resolve returns one catalogNotification per list entry the request
 // touches, with leaves narrowed to the request. A request for a
-// subtree alias returns that whole subtree.
+// subtree alias returns that whole subtree, or its alias_leaves scope.
 func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotification, error) {
 	if sts := r.aliasSubtrees(p); len(sts) > 0 {
-		return r.resolveSubtrees(p, sts[0].Origin, nil, sts, now)
+		return r.resolveSubtrees(p, sts[0].Origin, nil, true, sts, now)
 	}
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "origin %q not served by this device", p.GetOrigin())
 	}
-	return r.resolveSubtrees(p, origin, p.GetElem(), r.cat.Subtrees, now)
+	return r.resolveSubtrees(p, origin, p.GetElem(), false, r.cat.Subtrees, now)
 }
 
 // resolveSubtrees resolves request elems q (nil for everything) against
 // the subtrees of the given origin. p is the client's path, for errors.
-func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gnmipb.PathElem, subtrees []*gnmiCatalogSubtree, now time.Time) ([]catalogNotification, error) {
+// viaAlias limits each subtree to its alias_leaves scope.
+func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gnmipb.PathElem, viaAlias bool, subtrees []*gnmiCatalogSubtree, now time.Time) ([]catalogNotification, error) {
 	t := now.Sub(r.epoch()).Seconds()
 	var out []catalogNotification
 	touched := false
@@ -320,6 +321,9 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 				}
 			}
 			for _, leaf := range st.Leaves {
+				if viaAlias && !leaf.aliasScoped {
+					continue
+				}
 				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
 					continue
 				}

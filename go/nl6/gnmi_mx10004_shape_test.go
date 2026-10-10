@@ -35,6 +35,10 @@ type shapeFixture struct {
 	// that this (hardware) fixture says are not sent; they are removed
 	// from the expected union so an observation fixture stays intact.
 	Absent []string `json:"absent"`
+	// Exact says leaves is the whole set the subscription renders, so
+	// the test expects exactly it instead of the union under the
+	// rendered path (the subinterface counters sensor, nl6#787).
+	Exact bool `json:"exact"`
 }
 
 // fixtureSubscriptions maps fixture file stems to the path gnmic
@@ -70,9 +74,9 @@ var fixtureSubscriptions = map[string]string{
 // subscribed with an empty origin, as collectors often do.
 var fixtureAliasRendered = map[string]string{
 	"native-packet-usage": "/components/component/properties/property/state/value",
-	// The subinterface counters path is a subtree alias (nl6#773): a
-	// subscription to the sensor path renders the whole subinterface,
-	// as Junos does, so the expected set is the entry's full leaf set.
+	// The subinterface counters path is a subtree alias (nl6#773)
+	// scoped to the counters and init-time (nl6#787); the fixture is
+	// exact, so this only names where the leaves render.
 	"subif-hardware": "/interfaces/interface/subinterfaces/subinterface",
 	// The fabric sensor renders under a path that is neither the
 	// subscription path nor the YANG tree (nl6#767). It renders under
@@ -238,6 +242,12 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 			for l := range alwaysLeaves[fixtureOrigin(fx)] {
 				if touchedEntries[entryOf(l)] && unionLeaves[fixtureOrigin(fx)][l] {
 					wantLeaves[l] = true
+				}
+			}
+			if fx.Exact {
+				wantLeaves = map[string]bool{}
+				for _, l := range fx.Leaves {
+					wantLeaves[l.Path] = true
 				}
 			}
 			for _, run := range origins {

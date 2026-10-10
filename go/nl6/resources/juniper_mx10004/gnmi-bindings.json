@@ -295,6 +295,7 @@
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig",
       "aliases": ["/interfaces/interface/subinterfaces/subinterface/state/counters"],
+      "alias_leaves": ["state/counters", "ipv4/state/counters", "ipv6/state/counters", "init-time"],
       "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0"]}], "module": "openconfig-interfaces",
       "leaves": {
         "state/name": "ifstate:name", "state/index": "key:1",

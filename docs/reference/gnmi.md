@@ -137,6 +137,7 @@ Each device adds a 48-byte resolver.
 | `components`, `neighbors` | chassis inventory and BGP peers, the key sources for component and neighbour subtrees |
 | `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
 | `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin; several subtrees of one origin may carry the same alias and all of them answer it |
+| `subtrees[].alias_leaves` | optional leaf paths relative to the entry; a request through an alias then renders only the leaves at or below one of them instead of the whole subtree; load refuses it on a subtree without aliases, an entry with keys or covering no leaf, and an `always` leaf outside it |
 | `subtrees[].keys` | one key source per wildcard, listed in the order the wildcards are filled (an element with several keys fills them in sorted key-name order): `interfaces` (the ifDescr table), `components` (optional `filter`, optional `parent` naming the component whose children are the keys), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
 | `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way |
@@ -191,7 +192,9 @@ That set comes from the MX10004 hardware reference set behind nl6#775, which is 
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
-A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` renders the whole subinterface, as the Junos sensor does, because that path is a subtree alias.
+A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` is a subtree alias scoped by `alias_leaves`.
+It renders the 8 `state/counters/*` leaves, the 16 `ipv4/state/counters/*` and `ipv6/state/counters/*` leaves and `init-time`, as the Junos sensor does.
+The subinterface `state/*` leaves come only from a subscription to `.../subinterface/state`.
 The subinterface totals ride the interface's HC counters and agree with SNMP.
 The family counters are independent synthetic counters at their own rates; nothing ties them to the totals, so do not derive a remainder from them.
 BGP serves the two neighbours' state (with `state/peer-group`), their `afi-safis/afi-safi` entries for `IPV4_UNICAST` (28 leaves, with the `ipv4-unicast` containers) and `IPV6_UNICAST` (27 leaves, with the `ipv6-unicast` containers), and two peer-groups, `EBGP-TRANSIT` (external, both neighbours) and `IBGP-CORE` (internal, no members), each with afi-safi entries (21 and 20 leaves, including `total-paths` and `total-prefixes`); the transit group's totals stay above its members' received counts, and the peer-group prefix counters are outside the pinned model and declared as extra leaves because hardware sends them.
