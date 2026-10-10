@@ -40,7 +40,7 @@ func TestParseGnmiCatalog_Valid(t *testing.T) {
 	if !cat.acceptsEncoding(gnmipb.Encoding_PROTO) || !cat.acceptsEncoding(gnmipb.Encoding_JSON) || cat.acceptsEncoding(gnmipb.Encoding_JSON_IETF) {
 		t.Fatalf("encoding acceptance wrong")
 	}
-	if got := cat.components("temperature"); len(got) != 1 || got[0].Name != "FPC0" {
+	if got := cat.components("temperature", ""); len(got) != 1 || got[0].Name != "FPC0" {
 		t.Fatalf("temperature filter = %v", got)
 	}
 }
@@ -74,6 +74,11 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"bad decimal encoding", strings.Replace(base, `"prefix": "list-entry"`, `"decimal_encoding": "float", "prefix": "list-entry"`, 1), `decimal_encoding "float"`},
 		{"alias that is a canonical origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"openconfig": "openconfig"}, "prefix": "list-entry"`, 1), "is a canonical origin, not an alias"},
 		{"alias to an unknown origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"Native": "nokia"}, "prefix": "list-entry"`, 1), `"Native" maps to "nokia", want one of ["openconfig" "testvendor"]`},
+		{"parent naming no component", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": [{"source": "components", "parent": "FPC9"}]`, 1), `parent "FPC9" names no component`},
+		{"parent selecting nothing", strings.Replace(base, `"keys": [{"source": "components"}]`, `"keys": [{"source": "components", "parent": "FPC0"}]`, 1), `parent "FPC0" with filter "" selects no component`},
+		{"alias shared across origins", strings.Replace(strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/shared/"], "keys": [{"source": "components"}]`, 1), `"origin": "openconfig",
+      "keys": [{"source": "components", "filter": "temperature"}]`, `"origin": "testvendor", "aliases": ["/testvendor/shared/"],
+      "keys": [{"source": "components", "filter": "temperature"}]`, 1), `alias "/testvendor/shared/" is also listed by a "openconfig" subtree`},
 		{"leaf filter outside the key filter", strings.Replace(strings.Replace(base, `"keys": [{"source": "components", "filter": "temperature"}]`, `"keys": [{"source": "components", "filter": "CHASSIS"}]`, 1), `"gen": "sine:40,5,600"`, `"gen": "sine:40,5,600", "filter": "temperature"`, 1), `matches no component of this subtree`},
 	}
 	for _, tc := range cases {
@@ -264,5 +269,31 @@ func TestParseGnmiCatalog_SamePathOverlappingKeysRefused(t *testing.T) {
 				t.Fatalf("err = %v: the leaf-filter remedy belongs only to a subtree with a components key", err)
 			}
 		})
+	}
+}
+
+// TestParseGnmiCatalog_ParentScopesComponentsKey: a `parent` on a
+// components key source keys the subtree on one component's children
+// (nl6#767), narrowed further by the filter, and the same-path guard
+// sees the scoped set.
+func TestParseGnmiCatalog_ParentScopesComponentsKey(t *testing.T) {
+	data := strings.Replace(string(readTestCatalog(t)), `"keys": [{"source": "components"}]`, `"keys": [{"source": "components", "parent": "Chassis", "filter": "temperature"}]`, 1)
+	cat, err := parseGnmiCatalog([]byte(data), "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals, ok := cat.keyValues(cat.Subtrees[1].Keys[0])
+	if !ok || len(vals) != 1 || vals[0] != "FPC0" {
+		t.Fatalf("parent-scoped key values = %v, want [FPC0]", vals)
+	}
+	chassisOnly := cat.components("", "")
+	if len(chassisOnly) != 2 {
+		t.Fatalf("unscoped components = %d, want 2", len(chassisOnly))
+	}
+	// Scoped against a same-path subtree keyed by the same child: the
+	// guard must see the overlap through the parent scope.
+	_, err = parseGnmiCatalog(twoSubtreeCatalog("openconfig", `[{"source": "components", "parent": "Chassis"}]`, "openconfig", `[{"source": "static", "names": ["FPC0"]}]`), "guard")
+	if err == nil || !strings.Contains(err.Error(), `entry "FPC0"`) {
+		t.Fatalf("overlap through a parent scope not refused: %v", err)
 	}
 }

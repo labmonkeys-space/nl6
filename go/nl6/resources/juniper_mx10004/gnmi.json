@@ -12,6 +12,8 @@
     "extension": "juniper-header",
     "origin_aliases": {
       "Native": "juniper",
+      "junos-fabric": "juniper",
+      "junos-fpc-env": "juniper",
       "openconfig-interfaces": "openconfig",
       "openconfig-network-instance": "openconfig",
       "openconfig-platform": "openconfig",
@@ -20,6 +22,16 @@
     "decimal_encoding": "decimal_val"
   },
   "models": [
+    {
+      "name": "junos-fabric",
+      "organization": "Juniper Networks, Inc.",
+      "version": "2023-10-20"
+    },
+    {
+      "name": "junos-fpc-env",
+      "organization": "Juniper Networks, Inc.",
+      "version": "2022-07-19"
+    },
     {
       "name": "openconfig-interfaces",
       "organization": "OpenConfig working group",
@@ -4747,6 +4759,359 @@
           "name": "properties/property[name=ts-output-packets]/state/value",
           "type": "uint64",
           "gen": "counter:4900"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "SWITCH-FABRIC"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "high",
+            "low"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "SWITCH-FABRIC"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "high",
+            "low"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9200000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9200000,460000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:11500"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:11500,575,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/power-record",
+      "origin": "juniper",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "fpc-power",
+          "type": "uint32",
+          "gen": "sine:780,40,900"
+        },
+        {
+          "name": "max-fpc-power",
+          "type": "uint32",
+          "gen": "const:1100"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]",
+      "origin": "juniper",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "components",
+          "filter": "temperature",
+          "parent": "FPC0"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "temp-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "temp-value",
+          "type": "uint32",
+          "gen": "sine:42,6,600"
+        }
+      ]
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
+      "origin": "juniper",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "VDD-0V9",
+            "VDD-1V2",
+            "VDD-1V8",
+            "VDD-3V3",
+            "VDD-12V"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "voltage-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "voltage-value",
+          "type": "uint32",
+          "gen": "sine:1200,10,600"
         }
       ]
     }

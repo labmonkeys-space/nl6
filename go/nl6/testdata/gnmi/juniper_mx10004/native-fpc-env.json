@@ -1,0 +1,39 @@
+{
+  "comment": "YANG-derived shape of /junos/system/linecard/environment/ from junos-fpc-env.yang (Juniper/yang 24.2R1.17). No hardware capture exists: the prefix depth, the sensor names (nl6's inventory for temperature, synthetic rails for voltage) and the leaf kinds come from the model, not from an MX. Replace with a capture when one exists.",
+  "subtree": "native-fpc-env",
+  "prefixes": [
+    "juniper:/junos/system/linecard[name=*]/environment/power-record",
+    "juniper:/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]",
+    "juniper:/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]"
+  ],
+  "notifications": 42,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/junos/system/linecard[name=*]/environment/power-record/fpc-power",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/power-record/max-fpc-power",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]/temp-sensor-name",
+      "kind": "string",
+      "always": true
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]/temp-value",
+      "kind": "uint"
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]/voltage-sensor-name",
+      "kind": "string",
+      "always": true
+    },
+    {
+      "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]/voltage-value",
+      "kind": "uint"
+    }
+  ]
+}

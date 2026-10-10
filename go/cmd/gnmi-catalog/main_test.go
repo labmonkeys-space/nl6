@@ -149,3 +149,40 @@ func TestGenerateRejectsFilterWithoutComponentsKeyOrVocabulary(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateLooksLeavesUpAtYangPath covers nl6#767: the rendered
+// prefix is kept as the subtree path while the leaf types come from
+// `yang_path`, which never reaches the output.
+func TestGenerateLooksLeavesUpAtYangPath(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	moved := strings.Replace(string(b), `"path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",`,
+		`"path": "/rendered/queues[queue-number=*]", "yang_path": "/interfaces/interface/state/counters/out-queue", "origin": "openconfig",`, 1)
+	moved = strings.Replace(moved, `"keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1"]}], "module": "test-a",`,
+		`"keys": [{"source": "static", "names": ["0", "1"]}], "module": "test-a",`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(moved), 0o644)
+	out := filepath.Join(t.TempDir(), "o.json")
+	if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	flat := strings.Join(strings.Fields(string(got)), " ")
+	if !strings.Contains(flat, `"path": "/rendered/queues[queue-number=*]"`) || !strings.Contains(flat, `"name": "pkts", "type": "uint64"`) {
+		t.Fatalf("rendered path or model type lost:\n%s", got)
+	}
+	if strings.Contains(flat, "yang_path") {
+		t.Fatalf("yang_path leaked into the catalogue:\n%s", got)
+	}
+}
+
+func TestGenerateRejectsYangPathOutsideModel(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	bad := strings.Replace(string(b), `"path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",`,
+		`"path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "yang_path": "/interfaces/interface/state/no-such-container", "origin": "openconfig",`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(bad), 0o644)
+	err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
+	if err == nil || !strings.Contains(err.Error(), "out-queue") || !strings.Contains(err.Error(), "no-such-container") {
+		t.Fatalf("bad yang_path accepted: %v", err)
+	}
+}
