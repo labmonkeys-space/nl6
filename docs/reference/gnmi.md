@@ -121,7 +121,8 @@ The interface surface is state-only, so it is unaffected.
 Device types that ship `resources/<type>/gnmi.json` serve the subtrees that file lists, in addition to the interface and optical paths above.
 The first such type is `juniper_mx10004`; see [Device types](device-types.md).
 A catalogue is parsed once per type and shared by every device of that type.
-A device adds about 460 bytes.
+Each device adds a 48-byte resolver.
+`BenchmarkCatalogResolverMemory` measures about 460 bytes per device for the resolver plus a minimal device struct.
 
 ### File format
 
@@ -148,6 +149,9 @@ A device adds about 460 bytes.
 | `counter:rate_per_s` | monotonic counter with seeded jitter |
 | `inventory:<field>` / `neighbor:<field>` | from `components` / `neighbors` |
 | `const:<literal>` / `key:<n>` / `timestamp:now\|boot` | literal, the n-th key value, nanosecond timestamps |
+| `device:sysname\|id` | the device sysName (falling back to the device ID), or the device ID |
+
+Time-based bindings share the interface counter cycler's start as their epoch, so a catalogue counter equals the SNMP counter read at the same instant.
 
 ### Overrides
 
@@ -155,7 +159,8 @@ A device adds about 460 bytes.
 A `gnmi.json` in a resource directory replaces that type's embedded catalogue, including for types that ship none.
 Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout and `gnmi-bindings.json`.
 The generator's `-path` flag adds directories that are searched only to resolve imports, and the Makefile passes `native/jti/models` because Juniper's augments and deviations import `junos-*` modules.
-A test fails when the committed file drifts.
+A drift test regenerates the file and fails when the committed copy differs.
+It runs only where the YANG cache exists, which `make gen-gnmi-catalog` populates, and skips elsewhere.
 
 ### Junos shape
 
@@ -185,6 +190,7 @@ ON_CHANGE is not available on catalogue paths in this release, and Subscribe ret
 The same clamp applies to `heartbeat_interval` on ON_CHANGE subscriptions.
 
 **Backpressure:** each STREAM/SAMPLE stream owns a 100-deep send buffer with oldest-drop on overflow.
+One buffer element is one tick, so a catalogue tick with one notification per list entry is dropped or delivered whole.
 ON_CHANGE streams own a 16-deep listener channel (state events are rare; depth 16 absorbs multi-second collector stalls).
 Both drop counters are simulator-wide and exposed via `GET /api/v1/gnmi/status` as `updates_dropped` and `state_events_dropped` respectively.
 
