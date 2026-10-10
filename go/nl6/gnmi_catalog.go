@@ -112,14 +112,22 @@ type gnmiCatalogSubtree struct {
 	neighborKey  int
 }
 
+// gnmiCatalogLeaf is one served leaf. `filter` narrows the leaf to the
+// components matching it (same vocabulary as the `components` key
+// source), so one subtree can serve every component and carry a sensor
+// leaf on only the components that have the sensor. Splitting the leaf
+// into a second subtree on the same entry path instead renders that
+// entry twice (nl6#765), which parseGnmiCatalog refuses.
 type gnmiCatalogLeaf struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Enum []string `json:"enum,omitempty"`
-	Gen  string   `json:"gen"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Enum   []string `json:"enum,omitempty"`
+	Gen    string   `json:"gen"`
+	Filter string   `json:"filter,omitempty"`
 
-	elems []*gnmipb.PathElem // compiled from Name
-	gen   gnmiLeafGen        // compiled from Gen
+	elems       []*gnmipb.PathElem // compiled from Name
+	gen         gnmiLeafGen        // compiled from Gen
+	filterNames map[string]bool    // component names matching Filter; nil when unfiltered
 }
 
 var gnmiEncodingNames = map[string]gnmipb.Encoding{
@@ -271,6 +279,101 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: neighbor binding needs a neighbors key source", i, leaf.Name)
 			}
 			leaf.gen = g
+			if leaf.Filter != "" {
+				if st.componentKey < 0 {
+					return fail("subtree %d leaf %q: filter needs a components key source", i, leaf.Name)
+				}
+				matched := c.components(leaf.Filter)
+				if len(matched) == 0 {
+					return fail("subtree %d leaf %q: filter %q matches no component", i, leaf.Name, leaf.Filter)
+				}
+				leaf.filterNames = make(map[string]bool, len(matched))
+				for _, c := range matched {
+					leaf.filterNames[c.Name] = true
+				}
+			}
+		}
+	}
+	if err := c.checkSamePathSubtrees(); err != nil {
+		return fail("%v", err)
+	}
+	return nil
+}
+
+// keyValues enumerates one key source without a device: components,
+// neighbors and static. The interfaces source is per device and stays
+// in the resolver; ok is false for it. The resolver and the same-path
+// guard both expand through here so the guard cannot drift from what
+// the resolver renders.
+func (c *gnmiCatalog) keyValues(k gnmiCatalogKey) (vals []string, ok bool) {
+	switch k.Source {
+	case gnmiKeySourceComponents:
+		for _, comp := range c.components(k.Filter) {
+			vals = append(vals, comp.Name)
+		}
+	case gnmiKeySourceNeighbors:
+		for _, n := range c.Neighbors {
+			vals = append(vals, n.Address)
+		}
+	case gnmiKeySourceStatic:
+		vals = k.Names
+	default:
+		return nil, false
+	}
+	return vals, true
+}
+
+// entryTuples is the cartesian product of a subtree's key sources as
+// joined key strings, or ok=false when a source needs a device.
+func (c *gnmiCatalog) entryTuples(st *gnmiCatalogSubtree) (tuples []string, ok bool) {
+	tuples = []string{""}
+	for _, k := range st.Keys {
+		vals, ok := c.keyValues(k)
+		if !ok {
+			return nil, false
+		}
+		var next []string
+		for _, t := range tuples {
+			for _, v := range vals {
+				next = append(next, t+"\x00"+v)
+			}
+		}
+		tuples = next
+	}
+	return tuples, true
+}
+
+// checkSamePathSubtrees refuses two subtrees of one origin on one entry
+// path whose entries intersect: under `prefix: list-entry` they would
+// render one prefix as two notifications (nl6#765). Only key sources
+// resolvable at load are compared; a pair with an interfaces key on
+// either side is not checked, because the interface name set exists
+// only per device.
+func (c *gnmiCatalog) checkSamePathSubtrees() error {
+	for i, a := range c.Subtrees {
+		ta, ok := c.entryTuples(a)
+		if !ok {
+			continue
+		}
+		seen := make(map[string]bool, len(ta))
+		for _, t := range ta {
+			seen[t] = true
+		}
+		for j := i + 1; j < len(c.Subtrees); j++ {
+			b := c.Subtrees[j]
+			if b.Origin != a.Origin || b.Path != a.Path {
+				continue
+			}
+			tb, ok := c.entryTuples(b)
+			if !ok {
+				continue
+			}
+			for _, t := range tb {
+				if seen[t] {
+					return fmt.Errorf("subtree %d and subtree %d both serve %s %s at entry %q, which would render one prefix twice; fold the leaves into one subtree and narrow a per-component leaf with a leaf filter",
+						i, j, a.Origin, a.Path, strings.ReplaceAll(strings.TrimPrefix(t, "\x00"), "\x00", ","))
+				}
+			}
 		}
 	}
 	return nil

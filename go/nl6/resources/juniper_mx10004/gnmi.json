@@ -711,26 +711,15 @@
           "gen": "const:24.2R1.17"
         },
         {
+          "name": "state/temperature/instant",
+          "type": "uint64",
+          "gen": "sine:38,4,900",
+          "filter": "temperature"
+        },
+        {
           "name": "state/type",
           "type": "string",
           "gen": "inventory:type"
-        }
-      ]
-    },
-    {
-      "path": "/components/component[name=*]",
-      "origin": "openconfig",
-      "keys": [
-        {
-          "source": "components",
-          "filter": "temperature"
-        }
-      ],
-      "leaves": [
-        {
-          "name": "state/temperature/instant",
-          "type": "uint64",
-          "gen": "sine:38,4,900"
         }
       ]
     },

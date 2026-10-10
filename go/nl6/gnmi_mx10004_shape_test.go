@@ -481,3 +481,63 @@ func TestMX10004TemperatureOnlyOnSensorComponents(t *testing.T) {
 		}
 	}
 }
+
+// TestMX10004ComponentsOneNotificationPerEntry counts notifications,
+// which the shape tests above do not: they compare leaf sets, and
+// passed while FPC0 and Routing Engine0 each arrived twice under one
+// prefix (nl6#765), once from the inventory subtree and once from a
+// temperature-only subtree on the same entry path. The capture shows
+// one notification per component with temperature inside it.
+func TestMX10004ComponentsOneNotificationPerEntry(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := map[string]bool{}
+	for _, c := range cats["juniper_mx10004"].Components {
+		inventory[c.Name] = true
+	}
+	leavesByPrefix := map[string][]string{}
+	var perComponent int // notifications whose prefix names an inventory component
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		if el := n.GetPrefix().GetElem(); n.GetPrefix().GetOrigin() == "openconfig" && len(el) == 2 && inventory[el[1].GetKey()["name"]] {
+			perComponent++
+		}
+		key := n.GetPrefix().GetOrigin() + ":" + pathToString(n.GetPrefix())
+		if _, dup := leavesByPrefix[key]; dup {
+			t.Errorf("prefix %s rendered twice", key)
+		}
+		for _, u := range n.GetUpdate() {
+			leavesByPrefix[key] = append(leavesByPrefix[key], pathToString(u.GetPath()))
+		}
+	}
+	if want := len(inventory); perComponent != want {
+		t.Errorf("component notifications = %d, want %d (one per inventory component)", perComponent, want)
+	}
+	hasTemp := func(comp string) bool {
+		for _, l := range leavesByPrefix["openconfig:/components/component[name="+comp+"]"] {
+			if l == "/state/temperature/instant" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, comp := range []string{"FPC0", "Routing Engine0"} {
+		if !hasTemp(comp) {
+			t.Errorf("%s: no state/temperature/instant in its notification", comp)
+		}
+	}
+	if hasTemp("Chassis") {
+		t.Errorf("Chassis: carries a temperature leaf it has no sensor for")
+	}
+}

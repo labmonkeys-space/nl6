@@ -98,3 +98,33 @@ func TestGenerateRejectsUnknownBindingsField(t *testing.T) {
 		t.Fatalf("misspelt bindings field accepted: %v", err)
 	}
 }
+
+func TestGenerateCopiesLeafFilter(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	withFilter := strings.Replace(string(b), `"module"`, `"filters": {"state/mtu": "LINECARD"}, "module"`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(withFilter), 0o644)
+	out := filepath.Join(t.TempDir(), "o.json")
+	if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	flat := strings.Join(strings.Fields(string(got)), " ")
+	if !strings.Contains(flat, `"name": "state/mtu", "type": "uint32", "gen": "const:1514", "filter": "LINECARD"`) {
+		t.Fatalf("filter not copied onto its leaf:\n%s", got)
+	}
+	if n := strings.Count(string(got), `"filter"`); n != 1 {
+		t.Fatalf("%d leaves carry a filter, want exactly the one named", n)
+	}
+}
+
+func TestGenerateRejectsFilterOnUnknownLeaf(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	bad := strings.Replace(string(b), `"module"`, `"filters": {"state/nope": "LINECARD"}, "module"`, 1)
+	p := filepath.Join(t.TempDir(), "b.json")
+	_ = os.WriteFile(p, []byte(bad), 0o644)
+	err := run([]string{"-yang", "testdata", "-bindings", p, "-out", filepath.Join(t.TempDir(), "o.json")})
+	if err == nil || !strings.Contains(err.Error(), "state/nope") {
+		t.Fatalf("filter on unknown leaf accepted: %v", err)
+	}
+}

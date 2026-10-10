@@ -41,6 +41,12 @@ type bindingSubtree struct {
 	Module  string            `json:"module"`
 	Leaves  map[string]string `json:"leaves"`
 	Types   map[string]string `json:"types"`
+	// Filters narrows a leaf to the components matching the value
+	// (the `components` key-source vocabulary); copied to the emitted
+	// leaf's `filter`. A per-component leaf belongs in the entry's one
+	// subtree with a filter, never in a second subtree on the same
+	// path, which the loader refuses (nl6#765).
+	Filters map[string]string `json:"filters"`
 	Extra   map[string]struct {
 		Type string `json:"type"`
 		Gen  string `json:"gen"`
@@ -48,10 +54,11 @@ type bindingSubtree struct {
 }
 
 type outLeaf struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Enum []string `json:"enum,omitempty"`
-	Gen  string   `json:"gen"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Enum   []string `json:"enum,omitempty"`
+	Gen    string   `json:"gen"`
+	Filter string   `json:"filter,omitempty"`
 }
 
 type outSubtree struct {
@@ -146,7 +153,7 @@ func run(args []string) error {
 			if ov, ok := st.Types[name]; ok {
 				typ, enum = ov, nil
 			}
-			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name]})
+			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name], Filter: st.Filters[name]})
 		}
 		extraNames := make([]string, 0, len(st.Extra))
 		for n := range st.Extra {
@@ -154,7 +161,16 @@ func run(args []string) error {
 		}
 		sort.Strings(extraNames)
 		for _, n := range extraNames {
-			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen})
+			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n]})
+		}
+		for n := range st.Filters {
+			if _, ok := st.Leaves[n]; ok {
+				continue
+			}
+			if _, ok := st.Extra[n]; ok {
+				continue
+			}
+			return fmt.Errorf("subtree %s: filter on leaf %s, which is in neither leaves nor extra", st.Path, n)
 		}
 		keys := st.Keys
 		if keys == nil {
