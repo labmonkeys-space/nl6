@@ -4772,24 +4772,22 @@
         {
           "source": "static",
           "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
             "0"
           ]
         },
         {
           "source": "static",
           "names": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5"
-          ]
-        },
-        {
-          "source": "static",
-          "names": [
-            "SWITCH-FABRIC"
+            "LINECARD"
           ]
         },
         {
@@ -4895,7 +4893,127 @@
       ]
     },
     {
-      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "SWITCH-FABRIC"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
       "origin": "juniper",
       "aliases": [
         "/junos/system/linecard/fabric/"
@@ -4931,25 +5049,13 @@
         {
           "source": "static",
           "names": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5"
+            "0"
           ]
         },
         {
           "source": "static",
           "names": [
             "SWITCH-FABRIC"
-          ]
-        },
-        {
-          "source": "static",
-          "names": [
-            "high",
-            "low"
           ]
         }
       ],

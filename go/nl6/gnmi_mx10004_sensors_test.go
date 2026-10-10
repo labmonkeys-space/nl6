@@ -12,9 +12,11 @@ import (
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
-// TestMX10004FabricSensor covers nl6#767: the fabric sensor alias
-// resolves to both direction subtrees and renders under the prefix
-// hardware shows, with one notification per edge and class.
+// TestMX10004FabricSensor covers nl6#767 and nl6#785: the fabric sensor
+// alias resolves to all three edge subtrees and follows the hardware
+// edge rule. Line-card-to-line-card edges carry class-stats[priority];
+// switch fabric edges use a keyless class-stats and name only slot 0,
+// PFE 0.
 func TestMX10004FabricSensor(t *testing.T) {
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()
@@ -24,13 +26,12 @@ func TestMX10004FabricSensor(t *testing.T) {
 			t.Fatalf("origin %q: %v", origin, err)
 		}
 		edges := map[string]bool{}
-		n := 0
+		linecard, toFabric, fromFabric := 0, 0, 0
 		for _, r := range resps {
 			u := r.GetUpdate()
 			if u == nil {
 				continue
 			}
-			n++
 			if u.GetPrefix().GetOrigin() != "juniper" {
 				t.Fatalf("origin %q: prefix origin %q", origin, u.GetPrefix().GetOrigin())
 			}
@@ -38,70 +39,99 @@ func TestMX10004FabricSensor(t *testing.T) {
 			if len(elems) != 6 || elems[0].Name != "junos" || elems[1].Name != "fabric-statistics" || elems[3].Name != "edges" || elems[4].Name != "class-stats" || elems[5].Name != "transmit-counts" {
 				t.Fatalf("origin %q: prefix %s", origin, pathToString(u.GetPrefix()))
 			}
+			name := pathToString(u.GetPrefix())
 			k := elems[3].Key
 			if len(k) != 6 {
-				t.Fatalf("edges carries %d keys, want 6: %v", len(k), k)
+				t.Fatalf("%s: edges carries %d keys, want 6", name, len(k))
 			}
 			st, dt := k["src-type"], k["dst-type"]
-			if !(st == "LINECARD" && dt == "SWITCH-FABRIC") && !(st == "SWITCH-FABRIC" && dt == "LINECARD") {
-				t.Fatalf("edge types %q -> %q", st, dt)
+			pr, keyed := elems[4].Key["priority"]
+			switch {
+			case st == "LINECARD" && dt == "LINECARD":
+				if !keyed || len(elems[4].Key) != 1 || (pr != "high" && pr != "low") {
+					t.Fatalf("%s: line-card edge needs priority high or low", name)
+				}
+				linecard++
+			case st == "LINECARD" && dt == "SWITCH-FABRIC", st == "SWITCH-FABRIC" && dt == "LINECARD":
+				if len(elems[4].Key) != 0 {
+					t.Fatalf("%s: switch fabric edge carries class-stats keys", name)
+				}
+				side := "dst"
+				if st == "SWITCH-FABRIC" {
+					side = "src"
+				}
+				if k[side+"-slot"] != "0" || k[side+"-pfe"] != "0" {
+					t.Fatalf("%s: switch fabric side is not slot 0, PFE 0", name)
+				}
+				if side == "src" {
+					fromFabric++
+				} else {
+					toFabric++
+				}
+			default:
+				t.Fatalf("%s: edge types %q -> %q", name, st, dt)
 			}
-			if pr := elems[4].Key["priority"]; pr != "high" && pr != "low" {
-				t.Fatalf("priority %q", pr)
-			}
-			edges[pathToString(u.GetPrefix())] = true
+			edges[name] = true
 			if len(u.GetUpdate()) != 14 {
-				t.Fatalf("%s: %d updates, want 14", pathToString(u.GetPrefix()), len(u.GetUpdate()))
+				t.Fatalf("%s: %d updates, want 14", name, len(u.GetUpdate()))
 			}
 			for _, up := range u.GetUpdate() {
 				if _, ok := up.GetVal().GetValue().(*gnmipb.TypedValue_UintVal); !ok {
-					t.Fatalf("%s/%s is not uint64: %v", pathToString(u.GetPrefix()), pathToString(up.GetPath()), up.GetVal())
+					t.Fatalf("%s/%s is not uint64: %v", name, pathToString(up.GetPath()), up.GetVal())
 				}
 			}
 		}
-		if n != 96 || len(edges) != 96 {
-			t.Fatalf("origin %q: %d notifications over %d distinct prefixes, want 96 (48 edges x 2 classes)", origin, n, len(edges))
+		if linecard != 32 || toFabric != 4 || fromFabric != 4 || len(edges) != 40 {
+			t.Fatalf("origin %q: %d line-card, %d to and %d from switch fabric notifications over %d distinct prefixes, want 32 + 4 + 4 = 40", origin, linecard, toFabric, fromFabric, len(edges))
 		}
 	}
 }
 
-// TestMX10004FabricCountersMonotonic resolves one edge an hour apart.
+// TestMX10004FabricCountersMonotonic resolves one edge of each fabric
+// subtree an hour apart: keyed line card, keyless to and from the
+// switch fabric.
 func TestMX10004FabricCountersMonotonic(t *testing.T) {
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := newCatalogResolver(newTestGnmiDevice(t, 1), cats["juniper_mx10004"])
-	p := pathFromString(t, "/junos/fabric-statistics/fabric-message/edges[dst-pfe=0][dst-slot=3][dst-type=SWITCH-FABRIC][src-pfe=2][src-slot=0][src-type=LINECARD]/class-stats[priority=low]/transmit-counts")
-	p.Origin = "juniper"
-	read := func(at time.Time) map[string]uint64 {
-		got, err := r.Resolve(p, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(got) != 1 {
-			t.Fatalf("%d notifications for one edge", len(got))
-		}
-		out := map[string]uint64{}
-		for _, u := range got[0].Updates {
-			v, ok := u.Value.(uint64)
-			if !ok {
-				t.Fatalf("%s is %T, want uint64", pathToString(u.Path), u.Value)
+	for _, edge := range []string{
+		"/junos/fabric-statistics/fabric-message/edges[dst-pfe=3][dst-slot=0][dst-type=LINECARD][src-pfe=2][src-slot=0][src-type=LINECARD]/class-stats[priority=low]/transmit-counts",
+		"/junos/fabric-statistics/fabric-message/edges[dst-pfe=0][dst-slot=0][dst-type=SWITCH-FABRIC][src-pfe=2][src-slot=0][src-type=LINECARD]/class-stats/transmit-counts",
+		"/junos/fabric-statistics/fabric-message/edges[dst-pfe=1][dst-slot=0][dst-type=LINECARD][src-pfe=0][src-slot=0][src-type=SWITCH-FABRIC]/class-stats/transmit-counts",
+	} {
+		p := pathFromString(t, edge)
+		p.Origin = "juniper"
+		read := func(at time.Time) map[string]uint64 {
+			got, err := r.Resolve(p, at)
+			if err != nil {
+				t.Fatal(err)
 			}
-			out[pathToString(u.Path)] = v
+			if len(got) != 1 {
+				t.Fatalf("%s: %d notifications for one edge", edge, len(got))
+			}
+			out := map[string]uint64{}
+			for _, u := range got[0].Updates {
+				v, ok := u.Value.(uint64)
+				if !ok {
+					t.Fatalf("%s is %T, want uint64", pathToString(u.Path), u.Value)
+				}
+				out[pathToString(u.Path)] = v
+			}
+			return out
 		}
-		return out
-	}
-	now := time.Now()
-	a, b := read(now), read(now.Add(time.Hour))
-	for _, leaf := range []string{"/packets", "/bytes"} {
-		if b[leaf] <= a[leaf] {
-			t.Fatalf("%s did not advance: %d then %d", leaf, a[leaf], b[leaf])
+		now := time.Now()
+		a, b := read(now), read(now.Add(time.Hour))
+		for _, leaf := range []string{"/packets", "/bytes"} {
+			if b[leaf] <= a[leaf] {
+				t.Fatalf("%s %s did not advance: %d then %d", edge, leaf, a[leaf], b[leaf])
+			}
 		}
-	}
-	for _, leaf := range []string{"/drop-packets", "/drop-bytes", "/drop-packets-per-second", "/drop-bytes-per-second", "/error-packets", "/error-packets-per-second"} {
-		if a[leaf] != 0 || b[leaf] != 0 {
-			t.Fatalf("%s is %d/%d, want 0", leaf, a[leaf], b[leaf])
+		for _, leaf := range []string{"/drop-packets", "/drop-bytes", "/drop-packets-per-second", "/drop-bytes-per-second", "/error-packets", "/error-packets-per-second"} {
+			if a[leaf] != 0 || b[leaf] != 0 {
+				t.Fatalf("%s %s is %d/%d, want 0", edge, leaf, a[leaf], b[leaf])
+			}
 		}
 	}
 }
