@@ -190,18 +190,9 @@
       "temperature": false
     },
     {
-      "name": "FPC0:MIC0",
-      "type": "LINECARD",
-      "parent": "FPC0",
-      "part_no": "JNP10K-LC480-MIC",
-      "description": "24xSFPP 1/10GE MIC",
-      "serial_no": "NL6MIC000001",
-      "temperature": false
-    },
-    {
       "name": "FPC0:PIC0",
       "type": "LINECARD",
-      "parent": "FPC0:MIC0",
+      "parent": "FPC0",
       "part_no": "JNP10K-LC480-PIC",
       "description": "24xSFPP 1/10GE PIC",
       "serial_no": "NL6PIC000001",
@@ -210,7 +201,7 @@
     {
       "name": "FPC0:PIC1",
       "type": "LINECARD",
-      "parent": "FPC0:MIC0",
+      "parent": "FPC0",
       "part_no": "JNP10K-LC480-PIC",
       "description": "24xSFPP 1/10GE PIC",
       "serial_no": "NL6PIC000002",
@@ -1333,65 +1324,65 @@
       "temperature": true
     },
     {
-      "name": "FPC0:INTAKE-A",
+      "name": "FPC0:INTAKE_A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 INTAKE-A Temp Sensor",
+      "description": "FPC0 INTAKE_A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000022",
       "temperature": true
     },
     {
-      "name": "FPC0:INTAKE-B",
+      "name": "FPC0:INTAKE_B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 INTAKE-B Temp Sensor",
+      "description": "FPC0 INTAKE_B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000023",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST-A",
+      "name": "FPC0:EXHAUST_A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST-A Temp Sensor",
+      "description": "FPC0 EXHAUST_A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000024",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST-B",
+      "name": "FPC0:EXHAUST_B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST-B Temp Sensor",
+      "description": "FPC0 EXHAUST_B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000025",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST-C",
+      "name": "FPC0:EXHAUST_C_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST-C Temp Sensor",
+      "description": "FPC0 EXHAUST_C_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000026",
       "temperature": true
     },
     {
-      "name": "FPC0:PMB",
+      "name": "FPC0:PMB_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 PMB Temp Sensor",
+      "description": "FPC0 PMB_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000027",
       "temperature": true
     },
     {
-      "name": "FPC0:PEXSW",
+      "name": "FPC0:PEXSW_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 PEXSW Temp Sensor",
+      "description": "FPC0 PEXSW_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000028",
       "temperature": true
     },
@@ -1819,6 +1810,60 @@
       "temperature": true
     },
     {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS000011",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS000012",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS000013",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS000014",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS000015",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS000016",
+      "temperature": true
+    },
+    {
       "name": "SFB1",
       "type": "FABRIC",
       "parent": "Chassis",
@@ -1924,6 +1969,60 @@
       "part_no": "JNP10004-SFB",
       "description": "SFB1 ZF0_INTERNAL_REMOTE_0 Sensor",
       "serial_no": "NL6SBS001010",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS001011",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS001012",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS001013",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS001014",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS001015",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS001016",
       "temperature": true
     },
     {
@@ -2035,6 +2134,60 @@
       "temperature": true
     },
     {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS002011",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS002012",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS002013",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS002014",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS002015",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS002016",
+      "temperature": true
+    },
+    {
       "name": "SFB3",
       "type": "FABRIC",
       "parent": "Chassis",
@@ -2140,6 +2293,60 @@
       "part_no": "JNP10004-SFB",
       "description": "SFB3 ZF0_INTERNAL_REMOTE_0 Sensor",
       "serial_no": "NL6SBS003010",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS003011",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS003012",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS003013",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS003014",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS003015",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS003016",
       "temperature": true
     },
     {
@@ -2251,6 +2458,60 @@
       "temperature": true
     },
     {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS004011",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS004012",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS004013",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS004014",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS004015",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS004016",
+      "temperature": true
+    },
+    {
       "name": "SFB5",
       "type": "FABRIC",
       "parent": "Chassis",
@@ -2356,6 +2617,60 @@
       "part_no": "JNP10004-SFB",
       "description": "SFB5 ZF0_INTERNAL_REMOTE_0 Sensor",
       "serial_no": "NL6SBS005010",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS005011",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS005012",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS005013",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS005014",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS005015",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS005016",
       "temperature": true
     }
   ],
@@ -3150,7 +3465,6 @@
           "names": [
             "CB0",
             "FPC0",
-            "FPC0:MIC0",
             "FPC0:PIC0",
             "Routing Engine0"
           ]
@@ -3174,7 +3488,6 @@
             "memory-dram-used",
             "memory-utilization-buffer",
             "memory-utilization-heap",
-            "over-temperature",
             "power-maximum",
             "reboot-reason",
             "rom-software-rev-chassis",
@@ -3185,6 +3498,44 @@
             "temperature-exhaust-b",
             "temperature-intake",
             "uptime"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/configurable",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/value",
+          "type": "string",
+          "gen": "key:1"
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0:PIC0",
+            "FPC0:PIC1",
+            "Routing Engine0",
+            "SFB0",
+            "SFB1",
+            "SFB2",
+            "SFB3",
+            "SFB4",
+            "SFB5"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "over-temperature"
           ]
         }
       ],
