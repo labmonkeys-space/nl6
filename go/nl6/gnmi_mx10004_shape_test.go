@@ -42,6 +42,8 @@ var fixtureSubscriptions = map[string]string{
 	"component-temp":          "/components/component/state/temperature",
 	"components-hardware":     "/components/component/state",
 	"component-temp-hardware": "/components/component/state/temperature",
+	"transceiver-hardware":    "/components/component/transceiver/state/",
+	"wavelength-hardware":     "/components/component/properties/property/state", // the shape test matches paths without keys; the keyed form is pinned by TestMX10004Transceivers
 	"component-props":         "/components/component/properties/property/state",
 	"cpu":                     "/components/component/cpu/utilization/state",
 	"sys-cpu":                 "/system/cpus/cpu/state",
@@ -670,5 +672,76 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	}
 	if fan := leaves["Fan Tray 0 Fan 0"]; fan["/state/temperature/instant"] != nil {
 		t.Errorf("a fan carries a temperature it has no sensor for")
+	}
+}
+
+// TestMX10004Transceivers pins nl6#771: every transceiver component
+// renders the static and analog hardware shapes, analog leaves as decimals, the
+// wavelength property sits on every port, and a packet type without a
+// catalogue refuses the transceiver path by naming the path.
+func TestMX10004Transceivers(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/transceiver/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shapes := map[string]map[string]int{} // component -> prefix tail -> updates
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		el := n.GetPrefix().GetElem()
+		name := el[1].GetKey()["name"]
+		tail := ""
+		if len(el) == 3 {
+			tail = el[2].GetName()
+		}
+		if shapes[name] == nil {
+			shapes[name] = map[string]int{}
+		}
+		shapes[name][tail] = len(n.GetUpdate())
+		if tail == "transceiver" {
+			for _, u := range n.GetUpdate() {
+				if strings.HasSuffix(pathToString(u.GetPath()), "/instant") && u.GetVal().GetDecimalVal() == nil { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
+					t.Errorf("%s %s is %v, want a decimal", name, pathToString(u.GetPath()), u.GetVal())
+				}
+			}
+		}
+	}
+	if len(shapes) != 48 {
+		t.Fatalf("%d transceivers, want 48", len(shapes))
+	}
+	for name, sh := range shapes {
+		// Hardware adds a third shape, oper-status alone under a
+		// .../state prefix; nl6 cannot emit a leaf the request does not
+		// cover and serves oper-status in the inventory notification.
+		if sh[""] != 13 || sh["transceiver"] != 4 || len(sh) != 2 {
+			t.Errorf("%s shapes = %v, want 13 static and 4 analog", name, sh)
+		}
+	}
+	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/properties/property[name=wavelength]/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports := 0
+	for _, r := range resps {
+		if n := r.GetUpdate(); n != nil {
+			ports++
+			if len(n.GetUpdate()) != 2 {
+				t.Errorf("wavelength on %s: %d leaves, want configurable and value", pathToString(n.GetPrefix()), len(n.GetUpdate()))
+			}
+		}
+	}
+	if ports != 48 {
+		t.Errorf("wavelength on %d components, want 48 ports", ports)
+	}
+	// A packet type without a catalogue: the error names the path.
+	_, _, paddr, pcleanup := startTestGnmiServerWithCatalog(t, nil)
+	defer pcleanup()
+	_, err = subscribeOnceOrigin(t, paddr, gnmipb.Encoding_PROTO, "", "/components/component/transceiver/state/")
+	if status.Code(err) != codes.NotFound || strings.Contains(err.Error(), "optical") || !strings.Contains(err.Error(), "matches no entry") {
+		t.Fatalf("packet type: %v, want NotFound naming the path", err)
 	}
 }

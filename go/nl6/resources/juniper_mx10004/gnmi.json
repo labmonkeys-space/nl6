@@ -2963,6 +2963,200 @@
           "name": "state/type",
           "type": "string",
           "gen": "inventory:type"
+        },
+        {
+          "name": "transceiver/state/connector-type",
+          "type": "string",
+          "gen": "const:LC_CONNECTOR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/date-code",
+          "type": "string",
+          "gen": "const:2025-01-15T00:00:00Z",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/ethernet-pmd",
+          "type": "string",
+          "gen": "const:ETH_10GBASE_SR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/ethernet-pmd-preconf",
+          "type": "string",
+          "gen": "const:ETH_10GBASE_SR",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/form-factor",
+          "type": "string",
+          "gen": "const:SFP_PLUS",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/form-factor-preconf",
+          "type": "string",
+          "gen": "const:SFP_PLUS",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/otn-compliance-code",
+          "type": "string",
+          "gen": "const:OTN_UNDEFINED",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/present",
+          "type": "enumeration",
+          "enum": [
+            "PRESENT",
+            "NOT_PRESENT"
+          ],
+          "gen": "const:PRESENT",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/serial-no",
+          "type": "string",
+          "gen": "inventory:serial_no_per_device",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/sonet-sdh-compliance-code",
+          "type": "string",
+          "gen": "const:SONET_UNDEFINED",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor",
+          "type": "string",
+          "gen": "const:JUNIPER",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor-part",
+          "type": "string",
+          "gen": "inventory:part_no",
+          "filter": "TRANSCEIVER"
+        },
+        {
+          "name": "transceiver/state/vendor-rev",
+          "type": "string",
+          "gen": "const:01",
+          "filter": "TRANSCEIVER"
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/transceiver",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "components",
+          "filter": "TRANSCEIVER"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/enabled",
+          "type": "boolean",
+          "gen": "const:true"
+        },
+        {
+          "name": "state/input-power/instant",
+          "type": "decimal64",
+          "gen": "sine:-2.4,0.3,600",
+          "digits": 2
+        },
+        {
+          "name": "state/laser-bias-current/instant",
+          "type": "decimal64",
+          "gen": "sine:6.5,0.4,600",
+          "digits": 2
+        },
+        {
+          "name": "state/output-power/instant",
+          "type": "decimal64",
+          "gen": "sine:-1.1,0.2,600",
+          "digits": 2
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=*]",
+      "origin": "openconfig",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC0:PIC0:PORT0",
+            "FPC0:PIC0:PORT1",
+            "FPC0:PIC0:PORT2",
+            "FPC0:PIC0:PORT3",
+            "FPC0:PIC0:PORT4",
+            "FPC0:PIC0:PORT5",
+            "FPC0:PIC0:PORT6",
+            "FPC0:PIC0:PORT7",
+            "FPC0:PIC0:PORT8",
+            "FPC0:PIC0:PORT9",
+            "FPC0:PIC0:PORT10",
+            "FPC0:PIC0:PORT11",
+            "FPC0:PIC0:PORT12",
+            "FPC0:PIC0:PORT13",
+            "FPC0:PIC0:PORT14",
+            "FPC0:PIC0:PORT15",
+            "FPC0:PIC0:PORT16",
+            "FPC0:PIC0:PORT17",
+            "FPC0:PIC0:PORT18",
+            "FPC0:PIC0:PORT19",
+            "FPC0:PIC0:PORT20",
+            "FPC0:PIC0:PORT21",
+            "FPC0:PIC0:PORT22",
+            "FPC0:PIC0:PORT23",
+            "FPC0:PIC1:PORT0",
+            "FPC0:PIC1:PORT1",
+            "FPC0:PIC1:PORT2",
+            "FPC0:PIC1:PORT3",
+            "FPC0:PIC1:PORT4",
+            "FPC0:PIC1:PORT5",
+            "FPC0:PIC1:PORT6",
+            "FPC0:PIC1:PORT7",
+            "FPC0:PIC1:PORT8",
+            "FPC0:PIC1:PORT9",
+            "FPC0:PIC1:PORT10",
+            "FPC0:PIC1:PORT11",
+            "FPC0:PIC1:PORT12",
+            "FPC0:PIC1:PORT13",
+            "FPC0:PIC1:PORT14",
+            "FPC0:PIC1:PORT15",
+            "FPC0:PIC1:PORT16",
+            "FPC0:PIC1:PORT17",
+            "FPC0:PIC1:PORT18",
+            "FPC0:PIC1:PORT19",
+            "FPC0:PIC1:PORT20",
+            "FPC0:PIC1:PORT21",
+            "FPC0:PIC1:PORT22",
+            "FPC0:PIC1:PORT23"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "wavelength"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "state/configurable",
+          "type": "boolean",
+          "gen": "const:false"
+        },
+        {
+          "name": "state/value",
+          "type": "string",
+          "gen": "const:850"
         }
       ]
     },

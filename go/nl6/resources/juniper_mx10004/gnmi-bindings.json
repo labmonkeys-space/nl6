@@ -330,12 +330,29 @@
         "state/firmware-version": "const:24.2R1.17",
         "state/temperature/instant": "sine:38,4,900", "state/temperature/avg": "const:38.0", "state/temperature/min": "const:34.0", "state/temperature/max": "const:42.0",
         "state/temperature/alarm-status": "const:false", "state/temperature/alarm-threshold": "const:85", "state/temperature/interval": "const:60000000000",
-        "state/temperature/max-time": "timestamp:boot", "state/temperature/min-time": "timestamp:boot"
+        "state/temperature/max-time": "timestamp:boot", "state/temperature/min-time": "timestamp:boot",
+        "transceiver/state/connector-type": "const:LC_CONNECTOR", "transceiver/state/date-code": "const:2025-01-15T00:00:00Z", "transceiver/state/ethernet-pmd": "const:ETH_10GBASE_SR",
+        "transceiver/state/ethernet-pmd-preconf": "const:ETH_10GBASE_SR", "transceiver/state/form-factor": "const:SFP_PLUS", "transceiver/state/form-factor-preconf": "const:SFP_PLUS",
+        "transceiver/state/otn-compliance-code": "const:OTN_UNDEFINED", "transceiver/state/present": "const:PRESENT", "transceiver/state/serial-no": "inventory:serial_no_per_device",
+        "transceiver/state/sonet-sdh-compliance-code": "const:SONET_UNDEFINED", "transceiver/state/vendor": "const:JUNIPER", "transceiver/state/vendor-part": "inventory:part_no", "transceiver/state/vendor-rev": "const:01"
       },
-      "types": {"state/type": "string", "state/oper-status": "string", "state/location": "string", "state/allocated-power": "uint32", "state/memory/available": "uint64", "state/memory/utilized": "uint64"},
+      "types": {"state/type": "string", "state/oper-status": "string", "state/location": "string", "state/allocated-power": "uint32", "state/memory/available": "uint64", "state/memory/utilized": "uint64",
+        "transceiver/state/connector-type": "string", "transceiver/state/ethernet-pmd": "string", "transceiver/state/ethernet-pmd-preconf": "string", "transceiver/state/form-factor": "string", "transceiver/state/form-factor-preconf": "string", "transceiver/state/otn-compliance-code": "string", "transceiver/state/sonet-sdh-compliance-code": "string"},
       "filters": {"state/temperature/instant": "temperature", "state/temperature/avg": "temperature", "state/temperature/min": "temperature", "state/temperature/max": "temperature",
         "state/temperature/alarm-status": "temperature", "state/temperature/alarm-threshold": "temperature", "state/temperature/interval": "temperature",
-        "state/temperature/max-time": "temperature", "state/temperature/min-time": "temperature"}
+        "state/temperature/max-time": "temperature", "state/temperature/min-time": "temperature",
+        "transceiver/state/connector-type": "TRANSCEIVER", "transceiver/state/date-code": "TRANSCEIVER", "transceiver/state/ethernet-pmd": "TRANSCEIVER", "transceiver/state/ethernet-pmd-preconf": "TRANSCEIVER", "transceiver/state/form-factor": "TRANSCEIVER", "transceiver/state/form-factor-preconf": "TRANSCEIVER", "transceiver/state/otn-compliance-code": "TRANSCEIVER", "transceiver/state/present": "TRANSCEIVER", "transceiver/state/serial-no": "TRANSCEIVER", "transceiver/state/sonet-sdh-compliance-code": "TRANSCEIVER", "transceiver/state/vendor": "TRANSCEIVER", "transceiver/state/vendor-part": "TRANSCEIVER", "transceiver/state/vendor-rev": "TRANSCEIVER"}
+    },
+    {
+      "path": "/components/component[name=*]/transceiver", "origin": "openconfig", "keys": [{"source": "components", "filter": "TRANSCEIVER"}], "module": "openconfig-platform",
+      "leaves": {"state/enabled": "const:true", "state/input-power/instant": "sine:-2.4,0.3,600", "state/output-power/instant": "sine:-1.1,0.2,600", "state/laser-bias-current/instant": "sine:6.5,0.4,600"}
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",
+      "keys": [{"source": "static", "names": ["FPC0:PIC0:PORT0", "FPC0:PIC0:PORT1", "FPC0:PIC0:PORT2", "FPC0:PIC0:PORT3", "FPC0:PIC0:PORT4", "FPC0:PIC0:PORT5", "FPC0:PIC0:PORT6", "FPC0:PIC0:PORT7", "FPC0:PIC0:PORT8", "FPC0:PIC0:PORT9", "FPC0:PIC0:PORT10", "FPC0:PIC0:PORT11", "FPC0:PIC0:PORT12", "FPC0:PIC0:PORT13", "FPC0:PIC0:PORT14", "FPC0:PIC0:PORT15", "FPC0:PIC0:PORT16", "FPC0:PIC0:PORT17", "FPC0:PIC0:PORT18", "FPC0:PIC0:PORT19", "FPC0:PIC0:PORT20", "FPC0:PIC0:PORT21", "FPC0:PIC0:PORT22", "FPC0:PIC0:PORT23", "FPC0:PIC1:PORT0", "FPC0:PIC1:PORT1", "FPC0:PIC1:PORT2", "FPC0:PIC1:PORT3", "FPC0:PIC1:PORT4", "FPC0:PIC1:PORT5", "FPC0:PIC1:PORT6", "FPC0:PIC1:PORT7", "FPC0:PIC1:PORT8", "FPC0:PIC1:PORT9", "FPC0:PIC1:PORT10", "FPC0:PIC1:PORT11", "FPC0:PIC1:PORT12", "FPC0:PIC1:PORT13", "FPC0:PIC1:PORT14", "FPC0:PIC1:PORT15", "FPC0:PIC1:PORT16", "FPC0:PIC1:PORT17", "FPC0:PIC1:PORT18", "FPC0:PIC1:PORT19", "FPC0:PIC1:PORT20", "FPC0:PIC1:PORT21", "FPC0:PIC1:PORT22", "FPC0:PIC1:PORT23"]}, {"source": "static", "names": ["wavelength"]}],
+      "module": "openconfig-platform",
+      "leaves": {"state/configurable": "const:false", "state/value": "const:850"},
+      "types": {"state/value": "string"}
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",

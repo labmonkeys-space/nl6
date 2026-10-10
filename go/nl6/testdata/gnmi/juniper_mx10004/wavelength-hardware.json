@@ -1,0 +1,19 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for the wavelength property (nl6#771); hand-written from the issue.",
+  "subtree": "wavelength",
+  "prefixes": [
+    "openconfig:/components/component[name=*]/properties/property[name=wavelength]"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/properties/property[name=wavelength]/state/configurable",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/properties/property[name=wavelength]/state/value",
+      "kind": "string"
+    }
+  ]
+}

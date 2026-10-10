@@ -1,0 +1,80 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for the transceiver subscription (nl6#771); hand-written from the issue, an authoring record, not an observation. Three notification shapes per transceiver. Hardware also emits oper-status alone under a .../state prefix from the same sensor; nl6 serves oper-status in the inventory notification and cannot emit a leaf the request path does not cover, so that third shape is not modelled.",
+  "subtree": "transceiver",
+  "prefixes": [
+    "openconfig:/components/component[name=*]",
+    "openconfig:/components/component[name=*]/transceiver"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/components/component[name=*]/transceiver/state/connector-type",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/date-code",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/ethernet-pmd",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/ethernet-pmd-preconf",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/form-factor",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/form-factor-preconf",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/otn-compliance-code",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/present",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/serial-no",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/sonet-sdh-compliance-code",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/vendor",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/vendor-part",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/vendor-rev",
+      "kind": "string"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/enabled",
+      "kind": "bool"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/input-power/instant",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/output-power/instant",
+      "kind": "decimal"
+    },
+    {
+      "path": "/components/component[name=*]/transceiver/state/laser-bias-current/instant",
+      "kind": "decimal"
+    }
+  ]
+}

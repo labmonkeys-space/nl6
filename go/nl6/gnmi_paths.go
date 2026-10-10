@@ -536,6 +536,13 @@ func (r *pathResolver) opticalCapable() bool {
 //	…/optical-channel/state/osnr/avg                          -> one statistic
 //	…/optical-channel/state/fec-uncorrectable-blocks         -> the bare counter
 func (r *pathResolver) resolveComponents(p *gnmipb.Path, elems []*gnmipb.PathElem, t time.Time) ([]resolvedUpdate, error) {
+	// The shape check comes BEFORE the engine lookup: a transceiver or
+	// property path on a packet device is a path this resolver does
+	// not serve, not a missing optical subsystem, and the error must
+	// say so (nl6#771 found collectors sent to the Ciena subsystem).
+	if rest := componentRest(elems); len(rest) > 0 && rest[0].GetName() != "optical-channel" {
+		return nil, status.Errorf(codes.NotFound, "path %s matches no entry", pathToString(p))
+	}
 	oc, err := r.opticalCycler()
 	if err != nil {
 		return nil, err
