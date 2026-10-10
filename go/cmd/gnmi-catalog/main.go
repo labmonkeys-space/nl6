@@ -41,6 +41,12 @@ type bindingSubtree struct {
 	Module  string            `json:"module"`
 	Leaves  map[string]string `json:"leaves"`
 	Types   map[string]string `json:"types"`
+	// Filters narrows a leaf to the components matching the value
+	// (the `components` key-source vocabulary); copied to the emitted
+	// leaf's `filter`. A per-component leaf belongs in the entry's one
+	// subtree with a filter, never in a second subtree on the same
+	// path, which the loader refuses (nl6#765).
+	Filters map[string]string `json:"filters"`
 	Extra   map[string]struct {
 		Type string `json:"type"`
 		Gen  string `json:"gen"`
@@ -48,10 +54,11 @@ type bindingSubtree struct {
 }
 
 type outLeaf struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Enum []string `json:"enum,omitempty"`
-	Gen  string   `json:"gen"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type"`
+	Enum   []string `json:"enum,omitempty"`
+	Gen    string   `json:"gen"`
+	Filter string   `json:"filter,omitempty"`
 }
 
 type outSubtree struct {
@@ -146,7 +153,7 @@ func run(args []string) error {
 			if ov, ok := st.Types[name]; ok {
 				typ, enum = ov, nil
 			}
-			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name]})
+			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name], Filter: st.Filters[name]})
 		}
 		extraNames := make([]string, 0, len(st.Extra))
 		for n := range st.Extra {
@@ -154,7 +161,23 @@ func run(args []string) error {
 		}
 		sort.Strings(extraNames)
 		for _, n := range extraNames {
-			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen})
+			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n]})
+		}
+		for n, f := range st.Filters {
+			_, inLeaves := st.Leaves[n]
+			_, inExtra := st.Extra[n]
+			if !inLeaves && !inExtra {
+				return fmt.Errorf("subtree %s: filter on leaf %s, which is in neither leaves nor extra", st.Path, n)
+			}
+			// Mirror the loader's rules here, where the bindings are
+			// edited, so a bad filter fails the generator rather than the
+			// first simulator boot two steps later.
+			if !hasComponentsKey(st.Keys) {
+				return fmt.Errorf("subtree %s: filter on leaf %s needs a components key source", st.Path, n)
+			}
+			if !filterMatchesAComponent(b.Components, f) {
+				return fmt.Errorf("subtree %s: filter %q on leaf %s matches no component", st.Path, f, n)
+			}
 		}
 		keys := st.Keys
 		if keys == nil {
@@ -326,4 +349,39 @@ func latestRevision(m *yang.Module) string {
 		}
 	}
 	return best
+}
+
+// hasComponentsKey reports whether a subtree's raw keys carry a
+// components source.
+func hasComponentsKey(keys json.RawMessage) bool {
+	var ks []struct {
+		Source string `json:"source"`
+	}
+	if json.Unmarshal(keys, &ks) != nil {
+		return false
+	}
+	for _, k := range ks {
+		if k.Source == "components" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterMatchesAComponent applies the loader's filter vocabulary:
+// "temperature" for sensor-bearing components, else a component type.
+func filterMatchesAComponent(components json.RawMessage, filter string) bool {
+	var cs []struct {
+		Type        string `json:"type"`
+		Temperature bool   `json:"temperature"`
+	}
+	if json.Unmarshal(components, &cs) != nil {
+		return false
+	}
+	for _, c := range cs {
+		if (filter == "temperature" && c.Temperature) || c.Type == filter {
+			return true
+		}
+	}
+	return false
 }

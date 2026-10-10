@@ -313,3 +313,53 @@ func TestCatalogResolver_AliasServesWholeSubtree(t *testing.T) {
 		t.Error("a path below an alias must not match")
 	}
 }
+
+// TestCatalogResolver_LeafFilter: a filtered leaf rides inside the
+// matching components' notifications and is absent from the rest, so
+// one subtree serves every component with one notification each.
+func TestCatalogResolver_LeafFilter(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(`{
+  "comment": "leaf filter", "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "models": [], "neighbors": [],
+  "components": [
+    {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "C", "description": "c", "serial_no": "1", "temperature": false},
+    {"name": "FPC0", "type": "LINECARD", "parent": "Chassis", "part_no": "L", "description": "l", "serial_no": "2", "temperature": true},
+    {"name": "FPC1", "type": "LINECARD", "parent": "Chassis", "part_no": "L", "description": "l", "serial_no": "3", "temperature": false},
+    {"name": "RE0", "type": "CONTROLLER_CARD", "parent": "Chassis", "part_no": "R", "description": "r", "serial_no": "4", "temperature": true},
+    {"name": "Fan 0", "type": "FAN", "parent": "Chassis", "part_no": "F", "description": "f", "serial_no": "5", "temperature": false}
+  ],
+  "subtrees": [{"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}],
+    "leaves": [
+      {"name": "state/serial-no", "type": "string", "gen": "inventory:serial_no"},
+      {"name": "state/temperature/instant", "type": "uint64", "gen": "const:40", "filter": "temperature"},
+      {"name": "state/fan-speed", "type": "uint32", "gen": "const:3000", "filter": "FAN"}
+    ]}]
+}`), "filter.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	got, err := r.Resolve(pathFromString(t, "/components"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("notifications = %d, want 5 (one per component)", len(got))
+	}
+	want := map[string]string{"Chassis": "serial-no", "FPC0": "serial-no,temperature", "FPC1": "serial-no", "RE0": "serial-no,temperature", "Fan 0": "serial-no,fan-speed"}
+	for _, n := range got {
+		name := n.Prefix.Elem[1].Key["name"]
+		var leaves []string
+		for _, u := range n.Updates {
+			el := u.Path.Elem
+			leaves = append(leaves, el[len(el)-1].Name)
+			if el[len(el)-1].Name == "instant" {
+				leaves[len(leaves)-1] = "temperature"
+			}
+		}
+		if got := strings.Join(leaves, ","); got != want[name] {
+			t.Errorf("%s: leaves %q, want %q", name, got, want[name])
+		}
+	}
+}

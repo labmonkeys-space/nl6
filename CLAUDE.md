@@ -39,7 +39,7 @@ sudo ./nl6 [flags]
 -if-flap-global-cap <r> # [global] Simulator-wide tps ceiling on flap events (0 = unlimited)
 -gnmi-port <port>       # TCP port for gNMI listener on each device (default: 9339)
 -gnmi-disable           # Disable the gNMI subsystem; no device listens on the gNMI port (default: false, subsystem on)
--gnmi-catalog <path>    # [global] JSON gNMI path catalogue; replaces every type's embedded resources/<type>/gnmi.json. Catalogues are GENERATED (make gen-gnmi-catalog); the drift test fails on hand edits only where the YANG cache exists (make gen-gnmi-catalog populates it) and skips elsewhere.
+-gnmi-catalog <path>    # [global] JSON gNMI path catalogue; replaces every type's embedded resources/<type>/gnmi.json. Catalogues are GENERATED (make gen-gnmi-catalog); the drift test fails on hand edits only where the YANG cache exists (make gen-gnmi-catalog populates it) and skips elsewhere. Under `prefix: list-entry` ONE entry is ONE notification: a per-component leaf is a `filter`ed leaf of the entry's subtree (bindings `filters` map), never a second subtree whose entries OVERLAP the first on the same path; load REFUSES same-origin same-path subtrees whose load-resolvable entries (components/neighbors/static) intersect, while same-path subtrees with DISJOINT entries stay legal (the shipped `CPU0:CORE0` static subtree beside the inventory) (nl6#765: FPC0 and Routing Engine0 rendered twice and the leaf-set shape test could not see it; `TestMX10004ComponentsOneNotificationPerEntry` counts). Pairs with an `interfaces` key are not checked.
 
 # gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the auto-start batch;
 # REST-created devices opt in via a per-device `gnmi_dialout` block. Dial-out is per-device

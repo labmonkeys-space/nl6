@@ -199,16 +199,9 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 				}
 				vals = append(vals, keyVal{n, idx})
 			}
-		case gnmiKeySourceComponents:
-			for _, c := range r.cat.components(k.Filter) {
-				vals = append(vals, keyVal{name: c.Name})
-			}
-		case gnmiKeySourceNeighbors:
-			for _, n := range r.cat.Neighbors {
-				vals = append(vals, keyVal{name: n.Address})
-			}
-		case gnmiKeySourceStatic:
-			for _, n := range k.Names {
+		default:
+			names, _ := r.cat.keyValues(k) // parse rejected unknown sources
+			for _, n := range names {
 				vals = append(vals, keyVal{name: n})
 			}
 		}
@@ -285,6 +278,9 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 		for _, e := range entries {
 			var updates []resolvedUpdate
 			for _, leaf := range st.Leaves {
+				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
+					continue
+				}
 				full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
 				if !pathCovers(q, full) {
 					continue

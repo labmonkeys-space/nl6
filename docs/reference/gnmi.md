@@ -137,7 +137,14 @@ Each device adds a 48-byte resolver.
 | `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
 | `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin |
 | `subtrees[].keys` | one key source per wildcard: `interfaces` (the ifDescr table), `components` (optional `filter`), `neighbors`, or `static` with `names` |
-| `subtrees[].leaves` | relative path, YANG type, optional enum, and a generator binding |
+| `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
+| `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
+
+Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
+A per-component leaf such as `state/temperature/instant` is therefore a filtered leaf of the inventory subtree, not a second subtree serving the same entries.
+Two subtrees of one origin on one path are legal when their entry sets are disjoint; the shipped MX10004 keeps the static `CPU0:CORE0` subtree beside the inventory subtree that way.
+Loading refuses the pair when their entries overlap, by subtree index, path and the first colliding entry, and names the leaf filter as the remedy where the subtree has a components key.
+The check enumerates the key sources it can resolve without a device (`components`, `neighbors`, `static`); a pair with an `interfaces` key on either side is not checked, because the interface name set exists only per device.
 
 ### Generator bindings
 

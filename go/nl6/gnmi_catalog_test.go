@@ -65,6 +65,9 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"wildcard alias", strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/parts[name=*]/"], "keys": [{"source": "components"}]`, 1), "has a wildcard key"},
 		{"malformed alias", strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/parts[name"], "keys": [{"source": "components"}]`, 1), "unterminated key"},
 		{"neighbor without neighbors key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "neighbor:state"`, 1), "needs a neighbors key source"},
+		{"leaf filter without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "ifstate:oper", "filter": "temperature"`, 1), "filter needs a components key source"},
+		{"leaf filter matching nothing", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "inventory:serial_no", "filter": "FAN"`, 1), `filter "FAN" matches no component`},
+		{"leaf filter outside the key filter", strings.Replace(strings.Replace(base, `"keys": [{"source": "components", "filter": "temperature"}]`, `"keys": [{"source": "components", "filter": "CHASSIS"}]`, 1), `"gen": "sine:40,5,600"`, `"gen": "sine:40,5,600", "filter": "temperature"`, 1), `matches no component of this subtree`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -193,5 +196,66 @@ func TestLoadGnmiCatalogs_OverrideWinsEverywhere(t *testing.T) {
 	}
 	if err := sm.LoadGnmiCatalogs(filepath.Join(dir, "missing.json"), dir); err == nil {
 		t.Error("missing override file accepted")
+	}
+}
+
+// twoSubtreeCatalog builds a catalogue with two subtrees at one entry
+// path, for the same-path guard. Each subtree is spelled as raw JSON
+// fragments for its origin and keys.
+func twoSubtreeCatalog(origin1, keys1, origin2, keys2 string) []byte {
+	return []byte(`{
+  "comment": "same-path guard",
+  "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "testvendor", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "models": [],
+  "components": [
+    {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "C", "description": "c", "serial_no": "1", "temperature": false},
+    {"name": "FPC0", "type": "LINECARD", "parent": "Chassis", "part_no": "L", "description": "l", "serial_no": "2", "temperature": true}
+  ],
+  "neighbors": [],
+  "subtrees": [
+    {"path": "/components/component[name=*]", "origin": "` + origin1 + `", "keys": ` + keys1 + `,
+     "leaves": [{"name": "state/description", "type": "string", "gen": "const:a"}]},
+    {"path": "/components/component[name=*]", "origin": "` + origin2 + `", "keys": ` + keys2 + `,
+     "leaves": [{"name": "state/temperature/instant", "type": "uint64", "gen": "const:40"}]}
+  ]
+}`)
+}
+
+// TestParseGnmiCatalog_SamePathOverlappingKeysRefused is the guard
+// for nl6#765: two subtrees of one origin on one entry path whose
+// load-resolvable keys intersect render one prefix twice. The first
+// two rows are the positive controls that must still load.
+func TestParseGnmiCatalog_SamePathOverlappingKeysRefused(t *testing.T) {
+	static := func(names string) string { return `[{"source": "static", "names": [` + names + `]}]` }
+	cases := []struct {
+		name    string
+		cat     []byte
+		wantErr string // empty = must load
+	}{
+		{"disjoint static keys load", twoSubtreeCatalog("openconfig", static(`"A", "B"`), "openconfig", static(`"C"`)), ""},
+		{"different origin loads", twoSubtreeCatalog("openconfig", static(`"A", "B"`), "testvendor", static(`"B"`)), ""},
+		{"overlapping static keys", twoSubtreeCatalog("openconfig", static(`"A", "B"`), "openconfig", static(`"B", "C"`)), `entry "B"`},
+		{"components against filtered components", twoSubtreeCatalog("openconfig", `[{"source": "components"}]`, "openconfig", `[{"source": "components", "filter": "temperature"}]`), `entry "FPC0"`},
+		{"trailing-slash spelling of one path", []byte(strings.Replace(string(twoSubtreeCatalog("openconfig", static(`"A"`), "openconfig", static(`"A"`))), `"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["A"]}],
+     "leaves": [{"name": "state/temperature/instant"`, `"path": "/components/component[name=*]/", "origin": "openconfig", "keys": [{"source": "static", "names": ["A"]}],
+     "leaves": [{"name": "state/temperature/instant"`, 1)), `entry "A"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseGnmiCatalog(tc.cat, "two.json")
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("must load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0") || !strings.Contains(err.Error(), "subtree 1") || !strings.Contains(err.Error(), "fold the leaves") {
+				t.Fatalf("err = %v, want naming both subtrees, %q and the fold remedy", err, tc.wantErr)
+			}
+			if strings.Contains(tc.name, "components") != strings.Contains(err.Error(), "leaf filter") {
+				t.Fatalf("err = %v: the leaf-filter remedy belongs only to a subtree with a components key", err)
+			}
+		})
 	}
 }
