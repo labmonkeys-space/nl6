@@ -159,13 +159,25 @@ func (r *catalogResolver) aliasSubtrees(p *gnmipb.Path) []*gnmiCatalogSubtree {
 	if p.GetOrigin() != "" && !ok {
 		return nil
 	}
+	// An explicit wildcard key names the same sensor as no key, so
+	// `component[name=*]/transceiver/state` reaches the alias too.
+	q := make([]*gnmipb.PathElem, len(p.GetElem()))
+	for i, e := range p.GetElem() {
+		q[i] = e
+		for _, v := range e.GetKey() {
+			if v == "*" {
+				q[i] = &gnmipb.PathElem{Name: e.GetName()}
+				break
+			}
+		}
+	}
 	var out []*gnmiCatalogSubtree
 	for _, st := range r.cat.Subtrees {
 		if p.GetOrigin() != "" && origin != st.Origin {
 			continue
 		}
 		for _, a := range st.aliases {
-			if elemsEqual(p.GetElem(), a) {
+			if elemsEqual(q, a) {
 				out = append(out, st)
 				break
 			}
@@ -185,7 +197,7 @@ func (r *catalogResolver) Match(p *gnmipb.Path) bool {
 		return false
 	}
 	for _, st := range r.cat.Subtrees {
-		if st.Origin == origin && subtreeCandidate(p.GetElem(), st) {
+		if st.Origin == origin && !st.AliasOnly && subtreeCandidate(p.GetElem(), st) {
 			return true
 		}
 	}
@@ -295,7 +307,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 	var out []catalogNotification
 	touched := false
 	for _, st := range subtrees {
-		if st.Origin != origin || !subtreeCandidate(q, st) {
+		if st.Origin != origin || (st.AliasOnly && !viaAlias) || !subtreeCandidate(q, st) {
 			continue
 		}
 		touched = true

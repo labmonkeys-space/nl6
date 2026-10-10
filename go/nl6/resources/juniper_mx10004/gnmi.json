@@ -3150,6 +3150,12 @@
     {
       "path": "/components/component[name=*]",
       "origin": "openconfig",
+      "aliases": [
+        "/components/component/transceiver/state"
+      ],
+      "alias_leaves": [
+        "transceiver/state"
+      ],
       "keys": [
         {
           "source": "components"
@@ -3396,6 +3402,9 @@
     {
       "path": "/components/component[name=*]/transceiver",
       "origin": "openconfig",
+      "aliases": [
+        "/components/component/transceiver/state"
+      ],
       "keys": [
         {
           "source": "components",
@@ -3412,19 +3421,64 @@
           "name": "state/input-power/instant",
           "type": "decimal64",
           "gen": "sine:-2.4,0.3,600",
-          "digits": 2
+          "digits": 2,
+          "decimal_encoding": "double"
         },
         {
           "name": "state/laser-bias-current/instant",
           "type": "decimal64",
           "gen": "sine:6.5,0.4,600",
-          "digits": 2
+          "digits": 2,
+          "decimal_encoding": "double"
         },
         {
           "name": "state/output-power/instant",
           "type": "decimal64",
           "gen": "sine:-1.1,0.2,600",
-          "digits": 2
+          "digits": 2,
+          "decimal_encoding": "double"
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/state",
+      "origin": "openconfig",
+      "aliases": [
+        "/components/component/transceiver/state"
+      ],
+      "alias_only": true,
+      "keys": [
+        {
+          "source": "components",
+          "filter": "PORT"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "oper-status",
+          "type": "string",
+          "gen": "const:ACTIVE"
+        }
+      ]
+    },
+    {
+      "path": "/components/component[name=*]/state",
+      "origin": "openconfig",
+      "aliases": [
+        "/components/component/transceiver/state"
+      ],
+      "alias_only": true,
+      "keys": [
+        {
+          "source": "components",
+          "filter": "TRANSCEIVER"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "oper-status",
+          "type": "string",
+          "gen": "const:ACTIVE"
         }
       ]
     },

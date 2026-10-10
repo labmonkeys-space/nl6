@@ -349,6 +349,40 @@ func TestCatalogResolver_AliasLeavesScopeTheAlias(t *testing.T) {
 	}
 }
 
+// TestCatalogResolver_AliasOnlySubtree: an alias_only subtree answers
+// its alias and nothing else, so a path that covers its leaves does not
+// pull it in (the MX10004 transceiver oper-status shape, nl6#790).
+func TestCatalogResolver_AliasOnlySubtree(t *testing.T) {
+	data := strings.Replace(string(readTestCatalog(t)), `"keys": [{"source": "components"}]`,
+		`"aliases": ["/testvendor/serials/"], "alias_only": true, "keys": [{"source": "components"}]`, 1)
+	cat, err := parseGnmiCatalog([]byte(data), "alias-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	got, err := r.Resolve(pathFromString(t, "/testvendor/serials"), time.Now())
+	if err != nil || len(got) != 2 {
+		t.Fatalf("alias: %d notifications, err %v; want one per component", len(got), err)
+	}
+	if got, err := r.Resolve(pathFromString(t, "/testvendor/serials[name=*]"), time.Now()); err != nil || len(got) != 2 {
+		t.Fatalf("alias with an explicit wildcard key: %d notifications, err %v", len(got), err)
+	}
+	if r.Match(pathFromString(t, "/components/component/state/serial-no")) {
+		t.Fatal("path coverage reached an alias_only subtree")
+	}
+	got, err = r.Resolve(pathFromString(t, "/components/component"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range got {
+		for _, u := range n.Updates {
+			if pathToString(u.Path) == "/state/serial-no" {
+				t.Fatalf("path resolution rendered the alias_only leaf under %s", pathToString(n.Prefix))
+			}
+		}
+	}
+}
+
 // TestCatalogResolver_AliasSharedByTwoSubtrees: one sensor alias on
 // two same-path subtrees with disjoint keys resolves to both (the two
 // directions of the MX10004 fabric sensor, nl6#767).
@@ -459,16 +493,17 @@ func TestCatalogResolver_SerialPerDevice(t *testing.T) {
 
 // TestCatalogResolver_DecimalWireForm: a catalogue that declares
 // decimal_encoding: decimal_val gets gNMI's Decimal64 message at the
-// leaf's fraction-digits under PROTO; the default keeps double_val.
+// leaf's fraction-digits under PROTO; the default keeps double_val; a
+// leaf's own decimal_encoding wins over the notification's (nl6#790).
 func TestCatalogResolver_DecimalWireForm(t *testing.T) {
-	mk := func(notif string) *catalogResolver {
+	mk := func(notif string, leafExtra ...string) *catalogResolver {
 		cat, err := parseGnmiCatalog([]byte(`{
   "comment": "decimal", "vendor": "testvendor",
   "notification": {"origin": "openconfig", "native_origin": "", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"`+notif+`},
   "models": [], "neighbors": [],
   "components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": true}],
   "subtrees": [{"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}],
-    "leaves": [{"name": "state/temperature/instant", "type": "decimal64", "digits": 1, "gen": "const:38.25"}]}]
+    "leaves": [{"name": "state/temperature/instant", "type": "decimal64", "digits": 1, "gen": "const:38.25"`+strings.Join(leafExtra, "")+`}]}]
 }`), "dec.json")
 		if err != nil {
 			t.Fatal(err)
@@ -492,6 +527,12 @@ func TestCatalogResolver_DecimalWireForm(t *testing.T) {
 	tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`))
 	if d := tv.GetDecimalVal(); d == nil || d.GetPrecision() != 1 || d.GetDigits() != 382 { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772) (half-to-even, as the JSON forms round)
 		t.Fatalf("decimal_val form: %v", tv)
+	}
+	if tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`, `, "decimal_encoding": "double"`)); tv.GetDoubleVal() != 38.25 {
+		t.Fatalf("leaf double override: %v", tv)
+	}
+	if tv := encodeOne(mk(``, `, "decimal_encoding": "decimal_val"`)); tv.GetDecimalVal() == nil { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
+		t.Fatalf("leaf decimal_val override: %v", tv)
 	}
 }
 
