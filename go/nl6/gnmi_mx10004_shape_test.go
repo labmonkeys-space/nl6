@@ -432,3 +432,52 @@ func TestMX10004HostnameMatchesHeader(t *testing.T) {
 		t.Fatal("no hostname leaf served")
 	}
 }
+
+// TestMX10004TemperatureOnlyOnSensorComponents: the capture streams a
+// temperature for FPC0 and Routing Engine0 only, so the temperature
+// subscription yields exactly the components flagged `temperature`,
+// one notification each, as many as the fixture recorded.
+func TestMX10004TemperatureOnlyOnSensorComponents(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{}
+	for _, c := range cats["juniper_mx10004"].components("temperature") {
+		want[c.Name] = true
+	}
+	var raw struct {
+		Notifications int `json:"notifications"`
+	}
+	b, err := os.ReadFile("testdata/gnmi/juniper_mx10004/component-temp.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", fixtureSubscriptions["component-temp"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	notifs := 0
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		notifs++
+		got[n.GetPrefix().GetElem()[1].GetKey()["name"]] = true
+	}
+	if len(got) != len(want) || notifs != raw.Notifications {
+		t.Fatalf("temperature served on %v (%d notifications); want %v (%d in the fixture)", got, notifs, want, raw.Notifications)
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("no temperature for %s", name)
+		}
+	}
+}
