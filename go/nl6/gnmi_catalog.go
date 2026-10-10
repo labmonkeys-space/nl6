@@ -43,6 +43,9 @@ const (
 	gnmiKeySourceComponents = "components"
 	gnmiKeySourceNeighbors  = "neighbors"
 	gnmiKeySourceStatic     = "static"
+
+	gnmiDecimalDouble = "double"
+	gnmiDecimalVal    = "decimal_val"
 )
 
 type gnmiCatalog struct {
@@ -69,6 +72,10 @@ type gnmiCatalogNotification struct {
 	// as hardware does (nl6#770). Declared per catalogue so a type
 	// without aliases keeps refusing unknown origins.
 	OriginAliases map[string]string `json:"origin_aliases,omitempty"`
+	// DecimalEncoding is the PROTO wire form of decimal64 leaves:
+	// "double" (default, double_val) or "decimal_val" (gNMI Decimal64,
+	// what Junos sends). Catalogue-local by decision (nl6#772).
+	DecimalEncoding string `json:"decimal_encoding,omitempty"`
 }
 
 type gnmiCatalogModel struct {
@@ -132,6 +139,7 @@ type gnmiCatalogLeaf struct {
 	Enum   []string `json:"enum,omitempty"`
 	Gen    string   `json:"gen"`
 	Filter string   `json:"filter,omitempty"`
+	Digits int      `json:"digits,omitempty"` // decimal64 fraction-digits from YANG; 0 = 2
 
 	elems       []*gnmipb.PathElem // compiled from Name
 	gen         gnmiLeafGen        // compiled from Gen
@@ -173,6 +181,11 @@ func (c *gnmiCatalog) validate(source string) error {
 	}
 	if n.Origin == "" {
 		return fail("notification.origin is required")
+	}
+	switch n.DecimalEncoding {
+	case "", gnmiDecimalDouble, gnmiDecimalVal:
+	default:
+		return fail("notification.decimal_encoding %q: want %q or %q", n.DecimalEncoding, gnmiDecimalDouble, gnmiDecimalVal)
 	}
 	aliases := make([]string, 0, len(n.OriginAliases))
 	for alias := range n.OriginAliases {

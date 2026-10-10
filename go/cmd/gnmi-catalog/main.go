@@ -59,6 +59,7 @@ type outLeaf struct {
 	Enum   []string `json:"enum,omitempty"`
 	Gen    string   `json:"gen"`
 	Filter string   `json:"filter,omitempty"`
+	Digits int      `json:"digits,omitempty"`
 }
 
 type outSubtree struct {
@@ -153,7 +154,7 @@ func run(args []string) error {
 			if ov, ok := st.Types[name]; ok {
 				typ, enum = ov, nil
 			}
-			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name], Filter: st.Filters[name]})
+			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name], Filter: st.Filters[name], Digits: fractionDigitsOf(e, typ)})
 		}
 		extraNames := make([]string, 0, len(st.Extra))
 		for n := range st.Extra {
@@ -409,7 +410,8 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		Prefix        string            `json:"prefix"`
 		Encodings     []string          `json:"encodings"`
 		Extension     string            `json:"extension"`
-		OriginAliases map[string]string `json:"origin_aliases,omitempty"`
+		OriginAliases   map[string]string `json:"origin_aliases,omitempty"`
+		DecimalEncoding string            `json:"decimal_encoding,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(notification))
 	dec.DisallowUnknownFields()
@@ -431,4 +433,21 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		n.OriginAliases = nil
 	}
 	return json.Marshal(n) // map keys marshal sorted
+}
+
+// fractionDigitsOf returns the YANG fraction-digits of a decimal64
+// leaf (following leafrefs like typeOf), 0 for any other type.
+func fractionDigitsOf(e *yang.Entry, typ string) int {
+	if typ != "decimal64" || e == nil || e.Type == nil {
+		return 0
+	}
+	t := e.Type
+	for t.Kind == yang.Yleafref && t.Path != "" {
+		target := e.Find(t.Path)
+		if target == nil || target.Type == nil {
+			break
+		}
+		e, t = target, target.Type
+	}
+	return int(t.FractionDigits)
 }

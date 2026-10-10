@@ -391,3 +391,41 @@ func TestCatalogResolver_SerialPerDevice(t *testing.T) {
 		t.Fatalf("two components of one device share %s", m0)
 	}
 }
+
+// TestCatalogResolver_DecimalWireForm: a catalogue that declares
+// decimal_encoding: decimal_val gets gNMI's Decimal64 message at the
+// leaf's fraction-digits under PROTO; the default keeps double_val.
+func TestCatalogResolver_DecimalWireForm(t *testing.T) {
+	mk := func(notif string) *catalogResolver {
+		cat, err := parseGnmiCatalog([]byte(`{
+  "comment": "decimal", "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"`+notif+`},
+  "models": [], "neighbors": [],
+  "components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": true}],
+  "subtrees": [{"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}],
+    "leaves": [{"name": "state/temperature/instant", "type": "decimal64", "digits": 1, "gen": "const:38.25"}]}]
+}`), "dec.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	}
+	encodeOne := func(r *catalogResolver) *gnmipb.TypedValue {
+		got, err := r.Resolve(pathFromString(t, "/components"), time.Now())
+		if err != nil || len(got) != 1 {
+			t.Fatalf("%v %v", err, got)
+		}
+		ups, err := encodeUpdates(got[0].Updates, gnmipb.Encoding_PROTO)
+		if err != nil || len(ups) != 1 {
+			t.Fatalf("%v %v", err, ups)
+		}
+		return ups[0].GetVal()
+	}
+	if tv := encodeOne(mk(``)); tv.GetDoubleVal() != 38.25 {
+		t.Fatalf("default form: %v", tv)
+	}
+	tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`))
+	if d := tv.GetDecimalVal(); d == nil || d.GetPrecision() != 1 || d.GetDigits() != 383 {
+		t.Fatalf("decimal_val form: %v", tv)
+	}
+}

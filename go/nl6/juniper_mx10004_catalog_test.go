@@ -366,21 +366,34 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Junos prints boards, PICs, transceivers, fan trays and power
+	// supplies in show chassis hardware; sensors, single fans and port
+	// entries are gNMI-only components.
+	printed := func(c gnmiCatalogComponent) bool {
+		switch c.Type {
+		case "SENSOR":
+			return false
+		case "FAN":
+			return !strings.Contains(c.Name, " Fan ")
+		case "PORT":
+			return !strings.Contains(c.Name, ":PORT")
+		}
+		return true
+	}
 	for _, c := range cats["juniper_mx10004"].Components {
-		if !strings.Contains(hw, c.PartNo) || !strings.Contains(hw, c.SerialNo) {
+		if printed(c) && (!strings.Contains(hw, c.PartNo) || !strings.Contains(hw, c.SerialNo)) {
 			t.Errorf("gNMI component %s (part %s, serial %s) absent from show chassis hardware", c.Name, c.PartNo, c.SerialNo)
 		}
 	}
-	// And the reverse: every serial SSH prints for a board is a gNMI
-	// component, so the two inventories agree in both directions
-	// (transceivers are SSH-only until nl6#771).
+	// And the reverse: every serial SSH prints is a gNMI component, so
+	// the two inventories agree in both directions.
 	gnmiSerials := map[string]bool{}
 	for _, c := range cats["juniper_mx10004"].Components {
 		gnmiSerials[c.SerialNo] = true
 	}
 	for _, line := range strings.Split(hw, "\n") {
 		for _, f := range strings.Fields(line) {
-			if strings.HasPrefix(f, "NL6") && !strings.HasPrefix(f, "NL6XCV") && !gnmiSerials[f] {
+			if strings.HasPrefix(f, "NL6") && !gnmiSerials[f] {
 				t.Errorf("SSH serial %s has no gNMI component", f)
 			}
 		}

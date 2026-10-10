@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -548,6 +549,10 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			//
 			// Lossy for high-precision values (an 18-fraction-digit BER
 			// exceeds a float64 significand); JSON_IETF preserves them.
+			if x.decimalVal {
+				scale := math.Pow10(x.digits)
+				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: int64(math.Round(x.val * scale)), Precision: uint32(x.digits)}}}, nil
+			}
 			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)

@@ -264,6 +264,8 @@ func typedValueKind(tv *gnmipb.TypedValue, enc gnmipb.Encoding) string {
 		return "bool"
 	case *gnmipb.TypedValue_DoubleVal:
 		return "double"
+	case *gnmipb.TypedValue_DecimalVal:
+		return "decimal"
 	}
 	return "other"
 }
@@ -433,10 +435,9 @@ func TestMX10004HostnameMatchesHeader(t *testing.T) {
 	}
 }
 
-// TestMX10004TemperatureOnlyOnSensorComponents: the capture streams a
-// temperature for FPC0 and Routing Engine0 only, so the temperature
+// TestMX10004TemperatureOnlyOnSensorComponents: the temperature
 // subscription yields exactly the components flagged `temperature`,
-// one notification each, as many as the fixture recorded.
+// one notification each.
 func TestMX10004TemperatureOnlyOnSensorComponents(t *testing.T) {
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
@@ -472,8 +473,13 @@ func TestMX10004TemperatureOnlyOnSensorComponents(t *testing.T) {
 		notifs++
 		got[n.GetPrefix().GetElem()[1].GetKey()["name"]] = true
 	}
-	if len(got) != len(want) || notifs != raw.Notifications {
-		t.Fatalf("temperature served on %v (%d notifications); want %v (%d in the fixture)", got, notifs, want, raw.Notifications)
+	// One notification per sensor-bearing component. The fixture's
+	// notification count is the vJunos capture (two sensors); the
+	// catalogue now carries the hardware's sensor tree (nl6#772), so
+	// the count is checked against the catalogue and the fixture count
+	// is only required to be covered.
+	if len(got) != len(want) || notifs != len(want) || len(want) < raw.Notifications {
+		t.Fatalf("temperature served on %d components in %d notifications; want %d (fixture recorded %d)", len(got), notifs, len(want), raw.Notifications)
 	}
 	for name := range want {
 		if !got[name] {
@@ -615,5 +621,52 @@ func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 	resp, err := gnmipb.NewGNMIClient(conn).Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_PROTO, Path: []*gnmipb.Path{gp}})
 	if err != nil || len(resp.GetNotification()) == 0 || resp.GetNotification()[0].GetPrefix().GetOrigin() != "openconfig" {
 		t.Fatalf("Get under module-name origin: err=%v resp=%v", err, resp)
+	}
+}
+
+// TestMX10004ComponentInventory pins nl6#772: the hardware's component
+// cardinality and classes, and the full temperature record on a
+// sensor, with temperature leaves as Decimal64 precision 1.
+func TestMX10004ComponentInventory(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves := map[string]map[string]*gnmipb.TypedValue{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil || len(n.GetPrefix().GetElem()) != 2 {
+			continue
+		}
+		name := n.GetPrefix().GetElem()[1].GetKey()["name"]
+		leaves[name] = map[string]*gnmipb.TypedValue{}
+		for _, u := range n.GetUpdate() {
+			leaves[name][pathToString(u.GetPath())] = u.GetVal()
+		}
+	}
+	if len(leaves) < 250 {
+		t.Fatalf("%d components, want at least 250", len(leaves))
+	}
+	for _, class := range []string{"CB0:INTAKE_A_TEMP_SENSOR", "ROUTING_ENGINE0:CPU", "FPC0:PIC1:PORT23", "FPC0:PIC0:PORT0:Xcvr0", "FPC0:EA0_HMC0_LOGIC_DIE", "FPC0:CPU_TEMP_SENSOR", "FPD Board", "PEM1:TEMP_SENSOR_1", "FTC1", "Fan Tray 1 Fan 11", "SFB5", "SFB5:ZF0_INTERNAL_REMOTE_0"} {
+		if leaves[class] == nil {
+			t.Errorf("component %s missing", class)
+		}
+	}
+	sensor := leaves["SFB0:PCIE_SWITCH_TEMP"]
+	for _, leaf := range []string{"/state/firmware-version", "/state/temperature/alarm-status", "/state/temperature/alarm-threshold", "/state/temperature/interval", "/state/temperature/max-time", "/state/temperature/min-time"} {
+		if sensor[leaf] == nil {
+			t.Errorf("sensor lacks %s", leaf)
+		}
+	}
+	for _, leaf := range []string{"instant", "avg", "min", "max"} {
+		d := sensor["/state/temperature/"+leaf].GetDecimalVal()
+		if d == nil || d.GetPrecision() != 1 {
+			t.Errorf("temperature/%s = %v, want Decimal64 precision 1", leaf, sensor["/state/temperature/"+leaf])
+		}
+	}
+	if fan := leaves["Fan Tray 0 Fan 0"]; fan["/state/temperature/instant"] != nil {
+		t.Errorf("a fan carries a temperature it has no sensor for")
 	}
 }

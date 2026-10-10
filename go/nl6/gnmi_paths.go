@@ -303,6 +303,12 @@ type resolvedUpdate struct {
 type gnmiDecimal struct {
 	val    float64
 	digits int
+	// decimalVal asks the PROTO encoder for gNMI's Decimal64 message
+	// (digits + precision) instead of double_val; set by the catalogue
+	// resolver when the catalogue declares decimal_encoding:
+	// decimal_val, which is what Junos sends (nl6#772). JSON forms are
+	// unaffected.
+	decimalVal bool
 }
 
 // String renders the value with exactly `digits` fraction digits, which
