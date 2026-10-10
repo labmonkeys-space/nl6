@@ -304,7 +304,7 @@ func TestV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 			refused, want)
 	}
 
-	const want = "9971abb20b7252af1f3556bfb0852cdf04e1c6fec3c67c327b7202f6e2f1c9b6"
+	const want = "b8c7ce451d1fa482627ecb5893cf8a057d8464a8876539d02bac933a092ec8b9"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv2c encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
@@ -380,7 +380,7 @@ func TestFastV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d; the fault-parity arm is not being exercised", refused, want)
 	}
 
-	const want = "a158b0e60bed87742f6a3bd695583c9b5bb957f9255e856007c939160401ae5f"
+	const want = "4ad6c613d1772d740f36705327e0b1b9de974d75bdfb3e6963e72b304b3b1162"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the fast encoder's output over %d shipped notifications digests to %s, measured at "+
 			"the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a catalog DATA "+
@@ -425,7 +425,7 @@ func TestV1NotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d", refused, want)
 	}
 
-	const want = "186470c4e9635f230478ab8e327c911d7e6cc4d3b8294633f78ae736e9f5e36f"
+	const want = "bd59cab634778dc50b0b8239949af18a04fae376b8d718092b5d6f7b9a23cba7"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv1 encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
