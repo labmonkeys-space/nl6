@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -230,9 +231,27 @@ func genCounter(arg string) (gnmiLeafGen, error) {
 	}, nil
 }
 
+// perDeviceSerial inserts the device's whole IPv4 as eight hex digits
+// in front of the trailing digit run of a catalogue serial (the
+// component ordinal), so two devices never share a serial anywhere in
+// the IPv4 space and one device's components keep their full ordinal
+// (nl6#769). Without an IPv4, or without trailing digits, the constant
+// is served.
+func perDeviceSerial(serial string, ip net.IP) string {
+	v4 := ip.To4()
+	end := len(serial)
+	for end > 0 && serial[end-1] >= '0' && serial[end-1] <= '9' {
+		end--
+	}
+	if v4 == nil || end == len(serial) {
+		return serial
+	}
+	return fmt.Sprintf("%s%08X%s", serial[:end], binary.BigEndian.Uint32(v4), serial[end:])
+}
+
 func genInventory(arg string) (gnmiLeafGen, error) {
 	switch arg {
-	case "name", "type", "parent", "part_no", "description", "serial_no":
+	case "name", "type", "parent", "part_no", "description", "serial_no", "serial_no_per_device":
 	default:
 		return nil, fmt.Errorf("unknown inventory field %q", arg)
 	}
@@ -256,6 +275,12 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 				return c.PartNo, true
 			case "description":
 				return c.Description, true
+			case "serial_no_per_device":
+				var ip net.IP
+				if ctx.dev != nil {
+					ip = ctx.dev.IP
+				}
+				return perDeviceSerial(c.SerialNo, ip), true
 			default:
 				return c.SerialNo, true
 			}

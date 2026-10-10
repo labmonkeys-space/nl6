@@ -196,3 +196,26 @@ func TestGnmiBindings_Device(t *testing.T) {
 		t.Error("sysname without a device reported ok")
 	}
 }
+
+// TestPerDeviceSerial: the suffix carries the whole IPv4 and keeps the
+// full component ordinal, so devices in different /16s and components
+// whose ordinals differ above the tens never collide.
+func TestPerDeviceSerial(t *testing.T) {
+	a := perDeviceSerial("NL6FPC000001", net.ParseIP("10.42.1.7"))
+	b := perDeviceSerial("NL6FPC000001", net.ParseIP("10.43.1.7"))
+	if a != "NL6FPC0A2A0107000001" || b != "NL6FPC0A2B0107000001" {
+		t.Fatalf("got %s and %s", a, b)
+	}
+	if x0, x1 := perDeviceSerial("NL6XCV000000", net.ParseIP("10.42.1.7")), perDeviceSerial("NL6XCV000100", net.ParseIP("10.42.1.7")); x0 == x1 {
+		t.Fatalf("ordinals 000000 and 000100 collide: %s", x0)
+	}
+	if got := perDeviceSerial("NL6MX10004001", net.ParseIP("10.42.1.7")); got != "NL6MX0A2A010710004001" {
+		t.Fatalf("model digits must survive, got %s", got)
+	}
+	if got := perDeviceSerial("NL6FPC000001", nil); got != "NL6FPC000001" {
+		t.Fatalf("no IPv4 must serve the constant, got %s", got)
+	}
+	if got := perDeviceSerial("ABCDEF", net.ParseIP("10.42.1.7")); got != "ABCDEF" {
+		t.Fatalf("no trailing digits must serve the constant, got %s", got)
+	}
+}

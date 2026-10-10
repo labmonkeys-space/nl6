@@ -14,6 +14,8 @@
     {"name": "FPC0:MEZZ1", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MEZZ", "description": "LC480 Mezz", "serial_no": "NL6MEZ000002", "temperature": false},
     {"name": "FPC0:MIC0", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MIC", "description": "24xSFPP 1/10GE MIC", "serial_no": "NL6MIC000001", "temperature": false},
     {"name": "FPC0:PIC0", "type": "PORT", "parent": "FPC0:MIC0", "part_no": "JNP10K-LC480-PIC", "description": "24xSFPP 1/10GE PIC", "serial_no": "NL6PIC000001", "temperature": false},
+    {"name": "FPC0:PIC1", "type": "PORT", "parent": "FPC0:MIC0", "part_no": "JNP10K-LC480-PIC", "description": "24xSFPP 1/10GE PIC", "serial_no": "NL6PIC000002", "temperature": false},
+    {"name": "FPD Board", "type": "CHASSIS", "parent": "Chassis", "part_no": "JNP10004-FPD", "description": "Front Panel Display", "serial_no": "NL6FPD000001", "temperature": false},
     {"name": "Fan Tray 0", "type": "FAN", "parent": "Chassis", "part_no": "JNP10004-FAN3", "description": "Fan Tray 0", "serial_no": "NL6FT0000001", "temperature": false},
     {"name": "Fan Tray 1", "type": "FAN", "parent": "Chassis", "part_no": "JNP10004-FAN3", "description": "Fan Tray 1", "serial_no": "NL6FT0000002", "temperature": false},
     {"name": "PEM0", "type": "POWER_SUPPLY", "parent": "Chassis", "part_no": "JNP10K-PWR-AC2", "description": "JNP10K 5500W AC/HVDC Power Supply", "serial_no": "NL6PEM000001", "temperature": false},
@@ -81,7 +83,7 @@
       "path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}], "module": "openconfig-platform",
       "leaves": {
         "state/name": "inventory:name", "state/type": "inventory:type", "state/parent": "inventory:parent", "state/part-no": "inventory:part_no",
-        "state/description": "inventory:description", "state/serial-no": "inventory:serial_no", "state/id": "inventory:serial_no",
+        "state/description": "inventory:description", "state/serial-no": "inventory:serial_no_per_device", "state/id": "inventory:serial_no_per_device",
         "state/mfg-name": "const:Juniper Networks", "state/mfg-date": "const:2025-01-15", "state/hardware-version": "const:REV 06",
         "state/software-version": "const:24.2R1.17", "state/oper-status": "const:ACTIVE", "state/empty": "const:false", "state/removable": "const:true",
         "state/location": "key:0", "state/allocated-power": "const:0", "state/memory/available": "const:0", "state/memory/utilized": "const:0",
