@@ -485,7 +485,7 @@
       "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
       "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
       "keys": [
-        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
         {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
         {"source": "static", "names": ["high", "low"]}
       ],
@@ -497,13 +497,27 @@
       }
     },
     {
-      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
       "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
       "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
       "keys": [
         {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
-        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
-        {"source": "static", "names": ["high", "low"]}
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["SWITCH-FABRIC"]}
       ],
       "leaves": {
         "packets": "counter:11500", "bytes": "counter:9200000", "packets-per-second": "sine:11500,575,900", "bytes-per-second": "sine:9200000,460000,900",

@@ -75,7 +75,10 @@ var fixtureAliasRendered = map[string]string{
 	// as Junos does, so the expected set is the entry's full leaf set.
 	"subif-hardware": "/interfaces/interface/subinterfaces/subinterface",
 	// The fabric sensor renders under a path that is neither the
-	// subscription path nor the YANG tree (nl6#767).
+	// subscription path nor the YANG tree (nl6#767). It renders under
+	// two prefixes, class-stats keyed by priority for line-card edges
+	// and keyless for switch fabric edges (nl6#785); this one entry
+	// covers both only because underPath strips keys.
 	"native-fabric-hardware": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
 }
 
