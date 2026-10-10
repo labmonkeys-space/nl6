@@ -44,6 +44,8 @@ var fixtureSubscriptions = map[string]string{
 	"component-temp-hardware": "/components/component/state/temperature",
 	"transceiver-hardware":    "/components/component/transceiver/state/",
 	"wavelength-hardware":     "/components/component/properties/property[name=wavelength]/state/",
+	"bgp-neighbor-hardware":   "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/",
+	"bgp-peer-group-hardware": "/network-instances/network-instance/protocols/protocol/bgp/peer-groups/peer-group/",
 	"component-props":         "/components/component/properties/property/state",
 	"cpu":                     "/components/component/cpu/utilization/state",
 	"sys-cpu":                 "/system/cpus/cpu/state",
@@ -336,7 +338,7 @@ func TestMX10004Manifest(t *testing.T) {
 		}
 	}
 	for _, p := range served {
-		if !fromFixtures[p] && !strings.Contains(p, "/bgp/") {
+		if !fromFixtures[p] {
 			t.Errorf("served leaf %s has no capture behind it", p)
 		}
 	}
@@ -389,12 +391,18 @@ func TestMX10004ServesBGPNeighbors(t *testing.T) {
 		t.Fatal(err)
 	}
 	perNeighbor := map[string]map[string]bool{}
+	afiSafis := 0
 	for _, r := range resps {
 		n := r.GetUpdate()
 		if n == nil {
 			continue
 		}
-		addr := n.GetPrefix().GetElem()[len(n.GetPrefix().GetElem())-1].GetKey()["neighbor-address"]
+		last := n.GetPrefix().GetElem()[len(n.GetPrefix().GetElem())-1]
+		if last.GetName() != "neighbor" {
+			afiSafis++ // the afi-safi entries below the neighbour (nl6#774)
+			continue
+		}
+		addr := last.GetKey()["neighbor-address"]
 		if perNeighbor[addr] == nil {
 			perNeighbor[addr] = map[string]bool{}
 		}
@@ -403,9 +411,12 @@ func TestMX10004ServesBGPNeighbors(t *testing.T) {
 		}
 	}
 	for _, a := range []string{"203.0.113.1", "203.0.113.2"} {
-		if len(perNeighbor[a]) != 8 {
-			t.Errorf("neighbor %s: %d leaves, want 8: %v", a, len(perNeighbor[a]), perNeighbor[a])
+		if len(perNeighbor[a]) != 9 || !perNeighbor[a]["/state/peer-group"] {
+			t.Errorf("neighbor %s: %d leaves, want 9 with peer-group: %v", a, len(perNeighbor[a]), perNeighbor[a])
 		}
+	}
+	if afiSafis != 4 {
+		t.Errorf("afi-safi notifications under the neighbour subscription = %d, want 2 neighbours x 2 families", afiSafis)
 	}
 }
 
@@ -795,21 +806,48 @@ func TestMX10004ServesBGPAfiSafis(t *testing.T) {
 		t.Fatalf("neighbour afi-safi entries = %d, want 2 neighbours x 2 families", len(nb))
 	}
 	for prefix, leaves := range nb {
-		if len(leaves) != 28 || leaves["/state/prefixes/received"] == nil || leaves["/ipv4-unicast/prefix-limit/state/max-prefixes"] == nil {
-			t.Errorf("%s: %d leaves, want 28 with prefixes/received and prefix-limit/max-prefixes", prefix, len(leaves))
-		}
-		if !strings.Contains(prefix, "[afi-safi-name=IPV4_UNICAST]") && !strings.Contains(prefix, "[afi-safi-name=IPV6_UNICAST]") {
+		switch {
+		case strings.Contains(prefix, "[afi-safi-name=IPV4_UNICAST]"):
+			if len(leaves) != 28 || leaves["/state/prefixes/received"] == nil || leaves["/ipv4-unicast/prefix-limit/state/max-prefixes"] == nil || leaves["/ipv6-unicast/prefix-limit/state/max-prefixes"] != nil {
+				t.Errorf("%s: %d leaves, want 28 with ipv4-unicast containers only", prefix, len(leaves))
+			}
+		case strings.Contains(prefix, "[afi-safi-name=IPV6_UNICAST]"):
+			if len(leaves) != 27 || leaves["/ipv6-unicast/prefix-limit/state/max-prefixes"] == nil || leaves["/ipv4-unicast/state/extended-next-hop-encoding"] != nil {
+				t.Errorf("%s: %d leaves, want 27 with ipv6-unicast containers only", prefix, len(leaves))
+			}
+		default:
 			t.Errorf("%s: family key missing", prefix)
 		}
+	}
+	const rendered = "/network-instances/network-instance[name=DEFAULT]/protocols/protocol[identifier=BGP][name=DEFAULT]/bgp"
+	groups := collect(bgp + "peer-groups/peer-group/state")
+	if g := groups[rendered+"/peer-groups/peer-group[peer-group-name=IBGP-CORE]"]; len(groups) != 2 || g == nil || g["/state/peer-type"].GetStringVal() != "INTERNAL" || g["/state/peer-as"].GetUintVal() != g["/state/local-as"].GetUintVal() {
+		t.Errorf("peer-group state = %v; IBGP-CORE must be INTERNAL with peer-as == local-as", groups)
 	}
 	pg := collect(bgp + "peer-groups/peer-group/afi-safis/afi-safi/")
 	if len(pg) != 4 {
 		t.Fatalf("peer-group afi-safi entries = %d, want 2 groups x 2 families", len(pg))
 	}
 	for prefix, leaves := range pg {
-		if len(leaves) != 27 || leaves["/state/total-paths"] == nil || leaves["/state/total-prefixes"] == nil {
-			t.Errorf("%s: %d leaves, want 27 with total-paths and total-prefixes", prefix, len(leaves))
+		want := 21
+		if strings.Contains(prefix, "IPV6_UNICAST") {
+			want = 20
 		}
+		if len(leaves) != want || leaves["/state/total-paths"] == nil || leaves["/state/total-prefixes"] == nil {
+			t.Errorf("%s: %d leaves, want %d with total-paths and total-prefixes", prefix, len(leaves), want)
+		}
+	}
+	// The transit group carries both neighbours: its prefix total is at
+	// least the members' received sum; the core group has no members.
+	sum := uint64(0)
+	for prefix, leaves := range nb {
+		if strings.Contains(prefix, "IPV4_UNICAST") {
+			sum += leaves["/state/prefixes/received"].GetUintVal()
+		}
+	}
+	transit := pg[rendered+"/peer-groups/peer-group[peer-group-name=EBGP-TRANSIT]/afi-safis/afi-safi[afi-safi-name=IPV4_UNICAST]"]
+	if transit == nil || transit["/state/total-prefixes"].GetUintVal() < sum {
+		t.Errorf("EBGP-TRANSIT total-prefixes %v below the members' received sum %d", transit["/state/total-prefixes"], sum)
 	}
 	// Counters move: a second resolve an hour later reads higher.
 	cats, err := loadEmbeddedGnmiCatalogs()
@@ -824,7 +862,12 @@ func TestMX10004ServesBGPAfiSafis(t *testing.T) {
 		t.Fatalf("first resolve: %v %v", err, first)
 	}
 	second, err := r.Resolve(p, time.Now().Add(time.Hour))
-	if err != nil || second[0].Updates[0].Value.(uint32) <= first[0].Updates[0].Value.(uint32) {
-		t.Fatalf("prefixes/received did not advance: %v -> %v (%v)", first[0].Updates[0].Value, second[0].Updates[0].Value, err)
+	if err != nil || len(second) != 1 || len(second[0].Updates) != 1 {
+		t.Fatalf("second resolve: %v %v", err, second)
+	}
+	v1, ok1 := first[0].Updates[0].Value.(uint32)
+	v2, ok2 := second[0].Updates[0].Value.(uint32)
+	if !ok1 || !ok2 || v2 <= v1 {
+		t.Fatalf("prefixes/received did not advance: %v -> %v", first[0].Updates[0].Value, second[0].Updates[0].Value)
 	}
 }
