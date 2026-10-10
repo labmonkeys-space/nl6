@@ -44,6 +44,7 @@ var fixtureSubscriptions = map[string]string{
 	"component-temp-hardware": "/components/component/state/temperature",
 	"transceiver-hardware":    "/components/component/transceiver/state/",
 	"wavelength-hardware":     "/components/component/properties/property[name=wavelength]/state/",
+	"subif-hardware":          "/interfaces/interface/subinterfaces/subinterface/state/counters",
 	"bgp-neighbor-hardware":   "/network-instances/network-instance/protocols/protocol/bgp/neighbors/neighbor/",
 	"bgp-peer-group-hardware": "/network-instances/network-instance/protocols/protocol/bgp/peer-groups/peer-group/",
 	"component-props":         "/components/component/properties/property/state",
@@ -59,6 +60,10 @@ var fixtureSubscriptions = map[string]string{
 // subscribed with an empty origin, as collectors often do.
 var fixtureAliasRendered = map[string]string{
 	"native-packet-usage": "/components/component/properties/property/state/value",
+	// The subinterface counters path is a subtree alias (nl6#773): a
+	// subscription to the sensor path renders the whole subinterface,
+	// as Junos does, so the expected set is the entry's full leaf set.
+	"subif-hardware": "/interfaces/interface/subinterfaces/subinterface",
 }
 
 var keyValueRe = regexp.MustCompile(`\[([a-z-]+)=[^\]]*\]`)
@@ -869,5 +874,53 @@ func TestMX10004ServesBGPAfiSafis(t *testing.T) {
 	v2, ok2 := second[0].Updates[0].Value.(uint32)
 	if !ok1 || !ok2 || v2 <= v1 {
 		t.Fatalf("prefixes/received did not advance: %v -> %v", first[0].Updates[0].Value, second[0].Updates[0].Value)
+	}
+}
+
+// TestMX10004SubinterfaceFamilyCounters pins nl6#773: every subinterface
+// notification carries the eight state counters, the sixteen family
+// counters and init-time, and every family counter is non-decreasing.
+func TestMX10004SubinterfaceFamilyCounters(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 2), cats["juniper_mx10004"])
+	// The issue's acceptance path: a subscription to the counters
+	// container renders the whole subinterface through the subtree alias.
+	p := pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state/counters")
+	now := time.Now()
+	first, err := r.Resolve(p, now)
+	if err != nil || len(first) != 2 {
+		t.Fatalf("resolve: %v, %d notifications (want one per interface)", err, len(first))
+	}
+	later, err := r.Resolve(p, now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, n := range first {
+		vals := map[string]uint64{}
+		counters := 0
+		for _, u := range n.Updates {
+			ps := pathToString(u.Path)
+			if v, ok := u.Value.(uint64); ok {
+				vals[ps] = v
+			}
+			if strings.Contains(ps, "/counters/") || ps == "/init-time" {
+				counters++
+			}
+		}
+		if counters != 25 {
+			t.Errorf("%s: %d counter leaves, want 25", pathToString(n.Prefix), counters)
+		}
+		for _, u := range later[i].Updates {
+			ps := pathToString(u.Path)
+			if !strings.HasPrefix(ps, "/ipv4/") && !strings.HasPrefix(ps, "/ipv6/") {
+				continue
+			}
+			if v, ok := u.Value.(uint64); !ok || v < vals[ps] {
+				t.Errorf("%s %s went from %d to %v", pathToString(n.Prefix), ps, vals[ps], u.Value)
+			}
+		}
 	}
 }

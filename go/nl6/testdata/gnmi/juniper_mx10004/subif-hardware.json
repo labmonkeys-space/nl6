@@ -1,0 +1,47 @@
+{
+  "comment": "Shape of the MX10004 hardware reference set for the subinterface counters subscription (nl6#773); hand-written from the issue, an authoring record, not an observation. The family octet and packet counters and init-time are what hardware adds to the vJunos capture.",
+  "subtree": "subif",
+  "prefixes": [
+    "openconfig:/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]"
+  ],
+  "notifications": 0,
+  "extension": "juniper-header",
+  "leaves": [
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/init-time",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/in-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv4/state/counters/out-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/in-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-octets",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/ipv6/state/counters/out-pkts",
+      "kind": "uint"
+    }
+  ]
+}
