@@ -32,6 +32,9 @@ type gnmiServer struct {
 	device   *DeviceSimulator
 	resolver *pathResolver
 	catalog  *catalogResolver // nil when the device type has no catalogue
+	// catalogStreams counts catalogue Subscribe streams; it picks each
+	// stream's stable Juniper sensor name.
+	catalogStreams atomic.Uint64
 	// Aggregate counters (manager-owned, atomic). gnmiServer is
 	// constructed with a pointer to each so increments fan into the
 	// status endpoint without a manager round-trip.
@@ -116,8 +119,9 @@ func (s *gnmiServer) catalogEncoding(enc gnmipb.Encoding) (gnmipb.Encoding, erro
 }
 
 // catalogExtension builds the per-response extension the catalogue
-// asks for, or nil.
-func (s *gnmiServer) catalogExtension(subscribed string, seq uint64, now time.Time) *gnmi_ext.Extension {
+// asks for, or nil. sensor is fixed for the stream; seq counts the
+// stream's responses from 1.
+func (s *gnmiServer) catalogExtension(sensor, subscribed string, seq uint64, now time.Time) *gnmi_ext.Extension {
 	if s.catalog.cat.Notification.Extension != gnmiExtensionJuniperHeader {
 		return nil
 	}
@@ -126,7 +130,7 @@ func (s *gnmiServer) catalogExtension(subscribed string, seq uint64, now time.Ti
 		host = v
 	}
 	return juniperHeaderExtension(juniperHeader{
-		SystemID: host, ComponentID: 65535, SensorName: fmt.Sprintf("sensor_%d_1_1", 1000+seq%1000),
+		SystemID: host, ComponentID: 65535, SensorName: sensor,
 		SubscribedPath: subscribed, StreamedPath: subscribed, Component: "xmlproxyd_TM_Thread_1",
 		SequenceNumber: seq, ExportTimestamp: now.UnixMilli(),
 	})
@@ -443,11 +447,14 @@ func (s *gnmiServer) catalogStream(enc gnmipb.Encoding) *catalogSubscription {
 	if s.catalog == nil {
 		return nil
 	}
+	// One sensor name per stream, as Junos does (every response of a
+	// vJunos subscription carried the same sensor_NNNN_3_1).
+	sensor := fmt.Sprintf("sensor_%d_1_1", 1000+s.catalogStreams.Add(1)%1000)
 	return &catalogSubscription{
 		resolver: s.catalog,
 		enc:      enc,
 		extFor: func(sub *gnmipb.Subscription, seq uint64, now time.Time) *gnmi_ext.Extension {
-			return s.catalogExtension(pathToString(sub.GetPath()), seq, now)
+			return s.catalogExtension(sensor, pathToString(sub.GetPath()), seq, now)
 		},
 	}
 }

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -229,5 +230,111 @@ func TestCatalogServer_StreamSampleTicks(t *testing.T) {
 		if resp.GetUpdate() != nil {
 			got++
 		}
+	}
+}
+
+func TestCatalogServer_JuniperHeaderExtension(t *testing.T) {
+	data := bytes.Replace(readTestCatalog(t), []byte(`"extension": "none"`), []byte(`"extension": "juniper-header"`), 1)
+	cat, err := parseGnmiCatalog(data, "min-juniper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cat.Notification.Extension != gnmiExtensionJuniperHeader {
+		t.Fatal("fixture rewrite did not enable the juniper header")
+	}
+	_, dev, addr, cleanup := startTestGnmiServerWithCatalog(t, cat)
+	defer cleanup()
+	dev.cachedSysName.Store("vjunos-test")
+
+	const path = "/interfaces/interface/state/counters"
+	for stream := 0; stream < 2; stream++ {
+		resps, err := subscribeOnce(t, addr, gnmipb.Encoding_PROTO, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lastSeq uint64
+		sensor := ""
+		for _, r := range resps {
+			if r.GetUpdate() == nil {
+				continue
+			}
+			if len(r.GetExtension()) != 1 {
+				t.Fatalf("stream %d: extensions = %v", stream, r.GetExtension())
+			}
+			h, err := decodeJuniperHeader(r.GetExtension()[0].GetRegisteredExt().GetMsg())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h.SystemID != "vjunos-test" || h.ComponentID != 65535 || h.SubscribedPath != path || h.Component != "xmlproxyd_TM_Thread_1" {
+				t.Errorf("stream %d: header = %+v", stream, h)
+			}
+			if lastSeq == 0 && h.SequenceNumber != 1 {
+				t.Errorf("stream %d: first sequence = %d, want 1", stream, h.SequenceNumber)
+			}
+			if h.SequenceNumber <= lastSeq {
+				t.Errorf("stream %d: sequence %d after %d", stream, h.SequenceNumber, lastSeq)
+			}
+			lastSeq = h.SequenceNumber
+			if sensor == "" {
+				sensor = h.SensorName
+			}
+			if h.SensorName != sensor {
+				t.Errorf("stream %d: sensor %q changed to %q", stream, sensor, h.SensorName)
+			}
+		}
+		if lastSeq < 2 {
+			t.Fatalf("stream %d: want at least two update responses, got %d", stream, lastSeq)
+		}
+	}
+}
+
+func TestCatalogServer_MixedOnceOrdering(t *testing.T) {
+	_, addr, cleanup := startTestCatalogServer(t)
+	defer cleanup()
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := gnmipb.NewGNMIClient(conn).Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Legacy path listed first: the combined legacy notification still
+	// follows every catalogue per-entry response.
+	err = stream.Send(&gnmipb.SubscribeRequest{Request: &gnmipb.SubscribeRequest_Subscribe{Subscribe: &gnmipb.SubscriptionList{
+		Mode: gnmipb.SubscriptionList_ONCE, Encoding: gnmipb.Encoding_PROTO,
+		Subscription: []*gnmipb.Subscription{
+			{Path: pathFromString(t, "/interfaces/interface/state/counters/in-errors")},
+			{Path: pathFromString(t, "/components/component/state/serial-no")},
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resps []*gnmipb.SubscribeResponse
+	for {
+		r, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		resps = append(resps, r)
+		if r.GetSyncResponse() {
+			break
+		}
+	}
+	// Two components in the fixture, one legacy notification, one sync.
+	if len(resps) != 4 {
+		t.Fatalf("got %d responses, want 4: %v", len(resps), resps)
+	}
+	for i, r := range resps[:2] {
+		if r.GetUpdate().GetPrefix() == nil {
+			t.Errorf("response %d: want catalogue prefix: %v", i, r)
+		}
+	}
+	if n := resps[2].GetUpdate(); n == nil || n.GetPrefix() != nil || len(n.GetUpdate()) == 0 {
+		t.Errorf("response 2: want one combined legacy notification with nil prefix: %v", resps[2])
+	}
+	if !resps[3].GetSyncResponse() {
+		t.Errorf("response 3: want sync_response: %v", resps[3])
 	}
 }
