@@ -541,3 +541,55 @@ func TestMX10004ComponentsOneNotificationPerEntry(t *testing.T) {
 		t.Errorf("Chassis: carries a temperature leaf it has no sensor for")
 	}
 }
+
+// TestMX10004AcceptsModuleNameAndNativeOrigins: Junos accepts the YANG
+// module name as origin and `Native` for junos sensors, which is what
+// an operator types (nl6#770). The aliased request must return the
+// same notifications as the canonical origin, prefixes included.
+func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	digest := func(resps []*gnmipb.SubscribeResponse) []string {
+		var out []string
+		for _, r := range resps {
+			n := r.GetUpdate()
+			if n == nil {
+				continue
+			}
+			var paths []string
+			for _, u := range n.GetUpdate() {
+				paths = append(paths, pathToString(u.GetPath()))
+			}
+			sort.Strings(paths)
+			out = append(out, n.GetPrefix().GetOrigin()+":"+pathToString(n.GetPrefix())+" "+strings.Join(paths, ","))
+		}
+		sort.Strings(out)
+		return out
+	}
+	for _, tc := range []struct{ alias, canonical, path string }{
+		{"openconfig-interfaces", "openconfig", "/interfaces/interface/state/counters"},
+		{"openconfig-platform", "openconfig", "/components/component/state"},
+		{"openconfig-system", "openconfig", "/system/state"},
+		{"Native", "juniper", "/junos/system/linecard/packet/usage/"},
+	} {
+		t.Run(tc.alias, func(t *testing.T) {
+			want, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, tc.canonical, tc.path)
+			if err != nil {
+				t.Fatalf("canonical: %v", err)
+			}
+			got, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, tc.alias, tc.path)
+			if err != nil {
+				t.Fatalf("alias %s: %v", tc.alias, err)
+			}
+			if dw, dg := digest(want), digest(got); strings.Join(dw, "\n") != strings.Join(dg, "\n") {
+				t.Fatalf("alias %s: %d notifications differ from canonical %d", tc.alias, len(dg), len(dw))
+			}
+			if len(digest(got)) == 0 {
+				t.Fatal("no notifications")
+			}
+		})
+	}
+	if _, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "cisco-iosxr", "/interfaces"); status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown origin: got %v, want NotFound", err)
+	}
+}

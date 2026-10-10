@@ -54,6 +54,9 @@ func newCatalogResolver(d *DeviceSimulator, cat *gnmiCatalog) *catalogResolver {
 // catalogue serves, and returns the catalogue origin it maps to.
 func (r *catalogResolver) originAccepted(origin string) (string, bool) {
 	n := r.cat.Notification
+	if target, ok := n.OriginAliases[origin]; ok {
+		origin = target
+	}
 	switch origin {
 	case "", n.Origin:
 		return n.Origin, true
@@ -135,7 +138,7 @@ func elemsEqual(a, b []*gnmipb.PathElem) bool {
 // nil. The request origin must be empty or the subtree's origin.
 func (r *catalogResolver) aliasSubtree(p *gnmipb.Path) *gnmiCatalogSubtree {
 	for _, st := range r.cat.Subtrees {
-		if o := p.GetOrigin(); o != "" && o != st.Origin {
+		if o, ok := r.originAccepted(p.GetOrigin()); p.GetOrigin() != "" && (!ok || o != st.Origin) {
 			continue
 		}
 		for _, a := range st.aliases {

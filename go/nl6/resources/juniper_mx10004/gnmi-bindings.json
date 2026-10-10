@@ -1,7 +1,8 @@
 {
   "comment": "Juniper MX10004 bindings. Shape verified against vJunos-router 25.4R1.12 (context/gnmi-vendor-sources.md); chassis layout from the MX10004 hardware guide; serials synthetic.",
   "vendor": "juniper",
-  "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header"},
+  "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header",
+    "origin_aliases": {"openconfig-interfaces": "openconfig", "openconfig-platform": "openconfig", "openconfig-system": "openconfig", "openconfig-network-instance": "openconfig", "Native": "juniper"}},
   "components": [
     {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "JNP10004", "description": "JNP10004 [MX10004]", "serial_no": "NL6MX10004001", "temperature": false},
     {"name": "Midplane", "type": "BACKPLANE", "parent": "Chassis", "part_no": "JNP10004-MIDPLANE", "description": "Midplane", "serial_no": "NL6MP0000001", "temperature": false},
