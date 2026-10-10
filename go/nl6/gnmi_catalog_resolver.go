@@ -25,11 +25,25 @@ type catalogNotification struct {
 
 // catalogResolver answers gNMI paths from a per-type catalogue. One
 // catalogue is shared by every device of the type; the resolver holds
-// only the device pointer.
+// only the device pointer. start is the fallback epoch for a device
+// without an interface counter cycler; see epoch.
 type catalogResolver struct {
 	dev   *DeviceSimulator
 	cat   *gnmiCatalog
 	start time.Time
+}
+
+// epoch is the device's time base: the interface counter cycler's
+// start, which SNMP, sFlow and the legacy gNMI resolver also use, so a
+// counter read at one instant agrees across surfaces and a gNMI server
+// restart does not reset counters or boot timestamps.
+func (r *catalogResolver) epoch() time.Time {
+	if r.dev != nil && r.dev.metricsCycler != nil {
+		if ic := r.dev.metricsCycler.ifCounters.Load(); ic != nil {
+			return ic.startTime
+		}
+	}
+	return r.start
 }
 
 func newCatalogResolver(d *DeviceSimulator, cat *gnmiCatalog) *catalogResolver {
@@ -210,7 +224,7 @@ func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotif
 		return nil, status.Errorf(codes.InvalidArgument, "origin %q not served by this device", p.GetOrigin())
 	}
 	q := p.GetElem()
-	t := now.Sub(r.start).Seconds()
+	t := now.Sub(r.epoch()).Seconds()
 	var out []catalogNotification
 	touched := false
 	for _, st := range r.cat.Subtrees {

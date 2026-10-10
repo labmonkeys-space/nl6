@@ -157,12 +157,12 @@ func TestCatalogResolver_IfIndexFromCycler(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newCatalogResolver(d, cat)
-	now := r.start.Add(5 * time.Second)
+	ic := d.metricsCycler.ifCounters.Load()
+	now := ic.startTime.Add(5 * time.Second)
 	got, err := r.Resolve(pathFromString(t, "/interfaces/interface/state/counters"), now)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("got %v err %v", got, err)
 	}
-	ic := d.metricsCycler.ifCounters.Load()
 	vals := map[string]uint64{}
 	for _, n := range got {
 		vals[pathToString(n.Prefix)] = n.Updates[0].Value.(uint64)

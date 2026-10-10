@@ -311,22 +311,35 @@ func TestMX10004Manifest(t *testing.T) {
 }
 
 // TestMX10004CountersAgreeWithSNMP: the gNMI in-octets for TestIf1
-// equals ifHCInOctets.1 from the same cycler at the same instant.
+// equals ifHCInOctets.1 from the same cycler at the same instant, an
+// hour after the cycler started. The SNMP side uses the cycler's own
+// start, so a resolver with a different epoch fails. The boot-time
+// leaf shares that epoch.
 func TestMX10004CountersAgreeWithSNMP(t *testing.T) {
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		t.Fatal(err)
 	}
 	dev := newTestGnmiDevice(t, 2)
+	ic := dev.metricsCycler.ifCounters.Load()
+	// The gNMI server comes up after the device; keep the gap visible.
+	time.Sleep(5 * time.Millisecond)
 	r := newCatalogResolver(dev, cats["juniper_mx10004"])
-	now := time.Now()
+	now := ic.startTime.Add(time.Hour)
 	got, err := r.Resolve(pathFromString(t, "/interfaces/interface[name=TestIf1]/state/counters/in-octets"), now)
 	if err != nil || len(got) != 1 || len(got[0].Updates) != 1 {
 		t.Fatalf("%v %v", got, err)
 	}
-	ic := dev.metricsCycler.ifCounters.Load()
-	want := ic.GetDynamicAt(ifXTablePrefix+"6.1", now.Sub(r.start).Seconds())
+	want := ic.GetDynamicAt(ifXTablePrefix+"6.1", time.Hour.Seconds())
 	if gotV := got[0].Updates[0].Value.(uint64); strconv.FormatUint(gotV, 10) != want {
 		t.Fatalf("gNMI %d != SNMP %s", gotV, want)
+	}
+	boot, err := r.Resolve(pathFromString(t, "/system/state/last-configuration-timestamp"), now)
+	if err != nil || len(boot) != 1 || len(boot[0].Updates) != 1 {
+		t.Fatalf("%v %v", boot, err)
+	}
+	d := int64(boot[0].Updates[0].Value.(uint64)) - ic.startTime.UnixNano()
+	if d < -int64(time.Microsecond) || d > int64(time.Microsecond) {
+		t.Fatalf("boot timestamp is %v off the cycler start", time.Duration(d))
 	}
 }

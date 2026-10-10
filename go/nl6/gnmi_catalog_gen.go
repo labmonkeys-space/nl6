@@ -19,7 +19,8 @@ import (
 // gnmiGenCtx is what a binding sees when a leaf is resolved. keys are
 // the concrete key values of the list entry in catalogue key order
 // (for example ["xe-0/0/0", "3"]); ifIndex is set when the first key
-// source is `interfaces`, else 0; t is seconds since device start.
+// source is `interfaces`, else 0; t is seconds since the device epoch
+// (catalogResolver.epoch), shared by every time-based binding.
 type gnmiGenCtx struct {
 	dev     *DeviceSimulator
 	cat     *gnmiCatalog
