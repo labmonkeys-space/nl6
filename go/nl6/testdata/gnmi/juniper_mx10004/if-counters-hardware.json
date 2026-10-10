@@ -1,5 +1,5 @@
 {
-  "comment": "Shape of the MX10004 hardware reference set for the interface counters subscription (nl6#775); hand-written from the issue, an authoring record, not an observation. Hardware adds name, state/parent-ae-name and out-queue/queue-number to what the vJunos capture showed, and sends none of the eleven buffer and drop leaves nl6 used to add.",
+  "comment": "Shape of the MX10004 hardware reference set for the interface counters subscription (nl6#775); hand-written from the issue, an authoring record, not an observation. name and parent-ae-name are marked always: the sensor sends them with every counters notification. absent lists the eleven out-queue leaves the vJunos capture (if-state.json) showed and the hardware does not send.",
   "subtree": "if-counters",
   "prefixes": [
     "openconfig:/interfaces/interface[name=*]",
@@ -10,15 +10,30 @@
   "leaves": [
     {
       "path": "/interfaces/interface[name=*]/name",
-      "kind": "string"
+      "kind": "string",
+      "always": true
     },
     {
       "path": "/interfaces/interface[name=*]/state/parent-ae-name",
-      "kind": "string"
+      "kind": "string",
+      "always": true
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/queue-number",
       "kind": "uint"
     }
+  ],
+  "absent": [
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/allocated-buffer-size",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/avg-buffer-occupancy",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/bytes",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/cur-buffer-occupancy",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/peak-buffer-occupancy",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/pkts",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/red-drop-bytes",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/red-drop-pkts",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/rl-drop-bytes",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/rl-drop-pkts",
+    "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/tail-drop-pkts"
   ]
 }

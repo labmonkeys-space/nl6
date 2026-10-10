@@ -47,7 +47,11 @@ type bindingSubtree struct {
 	// subtree with a filter, never in a second subtree on the same
 	// path, which the loader refuses (nl6#765).
 	Filters map[string]string `json:"filters"`
-	Extra   map[string]struct {
+	// Always lists leaves rendered whenever the entry renders, even
+	// when the request path does not cover them (a Junos sensor's
+	// identity leaves, nl6#775). Names must be in leaves or extra.
+	Always []string `json:"always"`
+	Extra  map[string]struct {
 		Type   string `json:"type"`
 		Gen    string `json:"gen"`
 		Digits int    `json:"digits"` // decimal64 fraction-digits; extra leaves have no YANG to read it from
@@ -61,6 +65,7 @@ type outLeaf struct {
 	Gen    string   `json:"gen"`
 	Filter string   `json:"filter,omitempty"`
 	Digits int      `json:"digits,omitempty"`
+	Always bool     `json:"always,omitempty"`
 }
 
 type outSubtree struct {
@@ -164,6 +169,18 @@ func run(args []string) error {
 		sort.Strings(extraNames)
 		for _, n := range extraNames {
 			leaves = append(leaves, outLeaf{Name: n, Type: st.Extra[n].Type, Gen: st.Extra[n].Gen, Filter: st.Filters[n], Digits: st.Extra[n].Digits})
+		}
+		always := map[string]bool{}
+		for _, n := range st.Always {
+			_, inLeaves := st.Leaves[n]
+			_, inExtra := st.Extra[n]
+			if !inLeaves && !inExtra {
+				return fmt.Errorf("subtree %s: always names leaf %s, which is in neither leaves nor extra", st.Path, n)
+			}
+			always[n] = true
+		}
+		for i := range leaves {
+			leaves[i].Always = always[leaves[i].Name]
 		}
 		for n, f := range st.Filters {
 			_, inLeaves := st.Leaves[n]

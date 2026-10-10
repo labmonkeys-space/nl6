@@ -2538,22 +2538,26 @@
         {
           "name": "init-time",
           "type": "uint64",
-          "gen": "timestamp:boot"
+          "gen": "timestamp:boot",
+          "always": true
         },
         {
           "name": "name",
           "type": "string",
-          "gen": "key:0"
+          "gen": "key:0",
+          "always": true
         },
         {
           "name": "state/high-speed",
           "type": "uint32",
-          "gen": "const:10000"
+          "gen": "const:10000",
+          "always": true
         },
         {
           "name": "state/parent-ae-name",
           "type": "string",
-          "gen": "const:"
+          "gen": "const:",
+          "always": true
         }
       ]
     },
@@ -2597,12 +2601,12 @@
         {
           "name": "queued-bytes",
           "type": "uint64",
-          "gen": "counter:300"
+          "gen": "const:0"
         },
         {
           "name": "queued-pkts",
           "type": "uint64",
-          "gen": "counter:2"
+          "gen": "const:0"
         }
       ]
     },

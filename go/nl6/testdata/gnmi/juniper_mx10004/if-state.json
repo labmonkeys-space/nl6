@@ -1,5 +1,5 @@
 {
-  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md. The eleven out-queue buffer and drop leaves recorded here from vJunos are removed: the MX10004 hardware sends only queue-number, queued-bytes, queued-pkts, hp-red-drop-pkts and lp-red-drop-pkts (nl6#775), and the if-counters-hardware fixture pins that set.",
+  "comment": "Shape of a gnmic ONCE subscription against vJunos-router 25.4R1.12 (PROTO). Values removed; paths are absolute with wildcard keys; see context/gnmi-vendor-sources.md.",
   "subtree": "if-state",
   "prefixes": [
     "openconfig:/interfaces/interface[name=*]",
@@ -85,6 +85,22 @@
       "kind": "uint"
     },
     {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/allocated-buffer-size",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/avg-buffer-occupancy",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/bytes",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/cur-buffer-occupancy",
+      "kind": "uint"
+    },
+    {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/hp-red-drop-pkts",
       "kind": "uint"
     },
@@ -93,11 +109,39 @@
       "kind": "uint"
     },
     {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/peak-buffer-occupancy",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/pkts",
+      "kind": "uint"
+    },
+    {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/queued-bytes",
       "kind": "uint"
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/queued-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/red-drop-bytes",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/red-drop-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/rl-drop-bytes",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/rl-drop-pkts",
+      "kind": "uint"
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]/tail-drop-pkts",
       "kind": "uint"
     },
     {

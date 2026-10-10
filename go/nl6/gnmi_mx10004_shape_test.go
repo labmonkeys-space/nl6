@@ -27,9 +27,14 @@ type shapeFixture struct {
 	Prefixes  []string `json:"prefixes"`
 	Extension string   `json:"extension"`
 	Leaves    []struct {
-		Path string `json:"path"`
-		Kind string `json:"kind"`
+		Path   string `json:"path"`
+		Kind   string `json:"kind"`
+		Always bool   `json:"always"` // sent with every notification of its entry, path coverage aside
 	} `json:"leaves"`
+	// Absent lists leaves another fixture of the same origin recorded
+	// that this (hardware) fixture says are not sent; they are removed
+	// from the expected union so an observation fixture stays intact.
+	Absent []string `json:"absent"`
 }
 
 // fixtureSubscriptions maps fixture file stems to the path gnmic
@@ -150,17 +155,27 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 	defer cleanup()
 	fixtures := readShapeFixtures(t)
 	unionLeaves := map[string]map[string]bool{} // origin -> leaf path
+	alwaysLeaves := map[string]map[string]bool{}
 	unionPrefixes := map[string]bool{}
 	for _, fx := range fixtures {
 		o := fixtureOrigin(fx)
 		if unionLeaves[o] == nil {
 			unionLeaves[o] = map[string]bool{}
+			alwaysLeaves[o] = map[string]bool{}
 		}
 		for _, l := range fx.Leaves {
 			unionLeaves[o][l.Path] = true
+			if l.Always {
+				alwaysLeaves[o][l.Path] = true
+			}
 		}
 		for _, p := range fx.Prefixes {
 			unionPrefixes[p] = true
+		}
+	}
+	for _, fx := range fixtures {
+		for _, a := range fx.Absent {
+			delete(unionLeaves[fixtureOrigin(fx)], a)
 		}
 	}
 	stems := make([]string, 0, len(fixtures))
@@ -198,6 +213,20 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 			wantLeaves := map[string]bool{}
 			for l := range unionLeaves[fixtureOrigin(fx)] {
 				if underPath(l, rendered) && (keyed == "" || strings.Contains(l, keyed)) {
+					wantLeaves[l] = true
+				}
+			}
+			// An always-leaf is expected whenever the subscription covers
+			// another leaf of the same entry, the way the sensor sends it;
+			// a subscription that only reaches a deeper list (the
+			// subinterfaces under an interface) does not pull it in.
+			entryOf := func(l string) string { return l[:strings.LastIndex(l, "]/")+1] }
+			touchedEntries := map[string]bool{}
+			for l := range wantLeaves {
+				touchedEntries[entryOf(l)] = true
+			}
+			for l := range alwaysLeaves[fixtureOrigin(fx)] {
+				if touchedEntries[entryOf(l)] && unionLeaves[fixtureOrigin(fx)][l] {
 					wantLeaves[l] = true
 				}
 			}
@@ -370,11 +399,19 @@ func TestMX10004CountersAgreeWithSNMP(t *testing.T) {
 	r := newCatalogResolver(dev, cats["juniper_mx10004"])
 	now := ic.startTime.Add(time.Hour)
 	got, err := r.Resolve(pathFromString(t, "/interfaces/interface[name=TestIf1]/state/counters/in-octets"), now)
-	if err != nil || len(got) != 1 || len(got[0].Updates) != 1 {
+	if err != nil || len(got) != 1 {
 		t.Fatalf("%v %v", got, err)
 	}
+	// The entry's always-leaves (name, init-time, ...) ride along with
+	// the one requested counter (nl6#775), so find it by path.
+	var inOctets any
+	for _, u := range got[0].Updates {
+		if pathToString(u.Path) == "/state/counters/in-octets" {
+			inOctets = u.Value
+		}
+	}
 	want := ic.GetDynamicAt(ifXTablePrefix+"6.1", time.Hour.Seconds())
-	if gotV := got[0].Updates[0].Value.(uint64); strconv.FormatUint(gotV, 10) != want {
+	if gotV, _ := inOctets.(uint64); strconv.FormatUint(gotV, 10) != want {
 		t.Fatalf("gNMI %d != SNMP %s", gotV, want)
 	}
 	boot, err := r.Resolve(pathFromString(t, "/system/state/last-configuration-timestamp"), now)
@@ -961,10 +998,8 @@ func TestMX10004InterfaceCounterLeafSet(t *testing.T) {
 	if queues == 0 {
 		t.Fatal("no out-queue notifications")
 	}
-	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/interfaces/interface")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The same counters subscription carries the sensor's identity
+	// leaves (always-leaves) and nothing else beside the counters.
 	checked := 0
 	for _, r := range resps {
 		n := r.GetUpdate()
@@ -978,8 +1013,11 @@ func TestMX10004InterfaceCounterLeafSet(t *testing.T) {
 		}
 		for _, w := range []string{"/name", "/init-time", "/state/high-speed", "/state/parent-ae-name"} {
 			if !got[w] {
-				t.Errorf("%s: missing %s", pathToString(n.GetPrefix()), w)
+				t.Errorf("%s: missing %s under the counters subscription", pathToString(n.GetPrefix()), w)
 			}
+		}
+		if got["/state/admin-status"] || got["/state/mtu"] {
+			t.Errorf("%s: counters subscription carries whole-entry state leaves", pathToString(n.GetPrefix()))
 		}
 	}
 	if checked == 0 {

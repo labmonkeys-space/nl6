@@ -128,6 +128,7 @@ type gnmiCatalogSubtree struct {
 	// neighbor bindings read the entry key at that position.
 	componentKey int
 	neighborKey  int
+	hasAlways    bool // any leaf carries `always`; the resolver then checks coverage in two passes
 }
 
 // gnmiCatalogLeaf is one served leaf. `filter` narrows the leaf to the
@@ -143,6 +144,12 @@ type gnmiCatalogLeaf struct {
 	Gen    string   `json:"gen"`
 	Filter string   `json:"filter,omitempty"`
 	Digits int      `json:"digits,omitempty"` // decimal64 fraction-digits from YANG; 0 = 2
+	// Always renders the leaf whenever its entry renders at all, even
+	// when the request path does not cover it. A Junos sensor sends its
+	// identity leaves (name, init-time, parent-ae-name) with every
+	// counters notification (nl6#775); path coverage alone cannot say
+	// that, and a whole-entry alias says too much.
+	Always bool `json:"always,omitempty"`
 
 	elems       []*gnmipb.PathElem // compiled from Name
 	gen         gnmiLeafGen        // compiled from Gen
@@ -352,6 +359,9 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: digits %d outside YANG's 1..18", i, leaf.Name, leaf.Digits)
 			}
 			leaf.decimalVal = n.DecimalEncoding == gnmiDecimalVal
+			if leaf.Always {
+				st.hasAlways = true
+			}
 			if leaf.Filter != "" {
 				if st.componentKey < 0 {
 					return fail("subtree %d leaf %q: filter needs a components key source", i, leaf.Name)

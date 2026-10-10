@@ -299,12 +299,27 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 		}
 		for _, e := range entries {
 			var updates []resolvedUpdate
+			// An `always` leaf rides along once any other leaf of the
+			// entry is covered, so a counters subscription carries the
+			// sensor's identity leaves without carrying the whole entry.
+			entryTouched := !st.hasAlways
+			if st.hasAlways {
+				for _, leaf := range st.Leaves {
+					if leaf.Always || (leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]]) {
+						continue
+					}
+					if pathCovers(q, append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)) {
+						entryTouched = true
+						break
+					}
+				}
+			}
 			for _, leaf := range st.Leaves {
 				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
 					continue
 				}
 				full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
-				if !pathCovers(q, full) {
+				if !pathCovers(q, full) && !(leaf.Always && entryTouched) {
 					continue
 				}
 				ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex,
