@@ -536,22 +536,24 @@ func (r *pathResolver) opticalCapable() bool {
 //	…/optical-channel/state/osnr/avg                          -> one statistic
 //	…/optical-channel/state/fec-uncorrectable-blocks         -> the bare counter
 func (r *pathResolver) resolveComponents(p *gnmipb.Path, elems []*gnmipb.PathElem, t time.Time) ([]resolvedUpdate, error) {
-	// The shape check comes BEFORE the engine lookup: a transceiver or
-	// property path on a packet device is a path this resolver does
-	// not serve, not a missing optical subsystem, and the error must
-	// say so (nl6#771 found collectors sent to the Ciena subsystem).
-	if rest := componentRest(elems); len(rest) > 0 && rest[0].GetName() != "optical-channel" {
-		return nil, status.Errorf(codes.NotFound, "path %s matches no entry", pathToString(p))
+	// Shape checks come BEFORE the engine lookup, and in the same order
+	// ClassifyLeaves applies them, so Get, SAMPLE and ON_CHANGE refuse a
+	// path with one message: a transceiver or property path on a packet
+	// device is a path this resolver does not serve, not a missing
+	// optical subsystem (nl6#771 found collectors sent to the Ciena
+	// subsystem by the engine error).
+	if len(elems) > 1 && elems[1].GetName() != "component" {
+		return nil, status.Errorf(codes.NotFound, "only /components/component is supported, got %q", elems[1].GetName())
+	}
+	selectors, err := expandOpticalLeafSelector(componentRest(elems))
+	if err != nil {
+		return nil, err
 	}
 	oc, err := r.opticalCycler()
 	if err != nil {
 		return nil, err
 	}
 	names, err := r.expandComponentKey(oc, elems)
-	if err != nil {
-		return nil, err
-	}
-	selectors, err := expandOpticalLeafSelector(componentRest(elems))
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +658,7 @@ func expandOpticalLeafSelector(rest []*gnmipb.PathElem) ([]string, error) {
 	}
 	if rest[0].GetName() != "optical-channel" {
 		return nil, status.Errorf(codes.NotFound,
-			"only /components/component[]/optical-channel is supported, got %q", rest[0].GetName())
+			"path /components/component[]/%s matches no entry (this device serves optical-channel only)", rest[0].GetName())
 	}
 	rest = rest[1:]
 	if len(rest) == 0 {
