@@ -47,6 +47,9 @@ const (
 
 	gnmiDecimalDouble = "double"
 	gnmiDecimalVal    = "decimal_val"
+
+	gnmiAliasedOriginCanonical = "canonical"
+	gnmiAliasedOriginEmpty     = "empty"
 )
 
 type gnmiCatalog struct {
@@ -71,14 +74,20 @@ type gnmiCatalogNotification struct {
 	Extension    string   `json:"extension"`
 	// OriginAliases maps a request origin an operator types (a YANG
 	// module name such as `openconfig-interfaces`, or Junos's `Native`)
-	// to Origin or NativeOrigin. Responses carry the canonical origin,
-	// as hardware does (nl6#770). Declared per catalogue so a type
+	// to Origin or NativeOrigin (nl6#770); AliasedOriginPrefix decides
+	// the response's prefix origin. Declared per catalogue so a type
 	// without aliases keeps refusing unknown origins.
 	OriginAliases map[string]string `json:"origin_aliases,omitempty"`
 	// DecimalEncoding is the PROTO wire form of decimal64 leaves:
 	// "double" (default, double_val) or "decimal_val" (gNMI Decimal64,
 	// what Junos sends). Catalogue-local by decision (nl6#772).
 	DecimalEncoding string `json:"decimal_encoding,omitempty"`
+	// AliasedOriginPrefix is the prefix origin of a response to a
+	// request whose origin is an OriginAliases key: "canonical"
+	// (default) or "empty". An MX10004 answers module-name and Native
+	// requests with no prefix origin, and origin-less or canonical ones
+	// with the canonical origin, as vJunos does (nl6#788).
+	AliasedOriginPrefix string `json:"aliased_origin_prefix,omitempty"`
 }
 
 type gnmiCatalogModel struct {
@@ -131,9 +140,14 @@ type gnmiCatalogSubtree struct {
 	// request reaches it. The MX10004 transceiver sensor sends
 	// oper-status under a .../state prefix that /components/component/state
 	// must not repeat (nl6#790).
-	AliasOnly bool               `json:"alias_only,omitempty"`
-	Keys      []gnmiCatalogKey   `json:"keys"`
-	Leaves    []*gnmiCatalogLeaf `json:"leaves"`
+	AliasOnly bool `json:"alias_only,omitempty"`
+	// EchoOrigin renders an aliased request origin verbatim in the
+	// prefix under aliased_origin_prefix "empty": the MX10004 answers
+	// openconfig-platform: property subscriptions with that origin
+	// (nl6#788).
+	EchoOrigin bool               `json:"echo_origin,omitempty"`
+	Keys       []gnmiCatalogKey   `json:"keys"`
+	Leaves     []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
 	aliases [][]*gnmipb.PathElem // compiled from Aliases
@@ -235,6 +249,17 @@ func (c *gnmiCatalog) validate(source string) error {
 	case "", gnmiDecimalDouble, gnmiDecimalVal:
 	default:
 		return fail("notification.decimal_encoding %q: want %q or %q", n.DecimalEncoding, gnmiDecimalDouble, gnmiDecimalVal)
+	}
+	switch n.AliasedOriginPrefix {
+	case "", gnmiAliasedOriginCanonical:
+	case gnmiAliasedOriginEmpty:
+		// Flat updates carry absolute paths with the canonical origin;
+		// the field would load and do nothing there.
+		if n.Prefix != gnmiPrefixListEntry {
+			return fail("notification.aliased_origin_prefix %q needs prefix %q", n.AliasedOriginPrefix, gnmiPrefixListEntry)
+		}
+	default:
+		return fail("notification.aliased_origin_prefix %q: want %q or %q", n.AliasedOriginPrefix, gnmiAliasedOriginCanonical, gnmiAliasedOriginEmpty)
 	}
 	aliases := make([]string, 0, len(n.OriginAliases))
 	for alias := range n.OriginAliases {
@@ -429,6 +454,18 @@ func (c *gnmiCatalog) validate(source string) error {
 				if len(leaf.filterNames) == 0 {
 					return fail("subtree %d leaf %q: filter %q matches no component of this subtree", i, leaf.Name, leaf.Filter)
 				}
+			}
+		}
+		if st.EchoOrigin && n.AliasedOriginPrefix != gnmiAliasedOriginEmpty {
+			return fail("subtree %d (%s): echo_origin needs notification.aliased_origin_prefix %q", i, st.Path, gnmiAliasedOriginEmpty)
+		}
+		if st.EchoOrigin {
+			aliased := false
+			for _, target := range n.OriginAliases {
+				aliased = aliased || target == st.Origin
+			}
+			if !aliased {
+				return fail("subtree %d (%s): echo_origin, but no origin_aliases entry maps to %q", i, st.Path, st.Origin)
 			}
 		}
 		if st.AliasOnly && len(st.Aliases) == 0 {

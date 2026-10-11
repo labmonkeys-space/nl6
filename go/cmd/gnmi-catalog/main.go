@@ -63,6 +63,9 @@ type bindingSubtree struct {
 	// AliasOnly keeps the subtree reachable only through its aliases
 	// (nl6#790); copied through.
 	AliasOnly bool `json:"alias_only"`
+	// EchoOrigin renders an aliased request origin in the prefix
+	// (nl6#788); copied through.
+	EchoOrigin bool `json:"echo_origin"`
 	// Always lists leaves rendered whenever the entry renders, even
 	// when the request path does not cover them (a Junos sensor's
 	// identity leaves, nl6#775). Names must be in leaves or extra.
@@ -92,6 +95,7 @@ type outSubtree struct {
 	Aliases     []string        `json:"aliases,omitempty"`
 	AliasLeaves []string        `json:"alias_leaves,omitempty"`
 	AliasOnly   bool            `json:"alias_only,omitempty"`
+	EchoOrigin  bool            `json:"echo_origin,omitempty"`
 	Keys        json.RawMessage `json:"keys"`
 	Leaves      []outLeaf       `json:"leaves"`
 }
@@ -281,7 +285,7 @@ func run(args []string) error {
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, EchoOrigin: st.EchoOrigin, Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)
@@ -524,6 +528,9 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		Extension       string            `json:"extension"`
 		OriginAliases   map[string]string `json:"origin_aliases,omitempty"`
 		DecimalEncoding string            `json:"decimal_encoding,omitempty"`
+		// AliasedOriginPrefix: prefix origin under an aliased request
+		// origin (nl6#788); the loader validates the value.
+		AliasedOriginPrefix string `json:"aliased_origin_prefix,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(notification))
 	dec.DisallowUnknownFields()

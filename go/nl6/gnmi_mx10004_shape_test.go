@@ -173,7 +173,8 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 	fixtures := readShapeFixtures(t)
 	unionLeaves := map[string]map[string]bool{} // origin -> leaf path
 	alwaysLeaves := map[string]map[string]bool{}
-	unionPrefixes := map[string]bool{}
+	unionPrefixes := map[string]bool{} // origin:path, for requests with no origin or a canonical one
+	unionPaths := map[string]bool{}    // path only, for aliased requests, answered with no origin (nl6#788)
 	for _, fx := range fixtures {
 		o := fixtureOrigin(fx)
 		if unionLeaves[o] == nil {
@@ -188,6 +189,8 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 		}
 		for _, p := range fx.Prefixes {
 			unionPrefixes[p] = true
+			_, path, _ := strings.Cut(p, ":")
+			unionPaths[path] = true
 		}
 	}
 	for _, fx := range fixtures {
@@ -306,9 +309,11 @@ func TestMX10004ShapeMatchesCapture(t *testing.T) {
 					if len(missing)+len(extra)+len(wrongKind) > 0 {
 						t.Fatalf("origin %q %v shape mismatch\nmissing: %v\nextra: %v\nkind: %v", run, enc, missing, extra, wrongKind)
 					}
+					aliased := run != "" && run != "openconfig" && run != "juniper"
 					for gp := range gotPrefixes {
-						if !unionPrefixes[gp] {
-							t.Fatalf("prefix form %q not in any fixture", gp)
+						o, path, _ := strings.Cut(gp, ":")
+						if aliased && (o != "" || !unionPaths[path]) || !aliased && !unionPrefixes[gp] {
+							t.Fatalf("origin %q: prefix form %q not in any fixture (an aliased request gets an empty origin)", run, gp)
 						}
 					}
 				}
@@ -649,7 +654,8 @@ func TestMX10004ComponentsOneNotificationPerEntry(t *testing.T) {
 // TestMX10004AcceptsModuleNameAndNativeOrigins: Junos accepts the YANG
 // module name as origin and `Native` for junos sensors, which is what
 // an operator types (nl6#770). The aliased request must return the
-// same notifications as the canonical origin, prefixes included.
+// same notifications as the canonical origin, prefix paths included,
+// with an empty prefix origin, as the router sends (nl6#788).
 func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()
@@ -665,7 +671,9 @@ func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 				paths = append(paths, pathToString(u.GetPath()))
 			}
 			sort.Strings(paths)
-			out = append(out, n.GetPrefix().GetOrigin()+":"+pathToString(n.GetPrefix())+" "+strings.Join(paths, ","))
+			// Origin left out: an aliased request gets an empty prefix
+			// origin (nl6#788), checked below and in TestMX10004PrefixOrigin.
+			out = append(out, pathToString(n.GetPrefix())+" "+strings.Join(paths, ","))
 		}
 		sort.Strings(out)
 		return out
@@ -697,6 +705,11 @@ func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 			if len(digest(got)) == 0 {
 				t.Fatal("no notifications")
 			}
+			for _, r := range got {
+				if o := r.GetUpdate().GetPrefix().GetOrigin(); r.GetUpdate() != nil && o != "" {
+					t.Fatalf("alias %s: prefix origin %q, want empty", tc.alias, o)
+				}
+			}
 		})
 	}
 	if _, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "cisco-iosxr", "/interfaces"); status.Code(err) != codes.NotFound {
@@ -717,8 +730,66 @@ func TestMX10004AcceptsModuleNameAndNativeOrigins(t *testing.T) {
 	gp := pathFromString(t, "/system/state/hostname")
 	gp.Origin = "openconfig-system"
 	resp, err := gnmipb.NewGNMIClient(conn).Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_PROTO, Path: []*gnmipb.Path{gp}})
-	if err != nil || len(resp.GetNotification()) == 0 || resp.GetNotification()[0].GetPrefix().GetOrigin() != "openconfig" {
+	if err != nil || len(resp.GetNotification()) == 0 || resp.GetNotification()[0].GetPrefix().GetOrigin() != "" {
 		t.Fatalf("Get under module-name origin: err=%v resp=%v", err, resp)
+	}
+}
+
+// TestMX10004PrefixOrigin pins nl6#788: a module-name or Native request
+// gets an empty prefix origin, a property subscription echoes the module
+// name, and a request with no origin or a canonical one keeps the
+// canonical origin, as the vJunos capture shows.
+func TestMX10004PrefixOrigin(t *testing.T) {
+	addr, cleanup := startMX10004Server(t)
+	defer cleanup()
+	const overTemp = "/components/component/properties/property[name=over-temperature]/state/"
+	for _, tc := range []struct{ origin, path, wantOrigin, wantPrefix string }{
+		{"openconfig-system", "/system/cpus/cpu/state", "", "/system/cpus/cpu[index="},
+		{"openconfig-platform", overTemp, "openconfig-platform", "/components/component["},
+		{"Native", "/junos/system/linecard/fabric", "", "/junos/fabric-statistics/"},
+		{"", "/system/cpus/cpu/state", "openconfig", "/system/cpus/cpu[index="},
+		{"openconfig", "/system/cpus/cpu/state", "openconfig", "/system/cpus/cpu[index="},
+		{"", overTemp, "openconfig", "/components/component["},
+		{"juniper", "/junos/system/linecard/packet/usage/", "juniper", "/components/component["},
+		{"Native", "/junos/system/linecard/packet/usage/", "", "/components/component["},
+	} {
+		resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, tc.origin, tc.path)
+		if err != nil {
+			t.Fatalf("%s:%s: %v", tc.origin, tc.path, err)
+		}
+		n := 0
+		for _, r := range resps {
+			u := r.GetUpdate()
+			if u == nil {
+				continue
+			}
+			n++
+			if o, pfx := u.GetPrefix().GetOrigin(), pathToString(u.GetPrefix()); o != tc.wantOrigin || !strings.HasPrefix(pfx, tc.wantPrefix) {
+				t.Fatalf("%s:%s: prefix %s:%s, want origin %q and %s...", tc.origin, tc.path, o, pfx, tc.wantOrigin, tc.wantPrefix)
+			}
+		}
+		if n == 0 {
+			t.Fatalf("%s:%s: no notifications", tc.origin, tc.path)
+		}
+	}
+	// gNMI puts the origin on the request prefix when one is used; the
+	// joined path takes it.
+	conn := dialTestGnmi(t, addr)
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, tc := range []struct{ origin, want string }{{"openconfig-system", ""}, {"openconfig", "openconfig"}} {
+		pfx := pathFromString(t, "/system")
+		pfx.Origin = tc.origin
+		resp, err := gnmipb.NewGNMIClient(conn).Get(ctx, &gnmipb.GetRequest{Encoding: gnmipb.Encoding_PROTO, Prefix: pfx, Path: []*gnmipb.Path{pathFromString(t, "/cpus/cpu/state")}})
+		if err != nil || len(resp.GetNotification()) == 0 {
+			t.Fatalf("Get with prefix origin %q: %v", tc.origin, err)
+		}
+		for _, n := range resp.GetNotification() {
+			if n.GetPrefix().GetOrigin() != tc.want {
+				t.Fatalf("Get with prefix origin %q: response prefix origin %q, want %q", tc.origin, n.GetPrefix().GetOrigin(), tc.want)
+			}
+		}
 	}
 }
 

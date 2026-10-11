@@ -32,8 +32,13 @@ func TestMX10004FabricSensor(t *testing.T) {
 			if u == nil {
 				continue
 			}
-			if u.GetPrefix().GetOrigin() != "juniper" {
-				t.Fatalf("origin %q: prefix origin %q", origin, u.GetPrefix().GetOrigin())
+			// Aliased request origins get an empty prefix origin (nl6#788).
+			want := "juniper"
+			if origin == "Native" || origin == "junos-fabric" {
+				want = ""
+			}
+			if u.GetPrefix().GetOrigin() != want {
+				t.Fatalf("origin %q: prefix origin %q, want %q", origin, u.GetPrefix().GetOrigin(), want)
 			}
 			elems := u.GetPrefix().GetElem()
 			if len(elems) != 6 || elems[0].Name != "junos" || elems[1].Name != "fabric-statistics" || elems[3].Name != "edges" || elems[4].Name != "class-stats" || elems[5].Name != "transmit-counts" {

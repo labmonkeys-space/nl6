@@ -383,6 +383,47 @@ func TestCatalogResolver_AliasOnlySubtree(t *testing.T) {
 	}
 }
 
+// TestCatalogResolver_PrefixOrigin: under aliased_origin_prefix
+// "empty" an aliased request origin renders an empty prefix origin, or
+// its own spelling on an echo_origin subtree; without the field the
+// canonical origin stays, so other catalogues are unchanged (nl6#788).
+func TestCatalogResolver_PrefixOrigin(t *testing.T) {
+	origins := func(t *testing.T, data, reqOrigin string) map[string]string {
+		t.Helper()
+		cat, err := parseGnmiCatalog([]byte(data), "prefix-origin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := newCatalogResolver(newTestGnmiDevice(t, 1), cat).Resolve(pathWithOrigin(t, reqOrigin, "/components/component"), time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, n := range got {
+			out[pathToString(n.Prefix)] = n.Prefix.GetOrigin()
+		}
+		return out
+	}
+	base := strings.Replace(string(readTestCatalog(t)), `"prefix": "list-entry"`, `"origin_aliases": {"oc-platform": "openconfig"}, "prefix": "list-entry"`, 1)
+	for p, o := range origins(t, base, "oc-platform") {
+		if o != "openconfig" {
+			t.Errorf("default: %s origin %q, want openconfig", p, o)
+		}
+	}
+	empty := strings.Replace(strings.Replace(base, `"prefix": "list-entry"`, `"aliased_origin_prefix": "empty", "prefix": "list-entry"`, 1),
+		`"keys": [{"source": "components"}]`, `"echo_origin": true, "keys": [{"source": "components"}]`, 1)
+	for _, tc := range []struct{ req, entry, temp string }{
+		{"oc-platform", "oc-platform", ""},
+		{"", "openconfig", "openconfig"},
+		{"openconfig", "openconfig", "openconfig"},
+	} {
+		got := origins(t, empty, tc.req)
+		if got["/components/component[name=FPC0]"] != tc.entry || got["/components/component[name=FPC0]/state/temperature"] != tc.temp {
+			t.Errorf("request origin %q: %v, want entry %q and temperature %q", tc.req, got, tc.entry, tc.temp)
+		}
+	}
+}
+
 // TestCatalogResolver_AliasSharedByTwoSubtrees: one sensor alias on
 // two same-path subtrees with disjoint keys resolves to both (the two
 // directions of the MX10004 fabric sensor, nl6#767).

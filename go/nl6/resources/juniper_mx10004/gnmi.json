@@ -19,7 +19,8 @@
       "openconfig-platform": "openconfig",
       "openconfig-system": "openconfig"
     },
-    "decimal_encoding": "decimal_val"
+    "decimal_encoding": "decimal_val",
+    "aliased_origin_prefix": "empty"
   },
   "models": [
     {
@@ -3485,6 +3486,7 @@
     {
       "path": "/components/component[name=*]/properties/property[name=*]",
       "origin": "openconfig",
+      "echo_origin": true,
       "keys": [
         {
           "source": "components",
@@ -3513,6 +3515,7 @@
     {
       "path": "/components/component[name=*]/properties/property[name=*]",
       "origin": "openconfig",
+      "echo_origin": true,
       "keys": [
         {
           "source": "static",
@@ -3571,6 +3574,7 @@
     {
       "path": "/components/component[name=*]/properties/property[name=*]",
       "origin": "openconfig",
+      "echo_origin": true,
       "keys": [
         {
           "source": "static",

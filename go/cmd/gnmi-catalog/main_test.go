@@ -323,3 +323,33 @@ func TestGenerateAliasOnlyAndDecimalEncodings(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateCopiesPrefixOriginFields covers nl6#788: the notification's
+// aliased_origin_prefix and a subtree's echo_origin reach the catalogue.
+func TestGenerateCopiesPrefixOriginFields(t *testing.T) {
+	b, err := os.ReadFile("testdata/bindings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := strings.Replace(string(b), `"prefix": "list-entry"`, `"aliased_origin_prefix": "empty", "prefix": "list-entry"`, 1)
+	in = strings.Replace(in, `"module"`, `"echo_origin": true, "module"`, 1)
+	if strings.Count(in, "aliased_origin_prefix")+strings.Count(in, "echo_origin") != 2 {
+		t.Fatal("fixture changed; the injections did not land")
+	}
+	p := filepath.Join(t.TempDir(), "b.json")
+	if err := os.WriteFile(p, []byte(in), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "o.json")
+	if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flat := strings.Join(strings.Fields(string(got)), " ")
+	if !strings.Contains(flat, `"aliased_origin_prefix": "empty"`) || strings.Count(flat, `"echo_origin": true`) != 1 {
+		t.Fatalf("prefix origin fields not copied:\n%s", got)
+	}
+}

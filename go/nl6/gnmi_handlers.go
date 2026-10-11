@@ -174,15 +174,19 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 	// STATE and OPERATIONAL keep only state leaves; CONFIG keeps only config
 	// leaves; ALL (the default) keeps everything. The simulator does not
 	// distinguish operational from state internally.
-	prefixElems := req.GetPrefix().GetElem()
+	reqPrefix := req.GetPrefix()
 	now := time.Now()
 	notifs := make([]*gnmipb.Notification, 0, len(req.GetPath()))
 	for _, p := range req.GetPath() {
-		full := joinPathPrefix(prefixElems, p)
-		if s.catalog != nil {
+		full := joinPathPrefix(reqPrefix, p)
+		// A catalogue path keeps the request's origin spelling, which
+		// decides the prefix origin (nl6#788); the legacy resolver
+		// behind the catalogue gets the canonical one (nl6#770).
+		owned := s.catalog != nil && s.catalog.Match(full)
+		if s.catalog != nil && !owned {
 			full = s.catalog.Canonicalize(full)
 		}
-		if s.catalog != nil && s.catalog.Match(full) {
+		if owned {
 			cn, err := s.catalog.Resolve(full, now)
 			if err != nil {
 				return nil, err
@@ -261,18 +265,25 @@ func filterByGetType(updates []resolvedUpdate, typ gnmipb.GetRequest_DataType) [
 	return out
 }
 
-// joinPathPrefix returns a Path whose Elem slice is `prefix || p.Elem`.
-// When prefix is empty the original Path is returned unchanged so the
-// resolver receives the same pointer the client sent. Used by Get
-// (P10) and Subscribe (P9) to honour `*Request.prefix`.
-func joinPathPrefix(prefix []*gnmipb.PathElem, p *gnmipb.Path) *gnmipb.Path {
-	if len(prefix) == 0 || p == nil {
+// joinPathPrefix returns a Path whose Elem slice is `prefix.Elem || p.Elem`,
+// with the prefix's origin when p carries none: gNMI puts the origin on
+// the prefix when one is used, and the catalogue reads it to choose the
+// response prefix origin (nl6#788). When the prefix has neither elements
+// nor an origin the original Path is returned unchanged so the resolver
+// receives the same pointer the client sent. Used by Get (P10) and
+// Subscribe (P9) to honour `*Request.prefix`.
+func joinPathPrefix(prefix, p *gnmipb.Path) *gnmipb.Path {
+	if p == nil || (len(prefix.GetElem()) == 0 && (prefix.GetOrigin() == "" || p.GetOrigin() != "")) {
 		return p
 	}
-	merged := make([]*gnmipb.PathElem, 0, len(prefix)+len(p.GetElem()))
-	merged = append(merged, prefix...)
+	origin := p.GetOrigin()
+	if origin == "" {
+		origin = prefix.GetOrigin()
+	}
+	merged := make([]*gnmipb.PathElem, 0, len(prefix.GetElem())+len(p.GetElem()))
+	merged = append(merged, prefix.GetElem()...)
 	merged = append(merged, p.GetElem()...)
-	return &gnmipb.Path{Origin: p.GetOrigin(), Elem: merged, Target: p.GetTarget()}
+	return &gnmipb.Path{Origin: origin, Elem: merged, Target: p.GetTarget()}
 }
 
 // Set — design §D5: read-only simulator. Always returns Unimplemented.
@@ -378,14 +389,13 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 
 	// Honour SubscribeRequest.subscription_list.prefix per gNMI §3.5.1.1
 	// by prepending its Elem to each subscription Path before passing
-	// to Resolve (P9). Origin on the prefix is accepted but not
-	// validated — same rationale as Get.
-	prefixElems := sl.GetPrefix().GetElem()
-	if len(prefixElems) > 0 {
+	// to Resolve (P9). An origin on the prefix becomes the origin of a
+	// path that carries none (nl6#788).
+	if sp := sl.GetPrefix(); len(sp.GetElem()) > 0 || sp.GetOrigin() != "" {
 		merged := make([]*gnmipb.Subscription, 0, len(subs))
 		for _, sub := range subs {
 			merged = append(merged, &gnmipb.Subscription{
-				Path:              joinPathPrefix(prefixElems, sub.GetPath()),
+				Path:              joinPathPrefix(sp, sub.GetPath()),
 				Mode:              sub.GetMode(),
 				SampleInterval:    sub.GetSampleInterval(),
 				SuppressRedundant: sub.GetSuppressRedundant(),
@@ -395,9 +405,14 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 		subs = merged
 	}
 	if s.catalog != nil {
-		// Rewrite aliased origins once, before any dispatch, so the
-		// catalogue and the legacy resolver behind it agree.
+		// Rewrite aliased origins once, before any dispatch, on paths
+		// the legacy resolver behind the catalogue answers. Catalogue
+		// paths keep the request's spelling, which decides the prefix
+		// origin (nl6#788); Match and Resolve accept aliased origins.
 		for i, sub := range subs {
+			if s.catalog.Match(sub.GetPath()) {
+				continue
+			}
 			if cp := s.catalog.Canonicalize(sub.GetPath()); cp != sub.GetPath() {
 				subs[i] = &gnmipb.Subscription{
 					Path:              cp,
