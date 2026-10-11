@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -160,4 +161,71 @@ func RenderBindings(c *Chassis) ([]byte, error) {
 		return nil, fmt.Errorf("gnmi-bindings: %w", err)
 	}
 	return []byte(s), nil
+}
+
+// oidLess orders dotted OIDs numerically, arc by arc.
+func oidLess(a, b string) bool {
+	as, bs := strings.Split(strings.TrimPrefix(a, "."), "."), strings.Split(strings.TrimPrefix(b, "."), ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		x, _ := strconv.ParseUint(as[i], 10, 64)
+		y, _ := strconv.ParseUint(bs[i], 10, 64)
+		if x != y {
+			return x < y
+		}
+	}
+	return len(as) < len(bs)
+}
+
+// RenderSNMPRows returns every SNMP row the chassis owns: ifNumber, ifTable,
+// ifXTable (name, the HC registration rows, ifHighSpeed, ifAlias), the
+// jnxOperating rows per Routing Engine, and the ENTITY-MIB rows.
+func RenderSNMPRows(c *Chassis) []SNMPRow {
+	in := c.Model.Interfaces
+	rows := []SNMPRow{{"1.3.6.1.2.1.2.1.0", strconv.Itoa(len(c.Ports))}}
+	add := func(oid, v string) { rows = append(rows, SNMPRow{oid, v}) }
+	for _, p := range c.Ports {
+		ix := strconv.Itoa(p.IfIndex)
+		k := uint64((p.IfIndex - 1) % in.HCPeriod)
+		add("1.3.6.1.2.1.2.2.1.1."+ix, ix)
+		add("1.3.6.1.2.1.2.2.1.2."+ix, p.IfName)
+		add("1.3.6.1.2.1.2.2.1.3."+ix, "6")
+		add("1.3.6.1.2.1.2.2.1.4."+ix, in.MTU)
+		add("1.3.6.1.2.1.2.2.1.5."+ix, in.IfSpeed)
+		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, p.IfIndex))
+		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
+		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
+		add("1.3.6.1.2.1.31.1.1.1.1."+ix, p.IfName)
+		add("1.3.6.1.2.1.31.1.1.1.6."+ix, strconv.FormatUint(in.HCInBase+k*in.HCInStep, 10))
+		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
+		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(p.SpeedMbps))
+		add("1.3.6.1.2.1.31.1.1.1.18."+ix, fmt.Sprintf(in.AliasFormat, p.IfIndex))
+	}
+	for _, re := range c.Model.RoutingEngines {
+		idx := fmt.Sprintf("9.%d.0.0", re.Slot+1)
+		add("1.3.6.1.4.1.2636.3.1.13.1.5."+idx, fmt.Sprintf("Routing Engine %d", re.Slot))
+		add("1.3.6.1.4.1.2636.3.1.13.1.20."+idx, re.LoadAvg1)
+		add("1.3.6.1.4.1.2636.3.1.13.1.21."+idx, re.LoadAvg5)
+	}
+	rows = append(rows, c.Model.LegacySNMP...)
+	sort.SliceStable(rows, func(i, j int) bool { return oidLess(rows[i].OID, rows[j].OID) })
+	return rows
+}
+
+// marshalResource writes a resource part the way nl6's other parts look:
+// two-space indent, no HTML escaping, trailing newline.
+func marshalResource(v any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+func RenderSNMPFile(c *Chassis) ([]byte, error) {
+	return marshalResource(struct {
+		SNMP []SNMPRow `json:"snmp"`
+	}{RenderSNMPRows(c)})
 }
