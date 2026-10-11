@@ -9,6 +9,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -217,5 +218,62 @@ func TestPerDeviceSerial(t *testing.T) {
 	}
 	if got := perDeviceSerial("ABCDEF", net.ParseIP("10.42.1.7")); got != "ABCDEF" {
 		t.Fatalf("no trailing digits must serve the constant, got %s", got)
+	}
+}
+
+func TestIfMIBBinding(t *testing.T) {
+	ctx := genCtxForTest(t)
+	idx := &sync.Map{}
+	idx.Store(ifTablePrefix+"4.3", "9216")
+	idx.Store(ifXTablePrefix+"15.3", "400000")
+	ctx.dev.resources = &DeviceResources{oidIndex: idx}
+	ctx.ifIndex = 3
+	for spec, want := range map[string]string{"ifmib:ifMtu": "9216", "ifmib:ifHighSpeed": "400000"} {
+		g, err := compileGnmiBinding(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := g(ctx); !ok || v != want {
+			t.Errorf("%s = %v, %v; want %s", spec, v, ok, want)
+		}
+	}
+	if _, err := compileGnmiBinding("ifmib:ifInOctets"); err == nil {
+		t.Error("ifmib accepted a column it does not serve")
+	}
+}
+
+func TestIfMIBBindingMissingRowIsNotOk(t *testing.T) {
+	ctx := genCtxForTest(t)
+	ctx.dev.resources = &DeviceResources{oidIndex: &sync.Map{}}
+	ctx.ifIndex = 3
+	g, _ := compileGnmiBinding("ifmib:ifHighSpeed")
+	if v, ok := g(ctx); ok {
+		t.Errorf("missing ifHighSpeed row served %v", v)
+	}
+	ctx.ifIndex = 0
+	if _, ok := g(ctx); ok {
+		t.Error("ifmib served without an interface")
+	}
+}
+
+func TestInventoryOpticFields(t *testing.T) {
+	ctx := genCtxForTest(t)
+	x := gnmiCatalogComponent{Name: "FPC1:PIC0:PORT0:Xcvr0", Type: "TRANSCEIVER", FormFactor: "QSFP56_DD_TYPE1", EthernetPMD: "ETH_400GBASE_DR4"}
+	p := gnmiCatalogComponent{Name: "FPC1:PIC0:PORT0", Type: "PORT", Wavelength: "1310"}
+	ctx.cat = &gnmiCatalog{componentByName: map[string]*gnmiCatalogComponent{x.Name: &x, p.Name: &p}}
+	ctx.componentKey = 0
+	for _, c := range []struct{ key, spec, want string }{
+		{x.Name, "inventory:form_factor", "QSFP56_DD_TYPE1"},
+		{x.Name, "inventory:ethernet_pmd", "ETH_400GBASE_DR4"},
+		{p.Name, "inventory:wavelength", "1310"},
+	} {
+		ctx.keys = []string{c.key}
+		g, err := compileGnmiBinding(c.spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := g(ctx); !ok || v != c.want {
+			t.Errorf("%s on %s = %v, %v; want %s", c.spec, c.key, v, ok, c.want)
+		}
 	}
 }
