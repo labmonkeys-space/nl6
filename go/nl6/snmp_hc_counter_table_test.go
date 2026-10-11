@@ -155,9 +155,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // pre-change value is shippedTagDigestBeforeJuniperMx10004 in
 // snmp_shipped_juniper_mx10004_ledger_test.go, and
 // TestJuniperMx10004AdditionReproducesTheParentCorpus requires it back.
-// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0.
+// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0,
+// pre-change value shippedTagDigestBeforeMx10004DualRE.
 // juniper_mx10004 LC9600 in FPC1: ifTable and ifXTable rows at ifIndex 49-72
-// and ifNumber 48 -> 72.
+// and ifNumber 48 -> 72, pre-change value shippedTagDigestBeforeMx10004LC9600.
 // juniper_mx10004 ENTITY-MIB from the model: board and port entities rebuilt
 // from the chassis model, pre-change value in
 // snmp_shipped_juniper_mx10004_entity_ledger_test.go.

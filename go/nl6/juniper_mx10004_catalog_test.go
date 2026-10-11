@@ -519,3 +519,57 @@ func TestJuniperMx10004_EntityMIBMatchesInventory(t *testing.T) {
 		}
 	}
 }
+
+// TestJuniperMx10004_SSHRoutingEngineAndCBMatchModel: every Routing Engine
+// and control board the gNMI catalogue lists appears in the SSH
+// routing-engine and environment output, with the same serial.
+func TestJuniperMx10004_SSHRoutingEngineAndCBMatchModel(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := map[string]string{}
+	for _, e := range res.SSH {
+		ssh[e.Command] = e.Response
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reOut, env := ssh["show chassis routing-engine"], ssh["show chassis environment"]
+	res0, cbs := 0, 0
+	for _, c := range cats["juniper_mx10004"].Components {
+		var n int
+		if c.Type == "CONTROLLER_CARD" {
+			if _, err := fmt.Sscanf(c.Name, "Routing Engine%d", &n); err == nil {
+				res0++
+				slot := fmt.Sprintf("Slot %d:", n)
+				i := strings.Index(reOut, slot)
+				if i < 0 {
+					t.Errorf("show chassis routing-engine lacks %q", slot)
+					continue
+				}
+				block := reOut[i:]
+				if next := strings.Index(block[len(slot):], "Slot "); next >= 0 {
+					block = block[:len(slot)+next]
+				}
+				if !strings.Contains(block, "Serial ID") || !strings.Contains(block, c.SerialNo) {
+					t.Errorf("%s: slot block lacks Serial ID %s", c.Name, c.SerialNo)
+				}
+				if !strings.Contains(env, fmt.Sprintf("Routing Engine %d", n)) {
+					t.Errorf("show chassis environment lacks Routing Engine %d", n)
+				}
+			}
+		}
+		if _, err := fmt.Sscanf(c.Name, "CB%d", &n); err == nil && !strings.Contains(c.Name, ":") {
+			cbs++
+			if !strings.Contains(env, fmt.Sprintf("CB %d ", n)) {
+				t.Errorf("show chassis environment lacks CB %d", n)
+			}
+		}
+	}
+	if res0 != 2 || cbs != 2 {
+		t.Errorf("found %d Routing Engines and %d CBs in gNMI, want 2 each", res0, cbs)
+	}
+}

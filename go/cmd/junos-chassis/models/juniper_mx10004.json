@@ -87,7 +87,7 @@
       "type": "CONTROLLER_CARD",
       "parent": "CB0",
       "part_no": "JNP10K-RE1",
-      "description": "RE-S-X6-64G",
+      "description": "RE X10",
       "serial_no": "NL6RE0000001",
       "temperature": true
     },
@@ -159,7 +159,7 @@
       "type": "CONTROLLER_CARD",
       "parent": "CB1",
       "part_no": "JNP10K-RE1",
-      "description": "RE-S-X6-64G",
+      "description": "RE X10",
       "serial_no": "NL6RE0000002",
       "temperature": true
     },

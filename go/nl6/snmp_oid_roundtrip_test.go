@@ -387,7 +387,8 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // OID string, its sysObjectID value. The pre-change value is
 // shippedOIDEncodingDigestBeforeJuniperMx10004, required back by
 // TestJuniperMx10004RePinIsOnlyTheAddition.
-// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0.
+// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0,
+// pre-change value shippedOIDEncodingDigestBeforeMx10004DualRE.
 // juniper_mx10004 ENTITY-MIB from the model: 275 new entPhysicalTable OID
 // names, pre-change value in snmp_shipped_juniper_mx10004_entity_ledger_test.go.
 const shippedOIDEncodingDigest = "5b010a0cc36e41b86087d5dc62b31abb939cca2759edeb4d66bb6393653fe1af"

@@ -150,6 +150,13 @@ const mx10004TestSysName = "mx10004-test"
 
 func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 	t.Helper()
+	return startMX10004ServerN(t, 2)
+}
+
+// startMX10004ServerN is startMX10004Server with ifCount interfaces on the
+// synthetic device.
+func startMX10004ServerN(t *testing.T, ifCount int) (addr string, cleanup func()) {
+	t.Helper()
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +166,7 @@ func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 		t.Fatal("embedded juniper_mx10004 catalogue missing")
 	}
 	var dev *DeviceSimulator
-	_, dev, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
+	_, dev, addr, cleanup = startTestGnmiServerWithCatalogN(t, cat, ifCount)
 	dev.cachedSysName.Store(mx10004TestSysName)
 	// The catalogue reads MTU and speed from the device's IF-MIB rows. Only
 	// those columns are added, so the test device keeps its interface names.
@@ -1285,6 +1292,79 @@ func TestMX10004SpeedMTUAndOpticsComeFromTheDevice(t *testing.T) {
 		}
 		if c.Type == "PORT" && c.Wavelength == "" {
 			t.Errorf("port %s has no wavelength", c.Name)
+		}
+	}
+}
+
+// TestMX10004ServesFourHundredGigPort: an LC9600 port (ifIndex 49) serves
+// high-speed 400000 and MTU 9216 over gNMI, and its transceiver the QSFP56-DD
+// optic type. The synthetic device names its interfaces TestIf<n>, not
+// et-1/0/<n>, so the interface is picked by its ifindex leaf, not by name.
+func TestMX10004ServesFourHundredGigPort(t *testing.T) {
+	addr, cleanup := startMX10004ServerN(t, 49)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/interfaces/interface/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves := map[string]*gnmipb.TypedValue{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		var idx uint64
+		cur := map[string]*gnmipb.TypedValue{}
+		for _, u := range n.GetUpdate() {
+			cur[pathToString(u.GetPath())] = u.GetVal()
+		}
+		for k, v := range cur {
+			if strings.HasSuffix(k, "/ifindex") {
+				idx = v.GetUintVal()
+			}
+		}
+		if idx == 49 {
+			leaves = cur
+		}
+	}
+	if len(leaves) == 0 {
+		t.Fatal("no interface notification for ifindex 49")
+	}
+	for leaf, want := range map[string]uint64{"/state/high-speed": 400000, "/state/mtu": 9216} {
+		var got uint64
+		var found bool
+		for k, v := range leaves {
+			if strings.HasSuffix(k, leaf) {
+				found = true
+				got = v.GetUintVal()
+			}
+		}
+		if !found || got != want {
+			t.Errorf("ifindex 49 %s = %d (present %v), want %d", leaf, got, found, want)
+		}
+	}
+
+	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/transceiver/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const xcvr = "FPC1:PIC0:PORT0:Xcvr0"
+	got := map[string]string{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil || len(n.GetPrefix().GetElem()) < 2 || n.GetPrefix().GetElem()[1].GetKey()["name"] != xcvr {
+			continue
+		}
+		for _, u := range n.GetUpdate() {
+			got[pathToString(u.GetPath())] = u.GetVal().GetStringVal()
+		}
+	}
+	for leaf, want := range map[string]string{
+		"/transceiver/state/form-factor":  "QSFP56_DD_TYPE1",
+		"/transceiver/state/ethernet-pmd": "ETH_400GBASE_DR4",
+	} {
+		if got[leaf] != want {
+			t.Errorf("%s%s = %q, want %q", xcvr, leaf, got[leaf], want)
 		}
 	}
 }
