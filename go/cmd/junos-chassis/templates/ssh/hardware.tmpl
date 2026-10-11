@@ -1,0 +1,24 @@
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                NL6MX10004001     JNP10004 [MX10004]
+Midplane         REV 06   JNP10004-MIDPLANE NL6MP0000001   Midplane
+FPD Board        REV 06   JNP10004-FPD NL6FPD000001     Front Panel Display
+PEM 0            REV 06   JNP10K-PWR-AC2 NL6PEM000001   JNP10K 5500W AC/HVDC Power Supply
+PEM 1            REV 06   JNP10K-PWR-AC2 NL6PEM000002   JNP10K 5500W AC/HVDC Power Supply
+Routing Engine 0 REV 06   JNP10K-RE1   NL6RE0000001      RE-S-X6-64G
+CB 0             REV 06   JNP10K-RE1   NL6CB0000001      Control Board
+<<range .FPCs>><<hwrow (printf "FPC %d" .Slot) "REV 06" .FPC.PartNo .FPC.SerialNo .FPC.Description>>
+<<hwrow "  CPU" "REV 06" .CPU.PartNo .CPU.SerialNo .CPU.Description>>
+<<range $i, $m := .Mezz>><<hwrow (printf "  MEZZ %d" $i) "REV 06" $m.PartNo $m.SerialNo $m.Description>>
+<<end>><<range .PICs>><<hwrow (printf "  PIC %d" .Index) "REV 06" .Component.PartNo .Component.SerialNo .Component.Description>>
+<<range .Ports>><<hwrow (printf "    Xcvr %d" .Index) "REV 01" .Xcvr.PartNo .Xcvr.SerialNo .Xcvr.Description>>
+<<end>><<end>><<end>>SFB 0            REV 06   JNP10004-SFB NL6SFB000001      Switch Fabric Board
+SFB 1            REV 06   JNP10004-SFB NL6SFB000002      Switch Fabric Board
+SFB 2            REV 06   JNP10004-SFB NL6SFB000003      Switch Fabric Board
+SFB 3            REV 06   JNP10004-SFB NL6SFB000004      Switch Fabric Board
+SFB 4            REV 06   JNP10004-SFB NL6SFB000005      Switch Fabric Board
+SFB 5            REV 06   JNP10004-SFB NL6SFB000006      Switch Fabric Board
+FTC 0            REV 06   JNP10004-FTC NL6FTC000001      Fan Tray Controller
+FTC 1            REV 06   JNP10004-FTC NL6FTC000002      Fan Tray Controller
+Fan Tray 0       REV 06   JNP10004-FAN3 NL6FT0000001    Fan Tray 0
+Fan Tray 1       REV 06   JNP10004-FAN3 NL6FT0000002    Fan Tray 1

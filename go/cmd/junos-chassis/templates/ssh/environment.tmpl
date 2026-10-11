@@ -1,0 +1,15 @@
+Class Item                           Status     Measurement
+Temp  CB 0 Intake-A                   OK         31 degrees C / 87 degrees F
+Temp  CB 0 Exhaust-A                  OK         37 degrees C / 98 degrees F
+Temp  Routing Engine 0                OK         38 degrees C / 100 degrees F
+Temp  Routing Engine 0 CPU            OK         45 degrees C / 113 degrees F
+<<range .FPCs>><<$f := .>><<range .Card.SSHEnvironment>><<envrow "Temp" (printf "FPC %d %s" $f.Slot .Item) .Celsius>>
+<<end>><<range .PICs>><<envrow "Temp" (printf "FPC %d PIC %d" $f.Slot .Index) $f.Card.SSHPICCelsius>>
+<<end>><<end>>Temp  PEM 0                           OK         36 degrees C / 96 degrees F
+Temp  PEM 1                           OK         36 degrees C / 96 degrees F
+Fans  Fan Tray 0 Fan 1                OK         Spinning at normal speed
+Fans  Fan Tray 0 Fan 2                OK         Spinning at normal speed
+Fans  Fan Tray 1 Fan 1                OK         Spinning at normal speed
+Fans  Fan Tray 1 Fan 2                OK         Spinning at normal speed
+Power PEM 0                           OK
+Power PEM 1                           OK

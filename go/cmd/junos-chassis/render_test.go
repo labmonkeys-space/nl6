@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -143,6 +144,56 @@ func TestRenderSNMPRows(t *testing.T) {
 	for i := 1; i < len(order); i++ {
 		if !oidLess(order[i-1], order[i]) {
 			t.Fatalf("rows not in OID order at %s, %s", order[i-1], order[i])
+		}
+	}
+}
+
+// TestRenderSSHMatchesCommittedResponses compares every rendered command
+// with the response the committed SSH parts hold for it, wherever it lives.
+// Before Task 5 that is juniper_mx10004_ssh_1.json; after it, the
+// generated chassis part.
+func TestRenderSSHMatchesCommittedResponses(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := RenderSSHEntries(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed := map[string]string{}
+	for _, f := range []string{"juniper_mx10004_ssh_1.json", "juniper_mx10004_ssh_chassis.json"} {
+		raw, err := os.ReadFile(filepath.Join(resourceDir, f))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc struct {
+			SSH []sshEntry `json:"ssh"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range doc.SSH {
+			committed[e.Command] = e.Response
+		}
+	}
+	for _, e := range entries {
+		want, ok := committed[e.Command]
+		if !ok {
+			t.Errorf("%s: no committed response", e.Command)
+			continue
+		}
+		if e.Response != want {
+			i := firstDiff([]byte(e.Response), []byte(want))
+			t.Errorf("%s differs at byte %d:\nrendered:  %q\ncommitted: %q", e.Command, i,
+				e.Response[max(0, i-60):min(len(e.Response), i+60)], want[max(0, i-60):min(len(want), i+60)])
 		}
 	}
 }

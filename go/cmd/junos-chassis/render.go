@@ -229,3 +229,59 @@ func RenderSNMPFile(c *Chassis) ([]byte, error) {
 		SNMP []SNMPRow `json:"snmp"`
 	}{RenderSNMPRows(c)})
 }
+
+type sshEntry struct {
+	Command  string `json:"command"`
+	Response string `json:"response"`
+}
+
+type picData struct {
+	FPC FPC
+	PIC PIC
+}
+
+// RenderSSHEntries renders every SSH command the chassis owns. A template
+// ends with one newline more than the response, which is trimmed here.
+func RenderSSHEntries(c *Chassis) ([]sshEntry, error) {
+	var out []sshEntry
+	add := func(cmd, tmpl string, data any) error {
+		s, err := execTemplate("ssh/"+tmpl, data)
+		if err != nil {
+			return fmt.Errorf("%s: %w", cmd, err)
+		}
+		out = append(out, sshEntry{Command: cmd, Response: strings.TrimSuffix(s, "\n")})
+		return nil
+	}
+	for _, s := range []struct{ cmd, tmpl string }{
+		{"show interfaces terse", "terse.tmpl"},
+		{"show chassis environment", "environment.tmpl"},
+		{"show chassis hardware", "hardware.tmpl"},
+		{"show chassis fpc", "fpc.tmpl"},
+		{"show chassis routing-engine", "routing-engine.tmpl"},
+	} {
+		if err := add(s.cmd, s.tmpl, c); err != nil {
+			return nil, err
+		}
+	}
+	for _, f := range c.FPCs {
+		for _, p := range f.PICs {
+			if err := add(fmt.Sprintf("show chassis pic fpc-slot %d pic-slot %d", f.Slot, p.Index), "pic.tmpl", picData{FPC: f, PIC: p}); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := add("show chassis power", "power.tmpl", c); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func RenderSSHFile(c *Chassis) ([]byte, error) {
+	entries, err := RenderSSHEntries(c)
+	if err != nil {
+		return nil, err
+	}
+	return marshalResource(struct {
+		SSH []sshEntry `json:"ssh"`
+	}{entries})
+}
