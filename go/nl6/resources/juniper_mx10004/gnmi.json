@@ -1589,47 +1589,47 @@
       "temperature": true
     },
     {
-      "name": "FPC0:INTAKE_A_TEMP_SENSOR",
+      "name": "FPC0:INTAKE-A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 INTAKE_A_TEMP_SENSOR Temp Sensor",
+      "description": "FPC0 INTAKE-A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000022",
       "temperature": true
     },
     {
-      "name": "FPC0:INTAKE_B_TEMP_SENSOR",
+      "name": "FPC0:INTAKE-B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 INTAKE_B_TEMP_SENSOR Temp Sensor",
+      "description": "FPC0 INTAKE-B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000023",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST_A_TEMP_SENSOR",
+      "name": "FPC0:EXHAUST-A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST_A_TEMP_SENSOR Temp Sensor",
+      "description": "FPC0 EXHAUST-A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000024",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST_B_TEMP_SENSOR",
+      "name": "FPC0:EXHAUST-B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST_B_TEMP_SENSOR Temp Sensor",
+      "description": "FPC0 EXHAUST-B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000025",
       "temperature": true
     },
     {
-      "name": "FPC0:EXHAUST_C_TEMP_SENSOR",
+      "name": "FPC0:EXHAUST-C_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC0",
       "part_no": "JNP10K-LC480",
-      "description": "FPC0 EXHAUST_C_TEMP_SENSOR Temp Sensor",
+      "description": "FPC0 EXHAUST-C_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000026",
       "temperature": true
     },
@@ -2531,47 +2531,47 @@
       "temperature": true
     },
     {
-      "name": "FPC1:INTAKE_A_TEMP_SENSOR",
+      "name": "FPC1:INTAKE-A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC1",
       "part_no": "JNP10K-LC9600",
-      "description": "FPC1 INTAKE_A_TEMP_SENSOR Temp Sensor",
+      "description": "FPC1 INTAKE-A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS010022",
       "temperature": true
     },
     {
-      "name": "FPC1:INTAKE_B_TEMP_SENSOR",
+      "name": "FPC1:INTAKE-B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC1",
       "part_no": "JNP10K-LC9600",
-      "description": "FPC1 INTAKE_B_TEMP_SENSOR Temp Sensor",
+      "description": "FPC1 INTAKE-B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS010023",
       "temperature": true
     },
     {
-      "name": "FPC1:EXHAUST_A_TEMP_SENSOR",
+      "name": "FPC1:EXHAUST-A_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC1",
       "part_no": "JNP10K-LC9600",
-      "description": "FPC1 EXHAUST_A_TEMP_SENSOR Temp Sensor",
+      "description": "FPC1 EXHAUST-A_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS010024",
       "temperature": true
     },
     {
-      "name": "FPC1:EXHAUST_B_TEMP_SENSOR",
+      "name": "FPC1:EXHAUST-B_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC1",
       "part_no": "JNP10K-LC9600",
-      "description": "FPC1 EXHAUST_B_TEMP_SENSOR Temp Sensor",
+      "description": "FPC1 EXHAUST-B_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS010025",
       "temperature": true
     },
     {
-      "name": "FPC1:EXHAUST_C_TEMP_SENSOR",
+      "name": "FPC1:EXHAUST-C_TEMP_SENSOR",
       "type": "SENSOR",
       "parent": "FPC1",
       "part_no": "JNP10K-LC9600",
-      "description": "FPC1 EXHAUST_C_TEMP_SENSOR Temp Sensor",
+      "description": "FPC1 EXHAUST-C_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS010026",
       "temperature": true
     },

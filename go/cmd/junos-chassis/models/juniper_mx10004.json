@@ -1610,23 +1610,23 @@
           "ordinal": 36
         },
         {
-          "name": "INTAKE_A_TEMP_SENSOR",
+          "name": "INTAKE-A_TEMP_SENSOR",
           "ordinal": 22
         },
         {
-          "name": "INTAKE_B_TEMP_SENSOR",
+          "name": "INTAKE-B_TEMP_SENSOR",
           "ordinal": 23
         },
         {
-          "name": "EXHAUST_A_TEMP_SENSOR",
+          "name": "EXHAUST-A_TEMP_SENSOR",
           "ordinal": 24
         },
         {
-          "name": "EXHAUST_B_TEMP_SENSOR",
+          "name": "EXHAUST-B_TEMP_SENSOR",
           "ordinal": 25
         },
         {
-          "name": "EXHAUST_C_TEMP_SENSOR",
+          "name": "EXHAUST-C_TEMP_SENSOR",
           "ordinal": 26
         },
         {
@@ -1810,23 +1810,23 @@
           "ordinal": 36
         },
         {
-          "name": "INTAKE_A_TEMP_SENSOR",
+          "name": "INTAKE-A_TEMP_SENSOR",
           "ordinal": 22
         },
         {
-          "name": "INTAKE_B_TEMP_SENSOR",
+          "name": "INTAKE-B_TEMP_SENSOR",
           "ordinal": 23
         },
         {
-          "name": "EXHAUST_A_TEMP_SENSOR",
+          "name": "EXHAUST-A_TEMP_SENSOR",
           "ordinal": 24
         },
         {
-          "name": "EXHAUST_B_TEMP_SENSOR",
+          "name": "EXHAUST-B_TEMP_SENSOR",
           "ordinal": 25
         },
         {
-          "name": "EXHAUST_C_TEMP_SENSOR",
+          "name": "EXHAUST-C_TEMP_SENSOR",
           "ordinal": 26
         },
         {

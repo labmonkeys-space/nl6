@@ -853,7 +853,8 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	}
 	// nl6#789: the router's component names. Every FPC sensor outside
 	// the EA HMC family ends in _TEMP_SENSOR, there is no MIC, and each
-	// SFB has ZF0_INTERNAL_REMOTE_0 to _6.
+	// SFB has ZF0_INTERNAL_REMOTE_0 to _6. A hyphen appears only between
+	// INTAKE or EXHAUST and its letter (nl6#796).
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		t.Fatal(err)
@@ -862,7 +863,8 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	for _, c := range cats["juniper_mx10004"].Components {
 		if c.Type == "SENSOR" && strings.HasPrefix(c.Parent, "FPC") && !strings.Contains(c.Name, "_HMC") {
 			fpcSensors++
-			if !strings.HasSuffix(c.Name, "_TEMP_SENSOR") || strings.Contains(c.Name, "-") {
+			bare := strings.NewReplacer("INTAKE-", "INTAKE_", "EXHAUST-", "EXHAUST_").Replace(c.Name)
+			if !strings.HasSuffix(c.Name, "_TEMP_SENSOR") || strings.Contains(bare, "-") {
 				t.Errorf("FPC sensor %s; the router names them FPCn:<NAME>_TEMP_SENSOR", c.Name)
 			}
 		}
@@ -870,9 +872,23 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	if fpcSensors < 12 {
 		t.Errorf("%d FPC sensors outside the HMC family, want at least 12", fpcSensors)
 	}
-	for _, s := range []string{"EXHAUST_A", "EXHAUST_B", "EXHAUST_C", "INTAKE_A", "INTAKE_B", "PEXSW", "PMB", "CPU"} {
-		if leaves["FPC0:"+s+"_TEMP_SENSOR"] == nil {
-			t.Errorf("FPC0:%s_TEMP_SENSOR missing", s)
+	// nl6#796: the location sensors take a hyphen before their letter on
+	// an FPC, unlike the CB's underscores; the other FPC sensors do not.
+	for _, fpc := range []string{"FPC0", "FPC1"} {
+		for _, s := range []string{"EXHAUST-A", "EXHAUST-B", "EXHAUST-C", "INTAKE-A", "INTAKE-B", "PEXSW", "PMB", "CPU"} {
+			if leaves[fpc+":"+s+"_TEMP_SENSOR"] == nil {
+				t.Errorf("%s:%s_TEMP_SENSOR missing", fpc, s)
+			}
+		}
+		for _, s := range []string{"EXHAUST_A", "EXHAUST_B", "EXHAUST_C", "INTAKE_A", "INTAKE_B"} {
+			if leaves[fpc+":"+s+"_TEMP_SENSOR"] != nil {
+				t.Errorf("%s:%s_TEMP_SENSOR served; the router names it with a hyphen", fpc, s)
+			}
+		}
+	}
+	for _, name := range []string{"CB0:EXHAUST_A_TEMP_SENSOR", "SFB0:INTAKE-TOP_TEMP"} {
+		if leaves[name] == nil {
+			t.Errorf("component %s missing", name)
 		}
 	}
 	remotes := map[string]int{}
