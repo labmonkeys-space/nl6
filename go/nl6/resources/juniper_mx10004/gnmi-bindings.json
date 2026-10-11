@@ -1,7 +1,7 @@
 {
   "comment": "Juniper MX10004 bindings. Shape verified against vJunos-router 25.4R1.12 (context/gnmi-vendor-sources.md); chassis layout from the MX10004 hardware guide; serials synthetic.",
   "vendor": "juniper",
-  "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header", "decimal_encoding": "decimal_val",
+  "notification": {"origin": "openconfig", "native_origin": "juniper", "prefix": "list-entry", "encodings": ["PROTO", "JSON"], "extension": "juniper-header", "decimal_encoding": "decimal_val", "aliased_origin_prefix": "empty",
     "origin_aliases": {"Native": "juniper"}},
   "components": [
     {"name": "Chassis", "type": "CHASSIS", "parent": "", "part_no": "JNP10004", "description": "JNP10004 [MX10004]", "serial_no": "NL6MX10004001", "temperature": false},
@@ -398,21 +398,21 @@
       "types": {"oper-status": "string"}
     },
     {
-      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",
+      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
       "keys": [{"source": "components", "filter": "PORT"}, {"source": "static", "names": ["wavelength"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "const:850"},
       "types": {"state/value": "string"}
     },
     {
-      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",
+      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
       "keys": [{"source": "static", "names": ["CB0", "FPC0", "FPC0:PIC0", "Routing Engine0"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
       "types": {"state/value": "string"}
     },
     {
-      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig",
+      "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
       "keys": [{"source": "static", "names": ["FPC0:PIC0", "FPC0:PIC1", "Routing Engine0", "SFB0", "SFB1", "SFB2", "SFB3", "SFB4", "SFB5"]}, {"source": "static", "names": ["over-temperature"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},

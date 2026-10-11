@@ -68,6 +68,23 @@ func (r *catalogResolver) originAccepted(origin string) (string, bool) {
 	return "", false
 }
 
+// prefixOrigin is the origin a response prefix carries for a request
+// with origin requested, rendered by subtree st under canonical origin
+// canonical (nl6#788): canonical for an empty or canonical request
+// origin; for an aliased one, canonical unless the catalogue asks for
+// an empty prefix origin, which an echo_origin subtree replaces with
+// the request's own spelling.
+func (r *catalogResolver) prefixOrigin(requested, canonical string, st *gnmiCatalogSubtree) string {
+	n := r.cat.Notification
+	if _, aliased := n.OriginAliases[requested]; !aliased || n.AliasedOriginPrefix != gnmiAliasedOriginEmpty {
+		return canonical
+	}
+	if st.EchoOrigin {
+		return requested
+	}
+	return ""
+}
+
 // Canonicalize returns p with an aliased origin rewritten to the
 // catalogue origin it stands for, so the legacy resolver behind the
 // catalogue sees the same origin the catalogue would (nl6#770 review:
@@ -369,7 +386,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 			if r.cat.Notification.Prefix == gnmiPrefixListEntry {
 				// A root subtree ("/") yields a prefix with the origin only,
 				// which is what Junos sends for /system/state.
-				n.Prefix = &gnmipb.Path{Origin: origin, Elem: e.elems}
+				n.Prefix = &gnmipb.Path{Origin: r.prefixOrigin(p.GetOrigin(), origin, st), Elem: e.elems}
 			}
 			out = append(out, n)
 		}
