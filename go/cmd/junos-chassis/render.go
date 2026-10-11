@@ -179,7 +179,7 @@ func oidLess(a, b string) bool {
 // RenderSNMPRows returns every SNMP row the chassis owns: ifNumber, ifTable,
 // ifXTable (name, the HC registration rows, ifHighSpeed, ifAlias), the
 // jnxOperating rows per Routing Engine, and the ENTITY-MIB rows.
-func RenderSNMPRows(c *Chassis) []SNMPRow {
+func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 	in := c.Model.Interfaces
 	rows := []SNMPRow{{"1.3.6.1.2.1.2.1.0", strconv.Itoa(len(c.Ports))}}
 	add := func(oid, v string) { rows = append(rows, SNMPRow{oid, v}) }
@@ -206,9 +206,14 @@ func RenderSNMPRows(c *Chassis) []SNMPRow {
 		add("1.3.6.1.4.1.2636.3.1.13.1.20."+idx, re.LoadAvg1)
 		add("1.3.6.1.4.1.2636.3.1.13.1.21."+idx, re.LoadAvg5)
 	}
-	rows = append(rows, c.Model.LegacySNMP...)
+	ent, err := entityRows(c)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, ent...)
+	rows = append(rows, c.Model.ChassisEntity...)
 	sort.SliceStable(rows, func(i, j int) bool { return oidLess(rows[i].OID, rows[j].OID) })
-	return rows
+	return rows, nil
 }
 
 // marshalResource writes a resource part the way nl6's other parts look:
@@ -225,9 +230,13 @@ func marshalResource(v any) ([]byte, error) {
 }
 
 func RenderSNMPFile(c *Chassis) ([]byte, error) {
+	rows, err := RenderSNMPRows(c)
+	if err != nil {
+		return nil, fmt.Errorf("snmp: %w", err)
+	}
 	return marshalResource(struct {
 		SNMP []SNMPRow `json:"snmp"`
-	}{RenderSNMPRows(c)})
+	}{rows})
 }
 
 type sshEntry struct {
@@ -284,4 +293,54 @@ func RenderSSHFile(c *Chassis) ([]byte, error) {
 	return marshalResource(struct {
 		SSH []sshEntry `json:"ssh"`
 	}{entries})
+}
+
+// entityClass maps a gNMI component type to entPhysicalClass.
+var entityClass = map[string]string{
+	"CHASSIS": "9", "BACKPLANE": "4", "CONTROLLER_CARD": "9", "LINECARD": "9",
+	"CPU": "12", "FABRIC": "9", "POWER_SUPPLY": "6", "FAN": "7",
+}
+
+// entityRows builds entPhysicalTable and entAliasMappingTable from the
+// inventory. Entity 1, the chassis, stays in chassis_entity. Boards take 2..n
+// in component order, ports 1000+ifIndex; sensors, transceivers and single
+// fans are not entities. A board whose parent is not an earlier entity is an
+// error: entPhysicalContainedIn would otherwise read 0.
+func entityRows(c *Chassis) ([]SNMPRow, error) {
+	const ent = "1.3.6.1.2.1.47.1.1.1.1."
+	idx := map[string]int{"Chassis": 1}
+	var rows []SNMPRow
+	add := func(n int, descr, contained, class, serial, model string) {
+		s := strconv.Itoa(n)
+		for _, kv := range [][2]string{
+			{"1", s}, {"2", descr}, {"4", contained}, {"5", class}, {"7", descr}, {"8", "V1.0"},
+			{"9", "1.0.0"}, {"10", "1.0.0"}, {"11", serial}, {"12", "Juniper Networks, Inc."}, {"13", model},
+		} {
+			rows = append(rows, SNMPRow{ent + kv[0] + "." + s, kv[1]})
+		}
+	}
+	next := 2
+	for _, comp := range c.Components {
+		class, ok := entityClass[comp.Type]
+		if !ok || comp.Name == "Chassis" || strings.Contains(comp.Name, " Fan ") {
+			continue
+		}
+		parent, ok := idx[comp.Parent]
+		if !ok {
+			return nil, fmt.Errorf("entity %s: parent %q is not an earlier entity", comp.Name, comp.Parent)
+		}
+		idx[comp.Name] = next
+		add(next, comp.Name, strconv.Itoa(parent), class, comp.SerialNo, comp.PartNo)
+		next++
+	}
+	for _, f := range c.FPCs {
+		for _, p := range f.PICs {
+			for _, port := range p.Ports {
+				n := 1000 + port.IfIndex
+				add(n, port.IfName, strconv.Itoa(idx[p.Component.Name]), "10", port.Port.SerialNo, f.Card.EntityPortModel)
+				rows = append(rows, SNMPRow{fmt.Sprintf("1.3.6.1.2.1.47.1.3.2.1.2.%d.0", n), "1.3.6.1.2.1.2.2.1.1." + strconv.Itoa(port.IfIndex)})
+			}
+		}
+	}
+	return rows, nil
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -112,7 +113,11 @@ func TestRenderSNMPRows(t *testing.T) {
 	}
 	got := map[string]string{}
 	var order []string
-	for _, r := range RenderSNMPRows(c) {
+	rows, err := RenderSNMPRows(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
 		if _, dup := got[r.OID]; dup {
 			t.Fatalf("duplicate OID %s", r.OID)
 		}
@@ -140,13 +145,26 @@ func TestRenderSNMPRows(t *testing.T) {
 			t.Errorf("%s = %q, want %q", oid, got[oid], v)
 		}
 	}
-	if len(got) != 1+72*13+3*len(m.RoutingEngines)+len(m.LegacySNMP) {
-		t.Errorf("%d rows, want ifNumber + 72x13 interface rows + 3 jnxOperating per Routing Engine + %d legacy", len(got), len(m.LegacySNMP))
+	if got["1.3.6.1.2.1.47.1.3.2.1.2.1001.0"] != "1.3.6.1.2.1.2.2.1.1.1" {
+		t.Error("port entity 1001 does not alias ifIndex 1")
 	}
 	for i := 1; i < len(order); i++ {
 		if !oidLess(order[i-1], order[i]) {
 			t.Fatalf("rows not in OID order at %s, %s", order[i-1], order[i])
 		}
+	}
+}
+
+// TestEntityRowsRejectsUnindexedParent: a board whose parent is not an
+// earlier entity (here a sensor) fails instead of rendering contained-in 0.
+func TestEntityRowsRejectsUnindexedParent(t *testing.T) {
+	c := &Chassis{Components: []Component{
+		{Name: "Chassis", Type: "CHASSIS"},
+		{Name: "CB0:MIDDLE_TEMP_SENSOR", Type: "SENSOR", Parent: "Chassis"},
+		{Name: "Orphan", Type: "LINECARD", Parent: "CB0:MIDDLE_TEMP_SENSOR"},
+	}}
+	if _, err := entityRows(c); err == nil || !strings.Contains(err.Error(), "Orphan") {
+		t.Errorf("err = %v, want an error naming Orphan", err)
 	}
 }
 

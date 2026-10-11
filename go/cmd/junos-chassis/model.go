@@ -120,7 +120,7 @@ type Model struct {
 	CPUCount       int                 `json:"cpu_count"`
 	RoutingEngines []RoutingEngine     `json:"routing_engines"`
 	Interfaces     Interfaces          `json:"interfaces"`
-	LegacySNMP     []SNMPRow           `json:"legacy_snmp"`
+	ChassisEntity  []SNMPRow           `json:"chassis_entity"`
 }
 
 type Port struct {

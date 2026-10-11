@@ -462,3 +462,60 @@ func TestJuniperMx10004_DualRoutingEngine(t *testing.T) {
 		t.Errorf("/system/cpus/cpu serves %d indexes, want 10 (the RE X10 is a 10-core CPU)", cpus)
 	}
 }
+
+// TestJuniperMx10004_EntityMIBMatchesInventory: every board gNMI lists and
+// SSH prints is an ENTITY-MIB entity with the same serial and part number,
+// every port is a port entity, and each port entity's alias points at the
+// ifIndex whose ifDescr names the same port.
+func TestJuniperMx10004_EntityMIBMatchesInventory(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snmp := map[string]string{}
+	for _, e := range res.SNMP {
+		snmp[strings.TrimPrefix(e.OID, ".")] = e.Response
+	}
+	const ent = "1.3.6.1.2.1.47.1.1.1.1."
+	bySerial := map[string]string{} // serial -> entity index
+	for oid, v := range snmp {
+		if rest, ok := strings.CutPrefix(oid, ent+"11."); ok {
+			bySerial[v] = rest
+		}
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cats["juniper_mx10004"].Components {
+		switch {
+		case c.Type == "SENSOR" || c.Type == "TRANSCEIVER" || c.Name == "Chassis" || strings.Contains(c.Name, " Fan "):
+			continue
+		}
+		idx, ok := bySerial[c.SerialNo]
+		if !ok {
+			t.Errorf("%s (serial %s) has no entity", c.Name, c.SerialNo)
+			continue
+		}
+		if c.Type == "PORT" {
+			if snmp[ent+"5."+idx] != "10" {
+				t.Errorf("port %s entity %s has class %s, want port(10)", c.Name, idx, snmp[ent+"5."+idx])
+			}
+			alias := snmp["1.3.6.1.2.1.47.1.3.2.1.2."+idx+".0"]
+			ifIndex, ok := strings.CutPrefix(alias, "1.3.6.1.2.1.2.2.1.1.")
+			if !ok || snmp["1.3.6.1.2.1.2.2.1.2."+ifIndex] != c.Description {
+				t.Errorf("port %s entity %s aliases %q, whose ifDescr is not %s", c.Name, idx, alias, c.Description)
+			}
+			continue
+		}
+		if snmp[ent+"13."+idx] != c.PartNo {
+			t.Errorf("%s entity %s model %q, want %q", c.Name, idx, snmp[ent+"13."+idx], c.PartNo)
+		}
+	}
+	for oid, v := range snmp {
+		if strings.HasPrefix(oid, ent+"2.") && (strings.HasPrefix(v, "xe-1/") || strings.HasPrefix(v, "xe-2/") || strings.HasPrefix(v, "MPC")) {
+			t.Errorf("MX240 entity %s = %q still served", oid, v)
+		}
+	}
+}
