@@ -163,6 +163,7 @@ func checkFpcEnvironment(t *testing.T, addr, origin string) {
 	}
 	counts := map[string]int{}
 	railValues := map[string]map[uint64]bool{}
+	tempSensors := map[string]bool{}
 	for _, r := range resps {
 		u := r.GetUpdate()
 		if u == nil {
@@ -188,6 +189,7 @@ func checkFpcEnvironment(t *testing.T, addr, origin string) {
 			if got := vals["/temp-sensor-name"].GetStringVal(); got != rec.Key["temp-sensor-name"] {
 				t.Fatalf("temp-sensor-name %q under key %q", got, rec.Key["temp-sensor-name"])
 			}
+			tempSensors[rec.Key["temp-sensor-name"]] = true
 			if vals["/temp-value"].GetUintVal() == 0 {
 				t.Fatalf("temp-value missing on %s", pathToString(u.GetPrefix()))
 			}
@@ -206,6 +208,10 @@ func checkFpcEnvironment(t *testing.T, addr, origin string) {
 	for _, fpc := range []string{"FPC0", "FPC1"} {
 		if counts[fpc+"/power-record"] != 1 || counts[fpc+"/temp-record"] != 36 || counts[fpc+"/voltage-record"] != 5 {
 			t.Fatalf("origin %q: %s records = %v, want 1 power, 36 temperature, 5 voltage", origin, fpc, counts)
+		}
+		// nl6#796: the record key follows the inventory name, hyphen included.
+		if !tempSensors[fpc+":EXHAUST-A_TEMP_SENSOR"] || tempSensors[fpc+":EXHAUST_A_TEMP_SENSOR"] {
+			t.Fatalf("origin %q: %s temp-record keys lack EXHAUST-A_TEMP_SENSOR or keep EXHAUST_A_TEMP_SENSOR", origin, fpc)
 		}
 		// Each rail sits near its nominal voltage, so no two share a value.
 		if len(railValues[fpc]) != 5 {
