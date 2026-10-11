@@ -490,7 +490,7 @@ func TestJuniperMx10004_EntityMIBMatchesInventory(t *testing.T) {
 	}
 	for _, c := range cats["juniper_mx10004"].Components {
 		switch {
-		case c.Type == "SENSOR" || c.Type == "TRANSCEIVER" || c.Name == "Chassis" || strings.Contains(c.Name, " Fan "):
+		case c.Type == "SENSOR" || c.Type == "TRANSCEIVER" || strings.Contains(c.Name, " Fan "):
 			continue
 		}
 		idx, ok := bySerial[c.SerialNo]
@@ -509,8 +509,16 @@ func TestJuniperMx10004_EntityMIBMatchesInventory(t *testing.T) {
 			}
 			continue
 		}
+		if c.Name == "Chassis" && idx != "1" {
+			t.Errorf("the chassis serial %s names entity %s, want entity 1", c.SerialNo, idx)
+		}
 		if snmp[ent+"13."+idx] != c.PartNo {
 			t.Errorf("%s entity %s model %q, want %q", c.Name, idx, snmp[ent+"13."+idx], c.PartNo)
+		}
+		// gNMI serves hardware-version REV 06 and software 24.2R1.17 on
+		// every component, and `show chassis hardware` prints REV 06.
+		if hw, sw := snmp[ent+"8."+idx], snmp[ent+"10."+idx]; hw != "REV 06" || sw != "24.2R1.17" {
+			t.Errorf("%s entity %s revisions %q / %q, want REV 06 / 24.2R1.17", c.Name, idx, hw, sw)
 		}
 	}
 	for oid, v := range snmp {

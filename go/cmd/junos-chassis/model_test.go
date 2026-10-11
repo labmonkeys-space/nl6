@@ -6,46 +6,11 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
 
 const resourceDir = "../../nl6/resources/juniper_mx10004"
-
-// TestExpandReproducesCommittedComponents: the model expands to exactly the
-// component list gnmi-bindings.json carries, in the same order.
-func TestExpandReproducesCommittedComponents(t *testing.T) {
-	m, err := loadModel()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := Expand(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(filepath.Join(resourceDir, "gnmi-bindings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var b struct {
-		Components []Component `json:"components"`
-	}
-	if err := json.Unmarshal(raw, &b); err != nil {
-		t.Fatal(err)
-	}
-	if len(c.Components) != len(b.Components) {
-		t.Fatalf("expanded %d components, bindings carry %d", len(c.Components), len(b.Components))
-	}
-	for i := range b.Components {
-		if !reflect.DeepEqual(c.Components[i], b.Components[i]) {
-			t.Fatalf("component %d: expanded %+v, bindings %+v", i, c.Components[i], b.Components[i])
-		}
-	}
-}
 
 func TestExpandPortsAreInIfIndexOrder(t *testing.T) {
 	m, err := loadModel()
@@ -105,5 +70,14 @@ func TestExpandRejectsUnknownCardAndSlot(t *testing.T) {
 	m.FPCs = []FPCSlot{{Slot: 4, Card: "LC480"}}
 	if _, err := Expand(m); err == nil {
 		t.Fatal("FPC slot 4 expanded on a 4-slot chassis")
+	}
+	// An optic missing a field the catalogue reads would silently drop
+	// that leaf for every port of the card.
+	m, _ = loadModel()
+	card := m.CardTypes["LC480"]
+	card.Optic.ConnectorType = ""
+	m.CardTypes["LC480"] = card
+	if _, err := Expand(m); err == nil || !strings.Contains(err.Error(), "connector_type") {
+		t.Fatalf("optic without connector_type: err = %v", err)
 	}
 }

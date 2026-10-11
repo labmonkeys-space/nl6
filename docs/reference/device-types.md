@@ -21,7 +21,7 @@ The fabric sensor's shape comes from a hardware capture; the environment sensor 
 The MX10004 is not in the round-robin list.
 Request it by name.
 
-The MX10004's ENTITY-MIB `entPhysicalTable` lists the same boards, serials and part numbers as its gNMI components and `show chassis hardware`.
+The MX10004's ENTITY-MIB `entPhysicalTable` lists the same boards, serials, part numbers and revisions as its gNMI components and `show chassis hardware`, the chassis (entity 1) included.
 Each interface has a port entity at index 1000 + ifIndex, and `entAliasMappingTable` maps it to that ifIndex.
 
 ## Edge routers

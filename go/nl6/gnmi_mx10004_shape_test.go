@@ -1276,19 +1276,42 @@ func TestMX10004SpeedMTUAndOpticsComeFromTheDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{`"ifmib:ifHighSpeed"`, `"ifmib:ifMtu"`, `"inventory:form_factor"`, `"inventory:ethernet_pmd"`, `"inventory:wavelength"`} {
+	for _, s := range []string{`"ifmib:ifHighSpeed"`, `"ifmib:ifMtu"`, `"inventory:form_factor"`, `"inventory:ethernet_pmd"`, `"inventory:connector_type"`, `"inventory:wavelength"`} {
 		if !bytes.Contains(raw, []byte(s)) {
 			t.Errorf("the MX10004 catalogue does not bind %s", s)
 		}
 	}
-	for _, s := range []string{`"const:10000"`, `"const:1514"`, `"const:SFP_PLUS"`, `"const:850"`} {
+	for _, s := range []string{`"const:10000"`, `"const:1514"`, `"const:SFP_PLUS"`, `"const:850"`, `"const:LC_CONNECTOR"`} {
 		if bytes.Contains(raw, []byte(s)) {
 			t.Errorf("the MX10004 catalogue still binds %s", s)
 		}
 	}
+	// One CPU core component per /system/cpus/cpu index.
+	cores, cpus := 0, 0
+	for _, st := range cats["juniper_mx10004"].Subtrees {
+		if len(st.Keys) == 1 && st.Keys[0].Source == "static" {
+			switch st.Path {
+			case "/system/cpus/cpu[index=*]":
+				cpus = len(st.Keys[0].Names)
+			case "/components/component[name=*]":
+				for _, n := range st.Keys[0].Names {
+					if strings.HasPrefix(n, "CPU0:CORE") {
+						cores++
+					}
+				}
+			}
+		}
+	}
+	if cpus == 0 || cores != cpus {
+		t.Errorf("%d CPU core components for %d CPUs, want one per CPU", cores, cpus)
+	}
 	for _, c := range cats["juniper_mx10004"].Components {
-		if c.Type == "TRANSCEIVER" && (c.FormFactor == "" || c.EthernetPMD == "") {
+		if c.Type == "TRANSCEIVER" && (c.FormFactor == "" || c.EthernetPMD == "" || c.ConnectorType == "") {
 			t.Errorf("transceiver %s has no optic type", c.Name)
+		}
+		// A QSFP-DD DR4 lands on MPO, an SFP+ SR on LC.
+		if c.Type == "TRANSCEIVER" && (c.FormFactor == "SFP_PLUS") != (c.ConnectorType == "LC_CONNECTOR") {
+			t.Errorf("transceiver %s: form factor %s with connector %s", c.Name, c.FormFactor, c.ConnectorType)
 		}
 		if c.Type == "PORT" && c.Wavelength == "" {
 			t.Errorf("port %s has no wavelength", c.Name)

@@ -277,7 +277,7 @@ func genIfMIB(arg string) (gnmiLeafGen, error) {
 
 func genInventory(arg string) (gnmiLeafGen, error) {
 	switch arg {
-	case "name", "type", "parent", "part_no", "description", "serial_no", "serial_no_per_device", "form_factor", "ethernet_pmd", "wavelength":
+	case "name", "type", "parent", "part_no", "description", "serial_no", "serial_no_per_device", "form_factor", "ethernet_pmd", "connector_type", "wavelength":
 	default:
 		return nil, fmt.Errorf("unknown inventory field %q", arg)
 	}
@@ -302,6 +302,8 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 				return c.FormFactor, c.FormFactor != ""
 			case "ethernet_pmd":
 				return c.EthernetPMD, c.EthernetPMD != ""
+			case "connector_type":
+				return c.ConnectorType, c.ConnectorType != ""
 			case "wavelength":
 				return c.Wavelength, c.Wavelength != ""
 			case "serial_no_per_device":

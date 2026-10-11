@@ -40,7 +40,7 @@ func componentJSON(c Component) string {
 	fmt.Fprintf(&b, `{"name": %s, "type": %s, "parent": %s, "part_no": %s, "description": %s, "serial_no": %s, "temperature": %t`,
 		jsonString(c.Name), jsonString(c.Type), jsonString(c.Parent), jsonString(c.PartNo),
 		jsonString(c.Description), jsonString(c.SerialNo), c.Temperature)
-	for _, f := range [][2]string{{"form_factor", c.FormFactor}, {"ethernet_pmd", c.EthernetPMD}, {"wavelength", c.Wavelength}} {
+	for _, f := range [][2]string{{"form_factor", c.FormFactor}, {"ethernet_pmd", c.EthernetPMD}, {"connector_type", c.ConnectorType}, {"wavelength", c.Wavelength}} {
 		if f[1] != "" {
 			fmt.Fprintf(&b, ", %q: %s", f[0], jsonString(f[1]))
 		}
@@ -107,6 +107,9 @@ type fabricPair struct {
 type bindingsData struct {
 	Components         []Component
 	CPUIndexes         []string
+	CPUCores           []string // CPU0:COREn, one per /system/cpus/cpu index
+	HardwareRev        string
+	SoftwareRev        string
 	PropertyComponents []string
 	OverTemperature    []string
 	PacketUsage        []string
@@ -116,9 +119,10 @@ type bindingsData struct {
 }
 
 func bindingsDataFor(c *Chassis) bindingsData {
-	d := bindingsData{Components: c.Components}
+	d := bindingsData{Components: c.Components, HardwareRev: c.Model.HardwareRev, SoftwareRev: c.Model.SoftwareRev}
 	for i := 0; i < c.Model.CPUCount; i++ {
 		d.CPUIndexes = append(d.CPUIndexes, strconv.Itoa(i))
+		d.CPUCores = append(d.CPUCores, "CPU0:CORE"+strconv.Itoa(i))
 	}
 	var cbs, res, fabrics []string
 	for _, comp := range c.Components {
@@ -205,6 +209,11 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add("1.3.6.1.4.1.2636.3.1.13.1.5."+idx, fmt.Sprintf("Routing Engine %d", re.Slot))
 		add("1.3.6.1.4.1.2636.3.1.13.1.20."+idx, re.LoadAvg1)
 		add("1.3.6.1.4.1.2636.3.1.13.1.21."+idx, re.LoadAvg5)
+		for _, col := range [][2]string{{"7", re.Temp}, {"8", re.CPU}, {"11", re.Buffer}} {
+			if col[1] != "" {
+				add("1.3.6.1.4.1.2636.3.1.13.1."+col[0]+"."+idx, col[1])
+			}
+		}
 	}
 	ent, err := entityRows(c)
 	if err != nil {
@@ -302,22 +311,32 @@ var entityClass = map[string]string{
 }
 
 // entityRows builds entPhysicalTable and entAliasMappingTable from the
-// inventory. Entity 1, the chassis, stays in chassis_entity. Boards take 2..n
+// inventory. Entity 1, the chassis, keeps its descriptive rows in
+// chassis_entity; its revisions, serial and model come from the Chassis
+// component like every board's, so the views agree. Boards take 2..n
 // in component order, ports 1000+ifIndex; sensors, transceivers and single
 // fans are not entities. A board whose parent is not an earlier entity is an
 // error: entPhysicalContainedIn would otherwise read 0.
 func entityRows(c *Chassis) ([]SNMPRow, error) {
 	const ent = "1.3.6.1.2.1.47.1.1.1.1."
 	idx := map[string]int{"Chassis": 1}
+	hw, sw := c.Model.HardwareRev, c.Model.SoftwareRev
 	var rows []SNMPRow
 	add := func(n int, descr, contained, class, serial, model string) {
 		s := strconv.Itoa(n)
 		for _, kv := range [][2]string{
-			{"1", s}, {"2", descr}, {"4", contained}, {"5", class}, {"7", descr}, {"8", "V1.0"},
-			{"9", "1.0.0"}, {"10", "1.0.0"}, {"11", serial}, {"12", "Juniper Networks, Inc."}, {"13", model},
+			{"1", s}, {"2", descr}, {"4", contained}, {"5", class}, {"7", descr}, {"8", hw},
+			{"9", sw}, {"10", sw}, {"11", serial}, {"12", "Juniper Networks, Inc."}, {"13", model},
 		} {
 			rows = append(rows, SNMPRow{ent + kv[0] + "." + s, kv[1]})
 		}
+	}
+	chassis := c.Component("Chassis")
+	if chassis == nil {
+		return nil, fmt.Errorf("entity 1: no Chassis component")
+	}
+	for _, kv := range [][2]string{{"8", hw}, {"9", sw}, {"10", sw}, {"11", chassis.SerialNo}, {"13", chassis.PartNo}} {
+		rows = append(rows, SNMPRow{ent + kv[0] + ".1", kv[1]})
 	}
 	next := 2
 	for _, comp := range c.Components {

@@ -101,9 +101,10 @@ $(YANG_CACHE)/juniper:
 	git clone --filter=blob:none --sparse https://github.com/Juniper/yang $@
 	cd $@ && git sparse-checkout set 24.2/24.2R1.17 && git checkout $(JUNIPER_YANG_COMMIT)
 
-## gen-junos-chassis: Regenerate the juniper_mx10004 hardware files from go/cmd/junos-chassis/models
+## gen-junos-chassis: Regenerate the juniper_mx10004 hardware files from go/cmd/junos-chassis/models, then the gnmi.json the runtime serves
 gen-junos-chassis: check-go
 	cd go && go run ./cmd/junos-chassis -out nl6/resources/juniper_mx10004
+	@$(MAKE) --no-print-directory gen-gnmi-catalog
 
 ## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
 gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper

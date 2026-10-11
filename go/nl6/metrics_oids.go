@@ -89,9 +89,9 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 		".1.3.6.1.4.1.2636.3.1.13.1.8.9.1.0.0":  MetricCPUPercent,
 		".1.3.6.1.4.1.2636.3.1.13.1.11.9.1.0.0": MetricMemUsedPct,
 		".1.3.6.1.4.1.2636.3.1.13.1.7.9.1.0.0":  MetricTemperature,
-		".1.3.6.1.4.1.2636.3.1.13.1.8.9.2.0.0":  MetricCPUPercent,
-		".1.3.6.1.4.1.2636.3.1.13.1.11.9.2.0.0": MetricMemUsedPct,
-		".1.3.6.1.4.1.2636.3.1.13.1.7.9.2.0.0":  MetricTemperature,
+		// The backup RE (9.2.0.0) serves static CPU, buffer and temperature
+		// rows from the chassis model: one cycler per device would make it
+		// mirror the master.
 	},
 
 	// --- Palo Alto ---

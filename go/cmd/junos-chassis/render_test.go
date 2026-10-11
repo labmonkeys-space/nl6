@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -76,32 +75,6 @@ func TestEnvrowFollowsJunosColumns(t *testing.T) {
 	}
 }
 
-// TestRenderBindingsMatchesCommitted: the template reproduces the committed
-// gnmi-bindings.json byte for byte.
-func TestRenderBindingsMatchesCommitted(t *testing.T) {
-	m, err := loadModel()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := Expand(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := RenderBindings(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := os.ReadFile(filepath.Join(resourceDir, "gnmi-bindings.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, want) {
-		i := firstDiff(got, want)
-		lo := max(0, i-80)
-		t.Fatalf("rendered bindings differ at byte %d:\nrendered: %q\ncommitted: %q", i, got[lo:min(len(got), i+80)], want[lo:min(len(want), i+80)])
-	}
-}
-
 func TestRenderSNMPRows(t *testing.T) {
 	m, err := loadModel()
 	if err != nil {
@@ -137,7 +110,14 @@ func TestRenderSNMPRows(t *testing.T) {
 		"1.3.6.1.2.1.31.1.1.1.15.49":           "400000",
 		"1.3.6.1.2.1.31.1.1.1.18.7":            "to-core-07",
 		"1.3.6.1.4.1.2636.3.1.13.1.5.9.1.0.0":  "Routing Engine 0",
-		"1.3.6.1.4.1.2636.3.1.13.1.20.9.1.0.0": "45",
+		"1.3.6.1.4.1.2636.3.1.13.1.20.9.1.0.0": "5",
+		"1.3.6.1.4.1.2636.3.1.13.1.8.9.2.0.0":  "1",
+		"1.3.6.1.4.1.2636.3.1.13.1.11.9.2.0.0": "12",
+		"1.3.6.1.4.1.2636.3.1.13.1.7.9.2.0.0":  "36",
+		"1.3.6.1.2.1.47.1.1.1.1.11.1":          "NL6MX10004001",
+		"1.3.6.1.2.1.47.1.1.1.1.13.1":          "JNP10004",
+		"1.3.6.1.2.1.47.1.1.1.1.8.1":           "REV 06",
+		"1.3.6.1.2.1.47.1.1.1.1.10.8":          "24.2R1.17",
 		"1.3.6.1.2.1.47.1.1.1.1.3.1":           "1.3.6.1.4.1.2636.1.1.1.2.168",
 	}
 	for oid, v := range want {
@@ -158,7 +138,7 @@ func TestRenderSNMPRows(t *testing.T) {
 // TestEntityRowsRejectsUnindexedParent: a board whose parent is not an
 // earlier entity (here a sensor) fails instead of rendering contained-in 0.
 func TestEntityRowsRejectsUnindexedParent(t *testing.T) {
-	c := &Chassis{Components: []Component{
+	c := &Chassis{Model: &Model{}, Components: []Component{
 		{Name: "Chassis", Type: "CHASSIS"},
 		{Name: "CB0:MIDDLE_TEMP_SENSOR", Type: "SENSOR", Parent: "Chassis"},
 		{Name: "Orphan", Type: "LINECARD", Parent: "CB0:MIDDLE_TEMP_SENSOR"},

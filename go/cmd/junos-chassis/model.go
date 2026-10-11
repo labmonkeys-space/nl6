@@ -19,16 +19,17 @@ var assets embed.FS
 // Component is one gNMI inventory row, in gnmi-bindings.json's field order.
 // The three optic fields are written only when set.
 type Component struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Parent      string `json:"parent"`
-	PartNo      string `json:"part_no"`
-	Description string `json:"description"`
-	SerialNo    string `json:"serial_no"`
-	Temperature bool   `json:"temperature"`
-	FormFactor  string `json:"form_factor,omitempty"`
-	EthernetPMD string `json:"ethernet_pmd,omitempty"`
-	Wavelength  string `json:"wavelength,omitempty"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Parent        string `json:"parent"`
+	PartNo        string `json:"part_no"`
+	Description   string `json:"description"`
+	SerialNo      string `json:"serial_no"`
+	Temperature   bool   `json:"temperature"`
+	FormFactor    string `json:"form_factor,omitempty"`
+	EthernetPMD   string `json:"ethernet_pmd,omitempty"`
+	ConnectorType string `json:"connector_type,omitempty"`
+	Wavelength    string `json:"wavelength,omitempty"`
 }
 
 type Part struct {
@@ -36,17 +37,19 @@ type Part struct {
 	Description string `json:"description"`
 }
 
-// Optic is the transceiver a card type ships in every port. FormFactor and
-// EthernetPMD are left empty until the catalogue reads them (Task 9); while
-// they are empty no optic field is written onto components.
+// Optic is the transceiver a card type ships in every port. The catalogue
+// reads FormFactor, EthernetPMD and ConnectorType from the transceiver
+// component and Wavelength from the port; Expand refuses an optic missing
+// any of them.
 type Optic struct {
-	PartNo      string `json:"part_no"`
-	Description string `json:"description"`
-	FormFactor  string `json:"form_factor,omitempty"`
-	EthernetPMD string `json:"ethernet_pmd,omitempty"`
-	Wavelength  string `json:"wavelength"`
-	Cable       string `json:"cable"`
-	Fiber       string `json:"fiber"`
+	PartNo        string `json:"part_no"`
+	Description   string `json:"description"`
+	FormFactor    string `json:"form_factor"`
+	EthernetPMD   string `json:"ethernet_pmd"`
+	ConnectorType string `json:"connector_type"`
+	Wavelength    string `json:"wavelength"`
+	Cable         string `json:"cable"`
+	Fiber         string `json:"fiber"`
 }
 
 type Sensor struct {
@@ -89,6 +92,13 @@ type RoutingEngine struct {
 	Slot     int    `json:"slot"`
 	LoadAvg1 string `json:"jnx_load_avg_1m"`
 	LoadAvg5 string `json:"jnx_load_avg_5m"`
+	// Static jnxOperatingCPU, Buffer and Temp for an RE nl6 does not
+	// serve from the metrics cycler: the cycler is one per device, so a
+	// backup RE served from it would mirror the master. Empty means
+	// code-served (metrics_oids.go).
+	CPU    string `json:"jnx_cpu,omitempty"`
+	Buffer string `json:"jnx_buffer,omitempty"`
+	Temp   string `json:"jnx_temp,omitempty"`
 }
 
 type Interfaces struct {
@@ -111,16 +121,21 @@ type SNMPRow struct {
 // Model is the chassis description. Head and Tail are literal component
 // rows around the line cards; FPCs expand from CardTypes.
 type Model struct {
-	Comment        string              `json:"comment"`
-	Head           []Component         `json:"head"`
-	FPCSlots       int                 `json:"fpc_slots"`
-	FPCs           []FPCSlot           `json:"fpcs"`
-	Tail           []Component         `json:"tail"`
-	CardTypes      map[string]CardType `json:"card_types"`
-	CPUCount       int                 `json:"cpu_count"`
-	RoutingEngines []RoutingEngine     `json:"routing_engines"`
-	Interfaces     Interfaces          `json:"interfaces"`
-	ChassisEntity  []SNMPRow           `json:"chassis_entity"`
+	Comment   string              `json:"comment"`
+	Head      []Component         `json:"head"`
+	FPCSlots  int                 `json:"fpc_slots"`
+	FPCs      []FPCSlot           `json:"fpcs"`
+	Tail      []Component         `json:"tail"`
+	CardTypes map[string]CardType `json:"card_types"`
+	CPUCount  int                 `json:"cpu_count"`
+	// HardwareRev and SoftwareRev are the revisions every board reports,
+	// in gNMI (hardware-version, firmware/software-version) and in
+	// ENTITY-MIB (entPhysicalHardwareRev, FirmwareRev, SoftwareRev).
+	HardwareRev    string          `json:"hardware_rev"`
+	SoftwareRev    string          `json:"software_rev"`
+	RoutingEngines []RoutingEngine `json:"routing_engines"`
+	Interfaces     Interfaces      `json:"interfaces"`
+	ChassisEntity  []SNMPRow       `json:"chassis_entity"`
 }
 
 type Port struct {
@@ -200,6 +215,9 @@ func Expand(m *Model) (*Chassis, error) {
 		if s.Slot < 0 || s.Slot >= m.FPCSlots {
 			return nil, fmt.Errorf("FPC%d: slot outside 0..%d", s.Slot, m.FPCSlots-1)
 		}
+		if o := card.Optic; o.FormFactor == "" || o.EthernetPMD == "" || o.ConnectorType == "" || o.Wavelength == "" {
+			return nil, fmt.Errorf("card type %q: optic needs form_factor, ethernet_pmd, connector_type and wavelength", s.Card)
+		}
 		name := fmt.Sprintf("FPC%d", s.Slot)
 		f := FPC{Slot: s.Slot, SlotName: strconv.Itoa(s.Slot), Name: name, Card: card}
 		f.FPC = Component{Name: name, Type: "LINECARD", Parent: "Chassis", PartNo: card.PartNo,
@@ -230,11 +248,10 @@ func Expand(m *Model) (*Chassis, error) {
 					Description: port.IfName, SerialNo: fmt.Sprintf("NL6PRT%06d", ifIndex)}
 				port.Xcvr = Component{Name: pn + ":Xcvr0", Type: "TRANSCEIVER", Parent: pn, PartNo: card.Optic.PartNo,
 					Description: card.Optic.Description, SerialNo: fmt.Sprintf("NL6XCV%02d%02d%02d", s.Slot, p, n)}
-				if card.Optic.FormFactor != "" {
-					port.Port.Wavelength = card.Optic.Wavelength
-					port.Xcvr.FormFactor = card.Optic.FormFactor
-					port.Xcvr.EthernetPMD = card.Optic.EthernetPMD
-				}
+				port.Port.Wavelength = card.Optic.Wavelength
+				port.Xcvr.FormFactor = card.Optic.FormFactor
+				port.Xcvr.EthernetPMD = card.Optic.EthernetPMD
+				port.Xcvr.ConnectorType = card.Optic.ConnectorType
 				f.PICs[p].Ports = append(f.PICs[p].Ports, port)
 				c.Ports = append(c.Ports, port)
 				c.Components = append(c.Components, port.Port, port.Xcvr)
@@ -278,4 +295,14 @@ func Expand(m *Model) (*Chassis, error) {
 		names[comp.Name], serials[comp.SerialNo] = true, true
 	}
 	return c, nil
+}
+
+// Component returns the expanded component named name, or nil.
+func (c *Chassis) Component(name string) *Component {
+	for i := range c.Components {
+		if c.Components[i].Name == name {
+			return &c.Components[i]
+		}
+	}
+	return nil
 }

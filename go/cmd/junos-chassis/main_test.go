@@ -26,7 +26,10 @@ func TestCommittedOutputsMatchModel(t *testing.T) {
 			continue
 		}
 		if !bytes.Equal(got, want) {
-			t.Errorf("%s differs from the model at byte %d; edit go/cmd/junos-chassis and run make gen-junos-chassis", name, firstDiff(got, want))
+			i := firstDiff(got, want)
+			lo := max(0, i-80)
+			t.Errorf("%s differs from the model at byte %d; edit go/cmd/junos-chassis and run make gen-junos-chassis\ncommitted: %q\nrendered:  %q",
+				name, i, got[lo:min(len(got), i+80)], want[lo:min(len(want), i+80)])
 		}
 	}
 }
