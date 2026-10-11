@@ -5,9 +5,9 @@ Midplane         REV 06   JNP10004-MIDPLANE NL6MP0000001   Midplane
 FPD Board        REV 06   JNP10004-FPD NL6FPD000001     Front Panel Display
 PEM 0            REV 06   JNP10K-PWR-AC2 NL6PEM000001   JNP10K 5500W AC/HVDC Power Supply
 PEM 1            REV 06   JNP10K-PWR-AC2 NL6PEM000002   JNP10K 5500W AC/HVDC Power Supply
-Routing Engine 0 REV 06   JNP10K-RE1   NL6RE0000001      RE-S-X6-64G
-CB 0             REV 06   JNP10K-RE1   NL6CB0000001      Control Board
-<<range .FPCs>><<hwrow (printf "FPC %d" .Slot) "REV 06" .FPC.PartNo .FPC.SerialNo .FPC.Description>>
+<<range .Components>><<if and (eq .Type "CONTROLLER_CARD") (hasPrefix .Name "Routing Engine")>><<hwrow (printf "Routing Engine %s" (trimPrefix .Name "Routing Engine")) "REV 06" .PartNo .SerialNo .Description>>
+<<end>><<end>><<range .Components>><<if and (eq .Type "CONTROLLER_CARD") (hasPrefix .Name "CB")>><<hwrow (printf "CB %s" (trimPrefix .Name "CB")) "REV 06" .PartNo .SerialNo .Description>>
+<<end>><<end>><<range .FPCs>><<hwrow (printf "FPC %d" .Slot) "REV 06" .FPC.PartNo .FPC.SerialNo .FPC.Description>>
 <<hwrow "  CPU" "REV 06" .CPU.PartNo .CPU.SerialNo .CPU.Description>>
 <<range $i, $m := .Mezz>><<hwrow (printf "  MEZZ %d" $i) "REV 06" $m.PartNo $m.SerialNo $m.Description>>
 <<end>><<range .PICs>><<hwrow (printf "  PIC %d" .Index) "REV 06" .Component.PartNo .Component.SerialNo .Component.Description>>

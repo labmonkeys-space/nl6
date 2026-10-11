@@ -99,6 +99,78 @@
       "description": "Routing Engine0 CPU",
       "serial_no": "NL6RECPU0001",
       "temperature": true
+    },
+    {
+      "name": "CB1",
+      "type": "CONTROLLER_CARD",
+      "parent": "Chassis",
+      "part_no": "JNP10K-RE1",
+      "description": "Control Board",
+      "serial_no": "NL6CB0000002",
+      "temperature": false
+    },
+    {
+      "name": "CB1:INTAKE_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake A Temp Sensor",
+      "serial_no": "NL6CBS000006",
+      "temperature": true
+    },
+    {
+      "name": "CB1:INTAKE_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake B Temp Sensor",
+      "serial_no": "NL6CBS000007",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust A Temp Sensor",
+      "serial_no": "NL6CBS000008",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust B Temp Sensor",
+      "serial_no": "NL6CBS000009",
+      "temperature": true
+    },
+    {
+      "name": "CB1:MIDDLE_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Middle Temp Sensor",
+      "serial_no": "NL6CBS000010",
+      "temperature": true
+    },
+    {
+      "name": "Routing Engine1",
+      "type": "CONTROLLER_CARD",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "RE-S-X6-64G",
+      "serial_no": "NL6RE0000002",
+      "temperature": true
+    },
+    {
+      "name": "ROUTING_ENGINE1:CPU",
+      "type": "SENSOR",
+      "parent": "Routing Engine1",
+      "part_no": "JNP10K-RE1",
+      "description": "Routing Engine1 CPU",
+      "serial_no": "NL6RECPU0002",
+      "temperature": true
     }
   ],
   "fpc_slots": 4,
@@ -1587,12 +1659,17 @@
       "ssh_pic_celsius": 39
     }
   },
-  "cpu_count": 4,
+  "cpu_count": 10,
   "routing_engines": [
     {
       "slot": 0,
       "jnx_load_avg_1m": "45",
       "jnx_load_avg_5m": "48"
+    },
+    {
+      "slot": 1,
+      "jnx_load_avg_1m": "3",
+      "jnx_load_avg_5m": "4"
     }
   ],
   "interfaces": {

@@ -897,8 +897,8 @@ func TestMX10004OverTemperatureCarriers(t *testing.T) {
 			want[c.Name] = true
 		}
 	}
-	if len(want) < 9 {
-		t.Fatalf("inventory yields %d carriers, want at least 9 (2 PICs, 1 Routing Engine, 6 SFBs)", len(want))
+	if len(want) < 10 {
+		t.Fatalf("inventory yields %d carriers, want at least 10 (2 PICs, 2 Routing Engines, 6 SFBs)", len(want))
 	}
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()

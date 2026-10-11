@@ -15,6 +15,14 @@
     {"name": "CB0:MIDDLE_TEMP_SENSOR", "type": "SENSOR", "parent": "CB0", "part_no": "JNP10K-RE1", "description": "CB0 Middle Temp Sensor", "serial_no": "NL6CBS000005", "temperature": true},
     {"name": "Routing Engine0", "type": "CONTROLLER_CARD", "parent": "CB0", "part_no": "JNP10K-RE1", "description": "RE-S-X6-64G", "serial_no": "NL6RE0000001", "temperature": true},
     {"name": "ROUTING_ENGINE0:CPU", "type": "SENSOR", "parent": "Routing Engine0", "part_no": "JNP10K-RE1", "description": "Routing Engine0 CPU", "serial_no": "NL6RECPU0001", "temperature": true},
+    {"name": "CB1", "type": "CONTROLLER_CARD", "parent": "Chassis", "part_no": "JNP10K-RE1", "description": "Control Board", "serial_no": "NL6CB0000002", "temperature": false},
+    {"name": "CB1:INTAKE_A_TEMP_SENSOR", "type": "SENSOR", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "CB1 Intake A Temp Sensor", "serial_no": "NL6CBS000006", "temperature": true},
+    {"name": "CB1:INTAKE_B_TEMP_SENSOR", "type": "SENSOR", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "CB1 Intake B Temp Sensor", "serial_no": "NL6CBS000007", "temperature": true},
+    {"name": "CB1:EXHAUST_A_TEMP_SENSOR", "type": "SENSOR", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "CB1 Exhaust A Temp Sensor", "serial_no": "NL6CBS000008", "temperature": true},
+    {"name": "CB1:EXHAUST_B_TEMP_SENSOR", "type": "SENSOR", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "CB1 Exhaust B Temp Sensor", "serial_no": "NL6CBS000009", "temperature": true},
+    {"name": "CB1:MIDDLE_TEMP_SENSOR", "type": "SENSOR", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "CB1 Middle Temp Sensor", "serial_no": "NL6CBS000010", "temperature": true},
+    {"name": "Routing Engine1", "type": "CONTROLLER_CARD", "parent": "CB1", "part_no": "JNP10K-RE1", "description": "RE-S-X6-64G", "serial_no": "NL6RE0000002", "temperature": true},
+    {"name": "ROUTING_ENGINE1:CPU", "type": "SENSOR", "parent": "Routing Engine1", "part_no": "JNP10K-RE1", "description": "Routing Engine1 CPU", "serial_no": "NL6RECPU0002", "temperature": true},
     {"name": "FPC0", "type": "LINECARD", "parent": "Chassis", "part_no": "JNP10K-LC480", "description": "JNP10K-LC480", "serial_no": "NL6FPC000001", "temperature": true},
     {"name": "FPC0:CPU", "type": "CPU", "parent": "FPC0", "part_no": "JNP10K-LC480-CPU", "description": "LC480 PMB", "serial_no": "NL6CPU000001", "temperature": false},
     {"name": "FPC0:MEZZ0", "type": "LINECARD", "parent": "FPC0", "part_no": "JNP10K-LC480-MEZZ", "description": "LC480 Mezz", "serial_no": "NL6MEZ000001", "temperature": false},
@@ -406,14 +414,14 @@
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
-      "keys": [{"source": "static", "names": ["CB0", "FPC0", "FPC0:PIC0", "Routing Engine0"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
+      "keys": [{"source": "static", "names": ["CB0", "CB1", "FPC0", "FPC0:PIC0", "Routing Engine0", "Routing Engine1"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
       "types": {"state/value": "string"}
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
-      "keys": [{"source": "static", "names": ["FPC0:PIC0", "FPC0:PIC1", "Routing Engine0", "SFB0", "SFB1", "SFB2", "SFB3", "SFB4", "SFB5"]}, {"source": "static", "names": ["over-temperature"]}],
+      "keys": [{"source": "static", "names": ["FPC0:PIC0", "FPC0:PIC1", "Routing Engine0", "Routing Engine1", "SFB0", "SFB1", "SFB2", "SFB3", "SFB4", "SFB5"]}, {"source": "static", "names": ["over-temperature"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
       "types": {"state/value": "string"}
@@ -424,7 +432,7 @@
       "types": {"cpu/utilization/state/instant": "uint32", "cpu/utilization/state/avg": "uint32", "cpu/utilization/state/min": "uint32", "cpu/utilization/state/max": "uint32", "cpu/utilization/state/interval": "uint64", "cpu/utilization/state/min-time": "uint64", "cpu/utilization/state/max-time": "uint64"}
     },
     {
-      "path": "/system/cpus/cpu[index=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["0", "1", "2", "3"]}], "module": "openconfig-system",
+      "path": "/system/cpus/cpu[index=*]", "origin": "openconfig", "keys": [{"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]}], "module": "openconfig-system",
       "leaves": {
         "state/index": "key:0",
         "state/total/instant": "sine:20,8,600", "state/total/avg": "sine:20,4,600", "state/total/min": "const:5", "state/total/max": "const:45", "state/total/interval": "const:60000000000", "state/total/min-time": "timestamp:boot", "state/total/max-time": "timestamp:boot",

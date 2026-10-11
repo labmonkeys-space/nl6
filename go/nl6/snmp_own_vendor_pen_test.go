@@ -277,8 +277,9 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // The juniper_mx10004 profile raised both counts, names 316 to 321 and values 28
 // to 29. It is cloned from juniper_mx240, so it serves the same five jnx names,
 // and its sysObjectID.0 is jnxProductNameMX10004 under Juniper's own PEN.
+// The dual-RE change added RE1's jnxOperating rows: names 321 to 324.
 const (
-	ownVendorArcNamesShipped  = 321
+	ownVendorArcNamesShipped  = 324
 	ownVendorArcValuesShipped = 29
 )
 
@@ -737,8 +738,9 @@ func codeServedVendorArcHits() []arcHit {
 //
 // juniper_mx10004 raised the counts to 271 and 23: it serves juniper_mx240's
 // three jnxOperating OIDs live.
+// The dual-RE change added RE1's jnxOperating rows, 271 to 274.
 const (
-	codeServedVendorArcOIDs     = 271
+	codeServedVendorArcOIDs     = 274
 	codeServedVendorArcProfiles = 23
 )
 

@@ -155,7 +155,8 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // pre-change value is shippedTagDigestBeforeJuniperMx10004 in
 // snmp_shipped_juniper_mx10004_ledger_test.go, and
 // TestJuniperMx10004AdditionReproducesTheParentCorpus requires it back.
-const shippedTagDigest = "3003c79f424bfe3a7d9ca3888ecef2fc7a563fc466f79742ad216fa9e2aa2cb4"
+// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0.
+const shippedTagDigest = "ac7d6b16b723a24e90c9772c6ed27972337765dc8606d2638b474dcc47a4ebac"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

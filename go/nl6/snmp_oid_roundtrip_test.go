@@ -387,7 +387,8 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // OID string, its sysObjectID value. The pre-change value is
 // shippedOIDEncodingDigestBeforeJuniperMx10004, required back by
 // TestJuniperMx10004RePinIsOnlyTheAddition.
-const shippedOIDEncodingDigest = "c72b443dc6468e7b1c214aae0404cb435230ba656cf3a9295bec9fc71e9d506a"
+// juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0.
+const shippedOIDEncodingDigest = "c2a35107c754401c399172d2dc3db79fe493017e7c39140e0f3bdf7914106375"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

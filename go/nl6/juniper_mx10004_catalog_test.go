@@ -399,3 +399,59 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 		}
 	}
 }
+
+// TestJuniperMx10004_DualRoutingEngine: both Routing Engines and both
+// control boards appear in gNMI, SNMP and SSH, and the RE serves ten CPUs.
+func TestJuniperMx10004_DualRoutingEngine(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snmp := map[string]string{}
+	for _, e := range res.SNMP {
+		snmp[e.OID] = e.Response
+	}
+	for slot := 0; slot < 2; slot++ {
+		oid := fmt.Sprintf("1.3.6.1.4.1.2636.3.1.13.1.5.9.%d.0.0", slot+1)
+		if want := fmt.Sprintf("Routing Engine %d", slot); snmp[oid] != want {
+			t.Errorf("jnxOperatingDescr %s = %q, want %q", oid, snmp[oid], want)
+		}
+	}
+	ssh := map[string]string{}
+	for _, e := range res.SSH {
+		ssh[e.Command] = e.Response
+	}
+	re := ssh["show chassis routing-engine"]
+	if !strings.Contains(re, "Slot 1:") || !strings.Contains(re, "Backup") {
+		t.Errorf("show chassis routing-engine lacks a backup in slot 1")
+	}
+	for _, s := range []string{"Routing Engine 1", "CB 1"} {
+		if !strings.Contains(ssh["show chassis hardware"], s) || !strings.Contains(ssh["show chassis environment"], s) {
+			t.Errorf("%s missing from show chassis hardware or environment", s)
+		}
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := cats["juniper_mx10004"]
+	names := map[string]bool{}
+	for _, c := range cat.Components {
+		names[c.Name] = true
+	}
+	for _, n := range []string{"Routing Engine0", "Routing Engine1", "ROUTING_ENGINE1:CPU", "CB0", "CB1", "CB1:MIDDLE_TEMP_SENSOR"} {
+		if !names[n] {
+			t.Errorf("gNMI component %s missing", n)
+		}
+	}
+	cpus := -1
+	for _, st := range cat.Subtrees {
+		if st.Path == "/system/cpus/cpu[index=*]" {
+			cpus = len(st.Keys[0].Names)
+		}
+	}
+	if cpus != 10 {
+		t.Errorf("/system/cpus/cpu serves %d indexes, want 10 (the RE X10 is a 10-core CPU)", cpus)
+	}
+}

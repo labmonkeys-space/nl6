@@ -138,8 +138,8 @@ func TestRenderSNMPRows(t *testing.T) {
 			t.Errorf("%s = %q, want %q", oid, got[oid], v)
 		}
 	}
-	if len(got) != 1+48*13+3+len(m.LegacySNMP) {
-		t.Errorf("%d rows, want ifNumber + 48x13 interface rows + 3 jnxOperating + %d legacy", len(got), len(m.LegacySNMP))
+	if len(got) != 1+48*13+3*len(m.RoutingEngines)+len(m.LegacySNMP) {
+		t.Errorf("%d rows, want ifNumber + 48x13 interface rows + 3 jnxOperating per Routing Engine + %d legacy", len(got), len(m.LegacySNMP))
 	}
 	for i := 1; i < len(order); i++ {
 		if !oidLess(order[i-1], order[i]) {
