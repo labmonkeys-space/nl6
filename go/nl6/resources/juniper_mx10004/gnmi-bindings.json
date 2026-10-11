@@ -161,6 +161,100 @@
     {"name": "FPC0:PMB_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC0", "part_no": "JNP10K-LC480", "description": "FPC0 PMB_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS000027", "temperature": true},
     {"name": "FPC0:PEXSW_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC0", "part_no": "JNP10K-LC480", "description": "FPC0 PEXSW_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS000028", "temperature": true},
     {"name": "FPC0:CPU_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC0", "part_no": "JNP10K-LC480", "description": "FPC0 CPU_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS000029", "temperature": true},
+    {"name": "FPC1", "type": "LINECARD", "parent": "Chassis", "part_no": "JNP10K-LC9600", "description": "JNP10K-LC9600", "serial_no": "NL6FPC000002", "temperature": true},
+    {"name": "FPC1:CPU", "type": "CPU", "parent": "FPC1", "part_no": "JNP10K-LC9600-CPU", "description": "JNP10K-LC9600 PMB", "serial_no": "NL6CPU000002", "temperature": false},
+    {"name": "FPC1:MEZZ0", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-MEZZ", "description": "LC9600 Mezz", "serial_no": "NL6MEZ000003", "temperature": false},
+    {"name": "FPC1:MEZZ1", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-MEZZ", "description": "LC9600 Mezz", "serial_no": "NL6MEZ000004", "temperature": false},
+    {"name": "FPC1:PIC0", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000003", "temperature": false},
+    {"name": "FPC1:PIC1", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000004", "temperature": false},
+    {"name": "FPC1:PIC2", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000005", "temperature": false},
+    {"name": "FPC1:PIC3", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000006", "temperature": false},
+    {"name": "FPC1:PIC4", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000007", "temperature": false},
+    {"name": "FPC1:PIC5", "type": "LINECARD", "parent": "FPC1", "part_no": "JNP10K-LC9600-PIC", "description": "MRATE-4xQDD", "serial_no": "NL6PIC000008", "temperature": false},
+    {"name": "FPC1:PIC0:PORT0", "type": "PORT", "parent": "FPC1:PIC0", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/0/0", "serial_no": "NL6PRT000049", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC0:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC0:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010000", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC0:PORT1", "type": "PORT", "parent": "FPC1:PIC0", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/0/1", "serial_no": "NL6PRT000050", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC0:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC0:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010001", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC0:PORT2", "type": "PORT", "parent": "FPC1:PIC0", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/0/2", "serial_no": "NL6PRT000051", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC0:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC0:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010002", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC0:PORT3", "type": "PORT", "parent": "FPC1:PIC0", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/0/3", "serial_no": "NL6PRT000052", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC0:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC0:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010003", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC1:PORT0", "type": "PORT", "parent": "FPC1:PIC1", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/1/0", "serial_no": "NL6PRT000053", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC1:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC1:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010100", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC1:PORT1", "type": "PORT", "parent": "FPC1:PIC1", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/1/1", "serial_no": "NL6PRT000054", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC1:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC1:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010101", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC1:PORT2", "type": "PORT", "parent": "FPC1:PIC1", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/1/2", "serial_no": "NL6PRT000055", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC1:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC1:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010102", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC1:PORT3", "type": "PORT", "parent": "FPC1:PIC1", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/1/3", "serial_no": "NL6PRT000056", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC1:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC1:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010103", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC2:PORT0", "type": "PORT", "parent": "FPC1:PIC2", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/2/0", "serial_no": "NL6PRT000057", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC2:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC2:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010200", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC2:PORT1", "type": "PORT", "parent": "FPC1:PIC2", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/2/1", "serial_no": "NL6PRT000058", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC2:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC2:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010201", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC2:PORT2", "type": "PORT", "parent": "FPC1:PIC2", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/2/2", "serial_no": "NL6PRT000059", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC2:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC2:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010202", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC2:PORT3", "type": "PORT", "parent": "FPC1:PIC2", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/2/3", "serial_no": "NL6PRT000060", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC2:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC2:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010203", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC3:PORT0", "type": "PORT", "parent": "FPC1:PIC3", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/3/0", "serial_no": "NL6PRT000061", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC3:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC3:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010300", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC3:PORT1", "type": "PORT", "parent": "FPC1:PIC3", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/3/1", "serial_no": "NL6PRT000062", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC3:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC3:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010301", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC3:PORT2", "type": "PORT", "parent": "FPC1:PIC3", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/3/2", "serial_no": "NL6PRT000063", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC3:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC3:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010302", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC3:PORT3", "type": "PORT", "parent": "FPC1:PIC3", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/3/3", "serial_no": "NL6PRT000064", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC3:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC3:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010303", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC4:PORT0", "type": "PORT", "parent": "FPC1:PIC4", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/4/0", "serial_no": "NL6PRT000065", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC4:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC4:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010400", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC4:PORT1", "type": "PORT", "parent": "FPC1:PIC4", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/4/1", "serial_no": "NL6PRT000066", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC4:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC4:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010401", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC4:PORT2", "type": "PORT", "parent": "FPC1:PIC4", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/4/2", "serial_no": "NL6PRT000067", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC4:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC4:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010402", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC4:PORT3", "type": "PORT", "parent": "FPC1:PIC4", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/4/3", "serial_no": "NL6PRT000068", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC4:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC4:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010403", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC5:PORT0", "type": "PORT", "parent": "FPC1:PIC5", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/5/0", "serial_no": "NL6PRT000069", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC5:PORT0:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC5:PORT0", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010500", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC5:PORT1", "type": "PORT", "parent": "FPC1:PIC5", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/5/1", "serial_no": "NL6PRT000070", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC5:PORT1:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC5:PORT1", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010501", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC5:PORT2", "type": "PORT", "parent": "FPC1:PIC5", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/5/2", "serial_no": "NL6PRT000071", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC5:PORT2:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC5:PORT2", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010502", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:PIC5:PORT3", "type": "PORT", "parent": "FPC1:PIC5", "part_no": "JNP10K-LC9600-PIC", "description": "et-1/5/3", "serial_no": "NL6PRT000072", "temperature": false, "wavelength": "1310"},
+    {"name": "FPC1:PIC5:PORT3:Xcvr0", "type": "TRANSCEIVER", "parent": "FPC1:PIC5:PORT3", "part_no": "740-000400", "description": "QSFP56-DD-400GBASE-DR4", "serial_no": "NL6XCV010503", "temperature": false, "form_factor": "QSFP56_DD_TYPE1", "ethernet_pmd": "ETH_400GBASE_DR4"},
+    {"name": "FPC1:EA0_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010001", "temperature": true},
+    {"name": "FPC1:EA0_XR0_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_XR0_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010002", "temperature": true},
+    {"name": "FPC1:EA0_XR1_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_XR1_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010003", "temperature": true},
+    {"name": "FPC1:EA0_HMC0_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_HMC0_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010004", "temperature": true},
+    {"name": "FPC1:EA0_HMC0_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_HMC0_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010005", "temperature": true},
+    {"name": "FPC1:EA0_HMC1_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_HMC1_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010006", "temperature": true},
+    {"name": "FPC1:EA0_HMC1_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA0_HMC1_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010007", "temperature": true},
+    {"name": "FPC1:EA1_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010008", "temperature": true},
+    {"name": "FPC1:EA1_XR0_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_XR0_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010009", "temperature": true},
+    {"name": "FPC1:EA1_XR1_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_XR1_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010010", "temperature": true},
+    {"name": "FPC1:EA1_HMC0_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_HMC0_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010011", "temperature": true},
+    {"name": "FPC1:EA1_HMC0_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_HMC0_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010012", "temperature": true},
+    {"name": "FPC1:EA1_HMC1_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_HMC1_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010013", "temperature": true},
+    {"name": "FPC1:EA1_HMC1_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA1_HMC1_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010014", "temperature": true},
+    {"name": "FPC1:EA2_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010015", "temperature": true},
+    {"name": "FPC1:EA2_XR0_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_XR0_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010016", "temperature": true},
+    {"name": "FPC1:EA2_XR1_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_XR1_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010017", "temperature": true},
+    {"name": "FPC1:EA2_HMC0_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_HMC0_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010018", "temperature": true},
+    {"name": "FPC1:EA2_HMC0_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_HMC0_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010019", "temperature": true},
+    {"name": "FPC1:EA2_HMC1_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_HMC1_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010020", "temperature": true},
+    {"name": "FPC1:EA2_HMC1_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA2_HMC1_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010021", "temperature": true},
+    {"name": "FPC1:EA3_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010030", "temperature": true},
+    {"name": "FPC1:EA3_XR0_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_XR0_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010031", "temperature": true},
+    {"name": "FPC1:EA3_XR1_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_XR1_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010032", "temperature": true},
+    {"name": "FPC1:EA3_HMC0_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_HMC0_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010033", "temperature": true},
+    {"name": "FPC1:EA3_HMC0_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_HMC0_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010034", "temperature": true},
+    {"name": "FPC1:EA3_HMC1_LOGIC_DIE", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_HMC1_LOGIC_DIE Temp Sensor", "serial_no": "NL6FPS010035", "temperature": true},
+    {"name": "FPC1:EA3_HMC1_DRAM_BOTM", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EA3_HMC1_DRAM_BOTM Temp Sensor", "serial_no": "NL6FPS010036", "temperature": true},
+    {"name": "FPC1:INTAKE_A_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 INTAKE_A_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010022", "temperature": true},
+    {"name": "FPC1:INTAKE_B_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 INTAKE_B_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010023", "temperature": true},
+    {"name": "FPC1:EXHAUST_A_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EXHAUST_A_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010024", "temperature": true},
+    {"name": "FPC1:EXHAUST_B_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EXHAUST_B_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010025", "temperature": true},
+    {"name": "FPC1:EXHAUST_C_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 EXHAUST_C_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010026", "temperature": true},
+    {"name": "FPC1:PMB_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 PMB_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010027", "temperature": true},
+    {"name": "FPC1:PEXSW_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 PEXSW_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010028", "temperature": true},
+    {"name": "FPC1:CPU_TEMP_SENSOR", "type": "SENSOR", "parent": "FPC1", "part_no": "JNP10K-LC9600", "description": "FPC1 CPU_TEMP_SENSOR Temp Sensor", "serial_no": "NL6FPS010029", "temperature": true},
     {"name": "PEM0", "type": "POWER_SUPPLY", "parent": "Chassis", "part_no": "JNP10K-PWR-AC2", "description": "JNP10K 5500W AC/HVDC Power Supply", "serial_no": "NL6PEM000001", "temperature": false},
     {"name": "PEM0:TEMP_SENSOR_0", "type": "SENSOR", "parent": "PEM0", "part_no": "JNP10K-PWR-AC2", "description": "PEM0 Temp Sensor 0", "serial_no": "NL6PMS000001", "temperature": true},
     {"name": "PEM0:TEMP_SENSOR_1", "type": "SENSOR", "parent": "PEM0", "part_no": "JNP10K-PWR-AC2", "description": "PEM0 Temp Sensor 1", "serial_no": "NL6PMS000002", "temperature": true},
@@ -414,14 +508,14 @@
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
-      "keys": [{"source": "static", "names": ["CB0", "CB1", "FPC0", "FPC0:PIC0", "Routing Engine0", "Routing Engine1"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
+      "keys": [{"source": "static", "names": ["CB0", "CB1", "FPC0", "FPC1", "FPC0:PIC0", "FPC1:PIC0", "Routing Engine0", "Routing Engine1"]}, {"source": "static", "names": ["cpu-utilization-background", "cpu-utilization-idle", "cpu-utilization-interrupt", "cpu-utilization-kernel", "cpu-utilization-total", "cpu-utilization-user", "firmware-rev", "fru-failed", "fru-model-number", "manufacture-date", "mastership-priority", "mastership-state", "memory-dram-installed", "memory-dram-used", "memory-utilization-buffer", "memory-utilization-heap", "power-maximum", "reboot-reason", "rom-software-rev-chassis", "software-rev", "state", "temperature-back-to-normal", "temperature-exhaust-a", "temperature-exhaust-b", "temperature-intake", "uptime"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
       "types": {"state/value": "string"}
     },
     {
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
-      "keys": [{"source": "static", "names": ["FPC0:PIC0", "FPC0:PIC1", "Routing Engine0", "Routing Engine1", "SFB0", "SFB1", "SFB2", "SFB3", "SFB4", "SFB5"]}, {"source": "static", "names": ["over-temperature"]}],
+      "keys": [{"source": "static", "names": ["FPC0:PIC0", "FPC0:PIC1", "FPC1:PIC0", "FPC1:PIC1", "FPC1:PIC2", "FPC1:PIC3", "FPC1:PIC4", "FPC1:PIC5", "Routing Engine0", "Routing Engine1", "SFB0", "SFB1", "SFB2", "SFB3", "SFB4", "SFB5"]}, {"source": "static", "names": ["over-temperature"]}],
       "module": "openconfig-platform",
       "leaves": {"state/configurable": "const:false", "state/value": "key:1"},
       "types": {"state/value": "string"}
@@ -520,7 +614,7 @@
       "types": {"afi-safi-name": "string", "state/afi-safi-name": "string", "add-paths/state/eligible-prefix-policy": "string"}
     },
     {
-      "path": "/components/component[name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/packet/usage/"], "keys": [{"source": "static", "names": ["FPC0:NPU0", "FPC0:CC0", "FPC0:CPU0"]}], "module": "openconfig-platform",
+      "path": "/components/component[name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/packet/usage/"], "keys": [{"source": "static", "names": ["FPC0:NPU0", "FPC0:CC0", "FPC0:CPU0", "FPC1:NPU0", "FPC1:CC0", "FPC1:CPU0"]}], "module": "openconfig-platform",
       "leaves": {},
       "extra": {
         "properties/property[name=ts-input-packets]/state/value": {"type": "uint64", "gen": "counter:5000"}, "properties/property[name=ts-input-packets-pps]/state/value": {"type": "uint64", "gen": "const:5000"},
@@ -563,12 +657,75 @@
       }
     },
     {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["high", "low"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["high", "low"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["high", "low"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
       "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
       "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
       "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
       "keys": [
         {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
         {"source": "static", "names": ["0", "1", "2", "3"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["LINECARD"]}
+      ],
+      "leaves": {
+        "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["SWITCH-FABRIC"]},
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]}
       ],
       "leaves": {
         "packets": "counter:12000", "bytes": "counter:9600000", "packets-per-second": "sine:12000,600,900", "bytes-per-second": "sine:9600000,480000,900",
@@ -593,8 +750,23 @@
       }
     },
     {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "yang_path": "/junos/system/linecard/fabric/fabric-message/edges/class-stats/transmit-counts",
+      "origin": "juniper", "aliases": ["/junos/system/linecard/fabric/"], "module": "junos-fabric",
+      "keys": [
+        {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]}, {"source": "static", "names": ["1"]}, {"source": "static", "names": ["LINECARD"]},
+        {"source": "static", "names": ["0"]}, {"source": "static", "names": ["0"]}, {"source": "static", "names": ["SWITCH-FABRIC"]}
+      ],
+      "leaves": {
+        "packets": "counter:11500", "bytes": "counter:9200000", "packets-per-second": "sine:11500,575,900", "bytes-per-second": "sine:9200000,460000,900",
+        "drop-packets": "const:0", "drop-bytes": "const:0", "drop-packets-per-second": "const:0", "drop-bytes-per-second": "const:0",
+        "error-packets": "const:0", "error-packets-per-second": "const:0",
+        "queue-depth-average": "sine:40,10,600", "queue-depth-current": "sine:40,20,300", "queue-depth-maximum": "const:4096", "queue-depth-peak": "const:512"
+      }
+    },
+    {
       "path": "/junos/system/linecard[name=*]/environment/power-record", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}],
       "leaves": {"max-fpc-power": "const:1100", "fpc-power": "sine:780,40,900"}
     },
     {
@@ -604,32 +776,38 @@
       "always": ["temp-sensor-name"]
     },
     {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
+      "keys": [{"source": "static", "names": ["FPC1"]}, {"source": "components", "filter": "temperature", "parent": "FPC1"}],
+      "leaves": {"temp-sensor-name": "key:1", "temp-value": "sine:42,6,600"},
+      "always": ["temp-sensor-name"]
+    },
+    {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-0V9"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}, {"source": "static", "names": ["VDD-0V9"]}],
       "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:900,9,600"},
       "always": ["voltage-sensor-name"]
     },
     {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V2"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}, {"source": "static", "names": ["VDD-1V2"]}],
       "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1200,12,600"},
       "always": ["voltage-sensor-name"]
     },
     {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-1V8"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}, {"source": "static", "names": ["VDD-1V8"]}],
       "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:1800,18,600"},
       "always": ["voltage-sensor-name"]
     },
     {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-3V3"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}, {"source": "static", "names": ["VDD-3V3"]}],
       "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:3300,33,600"},
       "always": ["voltage-sensor-name"]
     },
     {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]", "origin": "juniper", "aliases": ["/junos/system/linecard/environment/"], "module": "junos-fpc-env",
-      "keys": [{"source": "static", "names": ["FPC0"]}, {"source": "static", "names": ["VDD-12V"]}],
+      "keys": [{"source": "static", "names": ["FPC0", "FPC1"]}, {"source": "static", "names": ["VDD-12V"]}],
       "leaves": {"voltage-sensor-name": "key:1", "voltage-value": "sine:12000,120,600"},
       "always": ["voltage-sensor-name"]
     }

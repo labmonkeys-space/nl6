@@ -15,7 +15,7 @@
     },
     {
       "command": "show system memory",
-      "response": "System memory usage distribution:\nTotal memory: 65536 MB Max: 65536 MB\nReserved memory: 1024 MB  Wired memory: 2048 MB\nActive memory: 11776 MB  Inactive memory: 1536 MB\nCache memory: 512 MB  Free memory: 48640 MB\n\nFPC 0:\n  Total memory: 32768 MB  Used: 6881 MB (21%)  Free: 25887 MB"
+      "response": "System memory usage distribution:\nTotal memory: 65536 MB Max: 65536 MB\nReserved memory: 1024 MB  Wired memory: 2048 MB\nActive memory: 11776 MB  Inactive memory: 1536 MB\nCache memory: 512 MB  Free memory: 48640 MB\n\nFPC 0:\n  Total memory: 32768 MB  Used: 6881 MB (21%)  Free: 25887 MB\n\nFPC 1:\n  Total memory: 32768 MB  Used: 7864 MB (24%)  Free: 24904 MB"
     }
   ]
 }

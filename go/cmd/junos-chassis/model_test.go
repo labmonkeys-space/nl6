@@ -61,7 +61,7 @@ func TestExpandPortsAreInIfIndexOrder(t *testing.T) {
 			t.Fatalf("port %d has ifIndex %d", i, p.IfIndex)
 		}
 	}
-	if first, last := c.Ports[0].IfName, c.Ports[len(c.Ports)-1].IfName; first != "xe-0/0/0" || last != "xe-0/1/23" {
+	if first, last := c.Ports[0].IfName, c.Ports[len(c.Ports)-1].IfName; first != "xe-0/0/0" || last != "et-1/5/3" {
 		t.Fatalf("ports run %s..%s", first, last)
 	}
 }

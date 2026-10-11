@@ -156,7 +156,9 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // snmp_shipped_juniper_mx10004_ledger_test.go, and
 // TestJuniperMx10004AdditionReproducesTheParentCorpus requires it back.
 // juniper_mx10004 dual Routing Engine: three jnxOperating rows at 9.2.0.0.
-const shippedTagDigest = "ac7d6b16b723a24e90c9772c6ed27972337765dc8606d2638b474dcc47a4ebac"
+// juniper_mx10004 LC9600 in FPC1: ifTable and ifXTable rows at ifIndex 49-72
+// and ifNumber 48 -> 72.
+const shippedTagDigest = "5a94bb769c9dbf894837691d8b7cd582f7799bfc2d837bda6c1ae9325f7e1604"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

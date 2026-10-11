@@ -384,8 +384,8 @@ func TestOctetShadowWithoutCyclerIsUnchanged(t *testing.T) {
 // and were deleted by nl6#571; they were never counted here, because they are
 // not rows. See bareColumnEntriesShipped.
 var staticRowsOnCyclerOwnedIfTableColumns = map[int]int{
-	colIfAdminStatus:  935, // live: seeds the state engine; juniper_mx10004 added 48
-	colIfOperStatus:   935, // live: seeds the state engine; juniper_mx10004 added 48
+	colIfAdminStatus:  959, // live: seeds the state engine; juniper_mx10004 added 72 (48, then 24 for juniper_mx10004 LC9600 in FPC1)
+	colIfOperStatus:   959, // live: seeds the state engine; juniper_mx10004 added 72 (48, then 24 for juniper_mx10004 LC9600 in FPC1)
 	colIfLastChange:   0,   // nl6#574: must stay 0
 	colIfInOctets:     0,   // nl6#570: must stay 0
 	colIfInUcastPkts:  0,   // nl6#574: must stay 0

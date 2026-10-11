@@ -14,7 +14,7 @@ See [Resource files](resource-files.md) for the JSON format.
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |
 | Juniper MX960 | 80 | Service provider edge router |
-| Juniper MX10004 | 48 | Modular edge router with dual Routing Engine and control board, gNMI catalogue (OpenConfig platform, system, BGP, Junos native sensors) |
+| Juniper MX10004 | 72 | Modular edge router with 48 × 10G and 24 × 400G interfaces, dual Routing Engine and control board, gNMI catalogue (OpenConfig platform, system, BGP, Junos native sensors) |
 
 The Juniper MX10004 also serves a gNMI catalogue: interface state and counters with Junos per-queue counters, subinterfaces, platform components with temperature and properties, CPU, system CPU and memory, system state, BGP neighbours, and the native packet-usage, fabric and FPC environment sensors under the `juniper` origin.
 The fabric sensor's shape comes from a hardware capture; the environment sensor is YANG-derived from `junos-fpc-env.yang` and may differ from what hardware renders.

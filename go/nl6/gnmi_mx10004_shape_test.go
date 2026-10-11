@@ -839,7 +839,7 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	if len(leaves) < 250 {
 		t.Fatalf("%d components, want at least 250", len(leaves))
 	}
-	for _, class := range []string{"CB0:INTAKE_A_TEMP_SENSOR", "ROUTING_ENGINE0:CPU", "FPC0:PIC1:PORT23", "FPC0:PIC0:PORT0:Xcvr0", "FPC0:EA0_HMC0_LOGIC_DIE", "FPC0:CPU_TEMP_SENSOR", "FPD Board", "PEM1:TEMP_SENSOR_1", "FTC1", "Fan Tray 1 Fan 11", "SFB5", "SFB5:ZF0_INTERNAL_REMOTE_0"} {
+	for _, class := range []string{"CB0:INTAKE_A_TEMP_SENSOR", "ROUTING_ENGINE0:CPU", "FPC0:PIC1:PORT23", "FPC0:PIC0:PORT0:Xcvr0", "FPC0:EA0_HMC0_LOGIC_DIE", "FPC0:CPU_TEMP_SENSOR", "FPD Board", "PEM1:TEMP_SENSOR_1", "FTC1", "Fan Tray 1 Fan 11", "SFB5", "SFB5:ZF0_INTERNAL_REMOTE_0", "FPC1:PIC5:PORT3:Xcvr0", "FPC1:EA3_HMC1_DRAM_BOTM", "FPC1:CPU"} {
 		if leaves[class] == nil {
 			t.Errorf("component %s missing", class)
 		}
@@ -1003,8 +1003,8 @@ func TestMX10004Transceivers(t *testing.T) {
 			ports++
 		}
 	}
-	if transceivers != 48 || ports != 48 {
-		t.Fatalf("%d transceivers and %d ports, want 48 each", transceivers, ports)
+	if transceivers != 72 || ports != 72 {
+		t.Fatalf("%d transceivers and %d ports, want 72 each", transceivers, ports)
 	}
 	for k, c := range seen {
 		if c != 1 {
@@ -1035,8 +1035,8 @@ func TestMX10004Transceivers(t *testing.T) {
 			}
 		}
 	}
-	if ports != 48 {
-		t.Errorf("wavelength on %d components, want 48 ports", ports)
+	if ports != 72 {
+		t.Errorf("wavelength on %d components, want 72 ports", ports)
 	}
 	// A packet type without a catalogue: the error names the path.
 	_, _, paddr, pcleanup := startTestGnmiServerWithCatalog(t, nil)

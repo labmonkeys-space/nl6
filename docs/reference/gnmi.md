@@ -187,7 +187,8 @@ The MX10004 reproduces what vJunos-router 25.4R1.12 sends.
 It serves PROTO and JSON only, and JSON_IETF is refused with the Junos message.
 It sends one notification per list entry, with prefixes such as `openconfig:/interfaces/interface[name=xe-0/0/0]`.
 Native sensors sit under the `juniper` origin.
-The component tree carries the MX10004 hardware's cardinality: 299 components across the chassis, both control boards and both routing engines with their sensors, the LC480 with two 24-port PICs, every port and transceiver, the FPC sensors, two PEMs with sensors, two fan tray controllers, 24 fans and six switch fabric boards with seventeen sensors each; sensor-bearing components serve the full temperature record with `instant`, `avg`, `min` and `max` as `Decimal64` precision 1.
+The component tree carries the MX10004 hardware's cardinality: 393 components across the chassis, both control boards and both routing engines with their sensors, the LC480 in FPC0 with two 24-port PICs and the LC9600 in FPC1 with six 4-port QSFP-DD PICs, every port and transceiver, the FPC sensors, two PEMs with sensors, two fan tray controllers, 24 fans and six switch fabric boards with seventeen sensors each; sensor-bearing components serve the full temperature record with `instant`, `avg`, `min` and `max` as `Decimal64` precision 1.
+FPC1's sensor set is modelled on the LC480's, because no public source names the LC9600's.
 The Routing Engine serves ten CPUs under /system/cpus/cpu, one per core of the RE X10.
 Every port carries a transceiver component serving the static transceiver state (`transceiver/state/{connector-type, date-code, ethernet-pmd, form-factor, present, serial-no, vendor, vendor-part, ...}`) in the component's notification and the analog leaves (`state/enabled`, `state/input-power/instant`, `state/output-power/instant`, `state/laser-bias-current/instant`, doubles) under the `component[name=*]/transceiver` prefix, plus `properties/property[name=wavelength]/state/{configurable,value}` on the port component.
 A subscription to `/components/component/transceiver/state/` also carries `oper-status` alone under a `component[name=*]/state` prefix for every port and every transceiver, as hardware does.
@@ -211,9 +212,9 @@ A subscription to `/junos/system/linecard/fabric/`, with origin `juniper`, `Nati
 Edges between line card PFEs render under `junos/fabric-statistics/fabric-message/edges[...]/class-stats[priority=*]/transmit-counts`, once per class `high` and `low`.
 Edges to and from the switch fabric render under the keyless `junos/fabric-statistics/fabric-message/edges[...]/class-stats/transmit-counts` and name only `SWITCH-FABRIC` slot 0, PFE 0.
 The prefixes, keys, leaf names and this edge rule come from an MX10004 hardware capture.
-The edge count follows nl6's one line card: FPC0's four PFEs to each other, themselves included, in both classes, plus four edges each way to the switch fabric, 40 notifications.
+The edge count follows nl6's two line cards with 4 + 12 PFEs: every PFE to every other, themselves included, in both classes, plus one edge each way between every PFE and the switch fabric, 544 notifications.
 The partial notifications with fewer leaves that the router also sends are not modelled.
-A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, `Native`, `junos-fpc-env` or none, returns FPC0's power record, one temperature record per FPC0 sensor in the inventory and five voltage records near their rails' nominal voltage, with the leaves of `junos-fpc-env.yang`.
+A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, `Native`, `junos-fpc-env` or none, returns, per FPC, one power record, one temperature record per sensor and five voltage rails near their nominal voltage, with the leaves of `junos-fpc-env.yang`.
 That subtree is YANG-derived: no capture exists, so the prefix depth, the sensor names and the values are nl6's reading of the model, not what an MX sends.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.

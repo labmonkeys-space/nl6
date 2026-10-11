@@ -120,7 +120,7 @@ func TestRenderSNMPRows(t *testing.T) {
 		order = append(order, r.OID)
 	}
 	want := map[string]string{
-		"1.3.6.1.2.1.2.1.0":                    "48",
+		"1.3.6.1.2.1.2.1.0":                    "72",
 		"1.3.6.1.2.1.2.2.1.2.1":                "xe-0/0/0",
 		"1.3.6.1.2.1.2.2.1.4.1":                "9216",
 		"1.3.6.1.2.1.2.2.1.6.26":               "00:1A:2B:3C:00:1a",
@@ -128,6 +128,8 @@ func TestRenderSNMPRows(t *testing.T) {
 		"1.3.6.1.2.1.31.1.1.1.6.25":            "13897247566",
 		"1.3.6.1.2.1.31.1.1.1.10.48":           "14051568552",
 		"1.3.6.1.2.1.31.1.1.1.15.48":           "10000",
+		"1.3.6.1.2.1.2.2.1.2.49":               "et-1/0/0",
+		"1.3.6.1.2.1.31.1.1.1.15.49":           "400000",
 		"1.3.6.1.2.1.31.1.1.1.18.7":            "to-core-07",
 		"1.3.6.1.4.1.2636.3.1.13.1.5.9.1.0.0":  "Routing Engine 0",
 		"1.3.6.1.4.1.2636.3.1.13.1.20.9.1.0.0": "45",
@@ -138,8 +140,8 @@ func TestRenderSNMPRows(t *testing.T) {
 			t.Errorf("%s = %q, want %q", oid, got[oid], v)
 		}
 	}
-	if len(got) != 1+48*13+3*len(m.RoutingEngines)+len(m.LegacySNMP) {
-		t.Errorf("%d rows, want ifNumber + 48x13 interface rows + 3 jnxOperating per Routing Engine + %d legacy", len(got), len(m.LegacySNMP))
+	if len(got) != 1+72*13+3*len(m.RoutingEngines)+len(m.LegacySNMP) {
+		t.Errorf("%d rows, want ifNumber + 72x13 interface rows + 3 jnxOperating per Routing Engine + %d legacy", len(got), len(m.LegacySNMP))
 	}
 	for i := 1; i < len(order); i++ {
 		if !oidLess(order[i-1], order[i]) {

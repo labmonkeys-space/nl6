@@ -292,7 +292,8 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 
 // TestJuniperMx10004_InterfaceTableAndIdentity pins what the clone script
 // produced from the MX240 template: 48 LC480 ports xe-0/0/0..xe-0/1/23 at
-// ifIndex 1..48, and the identity objects re-pointed at jnxProductNameMX10004.
+// ifIndex 1..48 and 24 LC9600 ports et-1/0/0..et-1/5/3 at 49..72, and the
+// identity objects re-pointed at jnxProductNameMX10004.
 func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
@@ -307,24 +308,30 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		"1.3.6.1.2.1.1.1.0":          "Juniper Networks, Inc. mx10004 internet router, kernel JUNOS 24.2R1.17, Build date: 2024-06-18",
 		"1.3.6.1.2.1.1.2.0":          "1.3.6.1.4.1.2636.1.1.1.2.168",
 		"1.3.6.1.2.1.47.1.1.1.1.3.1": "1.3.6.1.4.1.2636.1.1.1.2.168",
-		"1.3.6.1.2.1.2.1.0":          "48",
+		"1.3.6.1.2.1.2.1.0":          "72",
 		"1.3.6.1.2.1.2.2.1.2.1":      "xe-0/0/0",
 		"1.3.6.1.2.1.2.2.1.2.48":     "xe-0/1/23",
 		"1.3.6.1.2.1.31.1.1.1.1.48":  "xe-0/1/23",
+		"1.3.6.1.2.1.2.2.1.2.49":     "et-1/0/0",
+		"1.3.6.1.2.1.2.2.1.2.72":     "et-1/5/3",
+		"1.3.6.1.2.1.31.1.1.1.15.49": "400000",
 	}
 	for oid, v := range want {
 		if got[oid] != v {
 			t.Errorf("%s: got %q, want %q", oid, got[oid], v)
 		}
 	}
-	for i := 1; i <= 48; i++ {
+	for i := 1; i <= 72; i++ {
 		name := fmt.Sprintf("xe-0/%d/%d", (i-1)/24, (i-1)%24)
+		if i > 48 {
+			name = fmt.Sprintf("et-1/%d/%d", (i-49)/4, (i-49)%4)
+		}
 		if d := got[fmt.Sprintf("1.3.6.1.2.1.2.2.1.2.%d", i)]; d != name {
 			t.Errorf("ifDescr.%d: got %q, want %q", i, d, name)
 		}
 	}
-	if d, ok := got["1.3.6.1.2.1.2.2.1.2.49"]; ok {
-		t.Errorf("ifDescr.49 present (%q); the MX10004 type has exactly 48 ports", d)
+	if d, ok := got["1.3.6.1.2.1.2.2.1.2.73"]; ok {
+		t.Errorf("ifDescr.73 present (%q); the MX10004 type has exactly 72 ports", d)
 	}
 }
 
@@ -359,8 +366,8 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 			}
 		}
 	}
-	if ports != 48 {
-		t.Fatalf("SNMP serves %d ports, want 48", ports)
+	if ports != 72 {
+		t.Fatalf("SNMP serves %d ports, want 72", ports)
 	}
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {

@@ -1,5 +1,5 @@
 {
-  "comment": "juniper_mx10004 chassis model, rendered by go/cmd/junos-chassis. Layout from Juniper's public MX10004 hardware documentation (4 FPC slots, 2 RCBs, 6 SFBs) and the public LC480 and LC9600 descriptions; every serial is synthetic.",
+  "comment": "juniper_mx10004 chassis model, rendered by go/cmd/junos-chassis. Layout from Juniper's public MX10004 hardware documentation (4 FPC slots, 2 RCBs, 6 SFBs) and the public LC480 and LC9600 descriptions; every serial is synthetic. FPC1's sensor set copies the LC480's (no public source names LC9600 sensors).",
   "head": [
     {
       "name": "Chassis",
@@ -178,6 +178,10 @@
     {
       "slot": 0,
       "card": "LC480"
+    },
+    {
+      "slot": 1,
+      "card": "LC9600"
     }
   ],
   "tail": [
@@ -1659,6 +1663,205 @@
         }
       ],
       "ssh_pic_celsius": 39
+    },
+    "LC9600": {
+      "part_no": "JNP10K-LC9600",
+      "description": "JNP10K-LC9600",
+      "cpu": {
+        "part_no": "JNP10K-LC9600-CPU",
+        "description": "JNP10K-LC9600 PMB"
+      },
+      "mezz": {
+        "part_no": "JNP10K-LC9600-MEZZ",
+        "description": "LC9600 Mezz"
+      },
+      "mezz_count": 2,
+      "pic": {
+        "part_no": "JNP10K-LC9600-PIC",
+        "description": "MRATE-4xQDD"
+      },
+      "pic_count": 6,
+      "ports_per_pic": 4,
+      "port_prefix": "et",
+      "speed_mbps": 400000,
+      "entity_port_model": "400GE",
+      "optic": {
+        "part_no": "740-000400",
+        "description": "QSFP56-DD-400GBASE-DR4",
+        "form_factor": "QSFP56_DD_TYPE1",
+        "ethernet_pmd": "ETH_400GBASE_DR4",
+        "wavelength": "1310",
+        "cable": "400GBASE DR4",
+        "fiber": "SM"
+      },
+      "sensors": [
+        {
+          "name": "EA0_TEMP_SENSOR",
+          "ordinal": 1
+        },
+        {
+          "name": "EA0_XR0_TEMP_SENSOR",
+          "ordinal": 2
+        },
+        {
+          "name": "EA0_XR1_TEMP_SENSOR",
+          "ordinal": 3
+        },
+        {
+          "name": "EA0_HMC0_LOGIC_DIE",
+          "ordinal": 4
+        },
+        {
+          "name": "EA0_HMC0_DRAM_BOTM",
+          "ordinal": 5
+        },
+        {
+          "name": "EA0_HMC1_LOGIC_DIE",
+          "ordinal": 6
+        },
+        {
+          "name": "EA0_HMC1_DRAM_BOTM",
+          "ordinal": 7
+        },
+        {
+          "name": "EA1_TEMP_SENSOR",
+          "ordinal": 8
+        },
+        {
+          "name": "EA1_XR0_TEMP_SENSOR",
+          "ordinal": 9
+        },
+        {
+          "name": "EA1_XR1_TEMP_SENSOR",
+          "ordinal": 10
+        },
+        {
+          "name": "EA1_HMC0_LOGIC_DIE",
+          "ordinal": 11
+        },
+        {
+          "name": "EA1_HMC0_DRAM_BOTM",
+          "ordinal": 12
+        },
+        {
+          "name": "EA1_HMC1_LOGIC_DIE",
+          "ordinal": 13
+        },
+        {
+          "name": "EA1_HMC1_DRAM_BOTM",
+          "ordinal": 14
+        },
+        {
+          "name": "EA2_TEMP_SENSOR",
+          "ordinal": 15
+        },
+        {
+          "name": "EA2_XR0_TEMP_SENSOR",
+          "ordinal": 16
+        },
+        {
+          "name": "EA2_XR1_TEMP_SENSOR",
+          "ordinal": 17
+        },
+        {
+          "name": "EA2_HMC0_LOGIC_DIE",
+          "ordinal": 18
+        },
+        {
+          "name": "EA2_HMC0_DRAM_BOTM",
+          "ordinal": 19
+        },
+        {
+          "name": "EA2_HMC1_LOGIC_DIE",
+          "ordinal": 20
+        },
+        {
+          "name": "EA2_HMC1_DRAM_BOTM",
+          "ordinal": 21
+        },
+        {
+          "name": "EA3_TEMP_SENSOR",
+          "ordinal": 30
+        },
+        {
+          "name": "EA3_XR0_TEMP_SENSOR",
+          "ordinal": 31
+        },
+        {
+          "name": "EA3_XR1_TEMP_SENSOR",
+          "ordinal": 32
+        },
+        {
+          "name": "EA3_HMC0_LOGIC_DIE",
+          "ordinal": 33
+        },
+        {
+          "name": "EA3_HMC0_DRAM_BOTM",
+          "ordinal": 34
+        },
+        {
+          "name": "EA3_HMC1_LOGIC_DIE",
+          "ordinal": 35
+        },
+        {
+          "name": "EA3_HMC1_DRAM_BOTM",
+          "ordinal": 36
+        },
+        {
+          "name": "INTAKE_A_TEMP_SENSOR",
+          "ordinal": 22
+        },
+        {
+          "name": "INTAKE_B_TEMP_SENSOR",
+          "ordinal": 23
+        },
+        {
+          "name": "EXHAUST_A_TEMP_SENSOR",
+          "ordinal": 24
+        },
+        {
+          "name": "EXHAUST_B_TEMP_SENSOR",
+          "ordinal": 25
+        },
+        {
+          "name": "EXHAUST_C_TEMP_SENSOR",
+          "ordinal": 26
+        },
+        {
+          "name": "PMB_TEMP_SENSOR",
+          "ordinal": 27
+        },
+        {
+          "name": "PEXSW_TEMP_SENSOR",
+          "ordinal": 28
+        },
+        {
+          "name": "CPU_TEMP_SENSOR",
+          "ordinal": 29
+        }
+      ],
+      "pfes": 12,
+      "packet_usage": [
+        "NPU0",
+        "CC0",
+        "CPU0"
+      ],
+      "ssh_fpc_status": "Online            46     18          0        18     17     17    32768       24         15",
+      "ssh_environment": [
+        {
+          "item": "Intake-A",
+          "celsius": 34
+        },
+        {
+          "item": "Exhaust-A",
+          "celsius": 47
+        },
+        {
+          "item": "CPU",
+          "celsius": 49
+        }
+      ],
+      "ssh_pic_celsius": 45
     }
   },
   "cpu_count": 10,
