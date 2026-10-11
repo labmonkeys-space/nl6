@@ -86,8 +86,10 @@ func TestMX10004FabricSensor(t *testing.T) {
 				}
 			}
 		}
-		if linecard != 32 || toFabric != 4 || fromFabric != 4 || len(edges) != 40 {
-			t.Fatalf("origin %q: %d line-card, %d to and %d from switch fabric notifications over %d distinct prefixes, want 32 + 4 + 4 = 40", origin, linecard, toFabric, fromFabric, len(edges))
+		// FPC0 has 4 PFEs and FPC1 12: 16 x 16 line-card edges in two
+		// priorities, and one edge each way between every PFE and the fabric.
+		if linecard != 512 || toFabric != 16 || fromFabric != 16 || len(edges) != 544 {
+			t.Fatalf("origin %q: %d line-card, %d to and %d from switch fabric notifications over %d distinct prefixes, want 512 + 16 + 16 = 544", origin, linecard, toFabric, fromFabric, len(edges))
 		}
 	}
 }
@@ -142,8 +144,9 @@ func TestMX10004FabricCountersMonotonic(t *testing.T) {
 }
 
 // TestMX10004FpcEnvironment covers the YANG-derived environment
-// sensor: one power record, one temperature record per FPC0 sensor in
-// the inventory and the voltage rails, each record naming itself.
+// sensor on both line cards: per FPC one power record, one temperature
+// record per sensor in the inventory and the voltage rails, each record
+// naming itself.
 func TestMX10004FpcEnvironment(t *testing.T) {
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()
@@ -159,18 +162,19 @@ func checkFpcEnvironment(t *testing.T, addr, origin string) {
 		t.Fatalf("origin %q: %v", origin, err)
 	}
 	counts := map[string]int{}
-	railValues := map[uint64]bool{}
+	railValues := map[string]map[uint64]bool{}
 	for _, r := range resps {
 		u := r.GetUpdate()
 		if u == nil {
 			continue
 		}
 		elems := u.GetPrefix().GetElem()
-		if len(elems) != 5 || elems[2].Key["name"] != "FPC0" || elems[3].Name != "environment" {
+		fpc := elems[2].Key["name"]
+		if len(elems) != 5 || (fpc != "FPC0" && fpc != "FPC1") || elems[3].Name != "environment" {
 			t.Fatalf("prefix %s", pathToString(u.GetPrefix()))
 		}
 		rec := elems[4]
-		counts[rec.Name]++
+		counts[fpc+"/"+rec.Name]++
 		vals := map[string]*gnmipb.TypedValue{}
 		for _, up := range u.GetUpdate() {
 			vals[pathToString(up.GetPath())] = up.GetVal()
@@ -191,16 +195,21 @@ func checkFpcEnvironment(t *testing.T, addr, origin string) {
 			if got := vals["/voltage-sensor-name"].GetStringVal(); got != rec.Key["voltage-sensor-name"] {
 				t.Fatalf("voltage-sensor-name %q under key %q", got, rec.Key["voltage-sensor-name"])
 			}
-			railValues[vals["/voltage-value"].GetUintVal()/100] = true
+			if railValues[fpc] == nil {
+				railValues[fpc] = map[uint64]bool{}
+			}
+			railValues[fpc][vals["/voltage-value"].GetUintVal()/100] = true
 		default:
 			t.Fatalf("unexpected record %s", rec.Name)
 		}
 	}
-	if counts["power-record"] != 1 || counts["temp-record"] != 36 || counts["voltage-record"] != 5 {
-		t.Fatalf("origin %q: records = %v, want 1 power, 36 temperature, 5 voltage", origin, counts)
-	}
-	// Each rail sits near its nominal voltage, so no two share a value.
-	if len(railValues) != 5 {
-		t.Fatalf("origin %q: the five rails serve %d distinct voltages (in units of 100 mV)", origin, len(railValues))
+	for _, fpc := range []string{"FPC0", "FPC1"} {
+		if counts[fpc+"/power-record"] != 1 || counts[fpc+"/temp-record"] != 36 || counts[fpc+"/voltage-record"] != 5 {
+			t.Fatalf("origin %q: %s records = %v, want 1 power, 36 temperature, 5 voltage", origin, fpc, counts)
+		}
+		// Each rail sits near its nominal voltage, so no two share a value.
+		if len(railValues[fpc]) != 5 {
+			t.Fatalf("origin %q: %s's five rails serve %d distinct voltages (in units of 100 mV)", origin, fpc, len(railValues[fpc]))
+		}
 	}
 }

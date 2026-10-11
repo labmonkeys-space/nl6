@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -148,6 +150,13 @@ const mx10004TestSysName = "mx10004-test"
 
 func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 	t.Helper()
+	return startMX10004ServerN(t, 2)
+}
+
+// startMX10004ServerN is startMX10004Server with ifCount interfaces on the
+// synthetic device.
+func startMX10004ServerN(t *testing.T, ifCount int) (addr string, cleanup func()) {
+	t.Helper()
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		t.Fatal(err)
@@ -157,8 +166,27 @@ func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 		t.Fatal("embedded juniper_mx10004 catalogue missing")
 	}
 	var dev *DeviceSimulator
-	_, dev, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
+	_, dev, addr, cleanup = startTestGnmiServerWithCatalogN(t, cat, ifCount)
 	dev.cachedSysName.Store(mx10004TestSysName)
+	// The catalogue reads MTU and speed from the device's IF-MIB rows. Only
+	// those columns are added, so the test device keeps its interface names.
+	res, err := (&SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}).LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	if dev.resources == nil {
+		dev.resources = &DeviceResources{}
+	}
+	if dev.resources.oidIndex == nil {
+		dev.resources.oidIndex = &sync.Map{}
+	}
+	res.oidIndex.Range(func(k, v any) bool {
+		if oid := k.(string); strings.HasPrefix(oid, ifTablePrefix+"4.") || strings.HasPrefix(oid, ifXTablePrefix+"15.") {
+			dev.resources.oidIndex.Store(oid, v)
+		}
+		return true
+	})
 	return addr, cleanup
 }
 
@@ -818,7 +846,7 @@ func TestMX10004ComponentInventory(t *testing.T) {
 	if len(leaves) < 250 {
 		t.Fatalf("%d components, want at least 250", len(leaves))
 	}
-	for _, class := range []string{"CB0:INTAKE_A_TEMP_SENSOR", "ROUTING_ENGINE0:CPU", "FPC0:PIC1:PORT23", "FPC0:PIC0:PORT0:Xcvr0", "FPC0:EA0_HMC0_LOGIC_DIE", "FPC0:CPU_TEMP_SENSOR", "FPD Board", "PEM1:TEMP_SENSOR_1", "FTC1", "Fan Tray 1 Fan 11", "SFB5", "SFB5:ZF0_INTERNAL_REMOTE_0"} {
+	for _, class := range []string{"CB0:INTAKE_A_TEMP_SENSOR", "ROUTING_ENGINE0:CPU", "FPC0:PIC1:PORT23", "FPC0:PIC0:PORT0:Xcvr0", "FPC0:EA0_HMC0_LOGIC_DIE", "FPC0:CPU_TEMP_SENSOR", "FPD Board", "PEM1:TEMP_SENSOR_1", "FTC1", "Fan Tray 1 Fan 11", "SFB5", "SFB5:ZF0_INTERNAL_REMOTE_0", "FPC1:PIC5:PORT3:Xcvr0", "FPC1:EA3_HMC1_DRAM_BOTM", "FPC1:CPU"} {
 		if leaves[class] == nil {
 			t.Errorf("component %s missing", class)
 		}
@@ -897,8 +925,8 @@ func TestMX10004OverTemperatureCarriers(t *testing.T) {
 			want[c.Name] = true
 		}
 	}
-	if len(want) < 9 {
-		t.Fatalf("inventory yields %d carriers, want at least 9 (2 PICs, 1 Routing Engine, 6 SFBs)", len(want))
+	if len(want) < 10 {
+		t.Fatalf("inventory yields %d carriers, want at least 10 (2 PICs, 2 Routing Engines, 6 SFBs)", len(want))
 	}
 	addr, cleanup := startMX10004Server(t)
 	defer cleanup()
@@ -982,8 +1010,8 @@ func TestMX10004Transceivers(t *testing.T) {
 			ports++
 		}
 	}
-	if transceivers != 48 || ports != 48 {
-		t.Fatalf("%d transceivers and %d ports, want 48 each", transceivers, ports)
+	if transceivers != 72 || ports != 72 {
+		t.Fatalf("%d transceivers and %d ports, want 72 each", transceivers, ports)
 	}
 	for k, c := range seen {
 		if c != 1 {
@@ -1014,8 +1042,8 @@ func TestMX10004Transceivers(t *testing.T) {
 			}
 		}
 	}
-	if ports != 48 {
-		t.Errorf("wavelength on %d components, want 48 ports", ports)
+	if ports != 72 {
+		t.Errorf("wavelength on %d components, want 72 ports", ports)
 	}
 	// A packet type without a catalogue: the error names the path.
 	_, _, paddr, pcleanup := startTestGnmiServerWithCatalog(t, nil)
@@ -1234,5 +1262,132 @@ func TestMX10004InterfaceCounterLeafSet(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no interface notifications")
+	}
+}
+
+// TestMX10004SpeedMTUAndOpticsComeFromTheDevice: gNMI reads speed and MTU
+// from the device's IF-MIB rows and the optic type from each component.
+func TestMX10004SpeedMTUAndOpticsComeFromTheDevice(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile("resources/juniper_mx10004/gnmi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{`"ifmib:ifHighSpeed"`, `"ifmib:ifMtu"`, `"inventory:form_factor"`, `"inventory:ethernet_pmd"`, `"inventory:connector_type"`, `"inventory:wavelength"`} {
+		if !bytes.Contains(raw, []byte(s)) {
+			t.Errorf("the MX10004 catalogue does not bind %s", s)
+		}
+	}
+	for _, s := range []string{`"const:10000"`, `"const:1514"`, `"const:SFP_PLUS"`, `"const:850"`, `"const:LC_CONNECTOR"`} {
+		if bytes.Contains(raw, []byte(s)) {
+			t.Errorf("the MX10004 catalogue still binds %s", s)
+		}
+	}
+	// One CPU core component per /system/cpus/cpu index.
+	cores, cpus := 0, 0
+	for _, st := range cats["juniper_mx10004"].Subtrees {
+		if len(st.Keys) == 1 && st.Keys[0].Source == "static" {
+			switch st.Path {
+			case "/system/cpus/cpu[index=*]":
+				cpus = len(st.Keys[0].Names)
+			case "/components/component[name=*]":
+				for _, n := range st.Keys[0].Names {
+					if strings.HasPrefix(n, "CPU0:CORE") {
+						cores++
+					}
+				}
+			}
+		}
+	}
+	if cpus == 0 || cores != cpus {
+		t.Errorf("%d CPU core components for %d CPUs, want one per CPU", cores, cpus)
+	}
+	for _, c := range cats["juniper_mx10004"].Components {
+		if c.Type == "TRANSCEIVER" && (c.FormFactor == "" || c.EthernetPMD == "" || c.ConnectorType == "") {
+			t.Errorf("transceiver %s has no optic type", c.Name)
+		}
+		// A QSFP-DD DR4 lands on MPO, an SFP+ SR on LC.
+		if c.Type == "TRANSCEIVER" && (c.FormFactor == "SFP_PLUS") != (c.ConnectorType == "LC_CONNECTOR") {
+			t.Errorf("transceiver %s: form factor %s with connector %s", c.Name, c.FormFactor, c.ConnectorType)
+		}
+		if c.Type == "PORT" && c.Wavelength == "" {
+			t.Errorf("port %s has no wavelength", c.Name)
+		}
+	}
+}
+
+// TestMX10004ServesFourHundredGigPort: an LC9600 port (ifIndex 49) serves
+// high-speed 400000 and MTU 9216 over gNMI, and its transceiver the QSFP56-DD
+// optic type. The synthetic device names its interfaces TestIf<n>, not
+// et-1/0/<n>, so the interface is picked by its ifindex leaf, not by name.
+func TestMX10004ServesFourHundredGigPort(t *testing.T) {
+	addr, cleanup := startMX10004ServerN(t, 49)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/interfaces/interface/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves := map[string]*gnmipb.TypedValue{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		var idx uint64
+		cur := map[string]*gnmipb.TypedValue{}
+		for _, u := range n.GetUpdate() {
+			cur[pathToString(u.GetPath())] = u.GetVal()
+		}
+		for k, v := range cur {
+			if strings.HasSuffix(k, "/ifindex") {
+				idx = v.GetUintVal()
+			}
+		}
+		if idx == 49 {
+			leaves = cur
+		}
+	}
+	if len(leaves) == 0 {
+		t.Fatal("no interface notification for ifindex 49")
+	}
+	for leaf, want := range map[string]uint64{"/state/high-speed": 400000, "/state/mtu": 9216} {
+		var got uint64
+		var found bool
+		for k, v := range leaves {
+			if strings.HasSuffix(k, leaf) {
+				found = true
+				got = v.GetUintVal()
+			}
+		}
+		if !found || got != want {
+			t.Errorf("ifindex 49 %s = %d (present %v), want %d", leaf, got, found, want)
+		}
+	}
+
+	resps, err = subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "", "/components/component/transceiver/state/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const xcvr = "FPC1:PIC0:PORT0:Xcvr0"
+	got := map[string]string{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil || len(n.GetPrefix().GetElem()) < 2 || n.GetPrefix().GetElem()[1].GetKey()["name"] != xcvr {
+			continue
+		}
+		for _, u := range n.GetUpdate() {
+			got[pathToString(u.GetPath())] = u.GetVal().GetStringVal()
+		}
+	}
+	for leaf, want := range map[string]string{
+		"/transceiver/state/form-factor":  "QSFP56_DD_TYPE1",
+		"/transceiver/state/ethernet-pmd": "ETH_400GBASE_DR4",
+	} {
+		if got[leaf] != want {
+			t.Errorf("%s%s = %q, want %q", xcvr, leaf, got[leaf], want)
+		}
 	}
 }

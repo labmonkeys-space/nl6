@@ -1,0 +1,7 @@
+Interface               Admin Link Proto    Local                 Remote
+<<range .Ports>><<printf "%-24s%-6s%s" .IfName "up" "up">>
+<<if eq .IfIndex 1>>xe-0/0/0.0              up    up   inet     192.168.1.1/24
+<<end>><<end>>fxp0                    up    up
+fxp0.0                  up    up   inet     10.0.0.1/24
+lo0                     up    up
+lo0.0                   up    up   inet     10.255.0.1          --> 0/0

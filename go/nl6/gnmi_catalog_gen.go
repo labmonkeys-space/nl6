@@ -55,6 +55,7 @@ var gnmiGenRegistry = map[string]gnmiGenFactory{
 	"key":       genKey,
 	"ifcounter": genIfCounter,
 	"ifstate":   genIfState,
+	"ifmib":     genIfMIB,
 	"sine":      genSine,
 	"counter":   genCounter,
 	"inventory": genInventory,
@@ -249,9 +250,34 @@ func perDeviceSerial(serial string, ip net.IP) string {
 	return fmt.Sprintf("%s%08X%s", serial[:end], binary.BigEndian.Uint32(v4), serial[end:])
 }
 
+// ifMIBColumns are the static IF-MIB columns a catalogue leaf may read, so
+// gNMI reports the MTU and speed the device's SNMP rows serve.
+var ifMIBColumns = map[string]string{
+	"ifMtu":       ifTablePrefix + "4.",
+	"ifHighSpeed": ifXTablePrefix + "15.",
+}
+
+func genIfMIB(arg string) (gnmiLeafGen, error) {
+	prefix, ok := ifMIBColumns[arg]
+	if !ok {
+		return nil, fmt.Errorf("unknown static IF-MIB column %q", arg)
+	}
+	return func(ctx *gnmiGenCtx) (any, bool) {
+		if ctx.ifIndex == 0 || ctx.dev == nil || ctx.dev.resources == nil || ctx.dev.resources.oidIndex == nil {
+			return nil, false
+		}
+		v, ok := ctx.dev.resources.oidIndex.Load(prefix + strconv.Itoa(ctx.ifIndex))
+		if !ok {
+			return nil, false
+		}
+		s, ok := v.(string)
+		return s, ok && s != ""
+	}, nil
+}
+
 func genInventory(arg string) (gnmiLeafGen, error) {
 	switch arg {
-	case "name", "type", "parent", "part_no", "description", "serial_no", "serial_no_per_device":
+	case "name", "type", "parent", "part_no", "description", "serial_no", "serial_no_per_device", "form_factor", "ethernet_pmd", "connector_type", "wavelength":
 	default:
 		return nil, fmt.Errorf("unknown inventory field %q", arg)
 	}
@@ -272,6 +298,14 @@ func genInventory(arg string) (gnmiLeafGen, error) {
 				return c.PartNo, true
 			case "description":
 				return c.Description, true
+			case "form_factor":
+				return c.FormFactor, c.FormFactor != ""
+			case "ethernet_pmd":
+				return c.EthernetPMD, c.EthernetPMD != ""
+			case "connector_type":
+				return c.ConnectorType, c.ConnectorType != ""
+			case "wavelength":
+				return c.Wavelength, c.Wavelength != ""
 			case "serial_no_per_device":
 				var ip net.IP
 				if ctx.dev != nil {

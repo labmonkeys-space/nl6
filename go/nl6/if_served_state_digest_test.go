@@ -29,7 +29,7 @@ import (
 // measurement that did not exist.
 //
 // A test that asserts "nothing changed" by observing nothing passes for the
-// wrong reason. This one observes 887 (profile, ifIndex) rows through the
+// wrong reason. This one observes 960 (profile, ifIndex) rows through the
 // cycler's own serve path — the same GetDynamic that findResponse delegates to
 // for .7/.8/.9 — and pins their concatenation.
 //
@@ -46,7 +46,11 @@ import (
 // Re-pinned by the juniper_mx10004 device type: it adds 48 rows, all admin=1
 // oper=1. With those 48 rows filtered out the digest is exactly the previous
 // value, 182da76a7ef8109cf831a2bcc340031796f857be95906f324534ba07b3ca85b0.
-const shippedServedStateDigest = "faf7833ad0716139c2d777172269bf380c862ab9193711b2e05ffbbdef0514a5"
+//
+// Re-pinned by juniper_mx10004 LC9600 in FPC1: it adds 24 rows, ifIndex 49-72,
+// all admin=1 oper=1. With those 24 rows filtered out the digest is exactly
+// the previous value, faf7833ad0716139c2d777172269bf380c862ab9193711b2e05ffbbdef0514a5.
+const shippedServedStateDigest = "c94783c1f8dedc5d35e971ada849a8eee3085532c74c7399b529bd1176ef7dcb"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

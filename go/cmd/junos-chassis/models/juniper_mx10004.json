@@ -1,0 +1,1952 @@
+{
+  "comment": "juniper_mx10004 chassis model, rendered by go/cmd/junos-chassis. Layout from Juniper's public MX10004 hardware documentation (4 FPC slots, 2 RCBs, 6 SFBs) and the public LC480 and LC9600 descriptions; every serial is synthetic. FPC1's sensor set copies the LC480's (no public source names LC9600 sensors).",
+  "head": [
+    {
+      "name": "Chassis",
+      "type": "CHASSIS",
+      "parent": "",
+      "part_no": "JNP10004",
+      "description": "JNP10004 [MX10004]",
+      "serial_no": "NL6MX10004001",
+      "temperature": false
+    },
+    {
+      "name": "Midplane",
+      "type": "BACKPLANE",
+      "parent": "Chassis",
+      "part_no": "JNP10004-MIDPLANE",
+      "description": "Midplane",
+      "serial_no": "NL6MP0000001",
+      "temperature": false
+    },
+    {
+      "name": "FPD Board",
+      "type": "CHASSIS",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FPD",
+      "description": "Front Panel Display",
+      "serial_no": "NL6FPD000001",
+      "temperature": false
+    },
+    {
+      "name": "CB0",
+      "type": "CONTROLLER_CARD",
+      "parent": "Chassis",
+      "part_no": "JNP10K-RE1",
+      "description": "Control Board",
+      "serial_no": "NL6CB0000001",
+      "temperature": false
+    },
+    {
+      "name": "CB0:INTAKE_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "CB0 Intake A Temp Sensor",
+      "serial_no": "NL6CBS000001",
+      "temperature": true
+    },
+    {
+      "name": "CB0:INTAKE_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "CB0 Intake B Temp Sensor",
+      "serial_no": "NL6CBS000002",
+      "temperature": true
+    },
+    {
+      "name": "CB0:EXHAUST_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "CB0 Exhaust A Temp Sensor",
+      "serial_no": "NL6CBS000003",
+      "temperature": true
+    },
+    {
+      "name": "CB0:EXHAUST_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "CB0 Exhaust B Temp Sensor",
+      "serial_no": "NL6CBS000004",
+      "temperature": true
+    },
+    {
+      "name": "CB0:MIDDLE_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "CB0 Middle Temp Sensor",
+      "serial_no": "NL6CBS000005",
+      "temperature": true
+    },
+    {
+      "name": "Routing Engine0",
+      "type": "CONTROLLER_CARD",
+      "parent": "CB0",
+      "part_no": "JNP10K-RE1",
+      "description": "RE X10",
+      "serial_no": "NL6RE0000001",
+      "temperature": true
+    },
+    {
+      "name": "ROUTING_ENGINE0:CPU",
+      "type": "SENSOR",
+      "parent": "Routing Engine0",
+      "part_no": "JNP10K-RE1",
+      "description": "Routing Engine0 CPU",
+      "serial_no": "NL6RECPU0001",
+      "temperature": true
+    },
+    {
+      "name": "CB1",
+      "type": "CONTROLLER_CARD",
+      "parent": "Chassis",
+      "part_no": "JNP10K-RE1",
+      "description": "Control Board",
+      "serial_no": "NL6CB0000002",
+      "temperature": false
+    },
+    {
+      "name": "CB1:INTAKE_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake A Temp Sensor",
+      "serial_no": "NL6CBS000006",
+      "temperature": true
+    },
+    {
+      "name": "CB1:INTAKE_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake B Temp Sensor",
+      "serial_no": "NL6CBS000007",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust A Temp Sensor",
+      "serial_no": "NL6CBS000008",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust B Temp Sensor",
+      "serial_no": "NL6CBS000009",
+      "temperature": true
+    },
+    {
+      "name": "CB1:MIDDLE_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Middle Temp Sensor",
+      "serial_no": "NL6CBS000010",
+      "temperature": true
+    },
+    {
+      "name": "Routing Engine1",
+      "type": "CONTROLLER_CARD",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "RE X10",
+      "serial_no": "NL6RE0000002",
+      "temperature": true
+    },
+    {
+      "name": "ROUTING_ENGINE1:CPU",
+      "type": "SENSOR",
+      "parent": "Routing Engine1",
+      "part_no": "JNP10K-RE1",
+      "description": "Routing Engine1 CPU",
+      "serial_no": "NL6RECPU0002",
+      "temperature": true
+    }
+  ],
+  "fpc_slots": 4,
+  "fpcs": [
+    {
+      "slot": 0,
+      "card": "LC480"
+    },
+    {
+      "slot": 1,
+      "card": "LC9600"
+    }
+  ],
+  "tail": [
+    {
+      "name": "PEM0",
+      "type": "POWER_SUPPLY",
+      "parent": "Chassis",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "JNP10K 5500W AC/HVDC Power Supply",
+      "serial_no": "NL6PEM000001",
+      "temperature": false
+    },
+    {
+      "name": "PEM0:TEMP_SENSOR_0",
+      "type": "SENSOR",
+      "parent": "PEM0",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "PEM0 Temp Sensor 0",
+      "serial_no": "NL6PMS000001",
+      "temperature": true
+    },
+    {
+      "name": "PEM0:TEMP_SENSOR_1",
+      "type": "SENSOR",
+      "parent": "PEM0",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "PEM0 Temp Sensor 1",
+      "serial_no": "NL6PMS000002",
+      "temperature": true
+    },
+    {
+      "name": "PEM1",
+      "type": "POWER_SUPPLY",
+      "parent": "Chassis",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "JNP10K 5500W AC/HVDC Power Supply",
+      "serial_no": "NL6PEM000002",
+      "temperature": false
+    },
+    {
+      "name": "PEM1:TEMP_SENSOR_0",
+      "type": "SENSOR",
+      "parent": "PEM1",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "PEM1 Temp Sensor 0",
+      "serial_no": "NL6PMS000003",
+      "temperature": true
+    },
+    {
+      "name": "PEM1:TEMP_SENSOR_1",
+      "type": "SENSOR",
+      "parent": "PEM1",
+      "part_no": "JNP10K-PWR-AC2",
+      "description": "PEM1 Temp Sensor 1",
+      "serial_no": "NL6PMS000004",
+      "temperature": true
+    },
+    {
+      "name": "FTC0",
+      "type": "FAN",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FTC",
+      "description": "Fan Tray Controller",
+      "serial_no": "NL6FTC000001",
+      "temperature": false
+    },
+    {
+      "name": "FTC1",
+      "type": "FAN",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FTC",
+      "description": "Fan Tray Controller",
+      "serial_no": "NL6FTC000002",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0",
+      "type": "FAN",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0",
+      "serial_no": "NL6FT0000001",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 0",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 0",
+      "serial_no": "NL6FAN000000",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 1",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 1",
+      "serial_no": "NL6FAN000001",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 2",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 2",
+      "serial_no": "NL6FAN000002",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 3",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 3",
+      "serial_no": "NL6FAN000003",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 4",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 4",
+      "serial_no": "NL6FAN000004",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 5",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 5",
+      "serial_no": "NL6FAN000005",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 6",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 6",
+      "serial_no": "NL6FAN000006",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 7",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 7",
+      "serial_no": "NL6FAN000007",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 8",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 8",
+      "serial_no": "NL6FAN000008",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 9",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 9",
+      "serial_no": "NL6FAN000009",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 10",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 10",
+      "serial_no": "NL6FAN000010",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 0 Fan 11",
+      "type": "FAN",
+      "parent": "Fan Tray 0",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 0 Fan 11",
+      "serial_no": "NL6FAN000011",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1",
+      "type": "FAN",
+      "parent": "Chassis",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1",
+      "serial_no": "NL6FT0000002",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 0",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 0",
+      "serial_no": "NL6FAN001000",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 1",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 1",
+      "serial_no": "NL6FAN001001",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 2",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 2",
+      "serial_no": "NL6FAN001002",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 3",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 3",
+      "serial_no": "NL6FAN001003",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 4",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 4",
+      "serial_no": "NL6FAN001004",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 5",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 5",
+      "serial_no": "NL6FAN001005",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 6",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 6",
+      "serial_no": "NL6FAN001006",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 7",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 7",
+      "serial_no": "NL6FAN001007",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 8",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 8",
+      "serial_no": "NL6FAN001008",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 9",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 9",
+      "serial_no": "NL6FAN001009",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 10",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 10",
+      "serial_no": "NL6FAN001010",
+      "temperature": false
+    },
+    {
+      "name": "Fan Tray 1 Fan 11",
+      "type": "FAN",
+      "parent": "Fan Tray 1",
+      "part_no": "JNP10004-FAN3",
+      "description": "Fan Tray 1 Fan 11",
+      "serial_no": "NL6FAN001011",
+      "temperature": false
+    },
+    {
+      "name": "SFB0",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000001",
+      "temperature": false
+    },
+    {
+      "name": "SFB0:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS000000",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS000001",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS000002",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS000003",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS000004",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS000005",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS000006",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS000007",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS000008",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS000009",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS000010",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS000011",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS000012",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS000013",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS000014",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS000015",
+      "temperature": true
+    },
+    {
+      "name": "SFB0:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB0",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB0 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS000016",
+      "temperature": true
+    },
+    {
+      "name": "SFB1",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000002",
+      "temperature": false
+    },
+    {
+      "name": "SFB1:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS001000",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS001001",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS001002",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS001003",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS001004",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS001005",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS001006",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS001007",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS001008",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS001009",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS001010",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS001011",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS001012",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS001013",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS001014",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS001015",
+      "temperature": true
+    },
+    {
+      "name": "SFB1:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB1",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB1 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS001016",
+      "temperature": true
+    },
+    {
+      "name": "SFB2",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000003",
+      "temperature": false
+    },
+    {
+      "name": "SFB2:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS002000",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS002001",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS002002",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS002003",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS002004",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS002005",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS002006",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS002007",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS002008",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS002009",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS002010",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS002011",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS002012",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS002013",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS002014",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS002015",
+      "temperature": true
+    },
+    {
+      "name": "SFB2:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB2",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB2 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS002016",
+      "temperature": true
+    },
+    {
+      "name": "SFB3",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000004",
+      "temperature": false
+    },
+    {
+      "name": "SFB3:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS003000",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS003001",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS003002",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS003003",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS003004",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS003005",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS003006",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS003007",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS003008",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS003009",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS003010",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS003011",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS003012",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS003013",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS003014",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS003015",
+      "temperature": true
+    },
+    {
+      "name": "SFB3:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB3",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB3 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS003016",
+      "temperature": true
+    },
+    {
+      "name": "SFB4",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000005",
+      "temperature": false
+    },
+    {
+      "name": "SFB4:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS004000",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS004001",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS004002",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS004003",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS004004",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS004005",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS004006",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS004007",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS004008",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS004009",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS004010",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS004011",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS004012",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS004013",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS004014",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS004015",
+      "temperature": true
+    },
+    {
+      "name": "SFB4:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB4",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB4 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS004016",
+      "temperature": true
+    },
+    {
+      "name": "SFB5",
+      "type": "FABRIC",
+      "parent": "Chassis",
+      "part_no": "JNP10004-SFB",
+      "description": "Switch Fabric Board",
+      "serial_no": "NL6SFB000006",
+      "temperature": false
+    },
+    {
+      "name": "SFB5:INTAKE-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 INTAKE-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS005000",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:INTAKE-MIDDLE-HIGH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 INTAKE-MIDDLE-HIGH_TEMP Sensor",
+      "serial_no": "NL6SBS005001",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:INTAKE-MIDDLE-LOW_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 INTAKE-MIDDLE-LOW_TEMP Sensor",
+      "serial_no": "NL6SBS005002",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:INTAKE-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 INTAKE-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS005003",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:EXHAUST-TOP_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 EXHAUST-TOP_TEMP Sensor",
+      "serial_no": "NL6SBS005004",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:EXHAUST-MIDDLE_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 EXHAUST-MIDDLE_TEMP Sensor",
+      "serial_no": "NL6SBS005005",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:EXHAUST-BOTTOM_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 EXHAUST-BOTTOM_TEMP Sensor",
+      "serial_no": "NL6SBS005006",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:PCIE_SWITCH_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 PCIE_SWITCH_TEMP Sensor",
+      "serial_no": "NL6SBS005007",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_EXTERNAL_TEMP",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_EXTERNAL_TEMP Sensor",
+      "serial_no": "NL6SBS005008",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_MAIN",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_MAIN Sensor",
+      "serial_no": "NL6SBS005009",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_0",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_0 Sensor",
+      "serial_no": "NL6SBS005010",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_1",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_1 Sensor",
+      "serial_no": "NL6SBS005011",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_2",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_2 Sensor",
+      "serial_no": "NL6SBS005012",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_3",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_3 Sensor",
+      "serial_no": "NL6SBS005013",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_4",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_4 Sensor",
+      "serial_no": "NL6SBS005014",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_5",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_5 Sensor",
+      "serial_no": "NL6SBS005015",
+      "temperature": true
+    },
+    {
+      "name": "SFB5:ZF0_INTERNAL_REMOTE_6",
+      "type": "SENSOR",
+      "parent": "SFB5",
+      "part_no": "JNP10004-SFB",
+      "description": "SFB5 ZF0_INTERNAL_REMOTE_6 Sensor",
+      "serial_no": "NL6SBS005016",
+      "temperature": true
+    }
+  ],
+  "card_types": {
+    "LC480": {
+      "part_no": "JNP10K-LC480",
+      "description": "JNP10K-LC480",
+      "cpu": {
+        "part_no": "JNP10K-LC480-CPU",
+        "description": "LC480 PMB"
+      },
+      "mezz": {
+        "part_no": "JNP10K-LC480-MEZZ",
+        "description": "LC480 Mezz"
+      },
+      "mezz_count": 2,
+      "pic": {
+        "part_no": "JNP10K-LC480-PIC",
+        "description": "24xSFPP 1/10GE PIC"
+      },
+      "pic_count": 2,
+      "ports_per_pic": 24,
+      "port_prefix": "xe",
+      "speed_mbps": 10000,
+      "entity_port_model": "10GE",
+      "optic": {
+        "part_no": "740-021308",
+        "description": "SFP+-10G-SR",
+        "form_factor": "SFP_PLUS",
+        "ethernet_pmd": "ETH_10GBASE_SR",
+        "connector_type": "LC_CONNECTOR",
+        "wavelength": "850",
+        "cable": "10GBASE SR",
+        "fiber": "MM"
+      },
+      "sensors": [
+        {
+          "name": "EA0_TEMP_SENSOR",
+          "ordinal": 1
+        },
+        {
+          "name": "EA0_XR0_TEMP_SENSOR",
+          "ordinal": 2
+        },
+        {
+          "name": "EA0_XR1_TEMP_SENSOR",
+          "ordinal": 3
+        },
+        {
+          "name": "EA0_HMC0_LOGIC_DIE",
+          "ordinal": 4
+        },
+        {
+          "name": "EA0_HMC0_DRAM_BOTM",
+          "ordinal": 5
+        },
+        {
+          "name": "EA0_HMC1_LOGIC_DIE",
+          "ordinal": 6
+        },
+        {
+          "name": "EA0_HMC1_DRAM_BOTM",
+          "ordinal": 7
+        },
+        {
+          "name": "EA1_TEMP_SENSOR",
+          "ordinal": 8
+        },
+        {
+          "name": "EA1_XR0_TEMP_SENSOR",
+          "ordinal": 9
+        },
+        {
+          "name": "EA1_XR1_TEMP_SENSOR",
+          "ordinal": 10
+        },
+        {
+          "name": "EA1_HMC0_LOGIC_DIE",
+          "ordinal": 11
+        },
+        {
+          "name": "EA1_HMC0_DRAM_BOTM",
+          "ordinal": 12
+        },
+        {
+          "name": "EA1_HMC1_LOGIC_DIE",
+          "ordinal": 13
+        },
+        {
+          "name": "EA1_HMC1_DRAM_BOTM",
+          "ordinal": 14
+        },
+        {
+          "name": "EA2_TEMP_SENSOR",
+          "ordinal": 15
+        },
+        {
+          "name": "EA2_XR0_TEMP_SENSOR",
+          "ordinal": 16
+        },
+        {
+          "name": "EA2_XR1_TEMP_SENSOR",
+          "ordinal": 17
+        },
+        {
+          "name": "EA2_HMC0_LOGIC_DIE",
+          "ordinal": 18
+        },
+        {
+          "name": "EA2_HMC0_DRAM_BOTM",
+          "ordinal": 19
+        },
+        {
+          "name": "EA2_HMC1_LOGIC_DIE",
+          "ordinal": 20
+        },
+        {
+          "name": "EA2_HMC1_DRAM_BOTM",
+          "ordinal": 21
+        },
+        {
+          "name": "EA3_TEMP_SENSOR",
+          "ordinal": 30
+        },
+        {
+          "name": "EA3_XR0_TEMP_SENSOR",
+          "ordinal": 31
+        },
+        {
+          "name": "EA3_XR1_TEMP_SENSOR",
+          "ordinal": 32
+        },
+        {
+          "name": "EA3_HMC0_LOGIC_DIE",
+          "ordinal": 33
+        },
+        {
+          "name": "EA3_HMC0_DRAM_BOTM",
+          "ordinal": 34
+        },
+        {
+          "name": "EA3_HMC1_LOGIC_DIE",
+          "ordinal": 35
+        },
+        {
+          "name": "EA3_HMC1_DRAM_BOTM",
+          "ordinal": 36
+        },
+        {
+          "name": "INTAKE_A_TEMP_SENSOR",
+          "ordinal": 22
+        },
+        {
+          "name": "INTAKE_B_TEMP_SENSOR",
+          "ordinal": 23
+        },
+        {
+          "name": "EXHAUST_A_TEMP_SENSOR",
+          "ordinal": 24
+        },
+        {
+          "name": "EXHAUST_B_TEMP_SENSOR",
+          "ordinal": 25
+        },
+        {
+          "name": "EXHAUST_C_TEMP_SENSOR",
+          "ordinal": 26
+        },
+        {
+          "name": "PMB_TEMP_SENSOR",
+          "ordinal": 27
+        },
+        {
+          "name": "PEXSW_TEMP_SENSOR",
+          "ordinal": 28
+        },
+        {
+          "name": "CPU_TEMP_SENSOR",
+          "ordinal": 29
+        }
+      ],
+      "pfes": 4,
+      "packet_usage": [
+        "NPU0",
+        "CC0",
+        "CPU0"
+      ],
+      "ssh_fpc_status": "Online            41     12          0        12     12     12    32768       21         14",
+      "ssh_environment": [
+        {
+          "item": "Intake-A",
+          "celsius": 33
+        },
+        {
+          "item": "Exhaust-A",
+          "celsius": 41
+        },
+        {
+          "item": "CPU",
+          "celsius": 44
+        }
+      ],
+      "ssh_pic_celsius": 39
+    },
+    "LC9600": {
+      "part_no": "JNP10K-LC9600",
+      "description": "JNP10K-LC9600",
+      "cpu": {
+        "part_no": "JNP10K-LC9600-CPU",
+        "description": "JNP10K-LC9600 PMB"
+      },
+      "mezz": {
+        "part_no": "JNP10K-LC9600-MEZZ",
+        "description": "LC9600 Mezz"
+      },
+      "mezz_count": 2,
+      "pic": {
+        "part_no": "JNP10K-LC9600-PIC",
+        "description": "MRATE-4xQDD"
+      },
+      "pic_count": 6,
+      "ports_per_pic": 4,
+      "port_prefix": "et",
+      "speed_mbps": 400000,
+      "entity_port_model": "400GE",
+      "optic": {
+        "part_no": "740-000400",
+        "description": "QSFP56-DD-400GBASE-DR4",
+        "form_factor": "QSFP56_DD_TYPE1",
+        "ethernet_pmd": "ETH_400GBASE_DR4",
+        "connector_type": "MPO_CONNECTOR",
+        "wavelength": "1310",
+        "cable": "400GBASE DR4",
+        "fiber": "SM"
+      },
+      "sensors": [
+        {
+          "name": "EA0_TEMP_SENSOR",
+          "ordinal": 1
+        },
+        {
+          "name": "EA0_XR0_TEMP_SENSOR",
+          "ordinal": 2
+        },
+        {
+          "name": "EA0_XR1_TEMP_SENSOR",
+          "ordinal": 3
+        },
+        {
+          "name": "EA0_HMC0_LOGIC_DIE",
+          "ordinal": 4
+        },
+        {
+          "name": "EA0_HMC0_DRAM_BOTM",
+          "ordinal": 5
+        },
+        {
+          "name": "EA0_HMC1_LOGIC_DIE",
+          "ordinal": 6
+        },
+        {
+          "name": "EA0_HMC1_DRAM_BOTM",
+          "ordinal": 7
+        },
+        {
+          "name": "EA1_TEMP_SENSOR",
+          "ordinal": 8
+        },
+        {
+          "name": "EA1_XR0_TEMP_SENSOR",
+          "ordinal": 9
+        },
+        {
+          "name": "EA1_XR1_TEMP_SENSOR",
+          "ordinal": 10
+        },
+        {
+          "name": "EA1_HMC0_LOGIC_DIE",
+          "ordinal": 11
+        },
+        {
+          "name": "EA1_HMC0_DRAM_BOTM",
+          "ordinal": 12
+        },
+        {
+          "name": "EA1_HMC1_LOGIC_DIE",
+          "ordinal": 13
+        },
+        {
+          "name": "EA1_HMC1_DRAM_BOTM",
+          "ordinal": 14
+        },
+        {
+          "name": "EA2_TEMP_SENSOR",
+          "ordinal": 15
+        },
+        {
+          "name": "EA2_XR0_TEMP_SENSOR",
+          "ordinal": 16
+        },
+        {
+          "name": "EA2_XR1_TEMP_SENSOR",
+          "ordinal": 17
+        },
+        {
+          "name": "EA2_HMC0_LOGIC_DIE",
+          "ordinal": 18
+        },
+        {
+          "name": "EA2_HMC0_DRAM_BOTM",
+          "ordinal": 19
+        },
+        {
+          "name": "EA2_HMC1_LOGIC_DIE",
+          "ordinal": 20
+        },
+        {
+          "name": "EA2_HMC1_DRAM_BOTM",
+          "ordinal": 21
+        },
+        {
+          "name": "EA3_TEMP_SENSOR",
+          "ordinal": 30
+        },
+        {
+          "name": "EA3_XR0_TEMP_SENSOR",
+          "ordinal": 31
+        },
+        {
+          "name": "EA3_XR1_TEMP_SENSOR",
+          "ordinal": 32
+        },
+        {
+          "name": "EA3_HMC0_LOGIC_DIE",
+          "ordinal": 33
+        },
+        {
+          "name": "EA3_HMC0_DRAM_BOTM",
+          "ordinal": 34
+        },
+        {
+          "name": "EA3_HMC1_LOGIC_DIE",
+          "ordinal": 35
+        },
+        {
+          "name": "EA3_HMC1_DRAM_BOTM",
+          "ordinal": 36
+        },
+        {
+          "name": "INTAKE_A_TEMP_SENSOR",
+          "ordinal": 22
+        },
+        {
+          "name": "INTAKE_B_TEMP_SENSOR",
+          "ordinal": 23
+        },
+        {
+          "name": "EXHAUST_A_TEMP_SENSOR",
+          "ordinal": 24
+        },
+        {
+          "name": "EXHAUST_B_TEMP_SENSOR",
+          "ordinal": 25
+        },
+        {
+          "name": "EXHAUST_C_TEMP_SENSOR",
+          "ordinal": 26
+        },
+        {
+          "name": "PMB_TEMP_SENSOR",
+          "ordinal": 27
+        },
+        {
+          "name": "PEXSW_TEMP_SENSOR",
+          "ordinal": 28
+        },
+        {
+          "name": "CPU_TEMP_SENSOR",
+          "ordinal": 29
+        }
+      ],
+      "pfes": 12,
+      "packet_usage": [
+        "NPU0",
+        "CC0",
+        "CPU0"
+      ],
+      "ssh_fpc_status": "Online            46     18          0        18     17     17    32768       24         15",
+      "ssh_environment": [
+        {
+          "item": "Intake-A",
+          "celsius": 34
+        },
+        {
+          "item": "Exhaust-A",
+          "celsius": 47
+        },
+        {
+          "item": "CPU",
+          "celsius": 49
+        }
+      ],
+      "ssh_pic_celsius": 45
+    }
+  },
+  "cpu_count": 10,
+  "hardware_rev": "REV 06",
+  "software_rev": "24.2R1.17",
+  "routing_engines": [
+    {
+      "slot": 0,
+      "jnx_load_avg_1m": "5",
+      "jnx_load_avg_5m": "5"
+    },
+    {
+      "slot": 1,
+      "jnx_load_avg_1m": "1",
+      "jnx_load_avg_5m": "1",
+      "jnx_cpu": "1",
+      "jnx_buffer": "12",
+      "jnx_temp": "36"
+    }
+  ],
+  "interfaces": {
+    "mtu": "9216",
+    "if_speed": "4294967295",
+    "mac_prefix": "00:1A:2B:3C:00:",
+    "alias_format": "to-core-%02d",
+    "hc_period": 24,
+    "hc_in_base": 13897247566,
+    "hc_in_step": 12345678,
+    "hc_out_base": 13796012999,
+    "hc_out_step": 11111111
+  },
+  "chassis_entity": [
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.1.1",
+      "response": "1"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.2.1",
+      "response": "Juniper Networks MX10004 Universal Edge Router"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.4.1",
+      "response": "0"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.5.1",
+      "response": "3"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.7.1",
+      "response": "Chassis"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1",
+      "response": "Juniper Networks, Inc."
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.3.1",
+      "response": "1.3.6.1.4.1.2636.1.1.1.2.168"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.14.1",
+      "response": "JUNIPER-MX10004-CHASSIS-01"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1",
+      "response": "ASSET-JNP-001"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.16.1",
+      "response": "1"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.17.1",
+      "response": "07E50401000000"
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.18.1",
+      "response": "Juniper Networks, Inc."
+    },
+    {
+      "oid": "1.3.6.1.2.1.47.1.1.1.1.19.1",
+      "response": "urn:clei:JUNIAB1DAA"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+FPC slot <<.FPC.Slot>>, PIC slot <<.PIC.Index>> information:
+  Type                             <<.PIC.Component.Description>>
+  State                            Online
+  PIC version                      <<.PIC.Component.PartNo>>
+  Uptime                          23 days, 8 hours, 15 minutes
+
+PIC port information:
+                         Fiber                    Xcvr vendor
+Port Cable type          type  Xcvr vendor        part number        Wavelength
+<<range $i, $p := .PIC.Ports>><<if $i>>
+<<end>><<printf "%-5d%-20s%-6s%-19s%-19s%s nm" $p.Index $.FPC.Card.Optic.Cable $.FPC.Card.Optic.Fiber "JUNIPER" $p.Xcvr.PartNo $.FPC.Card.Optic.Wavelength>><<end>>

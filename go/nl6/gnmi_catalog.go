@@ -104,6 +104,13 @@ type gnmiCatalogComponent struct {
 	Description string `json:"description"`
 	SerialNo    string `json:"serial_no"`
 	Temperature bool   `json:"temperature"`
+	// Optic fields, set per card type by the chassis model: on a
+	// TRANSCEIVER the form factor, Ethernet PMD and connector type, on
+	// a PORT the wavelength property.
+	FormFactor    string `json:"form_factor,omitempty"`
+	EthernetPMD   string `json:"ethernet_pmd,omitempty"`
+	ConnectorType string `json:"connector_type,omitempty"`
+	Wavelength    string `json:"wavelength,omitempty"`
 }
 
 type gnmiCatalogNeighbor struct {

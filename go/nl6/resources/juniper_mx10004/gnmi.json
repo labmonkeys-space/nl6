@@ -141,7 +141,7 @@
       "type": "CONTROLLER_CARD",
       "parent": "CB0",
       "part_no": "JNP10K-RE1",
-      "description": "RE-S-X6-64G",
+      "description": "RE X10",
       "serial_no": "NL6RE0000001",
       "temperature": true
     },
@@ -152,6 +152,78 @@
       "part_no": "JNP10K-RE1",
       "description": "Routing Engine0 CPU",
       "serial_no": "NL6RECPU0001",
+      "temperature": true
+    },
+    {
+      "name": "CB1",
+      "type": "CONTROLLER_CARD",
+      "parent": "Chassis",
+      "part_no": "JNP10K-RE1",
+      "description": "Control Board",
+      "serial_no": "NL6CB0000002",
+      "temperature": false
+    },
+    {
+      "name": "CB1:INTAKE_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake A Temp Sensor",
+      "serial_no": "NL6CBS000006",
+      "temperature": true
+    },
+    {
+      "name": "CB1:INTAKE_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Intake B Temp Sensor",
+      "serial_no": "NL6CBS000007",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust A Temp Sensor",
+      "serial_no": "NL6CBS000008",
+      "temperature": true
+    },
+    {
+      "name": "CB1:EXHAUST_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Exhaust B Temp Sensor",
+      "serial_no": "NL6CBS000009",
+      "temperature": true
+    },
+    {
+      "name": "CB1:MIDDLE_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "CB1 Middle Temp Sensor",
+      "serial_no": "NL6CBS000010",
+      "temperature": true
+    },
+    {
+      "name": "Routing Engine1",
+      "type": "CONTROLLER_CARD",
+      "parent": "CB1",
+      "part_no": "JNP10K-RE1",
+      "description": "RE X10",
+      "serial_no": "NL6RE0000002",
+      "temperature": true
+    },
+    {
+      "name": "ROUTING_ENGINE1:CPU",
+      "type": "SENSOR",
+      "parent": "Routing Engine1",
+      "part_no": "JNP10K-RE1",
+      "description": "Routing Engine1 CPU",
+      "serial_no": "NL6RECPU0002",
       "temperature": true
     },
     {
@@ -215,7 +287,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/0",
       "serial_no": "NL6PRT000001",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT0:Xcvr0",
@@ -224,7 +297,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000000",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT1",
@@ -233,7 +309,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/1",
       "serial_no": "NL6PRT000002",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT1:Xcvr0",
@@ -242,7 +319,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000001",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT2",
@@ -251,7 +331,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/2",
       "serial_no": "NL6PRT000003",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT2:Xcvr0",
@@ -260,7 +341,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000002",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT3",
@@ -269,7 +353,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/3",
       "serial_no": "NL6PRT000004",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT3:Xcvr0",
@@ -278,7 +363,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000003",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT4",
@@ -287,7 +375,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/4",
       "serial_no": "NL6PRT000005",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT4:Xcvr0",
@@ -296,7 +385,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000004",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT5",
@@ -305,7 +397,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/5",
       "serial_no": "NL6PRT000006",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT5:Xcvr0",
@@ -314,7 +407,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000005",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT6",
@@ -323,7 +419,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/6",
       "serial_no": "NL6PRT000007",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT6:Xcvr0",
@@ -332,7 +429,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000006",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT7",
@@ -341,7 +441,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/7",
       "serial_no": "NL6PRT000008",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT7:Xcvr0",
@@ -350,7 +451,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000007",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT8",
@@ -359,7 +463,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/8",
       "serial_no": "NL6PRT000009",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT8:Xcvr0",
@@ -368,7 +473,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000008",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT9",
@@ -377,7 +485,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/9",
       "serial_no": "NL6PRT000010",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT9:Xcvr0",
@@ -386,7 +495,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000009",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT10",
@@ -395,7 +507,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/10",
       "serial_no": "NL6PRT000011",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT10:Xcvr0",
@@ -404,7 +517,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000010",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT11",
@@ -413,7 +529,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/11",
       "serial_no": "NL6PRT000012",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT11:Xcvr0",
@@ -422,7 +539,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000011",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT12",
@@ -431,7 +551,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/12",
       "serial_no": "NL6PRT000013",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT12:Xcvr0",
@@ -440,7 +561,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000012",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT13",
@@ -449,7 +573,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/13",
       "serial_no": "NL6PRT000014",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT13:Xcvr0",
@@ -458,7 +583,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000013",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT14",
@@ -467,7 +595,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/14",
       "serial_no": "NL6PRT000015",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT14:Xcvr0",
@@ -476,7 +605,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000014",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT15",
@@ -485,7 +617,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/15",
       "serial_no": "NL6PRT000016",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT15:Xcvr0",
@@ -494,7 +627,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000015",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT16",
@@ -503,7 +639,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/16",
       "serial_no": "NL6PRT000017",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT16:Xcvr0",
@@ -512,7 +649,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000016",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT17",
@@ -521,7 +661,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/17",
       "serial_no": "NL6PRT000018",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT17:Xcvr0",
@@ -530,7 +671,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000017",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT18",
@@ -539,7 +683,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/18",
       "serial_no": "NL6PRT000019",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT18:Xcvr0",
@@ -548,7 +693,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000018",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT19",
@@ -557,7 +705,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/19",
       "serial_no": "NL6PRT000020",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT19:Xcvr0",
@@ -566,7 +715,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000019",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT20",
@@ -575,7 +727,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/20",
       "serial_no": "NL6PRT000021",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT20:Xcvr0",
@@ -584,7 +737,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000020",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT21",
@@ -593,7 +749,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/21",
       "serial_no": "NL6PRT000022",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT21:Xcvr0",
@@ -602,7 +759,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000021",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT22",
@@ -611,7 +771,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/22",
       "serial_no": "NL6PRT000023",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT22:Xcvr0",
@@ -620,7 +781,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000022",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC0:PORT23",
@@ -629,7 +793,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/0/23",
       "serial_no": "NL6PRT000024",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC0:PORT23:Xcvr0",
@@ -638,7 +803,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000023",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT0",
@@ -647,7 +815,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/0",
       "serial_no": "NL6PRT000025",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT0:Xcvr0",
@@ -656,7 +825,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000100",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT1",
@@ -665,7 +837,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/1",
       "serial_no": "NL6PRT000026",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT1:Xcvr0",
@@ -674,7 +847,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000101",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT2",
@@ -683,7 +859,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/2",
       "serial_no": "NL6PRT000027",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT2:Xcvr0",
@@ -692,7 +869,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000102",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT3",
@@ -701,7 +881,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/3",
       "serial_no": "NL6PRT000028",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT3:Xcvr0",
@@ -710,7 +891,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000103",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT4",
@@ -719,7 +903,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/4",
       "serial_no": "NL6PRT000029",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT4:Xcvr0",
@@ -728,7 +913,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000104",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT5",
@@ -737,7 +925,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/5",
       "serial_no": "NL6PRT000030",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT5:Xcvr0",
@@ -746,7 +935,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000105",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT6",
@@ -755,7 +947,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/6",
       "serial_no": "NL6PRT000031",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT6:Xcvr0",
@@ -764,7 +957,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000106",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT7",
@@ -773,7 +969,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/7",
       "serial_no": "NL6PRT000032",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT7:Xcvr0",
@@ -782,7 +979,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000107",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT8",
@@ -791,7 +991,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/8",
       "serial_no": "NL6PRT000033",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT8:Xcvr0",
@@ -800,7 +1001,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000108",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT9",
@@ -809,7 +1013,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/9",
       "serial_no": "NL6PRT000034",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT9:Xcvr0",
@@ -818,7 +1023,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000109",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT10",
@@ -827,7 +1035,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/10",
       "serial_no": "NL6PRT000035",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT10:Xcvr0",
@@ -836,7 +1045,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000110",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT11",
@@ -845,7 +1057,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/11",
       "serial_no": "NL6PRT000036",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT11:Xcvr0",
@@ -854,7 +1067,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000111",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT12",
@@ -863,7 +1079,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/12",
       "serial_no": "NL6PRT000037",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT12:Xcvr0",
@@ -872,7 +1089,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000112",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT13",
@@ -881,7 +1101,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/13",
       "serial_no": "NL6PRT000038",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT13:Xcvr0",
@@ -890,7 +1111,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000113",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT14",
@@ -899,7 +1123,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/14",
       "serial_no": "NL6PRT000039",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT14:Xcvr0",
@@ -908,7 +1133,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000114",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT15",
@@ -917,7 +1145,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/15",
       "serial_no": "NL6PRT000040",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT15:Xcvr0",
@@ -926,7 +1155,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000115",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT16",
@@ -935,7 +1167,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/16",
       "serial_no": "NL6PRT000041",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT16:Xcvr0",
@@ -944,7 +1177,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000116",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT17",
@@ -953,7 +1189,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/17",
       "serial_no": "NL6PRT000042",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT17:Xcvr0",
@@ -962,7 +1199,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000117",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT18",
@@ -971,7 +1211,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/18",
       "serial_no": "NL6PRT000043",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT18:Xcvr0",
@@ -980,7 +1221,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000118",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT19",
@@ -989,7 +1233,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/19",
       "serial_no": "NL6PRT000044",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT19:Xcvr0",
@@ -998,7 +1243,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000119",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT20",
@@ -1007,7 +1255,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/20",
       "serial_no": "NL6PRT000045",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT20:Xcvr0",
@@ -1016,7 +1265,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000120",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT21",
@@ -1025,7 +1277,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/21",
       "serial_no": "NL6PRT000046",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT21:Xcvr0",
@@ -1034,7 +1287,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000121",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT22",
@@ -1043,7 +1299,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/22",
       "serial_no": "NL6PRT000047",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT22:Xcvr0",
@@ -1052,7 +1309,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000122",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:PIC1:PORT23",
@@ -1061,7 +1321,8 @@
       "part_no": "JNP10K-LC480-PIC",
       "description": "xe-0/1/23",
       "serial_no": "NL6PRT000048",
-      "temperature": false
+      "temperature": false,
+      "wavelength": "850"
     },
     {
       "name": "FPC0:PIC1:PORT23:Xcvr0",
@@ -1070,7 +1331,10 @@
       "part_no": "740-021308",
       "description": "SFP+-10G-SR",
       "serial_no": "NL6XCV000123",
-      "temperature": false
+      "temperature": false,
+      "form_factor": "SFP_PLUS",
+      "ethernet_pmd": "ETH_10GBASE_SR",
+      "connector_type": "LC_CONNECTOR"
     },
     {
       "name": "FPC0:EA0_TEMP_SENSOR",
@@ -1394,6 +1658,948 @@
       "part_no": "JNP10K-LC480",
       "description": "FPC0 CPU_TEMP_SENSOR Temp Sensor",
       "serial_no": "NL6FPS000029",
+      "temperature": true
+    },
+    {
+      "name": "FPC1",
+      "type": "LINECARD",
+      "parent": "Chassis",
+      "part_no": "JNP10K-LC9600",
+      "description": "JNP10K-LC9600",
+      "serial_no": "NL6FPC000002",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:CPU",
+      "type": "CPU",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-CPU",
+      "description": "JNP10K-LC9600 PMB",
+      "serial_no": "NL6CPU000002",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:MEZZ0",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-MEZZ",
+      "description": "LC9600 Mezz",
+      "serial_no": "NL6MEZ000003",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:MEZZ1",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-MEZZ",
+      "description": "LC9600 Mezz",
+      "serial_no": "NL6MEZ000004",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC0",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000003",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC1",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000004",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC2",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000005",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC3",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000006",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC4",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000007",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC5",
+      "type": "LINECARD",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "MRATE-4xQDD",
+      "serial_no": "NL6PIC000008",
+      "temperature": false
+    },
+    {
+      "name": "FPC1:PIC0:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC0",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/0/0",
+      "serial_no": "NL6PRT000049",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC0:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC0:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010000",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC0:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC0",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/0/1",
+      "serial_no": "NL6PRT000050",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC0:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC0:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010001",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC0:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC0",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/0/2",
+      "serial_no": "NL6PRT000051",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC0:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC0:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010002",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC0:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC0",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/0/3",
+      "serial_no": "NL6PRT000052",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC0:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC0:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010003",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC1:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/1/0",
+      "serial_no": "NL6PRT000053",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC1:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC1:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010100",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC1:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/1/1",
+      "serial_no": "NL6PRT000054",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC1:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC1:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010101",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC1:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/1/2",
+      "serial_no": "NL6PRT000055",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC1:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC1:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010102",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC1:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC1",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/1/3",
+      "serial_no": "NL6PRT000056",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC1:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC1:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010103",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC2:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC2",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/2/0",
+      "serial_no": "NL6PRT000057",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC2:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC2:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010200",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC2:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC2",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/2/1",
+      "serial_no": "NL6PRT000058",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC2:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC2:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010201",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC2:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC2",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/2/2",
+      "serial_no": "NL6PRT000059",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC2:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC2:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010202",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC2:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC2",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/2/3",
+      "serial_no": "NL6PRT000060",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC2:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC2:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010203",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC3:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC3",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/3/0",
+      "serial_no": "NL6PRT000061",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC3:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC3:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010300",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC3:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC3",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/3/1",
+      "serial_no": "NL6PRT000062",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC3:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC3:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010301",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC3:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC3",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/3/2",
+      "serial_no": "NL6PRT000063",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC3:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC3:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010302",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC3:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC3",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/3/3",
+      "serial_no": "NL6PRT000064",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC3:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC3:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010303",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC4:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC4",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/4/0",
+      "serial_no": "NL6PRT000065",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC4:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC4:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010400",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC4:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC4",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/4/1",
+      "serial_no": "NL6PRT000066",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC4:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC4:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010401",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC4:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC4",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/4/2",
+      "serial_no": "NL6PRT000067",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC4:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC4:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010402",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC4:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC4",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/4/3",
+      "serial_no": "NL6PRT000068",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC4:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC4:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010403",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC5:PORT0",
+      "type": "PORT",
+      "parent": "FPC1:PIC5",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/5/0",
+      "serial_no": "NL6PRT000069",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC5:PORT0:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC5:PORT0",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010500",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC5:PORT1",
+      "type": "PORT",
+      "parent": "FPC1:PIC5",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/5/1",
+      "serial_no": "NL6PRT000070",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC5:PORT1:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC5:PORT1",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010501",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC5:PORT2",
+      "type": "PORT",
+      "parent": "FPC1:PIC5",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/5/2",
+      "serial_no": "NL6PRT000071",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC5:PORT2:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC5:PORT2",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010502",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:PIC5:PORT3",
+      "type": "PORT",
+      "parent": "FPC1:PIC5",
+      "part_no": "JNP10K-LC9600-PIC",
+      "description": "et-1/5/3",
+      "serial_no": "NL6PRT000072",
+      "temperature": false,
+      "wavelength": "1310"
+    },
+    {
+      "name": "FPC1:PIC5:PORT3:Xcvr0",
+      "type": "TRANSCEIVER",
+      "parent": "FPC1:PIC5:PORT3",
+      "part_no": "740-000400",
+      "description": "QSFP56-DD-400GBASE-DR4",
+      "serial_no": "NL6XCV010503",
+      "temperature": false,
+      "form_factor": "QSFP56_DD_TYPE1",
+      "ethernet_pmd": "ETH_400GBASE_DR4",
+      "connector_type": "MPO_CONNECTOR"
+    },
+    {
+      "name": "FPC1:EA0_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010001",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_XR0_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_XR0_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010002",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_XR1_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_XR1_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010003",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_HMC0_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_HMC0_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010004",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_HMC0_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_HMC0_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010005",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_HMC1_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_HMC1_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010006",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA0_HMC1_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA0_HMC1_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010007",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010008",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_XR0_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_XR0_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010009",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_XR1_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_XR1_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010010",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_HMC0_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_HMC0_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010011",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_HMC0_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_HMC0_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010012",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_HMC1_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_HMC1_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010013",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA1_HMC1_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA1_HMC1_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010014",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010015",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_XR0_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_XR0_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010016",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_XR1_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_XR1_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010017",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_HMC0_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_HMC0_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010018",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_HMC0_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_HMC0_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010019",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_HMC1_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_HMC1_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010020",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA2_HMC1_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA2_HMC1_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010021",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010030",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_XR0_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_XR0_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010031",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_XR1_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_XR1_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010032",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_HMC0_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_HMC0_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010033",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_HMC0_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_HMC0_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010034",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_HMC1_LOGIC_DIE",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_HMC1_LOGIC_DIE Temp Sensor",
+      "serial_no": "NL6FPS010035",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EA3_HMC1_DRAM_BOTM",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EA3_HMC1_DRAM_BOTM Temp Sensor",
+      "serial_no": "NL6FPS010036",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:INTAKE_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 INTAKE_A_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010022",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:INTAKE_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 INTAKE_B_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010023",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EXHAUST_A_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EXHAUST_A_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010024",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EXHAUST_B_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EXHAUST_B_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010025",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:EXHAUST_C_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 EXHAUST_C_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010026",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:PMB_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 PMB_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010027",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:PEXSW_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 PEXSW_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010028",
+      "temperature": true
+    },
+    {
+      "name": "FPC1:CPU_TEMP_SENSOR",
+      "type": "SENSOR",
+      "parent": "FPC1",
+      "part_no": "JNP10K-LC9600",
+      "description": "FPC1 CPU_TEMP_SENSOR Temp Sensor",
+      "serial_no": "NL6FPS010029",
       "temperature": true
     },
     {
@@ -2837,7 +4043,7 @@
         {
           "name": "state/mtu",
           "type": "uint16",
-          "gen": "const:1514"
+          "gen": "ifmib:ifMtu"
         },
         {
           "name": "state/name",
@@ -2878,7 +4084,7 @@
         {
           "name": "state/high-speed",
           "type": "uint32",
-          "gen": "const:10000",
+          "gen": "ifmib:ifHighSpeed",
           "always": true
         },
         {
@@ -3319,7 +4525,7 @@
         {
           "name": "transceiver/state/connector-type",
           "type": "string",
-          "gen": "const:LC_CONNECTOR",
+          "gen": "inventory:connector_type",
           "filter": "TRANSCEIVER"
         },
         {
@@ -3331,25 +4537,25 @@
         {
           "name": "transceiver/state/ethernet-pmd",
           "type": "string",
-          "gen": "const:ETH_10GBASE_SR",
+          "gen": "inventory:ethernet_pmd",
           "filter": "TRANSCEIVER"
         },
         {
           "name": "transceiver/state/ethernet-pmd-preconf",
           "type": "string",
-          "gen": "const:ETH_10GBASE_SR",
+          "gen": "inventory:ethernet_pmd",
           "filter": "TRANSCEIVER"
         },
         {
           "name": "transceiver/state/form-factor",
           "type": "string",
-          "gen": "const:SFP_PLUS",
+          "gen": "inventory:form_factor",
           "filter": "TRANSCEIVER"
         },
         {
           "name": "transceiver/state/form-factor-preconf",
           "type": "string",
-          "gen": "const:SFP_PLUS",
+          "gen": "inventory:form_factor",
           "filter": "TRANSCEIVER"
         },
         {
@@ -3508,7 +4714,7 @@
         {
           "name": "state/value",
           "type": "string",
-          "gen": "const:850"
+          "gen": "inventory:wavelength"
         }
       ]
     },
@@ -3521,9 +4727,13 @@
           "source": "static",
           "names": [
             "CB0",
+            "CB1",
             "FPC0",
+            "FPC1",
             "FPC0:PIC0",
-            "Routing Engine0"
+            "FPC1:PIC0",
+            "Routing Engine0",
+            "Routing Engine1"
           ]
         },
         {
@@ -3581,7 +4791,14 @@
           "names": [
             "FPC0:PIC0",
             "FPC0:PIC1",
+            "FPC1:PIC0",
+            "FPC1:PIC1",
+            "FPC1:PIC2",
+            "FPC1:PIC3",
+            "FPC1:PIC4",
+            "FPC1:PIC5",
             "Routing Engine0",
+            "Routing Engine1",
             "SFB0",
             "SFB1",
             "SFB2",
@@ -3617,7 +4834,16 @@
         {
           "source": "static",
           "names": [
-            "CPU0:CORE0"
+            "CPU0:CORE0",
+            "CPU0:CORE1",
+            "CPU0:CORE2",
+            "CPU0:CORE3",
+            "CPU0:CORE4",
+            "CPU0:CORE5",
+            "CPU0:CORE6",
+            "CPU0:CORE7",
+            "CPU0:CORE8",
+            "CPU0:CORE9"
           ]
         }
       ],
@@ -3669,7 +4895,13 @@
             "0",
             "1",
             "2",
-            "3"
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
           ]
         }
       ],
@@ -4965,7 +6197,10 @@
           "names": [
             "FPC0:NPU0",
             "FPC0:CC0",
-            "FPC0:CPU0"
+            "FPC0:CPU0",
+            "FPC1:NPU0",
+            "FPC1:CC0",
+            "FPC1:CPU0"
           ]
         }
       ],
@@ -5308,6 +6543,428 @@
       ]
     },
     {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "high",
+            "low"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "high",
+            "low"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats[priority=*]/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "high",
+            "low"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
       "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
       "origin": "juniper",
       "aliases": [
@@ -5345,6 +7002,134 @@
           "source": "static",
           "names": [
             "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9600000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9600000,480000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:12000"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:12000,600,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "SWITCH-FABRIC"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
           ]
         },
         {
@@ -5548,6 +7333,134 @@
       ]
     },
     {
+      "path": "/junos/fabric-statistics/fabric-message/edges[dst-pfe=*][dst-slot=*][dst-type=*][src-pfe=*][src-slot=*][src-type=*]/class-stats/transmit-counts",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/fabric/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "1"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "LINECARD"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        },
+        {
+          "source": "static",
+          "names": [
+            "SWITCH-FABRIC"
+          ]
+        }
+      ],
+      "leaves": [
+        {
+          "name": "bytes",
+          "type": "uint64",
+          "gen": "counter:9200000"
+        },
+        {
+          "name": "bytes-per-second",
+          "type": "uint64",
+          "gen": "sine:9200000,460000,900"
+        },
+        {
+          "name": "drop-bytes",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-bytes-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "drop-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "error-packets-per-second",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "packets",
+          "type": "uint64",
+          "gen": "counter:11500"
+        },
+        {
+          "name": "packets-per-second",
+          "type": "uint64",
+          "gen": "sine:11500,575,900"
+        },
+        {
+          "name": "queue-depth-average",
+          "type": "uint64",
+          "gen": "sine:40,10,600"
+        },
+        {
+          "name": "queue-depth-current",
+          "type": "uint64",
+          "gen": "sine:40,20,300"
+        },
+        {
+          "name": "queue-depth-maximum",
+          "type": "uint64",
+          "gen": "const:4096"
+        },
+        {
+          "name": "queue-depth-peak",
+          "type": "uint64",
+          "gen": "const:512"
+        }
+      ]
+    },
+    {
       "path": "/junos/system/linecard[name=*]/environment/power-record",
       "origin": "juniper",
       "aliases": [
@@ -5557,7 +7470,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         }
       ],
@@ -5608,6 +7522,39 @@
       ]
     },
     {
+      "path": "/junos/system/linecard[name=*]/environment/temp-record[temp-sensor-name=*]",
+      "origin": "juniper",
+      "aliases": [
+        "/junos/system/linecard/environment/"
+      ],
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "FPC1"
+          ]
+        },
+        {
+          "source": "components",
+          "filter": "temperature",
+          "parent": "FPC1"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "temp-sensor-name",
+          "type": "string",
+          "gen": "key:1",
+          "always": true
+        },
+        {
+          "name": "temp-value",
+          "type": "uint32",
+          "gen": "sine:42,6,600"
+        }
+      ]
+    },
+    {
       "path": "/junos/system/linecard[name=*]/environment/voltage-record[voltage-sensor-name=*]",
       "origin": "juniper",
       "aliases": [
@@ -5617,7 +7564,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         },
         {
@@ -5651,7 +7599,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         },
         {
@@ -5685,7 +7634,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         },
         {
@@ -5719,7 +7669,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         },
         {
@@ -5753,7 +7704,8 @@
         {
           "source": "static",
           "names": [
-            "FPC0"
+            "FPC0",
+            "FPC1"
           ]
         },
         {

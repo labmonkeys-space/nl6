@@ -292,7 +292,8 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 
 // TestJuniperMx10004_InterfaceTableAndIdentity pins what the clone script
 // produced from the MX240 template: 48 LC480 ports xe-0/0/0..xe-0/1/23 at
-// ifIndex 1..48, and the identity objects re-pointed at jnxProductNameMX10004.
+// ifIndex 1..48 and 24 LC9600 ports et-1/0/0..et-1/5/3 at 49..72, and the
+// identity objects re-pointed at jnxProductNameMX10004.
 func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
@@ -307,24 +308,30 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		"1.3.6.1.2.1.1.1.0":          "Juniper Networks, Inc. mx10004 internet router, kernel JUNOS 24.2R1.17, Build date: 2024-06-18",
 		"1.3.6.1.2.1.1.2.0":          "1.3.6.1.4.1.2636.1.1.1.2.168",
 		"1.3.6.1.2.1.47.1.1.1.1.3.1": "1.3.6.1.4.1.2636.1.1.1.2.168",
-		"1.3.6.1.2.1.2.1.0":          "48",
+		"1.3.6.1.2.1.2.1.0":          "72",
 		"1.3.6.1.2.1.2.2.1.2.1":      "xe-0/0/0",
 		"1.3.6.1.2.1.2.2.1.2.48":     "xe-0/1/23",
 		"1.3.6.1.2.1.31.1.1.1.1.48":  "xe-0/1/23",
+		"1.3.6.1.2.1.2.2.1.2.49":     "et-1/0/0",
+		"1.3.6.1.2.1.2.2.1.2.72":     "et-1/5/3",
+		"1.3.6.1.2.1.31.1.1.1.15.49": "400000",
 	}
 	for oid, v := range want {
 		if got[oid] != v {
 			t.Errorf("%s: got %q, want %q", oid, got[oid], v)
 		}
 	}
-	for i := 1; i <= 48; i++ {
+	for i := 1; i <= 72; i++ {
 		name := fmt.Sprintf("xe-0/%d/%d", (i-1)/24, (i-1)%24)
+		if i > 48 {
+			name = fmt.Sprintf("et-1/%d/%d", (i-49)/4, (i-49)%4)
+		}
 		if d := got[fmt.Sprintf("1.3.6.1.2.1.2.2.1.2.%d", i)]; d != name {
 			t.Errorf("ifDescr.%d: got %q, want %q", i, d, name)
 		}
 	}
-	if d, ok := got["1.3.6.1.2.1.2.2.1.2.49"]; ok {
-		t.Errorf("ifDescr.49 present (%q); the MX10004 type has exactly 48 ports", d)
+	if d, ok := got["1.3.6.1.2.1.2.2.1.2.73"]; ok {
+		t.Errorf("ifDescr.73 present (%q); the MX10004 type has exactly 72 ports", d)
 	}
 }
 
@@ -359,8 +366,8 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 			}
 		}
 	}
-	if ports != 48 {
-		t.Fatalf("SNMP serves %d ports, want 48", ports)
+	if ports != 72 {
+		t.Fatalf("SNMP serves %d ports, want 72", ports)
 	}
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
@@ -397,5 +404,180 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 				t.Errorf("SSH serial %s has no gNMI component", f)
 			}
 		}
+	}
+}
+
+// TestJuniperMx10004_DualRoutingEngine: both Routing Engines and both
+// control boards appear in gNMI, SNMP and SSH, and the RE serves ten CPUs.
+func TestJuniperMx10004_DualRoutingEngine(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snmp := map[string]string{}
+	for _, e := range res.SNMP {
+		snmp[e.OID] = e.Response
+	}
+	for slot := 0; slot < 2; slot++ {
+		oid := fmt.Sprintf("1.3.6.1.4.1.2636.3.1.13.1.5.9.%d.0.0", slot+1)
+		if want := fmt.Sprintf("Routing Engine %d", slot); snmp[oid] != want {
+			t.Errorf("jnxOperatingDescr %s = %q, want %q", oid, snmp[oid], want)
+		}
+	}
+	ssh := map[string]string{}
+	for _, e := range res.SSH {
+		ssh[e.Command] = e.Response
+	}
+	re := ssh["show chassis routing-engine"]
+	if !strings.Contains(re, "Slot 1:") || !strings.Contains(re, "Backup") {
+		t.Errorf("show chassis routing-engine lacks a backup in slot 1")
+	}
+	for _, s := range []string{"Routing Engine 1", "CB 1"} {
+		if !strings.Contains(ssh["show chassis hardware"], s) || !strings.Contains(ssh["show chassis environment"], s) {
+			t.Errorf("%s missing from show chassis hardware or environment", s)
+		}
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := cats["juniper_mx10004"]
+	names := map[string]bool{}
+	for _, c := range cat.Components {
+		names[c.Name] = true
+	}
+	for _, n := range []string{"Routing Engine0", "Routing Engine1", "ROUTING_ENGINE1:CPU", "CB0", "CB1", "CB1:MIDDLE_TEMP_SENSOR"} {
+		if !names[n] {
+			t.Errorf("gNMI component %s missing", n)
+		}
+	}
+	cpus := -1
+	for _, st := range cat.Subtrees {
+		if st.Path == "/system/cpus/cpu[index=*]" {
+			cpus = len(st.Keys[0].Names)
+		}
+	}
+	if cpus != 10 {
+		t.Errorf("/system/cpus/cpu serves %d indexes, want 10 (the RE X10 is a 10-core CPU)", cpus)
+	}
+}
+
+// TestJuniperMx10004_EntityMIBMatchesInventory: every board gNMI lists and
+// SSH prints is an ENTITY-MIB entity with the same serial and part number,
+// every port is a port entity, and each port entity's alias points at the
+// ifIndex whose ifDescr names the same port.
+func TestJuniperMx10004_EntityMIBMatchesInventory(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snmp := map[string]string{}
+	for _, e := range res.SNMP {
+		snmp[strings.TrimPrefix(e.OID, ".")] = e.Response
+	}
+	const ent = "1.3.6.1.2.1.47.1.1.1.1."
+	bySerial := map[string]string{} // serial -> entity index
+	for oid, v := range snmp {
+		if rest, ok := strings.CutPrefix(oid, ent+"11."); ok {
+			bySerial[v] = rest
+		}
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cats["juniper_mx10004"].Components {
+		switch {
+		case c.Type == "SENSOR" || c.Type == "TRANSCEIVER" || strings.Contains(c.Name, " Fan "):
+			continue
+		}
+		idx, ok := bySerial[c.SerialNo]
+		if !ok {
+			t.Errorf("%s (serial %s) has no entity", c.Name, c.SerialNo)
+			continue
+		}
+		if c.Type == "PORT" {
+			if snmp[ent+"5."+idx] != "10" {
+				t.Errorf("port %s entity %s has class %s, want port(10)", c.Name, idx, snmp[ent+"5."+idx])
+			}
+			alias := snmp["1.3.6.1.2.1.47.1.3.2.1.2."+idx+".0"]
+			ifIndex, ok := strings.CutPrefix(alias, "1.3.6.1.2.1.2.2.1.1.")
+			if !ok || snmp["1.3.6.1.2.1.2.2.1.2."+ifIndex] != c.Description {
+				t.Errorf("port %s entity %s aliases %q, whose ifDescr is not %s", c.Name, idx, alias, c.Description)
+			}
+			continue
+		}
+		if c.Name == "Chassis" && idx != "1" {
+			t.Errorf("the chassis serial %s names entity %s, want entity 1", c.SerialNo, idx)
+		}
+		if snmp[ent+"13."+idx] != c.PartNo {
+			t.Errorf("%s entity %s model %q, want %q", c.Name, idx, snmp[ent+"13."+idx], c.PartNo)
+		}
+		// gNMI serves hardware-version REV 06 and software 24.2R1.17 on
+		// every component, and `show chassis hardware` prints REV 06.
+		if hw, sw := snmp[ent+"8."+idx], snmp[ent+"10."+idx]; hw != "REV 06" || sw != "24.2R1.17" {
+			t.Errorf("%s entity %s revisions %q / %q, want REV 06 / 24.2R1.17", c.Name, idx, hw, sw)
+		}
+	}
+	for oid, v := range snmp {
+		if strings.HasPrefix(oid, ent+"2.") && (strings.HasPrefix(v, "xe-1/") || strings.HasPrefix(v, "xe-2/") || strings.HasPrefix(v, "MPC")) {
+			t.Errorf("MX240 entity %s = %q still served", oid, v)
+		}
+	}
+}
+
+// TestJuniperMx10004_SSHRoutingEngineAndCBMatchModel: every Routing Engine
+// and control board the gNMI catalogue lists appears in the SSH
+// routing-engine and environment output, with the same serial.
+func TestJuniperMx10004_SSHRoutingEngineAndCBMatchModel(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ssh := map[string]string{}
+	for _, e := range res.SSH {
+		ssh[e.Command] = e.Response
+	}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reOut, env := ssh["show chassis routing-engine"], ssh["show chassis environment"]
+	res0, cbs := 0, 0
+	for _, c := range cats["juniper_mx10004"].Components {
+		var n int
+		if c.Type == "CONTROLLER_CARD" {
+			if _, err := fmt.Sscanf(c.Name, "Routing Engine%d", &n); err == nil {
+				res0++
+				slot := fmt.Sprintf("Slot %d:", n)
+				i := strings.Index(reOut, slot)
+				if i < 0 {
+					t.Errorf("show chassis routing-engine lacks %q", slot)
+					continue
+				}
+				block := reOut[i:]
+				if next := strings.Index(block[len(slot):], "Slot "); next >= 0 {
+					block = block[:len(slot)+next]
+				}
+				if !strings.Contains(block, "Serial ID") || !strings.Contains(block, c.SerialNo) {
+					t.Errorf("%s: slot block lacks Serial ID %s", c.Name, c.SerialNo)
+				}
+				if !strings.Contains(env, fmt.Sprintf("Routing Engine %d", n)) {
+					t.Errorf("show chassis environment lacks Routing Engine %d", n)
+				}
+			}
+		}
+		if _, err := fmt.Sscanf(c.Name, "CB%d", &n); err == nil && !strings.Contains(c.Name, ":") {
+			cbs++
+			if !strings.Contains(env, fmt.Sprintf("CB %d ", n)) {
+				t.Errorf("show chassis environment lacks CB %d", n)
+			}
+		}
+	}
+	if res0 != 2 || cbs != 2 {
+		t.Errorf("found %d Routing Engines and %d CBs in gNMI, want 2 each", res0, cbs)
 	}
 }

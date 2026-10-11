@@ -387,7 +387,12 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // OID string, its sysObjectID value. The pre-change value is
 // shippedOIDEncodingDigestBeforeJuniperMx10004, required back by
 // TestJuniperMx10004RePinIsOnlyTheAddition.
-const shippedOIDEncodingDigest = "c72b443dc6468e7b1c214aae0404cb435230ba656cf3a9295bec9fc71e9d506a"
+// juniper_mx10004 dual Routing Engine: six jnxOperating rows at 9.2.0.0
+// (descr, load averages, static CPU, buffer and temperature), pre-change
+// value shippedOIDEncodingDigestBeforeMx10004DualRE.
+// juniper_mx10004 ENTITY-MIB from the model: 275 new entPhysicalTable OID
+// names, pre-change value in snmp_shipped_juniper_mx10004_entity_ledger_test.go.
+const shippedOIDEncodingDigest = "cae9aa16df626304e22c050d88a93f64a861bbc171f33440f7783eac365aecea"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
