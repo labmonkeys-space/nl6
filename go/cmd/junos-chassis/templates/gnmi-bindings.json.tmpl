@@ -16,7 +16,7 @@
       "leaves": {
         "state/name": "ifstate:name", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper", "state/admin-status": "ifstate:admin",
         "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:false", "state/description": "const:",
-        "state/mtu": "const:1514", "state/type": "const:ethernetCsmacd", "state/loopback-mode": "const:NONE", "state/hardware-port": "key:0",
+        "state/mtu": "ifmib:ifMtu", "state/type": "const:ethernetCsmacd", "state/loopback-mode": "const:NONE", "state/hardware-port": "key:0",
         "state/counters/in-octets": "ifcounter:ifHCInOctets", "state/counters/out-octets": "ifcounter:ifHCOutOctets",
         "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts",
         "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts",
@@ -29,7 +29,7 @@
       },
       "types": {"state/last-change": "uint64", "state/hardware-port": "string", "state/type": "string", "state/loopback-mode": "string"},
       "always": ["name", "init-time", "state/high-speed", "state/parent-ae-name"],
-      "extra": {"state/high-speed": {"type": "uint32", "gen": "const:10000"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}, "name": {"type": "string", "gen": "key:0"}, "state/parent-ae-name": {"type": "string", "gen": "const:"}}
+      "extra": {"state/high-speed": {"type": "uint32", "gen": "ifmib:ifHighSpeed"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}, "name": {"type": "string", "gen": "key:0"}, "state/parent-ae-name": {"type": "string", "gen": "const:"}}
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
@@ -77,8 +77,8 @@
         "state/temperature/instant": "sine:38,4,900", "state/temperature/avg": "const:38.0", "state/temperature/min": "const:34.0", "state/temperature/max": "const:42.0",
         "state/temperature/alarm-status": "const:false", "state/temperature/alarm-threshold": "const:85", "state/temperature/interval": "const:60000000000",
         "state/temperature/max-time": "timestamp:boot", "state/temperature/min-time": "timestamp:boot",
-        "transceiver/state/connector-type": "const:LC_CONNECTOR", "transceiver/state/date-code": "const:2025-01-15T00:00:00Z", "transceiver/state/ethernet-pmd": "const:ETH_10GBASE_SR",
-        "transceiver/state/ethernet-pmd-preconf": "const:ETH_10GBASE_SR", "transceiver/state/form-factor": "const:SFP_PLUS", "transceiver/state/form-factor-preconf": "const:SFP_PLUS",
+        "transceiver/state/connector-type": "const:LC_CONNECTOR", "transceiver/state/date-code": "const:2025-01-15T00:00:00Z", "transceiver/state/ethernet-pmd": "inventory:ethernet_pmd",
+        "transceiver/state/ethernet-pmd-preconf": "inventory:ethernet_pmd", "transceiver/state/form-factor": "inventory:form_factor", "transceiver/state/form-factor-preconf": "inventory:form_factor",
         "transceiver/state/otn-compliance-code": "const:OTN_UNDEFINED", "transceiver/state/present": "const:PRESENT", "transceiver/state/serial-no": "inventory:serial_no_per_device",
         "transceiver/state/sonet-sdh-compliance-code": "const:SONET_UNDEFINED", "transceiver/state/vendor": "const:JUNIPER", "transceiver/state/vendor-part": "inventory:part_no", "transceiver/state/vendor-rev": "const:01"
       },
@@ -111,7 +111,7 @@
       "path": "/components/component[name=*]/properties/property[name=*]", "origin": "openconfig", "echo_origin": true,
       "keys": [{"source": "components", "filter": "PORT"}, {"source": "static", "names": ["wavelength"]}],
       "module": "openconfig-platform",
-      "leaves": {"state/configurable": "const:false", "state/value": "const:850"},
+      "leaves": {"state/configurable": "const:false", "state/value": "inventory:wavelength"},
       "types": {"state/value": "string"}
     },
     {

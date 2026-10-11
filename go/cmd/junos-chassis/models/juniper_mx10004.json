@@ -1485,6 +1485,8 @@
       "optic": {
         "part_no": "740-021308",
         "description": "SFP+-10G-SR",
+        "form_factor": "SFP_PLUS",
+        "ethernet_pmd": "ETH_10GBASE_SR",
         "wavelength": "850",
         "cable": "10GBASE SR",
         "fiber": "MM"

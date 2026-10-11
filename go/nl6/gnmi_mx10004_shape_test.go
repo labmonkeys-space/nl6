@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -159,6 +161,25 @@ func startMX10004Server(t *testing.T) (addr string, cleanup func()) {
 	var dev *DeviceSimulator
 	_, dev, addr, cleanup = startTestGnmiServerWithCatalog(t, cat)
 	dev.cachedSysName.Store(mx10004TestSysName)
+	// The catalogue reads MTU and speed from the device's IF-MIB rows. Only
+	// those columns are added, so the test device keeps its interface names.
+	res, err := (&SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}).LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	if dev.resources == nil {
+		dev.resources = &DeviceResources{}
+	}
+	if dev.resources.oidIndex == nil {
+		dev.resources.oidIndex = &sync.Map{}
+	}
+	res.oidIndex.Range(func(k, v any) bool {
+		if oid := k.(string); strings.HasPrefix(oid, ifTablePrefix+"4.") || strings.HasPrefix(oid, ifXTablePrefix+"15.") {
+			dev.resources.oidIndex.Store(oid, v)
+		}
+		return true
+	})
 	return addr, cleanup
 }
 
@@ -1234,5 +1255,36 @@ func TestMX10004InterfaceCounterLeafSet(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no interface notifications")
+	}
+}
+
+// TestMX10004SpeedMTUAndOpticsComeFromTheDevice: gNMI reads speed and MTU
+// from the device's IF-MIB rows and the optic type from each component.
+func TestMX10004SpeedMTUAndOpticsComeFromTheDevice(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile("resources/juniper_mx10004/gnmi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{`"ifmib:ifHighSpeed"`, `"ifmib:ifMtu"`, `"inventory:form_factor"`, `"inventory:ethernet_pmd"`, `"inventory:wavelength"`} {
+		if !bytes.Contains(raw, []byte(s)) {
+			t.Errorf("the MX10004 catalogue does not bind %s", s)
+		}
+	}
+	for _, s := range []string{`"const:10000"`, `"const:1514"`, `"const:SFP_PLUS"`, `"const:850"`} {
+		if bytes.Contains(raw, []byte(s)) {
+			t.Errorf("the MX10004 catalogue still binds %s", s)
+		}
+	}
+	for _, c := range cats["juniper_mx10004"].Components {
+		if c.Type == "TRANSCEIVER" && (c.FormFactor == "" || c.EthernetPMD == "") {
+			t.Errorf("transceiver %s has no optic type", c.Name)
+		}
+		if c.Type == "PORT" && c.Wavelength == "" {
+			t.Errorf("port %s has no wavelength", c.Name)
+		}
 	}
 }
