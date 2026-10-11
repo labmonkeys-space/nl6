@@ -408,7 +408,7 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 }
 
 // TestJuniperMx10004_DualRoutingEngine: both Routing Engines and both
-// control boards appear in gNMI, SNMP and SSH, and the RE serves ten CPUs.
+// control boards appear in gNMI, SNMP and SSH, and the RE serves eight CPUs.
 func TestJuniperMx10004_DualRoutingEngine(t *testing.T) {
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
@@ -458,8 +458,8 @@ func TestJuniperMx10004_DualRoutingEngine(t *testing.T) {
 			cpus = len(st.Keys[0].Names)
 		}
 	}
-	if cpus != 10 {
-		t.Errorf("/system/cpus/cpu serves %d indexes, want 10 (the RE X10 is a 10-core CPU)", cpus)
+	if cpus != 8 {
+		t.Errorf("/system/cpus/cpu serves %d indexes, want 8 (what MX10004 hardware reports)", cpus)
 	}
 }
 

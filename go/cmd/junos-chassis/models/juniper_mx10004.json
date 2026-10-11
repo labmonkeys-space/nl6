@@ -1866,7 +1866,7 @@
       "ssh_pic_celsius": 45
     }
   },
-  "cpu_count": 10,
+  "cpu_count": 8,
   "hardware_rev": "REV 06",
   "software_rev": "24.2R1.17",
   "routing_engines": [
