@@ -34,6 +34,7 @@ var nbar2CapableTypes = map[string]string{
 // no NBAR2. Cisco platforms are named by OS so the prefix trap is visible.
 var nbar2IncapableTypes = map[string]string{
 	"asr9k.json":                   "IOS-XR: no NBAR2",
+	"cisco_asr9902.json":           "IOS-XR: no NBAR2",
 	"cisco_crs_x.json":             "IOS-XR: no NBAR2",
 	"cisco_nexus_9500.json":        "NX-OS: no NBAR2",
 	"arista_7280r3.json":           "EOS: no Cisco AVC export",

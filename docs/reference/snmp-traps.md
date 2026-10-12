@@ -367,7 +367,7 @@ Operators tuning the distribution should check `GET /api/v1/traps/status` → `c
 | `juniper_mx240` | 7 JUNIPER-MIB entries (merged total 12) | `jnxPowerSupplyFailure`, `jnxFanFailure`, `jnxOverTemperature`, `jnxFruRemoval`, `jnxFruInsertion`, `jnxFruPowerOff`, `jnxFruFailed` (all `jnxChassisTraps` family). `snmpTrapEnterprise` = `1.3.6.1.4.1.2636` on all entries. |
 | `ciena_waveserver5` | 4 CIENA-WS entries (merged total 9) | `opticalPreFecSdRaise`, `opticalPreFecSdClear`, `opticalPreFecSfRaise`, `opticalPreFecSfClear`. All role-tagged (`optical-sd-*`, `optical-sf-*`), so they fire on a pre-FEC threshold crossing and never from the scheduler. |
 
-Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`, `asr9k`), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog.
+Other cisco_* slugs (`cisco_catalyst_9500`, `cisco_crs_x`, `cisco_nexus_9500`, `asr9k`, `cisco_asr9902`), `juniper_mx960`, Arista, Linux, and Palo Alto fall back to the universal catalog.
 Their realistic content depends on Class 2 random fields deferred to a follow-up.
 Family-catalog concept (one catalog shared by all `cisco_*` slugs) is also a follow-up refactor.
 

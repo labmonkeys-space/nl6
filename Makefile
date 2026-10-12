@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile gen-gnmi-catalog gen-junos-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile gen-gnmi-catalog gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -105,6 +105,10 @@ $(YANG_CACHE)/juniper:
 gen-junos-chassis: check-go
 	cd go && go run ./cmd/junos-chassis -out nl6/resources/juniper_mx10004
 	@$(MAKE) --no-print-directory gen-gnmi-catalog
+
+## gen-xr-chassis: Regenerate the cisco_asr9902 hardware files from go/cmd/xr-chassis/models
+gen-xr-chassis: check-go
+	cd go && go run ./cmd/xr-chassis -out nl6/resources/cisco_asr9902
 
 ## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
 gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper

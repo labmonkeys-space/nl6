@@ -1,0 +1,2024 @@
+{
+  "comment": "IOS-XR 24.2.2 ASR 9902 chassis model. Component names, types, parents and descriptions follow what an ASR 9902 reports; optics are data-sheet parts; serials and MACs are synthetic. Edit this file and run make gen-xr-chassis.",
+  "hardware_rev": "V01",
+  "software_rev": "24.2.2",
+  "vendor_types": {
+    "ASR-9902": "1.3.6.1.4.1.9.12.3.1.3.2432",
+    "A99-RP-F": "1.3.6.1.4.1.9.12.3.1.9.74.147",
+    "ASR-9902-LC": "1.3.6.1.4.1.9.12.3.1.9.74.157",
+    "ASR-9902-FAN": "1.3.6.1.4.1.9.12.3.1.9.74.158"
+  },
+  "kinds": {
+    "chassis": [
+      {
+        "name": "Rack 0",
+        "type": "CHASSIS",
+        "parent": "",
+        "part_no": "ASR-9902",
+        "description": "ASR 9902 Chassis",
+        "ent_class": "3"
+      },
+      {
+        "name": "Rack 0-RouteProcessor Slot 0",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Route Processor Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-RouteProcessor Slot 1",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Route Processor Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-Fan Tray Slot 0",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Fan Tray Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-Fan Tray Slot 1",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Fan Tray Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-Fan Tray Slot 2",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Fan Tray Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-Line Card Slot 0",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Line Card Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-Power Tray Slot 0",
+        "type": "",
+        "parent": "Rack 0",
+        "description": "ASR9K Power Tray Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "Rack 0-LineCard Chassis Backplane",
+        "type": "BACKPLANE",
+        "parent": "Rack 0",
+        "description": "ASR9K Chassis Line Card Backplane",
+        "ent_class": "4"
+      },
+      {
+        "name": "Rack 0-IDPROM",
+        "type": "",
+        "parent": "Rack 0-LineCard Chassis Backplane",
+        "description": "ASR 9902 Chassis"
+      }
+    ],
+    "rp": [
+      {
+        "name": "{loc}",
+        "type": "CONTROLLER_CARD",
+        "parent": "Rack 0-RouteProcessor Slot {slot}",
+        "part_no": "A99-RP-F",
+        "description": "ASR 9900 Fixed Chassis Route Processor",
+        "ent_class": "9"
+      },
+      {
+        "name": "{loc}-Motherboard",
+        "type": "",
+        "parent": "{loc}",
+        "description": "Motherboard Module"
+      },
+      {
+        "name": "{loc}-Hot Swap CS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Board Current Sensor"
+      },
+      {
+        "name": "{loc}-DIE_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_DIMM0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_DIMM1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-Inlet",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_Aldrin",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-AIR_Outlet",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-Hotspot",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-VP1P8_CPU_VCCIN",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P7_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P05_CPU_VCCSCUS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P05_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P3_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_RTC",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_ALD_SDAVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_MGTAVTT",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_MGTAVCC",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_LH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_ALD_CORE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP5P0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_AUX",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P6_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-P12V_STBY",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_I210",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_I210",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_MB_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP5P0_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP7P0_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_MGT_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_MGT_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_PLL_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5_DB",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-Hot Swap VS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Board Voltage Sensor"
+      },
+      {
+        "name": "{loc}-Mgmt Ethernet Switch",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "Ethernet Switch Module"
+      },
+      {
+        "name": "{loc}-CE Port 0",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 0"
+      },
+      {
+        "name": "{loc}-CE Port 1",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 1"
+      },
+      {
+        "name": "{loc}-CE Port 2",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 2"
+      },
+      {
+        "name": "{loc}-CE Port 3",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 3"
+      },
+      {
+        "name": "{loc}-CE Port 4",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 4"
+      },
+      {
+        "name": "{loc}-CE Port 5",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 5"
+      },
+      {
+        "name": "{loc}-CE Port 6",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 6"
+      },
+      {
+        "name": "{loc}-CE Port 7",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 7"
+      },
+      {
+        "name": "{loc}-CE Port 8",
+        "type": "PORT",
+        "parent": "{loc}-Mgmt Ethernet Switch",
+        "description": "Control Ethernet Port 8"
+      },
+      {
+        "name": "{loc}-CPU Module",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "CPU Module"
+      },
+      {
+        "name": "{loc}-Primary-BIOS",
+        "type": "",
+        "parent": "{loc}-CPU Module",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-SSDa",
+        "type": "",
+        "parent": "{loc}-CPU Module",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-SSDb",
+        "type": "",
+        "parent": "{loc}-CPU Module",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Aldrin-0-FPGA",
+        "type": "",
+        "parent": "{loc}-CPU Module",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Intel Xeon D 6 Core CPU Complex",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Processor Module"
+      },
+      {
+        "name": "{loc}-Virtual processor for admin",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Virtual Processor Module for Admin VM"
+      },
+      {
+        "name": "{loc}-Virtual processor for RP XR",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Virtual Processor Module for RP-XR VM"
+      },
+      {
+        "name": "{loc}-SPI Flash",
+        "type": "STORAGE",
+        "parent": "{loc}-Motherboard",
+        "description": "Storage Module - SPI"
+      },
+      {
+        "name": "{loc}-Disk0",
+        "type": "STORAGE",
+        "parent": "{loc}-Motherboard",
+        "description": "Storage Module - SSD"
+      },
+      {
+        "name": "{loc}-Disk1",
+        "type": "STORAGE",
+        "parent": "{loc}-Motherboard",
+        "description": "Storage Module - SSD"
+      },
+      {
+        "name": "{loc}-CBC",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Lionheart-FPGA",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Wolfpack-FPGA",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Longshot",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-TamFW-Longshot",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-TimingIC-A",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-IDPROM",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "ASR 9900 Fixed Chassis Route Processor"
+      },
+      {
+        "name": "{loc}-Niantic Dual Ethernet 2x10GE MAC",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "Ethernet Controller Module"
+      },
+      {
+        "name": "{loc}-CON0",
+        "type": "PORT",
+        "parent": "{loc}-Motherboard",
+        "description": "Console Port"
+      },
+      {
+        "name": "{loc}-CON1",
+        "type": "PORT",
+        "parent": "{loc}-Motherboard",
+        "description": "Console Port"
+      },
+      {
+        "name": "{loc}-CON2",
+        "type": "PORT",
+        "parent": "{loc}-Motherboard",
+        "description": "Console Port"
+      },
+      {
+        "name": "{loc}-Alarm",
+        "type": "PORT",
+        "parent": "{loc}",
+        "description": "Alarm Port"
+      },
+      {
+        "name": "MgmtEth{loc}/CPU0/0",
+        "type": "PORT",
+        "parent": "{loc}",
+        "description": "RP Management Ethernet Port 0",
+        "ent_class": "10"
+      },
+      {
+        "name": "{loc}-Management 1",
+        "type": "PORT",
+        "parent": "{loc}",
+        "description": "RP Management Ethernet Port 1"
+      },
+      {
+        "name": "{loc}-USB 0",
+        "type": "PORT",
+        "parent": "{loc}",
+        "description": "USB Module"
+      },
+      {
+        "name": "{loc}-USB Container",
+        "type": "",
+        "parent": "{loc}-USB 0",
+        "description": "USB Container"
+      }
+    ],
+    "lc": [
+      {
+        "name": "{loc}",
+        "type": "LINECARD",
+        "parent": "Rack 0-Line Card Slot {slot}",
+        "part_no": "ASR-9902-LC",
+        "description": "ASR 9902 Line Card",
+        "ent_class": "9"
+      },
+      {
+        "name": "{loc}-Motherboard",
+        "type": "",
+        "parent": "{loc}",
+        "description": "Motherboard Module"
+      },
+      {
+        "name": "{loc}-Hot Swap CS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Board Current Sensor"
+      },
+      {
+        "name": "{loc}-Inlet",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-MB_AIR_Inlet",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-MB_AIR_Outlet_0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-MB AIR_Outlet_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-MB_Hotspot_0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-MB_Hotspot_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_DIMM0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_DIMM1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_Aldrin",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_PHY0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_PHY1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_SKB0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_TOR",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD0_HBM0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD0_HBM1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD1_HBM0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_LSD1_HBM1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_X24_L",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DIE_X24_H",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DB_AIR_Inlet_0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DB_AIR_Inlet_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DB_AIR_Outlet_0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DB_AIR_Outlet_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-DB_AIR_Outlet_2",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "{loc}-VP1P8_CPU_VCCIN",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P7_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P05_CPU_VCCSCUS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P05_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P3_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_RTC",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P85_IPU_MGT",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_CPU",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_PHY_AVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_FPGA",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_PHY_AVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP7P0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP5P0",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P6_VTT",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_CAN",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P85_IPU_CORE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_IPU_DDR4",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_IPU_MGT",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_QP_VDD_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_QP_VDD_2",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_PEX",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_SUPR",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P85_TOR_AVS_VDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P7_LSD0_CORE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P75_LSD0_RTVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_LSD0_AVDDL",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_LSD0_AVDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_LSD0_HBM",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P75_LSD0_PLLVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_LSD0_PLLVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_PHY0_VDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P7_LSD1_CORE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P75_LSD1_RTVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_LSD1_AVDDL",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_LSD1_AVDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_LSD1_HBM",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P75_LSD1_PLLVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_LSD1_PLLVDL",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_PHY1_VDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_LSD0_TVDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_LSD0_CPLLVDD_PG",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_LSD0_VDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5_LSD0_HBM",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_LSD1_TVDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_LSD1_CPLLVDD_PG",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_LSD1_VDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5_LSD1_HBM",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_CORE_X24",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_ANA_X24",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_AVDD_X24",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_AVDD_X25",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_X24",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P1_TOR",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P85_TOR_VDDA",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P8_SKB0_VDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_SKB0_AVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P5_SKB0_VDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5_SKB0_VDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_SKB0_PLLAVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP2P5_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP0P9_SKB0_PLLVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP3P3_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_XGE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P0_XGE_SD_AVDD",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P8_XGE",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP5P0_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP7P0_1",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P2_PHY",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-VP1P1_SKB0_AVDDH",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "{loc}-Hot Swap VS",
+        "type": "SENSOR",
+        "parent": "{loc}-Motherboard",
+        "description": "Board Voltage Sensor"
+      },
+      {
+        "name": "{loc}-Control Ethernet Switch",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "Ethernet Switch Module"
+      },
+      {
+        "name": "{loc}-CE Port 0",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 0"
+      },
+      {
+        "name": "{loc}-CE Port 1",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 1"
+      },
+      {
+        "name": "{loc}-CE Port 2",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 2"
+      },
+      {
+        "name": "{loc}-CE Port 3",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 3"
+      },
+      {
+        "name": "{loc}-CE Port 4",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 4"
+      },
+      {
+        "name": "{loc}-CE Port 5",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 5"
+      },
+      {
+        "name": "{loc}-CE Port 6",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 6"
+      },
+      {
+        "name": "{loc}-CE Port 7",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 7"
+      },
+      {
+        "name": "{loc}-CE Port 9",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 9"
+      },
+      {
+        "name": "{loc}-CE Port 10",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 10"
+      },
+      {
+        "name": "{loc}-CE Port 12",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 12"
+      },
+      {
+        "name": "{loc}-CE Port 11",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 11"
+      },
+      {
+        "name": "{loc}-CE Port 13",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 13"
+      },
+      {
+        "name": "{loc}-CE Port 14",
+        "type": "PORT",
+        "parent": "{loc}-Control Ethernet Switch",
+        "description": "Control Ethernet Port 14"
+      },
+      {
+        "name": "{loc}-CPU Module",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "CPU Module"
+      },
+      {
+        "name": "{loc}-Primary-BIOS",
+        "type": "",
+        "parent": "{loc}-CPU Module",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Intel Broadwell-DE 4 Core CPU Complex",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Processor Module"
+      },
+      {
+        "name": "{loc}-Virtual processor for admin",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Virtual Processor Module for Admin VM"
+      },
+      {
+        "name": "{loc}-Virtual processor for LC XR",
+        "type": "CPU",
+        "parent": "{loc}-CPU Module",
+        "description": "Virtual Processor Module for LC-XR VM"
+      },
+      {
+        "name": "{loc}-ASR9K SPI Flash",
+        "type": "STORAGE",
+        "parent": "{loc}-Motherboard",
+        "description": "Storage Module - SPI"
+      },
+      {
+        "name": "{loc}-PCI Switch 8749",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "PCI Module"
+      },
+      {
+        "name": "{loc}-Slice 0",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "ASIC Module"
+      },
+      {
+        "name": "{loc}-Slice 0 Lightspeed",
+        "type": "",
+        "parent": "{loc}-Slice 0",
+        "description": "PSE ASIC Module"
+      },
+      {
+        "name": "{loc}-Slice 1",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "ASIC Module"
+      },
+      {
+        "name": "{loc}-Slice 1 Lightspeed",
+        "type": "",
+        "parent": "{loc}-Slice 1",
+        "description": "PSE ASIC Module"
+      },
+      {
+        "name": "{loc}-CBC",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Chromia",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-IPU-DDR4",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Sunstreaker",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Skywarp-0",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Skywarp-1",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-Aldrin-FPGA",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-SSDa",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-TAMFW-Sunstreaker",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-TimingIC-A",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_8",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_9",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_10",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_11",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_36",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_37",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_38",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-QDD_BRT_0_39",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "FPD Module"
+      },
+      {
+        "name": "{loc}-IDPROM",
+        "type": "",
+        "parent": "{loc}-Motherboard",
+        "description": "ASR 9902 Line Card"
+      }
+    ],
+    "ft": [
+      {
+        "name": "{loc}",
+        "type": "FRU",
+        "parent": "Rack 0-Fan Tray Slot {slot}",
+        "part_no": "ASR-9902-FAN",
+        "description": "ASR 9902 Fan Tray",
+        "ent_class": "9"
+      },
+      {
+        "name": "{loc}-Fan0",
+        "type": "FAN",
+        "parent": "{loc}",
+        "description": "Fan Module",
+        "ent_class": "7"
+      },
+      {
+        "name": "{loc}-Fan Speed Sensor 0",
+        "type": "SENSOR",
+        "parent": "{loc}-Fan0",
+        "description": "Fan Speed Sensor"
+      },
+      {
+        "name": "{loc}-Hot Swap CS",
+        "type": "SENSOR",
+        "parent": "{loc}",
+        "description": "Board Current Sensor"
+      },
+      {
+        "name": "{loc}-Hot Swap VS",
+        "type": "SENSOR",
+        "parent": "{loc}",
+        "description": "Board Voltage Sensor"
+      },
+      {
+        "name": "{loc}-IDPROM",
+        "type": "",
+        "parent": "{loc}",
+        "description": "ASR 9902 Fan Tray"
+      }
+    ],
+    "pt": [
+      {
+        "name": "0/PT0",
+        "type": "FRU",
+        "parent": "Rack 0-Power Tray Slot 0",
+        "part_no": "ASR-9900-AC-PEM",
+        "description": "Simulated Power Tray IDPROM",
+        "ent_class": "9"
+      },
+      {
+        "name": "0/PT0-PEM Bay 0",
+        "type": "",
+        "parent": "0/PT0",
+        "description": "ASR9K Power Supply AC Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "0/PT0-PM0",
+        "type": "POWER_SUPPLY",
+        "parent": "0/PT0-PEM Bay 0",
+        "part_no": "PWR-1.6KW-AC",
+        "description": "1.6kW-AC Power Module",
+        "ent_class": "6"
+      },
+      {
+        "name": "0/PT0-PM0-fan0",
+        "type": "FAN",
+        "parent": "0/PT0-PM0",
+        "description": "Fan Module",
+        "ent_class": "7"
+      },
+      {
+        "name": "0/PT0-PM0-Fan 0 Speed",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0-fan0",
+        "description": "Fan Speed Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-fan1",
+        "type": "FAN",
+        "parent": "0/PT0-PM0",
+        "description": "Fan Module",
+        "ent_class": "7"
+      },
+      {
+        "name": "0/PT0-PM0-Fan 1 Speed",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0-fan1",
+        "description": "Fan Speed Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Input Current",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Current Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Output Current",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Current Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Input Power",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Power Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Output Power",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Power Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Inlet Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM0-Outlet Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM0-Heat Sink Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM0-Input Voltage",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-Output Voltage",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM0",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "0/PT0-PM0-PO-PriMCU",
+        "type": "",
+        "parent": "0/PT0-PM0",
+        "description": "FPD Module"
+      },
+      {
+        "name": "0/PT0-PM0-PO-SecMCU",
+        "type": "",
+        "parent": "0/PT0-PM0",
+        "description": "FPD Module"
+      },
+      {
+        "name": "0/PT0-PM0-IDPROM",
+        "type": "",
+        "parent": "0/PT0-PM0",
+        "description": "1.6kW-AC Power Module"
+      },
+      {
+        "name": "0/PT0-PEM Bay 1",
+        "type": "",
+        "parent": "0/PT0",
+        "description": "ASR9K Power Supply AC Slot",
+        "ent_class": "5"
+      },
+      {
+        "name": "0/PT0-PM1",
+        "type": "POWER_SUPPLY",
+        "parent": "0/PT0-PEM Bay 1",
+        "part_no": "PWR-1.6KW-AC",
+        "description": "1.6kW-AC Power Module",
+        "ent_class": "6"
+      },
+      {
+        "name": "0/PT0-PM1-fan0",
+        "type": "FAN",
+        "parent": "0/PT0-PM1",
+        "description": "Fan Module",
+        "ent_class": "7"
+      },
+      {
+        "name": "0/PT0-PM1-Fan 0 Speed",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1-fan0",
+        "description": "Fan Speed Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-fan1",
+        "type": "FAN",
+        "parent": "0/PT0-PM1",
+        "description": "Fan Module",
+        "ent_class": "7"
+      },
+      {
+        "name": "0/PT0-PM1-Fan 1 Speed",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1-fan1",
+        "description": "Fan Speed Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Input Current",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Current Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Output Current",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Current Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Input Power",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Power Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Output Power",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Power Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Inlet Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM1-Outlet Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM1-Heat Sink Temperature",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Temperature Sensor",
+        "temperature": true
+      },
+      {
+        "name": "0/PT0-PM1-Input Voltage",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-Output Voltage",
+        "type": "SENSOR",
+        "parent": "0/PT0-PM1",
+        "description": "Voltage Sensor"
+      },
+      {
+        "name": "0/PT0-PM1-PO-PriMCU",
+        "type": "",
+        "parent": "0/PT0-PM1",
+        "description": "FPD Module"
+      },
+      {
+        "name": "0/PT0-PM1-PO-SecMCU",
+        "type": "",
+        "parent": "0/PT0-PM1",
+        "description": "FPD Module"
+      },
+      {
+        "name": "0/PT0-PM1-IDPROM",
+        "type": "",
+        "parent": "0/PT0-PM1",
+        "description": "1.6kW-AC Power Module"
+      },
+      {
+        "name": "0/PT0-IDPROM",
+        "type": "",
+        "parent": "0/PT0",
+        "description": "Simulated Power Tray IDPROM"
+      }
+    ],
+    "software": [
+      {
+        "name": "0/RP0/CPU0",
+        "type": "OPERATING_SYSTEM",
+        "parent": "",
+        "description": "IOS XR Operating System"
+      },
+      {
+        "name": "asr9k-xr-24.2.2",
+        "type": "SOFTWARE_MODULE",
+        "parent": "",
+        "description": "IOS XR Software Module"
+      },
+      {
+        "name": "0/RP1/CPU0",
+        "type": "OPERATING_SYSTEM",
+        "parent": "",
+        "description": "IOS XR Operating System"
+      },
+      {
+        "name": "0/0/CPU0",
+        "type": "OPERATING_SYSTEM",
+        "parent": "",
+        "description": "IOS XR Operating System"
+      }
+    ]
+  },
+  "boards": [
+    {
+      "kind": "chassis",
+      "vars": {}
+    },
+    {
+      "kind": "rp",
+      "vars": {
+        "loc": "0/RP0",
+        "slot": "0"
+      }
+    },
+    {
+      "kind": "rp",
+      "vars": {
+        "loc": "0/RP1",
+        "slot": "1"
+      }
+    },
+    {
+      "kind": "lc",
+      "vars": {
+        "loc": "0/0",
+        "slot": "0"
+      }
+    },
+    {
+      "kind": "ft",
+      "vars": {
+        "loc": "0/FT0",
+        "slot": "0"
+      }
+    },
+    {
+      "kind": "ft",
+      "vars": {
+        "loc": "0/FT1",
+        "slot": "1"
+      }
+    },
+    {
+      "kind": "ft",
+      "vars": {
+        "loc": "0/FT2",
+        "slot": "2"
+      }
+    },
+    {
+      "kind": "pt",
+      "vars": {}
+    },
+    {
+      "kind": "software",
+      "vars": {}
+    }
+  ],
+  "front_ports": {
+    "card": "0/0",
+    "count": 48,
+    "per_slice": 24,
+    "qsfp_bays": [
+      8,
+      9,
+      10,
+      11,
+      36,
+      37,
+      38,
+      39
+    ],
+    "sfp": {
+      "part_no": "SFP-10G-SR",
+      "description": "10GBASE-SR SFP Module",
+      "lanes": 1,
+      "port_prefix": "TenGigE",
+      "short_prefix": "Te",
+      "speed_mbps": 10000,
+      "port_description": "10GE Port",
+      "bay_name": "SFP+ bay",
+      "bay_type": "PORT",
+      "bay_description": "Pluggable Optical Module Container SFP+",
+      "module_name": "SFP Port Module",
+      "module_description": "PSE ASIC Port Module",
+      "sensor_descriptions": {
+        "current": "Current Sensor",
+        "power": "Power Sensor",
+        "temperature": "Temperature Sensor",
+        "voltage": "Voltage Sensor",
+        "idprom": "IDPROM"
+      }
+    },
+    "qsfp": {
+      "part_no": "QSFP-100G-SR4-S",
+      "description": "100GBASE SR4 QSFP Transceiver, MPO, 100m OM4 MMF",
+      "lanes": 4,
+      "port_prefix": "HundredGigE",
+      "short_prefix": "Hu",
+      "speed_mbps": 100000,
+      "port_description": "100GE Port",
+      "bay_name": "QSFP bay",
+      "bay_type": "",
+      "bay_description": "Pluggable Optical Module Container",
+      "module_name": "QSFP Port Module",
+      "module_description": "PSE ASIC Port Module",
+      "sensor_descriptions": {
+        "current": "Current Sensor",
+        "power": "Power Sensor",
+        "temperature": "Temperature Sensor",
+        "voltage": "Voltage Sensor",
+        "idprom": "IDPROM"
+      }
+    }
+  },
+  "mgmt_ports": [
+    {
+      "if_name": "MgmtEth0/RP0/CPU0/0",
+      "short": "Mg0/RP0/CPU0/0",
+      "speed_mbps": 1000
+    },
+    {
+      "if_name": "MgmtEth0/RP1/CPU0/0",
+      "short": "Mg0/RP1/CPU0/0",
+      "speed_mbps": 1000
+    }
+  ],
+  "platform": [
+    {
+      "node": "0/RP0/CPU0",
+      "type": "A99-RP-F(Active)",
+      "state": "IOS XR RUN"
+    },
+    {
+      "node": "0/RP1/CPU0",
+      "type": "A99-RP-F(Standby)",
+      "state": "IOS XR RUN"
+    },
+    {
+      "node": "0/0/CPU0",
+      "type": "ASR-9902-LC",
+      "state": "IOS XR RUN"
+    },
+    {
+      "node": "0/FT0",
+      "type": "ASR-9902-FAN",
+      "state": "OPERATIONAL"
+    },
+    {
+      "node": "0/FT1",
+      "type": "ASR-9902-FAN",
+      "state": "OPERATIONAL"
+    },
+    {
+      "node": "0/FT2",
+      "type": "ASR-9902-FAN",
+      "state": "OPERATIONAL"
+    },
+    {
+      "node": "0/PT0",
+      "type": "ASR-9900-AC-PEM",
+      "state": "OPERATIONAL"
+    }
+  ],
+  "interfaces": {
+    "mtu": "1514",
+    "mac_prefix": "00:00:5e:00:53:",
+    "hc_period": 16,
+    "hc_in_base": 1200000000000,
+    "hc_in_step": 7000000000,
+    "hc_out_base": 900000000000,
+    "hc_out_step": 5000000000
+  }
+}

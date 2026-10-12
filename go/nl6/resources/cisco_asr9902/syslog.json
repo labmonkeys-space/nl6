@@ -1,0 +1,10 @@
+{
+  "comment": "Per-device-type syslog catalog for cisco_asr9902 (IOS-XR 24.2.2). Overlays the universal catalog. Link entries are role-tagged, so an oper-status transition fires the XR LINK and LINEPROTO pair instead of the universal interface-up/down. Message text follows the Cisco IOS XR System Message Guide.",
+  "entries": [
+    {"name": "xr-link-updown-down", "role": "link-down", "weight": 25, "facility": "local7", "severity": "error", "appName": "ifmgr", "msgId": "PKT_INFRA-LINK-3-UPDOWN", "structuredData": {"ifIndex": "{{.IfIndex}}", "ifName": "{{.IfName}}"}, "template": "%PKT_INFRA-LINK-3-UPDOWN : Interface {{.IfName}}, changed state to Down"},
+    {"name": "xr-link-updown-up", "role": "link-up", "weight": 25, "facility": "local7", "severity": "error", "appName": "ifmgr", "msgId": "PKT_INFRA-LINK-3-UPDOWN", "structuredData": {"ifIndex": "{{.IfIndex}}", "ifName": "{{.IfName}}"}, "template": "%PKT_INFRA-LINK-3-UPDOWN : Interface {{.IfName}}, changed state to Up"},
+    {"name": "xr-lineproto-updown-down", "role": "link-down", "weight": 25, "facility": "local7", "severity": "notice", "appName": "ifmgr", "msgId": "PKT_INFRA-LINEPROTO-5-UPDOWN", "structuredData": {"ifIndex": "{{.IfIndex}}", "ifName": "{{.IfName}}"}, "template": "%PKT_INFRA-LINEPROTO-5-UPDOWN : Line protocol on Interface {{.IfName}}, changed state to Down"},
+    {"name": "xr-lineproto-updown-up", "role": "link-up", "weight": 25, "facility": "local7", "severity": "notice", "appName": "ifmgr", "msgId": "PKT_INFRA-LINEPROTO-5-UPDOWN", "structuredData": {"ifIndex": "{{.IfIndex}}", "ifName": "{{.IfName}}"}, "template": "%PKT_INFRA-LINEPROTO-5-UPDOWN : Line protocol on Interface {{.IfName}}, changed state to Up"},
+    {"name": "xr-config-commit", "weight": 10, "facility": "local7", "severity": "info", "appName": "config", "msgId": "MGBL-CONFIG-6-DB_COMMIT", "structuredData": {"model": "{{.Model}}"}, "template": "%MGBL-CONFIG-6-DB_COMMIT : Configuration committed by user 'admin'. Use 'show configuration commit changes 1000000001' to view the changes."}
+  ]
+}

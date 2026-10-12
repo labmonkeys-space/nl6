@@ -118,7 +118,7 @@ import (
 // `go test ./...` without -v never prints.
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
-const minimumTestFunctions = 1852
+const minimumTestFunctions = 1860
 
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 26
@@ -187,7 +187,7 @@ type loadBearingGuard struct {
 // covered by minimumTestFunctions and are deliberately absent, because a manifest
 // of everything is a maintenance burden that names nothing.
 //
-// The ten ledger reversals are here one apiece: each is the test that reproduces
+// The eleven ledger reversals are here one apiece: each is the test that reproduces
 // a parent revision's digest byte for byte, and without it a shipped-data
 // transition is no longer reversible. Their sibling vacuity and value-pin tests
 // are left to the floor, so that the manifest stays a list a reader can read.
@@ -495,7 +495,7 @@ var loadBearingGuards = []loadBearingGuard{
 		"Pins served == manifest in BOTH directions, and pins the deliberate absence of post-fec-ber. " +
 			"Deleting it lets an invented or dropped gNMI optical path ship"},
 
-	// The ten ledger reversals. One per ledger: the test that reproduces a parent
+	// The eleven ledger reversals. One per ledger: the test that reproduces a parent
 	// revision's digest byte for byte.
 	{"TestShippedDataEditsReproduceTheParentCorpus", "snmp_shipped_data_ledger_test.go",
 		"nl6#541's ledger reversal against 44ef67f. Without it the 31 tag changes, 16 rescales and 14 " +
@@ -520,6 +520,8 @@ var loadBearingGuards = []loadBearingGuard{
 		"nl6#602's Juniper arc audit reversal, 13 of 15 OIDs corrected"},
 	{"TestJuniperMx10004AdditionReproducesTheParentCorpus", "snmp_shipped_juniper_mx10004_ledger_test.go",
 		"The juniper_mx10004 device type addition: removing the profile gives 2f06857's corpus back"},
+	{"TestCiscoAsr9902AdditionReproducesTheParentCorpus", "snmp_shipped_cisco_asr9902_ledger_test.go",
+		"The cisco_asr9902 device type addition: removing the profile gives 06d0199's corpus back"},
 
 	// nl6#519's two contract tests. The reload endpoint EVICTS and never mutates;
 	// each of these is the only test that fails under the mutation it names.

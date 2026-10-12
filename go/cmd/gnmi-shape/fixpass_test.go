@@ -140,6 +140,8 @@ func TestReduceKeyValuesWithBrackets(t *testing.T) {
 
 // Every regular file under the capture directory is read, whatever its
 // name, so a capture saved as .txt or in a subdirectory is not skipped.
+// -repo is a directory outside any repository, so no base-tree filter can
+// count the test's own token as public once this file is on main.
 func TestLeakReadsEveryCaptureFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
@@ -150,7 +152,7 @@ func TestLeakReadsEveryCaptureFile(t *testing.T) {
 	body := filepath.Join(t.TempDir(), "body.md")
 	writeFile(t, body, "about zenithcorp-edge\n")
 	var out bytes.Buffer
-	if code := runLeak([]string{"-capture", dir, "-file", body}, &out); code != 1 {
+	if code := runLeak([]string{"-capture", dir, "-repo", t.TempDir(), "-file", body}, &out); code != 1 {
 		t.Fatalf("exit %d, want 1: the token is in sub/b.txt\n%s", code, out.String())
 	}
 }

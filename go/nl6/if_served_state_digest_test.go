@@ -50,7 +50,12 @@ import (
 // Re-pinned by juniper_mx10004 LC9600 in FPC1: it adds 24 rows, ifIndex 49-72,
 // all admin=1 oper=1. With those 24 rows filtered out the digest is exactly
 // the previous value, faf7833ad0716139c2d777172269bf380c862ab9193711b2e05ffbbdef0514a5.
-const shippedServedStateDigest = "c94783c1f8dedc5d35e971ada849a8eee3085532c74c7399b529bd1176ef7dcb"
+//
+// Re-pinned by the cisco_asr9902 device type: it adds 50 rows,
+// ifIndex 1-50 (48 front ports, 2 management), all admin=1 oper=1. With those
+// 50 rows filtered out the digest is exactly the previous value,
+// c94783c1f8dedc5d35e971ada849a8eee3085532c74c7399b529bd1176ef7dcb (measured).
+const shippedServedStateDigest = "e0a9c596518801f5d15747ca7357612e18b68cbeb368b864be4e300194872340"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

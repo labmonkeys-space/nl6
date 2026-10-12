@@ -224,8 +224,8 @@ const (
 	// entries UNCHANGED in their effective catalog. A profile declaring
 	// `extends: false`, or an overlay that overrides a universal entry name with
 	// different varbinds, would legitimately move the second number.
-	trapCatalogProfiles           = 30
-	trapProfilesCarryingUniversal = 30
+	trapCatalogProfiles           = 31 // +1: cisco_asr9902
+	trapProfilesCarryingUniversal = 31 // +1: cisco_asr9902 ships no traps overlay
 )
 
 // trapPollJoinedPairsShipped is the joined set BY IDENTITY, not by count.
@@ -298,8 +298,8 @@ const trapUniversalCatalogLabel = "<universal, as carried by profiles with no ov
 // anything under 1.3.6.1.6.3.1.1.4, so the two OID-valued prepends never join.
 // This is coverage of a surface the catalog does not control, not a near-miss.
 const (
-	trapPrependedJoinedPairs   = 25
-	trapPrependedUnservedPairs = 39 // 30x2 prepends + 4 profiles whose catalog sets snmpTrapEnterprise, less the 25
+	trapPrependedJoinedPairs   = 26 // +1: cisco_asr9902's sysUpTime.0
+	trapPrependedUnservedPairs = 40 // 31x2 prepends + 4 profiles whose catalog sets snmpTrapEnterprise, less the 26
 )
 
 // ── the type vocabulary, driven off the PRODUCTION accept-set ───────────────

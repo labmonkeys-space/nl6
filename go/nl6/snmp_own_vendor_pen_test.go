@@ -136,6 +136,7 @@ type ownVendorPEN struct {
 var ownVendorPENs = map[string]ownVendorPEN{
 	"arista_7280r3.json":           {"30065", "Arista Networks, Inc. — registered as 'Arista Networks, Inc. (formerly Arastra, Inc.)'; the company renamed"},
 	"asr9k.json":                   {"9", "ciscoSystems; the ASR 9000 is a Cisco platform"},
+	"cisco_asr9902.json":           {"9", "ciscoSystems; the ASR 9902 is a Cisco platform"},
 	"aws_s3_storage.json":          {"32473", "RFC 5612's documentation PEN, held by IANA. nl6#588 chose it over Amazon's real numbers (4843 Amazon.com Inc., 60099 Amazon Web Services Inc) DELIBERATELY: this profile models a CATEGORY — an S3-compatible object storage gateway, which MinIO, Ceph RGW and others implement — not a manufacturer, and AWS's own S3 is an HTTP service with no SNMP surface. Naming Amazon would trade one misattribution for a more plausible one. THIS IS A PER-PROFILE ALLOWANCE: 32473 must not become globally permitted, or any future profile could dodge this guard by claiming to be documentation"},
 	"check_point_15600.json":       {"2620", "Check Point Software Technologies Ltd"},
 	"ciena_waveserver5.json":       {"1271", "Ciena Corporation"},
@@ -282,7 +283,7 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // cycler is one per device and would make the backup mirror the master.
 const (
 	ownVendorArcNamesShipped  = 327
-	ownVendorArcValuesShipped = 29
+	ownVendorArcValuesShipped = 30 // +1: cisco_asr9902's sysObjectID ciscoASR9902
 )
 
 // TestOwnVendorPENMapIsCuratedAndComplete pins the map itself before anything
@@ -743,8 +744,8 @@ func codeServedVendorArcHits() []arcHit {
 // The dual-RE change serves RE1's CPU, buffer and temperature as static
 // corpus rows, not from this map, so the count stays 271.
 const (
-	codeServedVendorArcOIDs     = 271
-	codeServedVendorArcProfiles = 23
+	codeServedVendorArcOIDs     = 275 // +4: cisco_asr9902's vendorOIDs entry
+	codeServedVendorArcProfiles = 24  // +1: cisco_asr9902
 )
 
 // TestEveryCodeServedVendorOIDIsItsOwnVendorArc is P2: the same rule as the

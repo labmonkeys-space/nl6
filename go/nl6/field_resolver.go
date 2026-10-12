@@ -100,6 +100,7 @@ func synthIfName(ifIndex int) string {
 var deviceTypeLabels = map[string]string{
 	"arista_7280r3":           "Arista 7280R3",
 	"asr9k":                   "Cisco ASR 9000",
+	"cisco_asr9902":           "Cisco ASR 9902",
 	"aws_s3_storage":          "AWS S3",
 	"check_point_15600":       "Check Point 15600",
 	"ciena_waveserver5":       "Ciena Waveserver 5",

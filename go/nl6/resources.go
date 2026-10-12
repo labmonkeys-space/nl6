@@ -1333,7 +1333,9 @@ func (sm *SimulatorManager) ListAvailableResources() []ResourceInfo {
 func getDeviceTypeFromName(name string) string {
 	nameLower := strings.ToLower(name)
 
-	if strings.Contains(nameLower, "asr9k") {
+	if strings.Contains(nameLower, "asr9902") {
+		return "Cisco ASR 9902"
+	} else if strings.Contains(nameLower, "asr9k") {
 		return "Cisco ASR9K"
 	} else if strings.Contains(nameLower, "cisco") && strings.Contains(nameLower, "ios") {
 		return "Cisco IOS"
@@ -1402,7 +1404,7 @@ func getDeviceCategoryFromName(name string) string {
 	}
 
 	// Network Devices (routers, switches, firewalls)
-	if strings.Contains(nameLower, "asr9k") || strings.Contains(nameLower, "crs") ||
+	if strings.Contains(nameLower, "asr9k") || strings.Contains(nameLower, "asr9902") || strings.Contains(nameLower, "crs") ||
 		strings.Contains(nameLower, "mx240") || strings.Contains(nameLower, "mx960") ||
 		strings.Contains(nameLower, "ne8000") || strings.Contains(nameLower, "7750") ||
 		strings.Contains(nameLower, "nec") || (strings.Contains(nameLower, "cisco") && strings.Contains(nameLower, "ios")) ||

@@ -1,0 +1,13 @@
+{
+  "snmp": null,
+  "ssh": [
+    {
+      "command": "show vrf all",
+      "response": "VRF                  RD                  RT                          AFI   SAFI     \nCUSTOMER-A           65001:100           import  65001:100               IPV4  Unicast  \n                                         export  65001:100               IPV4  Unicast  \nMGMT                 65001:999           import  65001:999               IPV4  Unicast  \n                                         export  65001:999               IPV4  Unicast  \nINTERNET             65001:200           import  65001:200               IPV4  Unicast  \n                                         export  65001:200               IPV4  Unicast  "
+    },
+    {
+      "command": "show vrf all detail",
+      "response": "VRF CUSTOMER-A; RD 65001:100; VPN ID not set\nVRF mode: Regular\nDescription: Customer A VPN\nInterfaces:\n  TenGigE0/0/0/0.100\nAddress family IPV4 Unicast\n  Import VPN route-target communities:\n    RT:65001:100\n  Export VPN route-target communities:\n    RT:65001:100\n  No import route policy\n  No export route policy\n\nVRF MGMT; RD 65001:999; VPN ID not set\nVRF mode: Regular\nDescription: Management VRF\nInterfaces:\n  MgmtEth0/RP0/CPU0/0\nAddress family IPV4 Unicast\n  Import VPN route-target communities:\n    RT:65001:999\n  Export VPN route-target communities:\n    RT:65001:999\n  No import route policy\n  No export route policy\n\nVRF INTERNET; RD 65001:200; VPN ID not set\nVRF mode: Regular\nDescription: Internet Gateway VRF\nInterfaces:\n  TenGigE0/0/0/1.200\nAddress family IPV4 Unicast\n  Import VPN route-target communities:\n    RT:65001:200\n  Export VPN route-target communities:\n    RT:65001:200\n  No import route policy\n  No export route policy"
+    }
+  ]
+}

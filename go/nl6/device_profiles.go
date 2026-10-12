@@ -177,6 +177,7 @@ var profileGPUServerH200 = DeviceProfile{
 var deviceProfileMap = map[string]DeviceProfile{
 	// Core Routers
 	"asr9k.json":           profileCoreRouter,
+	"cisco_asr9902.json":   profileCoreRouter,
 	"cisco_crs_x.json":     profileCoreRouter,
 	"huawei_ne8000.json":   profileCoreRouter,
 	"nokia_7750_sr12.json": profileCoreRouter,

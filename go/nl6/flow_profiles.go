@@ -255,6 +255,7 @@ var flowProfileStorage = &FlowProfile{
 var flowProfileMap = map[string]*FlowProfile{
 	// Core Routers
 	"asr9k.json":           flowProfileCoreRouter,
+	"cisco_asr9902.json":   flowProfileCoreRouter,
 	"cisco_crs_x.json":     flowProfileCoreRouter,
 	"nokia_7750_sr12.json": flowProfileCoreRouter,
 	"juniper_mx960.json":   flowProfileCoreRouter,

@@ -110,6 +110,7 @@ Any other protocol, including the `netflow9` default, is rejected with a 400.
 | `cisco_nexus_9500` | NX-OS | no |
 | `cisco_crs_x` | IOS-XR | no |
 | `asr9k` | IOS-XR | no |
+| `cisco_asr9902` | IOS-XR | no |
 
 The set is curated by name in `nbar2_capability.go`, with a reason per row.
 It is never derived from a slug prefix.
