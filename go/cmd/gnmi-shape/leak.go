@@ -59,9 +59,12 @@ func (set tokenSet) addValue(v string, key bool) {
 			}
 		}
 		// The run, and each part of it between ':' or '/', so an address
-		// held only as addr:port is a token by itself.
+		// held only as addr:port is a token by itself. Edge separators are
+		// trimmed and a token spans at most maxWindow pieces, so scanLines
+		// can form every token in the set (nl6#809).
 		for _, w := range append([]string{run}, strings.FieldsFunc(run, func(r rune) bool { return r == ':' || r == '/' })...) {
-			if len(w) >= minWordToken && strings.ContainsAny(w, separators) && (hasLetter(w) || len(w) >= digits) {
+			w = strings.Trim(w, separators)
+			if len(w) >= minWordToken && strings.ContainsAny(w, separators) && (hasLetter(w) || len(w) >= digits) && len(pieces(w)) <= maxWindow {
 				set[w] = struct{}{}
 			}
 		}

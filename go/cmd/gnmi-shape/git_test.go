@@ -112,3 +112,51 @@ func TestLeakRefusesWhenSelfTestCannotRun(t *testing.T) {
 		t.Fatalf("exit %d, want 2 and no clean verdict:\n%s", code, out.String())
 	}
 }
+
+// A capture echoes its gnmic command line, which holds "--insecure". The
+// scanner never forms a token that starts with a separator, so the set
+// must not hold one; with "insecure" allowlisted the self-test planted
+// "--insecure" and refused to run (nl6#809).
+func TestLeakSelfTestPassesWithAllowlistedFlagWord(t *testing.T) {
+	dir := t.TempDir()
+	capture := "gnmic sub -a 192.0.2.1:57400 --insecure -e proto --path 'openconfig-system:/system/memory/state' --mode once\n" +
+		`{"source": "192.0.2.1:57400", "prefix": "openconfig-system:system/memory/state", "updates": [{"Path": "physical", "values": {"physical": 8589934592}}]}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "fake.log"), []byte(capture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	allow := filepath.Join(t.TempDir(), "allow.txt")
+	if err := os.WriteFile(allow, []byte("insecure\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := filepath.Join(t.TempDir(), "draft.md")
+	if err := os.WriteFile(body, []byte("nothing to see\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := runLeak([]string{"-capture", dir, "-repo", t.TempDir(), "-allow", allow, "-file", body}, &out); code != 0 || !strings.Contains(out.String(), "leak: self-test passed") || !strings.Contains(out.String(), "leak: clean") {
+		t.Fatalf("exit %d, want 0, a passed self-test and a clean verdict:\n%s", code, out.String())
+	}
+}
+
+// A value can begin or end with a separator ("-r1.ams", "h1.lab:",
+// "s2.par." at the end of a sentence). Its
+// pieces are below the word floor, so only the value without its edge
+// separators can catch a draft that repeats it (nl6#809).
+func TestLeakFindsValuesWithEdgeSeparators(t *testing.T) {
+	dir := t.TempDir()
+	capture := "gnmic sub -a 192.0.2.1:57400 --insecure\n" +
+		`{"source": "192.0.2.1:57400", "updates": [{"Path": "d", "values": {"d": "edge -r1.ams core h1.lab: up via s2.par."}}]}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "fake.log"), []byte(capture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, draft := range []string{"see r1.ams\n", "see h1.lab\n", "see s2.par\n"} {
+		body := filepath.Join(t.TempDir(), "draft.md")
+		if err := os.WriteFile(body, []byte(draft), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if code := runLeak([]string{"-capture", dir, "-repo", t.TempDir(), "-file", body}, &out); code != 1 {
+			t.Errorf("draft %q: exit %d, want 1 (a leak):\n%s", draft, code, out.String())
+		}
+	}
+}
