@@ -1,0 +1,119 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+)
+
+// notification is one message of gnmic --format json output.
+type notification struct {
+	Source  string   `json:"source"`
+	Prefix  string   `json:"prefix"`
+	Target  string   `json:"target"`
+	Updates []update `json:"updates"`
+}
+
+type update struct {
+	Path   string                     `json:"Path"`
+	Values map[string]json.RawMessage `json:"values"`
+}
+
+// readCapture streams the notifications of a gnmic --format json capture.
+// Objects with neither prefix nor updates (sync-response) are dropped. An
+// error names a byte offset only: capture values stay out of the repository,
+// so no error may quote them.
+func readCapture(r io.Reader, fn func(notification) error) error {
+	return readCaptureText(r, fn, nil)
+}
+
+// readCaptureText is readCapture that also hands every run of text outside
+// the JSON objects to onText: gnmic's command echo, and a shell prompt pasted
+// after the last object, which carries the host name.
+func readCaptureText(r io.Reader, fn func(notification) error, onText func(string)) error {
+	return scanObjects(r, func(obj []byte, start int64) error {
+		var n notification
+		if err := json.Unmarshal(obj, &n); err != nil {
+			return fmt.Errorf("capture: malformed JSON object at byte %d", start)
+		}
+		if n.Prefix == "" && len(n.Updates) == 0 {
+			return nil
+		}
+		return fn(n)
+	}, onText)
+}
+
+// scanObjects hands each top-level JSON object of a capture, raw, to fn and
+// the text between objects to onText. Objects are found by brace depth
+// outside strings rather than by a JSON decoder, because a decoder cannot
+// skip text between objects. A terminal copy hard-wraps long lines, putting
+// raw line breaks inside strings; JSON allows none there, so they are
+// dropped, which restores the original.
+func scanObjects(r io.Reader, fn func(obj []byte, start int64) error, onText func(string)) error {
+	br := bufio.NewReaderSize(r, 1<<20)
+	var obj, text []byte
+	depth, inStr, esc := 0, false, false
+	var off, start int64
+	flushText := func() {
+		if onText != nil && len(bytes.TrimSpace(text)) > 0 {
+			onText(string(text))
+		}
+		text = text[:0]
+	}
+	for {
+		b, err := br.ReadByte()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		off++
+		if depth == 0 {
+			if b != '{' {
+				text = append(text, b)
+				continue
+			}
+			flushText()
+			start = off - 1
+		}
+		if inStr && !esc && (b == '\r' || b == '\n') {
+			continue
+		}
+		obj = append(obj, b)
+		switch {
+		case esc:
+			esc = false
+		case inStr && b == '\\':
+			esc = true
+		case inStr && b == '"':
+			inStr = false
+		case inStr:
+		case b == '"':
+			inStr = true
+		case b == '{', b == '[':
+			depth++
+		case b == '}', b == ']':
+			depth--
+		}
+		if depth > 0 {
+			continue
+		}
+		if err := fn(obj, start); err != nil {
+			return err
+		}
+		obj = obj[:0]
+	}
+	if depth != 0 {
+		return fmt.Errorf("capture: truncated JSON object at byte %d", start)
+	}
+	flushText()
+	return nil
+}

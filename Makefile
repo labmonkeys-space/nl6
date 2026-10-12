@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile gen-gnmi-catalog gen-junos-chassis run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile gen-gnmi-catalog gen-junos-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -118,6 +118,13 @@ gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
 	  -path $(YANG_CACHE)/juniper/24.2/24.2R1.17/native/jti/models \
 	  -bindings nl6/resources/juniper_mx10004/gnmi-bindings.json \
 	  -out nl6/resources/juniper_mx10004/gnmi.json
+
+LEAK_BASE ?= origin/main
+
+## check-capture-leak: Refuse a change carrying a token from the gnmic capture in CAPTURE (prints file and line, never the token)
+check-capture-leak: check-go
+	@test -n "$(CAPTURE)" || { echo "usage: make check-capture-leak CAPTURE=<dir> [LEAK_BASE=origin/main] [LEAK_ALLOW=<file>]"; exit 2; }
+	cd $(GO_DIR) && go run ./cmd/gnmi-shape leak -capture "$(CAPTURE)" -repo .. -base "$(LEAK_BASE)" $(if $(LEAK_ALLOW),-allow "$(LEAK_ALLOW)")
 
 ## version: Print the resolved version string (useful for CI diagnostics)
 version:

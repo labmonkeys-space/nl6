@@ -127,6 +127,13 @@ gnmic `--format json` fields are source, subscription-name, timestamp, time, pre
 openconfig/gnmi `testing/fake` replays `fake.proto` Value lists with no YANG awareness, and lemming is OpenConfig-only, so neither replaces an nl6 extension. https://raw.githubusercontent.com/openconfig/gnmi/master/testing/fake/proto/fake.proto https://raw.githubusercontent.com/openconfig/lemming/main/README.md
 Synthetic identifiers use RFC 5737 IPv4, RFC 3849 IPv6, RFC 5398 ASNs and RFC 9542 MAC ranges. https://www.rfc-editor.org/rfc/rfc5737 https://www.rfc-editor.org/rfc/rfc3849 https://www.rfc-editor.org/rfc/rfc5398 https://www.rfc-editor.org/rfc/rfc9542
 
+`go/cmd/gnmi-shape` builds fixtures from a gnmic capture without publishing the capture's values.
+`reduce` writes a value-free fixture: wildcarded keys, the prefix form, leaf presence and the JSON class of each leaf, with no values, key values or counts.
+`make check-capture-leak CAPTURE=<dir>` refuses a change that carries a token from the capture, and prints file and line, never the token.
+It ignores public grammar (`go/cmd/gnmi-shape/grammar-allow.txt`) and tokens already in the base tree, and it runs a self-test first, so a broken check cannot report clean.
+It also reads the text outside the JSON objects, because a terminal copy carries the echoed command (the device address) and a pasted shell prompt (the host name).
+It cannot run in CI, which never has the capture, so it is a manual step before every PR built from one, including the PR text (`-file`).
+
 ## Open gaps, ranked
 
 1. XR PROTO per-leaf subscribe layout has no public sample; confirm on any XR, since the convention is model-independent.

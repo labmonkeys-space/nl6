@@ -1,0 +1,31 @@
+gnmic sub -a 192.0.2.10:57400 --insecure -e proto --path 'openconfig-interfaces:/interfaces/interface/state/counters' --mode once
+{
+  "source": "192.0.2.10:57400",
+  "subscription-name": "default-1",
+  "timestamp": 1,
+  "prefix": "openconfig-interfaces:interfaces/interface[name=Bundle-Ether77]/state/counters",
+  "updates": [
+    {"Path": "in-pkts", "values": {"in-pkts": 731}},
+    {"Path": "in-octets", "values": {"in-octets": 99887766}},
+    {"Path": "out-discards", "values": {"out-discards": 0}}
+  ]
+}
+{"sync-response": true}
+{
+  "source": "192.0.2.10:57400",
+  "prefix": "openconfig-interfaces:interfaces/interface[name=TenGigE0/0/0/3]/state/counters",
+  "updates": [
+    {"Path": "in-pkts", "values": {"in-pkts": 5}},
+    {"Path": "carrier-transitions", "values": {"carrier-transitions": 2}}
+  ]
+}
+{
+  "source": "192.0.2.10:57400",
+  "prefix": "Cisco-IOS-XR-fib-common-oper:mpls-forwarding/nodes/node[node-name=0/RP0/CPU0]/label-fib/forwarding-details/forwarding-detail[eos=0][label-value=424242]",
+  "updates": [
+    {"Path": "label-information[label-index=7]/next-hop", "values": {"label-information/next-hop": "198.51.100.77"}},
+    {"Path": "ldi-pointer", "values": {"ldi-pointer": 12.5}},
+    {"Path": "description", "values": {"description": "lab-r1 uplink"}},
+    {"Path": "is-up", "values": {"is-up": true}}
+  ]
+}
