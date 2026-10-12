@@ -31,6 +31,9 @@ type Component struct {
 	SerialNo    string `json:"serial_no,omitempty"`
 	Temperature bool   `json:"temperature,omitempty"`
 	EntClass    string `json:"ent_class,omitempty"`
+	// Tags are the leaf groups the component reports beyond its type's,
+	// served through tag:<name> filters in the gNMI catalogue.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // Board instantiates the component templates of one kind with Vars
@@ -56,6 +59,9 @@ type Optic struct {
 	ModuleName  string            `json:"module_name"`
 	ModuleDescr string            `json:"module_description"`
 	SensorDescr map[string]string `json:"sensor_descriptions"`
+	// Tags per generated role: module, bay, port, transceiver, and the
+	// sensor kinds current, power, temperature, voltage, idprom.
+	Tags map[string][]string `json:"tags"`
 }
 
 // FrontPorts lays out the line card's ports: positions 0..Count-1, PerSlice
@@ -203,22 +209,22 @@ func (c *Chassis) expandFrontPorts(fp FrontPorts) error {
 		ifName := fmt.Sprintf("%s%s/0/%d", o.PortPrefix, fp.Card, n)
 		port := fp.Card + "-" + ifName
 		rows := []Component{
-			{Name: mod, Parent: fmt.Sprintf("%s-Slice %d Lightspeed", fp.Card, s), Description: o.ModuleDescr},
-			{Name: bay, Type: o.BayType, Parent: mod, Description: o.BayDescr, EntClass: "5"},
-			{Name: port, Type: "PORT", Parent: mod, Description: o.PortDescr, EntClass: "10"},
-			{Name: ifName, Type: "TRANSCEIVER", Parent: bay, PartNo: o.PartNo, Description: o.Description, EntClass: "9"},
+			{Name: mod, Parent: fmt.Sprintf("%s-Slice %d Lightspeed", fp.Card, s), Description: o.ModuleDescr, Tags: o.Tags["module"]},
+			{Name: bay, Type: o.BayType, Parent: mod, Description: o.BayDescr, EntClass: "5", Tags: o.Tags["bay"]},
+			{Name: port, Type: "PORT", Parent: mod, Description: o.PortDescr, EntClass: "10", Tags: o.Tags["port"]},
+			{Name: ifName, Type: "TRANSCEIVER", Parent: bay, PartNo: o.PartNo, Description: o.Description, EntClass: "9", Tags: o.Tags["transceiver"]},
 		}
 		for _, k := range []struct{ format, descr string }{
 			{"Tx Lane %d Current", "current"}, {"Tx Lane %d Power", "power"}, {"Rx Lane %d Power", "power"},
 		} {
 			for l := 0; l < o.Lanes; l++ {
-				rows = append(rows, Component{Name: ifName + "-" + fmt.Sprintf(k.format, l), Type: "SENSOR", Parent: ifName, Description: o.SensorDescr[k.descr]})
+				rows = append(rows, Component{Name: ifName + "-" + fmt.Sprintf(k.format, l), Type: "SENSOR", Parent: ifName, Description: o.SensorDescr[k.descr], Tags: o.Tags[k.descr]})
 			}
 		}
 		rows = append(rows,
-			Component{Name: ifName + "-Module Temp", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["temperature"], Temperature: true},
-			Component{Name: ifName + "-3.3 V", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["voltage"]},
-			Component{Name: ifName + "-IDPROM", Parent: ifName, Description: o.SensorDescr["idprom"]},
+			Component{Name: ifName + "-Module Temp", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["temperature"], Temperature: true, Tags: o.Tags["temperature"]},
+			Component{Name: ifName + "-3.3 V", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["voltage"], Tags: o.Tags["voltage"]},
+			Component{Name: ifName + "-IDPROM", Parent: ifName, Description: o.SensorDescr["idprom"], Tags: o.Tags["idprom"]},
 		)
 		for _, r := range rows {
 			if err := c.add(r); err != nil {

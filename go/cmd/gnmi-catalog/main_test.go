@@ -396,3 +396,31 @@ func TestGenerateEmitsModuleOnlyUnderResponseOriginModule(t *testing.T) {
 		}
 	}
 }
+// A tag:<name> filter is accepted when a component carries the tag and
+// refused when none does, like a type filter.
+func TestGenerateAcceptsTagFilter(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	withTag := func(filter string) string {
+		return strings.Replace(strings.Replace(strings.Replace(string(b), `"components": []`, `"components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": false, "tags": ["x"]}]`, 1),
+			`"keys": [{"source": "interfaces"}], "module"`, `"keys": [{"source": "components"}], "module"`, 1),
+			`"module"`, `"filters": {"state/mtu": "`+filter+`"}, "module"`, 1)
+	}
+	for _, c := range []struct {
+		filter string
+		ok     bool
+	}{{"tag:x", true}, {"tag:y", false}} {
+		p := filepath.Join(t.TempDir(), "b.json")
+		_ = os.WriteFile(p, []byte(withTag(c.filter)), 0o644)
+		out := filepath.Join(t.TempDir(), "o.json")
+		err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out})
+		if (err == nil) != c.ok {
+			t.Fatalf("filter %s: err %v, want ok=%v", c.filter, err, c.ok)
+		}
+		if c.ok {
+			got, _ := os.ReadFile(out)
+			if !strings.Contains(string(got), `"filter": "tag:x"`) {
+				t.Fatalf("tag filter not copied:\n%s", got)
+			}
+		}
+	}
+}

@@ -117,6 +117,10 @@ type gnmiCatalogComponent struct {
 	EthernetPMD   string `json:"ethernet_pmd,omitempty"`
 	ConnectorType string `json:"connector_type,omitempty"`
 	Wavelength    string `json:"wavelength,omitempty"`
+	// Tags name the leaf groups this component reports beyond what its
+	// type implies, selected by a `tag:<name>` leaf filter: an IOS-XR FPD
+	// module reports firmware-version, a slot container no type.
+	Tags []string `json:"tags,omitempty"`
 }
 
 type gnmiCatalogNeighbor struct {
@@ -659,7 +663,8 @@ func (c *gnmiCatalog) acceptsEncoding(enc gnmipb.Encoding) bool {
 }
 
 // components returns the component list filtered by `filter`: "" for
-// all, "temperature" for sensors, or a component type such as "FAN";
+// all, "temperature" for sensors, "tag:<name>" for the components
+// carrying that tag, or a component type such as "FAN";
 // a non-empty `parent` keeps only that component's children. The
 // resolver, the leaf-filter check and the same-path guard all
 // enumerate through here, so load and serve cannot disagree.
@@ -672,7 +677,8 @@ func (c *gnmiCatalog) components(filter, parent string) []gnmiCatalogComponent {
 		if parent != "" && comp.Parent != parent {
 			continue
 		}
-		if filter == "" || (filter == "temperature" && comp.Temperature) || comp.Type == filter {
+		if filter == "" || (filter == "temperature" && comp.Temperature) || comp.Type == filter ||
+			(strings.HasPrefix(filter, "tag:") && slices.Contains(comp.Tags, strings.TrimPrefix(filter, "tag:"))) {
 			out = append(out, comp)
 		}
 	}

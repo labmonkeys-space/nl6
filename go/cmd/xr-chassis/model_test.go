@@ -7,6 +7,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -189,5 +190,36 @@ func TestShippedModelCarriesNoPerUnitData(t *testing.T) {
 		if strings.Contains(comp.Name, "-QDD_") && !strings.Contains(comp.Name, "-QDD_BRT_") {
 			t.Errorf("%s is a per-bay FPD row outside the QDD_BRT set that covers every QSFP bay", comp.Name)
 		}
+	}
+}
+
+// leafTags is every tag a component may carry: the leaf groups an ASR 9902
+// reports on some components of a type but not all. A tag outside it, or
+// one no component carries, fails.
+var leafTags = []string{"allocated-power", "empty", "firmware-version", "hardware-version", "id", "memory", "mfg-name",
+	"openconfig-platform-ext:entity-id", "oper-status", "parent", "part-no", "pcie", "serial-no", "software-version", "type", "used-power"}
+
+func TestShippedTagsAreKnownAndUsed(t *testing.T) {
+	c := shipped(t)
+	used := map[string]int{}
+	for _, comp := range c.Components {
+		for _, tag := range comp.Tags {
+			if !slices.Contains(leafTags, tag) {
+				t.Errorf("%s carries unknown tag %q", comp.Name, tag)
+			}
+			used[tag]++
+		}
+	}
+	for _, tag := range leafTags {
+		if used[tag] == 0 {
+			t.Errorf("tag %q is carried by no component", tag)
+		}
+	}
+	// Spot checks from the hardware's leaf profile.
+	if comp := c.Component("0/RP0-Lionheart-FPGA"); comp == nil || !slices.Contains(comp.Tags, "firmware-version") {
+		t.Error("an FPD module must report firmware-version")
+	}
+	if comp := c.Component("Rack 0-RouteProcessor Slot 0"); comp == nil || slices.Contains(comp.Tags, "type") {
+		t.Error("an untyped slot container reports no type leaf")
 	}
 }

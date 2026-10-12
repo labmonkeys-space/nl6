@@ -90,3 +90,21 @@ func TestResponseOriginDefaultIsCanonical(t *testing.T) {
 		t.Fatalf("prefix origin %q, want openconfig", got)
 	}
 }
+// A tag:<name> filter selects the components carrying that tag, so a leaf
+// group present on some components of a type is served on exactly those.
+func TestTagFilterSelectsTaggedComponents(t *testing.T) {
+	cat, err := minCatalogWith(t, func(m map[string]any) {
+		cs := m["components"].([]any)
+		cs[0].(map[string]any)["tags"] = []any{"firmware-version"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cat.components("tag:firmware-version", "")
+	if len(got) != 1 || got[0].Name != cat.Components[0].Name {
+		t.Fatalf("tag filter selected %v, want only %s", got, cat.Components[0].Name)
+	}
+	if len(cat.components("tag:absent", "")) != 0 {
+		t.Fatal("a tag no component carries selected something")
+	}
+}

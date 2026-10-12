@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -492,17 +493,20 @@ func hasComponentsKey(keys json.RawMessage) bool {
 }
 
 // filterMatchesAComponent applies the loader's filter vocabulary:
-// "temperature" for sensor-bearing components, else a component type.
+// "temperature" for sensor-bearing components, "tag:<name>" for the
+// components carrying that tag, else a component type.
 func filterMatchesAComponent(components json.RawMessage, filter string) bool {
 	var cs []struct {
-		Type        string `json:"type"`
-		Temperature bool   `json:"temperature"`
+		Type        string   `json:"type"`
+		Temperature bool     `json:"temperature"`
+		Tags        []string `json:"tags"`
 	}
 	if json.Unmarshal(components, &cs) != nil {
 		return false
 	}
 	for _, c := range cs {
-		if (filter == "temperature" && c.Temperature) || c.Type == filter {
+		if (filter == "temperature" && c.Temperature) || c.Type == filter ||
+			(strings.HasPrefix(filter, "tag:") && slices.Contains(c.Tags, strings.TrimPrefix(filter, "tag:"))) {
 			return true
 		}
 	}

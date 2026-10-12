@@ -16,69 +16,140 @@
         "parent": "",
         "part_no": "ASR-9902",
         "description": "ASR 9902 Chassis",
-        "ent_class": "3"
+        "ent_class": "3",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "part-no",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "Rack 0-RouteProcessor Slot 0",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Route Processor Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-RouteProcessor Slot 1",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Route Processor Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-Fan Tray Slot 0",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Fan Tray Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-Fan Tray Slot 1",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Fan Tray Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-Fan Tray Slot 2",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Fan Tray Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-Line Card Slot 0",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Line Card Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-Power Tray Slot 0",
         "type": "",
         "parent": "Rack 0",
         "description": "ASR9K Power Tray Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "Rack 0-LineCard Chassis Backplane",
         "type": "BACKPLANE",
         "parent": "Rack 0",
         "description": "ASR9K Chassis Line Card Backplane",
-        "ent_class": "4"
+        "ent_class": "4",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "Rack 0-IDPROM",
         "type": "",
         "parent": "Rack 0-LineCard Chassis Backplane",
-        "description": "ASR 9902 Chassis"
+        "description": "ASR 9902 Chassis",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     ],
     "rp": [
@@ -88,501 +159,1109 @@
         "parent": "Rack 0-RouteProcessor Slot {slot}",
         "part_no": "A99-RP-F",
         "description": "ASR 9900 Fixed Chassis Route Processor",
-        "ent_class": "9"
+        "ent_class": "9",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Motherboard",
         "type": "",
         "parent": "{loc}",
-        "description": "Motherboard Module"
+        "description": "Motherboard Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Hot Swap CS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Board Current Sensor"
+        "description": "Board Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_DIMM0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_DIMM1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Inlet",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_Aldrin",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-AIR_Outlet",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Hotspot",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_CPU_VCCIN",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P7_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P05_CPU_VCCSCUS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P05_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P3_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_RTC",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_ALD_SDAVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_MGTAVTT",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_MGTAVCC",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_LH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_ALD_CORE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP5P0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_AUX",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P6_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-P12V_STBY",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_I210",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_I210",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_MB_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP5P0_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP7P0_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_MGT_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_MGT_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_PLL_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5_DB",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Hot Swap VS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Board Voltage Sensor"
+        "description": "Board Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Mgmt Ethernet Switch",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "Ethernet Switch Module"
+        "description": "Ethernet Switch Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-CE Port 0",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 0"
+        "description": "Control Ethernet Port 0",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 1",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 1"
+        "description": "Control Ethernet Port 1",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 2",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 2"
+        "description": "Control Ethernet Port 2",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 3",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 3"
+        "description": "Control Ethernet Port 3",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 4",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 4"
+        "description": "Control Ethernet Port 4",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 5",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 5"
+        "description": "Control Ethernet Port 5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 6",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 6"
+        "description": "Control Ethernet Port 6",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 7",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 7"
+        "description": "Control Ethernet Port 7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 8",
         "type": "PORT",
         "parent": "{loc}-Mgmt Ethernet Switch",
-        "description": "Control Ethernet Port 8"
+        "description": "Control Ethernet Port 8",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CPU Module",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "CPU Module"
+        "description": "CPU Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Primary-BIOS",
         "type": "",
         "parent": "{loc}-CPU Module",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-SSDa",
         "type": "",
         "parent": "{loc}-CPU Module",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-SSDb",
         "type": "",
         "parent": "{loc}-CPU Module",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Aldrin-0-FPGA",
         "type": "",
         "parent": "{loc}-CPU Module",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Intel Xeon D 6 Core CPU Complex",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Processor Module"
+        "description": "Processor Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Virtual processor for admin",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Virtual Processor Module for Admin VM"
+        "description": "Virtual Processor Module for Admin VM",
+        "tags": [
+          "empty",
+          "id",
+          "memory",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Virtual processor for RP XR",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Virtual Processor Module for RP-XR VM"
+        "description": "Virtual Processor Module for RP-XR VM",
+        "tags": [
+          "empty",
+          "id",
+          "memory",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-SPI Flash",
         "type": "STORAGE",
         "parent": "{loc}-Motherboard",
-        "description": "Storage Module - SPI"
+        "description": "Storage Module - SPI",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "pcie",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Disk0",
         "type": "STORAGE",
         "parent": "{loc}-Motherboard",
-        "description": "Storage Module - SSD"
+        "description": "Storage Module - SSD",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "pcie",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Disk1",
         "type": "STORAGE",
         "parent": "{loc}-Motherboard",
-        "description": "Storage Module - SSD"
+        "description": "Storage Module - SSD",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "pcie",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CBC",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Lionheart-FPGA",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Wolfpack-FPGA",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Longshot",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-TamFW-Longshot",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-TimingIC-A",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-IDPROM",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "ASR 9900 Fixed Chassis Route Processor"
+        "description": "ASR 9900 Fixed Chassis Route Processor",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       },
       {
         "name": "{loc}-Niantic Dual Ethernet 2x10GE MAC",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "Ethernet Controller Module"
+        "description": "Ethernet Controller Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-CON0",
         "type": "PORT",
         "parent": "{loc}-Motherboard",
-        "description": "Console Port"
+        "description": "Console Port",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CON1",
         "type": "PORT",
         "parent": "{loc}-Motherboard",
-        "description": "Console Port"
+        "description": "Console Port",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CON2",
         "type": "PORT",
         "parent": "{loc}-Motherboard",
-        "description": "Console Port"
+        "description": "Console Port",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Alarm",
         "type": "PORT",
         "parent": "{loc}",
-        "description": "Alarm Port"
+        "description": "Alarm Port",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "MgmtEth{loc}/CPU0/0",
         "type": "PORT",
         "parent": "{loc}",
         "description": "RP Management Ethernet Port 0",
-        "ent_class": "10"
+        "ent_class": "10",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Management 1",
         "type": "PORT",
         "parent": "{loc}",
-        "description": "RP Management Ethernet Port 1"
+        "description": "RP Management Ethernet Port 1",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-USB 0",
         "type": "PORT",
         "parent": "{loc}",
-        "description": "USB Module"
+        "description": "USB Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-USB Container",
         "type": "",
         "parent": "{loc}-USB 0",
-        "description": "USB Container"
+        "description": "USB Container",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       }
     ],
     "lc": [
@@ -592,946 +1271,2065 @@
         "parent": "Rack 0-Line Card Slot {slot}",
         "part_no": "ASR-9902-LC",
         "description": "ASR 9902 Line Card",
-        "ent_class": "9"
+        "ent_class": "9",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Motherboard",
         "type": "",
         "parent": "{loc}",
-        "description": "Motherboard Module"
+        "description": "Motherboard Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Hot Swap CS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Board Current Sensor"
+        "description": "Board Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Inlet",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-MB_AIR_Inlet",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-MB_AIR_Outlet_0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-MB AIR_Outlet_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-MB_Hotspot_0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-MB_Hotspot_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_DIMM0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_DIMM1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_Aldrin",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_PHY0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_PHY1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_SKB0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_TOR",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD0_HBM0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD0_HBM1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD1_HBM0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_LSD1_HBM1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_X24_L",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DIE_X24_H",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DB_AIR_Inlet_0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DB_AIR_Inlet_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DB_AIR_Outlet_0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DB_AIR_Outlet_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-DB_AIR_Outlet_2",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_CPU_VCCIN",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P7_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P05_CPU_VCCSCUS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P05_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P3_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_RTC",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P85_IPU_MGT",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_CPU",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_PHY_AVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_FPGA",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_PHY_AVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP7P0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP5P0",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P6_VTT",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_CAN",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P85_IPU_CORE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_IPU_DDR4",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_IPU_MGT",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_QP_VDD_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_QP_VDD_2",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_PEX",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_SUPR",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P85_TOR_AVS_VDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P7_LSD0_CORE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P75_LSD0_RTVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_LSD0_AVDDL",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_LSD0_AVDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_LSD0_HBM",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P75_LSD0_PLLVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_LSD0_PLLVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_PHY0_VDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P7_LSD1_CORE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P75_LSD1_RTVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_LSD1_AVDDL",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_LSD1_AVDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_LSD1_HBM",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P75_LSD1_PLLVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_LSD1_PLLVDL",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_PHY1_VDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_LSD0_TVDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_LSD0_CPLLVDD_PG",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_LSD0_VDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5_LSD0_HBM",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_LSD1_TVDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_LSD1_CPLLVDD_PG",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_LSD1_VDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5_LSD1_HBM",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_CORE_X24",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_ANA_X24",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_AVDD_X24",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_AVDD_X25",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_X24",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P1_TOR",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P85_TOR_VDDA",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P8_SKB0_VDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_SKB0_AVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P5_SKB0_VDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5_SKB0_VDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_SKB0_PLLAVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP2P5_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP0P9_SKB0_PLLVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP3P3_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_XGE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P0_XGE_SD_AVDD",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P8_XGE",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP5P0_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP7P0_1",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P2_PHY",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-VP1P1_SKB0_AVDDH",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Hot Swap VS",
         "type": "SENSOR",
         "parent": "{loc}-Motherboard",
-        "description": "Board Voltage Sensor"
+        "description": "Board Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Control Ethernet Switch",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "Ethernet Switch Module"
+        "description": "Ethernet Switch Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-CE Port 0",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 0"
+        "description": "Control Ethernet Port 0",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 1",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 1"
+        "description": "Control Ethernet Port 1",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 2",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 2"
+        "description": "Control Ethernet Port 2",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 3",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 3"
+        "description": "Control Ethernet Port 3",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 4",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 4"
+        "description": "Control Ethernet Port 4",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 5",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 5"
+        "description": "Control Ethernet Port 5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 6",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 6"
+        "description": "Control Ethernet Port 6",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 7",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 7"
+        "description": "Control Ethernet Port 7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 9",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 9"
+        "description": "Control Ethernet Port 9",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 10",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 10"
+        "description": "Control Ethernet Port 10",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 12",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 12"
+        "description": "Control Ethernet Port 12",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 11",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 11"
+        "description": "Control Ethernet Port 11",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 13",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 13"
+        "description": "Control Ethernet Port 13",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CE Port 14",
         "type": "PORT",
         "parent": "{loc}-Control Ethernet Switch",
-        "description": "Control Ethernet Port 14"
+        "description": "Control Ethernet Port 14",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-CPU Module",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "CPU Module"
+        "description": "CPU Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Primary-BIOS",
         "type": "",
         "parent": "{loc}-CPU Module",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Intel Broadwell-DE 4 Core CPU Complex",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Processor Module"
+        "description": "Processor Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Virtual processor for admin",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Virtual Processor Module for Admin VM"
+        "description": "Virtual Processor Module for Admin VM",
+        "tags": [
+          "empty",
+          "id",
+          "memory",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Virtual processor for LC XR",
         "type": "CPU",
         "parent": "{loc}-CPU Module",
-        "description": "Virtual Processor Module for LC-XR VM"
+        "description": "Virtual Processor Module for LC-XR VM",
+        "tags": [
+          "empty",
+          "id",
+          "memory",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-ASR9K SPI Flash",
         "type": "STORAGE",
         "parent": "{loc}-Motherboard",
-        "description": "Storage Module - SPI"
+        "description": "Storage Module - SPI",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "pcie",
+          "type"
+        ]
       },
       {
         "name": "{loc}-PCI Switch 8749",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "PCI Module"
+        "description": "PCI Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Slice 0",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "ASIC Module"
+        "description": "ASIC Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Slice 0 Lightspeed",
         "type": "",
         "parent": "{loc}-Slice 0",
-        "description": "PSE ASIC Module"
+        "description": "PSE ASIC Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Slice 1",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "ASIC Module"
+        "description": "ASIC Module",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Slice 1 Lightspeed",
         "type": "",
         "parent": "{loc}-Slice 1",
-        "description": "PSE ASIC Module"
+        "description": "PSE ASIC Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-CBC",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Chromia",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-IPU-DDR4",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Sunstreaker",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Skywarp-0",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Skywarp-1",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-Aldrin-FPGA",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-SSDa",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-TAMFW-Sunstreaker",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-TimingIC-A",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_8",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_9",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_10",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_11",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_36",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_37",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_38",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-QDD_BRT_0_39",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "{loc}-IDPROM",
         "type": "",
         "parent": "{loc}-Motherboard",
-        "description": "ASR 9902 Line Card"
+        "description": "ASR 9902 Line Card",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     ],
     "ft": [
@@ -1541,38 +3339,92 @@
         "parent": "Rack 0-Fan Tray Slot {slot}",
         "part_no": "ASR-9902-FAN",
         "description": "ASR 9902 Fan Tray",
-        "ent_class": "9"
+        "ent_class": "9",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "pcie",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Fan0",
         "type": "FAN",
         "parent": "{loc}",
         "description": "Fan Module",
-        "ent_class": "7"
+        "ent_class": "7",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Fan Speed Sensor 0",
         "type": "SENSOR",
         "parent": "{loc}-Fan0",
-        "description": "Fan Speed Sensor"
+        "description": "Fan Speed Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Hot Swap CS",
         "type": "SENSOR",
         "parent": "{loc}",
-        "description": "Board Current Sensor"
+        "description": "Board Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-Hot Swap VS",
         "type": "SENSOR",
         "parent": "{loc}",
-        "description": "Board Voltage Sensor"
+        "description": "Board Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "{loc}-IDPROM",
         "type": "",
         "parent": "{loc}",
-        "description": "ASR 9902 Fan Tray"
+        "description": "ASR 9902 Fan Tray",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     ],
     "pt": [
@@ -1582,14 +3434,34 @@
         "parent": "Rack 0-Power Tray Slot 0",
         "part_no": "ASR-9900-AC-PEM",
         "description": "Simulated Power Tray IDPROM",
-        "ent_class": "9"
+        "ent_class": "9",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "pcie",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PEM Bay 0",
         "type": "",
         "parent": "0/PT0",
         "description": "ASR9K Power Supply AC Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM0",
@@ -1597,115 +3469,256 @@
         "parent": "0/PT0-PEM Bay 0",
         "part_no": "PWR-1.6KW-AC",
         "description": "1.6kW-AC Power Module",
-        "ent_class": "6"
+        "ent_class": "6",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-fan0",
         "type": "FAN",
         "parent": "0/PT0-PM0",
         "description": "Fan Module",
-        "ent_class": "7"
+        "ent_class": "7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Fan 0 Speed",
         "type": "SENSOR",
         "parent": "0/PT0-PM0-fan0",
-        "description": "Fan Speed Sensor"
+        "description": "Fan Speed Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-fan1",
         "type": "FAN",
         "parent": "0/PT0-PM0",
         "description": "Fan Module",
-        "ent_class": "7"
+        "ent_class": "7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Fan 1 Speed",
         "type": "SENSOR",
         "parent": "0/PT0-PM0-fan1",
-        "description": "Fan Speed Sensor"
+        "description": "Fan Speed Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Input Current",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Current Sensor"
+        "description": "Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Output Current",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Current Sensor"
+        "description": "Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Input Power",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Power Sensor"
+        "description": "Power Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ]
       },
       {
         "name": "0/PT0-PM0-Output Power",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Power Sensor"
+        "description": "Power Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ]
       },
       {
         "name": "0/PT0-PM0-Inlet Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Outlet Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Heat Sink Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Input Voltage",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-Output Voltage",
         "type": "SENSOR",
         "parent": "0/PT0-PM0",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM0-PO-PriMCU",
         "type": "",
         "parent": "0/PT0-PM0",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM0-PO-SecMCU",
         "type": "",
         "parent": "0/PT0-PM0",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM0-IDPROM",
         "type": "",
         "parent": "0/PT0-PM0",
-        "description": "1.6kW-AC Power Module"
+        "description": "1.6kW-AC Power Module",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       },
       {
         "name": "0/PT0-PEM Bay 1",
         "type": "",
         "parent": "0/PT0",
         "description": "ASR9K Power Supply AC Slot",
-        "ent_class": "5"
+        "ent_class": "5",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM1",
@@ -1713,114 +3726,259 @@
         "parent": "0/PT0-PEM Bay 1",
         "part_no": "PWR-1.6KW-AC",
         "description": "1.6kW-AC Power Module",
-        "ent_class": "6"
+        "ent_class": "6",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-fan0",
         "type": "FAN",
         "parent": "0/PT0-PM1",
         "description": "Fan Module",
-        "ent_class": "7"
+        "ent_class": "7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Fan 0 Speed",
         "type": "SENSOR",
         "parent": "0/PT0-PM1-fan0",
-        "description": "Fan Speed Sensor"
+        "description": "Fan Speed Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-fan1",
         "type": "FAN",
         "parent": "0/PT0-PM1",
         "description": "Fan Module",
-        "ent_class": "7"
+        "ent_class": "7",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Fan 1 Speed",
         "type": "SENSOR",
         "parent": "0/PT0-PM1-fan1",
-        "description": "Fan Speed Sensor"
+        "description": "Fan Speed Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Input Current",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Current Sensor"
+        "description": "Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Output Current",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Current Sensor"
+        "description": "Current Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Input Power",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Power Sensor"
+        "description": "Power Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ]
       },
       {
         "name": "0/PT0-PM1-Output Power",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Power Sensor"
+        "description": "Power Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ]
       },
       {
         "name": "0/PT0-PM1-Inlet Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Outlet Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Heat Sink Temperature",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
         "description": "Temperature Sensor",
-        "temperature": true
+        "temperature": true,
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Input Voltage",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-Output Voltage",
         "type": "SENSOR",
         "parent": "0/PT0-PM1",
-        "description": "Voltage Sensor"
+        "description": "Voltage Sensor",
+        "tags": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ]
       },
       {
         "name": "0/PT0-PM1-PO-PriMCU",
         "type": "",
         "parent": "0/PT0-PM1",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM1-PO-SecMCU",
         "type": "",
         "parent": "0/PT0-PM1",
-        "description": "FPD Module"
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ]
       },
       {
         "name": "0/PT0-PM1-IDPROM",
         "type": "",
         "parent": "0/PT0-PM1",
-        "description": "1.6kW-AC Power Module"
+        "description": "1.6kW-AC Power Module",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       },
       {
         "name": "0/PT0-IDPROM",
         "type": "",
         "parent": "0/PT0",
-        "description": "Simulated Power Tray IDPROM"
+        "description": "Simulated Power Tray IDPROM",
+        "tags": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     ],
     "software": [
@@ -1828,25 +3986,45 @@
         "name": "0/RP0/CPU0",
         "type": "OPERATING_SYSTEM",
         "parent": "",
-        "description": "IOS XR Operating System"
+        "description": "IOS XR Operating System",
+        "tags": [
+          "oper-status",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "asr9k-xr-24.2.2",
         "type": "SOFTWARE_MODULE",
         "parent": "",
-        "description": "IOS XR Software Module"
+        "description": "IOS XR Software Module",
+        "tags": [
+          "oper-status",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "0/RP1/CPU0",
         "type": "OPERATING_SYSTEM",
         "parent": "",
-        "description": "IOS XR Operating System"
+        "description": "IOS XR Operating System",
+        "tags": [
+          "oper-status",
+          "software-version",
+          "type"
+        ]
       },
       {
         "name": "0/0/CPU0",
         "type": "OPERATING_SYSTEM",
         "parent": "",
-        "description": "IOS XR Operating System"
+        "description": "IOS XR Operating System",
+        "tags": [
+          "oper-status",
+          "software-version",
+          "type"
+        ]
       }
     ]
   },
@@ -1939,6 +4117,80 @@
         "temperature": "Temperature Sensor",
         "voltage": "Voltage Sensor",
         "idprom": "IDPROM"
+      },
+      "tags": {
+        "module": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ],
+        "bay": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "port": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "transceiver": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "type"
+        ],
+        "current": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "power": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ],
+        "temperature": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "voltage": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "idprom": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     },
     "qsfp": {
@@ -1960,6 +4212,79 @@
         "temperature": "Temperature Sensor",
         "voltage": "Voltage Sensor",
         "idprom": "IDPROM"
+      },
+      "tags": {
+        "module": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ],
+        "bay": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent"
+        ],
+        "port": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "transceiver": [
+          "allocated-power",
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "oper-status",
+          "parent",
+          "part-no",
+          "serial-no",
+          "type"
+        ],
+        "current": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "power": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type",
+          "used-power"
+        ],
+        "temperature": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "voltage": [
+          "empty",
+          "id",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "type"
+        ],
+        "idprom": [
+          "empty",
+          "hardware-version",
+          "id",
+          "mfg-name",
+          "openconfig-platform-ext:entity-id",
+          "parent",
+          "part-no",
+          "serial-no"
+        ]
       }
     }
   },
