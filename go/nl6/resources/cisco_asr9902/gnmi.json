@@ -16708,6 +16708,10 @@
     {
       "path": "/interfaces/interface[name=*]/state",
       "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true,
       "module": "openconfig-interfaces",
       "keys": [
         {
@@ -16725,6 +16729,10 @@
     {
       "path": "/interfaces/interface[name=*]/state/counters",
       "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true,
       "module": "openconfig-interfaces",
       "keys": [
         {
@@ -16827,6 +16835,10 @@
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",
       "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true,
       "module": "openconfig-interfaces",
       "keys": [
         {
@@ -16850,6 +16862,10 @@
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters",
       "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true,
       "module": "openconfig-interfaces",
       "keys": [
         {

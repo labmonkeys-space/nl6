@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,8 +14,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // xrFixture is a reduced hardware fixture: wildcarded prefixes and the
@@ -158,5 +162,63 @@ func TestASR9902OriginlessRequestsGetModuleOrigin(t *testing.T) {
 		if seen == 0 {
 			t.Errorf("origin %q: no notification", origin)
 		}
+	}
+}
+
+// The catalogue owns only the interface subscriptions the reference
+// capture verified. A broader interface request is answered by the
+// resolver every device type has, so it keeps the state leaves and
+// ON_CHANGE it served before the catalogue existed.
+func TestASR9902BroaderInterfaceRequestsKeepState(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, cats["cisco_asr9902"], 2)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "openconfig-interfaces", "/interfaces/interface/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oper := false
+	for _, r := range resps {
+		n := r.GetUpdate()
+		for _, u := range n.GetUpdate() {
+			full := pathToString(n.GetPrefix()) + "/" + pathToString(u.GetPath())
+			if strings.HasSuffix(full, "/oper-status") {
+				oper = true
+			}
+		}
+	}
+	if !oper {
+		t.Error("ONCE /interfaces/interface/state served no oper-status")
+	}
+
+	// ON_CHANGE gets the shared resolver's answers, not the catalogue's
+	// refusal: a state leaf streams, and the whole state container is
+	// refused because it holds counters, as on every type.
+	for _, c := range []struct {
+		path string
+		want codes.Code
+	}{
+		{"/interfaces/interface/state/oper-status", codes.OK},
+		{"/interfaces/interface/state", codes.InvalidArgument},
+	} {
+		conn := dialTestGnmi(t, addr)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		stream, err := gnmipb.NewGNMIClient(conn).Subscribe(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = stream.Send(&gnmipb.SubscribeRequest{Request: &gnmipb.SubscribeRequest_Subscribe{Subscribe: &gnmipb.SubscriptionList{
+			Mode: gnmipb.SubscriptionList_STREAM, Encoding: gnmipb.Encoding_PROTO,
+			Subscription: []*gnmipb.Subscription{{Path: pathFromString(t, c.path), Mode: gnmipb.SubscriptionMode_ON_CHANGE}},
+		}}})
+		_, err = stream.Recv()
+		if got := status.Code(err); got != c.want {
+			t.Errorf("ON_CHANGE %s: %v, want %v", c.path, err, c.want)
+		}
+		cancel()
+		conn.Close()
 	}
 }

@@ -16693,7 +16693,11 @@
       ],
       "leaves": {
         "counters/carrier-transitions": "const:1"
-      }
+      },
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters",
@@ -16728,7 +16732,11 @@
           "type": "uint64",
           "gen": "timestamp:now"
         }
-      }
+      },
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",
@@ -16747,7 +16755,11 @@
       ],
       "leaves": {
         "state/counters/carrier-transitions": "const:1"
-      }
+      },
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true
     },
     {
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters",
@@ -16788,7 +16800,11 @@
           "type": "uint64",
           "gen": "timestamp:now"
         }
-      }
+      },
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true
     },
     {
       "path": "/components/component[name=*]/state",
