@@ -28,7 +28,7 @@ func fakeTokens(t *testing.T) tokenSet {
 
 func TestCaptureTokens(t *testing.T) {
 	set := fakeTokens(t)
-	for _, want := range []string{"bundle-ether77", "ether77", "bundle", "192.0.2.10:57400", "198.51.100.77", "424242", "99887766", "uplink", "0/rp0/cpu0", "tengige0/0/0/3"} {
+	for _, want := range []string{"bundle-ether77", "ether77", "bundle", "192.0.2.10:57400", "192.0.2.10", "198.51.100.77", "424242", "99887766", "uplink", "0/rp0/cpu0", "tengige0/0/0/3"} {
 		if _, ok := set[want]; !ok {
 			t.Errorf("token %q missing", want)
 		}
@@ -76,5 +76,20 @@ func TestScanHonoursAllowed(t *testing.T) {
 	hits := scanLines([]addedLine{{"a", 1, "uplink"}}, set, func(tok string) bool { return tok == "uplink" })
 	if len(hits) != 0 {
 		t.Fatalf("allowed token reported: %+v", hits)
+	}
+}
+
+// Text outside the JSON objects (the echoed command, a pasted prompt) and
+// a hostname inside a sentence-like value are tokens too.
+func TestCaptureTokensIncludeTextOutsideObjects(t *testing.T) {
+	in := "gnmic sub -a 192.0.2.10:57400\r\n{\"prefix\":\"x:a\",\"updates\":[{\"Path\":\"d\",\"values\":{\"d\":\"lab-r1 uplink\"}}]}\r\n[lab@fake-r1 ~]$ "
+	set := tokenSet{}
+	if err := captureTokens(strings.NewReader(in), set); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"fake-r1", "192.0.2.10:57400", "lab-r1"} {
+		if _, ok := set[want]; !ok {
+			t.Errorf("token %q missing", want)
+		}
 	}
 }
