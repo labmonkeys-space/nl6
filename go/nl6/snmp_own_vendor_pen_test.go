@@ -283,7 +283,7 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // cycler is one per device and would make the backup mirror the master.
 const (
 	ownVendorArcNamesShipped  = 327
-	ownVendorArcValuesShipped = 30 // +1: cisco_asr9902's sysObjectID ciscoASR9902 (nl6#766)
+	ownVendorArcValuesShipped = 30 // +1: cisco_asr9902's sysObjectID ciscoASR9902
 )
 
 // TestOwnVendorPENMapIsCuratedAndComplete pins the map itself before anything
@@ -744,8 +744,8 @@ func codeServedVendorArcHits() []arcHit {
 // The dual-RE change serves RE1's CPU, buffer and temperature as static
 // corpus rows, not from this map, so the count stays 271.
 const (
-	codeServedVendorArcOIDs     = 275 // +4: cisco_asr9902's vendorOIDs entry (nl6#766)
-	codeServedVendorArcProfiles = 24  // +1: cisco_asr9902 (nl6#766)
+	codeServedVendorArcOIDs     = 275 // +4: cisco_asr9902's vendorOIDs entry
+	codeServedVendorArcProfiles = 24  // +1: cisco_asr9902
 )
 
 // TestEveryCodeServedVendorOIDIsItsOwnVendorArc is P2: the same rule as the

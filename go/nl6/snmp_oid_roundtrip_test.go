@@ -392,7 +392,7 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // value shippedOIDEncodingDigestBeforeMx10004DualRE.
 // juniper_mx10004 ENTITY-MIB from the model: 275 new entPhysicalTable OID
 // names, pre-change value in snmp_shipped_juniper_mx10004_entity_ledger_test.go.
-// Re-pinned for the cisco_asr9902 addition (nl6#766); snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
+// Re-pinned for the cisco_asr9902 addition; snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
 const shippedOIDEncodingDigest = "9bf7d2bbd6c8e7aa074ff073d8edcc6f9c181efa5a7571990ccd169808bbb2da"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in

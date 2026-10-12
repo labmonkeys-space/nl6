@@ -521,7 +521,7 @@ var loadBearingGuards = []loadBearingGuard{
 	{"TestJuniperMx10004AdditionReproducesTheParentCorpus", "snmp_shipped_juniper_mx10004_ledger_test.go",
 		"The juniper_mx10004 device type addition: removing the profile gives 2f06857's corpus back"},
 	{"TestCiscoAsr9902AdditionReproducesTheParentCorpus", "snmp_shipped_cisco_asr9902_ledger_test.go",
-		"The cisco_asr9902 device type addition (nl6#766): removing the profile gives 06d0199's corpus back"},
+		"The cisco_asr9902 device type addition: removing the profile gives 06d0199's corpus back"},
 
 	// nl6#519's two contract tests. The reload endpoint EVICTS and never mutates;
 	// each of these is the only test that fails under the mutation it names.

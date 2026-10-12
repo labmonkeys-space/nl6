@@ -23,7 +23,7 @@ func loadCiscoAsr9902(t *testing.T) *DeviceResources {
 }
 
 // sysObjectID and the chassis vendor type are ciscoASR9902 and
-// cevChassisASR9902 (cisco/cisco-mibs c9ab98c0), not asr9k's (nl6#801).
+// cevChassisASR9902 (cisco/cisco-mibs c9ab98c0), not the values the asr9k profile serves.
 func TestCiscoAsr9902_Identity(t *testing.T) {
 	res := loadCiscoAsr9902(t)
 	snmp := map[string]string{}

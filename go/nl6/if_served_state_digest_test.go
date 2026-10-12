@@ -51,7 +51,7 @@ import (
 // all admin=1 oper=1. With those 24 rows filtered out the digest is exactly
 // the previous value, faf7833ad0716139c2d777172269bf380c862ab9193711b2e05ffbbdef0514a5.
 //
-// Re-pinned by the cisco_asr9902 device type (nl6#766): it adds 50 rows,
+// Re-pinned by the cisco_asr9902 device type: it adds 50 rows,
 // ifIndex 1-50 (48 front ports, 2 management), all admin=1 oper=1. With those
 // 50 rows filtered out the digest is exactly the previous value,
 // c94783c1f8dedc5d35e971ada849a8eee3085532c74c7399b529bd1176ef7dcb (measured).

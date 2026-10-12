@@ -162,7 +162,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // juniper_mx10004 ENTITY-MIB from the model: board and port entities rebuilt
 // from the chassis model, pre-change value in
 // snmp_shipped_juniper_mx10004_entity_ledger_test.go.
-// Re-pinned for the cisco_asr9902 addition (nl6#766); snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
+// Re-pinned for the cisco_asr9902 addition; snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
 const shippedTagDigest = "a24ac010983a7358e3aba2e7e46f17446371ff266d4997f7793c9db31ab21321"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
