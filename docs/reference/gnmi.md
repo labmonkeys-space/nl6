@@ -132,6 +132,7 @@ Each device adds a 48-byte resolver.
 | `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; the prefix origin of the response follows `aliased_origin_prefix`. The generator adds every subtree's `module` as an alias of `origin`, mapped to the origin of the subtrees naming it (`native_origin` for a native sensor model such as `junos-fabric`, `origin` when both use it), so the bindings list only spellings no module names, such as `Native` |
 | `notification.aliased_origin_prefix` | prefix origin of a response to a request whose origin is an `origin_aliases` key: `canonical` (default) or `empty`; a request with no origin or a canonical one always gets the canonical origin. The MX10004 uses `empty`: a module-name or `Native:` request is answered with no prefix origin, as hardware does, while an origin-less request gets `openconfig` or `juniper`, as vJunos 25.4 does |
 | `notification.response_origin` | `module` answers every request with the rendering subtree's YANG module as the prefix origin (`openconfig-interfaces:interfaces/...`), as IOS-XR does; every subtree then carries its `module`, and it cannot be combined with `aliased_origin_prefix: empty` |
+| `notification.json_ietf_layout` | `leaf` (default) answers JSON_IETF with one update per leaf; `container` answers with one update per requested node, its value the node's leaves nested as RFC 7951 JSON, as IOS-XR does. `container` needs `prefix: list-entry` and `JSON_IETF` in `encodings` |
 | `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
 | `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
 | `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
@@ -221,6 +222,22 @@ A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, 
 That subtree is YANG-derived: no capture exists, so the prefix depth, the sensor names and the values are nl6's reading of the model, not what an MX sends.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
+
+### IOS-XR JSON_IETF layout
+
+`cisco_asr9902` sets `json_ietf_layout: container`.
+A JSON_IETF Get then returns one Notification with no prefix per requested path.
+It holds one update per concrete instance of the path, with the response origin, and the value nests every leaf below that node.
+A request that names every list key it crosses has one instance.
+The counters alias `/interfaces/interface/state/counters` crosses the interface list without a key, so it gets one update per interface.
+Lists become arrays, and each entry repeats its keys as members, so `/components` answers `{"component": [{"name": "...", "state": {...}}, ...]}`.
+Scalars keep the per-leaf JSON_IETF form: 64-bit integers and decimals are quoted strings, 32-bit integers and booleans are bare.
+A leaf marked `always` that sits outside the requested node is left out, because the nested value cannot hold it.
+List keys repeated inside a value are JSON strings, because the catalogue does not type keys; on the ASR 9902 the keys a folded value can hold are the component `name` and the CPU `index`, which the catalogue serves as a string.
+A JSON_IETF Subscribe in ONCE or SAMPLE mode sends one update per list entry, at the entry path with its keys, with no prefix.
+PROTO, ON_CHANGE and the paths the shared resolver answers keep one update per leaf, so `/interfaces/interface/state` stays per-leaf on an ASR 9902.
+The layout follows Cisco's xrdocs article [Getting started with gNMI](https://xrdocs.io/programmability/blogs/OpenConfig-gNMI), which shows it for IOS-XR 7.
+It is not verified on IOS-XR 24.2.2, because the reference capture is PROTO only.
 
 ## Subscribe semantics
 
@@ -530,6 +547,7 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 `subsystem_active` is `false` when `-gnmi-disable` is set.
 `listeners` equals the device count when active.
 Every counter is cumulative since process start; `updates_dropped` increments per backpressure-discard event.
+`updates_sent` counts gNMI Updates, not leaves: under the [IOS-XR JSON_IETF layout](#ios-xr-json_ietf-layout) one Update carries a whole list entry, so the same traffic counts fewer Updates than in PROTO.
 The TLS counters are explained under [Troubleshooting](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
 
 ## Known limitations

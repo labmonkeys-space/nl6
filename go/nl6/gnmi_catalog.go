@@ -51,6 +51,9 @@ const (
 	gnmiAliasedOriginCanonical = "canonical"
 	gnmiAliasedOriginEmpty     = "empty"
 	gnmiResponseOriginModule   = "module"
+
+	gnmiJSONIETFLayoutLeaf      = "leaf"
+	gnmiJSONIETFLayoutContainer = "container"
 )
 
 type gnmiCatalog struct {
@@ -94,6 +97,11 @@ type gnmiCatalogNotification struct {
 	// (openconfig-interfaces:interfaces/...). Every subtree must then
 	// carry its module. Empty keeps the canonical origin.
 	ResponseOrigin string `json:"response_origin,omitempty"`
+	// JSONIETFLayout "container" answers a JSON_IETF Get or Subscribe
+	// with one update per requested node or list entry, its value the
+	// node's leaves nested as RFC 7951 JSON, as IOS-XR does. Empty or
+	// "leaf" keeps one update per leaf.
+	JSONIETFLayout string `json:"json_ietf_layout,omitempty"`
 }
 
 type gnmiCatalogModel struct {
@@ -326,6 +334,19 @@ func (c *gnmiCatalog) validate(source string) error {
 			return fail("notification.encodings: unknown encoding %q", e)
 		}
 		c.encodings[enc] = true
+	}
+	switch n.JSONIETFLayout {
+	case "", gnmiJSONIETFLayoutLeaf:
+	case gnmiJSONIETFLayoutContainer:
+		// Without either the option would load and do nothing.
+		if n.Prefix != gnmiPrefixListEntry {
+			return fail("notification.json_ietf_layout %q needs prefix %q", n.JSONIETFLayout, gnmiPrefixListEntry)
+		}
+		if !c.encodings[gnmipb.Encoding_JSON_IETF] {
+			return fail("notification.json_ietf_layout %q needs JSON_IETF in encodings", n.JSONIETFLayout)
+		}
+	default:
+		return fail("notification.json_ietf_layout %q: want %q or %q", n.JSONIETFLayout, gnmiJSONIETFLayoutLeaf, gnmiJSONIETFLayoutContainer)
 	}
 	names := map[string]bool{}
 	for _, comp := range c.Components {
@@ -660,6 +681,12 @@ func pathElemsEqual(a, b []*gnmipb.PathElem) bool {
 
 func (c *gnmiCatalog) acceptsEncoding(enc gnmipb.Encoding) bool {
 	return c.encodings[enc]
+}
+
+// jsonIETFContainer reports whether JSON_IETF answers nest leaves
+// under the requested node (json_ietf_layout "container").
+func (c *gnmiCatalog) jsonIETFContainer() bool {
+	return c.Notification.JSONIETFLayout == gnmiJSONIETFLayoutContainer
 }
 
 // components returns the component list filtered by `filter`: "" for
