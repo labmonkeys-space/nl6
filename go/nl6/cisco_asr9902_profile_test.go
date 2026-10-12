@@ -8,8 +8,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
 func loadCiscoAsr9902(t *testing.T) *DeviceResources {
@@ -151,4 +154,122 @@ func TestCiscoAsr9902_Classified(t *testing.T) {
 	if _, ok := deviceProfileMap["cisco_asr9902.json"]; !ok {
 		t.Error("no device profile")
 	}
+}
+
+// The gNMI inventory and ENTITY-MIB describe one chassis: every catalogue
+// component with a part number is an entPhysical row with the same serial
+// and model name, and show inventory lists its serial.
+func TestCiscoAsr9902_GNMIAgreesWithSNMPAndSSH(t *testing.T) {
+	res := loadCiscoAsr9902(t)
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat := cats["cisco_asr9902"]
+	if cat == nil {
+		t.Fatal("no cisco_asr9902 catalogue")
+	}
+	model := map[string]string{} // serial -> entPhysicalModelName
+	idx := map[string]string{}   // entity index -> serial
+	for _, e := range res.SNMP {
+		if strings.HasPrefix(e.OID, "1.3.6.1.2.1.47.1.1.1.1.11.") {
+			idx[strings.TrimPrefix(e.OID, "1.3.6.1.2.1.47.1.1.1.1.11.")] = e.Response
+		}
+	}
+	for _, e := range res.SNMP {
+		if strings.HasPrefix(e.OID, "1.3.6.1.2.1.47.1.1.1.1.13.") {
+			model[idx[strings.TrimPrefix(e.OID, "1.3.6.1.2.1.47.1.1.1.1.13.")]] = e.Response
+		}
+	}
+	inv := ""
+	for _, e := range res.SSH {
+		if e.Command == "show inventory" {
+			inv = e.Response
+		}
+	}
+	n := 0
+	for _, c := range cat.Components {
+		if c.PartNo == "" {
+			continue
+		}
+		n++
+		if model[c.SerialNo] != c.PartNo {
+			t.Errorf("%s: entPhysicalModelName for %s is %q, want %s", c.Name, c.SerialNo, model[c.SerialNo], c.PartNo)
+		}
+		if !strings.Contains(inv, "SN: "+c.SerialNo) {
+			t.Errorf("%s (%s) not in show inventory", c.Name, c.SerialNo)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no catalogue component carries a part number")
+	}
+}
+
+// Each component serves exactly the leaf groups its class reports: an FPD
+// module has firmware-version, an untyped slot container has no type, a
+// FRU has pcie, a board without memory has none.
+func TestCiscoAsr9902_ComponentsServeTheirOwnLeafGroups(t *testing.T) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, cats["cisco_asr9902"], 2)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_PROTO, "openconfig-platform", "/components/component/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves := map[string]map[string]bool{}
+	for _, r := range resps {
+		n := r.GetUpdate()
+		if n == nil {
+			continue
+		}
+		var name string
+		for _, e := range n.GetPrefix().GetElem() {
+			if e.GetName() == "component" {
+				name = e.GetKey()["name"]
+			}
+		}
+		if leaves[name] == nil {
+			leaves[name] = map[string]bool{}
+		}
+		for _, u := range n.GetUpdate() {
+			leaves[name][strings.SplitN(strings.TrimPrefix(pathToString(u.GetPath()), "/"), "/", 2)[0]] = true
+		}
+	}
+	// Every component serves a tagged leaf group exactly when it carries
+	// the tag, and temperature exactly when it is flagged, so no group can
+	// spread to components whose class does not report it.
+	cat := cats["cisco_asr9902"]
+	tagged := map[string]bool{}
+	for _, comp := range cat.Components {
+		for _, tag := range comp.Tags {
+			tagged[tag] = true
+		}
+	}
+	if len(tagged) == 0 {
+		t.Fatal("no component carries a tag")
+	}
+	checked := 0
+	for _, comp := range cat.Components {
+		served := leaves[comp.Name]
+		if served == nil {
+			t.Errorf("%s served nothing", comp.Name)
+			continue
+		}
+		for group := range tagged {
+			if got, want := served[group], slices.Contains(comp.Tags, group); got != want {
+				t.Errorf("%s serves %s: %v, want %v (its tags)", comp.Name, group, got, want)
+			}
+			checked++
+		}
+		if got := served["temperature"]; got != comp.Temperature {
+			t.Errorf("%s serves temperature: %v, want %v", comp.Name, got, comp.Temperature)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("nothing checked")
+	}
+
 }
