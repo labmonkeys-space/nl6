@@ -113,9 +113,18 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "asr9k identifies as the ASR 9010",
+		file:         "snmp_shipped_asr9k_identity_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       asr9kIdentityParentRevision,
+		valuesAbsentReason: "two values changed and neither changed its emitted tag (sysObjectID stays an " +
+			"OBJECT IDENTIFIER, entPhysicalVendorType an OCTET STRING)",
+		names: asr9kOIDNamesBeforeIdentityFix,
+	},
+	{
 		name:         "cisco_asr9902 device type",
 		file:         "snmp_shipped_cisco_asr9902_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: asr9kIdentityParentRevision,
 		parent:       ciscoAsr9902ParentRevision,
 		values:       restoreCiscoAsr9902Addition,
 		names:        ciscoAsr9902OIDNamesBeforeAddition,

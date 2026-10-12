@@ -393,7 +393,10 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // juniper_mx10004 ENTITY-MIB from the model: 275 new entPhysicalTable OID
 // names, pre-change value in snmp_shipped_juniper_mx10004_entity_ledger_test.go.
 // Re-pinned for the cisco_asr9902 addition; snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
-const shippedOIDEncodingDigest = "9bf7d2bbd6c8e7aa074ff073d8edcc6f9c181efa5a7571990ccd169808bbb2da"
+// Re-pinned when asr9k's sysObjectID value moved from an ASR 901 vendor-type OID
+// to ciscoASR9010; shippedTagDigest did not move. Reversed by
+// snmp_shipped_asr9k_identity_ledger_test.go.
+const shippedOIDEncodingDigest = "b573859f7da1f200461ed11ab439213cd43035e645038b981ba745dcd8547e51"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
