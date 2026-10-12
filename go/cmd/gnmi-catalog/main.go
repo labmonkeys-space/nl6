@@ -131,6 +131,7 @@ func run(args []string) error {
 	importDirs := flags.String("path", "", "comma-separated directories searched only to resolve imports (optional)")
 	bindingsPath := flags.String("bindings", "", "bindings JSON file")
 	outPath := flags.String("out", "", "output catalogue path")
+	modulesPath := flags.String("modules", "", "file naming, one per line, the only modules to read from the -yang directories (optional; # comments)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -155,7 +156,19 @@ func run(args []string) error {
 	for _, st := range b.Subtrees {
 		named = append(named, st.Module)
 	}
-	ms, err := loadModules(strings.Split(*yangDirs, ","), imports, named)
+	var listed []string
+	if *modulesPath != "" {
+		lb, err := os.ReadFile(*modulesPath)
+		if err != nil {
+			return err
+		}
+		for _, l := range strings.Split(string(lb), "\n") {
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+				listed = append(listed, l)
+			}
+		}
+	}
+	ms, err := loadModules(strings.Split(*yangDirs, ","), imports, named, listed)
 	if err != nil {
 		return err
 	}
@@ -333,10 +346,24 @@ func isKnownUnbuildableDeviation(err error) bool {
 // loaded when something imports it, or when a binding subtree names
 // it in `named` (the Junos native sensor models under -path, nl6#767;
 // walking that directory would read every JTI model for two).
-func loadModules(dirs, importDirs, named []string) (*yang.Modules, error) {
+// With listed modules, the -yang directories only resolve names: exactly
+// the listed modules are read, so a deviation module that sits beside
+// them but is not listed is not applied.
+func loadModules(dirs, importDirs, named, listed []string) (*yang.Modules, error) {
 	ms := yang.NewModules()
 	for _, d := range importDirs {
 		ms.AddPath(strings.TrimSpace(d))
+	}
+	if len(listed) > 0 {
+		for _, d := range dirs {
+			ms.AddPath(strings.TrimSpace(d))
+		}
+		for _, name := range listed {
+			if err := ms.Read(name + ".yang"); err != nil {
+				return nil, fmt.Errorf("module %s: %w", name, err)
+			}
+		}
+		dirs = nil
 	}
 	var files []string
 	for _, d := range dirs {

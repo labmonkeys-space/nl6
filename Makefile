@@ -101,6 +101,15 @@ $(YANG_CACHE)/juniper:
 	git clone --filter=blob:none --sparse https://github.com/Juniper/yang $@
 	cd $@ && git sparse-checkout set 24.2/24.2R1.17 && git checkout $(JUNIPER_YANG_COMMIT)
 
+# Pinned YangModels/yang commit for the cisco_asr9902 catalogue (IOS-XR
+# 24.2.2, vendor/cisco/xr/2422); bump deliberately.
+CISCO_YANG_COMMIT ?= b5465a86cd2457352dcd18a42043e40f0bab65ab
+CISCO_YANG_DIR = $(YANG_CACHE)/yangmodels/vendor/cisco/xr/2422
+
+$(YANG_CACHE)/yangmodels:
+	git clone --filter=blob:none --sparse https://github.com/YangModels/yang $@
+	cd $@ && git sparse-checkout set vendor/cisco/xr/2422 && git checkout $(CISCO_YANG_COMMIT)
+
 ## gen-junos-chassis: Regenerate the juniper_mx10004 hardware files from go/cmd/junos-chassis/models, then the gnmi.json the runtime serves
 gen-junos-chassis: check-go
 	cd go && go run ./cmd/junos-chassis -out nl6/resources/juniper_mx10004
@@ -111,7 +120,7 @@ gen-xr-chassis: check-go
 	cd go && go run ./cmd/xr-chassis -out nl6/resources/cisco_asr9902
 
 ## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
-gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
+gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper $(YANG_CACHE)/yangmodels
 	@if [ "$$(git -C $(YANG_CACHE)/juniper rev-parse HEAD)" != "$(JUNIPER_YANG_COMMIT)" ]; then \
 	  echo "YANG cache not at $(JUNIPER_YANG_COMMIT); fetching"; \
 	  git -C $(YANG_CACHE)/juniper fetch --depth 1 origin $(JUNIPER_YANG_COMMIT) && \
@@ -122,6 +131,17 @@ gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
 	  -path $(YANG_CACHE)/juniper/24.2/24.2R1.17/native/jti/models \
 	  -bindings nl6/resources/juniper_mx10004/gnmi-bindings.json \
 	  -out nl6/resources/juniper_mx10004/gnmi.json
+	@if [ "$$(git -C $(YANG_CACHE)/yangmodels rev-parse HEAD)" != "$(CISCO_YANG_COMMIT)" ]; then \
+	  echo "YANG cache not at $(CISCO_YANG_COMMIT); fetching"; \
+	  git -C $(YANG_CACHE)/yangmodels fetch --depth 1 origin $(CISCO_YANG_COMMIT) && \
+	  git -C $(YANG_CACHE)/yangmodels checkout $(CISCO_YANG_COMMIT); \
+	fi
+	@if [ -f go/nl6/resources/cisco_asr9902/gnmi-bindings.json ]; then \
+	  cd go && go run ./cmd/gnmi-catalog \
+	    -yang $(CISCO_YANG_DIR) -modules cmd/xr-chassis/yang-modules.txt \
+	    -bindings nl6/resources/cisco_asr9902/gnmi-bindings.json \
+	    -out nl6/resources/cisco_asr9902/gnmi.json; \
+	fi
 
 LEAK_BASE ?= origin/main
 

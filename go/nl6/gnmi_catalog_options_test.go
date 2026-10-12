@@ -90,6 +90,7 @@ func TestResponseOriginDefaultIsCanonical(t *testing.T) {
 		t.Fatalf("prefix origin %q, want openconfig", got)
 	}
 }
+
 // A tag:<name> filter selects the components carrying that tag, so a leaf
 // group present on some components of a type is served on exactly those.
 func TestTagFilterSelectsTaggedComponents(t *testing.T) {

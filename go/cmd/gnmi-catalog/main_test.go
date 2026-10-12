@@ -396,6 +396,7 @@ func TestGenerateEmitsModuleOnlyUnderResponseOriginModule(t *testing.T) {
 		}
 	}
 }
+
 // A tag:<name> filter is accepted when a component carries the tag and
 // refused when none does, like a type filter.
 func TestGenerateAcceptsTagFilter(t *testing.T) {
@@ -422,5 +423,26 @@ func TestGenerateAcceptsTagFilter(t *testing.T) {
 				t.Fatalf("tag filter not copied:\n%s", got)
 			}
 		}
+	}
+}
+
+// -modules reads only the named modules: test-dev's deviation, which
+// removes state/removed-by-deviation, is not applied when only test-a is
+// named, so bindings using that leaf generate. A named module the
+// directory lacks fails generation by name.
+func TestModulesFlagReadsOnlyNamedModules(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	usesDeviated := strings.Replace(string(b), `"state/mtu": "const:1514"`, `"state/removed-by-deviation": "const:x"`, 1)
+	dir := t.TempDir()
+	bp, list, out := filepath.Join(dir, "b.json"), filepath.Join(dir, "modules.txt"), filepath.Join(dir, "o.json")
+	_ = os.WriteFile(bp, []byte(usesDeviated), 0o644)
+	_ = os.WriteFile(list, []byte("# test\ntest-a\n"), 0o644)
+	if err := run([]string{"-yang", "testdata", "-modules", list, "-bindings", bp, "-out", out}); err != nil {
+		t.Fatalf("only test-a named, yet the deviation applied: %v", err)
+	}
+	_ = os.WriteFile(list, []byte("test-a\nno-such-module\n"), 0o644)
+	err := run([]string{"-yang", "testdata", "-modules", list, "-bindings", "testdata/bindings.json", "-out", out})
+	if err == nil || !strings.Contains(err.Error(), "no-such-module") {
+		t.Fatalf("got %v, want an error naming the missing module", err)
 	}
 }
