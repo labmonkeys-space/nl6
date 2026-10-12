@@ -191,6 +191,19 @@ func (s *gnmiServer) getLabelled(req *gnmipb.GetRequest) (*gnmipb.GetResponse, e
 			if err != nil {
 				return nil, err
 			}
+			if catEnc == gnmipb.Encoding_JSON_IETF && s.catalog.cat.jsonIETFContainer() {
+				for i := range cn {
+					cn[i].Updates = filterByGetType(cn[i].Updates, req.GetType())
+				}
+				ups, err := foldJSONIETFGet(full, cn)
+				if err != nil {
+					return nil, err
+				}
+				if len(ups) > 0 {
+					notifs = append(notifs, &gnmipb.Notification{Timestamp: now.UnixNano(), Update: ups})
+				}
+				continue
+			}
 			for _, n := range cn {
 				ups, err := encodeUpdates(filterByGetType(n.Updates, req.GetType()), catEnc)
 				if err != nil {

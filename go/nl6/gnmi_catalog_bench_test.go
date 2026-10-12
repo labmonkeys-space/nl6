@@ -9,6 +9,9 @@ import (
 	"net"
 	"runtime"
 	"testing"
+	"time"
+
+	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
 )
 
 // BenchmarkCatalogResolverMemory reports the per-device cost of the
@@ -40,4 +43,38 @@ func BenchmarkCatalogResolverMemory(b *testing.B) {
 	}
 	runtime.KeepAlive(keep)
 	runtime.KeepAlive(cats)
+}
+
+// BenchmarkASR9902ComponentsGet compares a JSON_IETF Get of /components
+// on the ASR 9902 catalogue per leaf and folded into one value.
+func BenchmarkASR9902ComponentsGet(b *testing.B) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		b.Fatal(err)
+	}
+	r := newCatalogResolver(&DeviceSimulator{ID: "d", IP: net.IPv4(10, 0, 0, 1)}, cats["cisco_asr9902"])
+	req := &gnmipb.Path{Elem: []*gnmipb.PathElem{{Name: "components"}}}
+	for _, layout := range []string{gnmiJSONIETFLayoutLeaf, gnmiJSONIETFLayoutContainer} {
+		b.Run(layout, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				cn, err := r.Resolve(req, time.Now())
+				if err != nil {
+					b.Fatal(err)
+				}
+				if layout == gnmiJSONIETFLayoutContainer {
+					_, err = foldJSONIETFGet(req, cn)
+				} else {
+					for _, n := range cn {
+						if _, err = encodeUpdates(n.Updates, gnmipb.Encoding_JSON_IETF); err != nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

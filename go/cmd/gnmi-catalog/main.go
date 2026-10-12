@@ -566,6 +566,9 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		// ResponseOrigin "module": the prefix origin is each subtree's
 		// YANG module; the loader validates the value.
 		ResponseOrigin string `json:"response_origin,omitempty"`
+		// JSONIETFLayout "container": JSON_IETF nests leaves under
+		// the requested node; the loader validates the value.
+		JSONIETFLayout string `json:"json_ietf_layout,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(notification))
 	dec.DisallowUnknownFields()

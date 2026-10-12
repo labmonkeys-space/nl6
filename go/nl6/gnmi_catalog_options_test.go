@@ -109,3 +109,46 @@ func TestTagFilterSelectsTaggedComponents(t *testing.T) {
 		t.Fatal("a tag no component carries selected something")
 	}
 }
+
+func setJSONIETFLayout(m map[string]any, layout string) {
+	n := m["notification"].(map[string]any)
+	n["json_ietf_layout"] = layout
+	n["encodings"] = []any{"PROTO", "JSON_IETF"}
+}
+
+func TestJSONIETFLayoutAccepted(t *testing.T) {
+	for _, layout := range []string{"", "leaf", "container"} {
+		cat, err := minCatalogWith(t, func(m map[string]any) { setJSONIETFLayout(m, layout) })
+		if err != nil {
+			t.Fatalf("layout %q: %v", layout, err)
+		}
+		if got := cat.jsonIETFContainer(); got != (layout == "container") {
+			t.Errorf("layout %q: jsonIETFContainer() = %v", layout, got)
+		}
+	}
+}
+
+// container would load and do nothing without a list-entry prefix or
+// without JSON_IETF in encodings, so both are refused.
+func TestJSONIETFLayoutRefusals(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		edit func(m map[string]any)
+	}{
+		{"unknown value", func(m map[string]any) { setJSONIETFLayout(m, "nested") }},
+		{"container without list-entry", func(m map[string]any) {
+			setJSONIETFLayout(m, "container")
+			m["notification"].(map[string]any)["prefix"] = "flat"
+		}},
+		{"container without JSON_IETF", func(m map[string]any) {
+			setJSONIETFLayout(m, "container")
+			m["notification"].(map[string]any)["encodings"] = []any{"PROTO", "JSON"}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := minCatalogWith(t, c.edit); err == nil || !strings.Contains(err.Error(), "json_ietf_layout") {
+				t.Fatalf("got %v, want an error naming json_ietf_layout", err)
+			}
+		})
+	}
+}

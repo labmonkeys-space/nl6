@@ -22,7 +22,7 @@ The fabric sensor's shape comes from a hardware capture; the environment sensor 
 The Cisco ASR 9902 serves a gNMI catalogue for interface and subinterface counters, platform components, system CPUs and system memory.
 Its leaf sets, prefix depths and per-component leaf groups are shape-verified against a gnmic capture of an ASR 9902 on IOS-XR 24.2.2; values are synthetic.
 Responses carry the subtree's YANG module as prefix origin, as IOS-XR does.
-JSON_IETF answers with one update per leaf.
+JSON_IETF answers with one update per requested node, its leaves nested as IOS-XR documents it; see [gNMI](gnmi.md#ios-xr-json_ietf-layout).
 
 The MX10004 is not in the round-robin list.
 Request it by name.

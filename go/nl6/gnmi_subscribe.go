@@ -60,7 +60,7 @@ func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time)
 		if alias {
 			streamed = pathToString(n.Prefix)
 		}
-		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.extFor(subscribed, streamed, c.seq.Add(1), now))
+		r, err := catalogSubscribeResponses(now, []catalogNotification{n}, c.enc, c.fold(), c.extFor(subscribed, streamed, c.seq.Add(1), now))
 		if err != nil {
 			return nil, err
 		}
@@ -69,17 +69,34 @@ func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time)
 	return out, nil
 }
 
+// fold reports whether this stream answers in the JSON_IETF container
+// layout: one update per list entry, its leaves nested.
+func (c *catalogSubscription) fold() bool {
+	return c.enc == gnmipb.Encoding_JSON_IETF && c.resolver.cat.jsonIETFContainer()
+}
+
 // catalogSubscribeResponses turns catalogue notifications into one
 // SubscribeResponse per list entry, each carrying ext when non-nil.
-func catalogSubscribeResponses(now time.Time, notifs []catalogNotification, enc gnmipb.Encoding, ext *gnmi_ext.Extension) ([]*gnmipb.SubscribeResponse, error) {
+// Under fold the entry is one update at the entry path with no prefix.
+func catalogSubscribeResponses(now time.Time, notifs []catalogNotification, enc gnmipb.Encoding, fold bool, ext *gnmi_ext.Extension) ([]*gnmipb.SubscribeResponse, error) {
 	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
 	for _, n := range notifs {
-		ups, err := encodeUpdates(n.Updates, enc)
-		if err != nil {
-			return nil, err
+		prefix := n.Prefix
+		var ups []*gnmipb.Update
+		if fold {
+			up, err := foldJSONIETFEntry(n)
+			if err != nil {
+				return nil, err
+			}
+			prefix, ups = nil, []*gnmipb.Update{up}
+		} else {
+			var err error
+			if ups, err = encodeUpdates(n.Updates, enc); err != nil {
+				return nil, err
+			}
 		}
 		resp := &gnmipb.SubscribeResponse{Response: &gnmipb.SubscribeResponse_Update{Update: &gnmipb.Notification{
-			Timestamp: now.UnixNano(), Prefix: n.Prefix, Update: ups,
+			Timestamp: now.UnixNano(), Prefix: prefix, Update: ups,
 		}}}
 		if ext != nil {
 			resp.Extension = []*gnmi_ext.Extension{ext}

@@ -9,7 +9,8 @@
       "JSON_IETF"
     ],
     "extension": "none",
-    "response_origin": "module"
+    "response_origin": "module",
+    "json_ietf_layout": "container"
   },
   "components": [
     {
