@@ -196,7 +196,7 @@ func TestShippedModelCarriesNoPerUnitData(t *testing.T) {
 // leafTags is every tag a component may carry: the leaf groups an ASR 9902
 // reports on some components of a type but not all. A tag outside it, or
 // one no component carries, fails.
-var leafTags = []string{"allocated-power", "empty", "firmware-version", "hardware-version", "id", "memory", "mfg-name",
+var leafTags = []string{"allocated-power", "empty", "firmware-version", "hardware-version", "id", "location", "memory", "mfg-name",
 	"openconfig-platform-ext:entity-id", "oper-status", "parent", "part-no", "pcie", "serial-no", "software-version", "type", "used-power"}
 
 func TestShippedTagsAreKnownAndUsed(t *testing.T) {

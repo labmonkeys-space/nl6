@@ -47,6 +47,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -67,6 +68,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -82,6 +84,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -97,6 +100,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -112,6 +116,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -127,6 +132,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -142,6 +148,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -157,6 +164,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -172,6 +180,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -189,6 +198,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -209,6 +219,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -231,6 +242,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -246,6 +258,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -262,6 +275,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -278,6 +292,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -294,6 +309,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -310,6 +326,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -326,6 +343,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -342,6 +360,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -358,6 +377,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -374,6 +394,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -390,6 +411,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -406,6 +428,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -422,6 +445,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -438,6 +462,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -454,6 +479,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -470,6 +496,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -486,6 +513,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -502,6 +530,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -518,6 +547,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -534,6 +564,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -550,6 +581,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -566,6 +598,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -582,6 +615,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -598,6 +632,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -614,6 +649,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -630,6 +666,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -646,6 +683,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -662,6 +700,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -678,6 +717,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -694,6 +734,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -710,6 +751,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -726,6 +768,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -742,6 +785,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -758,6 +802,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -774,6 +819,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -790,6 +836,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -806,6 +853,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -822,6 +870,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -838,6 +887,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -854,6 +904,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -870,6 +921,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -886,6 +938,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -902,6 +955,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -918,6 +972,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -934,6 +989,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -949,6 +1005,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -965,6 +1022,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -981,6 +1039,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -997,6 +1056,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1013,6 +1073,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1029,6 +1090,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1045,6 +1107,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1061,6 +1124,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1077,6 +1141,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1094,6 +1159,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1112,6 +1178,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1130,6 +1197,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1148,6 +1216,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1166,6 +1235,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1182,6 +1252,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1198,6 +1269,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -1215,6 +1287,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -1232,6 +1305,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -1249,6 +1323,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -1266,6 +1341,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -1286,6 +1362,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1304,6 +1381,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1322,6 +1400,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1340,6 +1419,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1358,6 +1438,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1376,6 +1457,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1392,6 +1474,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -1411,6 +1494,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1426,6 +1510,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1442,6 +1527,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1458,6 +1544,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1474,6 +1561,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1490,6 +1578,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1506,6 +1595,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1522,6 +1612,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1538,6 +1629,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1555,6 +1647,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -1577,6 +1670,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -1592,6 +1686,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1608,6 +1703,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1624,6 +1720,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1640,6 +1737,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1656,6 +1754,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1672,6 +1771,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1688,6 +1788,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1704,6 +1805,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1720,6 +1822,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1736,6 +1839,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1752,6 +1856,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1768,6 +1873,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1784,6 +1890,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1800,6 +1907,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1816,6 +1924,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1832,6 +1941,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1848,6 +1958,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1864,6 +1975,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1880,6 +1992,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1896,6 +2009,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1912,6 +2026,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1928,6 +2043,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1944,6 +2060,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1960,6 +2077,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1976,6 +2094,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -1992,6 +2111,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2008,6 +2128,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2024,6 +2145,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2040,6 +2162,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2056,6 +2179,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2072,6 +2196,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2088,6 +2213,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2104,6 +2230,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2120,6 +2247,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2136,6 +2264,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2152,6 +2281,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2168,6 +2298,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2184,6 +2315,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2200,6 +2332,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2216,6 +2349,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2232,6 +2366,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2248,6 +2383,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2264,6 +2400,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2280,6 +2417,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2295,6 +2433,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2311,6 +2450,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2327,6 +2467,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2343,6 +2484,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2359,6 +2501,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2375,6 +2518,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2391,6 +2535,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2407,6 +2552,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2423,6 +2569,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2440,6 +2587,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2458,6 +2606,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2476,6 +2625,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2494,6 +2644,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2512,6 +2663,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2528,6 +2680,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2544,6 +2697,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -2561,6 +2715,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -2578,6 +2733,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -2595,6 +2751,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -2612,6 +2769,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -2632,6 +2790,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2650,6 +2809,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2668,6 +2828,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2686,6 +2847,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2704,6 +2866,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2722,6 +2885,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2738,6 +2902,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -2757,6 +2922,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2772,6 +2938,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2788,6 +2955,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2804,6 +2972,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2820,6 +2989,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2836,6 +3006,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2852,6 +3023,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2868,6 +3040,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2884,6 +3057,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2901,6 +3075,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -2922,6 +3097,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -2937,6 +3113,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2953,6 +3130,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2969,6 +3147,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -2985,6 +3164,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3001,6 +3181,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3017,6 +3198,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3033,6 +3215,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3049,6 +3232,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3065,6 +3249,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3081,6 +3266,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3097,6 +3283,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3113,6 +3300,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3129,6 +3317,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3145,6 +3334,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3161,6 +3351,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3177,6 +3368,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3193,6 +3385,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3209,6 +3402,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3225,6 +3419,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3241,6 +3436,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3257,6 +3453,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3273,6 +3470,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3289,6 +3487,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3305,6 +3504,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3321,6 +3521,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3337,6 +3538,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3353,6 +3555,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3369,6 +3572,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3385,6 +3589,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3401,6 +3606,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3417,6 +3623,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3433,6 +3640,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3449,6 +3657,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3465,6 +3674,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3481,6 +3691,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3497,6 +3708,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3513,6 +3725,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3529,6 +3742,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3545,6 +3759,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3561,6 +3776,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3577,6 +3793,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3593,6 +3810,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3609,6 +3827,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3625,6 +3844,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3641,6 +3861,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3657,6 +3878,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3673,6 +3895,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3689,6 +3912,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3705,6 +3929,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3721,6 +3946,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3737,6 +3963,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3753,6 +3980,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3769,6 +3997,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3785,6 +4014,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3801,6 +4031,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3817,6 +4048,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3833,6 +4065,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3849,6 +4082,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3865,6 +4099,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3881,6 +4116,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3897,6 +4133,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3913,6 +4150,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3929,6 +4167,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3945,6 +4184,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3961,6 +4201,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3977,6 +4218,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -3993,6 +4235,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4009,6 +4252,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4025,6 +4269,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4041,6 +4286,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4057,6 +4303,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4073,6 +4320,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4089,6 +4337,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4105,6 +4354,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4121,6 +4371,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4137,6 +4388,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4153,6 +4405,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4169,6 +4422,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4185,6 +4439,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4201,6 +4456,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4217,6 +4473,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4233,6 +4490,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4249,6 +4507,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4265,6 +4524,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4281,6 +4541,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4297,6 +4558,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4313,6 +4575,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4329,6 +4592,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4345,6 +4609,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4361,6 +4626,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4377,6 +4643,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4393,6 +4660,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4409,6 +4677,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4425,6 +4694,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4441,6 +4711,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4457,6 +4728,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4473,6 +4745,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4489,6 +4762,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4505,6 +4779,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4521,6 +4796,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4537,6 +4813,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4553,6 +4830,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4569,6 +4847,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4585,6 +4864,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4601,6 +4881,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4617,6 +4898,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4633,6 +4915,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -4648,6 +4931,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4664,6 +4948,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4680,6 +4965,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4696,6 +4982,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4712,6 +4999,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4728,6 +5016,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4744,6 +5033,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4760,6 +5050,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4776,6 +5067,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4792,6 +5084,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4808,6 +5101,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4824,6 +5118,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4840,6 +5135,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4856,6 +5152,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4873,6 +5170,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -4891,6 +5189,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -4907,6 +5206,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -4923,6 +5223,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -4940,6 +5241,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "memory",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -4957,6 +5259,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "pcie",
@@ -4975,6 +5278,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -4990,6 +5294,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5006,6 +5311,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5021,6 +5327,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5037,6 +5344,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5055,6 +5363,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5073,6 +5382,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5091,6 +5401,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5109,6 +5420,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5127,6 +5439,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5145,6 +5458,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5163,6 +5477,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5181,6 +5496,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5199,6 +5515,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5217,6 +5534,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5235,6 +5553,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5253,6 +5572,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5271,6 +5591,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5289,6 +5610,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5307,6 +5629,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5325,6 +5648,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5343,6 +5667,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5361,6 +5686,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5377,6 +5703,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -5397,6 +5724,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -5420,6 +5748,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5436,6 +5765,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5452,6 +5782,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5468,6 +5799,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5485,6 +5817,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -5505,6 +5838,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -5528,6 +5862,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5544,6 +5879,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5560,6 +5896,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5576,6 +5913,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5593,6 +5931,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -5613,6 +5952,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -5636,6 +5976,7 @@
         "allocated-power",
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5652,6 +5993,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5668,6 +6010,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5684,6 +6027,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5701,6 +6045,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -5720,6 +6065,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -5742,6 +6088,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -5759,6 +6106,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -5780,6 +6128,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5796,6 +6145,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5812,6 +6162,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5828,6 +6179,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5844,6 +6196,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5860,6 +6213,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5876,6 +6230,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -5893,6 +6248,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -5910,6 +6266,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5926,6 +6283,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5942,6 +6300,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5958,6 +6317,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5974,6 +6334,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -5993,6 +6354,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6011,6 +6373,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6027,6 +6390,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6045,6 +6409,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6062,6 +6427,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -6083,6 +6449,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6099,6 +6466,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6115,6 +6483,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6131,6 +6500,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6147,6 +6517,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6163,6 +6534,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6179,6 +6551,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6196,6 +6569,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6213,6 +6587,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6229,6 +6604,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6245,6 +6621,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6261,6 +6638,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6277,6 +6655,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6296,6 +6675,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6314,6 +6694,7 @@
         "firmware-version",
         "hardware-version",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6330,6 +6711,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6349,6 +6731,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6365,6 +6748,7 @@
       "serial_no": "",
       "temperature": false,
       "tags": [
+        "location",
         "oper-status",
         "software-version",
         "type"
@@ -6393,6 +6777,7 @@
       "serial_no": "",
       "temperature": false,
       "tags": [
+        "location",
         "oper-status",
         "software-version",
         "type"
@@ -6407,6 +6792,7 @@
       "serial_no": "",
       "temperature": false,
       "tags": [
+        "location",
         "oper-status",
         "software-version",
         "type"
@@ -6423,6 +6809,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6438,6 +6825,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6454,6 +6842,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6472,6 +6861,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -6492,6 +6882,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6508,6 +6899,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6525,6 +6917,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6542,6 +6935,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6558,6 +6952,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6575,6 +6970,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6593,6 +6989,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6608,6 +7005,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6624,6 +7022,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6642,6 +7041,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -6662,6 +7062,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6678,6 +7079,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6695,6 +7097,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6712,6 +7115,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6728,6 +7132,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6745,6 +7150,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6763,6 +7169,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6778,6 +7185,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6794,6 +7202,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6812,6 +7221,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -6832,6 +7242,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6848,6 +7259,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6865,6 +7277,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -6882,6 +7295,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6898,6 +7312,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6915,6 +7330,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -6933,6 +7349,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -6948,6 +7365,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6964,6 +7382,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -6982,6 +7401,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7002,6 +7422,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7018,6 +7439,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7035,6 +7457,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7052,6 +7475,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7068,6 +7492,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7085,6 +7510,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -7103,6 +7529,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7118,6 +7545,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7134,6 +7562,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7152,6 +7581,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7172,6 +7602,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7188,6 +7619,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7205,6 +7637,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7222,6 +7655,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7238,6 +7672,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7255,6 +7690,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -7273,6 +7709,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7288,6 +7725,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7304,6 +7742,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7322,6 +7761,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7342,6 +7782,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7358,6 +7799,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7375,6 +7817,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7392,6 +7835,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7408,6 +7852,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7425,6 +7870,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -7443,6 +7889,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7458,6 +7905,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7474,6 +7922,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7492,6 +7941,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7512,6 +7962,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7528,6 +7979,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7545,6 +7997,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7562,6 +8015,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7578,6 +8032,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7595,6 +8050,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -7613,6 +8069,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7628,6 +8085,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7644,6 +8102,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7662,6 +8121,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7682,6 +8142,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7698,6 +8159,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7715,6 +8177,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7732,6 +8195,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7748,6 +8212,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7765,6 +8230,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -7783,6 +8249,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7798,6 +8265,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -7813,6 +8281,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7831,6 +8300,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -7851,6 +8321,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7867,6 +8338,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7883,6 +8355,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7899,6 +8372,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -7915,6 +8389,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7932,6 +8407,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7949,6 +8425,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7966,6 +8443,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -7983,6 +8461,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8000,6 +8479,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8017,6 +8497,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8034,6 +8515,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8051,6 +8533,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8067,6 +8550,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8084,6 +8568,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -8102,6 +8587,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8117,6 +8603,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8132,6 +8619,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8150,6 +8638,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -8170,6 +8659,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8186,6 +8676,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8202,6 +8693,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8218,6 +8710,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8234,6 +8727,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8251,6 +8745,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8268,6 +8763,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8285,6 +8781,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8302,6 +8799,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8319,6 +8817,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8336,6 +8835,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8353,6 +8853,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8370,6 +8871,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8386,6 +8888,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8403,6 +8906,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -8421,6 +8925,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8436,6 +8941,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8451,6 +8957,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8469,6 +8976,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -8489,6 +8997,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8505,6 +9014,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8521,6 +9031,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8537,6 +9048,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8553,6 +9065,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8570,6 +9083,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8587,6 +9101,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8604,6 +9119,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8621,6 +9137,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8638,6 +9155,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8655,6 +9173,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8672,6 +9191,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8689,6 +9209,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8705,6 +9226,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8722,6 +9244,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -8740,6 +9263,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8755,6 +9279,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -8770,6 +9295,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8788,6 +9314,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -8808,6 +9335,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8824,6 +9352,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8840,6 +9369,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8856,6 +9386,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -8872,6 +9403,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8889,6 +9421,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8906,6 +9439,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8923,6 +9457,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8940,6 +9475,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8957,6 +9493,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8974,6 +9511,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -8991,6 +9529,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9008,6 +9547,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9024,6 +9564,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9041,6 +9582,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9059,6 +9601,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9074,6 +9617,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9090,6 +9634,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9108,6 +9653,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9128,6 +9674,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9144,6 +9691,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9161,6 +9709,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9178,6 +9727,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9194,6 +9744,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9211,6 +9762,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9229,6 +9781,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9244,6 +9797,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9260,6 +9814,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9278,6 +9833,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9298,6 +9854,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9314,6 +9871,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9331,6 +9889,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9348,6 +9907,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9364,6 +9924,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9381,6 +9942,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9399,6 +9961,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9414,6 +9977,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9430,6 +9994,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9448,6 +10013,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9468,6 +10034,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9484,6 +10051,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9501,6 +10069,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9518,6 +10087,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9534,6 +10104,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9551,6 +10122,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9569,6 +10141,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9584,6 +10157,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9600,6 +10174,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9618,6 +10193,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9638,6 +10214,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9654,6 +10231,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9671,6 +10249,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9688,6 +10267,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9704,6 +10284,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9721,6 +10302,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9739,6 +10321,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9754,6 +10337,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9770,6 +10354,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9788,6 +10373,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9808,6 +10394,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9824,6 +10411,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9841,6 +10429,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -9858,6 +10447,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9874,6 +10464,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9891,6 +10482,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -9909,6 +10501,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -9924,6 +10517,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9940,6 +10534,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9958,6 +10553,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -9978,6 +10574,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -9994,6 +10591,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10011,6 +10609,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10028,6 +10627,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10044,6 +10644,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10061,6 +10662,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10079,6 +10681,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10094,6 +10697,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10110,6 +10714,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10128,6 +10733,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10148,6 +10754,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10164,6 +10771,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10181,6 +10789,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10198,6 +10807,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10214,6 +10824,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10231,6 +10842,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10249,6 +10861,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10264,6 +10877,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10280,6 +10894,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10298,6 +10913,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10318,6 +10934,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10334,6 +10951,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10351,6 +10969,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10368,6 +10987,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10384,6 +11004,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10401,6 +11022,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10419,6 +11041,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10434,6 +11057,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10450,6 +11074,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10468,6 +11093,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10488,6 +11114,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10504,6 +11131,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10521,6 +11149,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10538,6 +11167,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10554,6 +11184,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10571,6 +11202,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10589,6 +11221,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10604,6 +11237,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10620,6 +11254,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10638,6 +11273,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10658,6 +11294,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10674,6 +11311,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10691,6 +11329,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10708,6 +11347,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10724,6 +11364,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10741,6 +11382,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10759,6 +11401,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10774,6 +11417,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10790,6 +11434,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10808,6 +11453,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10828,6 +11474,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10844,6 +11491,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10861,6 +11509,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -10878,6 +11527,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10894,6 +11544,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10911,6 +11562,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -10929,6 +11581,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -10944,6 +11597,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10960,6 +11614,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -10978,6 +11633,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -10998,6 +11654,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11014,6 +11671,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11031,6 +11689,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11048,6 +11707,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11064,6 +11724,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11081,6 +11742,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11099,6 +11761,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11114,6 +11777,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11130,6 +11794,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11148,6 +11813,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -11168,6 +11834,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11184,6 +11851,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11201,6 +11869,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11218,6 +11887,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11234,6 +11904,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11251,6 +11922,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11269,6 +11941,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11284,6 +11957,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11300,6 +11974,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11318,6 +11993,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -11338,6 +12014,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11354,6 +12031,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11371,6 +12049,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11388,6 +12067,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11404,6 +12084,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11421,6 +12102,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11439,6 +12121,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11454,6 +12137,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11470,6 +12154,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11488,6 +12173,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -11508,6 +12194,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11524,6 +12211,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11541,6 +12229,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11558,6 +12247,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11574,6 +12264,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11591,6 +12282,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11609,6 +12301,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11624,6 +12317,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11640,6 +12334,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11658,6 +12353,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -11678,6 +12374,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11694,6 +12391,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11711,6 +12409,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11728,6 +12427,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11744,6 +12444,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11761,6 +12462,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11779,6 +12481,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11794,6 +12497,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11810,6 +12514,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11828,6 +12533,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -11848,6 +12554,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11864,6 +12571,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11881,6 +12589,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -11898,6 +12607,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11914,6 +12624,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11931,6 +12642,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -11949,6 +12661,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -11964,6 +12677,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11980,6 +12694,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -11998,6 +12713,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12018,6 +12734,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12034,6 +12751,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12051,6 +12769,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12068,6 +12787,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12084,6 +12804,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12101,6 +12822,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12119,6 +12841,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12134,6 +12857,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12150,6 +12874,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12168,6 +12893,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12188,6 +12914,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12204,6 +12931,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12221,6 +12949,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12238,6 +12967,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12254,6 +12984,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12271,6 +13002,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12289,6 +13021,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12304,6 +13037,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12320,6 +13054,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12338,6 +13073,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12358,6 +13094,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12374,6 +13111,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12391,6 +13129,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12408,6 +13147,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12424,6 +13164,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12441,6 +13182,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12459,6 +13201,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12474,6 +13217,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12490,6 +13234,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12508,6 +13253,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12528,6 +13274,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12544,6 +13291,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12561,6 +13309,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12578,6 +13327,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12594,6 +13344,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12611,6 +13362,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12629,6 +13381,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12644,6 +13397,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12660,6 +13414,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12678,6 +13433,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12698,6 +13454,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12714,6 +13471,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12731,6 +13489,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12748,6 +13507,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12764,6 +13524,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12781,6 +13542,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12799,6 +13561,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12814,6 +13577,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12830,6 +13594,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12848,6 +13613,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -12868,6 +13634,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12884,6 +13651,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12901,6 +13669,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -12918,6 +13687,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12934,6 +13704,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -12951,6 +13722,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -12969,6 +13741,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -12984,6 +13757,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13000,6 +13774,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13018,6 +13793,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -13038,6 +13814,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13054,6 +13831,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13071,6 +13849,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13088,6 +13867,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13104,6 +13884,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13121,6 +13902,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -13139,6 +13921,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13154,6 +13937,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13169,6 +13953,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13187,6 +13972,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -13207,6 +13993,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13223,6 +14010,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13239,6 +14027,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13255,6 +14044,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13271,6 +14061,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13288,6 +14079,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13305,6 +14097,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13322,6 +14115,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13339,6 +14133,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13356,6 +14151,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13373,6 +14169,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13390,6 +14187,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13407,6 +14205,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13423,6 +14222,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13440,6 +14240,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -13458,6 +14259,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13473,6 +14275,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13488,6 +14291,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13506,6 +14310,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -13526,6 +14331,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13542,6 +14348,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13558,6 +14365,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13574,6 +14382,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13590,6 +14399,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13607,6 +14417,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13624,6 +14435,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13641,6 +14453,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13658,6 +14471,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13675,6 +14489,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13692,6 +14507,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13709,6 +14525,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13726,6 +14543,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13742,6 +14560,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13759,6 +14578,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -13777,6 +14597,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13792,6 +14613,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -13807,6 +14629,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13825,6 +14648,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -13845,6 +14669,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13861,6 +14686,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13877,6 +14703,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13893,6 +14720,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -13909,6 +14737,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13926,6 +14755,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13943,6 +14773,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13960,6 +14791,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13977,6 +14809,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -13994,6 +14827,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14011,6 +14845,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14028,6 +14863,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14045,6 +14881,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14061,6 +14898,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14078,6 +14916,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -14096,6 +14935,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14111,6 +14951,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14126,6 +14967,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14144,6 +14986,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -14164,6 +15007,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14180,6 +15024,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14196,6 +15041,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14212,6 +15058,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14228,6 +15075,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14245,6 +15093,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14262,6 +15111,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14279,6 +15129,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14296,6 +15147,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14313,6 +15165,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14330,6 +15183,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14347,6 +15201,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14364,6 +15219,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14380,6 +15236,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14397,6 +15254,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -14415,6 +15273,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14430,6 +15289,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14446,6 +15306,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14464,6 +15325,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -14484,6 +15346,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14500,6 +15363,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14517,6 +15381,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14534,6 +15399,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14550,6 +15416,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14567,6 +15434,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -14585,6 +15453,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14600,6 +15469,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14616,6 +15486,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14634,6 +15505,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -14654,6 +15526,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14670,6 +15543,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14687,6 +15561,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14704,6 +15579,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14720,6 +15596,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14737,6 +15614,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -14755,6 +15633,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14770,6 +15649,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14786,6 +15666,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14804,6 +15685,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -14824,6 +15706,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14840,6 +15723,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14857,6 +15741,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -14874,6 +15759,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14890,6 +15776,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14907,6 +15794,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -14925,6 +15813,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -14940,6 +15829,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14956,6 +15846,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -14974,6 +15865,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -14994,6 +15886,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15010,6 +15903,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15027,6 +15921,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15044,6 +15939,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15060,6 +15956,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15077,6 +15974,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -15095,6 +15993,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -15110,6 +16009,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15126,6 +16026,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15144,6 +16045,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -15164,6 +16066,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15180,6 +16083,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15197,6 +16101,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15214,6 +16119,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15230,6 +16136,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15247,6 +16154,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -15265,6 +16173,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -15280,6 +16189,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15296,6 +16206,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15314,6 +16225,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -15334,6 +16246,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15350,6 +16263,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15367,6 +16281,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15384,6 +16299,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15400,6 +16316,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15417,6 +16334,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -15435,6 +16353,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -15450,6 +16369,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15466,6 +16386,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15484,6 +16405,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -15504,6 +16426,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15520,6 +16443,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15537,6 +16461,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15554,6 +16479,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15570,6 +16496,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15587,6 +16514,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -15605,6 +16533,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent"
       ]
@@ -15620,6 +16549,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15636,6 +16566,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15654,6 +16585,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "oper-status",
@@ -15674,6 +16606,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15690,6 +16623,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15707,6 +16641,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type",
@@ -15724,6 +16659,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15740,6 +16676,7 @@
       "tags": [
         "empty",
         "id",
+        "location",
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
@@ -15757,6 +16694,7 @@
         "empty",
         "hardware-version",
         "id",
+        "location",
         "mfg-name",
         "openconfig-platform-ext:entity-id",
         "parent",
@@ -16066,7 +17004,8 @@
         {
           "name": "location",
           "type": "string",
-          "gen": "inventory:parent"
+          "gen": "inventory:parent",
+          "filter": "tag:location"
         },
         {
           "name": "memory/available",

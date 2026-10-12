@@ -273,7 +273,8 @@
         "temperature/min": "temperature",
         "temperature/min-time": "temperature",
         "type": "tag:type",
-        "used-power": "tag:used-power"
+        "used-power": "tag:used-power",
+        "location": "tag:location"
       },
       "always": [
         "name",
