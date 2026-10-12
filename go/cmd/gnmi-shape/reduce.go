@@ -103,10 +103,19 @@ var errUnreduced = errors.New("reduce: a path holds a key value the reducer cann
 // past the line that read it. A leaf is always if it is in every
 // notification of the prefixes it appears under.
 func reduceCapture(r io.Reader, subtree, release string) (fixture, error) {
+	return reduceCaptureUnions(r, subtree, release, nil)
+}
+
+// reduceCaptureUnions is reduceCapture for a capture with leaves YANG types
+// as unions: a leaf named in unions may carry several JSON classes and
+// records them sorted and joined with "|" (the IOS-XR cpu index is "ALL" or
+// a core number). Every other leaf still refuses a second class.
+func reduceCaptureUnions(r io.Reader, subtree, release string, unions map[string]bool) (fixture, error) {
 	prefixCount := map[string]int{} // origin:path -> notifications
 	leafPrefixes := map[string]map[string]bool{}
 	leafSeen := map[string]int{} // notifications carrying the leaf
 	leafClass := map[string]string{}
+	leafClasses := map[string]map[string]bool{}
 	err := readCapture(r, func(n notification) error {
 		wp := wildcardKeys(n.Prefix)
 		if unreduced(wp) {
@@ -126,9 +135,17 @@ func reduceCapture(r io.Reader, subtree, release string) (fixture, error) {
 			}
 			leaf := strings.TrimSuffix(ppath, "/") + "/" + strings.TrimPrefix(wu, "/")
 			for _, raw := range u.Values {
-				c, ok := mergeClass(leafClass[leaf], valueClass(raw))
+				vc := valueClass(raw)
+				if unions[leaf] {
+					if leafClasses[leaf] == nil {
+						leafClasses[leaf] = map[string]bool{}
+					}
+					leafClasses[leaf][vc] = true
+					continue
+				}
+				c, ok := mergeClass(leafClass[leaf], vc)
 				if !ok {
-					return fmt.Errorf("reduce: leaf %s is %s in one notification and %s in another", leaf, leafClass[leaf], valueClass(raw))
+					return fmt.Errorf("reduce: leaf %s is %s in one notification and %s in another", leaf, leafClass[leaf], vc)
 				}
 				leafClass[leaf] = c
 			}
@@ -153,6 +170,14 @@ func reduceCapture(r io.Reader, subtree, release string) (fixture, error) {
 		Subtree:  subtree,
 		Prefixes: []string{},
 		Leaves:   []fixtureLeaf{},
+	}
+	for leaf, set := range leafClasses {
+		cs := make([]string, 0, len(set))
+		for c := range set {
+			cs = append(cs, c)
+		}
+		sort.Strings(cs)
+		leafClass[leaf] = strings.Join(cs, "|")
 	}
 	for p := range prefixCount {
 		fx.Prefixes = append(fx.Prefixes, p)

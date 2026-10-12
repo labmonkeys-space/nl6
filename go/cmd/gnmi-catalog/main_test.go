@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +352,97 @@ func TestGenerateCopiesPrefixOriginFields(t *testing.T) {
 	flat := strings.Join(strings.Fields(string(got)), " ")
 	if !strings.Contains(flat, `"aliased_origin_prefix": "empty"`) || strings.Count(flat, `"echo_origin": true`) != 1 {
 		t.Fatalf("prefix origin fields not copied:\n%s", got)
+	}
+}
+
+// Under response_origin "module" every emitted subtree carries its module;
+// without it none does, so existing catalogues stay byte-identical.
+func TestGenerateEmitsModuleOnlyUnderResponseOriginModule(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	for _, c := range []struct {
+		name, edit string
+		want       int
+	}{
+		{"default", string(b), 0},
+		{"module", strings.Replace(string(b), `"prefix": "list-entry"`, `"prefix": "list-entry", "response_origin": "module"`, 1), -1},
+	} {
+		p := filepath.Join(t.TempDir(), "b.json")
+		_ = os.WriteFile(p, []byte(c.edit), 0o644)
+		out := filepath.Join(t.TempDir(), "o.json")
+		if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got, _ := os.ReadFile(out)
+		var cat struct {
+			Subtrees []struct {
+				Module string `json:"module"`
+			} `json:"subtrees"`
+		}
+		if err := json.Unmarshal(got, &cat); err != nil {
+			t.Fatal(err)
+		}
+		withModule := 0
+		for _, st := range cat.Subtrees {
+			if st.Module != "" {
+				withModule++
+			}
+		}
+		want := c.want
+		if want < 0 {
+			want = len(cat.Subtrees)
+		}
+		if withModule != want || len(cat.Subtrees) == 0 {
+			t.Errorf("%s: %d of %d subtrees carry a module, want %d", c.name, withModule, len(cat.Subtrees), want)
+		}
+	}
+}
+
+// A tag:<name> filter is accepted when a component carries the tag and
+// refused when none does, like a type filter.
+func TestGenerateAcceptsTagFilter(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	withTag := func(filter string) string {
+		return strings.Replace(strings.Replace(strings.Replace(string(b), `"components": []`, `"components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": false, "tags": ["x"]}]`, 1),
+			`"keys": [{"source": "interfaces"}], "module"`, `"keys": [{"source": "components"}], "module"`, 1),
+			`"module"`, `"filters": {"state/mtu": "`+filter+`"}, "module"`, 1)
+	}
+	for _, c := range []struct {
+		filter string
+		ok     bool
+	}{{"tag:x", true}, {"tag:y", false}} {
+		p := filepath.Join(t.TempDir(), "b.json")
+		_ = os.WriteFile(p, []byte(withTag(c.filter)), 0o644)
+		out := filepath.Join(t.TempDir(), "o.json")
+		err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out})
+		if (err == nil) != c.ok {
+			t.Fatalf("filter %s: err %v, want ok=%v", c.filter, err, c.ok)
+		}
+		if c.ok {
+			got, _ := os.ReadFile(out)
+			if !strings.Contains(string(got), `"filter": "tag:x"`) {
+				t.Fatalf("tag filter not copied:\n%s", got)
+			}
+		}
+	}
+}
+
+// -modules reads only the named modules: test-dev's deviation, which
+// removes state/removed-by-deviation, is not applied when only test-a is
+// named, so bindings using that leaf generate. A named module the
+// directory lacks fails generation by name.
+func TestModulesFlagReadsOnlyNamedModules(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	usesDeviated := strings.Replace(string(b), `"state/mtu": "const:1514"`, `"state/removed-by-deviation": "const:x"`, 1)
+	dir := t.TempDir()
+	bp, list, out := filepath.Join(dir, "b.json"), filepath.Join(dir, "modules.txt"), filepath.Join(dir, "o.json")
+	_ = os.WriteFile(bp, []byte(usesDeviated), 0o644)
+	_ = os.WriteFile(list, []byte("# test\ntest-a\n"), 0o644)
+	if err := run([]string{"-yang", "testdata", "-modules", list, "-bindings", bp, "-out", out}); err != nil {
+		t.Fatalf("only test-a named, yet the deviation applied: %v", err)
+	}
+	_ = os.WriteFile(list, []byte("test-a\nno-such-module\n"), 0o644)
+	err := run([]string{"-yang", "testdata", "-modules", list, "-bindings", "testdata/bindings.json", "-out", out})
+	if err == nil || !strings.Contains(err.Error(), "no-such-module") {
+		t.Fatalf("got %v, want an error naming the missing module", err)
 	}
 }

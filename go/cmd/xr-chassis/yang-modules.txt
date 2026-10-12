@@ -1,0 +1,20 @@
+# Modules an ASR 9000 running 64-bit IOS-XR 24.2.2 advertises
+# (YangModels/yang vendor/cisco/xr/2422/capabilities-asr9k-x64.xml) that
+# the cisco_asr9902 catalogue serves. Deviations listed there for these
+# modules are included; nothing else is read.
+openconfig-interfaces
+openconfig-if-ethernet
+cisco-xr-openconfig-if-ethernet-deviations
+openconfig-platform
+openconfig-platform-ext
+openconfig-platform-cpu
+openconfig-platform-fan
+openconfig-platform-linecard
+openconfig-platform-controller-card
+openconfig-platform-port
+openconfig-platform-psu
+cisco-xr-openconfig-platform-psu-deviations
+openconfig-platform-software
+openconfig-platform-transceiver
+openconfig-system
+cisco-xr-openconfig-system-deviations

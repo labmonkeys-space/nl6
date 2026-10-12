@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 func runReduce(args []string, stdout io.Writer) int {
@@ -22,6 +23,7 @@ func runReduce(args []string, stdout io.Writer) int {
 	in := fs.String("in", "", "gnmic --format json capture file")
 	subtree := fs.String("subtree", "", "fixture subtree name")
 	release := fs.String("release", "", "software release of the reference, e.g. 24.2.2")
+	unionList := fs.String("union", "", "comma-separated wildcarded leaf paths YANG types as unions; they may carry several classes")
 	if err := fs.Parse(args); err != nil || *in == "" || *subtree == "" || *release == "" {
 		_, _ = fmt.Fprintln(stdout, "usage: gnmi-shape reduce -in FILE -subtree NAME -release VERSION > fixture.json")
 		return 2
@@ -32,7 +34,13 @@ func runReduce(args []string, stdout io.Writer) int {
 		return 2
 	}
 	defer f.Close()
-	fx, err := reduceCapture(f, *subtree, *release)
+	unions := map[string]bool{}
+	for _, l := range strings.Split(*unionList, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			unions[l] = true
+		}
+	}
+	fx, err := reduceCaptureUnions(f, *subtree, *release, unions)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return 1

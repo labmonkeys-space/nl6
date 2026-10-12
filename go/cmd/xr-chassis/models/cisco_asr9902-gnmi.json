@@ -1,0 +1,399 @@
+{
+  "comment": "IOS-XR 24.2.2 cisco_asr9902 gNMI bindings. Leaf sets, prefix depths and per-component leaf groups follow what an ASR 9902 sends; values are synthetic. Edit this file and run make gen-xr-chassis.",
+  "vendor": "cisco",
+  "notification": {
+    "origin": "openconfig",
+    "prefix": "list-entry",
+    "encodings": [
+      "PROTO",
+      "JSON_IETF"
+    ],
+    "extension": "none",
+    "response_origin": "module"
+  },
+  "neighbors": [],
+  "subtrees": [
+    {
+      "path": "/interfaces/interface[name=*]/state",
+      "origin": "openconfig",
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces"
+        }
+      ],
+      "leaves": {
+        "counters/carrier-transitions": "const:1"
+      },
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true
+    },
+    {
+      "path": "/interfaces/interface[name=*]/state/counters",
+      "origin": "openconfig",
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces"
+        }
+      ],
+      "leaves": {
+        "in-broadcast-pkts": "ifcounter:ifHCInBroadcastPkts",
+        "in-discards": "ifcounter:ifInDiscards",
+        "in-errors": "ifcounter:ifInErrors",
+        "in-fcs-errors": "const:0",
+        "in-multicast-pkts": "ifcounter:ifHCInMulticastPkts",
+        "in-octets": "ifcounter:ifHCInOctets",
+        "in-pkts": "ifcounter:ifHCInUcastPkts",
+        "in-unicast-pkts": "ifcounter:ifHCInUcastPkts",
+        "in-unknown-protos": "const:0",
+        "last-clear": "timestamp:boot",
+        "out-broadcast-pkts": "ifcounter:ifHCOutBroadcastPkts",
+        "out-discards": "ifcounter:ifOutDiscards",
+        "out-errors": "ifcounter:ifOutErrors",
+        "out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts",
+        "out-octets": "ifcounter:ifHCOutOctets",
+        "out-pkts": "ifcounter:ifHCOutUcastPkts",
+        "out-unicast-pkts": "ifcounter:ifHCOutUcastPkts"
+      },
+      "extra": {
+        "last-read-time": {
+          "type": "uint64",
+          "gen": "timestamp:now"
+        }
+      },
+      "aliases": [
+        "/interfaces/interface/state/counters"
+      ],
+      "alias_only": true
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",
+      "origin": "openconfig",
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces"
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        }
+      ],
+      "leaves": {
+        "state/counters/carrier-transitions": "const:1"
+      },
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters",
+      "origin": "openconfig",
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces"
+        },
+        {
+          "source": "static",
+          "names": [
+            "0"
+          ]
+        }
+      ],
+      "leaves": {
+        "in-broadcast-pkts": "counter:5",
+        "in-discards": "const:0",
+        "in-errors": "const:0",
+        "in-fcs-errors": "const:0",
+        "in-multicast-pkts": "counter:15",
+        "in-octets": "counter:800000",
+        "in-pkts": "counter:900",
+        "in-unicast-pkts": "counter:880",
+        "in-unknown-protos": "const:0",
+        "last-clear": "timestamp:boot",
+        "out-broadcast-pkts": "counter:5",
+        "out-discards": "const:0",
+        "out-errors": "const:0",
+        "out-multicast-pkts": "counter:15",
+        "out-octets": "counter:650000",
+        "out-pkts": "counter:700",
+        "out-unicast-pkts": "counter:680"
+      },
+      "extra": {
+        "last-read-time": {
+          "type": "uint64",
+          "gen": "timestamp:now"
+        }
+      },
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true
+    },
+    {
+      "path": "/components/component[name=*]/state",
+      "origin": "openconfig",
+      "module": "openconfig-platform",
+      "keys": [
+        {
+          "source": "components"
+        }
+      ],
+      "leaves": {
+        "allocated-power": "const:0",
+        "description": "inventory:description",
+        "empty": "const:false",
+        "firmware-version": "const:1.0",
+        "hardware-version": "const:V01",
+        "id": "inventory:serial_no_per_device",
+        "location": "inventory:parent",
+        "memory/available": "sine:8589934592,1073741824,1800",
+        "memory/utilized": "sine:4294967296,1073741824,1800",
+        "mfg-name": "const:Cisco Systems, Inc.",
+        "name": "inventory:name",
+        "oper-status": "const:openconfig-platform-types:ACTIVE",
+        "parent": "inventory:parent",
+        "part-no": "inventory:part_no",
+        "pcie/correctable-errors/advisory-non-fatal-errors": "const:0",
+        "pcie/correctable-errors/bad-dllp-errors": "const:0",
+        "pcie/correctable-errors/bad-tlp-errors": "const:0",
+        "pcie/correctable-errors/hdr-log-overflow-errors": "const:0",
+        "pcie/correctable-errors/internal-errors": "const:0",
+        "pcie/correctable-errors/receiver-errors": "const:0",
+        "pcie/correctable-errors/relay-rollover-errors": "const:0",
+        "pcie/correctable-errors/replay-timeout-errors": "const:0",
+        "pcie/correctable-errors/total-errors": "const:0",
+        "pcie/fatal-errors/acs-violation-errors": "const:0",
+        "pcie/fatal-errors/atomic-op-blocked-errors": "const:0",
+        "pcie/fatal-errors/blocked-tlp-errors": "const:0",
+        "pcie/fatal-errors/completion-abort-errors": "const:0",
+        "pcie/fatal-errors/completion-timeout-errors": "const:0",
+        "pcie/fatal-errors/data-link-errors": "const:0",
+        "pcie/fatal-errors/ecrc-errors": "const:0",
+        "pcie/fatal-errors/flow-control-protocol-errors": "const:0",
+        "pcie/fatal-errors/internal-errors": "const:0",
+        "pcie/fatal-errors/malformed-tlp-errors": "const:0",
+        "pcie/fatal-errors/poisoned-tlp-errors": "const:0",
+        "pcie/fatal-errors/receiver-overflow-errors": "const:0",
+        "pcie/fatal-errors/surprise-down-errors": "const:0",
+        "pcie/fatal-errors/tlp-prefix-blocked-errors": "const:0",
+        "pcie/fatal-errors/total-errors": "const:0",
+        "pcie/fatal-errors/undefined-errors": "const:0",
+        "pcie/fatal-errors/unexpected-completion-errors": "const:0",
+        "pcie/fatal-errors/unsupported-request-errors": "const:0",
+        "pcie/non-fatal-errors/acs-violation-errors": "const:0",
+        "pcie/non-fatal-errors/atomic-op-blocked-errors": "const:0",
+        "pcie/non-fatal-errors/blocked-tlp-errors": "const:0",
+        "pcie/non-fatal-errors/completion-abort-errors": "const:0",
+        "pcie/non-fatal-errors/completion-timeout-errors": "const:0",
+        "pcie/non-fatal-errors/data-link-errors": "const:0",
+        "pcie/non-fatal-errors/ecrc-errors": "const:0",
+        "pcie/non-fatal-errors/flow-control-protocol-errors": "const:0",
+        "pcie/non-fatal-errors/internal-errors": "const:0",
+        "pcie/non-fatal-errors/malformed-tlp-errors": "const:0",
+        "pcie/non-fatal-errors/poisoned-tlp-errors": "const:0",
+        "pcie/non-fatal-errors/receiver-overflow-errors": "const:0",
+        "pcie/non-fatal-errors/surprise-down-errors": "const:0",
+        "pcie/non-fatal-errors/tlp-prefix-blocked-errors": "const:0",
+        "pcie/non-fatal-errors/total-errors": "const:0",
+        "pcie/non-fatal-errors/undefined-errors": "const:0",
+        "pcie/non-fatal-errors/unexpected-completion-errors": "const:0",
+        "pcie/non-fatal-errors/unsupported-request-errors": "const:0",
+        "removable": "const:true",
+        "serial-no": "inventory:serial_no_per_device",
+        "software-version": "const:24.2.2",
+        "temperature/alarm-status": "const:false",
+        "temperature/avg": "sine:38,2,900",
+        "temperature/instant": "sine:38,4,900",
+        "temperature/interval": "const:30000000000",
+        "temperature/max": "const:50",
+        "temperature/max-time": "timestamp:boot",
+        "temperature/min": "const:30",
+        "temperature/min-time": "timestamp:boot",
+        "type": "inventory:type",
+        "used-power": "sine:4,2,600"
+      },
+      "filters": {
+        "allocated-power": "tag:allocated-power",
+        "empty": "tag:empty",
+        "firmware-version": "tag:firmware-version",
+        "hardware-version": "tag:hardware-version",
+        "id": "tag:id",
+        "memory/available": "tag:memory",
+        "memory/utilized": "tag:memory",
+        "mfg-name": "tag:mfg-name",
+        "openconfig-platform-ext:entity-id": "tag:openconfig-platform-ext:entity-id",
+        "oper-status": "tag:oper-status",
+        "parent": "tag:parent",
+        "part-no": "tag:part-no",
+        "pcie/correctable-errors/advisory-non-fatal-errors": "tag:pcie",
+        "pcie/correctable-errors/bad-dllp-errors": "tag:pcie",
+        "pcie/correctable-errors/bad-tlp-errors": "tag:pcie",
+        "pcie/correctable-errors/hdr-log-overflow-errors": "tag:pcie",
+        "pcie/correctable-errors/internal-errors": "tag:pcie",
+        "pcie/correctable-errors/receiver-errors": "tag:pcie",
+        "pcie/correctable-errors/relay-rollover-errors": "tag:pcie",
+        "pcie/correctable-errors/replay-timeout-errors": "tag:pcie",
+        "pcie/correctable-errors/total-errors": "tag:pcie",
+        "pcie/fatal-errors/acs-violation-errors": "tag:pcie",
+        "pcie/fatal-errors/atomic-op-blocked-errors": "tag:pcie",
+        "pcie/fatal-errors/blocked-tlp-errors": "tag:pcie",
+        "pcie/fatal-errors/completion-abort-errors": "tag:pcie",
+        "pcie/fatal-errors/completion-timeout-errors": "tag:pcie",
+        "pcie/fatal-errors/data-link-errors": "tag:pcie",
+        "pcie/fatal-errors/ecrc-errors": "tag:pcie",
+        "pcie/fatal-errors/flow-control-protocol-errors": "tag:pcie",
+        "pcie/fatal-errors/internal-errors": "tag:pcie",
+        "pcie/fatal-errors/malformed-tlp-errors": "tag:pcie",
+        "pcie/fatal-errors/poisoned-tlp-errors": "tag:pcie",
+        "pcie/fatal-errors/receiver-overflow-errors": "tag:pcie",
+        "pcie/fatal-errors/surprise-down-errors": "tag:pcie",
+        "pcie/fatal-errors/tlp-prefix-blocked-errors": "tag:pcie",
+        "pcie/fatal-errors/total-errors": "tag:pcie",
+        "pcie/fatal-errors/undefined-errors": "tag:pcie",
+        "pcie/fatal-errors/unexpected-completion-errors": "tag:pcie",
+        "pcie/fatal-errors/unsupported-request-errors": "tag:pcie",
+        "pcie/non-fatal-errors/acs-violation-errors": "tag:pcie",
+        "pcie/non-fatal-errors/atomic-op-blocked-errors": "tag:pcie",
+        "pcie/non-fatal-errors/blocked-tlp-errors": "tag:pcie",
+        "pcie/non-fatal-errors/completion-abort-errors": "tag:pcie",
+        "pcie/non-fatal-errors/completion-timeout-errors": "tag:pcie",
+        "pcie/non-fatal-errors/data-link-errors": "tag:pcie",
+        "pcie/non-fatal-errors/ecrc-errors": "tag:pcie",
+        "pcie/non-fatal-errors/flow-control-protocol-errors": "tag:pcie",
+        "pcie/non-fatal-errors/internal-errors": "tag:pcie",
+        "pcie/non-fatal-errors/malformed-tlp-errors": "tag:pcie",
+        "pcie/non-fatal-errors/poisoned-tlp-errors": "tag:pcie",
+        "pcie/non-fatal-errors/receiver-overflow-errors": "tag:pcie",
+        "pcie/non-fatal-errors/surprise-down-errors": "tag:pcie",
+        "pcie/non-fatal-errors/tlp-prefix-blocked-errors": "tag:pcie",
+        "pcie/non-fatal-errors/total-errors": "tag:pcie",
+        "pcie/non-fatal-errors/undefined-errors": "tag:pcie",
+        "pcie/non-fatal-errors/unexpected-completion-errors": "tag:pcie",
+        "pcie/non-fatal-errors/unsupported-request-errors": "tag:pcie",
+        "serial-no": "tag:serial-no",
+        "software-version": "tag:software-version",
+        "temperature/alarm-status": "temperature",
+        "temperature/avg": "temperature",
+        "temperature/instant": "temperature",
+        "temperature/interval": "temperature",
+        "temperature/max": "temperature",
+        "temperature/max-time": "temperature",
+        "temperature/min": "temperature",
+        "temperature/min-time": "temperature",
+        "type": "tag:type",
+        "used-power": "tag:used-power",
+        "location": "tag:location"
+      },
+      "always": [
+        "name",
+        "description",
+        "removable"
+      ],
+      "extra": {
+        "openconfig-platform-ext:entity-id": {
+          "type": "uint32",
+          "gen": "const:1"
+        }
+      }
+    },
+    {
+      "path": "/system/cpus/cpu[index=*]",
+      "origin": "openconfig",
+      "module": "openconfig-system",
+      "keys": [
+        {
+          "source": "static",
+          "names": [
+            "ALL",
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5"
+          ]
+        }
+      ],
+      "leaves": {
+        "state/index": "key:0",
+        "state/hardware-interrupt/avg": "sine:1,1,600",
+        "state/hardware-interrupt/instant": "sine:1,1,600",
+        "state/hardware-interrupt/interval": "const:30000000000",
+        "state/hardware-interrupt/max": "const:3",
+        "state/hardware-interrupt/max-time": "timestamp:boot",
+        "state/hardware-interrupt/min": "const:0",
+        "state/hardware-interrupt/min-time": "timestamp:boot",
+        "state/idle/avg": "sine:78,4,600",
+        "state/idle/instant": "sine:78,8,600",
+        "state/idle/interval": "const:30000000000",
+        "state/idle/max": "const:94",
+        "state/idle/max-time": "timestamp:boot",
+        "state/idle/min": "const:62",
+        "state/idle/min-time": "timestamp:boot",
+        "state/kernel/avg": "sine:6,1,600",
+        "state/kernel/instant": "sine:6,2,600",
+        "state/kernel/interval": "const:30000000000",
+        "state/kernel/max": "const:10",
+        "state/kernel/max-time": "timestamp:boot",
+        "state/kernel/min": "const:2",
+        "state/kernel/min-time": "timestamp:boot",
+        "state/nice/avg": "const:0",
+        "state/nice/instant": "const:0",
+        "state/nice/interval": "const:30000000000",
+        "state/nice/max": "const:0",
+        "state/nice/max-time": "timestamp:boot",
+        "state/nice/min": "const:0",
+        "state/nice/min-time": "timestamp:boot",
+        "state/software-interrupt/avg": "sine:1,1,600",
+        "state/software-interrupt/instant": "sine:1,1,600",
+        "state/software-interrupt/interval": "const:30000000000",
+        "state/software-interrupt/max": "const:3",
+        "state/software-interrupt/max-time": "timestamp:boot",
+        "state/software-interrupt/min": "const:0",
+        "state/software-interrupt/min-time": "timestamp:boot",
+        "state/total/avg": "sine:20,4,600",
+        "state/total/instant": "sine:20,8,600",
+        "state/total/interval": "const:30000000000",
+        "state/total/max": "const:36",
+        "state/total/max-time": "timestamp:boot",
+        "state/total/min": "const:4",
+        "state/total/min-time": "timestamp:boot",
+        "state/user/avg": "sine:12,2,600",
+        "state/user/instant": "sine:12,5,600",
+        "state/user/interval": "const:30000000000",
+        "state/user/max": "const:22",
+        "state/user/max-time": "timestamp:boot",
+        "state/user/min": "const:2",
+        "state/user/min-time": "timestamp:boot",
+        "state/wait/avg": "sine:1,1,600",
+        "state/wait/instant": "sine:1,1,600",
+        "state/wait/interval": "const:30000000000",
+        "state/wait/max": "const:3",
+        "state/wait/max-time": "timestamp:boot",
+        "state/wait/min": "const:0",
+        "state/wait/min-time": "timestamp:boot"
+      },
+      "types": {
+        "state/index": "string"
+      }
+    },
+    {
+      "path": "/system",
+      "origin": "openconfig",
+      "module": "openconfig-system",
+      "keys": [],
+      "leaves": {
+        "memory/state/physical": "const:34359738368",
+        "memory/state/reserved": "const:0"
+      }
+    }
+  ]
+}

@@ -119,7 +119,7 @@ The interface surface is state-only, so it is unaffected.
 ## Catalogue-driven paths
 
 Device types that ship `resources/<type>/gnmi.json` serve the subtrees that file lists, in addition to the interface and optical paths above.
-The first such type is `juniper_mx10004`; see [Device types](device-types.md).
+The types with a catalogue are `juniper_mx10004` and `cisco_asr9902`; see [Device types](device-types.md).
 A catalogue is parsed once per type and shared by every device of that type.
 Each device adds a 48-byte resolver.
 `BenchmarkCatalogResolverMemory` measures about 460 bytes per device for the resolver plus a minimal device struct.
@@ -131,11 +131,13 @@ Each device adds a 48-byte resolver.
 | `notification.origin` / `native_origin` | the origins served; a request with an empty origin maps to `origin` |
 | `notification.origin_aliases` | request origins accepted as another spelling of `origin` or `native_origin`, such as a YANG module name (`openconfig-interfaces`) or Junos's `Native`; the prefix origin of the response follows `aliased_origin_prefix`. The generator adds every subtree's `module` as an alias of `origin`, mapped to the origin of the subtrees naming it (`native_origin` for a native sensor model such as `junos-fabric`, `origin` when both use it), so the bindings list only spellings no module names, such as `Native` |
 | `notification.aliased_origin_prefix` | prefix origin of a response to a request whose origin is an `origin_aliases` key: `canonical` (default) or `empty`; a request with no origin or a canonical one always gets the canonical origin. The MX10004 uses `empty`: a module-name or `Native:` request is answered with no prefix origin, as hardware does, while an origin-less request gets `openconfig` or `juniper`, as vJunos 25.4 does |
+| `notification.response_origin` | `module` answers every request with the rendering subtree's YANG module as the prefix origin (`openconfig-interfaces:interfaces/...`), as IOS-XR does; every subtree then carries its `module`, and it cannot be combined with `aliased_origin_prefix: empty` |
 | `notification.prefix` | `list-entry` emits one Notification per list entry with the entry path as prefix and leaf-relative updates (Junos); `flat` emits absolute paths |
 | `notification.encodings` | the encodings Capabilities advertises; others are refused with `Unimplemented` |
 | `notification.extension` | `juniper-header` attaches Juniper's telemetry header extension (registered id 1) to every response |
 | `models` | `ModelData` entries Capabilities advertises |
 | `components`, `neighbors` | chassis inventory and BGP peers, the key sources for component and neighbour subtrees |
+| `components[].tags` | leaf groups a component reports beyond its type's, selected by a `tag:<name>` leaf filter; an IOS-XR FPD module carries `firmware-version`, a slot container no `type` |
 | `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
 | `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin; several subtrees of one origin may carry the same alias and all of them answer it |
 | `subtrees[].alias_leaves` | optional leaf paths relative to the entry; a request through an alias then renders only the leaves at or below one of them instead of the whole subtree; load refuses it on a subtree without aliases, an entry with keys or covering no leaf, and an `always` leaf outside it |
@@ -147,7 +149,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].alias_only` | the subtree answers only a request equal to one of its aliases, never path coverage; load refuses it without aliases. How a sensor sends a shape the YANG path does not cover without the shape leaking into other subscriptions |
 | `subtrees[].leaves[].decimal_encoding` | per-leaf override of `notification.decimal_encoding` on a `decimal64` leaf (bindings `decimal_encodings` map); the MX10004 sends temperature as `Decimal64` and the transceiver optic readings as doubles |
 | `subtrees[].leaves[].always` | rendered whenever its entry renders at all, even when the request path does not cover it (bindings `always` list); how a Junos sensor sends identity leaves such as `name` and `init-time` with every counters notification |
-| `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
+| `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature`, `tag:<name>` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
 A per-component leaf such as `state/temperature/instant` is therefore a filtered leaf of the inventory subtree, not a second subtree serving the same entries.
@@ -174,7 +176,8 @@ Time-based bindings share the interface counter cycler's start as their epoch, s
 
 `-gnmi-catalog <file>` replaces every type's catalogue with one file.
 A `gnmi.json` in a resource directory replaces that type's embedded catalogue, including for types that ship none.
-Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout and `gnmi-bindings.json`.
+Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout for `juniper_mx10004` and a pinned YangModels/yang `vendor/cisco/xr/2422` checkout for `cisco_asr9902`, each with its `gnmi-bindings.json`.
+For `cisco_asr9902`, `-modules` reads only the modules in `go/cmd/xr-chassis/yang-modules.txt`, which `capabilities-asr9k-x64.xml` advertises.
 The generator's `-path` flag adds directories that are searched only to resolve imports, and the Makefile passes `native/jti/models` because Juniper's augments and deviations import `junos-*` modules.
 A module under `-path` is also loaded when a binding subtree names it in `module`, which is how the Junos native sensor models (`junos-fabric`, `junos-fpc-env`) are read without walking every JTI model.
 A binding subtree may set `yang_path` when Junos renders a sensor under a prefix that differs from its YANG tree: the leaves are looked up at `yang_path` and the catalogue keeps `path` as the rendered prefix.

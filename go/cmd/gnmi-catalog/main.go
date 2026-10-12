@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -96,6 +97,7 @@ type outSubtree struct {
 	AliasLeaves []string        `json:"alias_leaves,omitempty"`
 	AliasOnly   bool            `json:"alias_only,omitempty"`
 	EchoOrigin  bool            `json:"echo_origin,omitempty"`
+	Module      string          `json:"module,omitempty"`
 	Keys        json.RawMessage `json:"keys"`
 	Leaves      []outLeaf       `json:"leaves"`
 }
@@ -129,6 +131,7 @@ func run(args []string) error {
 	importDirs := flags.String("path", "", "comma-separated directories searched only to resolve imports (optional)")
 	bindingsPath := flags.String("bindings", "", "bindings JSON file")
 	outPath := flags.String("out", "", "output catalogue path")
+	modulesPath := flags.String("modules", "", "file naming, one per line, the only modules to read from the -yang directories (optional; # comments)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -153,7 +156,19 @@ func run(args []string) error {
 	for _, st := range b.Subtrees {
 		named = append(named, st.Module)
 	}
-	ms, err := loadModules(strings.Split(*yangDirs, ","), imports, named)
+	var listed []string
+	if *modulesPath != "" {
+		lb, err := os.ReadFile(*modulesPath)
+		if err != nil {
+			return err
+		}
+		for _, l := range strings.Split(string(lb), "\n") {
+			if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+				listed = append(listed, l)
+			}
+		}
+	}
+	ms, err := loadModules(strings.Split(*yangDirs, ","), imports, named, listed)
 	if err != nil {
 		return err
 	}
@@ -285,7 +300,7 @@ func run(args []string) error {
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, EchoOrigin: st.EchoOrigin, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, EchoOrigin: st.EchoOrigin, Module: moduleIf(responseOrigin(b.Notification), st.Module), Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)
@@ -331,10 +346,24 @@ func isKnownUnbuildableDeviation(err error) bool {
 // loaded when something imports it, or when a binding subtree names
 // it in `named` (the Junos native sensor models under -path, nl6#767;
 // walking that directory would read every JTI model for two).
-func loadModules(dirs, importDirs, named []string) (*yang.Modules, error) {
+// With listed modules, the -yang directories only resolve names: exactly
+// the listed modules are read, so a deviation module that sits beside
+// them but is not listed is not applied.
+func loadModules(dirs, importDirs, named, listed []string) (*yang.Modules, error) {
 	ms := yang.NewModules()
 	for _, d := range importDirs {
 		ms.AddPath(strings.TrimSpace(d))
+	}
+	if len(listed) > 0 {
+		for _, d := range dirs {
+			ms.AddPath(strings.TrimSpace(d))
+		}
+		for _, name := range listed {
+			if err := ms.Read(name + ".yang"); err != nil {
+				return nil, fmt.Errorf("module %s: %w", name, err)
+			}
+		}
+		dirs = nil
 	}
 	var files []string
 	for _, d := range dirs {
@@ -491,17 +520,20 @@ func hasComponentsKey(keys json.RawMessage) bool {
 }
 
 // filterMatchesAComponent applies the loader's filter vocabulary:
-// "temperature" for sensor-bearing components, else a component type.
+// "temperature" for sensor-bearing components, "tag:<name>" for the
+// components carrying that tag, else a component type.
 func filterMatchesAComponent(components json.RawMessage, filter string) bool {
 	var cs []struct {
-		Type        string `json:"type"`
-		Temperature bool   `json:"temperature"`
+		Type        string   `json:"type"`
+		Temperature bool     `json:"temperature"`
+		Tags        []string `json:"tags"`
 	}
 	if json.Unmarshal(components, &cs) != nil {
 		return false
 	}
 	for _, c := range cs {
-		if (filter == "temperature" && c.Temperature) || c.Type == filter {
+		if (filter == "temperature" && c.Temperature) || c.Type == filter ||
+			(strings.HasPrefix(filter, "tag:") && slices.Contains(c.Tags, strings.TrimPrefix(filter, "tag:"))) {
 			return true
 		}
 	}
@@ -531,6 +563,9 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		// AliasedOriginPrefix: prefix origin under an aliased request
 		// origin (nl6#788); the loader validates the value.
 		AliasedOriginPrefix string `json:"aliased_origin_prefix,omitempty"`
+		// ResponseOrigin "module": the prefix origin is each subtree's
+		// YANG module; the loader validates the value.
+		ResponseOrigin string `json:"response_origin,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(notification))
 	dec.DisallowUnknownFields()
@@ -566,6 +601,25 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		n.OriginAliases = nil
 	}
 	return json.Marshal(n) // map keys marshal sorted
+}
+
+// responseOrigin reads notification.response_origin; the strict decode in
+// withModuleOriginAliases reports a malformed block.
+func responseOrigin(notification json.RawMessage) string {
+	var sel struct {
+		ResponseOrigin string `json:"response_origin"`
+	}
+	_ = json.Unmarshal(notification, &sel)
+	return sel.ResponseOrigin
+}
+
+// moduleIf emits a subtree's module only under response_origin "module",
+// so catalogues without it stay byte-identical.
+func moduleIf(responseOrigin, module string) string {
+	if responseOrigin == "module" {
+		return module
+	}
+	return ""
 }
 
 // fractionDigitsOf returns the YANG fraction-digits of a decimal64

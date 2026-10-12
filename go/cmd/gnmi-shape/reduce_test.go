@@ -89,3 +89,24 @@ func TestReduceIntegerAndFractionMergeToFraction(t *testing.T) {
 		t.Fatalf("got %+v, want one always leaf of class fraction", fx.Leaves)
 	}
 }
+
+// A leaf YANG types as a union may carry several JSON classes; it is named
+// with -union and records them joined. Any other leaf still refuses.
+func TestReduceUnionLeafRecordsJoinedClass(t *testing.T) {
+	in := `{"prefix":"x:a[k=v1]","updates":[{"Path":"i","values":{"i":"ALL"}},{"Path":"j","values":{"j":1}}]}
+{"prefix":"x:a[k=v2]","updates":[{"Path":"i","values":{"i":3}},{"Path":"j","values":{"j":2}}]}`
+	fx, err := reduceCaptureUnions(strings.NewReader(in), "t", "0", map[string]bool{"/a[k=*]/i": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, l := range fx.Leaves {
+		got[l.Path] = l.Class
+	}
+	if got["/a[k=*]/i"] != "integer|string" || got["/a[k=*]/j"] != "integer" {
+		t.Fatalf("classes %v, want i integer|string and j integer", got)
+	}
+	if _, err := reduceCaptureUnions(strings.NewReader(in), "t", "0", nil); err == nil {
+		t.Fatal("a mixed leaf not named as a union was accepted")
+	}
+}

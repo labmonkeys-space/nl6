@@ -111,6 +111,7 @@ A cisco-nsp post shows `show hw-module fpd` with 0/RP0 and 0/RP1 A99-RP-F and 0/
 No full `show inventory` or `show platform` for an ASR 9902 is public; component names in nl6 come from the location grammar and the data sheet descriptions.
 `go/cmd/xr-chassis` generates the `cisco_asr9902` IF-MIB, ENTITY-MIB and inventory CLI from `models/cisco_asr9902.json`.
 `make gen-xr-chassis` regenerates them, and `TestCommittedOutputsMatchModel` fails on a hand edit.
+Its gNMI catalogue is generated from YangModels/yang `vendor/cisco/xr/2422` reading only the modules `capabilities-asr9k-x64.xml` in the same directory advertises for the served subtrees, deviations included, listed in `go/cmd/xr-chassis/yang-modules.txt`.
 
 ### Vocabulary
 

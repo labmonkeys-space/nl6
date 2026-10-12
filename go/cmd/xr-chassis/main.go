@@ -4,8 +4,8 @@
  */
 
 // Command xr-chassis renders the cisco_asr9902 hardware files from one
-// chassis model: the SNMP chassis part and the SSH chassis part. Run it
-// through `make gen-xr-chassis`.
+// chassis model: the SNMP chassis part, the SSH chassis part and the gNMI
+// bindings. Run it through `make gen-xr-chassis`.
 package main
 
 import (
@@ -40,9 +40,18 @@ func renderAll() (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	skeleton, err := assets.ReadFile("models/cisco_asr9902-gnmi.json")
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := RenderBindings(c, skeleton)
+	if err != nil {
+		return nil, err
+	}
 	return map[string][]byte{
 		"cisco_asr9902_snmp_chassis.json": snmp,
 		"cisco_asr9902_ssh_chassis.json":  ssh,
+		"gnmi-bindings.json":              bindings,
 	}, nil
 }
 
