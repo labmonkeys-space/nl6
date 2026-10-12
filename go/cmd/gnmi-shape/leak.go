@@ -23,7 +23,7 @@ import (
 	"strings"
 )
 
-// tokenSet holds lower-cased tokens taken from a non-public capture. It is
+// tokenSet holds lower-cased tokens taken from a gnmic capture. It is
 // never printed.
 type tokenSet map[string]struct{}
 
@@ -473,7 +473,7 @@ func runLeak(args []string, stdout io.Writer) int {
 		_, _ = fmt.Fprintf(stdout, "%s:%d: capture-derived token (%d chars)\n", h.File, h.Line, h.Length)
 	}
 	if len(hits) > 0 {
-		_, _ = fmt.Fprintf(stdout, "leak: %d line(s) carry a token from the non-public capture; rewrite them, or add a reviewed public token to the local allowlist\n", len(hits))
+		_, _ = fmt.Fprintf(stdout, "leak: %d line(s) carry a token from the capture; rewrite them, or add a reviewed public token to the local allowlist\n", len(hits))
 		return 1
 	}
 	_, _ = fmt.Fprintln(stdout, "leak: clean")

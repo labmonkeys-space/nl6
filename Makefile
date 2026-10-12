@@ -121,7 +121,7 @@ gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper
 
 LEAK_BASE ?= origin/main
 
-## check-capture-leak: Refuse a change carrying a token from the non-public capture in CAPTURE (prints file and line, never the token)
+## check-capture-leak: Refuse a change carrying a token from the gnmic capture in CAPTURE (prints file and line, never the token)
 check-capture-leak: check-go
 	@test -n "$(CAPTURE)" || { echo "usage: make check-capture-leak CAPTURE=<dir> [LEAK_BASE=origin/main] [LEAK_ALLOW=<file>]"; exit 2; }
 	cd $(GO_DIR) && go run ./cmd/gnmi-shape leak -capture "$(CAPTURE)" -repo .. -base "$(LEAK_BASE)" $(if $(LEAK_ALLOW),-allow "$(LEAK_ALLOW)")

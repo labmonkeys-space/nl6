@@ -1,4 +1,4 @@
-# Tokens that are public grammar or data-sheet facts, never customer data.
+# Tokens that are public grammar or data-sheet facts, never capture values.
 # Design section 3: the leak check ignores these so generated names
 # (every port, every slot) do not fire. Add a line only for grammar a
 # public Cisco document states; cite it in the commit message.

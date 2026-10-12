@@ -28,8 +28,8 @@ type update struct {
 
 // readCapture streams the notifications of a gnmic --format json capture.
 // Objects with neither prefix nor updates (sync-response) are dropped. An
-// error names a byte offset only: the capture is non-public, so no error may
-// quote it.
+// error names a byte offset only: capture values stay out of the repository,
+// so no error may quote them.
 func readCapture(r io.Reader, fn func(notification) error) error {
 	return readCaptureText(r, fn, nil)
 }

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Command gnmi-shape works with a non-public gnmic capture without
-// publishing it. `reduce` writes a value-free shape fixture; `leak` refuses
+// Command gnmi-shape works with a gnmic capture without publishing its
+// values. `reduce` writes a value-free shape fixture; `leak` refuses
 // a change or a text that carries a token from the capture. Neither prints
 // capture content.
 package main
