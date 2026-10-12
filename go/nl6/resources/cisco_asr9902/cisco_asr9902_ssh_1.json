@@ -1,0 +1,12 @@
+{
+  "ssh": [
+    {
+      "command": "show version",
+      "response": "Cisco IOS XR Software, Version 24.2.2\nCopyright (c) 2013-2024 by Cisco Systems, Inc.\n\ncisco ASR-9902 (Intel Xeon D) processor\nASR9902-Core-01 uptime is 156 days, 7 hours, 23 minutes"
+    },
+    {
+      "command": "show running-config",
+      "response": "Building configuration...\nhostname ASR9902-Core-01\ninterface MgmtEth0/RP0/CPU0/0\n ipv4 address 10.1.1.1 255.255.255.0\ninterface TenGigE0/0/0/0\n ipv4 address 10.10.10.1 255.255.255.0"
+    }
+  ]
+}

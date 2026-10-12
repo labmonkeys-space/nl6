@@ -175,7 +175,7 @@ const entPhysicalVendorTypeExclusionReason = "the 1.3.6.1.4.1.0.0 entPhysicalVen
 const (
 	unauditedArcLabelledPairs = 14
 	unauditedArcLabelledParts = 19
-	auditedArcPairsShipped    = 14 // juniper_mx10004 joined the audited Juniper arc
+	auditedArcPairsShipped    = 15 // juniper_mx10004 joined the audited Juniper arc; cisco_asr9902 the audited Cisco arc (nl6#766)
 	excludedArcPairsShipped   = 1  // the scan-visible ones; the four PEN-0 rows are not scan-visible
 )
 

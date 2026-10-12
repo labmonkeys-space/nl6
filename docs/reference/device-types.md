@@ -1,6 +1,6 @@
 # Device types
 
-nl6 ships resource files for **30 device types across 9 categories**.
+nl6 ships resource files for **31 device types across 9 categories**.
 The REST API's `category` filter uses a coarser set of five values, shown below.
 Each device type has its own directory under `go/nl6/resources/` containing JSON responses for SNMP OIDs, SSH commands, and (for storage devices) REST API endpoints.
 See [Resource files](resource-files.md) for the JSON format.
@@ -10,6 +10,7 @@ See [Resource files](resource-files.md) for the JSON format.
 | Device | Ports | Description |
 |--------|-------|-------------|
 | Cisco ASR9K | 48 | High-end service provider router |
+| Cisco ASR 9902 | 50 | Fixed 2RU IOS-XR 24.2.2 router: two A99-RP-F, one ASR-9902-LC with 48 front ports in two slices, two management ports; SNMP and CLI inventory generated from one chassis model |
 | Cisco CRS-X | 144 | Carrier-class router |
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |

@@ -109,6 +109,8 @@ Data sheet PID descriptions: "ASR 9902 Chassis, 2RU", "ASR 9900 Fixed Chassis Ro
 `show environment` sample lists 0/FT0 to 0/FT2 ASR-9902-FAN and 0/PT0-PM0 and PM1 PWR-1.6KW-AC; the `show inventory power` sample is an ASR 9903 with ASR-9900-AC-PEM. https://www.cisco.com/c/en/us/td/docs/iosxr/asr9000/hardware-install/9001-hig/b-asr9001-hardware-installation-guide/b-asr9001-hardware-installation-guide_chapter_0111.html
 A cisco-nsp post shows `show hw-module fpd` with 0/RP0 and 0/RP1 A99-RP-F and 0/0 ASR-9902-LC. https://www.mail-archive.com/cisco-nsp@puck.nether.net/msg69271.html
 No full `show inventory` or `show platform` for an ASR 9902 is public; component names in nl6 come from the location grammar and the data sheet descriptions.
+`go/cmd/xr-chassis` generates the `cisco_asr9902` IF-MIB, ENTITY-MIB and inventory CLI from `models/cisco_asr9902.json`.
+`make gen-xr-chassis` regenerates them, and `TestCommittedOutputsMatchModel` fails on a hand edit.
 
 ### Vocabulary
 

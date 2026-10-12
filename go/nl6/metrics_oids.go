@@ -61,6 +61,14 @@ var vendorOIDs = map[string]map[string]MetricOIDType{
 		".1.3.6.1.4.1.9.9.48.1.1.1.6.1":    MetricMemFree,
 		".1.3.6.1.4.1.9.9.13.1.3.1.3.1":    MetricTemperature,
 	},
+	// The ASR 9902 serves CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB and
+	// CISCO-ENVMON-MIB the same way the asr9k profile does.
+	"cisco_asr9902.json": {
+		".1.3.6.1.4.1.9.9.109.1.1.1.1.5.1": MetricCPUPercent,
+		".1.3.6.1.4.1.9.9.48.1.1.1.5.1":    MetricMemUsed,
+		".1.3.6.1.4.1.9.9.48.1.1.1.6.1":    MetricMemFree,
+		".1.3.6.1.4.1.9.9.13.1.3.1.3.1":    MetricTemperature,
+	},
 	"asr9k.json": {
 		".1.3.6.1.4.1.9.9.109.1.1.1.1.5.1": MetricCPUPercent,
 		".1.3.6.1.4.1.9.9.48.1.1.1.5.1":    MetricMemUsed,
