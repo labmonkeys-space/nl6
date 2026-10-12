@@ -96,6 +96,7 @@ type outSubtree struct {
 	AliasLeaves []string        `json:"alias_leaves,omitempty"`
 	AliasOnly   bool            `json:"alias_only,omitempty"`
 	EchoOrigin  bool            `json:"echo_origin,omitempty"`
+	Module      string          `json:"module,omitempty"`
 	Keys        json.RawMessage `json:"keys"`
 	Leaves      []outLeaf       `json:"leaves"`
 }
@@ -285,7 +286,7 @@ func run(args []string) error {
 		if keys == nil {
 			keys = json.RawMessage("[]")
 		}
-		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, EchoOrigin: st.EchoOrigin, Keys: keys, Leaves: leaves})
+		out.Subtrees = append(out.Subtrees, outSubtree{Path: st.Path, Origin: st.Origin, Aliases: st.Aliases, AliasLeaves: st.AliasLeaves, AliasOnly: st.AliasOnly, EchoOrigin: st.EchoOrigin, Module: moduleIf(responseOrigin(b.Notification), st.Module), Keys: keys, Leaves: leaves})
 	}
 	for _, m := range models {
 		out.Models = append(out.Models, m)
@@ -531,6 +532,9 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		// AliasedOriginPrefix: prefix origin under an aliased request
 		// origin (nl6#788); the loader validates the value.
 		AliasedOriginPrefix string `json:"aliased_origin_prefix,omitempty"`
+		// ResponseOrigin "module": the prefix origin is each subtree's
+		// YANG module; the loader validates the value.
+		ResponseOrigin string `json:"response_origin,omitempty"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(notification))
 	dec.DisallowUnknownFields()
@@ -566,6 +570,25 @@ func withModuleOriginAliases(notification json.RawMessage, subtrees []bindingSub
 		n.OriginAliases = nil
 	}
 	return json.Marshal(n) // map keys marshal sorted
+}
+
+// responseOrigin reads notification.response_origin; the strict decode in
+// withModuleOriginAliases reports a malformed block.
+func responseOrigin(notification json.RawMessage) string {
+	var sel struct {
+		ResponseOrigin string `json:"response_origin"`
+	}
+	_ = json.Unmarshal(notification, &sel)
+	return sel.ResponseOrigin
+}
+
+// moduleIf emits a subtree's module only under response_origin "module",
+// so catalogues without it stay byte-identical.
+func moduleIf(responseOrigin, module string) string {
+	if responseOrigin == "module" {
+		return module
+	}
+	return ""
 }
 
 // fractionDigitsOf returns the YANG fraction-digits of a decimal64

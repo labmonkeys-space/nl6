@@ -50,6 +50,7 @@ const (
 
 	gnmiAliasedOriginCanonical = "canonical"
 	gnmiAliasedOriginEmpty     = "empty"
+	gnmiResponseOriginModule   = "module"
 )
 
 type gnmiCatalog struct {
@@ -88,6 +89,11 @@ type gnmiCatalogNotification struct {
 	// requests with no prefix origin, and origin-less or canonical ones
 	// with the canonical origin, as vJunos does (nl6#788).
 	AliasedOriginPrefix string `json:"aliased_origin_prefix,omitempty"`
+	// ResponseOrigin "module" answers every request with the rendering
+	// subtree's YANG module as the prefix origin, as IOS-XR does
+	// (openconfig-interfaces:interfaces/...). Every subtree must then
+	// carry its module. Empty keeps the canonical origin.
+	ResponseOrigin string `json:"response_origin,omitempty"`
 }
 
 type gnmiCatalogModel struct {
@@ -152,9 +158,12 @@ type gnmiCatalogSubtree struct {
 	// prefix under aliased_origin_prefix "empty": the MX10004 answers
 	// openconfig-platform: property subscriptions with that origin
 	// (nl6#788).
-	EchoOrigin bool               `json:"echo_origin,omitempty"`
-	Keys       []gnmiCatalogKey   `json:"keys"`
-	Leaves     []*gnmiCatalogLeaf `json:"leaves"`
+	EchoOrigin bool `json:"echo_origin,omitempty"`
+	// Module is the YANG module the subtree's leaves come from, emitted
+	// by the generator only under response_origin "module".
+	Module string             `json:"module,omitempty"`
+	Keys   []gnmiCatalogKey   `json:"keys"`
+	Leaves []*gnmiCatalogLeaf `json:"leaves"`
 
 	elems   []*gnmipb.PathElem   // compiled from Path; wildcard keys hold "*"
 	aliases [][]*gnmipb.PathElem // compiled from Aliases
@@ -267,6 +276,23 @@ func (c *gnmiCatalog) validate(source string) error {
 		}
 	default:
 		return fail("notification.aliased_origin_prefix %q: want %q or %q", n.AliasedOriginPrefix, gnmiAliasedOriginCanonical, gnmiAliasedOriginEmpty)
+	}
+	switch n.ResponseOrigin {
+	case "":
+	case gnmiResponseOriginModule:
+		if n.Prefix != gnmiPrefixListEntry {
+			return fail("notification.response_origin %q needs prefix %q", n.ResponseOrigin, gnmiPrefixListEntry)
+		}
+		if n.AliasedOriginPrefix == gnmiAliasedOriginEmpty {
+			return fail("notification.response_origin %q and aliased_origin_prefix %q both decide the prefix origin; set one", n.ResponseOrigin, n.AliasedOriginPrefix)
+		}
+		for i, st := range c.Subtrees {
+			if st.Module == "" {
+				return fail("subtree %d (%s): response_origin %q needs its module", i, st.Path, n.ResponseOrigin)
+			}
+		}
+	default:
+		return fail("notification.response_origin %q: want %q or empty", n.ResponseOrigin, gnmiResponseOriginModule)
 	}
 	aliases := make([]string, 0, len(n.OriginAliases))
 	for alias := range n.OriginAliases {

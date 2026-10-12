@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +352,47 @@ func TestGenerateCopiesPrefixOriginFields(t *testing.T) {
 	flat := strings.Join(strings.Fields(string(got)), " ")
 	if !strings.Contains(flat, `"aliased_origin_prefix": "empty"`) || strings.Count(flat, `"echo_origin": true`) != 1 {
 		t.Fatalf("prefix origin fields not copied:\n%s", got)
+	}
+}
+
+// Under response_origin "module" every emitted subtree carries its module;
+// without it none does, so existing catalogues stay byte-identical.
+func TestGenerateEmitsModuleOnlyUnderResponseOriginModule(t *testing.T) {
+	b, _ := os.ReadFile("testdata/bindings.json")
+	for _, c := range []struct {
+		name, edit string
+		want       int
+	}{
+		{"default", string(b), 0},
+		{"module", strings.Replace(string(b), `"prefix": "list-entry"`, `"prefix": "list-entry", "response_origin": "module"`, 1), -1},
+	} {
+		p := filepath.Join(t.TempDir(), "b.json")
+		_ = os.WriteFile(p, []byte(c.edit), 0o644)
+		out := filepath.Join(t.TempDir(), "o.json")
+		if err := run([]string{"-yang", "testdata", "-bindings", p, "-out", out}); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got, _ := os.ReadFile(out)
+		var cat struct {
+			Subtrees []struct {
+				Module string `json:"module"`
+			} `json:"subtrees"`
+		}
+		if err := json.Unmarshal(got, &cat); err != nil {
+			t.Fatal(err)
+		}
+		withModule := 0
+		for _, st := range cat.Subtrees {
+			if st.Module != "" {
+				withModule++
+			}
+		}
+		want := c.want
+		if want < 0 {
+			want = len(cat.Subtrees)
+		}
+		if withModule != want || len(cat.Subtrees) == 0 {
+			t.Errorf("%s: %d of %d subtrees carry a module, want %d", c.name, withModule, len(cat.Subtrees), want)
+		}
 	}
 }

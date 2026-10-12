@@ -73,9 +73,13 @@ func (r *catalogResolver) originAccepted(origin string) (string, bool) {
 // canonical (nl6#788): canonical for an empty or canonical request
 // origin; for an aliased one, canonical unless the catalogue asks for
 // an empty prefix origin, which an echo_origin subtree replaces with
-// the request's own spelling.
+// the request's own spelling. Under response_origin "module" every
+// request is answered with the subtree's YANG module.
 func (r *catalogResolver) prefixOrigin(requested, canonical string, st *gnmiCatalogSubtree) string {
 	n := r.cat.Notification
+	if n.ResponseOrigin == gnmiResponseOriginModule {
+		return st.Module
+	}
 	if _, aliased := n.OriginAliases[requested]; !aliased || n.AliasedOriginPrefix != gnmiAliasedOriginEmpty {
 		return canonical
 	}
