@@ -1,0 +1,9 @@
+# Tokens that are public grammar or data-sheet facts, never customer data.
+# Design section 3: the leak check ignores these so generated names
+# (every port, every slot) do not fire. Add a line only for grammar a
+# public Cisco document states; cite it in the commit message.
+^(tengige|twentyfivegige|fortygige|hundredgige|fourhundredgige|mgmteth)\d+(/\d+){0,4}$
+^\d+/(rp\d+|ft\d+|pt\d+|\d+)(/cpu\d+)?$
+^(asr-9902|asr-9902-lc|a99-rp-f|pwr-1\.6kw-ac|asr-9902-fan)$
+^24\.2\.2$
+^r2422$
