@@ -7,11 +7,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,37 +68,64 @@ func (set tokenSet) addValue(v string, key bool) {
 	}
 }
 
-// captureTokens adds the tokens of one capture file to set, including the
-// text outside its JSON objects (the echoed command, a pasted prompt).
+// captureTokens adds the tokens of one capture file to set: every string,
+// number and object key at any depth of every object (so container values,
+// deletes and error objects count), list key values found in any string,
+// and the text outside the objects (the echoed command, a pasted prompt).
 func captureTokens(r io.Reader, set tokenSet) error {
-	return readCaptureText(r, func(n notification) error {
-		set.addValue(n.Source, false)
-		set.addValue(n.Target, false)
-		paths := []string{n.Prefix}
-		for _, u := range n.Updates {
-			paths = append(paths, u.Path)
-			for _, raw := range u.Values {
-				var s string
-				switch valueClass(raw) {
-				case "string":
-					if err := json.Unmarshal(raw, &s); err != nil {
-						return fmt.Errorf("capture: undecodable string value")
-					}
-				case "integer", "fraction":
-					s = string(raw)
-				default:
-					continue
-				}
-				set.addValue(s, false)
-			}
+	return scanObjects(r, func(obj []byte, start int64) error {
+		dec := json.NewDecoder(bytes.NewReader(obj))
+		dec.UseNumber()
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return fmt.Errorf("capture: malformed JSON object at byte %d", start)
 		}
-		for _, p := range paths {
-			for _, m := range keyRe.FindAllStringSubmatch(p, -1) {
-				set.addValue(m[2], true)
-			}
-		}
+		set.walk(v, false)
 		return nil
-	}, func(text string) { set.addValue(text, false) })
+	}, func(text string) { set.addString(text) })
+}
+
+// pathFields hold gNMI paths in gnmic output. A path is YANG schema plus
+// list key values, and only the key values are capture data.
+var pathFields = map[string]bool{"prefix": true, "Path": true, "path": true, "deletes": true}
+
+// walk adds the tokens of a decoded JSON value. Object keys are read as
+// paths (schema, or a path keying a value), so are the values of
+// pathFields; every other string is tokenised in full.
+func (set tokenSet) walk(v any, isPath bool) {
+	switch x := v.(type) {
+	case string:
+		if isPath {
+			set.addKeyValues(x)
+		} else {
+			set.addString(x)
+		}
+	case json.Number:
+		set.addValue(string(x), false)
+	case []any:
+		for _, e := range x {
+			set.walk(e, isPath)
+		}
+	case map[string]any:
+		for k, e := range x {
+			set.addKeyValues(k)
+			set.walk(e, pathFields[k])
+		}
+	}
+}
+
+// addKeyValues adds the list key values written inside a path.
+func (set tokenSet) addKeyValues(p string) {
+	for _, m := range keyRe.FindAllStringSubmatch(p, -1) {
+		set.addValue(m[2], true)
+	}
+}
+
+// addString tokenises a string and, at the key floor, every list key value
+// written inside it.
+func (set tokenSet) addString(s string) {
+	set.addValue(s, false)
+	set.addKeyValues(s)
 }
 
 // addedLine is one added line of a diff, or one line of a scanned file.
@@ -125,6 +154,13 @@ func parseUnifiedDiff(r io.Reader) ([]addedLine, error) {
 			header = true
 		case header && strings.HasPrefix(t, "+++ "):
 			file = strings.TrimPrefix(strings.TrimPrefix(t, "+++ "), "b/")
+			if file != "/dev/null" {
+				// A path is published too.
+				out = append(out, addedLine{file, 0, file})
+			}
+		case header && strings.HasPrefix(t, "rename to "):
+			file = strings.TrimPrefix(t, "rename to ")
+			out = append(out, addedLine{file, 0, file})
 		case strings.HasPrefix(t, "@@"):
 			header = false
 			m := hunkRe.FindStringSubmatch(t)
@@ -219,16 +255,17 @@ func gitOut(repo string, args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
-// inBaseTree reports whether tok occurs anywhere in the tree at rev. A token
-// already in the base was published before this change, so the change does
-// not leak it. Results are cached; only hit candidates reach this.
+// inBaseTree reports whether tok occurs as a whole word in the tree at rev.
+// A token already in the base was published before this change, so the
+// change does not leak it; a token that is only part of a longer word in the
+// base is not public. Results are cached; only hit candidates reach this.
 func inBaseTree(repo, rev string) func(string) bool {
 	cache := map[string]bool{}
 	return func(tok string) bool {
 		if v, ok := cache[tok]; ok {
 			return v
 		}
-		err := exec.Command("git", "-C", repo, "grep", "-q", "-i", "-F", "-e", tok, rev, "--").Run()
+		err := exec.Command("git", "-C", repo, "grep", "-q", "-i", "-w", "-F", "-e", tok, rev, "--").Run()
 		cache[tok] = err == nil
 		return err == nil
 	}
@@ -247,20 +284,34 @@ func fileLines(path, name string) ([]addedLine, error) {
 	return out, nil
 }
 
-// changeLines returns the added lines of the working tree against the
-// merge base of rev and HEAD, plus every line of every untracked file.
+// diffArgs make git show binary content as text and skip converters, so
+// what is scanned is what is published.
+var diffArgs = []string{"--text", "--no-textconv", "--no-color", "--no-ext-diff", "--unified=0"}
+
+// changeLines returns every line the change would publish, measured from
+// the merge base of rev and HEAD: each commit on the branch (a later commit
+// does not remove a token from history), the index (the next commit), the
+// working tree, and every untracked file with its name.
 func changeLines(repo, rev string) (base string, lines []addedLine, err error) {
 	mb, err := gitOut(repo, "merge-base", rev, "HEAD")
 	if err != nil {
 		return "", nil, fmt.Errorf("git merge-base %s HEAD failed", rev)
 	}
 	base = strings.TrimSpace(string(mb))
-	diff, err := gitOut(repo, "diff", "--no-color", "--no-ext-diff", "--unified=0", base)
-	if err != nil {
-		return "", nil, fmt.Errorf("git diff failed")
-	}
-	if lines, err = parseUnifiedDiff(strings.NewReader(string(diff))); err != nil {
-		return "", nil, err
+	for _, args := range [][]string{
+		append(append([]string{"log", "-p", "--format="}, diffArgs...), base+"..HEAD"),
+		append(append([]string{"diff", "--cached"}, diffArgs...), base),
+		append(append([]string{"diff"}, diffArgs...), base),
+	} {
+		out, err := gitOut(repo, args...)
+		if err != nil {
+			return "", nil, fmt.Errorf("git %s failed", args[0])
+		}
+		dl, err := parseUnifiedDiff(bytes.NewReader(out))
+		if err != nil {
+			return "", nil, err
+		}
+		lines = append(lines, dl...)
 	}
 	untracked, err := gitOut(repo, "ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
@@ -274,6 +325,7 @@ func changeLines(repo, rev string) (base string, lines []addedLine, err error) {
 		if err != nil {
 			return "", nil, err
 		}
+		lines = append(lines, addedLine{name, 0, name})
 		lines = append(lines, fl...)
 	}
 	return base, lines, nil
@@ -319,39 +371,54 @@ func loadAllow(path string) (map[string]bool, error) {
 }
 
 func runLeak(args []string, stdout io.Writer) int {
-	fs := flag.NewFlagSet("leak", flag.ContinueOnError)
-	fs.SetOutput(stdout)
-	capDir := fs.String("capture", "", "directory of gnmic captures (outside the repo)")
-	repo := fs.String("repo", ".", "repository root")
-	rev := fs.String("base", "origin/main", "branch the change merges into")
-	allowPath := fs.String("allow", "", "optional local allowlist file, kept outside the repo")
+	flags := flag.NewFlagSet("leak", flag.ContinueOnError)
+	flags.SetOutput(stdout)
+	capDir := flags.String("capture", "", "directory of gnmic captures (outside the repo)")
+	repo := flags.String("repo", ".", "repository root")
+	rev := flags.String("base", "origin/main", "branch the change merges into")
+	allowPath := flags.String("allow", "", "optional local allowlist file, kept outside the repo")
 	var files multiFlag
-	fs.Var(&files, "file", "scan this file instead of the diff (repeatable), e.g. a PR body")
-	if err := fs.Parse(args); err != nil || *capDir == "" {
+	flags.Var(&files, "file", "scan this file instead of the diff (repeatable), e.g. a PR body")
+	if err := flags.Parse(args); err != nil || *capDir == "" {
 		_, _ = fmt.Fprintln(stdout, "usage: gnmi-shape leak -capture DIR [-repo DIR] [-base REV] [-allow FILE] [-file F]...")
 		return 2
 	}
 	set := tokenSet{}
-	entries, err := os.ReadDir(*capDir)
+	// Every regular file is read, whatever its name, so a capture saved
+	// under another extension or in a subdirectory is not skipped. Files
+	// are named by number: a capture file name can carry a host name.
+	nfiles := 0
+	root, err := os.OpenRoot(*capDir)
 	if err != nil {
-		_, _ = fmt.Fprintf(stdout, "leak: cannot read capture directory: %v\n", err)
+		_, _ = fmt.Fprintln(stdout, "leak: cannot open the capture directory")
 		return 2
 	}
-	for _, e := range entries {
-		if !e.Type().IsRegular() || !(strings.HasSuffix(e.Name(), ".log") || strings.HasSuffix(e.Name(), ".json")) {
-			continue
-		}
-		f, err := os.Open(filepath.Join(*capDir, e.Name()))
+	defer root.Close()
+	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			_, _ = fmt.Fprintf(stdout, "leak: %v\n", err)
-			return 2
+			return err
 		}
-		err = captureTokens(f, set)
-		f.Close()
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		nfiles++
+		f, err := root.Open(path)
 		if err != nil {
-			_, _ = fmt.Fprintf(stdout, "leak: %s: %v\n", e.Name(), err)
-			return 2
+			return fmt.Errorf("capture file %d: cannot open", nfiles)
 		}
+		defer f.Close()
+		if err := captureTokens(f, set); err != nil {
+			return fmt.Errorf("capture file %d: %v", nfiles, err)
+		}
+		return nil
+	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stdout, "leak: %v\n", err)
+		return 2
+	}
+	if nfiles == 0 {
+		_, _ = fmt.Fprintln(stdout, "leak: the capture directory holds no files")
+		return 2
 	}
 	local, err := loadAllow(*allowPath)
 	if err != nil {
@@ -363,8 +430,10 @@ func runLeak(args []string, stdout io.Writer) int {
 	if len(files) > 0 {
 		// Words the repository already has are public; outside a git
 		// repository there is no such filter.
-		if _, err := gitOut(*repo, "rev-parse", "--verify", "-q", "HEAD"); err == nil {
-			base = inBaseTree(*repo, "HEAD")
+		// Filter against the merge base, as the diff mode does: a token
+		// the branch itself added is not public.
+		if mb, err := gitOut(*repo, "merge-base", *rev, "HEAD"); err == nil {
+			base = inBaseTree(*repo, strings.TrimSpace(string(mb)))
 		}
 		for _, p := range files {
 			fl, err := fileLines(p, p)
@@ -390,7 +459,16 @@ func runLeak(args []string, stdout io.Writer) int {
 		return 2
 	}
 	_, _ = fmt.Fprintf(stdout, "leak: self-test passed (%d capture tokens, %d lines scanned)\n", len(set), len(lines))
-	hits := scanLines(lines, set, allowed)
+	// The same line can arrive from a commit, the index and the working
+	// tree; report it once.
+	var hits []hit
+	seen := map[hit]bool{}
+	for _, h := range scanLines(lines, set, allowed) {
+		if k := (hit{h.File, h.Line, 0}); !seen[k] {
+			seen[k] = true
+			hits = append(hits, h)
+		}
+	}
 	for _, h := range hits {
 		_, _ = fmt.Fprintf(stdout, "%s:%d: capture-derived token (%d chars)\n", h.File, h.Line, h.Length)
 	}

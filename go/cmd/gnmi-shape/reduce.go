@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -35,10 +36,19 @@ type fixture struct {
 	Leaves        []fixtureLeaf `json:"leaves"`
 }
 
-// keyRe matches one list key; group 1 is its name, group 2 its value.
-var keyRe = regexp.MustCompile(`\[([A-Za-z0-9_.-]+)=([^\]]*)\]`)
+// keyRe matches one list key; group 1 is its name, group 2 its value. A
+// value may carry an escaped "\]".
+var keyRe = regexp.MustCompile(`\[([A-Za-z0-9_.-]+)=((?:\\.|[^\]\\])*)\]`)
+
+// wildKeyRe matches a key reduced to its wildcard.
+var wildKeyRe = regexp.MustCompile(`\[[A-Za-z0-9_.-]+=\*\]`)
 
 func wildcardKeys(p string) string { return keyRe.ReplaceAllString(p, "[$1=*]") }
+
+// unreduced reports whether a wildcarded path still holds a bracket outside
+// its [k=*] keys: a key value keyRe could not delimit, part of which would
+// otherwise reach the fixture.
+func unreduced(p string) bool { return strings.ContainsAny(wildKeyRe.ReplaceAllString(p, ""), "[]") }
 
 // splitOrigin cuts gnmic's "origin:path" form. Call it on a wildcarded
 // path, so a ':' inside a key value cannot be mistaken for the separator.
@@ -85,6 +95,9 @@ func mergeClass(old, nu string) (string, bool) {
 	return old, false
 }
 
+// errUnreduced quotes nothing: the path it refuses is the part that leaked.
+var errUnreduced = errors.New("reduce: a path holds a key value the reducer cannot delimit; the path is not shown")
+
 // reduceCapture turns a capture into a value-free fixture. Prefixes and leaf
 // paths are wildcarded before anything is stored, so no key value is held
 // past the line that read it. A leaf is always if it is in every
@@ -95,7 +108,11 @@ func reduceCapture(r io.Reader, subtree, release string) (fixture, error) {
 	leafSeen := map[string]int{} // notifications carrying the leaf
 	leafClass := map[string]string{}
 	err := readCapture(r, func(n notification) error {
-		origin, ppath := splitOrigin(wildcardKeys(n.Prefix))
+		wp := wildcardKeys(n.Prefix)
+		if unreduced(wp) {
+			return errUnreduced
+		}
+		origin, ppath := splitOrigin(wp)
 		pkey := origin + ":" + ppath
 		if origin == "" {
 			pkey = ppath
@@ -103,7 +120,11 @@ func reduceCapture(r io.Reader, subtree, release string) (fixture, error) {
 		prefixCount[pkey]++
 		seen := map[string]bool{}
 		for _, u := range n.Updates {
-			leaf := strings.TrimSuffix(ppath, "/") + "/" + strings.TrimPrefix(wildcardKeys(u.Path), "/")
+			wu := wildcardKeys(u.Path)
+			if unreduced(wu) {
+				return errUnreduced
+			}
+			leaf := strings.TrimSuffix(ppath, "/") + "/" + strings.TrimPrefix(wu, "/")
 			for _, raw := range u.Values {
 				c, ok := mergeClass(leafClass[leaf], valueClass(raw))
 				if !ok {

@@ -36,10 +36,27 @@ func readCapture(r io.Reader, fn func(notification) error) error {
 
 // readCaptureText is readCapture that also hands every run of text outside
 // the JSON objects to onText: gnmic's command echo, and a shell prompt pasted
-// after the last object, which carries the host name. Objects are found by
-// brace depth outside strings rather than by a JSON decoder, because a
-// decoder cannot skip text between objects.
+// after the last object, which carries the host name.
 func readCaptureText(r io.Reader, fn func(notification) error, onText func(string)) error {
+	return scanObjects(r, func(obj []byte, start int64) error {
+		var n notification
+		if err := json.Unmarshal(obj, &n); err != nil {
+			return fmt.Errorf("capture: malformed JSON object at byte %d", start)
+		}
+		if n.Prefix == "" && len(n.Updates) == 0 {
+			return nil
+		}
+		return fn(n)
+	}, onText)
+}
+
+// scanObjects hands each top-level JSON object of a capture, raw, to fn and
+// the text between objects to onText. Objects are found by brace depth
+// outside strings rather than by a JSON decoder, because a decoder cannot
+// skip text between objects. A terminal copy hard-wraps long lines, putting
+// raw line breaks inside strings; JSON allows none there, so they are
+// dropped, which restores the original.
+func scanObjects(r io.Reader, fn func(obj []byte, start int64) error, onText func(string)) error {
 	br := bufio.NewReaderSize(r, 1<<20)
 	var obj, text []byte
 	depth, inStr, esc := 0, false, false
@@ -68,7 +85,6 @@ func readCaptureText(r io.Reader, fn func(notification) error, onText func(strin
 			start = off - 1
 		}
 		if inStr && !esc && (b == '\r' || b == '\n') {
-			// A terminal's hard wrap; JSON allows no raw line break here.
 			continue
 		}
 		obj = append(obj, b)
@@ -90,17 +106,10 @@ func readCaptureText(r io.Reader, fn func(notification) error, onText func(strin
 		if depth > 0 {
 			continue
 		}
-		var n notification
-		if err := json.Unmarshal(obj, &n); err != nil {
-			return fmt.Errorf("capture: malformed JSON object at byte %d", start)
-		}
-		obj = obj[:0]
-		if n.Prefix == "" && len(n.Updates) == 0 {
-			continue
-		}
-		if err := fn(n); err != nil {
+		if err := fn(obj, start); err != nil {
 			return err
 		}
+		obj = obj[:0]
 	}
 	if depth != 0 {
 		return fmt.Errorf("capture: truncated JSON object at byte %d", start)

@@ -1,4 +1,4 @@
-gnmic sub -a 192.0.2.10:57400 --insecure -e proto --path 'openconfig-interfaces:/interfaces/interface/state/counters' -u XXXXX -p 'XXXXXX' --mode once
+gnmic sub -a 192.0.2.10:57400 --insecure -e proto --path 'openconfig-interfaces:/interfaces/interface/state/counters' --mode once
 {
   "source": "192.0.2.10:57400",
   "subscription-name": "default-1",

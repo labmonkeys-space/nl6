@@ -86,7 +86,7 @@ func TestLeakFileMode(t *testing.T) {
 	}
 	capDir, _ := filepath.Abs("testdata")
 	var out bytes.Buffer
-	if code := runLeak([]string{"-capture", capDir, "-repo", repo, "-file", body}, &out); code != 1 {
+	if code := runLeak([]string{"-capture", capDir, "-repo", repo, "-base", "main", "-file", body}, &out); code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out.String())
 	}
 	if o := out.String(); !strings.Contains(o, "pr-body.md:2:") || strings.Contains(o, "pr-body.md:1:") {
@@ -94,11 +94,11 @@ func TestLeakFileMode(t *testing.T) {
 	}
 }
 
-// A capture whose only tokens are public grammar leaves the self-test
-// nothing to plant. runLeak must refuse rather than report clean.
+// A capture with no checkable token leaves the self-test nothing to
+// plant. runLeak must refuse rather than report clean.
 func TestLeakRefusesWhenSelfTestCannotRun(t *testing.T) {
 	dir := t.TempDir()
-	capture := `{"prefix":"openconfig-interfaces:interfaces/interface[name=TenGigE0/0/0/1]/state","updates":[{"Path":"oper-status","values":{"oper-status":"UP"}}]}`
+	capture := `{"a":"x"}`
 	if err := os.WriteFile(filepath.Join(dir, "c.log"), []byte(capture), 0o644); err != nil {
 		t.Fatal(err)
 	}

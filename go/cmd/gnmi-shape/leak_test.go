@@ -52,7 +52,7 @@ func TestParseUnifiedDiff(t *testing.T) {
 	for _, l := range lines {
 		got += l.File + ":" + strconv.Itoa(l.Line) + ":" + l.Text + ";"
 	}
-	if got != "x.txt:3:first;x.txt:4:second;x.txt:20:third;x.txt:21:++ x;" {
+	if got != "x.txt:0:x.txt;x.txt:3:first;x.txt:4:second;x.txt:20:third;x.txt:21:++ x;" {
 		t.Fatalf("got %s", got)
 	}
 }
