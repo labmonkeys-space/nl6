@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-//go:embed models/cisco_asr9902.json
+//go:embed models/cisco_asr9902.json models/cisco_asr9902-gnmi.json
 var assets embed.FS
 
 // Component is one inventory row. Type is empty for the components IOS-XR

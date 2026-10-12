@@ -115,9 +115,10 @@ gen-junos-chassis: check-go
 	cd go && go run ./cmd/junos-chassis -out nl6/resources/juniper_mx10004
 	@$(MAKE) --no-print-directory gen-gnmi-catalog
 
-## gen-xr-chassis: Regenerate the cisco_asr9902 hardware files from go/cmd/xr-chassis/models
+## gen-xr-chassis: Regenerate the cisco_asr9902 hardware files from go/cmd/xr-chassis/models, then the gnmi.json the runtime serves
 gen-xr-chassis: check-go
 	cd go && go run ./cmd/xr-chassis -out nl6/resources/cisco_asr9902
+	@$(MAKE) --no-print-directory gen-gnmi-catalog
 
 ## gen-gnmi-catalog: Regenerate resources/*/gnmi.json from YANG + bindings
 gen-gnmi-catalog: check-go $(YANG_CACHE)/juniper $(YANG_CACHE)/yangmodels
