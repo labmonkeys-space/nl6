@@ -81,3 +81,48 @@ func TestExpandRejectsUnknownCardAndSlot(t *testing.T) {
 		t.Fatalf("optic without connector_type: err = %v", err)
 	}
 }
+
+func TestExpandUnitsFollowThePorts(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Units) != 1 {
+		t.Fatalf("%d units, want 1", len(c.Units))
+	}
+	u := c.Units[0]
+	if u.IfIndex != len(c.Ports)+1 || u.IfName != "xe-0/0/0.0" || u.Parent.IfName != "xe-0/0/0" || u.Inet != "192.168.1.1/24" {
+		t.Fatalf("unit = %+v", u)
+	}
+	if got := c.UnitsOf("xe-0/0/0"); len(got) != 1 || got[0].IfName != "xe-0/0/0.0" {
+		t.Fatalf("UnitsOf(xe-0/0/0) = %+v", got)
+	}
+	if got := c.UnitsOf("xe-0/0/1"); len(got) != 0 {
+		t.Fatalf("UnitsOf(xe-0/0/1) = %+v", got)
+	}
+}
+
+func TestExpandRejectsBadUnits(t *testing.T) {
+	for name, tc := range map[string]struct {
+		units []Unit
+		want  string
+	}{
+		"unknown parent": {[]Unit{{Parent: "xe-9/0/0"}}, "not a port"},
+		"negative":       {[]Unit{{Parent: "xe-0/0/0", Unit: -1}}, "outside"},
+		"above range":    {[]Unit{{Parent: "xe-0/0/0", Unit: maxJunosUnit + 1}}, "outside"},
+		"duplicate":      {[]Unit{{Parent: "xe-0/0/0"}, {Parent: "xe-0/0/0"}}, "twice"},
+	} {
+		m, err := loadModel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Units = tc.units
+		if _, err := Expand(m); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
+		}
+	}
+}

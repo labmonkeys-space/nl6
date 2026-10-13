@@ -1,6 +1,6 @@
 Interface               Admin Link Proto    Local                 Remote
 <<range .Ports>><<printf "%-24s%-6s%s" .IfName "up" "up">>
-<<if eq .IfIndex 1>>xe-0/0/0.0              up    up   inet     192.168.1.1/24
+<<range $.UnitsOf .IfName>><<if .Inet>><<printf "%-24s%-6s%-5s%-9s%s" .IfName "up" "up" "inet" .Inet>><<else>><<printf "%-24s%-6s%s" .IfName "up" "up">><<end>>
 <<end>><<end>>fxp0                    up    up
 fxp0.0                  up    up   inet     10.0.0.1/24
 lo0                     up    up

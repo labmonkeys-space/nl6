@@ -8,8 +8,10 @@ package main
 import (
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestJuniperMx10004_TrapCatalogLoads mirrors the Cisco-side load test
@@ -292,8 +294,9 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 
 // TestJuniperMx10004_InterfaceTableAndIdentity pins what the clone script
 // produced from the MX240 template: 48 LC480 ports xe-0/0/0..xe-0/1/23 at
-// ifIndex 1..48 and 24 LC9600 ports et-1/0/0..et-1/5/3 at 49..72, and the
-// identity objects re-pointed at jnxProductNameMX10004.
+// ifIndex 1..48 and 24 LC9600 ports et-1/0/0..et-1/5/3 at 49..72, the one
+// configured logical unit xe-0/0/0.0 at 73, and the identity objects
+// re-pointed at jnxProductNameMX10004.
 func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
@@ -308,13 +311,16 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		"1.3.6.1.2.1.1.1.0":          "Juniper Networks, Inc. mx10004 internet router, kernel JUNOS 24.2R1.17, Build date: 2024-06-18",
 		"1.3.6.1.2.1.1.2.0":          "1.3.6.1.4.1.2636.1.1.1.2.168",
 		"1.3.6.1.2.1.47.1.1.1.1.3.1": "1.3.6.1.4.1.2636.1.1.1.2.168",
-		"1.3.6.1.2.1.2.1.0":          "72",
+		"1.3.6.1.2.1.2.1.0":          "73",
 		"1.3.6.1.2.1.2.2.1.2.1":      "xe-0/0/0",
 		"1.3.6.1.2.1.2.2.1.2.48":     "xe-0/1/23",
 		"1.3.6.1.2.1.31.1.1.1.1.48":  "xe-0/1/23",
 		"1.3.6.1.2.1.2.2.1.2.49":     "et-1/0/0",
 		"1.3.6.1.2.1.2.2.1.2.72":     "et-1/5/3",
 		"1.3.6.1.2.1.31.1.1.1.15.49": "400000",
+		"1.3.6.1.2.1.2.2.1.2.73":     "xe-0/0/0.0",
+		"1.3.6.1.2.1.2.2.1.3.73":     "53",
+		"1.3.6.1.2.1.31.1.1.1.1.73":  "xe-0/0/0.0",
 	}
 	for oid, v := range want {
 		if got[oid] != v {
@@ -330,8 +336,8 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 			t.Errorf("ifDescr.%d: got %q, want %q", i, d, name)
 		}
 	}
-	if d, ok := got["1.3.6.1.2.1.2.2.1.2.73"]; ok {
-		t.Errorf("ifDescr.73 present (%q); the MX10004 type has exactly 72 ports", d)
+	if d, ok := got["1.3.6.1.2.1.2.2.1.2.74"]; ok {
+		t.Errorf("ifDescr.74 present (%q); the MX10004 type has 72 ports and one logical unit", d)
 	}
 }
 
@@ -357,17 +363,24 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 	if strings.Contains(terse, "ge-") || strings.Contains(hw, "MPC Type 2") || strings.Contains(hw, "RE-S-2000") {
 		t.Errorf("SSH still carries MX240 content")
 	}
-	ports := 0
+	ifDescrs := map[string]bool{}
 	for _, e := range res.SNMP {
 		if strings.HasPrefix(e.OID, "1.3.6.1.2.1.2.2.1.2.") {
-			ports++
+			ifDescrs[e.Response] = true
 			if !strings.Contains(terse, e.Response+" ") {
 				t.Errorf("ifDescr %s not listed by show interfaces terse", e.Response)
 			}
 		}
 	}
-	if ports != 72 {
-		t.Fatalf("SNMP serves %d ports, want 72", ports)
+	if len(ifDescrs) != 73 {
+		t.Fatalf("SNMP serves %d interfaces, want 72 ports and one logical unit", len(ifDescrs))
+	}
+	// And the reverse for line-card interfaces: every xe- or et- interface
+	// or unit the CLI lists is an IF-MIB row. fxp0 and lo0 are CLI-only.
+	for _, line := range strings.Split(terse, "\n")[1:] {
+		if f := strings.Fields(line); len(f) > 0 && (strings.HasPrefix(f[0], "xe-") || strings.HasPrefix(f[0], "et-")) && !ifDescrs[f[0]] {
+			t.Errorf("show interfaces terse lists %s, which IF-MIB does not serve", f[0])
+		}
 	}
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
@@ -404,6 +417,80 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 				t.Errorf("SSH serial %s has no gNMI component", f)
 			}
 		}
+	}
+}
+
+// TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib: gNMI served a unit 0
+// under every port with its parent's name and ifIndex while IF-MIB served no
+// unit. The subinterfaces are now the device's logical units, each reading its
+// own IF-MIB row, and a unit is not also a top-level interface.
+func TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib(t *testing.T) {
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := &MetricsCycler{}
+	mc.InitIfCounters(res, 1)
+	dev := &DeviceSimulator{ID: "mx10004", IP: net.IPv4(10, 42, 0, 10), resourceFile: "juniper_mx10004.json", resources: res, metricsCycler: mc}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(dev, cats["juniper_mx10004"])
+	now := time.Now()
+
+	ns, err := r.Resolve(pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	type unit struct{ parent, index, name, ifindex string }
+	var got []unit
+	for _, n := range ns {
+		u := unit{}
+		for _, e := range n.Prefix.GetElem() {
+			switch e.GetName() {
+			case "interface":
+				u.parent = e.GetKey()["name"]
+			case "subinterface":
+				u.index = e.GetKey()["index"]
+			}
+		}
+		for _, up := range n.Updates {
+			switch pathToString(up.Path) {
+			case "/state/name":
+				u.name = fmt.Sprint(up.Value)
+			case "/state/ifindex":
+				u.ifindex = fmt.Sprint(up.Value)
+			}
+		}
+		got = append(got, u)
+	}
+	want := []unit{{"xe-0/0/0", "0", "xe-0/0/0.0", "73"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("subinterfaces = %+v, want %+v", got, want)
+	}
+
+	ns, err = r.Resolve(pathFromString(t, "/interfaces/interface/state/name"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ns) != 72 {
+		t.Errorf("%d interfaces, want the 72 ports", len(ns))
+	}
+	for _, n := range ns {
+		for _, up := range n.Updates {
+			if v := fmt.Sprint(up.Value); strings.Contains(v, ".") {
+				t.Errorf("logical unit %s served as a top-level interface", v)
+			}
+		}
+	}
+	ns, err = r.Resolve(pathFromString(t, "/interfaces/interface/state/counters/out-queue"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ns) != 72*8 {
+		t.Errorf("%d out-queues, want 8 for each of the 72 ports", len(ns))
 	}
 }
 

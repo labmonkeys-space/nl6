@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -166,7 +167,7 @@ func startMX10004ServerN(t *testing.T, ifCount int) (addr string, cleanup func()
 		t.Fatal("embedded juniper_mx10004 catalogue missing")
 	}
 	var dev *DeviceSimulator
-	_, dev, addr, cleanup = startTestGnmiServerWithCatalogN(t, cat, ifCount)
+	_, dev, addr, cleanup = startTestGnmiServerWithDevice(t, cat, newMX10004TestDevice(t, ifCount))
 	dev.cachedSysName.Store(mx10004TestSysName)
 	// The catalogue reads MTU and speed from the device's IF-MIB rows. Only
 	// those columns are added, so the test device keeps its interface names.
@@ -188,6 +189,18 @@ func startMX10004ServerN(t *testing.T, ifCount int) (addr string, cleanup func()
 		return true
 	})
 	return addr, cleanup
+}
+
+// newMX10004TestDevice is newTestGnmiDevice with ifCount ports plus one
+// logical unit, TestIf1.0 at ifIndex ifCount+1, the shape of the shipped
+// profile's xe-0/0/0.0.
+func newMX10004TestDevice(t *testing.T, ifCount int) *DeviceSimulator {
+	t.Helper()
+	dev := newTestGnmiDevice(t, ifCount+1)
+	unit := ifCount + 1
+	dev.resources.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", unit), "TestIf1.0")
+	dev.resources.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.3.%d", unit), "53") // propVirtual
+	return dev
 }
 
 // TestMX10004ShapeMatchesCapture compares what nl6 serves per captured
@@ -1179,14 +1192,14 @@ func TestMX10004SubinterfaceFamilyCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := newCatalogResolver(newTestGnmiDevice(t, 2), cats["juniper_mx10004"])
+	r := newCatalogResolver(newMX10004TestDevice(t, 2), cats["juniper_mx10004"])
 	// The issue's acceptance path: a subscription to the counters
 	// container renders the whole subinterface through the subtree alias.
 	p := pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state/counters")
 	now := time.Now()
 	first, err := r.Resolve(p, now)
-	if err != nil || len(first) != 2 {
-		t.Fatalf("resolve: %v, %d notifications (want one per interface)", err, len(first))
+	if err != nil || len(first) != 1 {
+		t.Fatalf("resolve: %v, %d notifications (want one, for the logical unit)", err, len(first))
 	}
 	later, err := r.Resolve(p, now.Add(time.Hour))
 	if err != nil {

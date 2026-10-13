@@ -113,6 +113,15 @@ type Interfaces struct {
 	HCOutStep   uint64 `json:"hc_out_step"`
 }
 
+// Unit is a logical unit the device configures on a port, named
+// <parent>.<unit> as Junos names it. Inet is the address `show interfaces
+// terse` lists for it; empty lists no family.
+type Unit struct {
+	Parent string `json:"parent"`
+	Unit   int    `json:"unit"`
+	Inet   string `json:"inet,omitempty"`
+}
+
 type SNMPRow struct {
 	OID      string `json:"oid"`
 	Response string `json:"response"`
@@ -135,7 +144,9 @@ type Model struct {
 	SoftwareRev    string          `json:"software_rev"`
 	RoutingEngines []RoutingEngine `json:"routing_engines"`
 	Interfaces     Interfaces      `json:"interfaces"`
-	ChassisEntity  []SNMPRow       `json:"chassis_entity"`
+	// Units follow the physical ports in ifIndex order.
+	Units         []Unit    `json:"units,omitempty"`
+	ChassisEntity []SNMPRow `json:"chassis_entity"`
 }
 
 type Port struct {
@@ -145,6 +156,16 @@ type Port struct {
 	SpeedMbps int
 	Port      Component
 	Xcvr      Component
+}
+
+// LogicalUnit is an expanded Unit: its own ifIndex after the last port, and
+// the port it belongs to.
+type LogicalUnit struct {
+	IfIndex int
+	IfName  string
+	Unit    int
+	Inet    string
+	Parent  Port
 }
 
 type PIC struct {
@@ -179,6 +200,7 @@ type Chassis struct {
 	FPCs       []FPC
 	Slots      []SlotView
 	Ports      []Port // every port, in ifIndex order
+	Units      []LogicalUnit
 }
 
 func loadModel() (*Model, error) {
@@ -284,6 +306,9 @@ func Expand(m *Model) (*Chassis, error) {
 	if len(c.Ports) > 255 {
 		return nil, fmt.Errorf("%d ports: ifPhysAddress encodes the ifIndex in one byte, at most 255", len(c.Ports))
 	}
+	if err := c.expandUnits(m); err != nil {
+		return nil, err
+	}
 	names, serials := map[string]bool{}, map[string]bool{}
 	for _, comp := range c.Components {
 		if names[comp.Name] {
@@ -295,6 +320,46 @@ func Expand(m *Model) (*Chassis, error) {
 		names[comp.Name], serials[comp.SerialNo] = true, true
 	}
 	return c, nil
+}
+
+// maxJunosUnit is the highest logical unit number Junos accepts.
+const maxJunosUnit = 16385
+
+// expandUnits numbers the units after the last port, each on a port the
+// chassis has.
+func (c *Chassis) expandUnits(m *Model) error {
+	ports := map[string]Port{}
+	for _, p := range c.Ports {
+		ports[p.IfName] = p
+	}
+	seen := map[string]bool{}
+	for _, u := range m.Units {
+		parent, ok := ports[u.Parent]
+		if !ok {
+			return fmt.Errorf("units: parent %s is not a port", u.Parent)
+		}
+		if u.Unit < 0 || u.Unit > maxJunosUnit {
+			return fmt.Errorf("units: %s unit %d outside 0..%d", u.Parent, u.Unit, maxJunosUnit)
+		}
+		name := fmt.Sprintf("%s.%d", u.Parent, u.Unit)
+		if seen[name] {
+			return fmt.Errorf("units: %s defined twice", name)
+		}
+		seen[name] = true
+		c.Units = append(c.Units, LogicalUnit{IfIndex: len(c.Ports) + len(c.Units) + 1, IfName: name, Unit: u.Unit, Inet: u.Inet, Parent: parent})
+	}
+	return nil
+}
+
+// UnitsOf returns the logical units on the port named port, in model order.
+func (c *Chassis) UnitsOf(port string) []LogicalUnit {
+	var out []LogicalUnit
+	for _, u := range c.Units {
+		if u.Parent.IfName == port {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // Component returns the expanded component named name, or nil.

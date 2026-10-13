@@ -213,11 +213,14 @@ Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queue
 That set comes from the MX10004 hardware reference set behind nl6#775, which is not public; the vJunos capture sent eleven buffer and drop leaves more.
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
+The subinterfaces are the logical units the device configures, which is one: `xe-0/0/0.0`, unit 0 of `xe-0/0/0`.
+It is also an `ifTable` row of its own at ifIndex 73 and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
+No other port has a subinterface, and the unit is not listed as an interface.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
 A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` is a subtree alias scoped by `alias_leaves`.
 It renders the 8 `state/counters/*` leaves, the 16 `ipv4/state/counters/*` and `ipv6/state/counters/*` leaves and `init-time`, as the Junos sensor does.
 The subinterface `state/*` leaves come only from a subscription to `.../subinterface/state`.
-The subinterface totals ride the interface's HC counters and agree with SNMP.
+The subinterface totals ride the unit's own `ifTable` row's HC counters and agree with SNMP.
 The family counters are independent synthetic counters at their own rates; nothing ties them to the totals, so do not derive a remainder from them.
 BGP serves the two neighbours' state (with `state/peer-group`), their `afi-safis/afi-safi` entries for `IPV4_UNICAST` (28 leaves, with the `ipv4-unicast` containers) and `IPV6_UNICAST` (27 leaves, with the `ipv6-unicast` containers), and two peer-groups, `EBGP-TRANSIT` (external, both neighbours) and `IBGP-CORE` (internal, no members), each with afi-safi entries (21 and 20 leaves, including `total-paths` and `total-prefixes`); the transit group's totals stay above its members' received counts, and the peer-group prefix counters are outside the pinned model and declared as extra leaves because hardware sends them.
 The module names `openconfig-interfaces`, `openconfig-platform`, `openconfig-system` and `openconfig-network-instance` are accepted as the `openconfig` origin and `Native` as `juniper`, which is what an operator types against a real MX.
