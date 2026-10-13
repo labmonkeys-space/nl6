@@ -881,17 +881,12 @@ func scanPerTypeGnmiCatalogs(resourceDir string, base map[string]*gnmiCatalog) (
 }
 
 // LoadGnmiCatalogs populates gnmiCatalogsByType. overridePath, when
-// non-empty, replaces every type's catalogue with that one file.
+// non-empty, replaces the catalogue of every type that carries one. A type
+// without a catalogue keeps none: it has no vendor profile for the override
+// to stand in for, and giving it one would put the override's components
+// subtree in front of the optical resolver on ciena_waveserver5 and gate
+// every legacy type's encodings by the override's.
 func (sm *SimulatorManager) LoadGnmiCatalogs(overridePath, resourceDir string) error {
-	if overridePath != "" {
-		c, err := loadGnmiCatalogFile(overridePath)
-		if err != nil {
-			return err
-		}
-		sm.gnmiCatalogsByType = map[string]*gnmiCatalog{"*": c}
-		log.Printf("gNMI catalog: %s overrides every device type", overridePath)
-		return nil
-	}
 	embedded, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
 		return err
@@ -899,6 +894,21 @@ func (sm *SimulatorManager) LoadGnmiCatalogs(overridePath, resourceDir string) e
 	byType, err := scanPerTypeGnmiCatalogs(resourceDir, embedded)
 	if err != nil {
 		return err
+	}
+	if overridePath != "" {
+		c, err := loadGnmiCatalogFile(overridePath)
+		if err != nil {
+			return err
+		}
+		slugs := make([]string, 0, len(byType))
+		for slug := range byType {
+			byType[slug] = c
+			slugs = append(slugs, slug)
+		}
+		sort.Strings(slugs)
+		log.Printf("gNMI catalog: %s overrides %s", overridePath, strings.Join(slugs, ", "))
+		sm.gnmiCatalogsByType = byType
+		return nil
 	}
 	sm.gnmiCatalogsByType = byType
 	for slug, c := range byType {
@@ -911,9 +921,6 @@ func (sm *SimulatorManager) LoadGnmiCatalogs(overridePath, resourceDir string) e
 func (sm *SimulatorManager) gnmiCatalogFor(d *DeviceSimulator) *gnmiCatalog {
 	if sm == nil || sm.gnmiCatalogsByType == nil {
 		return nil
-	}
-	if c, ok := sm.gnmiCatalogsByType["*"]; ok {
-		return c
 	}
 	return sm.gnmiCatalogsByType[resourceDirName(d.resourceFile)]
 }

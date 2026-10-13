@@ -993,26 +993,38 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		slot := idx - 1
 
 		// Prefer ifHighSpeed (Mbps → bps) over ifSpeed (bps, capped ~4 Gbps).
-		// A row that declares 0 is a zero-rate interface (an IOS-XR
-		// Loopback or Null0) and carries no traffic; only a missing or
-		// unparsable row falls back to the default.
+		// ifHighSpeed is in units of 1 Mbit/s (RFC 2863), so a sub-megabit
+		// link legitimately declares 0 there and carries its rate in ifSpeed
+		// alone; that case takes ifSpeed. A row that declares 0 in BOTH, or
+		// 0 in ifHighSpeed with no ifSpeed row, is a zero-rate interface (an
+		// IOS-XR Loopback or Null0) and carries no traffic. Only a missing
+		// or unparsable speed falls back to the default.
 		var speedBps uint64 = 1_000_000_000 // default 1 Gbps
+		readSpeed := func(oid string) (uint64, bool) {
+			v, ok := resources.oidIndex.Load(oid)
+			if !ok {
+				return 0, false
+			}
+			s, ok := v.(string)
+			if !ok {
+				return 0, false
+			}
+			n, err := strconv.ParseUint(s, 10, 64)
+			return n, err == nil
+		}
 		highSpeedOID := fmt.Sprintf(ifXTablePrefix+"15.%d", idx)
-		if v, ok := resources.oidIndex.Load(highSpeedOID); ok {
-			if s, ok := v.(string); ok {
-				if mbps, err := strconv.ParseUint(s, 10, 64); err == nil {
-					speedBps = mbps * 1_000_000
-				}
-			}
-		} else {
-			ifSpeedOID := fmt.Sprintf(ifTablePrefix+"5.%d", idx)
-			if v, ok := resources.oidIndex.Load(ifSpeedOID); ok {
-				if s, ok := v.(string); ok {
-					if bps, err := strconv.ParseUint(s, 10, 64); err == nil {
-						speedBps = bps
-					}
-				}
-			}
+		ifSpeedOID := fmt.Sprintf(ifTablePrefix+"5.%d", idx)
+		mbps, haveHigh := readSpeed(highSpeedOID)
+		bps, haveSpeed := readSpeed(ifSpeedOID)
+		switch {
+		case haveHigh && mbps > 0:
+			speedBps = mbps * 1_000_000
+		case haveHigh && haveSpeed:
+			speedBps = bps // 0 when both rows say 0
+		case haveHigh:
+			speedBps = 0
+		case haveSpeed:
+			speedBps = bps
 		}
 		ic.ifSpeedBps[slot] = speedBps
 

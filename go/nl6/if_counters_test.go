@@ -848,3 +848,24 @@ func TestIfCounterCycler_ExplicitZeroSpeedCarriesNoTraffic(t *testing.T) {
 		t.Errorf("ifHCInOctets.2 = %q, want traffic at the 1 Gbit/s default", v)
 	}
 }
+
+// ifHighSpeed is in units of 1 Mbit/s, so a sub-megabit link declares 0
+// there and carries its rate in ifSpeed alone. That row must take ifSpeed,
+// not read as a zero-rate interface. The zero-rate case is both rows at 0.
+func TestIfCounterCycler_SubMegabitLinkTakesIfSpeed(t *testing.T) {
+	res := buildSparseTestResources(t, []int{1, 2, 3}, 1_000_000_000)
+	res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.15.1", "0")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.5.1", "64000")
+	res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.15.2", "0")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.5.2", "0")
+	res.oidIndex.Delete(".1.3.6.1.2.1.31.1.1.1.15.3")
+	res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.5.3", "2000000")
+	c := &MetricsCycler{}
+	c.InitIfCounters(res, 7)
+	ic := c.ifCounters.Load()
+	for i, want := range []uint64{64_000, 0, 2_000_000} {
+		if got := ic.ifSpeedBps[i]; got != want {
+			t.Errorf("ifIndex %d: speed %d bit/s, want %d", i+1, got, want)
+		}
+	}
+}

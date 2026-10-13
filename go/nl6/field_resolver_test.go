@@ -7,7 +7,9 @@ package main
 
 import (
 	"net"
+	"os"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -166,5 +168,43 @@ func TestManagerFieldResolver_SerialAndChassisID(t *testing.T) {
 	}
 	if got := sm.Serial("not-an-ip"); got != "" {
 		t.Errorf("Serial(bad IP): got %q, want empty", got)
+	}
+}
+
+// TestEveryDeviceTypeHasALabelAndATier requires every shipped resource
+// directory to have a deviceTypeLabels entry, and every label to have a
+// TIER_RANK entry in the web console. A slug without a label renders
+// {{.Model}} as a title-cased slug ("Juniper Mx10004"), and a label the
+// console does not know drops the device into the structural fallback band
+// below its typed neighbours. juniper_mx10004 shipped both ways.
+func TestEveryDeviceTypeHasALabelAndATier(t *testing.T) {
+	entries, err := os.ReadDir("resources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := os.ReadFile("web/topology_logic.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tierRank := regexp.MustCompile(`'([^']+)':\s*\d`)
+	tiers := map[string]bool{}
+	for _, m := range tierRank.FindAllStringSubmatch(string(js), -1) {
+		tiers[m[1]] = true
+	}
+	if len(tiers) < 20 {
+		t.Fatalf("parsed only %d TIER_RANK labels from web/topology_logic.js; the table's shape changed", len(tiers))
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
+			continue
+		}
+		label, ok := deviceTypeLabels[e.Name()]
+		if !ok {
+			t.Errorf("resources/%s has no deviceTypeLabels entry", e.Name())
+			continue
+		}
+		if !tiers[label] {
+			t.Errorf("label %q (resources/%s) has no TIER_RANK entry in web/topology_logic.js", label, e.Name())
+		}
 	}
 }
