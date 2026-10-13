@@ -20,7 +20,8 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:1,6,24,53,161"
         }
       ],
       "leaves": {
@@ -37,7 +38,8 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:1,6,53,161"
         }
       ],
       "leaves": {
@@ -47,7 +49,7 @@
         "in-fcs-errors": "const:0",
         "in-multicast-pkts": "ifcounter:ifHCInMulticastPkts",
         "in-octets": "ifcounter:ifHCInOctets",
-        "in-pkts": "ifcounter:ifHCInUcastPkts",
+        "in-pkts": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts",
         "in-unicast-pkts": "ifcounter:ifHCInUcastPkts",
         "in-unknown-protos": "const:0",
         "last-clear": "timestamp:boot",
@@ -56,7 +58,7 @@
         "out-errors": "ifcounter:ifOutErrors",
         "out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts",
         "out-octets": "ifcounter:ifHCOutOctets",
-        "out-pkts": "ifcounter:ifHCOutUcastPkts",
+        "out-pkts": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts",
         "out-unicast-pkts": "ifcounter:ifHCOutUcastPkts"
       },
       "extra": {
@@ -76,13 +78,11 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6,161"
         },
         {
-          "source": "static",
-          "names": [
-            "0"
-          ]
+          "source": "subinterfaces"
         }
       ],
       "leaves": {
@@ -99,33 +99,67 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6"
         },
         {
-          "source": "static",
-          "names": [
-            "0"
-          ]
+          "source": "subinterfaces"
         }
       ],
       "leaves": {
-        "in-broadcast-pkts": "counter:5",
-        "in-discards": "const:0",
-        "in-errors": "const:0",
+        "in-broadcast-pkts": "ifcounter:ifHCInBroadcastPkts",
+        "in-discards": "ifcounter:ifInDiscards",
+        "in-errors": "ifcounter:ifInErrors",
         "in-fcs-errors": "const:0",
-        "in-multicast-pkts": "counter:15",
-        "in-octets": "counter:800000",
-        "in-pkts": "counter:900",
-        "in-unicast-pkts": "counter:880",
+        "in-multicast-pkts": "ifcounter:ifHCInMulticastPkts",
+        "in-octets": "ifcounter:ifHCInOctets",
+        "in-pkts": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts",
+        "in-unicast-pkts": "ifcounter:ifHCInUcastPkts",
         "in-unknown-protos": "const:0",
         "last-clear": "timestamp:boot",
-        "out-broadcast-pkts": "counter:5",
-        "out-discards": "const:0",
-        "out-errors": "const:0",
-        "out-multicast-pkts": "counter:15",
-        "out-octets": "counter:650000",
-        "out-pkts": "counter:700",
-        "out-unicast-pkts": "counter:680"
+        "out-broadcast-pkts": "ifcounter:ifHCOutBroadcastPkts",
+        "out-discards": "ifcounter:ifOutDiscards",
+        "out-errors": "ifcounter:ifOutErrors",
+        "out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts",
+        "out-octets": "ifcounter:ifHCOutOctets",
+        "out-pkts": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts",
+        "out-unicast-pkts": "ifcounter:ifHCOutUcastPkts"
+      },
+      "extra": {
+        "last-read-time": {
+          "type": "uint64",
+          "gen": "timestamp:now"
+        }
+      },
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters",
+      "origin": "openconfig",
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces",
+          "filter": "iftype:161"
+        },
+        {
+          "source": "subinterfaces"
+        }
+      ],
+      "leaves": {
+        "in-discards": "ifcounter:ifInDiscards",
+        "in-errors": "ifcounter:ifInErrors",
+        "in-fcs-errors": "const:0",
+        "in-octets": "ifcounter:ifHCInOctets",
+        "in-pkts": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts",
+        "in-unknown-protos": "const:0",
+        "out-discards": "ifcounter:ifOutDiscards",
+        "out-errors": "ifcounter:ifOutErrors",
+        "out-octets": "ifcounter:ifHCOutOctets",
+        "out-pkts": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts"
       },
       "extra": {
         "last-read-time": {

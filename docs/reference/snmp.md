@@ -645,6 +645,10 @@ Every per-interface counter listed below is generated dynamically, not read from
 | `ifHCOutMulticastPkts` | `.12` | same shape, `mcastRatioOut` |
 | `ifHCOutBroadcastPkts` | `.13` | same shape, `bcastRatioOut` |
 
+An interface whose profile declares `ifHighSpeed` 0 (or `ifSpeed` 0 without an `ifHighSpeed` row) carries no traffic: every column above stays 0.
+A missing or unparsable speed row still means 1 Gbit/s.
+The cisco_asr9902 Loopback0 and Null0 use this.
+
 **ifXTable Counter32 shadow columns**: always equal to `uint32(HC_value & 0xFFFFFFFF)`:
 
 | Column | OID column | Shadow of |

@@ -6,6 +6,7 @@
 package main
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,5 +136,58 @@ func TestSSHLayoutsMini(t *testing.T) {
 	}
 	if !strings.Contains(ssh["show inventory"], "NAME: \"Rack 0\", DESCR: \"Test Chassis\"\nPID: T-CHASSIS         , VID: V01, SN: NL600000001") {
 		t.Errorf("show inventory entry:\n%s", ssh["show inventory"])
+	}
+}
+
+// Logical ports and subinterfaces follow the physical ports in ifTable and
+// show interfaces brief, with their own ifType, and have no entity.
+func TestLogicalPortsMini(t *testing.T) {
+	m := miniModel(t)
+	m.LogicalPorts = []LogicalPort{{IfName: "Bundle-Ether1", Short: "BE1", IfType: 161, SpeedMbps: 200000}, {IfName: "Loopback0", Short: "Lo0", IfType: 24, MTU: "1500", NoPhysAddress: true}}
+	m.Subinterfaces = []Subinterface{{Parent: "HundredGigE0/0/0/1", Index: 100}, {Parent: "Bundle-Ether1", Index: 300}}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rowMap(t, c)
+	if r["1.3.6.1.2.1.2.1.0"] != "7" {
+		t.Fatalf("ifNumber %s, want 7", r["1.3.6.1.2.1.2.1.0"])
+	}
+	for ix, want := range map[string][4]string{
+		"2": {"HundredGigE0/0/0/1", "Hu0/0/0/1", "6", "100000"},
+		"4": {"Bundle-Ether1", "BE1", "161", "200000"},
+		"5": {"Loopback0", "Lo0", "24", "0"},
+		"6": {"HundredGigE0/0/0/1.100", "Hu0/0/0/1.100", "135", "100000"},
+		"7": {"Bundle-Ether1.300", "BE1.300", "135", "200000"},
+	} {
+		got := [4]string{r["1.3.6.1.2.1.2.2.1.2."+ix], r["1.3.6.1.2.1.31.1.1.1.1."+ix], r["1.3.6.1.2.1.2.2.1.3."+ix], r["1.3.6.1.2.1.31.1.1.1.15."+ix]}
+		if got != want {
+			t.Errorf("ifIndex %s: descr, name, type, high speed %v, want %v", ix, got, want)
+		}
+		if r["1.3.6.1.2.1.31.1.1.1.6."+ix] == "" {
+			t.Errorf("ifIndex %s: no HC registration row", ix)
+		}
+	}
+	if v, ok := r["1.3.6.1.2.1.2.2.1.6.5"]; !ok || v != "" || r["1.3.6.1.2.1.2.2.1.4.5"] != "1500" {
+		t.Errorf("Loopback0 ifPhysAddress %q (present %v), ifMtu %q; want empty and 1500", v, ok, r["1.3.6.1.2.1.2.2.1.4.5"])
+	}
+	if r["1.3.6.1.2.1.2.2.1.6.4"] == "" || r["1.3.6.1.2.1.2.2.1.4.4"] != "1514" {
+		t.Error("Bundle-Ether1 lost its ifPhysAddress or the default ifMtu")
+	}
+	for oid, v := range r {
+		if strings.HasPrefix(oid, "1.3.6.1.2.1.47.1.3.2.1.2.") && slices.Contains([]string{"4", "5", "6", "7"}, strings.TrimPrefix(v, "1.3.6.1.2.1.2.2.1.1.")) {
+			t.Errorf("logical ifIndex %s has an entAliasMapping row", v)
+		}
+	}
+	brief := ""
+	for _, e := range RenderSSHEntries(c) {
+		if e.Command == "show interfaces brief" {
+			brief = e.Response
+		}
+	}
+	for _, n := range []string{"Bundle-Ether1 ", "Loopback0 ", "HundredGigE0/0/0/1.100 ", "Bundle-Ether1.300 "} {
+		if !strings.Contains(brief, n) {
+			t.Errorf("%q missing from show interfaces brief", n)
+		}
 	}
 }

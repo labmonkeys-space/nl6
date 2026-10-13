@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -636,11 +637,18 @@ func deviceIfNameFn(device *DeviceSimulator) func(int) string {
 // match `resources.go` normalisation (all OID keys get a leading dot
 // when loaded). sync.Map read is lock-free and constant-time.
 func lookupIfDescr(device *DeviceSimulator, ifIndex int) string {
+	return lookupIfColumn(device, ifTablePrefix+"2.", ifIndex)
+}
+
+// lookupIfColumn returns the device's static IF-MIB value for ifIndex in
+// the column whose OID, with its trailing dot, is colPrefix (such as
+// ifTablePrefix+"2." for ifDescr), or "" when the row is absent or not a
+// string.
+func lookupIfColumn(device *DeviceSimulator, colPrefix string, ifIndex int) string {
 	if device == nil || device.resources == nil || device.resources.oidIndex == nil {
 		return ""
 	}
-	key := fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", ifIndex)
-	v, ok := device.resources.oidIndex.Load(key)
+	v, ok := device.resources.oidIndex.Load(colPrefix + strconv.Itoa(ifIndex))
 	if !ok {
 		return ""
 	}

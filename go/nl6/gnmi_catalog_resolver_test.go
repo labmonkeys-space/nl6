@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -616,5 +617,94 @@ func TestCatalogResolver_AlwaysLeaf(t *testing.T) {
 	}
 	if _, err := r.Resolve(pathFromString(t, "/components/component/nothing"), time.Now()); status.Code(err) != codes.NotFound {
 		t.Fatalf("uncovered entry must not render the always-leaf: %v", err)
+	}
+}
+
+// newNamedIfDevice is a device whose IF-MIB rows carry the given ifDescr
+// and ifType, ifIndex 1.. in order.
+func newNamedIfDevice(t *testing.T, ifs [][2]string) *DeviceSimulator {
+	t.Helper()
+	res := &DeviceResources{oidIndex: &sync.Map{}}
+	for i, f := range ifs {
+		ix := strconv.Itoa(i + 1)
+		res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.15."+ix, "1000")
+		res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.6."+ix, "0")
+		res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.10."+ix, "0")
+		res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.2."+ix, f[0])
+		res.oidIndex.Store(".1.3.6.1.2.1.2.2.1.3."+ix, f[1])
+	}
+	mc := &MetricsCycler{}
+	mc.InitIfCounters(res, 1)
+	return &DeviceSimulator{ID: "named", IP: net.IPv4(10, 42, 0, 2), resources: res, metricsCycler: mc}
+}
+
+const subifCatalog = `{
+  "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "subtrees": [
+    {"path": "/interfaces/interface[name=*]/state", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "iftype:6,161"}],
+     "leaves": [{"name": "counters/in-octets", "type": "uint64", "gen": "ifcounter:ifHCInOctets"}]},
+    {"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "iftype:6"}, {"source": "subinterfaces"}],
+     "leaves": [{"name": "state/counters/in-octets", "type": "uint64", "gen": "ifcounter:ifHCInOctets"}]}
+  ]
+}`
+
+var subifDeviceIfs = [][2]string{
+	{"Hu0", "6"}, {"Hu0.100", "135"}, {"Hu0.200", "135"}, {"BE1", "161"},
+	{"BE1.300", "135"}, {"Lo0", "24"}, {"Hu1", "6"}, {"Hu1.x", "135"},
+}
+
+// The iftype filter keeps the interfaces whose ifType row it lists, so
+// loopbacks and subinterface rows stay out of the interface list.
+func TestCatalogResolver_InterfacesIfTypeFilter(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(subifCatalog), "subif.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newNamedIfDevice(t, subifDeviceIfs), cat)
+	got, err := r.Resolve(pathFromString(t, "/interfaces/interface/state/counters"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, n := range got {
+		names = append(names, n.Prefix.GetElem()[1].GetKey()["name"])
+	}
+	sort.Strings(names)
+	if strings.Join(names, ",") != "BE1,Hu0,Hu1" {
+		t.Fatalf("interfaces %v, want BE1,Hu0,Hu1", names)
+	}
+}
+
+// The subinterfaces key source yields, per parent, the index of every
+// "<parent>.<n>" IF-MIB row, and the entry reads that row's counters. A
+// parent without such rows yields no entry, so there is no index 0.
+func TestCatalogResolver_SubinterfacesKeySource(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(subifCatalog), "subif.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := newNamedIfDevice(t, subifDeviceIfs)
+	r := newCatalogResolver(d, cat)
+	ic := d.metricsCycler.ifCounters.Load()
+	got, err := r.Resolve(pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state/counters"), ic.startTime.Add(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals := map[string]string{}
+	for _, n := range got {
+		vals[pathToString(n.Prefix)] = strconv.FormatUint(n.Updates[0].Value.(uint64), 10)
+	}
+	want := map[string]int{
+		"/interfaces/interface[name=Hu0]/subinterfaces/subinterface[index=100]": 2,
+		"/interfaces/interface[name=Hu0]/subinterfaces/subinterface[index=200]": 3,
+	}
+	if len(vals) != len(want) {
+		t.Fatalf("entries %v, want %v", vals, want)
+	}
+	for p, idx := range want {
+		if w := ic.GetDynamicAt(ifXTablePrefix+"6."+strconv.Itoa(idx), 5); vals[p] != w {
+			t.Errorf("%s in-octets %s, want ifIndex %d's %s", p, vals[p], idx, w)
+		}
 	}
 }

@@ -32,6 +32,7 @@ func newTestGnmiDevice(t *testing.T, ifCount int) *DeviceSimulator {
 	for i := 0; i < ifCount; i++ {
 		ifIndex := i + 1
 		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.2.%d", ifIndex), fmt.Sprintf("TestIf%d", ifIndex))
+		res.oidIndex.Store(fmt.Sprintf(".1.3.6.1.2.1.2.2.1.3.%d", ifIndex), "6") // ethernetCsmacd, for iftype key filters
 	}
 	mc := &MetricsCycler{}
 	mc.InitIfCounters(res, 1)

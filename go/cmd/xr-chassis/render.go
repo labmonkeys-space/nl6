@@ -57,10 +57,17 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		k := uint64((p.IfIndex - 1) % in.HCPeriod)
 		add("1.3.6.1.2.1.2.2.1.1."+ix, ix)
 		add("1.3.6.1.2.1.2.2.1.2."+ix, p.IfName)
-		add("1.3.6.1.2.1.2.2.1.3."+ix, "6")
-		add("1.3.6.1.2.1.2.2.1.4."+ix, in.MTU)
+		add("1.3.6.1.2.1.2.2.1.3."+ix, strconv.Itoa(p.IfType))
+		mtu, mac := in.MTU, fmt.Sprintf("%s%02x", in.MACPrefix, p.IfIndex)
+		if p.MTU != "" {
+			mtu = p.MTU
+		}
+		if p.NoPhysAddress {
+			mac = ""
+		}
+		add("1.3.6.1.2.1.2.2.1.4."+ix, mtu)
 		add("1.3.6.1.2.1.2.2.1.5."+ix, ifSpeedFor(p.SpeedMbps))
-		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, p.IfIndex))
+		add("1.3.6.1.2.1.2.2.1.6."+ix, mac)
 		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
 		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
 		add("1.3.6.1.2.1.31.1.1.1.1."+ix, p.Short)
@@ -124,6 +131,9 @@ func entityRows(c *Chassis) ([]SNMPRow, error) {
 		next++
 	}
 	for _, p := range c.Ports {
+		if p.Component == "" {
+			continue // a logical interface has no physical entity
+		}
 		e, ok := idx[p.Component]
 		if !ok {
 			return nil, fmt.Errorf("port %s: component %s is not an entity", p.IfName, p.Component)

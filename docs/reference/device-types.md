@@ -10,7 +10,7 @@ See [Resource files](resource-files.md) for the JSON format.
 | Device | Ports | Description |
 |--------|-------|-------------|
 | Cisco ASR9K | 48 | High-end service provider router |
-| Cisco ASR 9902 | 50 | Fixed 2RU IOS-XR 24.2.2 router: two A99-RP-F, one ASR-9902-LC with 48 front ports in two slices, two management ports; SNMP and CLI inventory generated from one chassis model |
+| Cisco ASR 9902 | 50 | Fixed 2RU IOS-XR 24.2.2 router: two A99-RP-F, one ASR-9902-LC with 48 front ports in two slices, two management ports, Bundle-Ether1, BVI1, Loopback0, Null0 and three VLAN subinterfaces; SNMP, CLI and gNMI interfaces and inventory generated from one chassis model |
 | Cisco CRS-X | 144 | Carrier-class router, 16-slot CRS-X |
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |
@@ -20,6 +20,8 @@ See [Resource files](resource-files.md) for the JSON format.
 The Juniper MX10004 also serves a gNMI catalogue: interface state and counters with Junos per-queue counters, subinterfaces, platform components with temperature and properties, CPU, system CPU and memory, system state, BGP neighbours, and the native packet-usage, fabric and FPC environment sensors under the `juniper` origin.
 The fabric sensor's shape comes from a hardware capture; the environment sensor is YANG-derived from `junos-fpc-env.yang` and may differ from what hardware renders.
 The Cisco ASR 9902 serves a gNMI catalogue for interface and subinterface counters, platform components, system CPUs and system memory.
+Its interface counters cover the physical ports and the logical interfaces.
+Its subinterface counters cover only the VLAN subinterfaces, as [gNMI](gnmi.md#ios-xr-interfaces) describes.
 Its leaf sets, prefix depths and per-component leaf groups are shape-verified against a gnmic capture of an ASR 9902 on IOS-XR 24.2.2; values are synthetic.
 Responses carry the subtree's YANG module as prefix origin, as IOS-XR does.
 JSON_IETF answers with one update per requested node, its leaves nested as IOS-XR documents it; see [gNMI](gnmi.md#ios-xr-json_ietf-layout).

@@ -248,7 +248,7 @@ func decodeJSONIETF(t *testing.T, b []byte) any {
 // layout's leaves as path => JSON class.
 func leavesOf(t *testing.T, layout, origin, path string) map[string]string {
 	t.Helper()
-	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, asr9902Catalog(t, layout), 2)
+	_, _, addr, cleanup := startTestGnmiServerWithDevice(t, asr9902Catalog(t, layout), newASR9902Device(t))
 	defer cleanup()
 	resp, err := getOrigin(t, addr, gnmipb.Encoding_JSON_IETF, origin, path)
 	if err != nil {

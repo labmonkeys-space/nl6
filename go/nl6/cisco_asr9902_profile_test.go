@@ -42,8 +42,8 @@ func TestCiscoAsr9902_Identity(t *testing.T) {
 	if d := snmp["1.3.6.1.2.1.1.1.0"]; !strings.Contains(d, "24.2.2") || !strings.Contains(d, "ASR9K") {
 		t.Errorf("sysDescr %q, want the IOS-XR 24.2.2 ASR9K form", d)
 	}
-	if snmp["1.3.6.1.2.1.2.1.0"] != "50" {
-		t.Errorf("ifNumber %q, want 50", snmp["1.3.6.1.2.1.2.1.0"])
+	if snmp["1.3.6.1.2.1.2.1.0"] != "57" {
+		t.Errorf("ifNumber %q, want 57 (50 physical, 4 logical, 3 VLAN subinterfaces)", snmp["1.3.6.1.2.1.2.1.0"])
 	}
 }
 
@@ -81,7 +81,9 @@ func TestCiscoAsr9902_SSHAgreesWithSNMP(t *testing.T) {
 }
 
 // Nothing from the asr9k clone survives: no ASR 9010, no RSP, no bundle,
-// no interface the ASR 9902 does not have.
+// no interface the ASR 9902 does not have. The generated chassis parts carry
+// the model's own Bundle-Ether1 (nl6#810), so only the hand-kept parts are
+// checked for a bundle.
 func TestCiscoAsr9902_NoAsr9kLeftovers(t *testing.T) {
 	files, err := filepath.Glob("resources/cisco_asr9902/*.json")
 	if err != nil || len(files) == 0 {
@@ -93,6 +95,9 @@ func TestCiscoAsr9902_NoAsr9kLeftovers(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, bad := range []string{"ASR 9010", "ASR9010", "A9K-RSP", "RSP880", "Bundle-Ether", "0/2/0/", "1.3.6.1.4.1.9.12.3.1.3.1736", "1.3.6.1.4.1.9.12.3.1.3.1186"} {
+			if bad == "Bundle-Ether" && strings.HasSuffix(f, "_chassis.json") {
+				continue
+			}
 			if strings.Contains(string(b), bad) {
 				t.Errorf("%s still carries %q from asr9k", f, bad)
 			}

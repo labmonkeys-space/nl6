@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,13 +22,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// xrFixture is a reduced hardware fixture: wildcarded prefixes and the
-// JSON class each leaf showed.
+// xrFixture is a reduced hardware fixture: wildcarded prefixes, the JSON
+// class each leaf showed and whether every notification of its prefixes
+// carried it.
 type xrFixture struct {
 	Prefixes []string `json:"prefixes"`
 	Leaves   []struct {
-		Path  string `json:"path"`
-		Class string `json:"class"`
+		Path   string `json:"path"`
+		Class  string `json:"class"`
+		Always bool   `json:"always"`
 	} `json:"leaves"`
 }
 
@@ -81,8 +84,11 @@ func classProblems(class string, kinds map[string]bool) []string {
 }
 
 // TestASR9902ShapeMatchesCapture subscribes ONCE in PROTO to each fixture's
-// path with the module origin gnmic used and requires the served leaf set,
-// prefix forms and value classes to equal the fixture's.
+// path with the module origin gnmic used, on a device with the shipped
+// cisco_asr9902 interfaces, and requires the served leaf set, prefix forms,
+// value classes and always flags to equal the fixture's. A leaf is always
+// when every notification of the prefixes it appears under carries it, as
+// go/cmd/gnmi-shape reduces it.
 func TestASR9902ShapeMatchesCapture(t *testing.T) {
 	cats, err := loadEmbeddedGnmiCatalogs()
 	if err != nil {
@@ -92,7 +98,7 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 	if cat == nil {
 		t.Fatal("embedded cisco_asr9902 catalogue missing")
 	}
-	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, cat, 4)
+	_, _, addr, cleanup := startTestGnmiServerWithDevice(t, cat, newASR9902Device(t))
 	defer cleanup()
 	files, _ := filepath.Glob("testdata/gnmi/cisco_asr9902/*-hardware.json")
 	if len(files) != len(xrSubscriptions) {
@@ -114,20 +120,31 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			gotLeaves, gotPrefixes := map[string]map[string]bool{}, map[string]bool{}
+			gotLeaves, gotPrefixes := map[string]map[string]bool{}, map[string]int{}
+			leafSeen, leafPrefixes := map[string]int{}, map[string]map[string]bool{}
 			for _, r := range resps {
 				n := r.GetUpdate()
 				if n == nil {
 					continue
 				}
 				pfx := wildcardKeys(pathToString(n.GetPrefix()))
-				gotPrefixes[n.GetPrefix().GetOrigin()+":"+pfx] = true
+				pkey := n.GetPrefix().GetOrigin() + ":" + pfx
+				gotPrefixes[pkey]++
+				seen := map[string]bool{}
 				for _, u := range n.GetUpdate() {
 					full := strings.TrimSuffix(pfx, "/") + "/" + strings.TrimPrefix(wildcardKeys(pathToString(u.GetPath())), "/")
 					if gotLeaves[full] == nil {
 						gotLeaves[full] = map[string]bool{}
 					}
 					gotLeaves[full][typedValueKind(u.GetVal(), gnmipb.Encoding_PROTO)] = true
+					if !seen[full] {
+						seen[full] = true
+						leafSeen[full]++
+						if leafPrefixes[full] == nil {
+							leafPrefixes[full] = map[string]bool{}
+						}
+						leafPrefixes[full][pkey] = true
+					}
 				}
 			}
 			var problems []string
@@ -142,6 +159,13 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 				for _, p := range classProblems(l.Class, kinds) {
 					problems = append(problems, p+": "+l.Path)
 				}
+				total := 0
+				for p := range leafPrefixes[l.Path] {
+					total += gotPrefixes[p]
+				}
+				if (leafSeen[l.Path] == total) != l.Always {
+					problems = append(problems, fmt.Sprintf("always %v, fixture %v: %s", leafSeen[l.Path] == total, l.Always, l.Path))
+				}
 			}
 			for l := range gotLeaves {
 				if !want[l] {
@@ -154,7 +178,7 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 				}
 			}
 			for _, p := range fx.Prefixes {
-				if !gotPrefixes[p] {
+				if gotPrefixes[p] == 0 {
 					problems = append(problems, "fixture prefix "+p+" never served")
 				}
 			}

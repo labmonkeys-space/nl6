@@ -1,5 +1,5 @@
 {
-  "comment": "IOS-XR 24.2.2 ASR 9902 chassis model. Component names, types, parents and descriptions follow what an ASR 9902 reports; optics are data-sheet parts; serials and MACs are synthetic. Edit this file and run make gen-xr-chassis.",
+  "comment": "IOS-XR 24.2.2 ASR 9902 chassis model. Component names, types, parents and descriptions follow what an ASR 9902 reports; optics are data-sheet parts; serials and MACs are synthetic. The logical interface and VLAN subinterface kinds follow what an ASR 9902 reports; which ones exist, their ifTypes (ieee8023adLag, propVirtual, softwareLoopback, other, l2vlan) and speeds are chosen, not captured. Edit this file and run make gen-xr-chassis.",
   "hardware_rev": "V01",
   "software_rev": "24.2.2",
   "vendor_types": {
@@ -4609,6 +4609,17 @@
       "short": "Mg0/RP1/CPU0/0",
       "speed_mbps": 1000
     }
+  ],
+  "logical_ports": [
+    {"if_name": "Bundle-Ether1", "short": "BE1", "if_type": 161, "speed_mbps": 200000},
+    {"if_name": "BVI1", "short": "BV1", "if_type": 53, "speed_mbps": 10000},
+    {"if_name": "Loopback0", "short": "Lo0", "if_type": 24, "speed_mbps": 0, "mtu": "1500", "no_phys_address": true},
+    {"if_name": "Null0", "short": "Nu0", "if_type": 1, "speed_mbps": 0, "mtu": "1500", "no_phys_address": true}
+  ],
+  "subinterfaces": [
+    {"parent": "HundredGigE0/0/0/8", "index": 100},
+    {"parent": "HundredGigE0/0/0/8", "index": 200},
+    {"parent": "Bundle-Ether1", "index": 300}
   ],
   "platform": [
     {

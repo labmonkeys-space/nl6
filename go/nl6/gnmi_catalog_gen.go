@@ -118,10 +118,18 @@ var ifCounterColumns = map[string]struct {
 	"ifOutErrors":          {ifTablePrefix, colIfOutErrors},
 }
 
+// genIfCounter reads one IF-MIB counter column, or the sum of several
+// joined by "+" (OpenConfig in-pkts is unicast plus multicast plus
+// broadcast).
 func genIfCounter(arg string) (gnmiLeafGen, error) {
-	col, ok := ifCounterColumns[arg]
-	if !ok {
-		return nil, fmt.Errorf("unknown IF-MIB column %q", arg)
+	names := strings.Split(arg, "+")
+	cols := make([]string, 0, len(names))
+	for _, n := range names {
+		col, ok := ifCounterColumns[n]
+		if !ok {
+			return nil, fmt.Errorf("unknown IF-MIB column %q", n)
+		}
+		cols = append(cols, col.prefix+strconv.Itoa(col.column)+".")
 	}
 	return func(ctx *gnmiGenCtx) (any, bool) {
 		if ctx.dev == nil || ctx.dev.metricsCycler == nil || ctx.ifIndex == 0 {
@@ -131,8 +139,19 @@ func genIfCounter(arg string) (gnmiLeafGen, error) {
 		if ic == nil {
 			return nil, false
 		}
-		oid := col.prefix + strconv.Itoa(col.column) + "." + strconv.Itoa(ctx.ifIndex)
-		return ic.GetDynamicAt(oid, ctx.t), true
+		ix := strconv.Itoa(ctx.ifIndex)
+		if len(cols) == 1 {
+			return ic.GetDynamicAt(cols[0]+ix, ctx.t), true
+		}
+		var sum uint64
+		for _, c := range cols {
+			v, err := strconv.ParseUint(ic.GetDynamicAt(c+ix, ctx.t), 10, 64)
+			if err != nil {
+				return nil, false
+			}
+			sum += v
+		}
+		return strconv.FormatUint(sum, 10), true
 	}, nil
 }
 
@@ -264,15 +283,11 @@ func genIfMIB(arg string) (gnmiLeafGen, error) {
 		return nil, fmt.Errorf("unknown static IF-MIB column %q", arg)
 	}
 	return func(ctx *gnmiGenCtx) (any, bool) {
-		if ctx.ifIndex == 0 || ctx.dev == nil || ctx.dev.resources == nil || ctx.dev.resources.oidIndex == nil {
+		if ctx.ifIndex == 0 {
 			return nil, false
 		}
-		v, ok := ctx.dev.resources.oidIndex.Load(prefix + strconv.Itoa(ctx.ifIndex))
-		if !ok {
-			return nil, false
-		}
-		s, ok := v.(string)
-		return s, ok && s != ""
+		s := lookupIfColumn(ctx.dev, prefix, ctx.ifIndex)
+		return s, s != ""
 	}, nil
 }
 

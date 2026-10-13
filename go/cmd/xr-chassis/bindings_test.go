@@ -30,8 +30,8 @@ func TestRenderBindings(t *testing.T) {
 	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Components) != len(c.Components) || len(out.Subtrees) != 7 || out.Notification["response_origin"] != "module" {
-		t.Fatalf("%d components (want %d), %d subtrees (want 7), notification %v", len(out.Components), len(c.Components), len(out.Subtrees), out.Notification)
+	if len(out.Components) != len(c.Components) || len(out.Subtrees) != 8 || out.Notification["response_origin"] != "module" {
+		t.Fatalf("%d components (want %d), %d subtrees (want 8), notification %v", len(out.Components), len(c.Components), len(out.Subtrees), out.Notification)
 	}
 	if out.Components[0].Name != "Rack 0" || out.Components[0].SerialNo == "" {
 		t.Errorf("first component %+v, want Rack 0 with a serial", out.Components[0])

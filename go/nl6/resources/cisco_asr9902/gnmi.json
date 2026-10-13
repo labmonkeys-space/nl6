@@ -16716,7 +16716,8 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:1,6,24,53,161"
         }
       ],
       "leaves": [
@@ -16737,7 +16738,8 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:1,6,53,161"
         }
       ],
       "leaves": [
@@ -16774,7 +16776,7 @@
         {
           "name": "in-pkts",
           "type": "uint64",
-          "gen": "ifcounter:ifHCInUcastPkts"
+          "gen": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts"
         },
         {
           "name": "in-unicast-pkts",
@@ -16819,7 +16821,7 @@
         {
           "name": "out-pkts",
           "type": "uint64",
-          "gen": "ifcounter:ifHCOutUcastPkts"
+          "gen": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts"
         },
         {
           "name": "out-unicast-pkts",
@@ -16843,13 +16845,11 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6,161"
         },
         {
-          "source": "static",
-          "names": [
-            "0"
-          ]
+          "source": "subinterfaces"
         }
       ],
       "leaves": [
@@ -16870,30 +16870,28 @@
       "module": "openconfig-interfaces",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6"
         },
         {
-          "source": "static",
-          "names": [
-            "0"
-          ]
+          "source": "subinterfaces"
         }
       ],
       "leaves": [
         {
           "name": "in-broadcast-pkts",
           "type": "uint64",
-          "gen": "counter:5"
+          "gen": "ifcounter:ifHCInBroadcastPkts"
         },
         {
           "name": "in-discards",
           "type": "uint64",
-          "gen": "const:0"
+          "gen": "ifcounter:ifInDiscards"
         },
         {
           "name": "in-errors",
           "type": "uint64",
-          "gen": "const:0"
+          "gen": "ifcounter:ifInErrors"
         },
         {
           "name": "in-fcs-errors",
@@ -16903,22 +16901,22 @@
         {
           "name": "in-multicast-pkts",
           "type": "uint64",
-          "gen": "counter:15"
+          "gen": "ifcounter:ifHCInMulticastPkts"
         },
         {
           "name": "in-octets",
           "type": "uint64",
-          "gen": "counter:800000"
+          "gen": "ifcounter:ifHCInOctets"
         },
         {
           "name": "in-pkts",
           "type": "uint64",
-          "gen": "counter:900"
+          "gen": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts"
         },
         {
           "name": "in-unicast-pkts",
           "type": "uint64",
-          "gen": "counter:880"
+          "gen": "ifcounter:ifHCInUcastPkts"
         },
         {
           "name": "in-unknown-protos",
@@ -16933,37 +16931,112 @@
         {
           "name": "out-broadcast-pkts",
           "type": "uint64",
-          "gen": "counter:5"
+          "gen": "ifcounter:ifHCOutBroadcastPkts"
         },
         {
           "name": "out-discards",
           "type": "uint64",
-          "gen": "const:0"
+          "gen": "ifcounter:ifOutDiscards"
         },
         {
           "name": "out-errors",
           "type": "uint64",
-          "gen": "const:0"
+          "gen": "ifcounter:ifOutErrors"
         },
         {
           "name": "out-multicast-pkts",
           "type": "uint64",
-          "gen": "counter:15"
+          "gen": "ifcounter:ifHCOutMulticastPkts"
         },
         {
           "name": "out-octets",
           "type": "uint64",
-          "gen": "counter:650000"
+          "gen": "ifcounter:ifHCOutOctets"
         },
         {
           "name": "out-pkts",
           "type": "uint64",
-          "gen": "counter:700"
+          "gen": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts"
         },
         {
           "name": "out-unicast-pkts",
           "type": "uint64",
-          "gen": "counter:680"
+          "gen": "ifcounter:ifHCOutUcastPkts"
+        },
+        {
+          "name": "last-read-time",
+          "type": "uint64",
+          "gen": "timestamp:now"
+        }
+      ]
+    },
+    {
+      "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters",
+      "origin": "openconfig",
+      "aliases": [
+        "/interfaces/interface/subinterfaces/subinterface/state/counters"
+      ],
+      "alias_only": true,
+      "module": "openconfig-interfaces",
+      "keys": [
+        {
+          "source": "interfaces",
+          "filter": "iftype:161"
+        },
+        {
+          "source": "subinterfaces"
+        }
+      ],
+      "leaves": [
+        {
+          "name": "in-discards",
+          "type": "uint64",
+          "gen": "ifcounter:ifInDiscards"
+        },
+        {
+          "name": "in-errors",
+          "type": "uint64",
+          "gen": "ifcounter:ifInErrors"
+        },
+        {
+          "name": "in-fcs-errors",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "in-octets",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCInOctets"
+        },
+        {
+          "name": "in-pkts",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts"
+        },
+        {
+          "name": "in-unknown-protos",
+          "type": "uint64",
+          "gen": "const:0"
+        },
+        {
+          "name": "out-discards",
+          "type": "uint64",
+          "gen": "ifcounter:ifOutDiscards"
+        },
+        {
+          "name": "out-errors",
+          "type": "uint64",
+          "gen": "ifcounter:ifOutErrors"
+        },
+        {
+          "name": "out-octets",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCOutOctets"
+        },
+        {
+          "name": "out-pkts",
+          "type": "uint64",
+          "gen": "ifcounter:ifHCOutUcastPkts+ifHCOutMulticastPkts+ifHCOutBroadcastPkts"
         },
         {
           "name": "last-read-time",

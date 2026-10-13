@@ -993,11 +993,14 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		slot := idx - 1
 
 		// Prefer ifHighSpeed (Mbps → bps) over ifSpeed (bps, capped ~4 Gbps).
+		// A row that declares 0 is a zero-rate interface (an IOS-XR
+		// Loopback or Null0) and carries no traffic; only a missing or
+		// unparsable row falls back to the default.
 		var speedBps uint64 = 1_000_000_000 // default 1 Gbps
 		highSpeedOID := fmt.Sprintf(ifXTablePrefix+"15.%d", idx)
 		if v, ok := resources.oidIndex.Load(highSpeedOID); ok {
 			if s, ok := v.(string); ok {
-				if mbps, err := strconv.ParseUint(s, 10, 64); err == nil && mbps > 0 {
+				if mbps, err := strconv.ParseUint(s, 10, 64); err == nil {
 					speedBps = mbps * 1_000_000
 				}
 			}
@@ -1005,7 +1008,7 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 			ifSpeedOID := fmt.Sprintf(ifTablePrefix+"5.%d", idx)
 			if v, ok := resources.oidIndex.Load(ifSpeedOID); ok {
 				if s, ok := v.(string); ok {
-					if bps, err := strconv.ParseUint(s, 10, 64); err == nil && bps > 0 {
+					if bps, err := strconv.ParseUint(s, 10, 64); err == nil {
 						speedBps = bps
 					}
 				}

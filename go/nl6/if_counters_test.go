@@ -828,3 +828,23 @@ func TestIfCounterCycler_StateEngine_SetCountersRewire(t *testing.T) {
 	state.Broadcast(evt)
 	<-ch
 }
+
+// An interface whose resources declare ifHighSpeed 0 (an IOS-XR Loopback or
+// Null0) carries no traffic: its octet and packet counters stay 0. A missing
+// speed row still defaults to 1 Gbit/s.
+func TestIfCounterCycler_ExplicitZeroSpeedCarriesNoTraffic(t *testing.T) {
+	res := buildSparseTestResources(t, []int{1, 2}, 1_000_000_000)
+	res.oidIndex.Store(".1.3.6.1.2.1.31.1.1.1.15.1", "0")
+	res.oidIndex.Delete(".1.3.6.1.2.1.31.1.1.1.15.2")
+	c := &MetricsCycler{}
+	c.InitIfCounters(res, 7)
+	ic := c.ifCounters.Load()
+	for _, col := range []int{6, 7, 8, 9, 10, 11, 12, 13} {
+		if v := ic.GetDynamicAt(ifXTablePrefix+strconv.Itoa(col)+".1", 3600); v != "0" {
+			t.Errorf("ifXTable .%d.1 = %s at t=3600, want 0 for a zero-speed interface", col, v)
+		}
+	}
+	if v := ic.GetDynamicAt(ifXTablePrefix+"6.2", 3600); v == "0" || v == "" {
+		t.Errorf("ifHCInOctets.2 = %q, want traffic at the 1 Gbit/s default", v)
+	}
+}
