@@ -163,7 +163,7 @@ func TestFoldScalarsMatchPerLeafEncoding(t *testing.T) {
 		"/i64": int64(-3),
 		"/b":   true,
 		"/s":   `quote " and \ slash`,
-		"/d":   gnmiDecimal{val: 1.25e-5, digits: 18},
+		"/d":   newGnmiDecimal(1.25e-5, 18),
 	}
 	for rel, v := range values {
 		n := catalogNotification{Prefix: jp(t, oci, "/x"), Updates: []resolvedUpdate{ru(t, rel, v)}}

@@ -641,7 +641,7 @@ func TestGnmiEncodeTypedValueAllTypes(t *testing.T) {
 		},
 	}, {
 		name:     "decimal is an RFC 7951 string, not a number",
-		val:      gnmiDecimal{val: -8.5, digits: 2},
+		val:      newGnmiDecimal(-8.5, 2),
 		wantJSON: `"-8.50"`,
 		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
 			if tv.GetDoubleVal() != -8.5 {
@@ -652,8 +652,17 @@ func TestGnmiEncodeTypedValueAllTypes(t *testing.T) {
 			}
 		},
 	}, {
+		name:     "decimal double_val is rounded to its digits (nl6#812)",
+		val:      newGnmiDecimal(41.29807130505998, 1),
+		wantJSON: `"41.3"`,
+		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
+			if tv.GetDoubleVal() != 41.3 {
+				t.Errorf("PROTO double_val = %v, want 41.3", tv.GetDoubleVal())
+			}
+		},
+	}, {
 		name:     "high-precision decimal keeps its digits under JSON_IETF",
-		val:      gnmiDecimal{val: 0.0000980812, digits: 18},
+		val:      newGnmiDecimal(0.0000980812, 18),
 		wantJSON: `"0.000098081200000000"`,
 		checkPB: func(t *testing.T, tv *gnmipb.TypedValue) {
 			// double_val is inherently lossy at 18 fraction digits; assert it

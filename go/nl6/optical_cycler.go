@@ -719,7 +719,7 @@ func (oc *OpticalCycler) GetDynamicAt(component, leaf string, t float64) (value 
 	case OpticalLeafLinePort:
 		return oc.linePort[slot], true
 	case OpticalLeafTargetOutputPower:
-		return gnmiDecimal{val: oc.targetOutDBm[slot], digits: opticalStatFractionDigits}, true
+		return newGnmiDecimal(oc.targetOutDBm[slot], opticalStatFractionDigits), true
 	case OpticalLeafUncorrBlock:
 		// A bare counter leaf in the pinned model: no instant/avg/min/max.
 		return oc.uncorrBlocksAt(slot, t), true
@@ -751,7 +751,7 @@ func (oc *OpticalCycler) GetDynamicAt(component, leaf string, t float64) (value 
 	if name == OpticalLeafPreFECBER {
 		digits = opticalBERFractionDigits
 	}
-	return gnmiDecimal{val: v, digits: digits}, true
+	return newGnmiDecimal(v, digits), true
 }
 
 // Components returns the channel names in sorted order. Sorted so that a
