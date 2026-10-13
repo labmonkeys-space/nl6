@@ -67,6 +67,18 @@ func TestExpandRefuses(t *testing.T) {
 		{"platform PID unknown", "platform", func(m *Model) { m.Platform[0].Type = "T-NONE" }},
 		{"missing sensor description", "sensor_descriptions", func(m *Model) { delete(m.FrontPorts.QSFP.SensorDescr, "voltage") }},
 		{"management port without component", "mgmt", func(m *Model) { m.MgmtPorts[0].IfName = "MgmtEth9/9/CPU0/0" }},
+		{"logical port without ifType", "logical_ports: Loopback0 needs a positive if_type", func(m *Model) {
+			m.LogicalPorts = []LogicalPort{{IfName: "Loopback0", Short: "Lo0"}}
+		}},
+		{"duplicate interface name", "interface TenGigE0/0/0/0 defined twice", func(m *Model) {
+			m.LogicalPorts = []LogicalPort{{IfName: "TenGigE0/0/0/0", Short: "Te0/0/0/0", IfType: 24}}
+		}},
+		{"subinterface of an unknown parent", "subinterfaces: parent Bundle-Ether9 is not an earlier interface", func(m *Model) {
+			m.Subinterfaces = []Subinterface{{Parent: "Bundle-Ether9", Index: 100}}
+		}},
+		{"subinterface index 0", "subinterfaces: TenGigE0/0/0/0 index 0 must be positive", func(m *Model) {
+			m.Subinterfaces = []Subinterface{{Parent: "TenGigE0/0/0/0", Index: 0}}
+		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := miniModel(t)
@@ -118,8 +130,14 @@ func TestShippedModelMatchesTheHardwareGuide(t *testing.T) {
 			xcvr++
 		}
 	}
-	if xcvr != 48 || len(c.Ports) != 50 {
-		t.Errorf("%d transceivers and %d ports, want 48 and 50 (48 front, 2 management)", xcvr, len(c.Ports))
+	physical := 0
+	for _, p := range c.Ports {
+		if p.Component != "" {
+			physical++
+		}
+	}
+	if xcvr != 48 || physical != 50 {
+		t.Errorf("%d transceivers and %d physical ports, want 48 and 50 (48 front, 2 management)", xcvr, physical)
 	}
 }
 
@@ -221,5 +239,27 @@ func TestShippedTagsAreKnownAndUsed(t *testing.T) {
 	}
 	if comp := c.Component("Rack 0-RouteProcessor Slot 0"); comp == nil || slices.Contains(comp.Tags, "type") {
 		t.Error("an untyped slot container reports no type leaf")
+	}
+}
+
+// The shipped logical interfaces and VLAN subinterfaces an IOS-XR 24.2.2
+// ASR 9902 reports (nl6#810, nl6#808), after the 50 physical ports.
+func TestShippedLogicalInterfaces(t *testing.T) {
+	c := shipped(t)
+	var got []string
+	for _, p := range c.Ports[50:] {
+		got = append(got, p.IfName+"="+strconv.Itoa(p.IfType))
+		if p.Component != "" {
+			t.Errorf("%s has component %s; a logical interface has none", p.IfName, p.Component)
+		}
+	}
+	want := "Bundle-Ether1=161 BVI1=53 Loopback0=24 Null0=1 HundredGigE0/0/0/8.100=135 HundredGigE0/0/0/8.200=135 Bundle-Ether1.300=135"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("logical interfaces\n got %s\nwant %s", strings.Join(got, " "), want)
+	}
+	for _, p := range c.Ports[:50] {
+		if p.IfType != 6 {
+			t.Errorf("%s ifType %d, want 6 (ethernetCsmacd)", p.IfName, p.IfType)
+		}
 	}
 }

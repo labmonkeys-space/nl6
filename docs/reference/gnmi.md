@@ -146,7 +146,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].path` | the list-entry path with `*` keys; `/` is a root entry with no keys |
 | `subtrees[].aliases` | optional subscription paths without wildcards that request the whole subtree, with an empty origin or the subtree's origin; several subtrees of one origin may carry the same alias and all of them answer it |
 | `subtrees[].alias_leaves` | optional leaf paths relative to the entry; a request through an alias then renders only the leaves at or below one of them instead of the whole subtree; load refuses it on a subtree without aliases, an entry with keys or covering no leaf, and an `always` leaf outside it |
-| `subtrees[].keys` | one key source per wildcard, listed in the order the wildcards are filled (an element with several keys fills them in sorted key-name order): `interfaces` (the ifDescr table), `components` (optional `filter`, optional `parent` naming the component whose children are the keys), `neighbors`, or `static` with `names` |
+| `subtrees[].keys` | one key source per wildcard, listed in the order the wildcards are filled (an element with several keys fills them in sorted key-name order): `interfaces` (the ifDescr table; optional `filter` `iftype:<n>[,<n>...]` keeps the interfaces whose IF-MIB ifType is listed), `subinterfaces` (directly after an `interfaces` key: per interface, the index of every ifDescr row named `<interface>.<index>` with a positive index; the entry reads that row's counters, and an interface without such rows has no entry), `components` (optional `filter`, optional `parent` naming the component whose children are the keys), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
 | `subtrees[].echo_origin` | under `aliased_origin_prefix: empty`, the prefix carries the request's own origin spelling; the MX10004 property subtrees use it, so `openconfig-platform:/components/component/properties/...` is answered with origin `openconfig-platform` |
 | `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way; every form is rounded to the leaf's `digits` |
@@ -156,6 +156,10 @@ Each device adds a 48-byte resolver.
 | `subtrees[].leaves[].always` | rendered whenever its entry renders at all, even when the request path does not cover it (bindings `always` list); how a Junos sensor sends identity leaves such as `name` and `init-time` with every counters notification |
 | `subtrees[].leaves[].members` | a `union` leaf's member types in YANG declaration order, written by the generator with nested unions flattened and leafref members resolved to their targets; `enum` then names the enumeration members' values, and `digits` the first `decimal64` member's fraction digits. A union with a member the runtime cannot serve (`binary`, `bits`, `empty`, ...) gets no `members`. A value takes the first member that accepts it: an enumeration only its names, a string-like member anything, an integer member an integral value in range (`3.7` falls through rather than truncating), a `decimal64` member any number. The ASR 9902 CPU `state/index` (`ALL` or `uint32`) sends `ALL` as a string and a numbered CPU as `uint_val`, a JSON number in JSON_IETF. A `union` without `members` is served as a string; load refuses `members` on another type |
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature`, `tag:<name>` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
+
+An `interfaces` key with a `filter` that is not `iftype:<n>[,<n>...]` now fails to load.
+Before nl6#810 the loader accepted such a filter and ignored it.
+A `subinterfaces` key with a `filter`, `names` or `parent` fails to load too.
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
 A per-component leaf such as `state/temperature/instant` is therefore a filtered leaf of the inventory subtree, not a second subtree serving the same entries.
@@ -167,7 +171,7 @@ The check enumerates the key sources it can resolve without a device (`component
 
 | Binding | Value |
 |---|---|
-| `ifcounter:<IF-MIB column>` | the same counter SNMP serves, e.g. `ifHCInOctets` |
+| `ifcounter:<IF-MIB column>` | the same counter SNMP serves, e.g. `ifHCInOctets`; columns joined by `+` serve their sum, e.g. `ifHCInUcastPkts+ifHCInMulticastPkts+ifHCInBroadcastPkts` |
 | `ifstate:name\|ifindex\|oper\|admin\|last-change` | interface state engine |
 | `sine:base,amplitude,period_s` | deterministic wave seeded by device IP and entry key |
 | `counter:rate_per_s` | monotonic counter with seeded jitter |
@@ -227,6 +231,24 @@ A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, 
 That subtree is YANG-derived: no capture exists, so the prefix depth, the sensor names and the values are nl6's reading of the model, not what an MX sends.
 The header extension carries the hostname and sensor name.
 ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
+
+### IOS-XR interfaces
+
+The ASR 9902 interface set comes from its chassis model: 48 front ports and two management ports, Bundle-Ether1, BVI1, Loopback0, Null0, and the VLAN subinterfaces HundredGigE0/0/0/8.100, HundredGigE0/0/0/8.200 and Bundle-Ether1.300.
+SNMP `ifTable`, `show interfaces brief` and gNMI agree on this set.
+`ifTable` and `show interfaces brief` list the VLAN subinterfaces as interfaces of their own.
+gNMI serves them only in their parent's `subinterfaces/subinterface` list, as IOS-XR does.
+A subscription to `/interfaces/interface/state/counters` sends two notifications per physical port, Bundle-Ether, BVI and Null0, with the 19 counter leaves.
+A Loopback sends one notification with `counters/carrier-transitions` only.
+A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` sends only the VLAN subinterfaces, never index 0.
+A HundredGigE subinterface carries the 19 leaves.
+A Bundle-Ether subinterface omits `in-`/`out-` `unicast-pkts`, `multicast-pkts`, `broadcast-pkts` and `last-clear`.
+The router shows `last-clear` on some subinterfaces only; nl6 ties it to the parent kind, which the reference does not confirm.
+Interface and subinterface counters read the IF-MIB row's HC counters, so they agree with SNMP.
+`in-pkts` and `out-pkts` are the sum of the unicast, multicast and broadcast counters.
+Loopback0 and Null0 declare speed 0 and carry no traffic.
+Their `ifPhysAddress` is empty and their `ifMtu` is 1500.
+The interface kinds and leaf sets follow an ASR 9902 on IOS-XR 24.2.2; which interfaces exist, their ifTypes and speeds are chosen.
 
 ### IOS-XR JSON_IETF layout
 

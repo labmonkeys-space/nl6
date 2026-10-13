@@ -7,7 +7,11 @@ package main
 
 import (
 	"log"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	gnmipb "github.com/openconfig/gnmi/proto/gnmi"
@@ -31,9 +35,27 @@ type catalogNotification struct {
 // only the device pointer. start is the fallback epoch for a device
 // without an interface counter cycler; see epoch.
 type catalogResolver struct {
-	dev   *DeviceSimulator
-	cat   *gnmiCatalog
-	start time.Time
+	dev    *DeviceSimulator
+	cat    *gnmiCatalog
+	start  time.Time
+	ifaces atomic.Pointer[catalogIfaces] // built on first use; see interfaces
+}
+
+// catalogIface is one IF-MIB row as the interfaces and subinterfaces key
+// sources see it. For a subinterface, name is the index.
+type catalogIface struct {
+	name   string
+	idx    int
+	ifType int
+}
+
+// catalogIfaces is a device's interface set in IfIndices order and its
+// "<parent>.<index>" rows by parent name. Both derive from the counter
+// cycler's ifIndex set and the device's resources, which never change
+// once published, so the resolver builds it once.
+type catalogIfaces struct {
+	all  []catalogIface
+	subs map[string][]catalogIface
 }
 
 // epoch is the device's time base: the interface counter cycler's
@@ -236,46 +258,86 @@ type catalogEntry struct {
 	elems   []*gnmipb.PathElem
 }
 
+// lookupIfType returns the device's ifType for ifIndex, or 0 when the
+// row is absent or not a number.
+func lookupIfType(device *DeviceSimulator, ifIndex int) int {
+	n, _ := strconv.Atoi(lookupIfColumn(device, ifTablePrefix+"3.", ifIndex))
+	return n
+}
+
+// interfaces returns the device's interface set, building it on first use.
+func (r *catalogResolver) interfaces() (*catalogIfaces, error) {
+	if c := r.ifaces.Load(); c != nil {
+		return c, nil
+	}
+	var ic *IfCounterCycler
+	if r.dev != nil && r.dev.metricsCycler != nil {
+		ic = r.dev.metricsCycler.ifCounters.Load()
+	}
+	if ic == nil {
+		return nil, status.Error(codes.Unavailable, "interface counters not initialized")
+	}
+	c := &catalogIfaces{subs: map[string][]catalogIface{}}
+	for _, idx := range ic.IfIndices() {
+		n := lookupIfDescr(r.dev, idx)
+		if n == "" {
+			n = synthIfName(idx)
+		}
+		c.all = append(c.all, catalogIface{n, idx, lookupIfType(r.dev, idx)})
+		dot := strings.LastIndexByte(n, '.')
+		if i, err := strconv.Atoi(n[dot+1:]); dot > 0 && err == nil && i > 0 {
+			c.subs[n[:dot]] = append(c.subs[n[:dot]], catalogIface{name: n[dot+1:], idx: idx})
+		}
+	}
+	r.ifaces.Store(c) // a concurrent first use builds the same set
+	return c, nil
+}
+
 // expandEntries builds the cartesian product of a subtree's key
-// sources. The `interfaces` key source, when present, sets ifIndex.
+// sources. The `interfaces` key source, when present, sets ifIndex; a
+// `subinterfaces` source after it narrows each interface to its
+// subinterface rows and moves ifIndex to the subinterface's row.
 func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry, error) {
+	var ifs *catalogIfaces
+	if slices.ContainsFunc(st.Keys, func(k gnmiCatalogKey) bool { return k.Source == gnmiKeySourceInterfaces }) {
+		var err error
+		if ifs, err = r.interfaces(); err != nil {
+			return nil, err
+		}
+	}
 	entries := []catalogEntry{{}}
 	for _, k := range st.Keys {
-		type keyVal struct {
-			name string
-			idx  int
-		}
-		var vals []keyVal
+		var next []catalogEntry
 		switch k.Source {
-		case gnmiKeySourceInterfaces:
-			var ic *IfCounterCycler
-			if r.dev != nil && r.dev.metricsCycler != nil {
-				ic = r.dev.metricsCycler.ifCounters.Load()
-			}
-			if ic == nil {
-				return nil, status.Error(codes.Unavailable, "interface counters not initialized")
-			}
-			for _, idx := range ic.IfIndices() {
-				n := lookupIfDescr(r.dev, idx)
-				if n == "" {
-					n = synthIfName(idx)
+		case gnmiKeySourceSubinterfaces:
+			// parse ensures the previous key is the parent interface.
+			for _, e := range entries {
+				for _, v := range ifs.subs[e.keys[len(e.keys)-1]] {
+					next = append(next, catalogEntry{keys: append(append([]string{}, e.keys...), v.name), ifIndex: v.idx})
 				}
-				vals = append(vals, keyVal{n, idx})
 			}
 		default:
-			names, _ := r.cat.keyValues(k) // parse rejected unknown sources
-			for _, n := range names {
-				vals = append(vals, keyVal{name: n})
-			}
-		}
-		var next []catalogEntry
-		for _, e := range entries {
-			for _, v := range vals {
-				ne := catalogEntry{keys: append(append([]string{}, e.keys...), v.name), ifIndex: e.ifIndex}
-				if k.Source == gnmiKeySourceInterfaces {
-					ne.ifIndex = v.idx
+			var vals []catalogIface
+			if k.Source == gnmiKeySourceInterfaces {
+				for _, v := range ifs.all {
+					if k.ifTypes == nil || k.ifTypes[v.ifType] {
+						vals = append(vals, v)
+					}
 				}
-				next = append(next, ne)
+			} else {
+				names, _ := r.cat.keyValues(k) // parse rejected unknown sources
+				for _, n := range names {
+					vals = append(vals, catalogIface{name: n})
+				}
+			}
+			for _, e := range entries {
+				for _, v := range vals {
+					ne := catalogEntry{keys: append(append([]string{}, e.keys...), v.name), ifIndex: e.ifIndex}
+					if k.Source == gnmiKeySourceInterfaces {
+						ne.ifIndex = v.idx
+					}
+					next = append(next, ne)
+				}
 			}
 		}
 		entries = next

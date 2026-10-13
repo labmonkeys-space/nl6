@@ -82,6 +82,13 @@ func startTestGnmiServerWithCatalog(t *testing.T, cat *gnmiCatalog) (mgr *Simula
 // with ifCount interfaces on the synthetic device.
 func startTestGnmiServerWithCatalogN(t *testing.T, cat *gnmiCatalog, ifCount int) (mgr *SimulatorManager, dev *DeviceSimulator, addr string, cleanup func()) {
 	t.Helper()
+	return startTestGnmiServerWithDevice(t, cat, newTestGnmiDevice(t, ifCount))
+}
+
+// startTestGnmiServerWithDevice serves dev, a device with a cycler,
+// with cat (when non-nil) registered for its type.
+func startTestGnmiServerWithDevice(t *testing.T, cat *gnmiCatalog, dev *DeviceSimulator) (mgr *SimulatorManager, _ *DeviceSimulator, addr string, cleanup func()) {
+	t.Helper()
 
 	// Manager with shared TLS cert, gNMI subsystem enabled.
 	mgr = &SimulatorManager{
@@ -101,9 +108,6 @@ func startTestGnmiServerWithCatalogN(t *testing.T, cat *gnmiCatalog, ifCount int
 	prev := manager
 	manager = mgr
 
-	// Synthetic device with cycler.
-	resolver := newTestPathResolver(t, ifCount)
-	dev = resolver.device
 	mgr.devices["test"] = dev
 	if cat != nil {
 		mgr.gnmiCatalogsByType = map[string]*gnmiCatalog{resourceDirName(dev.resourceFile): cat}

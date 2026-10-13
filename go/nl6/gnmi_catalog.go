@@ -40,10 +40,11 @@ const (
 	gnmiExtensionNone          = "none"
 	gnmiExtensionJuniperHeader = "juniper-header"
 
-	gnmiKeySourceInterfaces = "interfaces"
-	gnmiKeySourceComponents = "components"
-	gnmiKeySourceNeighbors  = "neighbors"
-	gnmiKeySourceStatic     = "static"
+	gnmiKeySourceInterfaces    = "interfaces"
+	gnmiKeySourceSubinterfaces = "subinterfaces"
+	gnmiKeySourceComponents    = "components"
+	gnmiKeySourceNeighbors     = "neighbors"
+	gnmiKeySourceStatic        = "static"
 
 	gnmiDecimalDouble = "double"
 	gnmiDecimalVal    = "decimal_val"
@@ -147,6 +148,23 @@ type gnmiCatalogKey struct {
 	// environment sensor, nl6#767), so a subtree keys on the inventory
 	// instead of a hand copy of its names. Narrowed further by Filter.
 	Parent string `json:"parent,omitempty"`
+
+	ifTypes map[int]bool // compiled from an interfaces Filter "iftype:<n>[,<n>...]"; nil when unfiltered
+}
+
+// parseIfTypeFilter compiles an interfaces key filter: the ifType
+// values (IF-MIB ifType) an interface's row must hold to be listed.
+func parseIfTypeFilter(f string) (map[int]bool, error) {
+	list, ok := strings.CutPrefix(f, "iftype:")
+	out := map[int]bool{}
+	for _, v := range strings.Split(list, ",") {
+		n, err := strconv.Atoi(v)
+		if !ok || err != nil || n <= 0 {
+			return nil, fmt.Errorf("interfaces filter %q: want iftype:<n>[,<n>...]", f)
+		}
+		out[n] = true
+	}
+	return out, nil
 }
 
 // gnmiCatalogSubtree is one list entry: `path` is the entry path that
@@ -425,6 +443,21 @@ func (c *gnmiCatalog) validate(source string) error {
 		for j, k := range st.Keys {
 			switch k.Source {
 			case gnmiKeySourceInterfaces:
+				st.Keys[j].ifTypes = nil
+				if k.Filter != "" {
+					types, err := parseIfTypeFilter(k.Filter)
+					if err != nil {
+						return fail("subtree %d key %d: %v", i, j, err)
+					}
+					st.Keys[j].ifTypes = types
+				}
+			case gnmiKeySourceSubinterfaces:
+				if k.Filter != "" || len(k.Names) > 0 || k.Parent != "" {
+					return fail("subtree %d key %d: the subinterfaces key source takes no filter, names or parent", i, j)
+				}
+				if j == 0 || st.Keys[j-1].Source != gnmiKeySourceInterfaces {
+					return fail("subtree %d key %d: the subinterfaces key source must directly follow an interfaces key source", i, j)
+				}
 			case gnmiKeySourceComponents:
 				if st.componentKey < 0 {
 					st.componentKey = j

@@ -113,9 +113,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "cisco_asr9902 logical interfaces",
+		file:         "snmp_shipped_cisco_asr9902_logical_ifs_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       ciscoAsr9902LogicalIfsParentRevision,
+		values:       restoreCiscoAsr9902LogicalIfs,
+		names:        ciscoAsr9902LogicalIfsOIDNamesBefore,
+	},
+	{
 		name:         "four Cisco profiles identify as the chassis they model",
 		file:         "snmp_shipped_cisco_identity_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: ciscoAsr9902LogicalIfsParentRevision,
 		parent:       ciscoIdentityParentRevision,
 		values:       restoreCiscoIdentity,
 		names:        ciscoIdentityOIDNamesBefore,

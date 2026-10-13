@@ -83,6 +83,26 @@ type MgmtPort struct {
 	SpeedMbps int    `json:"speed_mbps"`
 }
 
+// LogicalPort is an interface with no physical component: a bundle, a
+// BVI, a loopback or Null0. IfType is its IF-MIB ifType. MTU overrides
+// interfaces.mtu; NoPhysAddress serves an empty ifPhysAddress, as IOS-XR
+// does for a Loopback or Null0.
+type LogicalPort struct {
+	IfName        string `json:"if_name"`
+	Short         string `json:"short"`
+	IfType        int    `json:"if_type"`
+	SpeedMbps     int    `json:"speed_mbps"`
+	MTU           string `json:"mtu,omitempty"`
+	NoPhysAddress bool   `json:"no_phys_address,omitempty"`
+}
+
+// Subinterface is a dot1q VLAN subinterface, named <parent>.<index> as
+// IOS-XR names it. It takes its parent's speed.
+type Subinterface struct {
+	Parent string `json:"parent"`
+	Index  int    `json:"index"`
+}
+
 // PlatformRow is one `show platform` node; Type is a PID the model uses,
 // optionally followed by a role in parentheses.
 type PlatformRow struct {
@@ -113,17 +133,32 @@ type Model struct {
 	MgmtPorts   []MgmtPort             `json:"mgmt_ports"`
 	Platform    []PlatformRow          `json:"platform"`
 	Interfaces  Interfaces             `json:"interfaces"`
+	// LogicalPorts and Subinterfaces follow the physical ports in ifIndex
+	// order.
+	LogicalPorts  []LogicalPort  `json:"logical_ports,omitempty"`
+	Subinterfaces []Subinterface `json:"subinterfaces,omitempty"`
 }
 
 // Port is one interface: IF-MIB row and the PORT component ENTITY-MIB maps
-// its ifIndex to.
+// its ifIndex to. Component is empty for a logical interface. MTU empty
+// means interfaces.mtu.
 type Port struct {
-	IfIndex   int
-	IfName    string
-	Short     string
-	SpeedMbps int
-	Component string
+	IfIndex       int
+	IfName        string
+	Short         string
+	IfType        int
+	SpeedMbps     int
+	Component     string
+	MTU           string
+	NoPhysAddress bool
 }
+
+// ifTypeEthernet is IF-MIB ethernetCsmacd(6), every physical port's type;
+// ifTypeL2VLAN is l2vlan(135), a dot1q subinterface's.
+const (
+	ifTypeEthernet = 6
+	ifTypeL2VLAN   = 135
+)
 
 // Chassis is the expanded model every renderer reads.
 type Chassis struct {
@@ -231,7 +266,47 @@ func (c *Chassis) expandFrontPorts(fp FrontPorts) error {
 				return err
 			}
 		}
-		c.Ports = append(c.Ports, Port{IfIndex: n + 1, IfName: ifName, Short: o.ShortPrefix + fp.Card + "/0/" + strconv.Itoa(n), SpeedMbps: o.SpeedMbps, Component: port})
+		c.Ports = append(c.Ports, Port{IfIndex: n + 1, IfName: ifName, Short: o.ShortPrefix + fp.Card + "/0/" + strconv.Itoa(n), IfType: ifTypeEthernet, SpeedMbps: o.SpeedMbps, Component: port})
+	}
+	return nil
+}
+
+// expandLogicalPorts appends the logical ports, then the subinterfaces,
+// each parented by an earlier port that is not itself a subinterface.
+func (c *Chassis) expandLogicalPorts(m *Model) error {
+	byName := map[string]Port{}
+	for _, p := range c.Ports {
+		byName[p.IfName] = p
+	}
+	add := func(p Port) error {
+		if _, dup := byName[p.IfName]; dup {
+			return fmt.Errorf("interface %s defined twice", p.IfName)
+		}
+		p.IfIndex = len(c.Ports) + 1
+		byName[p.IfName] = p
+		c.Ports = append(c.Ports, p)
+		return nil
+	}
+	for _, lp := range m.LogicalPorts {
+		if lp.IfType <= 0 {
+			return fmt.Errorf("logical_ports: %s needs a positive if_type", lp.IfName)
+		}
+		if err := add(Port{IfName: lp.IfName, Short: lp.Short, IfType: lp.IfType, SpeedMbps: lp.SpeedMbps, MTU: lp.MTU, NoPhysAddress: lp.NoPhysAddress}); err != nil {
+			return err
+		}
+	}
+	for _, s := range m.Subinterfaces {
+		parent, ok := byName[s.Parent]
+		if !ok || parent.IfType == ifTypeL2VLAN {
+			return fmt.Errorf("subinterfaces: parent %s is not an earlier interface", s.Parent)
+		}
+		if s.Index <= 0 {
+			return fmt.Errorf("subinterfaces: %s index %d must be positive", s.Parent, s.Index)
+		}
+		ix := "." + strconv.Itoa(s.Index)
+		if err := add(Port{IfName: s.Parent + ix, Short: parent.Short + ix, IfType: ifTypeL2VLAN, SpeedMbps: parent.SpeedMbps}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -277,7 +352,10 @@ func Expand(m *Model) (*Chassis, error) {
 		if c.Component(mp.IfName) == nil {
 			return nil, fmt.Errorf("mgmt_ports: %s has no component", mp.IfName)
 		}
-		c.Ports = append(c.Ports, Port{IfIndex: fp.Count + i + 1, IfName: mp.IfName, Short: mp.Short, SpeedMbps: mp.SpeedMbps, Component: mp.IfName})
+		c.Ports = append(c.Ports, Port{IfIndex: fp.Count + i + 1, IfName: mp.IfName, Short: mp.Short, IfType: ifTypeEthernet, SpeedMbps: mp.SpeedMbps, Component: mp.IfName})
+	}
+	if err := c.expandLogicalPorts(m); err != nil {
+		return nil, err
 	}
 	if len(c.Ports) > 255 {
 		return nil, fmt.Errorf("%d ports: ifPhysAddress encodes the ifIndex in one byte, at most 255", len(c.Ports))
