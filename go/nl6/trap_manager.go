@@ -838,6 +838,30 @@ func (sm *SimulatorManager) startDeviceTrapExporter(device *DeviceSimulator) err
 	return nil
 }
 
+// linkRoleFor maps a state change to the link trap/syslog role it fires, or
+// false when it fires none.
+func linkRoleFor(evt StateChange) (string, bool) {
+	// Only a clean up/down transition is a link event. TESTING (a valid
+	// REST oper-status value) and any other non-binary IF-MIB oper state
+	// must NOT fire a spurious linkDown/linkUp.
+	//
+	// RFC 2863 sends linkUp on LEAVING down(2) and linkDown on entering
+	// it. A subinterface moving between up(1) and lowerLayerDown(7) with
+	// its parent does neither; without this, every port bounce sent its
+	// unit an unpaired linkUp.
+	switch evt.Oper {
+	case OperUp:
+		if evt.PrevOper == OperLowerLayerDn {
+			return "", false
+		}
+		return roleLinkUp, true
+	case OperDown:
+		return roleLinkDown, true
+	default:
+		return "", false
+	}
+}
+
 // wireStateNotify installs the Tier C (correlate-state-notifications) hook on
 // the device's interface-state engine. Called at trap AND syslog attach time;
 // idempotent — the single closure handles both subsystems and snapshots the
@@ -856,16 +880,8 @@ func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
 	}
 	ip := device.IP.String()
 	ic.State().SetNotify(func(evt StateChange) {
-		// Only a clean up/down transition is a link event. TESTING (a valid
-		// REST oper-status value) and any other non-binary IF-MIB oper state
-		// must NOT fire a spurious linkDown/linkUp.
-		var role string
-		switch evt.Oper {
-		case OperUp:
-			role = roleLinkUp
-		case OperDown:
-			role = roleLinkDown
-		default:
+		role, ok := linkRoleFor(evt)
+		if !ok {
 			return
 		}
 		// Snapshot the exporters under the device lock (race-free vs.

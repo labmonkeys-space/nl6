@@ -85,8 +85,11 @@ Its own `ifAdminStatus = down(2)` still reads `down(2)`.
 The subinterface's stored link and admin values are not written, so it comes back with its parent.
 
 A parent transition is also a transition of each subinterface it moves.
-`ifLastChange` is stamped with the parent's time, and the subinterface gets its own ON_CHANGE update, link trap and syslog message.
+`ifLastChange` is stamped with the parent's time, and the subinterface gets its own ON_CHANGE update.
 This holds for every mutation source: the flap scheduler, the REST endpoints, auto-revert and SNMP SET.
+No link trap or syslog message fires for that move.
+RFC 2863 sends `linkDown` on entering `down(2)` and `linkUp` on leaving it, and a move between `up(1)` and `lowerLayerDown(7)` does neither.
+A subinterface's own move to or from `down(2)` still fires them.
 
 The flap scheduler does not schedule subinterfaces.
 A logical unit has no physical link of its own to flap.

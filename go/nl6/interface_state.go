@@ -61,6 +61,7 @@ const (
 type StateChange struct {
 	IfIndex      int
 	Oper         uint8         // current value after mutation
+	PrevOper     uint8         // derived oper-status before the mutation
 	Admin        uint8         // current value after mutation
 	LastChangeNs uint64        // absolute Unix nanos
 	Changed      StateLeafBits // which status leaves moved (last-change implied if non-zero)
@@ -145,6 +146,16 @@ type InterfaceState struct {
 	// atomic load.
 	parent   []int
 	children [][]int
+
+	// familyMu serialises every mutation of an interface that has a parent
+	// or children. A child's derived oper reads its parent's slot, so a
+	// per-slot CAS cannot make a parent transition and its cascade atomic
+	// against a second writer: two concurrent parent moves could leave a
+	// child stamped with the older one (ifLastChange going backwards and a
+	// final event disagreeing with the state), and a child move could
+	// derive from a parent value that changed before its CAS. Interfaces
+	// outside a family never take it and keep the lock-free path.
+	familyMu sync.Mutex
 }
 
 // NewInterfaceState builds an engine for `maxIfIndex` interfaces. Slot
@@ -252,6 +263,16 @@ func (s *InterfaceState) Parent(ifIndex int) int {
 		return 0
 	}
 	return s.parent[ifIndex-1]
+}
+
+// lockFamily takes familyMu when slot belongs to a parent/child family and
+// returns the matching unlock; for every other slot it takes nothing.
+func (s *InterfaceState) lockFamily(slot int) func() {
+	if s.parent == nil || (s.parent[slot] == 0 && len(s.children[slot]) == 0) {
+		return func() {}
+	}
+	s.familyMu.Lock()
+	return s.familyMu.Unlock
 }
 
 // parentOper is the derived oper-status of slot's parent, or up(1) for a
@@ -455,6 +476,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 	if newLink < OperUp || newLink > OperLowerLayerDn {
 		return LinkUnchanged, nil
 	}
+	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
 		curLink, curAdmin, curRel := unpackState(cur)
@@ -491,6 +513,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 			evts := []StateChange{{
 				IfIndex:      ifIndex,
 				Oper:         nowOper,
+				PrevOper:     wasOper,
 				Admin:        curAdmin,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
@@ -522,6 +545,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 	if newVal < AdminUp || newVal > AdminTesting {
 		return nil
 	}
+	defer s.lockFamily(slot)()
 	for {
 		cur := s.slots[slot].Load()
 		curLink, curAdmin, curRel := unpackState(cur)
@@ -549,6 +573,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 		evts := []StateChange{{
 			IfIndex:      ifIndex,
 			Oper:         nowOper,
+			PrevOper:     wasOper,
 			Admin:        newVal,
 			LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 			Changed:      LeafAdminStatus,
@@ -559,6 +584,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			evts = append(evts, StateChange{
 				IfIndex:      ifIndex,
 				Oper:         nowOper,
+				PrevOper:     wasOper,
 				Admin:        newVal,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
@@ -576,9 +602,8 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 // event. Only lastChange is written; the child's stored link and admin are
 // untouched, so a parent bounce can neither repair nor damage them.
 //
-// Each child's verdict is recomputed from the slot its CAS loaded. A child
-// mutated concurrently with its parent may keep the other writer's timestamp,
-// the same approximation Broadcast documents for contended accounting.
+// The caller holds familyMu, so neither the parent nor any child can move
+// between the parent's CAS and this walk.
 func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, at time.Time, relNs uint64) []StateChange {
 	if s.children == nil {
 		return nil
@@ -599,6 +624,7 @@ func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, a
 				out = append(out, StateChange{
 					IfIndex:      c,
 					Oper:         now,
+					PrevOper:     was,
 					Admin:        admin,
 					LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 					Changed:      LeafOperStatus,

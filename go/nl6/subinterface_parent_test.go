@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,6 +143,111 @@ func TestUnitOwnStateWinsOverItsParent(t *testing.T) {
 	}
 	if res, evts := st.SetLinkState(73, OperDown); res != LinkMovedVisible || len(evts) != 1 || evts[0].Oper != OperDown {
 		t.Errorf("unit link down under a down port = %v %+v, want one visible move to down(2)", res, evts)
+	}
+}
+
+// TestUnitBouncesWithItsPortFireNoLinkTrap: RFC 2863 sends linkDown on
+// entering down(2) and linkUp on leaving it. The unit moves between up(1) and
+// lowerLayerDown(7), so neither fires; a linkUp on recovery alone was unpaired.
+// The port's own transitions keep their roles.
+func TestUnitBouncesWithItsPortFireNoLinkTrap(t *testing.T) {
+	st := shippedDevice(t, "juniper_mx10004.json").metricsCycler.ifCounters.Load().State()
+	var got []string
+	for _, target := range []uint8{OperDown, OperUp} {
+		_, evts := st.SetLinkState(1, target)
+		for _, e := range evts {
+			if role, ok := linkRoleFor(e); ok {
+				got = append(got, strconv.Itoa(e.IfIndex)+":"+role)
+			}
+		}
+	}
+	want := []string{"1:" + roleLinkDown, "1:" + roleLinkUp}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("link roles fired = %v, want %v (none for the unit)", got, want)
+	}
+}
+
+// TestFamilyTransitionsAreSerialised races two writers on the port's link
+// and one on the unit's admin. Each mutation and its cascade must be one step:
+// with a strictly increasing clock, the newest event per interface (by
+// LastChangeNs) must name the state the engine ends in, and the unit's
+// lastChange must never go backwards. Without the family lock a cascade from
+// an older parent transition overwrote a newer one, and a unit move derived
+// from a parent value that changed before its CAS.
+func TestFamilyTransitionsAreSerialised(t *testing.T) {
+	var tick atomic.Int64
+	clock := func() time.Time { return time.Unix(0, 1_000_000_000+tick.Add(1)) }
+	st := newInterfaceStateWithClock(2, nil, nil, clock)
+	st.setParents(map[int]int{2: 1})
+	st.Seed(1, OperUp, AdminUp)
+	st.Seed(2, OperUp, AdminUp)
+
+	const n = 20000
+	var mu sync.Mutex
+	var all []StateChange
+	record := func(evts []StateChange) {
+		mu.Lock()
+		all = append(all, evts...)
+		mu.Unlock()
+	}
+	var backwards atomic.Int64
+	stop := make(chan struct{})
+	var watch sync.WaitGroup
+	watch.Add(1)
+	go func() {
+		defer watch.Done()
+		var last uint64
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if lc := st.LastChangeNs(2); lc < last {
+				backwards.Add(1)
+			} else {
+				last = lc
+			}
+		}
+	}()
+	var wg sync.WaitGroup
+	for _, target := range []uint8{OperDown, OperUp} {
+		wg.Add(1)
+		go func(target uint8) {
+			defer wg.Done()
+			for i := 0; i < n; i++ {
+				_, evts := st.SetLinkState(1, target)
+				record(evts)
+			}
+		}(target)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			record(st.ApplyAdminStatus(2, []uint8{AdminDown, AdminUp}[i%2]))
+		}
+	}()
+	wg.Wait()
+	close(stop)
+	watch.Wait()
+
+	if b := backwards.Load(); b != 0 {
+		t.Errorf("the unit's lastChange went backwards %d times", b)
+	}
+	newest := map[int]StateChange{}
+	for _, e := range all {
+		if e.Changed&LeafOperStatus != 0 && e.LastChangeNs >= newest[e.IfIndex].LastChangeNs {
+			newest[e.IfIndex] = e
+		}
+	}
+	for _, idx := range []int{1, 2} {
+		if got := st.OperStatus(idx); newest[idx].Oper != got {
+			t.Errorf("ifIndex %d ends at oper %d but its newest event says %d", idx, got, newest[idx].Oper)
+		}
+		if got := st.LastChangeNs(idx); newest[idx].LastChangeNs != got {
+			t.Errorf("ifIndex %d ends at lastChange %d but its newest event says %d", idx, got, newest[idx].LastChangeNs)
+		}
 	}
 }
 
