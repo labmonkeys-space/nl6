@@ -193,7 +193,8 @@ The generator's `-path` flag adds directories that are searched only to resolve 
 A module under `-path` is also loaded when a binding subtree names it in `module`, which is how the Junos native sensor models (`junos-fabric`, `junos-fpc-env`) are read without walking every JTI model.
 A binding subtree may set `yang_path` when Junos renders a sensor under a prefix that differs from its YANG tree: the leaves are looked up at `yang_path` and the catalogue keeps `path` as the rendered prefix.
 A drift test regenerates the file and fails when the committed copy differs.
-It runs only where the YANG cache exists, which `make gen-gnmi-catalog` populates, and skips elsewhere.
+CI runs it through `make test-gnmi-drift`, which clones the pinned checkouts and fails if they are missing.
+A plain `go test` run skips it when the YANG cache is absent; `make yang-cache` populates the cache.
 
 ### Junos shape
 

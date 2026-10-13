@@ -105,6 +105,14 @@ jobs:
       - name: Test (race detector)
         run: make test-race
 
+      # The generated-catalogue guard. `make test` skips the drift test on a
+      # runner because no YANG cache exists; this target clones the pinned
+      # checkouts (about 12 s, so no actions/cache: the cache is 460 MB) and
+      # sets NL6_REQUIRE_YANG_CACHE, under which a missing cache FAILS. A hand
+      # edit to a generated gnmi.json fails here.
+      - name: Test (generated gNMI catalogues match their YANG)
+        run: make test-gnmi-drift
+
       # The interop gate. Everything above reads nl6's output with nl6's own
       # parser; this is the only step in which an independent implementation
       # decides whether nl6 is right (nl6#624). It was opt-in and unrun when it
