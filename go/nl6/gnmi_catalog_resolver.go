@@ -285,7 +285,10 @@ func (r *catalogResolver) interfaces() (*catalogIfaces, error) {
 		}
 		c.all = append(c.all, catalogIface{n, idx, lookupIfType(r.dev, idx)})
 		dot := strings.LastIndexByte(n, '.')
-		if i, err := strconv.Atoi(n[dot+1:]); dot > 0 && err == nil && i > 0 {
+		// A subinterface index is an OpenConfig uint32 and the suffix is the
+		// path key, so it must be canonical: unit 0 (Junos's default unit)
+		// counts, a sign, a leading zero or an out-of-range suffix does not.
+		if v, err := strconv.ParseUint(n[dot+1:], 10, 32); dot > 0 && err == nil && strconv.FormatUint(v, 10) == n[dot+1:] {
 			c.subs[n[:dot]] = append(c.subs[n[:dot]], catalogIface{name: n[dot+1:], idx: idx})
 		}
 	}

@@ -92,7 +92,8 @@ func TestASR9902InterfaceCountersServeLogicalInterfaces(t *testing.T) {
 	}
 }
 
-// nl6#808: only the configured VLAN subinterfaces answer, never index 0. A
+// nl6#808: only the configured VLAN subinterfaces answer. The profile ships
+// no ".0" row, so there is no index 0. A
 // Bundle-Ether subinterface omits the six unicast, multicast and broadcast
 // counters and last-clear; a HundredGigE subinterface carries all 19.
 func TestASR9902SubinterfaceCountersServeVLANSubinterfaces(t *testing.T) {
