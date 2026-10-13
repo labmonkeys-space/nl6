@@ -13,6 +13,9 @@ import (
 	"testing"
 )
 
+// entityNoSuchObject is how net-snmp renders the noSuchObject exception.
+const entityNoSuchObject = "No Such Object available on this agent at this OID"
+
 // TestEntityRootInterop reads the fixed ENTITY-MIB rows with net-snmp through
 // the real dispatcher on a real UDP socket. The in-package guards read resource
 // files; this reads the wire. It matters most for zeroDotZero: the value only
@@ -22,9 +25,6 @@ import (
 // entPhysicalUris or entPhysicalUUID, and a port row names no invented vendor.
 //
 // Opt-in like the other interop tests; `make test-interop` runs it in CI.
-// entityNoSuchObject is how net-snmp renders the noSuchObject exception.
-const entityNoSuchObject = "No Such Object available on this agent at this OID"
-
 func TestEntityRootInterop(t *testing.T) {
 	if os.Getenv("NL6_SNMP_INTEROP") != "1" {
 		t.Skip("set NL6_SNMP_INTEROP=1 to run the net-snmp interop check")

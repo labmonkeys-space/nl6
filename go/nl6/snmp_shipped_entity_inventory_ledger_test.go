@@ -103,11 +103,14 @@ func entityInventoryEdits() map[string][]profileRowEdit {
 	}
 	const ent = ".1.3.6.1.2.1.47.1.1.1.1."
 	for _, p := range entityInventoryPorts {
-		var mfg string
+		mfg := ""
 		for _, c := range entityInventoryChassis {
 			if c.profile == p.profile {
 				mfg = c.uris
 			}
+		}
+		if mfg == "" {
+			panic(p.profile + " is in entityInventoryPorts but not in entityInventoryChassis")
 		}
 		edits := []profileRowEdit{{op: editAdd, oid: ent + "12.1", after: mfg}}
 		for i := p.firstPort; i < p.firstPort+p.ports; i++ {

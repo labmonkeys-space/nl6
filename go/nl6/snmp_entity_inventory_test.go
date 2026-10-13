@@ -46,10 +46,7 @@ func entityInventoryFormatViolations(entries []shippedSNMPEntry) []string {
 		var why string
 		switch col {
 		case entPhysicalMfgDateCol:
-			// DateAndTime is 8 or 11 octets; '0000000000000000'H means unknown.
-			if n := len(e.Value); n != 8 && n != 11 {
-				why = fmt.Sprintf("entPhysicalMfgDate is %d octets, want 8 or 11", n)
-			}
+			why = dateAndTimeDefect(e.Value)
 		case entPhysicalUrisCol:
 			// Zero-length, or URIs separated by spaces.
 			for tok := range strings.FieldsSeq(e.Value) {
@@ -70,6 +67,29 @@ func entityInventoryFormatViolations(entries []shippedSNMPEntry) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// dateAndTimeDefect checks the SNMPv2-TC DateAndTime layout: 8 or 11 octets,
+// with month, day, hour, minutes, seconds and deci-seconds in range. The
+// all-zero value is RFC 4133's "unknown". An ASCII date such as "20210401" is
+// 8 octets and fails on its month octet.
+func dateAndTimeDefect(v string) string {
+	if n := len(v); n != 8 && n != 11 {
+		return fmt.Sprintf("entPhysicalMfgDate is %d octets, want 8 or 11", n)
+	}
+	if v[:8] == "\x00\x00\x00\x00\x00\x00\x00\x00" {
+		return ""
+	}
+	for _, f := range []struct {
+		name     string
+		at       int
+		min, max byte
+	}{{"month", 2, 1, 12}, {"day", 3, 1, 31}, {"hour", 4, 0, 23}, {"minutes", 5, 0, 59}, {"seconds", 6, 0, 60}, {"deci-seconds", 7, 0, 9}} {
+		if b := v[f.at]; b < f.min || b > f.max {
+			return fmt.Sprintf("entPhysicalMfgDate %s octet is %d, want %d..%d", f.name, b, f.min, f.max)
+		}
+	}
+	return ""
 }
 
 // entityManufacturerViolations requires the root row (entPhysicalContainedIn 0)
@@ -117,7 +137,7 @@ func entityManufacturerViolations(entries []shippedSNMPEntry) []string {
 			}
 		}
 		if roots != 1 {
-			continue
+			continue // TestEveryEntityTableHasOneChassisRoot reports it
 		}
 		root := rows[rootIndex]
 		if root.mfg == nil || *root.mfg == "" {
@@ -137,18 +157,69 @@ func entityManufacturerViolations(entries []shippedSNMPEntry) []string {
 }
 
 func TestEntityInventoryColumnsAreWellFormedOrAbsent(t *testing.T) {
-	t.Run("positive control", func(t *testing.T) { assertEntityInventoryDetectionWorks(t) })
-
 	for _, v := range entityInventoryFormatViolations(shippedSNMPEntries(t)) {
 		t.Error(v)
 	}
 }
 
 func TestEntityManufacturerIsNamedAndConsistent(t *testing.T) {
-	t.Run("positive control", func(t *testing.T) { assertEntityInventoryDetectionWorks(t) })
-
 	for _, v := range entityManufacturerViolations(shippedSNMPEntries(t)) {
 		t.Error(v)
+	}
+}
+
+// generatedFamilyPorts are the four generated profiles whose port rows served
+// "Simulation Vendor", *GE-PORT, SN00<n>, ASSET<n> and "1.0" revisions.
+var generatedFamilyPorts = map[string]bool{
+	"cisco_catalyst_9500.json": true, "cisco_nexus_9500.json": true,
+	"juniper_mx960.json": true, "palo_alto_pa3220.json": true,
+}
+
+// generatedFamilyPortViolations requires the inventory strings of every port
+// row (index 1001 and up) of the four generated profiles to be zero-length.
+// The manufacturer guard alone would accept a port that repeats the chassis
+// vendor beside an invented serial number.
+func generatedFamilyPortViolations(entries []shippedSNMPEntry) []string {
+	inventoryCols := map[string]bool{"8": true, "9": true, "10": true, "11": true, "12": true, "13": true, "15": true}
+	var out []string
+	for _, e := range entries {
+		if !generatedFamilyPorts[e.Profile] {
+			continue
+		}
+		rest, ok := strings.CutPrefix(e.OID, entPhysicalEntryPrefix)
+		if !ok {
+			continue
+		}
+		col, index, _ := strings.Cut(rest, ".")
+		if inventoryCols[col] && len(index) == 4 && e.Value != "" {
+			out = append(out, fmt.Sprintf("%s: %s = %q, want zero-length", e.Profile, e.OID, e.Value))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestGeneratedFamilyPortRowsServeNoInventedValues(t *testing.T) {
+	for _, v := range generatedFamilyPortViolations(shippedSNMPEntries(t)) {
+		t.Error(v)
+	}
+}
+
+// TestEntityInventoryGuardsDetectTheShippedShapes is the positive control of
+// the three inventory guards above.
+func TestEntityInventoryGuardsDetectTheShippedShapes(t *testing.T) {
+	assertEntityInventoryDetectionWorks(t)
+
+	// The port rule reads the four profile names, so it is planted in memory.
+	port := []shippedSNMPEntry{
+		{Profile: "juniper_mx960.json", OID: ".1.3.6.1.2.1.47.1.1.1.1.11.1001", Value: "SN001001"},
+		{Profile: "juniper_mx960.json", OID: ".1.3.6.1.2.1.47.1.1.1.1.11.1", Value: "SN1"},
+		{Profile: "juniper_mx960.json", OID: ".1.3.6.1.2.1.47.1.1.1.1.7.1001", Value: "ge-0/0/0"},
+		{Profile: "asr9k.json", OID: ".1.3.6.1.2.1.47.1.1.1.1.11.1001", Value: "SN001001"},
+	}
+	want := `juniper_mx960.json: .1.3.6.1.2.1.47.1.1.1.1.11.1001 = "SN001001", want zero-length`
+	if got := strings.Join(generatedFamilyPortViolations(port), "\n"); got != want {
+		t.Errorf("the port guard reported\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -185,6 +256,7 @@ func assertEntityInventoryDetectionWorks(t *testing.T) {
 			{"oid":"1.3.6.1.2.1.47.1.1.1.1.4.1002","response":"1"},
 			{"oid":"1.3.6.1.2.1.47.1.1.1.1.12.1002","response":""},
 			{"oid":"1.3.6.1.2.1.47.1.1.1.1.18.1","response":"urn:clei:CMICAB5DAA http://example.com/x"},
+			{"oid":"1.3.6.1.2.1.47.1.1.1.1.17.1","response":"20210401"},
 			{"oid":"1.3.6.1.2.1.47.1.1.1.1.19.1","response":""}]}`,
 	}
 	for name, body := range plants {
@@ -206,6 +278,7 @@ func assertEntityInventoryDetectionWorks(t *testing.T) {
 	}
 
 	wantFormat := strings.Join([]string{
+		`zzcontra.json: .1.3.6.1.2.1.47.1.1.1.1.17.1 = "20210401": entPhysicalMfgDate month octet is 50, want 1..12`,
 		`zzshifted.json: .1.3.6.1.2.1.47.1.1.1.1.17.1 = "07E4060A000000": entPhysicalMfgDate is 14 octets, want 8 or 11`,
 		`zzshifted.json: .1.3.6.1.2.1.47.1.1.1.1.18.1 = "Cisco Systems, Inc.": entPhysicalUris token "Cisco" is not an absolute URI`,
 		`zzshifted.json: .1.3.6.1.2.1.47.1.1.1.1.19.1 = "urn:clei:CMICAB5DAA": entPhysicalUUID is 19 octets, want 0 or 16`,
