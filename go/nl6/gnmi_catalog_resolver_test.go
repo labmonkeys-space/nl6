@@ -678,7 +678,7 @@ func TestCatalogResolver_InterfacesIfTypeFilter(t *testing.T) {
 
 // The subinterfaces key source yields, per parent, the index of every
 // "<parent>.<n>" IF-MIB row, and the entry reads that row's counters. A
-// parent without such rows yields no entry, so there is no index 0.
+// parent without such rows yields no entry; nothing synthesizes an index.
 func TestCatalogResolver_SubinterfacesKeySource(t *testing.T) {
 	cat, err := parseGnmiCatalog([]byte(subifCatalog), "subif.json")
 	if err != nil {
@@ -706,5 +706,49 @@ func TestCatalogResolver_SubinterfacesKeySource(t *testing.T) {
 		if w := ic.GetDynamicAt(ifXTablePrefix+"6."+strconv.Itoa(idx), 5); vals[p] != w {
 			t.Errorf("%s in-octets %s, want ifIndex %d's %s", p, vals[p], idx, w)
 		}
+	}
+}
+
+// Index 0 is a real unit (Junos numbers its default unit 0 on every port),
+// so a "<parent>.0" row answers as IF-MIB serves it. The index is a uint32,
+// as OpenConfig types it, written canonically: a sign, a leading zero, an
+// out-of-range number or a non-number is not a subinterface.
+func TestCatalogResolver_SubinterfacesKeySourceIndexZero(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(subifCatalog), "subif.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := newNamedIfDevice(t, [][2]string{
+		{"ge0", "6"}, {"ge0.0", "135"}, {"ge0.-1", "135"}, {"ge0.+5", "135"},
+		{"ge0.4294967296", "135"}, {"ge0.7", "135"}, {"ge0.4294967295", "135"},
+		{"ge0.00", "135"}, {"ge0.007", "135"},
+	})
+	r := newCatalogResolver(d, cat)
+	ic := d.metricsCycler.ifCounters.Load()
+	got, err := r.Resolve(pathFromString(t, "/interfaces/interface/subinterfaces/subinterface/state/counters"), ic.startTime.Add(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals := map[string]string{}
+	for _, n := range got {
+		vals[pathToString(n.Prefix)] = strconv.FormatUint(n.Updates[0].Value.(uint64), 10)
+	}
+	want := map[string]int{
+		"/interfaces/interface[name=ge0]/subinterfaces/subinterface[index=0]":          2,
+		"/interfaces/interface[name=ge0]/subinterfaces/subinterface[index=7]":          6,
+		"/interfaces/interface[name=ge0]/subinterfaces/subinterface[index=4294967295]": 7,
+	}
+	if len(vals) != len(want) {
+		t.Fatalf("entries %v, want %v", vals, want)
+	}
+	for p, idx := range want {
+		if w := ic.GetDynamicAt(ifXTablePrefix+"6."+strconv.Itoa(idx), 5); vals[p] != w {
+			t.Errorf("%s in-octets %s, want ifIndex %d's %s", p, vals[p], idx, w)
+		}
+	}
+	// A direct Get of unit 0 resolves too.
+	one, err := r.Resolve(pathFromString(t, "/interfaces/interface[name=ge0]/subinterfaces/subinterface[index=0]/state/counters/in-octets"), ic.startTime.Add(5*time.Second))
+	if err != nil || len(one) != 1 {
+		t.Fatalf("Get index 0: %d notifications, %v; want 1", len(one), err)
 	}
 }
