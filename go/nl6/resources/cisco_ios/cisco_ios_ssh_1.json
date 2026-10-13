@@ -3,7 +3,7 @@
   "ssh": [
     {
       "command": "show version",
-      "response": "Cisco IOS Software, C2900 Software\nSystem uptime is 15 days, 3 hours"
+      "response": "Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E\nSystem uptime is 15 days, 3 hours"
     },
     {
       "command": "show interfaces",
