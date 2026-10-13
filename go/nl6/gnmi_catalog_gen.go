@@ -438,27 +438,60 @@ func castGnmiLeafDigits(v any, yangType string, digits int) (any, error) {
 	}
 	switch yangType {
 	case "uint64", "uint32", "uint16", "uint8", "counter64", "counter32":
+		// Integers and strings convert exactly: a float64 holds only 53
+		// bits, so routing a nanosecond timestamp through it rounds the
+		// low bits away. A string must be a base-10 integer, so "3.7" is
+		// refused. Only a float64 generator value truncates.
 		var u uint64
-		if str, ok := v.(string); ok {
-			parsed, err := strconv.ParseUint(str, 10, 64)
+		switch x := v.(type) {
+		case uint64:
+			u = x
+		case int64:
+			if x < 0 {
+				return nil, fmt.Errorf("%d is not a %s", x, yangType)
+			}
+			u = uint64(x)
+		case string:
+			parsed, err := strconv.ParseUint(x, 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("%q is not a uint64", str)
+				return nil, fmt.Errorf("%q is not a %s", x, yangType)
 			}
 			u = parsed
-		} else {
+		default:
+			// 2^64 is exactly representable; MaxUint64 rounds up to it.
 			f, ok := toF()
-			if !ok || f < 0 || f > math.MaxUint64 {
+			if !ok || f < 0 || f >= 1<<64 {
 				return nil, fmt.Errorf("%v (%T) is not a %s", v, v, yangType)
 			}
 			u = uint64(f)
 		}
 		return narrowUint(u, yangType)
 	case "int64", "int32", "int16", "int8":
-		f, ok := toF()
-		if !ok || f < math.MinInt64 || f > math.MaxInt64 {
-			return nil, fmt.Errorf("%v (%T) is not an %s", v, v, yangType)
+		// The signed twin of the unsigned branch above.
+		var i int64
+		switch x := v.(type) {
+		case int64:
+			i = x
+		case uint64:
+			if x > math.MaxInt64 {
+				return nil, fmt.Errorf("%d is not an %s", x, yangType)
+			}
+			i = int64(x)
+		case string:
+			parsed, err := strconv.ParseInt(x, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("%q is not an %s", x, yangType)
+			}
+			i = parsed
+		default:
+			// MaxInt64 rounds up to 2^63 as a float64, so the bound is >=.
+			f, ok := toF()
+			if !ok || f < math.MinInt64 || f >= 1<<63 {
+				return nil, fmt.Errorf("%v (%T) is not an %s", v, v, yangType)
+			}
+			i = int64(f)
 		}
-		return narrowInt(int64(f), yangType)
+		return narrowInt(i, yangType)
 	case "decimal64":
 		f, ok := toF()
 		if !ok {
@@ -505,8 +538,9 @@ func castGnmiLeafDigits(v any, yangType string, digits int) (any, error) {
 // YANG resolves a union value against its members in order. An
 // enumeration member accepts only the names in enum; a string-like
 // member accepts any value; an integer member accepts a float only when
-// it is integral, so 3.7 falls through rather than truncating; a
-// decimal64 member is cast with digits.
+// it is integral and a string only when it parses as an integer, so 3.7
+// falls through rather than truncating; a decimal64 member is cast with
+// digits.
 func castGnmiUnion(v any, members, enum []string, digits int) (any, error) {
 	for _, m := range members {
 		switch {
@@ -516,6 +550,9 @@ func castGnmiUnion(v any, members, enum []string, digits int) (any, error) {
 			}
 			continue
 		case strings.HasPrefix(m, "int") || strings.HasPrefix(m, "uint"):
+			// The leaf cast truncates a float64 and refuses a
+			// non-integral string, so this guard is the only thing that
+			// stops a union serving 3 for the float 3.7.
 			if f, ok := v.(float64); ok && f != math.Trunc(f) {
 				continue
 			}
