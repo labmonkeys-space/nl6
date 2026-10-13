@@ -201,7 +201,7 @@
     'Ciena Waveserver 5': 0,
     // Core routers
     'Cisco CRS-X': 0, 'Cisco ASR 9000': 0, 'Cisco ASR 9902': 0, 'Huawei NE8000': 0,
-    'Nokia 7750 SR-12': 0, 'Juniper MX960': 0,
+    'Nokia 7750 SR-12': 0, 'Juniper MX960': 0, 'Juniper MX10004': 0,
     // Data-center switches
     'Cisco Nexus 9500': 1, 'Arista 7280R3': 1,
     // Edge routers

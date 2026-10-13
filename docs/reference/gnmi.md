@@ -184,7 +184,8 @@ Time-based bindings share the interface counter cycler's start as their epoch, s
 
 ### Overrides
 
-`-gnmi-catalog <file>` replaces every type's catalogue with one file.
+`-gnmi-catalog <file>` replaces the catalogue of every type that carries one with that file.
+A type without a catalogue keeps none, so `ciena_waveserver5` keeps its optical resolver and a legacy type keeps its encodings.
 A `gnmi.json` in a resource directory replaces that type's embedded catalogue, including for types that ship none.
 Catalogues are generated, not hand-edited: `make gen-gnmi-catalog` runs `go/cmd/gnmi-catalog` over a pinned Juniper/yang checkout for `juniper_mx10004` and a pinned YangModels/yang `vendor/cisco/xr/2422` checkout for `cisco_asr9902`, each with its `gnmi-bindings.json`.
 For `cisco_asr9902`, `-modules` reads only the modules in `go/cmd/xr-chassis/yang-modules.txt`, which `capabilities-asr9k-x64.xml` advertises.

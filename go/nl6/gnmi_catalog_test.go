@@ -180,11 +180,11 @@ func TestParseCatalogPath(t *testing.T) {
 	}
 }
 
-// TestLoadGnmiCatalogs_OverrideWinsEverywhere: -gnmi-catalog replaces
-// every type's catalogue, including a directory file and the embedded
-// set; without it, directory files and embedded catalogues apply per
-// type and other types get none.
-func TestLoadGnmiCatalogs_OverrideWinsEverywhere(t *testing.T) {
+// TestLoadGnmiCatalogs_OverrideWinsWhereACatalogueExists: -gnmi-catalog
+// replaces the catalogue of every type that has one, a directory file or
+// an embedded one, and reaches no other type; without it, directory files
+// and embedded catalogues apply per type and other types get none.
+func TestLoadGnmiCatalogs_OverrideWinsWhereACatalogueExists(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "typea"), 0o755); err != nil {
 		t.Fatal(err)
@@ -207,10 +207,15 @@ func TestLoadGnmiCatalogs_OverrideWinsEverywhere(t *testing.T) {
 	if err := sm.LoadGnmiCatalogs(override, dir); err != nil {
 		t.Fatal(err)
 	}
-	for slug, d := range devs {
-		if c := sm.gnmiCatalogFor(d); c == nil || c.Vendor != "override" {
+	for _, slug := range []string{"typea", "juniper_mx10004"} {
+		if c := sm.gnmiCatalogFor(devs[slug]); c == nil || c.Vendor != "override" {
 			t.Errorf("override: %s got %v", slug, c)
 		}
+	}
+	// A type with no catalogue of its own gets none from the override: on
+	// ciena_waveserver5 a catalogue would shadow the optical resolver.
+	if c := sm.gnmiCatalogFor(devs["cisco_ios"]); c != nil {
+		t.Errorf("override reached a type without a catalogue: %s", c.Vendor)
 	}
 
 	sm = &SimulatorManager{}

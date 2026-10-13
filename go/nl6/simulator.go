@@ -132,7 +132,7 @@ func main() {
 		trapInterval    = flag.Duration("trap-interval", 30*time.Second, "Per-device mean firing interval (Poisson-distributed); default 30s")
 		trapGlobalCap   = flag.Int("trap-global-cap", 0, "Simulator-wide tps ceiling for trap fires + retries (0 = unlimited)")
 		trapCatalog     = flag.String("trap-catalog", "", "Path to a JSON trap catalog; overrides the embedded universal 5-trap catalog when set")
-		gnmiCatalog     = flag.String("gnmi-catalog", "", "Path to a JSON gNMI path catalogue; replaces every device type's embedded resources/<type>/gnmi.json when set")
+		gnmiCatalog     = flag.String("gnmi-catalog", "", "Path to a JSON gNMI path catalogue; replaces the catalogue of every device type that carries one (resources/<type>/gnmi.json) when set; types without a catalogue keep none")
 		trapCommunity   = flag.String("trap-community", "public", "SNMPv2c community string for trap/INFORM PDUs")
 		trapSNMPVersion = flag.String("trap-snmp-version", "v2c", "SNMP notification wire format: v2c (default), v1 (RFC 1157 Trap-PDU) or v3 (RFC 3414 USM). One per fleet; neither v1 nor v3 can serve -trap-mode inform")
 		// -trap-snmpv3-* is the USM surface for notifications, and it is

@@ -116,6 +116,7 @@ var deviceTypeLabels = map[string]string{
 	"hpe_proliant_dl380":      "HPE ProLiant DL380",
 	"huawei_ne8000":           "Huawei NE8000",
 	"ibm_power_s922":          "IBM Power S922",
+	"juniper_mx10004":         "Juniper MX10004",
 	"juniper_mx240":           "Juniper MX240",
 	"juniper_mx960":           "Juniper MX960",
 	"linux_server":            "Linux Server",
