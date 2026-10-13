@@ -408,7 +408,10 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // snmp_shipped_vendortype_oid_ledger_test.go.
 // nl6#821 types entPhysicalVendorType: 236 rows move from OCTET STRING to
 // OBJECT IDENTIFIER, and the column's values join the OID names.
-const shippedOIDEncodingDigest = "62c861f9df6fce48698ba79bc01c8ae15303d72f72b4afc0f2c259380680548b"
+// Re-pinned when 208 port vendor types moved from 1.3.6.1.4.1.0.0 to
+// zeroDotZero, pre-change value shippedOIDEncodingDigestBeforeEntityRoot.
+// Reversed by snmp_shipped_entity_root_ledger_test.go.
+const shippedOIDEncodingDigest = "2f958f6a614ae97157f16b8ce973b457bcc1f7a23701af8407032fe7511bede4"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

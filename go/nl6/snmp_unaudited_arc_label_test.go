@@ -143,26 +143,10 @@ var excludedArcPairs = map[[2]string]arcExclusion{
 		scanVisible: true,
 	},
 
-	// PEN 0 is the entPhysicalVendorType placeholder, 208 responses across these
-	// four profiles. It is NOT a vendor subtree: PEN 0 is Reserved in the registry,
-	// held by IANA, so a collector reading one of these resolves nothing at all.
-	// Already recorded as known-synthetic by nl6#588 and pinned by count in
-	// entPhysicalVendorTypePlaceholders.
-	//
-	// These four were scan-INVISIBLE until nl6#821 typed entPhysicalVendorType
-	// in oidTypeTable. The disposition was decided again then, not inherited:
-	// the rows are line-card placeholders whose real vendor types are nl6#823's
-	// work, so they stay excluded, per pair, and now scan-visible.
-	{"cisco_catalyst_9500.json", "0"}: {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
-	{"cisco_nexus_9500.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
-	{"juniper_mx960.json", "0"}:       {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
-	{"palo_alto_pa3220.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
+	// There is no PEN-0 row. The port rows that served 1.3.6.1.4.1.0.0 as
+	// entPhysicalVendorType now answer zeroDotZero, which is under no
+	// enterprise arc, so the scan does not see them and nothing is excluded.
 }
-
-const entPhysicalVendorTypeExclusionReason = "the 1.3.6.1.4.1.0.0 entPhysicalVendorType placeholder. " +
-	"PEN 0 is Reserved in the IANA registry and held by IANA, so this is not a vendor subtree and there " +
-	"is no vendor MIB it could be audited against. Recorded as known-synthetic by nl6#588 and pinned by " +
-	"count in entPhysicalVendorTypePlaceholders. The line cards' real vendor types are nl6#823"
 
 // ── the census, so the zero this test asserts cannot go vacuous ──────────────
 
@@ -174,7 +158,7 @@ const (
 	unauditedArcLabelledPairs = 14
 	unauditedArcLabelledParts = 25 // +6 in nl6#821: the entPhysicalVendorType part of six labelled profiles became scan-visible
 	auditedArcPairsShipped    = 15 // juniper_mx10004 joined the audited Juniper arc; cisco_asr9902 the audited Cisco arc
-	excludedArcPairsShipped   = 5  // aws_s3_storage and, since nl6#821, the four PEN-0 rows
+	excludedArcPairsShipped   = 1  // aws_s3_storage
 )
 
 // arcPairParts groups the scan's hits into (profile, PEN) -> the parts carrying

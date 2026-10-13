@@ -346,12 +346,14 @@ What the guard does **not** cover, and what remains outstanding:
   Reusing the production predicate is deliberate.
   Nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity.
   Widening it again means adding a row to `oidTypeTable`, which is a wire change.
-  `assertEntPhysicalVendorTypeIsNotCrossVendor` still checks the column separately: none of the 236 enterprise-rooted values is cross-vendor today.
-- **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`).
-  PEN 0 is `Reserved` in the registry, held by IANA.
-  So this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing.
-  The count is pinned as a known quantity, not endorsed, and the real vendor types are nl6#823's work.
-  The column holds 236 rows: 28 OIDs under the profile's own PEN and those 208 placeholders, and no value that is not an OID.
+  `assertEntPhysicalVendorTypeIsNotCrossVendor` still checks the column separately: none of the 28 enterprise-rooted values is cross-vendor today.
+- **208 of those `entPhysicalVendorType` responses answer `zeroDotZero` (`0.0`)**, the port rows of `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`.
+  RFC 4133 prescribes that value when no vendor type is known.
+  They used to answer `1.3.6.1.4.1.0.0`, under PEN 0, which is `Reserved` in the registry and held by IANA.
+  That was not a misattribution the way 9999 and 8714 were, but a collector reading it resolved nothing.
+  A PEN-0 value now fails the own-vendor PEN guard like any other foreign arc.
+  The `zeroDotZero` count is pinned, so a real vendor type replacing one lowers it on purpose.
+  The column holds 236 rows: 28 OIDs under the profile's own PEN and 208 `zeroDotZero`, and no value that is not an OID.
   Being under the right PEN does not make an OID an assignment: `arista_7280r3` answers `aristaProducts 3082`, which resolves to nothing (see the next item).
   No bare `1` remains.
   The stub `Line Card 1` rows were removed, and the `juniper_mx960` and `palo_alto_pa3220` chassis rows carry real vendor types (`jnxChassisMX960` and `panPA-3220`).
@@ -893,16 +895,15 @@ A prose match would fail on a rewording and pass on a label that says nothing.
 Binding it to the number is what stops a profile that later gains a **second** arc inheriting the first one's label, so a labelled 2620 does not excuse an unlabelled 1234 in the same file.
 It is also what `git grep UNAUDITED-ARC` finds.
 
-**Three exclusions, each for its own reason.**
+**Two exclusions, each for its own reason.**
 
 - `aws_s3_storage` / **32473** is RFC 5612's documentation PEN, chosen deliberately by the own-vendor PEN guard and already documented in that profile's own `_comment`. There is no vendor MIB to audit it against and no vendor claim to label as unchecked.
-- **PEN 0** on `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` is the `1.3.6.1.4.1.0.0` `entPhysicalVendorType` placeholder, 208 responses in total. PEN 0 is `Reserved` in the registry and held by IANA, so it is not a vendor subtree.
 - **NVIDIA's 5703** is in the audited set rather than the labelled one, and the reason is that its existing `_comment` says something *stronger* than a label would. NVIDIA publishes no SNMP GPU MIB at all, so the NVIDIA PEN re-homing and the earlier research census recorded that every object below the PEN is nl6's own invention and unresolvable against any published module. There is nothing to audit it against, so `UNAUDITED-ARC` would understate what is known.
 
-The four PEN-0 rows carry `scanVisible: true`, and that flag is checked **both ways**.
-Since nl6#821 `oidTypeTable` types `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OIDs and reports them.
-The exclusion is what keeps them from failing the guard, and the own-vendor PEN guard counts them as a known exception that cites nl6#823.
+Every exclusion carries a `scanVisible` flag, and that flag is checked **both ways**.
 A row whose visibility changes, and a stale exclusion that describes nothing, both fail the same test.
+Four PEN-0 exclusions used to sit here, for the `1.3.6.1.4.1.0.0` `entPhysicalVendorType` placeholder.
+Those rows now answer `zeroDotZero`, which is under no enterprise arc, so there is nothing left to exclude.
 
 **What the guard cannot do: check that a label is true.** A label claims that nobody read a MIB, and no test can read a MIB.
 What it can do, and does, is refuse the fourth state: a vendor subtree that reads as checked because nothing says otherwise.
