@@ -103,24 +103,11 @@ func TestVendorTypeOIDIdentitiesMatchTheMIB(t *testing.T) {
 	}
 }
 
-// vendorTypeOIDStubProfiles served a half-row "Line Card 1" at index 2: only
-// entPhysicalDescr.2 and entPhysicalVendorType.2 ("1"), contained in nothing.
-var vendorTypeOIDStubProfiles = []string{
-	"cisco_nexus_9500.json", "cisco_catalyst_9500.json", "juniper_mx960.json", "palo_alto_pa3220.json",
-}
-
-// No shipped profile serves the stub, and every row of the column is a value
-// the OID encoder can represent, decided by encodableAsOID.
-func TestNoShippedVendorTypeStubOrNonOID(t *testing.T) {
-	for _, e := range shippedSNMPEntries(t) {
-		if typeTagIn([]oidTypeEntry{{".1.3.6.1.2.1.47.1.1.1.1.3", ASN1_OBJECT_ID}}, e.OID) == 0 {
-			continue
-		}
-		if !encodableAsOID(e.Value) {
-			t.Errorf("%s %s = %q is not an OID", e.Profile, e.OID, e.Value)
-		}
-	}
-	for _, p := range vendorTypeOIDStubProfiles {
+// No shipped profile serves the half-row "Line Card 1" stub at index 2. The
+// profiles are the ones vendorTypeOIDEdits deletes it from. Non-OID values
+// are refused by load rule 2 and by TestEntPhysicalVendorTypeIsAnOID.
+func TestNoShippedVendorTypeStub(t *testing.T) {
+	for p := range vendorTypeOIDEdits() {
 		srv := deviceForProfileWithMetrics(t, p)
 		for _, oid := range []string{vendorTypeOIDDescr2OID, vendorTypeOIDVendor2OID} {
 			if got := srv.findResponse(oid); got != valueNoSuchObject {
@@ -134,7 +121,7 @@ func TestNoShippedVendorTypeStubOrNonOID(t *testing.T) {
 func TestEntPhysicalVendorTypeIsAnOID(t *testing.T) {
 	n := 0
 	for _, e := range shippedSNMPEntries(t) {
-		if typeTagIn([]oidTypeEntry{{".1.3.6.1.2.1.47.1.1.1.1.3", ASN1_OBJECT_ID}}, e.OID) == 0 {
+		if !inColumns(e.OID, []string{vendorTypeOIDColumn}) {
 			continue
 		}
 		n++
@@ -148,11 +135,19 @@ func TestEntPhysicalVendorTypeIsAnOID(t *testing.T) {
 }
 
 // The ledger encodes an older corpus as its own revision saw it.
-func TestEncodeTypedValueAtUntypesNewerColumns(t *testing.T) {
-	if got := encodeTypedValueAt(t, vendorTypeOIDVendor1OID, "1", ciscoIdentityParentRevision); got[0] != ASN1_INTEGER {
+func TestEncodeTypedValueUntypingUntypesNewerColumns(t *testing.T) {
+	got := encodeTypedValueUntyping(vendorTypeOIDVendor1OID, "1", columnsTypedAfter(t, ciscoIdentityParentRevision))
+	if len(got) == 0 {
+		t.Fatalf("at %s: encoded nothing", ciscoIdentityParentRevision)
+	}
+	if got[0] != ASN1_INTEGER {
 		t.Errorf("at %s: tag %#02x, want INTEGER", ciscoIdentityParentRevision, got[0])
 	}
-	if got := encodeTypedValueAt(t, vendorTypeOIDVendor1OID, jnxChassisMX960, corpusHeadRevision); got[0] != ASN1_OBJECT_ID {
+	got = encodeTypedValueUntyping(vendorTypeOIDVendor1OID, jnxChassisMX960, columnsTypedAfter(t, corpusHeadRevision))
+	if len(got) == 0 {
+		t.Fatal("at HEAD: encoded nothing")
+	}
+	if got[0] != ASN1_OBJECT_ID {
 		t.Errorf("at HEAD: tag %#02x, want OBJECT IDENTIFIER", got[0])
 	}
 }
@@ -195,27 +190,46 @@ func restoreVendorTypeOID(t *testing.T, cur map[[2]string]string) {
 	}
 }
 
+// vendorTypeOIDTypedColumnNames are the OID names that entered the set only
+// because the column became typed: values of entPhysicalVendorType that are
+// not also a name for another reason (an OID key, or the value of another
+// OID-typed leaf such as the PA-3220 sysObjectID). Measured at this link as
+// the tree's names minus the tree collected with the column untyped. It is a
+// literal on purpose: recomputing it from a later tree would fold that
+// link's edits into this one, and the reversal would no longer land here.
+var vendorTypeOIDTypedColumnNames = []string{
+	"1.3.6.1.4.1.0.0",
+	"1.3.6.1.4.1.119.1.3315",
+	"1.3.6.1.4.1.12356.101.1.600",
+	"1.3.6.1.4.1.171.10.3630",
+	"1.3.6.1.4.1.1916.2.4450",
+	"1.3.6.1.4.1.2.6.922",
+	"1.3.6.1.4.1.2011.2.224",
+	"1.3.6.1.4.1.232.2.380.10",
+	"1.3.6.1.4.1.2636.1.1.2.1.21",
+	"1.3.6.1.4.1.30065.1.3082.7280.3714.3",
+	"1.3.6.1.4.1.6527.6.1.1.2.7",
+	"1.3.6.1.4.1.674.10892.5.750",
+	"1.3.6.1.4.1.8741.1.6700",
+	"1.3.6.1.4.1.9.12.3.1.3.1012",
+	"1.3.6.1.4.1.9.12.3.1.3.1268",
+	"1.3.6.1.4.1.9.12.3.1.3.1467",
+	"1.3.6.1.4.1.9.12.3.1.3.1968",
+	"1.3.6.1.4.1.9.12.3.1.3.2432",
+	"1.3.6.1.4.1.9.12.3.1.3.780",
+	"1.3.6.1.4.1.9.12.3.1.9.74.147",
+	"1.3.6.1.4.1.9.12.3.1.9.74.157",
+	"1.3.6.1.4.1.9.12.3.1.9.74.158",
+}
+
 // vendorTypeOIDNamesBefore reverses the OID-name view:
-//   - the column is typed, so its values became names; remove each one that
-//     is not also a name for another reason (an OID key, or the value of
-//     another OID-typed leaf such as the PA-3220 sysObjectID). The added set
-//     is today's names minus today's tree collected with the column untyped;
+//   - the column is typed, so vendorTypeOIDTypedColumnNames became names;
 //   - the PA-3220 sysObjectID moved from panPanorama to panPA-3220;
 //   - the stub removal took entPhysicalVendorType.2 out of the whole corpus,
 //     so that key left too.
 func vendorTypeOIDNamesBefore(t *testing.T, names []string) []string {
 	t.Helper()
-	untyped := map[string]bool{}
-	for _, n := range collectShippedOIDsUntyping(t, []string{vendorTypeOIDColumn}) {
-		untyped[n] = true
-	}
-	var added []string
-	for _, n := range collectShippedOIDs(t) {
-		if !untyped[n] {
-			added = append(added, n)
-		}
-	}
-	names = reverseOIDNameEdits(t, names, "nl6#821 typed column", added, nil)
+	names = reverseOIDNameEdits(t, names, "nl6#821 typed column", vendorTypeOIDTypedColumnNames, nil)
 	return reverseOIDNameEdits(t, names, "nl6#821", []string{panPA3220}, []string{panPanorama, "1.3.6.1.2.1.47.1.1.1.1.3.2"})
 }
 

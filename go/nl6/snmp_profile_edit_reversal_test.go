@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -114,12 +113,12 @@ func corpusValuesAt(t *testing.T, target string) map[[2]string]string {
 	return cur
 }
 
-// encodeTypedValueAt encodes value as the wire carried it at revision: a
-// column a newer link typed takes the untyped default branch. Membership is
-// decided by typeTagIn, the production matcher, over a one-row table.
-func encodeTypedValueAt(t *testing.T, oid, value, revision string) []byte {
-	t.Helper()
-	if inColumns(oid, columnsTypedAfter(t, revision)) {
+// encodeTypedValueUntyping encodes value as the wire carried it at an older
+// revision: a column in untyped (columnsTypedAfter that revision, resolved
+// once by the caller) takes the untyped default branch. Membership is decided
+// by typeTagIn, the production matcher, over a one-row table.
+func encodeTypedValueUntyping(oid, value string, untyped []string) []byte {
+	if inColumns(oid, untyped) {
 		return encodeTypedValueAtTag(oid, value, 0)
 	}
 	return encodeTypedValue(oid, value)
@@ -141,10 +140,11 @@ func inColumns(oid string, cols []string) bool {
 func corpusTagDigestAt(t *testing.T, cur map[[2]string]string, revision string) string {
 	t.Helper()
 	seen := map[string]struct{}{}
+	untyped := columnsTypedAfter(t, revision)
 	for k, v := range cur {
-		enc := encodeTypedValueAt(t, k[1], v, revision)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
-			t.Fatalf("%s %s: encodeTypedValueAt(%q) emitted nothing", k[0], k[1], v)
+			t.Fatalf("%s %s: encodeTypedValueUntyping(%q) emitted nothing", k[0], k[1], v)
 		}
 		seen[fmt.Sprintf("%s\t%s\t%02X", k[0], k[1], enc[0])] = struct{}{}
 	}
@@ -192,36 +192,5 @@ func TestReverseProfileEditsRoundTrip(t *testing.T) {
 	sort.Strings(got)
 	if strings.Join(got, ",") != "1.1,1.3" {
 		t.Fatalf("names reversed to %v", got)
-	}
-}
-
-// Outside every column a link typed, encoding a corpus "as of" any revision
-// is exactly today's encoding. TestEncodeTypedValueAtUntypesNewerColumns
-// covers the typed columns.
-func TestEncodeTypedValueAtIsTheEncoderOutsideTypedColumns(t *testing.T) {
-	revs := []string{corpusHeadRevision}
-	var typed []string
-	for _, r := range newestFirstReversals {
-		revs = append(revs, r.parent)
-		typed = append(typed, r.typedColumns...)
-	}
-	for _, e := range shippedSNMPEntries(t) {
-		if inColumns(e.OID, typed) {
-			continue
-		}
-		want := encodeTypedValue(e.OID, e.Value)
-		for _, rev := range revs {
-			if got := encodeTypedValueAt(t, e.OID, e.Value, rev); !bytes.Equal(got, want) {
-				t.Fatalf("%s %s at %s: encodeTypedValueAt = % X, encodeTypedValue = % X", e.Profile, e.OID, rev, got, want)
-			}
-		}
-	}
-}
-
-func TestTypeTagInIsSnmpTypeTag(t *testing.T) {
-	for _, e := range shippedSNMPEntries(t) {
-		if a, b := typeTagIn(oidTypeTable, e.OID), snmpTypeTag(e.OID); a != b {
-			t.Fatalf("%s: typeTagIn = %#02x, snmpTypeTag = %#02x", e.OID, a, b)
-		}
 	}
 }

@@ -115,8 +115,9 @@ func TestJuniperMx10004AdditionReproducesTheParentCorpus(t *testing.T) {
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
+	untyped := columnsTypedAfter(t, juniperMx10004ParentRevision)
 	for k, v := range cur {
-		enc := encodeTypedValueAt(t, k[1], v, juniperMx10004ParentRevision)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}

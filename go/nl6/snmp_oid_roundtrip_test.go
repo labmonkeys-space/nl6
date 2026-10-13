@@ -459,13 +459,6 @@ func TestShippedOIDsUnchangedOnTheWire(t *testing.T) {
 
 func collectShippedOIDs(t *testing.T) []string {
 	t.Helper()
-	return collectShippedOIDsUntyping(t, nil)
-}
-
-// collectShippedOIDsUntyping collects today's tree as if the columns in
-// untyped were not yet typed: their responses are not OID names.
-func collectShippedOIDsUntyping(t *testing.T, untyped []string) []string {
-	t.Helper()
 	seen := map[string]bool{}
 	err := filepath.Walk("resources", func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(p) != ".json" {
@@ -501,8 +494,7 @@ func collectShippedOIDsUntyping(t *testing.T, untyped []string) []string {
 						case "oid", "snmpTrapOID", "snmpTrapEnterprise":
 							seen[str] = true
 						case "response":
-							if name != "" && snmpTypeTag(normaliseOIDKey(name)) == ASN1_OBJECT_ID &&
-								!inColumns(normaliseOIDKey(name), untyped) {
+							if name != "" && snmpTypeTag(normaliseOIDKey(name)) == ASN1_OBJECT_ID {
 								seen[str] = true
 							}
 						case "value":

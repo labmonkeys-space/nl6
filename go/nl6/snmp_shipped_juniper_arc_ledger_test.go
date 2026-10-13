@@ -38,13 +38,17 @@ import (
 // COVERAGE GAP RATHER THAN AN OVERSIGHT. juniper_mx240 answers
 // entPhysicalVendorType.1 with a Juniper product OID too, but the PRODUCTION
 // predicate that decides whether a value reaches the wire as an OID is
-// snmpTypeTag, and oidTypeTable has exactly one OBJECT IDENTIFIER row
-// (sysObjectID). So that value goes out as an OCTET STRING and is outside every
-// OID-position measurement in this package. nl6#588 recorded the same gap and
-// closed it separately with assertEntPhysicalVendorTypeIsNotCrossVendor.
-// Widening the predicate means adding an oidTypeTable row, which is a wire
-// change. The value is pinned by TestJuniperArcMatchesTheMIB anyway, because it
-// was already right.
+// snmpTypeTag. At this ledger's revision oidTypeTable had exactly one OBJECT
+// IDENTIFIER row (sysObjectID), so that value went out as an OCTET STRING and
+// was outside every OID-position measurement in this package. nl6#588 recorded
+// the same gap and closed it separately with
+// assertEntPhysicalVendorTypeIsNotCrossVendor. The value is pinned by
+// TestJuniperArcMatchesTheMIB anyway, because it was already right.
+//
+// nl6#821 later added the entPhysicalVendorType row, so today's predicate
+// passes that value. TestJuniperArcIsMeasuredInBothPositions excludes the
+// columns typed after this ledger (columnsTypedAfter), so the denominator
+// stays 2, as measured then.
 //
 // The two survivors are jnxBoxSerialNo and juniper_mx240's sysObjectID value.
 // One of the 13 misses is a WEAK call and is named as such below: jnxBoxDescr
@@ -751,8 +755,9 @@ func TestJuniperArcAuditReproducesTheParentCorpus(t *testing.T) {
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
+	untyped := columnsTypedAfter(t, juniperArcParentRevision)
 	for k, v := range cur {
-		enc := encodeTypedValueAt(t, k[1], v, juniperArcParentRevision)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}
@@ -1440,6 +1445,7 @@ func TestJuniperArcIsMeasuredInBothPositions(t *testing.T) {
 	nameEntries := map[string]int{}  // distinct OID -> entry count, name position
 	valueEntries := map[string]int{} // distinct OID -> entry count, value position
 
+	untyped := columnsTypedAfter(t, juniperArcParentRevision)
 	for _, e := range shippedSNMPEntries(t) {
 		if e.Profile != juniperMX240Profile && e.Profile != juniperMX960Profile {
 			continue
@@ -1452,7 +1458,7 @@ func TestJuniperArcIsMeasuredInBothPositions(t *testing.T) {
 		// snmpTypeTag says the leaf is one. A column a newer link typed was not
 		// an OID at the parent (entPhysicalVendorType, nl6#821).
 		if snmpTypeTag(e.OID) == ASN1_OBJECT_ID &&
-			!inColumns(e.OID, columnsTypedAfter(t, juniperArcParentRevision)) &&
+			!inColumns(e.OID, untyped) &&
 			strings.HasPrefix(e.Value, juniperArcBare+".") {
 			valueEntries[e.Value]++
 		}

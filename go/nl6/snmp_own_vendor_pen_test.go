@@ -710,7 +710,7 @@ func assertEntPhysicalVendorTypeIsNotCrossVendor(t *testing.T) {
 		pen, ok := arcPENOf(normaliseOIDKey(e.Value))
 		if !ok {
 			// Not under the enterprise root at all. None ships since nl6#821;
-			// TestNoShippedVendorTypeStubOrNonOID requires every value to be an
+			// TestEntPhysicalVendorTypeIsAnOID requires every value to be an
 			// OID. Not a vendor misattribution, and out of scope here.
 			continue
 		}
