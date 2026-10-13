@@ -149,7 +149,7 @@ func TestCastGnmiUnionLeaf(t *testing.T) {
 		leaf     *gnmiCatalogLeaf
 		in, want any
 	}{
-		{dec, float64(3.7), gnmiDecimal{val: 3.7, digits: 3}},
+		{dec, float64(3.7), newGnmiDecimal(3.7, 3)},
 		{dec, float64(3), uint32(3)},
 		{&gnmiCatalogLeaf{Type: "union", Members: []string{"uint32", "string"}}, float64(3.7), "3.7"},
 		{&gnmiCatalogLeaf{Type: "union", Members: []string{"int32", "string"}}, float64(-2.5), "-2.5"},
@@ -178,7 +178,7 @@ func TestCastGnmiLeaf(t *testing.T) {
 		{"x", "string", "x"},
 		{true, "boolean", true},
 		{"true", "boolean", true},
-		{float64(41.7), "decimal64", gnmiDecimal{val: 41.7, digits: 2}},
+		{float64(41.7), "decimal64", newGnmiDecimal(41.7, 2)},
 		{uint64(7), "string", "7"},
 	}
 	for _, c := range cases {

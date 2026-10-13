@@ -296,13 +296,19 @@ type resolvedUpdate struct {
 // corrupt an advertised encoding — the value would look right in
 // JSON_IETF and be wrong in PROTO.
 //
+// Build it with newGnmiDecimal, which rounds ONCE: every wire form is
+// derived from the one decimal string it stores, so JSON_IETF,
+// double_val and decimal_val serve the same reading (nl6#812).
+//
 // Precision caveat: optical bit error rates carry 18 fraction digits,
 // which exceeds a float64 significand, so `double_val` is lossy for
 // them. That is inherent to representing decimal64 in gNMI's PROTO
-// scalar set; JSON_IETF preserves the digits.
+// scalar set; JSON_IETF and decimal_val preserve the digits.
 type gnmiDecimal struct {
-	val    float64
+	val    float64 // the float64 nearest text
 	digits int
+	text   string // the value rounded half-to-even to digits; never "-0"
+	units  int64  // text without its decimal point: decimal_val's digits
 	// decimalVal asks the PROTO encoder for gNMI's Decimal64 message
 	// (digits + precision) instead of double_val; set by the catalogue
 	// resolver when the catalogue declares decimal_encoding:
@@ -311,10 +317,25 @@ type gnmiDecimal struct {
 	decimalVal bool
 }
 
-// String renders the value with exactly `digits` fraction digits, which
-// is the RFC 7951 decimal64 lexical form.
+// newGnmiDecimal rounds v half-to-even to digits fraction digits and
+// derives every wire form from that one decimal string. A rounded zero
+// is +0 in every form. v must be finite and v*10^digits must fit int64
+// (decimal64's range); castGnmiLeafDigits checks both for catalogue
+// values, and the optical engine's readings are bounded well inside it.
+func newGnmiDecimal(v float64, digits int) gnmiDecimal {
+	text := strconv.FormatFloat(v, 'f', digits, 64)
+	if text[0] == '-' && strings.Trim(text[1:], "0.") == "" {
+		text = text[1:]
+	}
+	val, _ := strconv.ParseFloat(text, 64)                                  // text is a decimal FormatFloat wrote
+	units, _ := strconv.ParseInt(strings.Replace(text, ".", "", 1), 10, 64) // in range by the precondition
+	return gnmiDecimal{val: val, digits: digits, text: text, units: units}
+}
+
+// String is the RFC 7951 decimal64 lexical form: exactly `digits`
+// fraction digits.
 func (d gnmiDecimal) String() string {
-	return strconv.FormatFloat(d.val, 'f', d.digits, 64)
+	return d.text
 }
 
 // ClassifyLeaves returns the leaf-name list a path covers, without

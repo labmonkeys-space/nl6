@@ -562,14 +562,14 @@ func TestCatalogResolver_DecimalWireForm(t *testing.T) {
 		}
 		return ups[0].GetVal()
 	}
-	if tv := encodeOne(mk(``)); tv.GetDoubleVal() != 38.25 {
+	if tv := encodeOne(mk(``)); tv.GetDoubleVal() != 38.2 { // rounded to digits, half-to-even (nl6#812)
 		t.Fatalf("default form: %v", tv)
 	}
 	tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`))
 	if d := tv.GetDecimalVal(); d == nil || d.GetPrecision() != 1 || d.GetDigits() != 382 { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772) (half-to-even, as the JSON forms round)
 		t.Fatalf("decimal_val form: %v", tv)
 	}
-	if tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`, `, "decimal_encoding": "double"`)); tv.GetDoubleVal() != 38.25 {
+	if tv := encodeOne(mk(`, "decimal_encoding": "decimal_val"`, `, "decimal_encoding": "double"`)); tv.GetDoubleVal() != 38.2 {
 		t.Fatalf("leaf double override: %v", tv)
 	}
 	if tv := encodeOne(mk(``, `, "decimal_encoding": "decimal_val"`)); tv.GetDecimalVal() == nil { //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)

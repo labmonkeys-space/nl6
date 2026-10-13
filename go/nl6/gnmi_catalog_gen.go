@@ -452,7 +452,12 @@ func castGnmiLeafDigits(v any, yangType string, digits int) (any, error) {
 		if digits <= 0 {
 			digits = 2
 		}
-		return gnmiDecimal{val: f, digits: digits}, nil
+		// NaN and the infinities parse ("const:NaN") but are no decimal64
+		// value, and decimal64 is an int64 scaled by 10^digits.
+		if math.IsNaN(f) || math.IsInf(f, 0) || math.Abs(f)*math.Pow10(digits) >= math.MaxInt64 {
+			return nil, fmt.Errorf("%v (%T) is not a decimal64 with %d fraction digits", v, v, digits)
+		}
+		return newGnmiDecimal(f, digits), nil
 	case "boolean":
 		switch x := v.(type) {
 		case bool:

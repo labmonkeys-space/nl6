@@ -112,6 +112,10 @@ The error is permanent, not retryable, and those devices do not advertise the op
 **Precision caveat:** `pre-fec-ber` carries 18 fraction digits, which exceeds a float64 significand.
 `PROTO`'s `double_val` is lossy for it.
 Prefer `JSON_IETF`, which preserves the digits (RFC 7951 renders decimal64 as a string).
+Every `decimal64` value is rounded once, half-to-even, to its declared fraction digits.
+`JSON_IETF`, `double_val` and `decimal_val` all derive from that one rounded decimal, so they serve the same reading.
+`double_val` is the float64 nearest that decimal, so it never carries more digits than the YANG type declares.
+A value that rounds to zero is served as `0`, never as negative zero.
 
 **`GetRequest.type`:** because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything.
 The interface surface is state-only, so it is unaffected.
@@ -145,7 +149,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].keys` | one key source per wildcard, listed in the order the wildcards are filled (an element with several keys fills them in sorted key-name order): `interfaces` (the ifDescr table), `components` (optional `filter`, optional `parent` naming the component whose children are the keys), `neighbors`, or `static` with `names` |
 | `subtrees[].leaves` | relative path, YANG type, optional enum, a generator binding, and an optional `filter` |
 | `subtrees[].echo_origin` | under `aliased_origin_prefix: empty`, the prefix carries the request's own origin spelling; the MX10004 property subtrees use it, so `openconfig-platform:/components/component/properties/...` is answered with origin `openconfig-platform` |
-| `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way |
+| `notification.decimal_encoding` | PROTO wire form of `decimal64` leaves: `double` (default, `double_val`) or `decimal_val` (gNMI `Decimal64` with the leaf's fraction digits as precision, what Junos sends); JSON forms are the RFC 7951 string either way; every form is rounded to the leaf's `digits` |
 | `subtrees[].leaves[].digits` | `decimal64` fraction-digits (1..18), written by the generator from the YANG model, or declared on an `extra` binding leaf; absent means two; refused on a non-decimal leaf |
 | `subtrees[].alias_only` | the subtree answers only a request equal to one of its aliases, never path coverage; load refuses it without aliases. How a sensor sends a shape the YANG path does not cover without the shape leaking into other subscriptions |
 | `subtrees[].leaves[].decimal_encoding` | per-leaf override of `notification.decimal_encoding` on a `decimal64` leaf (bindings `decimal_encodings` map); the MX10004 sends temperature as `Decimal64` and the transceiver optic readings as doubles |
