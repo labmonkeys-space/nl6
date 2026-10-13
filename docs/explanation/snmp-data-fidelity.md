@@ -351,7 +351,8 @@ What the guard does **not** cover, and what remains outstanding:
   PEN 0 is `Reserved` in the registry, held by IANA.
   So this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing.
   The count is pinned as a known quantity, not endorsed, and the real vendor types are nl6#823's work.
-  The column holds 236 rows: 28 real vendor OIDs and those 208 placeholders, and no value that is not an OID.
+  The column holds 236 rows: 28 OIDs under the profile's own PEN and those 208 placeholders, and no value that is not an OID.
+  Being under the right PEN does not make an OID an assignment: `arista_7280r3` answers `aristaProducts 3082`, which resolves to nothing (see the next item).
   No bare `1` remains.
   The stub `Line Card 1` rows were removed, and the `juniper_mx960` and `palo_alto_pa3220` chassis rows carry real vendor types (`jnxChassisMX960` and `panPA-3220`).
 - Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Five arcs have been audited against a vendor MIB and every one but Ciena was mostly or entirely wrong. See [Semantic faithfulness](#semantic-faithfulness) for the miss rates and the per-arc sections. The remaining fourteen were closed by decision rather than by audit: each is labelled `UNAUDITED-ARC(<pen>)` in the parts that carry it, and a guard fails by name on any arc that is neither audited, labelled nor explicitly excluded, so a new device type cannot regrow the problem quietly. All three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks. See [Access modes are not modelled](#access-modes-are-not-modelled).
@@ -545,7 +546,7 @@ So editing it would be exactly the unbacked change this audit exists to undo.
 **One defect of the same class is recorded and not fixed.** `entPhysicalVendorType.1` answers `1.3.6.1.4.1.30065.1.3082.7280.3714.3`, and `3082` is not among the sixteen first sub-identifiers either.
 The same unresolvable-product-OID defect, in the value slot of a different object.
 It is a **subclass this audit newly surfaced**: an OID-typed value under a *correct* PEN that resolves to no assignment, which the census and the PEN guards pass by construction and no load rule can see.
-It is left alone because it is an ENTITY-MIB question rather than an Arista-arc one: 240 shipped values sit in that column across the corpus, 208 of them the reserved-PEN placeholder, and correcting one profile's while the class goes unexamined would be arbitrary.
+It is left alone because it is an ENTITY-MIB question rather than an Arista-arc one: when this audit measured it, 240 shipped values sat in that column across the corpus, 208 of them the reserved-PEN placeholder, and correcting one profile's while the class goes unexamined would be arbitrary.
 The pinned Arista reading asserts its current value as a **presence**, so a later fix has to edit that assertion deliberately.
 
 **Provenance, since no MIB file is checked in.** The five modules were fetched anonymously from `https://www.arista.com/assets/data/docs/MIBS/<NAME>.txt` on 2026-09-01 and are cited by LAST-UPDATED **and by the SHA-256 of the file read**.
@@ -817,7 +818,12 @@ The polled data missed 13 of 15. The pinned Juniper trap reading pins the commen
 #### What this audit did not close
 
 - **The trap catalog's OBJECTS-clause fidelity**, and the one misdeclared varbind type. Both are recorded as measurements above.
-- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123`, which is not under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done. The Arista audit left the same class open for the same reason.
+- **Semantic faithfulness of the mib-2 rows.**
+  They are not under the Juniper arc, so they belong with an ENTITY-MIB sweep, which no arc audit has done.
+  When this audit ran, `juniper_mx960` answered `entPhysicalModelName.1` with `MODEL123`.
+  nl6#821 corrected that row to `MX960`, together with the chassis `entPhysicalDescr.1` and `entPhysicalVendorType.1`.
+  The rest of the class is still open.
+  The Arista audit left the same class open for the same reason.
 - **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
 - **Whether the mirrored modules are what Juniper ships.** See the provenance note below.
 
