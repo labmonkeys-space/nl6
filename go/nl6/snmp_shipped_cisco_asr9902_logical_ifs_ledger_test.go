@@ -130,7 +130,7 @@ func ciscoAsr9902LogicalIfsOIDNamesBefore(t *testing.T, names []string) []string
 }
 
 func TestCiscoAsr9902LogicalIfsReproduceTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, ciscoAsr9902LogicalIfsParentRevision)); got != shippedTagDigestBeforeCiscoAsr9902LogicalIfs {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, ciscoAsr9902LogicalIfsParentRevision), ciscoAsr9902LogicalIfsParentRevision); got != shippedTagDigestBeforeCiscoAsr9902LogicalIfs {
 		t.Errorf("reversing the logical interfaces change gives digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeCiscoAsr9902LogicalIfs)
 	}

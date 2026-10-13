@@ -164,7 +164,9 @@ The two exceptions are `ifAdminStatus` (`.7`) and `ifOperStatus` (`.8`), whose s
 An OID key, and the value of an OID-typed leaf such as `sysObjectID`, must also be a well-formed OID: first arc `0`-`2`, second arc at most `39` when the first is `0` or `1`, every arc and the combined value `40*first + second` at most `4294967295`, and every component a number.
 The **value** of an OID-typed leaf is checked when the file is loaded and a bad one is rejected.
 Whether a value qualifies is decided by asking the encoder itself, so the loader and the wire cannot disagree about what an OID is.
-Which leaves count as OID-typed is bounded by the encoder's type table, which today lists only `sysObjectID`; a non-OID value on any other OBJECT IDENTIFIER leaf still loads and is served as an OCTET STRING.
+Which leaves count as OID-typed is bounded by the encoder's type table, which today lists `sysObjectID` and `entPhysicalVendorType`.
+Since nl6#821 a resource file whose `entPhysicalVendorType` value is not an OID is refused at load.
+A non-OID value on any other OBJECT IDENTIFIER leaf still loads and is served as an OCTET STRING.
 An OID **key** is still not checked: a malformed key reaches the encoder and is served as the degenerate encoding `06 00` rather than silently becoming a different OID, with nothing logged.
 See [SNMP reference → The first OID sub-identifier is a varint](snmp.md#the-first-oid-sub-identifier-is-a-varint).
 

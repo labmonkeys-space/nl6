@@ -50,11 +50,9 @@ import (
 // No MIB is checked in: Cisco's header grants no redistribution, so this is a
 // pinned reading, not a live check.
 //
-// entPhysicalVendorType.1 still goes out as an OCTET STRING, because
-// oidTypeTable types only sysObjectID as OBJECT IDENTIFIER and widening it is a
-// wire change for every profile. Its value is neither an OID name nor a typed
-// OID value, so no golden digest sees it: TestASR9kIdentityMatchesTheMIB is
-// the only guard on it.
+// entPhysicalVendorType.1 went out as an OCTET STRING when this ledger was
+// written. Since nl6#821 oidTypeTable types the column, so it is an OBJECT
+// IDENTIFIER on the wire and an OID name to collectShippedOIDs.
 
 const (
 	asr9kProfile           = "asr9k.json"
@@ -73,7 +71,7 @@ func TestASR9kIdentityMatchesTheMIB(t *testing.T) {
 		tag             byte
 	}{
 		{"sysObjectID.0 (ciscoASR9010)", asr9kSysObjectIDOID, asr9kSysObjectIDWant, ASN1_OBJECT_ID},
-		{"entPhysicalVendorType.1 (cevChassisASR9010)", asr9kChassisVendorOID, asr9kChassisVendorWant, ASN1_OCTET_STRING},
+		{"entPhysicalVendorType.1 (cevChassisASR9010)", asr9kChassisVendorOID, asr9kChassisVendorWant, ASN1_OBJECT_ID},
 	} {
 		got := srv.findResponse(c.oid)
 		if got != c.want {
@@ -166,8 +164,9 @@ func TestASR9kIdentityFixReproducesTheParentCorpus(t *testing.T) {
 
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
+	untyped := columnsTypedAfter(t, asr9kIdentityParentRevision)
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}

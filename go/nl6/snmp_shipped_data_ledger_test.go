@@ -268,8 +268,9 @@ func TestShippedDataEditsReproduceTheParentCorpus(t *testing.T) {
 	restoreCorpusValuesTo(t, cur, dataEditsParentRevision)
 
 	lines := make([]string, 0, len(cur))
+	untyped := columnsTypedAfter(t, dataEditsParentRevision)
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}

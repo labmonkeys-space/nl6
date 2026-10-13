@@ -49,6 +49,21 @@ func TestValidateSNMPResourceValues_SentinelRejected(t *testing.T) {
 	}
 }
 
+// nl6#821: entPhysicalVendorType is typed, so a non-OID value is refused at
+// load instead of going out as the degenerate 06 00.
+func TestValidateSNMPResourceValues_VendorTypeMustBeAnOID(t *testing.T) {
+	res := guardResources([2]string{".1.3.6.1.2.1.47.1.1.1.1.3.2", "1"})
+	err := validateSNMPResourceValues("operator_snmp.json", res)
+	if err == nil {
+		t.Fatal(`entPhysicalVendorType.2 = "1": want rejection, got nil`)
+	}
+	for _, want := range []string{"operator_snmp.json", ".1.3.6.1.2.1.47.1.1.1.1.3.2", `"1"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+}
+
 // TestValidateSNMPResourceValues_MatchIsExact covers the three "is data" rows
 // of the matrix. isSNMPExceptionValue is an exact string test, and this pins
 // that the guard did not widen it into a substring or case-folding match.

@@ -68,7 +68,7 @@ Counts are distinct OIDs found wrong or unresolvable, out of distinct OIDs read.
 
 ### Labelled arcs
 
-Fourteen profiles, one arc each, nineteen parts carrying the marker.
+Fourteen profiles, one arc each, twenty-five parts carrying the marker.
 
 | Profile | PEN |
 |---|---|

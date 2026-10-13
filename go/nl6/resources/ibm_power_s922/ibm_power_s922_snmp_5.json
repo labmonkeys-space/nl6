@@ -1,4 +1,5 @@
 {
+  "_comment": "UNAUDITED-ARC(2): entPhysicalVendorType.1 in this part answers an OID under 1.3.6.1.4.1.2. nl6#821 typed that column as an OBJECT IDENTIFIER, so the value reaches the wire as an identity claim. The arc itself IS checked: TestEveryProfileServesOnlyItsOwnVendorArc requires ibm_power_s922.json to serve PEN 2 and no other vendor's number. The value below the number has not been read against any IBM MIB. Refs nl6#590, nl6#821.",
   "snmp": [
     {"oid": "1.3.6.1.2.1.47.1.1.1.1.3.1", "response": "1.3.6.1.4.1.2.6.922"},
     {"oid": "1.3.6.1.2.1.47.1.1.1.1.14.1", "response": "IBM-POWER-S922-CHASSIS-01"},

@@ -355,7 +355,7 @@ func mx10004LC9600OIDNamesBefore(t *testing.T, names []string) []string {
 }
 
 func TestMx10004LC9600ReproducesTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, mx10004LC9600ParentRevision)); got != shippedTagDigestBeforeMx10004LC9600 {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, mx10004LC9600ParentRevision), mx10004LC9600ParentRevision); got != shippedTagDigestBeforeMx10004LC9600 {
 		t.Errorf("reversing the LC9600 change gives digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeMx10004LC9600)
 	}

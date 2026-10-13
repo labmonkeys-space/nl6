@@ -113,14 +113,38 @@ func corpusValuesAt(t *testing.T, target string) map[[2]string]string {
 	return cur
 }
 
-// corpusTagDigest hashes a value map the way shippedTagDigest does.
-func corpusTagDigest(t *testing.T, cur map[[2]string]string) string {
+// encodeTypedValueUntyping encodes value as the wire carried it at an older
+// revision: a column in untyped (columnsTypedAfter that revision, resolved
+// once by the caller) takes the untyped default branch. Membership is decided
+// by typeTagIn, the production matcher, over a one-row table.
+func encodeTypedValueUntyping(oid, value string, untyped []string) []byte {
+	if inColumns(oid, untyped) {
+		return encodeTypedValueAtTag(oid, value, 0)
+	}
+	return encodeTypedValue(oid, value)
+}
+
+// inColumns reports whether oid lies in one of cols. Membership is decided by
+// typeTagIn over a one-row table.
+func inColumns(oid string, cols []string) bool {
+	for _, col := range cols {
+		if typeTagIn([]oidTypeEntry{{col, ASN1_OBJECT_ID}}, oid) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// corpusTagDigestAt hashes a value map the way shippedTagDigest does, as the
+// corpus encoded at revision.
+func corpusTagDigestAt(t *testing.T, cur map[[2]string]string, revision string) string {
 	t.Helper()
 	seen := map[string]struct{}{}
+	untyped := columnsTypedAfter(t, revision)
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueUntyping(k[1], v, untyped)
 		if len(enc) == 0 {
-			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
+			t.Fatalf("%s %s: encodeTypedValueUntyping(%q) emitted nothing", k[0], k[1], v)
 		}
 		seen[fmt.Sprintf("%s\t%s\t%02X", k[0], k[1], enc[0])] = struct{}{}
 	}
