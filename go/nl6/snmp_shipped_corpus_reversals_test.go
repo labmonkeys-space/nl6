@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "entPhysicalVendorType as an OBJECT IDENTIFIER",
+		file:         "snmp_shipped_vendortype_oid_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       vendorTypeOIDParentRevision,
+		values:       restoreVendorTypeOID,
+		names:        vendorTypeOIDNamesBefore,
+	},
+	{
 		name:         "cisco_asr9902 components",
 		file:         "snmp_shipped_cisco_asr9902_components_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: vendorTypeOIDParentRevision,
 		parent:       ciscoAsr9902ComponentsParentRevision,
 		values:       restoreCiscoAsr9902Components,
 		names:        ciscoAsr9902ComponentsOIDNamesBefore,

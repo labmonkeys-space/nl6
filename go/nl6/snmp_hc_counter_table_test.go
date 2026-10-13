@@ -172,7 +172,9 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // cisco_asr9902 components: twenty empty SFP bays drop their transceiver
 // entities and go oper-down, pre-change value
 // shippedTagDigestBeforeCiscoAsr9902Components.
-const shippedTagDigest = "03c3beee1f1b37f43a374de662e6bdbbc7cccf595402c8ce1ffc5bd28bd2de39"
+// nl6#821 chassis identities and stub removal, pre-change value
+// shippedTagDigestBeforeVendorTypeOID.
+const shippedTagDigest = "7e971f515ae98097a82e6832e53f8b1841b9680b22405416150ca6b37220d73e"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

@@ -403,7 +403,10 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // transceiver entities, pre-change value
 // shippedOIDEncodingDigestBeforeCiscoAsr9902Components. Reversed by
 // snmp_shipped_cisco_asr9902_components_ledger_test.go.
-const shippedOIDEncodingDigest = "7852de8aa4ffe09fe6b38766096b68a8b895bbe00d6c4a9936d67f234ab2d222"
+// Re-pinned for the nl6#821 chassis identities and stub removal, pre-change
+// value shippedOIDEncodingDigestBeforeVendorTypeOID. Reversed by
+// snmp_shipped_vendortype_oid_ledger_test.go.
+const shippedOIDEncodingDigest = "fef8a48da9d2b011802f5065ed06fc815e1be8c0898dcf347302cd9186b24a37"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
