@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "ENTITY-MIB chassis root and zeroDotZero vendor types",
+		file:         "snmp_shipped_entity_root_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       entityRootParentRevision,
+		values:       restoreEntityRoot,
+		names:        entityRootNamesBefore,
+	},
+	{
 		name:         "entPhysicalVendorType as an OBJECT IDENTIFIER",
 		file:         "snmp_shipped_vendortype_oid_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: entityRootParentRevision,
 		parent:       vendorTypeOIDParentRevision,
 		values:       restoreVendorTypeOID,
 		names:        vendorTypeOIDNamesBefore,

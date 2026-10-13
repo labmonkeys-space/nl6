@@ -392,7 +392,7 @@ test-interop: check-go
 	@snmpget --version 2>&1 | head -1
 	@snmptrapd --version 2>&1 | head -2 | tail -1
 	cd $(GO_DIR) && NL6_SNMP_INTEROP=1 go test ./nl6/ \
-	    -run 'TestUSMInterop|TestSNMPv3TrapInterop|TestSNMPSetInterop' -count=1 -v
+	    -run 'TestUSMInterop|TestSNMPv3TrapInterop|TestSNMPSetInterop|TestEntityRootInterop' -count=1 -v
 	@echo "  (TestSNMPSetInteropWriteCommunity and ...MinimumSecurityLevel are the nl6#690"
 	@echo "   write-admission rows; the TestSNMPSetInterop prefix above already selects them)"
 

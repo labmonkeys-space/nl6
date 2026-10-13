@@ -176,7 +176,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // shippedTagDigestBeforeVendorTypeOID.
 // nl6#821 types entPhysicalVendorType: 236 rows move from OCTET STRING to
 // OBJECT IDENTIFIER. Reversed by snmp_shipped_vendortype_oid_ledger_test.go.
-const shippedTagDigest = "e99c04bc6034c11caca251d934f710fa14355d36669b4f24b7c22c9ed8838378"
+// The ENTITY-MIB chassis-root fix moves four firmware revisions from INTEGER to
+// OCTET STRING, pre-change value shippedTagDigestBeforeEntityRoot. Reversed by
+// snmp_shipped_entity_root_ledger_test.go.
+const shippedTagDigest = "1e737c477e1843377b22eea42508d971eeaee390bf77bfbb3bf8add85aae1968"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

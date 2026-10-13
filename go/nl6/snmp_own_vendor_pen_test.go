@@ -284,7 +284,7 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 //
 // nl6#821 typed entPhysicalVendorType as an OBJECT IDENTIFIER, so its values
 // joined the value half: 30 to 58. The 28 new ones are each profile's own
-// vendor type; the 208 PEN-0 placeholders are excused and counted separately.
+// vendor type. The 208 port rows answer zeroDotZero, which is under no arc.
 const (
 	ownVendorArcNamesShipped  = 327
 	ownVendorArcValuesShipped = 58 // +1: cisco_asr9902's sysObjectID ciscoASR9902; +28: entPhysicalVendorType (nl6#821)
@@ -440,11 +440,13 @@ func crossProfileForeignArcFixture() []struct{ dir, file, body string } {
 			`{"snmp":[{"oid":"1.3.6.1.2.1.1.2.0","response":"1.3.6.1.4.1.5703.1.2.1"}]}`},
 		{"ibm_power_s922", "zzplanted_prefix_trap_snmp.json",
 			`{"snmp":[{"oid":"1.3.6.1.4.1.2011.5.25.31.1.1.1.1.5.1","response":"7"}]}`},
+		{"dell_poweredge_r750", "zzplanted_reserved_pen_snmp.json",
+			`{"snmp":[{"oid":"1.3.6.1.2.1.47.1.1.1.1.3.9999","response":"1.3.6.1.4.1.0.0"}]}`},
 	}
 }
 
 // assertForeignArcDetectionWorks is the control every assertion in this file's
-// corpus guard runs first. It plants the three rows above into a temp copy of
+// corpus guard runs first. It plants the four rows above into a temp copy of
 // resources/ and requires the SAME scan and the SAME rule to report all three.
 func assertForeignArcDetectionWorks(t *testing.T) {
 	t.Helper()
@@ -464,13 +466,18 @@ func assertForeignArcDetectionWorks(t *testing.T) {
 	// SCOPED TO THE PLANTED PROFILES, deliberately. An exact total over the whole
 	// corpus would make this control fail whenever a REAL violation exists
 	// elsewhere — which is precisely when the guard is doing its job and the
-	// control still has to be trustworthy. Within the three planted profiles the
+	// control still has to be trustworthy. Within the four planted profiles the
 	// count IS exact, so a rule that reported every entry rather than the foreign
 	// ones still fails here.
 	want := map[string]struct{ pen, where string }{
 		"cisco_ios.json":      {"2636", "name"},
 		"linux_server.json":   {"5703", "value"},
 		"ibm_power_s922.json": {"2011", "name"},
+		// PEN 0 is Reserved, held by IANA. It is no profile's own vendor, so an
+		// entPhysicalVendorType under it fails like any other foreign arc. The
+		// RFC 4133 value for an unknown vendor type is zeroDotZero, which is not
+		// under the enterprise root at all.
+		"dell_poweredge_r750.json": {"0", "value"},
 	}
 	seen := map[string]arcViolation{}
 	for _, v := range foreignArcViolations(scanArcPositions(t, underAnyEnterpriseArc), ownVendorPENs) {
@@ -494,7 +501,8 @@ func assertForeignArcDetectionWorks(t *testing.T) {
 				"plant in linux_server is the missing one, the scan reads OID KEYS only — and "+
 				"vendor detection reads the sysObjectID RESPONSE. If the PEN-2011 plant inside the "+
 				"IBM profile (own PEN 2) is missing, the PEN is being matched by string prefix "+
-				"rather than on a sub-identifier boundary.", w.pen, w.where, profile)
+				"rather than on a sub-identifier boundary. If the PEN-0 plant in the Dell profile is "+
+				"missing, a reserved-PEN entPhysicalVendorType is being excused again.", w.pen, w.where, profile)
 		}
 		if v.pen != w.pen || v.hit.where != w.where {
 			t.Fatalf("in %s the guard reported PEN %s in the %s position, want PEN %s in the %s "+
@@ -547,8 +555,7 @@ func TestEveryProfileServesOnlyItsOwnVendorArc(t *testing.T) {
 	// The control runs first and in its own scope, because it t.Chdir()s.
 	t.Run("positive control", func(t *testing.T) { assertForeignArcDetectionWorks(t) })
 
-	hits, placeholders := splitEntPhysicalVendorTypePlaceholders(scanArcPositions(t, underAnyEnterpriseArc))
-	assertEntPhysicalVendorTypePlaceholders(t, placeholders)
+	hits := scanArcPositions(t, underAnyEnterpriseArc)
 
 	for _, v := range foreignArcViolations(hits, ownVendorPENs) {
 		own, registered := ownVendorPENs[v.hit.profile]
@@ -629,67 +636,14 @@ func TestEveryProfileServesOnlyItsOwnVendorArc(t *testing.T) {
 	assertEntPhysicalVendorTypeIsNotCrossVendor(t)
 }
 
-// entPhysicalVendorTypePlaceholderProfiles are the four profiles that serve the
-// 1.3.6.1.4.1.0.0 placeholder as line-card entPhysicalVendorType. Their real
-// vendor types are nl6#823's work.
-//
-// Since nl6#821 types the column, the main guard sees these values. They are a
-// counted exception, not a PEN-0 allowance: a hit is excused only when it is
-// that exact value, in that column, on one of these four profiles, and the
-// excused total must equal entPhysicalVendorTypePlaceholders.
-var entPhysicalVendorTypePlaceholderProfiles = map[string]bool{
-	"cisco_catalyst_9500.json": true,
-	"cisco_nexus_9500.json":    true,
-	"juniper_mx960.json":       true,
-	"palo_alto_pa3220.json":    true,
-}
-
-const entPhysicalVendorTypePlaceholder = "1.3.6.1.4.1.0.0"
-
-// splitEntPhysicalVendorTypePlaceholders separates the placeholder hits from
-// the rest. Column membership is decided by typeTagIn, the production matcher.
-func splitEntPhysicalVendorTypePlaceholders(hits []arcHit) (rest, placeholders []arcHit) {
-	for _, h := range hits {
-		if h.where == "value" && h.text == entPhysicalVendorTypePlaceholder &&
-			entPhysicalVendorTypePlaceholderProfiles[h.profile] &&
-			inColumns(h.oid, []string{vendorTypeOIDColumn}) {
-			placeholders = append(placeholders, h)
-			continue
-		}
-		rest = append(rest, h)
-	}
-	return rest, placeholders
-}
-
-// assertEntPhysicalVendorTypePlaceholders pins the exception: its size, and
-// that every one of the four profiles still needs it.
-func assertEntPhysicalVendorTypePlaceholders(t *testing.T, placeholders []arcHit) {
-	t.Helper()
-	per := map[string]int{}
-	for _, h := range placeholders {
-		per[h.profile]++
-	}
-	if len(placeholders) != entPhysicalVendorTypePlaceholders {
-		t.Errorf("%d entPhysicalVendorType placeholder values excused, want %d (nl6#823)",
-			len(placeholders), entPhysicalVendorTypePlaceholders)
-	}
-	for p := range entPhysicalVendorTypePlaceholderProfiles {
-		if per[p] == 0 {
-			t.Errorf("%s serves no entPhysicalVendorType placeholder; drop it from "+
-				"entPhysicalVendorTypePlaceholderProfiles", p)
-		}
-	}
-}
-
-// entPhysicalVendorTypePlaceholders is the number of shipped
-// entPhysicalVendorType responses answering the synthetic 1.3.6.1.4.1.0.0.
-//
-// PEN 0 is "Reserved" in the registry, held by IANA — it is not a company, so
-// these are not a misattribution the way 9999 or 8714 were, but they are not a
-// vendor type either: a collector reading entPhysicalVendorType gets a value that
-// resolves to nothing. Pinned so the count is a known quantity rather than
-// something nobody has counted.
-const entPhysicalVendorTypePlaceholders = 208
+// entPhysicalVendorTypeZeroDotZero is the number of shipped entPhysicalVendorType
+// responses answering zeroDotZero (0.0). RFC 4133 prescribes that value when no
+// vendor type is known. The port rows of cisco_catalyst_9500 (48),
+// cisco_nexus_9500 (64), juniper_mx960 (80) and palo_alto_pa3220 (16) served
+// 1.3.6.1.4.1.0.0 instead, an OID under the IANA-reserved PEN 0 that resolves to
+// nothing. Pinned so the count is a known quantity: a real vendor type replacing
+// one of these lowers it.
+const entPhysicalVendorTypeZeroDotZero = 208
 
 // assertEntPhysicalVendorTypeIsNotCrossVendor checks, by inspection, that no
 // entPhysicalVendorType value is another vendor's arc.
@@ -702,36 +656,35 @@ func assertEntPhysicalVendorTypeIsNotCrossVendor(t *testing.T) {
 	t.Helper()
 
 	const entPhysicalVendorTypeCol = ".1.3.6.1.2.1.47.1.1.1.1.3."
-	placeholders, checked := 0, 0
+	zeroDotZero, checked := 0, 0
 	for _, e := range shippedSNMPEntries(t) {
 		if !strings.HasPrefix(e.OID, entPhysicalVendorTypeCol) {
 			continue
 		}
 		pen, ok := arcPENOf(normaliseOIDKey(e.Value))
 		if !ok {
-			// Not under the enterprise root at all. None ships since nl6#821;
-			// TestEntPhysicalVendorTypeIsAnOID requires every value to be an
-			// OID. Not a vendor misattribution, and out of scope here.
+			// Not under the enterprise root at all. The only such value that
+			// ships is zeroDotZero, RFC 4133's "no vendor type known". Anything
+			// else here is not a vendor misattribution and is out of scope;
+			// TestEntPhysicalVendorTypeIsAnOID requires it to be an OID.
+			if e.Value == "0.0" {
+				zeroDotZero++
+			}
 			continue
 		}
 		checked++
-		if pen == "0" {
-			placeholders++
-			continue
-		}
 		if own := ownVendorPENs[e.Profile]; own.pen != pen {
 			t.Errorf("%s: entPhysicalVendorType %s answers %q, which is under PEN %s, not %s's own "+
 				"PEN %s", e.Part, e.OID, e.Value, pen, e.Profile, own.pen)
 		}
 	}
-	if placeholders != entPhysicalVendorTypePlaceholders {
-		t.Errorf("%d entPhysicalVendorType responses answer the synthetic 1.3.6.1.4.1.0.0, recorded "+
-			"as %d. PEN 0 is 'Reserved' in the registry: these resolve to no vendor at all. The "+
-			"count is pinned so it is a known quantity, not because it is right",
-			placeholders, entPhysicalVendorTypePlaceholders)
+	if zeroDotZero != entPhysicalVendorTypeZeroDotZero {
+		t.Errorf("%d entPhysicalVendorType responses answer zeroDotZero, recorded as %d. If a real "+
+			"vendor type replaced one, lower the constant and say which",
+			zeroDotZero, entPhysicalVendorTypeZeroDotZero)
 	}
-	t.Logf("%d entPhysicalVendorType values sit under an enterprise arc; %d are the reserved-PEN "+
-		"placeholder, the rest are their own vendor's", checked, placeholders)
+	t.Logf("%d entPhysicalVendorType values sit under their own vendor's arc; %d answer zeroDotZero",
+		checked, zeroDotZero)
 }
 
 // ── the code-served surface (nl6#588 P2) ────────────────────────────────────

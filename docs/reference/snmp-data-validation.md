@@ -42,6 +42,18 @@ See [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 | SSH, API, optical sections; trap and syslog catalogs | never reach `encodeTypedValue`; the catalogs have their own validation |
 | Version-0 GETBULK | answered as-is, `0x46` tags included |
 
+## ENTITY-MIB structure
+
+Two corpus tests check the shape of every shipped `entPhysicalTable`.
+They run in `make test`, not at load, so they cover shipped profiles and not operator files.
+
+| Test | Refuses |
+|---|---|
+| `TestEveryEntityTableHasOneChassisRoot` | a table with no row or several rows of `entPhysicalContainedIn` `0`, a root that is not `chassis(3)` or whose `entPhysicalParentRelPos` is not `-1`, and a row contained in an index the profile does not serve |
+| `TestEveryProfileServesOnlyItsOwnVendorArc` | an `entPhysicalVendorType` under another vendor's PEN, including the IANA-reserved PEN 0 |
+
+An unknown vendor type is `zeroDotZero` (`0.0`), as RFC 4133 prescribes.
+
 ## Vendor arc disposition
 
 Every enterprise arc a shipped profile serves is exactly one of three things.
@@ -92,4 +104,3 @@ Fourteen profiles, one arc each, twenty-five parts carrying the marker.
 | Profile | PEN | Reason |
 |---|---|---|
 | `aws_s3_storage` | 32473 | RFC 5612 documentation PEN; no vendor MIB exists to audit against |
-| `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960`, `palo_alto_pa3220` | 0 | `1.3.6.1.4.1.0.0` is the `entPhysicalVendorType` placeholder; PEN 0 is IANA-reserved |
