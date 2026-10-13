@@ -33,9 +33,12 @@ var gnmiCatalogDriftCases = []struct {
 }
 
 // TestGnmiCatalogNotDrifted regenerates every committed catalogue from its
-// bindings and diffs. A case skips when its YANG cache is absent so CI
-// without network still passes; `make gen-gnmi-catalog` populates it.
+// bindings and diffs. A case skips when its YANG cache is absent, so a local
+// run without network still passes. `make test-gnmi-drift` populates the cache
+// and sets NL6_REQUIRE_YANG_CACHE, under which an absent cache FAILS: a skip in
+// CI asserts nothing, and this guard skipped on every runner until CI ran it.
 func TestGnmiCatalogNotDrifted(t *testing.T) {
+	require := os.Getenv("NL6_REQUIRE_YANG_CACHE") != ""
 	cache := os.Getenv("YANG_CACHE")
 	if cache == "" {
 		home, _ := os.UserHomeDir()
@@ -45,10 +48,16 @@ func TestGnmiCatalogNotDrifted(t *testing.T) {
 		t.Run(c.slug, func(t *testing.T) {
 			rel := filepath.Join(cache, filepath.FromSlash(c.cacheRel))
 			if _, err := os.Stat(rel); err != nil {
-				t.Skipf("YANG cache %s missing; run make gen-gnmi-catalog", rel)
+				if require {
+					t.Fatalf("YANG cache %s missing and NL6_REQUIRE_YANG_CACHE is set; run make yang-cache", rel)
+				}
+				t.Skipf("YANG cache %s missing; run make test-gnmi-drift", rel)
 			}
 			bindings := filepath.Join("resources", c.slug, "gnmi-bindings.json")
 			if _, err := os.Stat(bindings); err != nil {
+				if require {
+					t.Fatalf("%s has no bindings and NL6_REQUIRE_YANG_CACHE is set", c.slug)
+				}
 				t.Skipf("%s has no bindings yet", c.slug)
 			}
 			out := filepath.Join(t.TempDir(), "gnmi.json")
@@ -60,8 +69,14 @@ func TestGnmiCatalogNotDrifted(t *testing.T) {
 			if b, err := exec.Command("go", args...).CombinedOutput(); err != nil {
 				t.Fatalf("generator: %v\n%s", err, b)
 			}
-			got, _ := os.ReadFile(out)
-			want, _ := os.ReadFile(filepath.Join("resources", c.slug, "gnmi.json"))
+			got, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatalf("generator output: %v", err)
+			}
+			want, err := os.ReadFile(filepath.Join("resources", c.slug, "gnmi.json"))
+			if err != nil {
+				t.Fatalf("committed catalogue: %v", err)
+			}
 			if !bytes.Equal(got, want) {
 				t.Fatalf("resources/%s/gnmi.json differs from generator output; run make gen-gnmi-catalog and commit", c.slug)
 			}
