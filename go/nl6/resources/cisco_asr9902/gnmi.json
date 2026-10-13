@@ -17414,6 +17414,10 @@
         {
           "name": "type",
           "type": "union",
+          "members": [
+            "identityref",
+            "identityref"
+          ],
           "gen": "inventory:type",
           "filter": "tag:type"
         },
@@ -17522,7 +17526,14 @@
         },
         {
           "name": "state/index",
-          "type": "string",
+          "type": "union",
+          "enum": [
+            "ALL"
+          ],
+          "members": [
+            "enumeration",
+            "uint32"
+          ],
           "gen": "key:0"
         },
         {

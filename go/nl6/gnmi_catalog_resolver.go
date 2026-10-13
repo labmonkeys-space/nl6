@@ -21,6 +21,9 @@ import (
 type catalogNotification struct {
 	Prefix  *gnmipb.Path
 	Updates []resolvedUpdate
+	// subtree rendered the entry; the JSON_IETF fold types a repeated
+	// list key through its state/<key> leaf (nl6#807).
+	subtree *gnmiCatalogSubtree
 }
 
 // catalogResolver answers gNMI paths from a per-type catalogue. One
@@ -386,7 +389,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 			if len(updates) == 0 {
 				continue
 			}
-			n := catalogNotification{Updates: updates}
+			n := catalogNotification{Updates: updates, subtree: st}
 			if r.cat.Notification.Prefix == gnmiPrefixListEntry {
 				// A root subtree ("/") yields a prefix with the origin only,
 				// which is what Junos sends for /system/state.

@@ -17050,9 +17050,6 @@
         "state/wait/max-time": "timestamp:boot",
         "state/wait/min": "const:0",
         "state/wait/min-time": "timestamp:boot"
-      },
-      "types": {
-        "state/index": "string"
       }
     },
     {

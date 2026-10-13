@@ -79,13 +79,15 @@ type bindingSubtree struct {
 }
 
 type outLeaf struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
-	Enum   []string `json:"enum,omitempty"`
-	Gen    string   `json:"gen"`
-	Filter string   `json:"filter,omitempty"`
-	Digits int      `json:"digits,omitempty"`
-	Always bool     `json:"always,omitempty"`
+	Name string   `json:"name"`
+	Type string   `json:"type"`
+	Enum []string `json:"enum,omitempty"`
+	// Members are a union's member types in declaration order (nl6#807).
+	Members []string `json:"members,omitempty"`
+	Gen     string   `json:"gen"`
+	Filter  string   `json:"filter,omitempty"`
+	Digits  int      `json:"digits,omitempty"`
+	Always  bool     `json:"always,omitempty"`
 	// DecimalEncoding is the leaf's override of the notification's.
 	DecimalEncoding string `json:"decimal_encoding,omitempty"`
 }
@@ -203,11 +205,14 @@ func run(args []string) error {
 			if err != nil {
 				return fmt.Errorf("subtree %s leaf %s: %w", st.Path, name, err)
 			}
-			typ, enum := typeOf(e)
+			typ, enum, members, digits := typeOf(e)
 			if ov, ok := st.Types[name]; ok {
-				typ, enum = ov, nil
+				typ, enum, members, digits = ov, nil, nil, 0
+				if ov == "decimal64" {
+					digits = fractionDigitsOf(e, ov)
+				}
 			}
-			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Gen: st.Leaves[name], Filter: st.Filters[name], Digits: fractionDigitsOf(e, typ)})
+			leaves = append(leaves, outLeaf{Name: name, Type: typ, Enum: enum, Members: members, Gen: st.Leaves[name], Filter: st.Filters[name], Digits: digits})
 		}
 		extraNames := make([]string, 0, len(st.Extra))
 		for n := range st.Extra {
@@ -442,7 +447,13 @@ func lookup(root *yang.Entry, subtree, leaf string) (*yang.Entry, error) {
 // resolvedType follows leafrefs until a non-leafref type; each hop
 // resolves its path relative to the entry that declared it.
 func resolvedType(e *yang.Entry) *yang.YangType {
-	t := e.Type
+	_, t := resolvedEntryType(e, e.Type)
+	return t
+}
+
+// resolvedEntryType follows leafrefs from type t declared at e, and
+// returns the final type with the entry that declared it.
+func resolvedEntryType(e *yang.Entry, t *yang.YangType) (*yang.Entry, *yang.YangType) {
 	for t.Kind == yang.Yleafref && t.Path != "" {
 		if target := e.Find(t.Path); target != nil && target.Type != nil {
 			e, t = target, target.Type
@@ -450,11 +461,70 @@ func resolvedType(e *yang.Entry) *yang.YangType {
 		}
 		break
 	}
-	return t
+	return e, t
 }
 
-func typeOf(e *yang.Entry) (string, []string) {
-	t := resolvedType(e)
+// servableKinds are the member kinds the runtime cast handles; a union
+// with any other member (binary, bits, empty, ...) gets no members and
+// is served as a string, as before members existed.
+var servableKinds = map[string]bool{
+	"uint64": true, "uint32": true, "uint16": true, "uint8": true,
+	"int64": true, "int32": true, "int16": true, "int8": true,
+	"decimal64": true, "boolean": true,
+	"string": true, "enumeration": true, "identityref": true, "leafref": true,
+}
+
+// typeOf returns the leaf's catalogue type, its enum or identity names,
+// for a union its member types in declaration order, and its decimal64
+// fraction-digits (for a union, the first decimal64 member's). A
+// union's names are its enumeration members' names, deduplicated, which
+// is what the runtime matches a value against (nl6#807).
+func typeOf(e *yang.Entry) (typ string, enum, members []string, digits int) {
+	de, t := resolvedEntryType(e, e.Type)
+	if t.Kind != yang.Yunion {
+		k, names := kindOf(t)
+		if k == "decimal64" {
+			digits = int(t.FractionDigits)
+		}
+		return k, names, nil, digits
+	}
+	for _, m := range unionMembers(de, t) {
+		k, names := kindOf(m)
+		if !servableKinds[k] {
+			return "union", nil, nil, 0
+		}
+		members = append(members, k)
+		if k == "enumeration" {
+			for _, n := range names {
+				if !slices.Contains(enum, n) {
+					enum = append(enum, n)
+				}
+			}
+		}
+		if k == "decimal64" && digits == 0 {
+			digits = int(m.FractionDigits)
+		}
+	}
+	return "union", enum, members, digits
+}
+
+// unionMembers flattens union t declared at e into its member types,
+// resolving leafref members to their targets and flattening nested
+// unions.
+func unionMembers(e *yang.Entry, t *yang.YangType) []*yang.YangType {
+	var out []*yang.YangType
+	for _, m := range t.Type {
+		me, m := resolvedEntryType(e, m)
+		if m.Kind == yang.Yunion {
+			out = append(out, unionMembers(me, m)...)
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func kindOf(t *yang.YangType) (string, []string) {
 	switch t.Kind {
 	case yang.Yenum:
 		return "enumeration", enumNames(t.Enum)
@@ -469,8 +539,6 @@ func typeOf(e *yang.Entry) (string, []string) {
 		return "boolean", nil
 	case yang.Ydecimal64:
 		return "decimal64", nil
-	case yang.Yunion:
-		return "union", nil
 	}
 	return t.Kind.String(), nil // uint64, uint32, int64, string, ...
 }

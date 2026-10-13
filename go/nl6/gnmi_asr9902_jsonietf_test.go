@@ -9,7 +9,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -195,7 +198,7 @@ func flattenFolded(t *testing.T, base string, v any, out map[string]string) {
 							rest[ek] = ev
 						}
 					}
-					flattenFolded(t, base+"/"+k+"["+key+"="+entry[key].(string)+"]", rest, out)
+					flattenFolded(t, base+"/"+k+"["+key+"="+jsonKey(entry[key])+"]", rest, out)
 				}
 				continue
 			}
@@ -204,6 +207,18 @@ func flattenFolded(t *testing.T, base string, v any, out map[string]string) {
 	default:
 		out[base] = jsonClass(x)
 	}
+}
+
+// jsonKey spells a repeated list key as the path does: a string as is,
+// a number without exponent form.
+func jsonKey(v any) string {
+	switch x := v.(type) {
+	case json.Number:
+		return x.String()
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	}
+	return fmt.Sprint(v)
 }
 
 func jsonClass(v any) string {
@@ -449,5 +464,159 @@ func TestASR9902JSONIETFGetTypeFiltersBeforeFold(t *testing.T) {
 				t.Errorf("%s type %v: %d notifications, want %d", path, c.typ, got, c.want)
 			}
 		}
+	}
+}
+
+// The CPU index is union { enumeration { enum ALL; } uint32; }. PROTO
+// sends ALL as string_val and a numbered CPU as uint_val, JSON_IETF as
+// a JSON string and a JSON number (RFC 7951 §6.1, §6.4), as IOS-XR does.
+// The path key stays a string in both (nl6#807).
+func TestASR9902CPUIndexFollowsTheUnionMember(t *testing.T) {
+	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, asr9902Catalog(t, ""), 1)
+	defer cleanup()
+	check := func(enc gnmipb.Encoding, key string, val *gnmipb.TypedValue) {
+		t.Helper()
+		var got any
+		if enc == gnmipb.Encoding_PROTO {
+			switch v := val.GetValue().(type) {
+			case *gnmipb.TypedValue_StringVal:
+				got = v.StringVal
+			case *gnmipb.TypedValue_UintVal:
+				got = float64(v.UintVal)
+			}
+		} else {
+			// The container layout folds each CPU entry into one value.
+			var obj struct {
+				State map[string]any `json:"state"`
+			}
+			if err := json.Unmarshal(val.GetJsonIetfVal(), &obj); err != nil {
+				t.Fatalf("%s value %q: %v", key, val.GetJsonIetfVal(), err)
+			}
+			got = obj.State["index"]
+		}
+		var want any = "ALL"
+		if key != "ALL" {
+			n, err := strconv.ParseUint(key, 10, 32)
+			if err != nil {
+				t.Fatalf("key %q", key)
+			}
+			want = float64(n)
+		}
+		if got != want {
+			t.Errorf("%v cpu[index=%s] state/index = %v (%T), want %v (%T)", enc, key, got, got, want, want)
+		}
+	}
+	for _, enc := range []gnmipb.Encoding{gnmipb.Encoding_PROTO, gnmipb.Encoding_JSON_IETF} {
+		resps, err := subscribeOnceOrigin(t, addr, enc, "openconfig-system", "/system/cpus/cpu/state")
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := 0
+		for _, r := range resps {
+			n := r.GetUpdate()
+			for _, u := range n.GetUpdate() {
+				full := append(append([]*gnmipb.PathElem{}, n.GetPrefix().GetElem()...), u.GetPath().GetElem()...)
+				key := ""
+				for _, e := range full {
+					if e.GetName() == "cpu" {
+						key = e.GetKey()["index"]
+					}
+				}
+				last := full[len(full)-1].GetName()
+				if (enc == gnmipb.Encoding_PROTO && last == "index") || (enc == gnmipb.Encoding_JSON_IETF && last == "cpu") {
+					seen++
+					check(enc, key, u.GetVal())
+				}
+			}
+		}
+		if seen != 7 {
+			t.Errorf("%v: %d CPU index values, want 7 (ALL and 0..5)", enc, seen)
+		}
+	}
+	// A folded list repeats the key as an entry member. The catalogue
+	// serves the key leaf, so the member is typed like state/index.
+	resp, err := getOrigin(t, addr, gnmipb.Encoding_JSON_IETF, "", "/system/cpus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, v := onlyUpdate(t, resp)
+	cpus, _ := v["cpu"].([]any)
+	if len(cpus) != 7 {
+		t.Fatalf("cpu is %T with %d entries, want 7", v["cpu"], len(cpus))
+	}
+	for _, c := range cpus {
+		entry, _ := c.(map[string]any)
+		state, _ := entry["state"].(map[string]any)
+		if entry["index"] == nil || entry["index"] != state["index"] {
+			t.Errorf("entry index %v (%T), state/index %v (%T), want equal", entry["index"], entry["index"], state["index"], state["index"])
+		}
+	}
+}
+
+// A folded CPU key is typed from the catalogue's state/index leaf even
+// when the request covers only state/total, so the key a value repeats
+// never depends on which leaves rode along, and always equals the path
+// key cast through the union (nl6#807).
+func TestASR9902FoldedCPUKeyTypedFromCatalogue(t *testing.T) {
+	r := newCatalogResolver(&DeviceSimulator{ID: "d", IP: net.IPv4(10, 0, 0, 1)}, asr9902Catalog(t, ""))
+	req := pathFromString(t, "/system/cpus")
+	cn, err := r.Resolve(req, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range cn {
+		var total []resolvedUpdate
+		for _, u := range cn[i].Updates {
+			if strings.HasPrefix(pathToString(u.Path), "/state/total/") {
+				total = append(total, u)
+			}
+		}
+		cn[i].Updates = total
+	}
+	ups, err := foldJSONIETFGet(req, cn)
+	if err != nil || len(ups) != 1 {
+		t.Fatalf("%d updates, %v", len(ups), err)
+	}
+	var v struct {
+		CPU []map[string]any `json:"cpu"`
+	}
+	if err := json.Unmarshal(ups[0].GetVal().GetJsonIetfVal(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.CPU) != 7 {
+		t.Fatalf("%d cpu entries, want 7", len(v.CPU))
+	}
+	for i, e := range v.CPU {
+		var want any = float64(i - 1)
+		if i == 0 {
+			want = "ALL"
+		}
+		if e["index"] != want {
+			t.Errorf("entry %d index %v (%T), want %v (%T)", i, e["index"], e["index"], want, want)
+		}
+	}
+	// End to end, a state/total Subscribe folds at the entry, whose path
+	// carries the key, so no value repeats it as a string.
+	_, _, addr, cleanup := startTestGnmiServerWithCatalogN(t, asr9902Catalog(t, ""), 1)
+	defer cleanup()
+	resps, err := subscribeOnceOrigin(t, addr, gnmipb.Encoding_JSON_IETF, "openconfig-system", "/system/cpus/cpu/state/total")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, r := range resps {
+		for _, u := range r.GetUpdate().GetUpdate() {
+			seen++
+			var obj map[string]any
+			if err := json.Unmarshal(u.GetVal().GetJsonIetfVal(), &obj); err != nil {
+				t.Fatal(err)
+			}
+			if idx, ok := obj["index"]; ok {
+				t.Errorf("%s: value repeats index %v (%T)", pathToString(u.GetPath()), idx, idx)
+			}
+		}
+	}
+	if seen != 7 {
+		t.Errorf("%d state/total updates, want 7", seen)
 	}
 }

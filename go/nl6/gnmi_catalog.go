@@ -194,12 +194,17 @@ type gnmiCatalogSubtree struct {
 // into a second subtree on the same entry path instead renders that
 // entry twice (nl6#765), which parseGnmiCatalog refuses.
 type gnmiCatalogLeaf struct {
-	Name   string   `json:"name"`
-	Type   string   `json:"type"`
-	Enum   []string `json:"enum,omitempty"`
-	Gen    string   `json:"gen"`
-	Filter string   `json:"filter,omitempty"`
-	Digits int      `json:"digits,omitempty"` // decimal64 fraction-digits from YANG; 0 = 2
+	Name string   `json:"name"`
+	Type string   `json:"type"`
+	Enum []string `json:"enum,omitempty"`
+	// Members are a union's member types in YANG declaration order;
+	// Enum then names the enumeration member's values. A value takes
+	// the first member that accepts it (nl6#807). A union without
+	// members is served as a string.
+	Members []string `json:"members,omitempty"`
+	Gen     string   `json:"gen"`
+	Filter  string   `json:"filter,omitempty"`
+	Digits  int      `json:"digits,omitempty"` // decimal64 fraction-digits from YANG; 0 = 2
 	// Always renders the leaf whenever its entry renders at all, even
 	// when the request path does not cover it. A Junos sensor sends its
 	// identity leaves (name, init-time, parent-ae-name) with every
@@ -222,7 +227,13 @@ type gnmiCatalogLeaf struct {
 // the leaf's fraction digits and wire form applied, so every caller
 // that casts a catalogue leaf gets the same gnmiDecimal.
 func (leaf *gnmiCatalogLeaf) cast(v any) (any, error) {
-	out, err := castGnmiLeafDigits(v, leaf.Type, leaf.Digits)
+	var out any
+	var err error
+	if leaf.Type == "union" && len(leaf.Members) > 0 {
+		out, err = castGnmiUnion(v, leaf.Members, leaf.Enum, leaf.Digits)
+	} else {
+		out, err = castGnmiLeafDigits(v, leaf.Type, leaf.Digits)
+	}
 	if d, ok := out.(gnmiDecimal); ok && err == nil {
 		d.decimalVal = leaf.decimalVal
 		return d, nil
@@ -456,6 +467,14 @@ func (c *gnmiCatalog) validate(source string) error {
 			if !gnmiLeafTypes[leaf.Type] {
 				return fail("subtree %d leaf %q: type %q is not a supported YANG type", i, leaf.Name, leaf.Type)
 			}
+			if len(leaf.Members) > 0 && leaf.Type != "union" {
+				return fail("subtree %d leaf %q: members is for union leaves, not %s", i, leaf.Name, leaf.Type)
+			}
+			for _, m := range leaf.Members {
+				if !gnmiLeafTypes[m] || m == "union" {
+					return fail("subtree %d leaf %q: union member %q is not a supported YANG type", i, leaf.Name, m)
+				}
+			}
 			g, err := compileGnmiBinding(leaf.Gen)
 			if err != nil {
 				return fail("subtree %d leaf %q: binding: %v", i, leaf.Name, err)
@@ -471,7 +490,7 @@ func (c *gnmiCatalog) validate(source string) error {
 				return fail("subtree %d leaf %q: neighbor binding needs a neighbors key source", i, leaf.Name)
 			}
 			leaf.gen = g
-			if leaf.Digits != 0 && leaf.Type != "decimal64" {
+			if leaf.Digits != 0 && leaf.Type != "decimal64" && !slices.Contains(leaf.Members, "decimal64") {
 				return fail("subtree %d leaf %q: digits is for decimal64 leaves, not %s", i, leaf.Name, leaf.Type)
 			}
 			if leaf.Digits < 0 || leaf.Digits > 18 {

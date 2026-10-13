@@ -79,6 +79,9 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"leaf filter without components key", strings.Replace(base, `"gen": "ifstate:oper"`, `"gen": "ifstate:oper", "filter": "temperature"`, 1), "filter needs a components key source"},
 		{"leaf filter matching nothing", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "inventory:serial_no", "filter": "FAN"`, 1), `filter "FAN" matches no component`},
 		{"digits on a non-decimal leaf", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "uint64", "digits": 1, "gen": "sine:40,5,600"`, 1), "digits is for decimal64 leaves"},
+		{"members on a non-union leaf", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "uint64", "members": ["uint32"], "gen": "sine:40,5,600"`, 1), "members is for union leaves"},
+		{"unknown union member", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "union", "members": ["float"], "gen": "sine:40,5,600"`, 1), `union member "float"`},
+		{"digits on a union without a decimal64 member", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "union", "members": ["uint32", "string"], "digits": 2, "gen": "sine:40,5,600"`, 1), "digits is for decimal64 leaves"},
 		{"digits out of range", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "decimal64", "digits": 19, "gen": "sine:40,5,600"`, 1), "outside YANG's 1..18"},
 		{"duplicate component", strings.Replace(base, `{"name": "Chassis"`, `{"name": "FPC0", "type": "CHASSIS", "parent": "", "part_no": "x", "description": "x", "serial_no": "x", "temperature": false}, {"name": "Chassis"`, 1), `"FPC0" listed twice`},
 		{"key index past the key sources", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "key:1"`, 1), "key index 1 is outside"},
@@ -306,5 +309,15 @@ func TestParseGnmiCatalog_ParentScopesComponentsKey(t *testing.T) {
 	_, err = parseGnmiCatalog(twoSubtreeCatalog("openconfig", `[{"source": "components", "parent": "Chassis"}]`, "openconfig", `[{"source": "static", "names": ["FPC0"]}]`), "guard")
 	if err == nil || !strings.Contains(err.Error(), `entry "FPC0"`) {
 		t.Fatalf("overlap through a parent scope not refused: %v", err)
+	}
+}
+
+// digits is allowed on a union whose members include decimal64: the
+// cast hands them to that member (nl6#807).
+func TestParseGnmiCatalog_UnionDigits(t *testing.T) {
+	base := string(readTestCatalog(t))
+	ok := strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "union", "members": ["uint32", "decimal64"], "digits": 3, "gen": "sine:40,5,600"`, 1)
+	if _, err := parseGnmiCatalog([]byte(ok), "union.json"); err != nil {
+		t.Fatal(err)
 	}
 }

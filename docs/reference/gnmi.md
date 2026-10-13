@@ -150,6 +150,7 @@ Each device adds a 48-byte resolver.
 | `subtrees[].alias_only` | the subtree answers only a request equal to one of its aliases, never path coverage; load refuses it without aliases. How a sensor sends a shape the YANG path does not cover without the shape leaking into other subscriptions |
 | `subtrees[].leaves[].decimal_encoding` | per-leaf override of `notification.decimal_encoding` on a `decimal64` leaf (bindings `decimal_encodings` map); the MX10004 sends temperature as `Decimal64` and the transceiver optic readings as doubles |
 | `subtrees[].leaves[].always` | rendered whenever its entry renders at all, even when the request path does not cover it (bindings `always` list); how a Junos sensor sends identity leaves such as `name` and `init-time` with every counters notification |
+| `subtrees[].leaves[].members` | a `union` leaf's member types in YANG declaration order, written by the generator with nested unions flattened and leafref members resolved to their targets; `enum` then names the enumeration members' values, and `digits` the first `decimal64` member's fraction digits. A union with a member the runtime cannot serve (`binary`, `bits`, `empty`, ...) gets no `members`. A value takes the first member that accepts it: an enumeration only its names, a string-like member anything, an integer member an integral value in range (`3.7` falls through rather than truncating), a `decimal64` member any number. The ASR 9902 CPU `state/index` (`ALL` or `uint32`) sends `ALL` as a string and a numbered CPU as `uint_val`, a JSON number in JSON_IETF. A `union` without `members` is served as a string; load refuses `members` on another type |
 | `subtrees[].leaves[].filter` | narrows the leaf to the components matching the value (`temperature`, `tag:<name>` or a component type, the `components` key-source vocabulary); the leaf is omitted from every other entry of the subtree |
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
@@ -233,7 +234,10 @@ The counters alias `/interfaces/interface/state/counters` crosses the interface 
 Lists become arrays, and each entry repeats its keys as members, so `/components` answers `{"component": [{"name": "...", "state": {...}}, ...]}`.
 Scalars keep the per-leaf JSON_IETF form: 64-bit integers and decimals are quoted strings, 32-bit integers and booleans are bare.
 A leaf marked `always` that sits outside the requested node is left out, because the nested value cannot hold it.
-List keys repeated inside a value are JSON strings, because the catalogue does not type keys; on the ASR 9902 the keys a folded value can hold are the component `name` and the CPU `index`, which the catalogue serves as a string.
+A list key repeated inside a value is the path key cast through the subtree's `state/<key>` leaf when the catalogue has one, whichever leaves the request covered, because an OpenConfig list key is a leafref to that leaf.
+So a numbered CPU entry under `/system/cpus` is `{"index": 0, "state": {"index": 0, ...}}` and the aggregate is `{"index": "ALL", ...}`.
+A key with no such leaf in the catalogue stays a JSON string.
+The path key is a string in every encoding, as gNMI requires.
 A JSON_IETF Subscribe in ONCE or SAMPLE mode sends one update per list entry, at the entry path with its keys, with no prefix.
 PROTO, ON_CHANGE and the paths the shared resolver answers keep one update per leaf, so `/interfaces/interface/state` stays per-leaf on an ASR 9902.
 The layout follows Cisco's xrdocs article [Getting started with gNMI](https://xrdocs.io/programmability/blogs/OpenConfig-gNMI), which shows it for IOS-XR 7.

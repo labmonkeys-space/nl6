@@ -55,6 +55,31 @@ func classAdmits(class, kind string) bool {
 	return false
 }
 
+// classProblems compares the kinds a leaf was served with against its
+// fixture class. Every served kind must be admitted. A union class
+// (`integer|string`) must also have each of its classes observed at
+// least once, or a leaf that only ever sends one member passes (nl6#807).
+func classProblems(class string, kinds map[string]bool) []string {
+	var problems []string
+	for k := range kinds {
+		if !classAdmits(class, k) {
+			problems = append(problems, "kind "+k+" outside class "+class)
+		}
+	}
+	if strings.Contains(class, "|") {
+		for _, c := range strings.Split(class, "|") {
+			seen := false
+			for k := range kinds {
+				seen = seen || classAdmits(c, k)
+			}
+			if !seen {
+				problems = append(problems, "class "+c+" of "+class+" never served")
+			}
+		}
+	}
+	return problems
+}
+
 // TestASR9902ShapeMatchesCapture subscribes ONCE in PROTO to each fixture's
 // path with the module origin gnmic used and requires the served leaf set,
 // prefix forms and value classes to equal the fixture's.
@@ -89,7 +114,7 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			gotLeaves, gotPrefixes := map[string]string{}, map[string]bool{}
+			gotLeaves, gotPrefixes := map[string]map[string]bool{}, map[string]bool{}
 			for _, r := range resps {
 				n := r.GetUpdate()
 				if n == nil {
@@ -99,18 +124,23 @@ func TestASR9902ShapeMatchesCapture(t *testing.T) {
 				gotPrefixes[n.GetPrefix().GetOrigin()+":"+pfx] = true
 				for _, u := range n.GetUpdate() {
 					full := strings.TrimSuffix(pfx, "/") + "/" + strings.TrimPrefix(wildcardKeys(pathToString(u.GetPath())), "/")
-					gotLeaves[full] = typedValueKind(u.GetVal(), gnmipb.Encoding_PROTO)
+					if gotLeaves[full] == nil {
+						gotLeaves[full] = map[string]bool{}
+					}
+					gotLeaves[full][typedValueKind(u.GetVal(), gnmipb.Encoding_PROTO)] = true
 				}
 			}
 			var problems []string
 			want := map[string]bool{}
 			for _, l := range fx.Leaves {
 				want[l.Path] = true
-				switch k, ok := gotLeaves[l.Path]; {
-				case !ok:
+				kinds, ok := gotLeaves[l.Path]
+				if !ok {
 					problems = append(problems, "missing "+l.Path)
-				case !classAdmits(l.Class, k):
-					problems = append(problems, "kind "+k+" outside class "+l.Class+": "+l.Path)
+					continue
+				}
+				for _, p := range classProblems(l.Class, kinds) {
+					problems = append(problems, p+": "+l.Path)
 				}
 			}
 			for l := range gotLeaves {

@@ -5146,6 +5146,10 @@
         {
           "name": "state/neighbor-address",
           "type": "union",
+          "members": [
+            "string",
+            "string"
+          ],
           "gen": "neighbor:address"
         },
         {
