@@ -446,3 +446,84 @@ func TestModulesFlagReadsOnlyNamedModules(t *testing.T) {
 		t.Fatalf("got %v, want an error naming the missing module", err)
 	}
 }
+
+// TestGenerateEmitsUnionMembers: a union leaf carries its member types
+// in declaration order, nested unions flattened, and its enumeration
+// members' names, so the runtime can type each value by the member that
+// accepts it (nl6#807). A types override drops them.
+func TestGenerateEmitsUnionMembers(t *testing.T) {
+	dir := t.TempDir()
+	yangSrc := `module test-u {
+  yang-version 1.1;
+  namespace "urn:test:u";
+  prefix tu;
+  revision 2026-10-13 { description "test"; }
+  typedef addr { type union { type string; type uint8; } }
+  container cpus {
+    list cpu {
+      key "index";
+      leaf index { type leafref { path "../state/index"; } }
+      container state {
+        leaf index { type union { type enumeration { enum ALL; } type uint32; } }
+        leaf nested { type union { type addr; type boolean; } }
+        leaf overridden { type union { type enumeration { enum ALL; } type uint32; } }
+        leaf viaref { type union { type leafref { path "../index"; } type boolean; } }
+        leaf dupenum { type union { type enumeration { enum ALL; } type enumeration { enum ALL; enum NONE; } } }
+        leaf withbinary { type union { type binary; type uint32; } }
+        leaf dec { type union { type decimal64 { fraction-digits 3; } type string; } }
+      }
+    }
+  }
+}
+`
+	bind := `{"vendor": "testvendor",
+  "notification": {"origin": "openconfig", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "subtrees": [{"path": "/cpus/cpu[index=*]", "origin": "openconfig", "module": "test-u",
+    "keys": [{"source": "static", "names": ["ALL", "0"]}],
+    "leaves": {"state/index": "key:0", "state/nested": "const:x", "state/overridden": "key:0",
+      "state/viaref": "key:0", "state/dupenum": "key:0", "state/withbinary": "const:1", "state/dec": "const:1.5"},
+    "types": {"state/overridden": "string"}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "test-u.yang"), []byte(yangSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bp := filepath.Join(t.TempDir(), "b.json")
+	if err := os.WriteFile(bp, []byte(bind), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "o.json")
+	if err := run([]string{"-yang", dir, "-bindings", bp, "-out", out}); err != nil {
+		t.Fatal(err)
+	}
+	var cat struct {
+		Subtrees []struct {
+			Leaves []outLeaf `json:"leaves"`
+		} `json:"subtrees"`
+	}
+	b, _ := os.ReadFile(out)
+	if err := json.Unmarshal(b, &cat); err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Subtrees) != 1 {
+		t.Fatalf("%d subtrees, want 1", len(cat.Subtrees))
+	}
+	got := map[string]outLeaf{}
+	for _, l := range cat.Subtrees[0].Leaves {
+		got[l.Name] = l
+	}
+	for name, want := range map[string]outLeaf{
+		"state/index":      {Type: "union", Members: []string{"enumeration", "uint32"}, Enum: []string{"ALL"}},
+		"state/nested":     {Type: "union", Members: []string{"string", "uint8", "boolean"}},
+		"state/overridden": {Type: "string"},
+		// A leafref member resolves to its target, here the index union.
+		"state/viaref":  {Type: "union", Members: []string{"enumeration", "uint32", "boolean"}, Enum: []string{"ALL"}},
+		"state/dupenum": {Type: "union", Members: []string{"enumeration", "enumeration"}, Enum: []string{"ALL", "NONE"}},
+		// A member the runtime cannot serve leaves the union a string.
+		"state/withbinary": {Type: "union"},
+		"state/dec":        {Type: "union", Members: []string{"decimal64", "string"}, Digits: 3},
+	} {
+		l := got[name]
+		if l.Type != want.Type || strings.Join(l.Members, ",") != strings.Join(want.Members, ",") || strings.Join(l.Enum, ",") != strings.Join(want.Enum, ",") || l.Digits != want.Digits {
+			t.Errorf("%s: type %s members %v enum %v digits %d, want %s %v %v %d", name, l.Type, l.Members, l.Enum, l.Digits, want.Type, want.Members, want.Enum, want.Digits)
+		}
+	}
+}

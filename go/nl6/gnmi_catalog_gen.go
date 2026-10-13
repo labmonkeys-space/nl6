@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 	"math"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -478,6 +479,32 @@ func castGnmiLeafDigits(v any, yangType string, digits int) (any, error) {
 		return nil, fmt.Errorf("%v (%T) is not a string", v, v)
 	}
 	return nil, fmt.Errorf("unknown YANG type %q", yangType)
+}
+
+// castGnmiUnion casts v to the first union member that accepts it, as
+// YANG resolves a union value against its members in order. An
+// enumeration member accepts only the names in enum; a string-like
+// member accepts any value; an integer member accepts a float only when
+// it is integral, so 3.7 falls through rather than truncating; a
+// decimal64 member is cast with digits.
+func castGnmiUnion(v any, members, enum []string, digits int) (any, error) {
+	for _, m := range members {
+		switch {
+		case m == "enumeration":
+			if s, err := castGnmiLeaf(v, m); err == nil && slices.Contains(enum, s.(string)) {
+				return s, nil
+			}
+			continue
+		case strings.HasPrefix(m, "int") || strings.HasPrefix(m, "uint"):
+			if f, ok := v.(float64); ok && f != math.Trunc(f) {
+				continue
+			}
+		}
+		if out, err := castGnmiLeafDigits(v, m, digits); err == nil {
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("%v (%T) matches no member of union %v", v, v, members)
 }
 
 // uintBounds and intBounds are the upper (and lower) bounds the narrower

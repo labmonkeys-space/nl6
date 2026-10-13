@@ -189,6 +189,37 @@ func (n *jsonIETFNode) write(b *bytes.Buffer) {
 	}
 }
 
+// typeKeys re-encodes the key members child spelled as strings on the
+// entry node for the last prefix element. An OpenConfig list key is a
+// leafref to state/<key>, so RFC 7951 encodes it as that leaf: the path
+// key value is cast through the subtree's state/<key> leaf, whichever
+// leaves the request covered (nl6#807). A key with no such leaf stays a
+// string.
+func (n *jsonIETFNode) typeKeys(last *gnmipb.PathElem, st *gnmiCatalogSubtree) error {
+	if st == nil {
+		return nil
+	}
+	for k, v := range last.GetKey() {
+		m := n.members[k]
+		if m == nil || !m.key {
+			continue
+		}
+		for _, leaf := range st.Leaves {
+			if leaf.Name != "state/"+k {
+				continue
+			}
+			cast, err := leaf.cast(v)
+			if err != nil {
+				return status.Errorf(codes.Internal, "JSON_IETF fold: key %s=%q: %v", k, v, err)
+			}
+			if m.scalar, err = jsonIETFScalar(cast); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (n *jsonIETFNode) typedValue() *gnmipb.TypedValue {
 	var b bytes.Buffer
 	n.write(&b)
@@ -243,6 +274,11 @@ func foldJSONIETFGet(request *gnmipb.Path, notifs []catalogNotification) ([]*gnm
 			var err error
 			if entry, err = lookup(&gnmipb.Path{Origin: n.Prefix.GetOrigin(), Elem: pe[:len(q)]}).root.descend(pe[len(q):]); err != nil {
 				return nil, err
+			}
+			if len(q) < len(pe) {
+				if err := entry.typeKeys(pe[len(pe)-1], n.subtree); err != nil {
+					return nil, err
+				}
 			}
 		}
 		for _, u := range n.Updates {

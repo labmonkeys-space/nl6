@@ -121,6 +121,49 @@ func TestGnmiBindings_MissingLookupsAreNotOk(t *testing.T) {
 	}
 }
 
+// A union leaf with members takes the first member that accepts the
+// value, in YANG declaration order. openconfig-system's CPU index is
+// union { enumeration { enum ALL; } uint32; }: ALL stays a string and a
+// numbered CPU becomes a uint32 (nl6#807).
+func TestCastGnmiUnionLeaf(t *testing.T) {
+	cpu := &gnmiCatalogLeaf{Type: "union", Members: []string{"enumeration", "uint32"}, Enum: []string{"ALL"}}
+	for _, c := range []struct {
+		in, want any
+	}{{"ALL", "ALL"}, {"0", uint32(0)}, {"5", uint32(5)}, {uint64(3), uint32(3)}} {
+		if got, err := cpu.cast(c.in); err != nil || got != c.want {
+			t.Errorf("cast(%v) = %v (%T), %v; want %v (%T)", c.in, got, got, err, c.want, c.want)
+		}
+	}
+	if got, err := cpu.cast("any"); err == nil {
+		t.Errorf("cast(any) = %v, want an error: no member accepts it", got)
+	}
+	// A string-like member accepts anything, so it wins when first.
+	if got, err := (&gnmiCatalogLeaf{Type: "union", Members: []string{"string", "uint32"}}).cast("7"); err != nil || got != "7" {
+		t.Errorf("string-first union cast(7) = %v, %v; want \"7\"", got, err)
+	}
+	// An integer member takes a float only when it is integral, so 3.7
+	// falls through to the next member instead of truncating to 3. A
+	// decimal64 member keeps the leaf's fraction digits.
+	dec := &gnmiCatalogLeaf{Type: "union", Members: []string{"uint32", "decimal64"}, Digits: 3}
+	for _, c := range []struct {
+		leaf     *gnmiCatalogLeaf
+		in, want any
+	}{
+		{dec, float64(3.7), gnmiDecimal{val: 3.7, digits: 3}},
+		{dec, float64(3), uint32(3)},
+		{&gnmiCatalogLeaf{Type: "union", Members: []string{"uint32", "string"}}, float64(3.7), "3.7"},
+		{&gnmiCatalogLeaf{Type: "union", Members: []string{"int32", "string"}}, float64(-2.5), "-2.5"},
+	} {
+		if got, err := c.leaf.cast(c.in); err != nil || got != c.want {
+			t.Errorf("%v cast(%v) = %v (%T), %v; want %v (%T)", c.leaf.Members, c.in, got, got, err, c.want, c.want)
+		}
+	}
+	// Without members a union keeps the historical string form.
+	if got, err := (&gnmiCatalogLeaf{Type: "union"}).cast("7"); err != nil || got != "7" {
+		t.Errorf("member-less union cast(7) = %v, %v; want \"7\"", got, err)
+	}
+}
+
 func TestCastGnmiLeaf(t *testing.T) {
 	cases := []struct {
 		in   any
