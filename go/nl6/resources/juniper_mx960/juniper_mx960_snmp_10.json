@@ -2,183 +2,183 @@
   "snmp": [
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1036",
-      "response": "ASSET1036"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1037",
-      "response": "ASSET1037"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1038",
-      "response": "ASSET1038"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1039",
-      "response": "ASSET1039"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1040",
-      "response": "ASSET1040"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1041",
-      "response": "ASSET1041"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1042",
-      "response": "ASSET1042"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1043",
-      "response": "ASSET1043"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1044",
-      "response": "ASSET1044"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1045",
-      "response": "ASSET1045"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1046",
-      "response": "ASSET1046"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1047",
-      "response": "ASSET1047"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1048",
-      "response": "ASSET1048"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1049",
-      "response": "ASSET1049"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1050",
-      "response": "ASSET1050"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1051",
-      "response": "ASSET1051"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1052",
-      "response": "ASSET1052"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1053",
-      "response": "ASSET1053"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1054",
-      "response": "ASSET1054"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1055",
-      "response": "ASSET1055"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1056",
-      "response": "ASSET1056"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1057",
-      "response": "ASSET1057"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1058",
-      "response": "ASSET1058"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1059",
-      "response": "ASSET1059"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1060",
-      "response": "ASSET1060"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1061",
-      "response": "ASSET1061"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1062",
-      "response": "ASSET1062"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1063",
-      "response": "ASSET1063"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1064",
-      "response": "ASSET1064"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1065",
-      "response": "ASSET1065"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1066",
-      "response": "ASSET1066"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1067",
-      "response": "ASSET1067"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1068",
-      "response": "ASSET1068"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1069",
-      "response": "ASSET1069"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1070",
-      "response": "ASSET1070"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1071",
-      "response": "ASSET1071"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1072",
-      "response": "ASSET1072"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1073",
-      "response": "ASSET1073"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1074",
-      "response": "ASSET1074"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1075",
-      "response": "ASSET1075"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1076",
-      "response": "ASSET1076"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1077",
-      "response": "ASSET1077"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1078",
-      "response": "ASSET1078"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1079",
-      "response": "ASSET1079"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1080",
-      "response": "ASSET1080"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.16.1001",

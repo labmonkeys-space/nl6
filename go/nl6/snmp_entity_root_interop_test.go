@@ -17,9 +17,14 @@ import (
 // the real dispatcher on a real UDP socket. The in-package guards read resource
 // files; this reads the wire. It matters most for zeroDotZero: the value only
 // goes out as an OBJECT IDENTIFIER because oidTypeTable types the column, and a
-// key the table does not match would send the string "0.0" instead.
+// key the table does not match would send the string "0.0" instead. It also
+// reads the inventory columns: the chassis serves no entPhysicalMfgDate,
+// entPhysicalUris or entPhysicalUUID, and a port row names no invented vendor.
 //
 // Opt-in like the other interop tests; `make test-interop` runs it in CI.
+// entityNoSuchObject is how net-snmp renders the noSuchObject exception.
+const entityNoSuchObject = "No Such Object available on this agent at this OID"
+
 func TestEntityRootInterop(t *testing.T) {
 	if os.Getenv("NL6_SNMP_INTEROP") != "1" {
 		t.Skip("set NL6_SNMP_INTEROP=1 to run the net-snmp interop check")
@@ -41,7 +46,16 @@ func TestEntityRootInterop(t *testing.T) {
 			".1.3.6.1.2.1.47.1.1.1.1.3.1001": "OID: .0.0",
 			// Control: the chassis vendor type is still a real OID, so the
 			// zeroDotZero row above is not every row of the column degrading.
-			".1.3.6.1.2.1.47.1.1.1.1.3.1": "OID: .1.3.6.1.4.1.9.12.3.1.3.1467",
+			".1.3.6.1.2.1.47.1.1.1.1.3.1":     "OID: .1.3.6.1.4.1.9.12.3.1.3.1467",
+			".1.3.6.1.2.1.47.1.1.1.1.12.1":    `STRING: "Cisco Systems, Inc."`,
+			".1.3.6.1.2.1.47.1.1.1.1.17.1":    entityNoSuchObject,
+			".1.3.6.1.2.1.47.1.1.1.1.18.1":    entityNoSuchObject,
+			".1.3.6.1.2.1.47.1.1.1.1.19.1":    entityNoSuchObject,
+			".1.3.6.1.2.1.47.1.1.1.1.11.1001": `""`,
+			".1.3.6.1.2.1.47.1.1.1.1.12.1001": `""`,
+			".1.3.6.1.2.1.47.1.1.1.1.15.1001": `""`,
+			// Control: the port keeps its name.
+			".1.3.6.1.2.1.47.1.1.1.1.7.1001": `STRING: "Ethernet1/1"`,
 		}},
 		{"palo_alto_pa3220.json", map[string]string{
 			".1.3.6.1.2.1.47.1.1.1.1.4.1":    "INTEGER: 0",
@@ -52,6 +66,12 @@ func TestEntityRootInterop(t *testing.T) {
 		{"cisco_ios.json", map[string]string{
 			".1.3.6.1.2.1.47.1.1.1.1.13.1": `STRING: "WS-C2960X-24TS-L"`,
 			".1.3.6.1.2.1.47.1.1.1.1.13.2": `""`,
+			".1.3.6.1.2.1.47.1.1.1.1.12.1": `STRING: "Cisco Systems, Inc."`,
+			".1.3.6.1.2.1.47.1.1.1.1.18.1": entityNoSuchObject,
+		}},
+		{"juniper_mx10004.json", map[string]string{
+			".1.3.6.1.2.1.47.1.1.1.1.12.1": `STRING: "Juniper Networks, Inc."`,
+			".1.3.6.1.2.1.47.1.1.1.1.19.1": entityNoSuchObject,
 		}},
 	}
 	for _, c := range cases {

@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "ENTITY-MIB inventory columns and port placeholders",
+		file:         "snmp_shipped_entity_inventory_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       entityInventoryParentRevision,
+		values:       restoreEntityInventory,
+		names:        entityInventoryNamesBefore,
+	},
+	{
 		name:         "ENTITY-MIB chassis root and zeroDotZero vendor types",
 		file:         "snmp_shipped_entity_root_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: entityInventoryParentRevision,
 		parent:       entityRootParentRevision,
 		values:       restoreEntityRoot,
 		names:        entityRootNamesBefore,
