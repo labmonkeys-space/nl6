@@ -87,7 +87,7 @@ An unclassified loader failure still answers 500 with the raw error text.
 The full path is logged server-side on every rejection, so base-naming the body loses nothing.
 Full detail, including the response envelope, is in [Web API → `resource_file` failures](../reference/web-api.md#resource_file-failures).
 
-Rule 2 covers a value on an OID-typed leaf, today only `sysObjectID`: it must be an OID the encoder can represent.
+Rule 2 covers a value on an OID-typed leaf, today `sysObjectID` and `entPhysicalVendorType` (nl6#821): it must be an OID the encoder can represent.
 Encodability is decided by calling the encoder and testing for the degenerate `06 00`, not by a second predicate, so the loader cannot drift from the wire.
 See [The first OID sub-identifier is a varint](../reference/snmp.md#the-first-oid-sub-identifier-is-a-varint) above for what the encoder accepts.
 The sentinel rule is checked first, matching the order the encoder applies them, so a sentinel on `sysObjectID` is reported as a sentinel collision.
