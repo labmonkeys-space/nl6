@@ -1126,6 +1126,16 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		link, admin := scenarioSeed(ifStateConfig, idx, oper, admin)
 		ic.state.Seed(idx, link, admin)
 	}
+	// Record which interfaces are subinterfaces of which, from the same
+	// ifDescr rows every reader names them by, before the engine is
+	// published: the table is immutable after this.
+	names := make(map[int]string, len(knownIdxs))
+	for idx := range knownIdxs {
+		if v, ok := resources.oidIndex.Load(ifTablePrefix + "2." + strconv.Itoa(idx)); ok {
+			names[idx], _ = v.(string)
+		}
+	}
+	ic.state.setParents(subinterfaceParents(names))
 
 	// ic is fully constructed before the Store, so concurrent readers
 	// either see the complete new cycler or the previous pointer — never

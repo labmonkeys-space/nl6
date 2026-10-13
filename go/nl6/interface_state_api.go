@@ -295,8 +295,10 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 	// engine's funnel, which returns one event per leaf that moved and leaves
 	// the broadcast to us, admin first.
 	if isOper {
-		if res, evt := state.SetLinkState(ifIndex, target); res == LinkMovedVisible {
-			state.Broadcast(evt)
+		if res, evts := state.SetLinkState(ifIndex, target); res == LinkMovedVisible {
+			for _, evt := range evts {
+				state.Broadcast(evt)
+			}
 		}
 	} else {
 		for _, evt := range state.ApplyAdminStatus(ifIndex, target) {
@@ -329,7 +331,12 @@ func (sm *SimulatorManager) mutateInterfaceState(ip string, ifIndex int, isOper 
 		// as admin is down or testing: no link trap, no syslog and no ON_CHANGE
 		// will fire from this leaf, and `ifLastChange` will not move, whatever
 		// the link does. That is exactly `admin != up`.
-		Masked: isOper && post.Admin != AdminUp,
+		//
+		// A subinterface under a parent that is not up is masked the same
+		// way while its link is up: it reads lowerLayerDown(7) whatever this
+		// request did. deriveOper ignores the parent, so the two derivations
+		// differ exactly then.
+		Masked: isOper && (post.Admin != AdminUp || post.Oper != deriveOper(post.Admin, post.Link)),
 	}
 
 	if revertAfter > 0 {
@@ -436,8 +443,10 @@ func (sm *SimulatorManager) scheduleAutoRevert(ip string, ifIndex int, isOper bo
 			// revertTo is the LINK value captured at POST time (see
 			// mutateInterfaceState), so this restores what was found rather
 			// than what was observable.
-			if res, e := state.SetLinkState(ifIndex, revertTo); res == LinkMovedVisible {
-				state.Broadcast(e)
+			if res, evts := state.SetLinkState(ifIndex, revertTo); res == LinkMovedVisible {
+				for _, e := range evts {
+					state.Broadcast(e)
+				}
 			}
 		} else {
 			for _, e := range state.ApplyAdminStatus(ifIndex, revertTo) {

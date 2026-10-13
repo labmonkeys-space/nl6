@@ -7,6 +7,7 @@ package main
 
 import (
 	"log"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -135,6 +136,15 @@ type InterfaceState struct {
 	// the manager sets this after the engine is already live and mutating; a
 	// transition before attach reads nil and is a safe no-op.
 	notify atomic.Pointer[func(StateChange)]
+
+	// parent and children record which interfaces are subinterfaces of which
+	// (slot = ifIndex - 1; a parent of 0 means top-level). Set once by
+	// setParents before the engine is published and never written again, so
+	// reads take no lock. Both are nil on a device with no subinterfaces,
+	// which is every shipped type but two, and keeps their read path at one
+	// atomic load.
+	parent   []int
+	children [][]int
 }
 
 // NewInterfaceState builds an engine for `maxIfIndex` interfaces. Slot
@@ -210,6 +220,53 @@ func (s *InterfaceState) Seed(ifIndex int, link, admin uint8) {
 	s.slots[slot].Store(packState(link, admin, 0))
 }
 
+// setParents records each subinterface's parent ifIndex (see
+// subinterfaceParents). It MUST be called before the engine is reachable by
+// any other goroutine; the tables carry no synchronisation. Out-of-range
+// entries are ignored.
+func (s *InterfaceState) setParents(parents map[int]int) {
+	if len(parents) == 0 {
+		return
+	}
+	s.parent = make([]int, s.maxIfIndex)
+	s.children = make([][]int, s.maxIfIndex)
+	kids := make([]int, 0, len(parents))
+	for c := range parents {
+		kids = append(kids, c)
+	}
+	sort.Ints(kids) // deterministic event order on a cascade
+	for _, c := range kids {
+		p := parents[c]
+		if c < 1 || c > s.maxIfIndex || p < 1 || p > s.maxIfIndex {
+			continue
+		}
+		s.parent[c-1] = p
+		s.children[p-1] = append(s.children[p-1], c)
+	}
+}
+
+// Parent returns the ifIndex of ifIndex's parent interface, or 0 when ifIndex
+// is a top-level interface or out of range. Safe on a nil engine.
+func (s *InterfaceState) Parent(ifIndex int) int {
+	if s == nil || s.parent == nil || ifIndex < 1 || ifIndex > s.maxIfIndex {
+		return 0
+	}
+	return s.parent[ifIndex-1]
+}
+
+// parentOper is the derived oper-status of slot's parent, or up(1) for a
+// top-level interface so deriveChildOper reduces to deriveOper. Parents are
+// top-level by construction (setParents is fed one level), so this does not
+// recurse.
+func (s *InterfaceState) parentOper(slot int) uint8 {
+	if s.parent == nil || s.parent[slot] == 0 {
+		return OperUp
+	}
+	link, admin, _ := unpackState(s.slots[s.parent[slot]-1].Load())
+	link, admin = normaliseSlot(link, admin)
+	return deriveOper(admin, link)
+}
+
 // StateSnapshot is the atomic (oper, admin, lastChange) tuple
 // returned by `Snapshot`. All three fields reflect the same
 // `slots[slot].Load()` so they cannot tear relative to each other —
@@ -239,6 +296,10 @@ type StateSnapshot struct {
 // need a consistent point-in-time view (e.g. auto-revert pre-state
 // capture, gNMI ON_CHANGE initial snapshot, cross-leaf consistency
 // tests) MUST use this rather than three separate accessor calls.
+//
+// A subinterface's Oper also reads its parent's slot, a second load, so it can
+// pair this slot with a parent state one transition older or newer. Link,
+// Admin and LastChangeNs still come from the one load.
 func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
@@ -253,7 +314,7 @@ func (s *InterfaceState) Snapshot(ifIndex int) StateSnapshot {
 		lc = s.bootTimeUnixNs + rel
 	}
 	return StateSnapshot{
-		Oper:         deriveOper(admin, link),
+		Oper:         deriveChildOper(admin, link, s.parentOper(slot)),
 		Link:         link,
 		Admin:        admin,
 		LastChangeNs: lc,
@@ -292,7 +353,7 @@ func (s *InterfaceState) OperStatus(ifIndex int) uint8 {
 	}
 	link, admin, _ := unpackState(s.slots[slot].Load())
 	link, admin = normaliseSlot(link, admin)
-	return deriveOper(admin, link)
+	return deriveChildOper(admin, link, s.parentOper(slot))
 }
 
 // AdminStatus returns the current admin-status enum value for ifIndex.
@@ -372,7 +433,9 @@ const (
 // caller having to re-read admin (a second read, at a different instant, whose
 // verdict could disagree with what was stored).
 //
-// On LinkMovedVisible the caller is responsible for calling Broadcast(evt).
+// On LinkMovedVisible the caller is responsible for calling Broadcast on every
+// returned event, in order. The first is ifIndex's own; any after it belong to
+// subinterfaces whose derived oper-status moved with it (cascadeChildren).
 //
 // `s.now()` and `wallRelNs` are sampled INSIDE the CAS loop so that
 // retries on contention record the timestamp of the winning CAS, not
@@ -384,31 +447,34 @@ const (
 // and the placement above is unchanged by that: the seam exposes WHICH clock is
 // read, never WHERE it is read. Moving the sample out of the loop would be a
 // behaviour change wearing a refactor's clothes.
-func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation, StateChange) {
+func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation, []StateChange) {
 	slot := ifIndex - 1
 	if slot < 0 || slot >= s.maxIfIndex {
-		return LinkUnchanged, StateChange{}
+		return LinkUnchanged, nil
 	}
 	if newLink < OperUp || newLink > OperLowerLayerDn {
-		return LinkUnchanged, StateChange{}
+		return LinkUnchanged, nil
 	}
 	for {
 		cur := s.slots[slot].Load()
 		curLink, curAdmin, curRel := unpackState(cur)
 		curLink, curAdmin = normaliseSlot(curLink, curAdmin)
 		if curLink == newLink {
-			return LinkUnchanged, StateChange{}
+			return LinkUnchanged, nil
 		}
 
 		// The transition that matters is the DERIVED one. RFC 2863 defines
 		// ifLastChange as the time the interface entered its current
 		// OPERATIONAL state, so a link flap on a shut port must not stamp it.
-		wasOper := deriveOper(curAdmin, curLink)
-		nowOper := deriveOper(curAdmin, newLink)
+		// A subinterface under a parent that is not up is masked the same
+		// way: its own link moves beneath lowerLayerDown(7).
+		pOper := s.parentOper(slot)
+		wasOper := deriveChildOper(curAdmin, curLink, pOper)
+		nowOper := deriveChildOper(curAdmin, newLink, pOper)
 		if wasOper == nowOper {
 			// Masked: store the link, carry lastChange forward untouched.
 			if s.slots[slot].CompareAndSwap(cur, packState(newLink, curAdmin, curRel)) {
-				return LinkMovedMasked, StateChange{}
+				return LinkMovedMasked, nil
 			}
 			continue
 		}
@@ -422,14 +488,15 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 			// changes no LLDP row, so invalidating on it would be pure cost at
 			// fleet scale.
 			invalidateLLDPServedCache()
-			return LinkMovedVisible, StateChange{
+			evts := []StateChange{{
 				IfIndex:      ifIndex,
 				Oper:         nowOper,
 				Admin:        curAdmin,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
-			}
+			}}
+			return LinkMovedVisible, append(evts, s.cascadeChildren(slot, wasOper, nowOper, nowAbs, relNs)...)
 		}
 	}
 }
@@ -463,8 +530,9 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			return nil
 		}
 
-		wasOper := deriveOper(curAdmin, curLink)
-		nowOper := deriveOper(newVal, curLink)
+		pOper := s.parentOper(slot)
+		wasOper := deriveChildOper(curAdmin, curLink, pOper)
+		nowOper := deriveChildOper(newVal, curLink, pOper)
 		operMoved := wasOper != nowOper
 
 		// lastChange keys on the DERIVED transition, so an admin change that
@@ -496,9 +564,51 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
 			})
+			evts = append(evts, s.cascadeChildren(slot, wasOper, nowOper, nowAbs, relNs)...)
 		}
 		return evts
 	}
+}
+
+// cascadeChildren is the other half of a parent's visible oper transition from
+// wasParent to nowParent: each subinterface whose derived oper-status moved with
+// it gets its lastChange stamped with the parent's transition time and an oper
+// event. Only lastChange is written; the child's stored link and admin are
+// untouched, so a parent bounce can neither repair nor damage them.
+//
+// Each child's verdict is recomputed from the slot its CAS loaded. A child
+// mutated concurrently with its parent may keep the other writer's timestamp,
+// the same approximation Broadcast documents for contended accounting.
+func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, at time.Time, relNs uint64) []StateChange {
+	if s.children == nil {
+		return nil
+	}
+	var out []StateChange
+	for _, c := range s.children[slot] {
+		cs := c - 1
+		for {
+			cur := s.slots[cs].Load()
+			link, admin, _ := unpackState(cur)
+			link, admin = normaliseSlot(link, admin)
+			was := deriveChildOper(admin, link, wasParent)
+			now := deriveChildOper(admin, link, nowParent)
+			if was == now {
+				break
+			}
+			if s.slots[cs].CompareAndSwap(cur, packState(link, admin, relNs)) {
+				out = append(out, StateChange{
+					IfIndex:      c,
+					Oper:         now,
+					Admin:        admin,
+					LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
+					Changed:      LeafOperStatus,
+					At:           at,
+				})
+				break
+			}
+		}
+	}
+	return out
 }
 
 // deriveOper is THE rule, and the only place it is written. Every accessor
@@ -524,9 +634,10 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 // can be passed", which is a property of the device's intent, not the cable.
 //
 // `link` carries the physical-layer reading and may be any ifOperStatus enum
-// value; the engine never assigns lowerLayerDown(7) itself (deriving it from
+// value. This function never assigns lowerLayerDown(7) itself (deriving it from
 // the LLDP peer graph is deliberately out of scope), but it stores and derives
-// it through unchanged if something else sets it.
+// it through unchanged if something else sets it. The one place the engine
+// does assign it is a subinterface whose parent is not up (deriveChildOper).
 func deriveOper(admin, link uint8) uint8 {
 	switch admin {
 	case AdminDown:
@@ -535,6 +646,20 @@ func deriveOper(admin, link uint8) uint8 {
 		return OperTesting
 	}
 	return link
+}
+
+// deriveChildOper is deriveOper with the parent clause RFC 2863 names
+// lowerLayerDown(7) for: an interface that would be up by its own admin and
+// link reads lowerLayerDown while the interface beneath it is not up. Anything
+// the interface's own slot forces (admin down, a down link) wins, so a shut
+// unit reads down(2) whatever its port does. For a top-level interface
+// parentOper is up(1) and this is exactly deriveOper.
+func deriveChildOper(admin, link, parentOper uint8) uint8 {
+	oper := deriveOper(admin, link)
+	if oper == OperUp && parentOper != OperUp {
+		return OperLowerLayerDn
+	}
+	return oper
 }
 
 // ApplyAdminStatus is THE funnel for every source that changes admin-status:

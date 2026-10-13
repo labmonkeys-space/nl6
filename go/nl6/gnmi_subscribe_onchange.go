@@ -367,6 +367,11 @@ func emitMatchingForChange(
 // (nil, nil) when the path doesn't cover evt.IfIndex; propagates
 // ClassifyLeaves errors (callers treat codes.NotFound as skip).
 func changedUpdatesForPath(resolver *pathResolver, ic *IfCounterCycler, p *gnmipb.Path, evt StateChange, tSec float64) ([]resolvedUpdate, error) {
+	// A subinterface is not under /interfaces/interface (see
+	// expandInterfaceKey), so its own transition matches no path here.
+	if ic.State().Parent(evt.IfIndex) != 0 {
+		return nil, nil
+	}
 	if !pathCoversIfIndex(p, evt.IfIndex, resolver) {
 		return nil, nil
 	}

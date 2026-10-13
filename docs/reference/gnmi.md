@@ -61,7 +61,8 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 | `/interfaces/interface[name=*]/state/counters/out-discards` | uint64 | `ifOutDiscards.<N>` |
 | `/interfaces/interface[name=*]/state/counters/out-errors` | uint64 | `ifOutErrors.<N>` |
 
-Wildcards (`name=*`) enumerate every ifIndex known to the device.
+Wildcards (`name=*`) enumerate every ifIndex known to the device except subinterfaces, whose names are `<interface>.<unit>` (see [interface state](interface-state.md#subinterfaces)).
+A subinterface name returns `codes.NotFound`, and its state changes produce no ON_CHANGE update on these paths.
 Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick.
 Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.
 
@@ -215,7 +216,7 @@ A counters subscription also carries `name`, `init-time`, `state/high-speed` and
 The router's ONCE chunking of one interface into several notifications is not modelled.
 The subinterfaces are the logical units the device configures, which is one: `xe-0/0/0.0`, unit 0 of `xe-0/0/0`.
 It is also an `ifTable` row of its own at ifIndex 73 and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
-No other port has a subinterface, and the unit is not listed as an interface.
+No other port has a subinterface, and the unit is not listed as an interface on dial-in or dial-out.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
 A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` is a subtree alias scoped by `alias_leaves`.
 It renders the 8 `state/counters/*` leaves, the 16 `ipv4/state/counters/*` and `ipv6/state/counters/*` leaves and `init-time`, as the Junos sensor does.

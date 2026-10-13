@@ -220,6 +220,11 @@ func (s *FlapScheduler) Register(deviceIP net.IP, ifIndexes []int, scenario IfFl
 	defer s.mu.Unlock()
 	now := s.now()
 	for _, ifIndex := range ifIndexes {
+		if state.Parent(ifIndex) != 0 {
+			// A subinterface has no physical link of its own. It goes
+			// down with its parent by derivation, never on its own.
+			continue
+		}
 		key := flapKey{ip: deviceIP.String(), ifIndex: ifIndex}
 		if old, ok := s.byKey[key]; ok && old.index >= 0 {
 			heap.Remove(&s.heap, old.index)
@@ -454,9 +459,11 @@ func (s *FlapScheduler) fireWithRecover(state *InterfaceState, ifIndex int, targ
 	// admin guard of its own: an admin-down interface is protected by the
 	// derivation, so a flap beneath a shut port moves real state that becomes
 	// visible the moment admin comes up — which is what the hardware does.
-	switch res, evt := state.SetLinkState(ifIndex, target); res {
+	switch res, evts := state.SetLinkState(ifIndex, target); res {
 	case LinkMovedVisible:
-		state.Broadcast(evt)
+		for _, evt := range evts {
+			state.Broadcast(evt)
+		}
 	case LinkMovedMasked:
 		// The link moved; admin-down or admin-testing masks it. Designed
 		// behaviour, NOT an anomaly — deliberately unlogged. Under

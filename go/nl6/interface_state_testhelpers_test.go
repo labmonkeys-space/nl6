@@ -25,8 +25,11 @@ package main
 // oper-status moved — the old SetOperStatus `changed` bool. A masked move
 // (admin down or testing) reports false here even though the link was stored.
 func setLinkVisible(s *InterfaceState, ifIndex int, v uint8) (bool, StateChange) {
-	res, evt := s.SetLinkState(ifIndex, v)
-	return res == LinkMovedVisible, evt
+	res, evts := s.SetLinkState(ifIndex, v)
+	if res != LinkMovedVisible {
+		return false, StateChange{}
+	}
+	return true, evts[0]
 }
 
 // setAdminOne drives the admin funnel and returns the ADMIN leaf event plus

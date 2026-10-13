@@ -73,6 +73,24 @@ Default `0` is unlimited.
 **Operational note:** at 30k devices × `typical` scenario, expected steady-state rate is ~30k / 900s ≈ 33 events/s.
 Setting a cap below that floor will systematically delay the scheduler.
 
+## Subinterfaces
+
+A subinterface is an interface whose `ifDescr` is another interface's `ifDescr` followed by `.` and an unsigned integer, such as `xe-0/0/0.0` under `xe-0/0/0`.
+Two shipped types have them: `juniper_mx10004` (one logical unit) and `cisco_asr9902` (three VLAN subinterfaces).
+The gNMI catalogue uses the same rule for its `subinterfaces` key source.
+
+A subinterface goes down with its parent.
+Its `ifOperStatus` reads `lowerLayerDown(7)` while its parent is not up, unless its own state already forces a value.
+Its own `ifAdminStatus = down(2)` still reads `down(2)`.
+The subinterface's stored link and admin values are not written, so it comes back with its parent.
+
+A parent transition is also a transition of each subinterface it moves.
+`ifLastChange` is stamped with the parent's time, and the subinterface gets its own ON_CHANGE update, link trap and syslog message.
+This holds for every mutation source: the flap scheduler, the REST endpoints, auto-revert and SNMP SET.
+
+The flap scheduler does not schedule subinterfaces.
+A logical unit has no physical link of its own to flap.
+
 ## REST control plane
 
 ### `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/oper-status`
@@ -100,6 +118,7 @@ Returns:
   ```
 
   `masked` is `true` whenever `ifAdminStatus` is `DOWN` or `TESTING`.
+  It is also `true` on a subinterface whose link is `UP` while its parent is not up, because it reads `LOWER_LAYER_DOWN` whatever the link does.
   In that state the link state you now hold is not what collectors see.
   While it is set, no link trap, syslog message or gNMI `ON_CHANGE` update will fire from this interface and `ifLastChange` will not move, whatever the link does.
   It is deliberately a property of the interface rather than of the individual request: a POST that finds the link already at the requested value changes nothing and still needs to report masking, and a POST whose link value happens to equal the masked `ifOperStatus` is masked too.
