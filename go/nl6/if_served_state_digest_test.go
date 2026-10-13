@@ -61,7 +61,13 @@ import (
 // subinterfaces), all admin=1 oper=1. With those 7 rows filtered out the
 // digest is exactly the previous value,
 // e0a9c596518801f5d15747ca7357612e18b68cbeb368b864be4e300194872340 (measured).
-const shippedServedStateDigest = "4698228a6a585e1a0fe8d9af7630d8ce0d07f2b5c6357f0c24fe724d5a3aadeb"
+//
+// Re-pinned by the cisco_asr9902 empty bays (nl6#811): the 20 ports with no
+// optic, ifIndex 15-24, 35-36 and 41-48, moved from oper=1 to oper=2, admin
+// stays 1. With their oper rows set back to 1 the digest is exactly the
+// previous value,
+// 4698228a6a585e1a0fe8d9af7630d8ce0d07f2b5c6357f0c24fe724d5a3aadeb (measured).
+const shippedServedStateDigest = "62c5679194d7427512c7b758c29cdb30f9aa627e5e27ce6f7655d3da25d86a84"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

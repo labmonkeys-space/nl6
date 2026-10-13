@@ -27,7 +27,8 @@
     "qsfp": {"part_no": "T-QSFP", "description": "Test QSFP", "lanes": 4, "port_prefix": "HundredGigE", "short_prefix": "Hu", "speed_mbps": 100000,
       "port_description": "100GE Port", "bay_name": "QSFP bay", "bay_type": "", "bay_description": "QSFP Container",
       "module_name": "QSFP Port Module", "module_description": "Port Module",
-      "sensor_descriptions": {"current": "Current Sensor", "power": "Power Sensor", "temperature": "Temperature Sensor", "voltage": "Voltage Sensor", "idprom": "IDPROM"}}
+      "sensor_descriptions": {"current": "Current Sensor", "power": "Power Sensor", "temperature": "Temperature Sensor", "voltage": "Voltage Sensor", "idprom": "IDPROM"},
+      "fpd": {"name": "{card}-QDD_0_{n}", "type": "", "parent": "{card}", "description": "FPD Module"}}
   },
   "mgmt_ports": [{"if_name": "MgmtEth0/0/CPU0/0", "short": "Mg0/0/CPU0/0", "speed_mbps": 1000}],
   "platform": [{"node": "0/0/CPU0", "type": "T-CARD", "state": "IOS XR RUN"}],

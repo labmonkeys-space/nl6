@@ -169,7 +169,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // cisco_asr9902 logical interfaces: ifTable and ifXTable rows at ifIndex 51-57
 // and ifNumber 50 -> 57, pre-change value
 // shippedTagDigestBeforeCiscoAsr9902LogicalIfs.
-const shippedTagDigest = "d8c9ca7a5cd3477f853eeeed60384b5c704393b640a7ada63e455c06ca00493d"
+// cisco_asr9902 components: twenty empty SFP bays drop their transceiver
+// entities and go oper-down, pre-change value
+// shippedTagDigestBeforeCiscoAsr9902Components.
+const shippedTagDigest = "03c3beee1f1b37f43a374de662e6bdbbc7cccf595402c8ce1ffc5bd28bd2de39"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

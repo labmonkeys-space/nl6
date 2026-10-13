@@ -191,3 +191,78 @@ func TestLogicalPortsMini(t *testing.T) {
 		}
 	}
 }
+
+// An empty bay has no transceiver entity and no show inventory line, and its
+// PORT entity still maps its ifIndex (nl6#811).
+func TestEmptyBayRendersNoTransceiver(t *testing.T) {
+	m := miniModel(t)
+	m.FrontPorts.EmptyBays = []int{0}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := rowMap(t, c)
+	const ent = "1.3.6.1.2.1.47.1.1.1.1."
+	var names []string
+	for oid, v := range rows {
+		if strings.HasPrefix(oid, ent+"7.") {
+			names = append(names, v)
+		}
+	}
+	if slices.Contains(names, "TenGigE0/0/0/0") || !slices.Contains(names, "HundredGigE0/0/0/1") {
+		t.Errorf("entPhysicalName %v: want the populated transceiver only", names)
+	}
+	if !slices.Contains(names, "0/0-TenGigE0/0/0/0") || rows["1.3.6.1.2.1.2.2.1.2.1"] != "TenGigE0/0/0/0" {
+		t.Error("the empty bay's PORT entity or interface is gone")
+	}
+	inv := RenderSSHEntries(c)[0].Response
+	if strings.Contains(inv, `"TenGigE0/0/0/0"`) || !strings.Contains(inv, `"HundredGigE0/0/0/1"`) {
+		t.Errorf("show inventory lists the empty bay's optic or drops the populated one:\n%s", inv)
+	}
+	// A port with no optic is admin up, oper down, in SNMP and the CLI.
+	if rows["1.3.6.1.2.1.2.2.1.7.1"] != "1" || rows["1.3.6.1.2.1.2.2.1.8.1"] != "2" || rows["1.3.6.1.2.1.2.2.1.8.2"] != "1" {
+		t.Errorf("admin/oper of the empty port %s/%s and oper of the populated one %s, want 1/2 and 1",
+			rows["1.3.6.1.2.1.2.2.1.7.1"], rows["1.3.6.1.2.1.2.2.1.8.1"], rows["1.3.6.1.2.1.2.2.1.8.2"])
+	}
+	brief := strings.Split(RenderSSHEntries(c)[2].Response, "\n")
+	if brief[1] != "TenGigE0/0/0/0     unassigned  down    down" || brief[2] != "HundredGigE0/0/0/1 unassigned  up      up" {
+		t.Errorf("show interfaces brief rows %q / %q", brief[1], brief[2])
+	}
+}
+
+// Entity indices and serials are reserved per bay, so emptying a bay
+// removes its optic's rows and renumbers nothing else (nl6#811).
+func TestEmptyBayKeepsEntityIndicesAndSerials(t *testing.T) {
+	full, err := Expand(miniModel(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := miniModel(t)
+	m.FrontPorts.EmptyBays = []int{0}
+	empty, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, after := rowMap(t, full), rowMap(t, empty)
+	removed := 0
+	for oid, v := range before {
+		if strings.HasPrefix(oid, "1.3.6.1.2.1.2.2.1.8.") {
+			continue // oper status is the intended change
+		}
+		got, ok := after[oid]
+		switch {
+		case !ok:
+			removed++
+		case got != v:
+			t.Errorf("%s: %q became %q", oid, v, got)
+		}
+	}
+	if len(after) != len(before)-removed || removed == 0 {
+		t.Errorf("%d rows removed and %d rows added; want only the empty bay's optic removed", removed, len(after)-len(before)+removed)
+	}
+	for _, comp := range empty.Components {
+		if full.Component(comp.Name).SerialNo != comp.SerialNo {
+			t.Errorf("%s: serial %s, was %s", comp.Name, comp.SerialNo, full.Component(comp.Name).SerialNo)
+		}
+	}
+}
