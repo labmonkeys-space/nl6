@@ -153,6 +153,11 @@ func TestCastGnmiUnionLeaf(t *testing.T) {
 		{dec, float64(3), uint32(3)},
 		{&gnmiCatalogLeaf{Type: "union", Members: []string{"uint32", "string"}}, float64(3.7), "3.7"},
 		{&gnmiCatalogLeaf{Type: "union", Members: []string{"int32", "string"}}, float64(-2.5), "-2.5"},
+		// A string from a const: or key: generator falls through the same
+		// way: the integer member refuses a non-integral string.
+		{&gnmiCatalogLeaf{Type: "union", Members: []string{"int32", "string"}}, "3.7", "3.7"},
+		{&gnmiCatalogLeaf{Type: "union", Members: []string{"uint32", "string"}}, "3.7", "3.7"},
+		{&gnmiCatalogLeaf{Type: "union", Members: []string{"int32", "string"}}, "-5", int64(-5)},
 	} {
 		if got, err := c.leaf.cast(c.in); err != nil || got != c.want {
 			t.Errorf("%v cast(%v) = %v (%T), %v; want %v (%T)", c.leaf.Members, c.in, got, got, err, c.want, c.want)
@@ -174,6 +179,13 @@ func TestCastGnmiLeaf(t *testing.T) {
 		{float64(41.7), "uint64", uint64(41)},
 		{float64(41.7), "uint32", uint32(41)},
 		{float64(-3), "int64", int64(-3)},
+		{"-5", "int32", int64(-5)},
+		// Integers convert exactly, never through a 53-bit float64.
+		{uint64(1760000000123456789), "uint64", uint64(1760000000123456789)},
+		{int64(1760000000123456789), "uint64", uint64(1760000000123456789)},
+		{int64(-1760000000123456789), "int64", int64(-1760000000123456789)},
+		{uint64(math.MaxInt64), "int64", int64(math.MaxInt64)},
+		{"-9223372036854775808", "int64", int64(math.MinInt64)},
 		{"UP", "enumeration", "UP"},
 		{"x", "string", "x"},
 		{true, "boolean", true},
@@ -193,9 +205,21 @@ func TestCastGnmiLeaf(t *testing.T) {
 	}{
 		{"4294967296", "uint32"}, {float64(4294967296), "uint32"}, {"65536", "uint16"}, {"256", "uint8"},
 		{float64(2147483648), "int32"}, {float64(-32769), "int16"}, {float64(128), "int8"},
+		{float64(1 << 63), "int64"}, {uint64(1 << 63), "int64"}, {int64(-1), "uint64"}, {float64(1 << 64), "uint64"},
 	} {
 		if _, err := castGnmiLeaf(c.in, c.typ); err == nil {
 			t.Errorf("cast(%v,%s) accepted an out-of-range value", c.in, c.typ)
+		}
+	}
+	// Both integer families refuse a string that is not a base-10 integer,
+	// rather than parsing it as a float and truncating.
+	for _, c := range []struct {
+		in, typ string
+	}{
+		{"3.7", "int32"}, {"3.7", "int64"}, {"3.7", "uint32"}, {"3.0", "int32"}, {"1e3", "int64"}, {"x", "int8"},
+	} {
+		if got, err := castGnmiLeaf(c.in, c.typ); err == nil {
+			t.Errorf("cast(%q,%s) = %v (%T), want an error: not an integer", c.in, c.typ, got, got)
 		}
 	}
 	if got, err := castGnmiLeaf("4294967295", "uint32"); err != nil || got != uint32(4294967295) {
