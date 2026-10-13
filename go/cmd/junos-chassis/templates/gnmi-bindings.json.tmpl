@@ -12,7 +12,7 @@
   ],
   "subtrees": [
     {
-      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces"}], "module": "openconfig-interfaces",
+      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "iftype:6"}], "module": "openconfig-interfaces",
       "leaves": {
         "state/name": "ifstate:name", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper", "state/admin-status": "ifstate:admin",
         "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:false", "state/description": "const:",
@@ -33,7 +33,7 @@
     },
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
-      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
+      "keys": [{"source": "interfaces", "filter": "iftype:6"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
       "leaves": {},
       "extra": {"queue-number": {"type": "uint8", "gen": "key:1"}, "queued-bytes": {"type": "uint64", "gen": "const:0"}, "queued-pkts": {"type": "uint64", "gen": "const:0"}, "hp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "lp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}}
     },
@@ -41,7 +41,7 @@
       "path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]", "origin": "openconfig",
       "aliases": ["/interfaces/interface/subinterfaces/subinterface/state/counters"],
       "alias_leaves": ["state/counters", "ipv4/state/counters", "ipv6/state/counters", "init-time"],
-      "keys": [{"source": "interfaces"}, {"source": "static", "names": ["0"]}], "module": "openconfig-interfaces",
+      "keys": [{"source": "interfaces", "filter": "iftype:6"}, {"source": "subinterfaces"}], "module": "openconfig-interfaces",
       "leaves": {
         "state/name": "ifstate:name", "state/index": "key:1",
         "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper",

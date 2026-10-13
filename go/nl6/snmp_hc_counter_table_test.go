@@ -183,7 +183,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // empties 1,456 port-row values, pre-change value
 // shippedTagDigestBeforeEntityInventory. Reversed by
 // snmp_shipped_entity_inventory_ledger_test.go.
-const shippedTagDigest = "65b1718472612a75e85ccb5c4a109ddb24ba5f511fa326b8625286709e5654dd"
+// juniper_mx10004 gains the ifTable and ifXTable rows of its logical unit
+// xe-0/0/0.0 at ifIndex 73, pre-change value shippedTagDigestBeforeMx10004Unit.
+// Reversed by snmp_shipped_juniper_mx10004_unit_ledger_test.go.
+const shippedTagDigest = "8c46e960fac968c5527f4391a71fa80f56371cc1879bf95a78bfcf017a1499e0"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

@@ -3901,7 +3901,8 @@
       "origin": "openconfig",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6"
         }
       ],
       "leaves": [
@@ -4100,7 +4101,8 @@
       "origin": "openconfig",
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6"
         },
         {
           "source": "static",
@@ -4158,13 +4160,11 @@
       ],
       "keys": [
         {
-          "source": "interfaces"
+          "source": "interfaces",
+          "filter": "iftype:6"
         },
         {
-          "source": "static",
-          "names": [
-            "0"
-          ]
+          "source": "subinterfaces"
         }
       ],
       "leaves": [
