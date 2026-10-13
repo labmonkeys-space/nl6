@@ -93,3 +93,21 @@ func TestCaptureTokensIncludeTextOutsideObjects(t *testing.T) {
 		}
 	}
 }
+
+// Every token in the set must be one scanLines can form, or the scan can
+// never report it (nl6#809). Each token is looked up through the real
+// scanner, not a second copy of its rule.
+func TestEveryCaptureTokenIsScannable(t *testing.T) {
+	set := fakeTokens(t)
+	in := "gnmic sub -a 192.0.2.1:57400 --insecure\n{\"d\":\"edge -r1.ams core h1.lab: up via s2.par. a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r\"}\n"
+	if err := captureTokens(strings.NewReader(in), set); err != nil {
+		t.Fatal(err)
+	}
+	never := func(string) bool { return false }
+	for tok := range set {
+		hits := scanLines([]addedLine{{"t", 1, tok}}, set, never)
+		if len(hits) != 1 || hits[0].Length != len(tok) {
+			t.Errorf("token of %d chars cannot be formed by scanLines: %+v", len(tok), hits)
+		}
+	}
+}
