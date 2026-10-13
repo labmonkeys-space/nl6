@@ -339,18 +339,21 @@ Four properties of the guard are load-bearing, and each is a defect this repo ha
 
 What the guard does **not** cover, and what remains outstanding:
 
-- **In the value position it sees `sysObjectID` and nothing else.**
-  The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly one such row.
-  `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133 and ships with enterprise-arc responses in 22 profiles, and the main guard reads every one of them as an OCTET STRING and skips it.
+- **In the value position it sees `sysObjectID` and `entPhysicalVendorType`.**
+  The gate is the production predicate `snmpTypeTag(oid) == ASN1_OBJECT_ID`, and `oidTypeTable` carries exactly two such rows.
+  `entPhysicalVendorType` (`1.3.6.1.2.1.47.1.1.1.1.3.x`) is an OBJECT IDENTIFIER in RFC 4133.
+  It joined the table in nl6#821, so its 236 responses in 22 profiles now go out as OIDs and the main guard reads them.
   Reusing the production predicate is deliberate.
   Nl6 encodes an untyped dotted response as an OCTET STRING, so it never reaches the wire as an OID, and judging values by string shape would report entries no collector can read as an identity.
-  Widening it means adding a row to `oidTypeTable`, which is a wire change.
-  `assertEntPhysicalVendorTypeIsNotCrossVendor` closes the question separately: none of the 234 enterprise-rooted values is cross-vendor today.
+  Widening it again means adding a row to `oidTypeTable`, which is a wire change.
+  `assertEntPhysicalVendorTypeIsNotCrossVendor` still checks the column separately: none of the 236 enterprise-rooted values is cross-vendor today.
 - **208 of those `entPhysicalVendorType` responses answer the synthetic `1.3.6.1.4.1.0.0`** (in `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220`).
   PEN 0 is `Reserved` in the registry, held by IANA.
   So this is not a misattribution the way 9999 and 8714 were, but it is not a vendor type either: a collector reading it resolves nothing.
-  The count is pinned as a known quantity, not endorsed.
-  Six further entries answer a bare `1`, which is not a valid OID for that object at all.
+  The count is pinned as a known quantity, not endorsed, and the real vendor types are nl6#823's work.
+  The column holds 236 rows: 28 real vendor OIDs and those 208 placeholders, and no value that is not an OID.
+  No bare `1` remains.
+  The stub `Line Card 1` rows were removed, and the `juniper_mx960` and `palo_alto_pa3220` chassis rows carry real vendor types (`jnxChassisMX960` and `panPA-3220`).
 - Whether the objects *below* a correct PEN mean what the vendor's MIB says they mean, and whether they are readable at all. Five arcs have been audited against a vendor MIB and every one but Ciena was mostly or entirely wrong. See [Semantic faithfulness](#semantic-faithfulness) for the miss rates and the per-arc sections. The remaining fourteen were closed by decision rather than by audit: each is labelled `UNAUDITED-ARC(<pen>)` in the parts that carry it, and a guard fails by name on any arc that is neither audited, labelled nor explicitly excluded, so a new device type cannot regrow the problem quietly. All three `nvidia_*` profiles pass every guard while every object under `5703` is nl6's own invention. Access mode is a third question no guard asks. See [Access modes are not modelled](#access-modes-are-not-modelled).
 - **An OID-typed *value* under a correct PEN that resolves to no assignment.** A subclass the Arista audit surfaced, and the one the guards are structurally blind to: `sysObjectID.0` answered `1.3.6.1.4.1.30065.1.3011.7280.3282.32.4`, which is well formed, under the profile's *own* vendor arc, and names no Arista product. The PEN guards check which vendor an OID belongs to, never whether the vendor assigned it. Rule 2 checks that an OID-typed value is *encodable*, never that it *resolves*. That instance is fixed; the class needs a MIB per arc, exactly as the semantic question does. `entPhysicalVendorType.1` on the same profile still answers an unresolvable `aristaProducts 3082` and is recorded rather than corrected, because it belongs with an ENTITY-MIB sweep. See [The Arista arc audited against its MIBs](#the-arista-arc-audited-against-its-mibs).
 - A *missing* arc. Nothing requires a profile to identify itself, only to identify itself truthfully. The closest thing is a per-profile census requiring one OID-typed value under the profile's own PEN.
@@ -678,8 +681,8 @@ The two survivors are `jnxBoxSerialNo` and `juniper_mx240`'s `sysObjectID` value
 One of the 13 misses is a **weak call** and is named below, so the strong-call rate is 12 of 15.
 
 **The value-position denominator is 2, not 3, and the missing one is a known coverage gap.** `juniper_mx240` answers `entPhysicalVendorType.1` with a Juniper product OID too.
-The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` has exactly one OBJECT IDENTIFIER row (`sysObjectID`), so that value goes out as an OCTET STRING and sits outside every OID-position measurement in the package.
-The own-vendor PEN guard recorded the same gap and closed it separately.
+The production predicate that decides whether a value reaches the wire as an OID is `snmpTypeTag`, and `oidTypeTable` had exactly one OBJECT IDENTIFIER row (`sysObjectID`) when this was measured, so that value went out as an OCTET STRING and sat outside every OID-position measurement in the package.
+nl6#821 added `entPhysicalVendorType` as a second OBJECT IDENTIFIER row, which closed the gap.
 The value is pinned anyway, because it was already right.
 
 #### The finding that matters most to a collector
@@ -814,7 +817,7 @@ The polled data missed 13 of 15. The pinned Juniper trap reading pins the commen
 #### What this audit did not close
 
 - **The trap catalog's OBJECTS-clause fidelity**, and the one misdeclared varbind type. Both are recorded as measurements above.
-- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123` and `entPhysicalVendorType.1` with `1`, neither of which is under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done. The Arista audit left the same class open for the same reason.
+- **Semantic faithfulness of the mib-2 rows.** `juniper_mx960` answers `entPhysicalModelName.1` with `MODEL123`, which is not under the Juniper arc. Those belong with an ENTITY-MIB sweep, which no arc audit has done. The Arista audit left the same class open for the same reason.
 - **Which container index a Routing Engine occupies**, and therefore whether the renamed rows sit on the right row of a right-shaped table.
 - **Whether the mirrored modules are what Juniper ships.** See the provenance note below.
 
@@ -864,7 +867,8 @@ So the label states what is known and nothing more, and it says so in the file, 
 
 The fourteen, one arc each: `check_point_15600` (2620), `dell_emc_unity` (1139), `dell_poweredge_r750` (674), `dlink_dgs3630` (171), `extreme_vsp4450` (1916), `fortinet_fortigate_600e` (12356), `hpe_proliant_dl380` (232), `huawei_ne8000` (2011), `ibm_power_s922` (2), `nec_ix3315` (119), `netapp_ontap` (789), `nokia_7750_sr12` (6527), `pure_storage_flasharray` (40482), `sonicwall_nsa6700` (8741).
 
-**Fourteen profiles, nineteen parts.** Five of them carry their arc in two parts, and in each of those five the second part holds a single vendor serial-number object among a page of standard MIB rows.
+**Fourteen profiles, twenty-five parts.** Eleven of them carry their arc in two parts and three in one.
+Nineteen parts were labelled first, and nl6#821 labelled six more.
 The marker is therefore **per part**, not per profile: a per-profile marker leaves that second file looking checked, and the label's entire value is that a reader who opens the file sees it.
 
 Each label states five things and claims nothing else:
@@ -889,11 +893,10 @@ It is also what `git grep UNAUDITED-ARC` finds.
 - **PEN 0** on `cisco_catalyst_9500`, `cisco_nexus_9500`, `juniper_mx960` and `palo_alto_pa3220` is the `1.3.6.1.4.1.0.0` `entPhysicalVendorType` placeholder, 208 responses in total. PEN 0 is `Reserved` in the registry and held by IANA, so it is not a vendor subtree.
 - **NVIDIA's 5703** is in the audited set rather than the labelled one, and the reason is that its existing `_comment` says something *stronger* than a label would. NVIDIA publishes no SNMP GPU MIB at all, so the NVIDIA PEN re-homing and the earlier research census recorded that every object below the PEN is nl6's own invention and unresolvable against any published module. There is nothing to audit it against, so `UNAUDITED-ARC` would understate what is known.
 
-The four PEN-0 rows carry `scanVisible: false`, and that flag is checked **both ways**.
-`oidTypeTable` does not type `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OCTET STRINGs and never reports them.
-They are covered instead by `assertEntPhysicalVendorTypeIsNotCrossVendor`.
-If `oidTypeTable` ever gains that row the four flip to visible, a curation guard says so, and the disposition has to be decided again rather than inherited.
-A stale exclusion that describes nothing fails the same test.
+The four PEN-0 rows carry `scanVisible: true`, and that flag is checked **both ways**.
+Since nl6#821 `oidTypeTable` types `entPhysicalVendorType`, so the production predicate the scan shares with the wire reads those responses as OIDs and reports them.
+The exclusion is what keeps them from failing the guard, and the own-vendor PEN guard counts them as a known exception that cites nl6#823.
+A row whose visibility changes, and a stale exclusion that describes nothing, both fail the same test.
 
 **What the guard cannot do: check that a label is true.** A label claims that nobody read a MIB, and no test can read a MIB.
 What it can do, and does, is refuse the fourth state: a vendor subtree that reads as checked because nothing says otherwise.
