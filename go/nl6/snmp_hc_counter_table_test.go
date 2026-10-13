@@ -163,7 +163,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // from the chassis model, pre-change value in
 // snmp_shipped_juniper_mx10004_entity_ledger_test.go.
 // Re-pinned for the cisco_asr9902 addition; snmp_shipped_cisco_asr9902_ledger_test.go reverses it.
-const shippedTagDigest = "a24ac010983a7358e3aba2e7e46f17446371ff266d4997f7793c9db31ab21321"
+// Re-pinned when entPhysicalVendorType.1 of cisco_nexus_9500 and
+// cisco_catalyst_9500 moved from INTEGER 1 to a cevChassis OID string.
+// Reversed by snmp_shipped_cisco_identity_ledger_test.go.
+const shippedTagDigest = "e06f2b92cdb8453576ef6ae870c63d62ab2e776b79e81cf9d0cfdecae89b5bf4"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

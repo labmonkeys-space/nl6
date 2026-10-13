@@ -11,7 +11,7 @@ See [Resource files](resource-files.md) for the JSON format.
 |--------|-------|-------------|
 | Cisco ASR9K | 48 | High-end service provider router |
 | Cisco ASR 9902 | 50 | Fixed 2RU IOS-XR 24.2.2 router: two A99-RP-F, one ASR-9902-LC with 48 front ports in two slices, two management ports; SNMP and CLI inventory generated from one chassis model |
-| Cisco CRS-X | 144 | Carrier-class router |
+| Cisco CRS-X | 144 | Carrier-class router, 16-slot CRS-X |
 | Huawei NE8000 | 96 | Carrier-class router |
 | Nokia 7750 SR-12 | 72 | IP/MPLS service router |
 | Juniper MX960 | 80 | Service provider edge router |
@@ -36,22 +36,22 @@ Each interface has a port entity at index 1000 + ifIndex, and `entAliasMappingTa
 |--------|-------|-------------|
 | Juniper MX240 | 24 | Compact modular router |
 | NEC IX3315 | 48 | Enterprise router |
-| Cisco IOS | 4 | Standard IOS router |
 
 ## Data center switches
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Cisco Nexus 9500 | 64 | Data center spine switch |
+| Cisco Nexus 9500 | 64 | Data center spine switch, Nexus 9508 chassis |
 | Arista 7280R3 | 32 | High-performance switch |
 
 ## Campus switches
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Cisco Catalyst 9500 | 48 | Enterprise core switch |
+| Cisco Catalyst 9500 | 48 | Enterprise core switch, Catalyst 9500-48Y4C |
 | Extreme VSP4450 | 48 | Campus switch |
 | D-Link DGS-3630 | 52 | L3 managed switch |
+| Cisco IOS | 4 | Access switch, Catalyst 2960-X (WS-C2960X-24TS-L) |
 
 ## Firewalls
 

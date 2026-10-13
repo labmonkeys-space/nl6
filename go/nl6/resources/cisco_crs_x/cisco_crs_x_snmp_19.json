@@ -6,7 +6,7 @@
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.2.1",
-      "response": "Cisco CRS-X Carrier Routing System"
+      "response": "Enhanced CRS 16 slots Line Card Chassis"
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.4.1",
@@ -42,7 +42,7 @@
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1",
-      "response": "CRS-X"
+      "response": "CRS-16-LCC-B"
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.1.2",
