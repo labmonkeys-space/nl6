@@ -187,39 +187,31 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 	in := c.Model.Interfaces
 	rows := []SNMPRow{{"1.3.6.1.2.1.2.1.0", strconv.Itoa(len(c.Ports) + len(c.Units))}}
 	add := func(oid, v string) { rows = append(rows, SNMPRow{oid, v}) }
-	for _, p := range c.Ports {
-		ix := strconv.Itoa(p.IfIndex)
-		k := uint64((p.IfIndex - 1) % in.HCPeriod)
+	// ifRow adds one interface's ifTable and ifXTable rows; macIndex is the
+	// ifIndex whose MAC the interface reports.
+	ifRow := func(ifIndex int, name, ifType, mtu string, macIndex, speedMbps int, alias string) {
+		ix := strconv.Itoa(ifIndex)
+		k := uint64((ifIndex - 1) % in.HCPeriod)
 		add("1.3.6.1.2.1.2.2.1.1."+ix, ix)
-		add("1.3.6.1.2.1.2.2.1.2."+ix, p.IfName)
-		add("1.3.6.1.2.1.2.2.1.3."+ix, "6")
-		add("1.3.6.1.2.1.2.2.1.4."+ix, in.MTU)
+		add("1.3.6.1.2.1.2.2.1.2."+ix, name)
+		add("1.3.6.1.2.1.2.2.1.3."+ix, ifType)
+		add("1.3.6.1.2.1.2.2.1.4."+ix, mtu)
 		add("1.3.6.1.2.1.2.2.1.5."+ix, in.IfSpeed)
-		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, p.IfIndex))
+		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, macIndex))
 		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
 		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
-		add("1.3.6.1.2.1.31.1.1.1.1."+ix, p.IfName)
+		add("1.3.6.1.2.1.31.1.1.1.1."+ix, name)
 		add("1.3.6.1.2.1.31.1.1.1.6."+ix, strconv.FormatUint(in.HCInBase+k*in.HCInStep, 10))
 		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
-		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(p.SpeedMbps))
-		add("1.3.6.1.2.1.31.1.1.1.18."+ix, fmt.Sprintf(in.AliasFormat, p.IfIndex))
+		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(speedMbps))
+		add("1.3.6.1.2.1.31.1.1.1.18."+ix, alias)
+	}
+	for _, p := range c.Ports {
+		ifRow(p.IfIndex, p.IfName, "6", in.MTU, p.IfIndex, p.SpeedMbps, fmt.Sprintf(in.AliasFormat, p.IfIndex))
 	}
 	for _, u := range c.Units {
-		ix := strconv.Itoa(u.IfIndex)
-		k := uint64((u.IfIndex - 1) % in.HCPeriod)
-		add("1.3.6.1.2.1.2.2.1.1."+ix, ix)
-		add("1.3.6.1.2.1.2.2.1.2."+ix, u.IfName)
-		add("1.3.6.1.2.1.2.2.1.3."+ix, "53") // propVirtual
-		add("1.3.6.1.2.1.2.2.1.4."+ix, "1500")
-		add("1.3.6.1.2.1.2.2.1.5."+ix, in.IfSpeed)
-		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, u.Parent.IfIndex))
-		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
-		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
-		add("1.3.6.1.2.1.31.1.1.1.1."+ix, u.IfName)
-		add("1.3.6.1.2.1.31.1.1.1.6."+ix, strconv.FormatUint(in.HCInBase+k*in.HCInStep, 10))
-		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
-		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(u.Parent.SpeedMbps))
-		add("1.3.6.1.2.1.31.1.1.1.18."+ix, "")
+		// propVirtual(53), the parent's MAC and speed, no description.
+		ifRow(u.IfIndex, u.IfName, "53", "1500", u.Parent.IfIndex, u.Parent.SpeedMbps, "")
 	}
 	for _, re := range c.Model.RoutingEngines {
 		idx := fmt.Sprintf("9.%d.0.0", re.Slot+1)

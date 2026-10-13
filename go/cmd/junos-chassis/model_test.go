@@ -115,6 +115,8 @@ func TestExpandRejectsBadUnits(t *testing.T) {
 		"negative":       {[]Unit{{Parent: "xe-0/0/0", Unit: -1}}, "outside"},
 		"above range":    {[]Unit{{Parent: "xe-0/0/0", Unit: maxJunosUnit + 1}}, "outside"},
 		"duplicate":      {[]Unit{{Parent: "xe-0/0/0"}, {Parent: "xe-0/0/0"}}, "twice"},
+		"no prefix len":  {[]Unit{{Parent: "xe-0/0/0", Inet: "192.168.1.1"}}, "inet"},
+		"bad address":    {[]Unit{{Parent: "xe-0/0/0", Inet: "192.168.1.300/24"}}, "inet"},
 	} {
 		m, err := loadModel()
 		if err != nil {

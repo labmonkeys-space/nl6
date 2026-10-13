@@ -10,6 +10,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"strconv"
 )
 
@@ -340,6 +341,9 @@ func (c *Chassis) expandUnits(m *Model) error {
 		}
 		if u.Unit < 0 || u.Unit > maxJunosUnit {
 			return fmt.Errorf("units: %s unit %d outside 0..%d", u.Parent, u.Unit, maxJunosUnit)
+		}
+		if _, err := netip.ParsePrefix(u.Inet); u.Inet != "" && err != nil {
+			return fmt.Errorf("units: %s unit %d inet: %w", u.Parent, u.Unit, err)
 		}
 		name := fmt.Sprintf("%s.%d", u.Parent, u.Unit)
 		if seen[name] {
