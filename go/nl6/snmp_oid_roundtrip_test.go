@@ -411,7 +411,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // Re-pinned when 208 port vendor types moved from 1.3.6.1.4.1.0.0 to
 // zeroDotZero, pre-change value shippedOIDEncodingDigestBeforeEntityRoot.
 // Reversed by snmp_shipped_entity_root_ledger_test.go.
-const shippedOIDEncodingDigest = "2f958f6a614ae97157f16b8ce973b457bcc1f7a23701af8407032fe7511bede4"
+// Re-pinned when the chassis rows stopped serving .17.1, .18.1 and .19.1 under
+// entPhysicalEntry, pre-change value
+// shippedOIDEncodingDigestBeforeEntityInventory. Reversed by
+// snmp_shipped_entity_inventory_ledger_test.go.
+const shippedOIDEncodingDigest = "1e16764e84ee6f73e8ec78f03683bc6c1121bbedd4732f7a2166b75cce09c248"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

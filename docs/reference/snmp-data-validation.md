@@ -44,15 +44,22 @@ See [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 
 ## ENTITY-MIB structure
 
-Two corpus tests check the shape of every shipped `entPhysicalTable`.
+Four corpus tests check the shape of every shipped `entPhysicalTable`, and a fifth checks the port rows of the four generated profiles.
 They run in `make test`, not at load, so they cover shipped profiles and not operator files.
 
 | Test | Refuses |
 |---|---|
 | `TestEveryEntityTableHasOneChassisRoot` | a table with no row or several rows of `entPhysicalContainedIn` `0`, a root that is not `chassis(3)` or whose `entPhysicalParentRelPos` is not `-1`, and a row contained in an index the profile does not serve |
 | `TestEveryProfileServesOnlyItsOwnVendorArc` | an `entPhysicalVendorType` under another vendor's PEN, including the IANA-reserved PEN 0 |
+| `TestEntityInventoryColumnsAreWellFormedOrAbsent` | an `entPhysicalMfgDate` that is not an 8- or 11-octet DateAndTime with its fields in range, an `entPhysicalUris` that is not zero-length or space-separated absolute URIs, and an `entPhysicalUUID` that is not 0 or 16 octets |
+| `TestEntityManufacturerIsNamedAndConsistent` | a root row with no or an empty `entPhysicalMfgName`, and a row whose non-empty `entPhysicalMfgName` differs from the root's |
+| `TestGeneratedFamilyPortRowsServeNoInventedValues` | a non-empty revision, serial number, manufacturer, model name or asset ID on a port row of `cisco_nexus_9500`, `cisco_catalyst_9500`, `juniper_mx960` or `palo_alto_pa3220` |
 
 An unknown vendor type is `zeroDotZero` (`0.0`), as RFC 4133 prescribes.
+The four generated profiles serve zero-length inventory strings on their port rows, as RFC 4133 prescribes for an unknown or unassigned value.
+Port rows of the other profiles still carry synthetic revisions and serial numbers.
+No shipped profile serves `entPhysicalMfgDate`, `entPhysicalUris` or `entPhysicalUUID`.
+The resource format sends a string as its literal bytes, so it cannot spell a DateAndTime.
 
 ## Vendor arc disposition
 

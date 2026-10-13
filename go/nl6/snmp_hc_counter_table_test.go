@@ -179,7 +179,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // The ENTITY-MIB chassis-root fix moves four firmware revisions from INTEGER to
 // OCTET STRING, pre-change value shippedTagDigestBeforeEntityRoot. Reversed by
 // snmp_shipped_entity_root_ledger_test.go.
-const shippedTagDigest = "1e737c477e1843377b22eea42508d971eeaee390bf77bfbb3bf8add85aae1968"
+// The ENTITY-MIB inventory fix deletes three chassis columns on 21 profiles and
+// empties 1,456 port-row values, pre-change value
+// shippedTagDigestBeforeEntityInventory. Reversed by
+// snmp_shipped_entity_inventory_ledger_test.go.
+const shippedTagDigest = "65b1718472612a75e85ccb5c4a109ddb24ba5f511fa326b8625286709e5654dd"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

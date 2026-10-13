@@ -1,8 +1,6 @@
 {
   "snmp": [
-    {"oid": "1.3.6.1.2.1.47.1.1.1.1.17.1", "response": "07E5010F000000"},
-    {"oid": "1.3.6.1.2.1.47.1.1.1.1.18.1", "response": "Cisco Systems, Inc."},
-    {"oid": "1.3.6.1.2.1.47.1.1.1.1.19.1", "response": "urn:clei:CMICAB4DAA"}
+    {"oid": "1.3.6.1.2.1.47.1.1.1.1.12.1", "response": "Cisco Systems, Inc."}
   ],
   "ssh": null
 }

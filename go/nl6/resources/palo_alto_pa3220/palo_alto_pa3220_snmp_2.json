@@ -150,195 +150,195 @@
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1001",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1002",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1003",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1004",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1005",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1006",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1007",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1008",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1009",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1010",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1011",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1012",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1013",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1014",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1015",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.10.1016",
-      "response": "1.0"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1001",
-      "response": "SN001001"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1002",
-      "response": "SN001002"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1003",
-      "response": "SN001003"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1004",
-      "response": "SN001004"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1005",
-      "response": "SN001005"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1006",
-      "response": "SN001006"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1007",
-      "response": "SN001007"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1008",
-      "response": "SN001008"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1009",
-      "response": "SN001009"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1010",
-      "response": "SN001010"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1011",
-      "response": "SN001011"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1012",
-      "response": "SN001012"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1013",
-      "response": "SN001013"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1014",
-      "response": "SN001014"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1015",
-      "response": "SN001015"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.11.1016",
-      "response": "SN001016"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1001",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1002",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1003",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1004",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1005",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1006",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1007",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1008",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1009",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1010",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1011",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1012",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1013",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1014",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1015",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.12.1016",
-      "response": "Simulation Vendor"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1",
@@ -346,67 +346,67 @@
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1001",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1002",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1003",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1004",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1005",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1006",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1007",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1008",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1009",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1010",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1011",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1012",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1013",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1014",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1015",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.13.1016",
-      "response": "1GE-PORT"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.14.1001",
@@ -474,67 +474,67 @@
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1001",
-      "response": "ASSET1001"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1002",
-      "response": "ASSET1002"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1003",
-      "response": "ASSET1003"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1004",
-      "response": "ASSET1004"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1005",
-      "response": "ASSET1005"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1006",
-      "response": "ASSET1006"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1007",
-      "response": "ASSET1007"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1008",
-      "response": "ASSET1008"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1009",
-      "response": "ASSET1009"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1010",
-      "response": "ASSET1010"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1011",
-      "response": "ASSET1011"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1012",
-      "response": "ASSET1012"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1013",
-      "response": "ASSET1013"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1014",
-      "response": "ASSET1014"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1015",
-      "response": "ASSET1015"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.15.1016",
-      "response": "ASSET1016"
+      "response": ""
     },
     {
       "oid": "1.3.6.1.2.1.47.1.1.1.1.16.1001",
