@@ -1162,7 +1162,7 @@ func mx10004EntityOIDNamesBefore(t *testing.T, names []string) []string {
 }
 
 func TestMx10004EntityReproducesTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, mx10004EntityParentRevision)); got != shippedTagDigestBeforeMx10004Entity {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, mx10004EntityParentRevision), mx10004EntityParentRevision); got != shippedTagDigestBeforeMx10004Entity {
 		t.Errorf("reversing the ENTITY-MIB rebuild gives digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeMx10004Entity)
 	}

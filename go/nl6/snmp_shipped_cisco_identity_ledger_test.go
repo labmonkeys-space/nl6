@@ -283,7 +283,7 @@ func ciscoIdentityOIDNamesBefore(t *testing.T, names []string) []string {
 }
 
 func TestCiscoIdentityFixReproducesTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, ciscoIdentityParentRevision)); got != shippedTagDigestBeforeCiscoIdentity {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, ciscoIdentityParentRevision), ciscoIdentityParentRevision); got != shippedTagDigestBeforeCiscoIdentity {
 		t.Errorf("reversing the Cisco identity fix gives tag digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeCiscoIdentity)
 	}

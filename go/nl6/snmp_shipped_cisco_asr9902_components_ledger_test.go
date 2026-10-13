@@ -246,7 +246,7 @@ func ciscoAsr9902ComponentsOIDNamesBefore(t *testing.T, names []string) []string
 }
 
 func TestCiscoAsr9902ComponentsReproduceTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, ciscoAsr9902ComponentsParentRevision)); got != shippedTagDigestBeforeCiscoAsr9902Components {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, ciscoAsr9902ComponentsParentRevision), ciscoAsr9902ComponentsParentRevision); got != shippedTagDigestBeforeCiscoAsr9902Components {
 		t.Errorf("reversing the components change gives digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeCiscoAsr9902Components)
 	}

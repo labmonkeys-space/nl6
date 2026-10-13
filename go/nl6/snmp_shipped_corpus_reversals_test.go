@@ -100,6 +100,12 @@ type corpusReversal struct {
 	// namesAbsentReason explains a nil names view. Required when names is nil,
 	// forbidden otherwise.
 	namesAbsentReason string
+
+	// typedColumns are the oidTypeTable prefixes this link's change ADDED.
+	// A corpus reconstructed at a revision older than this link is encoded
+	// with these columns untyped, because that is how the wire carried them
+	// then (nl6#821). Empty for every change that left the table alone.
+	typedColumns []string
 }
 
 // newestFirstReversals is THE CHAIN. Index 0 is the most recent corpus-editing
@@ -282,6 +288,20 @@ func reversalIndexFor(t *testing.T, target string) int {
 		"Either the revision is wrong, or this ledger's link is missing from newestFirstReversals "+
 		"in snmp_shipped_corpus_reversals_test.go", target, strings.Join(have, ", "))
 	return 0
+}
+
+// columnsTypedAfter returns the columns typed by links newer than revision:
+// the ones a corpus at revision must encode untyped. corpusHeadRevision has none.
+func columnsTypedAfter(t *testing.T, revision string) []string {
+	t.Helper()
+	if revision == corpusHeadRevision {
+		return nil
+	}
+	var cols []string
+	for i := 0; i <= reversalIndexFor(t, revision); i++ {
+		cols = append(cols, newestFirstReversals[i].typedColumns...)
+	}
+	return cols
 }
 
 // restoreCorpusValuesTo walks a (profile, OID) -> value map of TODAY's corpus back

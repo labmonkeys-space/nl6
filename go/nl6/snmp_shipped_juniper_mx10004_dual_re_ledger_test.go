@@ -53,7 +53,7 @@ func mx10004DualREOIDNamesBefore(t *testing.T, names []string) []string {
 }
 
 func TestMx10004DualREReproducesTheParentCorpus(t *testing.T) {
-	if got := corpusTagDigest(t, corpusValuesAt(t, mx10004DualREParentRevision)); got != shippedTagDigestBeforeMx10004DualRE {
+	if got := corpusTagDigestAt(t, corpusValuesAt(t, mx10004DualREParentRevision), mx10004DualREParentRevision); got != shippedTagDigestBeforeMx10004DualRE {
 		t.Errorf("reversing the dual-RE change gives digest %s, want %s: another shipped row changed without being recorded",
 			got, shippedTagDigestBeforeMx10004DualRE)
 	}

@@ -1425,7 +1425,7 @@ func TestOctetShadowDeletionReproducesTheParentCorpus(t *testing.T) {
 	// (profile, OID, emitted tag) triples.
 	seen := map[string]struct{}{}
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueAt(t, k[1], v, octetShadowParentRevision)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}

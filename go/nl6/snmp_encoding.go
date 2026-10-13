@@ -562,10 +562,13 @@ var oidTypeTable = []oidTypeEntry{
 	{".1.0.8802.1.1.2.1.4.1.1.10", ASN1_OCTET_STRING}, // lldpRemSysDesc
 }
 
-// snmpTypeTag returns the SNMP application type tag for the given OID, or 0
-// if the OID is not in the well-known type table (use INTEGER / OCTET_STRING).
-func snmpTypeTag(oid string) byte {
-	for _, e := range oidTypeTable {
+// snmpTypeTag is typeTagIn over the production oidTypeTable.
+func snmpTypeTag(oid string) byte { return typeTagIn(oidTypeTable, oid) }
+
+// typeTagIn returns the SNMP application type tag for the given OID in table,
+// or 0 if the OID is not in the table (use INTEGER / OCTET_STRING).
+func typeTagIn(table []oidTypeEntry, oid string) byte {
+	for _, e := range table {
 		// Allocation-free equivalent of `HasPrefix(oid, e.prefix+".") ||
 		// oid == e.prefix`. The concatenated form allocated a string PER ROW
 		// PER CALL, and this runs once per encoded value on every SNMP response

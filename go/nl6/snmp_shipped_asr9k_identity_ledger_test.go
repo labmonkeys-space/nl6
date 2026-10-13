@@ -167,7 +167,7 @@ func TestASR9kIdentityFixReproducesTheParentCorpus(t *testing.T) {
 	// Same line shape and hash as shippedTypedCorpus.
 	seen := map[string]struct{}{}
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueAt(t, k[1], v, asr9kIdentityParentRevision)
 		if len(enc) == 0 {
 			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
 		}

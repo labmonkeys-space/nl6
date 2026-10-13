@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -113,14 +114,28 @@ func corpusValuesAt(t *testing.T, target string) map[[2]string]string {
 	return cur
 }
 
-// corpusTagDigest hashes a value map the way shippedTagDigest does.
-func corpusTagDigest(t *testing.T, cur map[[2]string]string) string {
+// encodeTypedValueAt encodes value as the wire carried it at revision: a
+// column a newer link typed takes the untyped default branch. Membership is
+// decided by typeTagIn, the production matcher, over a one-row table.
+func encodeTypedValueAt(t *testing.T, oid, value, revision string) []byte {
+	t.Helper()
+	for _, col := range columnsTypedAfter(t, revision) {
+		if typeTagIn([]oidTypeEntry{{col, ASN1_OBJECT_ID}}, oid) != 0 {
+			return encodeTypedValueAtTag(oid, value, 0)
+		}
+	}
+	return encodeTypedValue(oid, value)
+}
+
+// corpusTagDigestAt hashes a value map the way shippedTagDigest does, as the
+// corpus encoded at revision.
+func corpusTagDigestAt(t *testing.T, cur map[[2]string]string, revision string) string {
 	t.Helper()
 	seen := map[string]struct{}{}
 	for k, v := range cur {
-		enc := encodeTypedValue(k[1], v)
+		enc := encodeTypedValueAt(t, k[1], v, revision)
 		if len(enc) == 0 {
-			t.Fatalf("%s %s: encodeTypedValue(%q) emitted nothing", k[0], k[1], v)
+			t.Fatalf("%s %s: encodeTypedValueAt(%q) emitted nothing", k[0], k[1], v)
 		}
 		seen[fmt.Sprintf("%s\t%s\t%02X", k[0], k[1], enc[0])] = struct{}{}
 	}
@@ -168,5 +183,34 @@ func TestReverseProfileEditsRoundTrip(t *testing.T) {
 	sort.Strings(got)
 	if strings.Join(got, ",") != "1.1,1.3" {
 		t.Fatalf("names reversed to %v", got)
+	}
+}
+
+// Before any link types a column, encoding a corpus "as of" any revision is
+// exactly today's encoding. This pins the refactor as a no-op.
+func TestEncodeTypedValueAtIsTheEncoderWhenNothingWasTyped(t *testing.T) {
+	revs := []string{corpusHeadRevision}
+	for _, r := range newestFirstReversals {
+		revs = append(revs, r.parent)
+	}
+	for _, rev := range revs {
+		if cols := columnsTypedAfter(t, rev); len(cols) != 0 {
+			t.Fatalf("columnsTypedAfter(%s) = %v, want none before nl6#821", rev, cols)
+		}
+	}
+	for _, e := range shippedSNMPEntries(t) {
+		want := encodeTypedValue(e.OID, e.Value)
+		got := encodeTypedValueAt(t, e.OID, e.Value, corpusOldestRevision)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%s %s: encodeTypedValueAt = % X, encodeTypedValue = % X", e.Profile, e.OID, got, want)
+		}
+	}
+}
+
+func TestTypeTagInIsSnmpTypeTag(t *testing.T) {
+	for _, e := range shippedSNMPEntries(t) {
+		if a, b := typeTagIn(oidTypeTable, e.OID), snmpTypeTag(e.OID); a != b {
+			t.Fatalf("%s: typeTagIn = %#02x, snmpTypeTag = %#02x", e.OID, a, b)
+		}
 	}
 }
