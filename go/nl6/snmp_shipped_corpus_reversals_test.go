@@ -125,6 +125,7 @@ var newestFirstReversals = []corpusReversal{
 		parent:       vendorTypeOIDParentRevision,
 		values:       restoreVendorTypeOID,
 		names:        vendorTypeOIDNamesBefore,
+		typedColumns: []string{vendorTypeOIDColumn},
 	},
 	{
 		name:         "cisco_asr9902 components",

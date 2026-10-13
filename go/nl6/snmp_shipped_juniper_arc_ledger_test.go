@@ -1449,8 +1449,10 @@ func TestJuniperArcIsMeasuredInBothPositions(t *testing.T) {
 		}
 		// The VALUE position is gated by the PRODUCTION predicate, the same one
 		// collectShippedOIDs uses: a value only reaches the wire as an OID if
-		// snmpTypeTag says the leaf is one.
+		// snmpTypeTag says the leaf is one. A column a newer link typed was not
+		// an OID at the parent (entPhysicalVendorType, nl6#821).
 		if snmpTypeTag(e.OID) == ASN1_OBJECT_ID &&
+			!inColumns(e.OID, columnsTypedAfter(t, juniperArcParentRevision)) &&
 			strings.HasPrefix(e.Value, juniperArcBare+".") {
 			valueEntries[e.Value]++
 		}

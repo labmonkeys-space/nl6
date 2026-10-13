@@ -174,7 +174,9 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // shippedTagDigestBeforeCiscoAsr9902Components.
 // nl6#821 chassis identities and stub removal, pre-change value
 // shippedTagDigestBeforeVendorTypeOID.
-const shippedTagDigest = "7e971f515ae98097a82e6832e53f8b1841b9680b22405416150ca6b37220d73e"
+// nl6#821 types entPhysicalVendorType: 236 rows move from OCTET STRING to
+// OBJECT IDENTIFIER. Reversed by snmp_shipped_vendortype_oid_ledger_test.go.
+const shippedTagDigest = "e99c04bc6034c11caca251d934f710fa14355d36669b4f24b7c22c9ed8838378"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

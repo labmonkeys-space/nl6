@@ -281,9 +281,13 @@ func underAnyEnterpriseArc(dottedOID string) bool {
 // The dual-RE change added RE1's six jnxOperating rows: names 321 to 327.
 // Three of them (CPU, buffer, temperature) are static because the metrics
 // cycler is one per device and would make the backup mirror the master.
+//
+// nl6#821 typed entPhysicalVendorType as an OBJECT IDENTIFIER, so its values
+// joined the value half: 30 to 58. The 28 new ones are each profile's own
+// vendor type; the 208 PEN-0 placeholders are excused and counted separately.
 const (
 	ownVendorArcNamesShipped  = 327
-	ownVendorArcValuesShipped = 30 // +1: cisco_asr9902's sysObjectID ciscoASR9902
+	ownVendorArcValuesShipped = 58 // +1: cisco_asr9902's sysObjectID ciscoASR9902; +28: entPhysicalVendorType (nl6#821)
 )
 
 // TestOwnVendorPENMapIsCuratedAndComplete pins the map itself before anything
@@ -519,21 +523,14 @@ func assertForeignArcDetectionWorks(t *testing.T) {
 //
 // WHAT IT STILL CANNOT SEE, stated rather than glossed:
 //
-//   - THE VALUE HALF SEES sysObjectID AND NOTHING ELSE, which is narrower than
-//     "OID-typed values" sounds and was overstated in the first cut of this
-//     comment. The gate is snmpTypeTag(...) == ASN1_OBJECT_ID and oidTypeTable
-//     carries exactly ONE such row: sysObjectID. entPhysicalVendorType
-//     (1.3.6.1.2.1.47.1.1.1.1.3.x) is an OBJECT IDENTIFIER in RFC 4133 and ships
-//     with enterprise-arc responses in at least six profiles, and this guard
-//     reads every one of them as an OCTET STRING and skips it. Nothing
-//     cross-vendor sits there today (assertEntPhysicalVendorTypeIsNotCrossVendor
-//     below checks that separately and cheaply), so this is a coverage gap and
-//     not a live defect. Reusing the PRODUCTION predicate is still the right
-//     boundary: nl6 encodes an untyped dotted-looking response as an OCTET
-//     STRING, so it never reaches the wire as an OID, and a guard that judged
-//     values by string shape would report entries no collector can read as an
-//     identity. Widening this means adding a row to oidTypeTable, which is a wire
-//     change and a separate decision.
+//   - THE VALUE HALF SEES ONLY OID-TYPED LEAVES. The gate is
+//     snmpTypeTag(...) == ASN1_OBJECT_ID, so it reads sysObjectID and, since
+//     nl6#821 typed it, entPhysicalVendorType (1.3.6.1.2.1.47.1.1.1.1.3.x).
+//     Before nl6#821 that column went out as an OCTET STRING and only
+//     assertEntPhysicalVendorTypeIsNotCrossVendor checked it. Reusing the
+//     PRODUCTION predicate is the right boundary: a guard that judged values
+//     by string shape would report entries no collector can read as an
+//     identity.
 //   - whether the objects BELOW a correct PEN mean what the vendor's MIB says
 //     they mean. nl6#569's audit of one profile found 8 of 11 wrong, and the
 //     other 28 have had no equivalent review. A profile can pass this guard while
@@ -550,7 +547,8 @@ func TestEveryProfileServesOnlyItsOwnVendorArc(t *testing.T) {
 	// The control runs first and in its own scope, because it t.Chdir()s.
 	t.Run("positive control", func(t *testing.T) { assertForeignArcDetectionWorks(t) })
 
-	hits := scanArcPositions(t, underAnyEnterpriseArc)
+	hits, placeholders := splitEntPhysicalVendorTypePlaceholders(scanArcPositions(t, underAnyEnterpriseArc))
+	assertEntPhysicalVendorTypePlaceholders(t, placeholders)
 
 	for _, v := range foreignArcViolations(hits, ownVendorPENs) {
 		own, registered := ownVendorPENs[v.hit.profile]
@@ -631,6 +629,58 @@ func TestEveryProfileServesOnlyItsOwnVendorArc(t *testing.T) {
 	assertEntPhysicalVendorTypeIsNotCrossVendor(t)
 }
 
+// entPhysicalVendorTypePlaceholderProfiles are the four profiles that serve the
+// 1.3.6.1.4.1.0.0 placeholder as line-card entPhysicalVendorType. Their real
+// vendor types are nl6#823's work.
+//
+// Since nl6#821 types the column, the main guard sees these values. They are a
+// counted exception, not a PEN-0 allowance: a hit is excused only when it is
+// that exact value, in that column, on one of these four profiles, and the
+// excused total must equal entPhysicalVendorTypePlaceholders.
+var entPhysicalVendorTypePlaceholderProfiles = map[string]bool{
+	"cisco_catalyst_9500.json": true,
+	"cisco_nexus_9500.json":    true,
+	"juniper_mx960.json":       true,
+	"palo_alto_pa3220.json":    true,
+}
+
+const entPhysicalVendorTypePlaceholder = "1.3.6.1.4.1.0.0"
+
+// splitEntPhysicalVendorTypePlaceholders separates the placeholder hits from
+// the rest. Column membership is decided by typeTagIn, the production matcher.
+func splitEntPhysicalVendorTypePlaceholders(hits []arcHit) (rest, placeholders []arcHit) {
+	for _, h := range hits {
+		if h.where == "value" && h.text == entPhysicalVendorTypePlaceholder &&
+			entPhysicalVendorTypePlaceholderProfiles[h.profile] &&
+			inColumns(h.oid, []string{vendorTypeOIDColumn}) {
+			placeholders = append(placeholders, h)
+			continue
+		}
+		rest = append(rest, h)
+	}
+	return rest, placeholders
+}
+
+// assertEntPhysicalVendorTypePlaceholders pins the exception: its size, and
+// that every one of the four profiles still needs it.
+func assertEntPhysicalVendorTypePlaceholders(t *testing.T, placeholders []arcHit) {
+	t.Helper()
+	per := map[string]int{}
+	for _, h := range placeholders {
+		per[h.profile]++
+	}
+	if len(placeholders) != entPhysicalVendorTypePlaceholders {
+		t.Errorf("%d entPhysicalVendorType placeholder values excused, want %d (nl6#823)",
+			len(placeholders), entPhysicalVendorTypePlaceholders)
+	}
+	for p := range entPhysicalVendorTypePlaceholderProfiles {
+		if per[p] == 0 {
+			t.Errorf("%s serves no entPhysicalVendorType placeholder; drop it from "+
+				"entPhysicalVendorTypePlaceholderProfiles", p)
+		}
+	}
+}
+
 // entPhysicalVendorTypePlaceholders is the number of shipped
 // entPhysicalVendorType responses answering the synthetic 1.3.6.1.4.1.0.0.
 //
@@ -641,20 +691,13 @@ func TestEveryProfileServesOnlyItsOwnVendorArc(t *testing.T) {
 // something nobody has counted.
 const entPhysicalVendorTypePlaceholders = 208
 
-// assertEntPhysicalVendorTypeIsNotCrossVendor closes, by inspection, the gap the
-// main guard's value half cannot reach.
+// assertEntPhysicalVendorTypeIsNotCrossVendor checks, by inspection, that no
+// entPhysicalVendorType value is another vendor's arc.
 //
-// entPhysicalVendorType is an OBJECT IDENTIFIER in RFC 4133, but oidTypeTable
-// does not type it, so scanArcPositions reads its responses as OCTET STRINGs and
-// never tests them. That is the right boundary for the guard (see the exclusion
-// list above) and it leaves a real question unanswered: are any of those values
-// another vendor's arc? They are not, and this says so with a check rather than
-// with a sentence.
-//
-// It reads the responses DIRECTLY rather than through scanArcPositions, precisely
-// because the production predicate excludes them — routing it through the shared
-// scan would either report nothing or require widening the scan, which is the
-// wire change the exclusion list declines to make here.
+// It was written when oidTypeTable did not type the column and the main guard
+// could not see it. Since nl6#821 the main guard covers the column too. This
+// check is kept because it reads the responses DIRECTLY, independent of
+// oidTypeTable, so it still holds if the row is ever removed.
 func assertEntPhysicalVendorTypeIsNotCrossVendor(t *testing.T) {
 	t.Helper()
 
@@ -666,9 +709,9 @@ func assertEntPhysicalVendorTypeIsNotCrossVendor(t *testing.T) {
 		}
 		pen, ok := arcPENOf(normaliseOIDKey(e.Value))
 		if !ok {
-			// Not under the enterprise root at all (eight entries answer a bare
-			// "1"). Malformed as a vendor type, but not a vendor misattribution,
-			// and out of scope here.
+			// Not under the enterprise root at all. None ships since nl6#821;
+			// TestNoShippedVendorTypeStubOrNonOID requires every value to be an
+			// OID. Not a vendor misattribution, and out of scope here.
 			continue
 		}
 		checked++
@@ -678,9 +721,7 @@ func assertEntPhysicalVendorTypeIsNotCrossVendor(t *testing.T) {
 		}
 		if own := ownVendorPENs[e.Profile]; own.pen != pen {
 			t.Errorf("%s: entPhysicalVendorType %s answers %q, which is under PEN %s, not %s's own "+
-				"PEN %s. The main guard cannot see this position — oidTypeTable does not type "+
-				"entPhysicalVendorType, so the response is encoded as an OCTET STRING — which is why "+
-				"it is checked here instead", e.Part, e.OID, e.Value, pen, e.Profile, own.pen)
+				"PEN %s", e.Part, e.OID, e.Value, pen, e.Profile, own.pen)
 		}
 	}
 	if placeholders != entPhysicalVendorTypePlaceholders {

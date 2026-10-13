@@ -149,34 +149,32 @@ var excludedArcPairs = map[[2]string]arcExclusion{
 	// Already recorded as known-synthetic by nl6#588 and pinned by count in
 	// entPhysicalVendorTypePlaceholders.
 	//
-	// scanVisible is FALSE on all four and that is the interesting half: oidTypeTable
-	// does not type entPhysicalVendorType, so the production predicate this scan
-	// shares with the wire reads those responses as OCTET STRINGs and skips them.
-	// They are covered instead by assertEntPhysicalVendorTypeIsNotCrossVendor. If
-	// oidTypeTable ever gains that row these four flip to visible, this test says so,
-	// and the disposition has to be decided again rather than inherited.
-	{"cisco_catalyst_9500.json", "0"}: {reason: entPhysicalVendorTypeExclusionReason},
-	{"cisco_nexus_9500.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason},
-	{"juniper_mx960.json", "0"}:       {reason: entPhysicalVendorTypeExclusionReason},
-	{"palo_alto_pa3220.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason},
+	// These four were scan-INVISIBLE until nl6#821 typed entPhysicalVendorType
+	// in oidTypeTable. The disposition was decided again then, not inherited:
+	// the rows are line-card placeholders whose real vendor types are nl6#823's
+	// work, so they stay excluded, per pair, and now scan-visible.
+	{"cisco_catalyst_9500.json", "0"}: {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
+	{"cisco_nexus_9500.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
+	{"juniper_mx960.json", "0"}:       {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
+	{"palo_alto_pa3220.json", "0"}:    {reason: entPhysicalVendorTypeExclusionReason, scanVisible: true},
 }
 
 const entPhysicalVendorTypeExclusionReason = "the 1.3.6.1.4.1.0.0 entPhysicalVendorType placeholder. " +
 	"PEN 0 is Reserved in the IANA registry and held by IANA, so this is not a vendor subtree and there " +
 	"is no vendor MIB it could be audited against. Recorded as known-synthetic by nl6#588 and pinned by " +
-	"count in entPhysicalVendorTypePlaceholders"
+	"count in entPhysicalVendorTypePlaceholders. The line cards' real vendor types are nl6#823"
 
 // ── the census, so the zero this test asserts cannot go vacuous ──────────────
 
 // The corpus totals, RE-DERIVED by the test on every run. They are pinned because
 // a rule that finds nothing to classify reports no violations either, and because
 // the parts figure is the one a reader is most likely to get wrong: fourteen
-// PROFILES carry an unaudited arc, but they carry it in NINETEEN parts.
+// PROFILES carry an unaudited arc, but they carry it in TWENTY-FIVE parts.
 const (
 	unauditedArcLabelledPairs = 14
-	unauditedArcLabelledParts = 19
+	unauditedArcLabelledParts = 25 // +6 in nl6#821: the entPhysicalVendorType part of six labelled profiles became scan-visible
 	auditedArcPairsShipped    = 15 // juniper_mx10004 joined the audited Juniper arc; cisco_asr9902 the audited Cisco arc
-	excludedArcPairsShipped   = 1  // the scan-visible ones; the four PEN-0 rows are not scan-visible
+	excludedArcPairsShipped   = 5  // aws_s3_storage and, since nl6#821, the four PEN-0 rows
 )
 
 // arcPairParts groups the scan's hits into (profile, PEN) -> the parts carrying

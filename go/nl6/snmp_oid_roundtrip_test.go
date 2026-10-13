@@ -406,7 +406,9 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // Re-pinned for the nl6#821 chassis identities and stub removal, pre-change
 // value shippedOIDEncodingDigestBeforeVendorTypeOID. Reversed by
 // snmp_shipped_vendortype_oid_ledger_test.go.
-const shippedOIDEncodingDigest = "fef8a48da9d2b011802f5065ed06fc815e1be8c0898dcf347302cd9186b24a37"
+// nl6#821 types entPhysicalVendorType: 236 rows move from OCTET STRING to
+// OBJECT IDENTIFIER, and the column's values join the OID names.
+const shippedOIDEncodingDigest = "62c861f9df6fce48698ba79bc01c8ae15303d72f72b4afc0f2c259380680548b"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
@@ -457,6 +459,13 @@ func TestShippedOIDsUnchangedOnTheWire(t *testing.T) {
 
 func collectShippedOIDs(t *testing.T) []string {
 	t.Helper()
+	return collectShippedOIDsUntyping(t, nil)
+}
+
+// collectShippedOIDsUntyping collects today's tree as if the columns in
+// untyped were not yet typed: their responses are not OID names.
+func collectShippedOIDsUntyping(t *testing.T, untyped []string) []string {
+	t.Helper()
 	seen := map[string]bool{}
 	err := filepath.Walk("resources", func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(p) != ".json" {
@@ -492,7 +501,8 @@ func collectShippedOIDs(t *testing.T) []string {
 						case "oid", "snmpTrapOID", "snmpTrapEnterprise":
 							seen[str] = true
 						case "response":
-							if name != "" && snmpTypeTag(normaliseOIDKey(name)) == ASN1_OBJECT_ID {
+							if name != "" && snmpTypeTag(normaliseOIDKey(name)) == ASN1_OBJECT_ID &&
+								!inColumns(normaliseOIDKey(name), untyped) {
 								seen[str] = true
 							}
 						case "value":

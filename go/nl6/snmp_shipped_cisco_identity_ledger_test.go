@@ -93,9 +93,10 @@ import (
 // No MIB is checked in: Cisco's header grants no redistribution, so this is a
 // pinned reading, not a live check.
 //
-// entPhysicalVendorType.1 goes out as an OCTET STRING, because oidTypeTable
-// types only sysObjectID as OBJECT IDENTIFIER. On nexus_9500 and catalyst_9500
-// the old "1" went out as an INTEGER, so those two rows changed tag.
+// entPhysicalVendorType.1 went out as an OCTET STRING when this ledger was
+// written. On nexus_9500 and catalyst_9500 the old "1" went out as an INTEGER,
+// so those two rows changed tag. Since nl6#821 oidTypeTable types the column,
+// so it is an OBJECT IDENTIFIER on the wire.
 
 const (
 	ciscoIdentitySysDescrOID    = ".1.3.6.1.2.1.1.1.0"
@@ -177,7 +178,7 @@ func TestCiscoIdentitiesMatchTheMIB(t *testing.T) {
 			}
 			rows := []row{
 				{"sysObjectID.0 (" + f.sysObjectName + ")", ciscoIdentitySysObjectIDOID, f.sysObjectID, ASN1_OBJECT_ID},
-				{"entPhysicalVendorType.1 (" + f.vendorTypeName + ")", ciscoIdentityVendorTypeOID, f.vendorType, ASN1_OCTET_STRING},
+				{"entPhysicalVendorType.1 (" + f.vendorTypeName + ")", ciscoIdentityVendorTypeOID, f.vendorType, ASN1_OBJECT_ID},
 			}
 			for _, r := range f.rows {
 				rows = append(rows, row{r.name, r.oid, r.after, ASN1_OCTET_STRING})

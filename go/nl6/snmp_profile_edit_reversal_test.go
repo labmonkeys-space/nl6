@@ -119,12 +119,21 @@ func corpusValuesAt(t *testing.T, target string) map[[2]string]string {
 // decided by typeTagIn, the production matcher, over a one-row table.
 func encodeTypedValueAt(t *testing.T, oid, value, revision string) []byte {
 	t.Helper()
-	for _, col := range columnsTypedAfter(t, revision) {
-		if typeTagIn([]oidTypeEntry{{col, ASN1_OBJECT_ID}}, oid) != 0 {
-			return encodeTypedValueAtTag(oid, value, 0)
-		}
+	if inColumns(oid, columnsTypedAfter(t, revision)) {
+		return encodeTypedValueAtTag(oid, value, 0)
 	}
 	return encodeTypedValue(oid, value)
+}
+
+// inColumns reports whether oid lies in one of cols. Membership is decided by
+// typeTagIn over a one-row table.
+func inColumns(oid string, cols []string) bool {
+	for _, col := range cols {
+		if typeTagIn([]oidTypeEntry{{col, ASN1_OBJECT_ID}}, oid) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // corpusTagDigestAt hashes a value map the way shippedTagDigest does, as the
@@ -186,23 +195,25 @@ func TestReverseProfileEditsRoundTrip(t *testing.T) {
 	}
 }
 
-// Before any link types a column, encoding a corpus "as of" any revision is
-// exactly today's encoding. This pins the refactor as a no-op.
-func TestEncodeTypedValueAtIsTheEncoderWhenNothingWasTyped(t *testing.T) {
+// Outside every column a link typed, encoding a corpus "as of" any revision
+// is exactly today's encoding. TestEncodeTypedValueAtUntypesNewerColumns
+// covers the typed columns.
+func TestEncodeTypedValueAtIsTheEncoderOutsideTypedColumns(t *testing.T) {
 	revs := []string{corpusHeadRevision}
+	var typed []string
 	for _, r := range newestFirstReversals {
 		revs = append(revs, r.parent)
-	}
-	for _, rev := range revs {
-		if cols := columnsTypedAfter(t, rev); len(cols) != 0 {
-			t.Fatalf("columnsTypedAfter(%s) = %v, want none before nl6#821", rev, cols)
-		}
+		typed = append(typed, r.typedColumns...)
 	}
 	for _, e := range shippedSNMPEntries(t) {
+		if inColumns(e.OID, typed) {
+			continue
+		}
 		want := encodeTypedValue(e.OID, e.Value)
-		got := encodeTypedValueAt(t, e.OID, e.Value, corpusOldestRevision)
-		if !bytes.Equal(got, want) {
-			t.Fatalf("%s %s: encodeTypedValueAt = % X, encodeTypedValue = % X", e.Profile, e.OID, got, want)
+		for _, rev := range revs {
+			if got := encodeTypedValueAt(t, e.OID, e.Value, rev); !bytes.Equal(got, want) {
+				t.Fatalf("%s %s at %s: encodeTypedValueAt = % X, encodeTypedValue = % X", e.Profile, e.OID, rev, got, want)
+			}
 		}
 	}
 }

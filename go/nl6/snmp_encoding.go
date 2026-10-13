@@ -432,6 +432,10 @@ var oidTypeTable = []oidTypeEntry{
 	{".1.3.6.1.2.1.1.2", ASN1_OBJECT_ID}, // sysObjectID
 	{".1.3.6.1.2.1.1.3", ASN1_TIMETICKS}, // sysUpTime
 
+	// ENTITY-MIB entPhysicalTable, RFC 4133. entPhysicalVendorType is an
+	// AutonomousType (OBJECT IDENTIFIER); nl6#821.
+	{".1.3.6.1.2.1.47.1.1.1.1.3", ASN1_OBJECT_ID}, // entPhysicalVendorType
+
 	// ifTable — RFC 2863
 	{".1.3.6.1.2.1.2.2.1.5", ASN1_GAUGE32},    // ifSpeed
 	{".1.3.6.1.2.1.2.2.1.9", ASN1_TIMETICKS},  // ifLastChange

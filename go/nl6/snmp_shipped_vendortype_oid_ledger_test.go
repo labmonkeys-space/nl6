@@ -12,8 +12,8 @@ import (
 
 // entPhysicalVendorType is an OBJECT IDENTIFIER (nl6#821). The shipped corpus
 // served the bare string "1" for most chassis rows. This change gives two
-// profiles real chassis identities and removes a stub row. Typing the column
-// is a separate change.
+// profiles real chassis identities and removes a stub row. A second commit
+// types the column in oidTypeTable; the link declares it in typedColumns.
 //
 // Decisions. The issue is decomposed: line cards keep their synthetic
 // vendor type and are deferred to nl6#823. Only the chassis identity and the
@@ -63,6 +63,9 @@ const (
 	vendorTypeOIDVendor1OID     = ".1.3.6.1.2.1.47.1.1.1.1.3.1"
 	vendorTypeOIDVendor2OID     = ".1.3.6.1.2.1.47.1.1.1.1.3.2"
 	vendorTypeOIDModel1OID      = ".1.3.6.1.2.1.47.1.1.1.1.13.1"
+
+	// vendorTypeOIDColumn is the column this link types.
+	vendorTypeOIDColumn = ".1.3.6.1.2.1.47.1.1.1.1.3"
 
 	jnxChassisMX960 = "1.3.6.1.4.1.2636.1.1.2.1.21"
 	panPA3220       = "1.3.6.1.4.1.25461.2.3.43"
@@ -127,6 +130,33 @@ func TestNoShippedVendorTypeStubOrNonOID(t *testing.T) {
 	}
 }
 
+// Every shipped row of the column goes out as an OBJECT IDENTIFIER.
+func TestEntPhysicalVendorTypeIsAnOID(t *testing.T) {
+	n := 0
+	for _, e := range shippedSNMPEntries(t) {
+		if typeTagIn([]oidTypeEntry{{".1.3.6.1.2.1.47.1.1.1.1.3", ASN1_OBJECT_ID}}, e.OID) == 0 {
+			continue
+		}
+		n++
+		if enc := encodeTypedValue(e.OID, e.Value); len(enc) < 3 || enc[0] != ASN1_OBJECT_ID {
+			t.Errorf("%s %s = %q encodes as % X, want an OBJECT IDENTIFIER", e.Profile, e.OID, e.Value, enc)
+		}
+	}
+	if n != 236 {
+		t.Errorf("%d entPhysicalVendorType rows, want 236", n)
+	}
+}
+
+// The ledger encodes an older corpus as its own revision saw it.
+func TestEncodeTypedValueAtUntypesNewerColumns(t *testing.T) {
+	if got := encodeTypedValueAt(t, vendorTypeOIDVendor1OID, "1", ciscoIdentityParentRevision); got[0] != ASN1_INTEGER {
+		t.Errorf("at %s: tag %#02x, want INTEGER", ciscoIdentityParentRevision, got[0])
+	}
+	if got := encodeTypedValueAt(t, vendorTypeOIDVendor1OID, jnxChassisMX960, corpusHeadRevision); got[0] != ASN1_OBJECT_ID {
+		t.Errorf("at HEAD: tag %#02x, want OBJECT IDENTIFIER", got[0])
+	}
+}
+
 // vendorTypeOIDParentRevision is main at branch time; the digests below were
 // taken there and are NOT re-derived from the new tree.
 const vendorTypeOIDParentRevision = "c308f395"
@@ -165,11 +195,27 @@ func restoreVendorTypeOID(t *testing.T, cur map[[2]string]string) {
 	}
 }
 
-// vendorTypeOIDNamesBefore reverses the OID-name view. panPA-3220 joined the
-// names as the new PA-3220 sysObjectID and panPanorama left. The stub removal
-// took entPhysicalVendorType.2 out of the whole corpus, so that key left too.
+// vendorTypeOIDNamesBefore reverses the OID-name view:
+//   - the column is typed, so its values became names; remove each one that
+//     is not also a name for another reason (an OID key, or the value of
+//     another OID-typed leaf such as the PA-3220 sysObjectID). The added set
+//     is today's names minus today's tree collected with the column untyped;
+//   - the PA-3220 sysObjectID moved from panPanorama to panPA-3220;
+//   - the stub removal took entPhysicalVendorType.2 out of the whole corpus,
+//     so that key left too.
 func vendorTypeOIDNamesBefore(t *testing.T, names []string) []string {
 	t.Helper()
+	untyped := map[string]bool{}
+	for _, n := range collectShippedOIDsUntyping(t, []string{vendorTypeOIDColumn}) {
+		untyped[n] = true
+	}
+	var added []string
+	for _, n := range collectShippedOIDs(t) {
+		if !untyped[n] {
+			added = append(added, n)
+		}
+	}
+	names = reverseOIDNameEdits(t, names, "nl6#821 typed column", added, nil)
 	return reverseOIDNameEdits(t, names, "nl6#821", []string{panPA3220}, []string{panPanorama, "1.3.6.1.2.1.47.1.1.1.1.3.2"})
 }
 
