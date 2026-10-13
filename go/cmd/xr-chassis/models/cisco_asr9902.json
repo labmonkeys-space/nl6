@@ -1,5 +1,5 @@
 {
-  "comment": "IOS-XR 24.2.2 ASR 9902 chassis model. Component names, types, parents and descriptions follow what an ASR 9902 reports; optics are data-sheet parts; serials and MACs are synthetic. The logical interface and VLAN subinterface kinds follow what an ASR 9902 reports; which ones exist, their ifTypes (ieee8023adLag, propVirtual, softwareLoopback, other, l2vlan) and speeds are chosen, not captured. Edit this file and run make gen-xr-chassis.",
+  "comment": "IOS-XR 24.2.2 ASR 9902 chassis model. Component names, types, parents and descriptions follow what an ASR 9902 reports; optics are data-sheet parts; serials and MACs are synthetic. The logical interface and VLAN subinterface kinds follow what an ASR 9902 reports; which ones exist, their ifTypes (ieee8023adLag, propVirtual, softwareLoopback, other, l2vlan) and speeds are chosen, not captured. Node OS components are named IOSXR-NODE <node>, and each node reports every package as IOSXR-PKG/<n> <package>, n counting nodes from 1. The packages are the base and five optional packages, named as Cisco's IOS XR 24.2.2 ASR 9000 release notes show them in show install active summary. No public source names the SSD vendor, so INNODISK is a chosen value for every slot. QDD_0_<port> is the plugged module's FPD, named as the ASR 9000 400G ZR configuration guide documents (QDD_<instance>_<port>); it exists only for a populated QSFP bay, while QDD_BRT_0_<port> covers every QSFP bay. Every QSFP bay and the lowest ten SFP bays of each slice hold an optic; empty_bays lists the other twenty, which have no transceiver or sensor components. An empty port keeps its interface, admin up and oper down, and keeps its speed. Entity indices and serials are reserved per bay, so emptying a bay renumbers nothing else. Edit this file and run make gen-xr-chassis.",
   "hardware_rev": "V01",
   "software_rev": "24.2.2",
   "vendor_types": {
@@ -979,7 +979,7 @@
         ]
       },
       {
-        "name": "{loc}-SSDa",
+        "name": "{loc}-SSDa-INNODISK",
         "type": "",
         "parent": "{loc}-CPU Module",
         "description": "FPD Module",
@@ -995,7 +995,7 @@
         ]
       },
       {
-        "name": "{loc}-SSDb",
+        "name": "{loc}-SSDb-INNODISK",
         "type": "",
         "parent": "{loc}-CPU Module",
         "description": "FPD Module",
@@ -3384,7 +3384,7 @@
         ]
       },
       {
-        "name": "{loc}-SSDa",
+        "name": "{loc}-SSDa-INNODISK",
         "type": "",
         "parent": "{loc}-Motherboard",
         "description": "FPD Module",
@@ -4272,7 +4272,7 @@
     ],
     "software": [
       {
-        "name": "0/RP0/CPU0",
+        "name": "IOSXR-NODE {node}",
         "type": "OPERATING_SYSTEM",
         "parent": "",
         "description": "IOS XR Operating System",
@@ -4284,7 +4284,7 @@
         ]
       },
       {
-        "name": "asr9k-xr-24.2.2",
+        "name": "IOSXR-PKG/{n} {package}",
         "type": "SOFTWARE_MODULE",
         "parent": "",
         "description": "IOS XR Software Module",
@@ -4293,33 +4293,17 @@
           "software-version",
           "type"
         ]
-      },
-      {
-        "name": "0/RP1/CPU0",
-        "type": "OPERATING_SYSTEM",
-        "parent": "",
-        "description": "IOS XR Operating System",
-        "tags": [
-          "location",
-          "oper-status",
-          "software-version",
-          "type"
-        ]
-      },
-      {
-        "name": "0/0/CPU0",
-        "type": "OPERATING_SYSTEM",
-        "parent": "",
-        "description": "IOS XR Operating System",
-        "tags": [
-          "location",
-          "oper-status",
-          "software-version",
-          "type"
-        ]
       }
     ]
   },
+  "packages": [
+    "asr9k-xr-24.2.2",
+    "asr9k-isis-x64-1.0.0.0-r2422",
+    "asr9k-k9sec-x64-1.0.0.0-r2422",
+    "asr9k-mgbl-x64-1.0.0.0-r2422",
+    "asr9k-mpls-x64-1.0.0.0-r2422",
+    "asr9k-ospf-x64-1.0.0.0-r2422"
+  ],
   "boards": [
     {
       "kind": "chassis",
@@ -4373,7 +4357,21 @@
     },
     {
       "kind": "software",
-      "vars": {}
+      "vars": {
+        "node": "0/RP0/CPU0"
+      }
+    },
+    {
+      "kind": "software",
+      "vars": {
+        "node": "0/RP1/CPU0"
+      }
+    },
+    {
+      "kind": "software",
+      "vars": {
+        "node": "0/0/CPU0"
+      }
     }
   ],
   "front_ports": {
@@ -4389,6 +4387,28 @@
       37,
       38,
       39
+    ],
+    "empty_bays": [
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      34,
+      35,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47
     ],
     "sfp": {
       "part_no": "SFP-10G-SR",
@@ -4594,6 +4614,22 @@
           "parent",
           "part-no",
           "serial-no"
+        ]
+      },
+      "fpd": {
+        "name": "{card}-QDD_0_{n}",
+        "type": "",
+        "parent": "{card}-Motherboard",
+        "description": "FPD Module",
+        "tags": [
+          "allocated-power",
+          "empty",
+          "firmware-version",
+          "hardware-version",
+          "id",
+          "location",
+          "openconfig-platform-ext:entity-id",
+          "parent"
         ]
       }
     }

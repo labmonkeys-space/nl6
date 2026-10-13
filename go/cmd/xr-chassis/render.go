@@ -69,7 +69,7 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add("1.3.6.1.2.1.2.2.1.5."+ix, ifSpeedFor(p.SpeedMbps))
 		add("1.3.6.1.2.1.2.2.1.6."+ix, mac)
 		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
-		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
+		add("1.3.6.1.2.1.2.2.1.8."+ix, operStatus(p))
 		add("1.3.6.1.2.1.31.1.1.1.1."+ix, p.Short)
 		add("1.3.6.1.2.1.31.1.1.1.6."+ix, strconv.FormatUint(in.HCInBase+k*in.HCInStep, 10))
 		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
@@ -84,16 +84,23 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 	return rows, nil
 }
 
+// operStatus is ifOperStatus: down(2) for a port with no optic, else up(1).
+func operStatus(p Port) string {
+	if p.OperDown {
+		return "2"
+	}
+	return "1"
+}
+
 // entityRows builds entPhysicalTable and entAliasMappingTable. Entities are
-// the components with an ent_class, numbered 1.. in component order; entity
-// 1 must be the chassis. entPhysicalContainedIn is the nearest ancestor that
+// the components with an ent_class, numbered 1.. in slot order, so an empty
+// bay's absent optic keeps its number unused; entity 1 must be the chassis. entPhysicalContainedIn is the nearest ancestor that
 // is an entity. A part number with no vendor_types entry gets no
 // entPhysicalVendorType row rather than a guessed OID.
 func entityRows(c *Chassis) ([]SNMPRow, error) {
 	const ent = "1.3.6.1.2.1.47.1.1.1.1."
 	idx := map[string]int{}
 	var rows []SNMPRow
-	next := 1
 	for _, comp := range c.Components {
 		if comp.EntClass == "" {
 			continue
@@ -106,13 +113,13 @@ func entityRows(c *Chassis) ([]SNMPRow, error) {
 			}
 		}
 		switch {
-		case next == 1 && comp.EntClass != "3":
+		case comp.entIndex == 1 && comp.EntClass != "3":
 			return nil, fmt.Errorf("entity 1 must be the chassis (class 3), got %s", comp.Name)
-		case next > 1 && contained == 0:
+		case comp.entIndex > 1 && contained == 0:
 			return nil, fmt.Errorf("entity %s: no ancestor is an entity", comp.Name)
 		}
-		s := strconv.Itoa(next)
-		idx[comp.Name] = next
+		s := strconv.Itoa(comp.entIndex)
+		idx[comp.Name] = comp.entIndex
 		add := func(col, v string) { rows = append(rows, SNMPRow{ent + col + "." + s, v}) }
 		add("2", comp.Description)
 		if vt, ok := c.Model.VendorTypes[comp.PartNo]; ok {
@@ -128,7 +135,6 @@ func entityRows(c *Chassis) ([]SNMPRow, error) {
 			add("11", comp.SerialNo)
 			add("13", comp.PartNo)
 		}
-		next++
 	}
 	for _, p := range c.Ports {
 		if p.Component == "" {
@@ -165,7 +171,11 @@ func RenderSSHEntries(c *Chassis) []sshEntry {
 		if pad < 1 {
 			pad = 1
 		}
-		brief = append(brief, p.IfName+strings.Repeat(" ", pad)+fmt.Sprintf("%-12s%-8s%s", "unassigned", "up", "up"))
+		state := "up"
+		if p.OperDown {
+			state = "down" // admin up, no optic: IOS-XR shows the interface and its protocol down
+		}
+		brief = append(brief, p.IfName+strings.Repeat(" ", pad)+fmt.Sprintf("%-12s%-8s%s", "unassigned", state, state))
 	}
 	// Columns, rule and config state follow the show platform sample in the
 	// ASR 9000 System Management command reference.

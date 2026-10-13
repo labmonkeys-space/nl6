@@ -399,7 +399,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // Re-pinned when cisco_ios, cisco_crs_x, cisco_nexus_9500 and
 // cisco_catalyst_9500 moved their sysObjectID values to the product OIDs of
 // the chassis they model. Reversed by snmp_shipped_cisco_identity_ledger_test.go.
-const shippedOIDEncodingDigest = "8c8c3e779289c26e453ddccad72c07ca1cffd7b571ffc645421c425d58d26fc8"
+// Re-pinned when twenty empty cisco_asr9902 SFP bays dropped their
+// transceiver entities, pre-change value
+// shippedOIDEncodingDigestBeforeCiscoAsr9902Components. Reversed by
+// snmp_shipped_cisco_asr9902_components_ledger_test.go.
+const shippedOIDEncodingDigest = "7852de8aa4ffe09fe6b38766096b68a8b895bbe00d6c4a9936d67f234ab2d222"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

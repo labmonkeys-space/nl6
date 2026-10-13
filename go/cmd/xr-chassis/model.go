@@ -10,6 +10,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -34,6 +35,8 @@ type Component struct {
 	// Tags are the leaf groups the component reports beyond its type's,
 	// served through tag:<name> filters in the gNMI catalogue.
 	Tags []string `json:"tags,omitempty"`
+	// entIndex is the entPhysicalIndex, 0 when EntClass is empty.
+	entIndex int
 }
 
 // Board instantiates the component templates of one kind with Vars
@@ -62,17 +65,22 @@ type Optic struct {
 	// Tags per generated role: module, bay, port, transceiver, and the
 	// sensor kinds current, power, temperature, voltage, idprom.
 	Tags map[string][]string `json:"tags"`
+	// FPD, when set, is the plugged module's FPD row, added only for a
+	// populated bay; {card} and {n} are the card and the bay position.
+	FPD *Component `json:"fpd,omitempty"`
 }
 
 // FrontPorts lays out the line card's ports: positions 0..Count-1, PerSlice
 // per slice, QSFPBays taking the QSFP optic and every other position the SFP.
+// EmptyBays hold no optic: no transceiver or sensor components.
 type FrontPorts struct {
-	Card     string `json:"card"`
-	Count    int    `json:"count"`
-	PerSlice int    `json:"per_slice"`
-	QSFPBays []int  `json:"qsfp_bays"`
-	SFP      Optic  `json:"sfp"`
-	QSFP     Optic  `json:"qsfp"`
+	Card      string `json:"card"`
+	Count     int    `json:"count"`
+	PerSlice  int    `json:"per_slice"`
+	QSFPBays  []int  `json:"qsfp_bays"`
+	EmptyBays []int  `json:"empty_bays,omitempty"`
+	SFP       Optic  `json:"sfp"`
+	QSFP      Optic  `json:"qsfp"`
 }
 
 // MgmtPort is an interface outside the front panel; its component must be
@@ -128,11 +136,13 @@ type Model struct {
 	SoftwareRev string                 `json:"software_rev"`
 	VendorTypes map[string]string      `json:"vendor_types"`
 	Kinds       map[string][]Component `json:"kinds"`
-	Boards      []Board                `json:"boards"`
-	FrontPorts  FrontPorts             `json:"front_ports"`
-	MgmtPorts   []MgmtPort             `json:"mgmt_ports"`
-	Platform    []PlatformRow          `json:"platform"`
-	Interfaces  Interfaces             `json:"interfaces"`
+	// Packages instantiate a template naming {package} once each.
+	Packages   []string      `json:"packages,omitempty"`
+	Boards     []Board       `json:"boards"`
+	FrontPorts FrontPorts    `json:"front_ports"`
+	MgmtPorts  []MgmtPort    `json:"mgmt_ports"`
+	Platform   []PlatformRow `json:"platform"`
+	Interfaces Interfaces    `json:"interfaces"`
 	// LogicalPorts and Subinterfaces follow the physical ports in ifIndex
 	// order.
 	LogicalPorts  []LogicalPort  `json:"logical_ports,omitempty"`
@@ -151,6 +161,8 @@ type Port struct {
 	Component     string
 	MTU           string
 	NoPhysAddress bool
+	// OperDown is a front port with no optic: admin up, oper down.
+	OperDown bool
 }
 
 // ifTypeEthernet is IF-MIB ethernetCsmacd(6), every physical port's type;
@@ -160,12 +172,23 @@ const (
 	ifTypeL2VLAN   = 135
 )
 
-// Chassis is the expanded model every renderer reads.
+// Chassis is the expanded model every renderer reads. Components are the
+// present components; slots are every component in order, absent optics
+// of empty bays included, so that entity indices and serials are reserved
+// per bay and emptying one renumbers nothing else.
 type Chassis struct {
 	Model      *Model
 	Components []Component
 	Ports      []Port
 	byName     map[string]int
+	slots      []slot
+}
+
+// slot is a component position: present indexes Components, an absent
+// one keeps the component it reserves numbers for.
+type slot struct {
+	present int
+	absent  *Component
 }
 
 func loadModel() (*Model, error) {
@@ -216,8 +239,25 @@ func (c *Chassis) add(comp Component) error {
 		}
 	}
 	c.byName[comp.Name] = len(c.Components)
+	c.slots = append(c.slots, slot{present: len(c.Components)})
 	c.Components = append(c.Components, comp)
 	return nil
+}
+
+// reserve takes a slot for a component an empty bay does not have.
+func (c *Chassis) reserve(comp Component) {
+	c.slots = append(c.slots, slot{absent: &comp})
+}
+
+// namesPackage reports whether a template uses {package} in any field
+// instantiate substitutes.
+func namesPackage(t Component) bool {
+	for _, f := range []string{t.Name, t.Parent, t.PartNo, t.Description} {
+		if strings.Contains(f, "{package}") {
+			return true
+		}
+	}
+	return false
 }
 
 // Component returns the expanded component named name, or nil.
@@ -247,28 +287,48 @@ func (c *Chassis) expandFrontPorts(fp FrontPorts) error {
 			{Name: mod, Parent: fmt.Sprintf("%s-Slice %d Lightspeed", fp.Card, s), Description: o.ModuleDescr, Tags: o.Tags["module"]},
 			{Name: bay, Type: o.BayType, Parent: mod, Description: o.BayDescr, EntClass: "5", Tags: o.Tags["bay"]},
 			{Name: port, Type: "PORT", Parent: mod, Description: o.PortDescr, EntClass: "10", Tags: o.Tags["port"]},
-			{Name: ifName, Type: "TRANSCEIVER", Parent: bay, PartNo: o.PartNo, Description: o.Description, EntClass: "9", Tags: o.Tags["transceiver"]},
 		}
-		for _, k := range []struct{ format, descr string }{
-			{"Tx Lane %d Current", "current"}, {"Tx Lane %d Power", "power"}, {"Rx Lane %d Power", "power"},
-		} {
-			for l := 0; l < o.Lanes; l++ {
-				rows = append(rows, Component{Name: ifName + "-" + fmt.Sprintf(k.format, l), Type: "SENSOR", Parent: ifName, Description: o.SensorDescr[k.descr], Tags: o.Tags[k.descr]})
-			}
-		}
-		rows = append(rows,
-			Component{Name: ifName + "-Module Temp", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["temperature"], Temperature: true, Tags: o.Tags["temperature"]},
-			Component{Name: ifName + "-3.3 V", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["voltage"], Tags: o.Tags["voltage"]},
-			Component{Name: ifName + "-IDPROM", Parent: ifName, Description: o.SensorDescr["idprom"], Tags: o.Tags["idprom"]},
-		)
 		for _, r := range rows {
 			if err := c.add(r); err != nil {
 				return err
 			}
 		}
-		c.Ports = append(c.Ports, Port{IfIndex: n + 1, IfName: ifName, Short: o.ShortPrefix + fp.Card + "/0/" + strconv.Itoa(n), IfType: ifTypeEthernet, SpeedMbps: o.SpeedMbps, Component: port})
+		empty := slices.Contains(fp.EmptyBays, n)
+		optic := opticRows(o, ifName, bay)
+		if !empty && o.FPD != nil {
+			fpd, err := instantiate(*o.FPD, map[string]string{"card": fp.Card, "n": strconv.Itoa(n)})
+			if err != nil {
+				return err
+			}
+			optic = append(optic, fpd)
+		}
+		for _, r := range optic {
+			if empty {
+				c.reserve(r)
+			} else if err := c.add(r); err != nil {
+				return err
+			}
+		}
+		c.Ports = append(c.Ports, Port{IfIndex: n + 1, IfName: ifName, Short: o.ShortPrefix + fp.Card + "/0/" + strconv.Itoa(n), IfType: ifTypeEthernet, SpeedMbps: o.SpeedMbps, Component: port, OperDown: empty})
 	}
 	return nil
+}
+
+// opticRows are the transceiver in bay and its sensors.
+func opticRows(o Optic, ifName, bay string) []Component {
+	rows := []Component{{Name: ifName, Type: "TRANSCEIVER", Parent: bay, PartNo: o.PartNo, Description: o.Description, EntClass: "9", Tags: o.Tags["transceiver"]}}
+	for _, k := range []struct{ format, descr string }{
+		{"Tx Lane %d Current", "current"}, {"Tx Lane %d Power", "power"}, {"Rx Lane %d Power", "power"},
+	} {
+		for l := 0; l < o.Lanes; l++ {
+			rows = append(rows, Component{Name: ifName + "-" + fmt.Sprintf(k.format, l), Type: "SENSOR", Parent: ifName, Description: o.SensorDescr[k.descr], Tags: o.Tags[k.descr]})
+		}
+	}
+	return append(rows,
+		Component{Name: ifName + "-Module Temp", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["temperature"], Temperature: true, Tags: o.Tags["temperature"]},
+		Component{Name: ifName + "-3.3 V", Type: "SENSOR", Parent: ifName, Description: o.SensorDescr["voltage"], Tags: o.Tags["voltage"]},
+		Component{Name: ifName + "-IDPROM", Parent: ifName, Description: o.SensorDescr["idprom"], Tags: o.Tags["idprom"]},
+	)
 }
 
 // expandLogicalPorts appends the logical ports, then the subinterfaces,
@@ -316,24 +376,55 @@ func (c *Chassis) expandLogicalPorts(m *Model) error {
 // a part number.
 func Expand(m *Model) (*Chassis, error) {
 	c := &Chassis{Model: m, byName: map[string]int{}}
+	if len(m.Packages) > 0 && !slices.ContainsFunc(slices.Collect(maps.Values(m.Kinds)), func(k []Component) bool {
+		return slices.ContainsFunc(k, namesPackage)
+	}) {
+		return nil, fmt.Errorf("packages: no template names {package}")
+	}
+	ordinal := map[string]int{}
 	for _, b := range m.Boards {
 		tmpl, ok := m.Kinds[b.Kind]
 		if !ok {
 			return nil, fmt.Errorf("board %v: unknown kind %q", b.Vars, b.Kind)
 		}
+		if _, set := b.Vars["n"]; set {
+			return nil, fmt.Errorf("board %v: {n} is the board's ordinal among the %s boards, not a var", b.Vars, b.Kind)
+		}
+		ordinal[b.Kind]++
+		bv := maps.Clone(b.Vars)
+		if bv == nil {
+			bv = map[string]string{}
+		}
+		bv["n"] = strconv.Itoa(ordinal[b.Kind])
 		for _, t := range tmpl {
-			comp, err := instantiate(t, b.Vars)
-			if err != nil {
-				return nil, err
+			vars := []map[string]string{bv}
+			if namesPackage(t) && len(m.Packages) > 0 {
+				vars = vars[:0]
+				for _, p := range m.Packages {
+					v := maps.Clone(bv)
+					v["package"] = p
+					vars = append(vars, v)
+				}
 			}
-			if err := c.add(comp); err != nil {
-				return nil, err
+			for _, v := range vars {
+				comp, err := instantiate(t, v)
+				if err != nil {
+					return nil, err
+				}
+				if err := c.add(comp); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 	fp := m.FrontPorts
 	if fp.Count <= 0 || fp.PerSlice <= 0 {
 		return nil, fmt.Errorf("front_ports: count and per_slice must be positive")
+	}
+	for _, n := range fp.EmptyBays {
+		if n < 0 || n >= fp.Count {
+			return nil, fmt.Errorf("front_ports: empty bay %d is not a front port", n)
+		}
 	}
 	for _, o := range []Optic{fp.SFP, fp.QSFP} {
 		if o.Lanes <= 0 {
@@ -361,12 +452,22 @@ func Expand(m *Model) (*Chassis, error) {
 		return nil, fmt.Errorf("%d ports: ifPhysAddress encodes the ifIndex in one byte, at most 255", len(c.Ports))
 	}
 	used := map[string]bool{}
-	n := 0
-	for i := range c.Components {
-		if p := c.Components[i].PartNo; p != "" {
-			used[p] = true
-			n++
-			c.Components[i].SerialNo = fmt.Sprintf("NL6%08d", n)
+	serial, entity := 0, 0
+	for _, s := range c.slots {
+		comp := s.absent
+		if comp == nil {
+			comp = &c.Components[s.present]
+		}
+		if comp.PartNo != "" {
+			serial++
+			if s.absent == nil {
+				used[comp.PartNo] = true
+				comp.SerialNo = fmt.Sprintf("NL6%08d", serial)
+			}
+		}
+		if comp.EntClass != "" {
+			entity++
+			comp.entIndex = entity
 		}
 	}
 	for pid, oid := range m.VendorTypes {

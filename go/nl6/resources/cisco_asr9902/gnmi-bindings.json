@@ -1162,7 +1162,7 @@
       ]
     },
     {
-      "name": "0/RP0-SSDa",
+      "name": "0/RP0-SSDa-INNODISK",
       "type": "",
       "parent": "0/RP0-CPU Module",
       "part_no": "",
@@ -1181,7 +1181,7 @@
       ]
     },
     {
-      "name": "0/RP0-SSDb",
+      "name": "0/RP0-SSDb-INNODISK",
       "type": "",
       "parent": "0/RP0-CPU Module",
       "part_no": "",
@@ -2590,7 +2590,7 @@
       ]
     },
     {
-      "name": "0/RP1-SSDa",
+      "name": "0/RP1-SSDa-INNODISK",
       "type": "",
       "parent": "0/RP1-CPU Module",
       "part_no": "",
@@ -2609,7 +2609,7 @@
       ]
     },
     {
-      "name": "0/RP1-SSDb",
+      "name": "0/RP1-SSDb-INNODISK",
       "type": "",
       "parent": "0/RP1-CPU Module",
       "part_no": "",
@@ -5461,7 +5461,7 @@
       ]
     },
     {
-      "name": "0/0-SSDa",
+      "name": "0/0-SSDa-INNODISK",
       "type": "",
       "parent": "0/0-Motherboard",
       "part_no": "",
@@ -6718,7 +6718,7 @@
       ]
     },
     {
-      "name": "0/RP0/CPU0",
+      "name": "IOSXR-NODE 0/RP0/CPU0",
       "type": "OPERATING_SYSTEM",
       "parent": "",
       "part_no": "",
@@ -6733,7 +6733,7 @@
       ]
     },
     {
-      "name": "asr9k-xr-24.2.2",
+      "name": "IOSXR-PKG/1 asr9k-xr-24.2.2",
       "type": "SOFTWARE_MODULE",
       "parent": "",
       "part_no": "",
@@ -6747,7 +6747,77 @@
       ]
     },
     {
-      "name": "0/RP1/CPU0",
+      "name": "IOSXR-PKG/1 asr9k-isis-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/1 asr9k-k9sec-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/1 asr9k-mgbl-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/1 asr9k-mpls-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/1 asr9k-ospf-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-NODE 0/RP1/CPU0",
       "type": "OPERATING_SYSTEM",
       "parent": "",
       "part_no": "",
@@ -6762,7 +6832,91 @@
       ]
     },
     {
-      "name": "0/0/CPU0",
+      "name": "IOSXR-PKG/2 asr9k-xr-24.2.2",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/2 asr9k-isis-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/2 asr9k-k9sec-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/2 asr9k-mgbl-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/2 asr9k-mpls-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/2 asr9k-ospf-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-NODE 0/0/CPU0",
       "type": "OPERATING_SYSTEM",
       "parent": "",
       "part_no": "",
@@ -6771,6 +6925,90 @@
       "temperature": false,
       "tags": [
         "location",
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-xr-24.2.2",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-isis-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-k9sec-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-mgbl-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-mpls-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "oper-status",
+        "software-version",
+        "type"
+      ]
+    },
+    {
+      "name": "IOSXR-PKG/3 asr9k-ospf-x64-1.0.0.0-r2422",
+      "type": "SOFTWARE_MODULE",
+      "parent": "",
+      "part_no": "",
+      "description": "IOS XR Software Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
         "oper-status",
         "software-version",
         "type"
@@ -8555,6 +8793,25 @@
       ]
     },
     {
+      "name": "0/0-QDD_0_8",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
+      ]
+    },
+    {
       "name": "0/0-Slice 0 QSFP Port Module #9",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -8890,6 +9147,25 @@
         "parent",
         "part-no",
         "serial-no"
+      ]
+    },
+    {
+      "name": "0/0-QDD_0_9",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
       ]
     },
     {
@@ -9231,6 +9507,25 @@
       ]
     },
     {
+      "name": "0/0-QDD_0_10",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
+      ]
+    },
+    {
       "name": "0/0-Slice 0 QSFP Port Module #11",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -9566,6 +9861,25 @@
         "parent",
         "part-no",
         "serial-no"
+      ]
+    },
+    {
+      "name": "0/0-QDD_0_11",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
       ]
     },
     {
@@ -9979,136 +10293,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/14",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 14",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000025",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/14-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/14",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 0 SFP Port Module #15",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -10156,136 +10340,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 15",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000026",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/15-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/15",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -10339,136 +10393,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/16",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 16",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000027",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/16-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/16",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 0 SFP Port Module #17",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -10516,136 +10440,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 17",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000028",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/17-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/17",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -10699,136 +10493,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/18",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 18",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000029",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/18-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/18",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 0 SFP Port Module #19",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -10876,136 +10540,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 19",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000030",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/19-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/19",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -11059,136 +10593,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/20",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 20",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000031",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/20-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/20",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 0 SFP Port Module #21",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -11236,136 +10640,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 21",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000032",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/21-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/21",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -11419,136 +10693,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/22",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 22",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000033",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/22-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/22",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 0 SFP Port Module #23",
       "type": "",
       "parent": "0/0-Slice 0 Lightspeed",
@@ -11596,136 +10740,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 23",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000034",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/23-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/23",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -13579,136 +12593,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/34",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 34",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000045",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/34-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/34",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 1 SFP Port Module #35",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -13756,136 +12640,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 35",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000046",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/35-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/35",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -14227,6 +12981,25 @@
       ]
     },
     {
+      "name": "0/0-QDD_0_36",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
+      ]
+    },
+    {
       "name": "0/0-Slice 1 QSFP Port Module #37",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -14562,6 +13335,25 @@
         "parent",
         "part-no",
         "serial-no"
+      ]
+    },
+    {
+      "name": "0/0-QDD_0_37",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
       ]
     },
     {
@@ -14903,6 +13695,25 @@
       ]
     },
     {
+      "name": "0/0-QDD_0_38",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
+      ]
+    },
+    {
       "name": "0/0-Slice 1 QSFP Port Module #39",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -15241,6 +14052,25 @@
       ]
     },
     {
+      "name": "0/0-QDD_0_39",
+      "type": "",
+      "parent": "0/0-Motherboard",
+      "part_no": "",
+      "description": "FPD Module",
+      "serial_no": "",
+      "temperature": false,
+      "tags": [
+        "allocated-power",
+        "empty",
+        "firmware-version",
+        "hardware-version",
+        "id",
+        "location",
+        "openconfig-platform-ext:entity-id",
+        "parent"
+      ]
+    },
+    {
       "name": "0/0-Slice 1 SFP Port Module #40",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -15288,136 +14118,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 40",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000051",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/40-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/40",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -15471,136 +14171,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/41",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 41",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000052",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/41-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/41",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 1 SFP Port Module #42",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -15648,136 +14218,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 42",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000053",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/42-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/42",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -15831,136 +14271,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/43",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 43",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000054",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/43-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/43",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 1 SFP Port Module #44",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -16008,136 +14318,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 44",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000055",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/44-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/44",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     },
     {
@@ -16191,136 +14371,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/45",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 45",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000056",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/45-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/45",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 1 SFP Port Module #46",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -16371,136 +14421,6 @@
       ]
     },
     {
-      "name": "TenGigE0/0/0/46",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 46",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000057",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/46-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/46",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
-      ]
-    },
-    {
       "name": "0/0-Slice 1 SFP Port Module #47",
       "type": "",
       "parent": "0/0-Slice 1 Lightspeed",
@@ -16548,136 +14468,6 @@
         "openconfig-platform-ext:entity-id",
         "parent",
         "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47",
-      "type": "TRANSCEIVER",
-      "parent": "0/0-SFP+ bay 47",
-      "part_no": "SFP-10G-SR",
-      "description": "10GBASE-SR SFP Module",
-      "serial_no": "NL600000058",
-      "temperature": false,
-      "tags": [
-        "allocated-power",
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "oper-status",
-        "parent",
-        "part-no",
-        "serial-no",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-Tx Lane 0 Current",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "Current Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-Tx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-Rx Lane 0 Power",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "Power Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type",
-        "used-power"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-Module Temp",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "Temperature Sensor",
-      "serial_no": "",
-      "temperature": true,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-3.3 V",
-      "type": "SENSOR",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "Voltage Sensor",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "id",
-        "location",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "type"
-      ]
-    },
-    {
-      "name": "TenGigE0/0/0/47-IDPROM",
-      "type": "",
-      "parent": "TenGigE0/0/0/47",
-      "part_no": "",
-      "description": "IDPROM",
-      "serial_no": "",
-      "temperature": false,
-      "tags": [
-        "empty",
-        "hardware-version",
-        "id",
-        "location",
-        "mfg-name",
-        "openconfig-platform-ext:entity-id",
-        "parent",
-        "part-no",
-        "serial-no"
       ]
     }
   ],

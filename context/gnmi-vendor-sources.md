@@ -112,6 +112,13 @@ No full `show inventory` or `show platform` for an ASR 9902 is public; component
 `go/cmd/xr-chassis` generates the `cisco_asr9902` IF-MIB, ENTITY-MIB and inventory CLI from `models/cisco_asr9902.json`.
 `make gen-xr-chassis` regenerates them, and `TestCommittedOutputsMatchModel` fails on a hand edit.
 Its gNMI catalogue is generated from YangModels/yang `vendor/cisco/xr/2422` reading only the modules `capabilities-asr9k-x64.xml` in the same directory advertises for the served subtrees, deviations included, listed in `go/cmd/xr-chassis/yang-modules.txt`.
+Software packages (nl6#811): the 24.2.2 ASR 9000 release notes show `show install active summary` with the base `asr9k-xr-24.2.2` and optional packages named `asr9k-<pkg>-x64-1.0.0.0-r2422`. https://www.cisco.com/c/en/us/td/docs/routers/asr9000/software/24xx/general/release/notes/b-release-notes-asr9000-r2422.html
+nl6 serves the base plus `isis`, `k9sec`, `mgbl`, `mpls` and `ospf` once per node as `IOSXR-PKG/<n> <package>`.
+QSFP-DD FPD names: the ASR 9000 400G ZR guide says the FPD description column shows `QDD_instance_port-number`. https://www.cisco.com/c/en/us/td/docs/routers/asr9000/software/asr9k-r7-3/interfaces/configuration/guide/b-interfaces-hardware-component-cg-asr9000-73x/m-zr-zrp.html
+nl6 keeps `QDD_BRT_0_<port>` on all eight QSFP bays and adds `QDD_0_<port>`, the plugged module's FPD, only on a QSFP bay that holds an optic.
+No public source names the SSD vendor in an A99-RP-F or ASR-9902-LC SSD FPD name; `INNODISK` is a chosen value.
+Optic population is a chosen rule, not a source: every QSFP bay and the lowest ten SFP bays of each slice hold an optic.
+A port with no optic is admin up and oper down, as on IOS-XR.
 
 ### Vocabulary
 

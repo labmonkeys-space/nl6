@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -76,6 +77,7 @@ func TestExpandRefuses(t *testing.T) {
 		{"subinterface of an unknown parent", "subinterfaces: parent Bundle-Ether9 is not an earlier interface", func(m *Model) {
 			m.Subinterfaces = []Subinterface{{Parent: "Bundle-Ether9", Index: 100}}
 		}},
+		{"empty bay out of range", "front_ports: empty bay 2 is not a front port", func(m *Model) { m.FrontPorts.EmptyBays = []int{2} }},
 		{"subinterface index 0", "subinterfaces: TenGigE0/0/0/0 index 0 must be positive", func(m *Model) {
 			m.Subinterfaces = []Subinterface{{Parent: "TenGigE0/0/0/0", Index: 0}}
 		}},
@@ -87,6 +89,80 @@ func TestExpandRefuses(t *testing.T) {
 				t.Fatalf("got %v, want an error containing %q", err, c.want)
 			}
 		})
+	}
+}
+
+// An empty bay keeps its module, bay and PORT; its transceiver and sensors go.
+func TestExpandEmptyBayMini(t *testing.T) {
+	m := miniModel(t)
+	m.FrontPorts.EmptyBays = []int{0}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"0/0-Slice 0 SFP Port Module #0", "0/0-SFP+ bay 0", "0/0-TenGigE0/0/0/0"} {
+		if c.Component(name) == nil {
+			t.Errorf("component %q missing", name)
+		}
+	}
+	for _, comp := range c.Components {
+		if strings.HasPrefix(comp.Name, "TenGigE0/0/0/0") {
+			t.Errorf("empty bay serves %s", comp.Name)
+		}
+	}
+	if c.Component("HundredGigE0/0/0/1") == nil || c.Ports[0].IfName != "TenGigE0/0/0/0" {
+		t.Error("the populated bay or the empty bay's interface is gone")
+	}
+	if c.Component("0/0-QDD_0_1") == nil {
+		t.Error("a populated QSFP bay has no QDD FPD row")
+	}
+	m.FrontPorts.EmptyBays = []int{1}
+	if c, err = Expand(m); err != nil {
+		t.Fatal(err)
+	}
+	if c.Component("0/0-QDD_0_1") != nil {
+		t.Error("an empty QSFP bay has a QDD FPD row")
+	}
+}
+
+// A template naming {package} in any field is instantiated once per
+// package, and {n} is the board's ordinal among the boards of its kind.
+func TestExpandPackagesMini(t *testing.T) {
+	m := miniModel(t)
+	m.Packages = []string{"p-a", "p-b"}
+	m.Kinds["sw"] = []Component{
+		{Name: "IOSXR-NODE {node}", Type: "OPERATING_SYSTEM"},
+		{Name: "IOSXR-PKG/{n} {node}", Type: "SOFTWARE_MODULE", Description: "{package}"},
+	}
+	m.Boards = append(m.Boards, Board{Kind: "sw", Vars: map[string]string{"node": "A"}}, Board{Kind: "sw", Vars: map[string]string{"node": "B"}})
+	_, err := Expand(m)
+	if err == nil || !strings.Contains(err.Error(), "duplicate component") {
+		t.Fatalf("a {package} in the description fans the row out, so its name repeats: got %v", err)
+	}
+	m.Kinds["sw"][1] = Component{Name: "IOSXR-PKG/{n} {package}", Type: "SOFTWARE_MODULE", Description: "Package"}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"IOSXR-NODE A", "IOSXR-NODE B", "IOSXR-PKG/1 p-a", "IOSXR-PKG/1 p-b", "IOSXR-PKG/2 p-a", "IOSXR-PKG/2 p-b"} {
+		if c.Component(name) == nil {
+			t.Errorf("component %q missing", name)
+		}
+	}
+	m.Packages = nil
+	if _, err := Expand(m); err == nil || !strings.Contains(err.Error(), "placeholder {package}") {
+		t.Errorf("a {package} template with no packages: got %v", err)
+	}
+	m.Packages = []string{"p-a"}
+	delete(m.Kinds, "sw")
+	m.Boards = m.Boards[:len(m.Boards)-2]
+	if _, err := Expand(m); err == nil || !strings.Contains(err.Error(), "packages: no template names {package}") {
+		t.Errorf("packages with no {package} template: got %v", err)
+	}
+	m = miniModel(t)
+	m.Boards[1].Vars["n"] = "7"
+	if _, err := Expand(m); err == nil || !strings.Contains(err.Error(), "{n} is the board's ordinal") {
+		t.Errorf("a board setting n: got %v", err)
 	}
 }
 
@@ -136,8 +212,8 @@ func TestShippedModelMatchesTheHardwareGuide(t *testing.T) {
 			physical++
 		}
 	}
-	if xcvr != 48 || physical != 50 {
-		t.Errorf("%d transceivers and %d physical ports, want 48 and 50 (48 front, 2 management)", xcvr, physical)
+	if xcvr != 28 || physical != 50 {
+		t.Errorf("%d transceivers and %d physical ports, want 28 and 50 (48 front of which 28 populated, 2 management)", xcvr, physical)
 	}
 }
 
@@ -194,19 +270,113 @@ func TestShippedVendorTypesFromTheMIB(t *testing.T) {
 	}
 }
 
-// The model publishes product-invariant names only. The SSD vendor varies
-// per unit, and a per-bay FPD row set narrower than the QSFP bays could
-// encode which bays a captured unit had populated.
-func TestShippedModelCarriesNoPerUnitData(t *testing.T) {
+// The SSD vendor is a chosen value (nl6#811): one vendor for every slot.
+// QDD_BRT_0_<port> covers every QSFP bay; QDD_0_<port>, the plugged
+// module's FPD, exists only where the bay holds an optic.
+func TestShippedSSDAndQDDRows(t *testing.T) {
 	c := shipped(t)
+	ssd := 0
 	for _, comp := range c.Components {
-		// An SSD FPD is named by its slot letter only; anything after it
-		// would be the per-unit vendor.
-		if i := strings.Index(comp.Name, "-SSD"); i >= 0 && !strings.HasSuffix(comp.Name, "-SSDa") && !strings.HasSuffix(comp.Name, "-SSDb") {
-			t.Errorf("%s: an SSD FPD must be named <location>-SSDa or -SSDb", comp.Name)
+		if strings.Contains(comp.Name, "-SSD") {
+			ssd++
+			if !strings.HasSuffix(comp.Name, "-SSDa-INNODISK") && !strings.HasSuffix(comp.Name, "-SSDb-INNODISK") {
+				t.Errorf("%s: an SSD FPD must be named <location>-SSDa-INNODISK or -SSDb-INNODISK", comp.Name)
+			}
 		}
-		if strings.Contains(comp.Name, "-QDD_") && !strings.Contains(comp.Name, "-QDD_BRT_") {
-			t.Errorf("%s is a per-bay FPD row outside the QDD_BRT set that covers every QSFP bay", comp.Name)
+	}
+	if ssd != 5 {
+		t.Errorf("%d SSD components, want 5 (SSDa and SSDb on each RP, SSDa on the LC)", ssd)
+	}
+	want := map[string]bool{}
+	for _, n := range c.Model.FrontPorts.QSFPBays {
+		want[fmt.Sprintf("0/0-QDD_BRT_0_%d", n)] = true
+		if c.Component(fmt.Sprintf("HundredGigE0/0/0/%d", n)) != nil {
+			want[fmt.Sprintf("0/0-QDD_0_%d", n)] = true
+		}
+	}
+	for _, comp := range c.Components {
+		if !strings.Contains(comp.Name, "-QDD_") {
+			continue
+		}
+		if !want[comp.Name] {
+			t.Errorf("%s: no QSFP bay, or no optic in it, accounts for this QDD row", comp.Name)
+		}
+		if comp.Type != "" || comp.Parent != "0/0-Motherboard" || !slices.Contains(comp.Tags, "firmware-version") {
+			t.Errorf("%s: want an untyped FPD module under 0/0-Motherboard, got %+v", comp.Name, comp)
+		}
+		delete(want, comp.Name)
+	}
+	for name := range want {
+		t.Errorf("%s missing", name)
+	}
+}
+
+// IOS-XR names a node's OS component IOSXR-NODE <node> and reports each
+// active package once per node as IOSXR-PKG/<n> <package>, n counting the
+// nodes from 1 (nl6#811).
+func TestShippedNodeAndPackageNames(t *testing.T) {
+	c := shipped(t)
+	nodes := []string{"0/RP0/CPU0", "0/RP1/CPU0", "0/0/CPU0"}
+	pkgs := []string{"asr9k-xr-24.2.2", "asr9k-isis-x64-1.0.0.0-r2422", "asr9k-k9sec-x64-1.0.0.0-r2422",
+		"asr9k-mgbl-x64-1.0.0.0-r2422", "asr9k-mpls-x64-1.0.0.0-r2422", "asr9k-ospf-x64-1.0.0.0-r2422"}
+	for i, node := range nodes {
+		if c.Component(node) != nil {
+			t.Errorf("component %q: IOS-XR names it IOSXR-NODE %s", node, node)
+		}
+		if comp := c.Component("IOSXR-NODE " + node); comp == nil || comp.Type != "OPERATING_SYSTEM" || comp.Parent != "" {
+			t.Errorf("IOSXR-NODE %s: want a parentless OPERATING_SYSTEM component, got %+v", node, comp)
+		}
+		for _, p := range pkgs {
+			name := fmt.Sprintf("IOSXR-PKG/%d %s", i+1, p)
+			if comp := c.Component(name); comp == nil || comp.Type != "SOFTWARE_MODULE" || comp.Parent != "" {
+				t.Errorf("%s: want a parentless SOFTWARE_MODULE component, got %+v", name, comp)
+			}
+		}
+	}
+	sw := 0
+	for _, comp := range c.Components {
+		if comp.Type == "SOFTWARE_MODULE" {
+			sw++
+		}
+	}
+	if sw != len(nodes)*len(pkgs) {
+		t.Errorf("%d SOFTWARE_MODULE components, want %d", sw, len(nodes)*len(pkgs))
+	}
+}
+
+// Every QSFP bay and the lowest ten SFP bays of each slice hold an optic;
+// the other twenty SFP bays are empty (nl6#811). An empty bay keeps its
+// port module, bay and PORT, has no transceiver or sensor, and its port is
+// oper-down.
+func TestShippedOpticPopulation(t *testing.T) {
+	c := shipped(t)
+	fp := c.Model.FrontPorts
+	byPort := map[string][]string{} // interface name -> its transceiver and sensor rows
+	for _, comp := range c.Components {
+		if name, _, _ := strings.Cut(comp.Name, "-"); strings.HasPrefix(name, "TenGigE") || strings.HasPrefix(name, "HundredGigE") {
+			byPort[name] = append(byPort[name], comp.Name)
+		}
+	}
+	sfpSeen := map[int]int{}
+	for n := 0; n < fp.Count; n++ {
+		want := true
+		if !slices.Contains(fp.QSFPBays, n) {
+			s := n / fp.PerSlice
+			sfpSeen[s]++
+			want = sfpSeen[s] <= 10
+		}
+		p := c.Ports[n]
+		if c.Component(p.Component) == nil {
+			t.Errorf("%s: PORT component %s missing", p.IfName, p.Component)
+		}
+		if got := c.Component(p.IfName) != nil; got != want {
+			t.Errorf("%s: transceiver present %v, want %v", p.IfName, got, want)
+		}
+		if !want && len(byPort[p.IfName]) > 0 {
+			t.Errorf("%s: empty bay serves %v", p.IfName, byPort[p.IfName])
+		}
+		if p.OperDown == want {
+			t.Errorf("%s: oper-down %v, want %v", p.IfName, p.OperDown, !want)
 		}
 	}
 }
