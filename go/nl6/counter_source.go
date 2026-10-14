@@ -119,8 +119,22 @@ func (s *InterfaceCounterSource) Snapshot(t time.Time) []CounterRecord {
 		outDisc := uint32(parseUintOrZero(s.cycler.GetDynamicAt(ifTablePrefix+"19."+idxStr, tSec)))
 		outErr := uint32(parseUintOrZero(s.cycler.GetDynamicAt(ifTablePrefix+"20."+idxStr, tSec)))
 
+		// sFlow v5 if_counters ifStatus: bit 0 is ifAdminStatus, bit 1 is
+		// ifOperStatus, 1 = up. Read from the state engine so the word agrees
+		// with SNMP and with the held counters beside it; a cycler without an
+		// engine reports both up, as before.
+		var ifStatus uint32 = 3
+		if st := s.cycler.State(); st != nil {
+			ifStatus = 0
+			if st.AdminStatus(ifIndex) == AdminUp {
+				ifStatus |= 1
+			}
+			if st.OperStatus(ifIndex) == OperUp {
+				ifStatus |= 2
+			}
+		}
 		body := encodeIfCountersBody(
-			uint32(ifIndex), s.cycler.ifSpeedBps[slot],
+			uint32(ifIndex), s.cycler.ifSpeedBps[slot], ifStatus,
 			inOctets, inUcast, inMcast, inBcast, inDisc, inErr,
 			outOctets, outUcast, outMcast, outBcast, outDisc, outErr,
 		)
@@ -175,7 +189,7 @@ const (
 )
 
 func encodeIfCountersBody(
-	ifIndex uint32, speedBps, inOctets uint64,
+	ifIndex uint32, speedBps uint64, ifStatus uint32, inOctets uint64,
 	inUcast, inMcast, inBcast, inDisc, inErr uint32,
 	outOctets uint64, outUcast, outMcast, outBcast, outDisc, outErr uint32,
 ) []byte {
@@ -189,7 +203,7 @@ func encodeIfCountersBody(
 	pos += 8
 	binary.BigEndian.PutUint32(body[pos:], 1) // full-duplex
 	pos += 4
-	binary.BigEndian.PutUint32(body[pos:], 3) // admin+oper up
+	binary.BigEndian.PutUint32(body[pos:], ifStatus) // bit 0 admin up, bit 1 oper up
 	pos += 4
 	binary.BigEndian.PutUint64(body[pos:], inOctets)
 	pos += 8

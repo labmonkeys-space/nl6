@@ -646,6 +646,7 @@ Every per-interface counter listed below is generated dynamically, not read from
 | `ifHCOutBroadcastPkts` | `.13` | same shape, `bcastRatioOut` |
 
 An interface whose profile declares `ifHighSpeed` 0 (or `ifSpeed` 0 without an `ifHighSpeed` row) carries no traffic: every column above stays 0.
+Every column on this page holds while the interface's derived `ifOperStatus` is not `up(1)` and resumes from the held value when it returns; see [Interface state](./interface-state.md).
 A missing or unparsable speed row still means 1 Gbit/s.
 The cisco_asr9902 Loopback0 and Null0 use this.
 
