@@ -198,7 +198,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // xe-0/0/0.100, .200 and .999 at ifIndex 74-76, pre-change value
 // shippedTagDigestBeforeMx10004VRFUnits. Reversed by
 // snmp_shipped_juniper_mx10004_vrf_units_ledger_test.go.
-const shippedTagDigest = "3d6b23bf8a3dab9be83e0141745cd841f7e104d4618d729aa3fc78b57ad3f6a7"
+// Re-pinned by the cisco_asr9902 bundle members: two ifStackStatus rows added;
+// snmp_shipped_cisco_asr9902_bundle_members_ledger_test.go reverses them to
+// 3d6b23bf8a3dab9be83e0141745cd841f7e104d4618d729aa3fc78b57ad3f6a7.
+const shippedTagDigest = "ae463d5157810cbb2f78ad0d3a369f5a667e7eefd8cad994bda2fff83a77b1c1"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

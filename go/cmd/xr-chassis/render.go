@@ -75,6 +75,12 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
 		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(p.SpeedMbps))
 	}
+	// ifStackTable: an aggregate is the higher layer over each member.
+	for _, p := range c.Ports {
+		for _, m := range p.Members {
+			add("1.3.6.1.2.1.31.1.2.1.3."+strconv.Itoa(p.IfIndex)+"."+strconv.Itoa(m), "1")
+		}
+	}
 	ent, err := entityRows(c)
 	if err != nil {
 		return nil, err

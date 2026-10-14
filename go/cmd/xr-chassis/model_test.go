@@ -433,3 +433,55 @@ func TestShippedLogicalInterfaces(t *testing.T) {
 		}
 	}
 }
+
+// Bundle-Ether1 is made of two populated 100G bays that carry no
+// subinterface, and its speed is their sum.
+func TestShippedBundleMembers(t *testing.T) {
+	c := shipped(t)
+	var bundle Port
+	for _, p := range c.Ports {
+		if p.IfName == "Bundle-Ether1" {
+			bundle = p
+		}
+	}
+	var names []string
+	speed := 0
+	for _, m := range bundle.Members {
+		names = append(names, c.Ports[m-1].IfName)
+		speed += c.Ports[m-1].SpeedMbps
+	}
+	if got := strings.Join(names, " "); got != "HundredGigE0/0/0/9 HundredGigE0/0/0/10" {
+		t.Fatalf("members = %q", got)
+	}
+	if speed != bundle.SpeedMbps {
+		t.Errorf("bundle speed %d, members sum %d", bundle.SpeedMbps, speed)
+	}
+}
+
+func TestBundleMembersAreValidated(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		members    []string
+		speed      int
+	}{
+		{"unknown port", "member HundredGigE0/0/0/99 is not an earlier physical port", []string{"HundredGigE0/0/0/9", "HundredGigE0/0/0/99"}, 200000},
+		{"twice", "member HundredGigE0/0/0/9 listed twice", []string{"HundredGigE0/0/0/9", "HundredGigE0/0/0/9"}, 200000},
+		{"speed", "speed_mbps 300000 is not the sum of its members, 200000", []string{"HundredGigE0/0/0/9", "HundredGigE0/0/0/10"}, 300000},
+		{"not a lag", "BVI1 has bundle_members but if_type 53 is not ieee8023adLag(161)", nil, 0},
+	} {
+		m, err := loadModel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tc.members == nil {
+			m.LogicalPorts[1].BundleMembers = []string{"HundredGigE0/0/0/9"}
+		} else {
+			m.LogicalPorts[0].BundleMembers = tc.members
+			m.LogicalPorts[0].SpeedMbps = tc.speed
+		}
+		_, err = Expand(m)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}

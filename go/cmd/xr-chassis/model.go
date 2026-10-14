@@ -102,6 +102,10 @@ type LogicalPort struct {
 	SpeedMbps     int    `json:"speed_mbps"`
 	MTU           string `json:"mtu,omitempty"`
 	NoPhysAddress bool   `json:"no_phys_address,omitempty"`
+	// BundleMembers names the physical ports an aggregate is made of, each
+	// an earlier front port listed once; their speeds must sum to SpeedMbps.
+	// Rendered as ifStackStatus.<bundle>.<member> rows.
+	BundleMembers []string `json:"bundle_members,omitempty"`
 }
 
 // Subinterface is a dot1q VLAN subinterface, named <parent>.<index> as
@@ -163,6 +167,8 @@ type Port struct {
 	NoPhysAddress bool
 	// OperDown is a front port with no optic: admin up, oper down.
 	OperDown bool
+	// Members is an aggregate's member ifIndexes, in model order.
+	Members []int
 }
 
 // ifTypeEthernet is IF-MIB ethernetCsmacd(6), every physical port's type;
@@ -170,6 +176,8 @@ type Port struct {
 const (
 	ifTypeEthernet = 6
 	ifTypeL2VLAN   = 135
+	// ifTypeLAG is ieee8023adLag(161), the only type that may name members.
+	ifTypeLAG = 161
 )
 
 // Chassis is the expanded model every renderer reads. Components are the
@@ -351,7 +359,28 @@ func (c *Chassis) expandLogicalPorts(m *Model) error {
 		if lp.IfType <= 0 {
 			return fmt.Errorf("logical_ports: %s needs a positive if_type", lp.IfName)
 		}
-		if err := add(Port{IfName: lp.IfName, Short: lp.Short, IfType: lp.IfType, SpeedMbps: lp.SpeedMbps, MTU: lp.MTU, NoPhysAddress: lp.NoPhysAddress}); err != nil {
+		var members []int
+		seen := map[string]bool{}
+		speed := 0
+		if len(lp.BundleMembers) > 0 && lp.IfType != ifTypeLAG {
+			return fmt.Errorf("logical_ports: %s has bundle_members but if_type %d is not ieee8023adLag(%d)", lp.IfName, lp.IfType, ifTypeLAG)
+		}
+		for _, name := range lp.BundleMembers {
+			mp, ok := byName[name]
+			if !ok || mp.Component == "" || mp.IfType != ifTypeEthernet {
+				return fmt.Errorf("logical_ports: %s member %s is not an earlier physical port", lp.IfName, name)
+			}
+			if seen[name] {
+				return fmt.Errorf("logical_ports: %s member %s listed twice", lp.IfName, name)
+			}
+			seen[name] = true
+			members = append(members, mp.IfIndex)
+			speed += mp.SpeedMbps
+		}
+		if len(members) > 0 && speed != lp.SpeedMbps {
+			return fmt.Errorf("logical_ports: %s speed_mbps %d is not the sum of its members, %d", lp.IfName, lp.SpeedMbps, speed)
+		}
+		if err := add(Port{IfName: lp.IfName, Short: lp.Short, IfType: lp.IfType, SpeedMbps: lp.SpeedMbps, MTU: lp.MTU, NoPhysAddress: lp.NoPhysAddress, Members: members}); err != nil {
 			return err
 		}
 	}

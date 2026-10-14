@@ -82,7 +82,7 @@ func (ic *IfCounterCycler) heldDeltasAt(slot int, t float64) (in, out uint64) {
 
 func (ic *IfCounterCycler) heldDeltaFor(h *counterHold, slot int, t float64, inbound bool) uint64 {
 	if h == nil {
-		return ic.deltaOctetsAt(slot, t, inbound)
+		return ic.rawDeltaAt(slot, t, inbound)
 	}
 	skipped := h.skippedIn
 	if !inbound {
@@ -94,13 +94,18 @@ func (ic *IfCounterCycler) heldDeltaFor(h *counterHold, slot int, t float64, inb
 	if t < h.upAt {
 		t = h.upAt
 	}
-	d := ic.deltaOctetsAt(slot, t, inbound)
+	d := ic.rawDeltaAt(slot, t, inbound)
 	if d < skipped {
-		// Unreachable on one binary: skipped is a sum of differences of this
-		// same function at instants no later than the clamped t, evaluated
-		// by the same instructions on the same inputs, and the dial is
-		// strictly increasing. Kept because the alternative is a wrap to a
-		// counter near 2^64; serving the base is the lesser wrong answer.
+		// Unreachable while served deltas are monotone across ledger
+		// generations: skipped is a sum of differences of rawDeltaAt at
+		// instants no later than the clamped t. For a standalone slot that
+		// is the dial, strictly increasing and evaluated by the same
+		// instructions. For a child or an aggregate rawDeltaAt reads OTHER
+		// slots' served deltas, which later generations only raise (the
+		// upAt clamp and its carry are what guarantee that), so the sum
+		// skipped against an older generation never exceeds the current
+		// raw value. Kept because the alternative is a wrap to a counter
+		// near 2^64; serving the base is the lesser wrong answer.
 		return 0
 	}
 	return d - skipped
@@ -138,8 +143,8 @@ func (ic *IfCounterCycler) reconcileHoldAt(ifIndex int, now func() float64) {
 		}
 		ic.hold[slot].Store(&counterHold{
 			upAt:       t,
-			skippedIn:  h.skippedIn + ic.deltaOctetsAt(slot, t, true) - ic.deltaOctetsAt(slot, h.downAt, true),
-			skippedOut: h.skippedOut + ic.deltaOctetsAt(slot, t, false) - ic.deltaOctetsAt(slot, h.downAt, false),
+			skippedIn:  h.skippedIn + ic.rawDeltaAt(slot, t, true) - ic.rawDeltaAt(slot, h.downAt, true),
+			skippedOut: h.skippedOut + ic.rawDeltaAt(slot, t, false) - ic.rawDeltaAt(slot, h.downAt, false),
 		})
 	case !up && (h == nil || !h.down):
 		n := &counterHold{down: true, downAt: t}

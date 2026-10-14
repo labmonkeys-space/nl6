@@ -266,3 +266,23 @@ func TestEmptyBayKeepsEntityIndicesAndSerials(t *testing.T) {
 		}
 	}
 }
+
+// An aggregate renders one active ifStackStatus row per member and nothing
+// else names it as a higher layer.
+func TestRenderSNMPRowsStackRowsForBundleMembers(t *testing.T) {
+	c := shipped(t)
+	rows, err := RenderSNMPRows(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range rows {
+		if strings.HasPrefix(r.OID, "1.3.6.1.2.1.31.1.2.1.3.") {
+			got = append(got, r.OID+"="+r.Response)
+		}
+	}
+	want := []string{"1.3.6.1.2.1.31.1.2.1.3.51.10=1", "1.3.6.1.2.1.31.1.2.1.3.51.11=1"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("ifStackStatus rows = %v, want %v", got, want)
+	}
+}
