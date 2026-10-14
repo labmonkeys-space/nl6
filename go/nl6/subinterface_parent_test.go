@@ -395,6 +395,14 @@ func TestStackedParentsReadsActiveRowsOnly(t *testing.T) {
 	if want := map[int]int{3: 1}; !reflect.DeepEqual(got, want) {
 		t.Errorf("stackedParents = %v, want %v", got, want)
 	}
+	// The same row twice, as two resource parts can carry it, is one row.
+	dup := stackedParents([]SNMPResource{
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.3.1", Response: "1"},
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.3.1", Response: "1"},
+	}, known)
+	if want := map[int]int{3: 1}; !reflect.DeepEqual(dup, want) {
+		t.Errorf("a repeated row = %v, want %v", dup, want)
+	}
 	// The name rule decides first; a stack row cannot re-parent its child.
 	if got := interfaceParents(map[int]string{1: "a", 2: "b", 3: "a.0"}, map[int]int{3: 2}); got[3] != 1 {
 		t.Errorf("a stack row overrode the name rule: parents = %v", got)
@@ -419,6 +427,42 @@ func TestNokiaRouterInterfaceFollowsItsPort(t *testing.T) {
 	}
 	if got := srv.findResponse(operOID(74)); got != "1" {
 		t.Errorf("ifOperStatus of system with port 1/1/1 down = %q, want 1", got)
+	}
+	// A stacked router interface is still an interface to gNMI: only a
+	// <port>.<unit> name is served under its port's subinterfaces instead.
+	if st.NamedSubinterface(73) {
+		t.Errorf("toWAN counts as a named subinterface")
+	}
+	r := newPathResolver(dev)
+	byName := &gnmipb.Path{Elem: []*gnmipb.PathElem{
+		{Name: "interfaces"}, {Name: "interface", Key: map[string]string{"name": "toWAN"}},
+		{Name: "state"}, {Name: "oper-status"},
+	}}
+	if ups, err := r.Resolve(byName, time.Now()); err != nil || len(ups) != 1 {
+		t.Errorf("gNMI interface[name=toWAN] = %v, %v; want one update", ups, err)
+	}
+	// RFC 2863 ifStackTable describes every interface: each appears once as a
+	// higher layer and once as a lower layer, with 0 where nothing is there.
+	higher, lower := map[int]int{}, map[int]int{}
+	for _, e := range dev.resources.SNMP {
+		rest, ok := strings.CutPrefix(strings.TrimPrefix(e.OID, "."), ifStackStatusPrefix)
+		if !ok {
+			continue
+		}
+		hs, ls, _ := strings.Cut(rest, ".")
+		h, _ := strconv.Atoi(hs)
+		l, _ := strconv.Atoi(ls)
+		higher[h]++
+		lower[l]++
+	}
+	for _, idx := range dev.metricsCycler.ifCounters.Load().IfIndices() {
+		if higher[idx] != 1 || lower[idx] != 1 {
+			t.Errorf("ifStackTable: ifIndex %d is a higher layer %d times and a lower layer %d times, want 1 and 1", idx, higher[idx], lower[idx])
+		}
+	}
+	all, err := r.Resolve(pathFromString(t, "/interfaces/interface[name=*]/state/ifindex"), time.Now())
+	if err != nil || len(all) != 74 {
+		t.Errorf("gNMI lists %d interfaces (%v), want all 74 including toWAN and system", len(all), err)
 	}
 }
 

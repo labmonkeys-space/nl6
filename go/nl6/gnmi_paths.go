@@ -876,14 +876,14 @@ func (r *pathResolver) expandInterfaceKey(ic *IfCounterCycler, name string) ([]i
 		all := ic.IfIndices()
 		dst := make([]int, 0, len(all))
 		for _, idx := range all {
-			if state.Parent(idx) == 0 {
+			if !state.NamedSubinterface(idx) {
 				dst = append(dst, idx)
 			}
 		}
 		return dst, nil
 	}
 	if idx, ok := r.descrToIndex[name]; ok {
-		if state.Parent(idx) != 0 {
+		if state.NamedSubinterface(idx) {
 			return nil, status.Errorf(codes.NotFound, "%q is a subinterface, not an interface; it is not served under /interfaces/interface", name)
 		}
 		return []int{idx}, nil

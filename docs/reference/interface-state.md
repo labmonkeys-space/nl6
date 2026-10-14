@@ -85,6 +85,8 @@ Shipped profiles with subinterfaces:
 - `cisco_asr9902`: three VLAN subinterfaces, by name.
 - `nokia_7750_sr12`: router interface `toWAN`, stacked on `port 1/1/1`.
 
+A stacked interface follows its parent the same way, but gNMI still lists it under `/interfaces/interface`, because it is not a `<port>.<unit>` subinterface.
+
 A subinterface goes down with its parent.
 Its `ifOperStatus` reads `lowerLayerDown(7)` while its parent is not up, unless its own state already forces a value.
 Its own `ifAdminStatus = down(2)` still reads `down(2)`.

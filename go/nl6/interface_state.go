@@ -149,6 +149,11 @@ type InterfaceState struct {
 	// loopback marks softwareLoopback(24) interfaces, which have no physical
 	// link either. Set once with the parent table, nil when there are none.
 	loopback []bool
+	// stacked marks interfaces whose parent came from ifStackTable rather
+	// than the <port>.<unit> name rule. They follow their parent like any
+	// child, but they are not subinterfaces in OpenConfig's sense, so gNMI
+	// keeps listing them as interfaces. Nil when there are none.
+	stacked []bool
 
 	// familyMu serialises every mutation of an interface that has a parent
 	// or children. A child's derived oper reads its parent's slot, so a
@@ -290,6 +295,32 @@ func (s *InterfaceState) setLoopbacks(set map[int]bool) {
 			s.loopback[idx-1] = true
 		}
 	}
+}
+
+// setStacked records which children got their parent from ifStackTable.
+// Same publication rule as setParents.
+func (s *InterfaceState) setStacked(set map[int]bool) {
+	if len(set) == 0 {
+		return
+	}
+	s.stacked = make([]bool, s.maxIfIndex)
+	for idx := range set {
+		if idx >= 1 && idx <= s.maxIfIndex {
+			s.stacked[idx-1] = true
+		}
+	}
+}
+
+// NamedSubinterface reports whether ifIndex is a subinterface by the
+// <port>.<unit> name rule: one the gNMI catalogue serves under its parent's
+// subinterfaces, which the legacy resolver therefore keeps out of its
+// interface list. A child stacked by ifStackTable is not one. Safe on a nil
+// engine.
+func (s *InterfaceState) NamedSubinterface(ifIndex int) bool {
+	if s.Parent(ifIndex) == 0 {
+		return false
+	}
+	return s.stacked == nil || !s.stacked[ifIndex-1]
 }
 
 // Linkless reports whether ifIndex has no physical link of its own: a

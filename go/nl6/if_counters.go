@@ -1144,7 +1144,16 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 			loopbacks[idx] = true
 		}
 	}
-	ic.state.setParents(interfaceParents(names, stackedParents(resources.SNMP, known)))
+	byName := subinterfaceParents(names)
+	parents := interfaceParents(names, cachedStackedParents(resources, known))
+	stackedOnly := map[int]bool{}
+	for idx := range parents {
+		if _, ok := byName[idx]; !ok {
+			stackedOnly[idx] = true
+		}
+	}
+	ic.state.setParents(parents)
+	ic.state.setStacked(stackedOnly)
 	ic.state.setLoopbacks(loopbacks)
 
 	// ic is fully constructed before the Store, so concurrent readers

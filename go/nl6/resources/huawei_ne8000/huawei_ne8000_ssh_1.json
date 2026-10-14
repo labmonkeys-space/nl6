@@ -7,7 +7,7 @@
     },
     {
       "command": "display interface brief",
-      "response": "PHY: Physical, *down: administratively down, (l): loopback\n(s): spoofing, (B): BFD down, (e): ETHOAM down, (d): Dampening Suppressed\n(p): port alarm down, (dl): DLDP down, (c): CFM down\nInterface                   PHY   Protocol  InUti OutUti   inErrors  outErrors\n100GE1/0/0                  up    up           0%     5%          0          0\n100GE1/0/1                  up    up           2%     8%          0          0\n100GE1/0/2                  up    down         0%     0%          0          0\nXGE1/1/0                    up    up          12%    15%          0          0"
+      "response": "PHY: Physical, *down: administratively down, (l): loopback\n(s): spoofing, (B): BFD down, (e): ETHOAM down, (d): Dampening Suppressed\n(p): port alarm down, (dl): DLDP down, (c): CFM down\nInterface                   PHY   Protocol  InUti OutUti   inErrors  outErrors\n100GE1/0/0                  up    up           0%     5%          0          0\n100GE1/0/1                  up    up           2%     8%          0          0\n100GE1/0/2                  up    up           0%     0%          0          0\n100GE1/0/3                  up    up          12%    15%          0          0"
     },
     {
       "command": "display ip routing-table",

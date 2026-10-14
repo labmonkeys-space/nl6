@@ -194,7 +194,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // on three profiles and rename values on huawei_ne8000, pre-change value
 // shippedTagDigestBeforeLogicalIfs. Reversed by
 // snmp_shipped_logical_ifs_ledger_test.go.
-const shippedTagDigest = "92c080f57ffd152487d1fdcec27a25e11a6d29d373a342297d432db6e12da5c8"
+const shippedTagDigest = "dee88ff04363cf8bd961f4b3094878dcdd5d7c473d651a19c9c633d28e3af41f"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

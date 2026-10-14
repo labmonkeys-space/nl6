@@ -347,16 +347,24 @@ func cliToken(s string) *regexp.Regexp {
 // spelled its ports HundredGigE while VRP prints 100GE. juniper_mx10004 is not
 // listed: its show route instance detail still names ge-0/0/0 units, a port
 // that profile does not have, which is a separate defect.
+//
+// A Huawei name with a .N suffix is a VRP subinterface, which IF-MIB serves
+// through its port; the test then requires the port.
 var cliInterfaceNames = map[string]*regexp.Regexp{
 	"juniper_mx240.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
 	"juniper_mx960.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
 	"nokia_7750_sr12.json": regexp.MustCompile(`interface "([^"]+)"`),
-	"huawei_ne8000.json":   regexp.MustCompile(`\b(?:\d+GE|GE|HundredGigE)\d+/\d+/\d+\b`),
+	"huawei_ne8000.json":   regexp.MustCompile(`(?:^|[^\w/-])((?:\d*X?GE|HundredGigE|GigabitEthernet|Eth-Trunk)\d+(?:/\d+)*)(?:\.\d+)?\b`),
 }
 
 func TestCLIInterfacesAreIFMIBRows(t *testing.T) {
 	if !cliInterfaceNames["juniper_mx240.json"].MatchString("> via xe-1/0/0.0") || cliInterfaceNames["juniper_mx240.json"].MatchString("xe-1/0/0 up") {
 		t.Fatal("control: the Junos unit pattern does not tell a unit from its port")
+	}
+	for _, name := range []string{"XGE1/1/0", "10GE1/0/1", "100GE1/0/0", "GE0/0/1", "Interfaces : XGE1/1/0.200"} {
+		if !cliInterfaceNames["huawei_ne8000.json"].MatchString(name) {
+			t.Fatalf("control: the VRP pattern misses %q", name)
+		}
 	}
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	for profile, pat := range cliInterfaceNames {
