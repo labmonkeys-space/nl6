@@ -7,15 +7,15 @@
     },
     {
       "command": "show interfaces terse",
-      "response": "Interface               Admin Link Proto    Local                 Remote\nge-0/0/0                up    up\nge-0/0/0.0              up    up   inet     192.168.100.1/24\nxe-0/1/0                up    up\nxe-0/1/0.0              up    up   inet     10.0.1.1/30"
+      "response": "Interface               Admin Link Proto    Local                 Remote\nge-0/0/0                up    up\nge-0/0/0.0              up    up   inet     192.168.100.1/24\nxe-1/0/1                up    up\nxe-1/0/1.0              up    up   inet     10.0.1.1/30"
     },
     {
       "command": "show route",
-      "response": "inet.0: 45 destinations, 45 routes (45 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[BGP/170] 156d 07:33:12, localpref 100\n                    \u003e to 10.0.1.2 via xe-0/1/0.0"
+      "response": "inet.0: 45 destinations, 45 routes (45 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[BGP/170] 156d 07:33:12, localpref 100\n                    \u003e to 10.0.1.2 via xe-1/0/1.0\n10.0.1.0/30        *[Direct/0] 156d 07:33:20\n                    \u003e via xe-1/0/1.0"
     },
     {
       "command": "show configuration",
-      "response": "system {\n    host-name LON-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$def456\";\n    }\n}\ninterfaces {\n    xe-0/1/0 {\n        unit 0 {\n            family inet {\n                address 10.0.1.1/30;\n            }\n        }\n    }\n}"
+      "response": "system {\n    host-name LON-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$def456\";\n    }\n}\ninterfaces {\n    xe-1/0/1 {\n        unit 0 {\n            family inet {\n                address 10.0.1.1/30;\n            }\n        }\n    }\n}"
     },
     {
       "command": "show chassis environment",

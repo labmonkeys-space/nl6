@@ -11,11 +11,11 @@
     },
     {
       "command": "show ip route",
-      "response": "VRF: default\nCodes: C - connected, S - static, K - kernel, \n       O - OSPF, IA - OSPF inter area, E1 - OSPF external type 1,\n       E2 - OSPF external type 2, N1 - OSPF NSSA external type 1,\n       N2 - OSPF NSSA external type 2, B - BGP, A F - BGP Aggregate,\n       I L1 - IS-IS level 1, I L2 - IS-IS level 2, O3 - OSPFv3,\n       A B - BGP Aggregate, A O - OSPF Summary,\n       NG - Nexthop Group Static Route, V - VXLAN Control Service,\n       DH - DHCP client installed default route, M - Martian,\n       DP - Dynamic Policy Route, L - VRF Leaked,\n       RC - Route Cache Route\n\nGateway of last resort:\n S        0.0.0.0/0 [1/0] via 192.168.201.254, Management1\n\n C        192.168.201.0/24 is directly connected, Management1"
+      "response": "VRF: default\nCodes: C - connected, S - static, K - kernel, \n       O - OSPF, IA - OSPF inter area, E1 - OSPF external type 1,\n       E2 - OSPF external type 2, N1 - OSPF NSSA external type 1,\n       N2 - OSPF NSSA external type 2, B - BGP, A F - BGP Aggregate,\n       I L1 - IS-IS level 1, I L2 - IS-IS level 2, O3 - OSPFv3,\n       A B - BGP Aggregate, A O - OSPF Summary,\n       NG - Nexthop Group Static Route, V - VXLAN Control Service,\n       DH - DHCP client installed default route, M - Martian,\n       DP - Dynamic Policy Route, L - VRF Leaked,\n       RC - Route Cache Route\n\nGateway of last resort:\n S        0.0.0.0/0 [1/0] via 192.168.201.254, Ethernet1/1\n\n C        192.168.201.0/24 is directly connected, Ethernet1/1"
     },
     {
       "command": "show running-config",
-      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280CR3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Management1\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
+      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280CR3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Ethernet1/1\n   no switchport\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
     },
     {
       "command": "show environment all",

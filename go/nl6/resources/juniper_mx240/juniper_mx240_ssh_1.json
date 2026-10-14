@@ -7,15 +7,15 @@
     },
     {
       "command": "show interfaces terse",
-      "response": "Interface               Admin Link Proto    Local                 Remote\nge-0/0/0                up    up\nge-0/0/0.0              up    up   inet     192.168.1.1/24\nge-0/0/1                up    down\nge-0/0/2                up    up"
+      "response": "Interface               Admin Link Proto    Local                 Remote\nxe-1/0/0                up    up\nxe-1/0/0.0              up    up   inet     192.168.1.1/24\nge-0/0/1                up    down\nge-0/0/2                up    up"
     },
     {
       "command": "show route",
-      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    \u003e to 192.168.1.254 via ge-0/0/0.0"
+      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    \u003e to 192.168.1.254 via xe-1/0/0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    \u003e via xe-1/0/0.0"
     },
     {
       "command": "show configuration",
-      "response": "system {\n    host-name NY-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$abc123\";\n    }\n}\ninterfaces {\n    ge-0/0/0 {\n        unit 0 {\n            family inet {\n                address 192.168.1.1/24;\n            }\n        }\n    }\n}"
+      "response": "system {\n    host-name NY-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$abc123\";\n    }\n}\ninterfaces {\n    xe-1/0/0 {\n        unit 0 {\n            family inet {\n                address 192.168.1.1/24;\n            }\n        }\n    }\n}"
     },
     {
       "command": "show chassis environment",
