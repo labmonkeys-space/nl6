@@ -214,9 +214,9 @@ Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queue
 That set comes from the MX10004 hardware reference set behind nl6#775, which is not public; the vJunos capture sent eleven buffer and drop leaves more.
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
-The subinterfaces are the logical units the device configures, which is one: `xe-0/0/0.0`, unit 0 of `xe-0/0/0`.
-It is also an `ifTable` row of its own at ifIndex 73 and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
-No other port has a subinterface, and the unit is not listed as an interface on dial-in or dial-out.
+The subinterfaces are the device's four logical units, all on `xe-0/0/0`: unit 0 (`xe-0/0/0.0`) and the VRF units `xe-0/0/0.100`, `xe-0/0/0.200` and `xe-0/0/0.999` that `show route instance detail` names.
+Each is also an `ifTable` row of its own, at ifIndex 73 to 76, and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
+No other port has a subinterface, and no unit is listed as an interface on dial-in or dial-out.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
 A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` is a subtree alias scoped by `alias_leaves`.
 It renders the 8 `state/counters/*` leaves, the 16 `ipv4/state/counters/*` and `ipv6/state/counters/*` leaves and `init-time`, as the Junos sensor does.

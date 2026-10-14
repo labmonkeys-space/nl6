@@ -194,7 +194,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // on three profiles and rename values on huawei_ne8000, pre-change value
 // shippedTagDigestBeforeLogicalIfs. Reversed by
 // snmp_shipped_logical_ifs_ledger_test.go.
-const shippedTagDigest = "dee88ff04363cf8bd961f4b3094878dcdd5d7c473d651a19c9c633d28e3af41f"
+// juniper_mx10004 gains the ifTable and ifXTable rows of its VRF units
+// xe-0/0/0.100, .200 and .999 at ifIndex 74-76, pre-change value
+// shippedTagDigestBeforeMx10004VRFUnits. Reversed by
+// snmp_shipped_juniper_mx10004_vrf_units_ledger_test.go.
+const shippedTagDigest = "3d6b23bf8a3dab9be83e0141745cd841f7e104d4618d729aa3fc78b57ad3f6a7"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

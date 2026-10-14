@@ -78,7 +78,12 @@ import (
 // oper=1. With those 11 rows filtered out the digest is exactly the previous
 // value, c76bf4f789be32ee92ff660cef5e22e44e7f7123777e38e1bac9ab3170f98d32
 // (measured).
-const shippedServedStateDigest = "f0c49ffc279dd65a091aeb6255cd97da79c070e32efcde53b2f80595b6611c79"
+//
+// Re-pinned by the juniper_mx10004 VRF units xe-0/0/0.100, .200 and .999: they
+// add ifIndex 74-76, all admin=1 oper=1. With those 3 rows filtered out the
+// digest is exactly the previous value,
+// f0c49ffc279dd65a091aeb6255cd97da79c070e32efcde53b2f80595b6611c79 (measured).
+const shippedServedStateDigest = "86cd2bc98bf90337555bd4481e0259779479d8186abea61489f97ccbe21f5e24"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is
