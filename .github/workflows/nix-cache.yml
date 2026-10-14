@@ -149,7 +149,16 @@ jobs:
       # its source is the whole repo).
       - name: Build nl6 (and push to Cachix on push events)
         if: steps.relevant.outputs.run == 'true'
-        run: nix build "git+file://$PWD?dir=deploy/packages/nix#nl6" --no-link --print-out-paths
+        # One retry: the vendor fetch talks to proxy.golang.org, which occasionally
+        # drops a stream mid-download (nl6#859). A stale vendorHash fails both
+        # attempts the same way and costs one extra build.
+        run: |
+          for attempt in 1 2; do
+            nix build "git+file://$PWD?dir=deploy/packages/nix#nl6" --no-link --print-out-paths && exit 0
+            echo "nix build failed (attempt $attempt of 2)"
+            [ "$attempt" = 2 ] || sleep 30
+          done
+          exit 1
 
       # A stale vendorHash fails the step above WITHOUT naming the correct
       # hash (the substituted stale vendor tree fails as "inconsistent
@@ -166,12 +175,18 @@ jobs:
           # they would wait for something that is never coming.
           SWEEP_APPLIES: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && startsWith(github.event.pull_request.head.ref, 'dependabot/go_modules/') }}
         run: |
+          current=$(sed -n 's|.*vendorHash = "\(sha256-[^"]*\)".*|\1|p' deploy/packages/nix/package.nix)
           sed -i 's|vendorHash = ".*"|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' deploy/packages/nix/package.nix
           # path: (unlike git+file:) reads the dirty work tree, so the sed
           # needs no temporary commit.
           out=$(nix build "path:$PWD?dir=deploy/packages/nix#nl6" --no-link 2>&1 || true)
           echo "$out" | grep -E 'specified:|got:' || { echo "$out" | tail -20; exit 0; }
           want=$(echo "$out" | grep 'got:' | awk '{print $2}')
+          if [ "$want" = "$current" ]; then
+            # The hash is right; the vendor fetch failed for another reason (nl6#859).
+            echo "::error::vendorHash $current matches go.mod/go.sum. The vendor fetch failed for another reason, usually a transient proxy.golang.org error; see the nix build log above and re-run the job."
+            exit 0
+          fi
           hint=''
           if [ "$SWEEP_APPLIES" = 'true' ]; then
             hint=" You can also leave it: the Dependabot vendorHash workflow sweeps every ~6h and pushes this value onto the branch. Dispatch it with the PR number to skip the wait."
