@@ -11,11 +11,11 @@
     },
     {
       "command": "show ip route",
-      "response": "Codes: C - connected, S - static, R - RIP\nGateway of last resort is 192.168.1.1"
+      "response": "Codes: C - connected, S - static, R - RIP\nGateway of last resort is 192.168.1.1 to network 0.0.0.0\n\nS*   0.0.0.0/0 [1/0] via 192.168.1.1\nC    192.168.1.0/24 is directly connected, GigabitEthernet0/0"
     },
     {
       "command": "show running-config",
-      "response": "Building configuration...\n!\nhostname Router-Simulator\n!"
+      "response": "Building configuration...\n!\nhostname Router-Simulator\n!\ninterface GigabitEthernet0/0\n ip address 192.168.1.10 255.255.255.0\n no shutdown\n!\nip route 0.0.0.0 0.0.0.0 192.168.1.1\n!"
     },
     {
       "command": "show memory",

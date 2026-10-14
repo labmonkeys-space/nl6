@@ -7,15 +7,15 @@
     },
     {
       "command": "show interfaces brief",
-      "response": "Interface              IP-Address      OK? Method Status                Protocol\nGigabitEthernet0/0/0/1 192.168.30.1    YES manual up                    up\nGigabitEthernet0/0/0/2 unassigned      YES manual up                    up\nGigabitEthernet0/0/0/3 unassigned      YES manual administratively down down\nTenGigE0/1/0/1        unassigned      YES manual up                    up\nTenGigE0/1/0/2        unassigned      YES manual up                    up\n\nTotal interfaces: 144 (98 up, 46 down)"
+      "response": "Interface              IP-Address      OK? Method Status                Protocol\nHundredGigE0/1/0/0     192.168.30.1    YES manual up                    up\nGigabitEthernet0/0/0/2 unassigned      YES manual up                    up\nGigabitEthernet0/0/0/3 unassigned      YES manual administratively down down\nTenGigE0/1/0/1        unassigned      YES manual up                    up\nTenGigE0/1/0/2        unassigned      YES manual up                    up\n\nTotal interfaces: 144 (98 up, 46 down)"
     },
     {
       "command": "show route ipv4",
-      "response": "Codes: C - connected, S - static, R - RIP, B - BGP, (\u003e) - Diversion path\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, i - IS-IS\n       su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2\n       ia - IS-IS inter area, * - candidate default\n\nGateway of last resort is 192.168.30.254 to network 0.0.0.0\n\nS*   0.0.0.0/0 [1/0] via 192.168.30.254, 167d22h\nC    192.168.30.0/24 is directly connected, 167d22h, GigabitEthernet0/0/0/1"
+      "response": "Codes: C - connected, S - static, R - RIP, B - BGP, (\u003e) - Diversion path\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, i - IS-IS\n       su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2\n       ia - IS-IS inter area, * - candidate default\n\nGateway of last resort is 192.168.30.254 to network 0.0.0.0\n\nS*   0.0.0.0/0 [1/0] via 192.168.30.254, 167d22h\nC    192.168.30.0/24 is directly connected, 167d22h, HundredGigE0/1/0/0"
     },
     {
       "command": "show running-config",
-      "response": "!! IOS XR Configuration 6.7.3\n!! Last configuration change at Sun Aug  7 10:35:00 2025 by admin\n!\nhostname SYD-CORE-01\n!\ninterface GigabitEthernet0/0/0/1\n ipv4 address 192.168.30.1 255.255.255.0\n no shutdown\n!\nrouter static\n address-family ipv4 unicast\n  0.0.0.0/0 192.168.30.254\n !\n!\nend"
+      "response": "!! IOS XR Configuration 6.7.3\n!! Last configuration change at Sun Aug  7 10:35:00 2025 by admin\n!\nhostname SYD-CORE-01\n!\ninterface HundredGigE0/1/0/0\n ipv4 address 192.168.30.1 255.255.255.0\n no shutdown\n!\nrouter static\n address-family ipv4 unicast\n  0.0.0.0/0 192.168.30.254\n !\n!\nend"
     },
     {
       "command": "show processes cpu",
@@ -31,15 +31,15 @@
     },
     {
       "command": "show cdp neighbors",
-      "response": "Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater\n\nDevice ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\nCore-RTR-02      Gi0/0/0/1         165        R           CRS-16/S  Gi0/0/0/24\nAgg-SW-01        Te0/1/0/1         142        S I         ASR-9910  Te0/0/0/1\nEdge-RTR-01      Te0/1/0/10        158        R           ASR-9006  Te0/2/0/5\n\nTotal cdp entries displayed: 3"
+      "response": "Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater\n\nDevice ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\nCore-RTR-02      Hu0/1/0/0         165        R           CRS-16/S  Gi0/0/0/24\nAgg-SW-01        Te0/1/0/1         142        S I         ASR-9910  Te0/0/0/1\nEdge-RTR-01      Te0/1/0/10        158        R           ASR-9006  Te0/2/0/5\n\nTotal cdp entries displayed: 3"
     },
     {
       "command": "show cdp neighbors detail",
-      "response": "-------------------------\nDevice ID: Core-RTR-02\nEntry address(es):\n  IP address: 10.0.1.2\nPlatform: Cisco CRS-16/S,  Capabilities: Router\nInterface: GigabitEthernet0/0/0/1,  Port ID (outgoing port): GigabitEthernet0/0/0/24\nHoldtime : 165 sec\n\nVersion :\nCisco IOS XR Software, Version 6.7.3\n\n-------------------------\nDevice ID: Agg-SW-01\nEntry address(es):\n  IP address: 10.1.10.5\nPlatform: Cisco ASR-9910,  Capabilities: Switch IGMP\nInterface: TenGigE0/1/0/1,  Port ID (outgoing port): TenGigE0/0/0/1\nHoldtime : 142 sec\n\nVersion :\nCisco IOS XR Software, Version 7.3.2\n\n-------------------------\nDevice ID: Edge-RTR-01\nEntry address(es):\n  IP address: 10.2.1.1\nPlatform: Cisco ASR-9006,  Capabilities: Router\nInterface: TenGigE0/1/0/10,  Port ID (outgoing port): TenGigE0/2/0/5\nHoldtime : 158 sec\n\nVersion :\nCisco IOS XR Software, Version 7.2.1"
+      "response": "-------------------------\nDevice ID: Core-RTR-02\nEntry address(es):\n  IP address: 10.0.1.2\nPlatform: Cisco CRS-16/S,  Capabilities: Router\nInterface: HundredGigE0/1/0/0,  Port ID (outgoing port): GigabitEthernet0/0/0/24\nHoldtime : 165 sec\n\nVersion :\nCisco IOS XR Software, Version 6.7.3\n\n-------------------------\nDevice ID: Agg-SW-01\nEntry address(es):\n  IP address: 10.1.10.5\nPlatform: Cisco ASR-9910,  Capabilities: Switch IGMP\nInterface: TenGigE0/1/0/1,  Port ID (outgoing port): TenGigE0/0/0/1\nHoldtime : 142 sec\n\nVersion :\nCisco IOS XR Software, Version 7.3.2\n\n-------------------------\nDevice ID: Edge-RTR-01\nEntry address(es):\n  IP address: 10.2.1.1\nPlatform: Cisco ASR-9006,  Capabilities: Router\nInterface: TenGigE0/1/0/10,  Port ID (outgoing port): TenGigE0/2/0/5\nHoldtime : 158 sec\n\nVersion :\nCisco IOS XR Software, Version 7.2.1"
     },
     {
       "command": "show lldp neighbors",
-      "response": "Capability codes:\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\nDevice ID           Local Intf     Hold-time  Capability      Port ID\nCore-RTR-02         Gi0/0/0/1      120        R               GigabitEthernet0/0/0/24\nAgg-SW-01           Te0/1/0/1      120        R               TenGigE0/0/0/1\nEdge-RTR-01         Te0/1/0/10     120        R               TenGigE0/2/0/5\n\nTotal entries displayed: 3"
+      "response": "Capability codes:\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\nDevice ID           Local Intf     Hold-time  Capability      Port ID\nCore-RTR-02         Hu0/1/0/0      120        R               GigabitEthernet0/0/0/24\nAgg-SW-01           Te0/1/0/1      120        R               TenGigE0/0/0/1\nEdge-RTR-01         Te0/1/0/10     120        R               TenGigE0/2/0/5\n\nTotal entries displayed: 3"
     }
   ]
 }

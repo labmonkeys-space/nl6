@@ -415,7 +415,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // entPhysicalEntry, pre-change value
 // shippedOIDEncodingDigestBeforeEntityInventory. Reversed by
 // snmp_shipped_entity_inventory_ledger_test.go.
-const shippedOIDEncodingDigest = "1e16764e84ee6f73e8ec78f03683bc6c1121bbedd4732f7a2166b75cce09c248"
+// Re-pinned when eleven profiles' connected route moved to the CLI's subnet and
+// ipAddrTable rows were added, pre-change value
+// shippedOIDEncodingDigestBeforeRouteTable. Reversed by
+// snmp_shipped_route_table_ledger_test.go.
+const shippedOIDEncodingDigest = "3db5e113692c53e0dfd709c04e6eeb3e125f6ca819a5d2616f7f5b70e4260d7b"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

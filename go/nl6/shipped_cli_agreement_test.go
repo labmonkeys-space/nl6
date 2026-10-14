@@ -10,6 +10,8 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,25 +26,50 @@ import (
 type defaultRouteRow struct {
 	command string
 	nextHop *regexp.Regexp
+	// The connected route and its interface, checked when port is set:
+	// port is the IF-MIB ifDescr both ipRouteTable rows and the ipAddrTable
+	// row name; cliPort is how the CLI spells it (a Junos unit); prefix and
+	// addr are the connected subnet and the device's own address on it;
+	// proto is the default route's ipRouteProto, netmgmt(3) for static and
+	// bgp(14) for BGP.
+	port, cliPort, prefix, addr string
+	proto                       int
 }
 
 func routeRow(command, nextHop string) defaultRouteRow {
-	return defaultRouteRow{command, regexp.MustCompile(nextHop)}
+	return defaultRouteRow{command: command, nextHop: regexp.MustCompile(nextHop)}
+}
+
+// connected adds the connected-route plan to a row.
+func (r defaultRouteRow) connected(port, cliPort, prefix, addr string, proto int) defaultRouteRow {
+	r.port, r.cliPort, r.prefix, r.addr, r.proto = port, cliPort, prefix, addr, proto
+	return r
 }
 
 var defaultRouteCLI = map[string]defaultRouteRow{
-	"arista_7280r3.json":           routeRow("show ip route", `0\.0\.0\.0/0 \S+ via (\S+),`),
-	"cisco_catalyst_9500.json":     routeRow("show ip route", `0\.0\.0\.0/0 \S+ via (\S+)`),
-	"cisco_crs_x.json":             routeRow("show route ipv4", `0\.0\.0\.0/0 \S+ via (\S+),`),
-	"cisco_ios.json":               routeRow("show ip route", `Gateway of last resort is (\S+)`),
-	"cisco_nexus_9500.json":        routeRow("show ip route", `0\.0\.0\.0/0,[^\n]*\n\s*\*via (\S+),`),
-	"fortinet_fortigate_600e.json": routeRow("get router info routing-table all", `0\.0\.0\.0/0 \S+ via (\S+),`),
-	"huawei_ne8000.json":           routeRow("display ip routing-table", `0\.0\.0\.0/0\s+Static\s+\d+\s+\d+\s+\S+\s+(\S+)`),
-	"juniper_mx10004.json":         routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`),
-	"juniper_mx240.json":           routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`),
-	"juniper_mx960.json":           routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`),
-	"nokia_7750_sr12.json":         routeRow("show router route-table", `0\.0\.0\.0/0[^\n]*\n\s*(\S+)`),
-	"palo_alto_pa3220.json":        routeRow("show routing route", `0\.0\.0\.0/0\s+(\S+)`),
+	"arista_7280r3.json": routeRow("show ip route", `0\.0\.0\.0/0 \S+ via (\S+),`).
+		connected("Ethernet1/1", "Ethernet1/1", "192.168.201.0/24", "192.168.201.1", 3),
+	"cisco_catalyst_9500.json": routeRow("show ip route", `0\.0\.0\.0/0 \S+ via (\S+)`).
+		connected("GigabitEthernet1/0/47", "GigabitEthernet1/0/47", "192.168.1.0/24", "192.168.1.10", 3),
+	"cisco_crs_x.json": routeRow("show route ipv4", `0\.0\.0\.0/0 \S+ via (\S+),`).
+		connected("HundredGigE0/1/0/0", "HundredGigE0/1/0/0", "192.168.30.0/24", "192.168.30.1", 3),
+	"cisco_ios.json": routeRow("show ip route", `Gateway of last resort is (\S+)`).
+		connected("GigabitEthernet0/0", "GigabitEthernet0/0", "192.168.1.0/24", "192.168.1.10", 3),
+	"cisco_nexus_9500.json": routeRow("show ip route", `0\.0\.0\.0/0,[^\n]*\n\s*\*via (\S+),`).
+		connected("Ethernet1/11", "Ethernet1/11", "192.168.101.0/24", "192.168.101.1", 3),
+	"fortinet_fortigate_600e.json": routeRow("get router info routing-table all", `0\.0\.0\.0/0 \S+ via (\S+),`).
+		connected("port1", "port1", "192.168.2.0/24", "192.168.2.1", 3),
+	"huawei_ne8000.json": routeRow("display ip routing-table", `0\.0\.0\.0/0\s+Static\s+\d+\s+\d+\s+\S+\s+(\S+)`).
+		connected("HundredGigE1/0/0", "HundredGigE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
+	"juniper_mx10004.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`),
+	"juniper_mx240.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
+		connected("xe-1/0/0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
+	"juniper_mx960.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
+		connected("xe-1/0/1", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14),
+	"nokia_7750_sr12.json": routeRow("show router route-table", `0\.0\.0\.0/0[^\n]*\n\s*(\S+)`).
+		connected("port 1/1/1", "port 1/1/1", "192.168.40.0/24", "192.168.40.1", 3),
+	"palo_alto_pa3220.json": routeRow("show routing route", `0\.0\.0\.0/0\s+(\S+)`).
+		connected("ethernet1/1", "ethernet1/1", "10.0.0.0/24", "10.0.0.1", 3),
 
 	// The CLI prints a default route; SNMP serves none.
 	"check_point_15600.json": {},
@@ -129,6 +156,9 @@ func TestShippedDefaultRouteAgreesWithCLI(t *testing.T) {
 		if snmp != m[1] {
 			t.Errorf("%s: ipRouteNextHop.0.0.0.0 = %q, %s says %q", profile, snmp, row.command, m[1])
 		}
+		if row.port != "" {
+			checkConnectedRoute(t, profile, row, res, ssh)
+		}
 	}
 	for profile := range defaultRouteCLI {
 		if !shipped[profile] {
@@ -213,5 +243,74 @@ func TestShippedResponsesNameValidIPv4(t *testing.T) {
 		if q := invalidQuad(r); q != "" {
 			t.Errorf("%s names %s, which is not an IPv4 address", where, q)
 		}
+	}
+}
+
+// checkConnectedRoute holds a profile's ipRouteTable and ipAddrTable to its
+// CLI. The template served a connected 192.168.1.0/24 via ifIndex 2 and no
+// ipAddrTable on every profile, so the default route's next hop lay in no
+// subnet SNMP served and its egress interface was not the one the CLI named.
+func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res *DeviceResources, ssh map[string]string) {
+	t.Helper()
+	const route, addrTab, ifDescr = "1.3.6.1.2.1.4.21.1.", "1.3.6.1.2.1.4.20.1.", "1.3.6.1.2.1.2.2.1.2."
+	_, subnet, err := net.ParseCIDR(row.prefix)
+	if err != nil {
+		t.Fatalf("%s: bad prefix %q", profile, row.prefix)
+	}
+	net0, mask := subnet.IP.String(), net.IP(subnet.Mask).String()
+	snmp := map[string]string{}
+	var dests, addrs []string
+	ifIndex := ""
+	for _, e := range res.SNMP {
+		oid := strings.TrimPrefix(e.OID, ".")
+		snmp[oid] = e.Response
+		switch {
+		case strings.HasPrefix(oid, route+"1."):
+			dests = append(dests, e.Response)
+		case strings.HasPrefix(oid, addrTab+"1."):
+			addrs = append(addrs, e.Response)
+		case strings.HasPrefix(oid, ifDescr) && e.Response == row.port:
+			ifIndex = strings.TrimPrefix(oid, ifDescr)
+		}
+	}
+	if ifIndex == "" {
+		t.Errorf("%s: IF-MIB serves no %q", profile, row.port)
+		return
+	}
+	sort.Strings(dests)
+	if want := []string{"0.0.0.0", net0}; !slices.Equal(dests, want) {
+		t.Errorf("%s: ipRouteTable destinations = %v, want %v", profile, dests, want)
+	}
+	for _, c := range []struct{ oid, want string }{
+		{route + "2.0.0.0.0", ifIndex},
+		{route + "9.0.0.0.0", strconv.Itoa(row.proto)},
+		{route + "2." + net0, ifIndex},
+		{route + "7." + net0, row.addr},
+		{route + "8." + net0, "3"},
+		{route + "11." + net0, mask},
+		{addrTab + "2." + row.addr, ifIndex},
+		{addrTab + "3." + row.addr, mask},
+	} {
+		if got := snmp[c.oid]; got != c.want {
+			t.Errorf("%s: %s = %q, want %q", profile, c.oid, got, c.want)
+		}
+	}
+	if !slices.Equal(addrs, []string{row.addr}) {
+		t.Errorf("%s: ipAddrTable addresses = %v, want [%s]", profile, addrs, row.addr)
+	}
+	if !strings.Contains(ssh[row.command], row.prefix) {
+		t.Errorf("%s: %s does not print the connected route %s", profile, row.command, row.prefix)
+	}
+	// The CLI must put the device's address (or the connected route) on the
+	// port IF-MIB names, within one response: the route table for most
+	// vendors, the interface configuration where the table omits the port.
+	found := false
+	for _, r := range ssh {
+		if (strings.Contains(r, row.addr) || strings.Contains(r, row.prefix)) && strings.Contains(r, row.cliPort) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("%s: no SSH output puts %s on %s", profile, row.addr, row.cliPort)
 	}
 }

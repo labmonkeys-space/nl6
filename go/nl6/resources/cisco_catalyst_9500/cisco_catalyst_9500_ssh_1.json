@@ -11,11 +11,11 @@
     },
     {
       "command": "show ip route",
-      "response": "Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\nGateway of last resort is 192.168.1.1 to network 0.0.0.0\nS*   0.0.0.0/0 [1/0] via 192.168.1.1\nC    192.168.1.0/24 is directly connected, Vlan1"
+      "response": "Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP\nGateway of last resort is 192.168.1.1 to network 0.0.0.0\nS*   0.0.0.0/0 [1/0] via 192.168.1.1\nC    192.168.1.0/24 is directly connected, GigabitEthernet1/0/47"
     },
     {
       "command": "show running-config",
-      "response": "version 16.12\nhostname Core-Switch-01\ninterface Vlan1\n ip address 192.168.1.10 255.255.255.0\n no shutdown\nip default-gateway 192.168.1.1"
+      "response": "version 16.12\nhostname Core-Switch-01\ninterface GigabitEthernet1/0/47\n no switchport\n ip address 192.168.1.10 255.255.255.0\n no shutdown\nip default-gateway 192.168.1.1"
     },
     {
       "command": "show environment all",
