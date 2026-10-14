@@ -35,7 +35,7 @@
     },
     {
       "command": "netstat -in",
-      "response": "Name  Mtu   Network     Address            Ipkts Ierrs    Opkts Oerrs  Coll\nlo0   16896 loopback    localhost          28573     0    28573     0     0\nlo0   16896 127         127.0.0.1          28573     0    28573     0     0\nen0   1500  link#2      9c.69.b4.60.12.34  947382     0   851947     0     0\nen0   1500  192.168.501 192.168.501.1      947382     0   851947     0     0\nen1   1500  link#3      9c.69.b4.60.12.35  0          0        0     0     0\nen2   1500  link#4      9c.69.b4.60.12.36  0          0        0     0     0\nen3   1500  link#5      9c.69.b4.60.12.37  0          0        0     0     0"
+      "response": "Name  Mtu   Network     Address            Ipkts Ierrs    Opkts Oerrs  Coll\nlo0   16896 loopback    localhost          28573     0    28573     0     0\nlo0   16896 127         127.0.0.1          28573     0    28573     0     0\nen0   1500  link#2      9c.69.b4.60.12.34  947382     0   851947     0     0\nen0   1500  192.168.51  192.168.51.1       947382     0   851947     0     0\nen1   1500  link#3      9c.69.b4.60.12.35  0          0        0     0     0\nen2   1500  link#4      9c.69.b4.60.12.36  0          0        0     0     0\nen3   1500  link#5      9c.69.b4.60.12.37  0          0        0     0     0"
     }
   ]
 }

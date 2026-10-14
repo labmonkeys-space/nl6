@@ -351,3 +351,32 @@ func TestDialoutListsNoSubinterface(t *testing.T) {
 		}
 	}
 }
+
+// TestRestOperPostOnAUnitUnderADownPortIsMasked: the POST is applied to the
+// unit's link but collectors keep reading lowerLayerDown, so the caller must be
+// told it is masked, as for an admin-down interface.
+func TestRestOperPostOnAUnitUnderADownPortIsMasked(t *testing.T) {
+	dev := shippedDevice(t, "juniper_mx10004.json")
+	sm := &SimulatorManager{}
+	sm.mu.Lock()
+	sm.indexDeviceByIP(dev)
+	sm.mu.Unlock()
+	ip := dev.IP.String()
+
+	if out, err := sm.mutateInterfaceState(ip, 73, true, OperUp, 0); err != nil || out.Masked {
+		t.Fatalf("control: unit POST UP with its port up = %+v, %v; want unmasked", out, err)
+	}
+	if _, err := sm.mutateInterfaceState(ip, 1, true, OperDown, 0); err != nil {
+		t.Fatal(err)
+	}
+	out, err := sm.mutateInterfaceState(ip, 73, true, OperUp, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Masked || out.OperStatus != ifStatusName(OperLowerLayerDn) {
+		t.Errorf("unit POST UP under a down port = %+v; want masked, reading lowerLayerDown", out)
+	}
+	if out, _ := sm.mutateInterfaceState(ip, 73, true, OperDown, 0); out.Masked {
+		t.Errorf("unit POST DOWN under a down port = %+v; its own fault is visible, want unmasked", out)
+	}
+}

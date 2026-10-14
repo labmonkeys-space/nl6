@@ -7,11 +7,11 @@
     },
     {
       "command": "show interface all",
-      "response": "Interface    Status    Zone        IP Address      Netmask\n------------ --------- ----------- --------------- ---------------\nX0           Up        LAN         192.168.401.1   255.255.255.0\nX1           Up        WAN         10.1.1.100      255.255.255.0\nX2           Down      DMZ         -               -\nX3           Down      DMZ         -               -\nX4           Down      DMZ         -               -\n\nTotal interfaces: 16 (8 up, 8 down)\nWarning: High interface utilization detected"
+      "response": "Interface    Status    Zone        IP Address      Netmask\n------------ --------- ----------- --------------- ---------------\nX0           Up        LAN         192.168.41.1    255.255.255.0\nX1           Up        WAN         10.1.1.100      255.255.255.0\nX2           Down      DMZ         -               -\nX3           Down      DMZ         -               -\nX4           Down      DMZ         -               -\n\nTotal interfaces: 16 (8 up, 8 down)\nWarning: High interface utilization detected"
     },
     {
       "command": "show log security",
-      "response": "Security Log:\n2025-08-03 14:29:00 - Alert: High resource usage detected\n2025-08-03 14:25:30 - Info: Connection established from 192.168.401.100\n2025-08-03 14:20:15 - Warning: CPU usage above 65% threshold\n2025-08-03 14:15:00 - Info: Firewall policy applied successfully"
+      "response": "Security Log:\n2025-08-03 14:29:00 - Alert: High resource usage detected\n2025-08-03 14:25:30 - Info: Connection established from 192.168.41.100\n2025-08-03 14:20:15 - Warning: CPU usage above 65% threshold\n2025-08-03 14:15:00 - Info: Firewall policy applied successfully"
     },
     {
       "command": "show status",
