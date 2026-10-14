@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -302,6 +304,14 @@ type IfCounterCycler struct {
 	// state columns (.7, .8, .9) served via GetDynamicAt, and for the
 	// gNMI `state/*` leaves. Set by InitIfCountersWithScenario.
 	state *InterfaceState
+
+	// hold is the per-interface counter hold ledger (if_counter_hold.go):
+	// one immutable entry behind an atomic pointer per slot, nil until the
+	// interface is first held. holdMu serialises the writers, which are the
+	// oper transitions.
+	hold    []atomic.Pointer[counterHold]
+	holdMu  sync.Mutex
+	holdSeq atomic.Uint64 // seqlock around ledger writes; see heldDeltaAt
 }
 
 // State returns the interface state engine owned by this cycler. May be
@@ -432,8 +442,10 @@ func (ic *IfCounterCycler) GetDynamicAt(oid string, t float64) string {
 	// pre-seed bases (baseInUcast, baseInErr, …) are themselves
 	// derived from baseInOctets at init; adding another
 	// ratio × baseInOctets here would double-count the pre-seed.
-	inDelta := ic.deltaOctetsAt(slot, t, true)
-	outDelta := ic.deltaOctetsAt(slot, t, false)
+	//
+	// The hold ledger is applied here and nowhere else, so every column and
+	// every surface inherits it (if_counter_hold.go).
+	inDelta, outDelta := ic.heldDeltasAt(slot, t)
 
 	// Dispatch by (table, column). Ordering below mirrors the MIB
 	// column numbering so the intent is obvious when reading.
@@ -984,6 +996,7 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		baseOutErr:      make([]uint64, maxIdx),
 		baseInDisc:      make([]uint64, maxIdx),
 		baseOutDisc:     make([]uint64, maxIdx),
+		hold:            make([]atomic.Pointer[counterHold], maxIdx),
 	}
 
 	rng := rand.New(rand.NewSource(seed))
@@ -1155,6 +1168,11 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	ic.state.setParents(parents)
 	ic.state.setStacked(stackedOnly)
 	ic.state.setLoopbacks(loopbacks)
+	// The counter hold follows derived oper-status: the hook keeps the ledger
+	// in step with every transition, and the seed pass covers interfaces that
+	// boot in a non-up state. Both before publish, like the tables above.
+	ic.state.setOperHook(ic.onOperTransition)
+	ic.seedHolds()
 
 	// ic is fully constructed before the Store, so concurrent readers
 	// either see the complete new cycler or the previous pointer — never

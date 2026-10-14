@@ -5,7 +5,7 @@ SNMP, gNMI `Get`, and gNMI `Subscribe ON_CHANGE` all read from the same slot tab
 Values agree byte-for-byte at every instant.
 State can be mutated by a scheduled link-flap scenario, by a REST control plane or by an SNMP `SET` of `ifAdminStatus.<N>`.
 A derived `ifOperStatus` transition also fires the device's role-tagged link trap and syslog entries for that interface.
-Counter cycling is unaffected by state changes.
+Every counter the cycler derives from the octet dial holds while the derived `ifOperStatus` is not `up(1)`, and resumes from the held value when it returns.
 
 This is the capability reference.
 For the gNMI subscribe semantics see [gNMI reference](gnmi.md#subscribe-semantics).
@@ -21,10 +21,19 @@ Current behaviour:
 
 State-driven telemetry: every derived `ifOperStatus` transition fires the role-tagged `linkDown` / `linkUp` trap and `interface-down` / `interface-up` syslog entries of the device's catalog for that ifIndex (`InterfaceState.SetNotify`, wired at trap and syslog attach time).
 
+Counter hold: every octet, packet, error and discard column the cycler derives holds at the value it had when the derived `ifOperStatus` last left `up(1)`, for every state other than `up(1)`.
+Admin-down, a parent port's outage reported on a subinterface as `lowerLayerDown(7)`, and an interface seeded down at boot (an empty optic bay) are all held; an interface that boots in a non-up state reads its pre-seeded base from the first poll.
+When the interface returns to `up(1)` the columns resume from the held value with no jump; the traffic the dial would have produced during the hold is dropped, never replayed.
+The hold is applied in the one counter dispatcher, so SNMP, both gNMI resolvers, gNMI dial-out and the sFlow `counter_sample` read the same held value at the same instant, and a gNMI SAMPLE stream keeps sending the held value every interval.
+Counters never decrease: the ledger write is bracketed by a seqlock and a read that sampled its instant on the far side of a transition is clamped to the hold instant, so a poll sequence sees no backwards step even under tight flapping.
+`ifLastChange`, `ifSpeed` and `ifHighSpeed` are unchanged; a down port keeps its line rate, as IOS-XR and Junos do.
+The sFlow `counter_sample` status word reads admin and oper from the same engine, so it agrees with the held counters beside it.
+Two surfaces do not follow the hold: the SSH CLI counter text is static profile JSON and does not read the cycler, and flow records (NetFlow, IPFIX, sFlow flow samples) name a fixed ingress ifIndex and keep flowing regardless of interface state.
+
 Out of scope:
 
-- Pausing the counter cycler when `oper-status` is `DOWN`
 - Per-interface bandwidth scaling on admin-status changes
+- `suppress_redundant` on gNMI SAMPLE subscriptions
 
 ## Architecture
 

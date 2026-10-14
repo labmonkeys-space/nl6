@@ -138,6 +138,13 @@ type InterfaceState struct {
 	// transition before attach reads nil and is a safe no-op.
 	notify atomic.Pointer[func(StateChange)]
 
+	// onOper is the counter cycler's hold hook, invoked from Broadcast for
+	// every event whose Changed includes LeafOperStatus, child cascades
+	// included. Set once by setOperHook before the engine is published and
+	// never written again, so the read takes no lock. Separate from notify,
+	// which the manager replaces at exporter attach.
+	onOper func(ifIndex int)
+
 	// parent and children record which interfaces are subinterfaces of which
 	// (slot = ifIndex - 1; a parent of 0 means top-level). Set once by
 	// setParents before the engine is published and never written again, so
@@ -281,6 +288,12 @@ func (s *InterfaceState) lockFamily(slot int) func() {
 	}
 	s.familyMu.Lock()
 	return s.familyMu.Unlock
+}
+
+// setOperHook installs the counter cycler's oper hook. Same publication
+// rule as setParents.
+func (s *InterfaceState) setOperHook(fn func(ifIndex int)) {
+	s.onOper = fn
 }
 
 // setLoopbacks records the softwareLoopback interfaces. Same publication
@@ -864,6 +877,13 @@ func (s *InterfaceState) Broadcast(evt StateChange) {
 	// the gate an invariant of the API instead of a convention.
 	if evt.Changed == 0 {
 		return
+	}
+	// The counter hold first, before any subscriber can act on the event: a
+	// listener that receives this update and immediately reads counters
+	// must find them held. The window between the slot CAS and this call is
+	// the one that remains, and it is not covered by the listener path.
+	if evt.Changed&LeafOperStatus != 0 && s.onOper != nil {
+		s.onOper(evt.IfIndex)
 	}
 	s.listeners.Range(func(key, _ any) bool {
 		ch, ok := key.(chan StateChange)

@@ -590,6 +590,7 @@ The TLS counters are explained under [Troubleshooting](#troubleshooting), the st
 
 - **Read-only.** `Set` returns `Unimplemented`. The simulator's deterministic-state guarantee is incompatible with mutation.
 - **No POLL.** Returns `Unimplemented`. STREAM/SAMPLE and ONCE cover the common cases.
+- **No `suppress_redundant`.** A SAMPLE stream sends every interval, including the held value of an interface whose `oper-status` is not `up(1)` (see [Interface state](./interface-state.md)).
 - **Single shared certificate.** All devices present the same self-signed cert. Real fleets have per-device PKI; the simulator does not.
 - **No client-cert auth.** The simulator runs in lab contexts; mutual-TLS is out of scope.
 - **No subinterfaces, no `/system`, no LLDP.** The interface surface serves only the state leaves listed above. `/components` is served only for `optical-channel` on optical transport types.

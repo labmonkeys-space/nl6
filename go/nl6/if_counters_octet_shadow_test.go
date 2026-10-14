@@ -1004,7 +1004,7 @@ func TestSFlowOctetOffsetsMatchTheEncoder(t *testing.T) {
 		inSentinel  uint64 = 0x1122334455667788
 		outSentinel uint64 = 0x8877665544332211
 	)
-	body := encodeIfCountersBody(1, 0, inSentinel, 0, 0, 0, 0, 0, outSentinel, 0, 0, 0, 0, 0)
+	body := encodeIfCountersBody(1, 0, 3, inSentinel, 0, 0, 0, 0, 0, outSentinel, 0, 0, 0, 0, 0)
 	if len(body) != sflowIfCountersBodyLen {
 		t.Fatalf("body is %d bytes, sflowIfCountersBodyLen says %d", len(body), sflowIfCountersBodyLen)
 	}
