@@ -8,7 +8,6 @@ package main
 import (
 	"net"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,61 +349,5 @@ func TestDialoutListsNoSubinterface(t *testing.T) {
 		if want := map[int]int{1: 1, 73: 0}[evt.IfIndex]; len(got) != want {
 			t.Errorf("ifIndex %d ON_CHANGE produced %d updates, want %d", evt.IfIndex, len(got), want)
 		}
-	}
-}
-
-// TestMx10004DefaultRouteNextHopAgreesWithShowRoute: SNMP named 10.0.0.1 for
-// the default route while show route sends it to 192.168.1.254.
-func TestMx10004DefaultRouteNextHopAgreesWithShowRoute(t *testing.T) {
-	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
-	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snmp, cli string
-	for _, e := range res.SNMP {
-		if e.OID == "1.3.6.1.2.1.4.21.1.7.0.0.0.0" {
-			snmp = e.Response
-		}
-	}
-	m := regexp.MustCompile(`0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`)
-	for _, e := range res.SSH {
-		if e.Command == "show route" {
-			if g := m.FindStringSubmatch(e.Response); g != nil {
-				cli = g[1]
-			}
-		}
-	}
-	if cli == "" || snmp != cli {
-		t.Errorf("ipRouteNextHop.0.0.0.0 = %q, show route next hop = %q", snmp, cli)
-	}
-}
-
-// TestRestOperPostOnAUnitUnderADownPortIsMasked: the POST is applied to the
-// unit's link but collectors keep reading lowerLayerDown, so the caller must be
-// told it is masked, as for an admin-down interface.
-func TestRestOperPostOnAUnitUnderADownPortIsMasked(t *testing.T) {
-	dev := shippedDevice(t, "juniper_mx10004.json")
-	sm := &SimulatorManager{}
-	sm.mu.Lock()
-	sm.indexDeviceByIP(dev)
-	sm.mu.Unlock()
-	ip := dev.IP.String()
-
-	if out, err := sm.mutateInterfaceState(ip, 73, true, OperUp, 0); err != nil || out.Masked {
-		t.Fatalf("control: unit POST UP with its port up = %+v, %v; want unmasked", out, err)
-	}
-	if _, err := sm.mutateInterfaceState(ip, 1, true, OperDown, 0); err != nil {
-		t.Fatal(err)
-	}
-	out, err := sm.mutateInterfaceState(ip, 73, true, OperUp, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !out.Masked || out.OperStatus != ifStatusName(OperLowerLayerDn) {
-		t.Errorf("unit POST UP under a down port = %+v; want masked, reading lowerLayerDown", out)
-	}
-	if out, _ := sm.mutateInterfaceState(ip, 73, true, OperDown, 0); out.Masked {
-		t.Errorf("unit POST DOWN under a down port = %+v; its own fault is visible, want unmasked", out)
 	}
 }

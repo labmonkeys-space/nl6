@@ -3,23 +3,23 @@
   "ssh": [
     {
       "command": "show version",
-      "response": "SonicWall NSa 6700\\nSonicOS Enhanced 7.0.1-5050\\nBase Mac Address: 00:06:B1:12:34:56\\nSerial Number: SW-NSa6700-001\\nUptime: 56 days, 12 hours, 19 minutes\\n\\nCPU Load Average:\\n  1 min: 68%\\n  5 min: 67%\\n  15 min: 69%\\n\\nRAM Usage: 82%\\n\\nAppliance Model: NSa 6700\\nFirmware Version: SonicOS Enhanced 7.0.1-5050"
+      "response": "SonicWall NSa 6700\nSonicOS Enhanced 7.0.1-5050\nBase Mac Address: 00:06:B1:12:34:56\nSerial Number: SW-NSa6700-001\nUptime: 56 days, 12 hours, 19 minutes\n\nCPU Load Average:\n  1 min: 68%\n  5 min: 67%\n  15 min: 69%\n\nRAM Usage: 82%\n\nAppliance Model: NSa 6700\nFirmware Version: SonicOS Enhanced 7.0.1-5050"
     },
     {
       "command": "show interface all",
-      "response": "Interface    Status    Zone        IP Address      Netmask\\n------------ --------- ----------- --------------- ---------------\\nX0           Up        LAN         192.168.401.1   255.255.255.0\\nX1           Up        WAN         10.1.1.100      255.255.255.0\\nX2           Down      DMZ         -               -\\nX3           Down      DMZ         -               -\\nX4           Down      DMZ         -               -\\n\\nTotal interfaces: 16 (8 up, 8 down)\\nWarning: High interface utilization detected"
+      "response": "Interface    Status    Zone        IP Address      Netmask\n------------ --------- ----------- --------------- ---------------\nX0           Up        LAN         192.168.401.1   255.255.255.0\nX1           Up        WAN         10.1.1.100      255.255.255.0\nX2           Down      DMZ         -               -\nX3           Down      DMZ         -               -\nX4           Down      DMZ         -               -\n\nTotal interfaces: 16 (8 up, 8 down)\nWarning: High interface utilization detected"
     },
     {
       "command": "show log security",
-      "response": "Security Log:\\n2025-08-03 14:29:00 - Alert: High resource usage detected\\n2025-08-03 14:25:30 - Info: Connection established from 192.168.401.100\\n2025-08-03 14:20:15 - Warning: CPU usage above 65% threshold\\n2025-08-03 14:15:00 - Info: Firewall policy applied successfully"
+      "response": "Security Log:\n2025-08-03 14:29:00 - Alert: High resource usage detected\n2025-08-03 14:25:30 - Info: Connection established from 192.168.401.100\n2025-08-03 14:20:15 - Warning: CPU usage above 65% threshold\n2025-08-03 14:15:00 - Info: Firewall policy applied successfully"
     },
     {
       "command": "show status",
-      "response": "SonicWall NSa 6700 Status:\\n\\nSystem Status: Warning\\nCPU Usage: 68%\\nMemory Usage: 82%\\nTemperature: 49°C\\nUptime: 56d 12h 19m\\n\\nInterfaces:\\n  Total: 16\\n  Active: 8\\n  Warning: 2\\n\\nSecurity Services:\\n  Firewall: Active\\n  IPS: Active\\n  Anti-Virus: Active\\n  Content Filter: Active\\n\\nThreat Detection:\\n  Last 24h: 127 threats blocked\\n  Status: Active"
+      "response": "SonicWall NSa 6700 Status:\n\nSystem Status: Warning\nCPU Usage: 68%\nMemory Usage: 82%\nTemperature: 49°C\nUptime: 56d 12h 19m\n\nInterfaces:\n  Total: 16\n  Active: 8\n  Warning: 2\n\nSecurity Services:\n  Firewall: Active\n  IPS: Active\n  Anti-Virus: Active\n  Content Filter: Active\n\nThreat Detection:\n  Last 24h: 127 threats blocked\n  Status: Active"
     },
     {
       "command": "show network statistics",
-      "response": "Network Interface Statistics:\\n\\nX0 (LAN):\\n  Bytes In: 1,847,382,946\\n  Bytes Out: 2,384,729,581\\n  Packets In: 2,847,291\\n  Packets Out: 3,182,847\\n  Errors: 12\\n  Drops: 5\\n\\nX1 (WAN):\\n  Bytes In: 2,384,729,581\\n  Bytes Out: 1,847,382,946\\n  Packets In: 3,182,847\\n  Packets Out: 2,847,291\\n  Errors: 8\\n  Drops: 3\\n\\nOverall Throughput: 1.2 Gbps"
+      "response": "Network Interface Statistics:\n\nX0 (LAN):\n  Bytes In: 1,847,382,946\n  Bytes Out: 2,384,729,581\n  Packets In: 2,847,291\n  Packets Out: 3,182,847\n  Errors: 12\n  Drops: 5\n\nX1 (WAN):\n  Bytes In: 2,384,729,581\n  Bytes Out: 1,847,382,946\n  Packets In: 3,182,847\n  Packets Out: 2,847,291\n  Errors: 8\n  Drops: 3\n\nOverall Throughput: 1.2 Gbps"
     }
   ]
 }

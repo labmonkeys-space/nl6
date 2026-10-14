@@ -3,23 +3,23 @@
   "ssh": [
     {
       "command": "show switch",
-      "response": "Switch Information\\n==================\\nSwitch Model      : DGS-3630-52TC\\nMAC Address       : 1C-7B-21-12-34-56\\nSerial Number     : DL-DGS3630-001\\nFirmware Version  : 3.00.B012\\nHardware Version  : A1\\nUptime            : 78 days, 8 hours, 44 minutes\\n\\nCPU Utilization   : 33%\\nMemory Utilization: 51%\\nTemperature       : 41°C\\nFan Status        : OK (2800 RPM)"
+      "response": "Switch Information\n==================\nSwitch Model      : DGS-3630-52TC\nMAC Address       : 1C-7B-21-12-34-56\nSerial Number     : DL-DGS3630-001\nFirmware Version  : 3.00.B012\nHardware Version  : A1\nUptime            : 78 days, 8 hours, 44 minutes\n\nCPU Utilization   : 33%\nMemory Utilization: 51%\nTemperature       : 41°C\nFan Status        : OK (2800 RPM)"
     },
     {
       "command": "show ports",
-      "response": "Port Information\\n================\\nPort  Link  State    Duplex  Speed   Type\\n----  ----  -------  ------  ------  --------\\n1     Up    Enabled  Full    1000M   1000BaseT\\n2     Up    Enabled  Full    1000M   1000BaseT\\n3     Down  Enabled  -       -       1000BaseT\\n4     Down  Enabled  -       -       1000BaseT\\n5     Up    Enabled  Full    1000M   1000BaseT\\n...\\n49    Up    Enabled  Full    10G     10GBaseR\\n50    Up    Enabled  Full    10G     10GBaseR\\n51    Down  Enabled  -       -       10GBaseR\\n52    Down  Enabled  -       -       10GBaseR\\n\\nTotal Ports: 52 (38 up, 14 down)"
+      "response": "Port Information\n================\nPort  Link  State    Duplex  Speed   Type\n----  ----  -------  ------  ------  --------\n1     Up    Enabled  Full    1000M   1000BaseT\n2     Up    Enabled  Full    1000M   1000BaseT\n3     Down  Enabled  -       -       1000BaseT\n4     Down  Enabled  -       -       1000BaseT\n5     Up    Enabled  Full    1000M   1000BaseT\n...\n49    Up    Enabled  Full    10G     10GBaseR\n50    Up    Enabled  Full    10G     10GBaseR\n51    Down  Enabled  -       -       10GBaseR\n52    Down  Enabled  -       -       10GBaseR\n\nTotal Ports: 52 (38 up, 14 down)"
     },
     {
       "command": "show ip route",
-      "response": "IP Route Table\\n===============\\nDestination       Gateway          Interface    Metric  Type\\n0.0.0.0/0         192.168.500.254  System       1       Static\\n192.168.500.0/24  0.0.0.0          System       0       Connected\\n\\nTotal Routes: 2"
+      "response": "IP Route Table\n===============\nDestination       Gateway          Interface    Metric  Type\n0.0.0.0/0         192.168.500.254  System       1       Static\n192.168.500.0/24  0.0.0.0          System       0       Connected\n\nTotal Routes: 2"
     },
     {
       "command": "show configuration",
-      "response": "#DGS-3630-52TC Configuration File\\n#Firmware: 3.00.B012\\n#Created: 2025-08-03 14:32:45\\n\\nconfigure\\n system name \\\"CAI-SW-01\\\"\\n system contact \\\"Network Administrator\\\"\\n system location \\\"Cairo, Egypt\\\"\\n\\nconfig ipif system\\n ipaddress 192.168.500.1/24\\n state enable\\n\\nconfig route default 192.168.500.254 1\\n\\nconfig ports 1-48 speed auto duplex auto flowcontrol disable state enable\\nconfig ports 49-52 speed 10G duplex full flowcontrol disable state enable"
+      "response": "#DGS-3630-52TC Configuration File\n#Firmware: 3.00.B012\n#Created: 2025-08-03 14:32:45\n\nconfigure\n system name \"CAI-SW-01\"\n system contact \"Network Administrator\"\n system location \"Cairo, Egypt\"\n\nconfig ipif system\n ipaddress 192.168.500.1/24\n state enable\n\nconfig route default 192.168.500.254 1\n\nconfig ports 1-48 speed auto duplex auto flowcontrol disable state enable\nconfig ports 49-52 speed 10G duplex full flowcontrol disable state enable"
     },
     {
       "command": "show system",
-      "response": "System Information\\n==================\\nDevice Type       : L2+ Managed Switch\\nModel Name        : DGS-3630-52TC\\nFirmware Version  : 3.00.B012\\nHardware Version  : A1\\nSerial Number     : DL-DGS3630-001\\nSystem Name       : CAI-SW-01\\nSystem Location   : Cairo, Egypt\\nSystem Contact    : Network Administrator\\nSystem Up Time    : 78 days, 8 hours, 44 minutes\\n\\nCPU Usage (%):\\n Current           : 33\\n Average (1 min)   : 32\\n Average (5 min)   : 34\\n\\nMemory Usage (%):\\n Total Memory      : 512 MB\\n Used Memory       : 261 MB\\n Free Memory       : 251 MB\\n Utilization       : 51%\\n\\nTemperature       : 41°C\\nPower Consumption : 82W"
+      "response": "System Information\n==================\nDevice Type       : L2+ Managed Switch\nModel Name        : DGS-3630-52TC\nFirmware Version  : 3.00.B012\nHardware Version  : A1\nSerial Number     : DL-DGS3630-001\nSystem Name       : CAI-SW-01\nSystem Location   : Cairo, Egypt\nSystem Contact    : Network Administrator\nSystem Up Time    : 78 days, 8 hours, 44 minutes\n\nCPU Usage (%):\n Current           : 33\n Average (1 min)   : 32\n Average (5 min)   : 34\n\nMemory Usage (%):\n Total Memory      : 512 MB\n Used Memory       : 261 MB\n Free Memory       : 251 MB\n Utilization       : 51%\n\nTemperature       : 41°C\nPower Consumption : 82W"
     }
   ]
 }
