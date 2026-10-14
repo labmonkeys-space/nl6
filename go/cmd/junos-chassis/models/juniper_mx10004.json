@@ -1,5 +1,5 @@
 {
-  "comment": "juniper_mx10004 chassis model, rendered by go/cmd/junos-chassis. Layout from Juniper's public MX10004 hardware documentation (4 FPC slots, 2 RCBs, 6 SFBs) and the public LC480 and LC9600 descriptions; every serial is synthetic. FPC1's sensor set copies the LC480's (no public source names LC9600 sensors). units lists the logical units the device configures, which show configuration and show interfaces terse also show; each takes an ifIndex after the last port. A unit's IF-MIB values are chosen, not captured: ifType propVirtual, MTU 1500, its port's speed and MAC, and an empty ifAlias because the configuration sets no description.",
+  "comment": "juniper_mx10004 chassis model, rendered by go/cmd/junos-chassis. Layout from Juniper's public MX10004 hardware documentation (4 FPC slots, 2 RCBs, 6 SFBs) and the public LC480 and LC9600 descriptions; every serial is synthetic. FPC1's sensor set copies the LC480's (no public source names LC9600 sensors). units lists the device's logical units, which show interfaces terse also shows; each takes an ifIndex after the last port. Unit 0 carries the address show configuration sets; units 100, 200 and 999 are the VRF interfaces show route instance detail names, with no address because that output shows none. A unit's IF-MIB values are chosen, not captured: ifType propVirtual, MTU 1500, its port's speed and MAC, and an empty ifAlias because the configuration sets no description.",
   "head": [
     {
       "name": "Chassis",
@@ -1896,7 +1896,10 @@
     "hc_out_step": 11111111
   },
   "units": [
-    {"parent": "xe-0/0/0", "unit": 0, "inet": "192.168.1.1/24"}
+    {"parent": "xe-0/0/0", "unit": 0, "inet": "192.168.1.1/24"},
+    {"parent": "xe-0/0/0", "unit": 100},
+    {"parent": "xe-0/0/0", "unit": 200},
+    {"parent": "xe-0/0/0", "unit": 999}
   ],
   "chassis_entity": [
     {

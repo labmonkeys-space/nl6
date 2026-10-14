@@ -8,6 +8,7 @@ package main
 import (
 	"net"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,8 +84,13 @@ func TestMx10004UnitGoesDownWithItsPort(t *testing.T) {
 	if res != LinkMovedVisible {
 		t.Fatalf("SetLinkState = %v", res)
 	}
-	if len(evts) != 2 || evts[0].IfIndex != 1 || evts[1].IfIndex != 73 || evts[1].Oper != OperLowerLayerDn {
-		t.Fatalf("events = %+v, want the port then the unit at lowerLayerDown", evts)
+	if len(evts) != 5 || evts[0].IfIndex != 1 {
+		t.Fatalf("events = %+v, want the port then its four units", evts)
+	}
+	for i, e := range evts[1:] {
+		if e.IfIndex != 73+i || e.Oper != OperLowerLayerDn {
+			t.Fatalf("events = %+v, want units 73-76 at lowerLayerDown after the port", evts)
+		}
 	}
 	if got := srv.findResponse(operOID(1)); got != "2" {
 		t.Errorf("ifOperStatus.1 = %q, want 2", got)
@@ -97,8 +103,13 @@ func TestMx10004UnitGoesDownWithItsPort(t *testing.T) {
 	}
 
 	res, evts = st.SetLinkState(1, OperUp)
-	if res != LinkMovedVisible || len(evts) != 2 || evts[1].IfIndex != 73 || evts[1].Oper != OperUp {
-		t.Fatalf("link up: %v %+v, want the unit to come back with its port", res, evts)
+	if res != LinkMovedVisible || len(evts) != 5 {
+		t.Fatalf("link up: %v %+v, want the units to come back with their port", res, evts)
+	}
+	for i, e := range evts[1:] {
+		if e.IfIndex != 73+i || e.Oper != OperUp {
+			t.Fatalf("link up: events = %+v, want units 73-76 back up after the port", evts)
+		}
 	}
 	if got := srv.findResponse(operOID(73)); got != "1" {
 		t.Errorf("ifOperStatus.73 after the port came back = %q, want 1", got)
@@ -112,7 +123,7 @@ func TestPortAdminDownTakesTheUnitDown(t *testing.T) {
 	for _, e := range evts {
 		got = append(got, strconv.Itoa(e.IfIndex)+":"+strconv.Itoa(int(e.Changed))+":"+strconv.Itoa(int(e.Oper)))
 	}
-	want := []string{"1:2:2", "1:1:2", "73:1:7"}
+	want := []string{"1:2:2", "1:1:2", "73:1:7", "74:1:7", "75:1:7", "76:1:7"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("events (ifIndex:changed:oper) = %v, want %v", got, want)
 	}
@@ -124,8 +135,13 @@ func TestUnitOwnStateWinsOverItsParent(t *testing.T) {
 	before := st.Snapshot(73)
 
 	res, evts := st.SetLinkState(1, OperDown)
-	if res != LinkMovedVisible || len(evts) != 1 {
-		t.Fatalf("port down over a shut unit: %v %+v, want only the port's event", res, evts)
+	if res != LinkMovedVisible || len(evts) != 4 || evts[0].IfIndex != 1 {
+		t.Fatalf("port down over a shut unit: %v %+v, want the port and its other units, not the shut unit", res, evts)
+	}
+	for i, e := range evts[1:] {
+		if e.IfIndex != 74+i || e.Oper != OperLowerLayerDn {
+			t.Fatalf("port down over a shut unit: events = %+v, want units 74-76 at lowerLayerDown and no event for 73", evts)
+		}
 	}
 	after := st.Snapshot(73)
 	if after.Oper != OperDown {
@@ -260,8 +276,8 @@ func TestUnitTransitionFiresTheNotifyHook(t *testing.T) {
 	for _, e := range evts {
 		st.Broadcast(e)
 	}
-	if !reflect.DeepEqual(fired, []int{1, 73}) {
-		t.Errorf("notify fired for %v, want [1 73]: the unit's link trap must follow its port", fired)
+	if !reflect.DeepEqual(fired, []int{1, 73, 74, 75, 76}) {
+		t.Errorf("notify fired for %v, want [1 73 74 75 76]: the units' link traps must follow their port", fired)
 	}
 }
 
@@ -296,13 +312,13 @@ func TestFlapSchedulerSkipsSubinterfaces(t *testing.T) {
 	s := NewFlapScheduler(FlapSchedulerOptions{})
 	s.Register(net.IPv4(10, 42, 0, 10), ic.IfIndices(), IfFlapTypical, ic.State())
 	if got := s.pendingCountForTest(); got != 72 {
-		t.Errorf("%d scheduled interfaces, want the 72 ports and not the unit", got)
+		t.Errorf("%d scheduled interfaces, want the 72 ports and not the units", got)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k := range s.byKey {
-		if k.ifIndex == 73 {
-			t.Errorf("the logical unit is scheduled to flap on its own")
+		if k.ifIndex >= 73 {
+			t.Errorf("logical unit %d is scheduled to flap on its own", k.ifIndex)
 		}
 	}
 }
@@ -310,6 +326,7 @@ func TestFlapSchedulerSkipsSubinterfaces(t *testing.T) {
 // TestDialoutListsNoSubinterface pins the reported defect through the dial-out
 // exporter's own resolver: it listed xe-0/0/0.0 as a 73rd interface.
 func TestDialoutListsNoSubinterface(t *testing.T) {
+	unitName := regexp.MustCompile(`xe-0/0/0\.\d`)
 	dev := shippedDevice(t, "juniper_mx10004.json")
 	e := NewGnmiDialoutExporter(dev, "127.0.0.1:1", "gnmireverse", nil, gnmipb.Encoding_JSON_IETF, "sample", nil, time.Second, nil)
 	ups, err := e.resolver.Resolve(pathFromString(t, "/interfaces/interface[name=*]/state/name"), time.Now())
@@ -320,7 +337,7 @@ func TestDialoutListsNoSubinterface(t *testing.T) {
 		t.Errorf("%d interfaces, want 72", len(ups))
 	}
 	for _, u := range ups {
-		if strings.Contains(pathToString(u.Path), "xe-0/0/0.0") {
+		if unitName.MatchString(pathToString(u.Path)) {
 			t.Errorf("dial-out serves the unit as an interface: %s", pathToString(u.Path))
 		}
 	}

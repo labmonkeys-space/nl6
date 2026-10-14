@@ -344,15 +344,15 @@ func cliToken(s string) *regexp.Regexp {
 // cliInterfaceNames are, per profile, the interface names its CLI configures
 // that IF-MIB must serve as rows of their own. The Junos and SR OS profiles
 // routed through logical interfaces IF-MIB did not serve, and huawei_ne8000
-// spelled its ports HundredGigE while VRP prints 100GE. juniper_mx10004 is not
-// listed: its show route instance detail still names ge-0/0/0 units, a port
-// that profile does not have, which is a separate defect.
+// spelled its ports HundredGigE while VRP prints 100GE. juniper_mx10004's VRF
+// view named units on a ge-0/0/0 port that profile does not have.
 //
 // A Huawei name with a .N suffix is a VRP subinterface, which IF-MIB serves
 // through its port; the test then requires the port.
 var cliInterfaceNames = map[string]*regexp.Regexp{
 	"juniper_mx240.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
 	"juniper_mx960.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
+	"juniper_mx10004.json": regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
 	"nokia_7750_sr12.json": regexp.MustCompile(`interface "([^"]+)"`),
 	"huawei_ne8000.json":   regexp.MustCompile(`(?:^|[^\w/-])((?:\d*X?GE|HundredGigE|GigabitEthernet|Eth-Trunk)\d+(?:/\d+)*)(?:\.\d+)?\b`),
 }

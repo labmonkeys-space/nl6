@@ -91,14 +91,20 @@ func TestExpandUnitsFollowThePorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Units) != 1 {
-		t.Fatalf("%d units, want 1", len(c.Units))
+	if len(c.Units) != 4 {
+		t.Fatalf("%d units, want 4", len(c.Units))
 	}
 	u := c.Units[0]
 	if u.IfIndex != len(c.Ports)+1 || u.IfName != "xe-0/0/0.0" || u.Parent.IfName != "xe-0/0/0" || u.Inet != "192.168.1.1/24" {
 		t.Fatalf("unit = %+v", u)
 	}
-	if got := c.UnitsOf("xe-0/0/0"); len(got) != 1 || got[0].IfName != "xe-0/0/0.0" {
+	// The VRF units carry no address and number on in model order.
+	for i, name := range []string{"xe-0/0/0.100", "xe-0/0/0.200", "xe-0/0/0.999"} {
+		if u := c.Units[i+1]; u.IfIndex != len(c.Ports)+i+2 || u.IfName != name || u.Inet != "" {
+			t.Fatalf("unit %d = %+v, want %s at ifIndex %d with no address", i+1, u, name, len(c.Ports)+i+2)
+		}
+	}
+	if got := c.UnitsOf("xe-0/0/0"); len(got) != 4 || got[0].IfName != "xe-0/0/0.0" {
 		t.Fatalf("UnitsOf(xe-0/0/0) = %+v", got)
 	}
 	if got := c.UnitsOf("xe-0/0/1"); len(got) != 0 {
