@@ -35,6 +35,7 @@ Dial-in responses are unaffected (servers echo a client-set target; they don't i
 
 Paths are gNMI paths under `/interfaces/interface[name=*]/state/...`.
 The default path is the full state subtree (`/interfaces/interface[name=*]/state`).
+A subinterface, such as the `juniper_mx10004` unit `xe-0/0/0.0`, is not an interface of that list, so dial-out lists the same interfaces dial-in does.
 
 ## Connection model
 

@@ -186,11 +186,14 @@ func TestMaskedLinkMoveIsStoredSilentlyAndSurfacesOnAdminUp(t *testing.T) {
 
 	before := s.Snapshot(1)
 
-	res, evt := s.SetLinkState(1, OperUp)
+	res, evts := s.SetLinkState(1, OperUp)
 	if res != LinkMovedMasked {
 		t.Fatalf("SetLinkState under admin-down = %v, want LinkMovedMasked", res)
 	}
-	s.Broadcast(evt) // a caller that broadcasts the zero event must not fire anything
+	if len(evts) != 0 {
+		t.Fatalf("masked move returned %d events, want none", len(evts))
+	}
+	s.Broadcast(StateChange{}) // a caller that broadcasts the zero event must not fire anything
 
 	after := s.Snapshot(1)
 	if after.Link != OperUp {
@@ -212,7 +215,7 @@ func TestMaskedLinkMoveIsStoredSilentlyAndSurfacesOnAdminUp(t *testing.T) {
 	}
 
 	// Raising admin surfaces it, with no further link mutation.
-	evts := s.ApplyAdminStatus(1, AdminUp)
+	evts = s.ApplyAdminStatus(1, AdminUp)
 	if len(evts) != 2 {
 		t.Fatalf("admin up returned %d events, want 2 (admin then the surfaced oper): %+v", len(evts), evts)
 	}

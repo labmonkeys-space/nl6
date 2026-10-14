@@ -174,10 +174,13 @@ func TestStateNotify_OperOnlyAndDirection(t *testing.T) {
 	// A link move while admin is DOWN is MASKED: stored, but not observable,
 	// so it fires nothing (nl6#694). This is what stops a shut port emitting
 	// linkUp/linkDown telemetry for a cable nobody can use.
-	if res, evt := s.SetLinkState(1, OperUp); res != LinkMovedMasked {
+	if res, evts := s.SetLinkState(1, OperUp); res != LinkMovedMasked {
 		t.Fatalf("link UP under admin-down: got %v, want LinkMovedMasked", res)
 	} else {
-		s.Broadcast(evt) // zero event; broadcasting it must stay harmless
+		if len(evts) != 0 {
+			t.Fatalf("masked move returned %d events, want none", len(evts))
+		}
+		s.Broadcast(StateChange{}) // the zero event must stay harmless
 	}
 	if len(got) != 1 {
 		t.Fatalf("a masked link move fired the hook: got %d events, want still 1", len(got))

@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "juniper_mx10004 default route next hop",
+		file:         "snmp_shipped_juniper_mx10004_route_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       mx10004RouteParentRevision,
+		values:       restoreMx10004Route,
+		names:        mx10004RouteOIDNamesBefore,
+	},
+	{
 		name:         "juniper_mx10004 logical unit xe-0/0/0.0",
 		file:         "snmp_shipped_juniper_mx10004_unit_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: mx10004RouteParentRevision,
 		parent:       mx10004UnitParentRevision,
 		values:       restoreMx10004Unit,
 		names:        mx10004UnitOIDNamesBefore,

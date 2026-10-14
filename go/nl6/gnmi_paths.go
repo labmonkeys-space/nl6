@@ -864,15 +864,28 @@ func (r *pathResolver) Capabilities() *gnmipb.CapabilityResponse {
 // the precomputed descrToIndex map (P20) for an O(1) reverse lookup.
 // Empty `name` was already rejected by Resolve (P13); this function
 // never sees it.
+//
+// A subinterface is not an interface of this list: the catalogue serves it
+// only under its parent's subinterfaces, and this resolver serves no
+// subinterfaces at all, so `*` skips it and its name is NotFound. Without this
+// gNMI dial-out, which serves from this resolver alone, listed a unit as one
+// more top-level interface than dial-in did.
 func (r *pathResolver) expandInterfaceKey(ic *IfCounterCycler, name string) ([]int, error) {
+	state := ic.State()
 	if name == "*" {
-		// IfIndices() is read-only; copy avoids accidental mutation.
 		all := ic.IfIndices()
-		dst := make([]int, len(all))
-		copy(dst, all)
+		dst := make([]int, 0, len(all))
+		for _, idx := range all {
+			if state.Parent(idx) == 0 {
+				dst = append(dst, idx)
+			}
+		}
 		return dst, nil
 	}
 	if idx, ok := r.descrToIndex[name]; ok {
+		if state.Parent(idx) != 0 {
+			return nil, status.Errorf(codes.NotFound, "%q is a subinterface, not an interface; it is not served under /interfaces/interface", name)
+		}
 		return []int{idx}, nil
 	}
 	return nil, status.Errorf(codes.NotFound, "unknown interface name %q", name)
