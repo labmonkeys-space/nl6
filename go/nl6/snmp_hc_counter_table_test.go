@@ -190,7 +190,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // and each gains one ipAddrTable row, pre-change value
 // shippedTagDigestBeforeRouteTable. Reversed by
 // snmp_shipped_route_table_ledger_test.go.
-const shippedTagDigest = "412d5a36c405a6a689c30f82052db84b7b34da6e77856795fba675b30060b4d9"
+// The Junos units, the SR OS router interfaces and the VRP port names add rows
+// on three profiles and rename values on huawei_ne8000, pre-change value
+// shippedTagDigestBeforeLogicalIfs. Reversed by
+// snmp_shipped_logical_ifs_ledger_test.go.
+const shippedTagDigest = "92c080f57ffd152487d1fdcec27a25e11a6d29d373a342297d432db6e12da5c8"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

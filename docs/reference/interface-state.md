@@ -76,8 +76,14 @@ Setting a cap below that floor will systematically delay the scheduler.
 ## Subinterfaces
 
 A subinterface is an interface whose `ifDescr` is another interface's `ifDescr` followed by `.` and an unsigned integer, such as `xe-0/0/0.0` under `xe-0/0/0`.
-Two shipped types have them: `juniper_mx10004` (one logical unit) and `cisco_asr9902` (three VLAN subinterfaces).
 The gNMI catalogue uses the same rule for its `subinterfaces` key source.
+An interface whose name does not say which port it rides on gets a parent from the profile's `ifStackTable`: an `ifStackStatus.<higher>.<lower>` row of `active(1)`.
+The name rule decides first.
+Shipped profiles with subinterfaces:
+
+- `juniper_mx10004`, `juniper_mx240` and `juniper_mx960`: the logical units their CLI shows, by name.
+- `cisco_asr9902`: three VLAN subinterfaces, by name.
+- `nokia_7750_sr12`: router interface `toWAN`, stacked on `port 1/1/1`.
 
 A subinterface goes down with its parent.
 Its `ifOperStatus` reads `lowerLayerDown(7)` while its parent is not up, unless its own state already forces a value.
@@ -91,8 +97,7 @@ No link trap or syslog message fires for that move.
 RFC 2863 sends `linkDown` on entering `down(2)` and `linkUp` on leaving it, and a move between `up(1)` and `lowerLayerDown(7)` does neither.
 A subinterface's own move to or from `down(2)` still fires them.
 
-The flap scheduler does not schedule subinterfaces.
-A logical unit has no physical link of its own to flap.
+The flap scheduler does not schedule an interface without a physical link of its own: a subinterface, or a `softwareLoopback(24)` such as `lo` on `linux_server`, `Loopback0` on `cisco_asr9902` and `system` on `nokia_7750_sr12`.
 
 ## REST control plane
 

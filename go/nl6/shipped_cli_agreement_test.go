@@ -28,9 +28,8 @@ type defaultRouteRow struct {
 	nextHop *regexp.Regexp
 	// The connected route and its interface, checked when port is set:
 	// port is the IF-MIB ifDescr both ipRouteTable rows and the ipAddrTable
-	// row name; cliPort is how the CLI's route table spells it (a Junos
-	// unit, a Nokia router interface, VRP's 100GE where IF-MIB says
-	// HundredGigE); prefix and
+	// row name; cliPort is how the CLI's route table spells it, which is the
+	// same name on every shipped profile; prefix and
 	// addr are the connected subnet and the device's own address on it;
 	// proto is the default route's ipRouteProto, netmgmt(3) for static and
 	// bgp(14) for BGP.
@@ -62,15 +61,15 @@ var defaultRouteCLI = map[string]defaultRouteRow{
 	"fortinet_fortigate_600e.json": routeRow("get router info routing-table all", `0\.0\.0\.0/0 \S+ via (\S+),`).
 		connected("port1", "port1", "192.168.2.0/24", "192.168.2.1", 3),
 	"huawei_ne8000.json": routeRow("display ip routing-table", `0\.0\.0\.0/0\s+Static\s+\d+\s+\d+\s+\S+\s+(\S+)`).
-		connected("HundredGigE1/0/0", "100GE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
+		connected("100GE1/0/0", "100GE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
 	"juniper_mx10004.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
 		connected("xe-0/0/0.0", "xe-0/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx240.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
-		connected("xe-1/0/0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
+		connected("xe-1/0/0.0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx960.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
-		connected("xe-1/0/1", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14),
+		connected("xe-1/0/1.0", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14),
 	"nokia_7750_sr12.json": routeRow("show router route-table", `0\.0\.0\.0/0[^\n]*\n\s*(\S+)`).
-		connected("port 1/1/1", "toWAN", "192.168.40.0/24", "192.168.40.1", 3),
+		connected("toWAN", "toWAN", "192.168.40.0/24", "192.168.40.1", 3),
 	"palo_alto_pa3220.json": routeRow("show routing route", `0\.0\.0\.0/0\s+(\S+)`).
 		connected("ethernet1/1", "ethernet1/1", "10.0.0.0/24", "10.0.0.1", 3),
 
@@ -340,4 +339,49 @@ func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res 
 // character that would extend an interface name or an address.
 func cliToken(s string) *regexp.Regexp {
 	return regexp.MustCompile(`(^|[^\w./-])` + regexp.QuoteMeta(s) + `($|[^\w/-])`)
+}
+
+// cliInterfaceNames are, per profile, the interface names its CLI configures
+// that IF-MIB must serve as rows of their own. The Junos and SR OS profiles
+// routed through logical interfaces IF-MIB did not serve, and huawei_ne8000
+// spelled its ports HundredGigE while VRP prints 100GE. juniper_mx10004 is not
+// listed: its show route instance detail still names ge-0/0/0 units, a port
+// that profile does not have, which is a separate defect.
+var cliInterfaceNames = map[string]*regexp.Regexp{
+	"juniper_mx240.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
+	"juniper_mx960.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
+	"nokia_7750_sr12.json": regexp.MustCompile(`interface "([^"]+)"`),
+	"huawei_ne8000.json":   regexp.MustCompile(`\b(?:\d+GE|GE|HundredGigE)\d+/\d+/\d+\b`),
+}
+
+func TestCLIInterfacesAreIFMIBRows(t *testing.T) {
+	if !cliInterfaceNames["juniper_mx240.json"].MatchString("> via xe-1/0/0.0") || cliInterfaceNames["juniper_mx240.json"].MatchString("xe-1/0/0 up") {
+		t.Fatal("control: the Junos unit pattern does not tell a unit from its port")
+	}
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	for profile, pat := range cliInterfaceNames {
+		res, err := sm.LoadSpecificResources(profile)
+		if err != nil {
+			t.Fatalf("%s: %v", profile, err)
+		}
+		served := map[string]bool{}
+		for _, e := range res.SNMP {
+			if strings.HasPrefix(strings.TrimPrefix(e.OID, "."), "1.3.6.1.2.1.2.2.1.2.") {
+				served[e.Response] = true
+			}
+		}
+		seen := 0
+		for _, e := range res.SSH {
+			for _, m := range pat.FindAllStringSubmatch(e.Response, -1) {
+				name := m[len(m)-1]
+				seen++
+				if !served[name] {
+					t.Errorf("%s: %q names %s, which IF-MIB does not serve", profile, e.Command, name)
+				}
+			}
+		}
+		if seen == 0 {
+			t.Errorf("%s: no CLI interface matched; the pattern no longer fits the profile", profile)
+		}
+	}
 }

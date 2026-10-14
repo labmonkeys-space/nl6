@@ -220,9 +220,10 @@ func (s *FlapScheduler) Register(deviceIP net.IP, ifIndexes []int, scenario IfFl
 	defer s.mu.Unlock()
 	now := s.now()
 	for _, ifIndex := range ifIndexes {
-		if state.Parent(ifIndex) != 0 {
-			// A subinterface has no physical link of its own. It goes
-			// down with its parent by derivation, never on its own.
+		if state.Linkless(ifIndex) {
+			// A subinterface has no physical link of its own: it goes
+			// down with its parent by derivation, never on its own. A
+			// loopback does not go down at all.
 			continue
 		}
 		key := flapKey{ip: deviceIP.String(), ifIndex: ifIndex}

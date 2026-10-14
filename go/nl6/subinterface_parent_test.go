@@ -8,6 +8,7 @@ package main
 import (
 	"net"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -378,5 +379,68 @@ func TestRestOperPostOnAUnitUnderADownPortIsMasked(t *testing.T) {
 	}
 	if out, _ := sm.mutateInterfaceState(ip, 73, true, OperDown, 0); out.Masked {
 		t.Errorf("unit POST DOWN under a down port = %+v; its own fault is visible, want unmasked", out)
+	}
+}
+
+func TestStackedParentsReadsActiveRowsOnly(t *testing.T) {
+	known := map[int]bool{1: true, 2: true, 3: true, 4: true}
+	got := stackedParents([]SNMPResource{
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.3.1", Response: "1"},  // active: 3 on 1
+		{OID: ".1.3.6.1.2.1.31.1.2.1.3.2.1", Response: "2"}, // notInService
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.4.1", Response: "1"},  // 4 on two lower layers
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.4.2", Response: "1"},
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.9.1", Response: "1"}, // unknown ifIndex
+		{OID: "1.3.6.1.2.1.31.1.2.1.3.0.1", Response: "1"}, // the table's 0 marker
+	}, known)
+	if want := map[int]int{3: 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("stackedParents = %v, want %v", got, want)
+	}
+	// The name rule decides first; a stack row cannot re-parent its child.
+	if got := interfaceParents(map[int]string{1: "a", 2: "b", 3: "a.0"}, map[int]int{3: 2}); got[3] != 1 {
+		t.Errorf("a stack row overrode the name rule: parents = %v", got)
+	}
+}
+
+// TestNokiaRouterInterfaceFollowsItsPort: toWAN is stacked on port 1/1/1, so it
+// goes down with the port although its name says nothing about the port.
+func TestNokiaRouterInterfaceFollowsItsPort(t *testing.T) {
+	dev := shippedDevice(t, "nokia_7750_sr12.json")
+	srv := &SNMPServer{device: dev}
+	st := dev.metricsCycler.ifCounters.Load().State()
+	if p := st.Parent(73); p != 1 {
+		t.Fatalf("Parent(toWAN) = %d, want 1 (port 1/1/1)", p)
+	}
+	if st.Parent(74) != 0 || !st.Linkless(74) {
+		t.Errorf("system: Parent = %d, Linkless = %v; want a top-level loopback", st.Parent(74), st.Linkless(74))
+	}
+	st.SetLinkState(1, OperDown)
+	if got := srv.findResponse(operOID(73)); got != "7" {
+		t.Errorf("ifOperStatus of toWAN with its port down = %q, want 7", got)
+	}
+	if got := srv.findResponse(operOID(74)); got != "1" {
+		t.Errorf("ifOperStatus of system with port 1/1/1 down = %q, want 1", got)
+	}
+}
+
+// TestFlapSchedulerSkipsLinklessInterfaces: a loopback does not go down and a
+// stacked router interface moves only with its port.
+func TestFlapSchedulerSkipsLinklessInterfaces(t *testing.T) {
+	for profile, skipped := range map[string][]int{
+		"nokia_7750_sr12.json": {73, 74},
+		"linux_server.json":    {1},
+	} {
+		ic := shippedDevice(t, profile).metricsCycler.ifCounters.Load()
+		s := NewFlapScheduler(FlapSchedulerOptions{})
+		s.Register(net.IPv4(10, 42, 0, 10), ic.IfIndices(), IfFlapTypical, ic.State())
+		if got, want := s.pendingCountForTest(), len(ic.IfIndices())-len(skipped); got != want {
+			t.Errorf("%s: %d scheduled interfaces, want %d", profile, got, want)
+		}
+		s.mu.Lock()
+		for k := range s.byKey {
+			if slices.Contains(skipped, k.ifIndex) {
+				t.Errorf("%s: ifIndex %d has no physical link and is scheduled to flap", profile, k.ifIndex)
+			}
+		}
+		s.mu.Unlock()
 	}
 }

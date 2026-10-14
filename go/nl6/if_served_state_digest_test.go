@@ -72,7 +72,13 @@ import (
 // ifIndex 73, admin=1 oper=1. With that row filtered out the digest is exactly
 // the previous value,
 // 62c5679194d7427512c7b758c29cdb30f9aa627e5e27ce6f7655d3da25d86a84 (measured).
-const shippedServedStateDigest = "c76bf4f789be32ee92ff660cef5e22e44e7f7123777e38e1bac9ab3170f98d32"
+//
+// Re-pinned by the Junos units and SR OS router interfaces: juniper_mx240 adds
+// ifIndex 25-28, juniper_mx960 81-85 and nokia_7750_sr12 73-74, all admin=1
+// oper=1. With those 11 rows filtered out the digest is exactly the previous
+// value, c76bf4f789be32ee92ff660cef5e22e44e7f7123777e38e1bac9ab3170f98d32
+// (measured).
+const shippedServedStateDigest = "f0c49ffc279dd65a091aeb6255cd97da79c070e32efcde53b2f80595b6611c79"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

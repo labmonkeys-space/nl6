@@ -419,7 +419,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // ipAddrTable rows were added, pre-change value
 // shippedOIDEncodingDigestBeforeRouteTable. Reversed by
 // snmp_shipped_route_table_ledger_test.go.
-const shippedOIDEncodingDigest = "3db5e113692c53e0dfd709c04e6eeb3e125f6ca819a5d2616f7f5b70e4260d7b"
+// Re-pinned when nokia_7750_sr12 gained an ifStackTable row, the one new OID
+// name of the logical interfaces change, pre-change value
+// shippedOIDEncodingDigestBeforeLogicalIfs. Reversed by
+// snmp_shipped_logical_ifs_ledger_test.go.
+const shippedOIDEncodingDigest = "67d97acde41f72d1feaef6481d271f46a943ff63826d7a063be997f83fcc2e76"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as
