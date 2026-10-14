@@ -15,7 +15,7 @@
     },
     {
       "command": "show running-config",
-      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280CR3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Ethernet1/1\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
+      "response": "! Command: show running-config\n! device: SIN-SW-01 (DCS-7280CR3-32P4-M, EOS-4.29.2F)\n!\nhostname SIN-SW-01\n!\ninterface Ethernet1\n   no shutdown\n   switchport\n!\ninterface Ethernet2\n   no shutdown\n   switchport\n!\ninterface Ethernet1/1\n   no switchport\n   ip address 192.168.201.1/24\n   no shutdown\n!\nip route 0.0.0.0/0 192.168.201.254\n!\nend"
     },
     {
       "command": "show environment all",

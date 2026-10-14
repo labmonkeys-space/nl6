@@ -28,7 +28,9 @@ type defaultRouteRow struct {
 	nextHop *regexp.Regexp
 	// The connected route and its interface, checked when port is set:
 	// port is the IF-MIB ifDescr both ipRouteTable rows and the ipAddrTable
-	// row name; cliPort is how the CLI spells it (a Junos unit); prefix and
+	// row name; cliPort is how the CLI's route table spells it (a Junos
+	// unit, a Nokia router interface, VRP's 100GE where IF-MIB says
+	// HundredGigE); prefix and
 	// addr are the connected subnet and the device's own address on it;
 	// proto is the default route's ipRouteProto, netmgmt(3) for static and
 	// bgp(14) for BGP.
@@ -60,14 +62,15 @@ var defaultRouteCLI = map[string]defaultRouteRow{
 	"fortinet_fortigate_600e.json": routeRow("get router info routing-table all", `0\.0\.0\.0/0 \S+ via (\S+),`).
 		connected("port1", "port1", "192.168.2.0/24", "192.168.2.1", 3),
 	"huawei_ne8000.json": routeRow("display ip routing-table", `0\.0\.0\.0/0\s+Static\s+\d+\s+\d+\s+\S+\s+(\S+)`).
-		connected("HundredGigE1/0/0", "HundredGigE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
-	"juniper_mx10004.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`),
+		connected("HundredGigE1/0/0", "100GE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
+	"juniper_mx10004.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
+		connected("xe-0/0/0.0", "xe-0/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx240.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
 		connected("xe-1/0/0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx960.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
 		connected("xe-1/0/1", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14),
 	"nokia_7750_sr12.json": routeRow("show router route-table", `0\.0\.0\.0/0[^\n]*\n\s*(\S+)`).
-		connected("port 1/1/1", "port 1/1/1", "192.168.40.0/24", "192.168.40.1", 3),
+		connected("port 1/1/1", "toWAN", "192.168.40.0/24", "192.168.40.1", 3),
 	"palo_alto_pa3220.json": routeRow("show routing route", `0\.0\.0\.0/0\s+(\S+)`).
 		connected("ethernet1/1", "ethernet1/1", "10.0.0.0/24", "10.0.0.1", 3),
 
@@ -156,9 +159,11 @@ func TestShippedDefaultRouteAgreesWithCLI(t *testing.T) {
 		if snmp != m[1] {
 			t.Errorf("%s: ipRouteNextHop.0.0.0.0 = %q, %s says %q", profile, snmp, row.command, m[1])
 		}
-		if row.port != "" {
-			checkConnectedRoute(t, profile, row, res, ssh)
+		if row.port == "" {
+			t.Errorf("%s: its defaultRouteCLI row has no connected route plan", profile)
+			continue
 		}
+		checkConnectedRoute(t, profile, row, res, ssh)
 	}
 	for profile := range defaultRouteCLI {
 		if !shipped[profile] {
@@ -281,8 +286,13 @@ func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res 
 	if want := []string{"0.0.0.0", net0}; !slices.Equal(dests, want) {
 		t.Errorf("%s: ipRouteTable destinations = %v, want %v", profile, dests, want)
 	}
+	if nh := net.ParseIP(snmp[route+"7.0.0.0.0"]); nh == nil || !subnet.Contains(nh) {
+		t.Errorf("%s: default next hop %s is not in the connected subnet %s", profile, snmp[route+"7.0.0.0.0"], row.prefix)
+	}
 	for _, c := range []struct{ oid, want string }{
 		{route + "2.0.0.0.0", ifIndex},
+		{route + "8.0.0.0.0", "4"},
+		{route + "11.0.0.0.0", "0.0.0.0"},
 		{route + "9.0.0.0.0", strconv.Itoa(row.proto)},
 		{route + "2." + net0, ifIndex},
 		{route + "7." + net0, row.addr},
@@ -298,19 +308,36 @@ func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res 
 	if !slices.Equal(addrs, []string{row.addr}) {
 		t.Errorf("%s: ipAddrTable addresses = %v, want [%s]", profile, addrs, row.addr)
 	}
-	if !strings.Contains(ssh[row.command], row.prefix) {
-		t.Errorf("%s: %s does not print the connected route %s", profile, row.command, row.prefix)
-	}
-	// The CLI must put the device's address (or the connected route) on the
-	// port IF-MIB names, within one response: the route table for most
-	// vendors, the interface configuration where the table omits the port.
-	found := false
-	for _, r := range ssh {
-		if (strings.Contains(r, row.addr) || strings.Contains(r, row.prefix)) && strings.Contains(r, row.cliPort) {
-			found = true
+	// The route table must print the connected prefix with its egress port on
+	// the same line, or on the next one where the vendor puts the next hop
+	// there (Junos, NX-OS, SR OS). Both are matched as whole tokens, so
+	// Ethernet1/1 is not found inside Ethernet1/11.
+	prefixTok, portTok := cliToken(row.prefix), cliToken(row.cliPort)
+	lines := strings.Split(ssh[row.command], "\n")
+	onPort := false
+	for i, l := range lines {
+		if !prefixTok.MatchString(l) {
+			continue
+		}
+		if portTok.MatchString(l) || (i+1 < len(lines) && portTok.MatchString(lines[i+1])) {
+			onPort = true
 		}
 	}
-	if !found {
-		t.Errorf("%s: no SSH output puts %s on %s", profile, row.addr, row.cliPort)
+	if !onPort {
+		t.Errorf("%s: %s does not route %s via %s", profile, row.command, row.prefix, row.cliPort)
 	}
+	addrTok := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(row.addr) + `($|[^\d])`)
+	shown := false
+	for _, r := range ssh {
+		shown = shown || addrTok.MatchString(r)
+	}
+	if !shown {
+		t.Errorf("%s: no SSH output shows the device address %s", profile, row.addr)
+	}
+}
+
+// cliToken matches s as a whole CLI token: not preceded or followed by a
+// character that would extend an interface name or an address.
+func cliToken(s string) *regexp.Regexp {
+	return regexp.MustCompile(`(^|[^\w./-])` + regexp.QuoteMeta(s) + `($|[^\w/-])`)
 }

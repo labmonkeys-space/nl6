@@ -3,11 +3,11 @@
   "ssh": [
     {
       "command": "show vrf",
-      "response": "   Vrf              RD                 Protocols       State  Interfaces  \n   ---------------- ------------------ --------------- ------ -----------\n   CUSTOMER-A       65001:100          ipv4            v4: routing  Et1.100\n   MGMT             65001:999          ipv4            v4: routing  Et1/1\n   INTERNET         65001:200          ipv4            v4: routing  Et2.200\n   default          -                  ipv4,ipv6       v4: no routing  "
+      "response": "   Vrf              RD                 Protocols       State  Interfaces  \n   ---------------- ------------------ --------------- ------ -----------\n   CUSTOMER-A       65001:100          ipv4            v4: routing  Et1.100\n   MGMT             65001:999          ipv4            v4: routing  Ma1\n   INTERNET         65001:200          ipv4            v4: routing  Et2.200\n   default          -                  ipv4,ipv6       v4: no routing  "
     },
     {
       "command": "show vrf detail",
-      "response": "VRF: CUSTOMER-A\n   RD: 65001:100\n   Description: Customer A VPN\n   Interfaces: Ethernet1.100\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:100\n      Route Export: 65001:100\n   Router ID: 10.100.0.1\n\nVRF: MGMT\n   RD: 65001:999\n   Description: Management VRF\n   Interfaces: Ethernet1/1\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:999\n      Route Export: 65001:999\n   Router ID: 10.200.0.1\n\nVRF: INTERNET\n   RD: 65001:200\n   Description: Internet Gateway VRF\n   Interfaces: Ethernet2.200\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:200\n      Route Export: 65001:200\n   Router ID: 10.150.0.1"
+      "response": "VRF: CUSTOMER-A\n   RD: 65001:100\n   Description: Customer A VPN\n   Interfaces: Ethernet1.100\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:100\n      Route Export: 65001:100\n   Router ID: 10.100.0.1\n\nVRF: MGMT\n   RD: 65001:999\n   Description: Management VRF\n   Interfaces: Management1\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:999\n      Route Export: 65001:999\n   Router ID: 10.200.0.1\n\nVRF: INTERNET\n   RD: 65001:200\n   Description: Internet Gateway VRF\n   Interfaces: Ethernet2.200\n   Protocols: ipv4\n   State: IPv4: routing\n   VPN Route Targets:\n      Route Import: 65001:200\n      Route Export: 65001:200\n   Router ID: 10.150.0.1"
     }
   ]
 }

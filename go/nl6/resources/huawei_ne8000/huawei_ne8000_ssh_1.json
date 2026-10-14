@@ -7,15 +7,15 @@
     },
     {
       "command": "display interface brief",
-      "response": "PHY: Physical, *down: administratively down, (l): loopback\n(s): spoofing, (B): BFD down, (e): ETHOAM down, (d): Dampening Suppressed\n(p): port alarm down, (dl): DLDP down, (c): CFM down\nInterface                   PHY   Protocol  InUti OutUti   inErrors  outErrors\nHundredGigE1/0/0            up    up           0%     5%          0          0\n10GE1/0/1                   up    up           2%     8%          0          0\n10GE1/0/2                   up    down         0%     0%          0          0\nXGE1/1/0                    up    up          12%    15%          0          0"
+      "response": "PHY: Physical, *down: administratively down, (l): loopback\n(s): spoofing, (B): BFD down, (e): ETHOAM down, (d): Dampening Suppressed\n(p): port alarm down, (dl): DLDP down, (c): CFM down\nInterface                   PHY   Protocol  InUti OutUti   inErrors  outErrors\n100GE1/0/0                  up    up           0%     5%          0          0\n10GE1/0/1                   up    up           2%     8%          0          0\n10GE1/0/2                   up    down         0%     0%          0          0\nXGE1/1/0                    up    up          12%    15%          0          0"
     },
     {
       "command": "display ip routing-table",
-      "response": "Route Flags: R - relay, D - download to fib\n------------------------------------------------------------------------------\nRouting Table : Public\n         Destinations : 25       Routes : 25       \n\nDestination/Mask    Proto   Pre  Cost      Flags NextHop         Interface\n\n        0.0.0.0/0   Static  60   0          RD   192.168.102.254 HundredGigE1/0/0\n  192.168.102.0/24  Direct  0    0           D   192.168.102.1   HundredGigE1/0/0\n  192.168.102.1/32  Direct  0    0           D   127.0.0.1       HundredGigE1/0/0"
+      "response": "Route Flags: R - relay, D - download to fib\n------------------------------------------------------------------------------\nRouting Table : Public\n         Destinations : 25       Routes : 25       \n\nDestination/Mask    Proto   Pre  Cost      Flags NextHop         Interface\n\n        0.0.0.0/0   Static  60   0          RD   192.168.102.254 100GE1/0/0\n  192.168.102.0/24  Direct  0    0           D   192.168.102.1   100GE1/0/0\n  192.168.102.1/32  Direct  0    0           D   127.0.0.1       100GE1/0/0"
     },
     {
       "command": "display current-configuration",
-      "response": "#\nsysname FRA-CORE-02\n#\ninterface HundredGigE1/0/0\n ip address 192.168.102.1 255.255.255.0\n#\ninterface 10GE1/0/1\n ip address 10.1.2.1 255.255.255.252\n#\nip route-static 0.0.0.0 0.0.0.0 192.168.102.254\n#\nreturn"
+      "response": "#\nsysname FRA-CORE-02\n#\ninterface 100GE1/0/0\n ip address 192.168.102.1 255.255.255.0\n#\ninterface 10GE1/0/1\n ip address 10.1.2.1 255.255.255.252\n#\nip route-static 0.0.0.0 0.0.0.0 192.168.102.254\n#\nreturn"
     },
     {
       "command": "display environment",

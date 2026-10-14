@@ -186,11 +186,11 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // juniper_mx10004 gains the ifTable and ifXTable rows of its logical unit
 // xe-0/0/0.0 at ifIndex 73, pre-change value shippedTagDigestBeforeMx10004Unit.
 // Reversed by snmp_shipped_juniper_mx10004_unit_ledger_test.go.
-// Eleven profiles' ipRouteTable follows the CLI's default and connected route
+// Twelve profiles' ipRouteTable follows the CLI's default and connected route
 // and each gains one ipAddrTable row, pre-change value
 // shippedTagDigestBeforeRouteTable. Reversed by
 // snmp_shipped_route_table_ledger_test.go.
-const shippedTagDigest = "25dc48dbbb05d424c8e2f2158916ab5c5f1abb75454197c53e7221a0876e01d3"
+const shippedTagDigest = "412d5a36c405a6a689c30f82052db84b7b34da6e77856795fba675b30060b4d9"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

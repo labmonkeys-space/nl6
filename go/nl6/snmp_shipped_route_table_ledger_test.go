@@ -9,7 +9,8 @@ import "testing"
 
 // Eleven profiles served the same two-row ipRouteTable template: a default
 // route via ifIndex 1 and a connected 192.168.1.0/24 via ifIndex 2, with no
-// ipAddrTable. Only the default route's next hop followed the CLI, so the next
+// ipAddrTable. juniper_mx10004 already routed via its unit but served
+// ipRouteProto ospf(13) for a static default route and no ipAddrTable. Only the default route's next hop followed the CLI, so the next
 // hop lay in no subnet SNMP served and the egress interface was not the one
 // the CLI named. Each profile now serves the CLI's default route and the
 // connected subnet its gateway lies on, both on the egress port's IF-MIB row,
@@ -224,6 +225,14 @@ var routeTableEdits = map[string][]profileRowEdit{
 		{op: editAdd, oid: ".1.3.6.1.2.1.4.21.1.12.192.168.102.0", after: "-1"},
 		{op: editDel, oid: ".1.3.6.1.2.1.4.21.1.13.192.168.1.0", before: "0.0"},
 		{op: editAdd, oid: ".1.3.6.1.2.1.4.21.1.13.192.168.102.0", after: "0.0"},
+	},
+	"juniper_mx10004.json": {
+		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.1.192.168.1.1", after: "192.168.1.1"},
+		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.2.192.168.1.1", after: "73"},
+		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.3.192.168.1.1", after: "255.255.255.0"},
+		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.4.192.168.1.1", after: "1"},
+		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.5.192.168.1.1", after: "65535"},
+		{op: editChg, oid: ".1.3.6.1.2.1.4.21.1.9.0.0.0.0", before: "13", after: "3"},
 	},
 	"juniper_mx240.json": {
 		{op: editAdd, oid: ".1.3.6.1.2.1.4.20.1.1.192.168.1.1", after: "192.168.1.1"},
