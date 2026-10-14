@@ -3,43 +3,43 @@
   "ssh": [
     {
       "command": "show version",
-      "response": "Cisco IOS XR Software, Version 6.7.3[Default]\\nCisco CRS-X\\nUptime is 167 days, 22 hours, 8 minutes\\nSystem image file is \\\"harddisk:hfr-os-mbi-6.7.3/mbihfr-rsp3.vm\\\"\\n\\nProcessor board ID CRS-X-001\\n16-Slot Chassis with CRS-X-RP installed\\n2048 Mbytes of main memory\\n47 GigabitEthernet interfaces\\n97 TenGigabitEthernet interfaces\\n2048K bytes of non-volatile configuration memory\\n8192K bytes of packet buffer memory"
+      "response": "Cisco IOS XR Software, Version 6.7.3[Default]\nCisco CRS-X\nUptime is 167 days, 22 hours, 8 minutes\nSystem image file is \"harddisk:hfr-os-mbi-6.7.3/mbihfr-rsp3.vm\"\n\nProcessor board ID CRS-X-001\n16-Slot Chassis with CRS-X-RP installed\n2048 Mbytes of main memory\n47 GigabitEthernet interfaces\n97 TenGigabitEthernet interfaces\n2048K bytes of non-volatile configuration memory\n8192K bytes of packet buffer memory"
     },
     {
       "command": "show interfaces brief",
-      "response": "Interface              IP-Address      OK? Method Status                Protocol\\nGigabitEthernet0/0/0/1 192.168.300.1   YES manual up                    up\\nGigabitEthernet0/0/0/2 unassigned      YES manual up                    up\\nGigabitEthernet0/0/0/3 unassigned      YES manual administratively down down\\nTenGigE0/1/0/1        unassigned      YES manual up                    up\\nTenGigE0/1/0/2        unassigned      YES manual up                    up\\n\\nTotal interfaces: 144 (98 up, 46 down)"
+      "response": "Interface              IP-Address      OK? Method Status                Protocol\nGigabitEthernet0/0/0/1 192.168.30.1    YES manual up                    up\nGigabitEthernet0/0/0/2 unassigned      YES manual up                    up\nGigabitEthernet0/0/0/3 unassigned      YES manual administratively down down\nTenGigE0/1/0/1        unassigned      YES manual up                    up\nTenGigE0/1/0/2        unassigned      YES manual up                    up\n\nTotal interfaces: 144 (98 up, 46 down)"
     },
     {
       "command": "show route ipv4",
-      "response": "Codes: C - connected, S - static, R - RIP, B - BGP, (\u003e) - Diversion path\\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\\n       E1 - OSPF external type 1, E2 - OSPF external type 2, i - IS-IS\\n       su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2\\n       ia - IS-IS inter area, * - candidate default\\n\\nGateway of last resort is 192.168.300.254 to network 0.0.0.0\\n\\nS*   0.0.0.0/0 [1/0] via 192.168.300.254, 167d22h\\nC    192.168.300.0/24 is directly connected, 167d22h, GigabitEthernet0/0/0/1"
+      "response": "Codes: C - connected, S - static, R - RIP, B - BGP, (\u003e) - Diversion path\n       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area\n       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2\n       E1 - OSPF external type 1, E2 - OSPF external type 2, i - IS-IS\n       su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2\n       ia - IS-IS inter area, * - candidate default\n\nGateway of last resort is 192.168.30.254 to network 0.0.0.0\n\nS*   0.0.0.0/0 [1/0] via 192.168.30.254, 167d22h\nC    192.168.30.0/24 is directly connected, 167d22h, GigabitEthernet0/0/0/1"
     },
     {
       "command": "show running-config",
-      "response": "!! IOS XR Configuration 6.7.3\\n!! Last configuration change at Sun Aug  7 10:35:00 2025 by admin\\n!\\nhostname SYD-CORE-01\\n!\\ninterface GigabitEthernet0/0/0/1\\n ipv4 address 192.168.300.1 255.255.255.0\\n no shutdown\\n!\\nrouter static\\n address-family ipv4 unicast\\n  0.0.0.0/0 192.168.300.254\\n !\\n!\\nend"
+      "response": "!! IOS XR Configuration 6.7.3\n!! Last configuration change at Sun Aug  7 10:35:00 2025 by admin\n!\nhostname SYD-CORE-01\n!\ninterface GigabitEthernet0/0/0/1\n ipv4 address 192.168.30.1 255.255.255.0\n no shutdown\n!\nrouter static\n address-family ipv4 unicast\n  0.0.0.0/0 192.168.30.254\n !\n!\nend"
     },
     {
       "command": "show processes cpu",
-      "response": "CPU utilization for one minute: 39%; five minutes: 38%; fifteen minutes: 40%\\nPID    Runtime(ms)   Invoked   uSecs  5Sec   1Min   5Min TTY Process\\n1        928475     142832     6505  0.31%  0.33%  0.35%   ? kernel\\n2       2847293     738462     3857  4.21%  4.18%  4.25%   ? bgp\\n3       1847392     445821     4144  2.89%  2.92%  2.88%   ? ospf"
+      "response": "CPU utilization for one minute: 39%; five minutes: 38%; fifteen minutes: 40%\nPID    Runtime(ms)   Invoked   uSecs  5Sec   1Min   5Min TTY Process\n1        928475     142832     6505  0.31%  0.33%  0.35%   ? kernel\n2       2847293     738462     3857  4.21%  4.18%  4.25%   ? bgp\n3       1847392     445821     4144  2.89%  2.92%  2.88%   ? ospf"
     },
     {
       "command": "show memory summary",
-      "response": "Physical Memory: 2048M total (776M available)\\n Application Memory: 1272M used, 776M available, 38% used\\n\\nMemory utilization: 62%"
+      "response": "Physical Memory: 2048M total (776M available)\n Application Memory: 1272M used, 776M available, 38% used\n\nMemory utilization: 62%"
     },
     {
       "command": "show environment temperatures",
-      "response": "Location     Temp(C)  Status\\n-----------  -------  ------\\nCPU DIE        44      Normal\\nINLET          32      Normal\\nOUTLET         38      Normal\\nFAN TRAY 1     35      Normal\\nFAN TRAY 2     34      Normal"
+      "response": "Location     Temp(C)  Status\n-----------  -------  ------\nCPU DIE        44      Normal\nINLET          32      Normal\nOUTLET         38      Normal\nFAN TRAY 1     35      Normal\nFAN TRAY 2     34      Normal"
     },
     {
       "command": "show cdp neighbors",
-      "response": "Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\\n                  S - Switch, H - Host, I - IGMP, r - Repeater\\n\\nDevice ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\\nCore-RTR-02      Gi0/0/0/1         165        R           CRS-16/S  Gi0/0/0/24\\nAgg-SW-01        Te0/1/0/1         142        S I         ASR-9910  Te0/0/0/1\\nEdge-RTR-01      Te0/1/0/10        158        R           ASR-9006  Te0/2/0/5\\n\\nTotal cdp entries displayed: 3"
+      "response": "Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge\n                  S - Switch, H - Host, I - IGMP, r - Repeater\n\nDevice ID        Local Intrfce     Holdtme    Capability  Platform  Port ID\nCore-RTR-02      Gi0/0/0/1         165        R           CRS-16/S  Gi0/0/0/24\nAgg-SW-01        Te0/1/0/1         142        S I         ASR-9910  Te0/0/0/1\nEdge-RTR-01      Te0/1/0/10        158        R           ASR-9006  Te0/2/0/5\n\nTotal cdp entries displayed: 3"
     },
     {
       "command": "show cdp neighbors detail",
-      "response": "-------------------------\\nDevice ID: Core-RTR-02\\nEntry address(es):\\n  IP address: 10.0.1.2\\nPlatform: Cisco CRS-16/S,  Capabilities: Router\\nInterface: GigabitEthernet0/0/0/1,  Port ID (outgoing port): GigabitEthernet0/0/0/24\\nHoldtime : 165 sec\\n\\nVersion :\\nCisco IOS XR Software, Version 6.7.3\\n\\n-------------------------\\nDevice ID: Agg-SW-01\\nEntry address(es):\\n  IP address: 10.1.10.5\\nPlatform: Cisco ASR-9910,  Capabilities: Switch IGMP\\nInterface: TenGigE0/1/0/1,  Port ID (outgoing port): TenGigE0/0/0/1\\nHoldtime : 142 sec\\n\\nVersion :\\nCisco IOS XR Software, Version 7.3.2\\n\\n-------------------------\\nDevice ID: Edge-RTR-01\\nEntry address(es):\\n  IP address: 10.2.1.1\\nPlatform: Cisco ASR-9006,  Capabilities: Router\\nInterface: TenGigE0/1/0/10,  Port ID (outgoing port): TenGigE0/2/0/5\\nHoldtime : 158 sec\\n\\nVersion :\\nCisco IOS XR Software, Version 7.2.1"
+      "response": "-------------------------\nDevice ID: Core-RTR-02\nEntry address(es):\n  IP address: 10.0.1.2\nPlatform: Cisco CRS-16/S,  Capabilities: Router\nInterface: GigabitEthernet0/0/0/1,  Port ID (outgoing port): GigabitEthernet0/0/0/24\nHoldtime : 165 sec\n\nVersion :\nCisco IOS XR Software, Version 6.7.3\n\n-------------------------\nDevice ID: Agg-SW-01\nEntry address(es):\n  IP address: 10.1.10.5\nPlatform: Cisco ASR-9910,  Capabilities: Switch IGMP\nInterface: TenGigE0/1/0/1,  Port ID (outgoing port): TenGigE0/0/0/1\nHoldtime : 142 sec\n\nVersion :\nCisco IOS XR Software, Version 7.3.2\n\n-------------------------\nDevice ID: Edge-RTR-01\nEntry address(es):\n  IP address: 10.2.1.1\nPlatform: Cisco ASR-9006,  Capabilities: Router\nInterface: TenGigE0/1/0/10,  Port ID (outgoing port): TenGigE0/2/0/5\nHoldtime : 158 sec\n\nVersion :\nCisco IOS XR Software, Version 7.2.1"
     },
     {
       "command": "show lldp neighbors",
-      "response": "Capability codes:\\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\\n\\nDevice ID           Local Intf     Hold-time  Capability      Port ID\\nCore-RTR-02         Gi0/0/0/1      120        R               GigabitEthernet0/0/0/24\\nAgg-SW-01           Te0/1/0/1      120        R               TenGigE0/0/0/1\\nEdge-RTR-01         Te0/1/0/10     120        R               TenGigE0/2/0/5\\n\\nTotal entries displayed: 3"
+      "response": "Capability codes:\n    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\nDevice ID           Local Intf     Hold-time  Capability      Port ID\nCore-RTR-02         Gi0/0/0/1      120        R               GigabitEthernet0/0/0/24\nAgg-SW-01           Te0/1/0/1      120        R               TenGigE0/0/0/1\nEdge-RTR-01         Te0/1/0/10     120        R               TenGigE0/2/0/5\n\nTotal entries displayed: 3"
     }
   ]
 }

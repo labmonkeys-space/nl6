@@ -7,7 +7,7 @@
     },
     {
       "command": "prtconf | head -15",
-      "response": "System Model: IBM,9009-42A\\nMachine Serial Number: IBM-S922-001\\nProcessor Type: PowerPC_POWER9\\nProcessor Implementation Mode: POWER 9\\nProcessor Version: PV=0x4e1200\\nNumber Of Processors: 8\\nProcessor Clock Speed: 3800 MHz\\nCPU Type: 64-bit\\nKernel Type: 64-bit\\nLPAR Info: 1 CPT-SRV-01\\nMemory Size: 128 GB\\nGood Memory Size: 128 GB\\nFirmware Version: IBM,FW940.21\\nConsole Login: enable\\nAuto Restart: true"
+      "response": "System Model: IBM,9009-42A\nMachine Serial Number: IBM-S922-001\nProcessor Type: PowerPC_POWER9\nProcessor Implementation Mode: POWER 9\nProcessor Version: PV=0x4e1200\nNumber Of Processors: 8\nProcessor Clock Speed: 3800 MHz\nCPU Type: 64-bit\nKernel Type: 64-bit\nLPAR Info: 1 CPT-SRV-01\nMemory Size: 128 GB\nGood Memory Size: 128 GB\nFirmware Version: IBM,FW940.21\nConsole Login: enable\nAuto Restart: true"
     },
     {
       "command": "uptime",
@@ -19,7 +19,7 @@
     },
     {
       "command": "svmon -G",
-      "response": "               size       inuse        free         pin     virtual\\nmemory      32768     14090       18678        2847       14090\\npg space     4096       256        3840\\n\\n               work        pers        clnt       other\\npin             2156         5         124        562\\nin use         13456       234         178        222\\n\\nMemory usage: 43%"
+      "response": "               size       inuse        free         pin     virtual\nmemory      32768     14090       18678        2847       14090\npg space     4096       256        3840\n\n               work        pers        clnt       other\npin             2156         5         124        562\nin use         13456       234         178        222\n\nMemory usage: 43%"
     },
     {
       "command": "lsattr -El sys0 -a realmem",
@@ -27,15 +27,15 @@
     },
     {
       "command": "errpt | head -5",
-      "response": "IDENTIFIER TIMESTAMP  T C RESOURCE_NAME  DESCRIPTION\\n2F8A1B2C   0803143315 I H sysplanar0     INFORMATIONAL MESSAGE FROM SYSTEM FIRMWARE\\nA3B4C5D6   0803120045 P H fcs0           FIBRE CHANNEL DEVICE ERROR\\nE7F8G9H0   0803095512 T O proc0          PROCESSOR CACHE ERROR DETECTED\\nB1C2D3E4   0803074428 I S SYSPROC        SYSTEM SHUTDOWN REQUEST"
+      "response": "IDENTIFIER TIMESTAMP  T C RESOURCE_NAME  DESCRIPTION\n2F8A1B2C   0803143315 I H sysplanar0     INFORMATIONAL MESSAGE FROM SYSTEM FIRMWARE\nA3B4C5D6   0803120045 P H fcs0           FIBRE CHANNEL DEVICE ERROR\nE7F8G9H0   0803095512 T O proc0          PROCESSOR CACHE ERROR DETECTED\nB1C2D3E4   0803074428 I S SYSPROC        SYSTEM SHUTDOWN REQUEST"
     },
     {
       "command": "lscfg -vp | grep -E '\\*-\\*|proc|mem'",
-      "response": "* System VPD:\\n* Machine/Cabinet Serial Number.......IBM-S922-001\\n* Machine Type and Model...............9009-42A\\n\\n* CPUs:\\n  proc0            U9009.42A.10XXXXX-V1-C0  Processor\\n  proc1            U9009.42A.10XXXXX-V1-C1  Processor\\n\\n* Memory:\\n  DIMM_00           U78CB.001.WZSGB45-P1-C15-L1  Memory DIMM\\n  DIMM_01           U78CB.001.WZSGB45-P1-C15-L2  Memory DIMM\\n\\nSystem temperature: 38°C"
+      "response": "* System VPD:\n* Machine/Cabinet Serial Number.......IBM-S922-001\n* Machine Type and Model...............9009-42A\n\n* CPUs:\n  proc0            U9009.42A.10XXXXX-V1-C0  Processor\n  proc1            U9009.42A.10XXXXX-V1-C1  Processor\n\n* Memory:\n  DIMM_00           U78CB.001.WZSGB45-P1-C15-L1  Memory DIMM\n  DIMM_01           U78CB.001.WZSGB45-P1-C15-L2  Memory DIMM\n\nSystem temperature: 38°C"
     },
     {
       "command": "netstat -in",
-      "response": "Name  Mtu   Network     Address            Ipkts Ierrs    Opkts Oerrs  Coll\\nlo0   16896 loopback    localhost          28573     0    28573     0     0\\nlo0   16896 127         127.0.0.1          28573     0    28573     0     0\\nen0   1500  link#2      9c.69.b4.60.12.34  947382     0   851947     0     0\\nen0   1500  192.168.501 192.168.501.1      947382     0   851947     0     0\\nen1   1500  link#3      9c.69.b4.60.12.35  0          0        0     0     0\\nen2   1500  link#4      9c.69.b4.60.12.36  0          0        0     0     0\\nen3   1500  link#5      9c.69.b4.60.12.37  0          0        0     0     0"
+      "response": "Name  Mtu   Network     Address            Ipkts Ierrs    Opkts Oerrs  Coll\nlo0   16896 loopback    localhost          28573     0    28573     0     0\nlo0   16896 127         127.0.0.1          28573     0    28573     0     0\nen0   1500  link#2      9c.69.b4.60.12.34  947382     0   851947     0     0\nen0   1500  192.168.51  192.168.51.1       947382     0   851947     0     0\nen1   1500  link#3      9c.69.b4.60.12.35  0          0        0     0     0\nen2   1500  link#4      9c.69.b4.60.12.36  0          0        0     0     0\nen3   1500  link#5      9c.69.b4.60.12.37  0          0        0     0     0"
     }
   ]
 }

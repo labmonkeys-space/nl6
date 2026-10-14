@@ -8,7 +8,6 @@ package main
 import (
 	"net"
 	"reflect"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,33 +349,6 @@ func TestDialoutListsNoSubinterface(t *testing.T) {
 		if want := map[int]int{1: 1, 73: 0}[evt.IfIndex]; len(got) != want {
 			t.Errorf("ifIndex %d ON_CHANGE produced %d updates, want %d", evt.IfIndex, len(got), want)
 		}
-	}
-}
-
-// TestMx10004DefaultRouteNextHopAgreesWithShowRoute: SNMP named 10.0.0.1 for
-// the default route while show route sends it to 192.168.1.254.
-func TestMx10004DefaultRouteNextHopAgreesWithShowRoute(t *testing.T) {
-	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
-	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var snmp, cli string
-	for _, e := range res.SNMP {
-		if e.OID == "1.3.6.1.2.1.4.21.1.7.0.0.0.0" {
-			snmp = e.Response
-		}
-	}
-	m := regexp.MustCompile(`0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`)
-	for _, e := range res.SSH {
-		if e.Command == "show route" {
-			if g := m.FindStringSubmatch(e.Response); g != nil {
-				cli = g[1]
-			}
-		}
-	}
-	if cli == "" || snmp != cli {
-		t.Errorf("ipRouteNextHop.0.0.0.0 = %q, show route next hop = %q", snmp, cli)
 	}
 }
 

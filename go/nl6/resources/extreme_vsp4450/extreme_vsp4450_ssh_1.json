@@ -11,11 +11,11 @@
     },
     {
       "command": "show ip route",
-      "response": "================================================================================\n                                IP Route\n================================================================================\nDEST_ADDR/MASK          NEXT_HOP        COST PREF TYPE/NUM  VRF_NAME  INTERFACE\n0.0.0.0/0               192.168.301.254    1  5   local/0   GlobalRouter mgmt\n192.168.301.0/24        0.0.0.0            0  0   direct/0  GlobalRouter mgmt\n\nTotal number of IP routes: 2"
+      "response": "================================================================================\n                                IP Route\n================================================================================\nDEST_ADDR/MASK          NEXT_HOP        COST PREF TYPE/NUM  VRF_NAME  INTERFACE\n0.0.0.0/0               192.168.31.254     1  5   local/0   GlobalRouter mgmt\n192.168.31.0/24         0.0.0.0            0  0   direct/0  GlobalRouter mgmt\n\nTotal number of IP routes: 2"
     },
     {
       "command": "show running-config",
-      "response": "!\n! Configuration of \"MEL-SW-01\" \n!\n! Software Version VOSS 8.10.1.0 GA\n! Build Date: Oct-20-2022\n!\nhostname \"MEL-SW-01\"\n!\ninterface mgmt\n   ip address 192.168.301.1 255.255.255.0\n   exit\n!\ninterface GigabitEthernet 1/1\n   no shutdown\n   exit\n!\ninterface GigabitEthernet 1/2\n   no shutdown\n   exit\n!\nip route 0.0.0.0 0.0.0.0 192.168.301.254\n!\nexit"
+      "response": "!\n! Configuration of \"MEL-SW-01\" \n!\n! Software Version VOSS 8.10.1.0 GA\n! Build Date: Oct-20-2022\n!\nhostname \"MEL-SW-01\"\n!\ninterface mgmt\n   ip address 192.168.31.1 255.255.255.0\n   exit\n!\ninterface GigabitEthernet 1/1\n   no shutdown\n   exit\n!\ninterface GigabitEthernet 1/2\n   no shutdown\n   exit\n!\nip route 0.0.0.0 0.0.0.0 192.168.31.254\n!\nexit"
     },
     {
       "command": "show chassis",
