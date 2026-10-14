@@ -1127,15 +1127,34 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		ic.state.Seed(idx, link, admin)
 	}
 	// Record which interfaces are subinterfaces of which, from the same
-	// ifDescr rows every reader names them by, before the engine is
-	// published: the table is immutable after this.
+	// ifDescr rows every reader names them by and from ifStackTable, and
+	// which are loopbacks, before the engine is published: the tables are
+	// immutable after this.
 	names := make(map[int]string, len(knownIdxs))
 	for idx := range knownIdxs {
 		if v, ok := resources.oidIndex.Load(ifTablePrefix + "2." + strconv.Itoa(idx)); ok {
 			names[idx], _ = v.(string)
 		}
 	}
-	ic.state.setParents(subinterfaceParents(names))
+	known := make(map[int]bool, len(knownIdxs))
+	loopbacks := map[int]bool{}
+	for idx := range knownIdxs {
+		known[idx] = true
+		if v, ok := resources.oidIndex.Load(ifTablePrefix + "3." + strconv.Itoa(idx)); ok && v == ifTypeSoftwareLoopback {
+			loopbacks[idx] = true
+		}
+	}
+	byName := subinterfaceParents(names)
+	parents := interfaceParents(names, cachedStackedParents(resources, known))
+	stackedOnly := map[int]bool{}
+	for idx := range parents {
+		if _, ok := byName[idx]; !ok {
+			stackedOnly[idx] = true
+		}
+	}
+	ic.state.setParents(parents)
+	ic.state.setStacked(stackedOnly)
+	ic.state.setLoopbacks(loopbacks)
 
 	// ic is fully constructed before the Store, so concurrent readers
 	// either see the complete new cycler or the previous pointer — never

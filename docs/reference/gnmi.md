@@ -61,7 +61,7 @@ Path coverage is scoped to the OpenConfig `interfaces` model, read-only:
 | `/interfaces/interface[name=*]/state/counters/out-discards` | uint64 | `ifOutDiscards.<N>` |
 | `/interfaces/interface[name=*]/state/counters/out-errors` | uint64 | `ifOutErrors.<N>` |
 
-Wildcards (`name=*`) enumerate every ifIndex known to the device except subinterfaces, whose names are `<interface>.<unit>` (see [interface state](interface-state.md#subinterfaces)).
+Wildcards (`name=*`) enumerate every ifIndex known to the device except subinterfaces whose names are `<interface>.<unit>` (see [interface state](interface-state.md#subinterfaces)); an interface stacked by `ifStackTable`, such as Nokia's `toWAN`, is still listed.
 A subinterface name returns `codes.NotFound`, and its state changes produce no ON_CHANGE update on these paths.
 Subtree subscribes (e.g. `/state/counters` with no leaf) flatten to all 12 counter leaves in one tick.
 Specific names (`name=GigabitEthernet0/0`) reverse-resolve via the `ifDescr` table; unknown names return `codes.NotFound`.

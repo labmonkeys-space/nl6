@@ -6,10 +6,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // splitSubinterfaceName splits an ifDescr of the form <parent>.<unit> into its
@@ -34,15 +36,63 @@ func splitSubinterfaceName(name string) (parent, unit string, ok bool) {
 	return name[:dot], suffix, true
 }
 
-// subinterfaceParents maps each subinterface ifIndex to its parent's ifIndex,
-// given the device's ifDescr per ifIndex. A name is a subinterface only when
-// its parent name is itself an interface of the device. When two ifIndexes
-// share the parent name the lower one wins, matching the legacy resolver's
-// reverse lookup.
+// subinterfaceParents is interfaceParents with no ifStackTable.
+func subinterfaceParents(names map[int]string) map[int]int {
+	return interfaceParents(names, nil)
+}
+
+// ifTypeSoftwareLoopback is IANAifType softwareLoopback(24) as a resource
+// file spells it.
+const ifTypeSoftwareLoopback = "24"
+
+// ifStackStatusPrefix is ifStackStatus (IF-MIB), indexed <higher>.<lower>.
+const ifStackStatusPrefix = "1.3.6.1.2.1.31.1.2.1.3."
+
+// stackedParents reads the active(1) ifStackTable rows of a profile as
+// higher-layer ifIndex -> lower-layer ifIndex. Rows naming ifIndex 0 (the
+// table's "nothing above/below" marker) or an ifIndex outside known are
+// ignored, as is a higher layer stacked on more than one lower layer, since
+// the engine follows one parent. The same row repeated, as when two resource
+// parts carry it, is one row.
+func stackedParents(entries []SNMPResource, known map[int]bool) map[int]int {
+	out := map[int]int{}
+	multi := map[int]bool{}
+	for _, e := range entries {
+		rest, ok := strings.CutPrefix(strings.TrimPrefix(e.OID, "."), ifStackStatusPrefix)
+		if !ok || e.Response != "1" {
+			continue
+		}
+		hs, ls, ok := strings.Cut(rest, ".")
+		h, err1 := strconv.Atoi(hs)
+		l, err2 := strconv.Atoi(ls)
+		if !ok || err1 != nil || err2 != nil || !known[h] || !known[l] || h == l {
+			continue
+		}
+		if prev, dup := out[h]; dup && prev != l {
+			multi[h] = true
+		}
+		out[h] = l
+	}
+	for h := range multi {
+		logHierarchyOnce(fmt.Sprintf("interface hierarchy: ifIndex %d is stacked on more than one interface; treating it as top-level", h))
+		delete(out, h)
+	}
+	return out
+}
+
+// interfaceParents maps each subinterface ifIndex to its parent's ifIndex,
+// given the device's ifDescr per ifIndex and its ifStackTable. The name rule
+// decides first; a stack row gives a parent only to an ifIndex the name rule
+// left top-level, which is how an interface whose name does not say
+// <port>.<unit> (an SR OS router interface) names the port beneath it.
+//
+// A name is a subinterface only when its parent name is itself an interface of
+// the device. When two ifIndexes share the parent name the lower one wins,
+// matching the legacy resolver's reverse lookup.
 //
 // One level only: a child whose parent is itself a child is dropped with a log
 // line, because the engine cascades one level and no shipped profile nests.
-func subinterfaceParents(names map[int]string) map[int]int {
+func interfaceParents(names map[int]string, stacked map[int]int) map[int]int {
 	byName := make(map[string]int, len(names))
 	idxs := make([]int, 0, len(names))
 	for idx := range names {
@@ -64,6 +114,11 @@ func subinterfaceParents(names map[int]string) map[int]int {
 			parents[idx] = pIdx
 		}
 	}
+	for h, l := range stacked {
+		if _, ok := parents[h]; !ok {
+			parents[h] = l
+		}
+	}
 	var nested []int
 	for _, idx := range idxs {
 		if p, ok := parents[idx]; ok {
@@ -73,8 +128,34 @@ func subinterfaceParents(names map[int]string) map[int]int {
 		}
 	}
 	for _, idx := range nested {
-		log.Printf("interface hierarchy: %q (ifIndex %d) is a subinterface of a subinterface; treating it as top-level", names[idx], idx)
+		logHierarchyOnce(fmt.Sprintf("interface hierarchy: %q (ifIndex %d) is a subinterface of a subinterface; treating it as top-level", names[idx], idx))
 		delete(parents, idx)
 	}
 	return parents
+}
+
+// hierarchyLogged dedupes the hierarchy warnings. They are properties of a
+// profile, and the hierarchy is rebuilt for every device, so an unguarded line
+// would repeat once per device of a 30,000-device fleet.
+var hierarchyLogged sync.Map
+
+func logHierarchyOnce(msg string) {
+	if _, seen := hierarchyLogged.LoadOrStore(msg, struct{}{}); !seen {
+		log.Print(msg)
+	}
+}
+
+// stackCache holds stackedParents per loaded profile. The result depends only
+// on the profile, and scanning its whole SNMP slice once per device would cost
+// a fleet of N devices N full scans. A reload loads a new *DeviceResources, so
+// a stale entry is never read; it is only kept.
+var stackCache sync.Map // *DeviceResources -> map[int]int
+
+func cachedStackedParents(res *DeviceResources, known map[int]bool) map[int]int {
+	if v, ok := stackCache.Load(res); ok {
+		return v.(map[int]int)
+	}
+	m := stackedParents(res.SNMP, known)
+	stackCache.Store(res, m)
+	return m
 }

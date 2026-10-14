@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "logical interfaces and VRP port names",
+		file:         "snmp_shipped_logical_ifs_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       logicalIfsParentRevision,
+		values:       restoreLogicalIfs,
+		names:        logicalIfsOIDNamesBefore,
+	},
+	{
 		name:         "route table and ipAddrTable from the CLI",
 		file:         "snmp_shipped_route_table_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: logicalIfsParentRevision,
 		parent:       routeTableParentRevision,
 		values:       restoreRouteTable,
 		names:        routeTableOIDNamesBefore,
