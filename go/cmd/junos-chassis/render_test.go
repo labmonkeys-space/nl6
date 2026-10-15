@@ -274,3 +274,41 @@ func TestRenderSNMPRowsStackTable(t *testing.T) {
 		t.Errorf("xe-0/0/0 (ifIndex %d) carries units but has a 0.<port> row", u.Parent.IfIndex)
 	}
 }
+
+// show interfaces terse prints the family column for a unit configured
+// `family inet;` with no address, the address after it when there is one, and
+// nothing after the link state for a unit with neither.
+func TestRenderTerseUnitFamilies(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Units = []Unit{
+		{Parent: "xe-0/0/0", Unit: 0, Inet: "192.0.2.1/24"},
+		{Parent: "xe-0/0/0", Unit: 100, Family: "inet"},
+		{Parent: "xe-0/0/0", Unit: 200},
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := RenderSSHEntries(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var terse string
+	for _, e := range entries {
+		if e.Command == "show interfaces terse" {
+			terse = e.Response
+		}
+	}
+	for _, want := range []string{
+		"xe-0/0/0.0              up    up   inet     192.0.2.1/24\n",
+		"xe-0/0/0.100            up    up   inet\n",
+		"xe-0/0/0.200            up    up\n",
+	} {
+		if !strings.Contains(terse, want) {
+			t.Errorf("terse output lacks %q:\n%s", want, terse)
+		}
+	}
+}

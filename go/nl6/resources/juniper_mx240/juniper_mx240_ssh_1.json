@@ -7,15 +7,15 @@
     },
     {
       "command": "show interfaces terse",
-      "response": "Interface               Admin Link Proto    Local                 Remote\nxe-1/0/0                up    up\nxe-1/0/0.0              up    up   inet     192.168.1.1/24\nge-0/0/1                up    down\nge-0/0/2                up    up"
+      "response": "Interface               Admin Link Proto    Local                 Remote\nxe-1/0/0                up    up\nxe-1/0/0.0              up    up   inet     192.168.1.1/24\nxe-1/0/0.100            up    up   inet\nxe-1/0/0.200            up    up   inet\nxe-1/0/0.999            up    up   inet\nge-0/0/1                up    down\nge-0/0/2                up    up"
     },
     {
       "command": "show route",
-      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    \u003e to 192.168.1.254 via xe-1/0/0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    \u003e via xe-1/0/0.0"
+      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    > to 192.168.1.254 via xe-1/0/0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    > via xe-1/0/0.0"
     },
     {
       "command": "show configuration",
-      "response": "system {\n    host-name NY-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$abc123\";\n    }\n}\ninterfaces {\n    xe-1/0/0 {\n        unit 0 {\n            family inet {\n                address 192.168.1.1/24;\n            }\n        }\n    }\n}"
+      "response": "system {\n    host-name NY-CORE-01;\n    root-authentication {\n        encrypted-password \"$6$abc123\";\n    }\n}\ninterfaces {\n    xe-1/0/0 {\n        vlan-tagging;\n        unit 0 {\n            vlan-id 1;\n            family inet {\n                address 192.168.1.1/24;\n            }\n        }\n        unit 100 {\n            vlan-id 100;\n            family inet;\n        }\n        unit 200 {\n            vlan-id 200;\n            family inet;\n        }\n        unit 999 {\n            vlan-id 999;\n            family inet;\n        }\n    }\n}\npolicy-options {\n    policy-statement CUSTOMER-A-export {\n        term 1 {\n            then {\n                community add CUSTOMER-A;\n                accept;\n            }\n        }\n    }\n    policy-statement CUSTOMER-A-import {\n        term 1 {\n            from community CUSTOMER-A;\n            then accept;\n        }\n        term 2 {\n            then reject;\n        }\n    }\n    policy-statement INTERNET-export {\n        term 1 {\n            then {\n                community add INTERNET;\n                accept;\n            }\n        }\n    }\n    policy-statement INTERNET-import {\n        term 1 {\n            from community INTERNET;\n            then accept;\n        }\n        term 2 {\n            then reject;\n        }\n    }\n    policy-statement MGMT-export {\n        term 1 {\n            then {\n                community add MGMT;\n                accept;\n            }\n        }\n    }\n    policy-statement MGMT-import {\n        term 1 {\n            from community MGMT;\n            then accept;\n        }\n        term 2 {\n            then reject;\n        }\n    }\n    community CUSTOMER-A members target:65001:100;\n    community INTERNET members target:65001:200;\n    community MGMT members target:65001:999;\n}\nrouting-instances {\n    CUSTOMER-A {\n        instance-type vrf;\n        interface xe-1/0/0.100;\n        route-distinguisher 65001:100;\n        vrf-import CUSTOMER-A-import;\n        vrf-export CUSTOMER-A-export;\n        routing-options {\n            router-id 10.100.0.2;\n        }\n    }\n    INTERNET {\n        instance-type vrf;\n        interface xe-1/0/0.200;\n        route-distinguisher 65001:200;\n        vrf-import INTERNET-import;\n        vrf-export INTERNET-export;\n        routing-options {\n            router-id 10.150.0.2;\n        }\n    }\n    MGMT {\n        instance-type vrf;\n        interface xe-1/0/0.999;\n        route-distinguisher 65001:999;\n        vrf-import MGMT-import;\n        vrf-export MGMT-export;\n        routing-options {\n            router-id 10.200.0.2;\n        }\n    }\n}"
     },
     {
       "command": "show chassis environment",
@@ -27,7 +27,7 @@
     },
     {
       "command": "show chassis fpc",
-      "response": "                     Temp  CPU Utilization (%)   Memory    Utilization (%)\nSlot State            (C)  Total  Interrupt      DRAM (MB) Heap     Buffer\n  0  Online            45     67          8      4096        78         15\n\nFPC 0 Details:\n  Type: MPC Type 2 3D\n  CPU: AMCC PowerPC 8544E\n  Cores: 6\n  Frequency: 3200 MHz\n  Memory: 4096 MB DDR3\n  State: Online\n  Temperature: 45°C\n  CPU Utilization: 67%\n  Memory Utilization: 78%"
+      "response": "                     Temp  CPU Utilization (%)   Memory    Utilization (%)\nSlot State            (C)  Total  Interrupt      DRAM (MB) Heap     Buffer\n  0  Online            45     67          8      4096        78         15\n\nFPC 0 Details:\n  Type: MPC Type 2 3D\n  CPU: AMCC PowerPC 8544E\n  Cores: 6\n  Frequency: 3200 MHz\n  Memory: 4096 MB DDR3\n  State: Online\n  Temperature: 45\u00b0C\n  CPU Utilization: 67%\n  Memory Utilization: 78%"
     },
     {
       "command": "show chassis routing-engine",

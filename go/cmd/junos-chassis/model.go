@@ -116,11 +116,14 @@ type Interfaces struct {
 
 // Unit is a logical unit the device configures on a port, named
 // <parent>.<unit> as Junos names it. Inet is the address `show interfaces
-// terse` lists for it; empty lists no family.
+// terse` lists for it. Family is the protocol family the unit carries
+// without an address ("inet", as a VRF unit configured `family inet;`);
+// an Inet address implies it, and neither lists no family.
 type Unit struct {
 	Parent string `json:"parent"`
 	Unit   int    `json:"unit"`
 	Inet   string `json:"inet,omitempty"`
+	Family string `json:"family,omitempty"`
 }
 
 type SNMPRow struct {
@@ -166,6 +169,7 @@ type LogicalUnit struct {
 	IfName  string
 	Unit    int
 	Inet    string
+	Family  string
 	Parent  Port
 }
 
@@ -345,12 +349,21 @@ func (c *Chassis) expandUnits(m *Model) error {
 		if _, err := netip.ParsePrefix(u.Inet); u.Inet != "" && err != nil {
 			return fmt.Errorf("units: %s unit %d inet: %w", u.Parent, u.Unit, err)
 		}
+		family := u.Family
+		switch {
+		case u.Inet != "" && family == "":
+			family = "inet"
+		case u.Inet != "" && family != "inet":
+			return fmt.Errorf("units: %s unit %d carries an inet address but family %q", u.Parent, u.Unit, family)
+		case family != "" && family != "inet":
+			return fmt.Errorf("units: %s unit %d family %q is not inet", u.Parent, u.Unit, family)
+		}
 		name := fmt.Sprintf("%s.%d", u.Parent, u.Unit)
 		if seen[name] {
 			return fmt.Errorf("units: %s defined twice", name)
 		}
 		seen[name] = true
-		c.Units = append(c.Units, LogicalUnit{IfIndex: len(c.Ports) + len(c.Units) + 1, IfName: name, Unit: u.Unit, Inet: u.Inet, Parent: parent})
+		c.Units = append(c.Units, LogicalUnit{IfIndex: len(c.Ports) + len(c.Units) + 1, IfName: name, Unit: u.Unit, Inet: u.Inet, Family: family, Parent: parent})
 	}
 	return nil
 }
