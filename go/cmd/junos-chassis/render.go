@@ -117,6 +117,15 @@ type bindingsData struct {
 	FPCs               []FPC
 	FPCNames           []string
 	FabricPairs        []fabricPair
+	// ManagementFilter keys the management-port subtree by name
+	// ("name:fxp0") and ManagementExclude drops those names from the
+	// line-card subtrees (" !name:fxp0", with its leading space so an
+	// empty value leaves "iftype:6" as it was). Both are empty when the
+	// model has no Ethernet system interface: a Routing Engine port is
+	// ethernetCsmacd like a line-card port, so only its name tells the
+	// catalogue it carries no PFE out-queues and no line-card sensor.
+	ManagementFilter  string
+	ManagementExclude string
 }
 
 func bindingsDataFor(c *Chassis) bindingsData {
@@ -152,6 +161,16 @@ func bindingsDataFor(c *Chassis) bindingsData {
 	d.PropertyComponents = append(append(append(append(d.PropertyComponents, cbs...), d.FPCNames...), firstPICs...), res...)
 	d.OverTemperature = append(append(append(d.OverTemperature, pics...), res...), fabrics...)
 	d.FPCs = c.FPCs
+	var mgmt []string
+	for _, p := range c.System {
+		if p.IfType == "6" {
+			mgmt = append(mgmt, p.IfName)
+		}
+	}
+	if len(mgmt) > 0 {
+		d.ManagementFilter = "name:" + strings.Join(mgmt, ",")
+		d.ManagementExclude = " !name:" + strings.Join(mgmt, ",")
+	}
 	for _, src := range c.FPCs {
 		for _, dst := range c.FPCs {
 			d.FabricPairs = append(d.FabricPairs, fabricPair{Src: src, Dst: dst})

@@ -353,3 +353,58 @@ func TestRenderTerseUnitFamilies(t *testing.T) {
 		}
 	}
 }
+
+// The management port is ethernetCsmacd like a line-card port, so the
+// bindings exclude it from the line-card and out-queue subtrees by name
+// and serve it from a subtree of its own keyed by name. A model with no
+// Ethernet system interface renders neither, so its interface subtrees
+// are keyed as they were before system interfaces existed.
+func TestRenderBindingsManagementPort(t *testing.T) {
+	render := func(system []SystemInterface) string {
+		t.Helper()
+		m, err := loadModel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.SystemInterfaces = system
+		c, err := Expand(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := RenderBindings(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	shipped := render([]SystemInterface{
+		{Name: "fxp0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "10.0.0.1/24"},
+		{Name: "lo0", IfType: 24, MTU: "65536", Inet: "10.255.0.1/32"},
+	})
+	if n := strings.Count(shipped, `"filter": "iftype:6 !name:fxp0"`); n != 2 {
+		t.Errorf("shipped bindings exclude fxp0 from %d subtrees, want the line-card and out-queue subtrees", n)
+	}
+	if n := strings.Count(shipped, `"filter": "name:fxp0"`); n != 1 {
+		t.Errorf("shipped bindings carry %d management subtrees, want 1", n)
+	}
+	if n := strings.Count(shipped, `"filter": "iftype:6"`); n != 1 {
+		t.Errorf("shipped bindings keep %d subtrees on the bare iftype:6, want the subinterface subtree only", n)
+	}
+	two := render([]SystemInterface{
+		{Name: "fxp0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "10.0.0.1/24"},
+		{Name: "em0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "10.0.1.1/24"},
+	})
+	if !strings.Contains(two, `"filter": "iftype:6 !name:fxp0,em0"`) || !strings.Contains(two, `"filter": "name:fxp0,em0"`) {
+		t.Errorf("two management ports are not listed together in the filters")
+	}
+	none := render([]SystemInterface{{Name: "lo0", IfType: 24, MTU: "65536", Inet: "10.255.0.1/32"}})
+	if strings.Contains(none, "name:") {
+		t.Errorf("a model without an Ethernet system interface renders a name term")
+	}
+	if n := strings.Count(none, `"filter": "iftype:6"`); n != 3 {
+		t.Errorf("a model without an Ethernet system interface keys %d subtrees on iftype:6, want 3", n)
+	}
+	if n := strings.Count(none, `"path": "/interfaces/interface[name=*]",`); n != 1 {
+		t.Errorf("a model without an Ethernet system interface renders %d interface entry subtrees, want 1", n)
+	}
+}

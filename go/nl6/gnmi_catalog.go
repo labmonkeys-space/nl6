@@ -149,22 +149,123 @@ type gnmiCatalogKey struct {
 	// instead of a hand copy of its names. Narrowed further by Filter.
 	Parent string `json:"parent,omitempty"`
 
-	ifTypes map[int]bool // compiled from an interfaces Filter "iftype:<n>[,<n>...]"; nil when unfiltered
+	ifFilter *gnmiInterfaceFilter // compiled from an interfaces Filter; nil when unfiltered
 }
 
-// parseIfTypeFilter compiles an interfaces key filter: the ifType
-// values (IF-MIB ifType) an interface's row must hold to be listed.
-func parseIfTypeFilter(f string) (map[int]bool, error) {
-	list, ok := strings.CutPrefix(f, "iftype:")
-	out := map[int]bool{}
-	for _, v := range strings.Split(list, ",") {
-		n, err := strconv.Atoi(v)
-		if !ok || err != nil || n <= 0 {
-			return nil, fmt.Errorf("interfaces filter %q: want iftype:<n>[,<n>...]", f)
+// gnmiInterfaceFilter is a compiled interfaces key filter: an interface
+// is listed when every term admits it. A nil set is an absent term.
+type gnmiInterfaceFilter struct {
+	ifTypes map[int]bool    // iftype:<n>[,<n>...]: the row's IF-MIB ifType must be listed
+	names   map[string]bool // name:<ifDescr>[,...]: the row's ifDescr must be listed
+	exclude map[string]bool // !name:<ifDescr>[,...]: the row's ifDescr must not be listed
+}
+
+const gnmiInterfaceFilterGrammar = "want whitespace-separated terms iftype:<n>[,<n>...], name:<ifDescr>[,...] and !name:<ifDescr>[,...], each at most once"
+
+// parseInterfaceFilter compiles an interfaces key filter. Names match
+// the device's ifDescr exactly: the management port of a generated
+// profile is excluded from the line-card subtrees and served by a
+// subtree of its own by name, since nothing on the device beyond
+// ifDescr and ifType tells a Routing Engine port from a line-card one.
+func parseInterfaceFilter(f string) (*gnmiInterfaceFilter, error) {
+	fail := func() (*gnmiInterfaceFilter, error) {
+		return nil, fmt.Errorf("interfaces filter %q: %s", f, gnmiInterfaceFilterGrammar)
+	}
+	out := &gnmiInterfaceFilter{}
+	for _, term := range strings.Fields(f) {
+		kind, list, ok := strings.Cut(term, ":")
+		if !ok || list == "" {
+			return fail()
 		}
-		out[n] = true
+		switch kind {
+		case "iftype":
+			if out.ifTypes != nil {
+				return fail()
+			}
+			out.ifTypes = map[int]bool{}
+			for _, v := range strings.Split(list, ",") {
+				n, err := strconv.Atoi(v)
+				if err != nil || n <= 0 {
+					return fail()
+				}
+				out.ifTypes[n] = true
+			}
+		case "name", "!name":
+			set := &out.names
+			if kind == "!name" {
+				set = &out.exclude
+			}
+			if *set != nil {
+				return fail()
+			}
+			*set = map[string]bool{}
+			for _, n := range strings.Split(list, ",") {
+				if n == "" {
+					return fail()
+				}
+				(*set)[n] = true
+			}
+		default:
+			return fail()
+		}
+	}
+	if out.ifTypes == nil && out.names == nil && out.exclude == nil {
+		return fail()
+	}
+	for n := range out.names {
+		if out.exclude[n] {
+			return nil, fmt.Errorf("interfaces filter %q: %q is both kept and dropped", f, n)
+		}
 	}
 	return out, nil
+}
+
+// admits reports whether every term of the filter accepts the interface.
+func (f *gnmiInterfaceFilter) admits(v catalogIface) bool {
+	if f == nil {
+		return true
+	}
+	return (f.ifTypes == nil || f.ifTypes[v.ifType]) && (f.names == nil || f.names[v.name]) && !f.exclude[v.name]
+}
+
+// disjointFrom reports whether no interface can satisfy both filters,
+// decided from the filters alone: disjoint ifType sets, disjoint name
+// lists, or one name list wholly inside the other's exclusions. Two
+// same-path subtrees keyed on interfaces are legal only on this proof,
+// because the interface set exists only per device.
+func (f *gnmiInterfaceFilter) disjointFrom(g *gnmiInterfaceFilter) bool {
+	if f == nil || g == nil {
+		return false
+	}
+	if f.ifTypes != nil && g.ifTypes != nil && !mapsIntersect(f.ifTypes, g.ifTypes) {
+		return true
+	}
+	if f.names != nil && g.names != nil && !mapsIntersect(f.names, g.names) {
+		return true
+	}
+	return mapsSubset(f.names, g.exclude) || mapsSubset(g.names, f.exclude)
+}
+
+func mapsIntersect[K comparable](a, b map[K]bool) bool {
+	for k := range a {
+		if b[k] {
+			return true
+		}
+	}
+	return false
+}
+
+// mapsSubset reports whether sub is a non-nil set wholly inside super.
+func mapsSubset[K comparable](sub, super map[K]bool) bool {
+	if sub == nil {
+		return false
+	}
+	for k := range sub {
+		if !super[k] {
+			return false
+		}
+	}
+	return true
 }
 
 // gnmiCatalogSubtree is one list entry: `path` is the entry path that
@@ -443,13 +544,13 @@ func (c *gnmiCatalog) validate(source string) error {
 		for j, k := range st.Keys {
 			switch k.Source {
 			case gnmiKeySourceInterfaces:
-				st.Keys[j].ifTypes = nil
+				st.Keys[j].ifFilter = nil
 				if k.Filter != "" {
-					types, err := parseIfTypeFilter(k.Filter)
+					filter, err := parseInterfaceFilter(k.Filter)
 					if err != nil {
 						return fail("subtree %d key %d: %v", i, j, err)
 					}
-					st.Keys[j].ifTypes = types
+					st.Keys[j].ifFilter = filter
 				}
 			case gnmiKeySourceSubinterfaces:
 				if k.Filter != "" || len(k.Names) > 0 || k.Parent != "" {
@@ -664,15 +765,19 @@ func (c *gnmiCatalog) entryTuples(st *gnmiCatalogSubtree) (tuples []string, ok b
 
 // checkSamePathSubtrees refuses two subtrees of one origin on one entry
 // path whose entries intersect: under `prefix: list-entry` they would
-// render one prefix as two notifications (nl6#765). Only key sources
-// resolvable at load are compared; a pair with an interfaces key on
-// either side is not checked, because the interface name set exists
-// only per device.
+// render one prefix as two notifications (nl6#765). Key sources
+// resolvable at load (components, neighbors, static) are enumerated. A
+// pair with an interfaces key on both sides at one position is decided
+// from the two filters alone, since the interface set exists only per
+// device: it loads when the filters are disjoint by construction or
+// another position is disjoint, and is refused otherwise. A pair with
+// an interfaces key on one side only is not checked.
 //
 // Same-path subtrees with DISJOINT entries are allowed (the shipped
-// MX10004 keeps `CPU0:CORE0` beside the inventory on one path). Paths
-// are compared compiled, since parseCatalogPath trims slashes. A pair
-// of key-less root subtrees is refused too: both render the origin-only
+// MX10004 keeps `CPU0:CORE0` beside the inventory on one path, and its
+// management port beside the line-card ports by name). Paths are
+// compared compiled, since parseCatalogPath trims slashes. A pair of
+// key-less root subtrees is refused too: both render the origin-only
 // prefix, so their leaves belong in one root subtree.
 func (c *gnmiCatalog) checkSamePathSubtrees() error {
 	for i, a := range c.Subtrees {
@@ -680,6 +785,14 @@ func (c *gnmiCatalog) checkSamePathSubtrees() error {
 		for j := i + 1; j < len(c.Subtrees); j++ {
 			b := c.Subtrees[j]
 			if b.Origin != a.Origin || !pathElemsEqual(a.elems, b.elems) {
+				continue
+			}
+			if ia := interfacesKeyAt(a); ia >= 0 {
+				if ib := interfacesKeyAt(b); ib == ia {
+					if err := c.checkSamePathInterfacePair(i, j, a, b, ia); err != nil {
+						return err
+					}
+				}
 				continue
 			}
 			if seen == nil {
@@ -710,6 +823,34 @@ func (c *gnmiCatalog) checkSamePathSubtrees() error {
 		}
 	}
 	return nil
+}
+
+// interfacesKeyAt is the position of a subtree's interfaces key, or -1.
+func interfacesKeyAt(st *gnmiCatalogSubtree) int {
+	return slices.IndexFunc(st.Keys, func(k gnmiCatalogKey) bool { return k.Source == gnmiKeySourceInterfaces })
+}
+
+// checkSamePathInterfacePair decides a same-path pair keyed on
+// interfaces at position pos. The pair is legal when some key position
+// cannot share a value: the interface filters are disjoint by
+// construction, or a load-resolvable position has no common value. A
+// subinterfaces key follows its interface and decides nothing.
+func (c *gnmiCatalog) checkSamePathInterfacePair(i, j int, a, b *gnmiCatalogSubtree, pos int) error {
+	if a.Keys[pos].ifFilter.disjointFrom(b.Keys[pos].ifFilter) {
+		return nil
+	}
+	for k := range a.Keys {
+		if k == pos || a.Keys[k].Source == gnmiKeySourceSubinterfaces || b.Keys[k].Source == gnmiKeySourceSubinterfaces {
+			continue
+		}
+		va, oka := c.keyValues(a.Keys[k])
+		vb, okb := c.keyValues(b.Keys[k])
+		if oka && okb && !slices.ContainsFunc(va, func(v string) bool { return slices.Contains(vb, v) }) {
+			return nil
+		}
+	}
+	return fmt.Errorf("subtree %d and subtree %d both serve %s %s with interfaces filters %q and %q, which may render one prefix twice; make the filters disjoint by construction: disjoint iftype sets, disjoint name lists, or one name list inside the other's !name list",
+		i, j, a.Origin, a.Path, a.Keys[pos].Filter, b.Keys[pos].Filter)
 }
 
 // pathElemsEqual compares compiled entry paths element by element,
