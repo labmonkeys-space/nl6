@@ -7,8 +7,10 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -515,8 +517,92 @@ func TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ns) != 73*8 {
-		t.Errorf("%d out-queues, want 8 for each of the 72 ports and fxp0", len(ns))
+	// The management port has no PFE: the out-queue subtree excludes it
+	// by name, so only the 72 line-card ports carry queues.
+	if len(ns) != 72*8 {
+		t.Errorf("%d out-queues, want 8 for each of the 72 ports and none for fxp0", len(ns))
+	}
+	for _, n := range ns {
+		if n.Prefix.GetElem()[1].GetKey()["name"] == "fxp0" {
+			t.Fatalf("fxp0 carries an out-queue: %s", pathToString(n.Prefix))
+		}
+	}
+}
+
+// newMX10004ProfileResolver builds a catalogue resolver over a device
+// carrying the shipped juniper_mx10004 profile, so the resolver sees the
+// real ifDescr table, fxp0 and lo0 included.
+func newMX10004ProfileResolver(t *testing.T) *catalogResolver {
+	t.Helper()
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := &MetricsCycler{}
+	mc.InitIfCounters(res, 1)
+	dev := &DeviceSimulator{ID: "mx10004", IP: net.IPv4(10, 42, 0, 10), resourceFile: "juniper_mx10004.json", resources: res, metricsCycler: mc}
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newCatalogResolver(dev, cats["juniper_mx10004"])
+}
+
+// TestJuniperMx10004_ManagementPortLeafSet: fxp0 is a Routing Engine port,
+// not a line-card one, so it renders once under /interfaces/interface with
+// the OpenConfig state and IF-MIB counters and without the line-card
+// sensor's identity leaves, the PFE hardware-port and the MAC statistics,
+// while a line-card port keeps all of them. Every interface entry renders
+// exactly once: the two same-path subtrees split the ports by name.
+func TestJuniperMx10004_ManagementPortLeafSet(t *testing.T) {
+	r := newMX10004ProfileResolver(t)
+	ns, err := r.Resolve(pathFromString(t, "/interfaces/interface"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaves := map[string]map[string]any{}
+	for _, n := range ns {
+		if len(n.Prefix.GetElem()) != 2 {
+			continue // out-queue and subinterface entries
+		}
+		name := n.Prefix.GetElem()[1].GetKey()["name"]
+		if leaves[name] != nil {
+			t.Fatalf("interface %s rendered twice", name)
+		}
+		leaves[name] = map[string]any{}
+		for _, up := range n.Updates {
+			leaves[name][pathToString(up.Path)] = up.Value
+		}
+	}
+	if len(leaves) != 73 {
+		t.Fatalf("%d interface entries, want the 72 ports and fxp0", len(leaves))
+	}
+	fxp0, port := leaves["fxp0"], leaves["xe-0/0/0"]
+	if fxp0 == nil || port == nil {
+		t.Fatalf("entries %v lack fxp0 or xe-0/0/0", slices.Sorted(maps.Keys(leaves)))
+	}
+	if got := fmt.Sprint(fxp0["/state/ifindex"]); got != "77" {
+		t.Errorf("fxp0 state/ifindex = %s, want 77", got)
+	}
+	for _, l := range []string{"/name", "/state/name", "/state/mtu", "/state/type", "/state/high-speed", "/state/oper-status", "/state/counters/in-octets", "/state/counters/out-octets", "/state/counters/in-errors", "/state/counters/carrier-transitions"} {
+		if _, ok := fxp0[l]; !ok {
+			t.Errorf("fxp0 lacks %s", l)
+		}
+		if _, ok := port[l]; !ok {
+			t.Errorf("xe-0/0/0 lacks %s", l)
+		}
+	}
+	for _, l := range []string{"/init-time", "/state/parent-ae-name", "/state/hardware-port", "/state/counters/in-fcs-errors", "/state/counters/in-pause-pkts", "/state/counters/out-pause-pkts"} {
+		if _, ok := fxp0[l]; ok {
+			t.Errorf("fxp0 carries the line-card leaf %s", l)
+		}
+		if _, ok := port[l]; !ok {
+			t.Errorf("xe-0/0/0 lacks the line-card leaf %s", l)
+		}
+	}
+	if got := fmt.Sprint(fxp0["/state/mtu"]); got != "1514" {
+		t.Errorf("fxp0 state/mtu = %s, want the IF-MIB row's 1514", got)
 	}
 }
 

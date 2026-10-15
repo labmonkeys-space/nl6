@@ -7,6 +7,7 @@ package main
 
 import (
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -673,6 +674,60 @@ func TestCatalogResolver_InterfacesIfTypeFilter(t *testing.T) {
 	sort.Strings(names)
 	if strings.Join(names, ",") != "BE1,Hu0,Hu1" {
 		t.Fatalf("interfaces %v, want BE1,Hu0,Hu1", names)
+	}
+}
+
+// The name terms select interfaces by ifDescr: `!name:` drops a row an
+// ifType term would keep (the management port is ethernetCsmacd like a
+// line-card port) and `name:` keeps only the rows named, whatever their
+// ifType. Each listed entry still carries its own row's ifIndex.
+func TestCatalogResolver_InterfacesNameFilter(t *testing.T) {
+	for _, tc := range []struct {
+		filter, want string
+	}{
+		{"iftype:6 !name:Hu0", "Hu1"},
+		{"!name:Hu0,BE1", "Hu0.100,Hu0.200,BE1.300,Hu1,Hu1.x,Lo0"},
+		{"name:Hu0,Lo0", "Hu0,Lo0"},
+		{"iftype:6 name:Hu0,Lo0", "Hu0"},
+		{"name:Hu0 !name:Lo0", "Hu0"},
+		{"name:Hu9", ""},
+	} {
+		t.Run(tc.filter, func(t *testing.T) {
+			data := strings.Replace(subifCatalog, `"filter": "iftype:6,161"`, `"filter": "`+tc.filter+`"`, 1)
+			cat, err := parseGnmiCatalog([]byte(data), "named.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := newNamedIfDevice(t, subifDeviceIfs)
+			ic := d.metricsCycler.ifCounters.Load()
+			r := newCatalogResolver(d, cat)
+			got, err := r.Resolve(pathFromString(t, "/interfaces/interface/state/counters"), ic.startTime.Add(5*time.Second))
+			if tc.want == "" {
+				// No interface admitted: the path matches no entry.
+				if status.Code(err) != codes.NotFound {
+					t.Fatalf("err = %v, want NotFound", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var names []string
+			for _, n := range got {
+				name := n.Prefix.GetElem()[1].GetKey()["name"]
+				names = append(names, name)
+				idx := slices.IndexFunc(subifDeviceIfs, func(r [2]string) bool { return r[0] == name }) + 1
+				if w := ic.GetDynamicAt(ifXTablePrefix+"6."+strconv.Itoa(idx), 5); strconv.FormatUint(n.Updates[0].Value.(uint64), 10) != w {
+					t.Errorf("%s in-octets %v, want ifIndex %d's %s", name, n.Updates[0].Value, idx, w)
+				}
+			}
+			sort.Strings(names)
+			want := strings.Split(tc.want, ",")
+			sort.Strings(want)
+			if strings.Join(names, ",") != strings.Join(want, ",") {
+				t.Fatalf("filter %q listed %v, want %v", tc.filter, names, want)
+			}
+		})
 	}
 }
 

@@ -318,7 +318,7 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 			var vals []catalogIface
 			if k.Source == gnmiKeySourceInterfaces {
 				for _, v := range ifs.all {
-					if k.ifTypes == nil || k.ifTypes[v.ifType] {
+					if k.ifFilter.admits(v) {
 						vals = append(vals, v)
 					}
 				}

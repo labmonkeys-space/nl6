@@ -12,7 +12,7 @@
   ],
   "subtrees": [
     {
-      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "iftype:6"}], "module": "openconfig-interfaces",
+      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "iftype:6<<if .ManagementPorts>> !name:<<.ManagementPorts>><<end>>"}], "module": "openconfig-interfaces",
       "leaves": {
         "state/name": "ifstate:name", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper", "state/admin-status": "ifstate:admin",
         "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:false", "state/description": "const:",
@@ -30,10 +30,28 @@
       "types": {"state/last-change": "uint64", "state/hardware-port": "string", "state/type": "string", "state/loopback-mode": "string"},
       "always": ["name", "init-time", "state/high-speed", "state/parent-ae-name"],
       "extra": {"state/high-speed": {"type": "uint32", "gen": "ifmib:ifHighSpeed"}, "init-time": {"type": "uint64", "gen": "timestamp:boot"}, "name": {"type": "string", "gen": "key:0"}, "state/parent-ae-name": {"type": "string", "gen": "const:"}}
-    },
+    },<<if .ManagementPorts>><</* The Routing Engine management port: the OpenConfig interface state and IF-MIB counters, with no PFE out-queue, no hardware-port and none of the line-card sensor's identity or MAC statistics. */>>
+    {
+      "path": "/interfaces/interface[name=*]", "origin": "openconfig", "keys": [{"source": "interfaces", "filter": "name:<<.ManagementPorts>>"}], "module": "openconfig-interfaces",
+      "leaves": {
+        "state/name": "ifstate:name", "state/ifindex": "ifstate:ifindex", "state/oper-status": "ifstate:oper", "state/admin-status": "ifstate:admin",
+        "state/last-change": "ifstate:last-change", "state/enabled": "const:true", "state/logical": "const:false", "state/description": "const:",
+        "state/mtu": "ifmib:ifMtu", "state/type": "const:ethernetCsmacd", "state/loopback-mode": "const:NONE",
+        "state/counters/in-octets": "ifcounter:ifHCInOctets", "state/counters/out-octets": "ifcounter:ifHCOutOctets",
+        "state/counters/in-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-unicast-pkts": "ifcounter:ifHCInUcastPkts", "state/counters/out-unicast-pkts": "ifcounter:ifHCOutUcastPkts",
+        "state/counters/in-multicast-pkts": "ifcounter:ifHCInMulticastPkts", "state/counters/out-multicast-pkts": "ifcounter:ifHCOutMulticastPkts",
+        "state/counters/in-broadcast-pkts": "ifcounter:ifHCInBroadcastPkts", "state/counters/out-broadcast-pkts": "ifcounter:ifHCOutBroadcastPkts",
+        "state/counters/in-discards": "ifcounter:ifInDiscards", "state/counters/out-discards": "ifcounter:ifOutDiscards",
+        "state/counters/in-errors": "ifcounter:ifInErrors", "state/counters/out-errors": "ifcounter:ifOutErrors",
+        "state/counters/carrier-transitions": "const:1"
+      },
+      "types": {"state/last-change": "uint64", "state/type": "string", "state/loopback-mode": "string"},
+      "extra": {"state/high-speed": {"type": "uint32", "gen": "ifmib:ifHighSpeed"}, "name": {"type": "string", "gen": "key:0"}}
+    },<<end>>
     {
       "path": "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]", "origin": "openconfig",
-      "keys": [{"source": "interfaces", "filter": "iftype:6"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
+      "keys": [{"source": "interfaces", "filter": "iftype:6<<if .ManagementPorts>> !name:<<.ManagementPorts>><<end>>"}, {"source": "static", "names": ["0", "1", "2", "3", "4", "5", "6", "7"]}], "module": "openconfig-interfaces",
       "leaves": {},
       "extra": {"queue-number": {"type": "uint8", "gen": "key:1"}, "queued-bytes": {"type": "uint64", "gen": "const:0"}, "queued-pkts": {"type": "uint64", "gen": "const:0"}, "hp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}, "lp-red-drop-pkts": {"type": "uint64", "gen": "const:0"}}
     },

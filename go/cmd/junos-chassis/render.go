@@ -117,6 +117,14 @@ type bindingsData struct {
 	FPCs               []FPC
 	FPCNames           []string
 	FabricPairs        []fabricPair
+	// ManagementPorts is the comma-separated list of the Ethernet
+	// system interfaces ("fxp0"), the value of the management subtree's
+	// name: term and of the !name: term that drops them from the
+	// line-card subtrees; empty when the model has none, and the
+	// template then renders neither. A Routing Engine port is
+	// ethernetCsmacd like a line-card port, so only its name tells the
+	// catalogue it carries no PFE out-queues and no line-card sensor.
+	ManagementPorts string
 }
 
 func bindingsDataFor(c *Chassis) bindingsData {
@@ -152,6 +160,13 @@ func bindingsDataFor(c *Chassis) bindingsData {
 	d.PropertyComponents = append(append(append(append(d.PropertyComponents, cbs...), d.FPCNames...), firstPICs...), res...)
 	d.OverTemperature = append(append(append(d.OverTemperature, pics...), res...), fabrics...)
 	d.FPCs = c.FPCs
+	var mgmt []string
+	for _, p := range c.System {
+		if p.IfType == "6" {
+			mgmt = append(mgmt, p.IfName)
+		}
+	}
+	d.ManagementPorts = strings.Join(mgmt, ",")
 	for _, src := range c.FPCs {
 		for _, dst := range c.FPCs {
 			d.FabricPairs = append(d.FabricPairs, fabricPair{Src: src, Dst: dst})

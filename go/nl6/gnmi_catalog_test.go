@@ -93,8 +93,15 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"alias shared across origins", strings.Replace(strings.Replace(base, `"keys": [{"source": "components"}]`, `"aliases": ["/testvendor/shared/"], "keys": [{"source": "components"}]`, 1), `"origin": "openconfig",
       "keys": [{"source": "components", "filter": "temperature"}]`, `"origin": "testvendor", "aliases": ["/testvendor/shared"],
       "keys": [{"source": "components", "filter": "temperature"}]`, 1), `alias "/testvendor/shared" is also listed by a "openconfig" subtree`},
-		{"interfaces filter outside iftype", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "FAN"}]`, 1), `interfaces filter "FAN": want iftype:<n>[,<n>...]`},
-		{"interfaces filter with a bad iftype", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6,x"}]`, 1), `interfaces filter "iftype:6,x": want iftype:<n>[,<n>...]`},
+		{"interfaces filter outside the grammar", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "FAN"}]`, 1), `interfaces filter "FAN": want whitespace-separated terms iftype:<n>[,<n>...], name:<ifDescr>[,...] and !name:<ifDescr>[,...]`},
+		{"interfaces filter with a bad iftype", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6,x"}]`, 1), `interfaces filter "iftype:6,x": want`},
+		{"interfaces filter with an unknown term", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6 role:mgmt"}]`, 1), `interfaces filter "iftype:6 role:mgmt": want`},
+		{"interfaces filter with a repeated term", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6 iftype:24"}]`, 1), `interfaces filter "iftype:6 iftype:24": want`},
+		{"interfaces filter with an empty name", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "name:"}]`, 1), `interfaces filter "name:": want`},
+		{"interfaces filter with an empty name in a list", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "!name:fxp0,"}]`, 1), `interfaces filter "!name:fxp0,": want`},
+		{"interfaces filter listing a name twice", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "!name:fxp0,fxp0"}]`, 1), `interfaces filter "!name:fxp0,fxp0": want`},
+		{"interfaces filter listing an iftype twice", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6,6"}]`, 1), `interfaces filter "iftype:6,6": want`},
+		{"interfaces filter keeping and dropping one name", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "name:fxp0,em0 !name:fxp0"}]`, 1), `interfaces filter "name:fxp0,em0 !name:fxp0": "fxp0" is both kept and dropped`},
 		{"subinterfaces without an interfaces key before it", strings.Replace(strings.Replace(base, `"path": "/interfaces/interface[name=*]",`, `"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",`, 1), `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "static", "names": ["x"]}, {"source": "subinterfaces"}]`, 1), "subinterfaces key source must directly follow an interfaces key source"},
 		{"subinterfaces with a filter", strings.Replace(strings.Replace(base, `"path": "/interfaces/interface[name=*]",`, `"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",`, 1), `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces"}, {"source": "subinterfaces", "filter": "iftype:6"}]`, 1), "subinterfaces key source takes no filter, names or parent"},
 		{"subinterfaces with names", strings.Replace(strings.Replace(base, `"path": "/interfaces/interface[name=*]",`, `"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",`, 1), `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces"}, {"source": "subinterfaces", "names": ["100"]}]`, 1), "subinterfaces key source takes no filter, names or parent"},
@@ -292,6 +299,71 @@ func TestParseGnmiCatalog_SamePathOverlappingKeysRefused(t *testing.T) {
 			}
 			if strings.Contains(tc.name, "components") != strings.Contains(err.Error(), "leaf filter") {
 				t.Fatalf("err = %v: the leaf-filter remedy belongs only to a subtree with a components key", err)
+			}
+		})
+	}
+}
+
+// twoInterfaceSubtreeCatalog is a catalogue with two openconfig subtrees
+// on one interface entry path, each keyed by the given key list.
+func twoInterfaceSubtreeCatalog(path, keys1, keys2 string) []byte {
+	return []byte(`{
+  "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "testvendor", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "subtrees": [
+    {"path": "` + path + `", "origin": "openconfig", "keys": ` + keys1 + `,
+     "leaves": [{"name": "state/counters/in-octets", "type": "uint64", "gen": "ifcounter:ifHCInOctets"}]},
+    {"path": "` + path + `", "origin": "openconfig", "keys": ` + keys2 + `,
+     "leaves": [{"name": "state/counters/out-octets", "type": "uint64", "gen": "ifcounter:ifHCOutOctets"}]}
+  ]
+}`)
+}
+
+// TestParseGnmiCatalog_SamePathInterfacePairs: a same-path pair keyed
+// on interfaces exists only per device, so load decides it from the
+// filters alone. It loads when the filters cannot share an interface
+// (disjoint ifType sets, disjoint name lists, a name list inside the
+// other's exclusions) or another key position is disjoint, and is
+// refused otherwise naming both filters. Before this, such a pair was
+// not checked at all and rendered one prefix twice.
+func TestParseGnmiCatalog_SamePathInterfacePairs(t *testing.T) {
+	ifs := func(filter string) string {
+		if filter == "" {
+			return `{"source": "interfaces"}`
+		}
+		return `{"source": "interfaces", "filter": "` + filter + `"}`
+	}
+	const entry = "/interfaces/interface[name=*]"
+	const subif = "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]/state/counters"
+	const queue = "/interfaces/interface[name=*]/state/counters/out-queue[queue-number=*]"
+	cases := []struct {
+		name    string
+		cat     []byte
+		wantErr string // empty = must load
+	}{
+		{"split by name loads", twoInterfaceSubtreeCatalog(entry, "["+ifs("iftype:6 !name:fxp0")+"]", "["+ifs("name:fxp0")+"]"), ""},
+		{"split by name in either order loads", twoInterfaceSubtreeCatalog(entry, "["+ifs("name:fxp0,em0")+"]", "["+ifs("!name:em0,fxp0,lo0")+"]"), ""},
+		{"split by ifType loads", twoInterfaceSubtreeCatalog(subif, "["+ifs("iftype:6")+`, {"source": "subinterfaces"}]`, "["+ifs("iftype:161")+`, {"source": "subinterfaces"}]`), ""},
+		{"disjoint name lists load", twoInterfaceSubtreeCatalog(entry, "["+ifs("name:fxp0")+"]", "["+ifs("name:em0")+"]"), ""},
+		{"disjoint static key beside one interface filter loads", twoInterfaceSubtreeCatalog(queue, "["+ifs("iftype:6")+`, {"source": "static", "names": ["0", "1"]}]`, "["+ifs("iftype:6")+`, {"source": "static", "names": ["2"]}]`), ""},
+		{"ifType against a name", twoInterfaceSubtreeCatalog(entry, "["+ifs("iftype:6")+"]", "["+ifs("name:fxp0")+"]"), `interfaces filters "iftype:6" and "name:fxp0"`},
+		{"unfiltered against a filter", twoInterfaceSubtreeCatalog(entry, "["+ifs("")+"]", "["+ifs("iftype:6")+"]"), `interfaces filters "" and "iftype:6"`},
+		{"overlapping ifType sets", twoInterfaceSubtreeCatalog(subif, "["+ifs("iftype:6,161")+`, {"source": "subinterfaces"}]`, "["+ifs("iftype:161")+`, {"source": "subinterfaces"}]`), `interfaces filters "iftype:6,161" and "iftype:161"`},
+		{"exclusion short of the name list", twoInterfaceSubtreeCatalog(entry, "["+ifs("name:fxp0,em0")+"]", "["+ifs("iftype:6 !name:fxp0")+"]"), `interfaces filters "name:fxp0,em0" and "iftype:6 !name:fxp0"`},
+		{"interfaces keys at different positions", twoInterfaceSubtreeCatalog(queue, "["+ifs("iftype:6")+`, {"source": "static", "names": ["0"]}]`, `[{"source": "static", "names": ["0"]}, `+ifs("iftype:24")+"]"), `interfaces keys at positions 0 and 1`},
+		{"overlapping static key beside one interface filter", twoInterfaceSubtreeCatalog(queue, "["+ifs("iftype:6")+`, {"source": "static", "names": ["0", "1"]}]`, "["+ifs("iftype:6")+`, {"source": "static", "names": ["1"]}]`), `interfaces filters "iftype:6" and "iftype:6"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseGnmiCatalog(tc.cat, "two.json")
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("must load: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0 and subtree 1") || !strings.Contains(err.Error(), "disjoint") {
+				t.Fatalf("err = %v, want naming both subtrees, %s and disjointness as the remedy", err, tc.wantErr)
 			}
 		})
 	}
