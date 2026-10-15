@@ -312,6 +312,14 @@ type IfCounterCycler struct {
 	hold    []atomic.Pointer[counterHold]
 	holdMu  sync.Mutex
 	holdSeq atomic.Uint64 // seqlock around ledger writes; see heldDeltaAt
+
+	// Counter hierarchy (if_counter_rollup.go), built once at init after the
+	// engine's parent table. counterParent is the parent ifIndex of a child
+	// slot (0 for none) and share its fraction of the parent's served delta;
+	// members lists an aggregate slot's member ifIndexes (nil for none).
+	counterParent []int
+	share         []float64
+	members       [][]int
 }
 
 // State returns the interface state engine owned by this cycler. May be
@@ -1158,7 +1166,8 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 		}
 	}
 	byName := subinterfaceParents(names)
-	parents := interfaceParents(names, cachedStackedParents(resources, known))
+	layers := cachedStackLayers(resources, known)
+	parents := interfaceParents(names, layers.parents)
 	stackedOnly := map[int]bool{}
 	for idx := range parents {
 		if _, ok := byName[idx]; !ok {
@@ -1168,6 +1177,11 @@ func (c *MetricsCycler) InitIfCountersWithScenario(resources *DeviceResources, s
 	ic.state.setParents(parents)
 	ic.state.setStacked(stackedOnly)
 	ic.state.setLoopbacks(loopbacks)
+	// Counter roll-up: children derive a share of their parent, aggregates
+	// the sum of their members. Built from the same parent table and the
+	// stack table's aggregates, before the hold seed so a held child of a
+	// held parent clamps consistently.
+	ic.buildRollup(parents, layers.members)
 	// The counter hold follows derived oper-status: the hook keeps the ledger
 	// in step with every transition, and the seed pass covers interfaces that
 	// boot in a non-up state. Both before publish, like the tables above.

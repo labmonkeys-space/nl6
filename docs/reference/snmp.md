@@ -647,6 +647,7 @@ Every per-interface counter listed below is generated dynamically, not read from
 
 An interface whose profile declares `ifHighSpeed` 0 (or `ifSpeed` 0 without an `ifHighSpeed` row) carries no traffic: every column above stays 0.
 Every column on this page holds while the interface's derived `ifOperStatus` is not `up(1)` and resumes from the held value when it returns; see [Interface state](./interface-state.md).
+A subinterface or a stacked interface serves a fixed share of its parent's served delta, and an interface with two or more `ifStackTable` lower layers serves the sum of its members', so a parent is at least the sum of its children and a bundle equals the sum of its members on the octet columns.
 A missing or unparsable speed row still means 1 Gbit/s.
 The cisco_asr9902 Loopback0 and Null0 use this.
 

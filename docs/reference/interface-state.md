@@ -28,6 +28,11 @@ The hold is applied in the one counter dispatcher, so SNMP, both gNMI resolvers,
 Counters never decrease: the ledger write is bracketed by a seqlock and a read that sampled its instant on the far side of a transition is clamped to the hold instant, so a poll sequence sees no backwards step even under tight flapping.
 `ifLastChange`, `ifSpeed` and `ifHighSpeed` are unchanged; a down port keeps its line rate, as IOS-XR and Junos do.
 The sFlow `counter_sample` status word reads admin and oper from the same engine, so it agrees with the held counters beside it.
+Counter roll-up: an interface with one lower layer (a `<port>.<unit>` subinterface, or an interface stacked on one port in `ifStackTable`) serves a fixed share of its parent's served octet delta instead of its own dial, and the shares of one parent's children sum below 1, so on every Counter64 column and on the error and discard columns a parent is at least the sum of its children at every instant, held or not.
+An interface stacked on two or more lower layers is an aggregate (a bundle) and serves the sum of its members' served deltas; the octet columns equal the member sum exactly and the packet columns read within one packet per member of it.
+The shares are a hash of the child's ifIndex, so no other interface's dial moves.
+The composition is on the served delta, after each parent's or member's own hold, so a member cable pull lowers the bundle and a held parent holds its children.
+A bundle's own `oper-status` does not follow its members: the engine follows one parent, so a bundle whose members are all down stays up.
 Two surfaces do not follow the hold: the SSH CLI counter text is static profile JSON and does not read the cycler, and flow records (NetFlow, IPFIX, sFlow flow samples) name a fixed ingress ifIndex and keep flowing regardless of interface state.
 
 Out of scope:

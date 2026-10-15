@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,7 +41,7 @@ import (
 //
 // Pinned on the parent revision, before the counter hold:
 // see shippedServedCounterDigestBeforeHold.
-const shippedServedCounterDigest = "7894c343a50f4756b8cc8e56764d5ce7785a703bb04bcf134b6e82b612de65bd"
+const shippedServedCounterDigest = "0652f065470a6aef39c3ef2707f073f3830aea6bca4716bcd61828f86e15aef3"
 
 // shippedServedCounterDigestBeforeHold is the full digest on the parent
 // revision, captured BEFORE the counter hold was written, which is the only
@@ -54,7 +55,20 @@ const shippedServedCounterDigestBeforeHold = "bdceb57cacc5614833ce3b976837284649
 // counter hold existed, in a clean worktree: it is the measurement that the
 // hold left every always-up interface byte-identical, and re-pinning it on a
 // later revision discards that measurement.
-const shippedServedCounterDigestUpOnly = "c62099ad54d62fdbcfec0c883ede750ec5de4803551f9561b3a42824fde8a204"
+//
+// Re-pinned by the counter roll-up: children, aggregates and members moved,
+// and the always-up, standalone measurement moved to
+// shippedServedCounterDigestStandaloneUp. With the roll-up reverted this
+// constant reads c62099ad54d62fdbcfec0c883ede750ec5de4803551f9561b3a42824fde8a204.
+const shippedServedCounterDigestUpOnly = "2154bb4d6b037754d728275e889bcc98b318a41b508ab016e3569119142f5c39"
+
+// shippedServedCounterDigestStandaloneUp is the digest over interfaces that are
+// up at seed AND standalone: no parent, not an aggregate, not a member of one.
+// PINNED ON THE PARENT REVISION of the counter roll-up, in a clean worktree,
+// before any edit: the roll-up moves children, aggregates and members and
+// must leave this set byte-identical. Re-pinning it on a later revision
+// discards that measurement.
+const shippedServedCounterDigestStandaloneUp = "a1c6b09ebf850e64f05a02cc020c22a8233dee7ff5b439bae7c58e5c6305841d"
 
 // normaliseDialsForDigest replaces every per-interface random draw with a
 // deterministic function of the slot. InitIfCountersWithScenario draws the
@@ -84,6 +98,36 @@ func normaliseDialsForDigest(ic *IfCounterCycler) {
 	}
 }
 
+// servedCounterExcluded names interfaces that became non-standalone when the
+// counter roll-up landed: the cisco_asr9902 bundle and its two members, which
+// had no ifStackTable rows before. Excluding them on both sides keeps the
+// standalone pin a comparison of one set against itself.
+var servedCounterExcluded = map[string]map[int]bool{
+	"cisco_asr9902.json": {10: true, 11: true, 51: true},
+}
+
+// servedCounterClass classifies one interface from the engine's parent table
+// and a direct count of the profile's active ifStackStatus rows.
+func servedCounterClass(ic *IfCounterCycler, res *DeviceResources, ifIndex int) string {
+	if ic.State().Parent(ifIndex) != 0 {
+		return "child"
+	}
+	known := map[int]bool{}
+	for i := range ic.knownIfIndexes {
+		known[i] = true
+	}
+	layers := readStackLayers(res.SNMP, known)
+	if layers.members[ifIndex] != nil {
+		return "aggregate"
+	}
+	for _, ls := range layers.members {
+		if slices.Contains(ls, ifIndex) {
+			return "member"
+		}
+	}
+	return "standalone"
+}
+
 // servedCounterInstants are the fixed evaluation instants, in cycler seconds.
 // 0 is the pre-seeded base; the others sit inside and past one dial period.
 var servedCounterInstants = []float64{0, 600, 3600, 7200}
@@ -94,6 +138,11 @@ type servedCounterRow struct {
 	OID     string
 	T       float64
 	Value   string
+	// Class is standalone, child, aggregate or member, from the engine's parent
+	// table and the stack parser (through the parser, not the cycler, so the
+	// classification does not depend on what the roll-up did with it). excluded rows are standalone on an older revision and not on
+	// this one, so the standalone pin covers one set on both.
+	Class string
 	// SeedUp records whether the interface's derived oper-status at engine
 	// construction is up(1). Read from the engine, not inferred.
 	SeedUp bool
@@ -128,6 +177,10 @@ func shippedServedCounterRows(t *testing.T) []servedCounterRow {
 		sort.Ints(idx)
 		for _, i := range idx {
 			seedUp := ic.State().OperStatus(i) == OperUp
+			class := servedCounterClass(ic, res, i)
+			if servedCounterExcluded[profile][i] {
+				class = "excluded"
+			}
 			for _, c := range ifCyclerColumns {
 				if isStateCol(c.col, c.prefix) {
 					continue
@@ -136,7 +189,7 @@ func shippedServedCounterRows(t *testing.T) []servedCounterRow {
 				for _, at := range servedCounterInstants {
 					rows = append(rows, servedCounterRow{
 						Profile: profile, IfIndex: i, OID: oid, T: at,
-						Value: ic.GetDynamicAt(oid, at), SeedUp: seedUp,
+						Value: ic.GetDynamicAt(oid, at), SeedUp: seedUp, Class: class,
 					})
 				}
 			}
@@ -182,6 +235,13 @@ func TestShippedServedCounterDigest(t *testing.T) {
 	gotUp, upLines := servedCounterDigest(rows, func(r servedCounterRow) bool { return r.SeedUp })
 	if gotUp != shippedServedCounterDigestUpOnly {
 		reportDigestMismatch(t, "shippedServedCounterDigestUpOnly", shippedServedCounterDigestUpOnly, gotUp, upLines)
+	}
+	gotSA, saLines := servedCounterDigest(rows, func(r servedCounterRow) bool { return r.SeedUp && r.Class == "standalone" })
+	if gotSA != shippedServedCounterDigestStandaloneUp {
+		reportDigestMismatch(t, "shippedServedCounterDigestStandaloneUp", shippedServedCounterDigestStandaloneUp, gotSA, saLines)
+	}
+	if len(saLines) == len(upLines) {
+		t.Fatalf("every up interface is standalone: the standalone digest then pins nothing about the roll-up")
 	}
 	if len(upLines) == len(lines) {
 		t.Fatalf("every shipped interface seeds up: the up-only digest is then the full digest and pins nothing about the hold")

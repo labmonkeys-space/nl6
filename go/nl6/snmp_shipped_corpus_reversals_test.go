@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "cisco_asr9902 bundle members",
+		file:         "snmp_shipped_cisco_asr9902_bundle_members_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       ciscoAsr9902BundleMembersParentRevision,
+		values:       restoreCiscoAsr9902BundleMembers,
+		names:        ciscoAsr9902BundleMembersOIDNamesBefore,
+	},
+	{
 		name:         "juniper_mx10004 VRF units",
 		file:         "snmp_shipped_juniper_mx10004_vrf_units_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: ciscoAsr9902BundleMembersParentRevision,
 		parent:       mx10004VRFUnitsParentRevision,
 		values:       restoreMx10004VRFUnits,
 		names:        mx10004VRFUnitsOIDNamesBefore,

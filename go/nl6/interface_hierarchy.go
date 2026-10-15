@@ -48,15 +48,27 @@ const ifTypeSoftwareLoopback = "24"
 // ifStackStatusPrefix is ifStackStatus (IF-MIB), indexed <higher>.<lower>.
 const ifStackStatusPrefix = "1.3.6.1.2.1.31.1.2.1.3."
 
-// stackedParents reads the active(1) ifStackTable rows of a profile as
-// higher-layer ifIndex -> lower-layer ifIndex. Rows naming ifIndex 0 (the
-// table's "nothing above/below" marker) or an ifIndex outside known are
-// ignored, as is a higher layer stacked on more than one lower layer, since
-// the engine follows one parent. The same row repeated, as when two resource
-// parts carry it, is one row.
-func stackedParents(entries []SNMPResource, known map[int]bool) map[int]int {
-	out := map[int]int{}
-	multi := map[int]bool{}
+// stackLayers is a profile's active(1) ifStackTable read two ways: parents
+// maps a higher layer with exactly ONE lower layer to it, which the state
+// engine follows; members maps a higher layer with two or more lower layers,
+// an aggregate such as a bundle, to them in row order, which the counter
+// cycler sums. An aggregate has no parent: the engine follows one, so its
+// oper-status stays its own. Rows naming ifIndex 0 (the table's "nothing
+// above/below" marker) or an ifIndex outside known are ignored. The same row
+// repeated, as when two resource parts carry it, is one row.
+type stackLayers struct {
+	parents map[int]int
+	members map[int][]int
+}
+
+func readStackLayers(entries []SNMPResource, known map[int]bool) stackLayers {
+	lower := map[int][]int{}
+	// rows counts every well-formed row per higher layer, resolvable or not,
+	// so a higher layer whose rows name an unknown lower layer is never
+	// read as having ONE lower layer: a bundle with a typo in one member
+	// row would otherwise become a child of the other member.
+	rows := map[int]int{}
+	seen := map[[2]int]bool{}
 	for _, e := range entries {
 		rest, ok := strings.CutPrefix(strings.TrimPrefix(e.OID, "."), ifStackStatusPrefix)
 		if !ok || e.Response != "1" {
@@ -65,19 +77,37 @@ func stackedParents(entries []SNMPResource, known map[int]bool) map[int]int {
 		hs, ls, ok := strings.Cut(rest, ".")
 		h, err1 := strconv.Atoi(hs)
 		l, err2 := strconv.Atoi(ls)
-		if !ok || err1 != nil || err2 != nil || !known[h] || !known[l] || h == l {
+		if !ok || err1 != nil || err2 != nil || !known[h] || h == l {
 			continue
 		}
-		if prev, dup := out[h]; dup && prev != l {
-			multi[h] = true
+		if seen[[2]int{h, l}] {
+			continue
 		}
-		out[h] = l
+		seen[[2]int{h, l}] = true
+		rows[h]++
+		if !known[l] {
+			logHierarchyOnce(fmt.Sprintf("interface hierarchy: ifStackStatus row %d.%d names an unknown lower layer; ignored", h, l))
+			continue
+		}
+		lower[h] = append(lower[h], l)
 	}
-	for h := range multi {
-		logHierarchyOnce(fmt.Sprintf("interface hierarchy: ifIndex %d is stacked on more than one interface; treating it as top-level", h))
-		delete(out, h)
+	out := stackLayers{parents: map[int]int{}, members: map[int][]int{}}
+	for h, ls := range lower {
+		switch {
+		case len(ls) >= 2:
+			out.members[h] = ls
+		case rows[h] >= 2:
+			logHierarchyOnce(fmt.Sprintf("interface hierarchy: ifIndex %d is stacked on %d rows of which %d resolve; treating it as top-level", h, rows[h], len(ls)))
+		default:
+			out.parents[h] = ls[0]
+		}
 	}
 	return out
+}
+
+// stackedParents is the one-lower-layer half of readStackLayers.
+func stackedParents(entries []SNMPResource, known map[int]bool) map[int]int {
+	return readStackLayers(entries, known).parents
 }
 
 // interfaceParents maps each subinterface ifIndex to its parent's ifIndex,
@@ -149,13 +179,13 @@ func logHierarchyOnce(msg string) {
 // on the profile, and scanning its whole SNMP slice once per device would cost
 // a fleet of N devices N full scans. A reload loads a new *DeviceResources, so
 // a stale entry is never read; it is only kept.
-var stackCache sync.Map // *DeviceResources -> map[int]int
+var stackCache sync.Map // *DeviceResources -> stackLayers
 
-func cachedStackedParents(res *DeviceResources, known map[int]bool) map[int]int {
+func cachedStackLayers(res *DeviceResources, known map[int]bool) stackLayers {
 	if v, ok := stackCache.Load(res); ok {
-		return v.(map[int]int)
+		return v.(stackLayers)
 	}
-	m := stackedParents(res.SNMP, known)
+	m := readStackLayers(res.SNMP, known)
 	stackCache.Store(res, m)
 	return m
 }

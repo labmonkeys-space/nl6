@@ -4647,7 +4647,7 @@
     }
   ],
   "logical_ports": [
-    {"if_name": "Bundle-Ether1", "short": "BE1", "if_type": 161, "speed_mbps": 200000},
+    {"if_name": "Bundle-Ether1", "short": "BE1", "if_type": 161, "speed_mbps": 200000, "bundle_members": ["HundredGigE0/0/0/9", "HundredGigE0/0/0/10"]},
     {"if_name": "BVI1", "short": "BV1", "if_type": 53, "speed_mbps": 10000},
     {"if_name": "Loopback0", "short": "Lo0", "if_type": 24, "speed_mbps": 0, "mtu": "1500", "no_phys_address": true},
     {"if_name": "Null0", "short": "Nu0", "if_type": 1, "speed_mbps": 0, "mtu": "1500", "no_phys_address": true}
