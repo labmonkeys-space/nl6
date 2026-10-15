@@ -11,7 +11,7 @@
     },
     {
       "command": "show route",
-      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    > to 192.168.1.254 via xe-1/0/0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    > via xe-1/0/0.0"
+      "response": "inet.0: 12 destinations, 12 routes (12 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    \u003e to 192.168.1.254 via xe-1/0/0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    \u003e via xe-1/0/0.0"
     },
     {
       "command": "show configuration",
@@ -27,7 +27,7 @@
     },
     {
       "command": "show chassis fpc",
-      "response": "                     Temp  CPU Utilization (%)   Memory    Utilization (%)\nSlot State            (C)  Total  Interrupt      DRAM (MB) Heap     Buffer\n  0  Online            45     67          8      4096        78         15\n\nFPC 0 Details:\n  Type: MPC Type 2 3D\n  CPU: AMCC PowerPC 8544E\n  Cores: 6\n  Frequency: 3200 MHz\n  Memory: 4096 MB DDR3\n  State: Online\n  Temperature: 45\u00b0C\n  CPU Utilization: 67%\n  Memory Utilization: 78%"
+      "response": "                     Temp  CPU Utilization (%)   Memory    Utilization (%)\nSlot State            (C)  Total  Interrupt      DRAM (MB) Heap     Buffer\n  0  Online            45     67          8      4096        78         15\n\nFPC 0 Details:\n  Type: MPC Type 2 3D\n  CPU: AMCC PowerPC 8544E\n  Cores: 6\n  Frequency: 3200 MHz\n  Memory: 4096 MB DDR3\n  State: Online\n  Temperature: 45°C\n  CPU Utilization: 67%\n  Memory Utilization: 78%"
     },
     {
       "command": "show chassis routing-engine",

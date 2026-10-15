@@ -63,11 +63,13 @@ func parseJunosConfig(text string) (*junosNode, error) {
 	stack := []*junosNode{root}
 	for i, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "##") {
+		if line == "" || strings.HasPrefix(line, "##") || (strings.HasPrefix(line, "/*") && strings.HasSuffix(line, "*/")) {
 			continue
 		}
-		if j := strings.Index(line, " ## "); j >= 0 {
-			line = strings.TrimSpace(line[:j])
+		// A "; ## SECRET-DATA" trailer follows the statement; " ## " inside a
+		// quoted value is part of the value.
+		if j := strings.Index(line, "; ##"); j >= 0 {
+			line = line[:j+1]
 		}
 		top := stack[len(stack)-1]
 		switch {
@@ -108,16 +110,20 @@ func stripPrefixLen(a string) string {
 
 // configUnits returns port -> unit number -> unit, and the ports with
 // vlan-tagging.
-func configUnits(root *junosNode) (map[string]map[int]junosUnit, map[string]bool, error) {
+// tagged maps a port to the tagging statement it carries ("vlan-tagging" or
+// "flexible-vlan-tagging"); a port with neither is absent.
+func configUnits(root *junosNode) (map[string]map[int]junosUnit, map[string]string, error) {
 	units := map[string]map[int]junosUnit{}
-	tagged := map[string]bool{}
+	tagged := map[string]string{}
 	ifs := root.child("interfaces")
 	if ifs == nil {
 		return nil, nil, fmt.Errorf("no interfaces block")
 	}
 	for _, port := range ifs.children {
-		if port.has("vlan-tagging") {
-			tagged[port.name] = true
+		for _, t := range []string{"vlan-tagging", "flexible-vlan-tagging"} {
+			if port.has(t) {
+				tagged[port.name] = t
+			}
 		}
 		for _, c := range port.children {
 			numStr, ok := strings.CutPrefix(c.name, "unit ")
@@ -134,13 +140,15 @@ func configUnits(root *junosNode) (map[string]map[int]junosUnit, map[string]bool
 					return nil, nil, fmt.Errorf("%s unit %d: vlan-id %q", port.name, num, v)
 				}
 			}
-			if c.has("family inet") {
-				u.family = "inet"
+			if fam, ok := c.stmtArg("family"); ok {
+				u.family = fam
 			}
-			if fam := c.child("family inet"); fam != nil {
-				u.family = "inet"
-				if a, ok := fam.stmtArg("address"); ok {
-					u.address = stripPrefixLen(a)
+			for _, fam := range c.children {
+				if name, ok := strings.CutPrefix(fam.name, "family "); ok {
+					u.family = name
+					if a, ok := fam.stmtArg("address"); ok {
+						u.address = stripPrefixLen(a)
+					}
 				}
 			}
 			if units[port.name] == nil {
@@ -185,7 +193,7 @@ func terseUnits(text string) (map[string]map[int]junosUnit, error) {
 
 // junosVRF is one instance as show route instance detail prints it.
 type junosVRF struct {
-	name, routerID, rd         string
+	name, routerID, rd, typ    string
 	interfaces                 []string
 	vrfImport, vrfExport       string
 	importTarget, exportTarget string
@@ -224,6 +232,8 @@ func parseInstanceDetail(text string) ([]junosVRF, error) {
 			}
 			v = strings.TrimSpace(strings.Trim(strings.TrimSpace(v), "[]"))
 			switch k {
+			case "Type":
+				cur.typ = strings.Fields(v)[0]
 			case "Router ID":
 				cur.routerID = v
 			case "Route-distinguisher":
@@ -240,10 +250,18 @@ func parseInstanceDetail(text string) ([]junosVRF, error) {
 		}
 	}
 	flush()
-	if len(out) == 0 {
-		return nil, fmt.Errorf("show route instance detail lists no instance")
+	// Only VRFs are routing-instances stanzas; the master instance (Type:
+	// forwarding) a real capture leads with is the default routing table.
+	vrfs := out[:0]
+	for _, v := range out {
+		if v.typ == "vrf" {
+			vrfs = append(vrfs, v)
+		}
 	}
-	return out, nil
+	if len(vrfs) == 0 {
+		return nil, fmt.Errorf("show route instance detail lists no vrf instance")
+	}
+	return vrfs, nil
 }
 
 // junosCLIFindings applies the rules to one profile's three responses and
@@ -303,16 +321,15 @@ func junosCLIFindings(ssh map[string]string) []string {
 		if !hasHigher {
 			continue
 		}
-		if !tagged[p] {
+		if tagged[p] == "" {
 			add("%s carries a unit above 0 but has no vlan-tagging", p)
 		}
 		for _, n := range sortedUnitNumbers(cfg[p]) {
-			want := n
-			if n == 0 {
-				want = 1
-			}
-			if cfg[p][n].vlanID != want {
-				add("%s unit %d: vlan-id is %d, want %d", p, n, cfg[p][n].vlanID, want)
+			switch {
+			case n == 0 && tagged[p] == "vlan-tagging" && cfg[p][n].vlanID < 0:
+				add("%s unit 0 has no vlan-id on a vlan-tagging port", p)
+			case n > 0 && cfg[p][n].vlanID != n:
+				add("%s unit %d: vlan-id is %d, want %d", p, n, cfg[p][n].vlanID, n)
 			}
 		}
 	}
@@ -325,7 +342,7 @@ func junosCLIFindings(ssh map[string]string) []string {
 		for _, s := range po.stmts {
 			if rest, ok := strings.CutPrefix(s, "community "); ok {
 				name, members, _ := strings.Cut(rest, " members ")
-				communities[name] = members
+				communities[name] = strings.TrimSpace(strings.Trim(strings.TrimSpace(members), "[]"))
 			}
 		}
 	}
@@ -541,6 +558,34 @@ func TestJunosCLIGuardControl(t *testing.T) {
 		{"VRF unit with an address", "show configuration", "            family inet;\n", "            family inet {\n                address 10.100.0.9/24;\n            }\n", "carries address 10.100.0.9; VRF units carry none"},
 		{"instance missing", "show configuration", "    A {\n        instance-type vrf;", "    B {\n        instance-type vrf;", "VRF A (router ID 10.100.0.9) has no routing-instances stanza"},
 		{"community members disagree", "show configuration", "members target:65001:100", "members target:65001:101", "community A (via A-import) has members \"target:65001:101\""},
+	}
+	// Legal variants that must stay quiet: a master instance in the detail
+	// output, a bracketed community, an inet6 unit, an annotated stanza, a
+	// flexible-vlan-tagging port whose unit 0 is native.
+	for _, c := range []struct{ name, cmd, from, to string }{
+		{"master instance", "show route instance detail", "A:\n", "master:\n  Router ID: 192.0.2.1\n  Type: forwarding    State: Active\n  Tables:\n    inet.0                   : 2 routes (2 active, 0 holddown, 0 hidden)\n\nA:\n"},
+		{"bracketed community", "show configuration", "members target:65001:100", "members [ target:65001:100 ]"},
+		{"annotation", "show configuration", "    A {\n", "    /* customer A */\n    A {\n"},
+		{"native unit 0", "show configuration", "        vlan-tagging;\n        unit 0 {\n            vlan-id 1;\n", "        flexible-vlan-tagging;\n        native-vlan-id 1;\n        unit 0 {\n"},
+	} {
+		ssh := junosControl()
+		if !strings.Contains(ssh[c.cmd], c.from) {
+			t.Fatalf("%s: control lacks %q", c.name, c.from)
+		}
+		ssh[c.cmd] = strings.Replace(ssh[c.cmd], c.from, c.to, 1)
+		if got := junosCLIFindings(ssh); len(got) != 0 {
+			t.Errorf("%s: legal variant has findings %v", c.name, got)
+		}
+	}
+	ssh := junosControl()
+	ssh["show configuration"] = strings.Replace(ssh["show configuration"], "        unit 100 {\n            vlan-id 100;\n            family inet;\n", "        unit 100 {\n            vlan-id 100;\n            family inet6 {\n                address 2001:db8::1/64;\n            }\n", 1)
+	ssh["show interfaces terse"] = strings.Replace(ssh["show interfaces terse"], "xe-1/0/0.100            up    up   inet\n", "xe-1/0/0.100            up    up   inet6    2001:db8::1/64\n", 1)
+	ssh["show route instance detail"] = strings.Replace(ssh["show route instance detail"], "    xe-1/0/0.100\n", "", 1)
+	ssh["show configuration"] = strings.Replace(ssh["show configuration"], "        interface xe-1/0/0.100;\n", "", 1)
+	for _, g := range junosCLIFindings(ssh) {
+		if strings.Contains(g, "xe-1/0/0.100") {
+			t.Errorf("an inet6 unit that both surfaces agree on is reported: %s", g)
+		}
 	}
 	for _, c := range cases {
 		ssh := junosControl()
