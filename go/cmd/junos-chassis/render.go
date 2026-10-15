@@ -213,6 +213,23 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		// propVirtual(53), the parent's MAC and speed, no description.
 		ifRow(u.IfIndex, u.IfName, "53", "1500", u.Parent.IfIndex, u.Parent.SpeedMbps, "")
 	}
+	// ifStackTable: a unit is the higher layer over its port. RFC 2863 keeps
+	// every interface in at least two rows, so an interface nothing runs
+	// over gets 0.<I> and one that runs over nothing gets <I>.0: a port with
+	// units gets only <port>.0, a unit gets 0.<unit> and <unit>.<port>.
+	const stackStatus = "1.3.6.1.2.1.31.1.2.1.3."
+	withUnit := map[int]bool{}
+	for _, u := range c.Units {
+		add(stackStatus+strconv.Itoa(u.IfIndex)+"."+strconv.Itoa(u.Parent.IfIndex), "1")
+		add(stackStatus+"0."+strconv.Itoa(u.IfIndex), "1")
+		withUnit[u.Parent.IfIndex] = true
+	}
+	for _, p := range c.Ports {
+		add(stackStatus+strconv.Itoa(p.IfIndex)+".0", "1")
+		if !withUnit[p.IfIndex] {
+			add(stackStatus+"0."+strconv.Itoa(p.IfIndex), "1")
+		}
+	}
 	for _, re := range c.Model.RoutingEngines {
 		idx := fmt.Sprintf("9.%d.0.0", re.Slot+1)
 		add("1.3.6.1.4.1.2636.3.1.13.1.5."+idx, fmt.Sprintf("Routing Engine %d", re.Slot))

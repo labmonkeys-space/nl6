@@ -75,10 +75,31 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add("1.3.6.1.2.1.31.1.1.1.10."+ix, strconv.FormatUint(in.HCOutBase+k*in.HCOutStep, 10))
 		add("1.3.6.1.2.1.31.1.1.1.15."+ix, strconv.Itoa(p.SpeedMbps))
 	}
-	// ifStackTable: an aggregate is the higher layer over each member.
+	// ifStackTable: an aggregate is the higher layer over each member and a
+	// subinterface over its parent. RFC 2863 keeps every interface in at
+	// least two rows, so an interface nothing runs over gets 0.<I> and one
+	// that runs over nothing gets <I>.0.
+	const stackStatus = "1.3.6.1.2.1.31.1.2.1.3."
+	higher, lower := map[int]bool{}, map[int]bool{}
+	stack := func(h, l int) {
+		add(stackStatus+strconv.Itoa(h)+"."+strconv.Itoa(l), "1")
+		higher[h], lower[l] = true, true
+	}
 	for _, p := range c.Ports {
 		for _, m := range p.Members {
-			add("1.3.6.1.2.1.31.1.2.1.3."+strconv.Itoa(p.IfIndex)+"."+strconv.Itoa(m), "1")
+			stack(p.IfIndex, m)
+		}
+		if p.Parent > 0 {
+			stack(p.IfIndex, p.Parent)
+		}
+	}
+	for _, p := range c.Ports {
+		ix := strconv.Itoa(p.IfIndex)
+		if !lower[p.IfIndex] {
+			add(stackStatus+"0."+ix, "1")
+		}
+		if !higher[p.IfIndex] {
+			add(stackStatus+ix+".0", "1")
 		}
 	}
 	ent, err := entityRows(c)

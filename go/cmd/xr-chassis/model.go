@@ -169,6 +169,9 @@ type Port struct {
 	OperDown bool
 	// Members is an aggregate's member ifIndexes, in model order.
 	Members []int
+	// Parent is the ifIndex of the interface a subinterface runs over; 0
+	// for every other interface.
+	Parent int
 }
 
 // ifTypeEthernet is IF-MIB ethernetCsmacd(6), every physical port's type;
@@ -393,7 +396,7 @@ func (c *Chassis) expandLogicalPorts(m *Model) error {
 			return fmt.Errorf("subinterfaces: %s index %d must be positive", s.Parent, s.Index)
 		}
 		ix := "." + strconv.Itoa(s.Index)
-		if err := add(Port{IfName: s.Parent + ix, Short: parent.Short + ix, IfType: ifTypeL2VLAN, SpeedMbps: parent.SpeedMbps}); err != nil {
+		if err := add(Port{IfName: s.Parent + ix, Short: parent.Short + ix, IfType: ifTypeL2VLAN, SpeedMbps: parent.SpeedMbps, Parent: parent.IfIndex}); err != nil {
 			return err
 		}
 	}

@@ -7,8 +7,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -204,5 +206,71 @@ func TestRenderSSHMatchesCommittedResponses(t *testing.T) {
 			t.Errorf("%s differs at byte %d:\nrendered:  %q\ncommitted: %q", e.Command, i,
 				e.Response[max(0, i-60):min(len(e.Response), i+60)], want[max(0, i-60):min(len(want), i+60)])
 		}
+	}
+}
+
+// The shipped table is RFC 2863 complete: each unit over its port, 0.<unit>
+// because nothing runs over a unit, <port>.0 because a port runs over
+// nothing, and 0.<port> only for a port with no unit.
+func TestRenderSNMPRowsStackTable(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := RenderSNMPRows(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	n := 0
+	for _, r := range rows {
+		if rest, ok := strings.CutPrefix(r.OID, "1.3.6.1.2.1.31.1.2.1.3."); ok {
+			if r.Response != "1" {
+				t.Errorf("row %s = %s, want active(1)", rest, r.Response)
+			}
+			got[rest] = true
+			n++
+		}
+	}
+	want := map[string]bool{}
+	withUnit := map[int]bool{}
+	for _, u := range c.Units {
+		want[fmt.Sprintf("%d.%d", u.IfIndex, u.Parent.IfIndex)] = true
+		want[fmt.Sprintf("0.%d", u.IfIndex)] = true
+		withUnit[u.Parent.IfIndex] = true
+	}
+	for _, p := range c.Ports {
+		want[fmt.Sprintf("%d.0", p.IfIndex)] = true
+		if !withUnit[p.IfIndex] {
+			want[fmt.Sprintf("0.%d", p.IfIndex)] = true
+		}
+	}
+	for w := range want {
+		if !got[w] {
+			t.Errorf("missing row %s", w)
+		}
+	}
+	for g := range got {
+		if !want[g] {
+			t.Errorf("unexpected row %s", g)
+		}
+	}
+	if n != len(want) {
+		t.Errorf("%d rows, want %d", n, len(want))
+	}
+	// The issue's acceptance row, and that xe-0/0/0 is no longer top-most.
+	if len(c.Units) == 0 || c.Units[0].IfName != "xe-0/0/0.0" {
+		t.Fatalf("first unit = %+v, want xe-0/0/0.0", c.Units)
+	}
+	u := c.Units[0]
+	if u.IfIndex != 73 || !got["73."+strconv.Itoa(u.Parent.IfIndex)] {
+		t.Errorf("xe-0/0/0.0 is ifIndex %d on port %d; row 73.<port> present: %v", u.IfIndex, u.Parent.IfIndex, got["73."+strconv.Itoa(u.Parent.IfIndex)])
+	}
+	if got["0."+strconv.Itoa(u.Parent.IfIndex)] {
+		t.Errorf("xe-0/0/0 (ifIndex %d) carries units but has a 0.<port> row", u.Parent.IfIndex)
 	}
 }

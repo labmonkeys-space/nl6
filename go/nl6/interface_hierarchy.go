@@ -53,9 +53,12 @@ const ifStackStatusPrefix = "1.3.6.1.2.1.31.1.2.1.3."
 // engine follows; members maps a higher layer with two or more lower layers,
 // an aggregate such as a bundle, to them in row order, which the counter
 // cycler sums. An aggregate has no parent: the engine follows one, so its
-// oper-status stays its own. Rows naming ifIndex 0 (the table's "nothing
-// above/below" marker) or an ifIndex outside known are ignored. The same row
-// repeated, as when two resource parts carry it, is one row.
+// oper-status stays its own. A row naming ifIndex 0 on either side is the
+// RFC 2863 marker for "nothing above" or "nothing below", which a complete
+// table carries for every interface: it is skipped silently and is not a
+// row of its higher layer. A row naming a non-zero ifIndex outside known is
+// ignored with a log line. The same row repeated, as when two resource parts
+// carry it, is one row.
 type stackLayers struct {
 	parents map[int]int
 	members map[int][]int
@@ -77,7 +80,7 @@ func readStackLayers(entries []SNMPResource, known map[int]bool) stackLayers {
 		hs, ls, ok := strings.Cut(rest, ".")
 		h, err1 := strconv.Atoi(hs)
 		l, err2 := strconv.Atoi(ls)
-		if !ok || err1 != nil || err2 != nil || !known[h] || h == l {
+		if !ok || err1 != nil || err2 != nil || !known[h] || l == 0 || h == l {
 			continue
 		}
 		if seen[[2]int{h, l}] {

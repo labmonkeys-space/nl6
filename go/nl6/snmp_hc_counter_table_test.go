@@ -201,7 +201,7 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // Re-pinned by the cisco_asr9902 bundle members: two ifStackStatus rows added;
 // snmp_shipped_cisco_asr9902_bundle_members_ledger_test.go reverses them to
 // 3d6b23bf8a3dab9be83e0141745cd841f7e104d4618d729aa3fc78b57ad3f6a7.
-const shippedTagDigest = "ae463d5157810cbb2f78ad0d3a369f5a667e7eefd8cad994bda2fff83a77b1c1"
+const shippedTagDigest = "c9829e4c1982685c491a3a8f097b9dd0c01e089ecfc2ad159da6a31655b88d50"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)
