@@ -35,6 +35,17 @@ type defaultRouteRow struct {
 	// bgp(14) for BGP.
 	port, cliPort, prefix, addr string
 	proto                       int
+	// more lists the other interfaces the CLI addresses, each with its
+	// own connected route and ipAddrTable row.
+	more []connectedNet
+}
+
+// connectedNet is one subnet the CLI addresses an interface on: port is the
+// IF-MIB ifDescr the ipRouteTable and ipAddrTable rows name, cliPort how the
+// CLI's route table spells it, prefix the subnet and addr the device's own
+// address on it.
+type connectedNet struct {
+	port, cliPort, prefix, addr string
 }
 
 func routeRow(command, nextHop string) defaultRouteRow {
@@ -44,6 +55,14 @@ func routeRow(command, nextHop string) defaultRouteRow {
 // connected adds the connected-route plan to a row.
 func (r defaultRouteRow) connected(port, cliPort, prefix, addr string, proto int) defaultRouteRow {
 	r.port, r.cliPort, r.prefix, r.addr, r.proto = port, cliPort, prefix, addr, proto
+	return r
+}
+
+// also adds a further addressed interface to a row. juniper_mx960 addresses
+// ge-0/0/0.0 as well as the unit its default route leaves on, and SNMP served
+// the rows for the second only.
+func (r defaultRouteRow) also(port, cliPort, prefix, addr string) defaultRouteRow {
+	r.more = append(r.more, connectedNet{port, cliPort, prefix, addr})
 	return r
 }
 
@@ -67,7 +86,8 @@ var defaultRouteCLI = map[string]defaultRouteRow{
 	"juniper_mx240.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
 		connected("xe-1/0/0.0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx960.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
-		connected("xe-1/0/1.0", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14),
+		connected("xe-1/0/1.0", "xe-1/0/1.0", "10.0.1.0/30", "10.0.1.1", 14).
+		also("ge-0/0/0.0", "ge-0/0/0.0", "192.168.100.0/24", "192.168.100.1"),
 	"nokia_7750_sr12.json": routeRow("show router route-table", `0\.0\.0\.0/0[^\n]*\n\s*(\S+)`).
 		connected("toWAN", "toWAN", "192.168.40.0/24", "192.168.40.1", 3),
 	"palo_alto_pa3220.json": routeRow("show routing route", `0\.0\.0\.0/0\s+(\S+)`).
@@ -254,17 +274,15 @@ func TestShippedResponsesNameValidIPv4(t *testing.T) {
 // CLI. The template served a connected 192.168.1.0/24 via ifIndex 2 and no
 // ipAddrTable on every profile, so the default route's next hop lay in no
 // subnet SNMP served and its egress interface was not the one the CLI named.
+// Every interface the CLI addresses gets a connected route and an address
+// row; the first one listed is the one the default route leaves on.
 func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res *DeviceResources, ssh map[string]string) {
 	t.Helper()
 	const route, addrTab, ifDescr = "1.3.6.1.2.1.4.21.1.", "1.3.6.1.2.1.4.20.1.", "1.3.6.1.2.1.2.2.1.2."
-	_, subnet, err := net.ParseCIDR(row.prefix)
-	if err != nil {
-		t.Fatalf("%s: bad prefix %q", profile, row.prefix)
-	}
-	net0, mask := subnet.IP.String(), net.IP(subnet.Mask).String()
+	nets := append([]connectedNet{{row.port, row.cliPort, row.prefix, row.addr}}, row.more...)
 	snmp := map[string]string{}
+	ifIndexOf := map[string]string{}
 	var dests, addrs []string
-	ifIndex := ""
 	for _, e := range res.SNMP {
 		oid := strings.TrimPrefix(e.OID, ".")
 		snmp[oid] = e.Response
@@ -273,65 +291,86 @@ func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res 
 			dests = append(dests, e.Response)
 		case strings.HasPrefix(oid, addrTab+"1."):
 			addrs = append(addrs, e.Response)
-		case strings.HasPrefix(oid, ifDescr) && e.Response == row.port:
-			ifIndex = strings.TrimPrefix(oid, ifDescr)
+		case strings.HasPrefix(oid, ifDescr):
+			if prev, dup := ifIndexOf[e.Response]; dup {
+				t.Errorf("%s: ifDescr %q is served at ifIndex %s and %s, so no address row can name it", profile, e.Response, prev, strings.TrimPrefix(oid, ifDescr))
+			}
+			ifIndexOf[e.Response] = strings.TrimPrefix(oid, ifDescr)
 		}
 	}
-	if ifIndex == "" {
-		t.Errorf("%s: IF-MIB serves no %q", profile, row.port)
-		return
-	}
-	sort.Strings(dests)
-	if want := []string{"0.0.0.0", net0}; !slices.Equal(dests, want) {
-		t.Errorf("%s: ipRouteTable destinations = %v, want %v", profile, dests, want)
-	}
-	if nh := net.ParseIP(snmp[route+"7.0.0.0.0"]); nh == nil || !subnet.Contains(nh) {
-		t.Errorf("%s: default next hop %s is not in the connected subnet %s", profile, snmp[route+"7.0.0.0.0"], row.prefix)
-	}
-	for _, c := range []struct{ oid, want string }{
-		{route + "2.0.0.0.0", ifIndex},
-		{route + "8.0.0.0.0", "4"},
-		{route + "11.0.0.0.0", "0.0.0.0"},
-		{route + "9.0.0.0.0", strconv.Itoa(row.proto)},
-		{route + "2." + net0, ifIndex},
-		{route + "7." + net0, row.addr},
-		{route + "8." + net0, "3"},
-		{route + "11." + net0, mask},
-		{addrTab + "2." + row.addr, ifIndex},
-		{addrTab + "3." + row.addr, mask},
-	} {
-		if got := snmp[c.oid]; got != c.want {
-			t.Errorf("%s: %s = %q, want %q", profile, c.oid, got, c.want)
-		}
-	}
-	if !slices.Equal(addrs, []string{row.addr}) {
-		t.Errorf("%s: ipAddrTable addresses = %v, want [%s]", profile, addrs, row.addr)
-	}
-	// The route table must print the connected prefix with its egress port on
-	// the same line, or on the next one where the vendor puts the next hop
-	// there (Junos, NX-OS, SR OS). Both are matched as whole tokens, so
-	// Ethernet1/1 is not found inside Ethernet1/11.
-	prefixTok, portTok := cliToken(row.prefix), cliToken(row.cliPort)
 	lines := strings.Split(ssh[row.command], "\n")
-	onPort := false
-	for i, l := range lines {
-		if !prefixTok.MatchString(l) {
+	wantDests, wantAddrs := []string{"0.0.0.0"}, []string{}
+	for i, n := range nets {
+		_, subnet, err := net.ParseCIDR(n.prefix)
+		if err != nil {
+			t.Fatalf("%s: bad prefix %q", profile, n.prefix)
+		}
+		net0, mask := subnet.IP.String(), net.IP(subnet.Mask).String()
+		wantDests, wantAddrs = append(wantDests, net0), append(wantAddrs, n.addr)
+		ifIndex := ifIndexOf[n.port]
+		if ifIndex == "" {
+			t.Errorf("%s: IF-MIB serves no %q", profile, n.port)
 			continue
 		}
-		if portTok.MatchString(l) || (i+1 < len(lines) && portTok.MatchString(lines[i+1])) {
-			onPort = true
+		checks := []struct{ oid, want string }{
+			{route + "2." + net0, ifIndex},
+			{route + "7." + net0, n.addr},
+			{route + "8." + net0, "3"},
+			{route + "11." + net0, mask},
+			{addrTab + "2." + n.addr, ifIndex},
+			{addrTab + "3." + n.addr, mask},
+		}
+		if i == 0 {
+			if nh := net.ParseIP(snmp[route+"7.0.0.0.0"]); nh == nil || !subnet.Contains(nh) {
+				t.Errorf("%s: default next hop %s is not in the connected subnet %s", profile, snmp[route+"7.0.0.0.0"], n.prefix)
+			}
+			checks = append(checks, []struct{ oid, want string }{
+				{route + "2.0.0.0.0", ifIndex},
+				{route + "8.0.0.0.0", "4"},
+				{route + "11.0.0.0.0", "0.0.0.0"},
+				{route + "9.0.0.0.0", strconv.Itoa(row.proto)},
+			}...)
+		}
+		for _, c := range checks {
+			if got := snmp[c.oid]; got != c.want {
+				t.Errorf("%s: %s = %q, want %q", profile, c.oid, got, c.want)
+			}
+		}
+		// The route table must print the connected prefix with its egress
+		// port on the same line, or on the next one where the vendor puts
+		// the next hop there (Junos, NX-OS, SR OS). Both are matched as
+		// whole tokens, so Ethernet1/1 is not found inside Ethernet1/11.
+		prefixTok, portTok := cliToken(n.prefix), cliToken(n.cliPort)
+		onPort := false
+		for i, l := range lines {
+			if !prefixTok.MatchString(l) {
+				continue
+			}
+			if portTok.MatchString(l) || (i+1 < len(lines) && portTok.MatchString(lines[i+1])) {
+				onPort = true
+			}
+		}
+		if !onPort {
+			t.Errorf("%s: %s does not route %s via %s", profile, row.command, n.prefix, n.cliPort)
+		}
+		addrTok := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(n.addr) + `($|[^\d])`)
+		shown := false
+		for _, r := range ssh {
+			shown = shown || addrTok.MatchString(r)
+		}
+		if !shown {
+			t.Errorf("%s: no SSH output shows the device address %s", profile, n.addr)
 		}
 	}
-	if !onPort {
-		t.Errorf("%s: %s does not route %s via %s", profile, row.command, row.prefix, row.cliPort)
+	sort.Strings(dests)
+	sort.Strings(wantDests)
+	if !slices.Equal(dests, wantDests) {
+		t.Errorf("%s: ipRouteTable destinations = %v, want %v", profile, dests, wantDests)
 	}
-	addrTok := regexp.MustCompile(`(^|[^\d.])` + regexp.QuoteMeta(row.addr) + `($|[^\d])`)
-	shown := false
-	for _, r := range ssh {
-		shown = shown || addrTok.MatchString(r)
-	}
-	if !shown {
-		t.Errorf("%s: no SSH output shows the device address %s", profile, row.addr)
+	sort.Strings(addrs)
+	sort.Strings(wantAddrs)
+	if !slices.Equal(addrs, wantAddrs) {
+		t.Errorf("%s: ipAddrTable addresses = %v, want %v", profile, addrs, wantAddrs)
 	}
 }
 
@@ -390,6 +429,146 @@ func TestCLIInterfacesAreIFMIBRows(t *testing.T) {
 		}
 		if seen == 0 {
 			t.Errorf("%s: no CLI interface matched; the pattern no longer fits the profile", profile)
+		}
+	}
+}
+
+// junosTerseAddress matches a unit line of show interfaces terse that carries
+// an inet address: any <name>.<unit>, admin and link state, inet, then
+// a.b.c.d with /n on a subnet address and none on a loopback, which Junos
+// prints as "a.b.c.d --> 0/0".
+var junosTerseAddress = regexp.MustCompile(`(?m)^(\S+\.\d+)\s+\S+\s+\S+\s+inet\s+(\d+\.\d+\.\d+\.\d+)(?:/(\d+))?`)
+
+// junosDirectRoute matches a Direct/0 route of show route: the prefix and
+// its length, with the unit on the next line.
+var junosDirectRoute = regexp.MustCompile(`(?m)^(\d+\.\d+\.\d+\.\d+)/(\d+)\s+\*\[Direct/0\][^\n]*\n\s*> via (\S+)`)
+
+// junosUnitsOutsideIFMIB lists, per profile, the addressed units the terse
+// output shows that IF-MIB does not serve, so no ipAddrTable row can name
+// their ifIndex, each with the reason. The guard requires an excluded unit
+// to still be absent from IF-MIB, so the exclusion cannot outlive the gap.
+var junosUnitsOutsideIFMIB = map[string]map[string]string{
+	"juniper_mx10004.json": {
+		"fxp0.0": "the chassis model has no management port, so IF-MIB serves no fxp0",
+		"lo0.0":  "the chassis model has no loopback, so IF-MIB serves no lo0; its /32 is a host route, which no profile mirrors",
+	},
+}
+
+// junosAddressGaps returns, for every unit show interfaces terse addresses and
+// every Direct/0 route show route prints, what ipAddrTable and ipRouteTable
+// fail to serve for it, and how many addressed units it saw. Host routes
+// (/32) are not mirrored on any profile, so a Direct/0 host route is not
+// checked; excluded names the units IF-MIB does not serve.
+func junosAddressGaps(res *DeviceResources, excluded map[string]string) (gaps []string, seen int) {
+	const route, addrTab, ifDescr = "1.3.6.1.2.1.4.21.1.", "1.3.6.1.2.1.4.20.1.", "1.3.6.1.2.1.2.2.1.2."
+	snmp := map[string]string{}
+	ifIndexOf := map[string]string{}
+	for _, e := range res.SNMP {
+		oid := strings.TrimPrefix(e.OID, ".")
+		snmp[oid] = e.Response
+		if strings.HasPrefix(oid, ifDescr) {
+			if prev, dup := ifIndexOf[e.Response]; dup {
+				gaps = append(gaps, "ifDescr "+strconv.Quote(e.Response)+" is served at ifIndex "+prev+" and "+strings.TrimPrefix(oid, ifDescr)+", so no address row can name it")
+			}
+			ifIndexOf[e.Response] = strings.TrimPrefix(oid, ifDescr)
+		}
+	}
+	for _, e := range res.SSH {
+		switch e.Command {
+		case "show interfaces terse":
+			for _, m := range junosTerseAddress.FindAllStringSubmatch(e.Response, -1) {
+				unit, addr, bits := m[1], m[2], m[3]
+				seen++
+				if _, ok := excluded[unit]; ok {
+					if ifIndex := ifIndexOf[unit]; ifIndex != "" {
+						gaps = append(gaps, unit+" is excluded as not served by IF-MIB, but ifDescr."+ifIndex+" serves it; drop the exclusion and add its rows")
+					}
+					continue
+				}
+				if bits == "" {
+					bits = "32"
+				}
+				_, subnet, err := net.ParseCIDR(addr + "/" + bits)
+				if err != nil {
+					gaps = append(gaps, unit+": terse prints "+addr+"/"+bits+", which is not a prefix")
+					continue
+				}
+				net0, mask := subnet.IP.String(), net.IP(subnet.Mask).String()
+				ifIndex := ifIndexOf[unit]
+				if ifIndex == "" {
+					gaps = append(gaps, unit+": IF-MIB serves no such ifDescr")
+					continue
+				}
+				for _, c := range []struct{ oid, want, what string }{
+					{addrTab + "2." + addr, ifIndex, "ipAdEntIfIndex." + addr},
+					{addrTab + "3." + addr, mask, "ipAdEntNetMask." + addr},
+					{route + "2." + net0, ifIndex, "ipRouteIfIndex." + net0},
+					{route + "7." + net0, addr, "ipRouteNextHop." + net0},
+					{route + "11." + net0, mask, "ipRouteMask." + net0},
+				} {
+					if got := snmp[c.oid]; got != c.want {
+						gaps = append(gaps, unit+" ("+addr+"/"+bits+", ifIndex "+ifIndex+"): "+c.what+" = "+strconv.Quote(got)+", want "+strconv.Quote(c.want))
+					}
+				}
+			}
+		case "show route":
+			for _, m := range junosDirectRoute.FindAllStringSubmatch(e.Response, -1) {
+				net0, bits, unit := m[1], m[2], m[3]
+				if bits == "32" {
+					continue
+				}
+				if got := snmp[route+"1."+net0]; got != net0 {
+					gaps = append(gaps, "show route prints "+net0+"/"+bits+" as Direct/0 via "+unit+", but ipRouteDest."+net0+" = "+strconv.Quote(got))
+				}
+			}
+		}
+	}
+	return gaps, seen
+}
+
+// TestJunosTerseAddressesAreIPAddrTableRows: juniper_mx960 addressed
+// ge-0/0/0.0 on the CLI and served ipAddrTable and ipRouteTable rows for
+// xe-1/0/1.0 only. The agreement test's plan lists what it checks, so an
+// address it did not list was invisible to it; this derives the rows every
+// addressed unit and every connected route must have from the CLI itself.
+func TestJunosTerseAddressesAreIPAddrTableRows(t *testing.T) {
+	control := &DeviceResources{
+		SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.2.2.1.2.9", Response: "ge-0/0/9.0"}},
+		SSH: []SSHResource{
+			{Command: "show interfaces terse", Response: "Interface Admin Link Proto Local Remote\nge-0/0/9 up up\nge-0/0/9.0 up up inet 10.9.9.1/24\nge-0/0/9.100 up up inet\nlo0.0 up up inet 10.255.9.9 --> 0/0\n"},
+			{Command: "show route", Response: "10.9.9.0/24 *[Direct/0] 1d 00:00:00\n > via ge-0/0/9.0\n10.255.9.9/32 *[Direct/0] 1d 00:00:00\n > via lo0.0\n"},
+		},
+	}
+	gaps, seen := junosAddressGaps(control, nil)
+	if seen != 2 || len(gaps) != 7 ||
+		!strings.HasPrefix(gaps[0], "ge-0/0/9.0 (10.9.9.1/24, ifIndex 9): ipAdEntIfIndex.10.9.9.1") ||
+		gaps[5] != "lo0.0: IF-MIB serves no such ifDescr" ||
+		!strings.HasPrefix(gaps[6], "show route prints 10.9.9.0/24 as Direct/0 via ge-0/0/9.0, but ipRouteDest.10.9.9.0") {
+		t.Fatalf("control: an addressed unit with no rows gives seen=%d gaps=%q, want 2 and 7 naming the units and the route", seen, gaps)
+	}
+	if gaps, _ := junosAddressGaps(control, map[string]string{"ge-0/0/9.0": "planted", "lo0.0": "planted"}); len(gaps) != 2 || !strings.HasPrefix(gaps[0], "ge-0/0/9.0 is excluded as not served by IF-MIB, but ifDescr.9 serves it") {
+		t.Fatalf("control: an exclusion on a served unit gives gaps=%q, want one naming the stale exclusion and the unserved route", gaps)
+	}
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	for profile := range cliInterfaceNames {
+		if !strings.HasPrefix(profile, "juniper_") {
+			continue
+		}
+		res, err := sm.LoadSpecificResources(profile)
+		if err != nil {
+			t.Fatalf("%s: %v", profile, err)
+		}
+		gaps, seen := junosAddressGaps(res, junosUnitsOutsideIFMIB[profile])
+		if seen == 0 {
+			t.Errorf("%s: show interfaces terse addresses no unit; the pattern no longer fits the profile", profile)
+		}
+		for _, g := range gaps {
+			t.Errorf("%s: %s", profile, g)
+		}
+	}
+	for profile := range junosUnitsOutsideIFMIB {
+		if _, ok := cliInterfaceNames[profile]; !ok {
+			t.Errorf("junosUnitsOutsideIFMIB lists %s, which the guard does not visit", profile)
 		}
 	}
 }
