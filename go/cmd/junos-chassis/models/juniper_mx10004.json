@@ -1897,9 +1897,9 @@
   },
   "units": [
     {"parent": "xe-0/0/0", "unit": 0, "inet": "192.168.1.1/24"},
-    {"parent": "xe-0/0/0", "unit": 100},
-    {"parent": "xe-0/0/0", "unit": 200},
-    {"parent": "xe-0/0/0", "unit": 999}
+    {"parent": "xe-0/0/0", "unit": 100, "family": "inet"},
+    {"parent": "xe-0/0/0", "unit": 200, "family": "inet"},
+    {"parent": "xe-0/0/0", "unit": 999, "family": "inet"}
   ],
   "chassis_entity": [
     {

@@ -134,3 +134,31 @@ func TestExpandRejectsBadUnits(t *testing.T) {
 		}
 	}
 }
+
+// A VRF unit is configured `family inet;` with no address: the model says so
+// with family, an address implies the family, and any other family is refused.
+func TestExpandUnitsCarryTheFamily(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range c.UnitsOf("xe-0/0/0") {
+		if u.Family != "inet" {
+			t.Errorf("%s: family %q, want inet (unit 0 by its address, the VRF units by the model)", u.IfName, u.Family)
+		}
+	}
+	for _, bad := range []Unit{
+		{Parent: "xe-0/0/0", Unit: 7, Family: "inet6"},
+		{Parent: "xe-0/0/0", Unit: 8, Inet: "192.0.2.1/24", Family: "iso"},
+	} {
+		m2 := *m
+		m2.Units = append(append([]Unit(nil), m.Units...), bad)
+		if _, err := Expand(&m2); err == nil || !strings.Contains(err.Error(), "family") {
+			t.Errorf("unit %d with family %q: err = %v, want a family error", bad.Unit, bad.Family, err)
+		}
+	}
+}
