@@ -214,8 +214,10 @@ Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queue
 That set comes from the MX10004 hardware reference set behind nl6#775, which is not public; the vJunos capture sent eleven buffer and drop leaves more.
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
-The subinterfaces are the device's four logical units, all on `xe-0/0/0`: unit 0 (`xe-0/0/0.0`) and the VRF units `xe-0/0/0.100`, `xe-0/0/0.200` and `xe-0/0/0.999` that `show route instance detail` names.
-Each is also an `ifTable` row of its own, at ifIndex 73 to 76, and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
+The subinterfaces are the device's five logical units: unit 0 (`xe-0/0/0.0`) and the VRF units `xe-0/0/0.100`, `xe-0/0/0.200` and `xe-0/0/0.999` on `xe-0/0/0`, which `show route instance detail` names, and `fxp0.0` on the management port `fxp0`.
+Each is also an `ifTable` row of its own, at ifIndex 73 to 76 and 78, and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
+`fxp0` is the 73rd interface of the list, beside the 72 ports, because it is an Ethernet port (`ifType` 6).
+The loopback `lo0` and its unit `lo0.0` are IF-MIB rows (ifIndex 79 and 80) and terse lines but not gNMI interfaces: the catalogue's interface leaves describe an Ethernet port, so a loopback is filtered out by `ifType`.
 No other port has a subinterface, and no unit is listed as an interface on dial-in or dial-out.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
 A subscription to `/interfaces/interface/subinterfaces/subinterface/state/counters` is a subtree alias scoped by `alias_leaves`.

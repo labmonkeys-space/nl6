@@ -7,7 +7,7 @@
     },
     {
       "command": "show route",
-      "response": "inet.0: 14 destinations, 14 routes (14 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    > to 192.168.1.254 via xe-0/0/0.0\n10.255.0.1/32      *[Direct/0] 23d 08:15:40\n                    > via lo0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    > via xe-0/0/0.0\n192.168.1.1/32     *[Local/0] 23d 08:15:35\n                      Local via xe-0/0/0.0"
+      "response": "inet.0: 16 destinations, 16 routes (16 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n\n0.0.0.0/0          *[Static/5] 23d 08:15:32\n                    > to 192.168.1.254 via xe-0/0/0.0\n10.0.0.0/24        *[Direct/0] 23d 08:15:40\n                    > via fxp0.0\n10.0.0.1/32        *[Local/0] 23d 08:15:40\n                      Local via fxp0.0\n10.255.0.1/32      *[Direct/0] 23d 08:15:40\n                    > via lo0.0\n192.168.1.0/24     *[Direct/0] 23d 08:15:35\n                    > via xe-0/0/0.0\n192.168.1.1/32     *[Local/0] 23d 08:15:35\n                      Local via xe-0/0/0.0"
     },
     {
       "command": "show configuration",

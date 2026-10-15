@@ -91,8 +91,8 @@ func TestExpandUnitsFollowThePorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Units) != 4 {
-		t.Fatalf("%d units, want 4", len(c.Units))
+	if len(c.Units) != 6 {
+		t.Fatalf("%d units, want the 4 port units and the 2 system units", len(c.Units))
 	}
 	u := c.Units[0]
 	if u.IfIndex != len(c.Ports)+1 || u.IfName != "xe-0/0/0.0" || u.Parent.IfName != "xe-0/0/0" || u.Inet != "192.168.1.1/24" {
@@ -109,6 +109,53 @@ func TestExpandUnitsFollowThePorts(t *testing.T) {
 	}
 	if got := c.UnitsOf("xe-0/0/1"); len(got) != 0 {
 		t.Fatalf("UnitsOf(xe-0/0/1) = %+v", got)
+	}
+}
+
+// The system interfaces number after the port units, each followed by its
+// unit 0, so adding them moves no port or unit ifIndex.
+func TestExpandSystemInterfacesFollowTheUnits(t *testing.T) {
+	m, err := loadModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Expand(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.System) != 2 || c.System[0].IfName != "fxp0" || c.System[0].IfIndex != 77 || c.System[0].IfType != "6" || c.System[0].MTU != "1514" || c.System[0].SpeedMbps != 1000 ||
+		c.System[1].IfName != "lo0" || c.System[1].IfIndex != 79 || c.System[1].IfType != "24" || c.System[1].SpeedMbps != 0 {
+		t.Fatalf("system = %+v, want fxp0 at 77 and lo0 at 79", c.System)
+	}
+	for _, want := range []struct {
+		name   string
+		index  int
+		parent string
+		inet   string
+	}{{"fxp0.0", 78, "fxp0", "10.0.0.1/24"}, {"lo0.0", 80, "lo0", "10.255.0.1/32"}} {
+		got := c.UnitsOf(want.parent)
+		if len(got) != 1 || got[0].IfName != want.name || got[0].IfIndex != want.index || got[0].Inet != want.inet || got[0].Family != "inet" || got[0].Parent.IfIndex != want.index-1 {
+			t.Errorf("UnitsOf(%s) = %+v, want %s at %d with %s", want.parent, got, want.name, want.index, want.inet)
+		}
+	}
+	if c.Units[3].IfName != "xe-0/0/0.999" || c.Units[3].IfIndex != 76 {
+		t.Errorf("last port unit = %+v, want xe-0/0/0.999 at 76", c.Units[3])
+	}
+	for name, bad := range map[string]SystemInterface{
+		"iftype":        {Name: "em1", IfType: 131, MTU: "1500", Inet: "192.0.2.1/24"},
+		"ipv6":          {Name: "em1", IfType: 6, MTU: "1500", Inet: "2001:db8::1/64"},
+		"port name":     {Name: "xe-0/0/1", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
+		"unit name":     {Name: "xe-0/0/0", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
+		"no address":    {Name: "em1", IfType: 6, MTU: "1500"},
+		"loopback /24":  {Name: "lo1", IfType: 24, MTU: "65536", Inet: "192.0.2.1/24"},
+		"no mtu":        {Name: "em1", IfType: 6, Inet: "192.0.2.1/24"},
+		"second system": {Name: "fxp0", IfType: 6, MTU: "1514", Inet: "192.0.2.1/24"},
+	} {
+		m2 := *m
+		m2.SystemInterfaces = append(append([]SystemInterface(nil), m.SystemInterfaces...), bad)
+		if _, err := Expand(&m2); err == nil || !strings.Contains(err.Error(), "system_interfaces") {
+			t.Errorf("%s: err = %v, want a system_interfaces error", name, err)
+		}
 	}
 }
 

@@ -349,7 +349,7 @@ func TestShippedHierarchyCountersRollUp(t *testing.T) {
 	}
 	wantChildren := map[string][]int{
 		"cisco_asr9902.json":   {55, 56, 57},
-		"juniper_mx10004.json": {73, 74, 75, 76},
+		"juniper_mx10004.json": {73, 74, 75, 76, 78}, // lo0.0 declares speed 0 and takes no share
 		"juniper_mx240.json":   {25, 26, 27, 28},
 		"juniper_mx960.json":   {81, 82, 83, 84, 85},
 		"nokia_7750_sr12.json": {73},

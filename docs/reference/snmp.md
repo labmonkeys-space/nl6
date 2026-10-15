@@ -634,7 +634,7 @@ The loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup
 Only `ifStackStatus` is served.
 Three profiles carry the table, and on each it is complete in the RFC 2863 sense: every interface is in at least two rows, with `0` standing for "nothing above" (`ifStackStatus.0.<I>`) or "nothing below" (`ifStackStatus.<I>.0`).
 
-- `juniper_mx10004`: each logical unit over its port (`ifStackStatus.73.1` is `xe-0/0/0.0` over `xe-0/0/0`), generated from the chassis model.
+- `juniper_mx10004`: each logical unit over its port (`ifStackStatus.73.1` is `xe-0/0/0.0` over `xe-0/0/0`, `ifStackStatus.78.77` is `fxp0.0` over the management port `fxp0`), generated from the chassis model.
 - `cisco_asr9902`: each VLAN subinterface over its port or bundle, and `Bundle-Ether1` over its two members, generated from the chassis model.
 - `nokia_7750_sr12`: the router interface `toWAN` over `port 1/1/1`.
 

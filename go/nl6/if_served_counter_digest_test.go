@@ -41,7 +41,13 @@ import (
 //
 // Pinned on the parent revision, before the counter hold:
 // see shippedServedCounterDigestBeforeHold.
-const shippedServedCounterDigest = "0652f065470a6aef39c3ef2707f073f3830aea6bca4716bcd61828f86e15aef3"
+//
+// Re-pinned by the juniper_mx10004 system interfaces (ifIndex 77-80). With
+// those rows filtered out every one of the three digests below is exactly
+// its previous value: 0652f065470a6aef39c3ef2707f073f3830aea6bca4716bcd61828f86e15aef3,
+// 2154bb4d6b037754d728275e889bcc98b318a41b508ab016e3569119142f5c39 and
+// a1c6b09ebf850e64f05a02cc020c22a8233dee7ff5b439bae7c58e5c6305841d (measured).
+const shippedServedCounterDigest = "7a3838465aaf7f18e7fb3c94155486d31dc10e40a8ac91926f1b1a25734c265f"
 
 // shippedServedCounterDigestBeforeHold is the full digest on the parent
 // revision, captured BEFORE the counter hold was written, which is the only
@@ -60,15 +66,21 @@ const shippedServedCounterDigestBeforeHold = "bdceb57cacc5614833ce3b976837284649
 // and the always-up, standalone measurement moved to
 // shippedServedCounterDigestStandaloneUp. With the roll-up reverted this
 // constant reads c62099ad54d62fdbcfec0c883ede750ec5de4803551f9561b3a42824fde8a204.
-const shippedServedCounterDigestUpOnly = "2154bb4d6b037754d728275e889bcc98b318a41b508ab016e3569119142f5c39"
+// Re-pinned by the juniper_mx10004 system interfaces; with ifIndex 77-80 of
+// that profile filtered out it reads
+// 2154bb4d6b037754d728275e889bcc98b318a41b508ab016e3569119142f5c39 (measured).
+const shippedServedCounterDigestUpOnly = "0aa03e2ce2b70fe116319e67f98aeaa67e4142198dfcfdf7eb1e2e641dca45c4"
 
 // shippedServedCounterDigestStandaloneUp is the digest over interfaces that are
 // up at seed AND standalone: no parent, not an aggregate, not a member of one.
 // PINNED ON THE PARENT REVISION of the counter roll-up, in a clean worktree,
 // before any edit: the roll-up moves children, aggregates and members and
 // must leave this set byte-identical. Re-pinning it on a later revision
-// discards that measurement.
-const shippedServedCounterDigestStandaloneUp = "a1c6b09ebf850e64f05a02cc020c22a8233dee7ff5b439bae7c58e5c6305841d"
+// discards that measurement unless the previous value is reproduced with the
+// added rows filtered out, as the juniper_mx10004 system interfaces re-pin
+// did: with ifIndex 77-80 of that profile filtered out this digest is
+// a1c6b09ebf850e64f05a02cc020c22a8233dee7ff5b439bae7c58e5c6305841d (measured).
+const shippedServedCounterDigestStandaloneUp = "cf0125dff1e55a46bcbe0b4fe5c648e39186f129b3a190e8dbbcaf7b25da06cd"
 
 // normaliseDialsForDigest replaces every per-interface random draw with a
 // deterministic function of the slot. InitIfCountersWithScenario draws the

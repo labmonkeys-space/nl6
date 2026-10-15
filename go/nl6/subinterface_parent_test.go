@@ -311,14 +311,15 @@ func TestFlapSchedulerSkipsSubinterfaces(t *testing.T) {
 	ic := shippedDevice(t, "juniper_mx10004.json").metricsCycler.ifCounters.Load()
 	s := NewFlapScheduler(FlapSchedulerOptions{})
 	s.Register(net.IPv4(10, 42, 0, 10), ic.IfIndices(), IfFlapTypical, ic.State())
-	if got := s.pendingCountForTest(); got != 72 {
-		t.Errorf("%d scheduled interfaces, want the 72 ports and not the units", got)
+	if got := s.pendingCountForTest(); got != 73 {
+		t.Errorf("%d scheduled interfaces, want the 72 ports and fxp0, not the units or lo0", got)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k := range s.byKey {
-		if k.ifIndex >= 73 {
-			t.Errorf("logical unit %d is scheduled to flap on its own", k.ifIndex)
+		// 77 is fxp0, a management port with a link of its own; 79 is lo0.
+		if k.ifIndex >= 73 && k.ifIndex != 77 {
+			t.Errorf("ifIndex %d is scheduled to flap on its own; only ports and fxp0 have a link", k.ifIndex)
 		}
 	}
 }
@@ -333,8 +334,10 @@ func TestDialoutListsNoSubinterface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ups) != 72 {
-		t.Errorf("%d interfaces, want 72", len(ups))
+	// The legacy resolver behind dial-out has no ifType filter, so it lists
+	// lo0 as well as fxp0; the catalogue lists fxp0 only.
+	if len(ups) != 74 {
+		t.Errorf("%d interfaces, want the 72 ports, fxp0 and lo0", len(ups))
 	}
 	for _, u := range ups {
 		if unitName.MatchString(pathToString(u.Path)) {
