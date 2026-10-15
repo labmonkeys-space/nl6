@@ -83,7 +83,12 @@ import (
 // add ifIndex 74-76, all admin=1 oper=1. With those 3 rows filtered out the
 // digest is exactly the previous value,
 // f0c49ffc279dd65a091aeb6255cd97da79c070e32efcde53b2f80595b6611c79 (measured).
-const shippedServedStateDigest = "86cd2bc98bf90337555bd4481e0259779479d8186abea61489f97ccbe21f5e24"
+//
+// Re-pinned by the juniper_mx10004 system interfaces fxp0, fxp0.0, lo0 and
+// lo0.0: they add ifIndex 77-80, all admin=1 oper=1. With those 4 rows
+// filtered out the digest is exactly the previous value,
+// 86cd2bc98bf90337555bd4481e0259779479d8186abea61489f97ccbe21f5e24 (measured).
+const shippedServedStateDigest = "527827b12b408b9b8ed14d8489a3ade93b24d3714da9a505de0a4fdd3883c47f"
 
 // shippedServedStateDigestBeforeDerivation is the value this digest held on the
 // parent revision, captured BEFORE nl6#694's derivation was written — which is

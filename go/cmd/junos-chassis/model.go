@@ -104,7 +104,6 @@ type RoutingEngine struct {
 
 type Interfaces struct {
 	MTU         string `json:"mtu"`
-	IfSpeed     string `json:"if_speed"`
 	MACPrefix   string `json:"mac_prefix"`
 	AliasFormat string `json:"alias_format"`
 	HCPeriod    int    `json:"hc_period"`
@@ -124,6 +123,17 @@ type Unit struct {
 	Unit   int    `json:"unit"`
 	Inet   string `json:"inet,omitempty"`
 	Family string `json:"family,omitempty"`
+}
+
+// SystemInterface is an interface the Routing Engine owns rather than a
+// line card: the management port fxp0 (ethernetCsmacd, 6) or the loopback
+// lo0 (softwareLoopback, 24). It carries unit 0, addressed Inet.
+type SystemInterface struct {
+	Name      string `json:"name"`
+	IfType    int    `json:"iftype"`
+	MTU       string `json:"mtu"`
+	SpeedMbps int    `json:"speed_mbps"`
+	Inet      string `json:"inet"`
 }
 
 type SNMPRow struct {
@@ -148,15 +158,19 @@ type Model struct {
 	SoftwareRev    string          `json:"software_rev"`
 	RoutingEngines []RoutingEngine `json:"routing_engines"`
 	Interfaces     Interfaces      `json:"interfaces"`
-	// Units follow the physical ports in ifIndex order.
-	Units         []Unit    `json:"units,omitempty"`
-	ChassisEntity []SNMPRow `json:"chassis_entity"`
+	// Units follow the physical ports in ifIndex order; the system
+	// interfaces follow the units, each with its own unit 0 after it.
+	Units            []Unit            `json:"units,omitempty"`
+	SystemInterfaces []SystemInterface `json:"system_interfaces,omitempty"`
+	ChassisEntity    []SNMPRow         `json:"chassis_entity"`
 }
 
 type Port struct {
 	Index     int // port number on its PIC
 	IfIndex   int
 	IfName    string
+	IfType    string // IANAifType: "6" on a line-card port
+	MTU       string
 	SpeedMbps int
 	Port      Component
 	Xcvr      Component
@@ -204,8 +218,9 @@ type Chassis struct {
 	Components []Component
 	FPCs       []FPC
 	Slots      []SlotView
-	Ports      []Port // every port, in ifIndex order
+	Ports      []Port // every line-card port, in ifIndex order
 	Units      []LogicalUnit
+	System     []Port // the system interfaces, after the units, no components
 }
 
 func loadModel() (*Model, error) {
@@ -270,7 +285,7 @@ func Expand(m *Model) (*Chassis, error) {
 			for n := 0; n < card.PortsPerPIC; n++ {
 				ifIndex++
 				pn := fmt.Sprintf("%s:PIC%d:PORT%d", name, p, n)
-				port := Port{Index: n, IfIndex: ifIndex, IfName: fmt.Sprintf("%s-%d/%d/%d", card.PortPrefix, s.Slot, p, n), SpeedMbps: card.SpeedMbps}
+				port := Port{Index: n, IfIndex: ifIndex, IfName: fmt.Sprintf("%s-%d/%d/%d", card.PortPrefix, s.Slot, p, n), IfType: "6", MTU: m.Interfaces.MTU, SpeedMbps: card.SpeedMbps}
 				port.Port = Component{Name: pn, Type: "PORT", Parent: f.PICs[p].Component.Name, PartNo: card.PIC.PartNo,
 					Description: port.IfName, SerialNo: fmt.Sprintf("NL6PRT%06d", ifIndex)}
 				port.Xcvr = Component{Name: pn + ":Xcvr0", Type: "TRANSCEIVER", Parent: pn, PartNo: card.Optic.PartNo,
@@ -312,6 +327,9 @@ func Expand(m *Model) (*Chassis, error) {
 		return nil, fmt.Errorf("%d ports: ifPhysAddress encodes the ifIndex in one byte, at most 255", len(c.Ports))
 	}
 	if err := c.expandUnits(m); err != nil {
+		return nil, err
+	}
+	if err := c.expandSystem(m); err != nil {
 		return nil, err
 	}
 	names, serials := map[string]bool{}, map[string]bool{}
@@ -364,6 +382,43 @@ func (c *Chassis) expandUnits(m *Model) error {
 		}
 		seen[name] = true
 		c.Units = append(c.Units, LogicalUnit{IfIndex: len(c.Ports) + len(c.Units) + 1, IfName: name, Unit: u.Unit, Inet: u.Inet, Family: family, Parent: parent})
+	}
+	return nil
+}
+
+// expandSystem numbers each system interface after the last unit, followed
+// by its own unit 0, and appends that unit to c.Units so every unit consumer
+// sees it. The ifIndexes of the ports and their units do not move.
+func (c *Chassis) expandSystem(m *Model) error {
+	seen := map[string]bool{}
+	for _, p := range c.Ports {
+		seen[p.IfName] = true
+	}
+	for _, u := range c.Units {
+		seen[u.IfName] = true
+	}
+	for _, si := range m.SystemInterfaces {
+		if si.IfType != 6 && si.IfType != 24 {
+			return fmt.Errorf("system_interfaces: %s iftype %d is neither ethernetCsmacd(6) nor softwareLoopback(24)", si.Name, si.IfType)
+		}
+		if si.Name == "" || seen[si.Name] || seen[si.Name+".0"] {
+			return fmt.Errorf("system_interfaces: %q clashes with a port or unit", si.Name)
+		}
+		prefix, err := netip.ParsePrefix(si.Inet)
+		if err != nil {
+			return fmt.Errorf("system_interfaces: %s inet: %w", si.Name, err)
+		}
+		if si.IfType == 24 && prefix.Bits() != 32 {
+			return fmt.Errorf("system_interfaces: %s is a loopback, so its address must be a /32, not %s", si.Name, si.Inet)
+		}
+		if si.MTU == "" || si.SpeedMbps < 0 {
+			return fmt.Errorf("system_interfaces: %s needs an mtu and a non-negative speed_mbps", si.Name)
+		}
+		next := len(c.Ports) + len(c.Units) + len(c.System) + 1
+		port := Port{IfIndex: next, IfName: si.Name, IfType: strconv.Itoa(si.IfType), MTU: si.MTU, SpeedMbps: si.SpeedMbps}
+		c.System = append(c.System, port)
+		c.Units = append(c.Units, LogicalUnit{IfIndex: next + 1, IfName: si.Name + ".0", Inet: si.Inet, Family: "inet", Parent: port})
+		seen[si.Name], seen[si.Name+".0"] = true, true
 	}
 	return nil
 }

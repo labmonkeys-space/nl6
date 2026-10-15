@@ -58,7 +58,8 @@ func (r defaultRouteRow) connected(port, cliPort, prefix, addr string, proto int
 	return r
 }
 
-// also adds a further addressed interface to a row. juniper_mx960 addresses
+// also adds a further addressed interface to a row; a /32 prefix is a
+// loopback address with no connected route. juniper_mx960 addresses
 // ge-0/0/0.0 as well as the unit its default route leaves on, and SNMP served
 // the rows for the second only.
 func (r defaultRouteRow) also(port, cliPort, prefix, addr string) defaultRouteRow {
@@ -82,7 +83,9 @@ var defaultRouteCLI = map[string]defaultRouteRow{
 	"huawei_ne8000.json": routeRow("display ip routing-table", `0\.0\.0\.0/0\s+Static\s+\d+\s+\d+\s+\S+\s+(\S+)`).
 		connected("100GE1/0/0", "100GE1/0/0", "192.168.102.0/24", "192.168.102.1", 3),
 	"juniper_mx10004.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
-		connected("xe-0/0/0.0", "xe-0/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
+		connected("xe-0/0/0.0", "xe-0/0/0.0", "192.168.1.0/24", "192.168.1.1", 3).
+		also("fxp0.0", "fxp0.0", "10.0.0.0/24", "10.0.0.1").
+		also("lo0.0", "lo0.0", "10.255.0.1/32", "10.255.0.1"),
 	"juniper_mx240.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
 		connected("xe-1/0/0.0", "xe-1/0/0.0", "192.168.1.0/24", "192.168.1.1", 3),
 	"juniper_mx960.json": routeRow("show route", `0\.0\.0\.0/0[^\n]*\n\s*> to (\S+) via`).
@@ -306,19 +309,30 @@ func checkConnectedRoute(t *testing.T, profile string, row defaultRouteRow, res 
 			t.Fatalf("%s: bad prefix %q", profile, n.prefix)
 		}
 		net0, mask := subnet.IP.String(), net.IP(subnet.Mask).String()
-		wantDests, wantAddrs = append(wantDests, net0), append(wantAddrs, n.addr)
+		// A /32 is a loopback address: an ipAddrTable row and no connected
+		// route, since host routes are mirrored on no profile.
+		ones, _ := subnet.Mask.Size()
+		host := ones == 32
+		if !host {
+			wantDests = append(wantDests, net0)
+		}
+		wantAddrs = append(wantAddrs, n.addr)
 		ifIndex := ifIndexOf[n.port]
 		if ifIndex == "" {
 			t.Errorf("%s: IF-MIB serves no %q", profile, n.port)
 			continue
 		}
 		checks := []struct{ oid, want string }{
-			{route + "2." + net0, ifIndex},
-			{route + "7." + net0, n.addr},
-			{route + "8." + net0, "3"},
-			{route + "11." + net0, mask},
 			{addrTab + "2." + n.addr, ifIndex},
 			{addrTab + "3." + n.addr, mask},
+		}
+		if !host {
+			checks = append(checks, []struct{ oid, want string }{
+				{route + "2." + net0, ifIndex},
+				{route + "7." + net0, n.addr},
+				{route + "8." + net0, "3"},
+				{route + "11." + net0, mask},
+			}...)
 		}
 		if i == 0 {
 			if nh := net.ParseIP(snmp[route+"7.0.0.0.0"]); nh == nil || !subnet.Contains(nh) {
@@ -391,7 +405,7 @@ func cliToken(s string) *regexp.Regexp {
 var cliInterfaceNames = map[string]*regexp.Regexp{
 	"juniper_mx240.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
 	"juniper_mx960.json":   regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
-	"juniper_mx10004.json": regexp.MustCompile(`\b(?:xe|ge|et)-\d+/\d+/\d+\.\d+\b`),
+	"juniper_mx10004.json": regexp.MustCompile(`\b(?:(?:xe|ge|et)-\d+/\d+/\d+|fxp\d+|lo\d+)\.\d+\b`),
 	"nokia_7750_sr12.json": regexp.MustCompile(`interface "([^"]+)"`),
 	"huawei_ne8000.json":   regexp.MustCompile(`(?:^|[^\w/-])((?:\d*X?GE|HundredGigE|GigabitEthernet|Eth-Trunk)\d+(?:/\d+)*)(?:\.\d+)?\b`),
 }
@@ -399,6 +413,14 @@ var cliInterfaceNames = map[string]*regexp.Regexp{
 func TestCLIInterfacesAreIFMIBRows(t *testing.T) {
 	if !cliInterfaceNames["juniper_mx240.json"].MatchString("> via xe-1/0/0.0") || cliInterfaceNames["juniper_mx240.json"].MatchString("xe-1/0/0 up") {
 		t.Fatal("control: the Junos unit pattern does not tell a unit from its port")
+	}
+	for _, name := range []string{"fxp0.0 ", "> via lo0.0"} {
+		if !cliInterfaceNames["juniper_mx10004.json"].MatchString(name) {
+			t.Fatalf("control: the MX10004 pattern misses %q", name)
+		}
+	}
+	if cliInterfaceNames["juniper_mx10004.json"].MatchString("lo0 up") {
+		t.Fatal("control: the MX10004 pattern does not tell lo0.0 from lo0")
 	}
 	for _, name := range []string{"XGE1/1/0", "10GE1/0/1", "100GE1/0/0", "GE0/0/1", "Interfaces : XGE1/1/0.200"} {
 		if !cliInterfaceNames["huawei_ne8000.json"].MatchString(name) {
@@ -447,18 +469,17 @@ var junosDirectRoute = regexp.MustCompile(`(?m)^(\d+\.\d+\.\d+\.\d+)/(\d+)\s+\*\
 // output shows that IF-MIB does not serve, so no ipAddrTable row can name
 // their ifIndex, each with the reason. The guard requires an excluded unit
 // to still be absent from IF-MIB, so the exclusion cannot outlive the gap.
-var junosUnitsOutsideIFMIB = map[string]map[string]string{
-	"juniper_mx10004.json": {
-		"fxp0.0": "the chassis model has no management port, so IF-MIB serves no fxp0",
-		"lo0.0":  "the chassis model has no loopback, so IF-MIB serves no lo0; its /32 is a host route, which no profile mirrors",
-	},
-}
+// Empty on the shipped corpus since the MX10004 chassis model gained its
+// management port and loopback; the positive control keeps the mechanism
+// exercised.
+var junosUnitsOutsideIFMIB = map[string]map[string]string{}
 
 // junosAddressGaps returns, for every unit show interfaces terse addresses and
 // every Direct/0 route show route prints, what ipAddrTable and ipRouteTable
 // fail to serve for it, and how many addressed units it saw. Host routes
 // (/32) are not mirrored on any profile, so a Direct/0 host route is not
-// checked; excluded names the units IF-MIB does not serve.
+// checked and a /32 unit address needs its ipAddrTable row only; excluded
+// names the units IF-MIB does not serve.
 func junosAddressGaps(res *DeviceResources, excluded map[string]string) (gaps []string, seen int) {
 	const route, addrTab, ifDescr = "1.3.6.1.2.1.4.21.1.", "1.3.6.1.2.1.4.20.1.", "1.3.6.1.2.1.2.2.1.2."
 	snmp := map[string]string{}
@@ -499,13 +520,19 @@ func junosAddressGaps(res *DeviceResources, excluded map[string]string) (gaps []
 					gaps = append(gaps, unit+": IF-MIB serves no such ifDescr")
 					continue
 				}
-				for _, c := range []struct{ oid, want, what string }{
+				checks := []struct{ oid, want, what string }{
 					{addrTab + "2." + addr, ifIndex, "ipAdEntIfIndex." + addr},
 					{addrTab + "3." + addr, mask, "ipAdEntNetMask." + addr},
-					{route + "2." + net0, ifIndex, "ipRouteIfIndex." + net0},
-					{route + "7." + net0, addr, "ipRouteNextHop." + net0},
-					{route + "11." + net0, mask, "ipRouteMask." + net0},
-				} {
+				}
+				// A loopback's /32 is a host route, mirrored on no profile.
+				if bits != "32" {
+					checks = append(checks, []struct{ oid, want, what string }{
+						{route + "2." + net0, ifIndex, "ipRouteIfIndex." + net0},
+						{route + "7." + net0, addr, "ipRouteNextHop." + net0},
+						{route + "11." + net0, mask, "ipRouteMask." + net0},
+					}...)
+				}
+				for _, c := range checks {
 					if got := snmp[c.oid]; got != c.want {
 						gaps = append(gaps, unit+" ("+addr+"/"+bits+", ifIndex "+ifIndex+"): "+c.what+" = "+strconv.Quote(got)+", want "+strconv.Quote(c.want))
 					}
@@ -533,21 +560,36 @@ func junosAddressGaps(res *DeviceResources, excluded map[string]string) (gaps []
 // addressed unit and every connected route must have from the CLI itself.
 func TestJunosTerseAddressesAreIPAddrTableRows(t *testing.T) {
 	control := &DeviceResources{
-		SNMP: []SNMPResource{{OID: "1.3.6.1.2.1.2.2.1.2.9", Response: "ge-0/0/9.0"}},
+		SNMP: []SNMPResource{
+			{OID: "1.3.6.1.2.1.2.2.1.2.9", Response: "ge-0/0/9.0"},
+			// A served loopback with its address rows and no route row is
+			// complete: the /32 needs no connected route.
+			{OID: "1.3.6.1.2.1.2.2.1.2.10", Response: "lo0.0"},
+			{OID: "1.3.6.1.2.1.4.20.1.2.10.255.9.9", Response: "10"},
+			{OID: "1.3.6.1.2.1.4.20.1.3.10.255.9.9", Response: "255.255.255.255"},
+		},
 		SSH: []SSHResource{
 			{Command: "show interfaces terse", Response: "Interface Admin Link Proto Local Remote\nge-0/0/9 up up\nge-0/0/9.0 up up inet 10.9.9.1/24\nge-0/0/9.100 up up inet\nlo0.0 up up inet 10.255.9.9 --> 0/0\n"},
 			{Command: "show route", Response: "10.9.9.0/24 *[Direct/0] 1d 00:00:00\n > via ge-0/0/9.0\n10.255.9.9/32 *[Direct/0] 1d 00:00:00\n > via lo0.0\n"},
 		},
 	}
 	gaps, seen := junosAddressGaps(control, nil)
-	if seen != 2 || len(gaps) != 7 ||
+	if seen != 2 || len(gaps) != 6 ||
 		!strings.HasPrefix(gaps[0], "ge-0/0/9.0 (10.9.9.1/24, ifIndex 9): ipAdEntIfIndex.10.9.9.1") ||
-		gaps[5] != "lo0.0: IF-MIB serves no such ifDescr" ||
-		!strings.HasPrefix(gaps[6], "show route prints 10.9.9.0/24 as Direct/0 via ge-0/0/9.0, but ipRouteDest.10.9.9.0") {
-		t.Fatalf("control: an addressed unit with no rows gives seen=%d gaps=%q, want 2 and 7 naming the units and the route", seen, gaps)
+		!strings.HasPrefix(gaps[5], "show route prints 10.9.9.0/24 as Direct/0 via ge-0/0/9.0, but ipRouteDest.10.9.9.0") {
+		t.Fatalf("control: an addressed unit with no rows gives seen=%d gaps=%q, want 2 and 6 naming the unit's five rows and the route, and none for the served loopback", seen, gaps)
 	}
-	if gaps, _ := junosAddressGaps(control, map[string]string{"ge-0/0/9.0": "planted", "lo0.0": "planted"}); len(gaps) != 2 || !strings.HasPrefix(gaps[0], "ge-0/0/9.0 is excluded as not served by IF-MIB, but ifDescr.9 serves it") {
-		t.Fatalf("control: an exclusion on a served unit gives gaps=%q, want one naming the stale exclusion and the unserved route", gaps)
+	control.SNMP = control.SNMP[:2]
+	if gaps, _ := junosAddressGaps(control, nil); len(gaps) != 8 ||
+		!strings.HasPrefix(gaps[5], "lo0.0 (10.255.9.9/32, ifIndex 10): ipAdEntIfIndex.10.255.9.9") ||
+		!strings.HasPrefix(gaps[6], "lo0.0 (10.255.9.9/32, ifIndex 10): ipAdEntNetMask.10.255.9.9") ||
+		!strings.HasPrefix(gaps[7], "show route prints") {
+		t.Fatalf("control: a loopback without its address rows gives gaps=%q, want its two address rows and no route row", gaps)
+	}
+	if gaps, _ := junosAddressGaps(control, map[string]string{"ge-0/0/9.0": "planted", "lo0.0": "planted"}); len(gaps) != 3 ||
+		!strings.HasPrefix(gaps[0], "ge-0/0/9.0 is excluded as not served by IF-MIB, but ifDescr.9 serves it") ||
+		!strings.HasPrefix(gaps[1], "lo0.0 is excluded as not served by IF-MIB, but ifDescr.10 serves it") {
+		t.Fatalf("control: an exclusion on a served unit gives gaps=%q, want two naming the stale exclusions and the unserved route", gaps)
 	}
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	for profile := range cliInterfaceNames {

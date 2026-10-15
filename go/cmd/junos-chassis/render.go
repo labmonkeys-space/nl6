@@ -80,6 +80,7 @@ var templateFuncs = template.FuncMap{
 	"envrow":     envrow,
 	"hasPrefix":  strings.HasPrefix,
 	"trimPrefix": strings.TrimPrefix,
+	"trimSuffix": strings.TrimSuffix,
 }
 
 // execTemplate runs templates/<name> with << >> delimiters, because the
@@ -180,24 +181,42 @@ func oidLess(a, b string) bool {
 	return len(as) < len(bs)
 }
 
+// maxIfSpeed is the ifSpeed an interface faster than 4.29 Gbit/s reports;
+// RFC 2863 moves the real figure to ifHighSpeed.
+const maxIfSpeed = 4294967295
+
+// ifSpeedOf derives ifSpeed from the speed in Mbit/s, capped at maxIfSpeed.
+func ifSpeedOf(speedMbps int) string {
+	bps := uint64(speedMbps) * 1_000_000
+	if bps > maxIfSpeed {
+		bps = maxIfSpeed
+	}
+	return strconv.FormatUint(bps, 10)
+}
+
 // RenderSNMPRows returns every SNMP row the chassis owns: ifNumber, ifTable,
 // ifXTable (name, the HC registration rows, ifHighSpeed, ifAlias) for every
-// port and logical unit, the jnxOperating rows per Routing Engine, and the ENTITY-MIB rows.
+// port, system interface and logical unit, the jnxOperating rows per Routing
+// Engine, and the ENTITY-MIB rows.
 func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 	in := c.Model.Interfaces
-	rows := []SNMPRow{{"1.3.6.1.2.1.2.1.0", strconv.Itoa(len(c.Ports) + len(c.Units))}}
+	rows := []SNMPRow{{"1.3.6.1.2.1.2.1.0", strconv.Itoa(len(c.Ports) + len(c.System) + len(c.Units))}}
 	add := func(oid, v string) { rows = append(rows, SNMPRow{oid, v}) }
 	// ifRow adds one interface's ifTable and ifXTable rows; macIndex is the
-	// ifIndex whose MAC the interface reports.
+	// ifIndex whose MAC the interface reports, 0 for none (a loopback).
 	ifRow := func(ifIndex int, name, ifType, mtu string, macIndex, speedMbps int, alias string) {
 		ix := strconv.Itoa(ifIndex)
 		k := uint64((ifIndex - 1) % in.HCPeriod)
+		mac := ""
+		if macIndex != 0 {
+			mac = fmt.Sprintf("%s%02x", in.MACPrefix, macIndex)
+		}
 		add("1.3.6.1.2.1.2.2.1.1."+ix, ix)
 		add("1.3.6.1.2.1.2.2.1.2."+ix, name)
 		add("1.3.6.1.2.1.2.2.1.3."+ix, ifType)
 		add("1.3.6.1.2.1.2.2.1.4."+ix, mtu)
-		add("1.3.6.1.2.1.2.2.1.5."+ix, in.IfSpeed)
-		add("1.3.6.1.2.1.2.2.1.6."+ix, fmt.Sprintf("%s%02x", in.MACPrefix, macIndex))
+		add("1.3.6.1.2.1.2.2.1.5."+ix, ifSpeedOf(speedMbps))
+		add("1.3.6.1.2.1.2.2.1.6."+ix, mac)
 		add("1.3.6.1.2.1.2.2.1.7."+ix, "1")
 		add("1.3.6.1.2.1.2.2.1.8."+ix, "1")
 		add("1.3.6.1.2.1.31.1.1.1.1."+ix, name)
@@ -207,11 +226,24 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add("1.3.6.1.2.1.31.1.1.1.18."+ix, alias)
 	}
 	for _, p := range c.Ports {
-		ifRow(p.IfIndex, p.IfName, "6", in.MTU, p.IfIndex, p.SpeedMbps, fmt.Sprintf(in.AliasFormat, p.IfIndex))
+		ifRow(p.IfIndex, p.IfName, p.IfType, p.MTU, p.IfIndex, p.SpeedMbps, fmt.Sprintf(in.AliasFormat, p.IfIndex))
+	}
+	// A loopback has no MAC and no description; the management port has a
+	// MAC of its own.
+	for _, p := range c.System {
+		macIndex := p.IfIndex
+		if p.IfType == "24" {
+			macIndex = 0
+		}
+		ifRow(p.IfIndex, p.IfName, p.IfType, p.MTU, macIndex, p.SpeedMbps, "")
 	}
 	for _, u := range c.Units {
 		// propVirtual(53), the parent's MAC and speed, no description.
-		ifRow(u.IfIndex, u.IfName, "53", "1500", u.Parent.IfIndex, u.Parent.SpeedMbps, "")
+		macIndex := u.Parent.IfIndex
+		if u.Parent.IfType == "24" {
+			macIndex = 0
+		}
+		ifRow(u.IfIndex, u.IfName, "53", "1500", macIndex, u.Parent.SpeedMbps, "")
 	}
 	// ifStackTable: a unit is the higher layer over its port. RFC 2863 keeps
 	// every interface in at least two rows, so an interface nothing runs
@@ -224,7 +256,7 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add(stackStatus+"0."+strconv.Itoa(u.IfIndex), "1")
 		withUnit[u.Parent.IfIndex] = true
 	}
-	for _, p := range c.Ports {
+	for _, p := range append(append([]Port(nil), c.Ports...), c.System...) {
 		add(stackStatus+strconv.Itoa(p.IfIndex)+".0", "1")
 		if !withUnit[p.IfIndex] {
 			add(stackStatus+"0."+strconv.Itoa(p.IfIndex), "1")

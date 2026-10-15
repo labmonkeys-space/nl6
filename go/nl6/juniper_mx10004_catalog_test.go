@@ -296,8 +296,9 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 // TestJuniperMx10004_InterfaceTableAndIdentity pins what the clone script
 // produced from the MX240 template: 48 LC480 ports xe-0/0/0..xe-0/1/23 at
 // ifIndex 1..48 and 24 LC9600 ports et-1/0/0..et-1/5/3 at 49..72, the
-// logical units xe-0/0/0.0, .100, .200 and .999 at 73..76, and the identity objects
-// re-pointed at jnxProductNameMX10004.
+// logical units xe-0/0/0.0, .100, .200 and .999 at 73..76, the management
+// port fxp0 and loopback lo0 with their units at 77..80, and the identity
+// objects re-pointed at jnxProductNameMX10004.
 func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
 	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
@@ -312,7 +313,7 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		"1.3.6.1.2.1.1.1.0":          "Juniper Networks, Inc. mx10004 internet router, kernel JUNOS 24.2R1.17, Build date: 2024-06-18",
 		"1.3.6.1.2.1.1.2.0":          "1.3.6.1.4.1.2636.1.1.1.2.168",
 		"1.3.6.1.2.1.47.1.1.1.1.3.1": "1.3.6.1.4.1.2636.1.1.1.2.168",
-		"1.3.6.1.2.1.2.1.0":          "76",
+		"1.3.6.1.2.1.2.1.0":          "80",
 		"1.3.6.1.2.1.2.2.1.2.1":      "xe-0/0/0",
 		"1.3.6.1.2.1.2.2.1.2.48":     "xe-0/1/23",
 		"1.3.6.1.2.1.31.1.1.1.1.48":  "xe-0/1/23",
@@ -327,6 +328,14 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 		"1.3.6.1.2.1.2.2.1.2.76":     "xe-0/0/0.999",
 		"1.3.6.1.2.1.2.2.1.3.76":     "53",
 		"1.3.6.1.2.1.31.1.1.1.1.76":  "xe-0/0/0.999",
+		"1.3.6.1.2.1.2.2.1.2.77":     "fxp0",
+		"1.3.6.1.2.1.2.2.1.3.77":     "6",
+		"1.3.6.1.2.1.2.2.1.2.78":     "fxp0.0",
+		"1.3.6.1.2.1.2.2.1.3.78":     "53",
+		"1.3.6.1.2.1.2.2.1.2.79":     "lo0",
+		"1.3.6.1.2.1.2.2.1.3.79":     "24",
+		"1.3.6.1.2.1.2.2.1.2.80":     "lo0.0",
+		"1.3.6.1.2.1.31.1.1.1.1.80":  "lo0.0",
 	}
 	for oid, v := range want {
 		if got[oid] != v {
@@ -342,8 +351,8 @@ func TestJuniperMx10004_InterfaceTableAndIdentity(t *testing.T) {
 			t.Errorf("ifDescr.%d: got %q, want %q", i, d, name)
 		}
 	}
-	if d, ok := got["1.3.6.1.2.1.2.2.1.2.77"]; ok {
-		t.Errorf("ifDescr.77 present (%q); the MX10004 type has 72 ports and four logical units", d)
+	if d, ok := got["1.3.6.1.2.1.2.2.1.2.81"]; ok {
+		t.Errorf("ifDescr.81 present (%q); the MX10004 type has 72 ports, four logical units, fxp0, lo0 and their units", d)
 	}
 }
 
@@ -378,13 +387,13 @@ func TestJuniperMx10004_SSHAgreesWithSNMPAndGNMI(t *testing.T) {
 			}
 		}
 	}
-	if len(ifDescrs) != 76 {
-		t.Fatalf("SNMP serves %d interfaces, want 72 ports and four logical units", len(ifDescrs))
+	if len(ifDescrs) != 80 {
+		t.Fatalf("SNMP serves %d interfaces, want 72 ports, four logical units, fxp0, lo0 and their units", len(ifDescrs))
 	}
-	// And the reverse for line-card interfaces: every xe- or et- interface
-	// or unit the CLI lists is an IF-MIB row. fxp0 and lo0 are CLI-only.
+	// And the reverse: every interface or unit the CLI lists is an IF-MIB
+	// row, the management port and loopback included.
 	for _, line := range strings.Split(terse, "\n")[1:] {
-		if f := strings.Fields(line); len(f) > 0 && (strings.HasPrefix(f[0], "xe-") || strings.HasPrefix(f[0], "et-")) && !ifDescrs[f[0]] {
+		if f := strings.Fields(line); len(f) > 0 && !ifDescrs[f[0]] {
 			t.Errorf("show interfaces terse lists %s, which IF-MIB does not serve", f[0])
 		}
 	}
@@ -480,6 +489,9 @@ func TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib(t *testing.T) {
 		{"xe-0/0/0", "100", "xe-0/0/0.100", "74"},
 		{"xe-0/0/0", "200", "xe-0/0/0.200", "75"},
 		{"xe-0/0/0", "999", "xe-0/0/0.999", "76"},
+		// fxp0 is ethernetCsmacd, so the catalogue's iftype:6 filter admits
+		// it and its unit; lo0 (softwareLoopback) is IF-MIB only.
+		{"fxp0", "0", "fxp0.0", "78"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("subinterfaces = %+v, want %+v", got, want)
@@ -489,8 +501,8 @@ func TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ns) != 72 {
-		t.Errorf("%d interfaces, want the 72 ports", len(ns))
+	if len(ns) != 73 {
+		t.Errorf("%d interfaces, want the 72 ports and fxp0", len(ns))
 	}
 	for _, n := range ns {
 		for _, up := range n.Updates {
@@ -503,8 +515,8 @@ func TestJuniperMx10004_LogicalUnitAgreesAcrossGnmiAndIfMib(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ns) != 72*8 {
-		t.Errorf("%d out-queues, want 8 for each of the 72 ports", len(ns))
+	if len(ns) != 73*8 {
+		t.Errorf("%d out-queues, want 8 for each of the 72 ports and fxp0", len(ns))
 	}
 }
 

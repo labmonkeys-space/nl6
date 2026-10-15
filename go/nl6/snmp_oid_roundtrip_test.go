@@ -429,7 +429,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // names of ge-0/0/0.0, pre-change value
 // shippedOIDEncodingDigestBeforeMx960UnitAddress. Reversed by
 // snmp_shipped_mx960_unit_address_ledger_test.go.
-const shippedOIDEncodingDigest = "ff0f8eaf441315617b8e8b4c2677d5902168c10f12c4934b93f3103a854fb7c3"
+// Re-pinned when juniper_mx10004 gained fxp0, lo0 and their units: the five
+// ipAddrTable names of 10.255.0.1 and six ifStackStatus names are new to the
+// corpus, pre-change value shippedOIDEncodingDigestBeforeMx10004SystemInterfaces.
+// Reversed by snmp_shipped_juniper_mx10004_system_interfaces_ledger_test.go.
+const shippedOIDEncodingDigest = "1d1e3b7b6da9cf037b87599cd8e7a86553ce4dd79a1019312e35e45bf3225005"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

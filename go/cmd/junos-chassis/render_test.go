@@ -100,9 +100,34 @@ func TestRenderSNMPRows(t *testing.T) {
 		order = append(order, r.OID)
 	}
 	want := map[string]string{
-		"1.3.6.1.2.1.2.1.0":                    "76",
-		"1.3.6.1.2.1.2.2.1.2.76":               "xe-0/0/0.999",
-		"1.3.6.1.2.1.2.2.1.3.76":               "53",
+		"1.3.6.1.2.1.2.1.0":      "80",
+		"1.3.6.1.2.1.2.2.1.2.76": "xe-0/0/0.999",
+		"1.3.6.1.2.1.2.2.1.3.76": "53",
+		"1.3.6.1.2.1.2.2.1.5.76": "4294967295",
+		// The system interfaces and their units follow the port units:
+		// the management port with a MAC and a 1 Gbit/s ifSpeed, the
+		// loopback with no MAC and speed 0, the units propVirtual on the
+		// parent's MAC.
+		"1.3.6.1.2.1.2.2.1.2.77":               "fxp0",
+		"1.3.6.1.2.1.2.2.1.3.77":               "6",
+		"1.3.6.1.2.1.2.2.1.4.77":               "1514",
+		"1.3.6.1.2.1.2.2.1.5.77":               "1000000000",
+		"1.3.6.1.2.1.2.2.1.6.77":               "00:1A:2B:3C:00:4d",
+		"1.3.6.1.2.1.31.1.1.1.15.77":           "1000",
+		"1.3.6.1.2.1.31.1.1.1.18.77":           "",
+		"1.3.6.1.2.1.2.2.1.2.78":               "fxp0.0",
+		"1.3.6.1.2.1.2.2.1.3.78":               "53",
+		"1.3.6.1.2.1.2.2.1.6.78":               "00:1A:2B:3C:00:4d",
+		"1.3.6.1.2.1.2.2.1.2.79":               "lo0",
+		"1.3.6.1.2.1.2.2.1.3.79":               "24",
+		"1.3.6.1.2.1.2.2.1.4.79":               "65536",
+		"1.3.6.1.2.1.2.2.1.5.79":               "0",
+		"1.3.6.1.2.1.2.2.1.6.79":               "",
+		"1.3.6.1.2.1.31.1.1.1.15.79":           "0",
+		"1.3.6.1.2.1.2.2.1.2.80":               "lo0.0",
+		"1.3.6.1.2.1.2.2.1.3.80":               "53",
+		"1.3.6.1.2.1.2.2.1.6.80":               "",
+		"1.3.6.1.2.1.31.1.1.1.1.80":            "lo0.0",
 		"1.3.6.1.2.1.2.2.1.2.73":               "xe-0/0/0.0",
 		"1.3.6.1.2.1.2.2.1.3.73":               "53",
 		"1.3.6.1.2.1.2.2.1.4.73":               "1500",
@@ -138,6 +163,12 @@ func TestRenderSNMPRows(t *testing.T) {
 	}
 	if got["1.3.6.1.2.1.47.1.3.2.1.2.1001.0"] != "1.3.6.1.2.1.2.2.1.1.1" {
 		t.Error("port entity 1001 does not alias ifIndex 1")
+	}
+	// The system interfaces are not line-card ports, so no port entity.
+	for _, ix := range []string{"1077", "1079"} {
+		if _, ok := got["1.3.6.1.2.1.47.1.1.1.1.2."+ix]; ok {
+			t.Errorf("entity %s exists; fxp0 and lo0 are not PIC ports", ix)
+		}
 	}
 	for i := 1; i < len(order); i++ {
 		if !oidLess(order[i-1], order[i]) {
@@ -243,11 +274,15 @@ func TestRenderSNMPRowsStackTable(t *testing.T) {
 		want[fmt.Sprintf("0.%d", u.IfIndex)] = true
 		withUnit[u.Parent.IfIndex] = true
 	}
-	for _, p := range c.Ports {
+	for _, p := range append(append([]Port(nil), c.Ports...), c.System...) {
 		want[fmt.Sprintf("%d.0", p.IfIndex)] = true
 		if !withUnit[p.IfIndex] {
 			want[fmt.Sprintf("0.%d", p.IfIndex)] = true
 		}
+	}
+	// The system interfaces stack their unit over themselves.
+	for _, w := range []string{"78.77", "0.78", "77.0", "80.79", "0.80", "79.0"} {
+		want[w] = true
 	}
 	for w := range want {
 		if !got[w] {
@@ -288,6 +323,10 @@ func TestRenderTerseUnitFamilies(t *testing.T) {
 		{Parent: "xe-0/0/0", Unit: 100, Family: "inet"},
 		{Parent: "xe-0/0/0", Unit: 200},
 	}
+	m.SystemInterfaces = []SystemInterface{
+		{Name: "em0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "198.51.100.1/24"},
+		{Name: "lo9", IfType: 24, MTU: "65536", Inet: "198.51.100.9/32"},
+	}
 	c, err := Expand(m)
 	if err != nil {
 		t.Fatal(err)
@@ -306,6 +345,8 @@ func TestRenderTerseUnitFamilies(t *testing.T) {
 		"xe-0/0/0.0              up    up   inet     192.0.2.1/24\n",
 		"xe-0/0/0.100            up    up   inet\n",
 		"xe-0/0/0.200            up    up\n",
+		"em0                     up    up\nem0.0                   up    up   inet     198.51.100.1/24\n",
+		"lo9                     up    up\nlo9.0                   up    up   inet     198.51.100.9        --> 0/0",
 	} {
 		if !strings.Contains(terse, want) {
 			t.Errorf("terse output lacks %q:\n%s", want, terse)

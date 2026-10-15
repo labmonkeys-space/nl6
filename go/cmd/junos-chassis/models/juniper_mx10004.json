@@ -1886,7 +1886,6 @@
   ],
   "interfaces": {
     "mtu": "9216",
-    "if_speed": "4294967295",
     "mac_prefix": "00:1A:2B:3C:00:",
     "alias_format": "to-core-%02d",
     "hc_period": 24,
@@ -1900,6 +1899,22 @@
     {"parent": "xe-0/0/0", "unit": 100, "family": "inet"},
     {"parent": "xe-0/0/0", "unit": 200, "family": "inet"},
     {"parent": "xe-0/0/0", "unit": 999, "family": "inet"}
+  ],
+  "system_interfaces": [
+    {
+      "name": "fxp0",
+      "iftype": 6,
+      "mtu": "1514",
+      "speed_mbps": 1000,
+      "inet": "10.0.0.1/24"
+    },
+    {
+      "name": "lo0",
+      "iftype": 24,
+      "mtu": "65536",
+      "speed_mbps": 0,
+      "inet": "10.255.0.1/32"
+    }
   ],
   "chassis_entity": [
     {

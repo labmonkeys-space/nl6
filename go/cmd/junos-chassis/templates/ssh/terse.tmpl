@@ -1,7 +1,6 @@
 Interface               Admin Link Proto    Local                 Remote
 <<range .Ports>><<printf "%-24s%-6s%s" .IfName "up" "up">>
 <<range $.UnitsOf .IfName>><<if .Inet>><<printf "%-24s%-6s%-5s%-9s%s" .IfName "up" "up" .Family .Inet>><<else if .Family>><<printf "%-24s%-6s%-5s%s" .IfName "up" "up" .Family>><<else>><<printf "%-24s%-6s%s" .IfName "up" "up">><<end>>
-<<end>><<end>>fxp0                    up    up
-fxp0.0                  up    up   inet     10.0.0.1/24
-lo0                     up    up
-lo0.0                   up    up   inet     10.255.0.1          --> 0/0
+<<end>><<end>><<range .System>><<printf "%-24s%-6s%s" .IfName "up" "up">>
+<<range $.UnitsOf .IfName>><<if eq .Parent.IfType "24">><<printf "%-24s%-6s%-5s%-9s%-20s--> 0/0" .IfName "up" "up" .Family (trimSuffix .Inet "/32")>><<else>><<printf "%-24s%-6s%-5s%-9s%s" .IfName "up" "up" .Family .Inet>><<end>>
+<<end>><<end>>
