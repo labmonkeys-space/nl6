@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "juniper_mx960 unit address",
+		file:         "snmp_shipped_mx960_unit_address_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       mx960UnitAddressParentRevision,
+		values:       restoreMx960UnitAddress,
+		names:        mx960UnitAddressOIDNamesBefore,
+	},
+	{
 		name:         "ifStackTable on the generated profiles",
 		file:         "snmp_shipped_ifstacktable_generated_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: mx960UnitAddressParentRevision,
 		parent:       ifStackTableGeneratedParentRevision,
 		values:       restoreIfStackTableGenerated,
 		names:        ifStackTableGeneratedOIDNamesBefore,

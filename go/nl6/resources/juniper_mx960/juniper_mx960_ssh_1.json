@@ -11,7 +11,7 @@
     },
     {
       "command": "show route",
-      "response": "inet.0: 45 destinations, 45 routes (45 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[BGP/170] 156d 07:33:12, localpref 100\n                    \u003e to 10.0.1.2 via xe-1/0/1.0\n10.0.1.0/30        *[Direct/0] 156d 07:33:20\n                    \u003e via xe-1/0/1.0"
+      "response": "inet.0: 45 destinations, 45 routes (45 active, 0 holddown, 0 hidden)\n+ = Active Route, - = Last Active, * = Both\n0.0.0.0/0          *[BGP/170] 156d 07:33:12, localpref 100\n                    \u003e to 10.0.1.2 via xe-1/0/1.0\n10.0.1.0/30        *[Direct/0] 156d 07:33:20\n                    \u003e via xe-1/0/1.0\n192.168.100.0/24   *[Direct/0] 156d 07:33:20\n                    \u003e via ge-0/0/0.0"
     },
     {
       "command": "show configuration",

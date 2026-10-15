@@ -425,7 +425,11 @@ const shippedOIDEncodingDigestBeforeResourceDataDefects = "9c0cdb3d109ad5ef4135b
 // snmp_shipped_logical_ifs_ledger_test.go.
 // Re-pinned by the cisco_asr9902 bundle members: two new ifStackStatus OID names;
 // the ledger reverses them to f6a56b7156551f632c58735bcfefdf99b9bf523b4ecb5f85eebf0d53d068489c.
-const shippedOIDEncodingDigest = "ca4ca2581accdc2cecfd5944d6a7e5d7ad8873eb2b724016578f31c09a84a19d"
+// Re-pinned when juniper_mx960 gained the 18 ipAddrTable and ipRouteTable
+// names of ge-0/0/0.0, pre-change value
+// shippedOIDEncodingDigestBeforeMx960UnitAddress. Reversed by
+// snmp_shipped_mx960_unit_address_ledger_test.go.
+const shippedOIDEncodingDigest = "ff0f8eaf441315617b8e8b4c2677d5902168c10f12c4934b93f3103a854fb7c3"
 
 // TestShippedOIDsUnchangedOnTheWire is the compatibility proof: every OID in
 // every shipped resource file and trap catalog must encode to the same bytes as

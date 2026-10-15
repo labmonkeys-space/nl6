@@ -201,7 +201,10 @@ func shippedTypedCorpus(t *testing.T) (lines []string, entries int) {
 // Re-pinned by the cisco_asr9902 bundle members: two ifStackStatus rows added;
 // snmp_shipped_cisco_asr9902_bundle_members_ledger_test.go reverses them to
 // 3d6b23bf8a3dab9be83e0141745cd841f7e104d4618d729aa3fc78b57ad3f6a7.
-const shippedTagDigest = "c9829e4c1982685c491a3a8f097b9dd0c01e089ecfc2ad159da6a31655b88d50"
+// juniper_mx960 gains the ipAddrTable row of ge-0/0/0.0 and its connected
+// ipRouteTable row, pre-change value shippedTagDigestBeforeMx960UnitAddress.
+// Reversed by snmp_shipped_mx960_unit_address_ledger_test.go.
+const shippedTagDigest = "f431ff843374e30154ff3da66b81903d7f68e271fe2e2c2bd72dc50727ac3e8d"
 
 func TestShippedTagsUnchangedByTableWidening(t *testing.T) {
 	lines, entries := shippedTypedCorpus(t)

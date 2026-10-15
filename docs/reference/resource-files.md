@@ -52,7 +52,7 @@ See [Device types → Storage systems](device-types.md#storage-systems).
 On a Junos profile, `show configuration`, `show interfaces terse` and `show route instance detail` describe one device, and a corpus test keeps them that way.
 Every unit one of them lists is configured, a port carrying a unit above 0 is VLAN-tagged with a `vlan-id` on each unit above 0 (the shipped profiles give unit 0 `vlan-id 1` as well), and every VRF in the detail output is a `routing-instances` stanza with the same interface, route distinguisher, import and export policies and `router-id`.
 The VRF units are configured `family inet;` with no address.
-An address would belong in `ipAddrTable` as well, and the shipped profiles serve one row there, so the VRFs' Router IDs are explicit `router-id` statements rather than interface addresses.
+An address would belong in `ipAddrTable` as well, and the shipped profiles serve one row there per unit the CLI addresses, so the VRFs' Router IDs are explicit `router-id` statements rather than interface addresses.
 Only the MX10004's `show interfaces terse` is generated from its chassis model; `show configuration` is hand-written on all three and the test, not a generator, holds them together.
 
 ## Directory layout
