@@ -143,6 +143,7 @@ func TestExpandSystemInterfacesFollowTheUnits(t *testing.T) {
 	}
 	for name, bad := range map[string]SystemInterface{
 		"iftype":        {Name: "em1", IfType: 131, MTU: "1500", Inet: "192.0.2.1/24"},
+		"ipv6":          {Name: "em1", IfType: 6, MTU: "1500", Inet: "2001:db8::1/64"},
 		"port name":     {Name: "xe-0/0/1", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
 		"unit name":     {Name: "xe-0/0/0", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
 		"no address":    {Name: "em1", IfType: 6, MTU: "1500"},

@@ -260,6 +260,9 @@ func Expand(m *Model) (*Chassis, error) {
 		if o := card.Optic; o.FormFactor == "" || o.EthernetPMD == "" || o.ConnectorType == "" || o.Wavelength == "" {
 			return nil, fmt.Errorf("card type %q: optic needs form_factor, ethernet_pmd, connector_type and wavelength", s.Card)
 		}
+		if card.SpeedMbps < 0 {
+			return nil, fmt.Errorf("card type %q: speed_mbps %d is negative", s.Card, card.SpeedMbps)
+		}
 		name := fmt.Sprintf("FPC%d", s.Slot)
 		f := FPC{Slot: s.Slot, SlotName: strconv.Itoa(s.Slot), Name: name, Card: card}
 		f.FPC = Component{Name: name, Type: "LINECARD", Parent: "Chassis", PartNo: card.PartNo,
@@ -397,6 +400,7 @@ func (c *Chassis) expandSystem(m *Model) error {
 	for _, u := range c.Units {
 		seen[u.IfName] = true
 	}
+	next := len(c.Ports) + len(c.Units)
 	for _, si := range m.SystemInterfaces {
 		if si.IfType != 6 && si.IfType != 24 {
 			return fmt.Errorf("system_interfaces: %s iftype %d is neither ethernetCsmacd(6) nor softwareLoopback(24)", si.Name, si.IfType)
@@ -408,19 +412,29 @@ func (c *Chassis) expandSystem(m *Model) error {
 		if err != nil {
 			return fmt.Errorf("system_interfaces: %s inet: %w", si.Name, err)
 		}
+		if !prefix.Addr().Is4() {
+			return fmt.Errorf("system_interfaces: %s inet %s is not IPv4, which is what family inet carries", si.Name, si.Inet)
+		}
 		if si.IfType == 24 && prefix.Bits() != 32 {
 			return fmt.Errorf("system_interfaces: %s is a loopback, so its address must be a /32, not %s", si.Name, si.Inet)
 		}
 		if si.MTU == "" || si.SpeedMbps < 0 {
 			return fmt.Errorf("system_interfaces: %s needs an mtu and a non-negative speed_mbps", si.Name)
 		}
-		next := len(c.Ports) + len(c.Units) + len(c.System) + 1
+		next++
 		port := Port{IfIndex: next, IfName: si.Name, IfType: strconv.Itoa(si.IfType), MTU: si.MTU, SpeedMbps: si.SpeedMbps}
 		c.System = append(c.System, port)
-		c.Units = append(c.Units, LogicalUnit{IfIndex: next + 1, IfName: si.Name + ".0", Inet: si.Inet, Family: "inet", Parent: port})
+		next++
+		c.Units = append(c.Units, LogicalUnit{IfIndex: next, IfName: si.Name + ".0", Inet: si.Inet, Family: "inet", Parent: port})
 		seen[si.Name], seen[si.Name+".0"] = true, true
 	}
 	return nil
+}
+
+// Interfaces returns every physical interface, the line-card ports then
+// the system interfaces, in ifIndex order.
+func (c *Chassis) Interfaces() []Port {
+	return append(append(make([]Port, 0, len(c.Ports)+len(c.System)), c.Ports...), c.System...)
 }
 
 // UnitsOf returns the logical units on the port named port, in model order.

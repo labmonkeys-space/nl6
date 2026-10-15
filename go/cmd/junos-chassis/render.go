@@ -256,7 +256,7 @@ func RenderSNMPRows(c *Chassis) ([]SNMPRow, error) {
 		add(stackStatus+"0."+strconv.Itoa(u.IfIndex), "1")
 		withUnit[u.Parent.IfIndex] = true
 	}
-	for _, p := range append(append([]Port(nil), c.Ports...), c.System...) {
+	for _, p := range c.Interfaces() {
 		add(stackStatus+strconv.Itoa(p.IfIndex)+".0", "1")
 		if !withUnit[p.IfIndex] {
 			add(stackStatus+"0."+strconv.Itoa(p.IfIndex), "1")

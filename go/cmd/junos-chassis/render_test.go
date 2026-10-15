@@ -274,7 +274,7 @@ func TestRenderSNMPRowsStackTable(t *testing.T) {
 		want[fmt.Sprintf("0.%d", u.IfIndex)] = true
 		withUnit[u.Parent.IfIndex] = true
 	}
-	for _, p := range append(append([]Port(nil), c.Ports...), c.System...) {
+	for _, p := range c.Interfaces() {
 		want[fmt.Sprintf("%d.0", p.IfIndex)] = true
 		if !withUnit[p.IfIndex] {
 			want[fmt.Sprintf("0.%d", p.IfIndex)] = true
