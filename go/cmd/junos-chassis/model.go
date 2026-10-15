@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 )
 
 //go:embed models/juniper_mx10004.json templates
@@ -407,6 +408,12 @@ func (c *Chassis) expandSystem(m *Model) error {
 		}
 		if si.Name == "" || seen[si.Name] || seen[si.Name+".0"] {
 			return fmt.Errorf("system_interfaces: %q clashes with a port or unit", si.Name)
+		}
+		// The name is spliced into the catalogue's interfaces filter
+		// (whitespace-separated terms, comma-separated names) and a JSON
+		// string; a name those cannot carry fails here, not at load.
+		if strings.ContainsAny(si.Name, " \t\r\n,:\"\\") {
+			return fmt.Errorf("system_interfaces: %q holds whitespace, a comma, a colon, a quote or a backslash, which the gNMI interfaces filter cannot name", si.Name)
 		}
 		prefix, err := netip.ParsePrefix(si.Inet)
 		if err != nil {

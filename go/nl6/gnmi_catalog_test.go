@@ -99,6 +99,8 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"interfaces filter with a repeated term", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6 iftype:24"}]`, 1), `interfaces filter "iftype:6 iftype:24": want`},
 		{"interfaces filter with an empty name", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "name:"}]`, 1), `interfaces filter "name:": want`},
 		{"interfaces filter with an empty name in a list", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "!name:fxp0,"}]`, 1), `interfaces filter "!name:fxp0,": want`},
+		{"interfaces filter listing a name twice", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "!name:fxp0,fxp0"}]`, 1), `interfaces filter "!name:fxp0,fxp0": want`},
+		{"interfaces filter listing an iftype twice", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "iftype:6,6"}]`, 1), `interfaces filter "iftype:6,6": want`},
 		{"interfaces filter keeping and dropping one name", strings.Replace(base, `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces", "filter": "name:fxp0,em0 !name:fxp0"}]`, 1), `interfaces filter "name:fxp0,em0 !name:fxp0": "fxp0" is both kept and dropped`},
 		{"subinterfaces without an interfaces key before it", strings.Replace(strings.Replace(base, `"path": "/interfaces/interface[name=*]",`, `"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",`, 1), `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "static", "names": ["x"]}, {"source": "subinterfaces"}]`, 1), "subinterfaces key source must directly follow an interfaces key source"},
 		{"subinterfaces with a filter", strings.Replace(strings.Replace(base, `"path": "/interfaces/interface[name=*]",`, `"path": "/interfaces/interface[name=*]/subinterfaces/subinterface[index=*]",`, 1), `"keys": [{"source": "interfaces"}]`, `"keys": [{"source": "interfaces"}, {"source": "subinterfaces", "filter": "iftype:6"}]`, 1), "subinterfaces key source takes no filter, names or parent"},
@@ -348,6 +350,7 @@ func TestParseGnmiCatalog_SamePathInterfacePairs(t *testing.T) {
 		{"unfiltered against a filter", twoInterfaceSubtreeCatalog(entry, "["+ifs("")+"]", "["+ifs("iftype:6")+"]"), `interfaces filters "" and "iftype:6"`},
 		{"overlapping ifType sets", twoInterfaceSubtreeCatalog(subif, "["+ifs("iftype:6,161")+`, {"source": "subinterfaces"}]`, "["+ifs("iftype:161")+`, {"source": "subinterfaces"}]`), `interfaces filters "iftype:6,161" and "iftype:161"`},
 		{"exclusion short of the name list", twoInterfaceSubtreeCatalog(entry, "["+ifs("name:fxp0,em0")+"]", "["+ifs("iftype:6 !name:fxp0")+"]"), `interfaces filters "name:fxp0,em0" and "iftype:6 !name:fxp0"`},
+		{"interfaces keys at different positions", twoInterfaceSubtreeCatalog(queue, "["+ifs("iftype:6")+`, {"source": "static", "names": ["0"]}]`, `[{"source": "static", "names": ["0"]}, `+ifs("iftype:24")+"]"), `interfaces keys at positions 0 and 1`},
 		{"overlapping static key beside one interface filter", twoInterfaceSubtreeCatalog(queue, "["+ifs("iftype:6")+`, {"source": "static", "names": ["0", "1"]}]`, "["+ifs("iftype:6")+`, {"source": "static", "names": ["1"]}]`), `interfaces filters "iftype:6" and "iftype:6"`},
 	}
 	for _, tc := range cases {
@@ -359,8 +362,8 @@ func TestParseGnmiCatalog_SamePathInterfacePairs(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0 and subtree 1") || !strings.Contains(err.Error(), "disjoint by construction") {
-				t.Fatalf("err = %v, want naming both subtrees, %s and the disjoint-by-construction remedy", err, tc.wantErr)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "subtree 0 and subtree 1") || !strings.Contains(err.Error(), "disjoint") {
+				t.Fatalf("err = %v, want naming both subtrees, %s and disjointness as the remedy", err, tc.wantErr)
 			}
 		})
 	}

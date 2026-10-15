@@ -142,14 +142,17 @@ func TestExpandSystemInterfacesFollowTheUnits(t *testing.T) {
 		t.Errorf("last port unit = %+v, want xe-0/0/0.999 at 76", c.Units[3])
 	}
 	for name, bad := range map[string]SystemInterface{
-		"iftype":        {Name: "em1", IfType: 131, MTU: "1500", Inet: "192.0.2.1/24"},
-		"ipv6":          {Name: "em1", IfType: 6, MTU: "1500", Inet: "2001:db8::1/64"},
-		"port name":     {Name: "xe-0/0/1", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
-		"unit name":     {Name: "xe-0/0/0", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
-		"no address":    {Name: "em1", IfType: 6, MTU: "1500"},
-		"loopback /24":  {Name: "lo1", IfType: 24, MTU: "65536", Inet: "192.0.2.1/24"},
-		"no mtu":        {Name: "em1", IfType: 6, Inet: "192.0.2.1/24"},
-		"second system": {Name: "fxp0", IfType: 6, MTU: "1514", Inet: "192.0.2.1/24"},
+		"iftype":            {Name: "em1", IfType: 131, MTU: "1500", Inet: "192.0.2.1/24"},
+		"ipv6":              {Name: "em1", IfType: 6, MTU: "1500", Inet: "2001:db8::1/64"},
+		"port name":         {Name: "xe-0/0/1", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
+		"unit name":         {Name: "xe-0/0/0", IfType: 6, MTU: "1500", Inet: "192.0.2.1/24"},
+		"no address":        {Name: "em1", IfType: 6, MTU: "1500"},
+		"loopback /24":      {Name: "lo1", IfType: 24, MTU: "65536", Inet: "192.0.2.1/24"},
+		"no mtu":            {Name: "em1", IfType: 6, Inet: "192.0.2.1/24"},
+		"second system":     {Name: "fxp0", IfType: 6, MTU: "1514", Inet: "192.0.2.1/24"},
+		"name with a space": {Name: "fxp 0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "192.0.2.1/24"},
+		"name with a comma": {Name: "fxp0,em0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "192.0.2.1/24"},
+		"name with a quote": {Name: "fxp\"0", IfType: 6, MTU: "1514", SpeedMbps: 1000, Inet: "192.0.2.1/24"},
 	} {
 		m2 := *m
 		m2.SystemInterfaces = append(append([]SystemInterface(nil), m.SystemInterfaces...), bad)

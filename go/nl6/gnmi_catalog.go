@@ -160,7 +160,7 @@ type gnmiInterfaceFilter struct {
 	exclude map[string]bool // !name:<ifDescr>[,...]: the row's ifDescr must not be listed
 }
 
-const gnmiInterfaceFilterGrammar = "want whitespace-separated terms iftype:<n>[,<n>...], name:<ifDescr>[,...] and !name:<ifDescr>[,...], each at most once"
+const gnmiInterfaceFilterGrammar = "want whitespace-separated terms iftype:<n>[,<n>...], name:<ifDescr>[,...] and !name:<ifDescr>[,...], each at most once and each value listed once"
 
 // parseInterfaceFilter compiles an interfaces key filter. Names match
 // the device's ifDescr exactly: the management port of a generated
@@ -185,7 +185,7 @@ func parseInterfaceFilter(f string) (*gnmiInterfaceFilter, error) {
 			out.ifTypes = map[int]bool{}
 			for _, v := range strings.Split(list, ",") {
 				n, err := strconv.Atoi(v)
-				if err != nil || n <= 0 {
+				if err != nil || n <= 0 || out.ifTypes[n] {
 					return fail()
 				}
 				out.ifTypes[n] = true
@@ -200,7 +200,7 @@ func parseInterfaceFilter(f string) (*gnmiInterfaceFilter, error) {
 			}
 			*set = map[string]bool{}
 			for _, n := range strings.Split(list, ",") {
-				if n == "" {
+				if n == "" || (*set)[n] {
 					return fail()
 				}
 				(*set)[n] = true
@@ -770,8 +770,9 @@ func (c *gnmiCatalog) entryTuples(st *gnmiCatalogSubtree) (tuples []string, ok b
 // pair with an interfaces key on both sides at one position is decided
 // from the two filters alone, since the interface set exists only per
 // device: it loads when the filters are disjoint by construction or
-// another position is disjoint, and is refused otherwise. A pair with
-// an interfaces key on one side only is not checked.
+// another position is disjoint, and is refused otherwise, as is a pair
+// with interfaces keys at different positions. A pair with an
+// interfaces key on one side only is not checked.
 //
 // Same-path subtrees with DISJOINT entries are allowed (the shipped
 // MX10004 keeps `CPU0:CORE0` beside the inventory on one path, and its
@@ -788,10 +789,16 @@ func (c *gnmiCatalog) checkSamePathSubtrees() error {
 				continue
 			}
 			if ia := interfacesKeyAt(a); ia >= 0 {
-				if ib := interfacesKeyAt(b); ib == ia {
+				switch ib := interfacesKeyAt(b); {
+				case ib == ia:
 					if err := c.checkSamePathInterfacePair(i, j, a, b, ia); err != nil {
 						return err
 					}
+				case ib >= 0:
+					// Filters at different positions select different
+					// path keys, so nothing proves the pair disjoint.
+					return fmt.Errorf("subtree %d and subtree %d both serve %s %s with interfaces keys at positions %d and %d, which cannot be proven disjoint; key both on interfaces at one position",
+						i, j, a.Origin, a.Path, ia, ib)
 				}
 				continue
 			}

@@ -161,6 +161,7 @@ Each device adds a 48-byte resolver.
 An `interfaces` key with a `filter` outside that grammar fails to load, as does one with a repeated term, an empty name, or a name both kept and dropped.
 Before nl6#810 the loader accepted such a filter and ignored it.
 Names match `ifDescr` exactly, no globs: nothing on a device beyond `ifDescr` and `ifType` tells a Routing Engine port from a line-card port of the same `ifType`, so a generated profile names the ports it treats differently.
+An interface whose profile ships no `ifDescr` row is listed under the synthesised name the catalogue serves as its key, and a name term matches that name.
 A `subinterfaces` key with a `filter`, `names` or `parent` fails to load too.
 
 Under `prefix: list-entry` one entry renders as exactly one Notification, so every leaf an entry serves belongs in one subtree.
@@ -170,7 +171,7 @@ Loading refuses the pair when their entries overlap, by subtree index, path and 
 The check enumerates the key sources it can resolve without a device (`components`, `neighbors`, `static`).
 A pair with an `interfaces` key on both sides at the same position is decided from the two filters alone, because the interface name set exists only per device: it loads when the filters are disjoint by construction (both carry `iftype` sets with no common value, both carry `name` lists with no common name, or one carries a `name` list wholly inside the other's `!name` list) or when another key position is disjoint, and is refused otherwise, naming both subtrees and both filters.
 The shipped `cisco_asr9902` splits its subinterface counters by `iftype:6` and `iftype:161`, and the shipped `juniper_mx10004` splits its interface entry by `iftype:6 !name:fxp0` and `name:fxp0`.
-A pair with an `interfaces` key on one side only is not checked.
+A pair with `interfaces` keys at different positions is refused, since filters on different path keys prove nothing; a pair with an `interfaces` key on one side only is not checked.
 
 ### Generator bindings
 
@@ -222,6 +223,7 @@ The subinterfaces are the device's five logical units: unit 0 (`xe-0/0/0.0`) and
 Each is also an `ifTable` row of its own, at ifIndex 73 to 76 and 78, and a line of `show interfaces terse`, and its `state/name` and `state/ifindex` read that row.
 `fxp0` is the 73rd interface of the list, beside the 72 ports, because it is an Ethernet port (`ifType` 6), but it is a Routing Engine port, not a line-card one, so a subtree of its own keyed `name:fxp0` serves it: the OpenConfig interface state, `state/high-speed` and the IF-MIB counters, and no out-queue, `hardware-port`, `init-time`, `parent-ae-name` or FCS and pause statistics.
 The line-card and out-queue subtrees exclude it with `!name:fxp0`, so the 576 out-queues belong to the 72 ports.
+No line-card sensor stands behind `fxp0`, so its subtree marks no leaf `always`: a counters subscription renders its counters and nothing else, while a line-card port's notification also carries the sensor's identity leaves.
 The loopback `lo0` and its unit `lo0.0` are IF-MIB rows (ifIndex 79 and 80) and terse lines but not gNMI interfaces: the catalogue's interface leaves describe an Ethernet port, so a loopback is filtered out by `ifType`.
 No other port has a subinterface, and no unit is listed as an interface on dial-in or dial-out.
 Every subinterface carries the eight `state/counters` leaves, `ipv4/state/counters` and `ipv6/state/counters` with octets, packets and multicast octets and packets each, and `init-time`.
