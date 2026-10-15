@@ -275,14 +275,128 @@ func TestRenderSNMPRowsStackRowsForBundleMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Only the rows with the bundle as higher layer: the rest of the table
+	// is pinned by TestRenderSNMPRowsStackTableIsComplete.
 	var got []string
 	for _, r := range rows {
-		if strings.HasPrefix(r.OID, "1.3.6.1.2.1.31.1.2.1.3.") {
+		if strings.HasPrefix(r.OID, "1.3.6.1.2.1.31.1.2.1.3.51.") {
 			got = append(got, r.OID+"="+r.Response)
 		}
 	}
 	want := []string{"1.3.6.1.2.1.31.1.2.1.3.51.10=1", "1.3.6.1.2.1.31.1.2.1.3.51.11=1"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("ifStackStatus rows = %v, want %v", got, want)
+	}
+}
+
+// stackRows returns the ifStackStatus rows of a render as "<higher>.<lower>=<value>".
+func stackRows(t *testing.T, rows []SNMPRow) []string {
+	t.Helper()
+	var got []string
+	for _, r := range rows {
+		if rest, ok := strings.CutPrefix(r.OID, "1.3.6.1.2.1.31.1.2.1.3."); ok {
+			got = append(got, rest+"="+r.Response)
+		}
+	}
+	return got
+}
+
+// The shipped table is RFC 2863 complete: every interface appears as a higher
+// and as a lower layer at least once, with 0 where nothing is above or below.
+// The expected set is written out from the model's relations, not derived
+// from the renderer's own loops.
+func TestRenderSNMPRowsStackTableIsComplete(t *testing.T) {
+	c := shipped(t)
+	rows, err := RenderSNMPRows(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]int{}
+	for _, p := range c.Ports {
+		byName[p.IfName] = p.IfIndex
+	}
+	hu8, be1 := byName["HundredGigE0/0/0/8"], byName["Bundle-Ether1"]
+	if hu8 == 0 || be1 == 0 {
+		t.Fatalf("shipped model lacks HundredGigE0/0/0/8 (%d) or Bundle-Ether1 (%d)", hu8, be1)
+	}
+	// The relations the model states: bundle over members, subinterface over parent.
+	relations := [][2]int{
+		{be1, byName["HundredGigE0/0/0/9"]},
+		{be1, byName["HundredGigE0/0/0/10"]},
+		{byName["HundredGigE0/0/0/8.100"], hu8},
+		{byName["HundredGigE0/0/0/8.200"], hu8},
+		{byName["Bundle-Ether1.300"], be1},
+	}
+	want := map[string]bool{}
+	hasAbove, hasBelow := map[int]bool{}, map[int]bool{}
+	for _, r := range relations {
+		if r[0] == 0 || r[1] == 0 {
+			t.Fatalf("relation %v names an interface the model lacks", r)
+		}
+		want[strconv.Itoa(r[0])+"."+strconv.Itoa(r[1])+"=1"] = true
+		hasAbove[r[1]], hasBelow[r[0]] = true, true
+	}
+	for _, p := range c.Ports {
+		if !hasAbove[p.IfIndex] {
+			want["0."+strconv.Itoa(p.IfIndex)+"=1"] = true
+		}
+		if !hasBelow[p.IfIndex] {
+			want[strconv.Itoa(p.IfIndex)+".0=1"] = true
+		}
+	}
+	got := stackRows(t, rows)
+	gotSet := map[string]bool{}
+	for _, g := range got {
+		if gotSet[g] {
+			t.Errorf("row %s emitted twice", g)
+		}
+		gotSet[g] = true
+		if !want[g] {
+			t.Errorf("unexpected row %s", g)
+		}
+	}
+	for w := range want {
+		if !gotSet[w] {
+			t.Errorf("missing row %s", w)
+		}
+	}
+	// Spot checks a reader can verify against the model without the loops above.
+	for _, w := range []string{
+		strconv.Itoa(be1) + ".0", "0." + strconv.Itoa(be1), // the bundle has members below and a subinterface above
+		"0." + strconv.Itoa(hu8), // the port carries two subinterfaces
+	} {
+		if gotSet[w+"=1"] {
+			t.Errorf("row %s must not exist", w)
+		}
+	}
+	for _, w := range []string{strconv.Itoa(hu8) + ".0", "0." + strconv.Itoa(byName["Bundle-Ether1.300"]), "1.0", "0.1"} {
+		if !gotSet[w+"=1"] {
+			t.Errorf("row %s must exist", w)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("%d ifStackStatus rows, want %d", len(got), len(want))
+	}
+}
+
+func TestSubinterfacesCarryTheirParentIfIndex(t *testing.T) {
+	c := shipped(t)
+	byName := map[string]Port{}
+	for _, p := range c.Ports {
+		byName[p.IfName] = p
+	}
+	for child, parent := range map[string]string{
+		"HundredGigE0/0/0/8.100": "HundredGigE0/0/0/8",
+		"HundredGigE0/0/0/8.200": "HundredGigE0/0/0/8",
+		"Bundle-Ether1.300":      "Bundle-Ether1",
+	} {
+		if got, want := byName[child].Parent, byName[parent].IfIndex; got != want || want == 0 {
+			t.Errorf("%s.Parent = %d, want %d (%s)", child, got, want, parent)
+		}
+	}
+	for _, p := range c.Ports {
+		if _, _, isSub := strings.Cut(p.IfName, "."); !isSub && p.Parent != 0 {
+			t.Errorf("%s is not a subinterface but has Parent %d", p.IfName, p.Parent)
+		}
 	}
 }

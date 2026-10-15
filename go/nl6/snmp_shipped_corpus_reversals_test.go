@@ -119,9 +119,17 @@ type corpusReversal struct {
 // else changes — no ledger test has a chain of its own any more.
 var newestFirstReversals = []corpusReversal{
 	{
+		name:         "ifStackTable on the generated profiles",
+		file:         "snmp_shipped_ifstacktable_generated_ledger_test.go",
+		restoresFrom: corpusHeadRevision,
+		parent:       ifStackTableGeneratedParentRevision,
+		values:       restoreIfStackTableGenerated,
+		names:        ifStackTableGeneratedOIDNamesBefore,
+	},
+	{
 		name:         "cisco_asr9902 bundle members",
 		file:         "snmp_shipped_cisco_asr9902_bundle_members_ledger_test.go",
-		restoresFrom: corpusHeadRevision,
+		restoresFrom: ifStackTableGeneratedParentRevision,
 		parent:       ciscoAsr9902BundleMembersParentRevision,
 		values:       restoreCiscoAsr9902BundleMembers,
 		names:        ciscoAsr9902BundleMembersOIDNamesBefore,

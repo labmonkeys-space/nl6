@@ -95,9 +95,12 @@ An interface whose name does not say which port it rides on gets a parent from t
 The name rule decides first.
 Shipped profiles with subinterfaces:
 
-- `juniper_mx10004`, `juniper_mx240` and `juniper_mx960`: the logical units their CLI shows, by name.
-- `cisco_asr9902`: three VLAN subinterfaces, by name.
+- `juniper_mx10004`, `juniper_mx240` and `juniper_mx960`: the logical units their CLI shows, by name. The MX10004 also states each unit's port in `ifStackTable`.
+- `cisco_asr9902`: three VLAN subinterfaces, by name, each also stated over its port or bundle in `ifStackTable`.
 - `nokia_7750_sr12`: router interface `toWAN`, stacked on `port 1/1/1`.
+
+Where a profile states a parent both ways the rows agree, so the hierarchy is the same with or without the table.
+The RFC 2863 marker rows (`ifStackStatus.0.<I>`, `ifStackStatus.<I>.0`) give no interface a parent and are not logged.
 
 A stacked interface follows its parent the same way, but gNMI still lists it under `/interfaces/interface`, because it is not a `<port>.<unit>` subinterface.
 

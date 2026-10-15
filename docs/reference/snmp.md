@@ -628,6 +628,21 @@ Request buffers come from a shared pool to reduce GC pressure on SNMP-heavy work
 OIDs in resource files may be written with or without a leading dot.
 The loader normalises them to the net-snmp convention (`.1.3.6.1…`) at startup.
 
+## ifStackTable
+
+`ifStackTable` (`1.3.6.1.2.1.31.1.2`) says which interface runs over which: `ifStackStatus.<higher>.<lower>` reads `active(1)`.
+Only `ifStackStatus` is served.
+Three profiles carry the table, and on each it is complete in the RFC 2863 sense: every interface is in at least two rows, with `0` standing for "nothing above" (`ifStackStatus.0.<I>`) or "nothing below" (`ifStackStatus.<I>.0`).
+
+- `juniper_mx10004`: each logical unit over its port (`ifStackStatus.73.1` is `xe-0/0/0.0` over `xe-0/0/0`), generated from the chassis model.
+- `cisco_asr9902`: each VLAN subinterface over its port or bundle, and `Bundle-Ether1` over its two members, generated from the chassis model.
+- `nokia_7750_sr12`: the router interface `toWAN` over `port 1/1/1`.
+
+So a port that carries units has a `<port>.0` row and no `0.<port>` row, a unit has `0.<unit>` and `<unit>.<port>`, and a bundle with members below and a subinterface above has neither marker.
+A collector that builds the interface hierarchy from IF-MIB finds the same parents here that gNMI shows by nesting each subinterface under its port, and bundle membership, which no name encodes.
+The interface state engine reads the same rows: a row with one lower layer makes the higher layer follow it, two or more make it an aggregate whose counters sum its members, and the `0` markers are ignored.
+Other profiles serve no `ifStackTable`.
+
 ## Dynamic IF-MIB counters
 
 Every per-interface counter listed below is generated dynamically, not read from the profile's JSON:
