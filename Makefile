@@ -317,6 +317,7 @@ $(ANSIBLE_VENV)/.stamp: deploy/ansible/requirements-dev.txt
 
 check-ansible: $(ANSIBLE_VENV)/.stamp
 	cd deploy/ansible && ../../$(ANSIBLE_VENV)/bin/ansible-lint
+	bash deploy/ansible/tests/check-role.sh
 
 ## check-guard-file: Assert nl6#577's anti-test-deletion guard still exists
 # go/nl6/test_inventory_test.go carries the test-count floor, the load-bearing

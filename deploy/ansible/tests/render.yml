@@ -1,0 +1,15 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+- name: Render nl6.conf.j2 without a target host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../roles/nl6/defaults/main.yml
+  tasks:
+    - name: Render the config
+      ansible.builtin.template:
+        src: ../roles/nl6/templates/nl6.conf.j2
+        dest: "{{ render_dest }}"
+        mode: "0644"

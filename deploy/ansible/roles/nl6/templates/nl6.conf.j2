@@ -1,0 +1,9 @@
+{# Copyright 2026 Ronny Trommer <ronny@no42.org> #}
+{# SPDX-License-Identifier: Apache-2.0 #}
+{# Managed by Ansible. systemd word-splits NL6_OPTS on whitespace. #}
+{% set nl6_args = ['-port ' ~ nl6_web_port, '-gnmi-tls=' ~ (nl6_gnmi_tls | ternary('true', 'false'))] %}
+{% if nl6_pyroscope_url | length > 0 %}
+{% set nl6_args = nl6_args + ['-profiling-pyroscope=' ~ nl6_pyroscope_url] %}
+{% endif %}
+{% set nl6_args = nl6_args + (nl6_extra_args | map('string') | list) %}
+NL6_OPTS="{{ nl6_args | join(' ') }}"

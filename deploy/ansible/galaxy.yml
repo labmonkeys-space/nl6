@@ -15,3 +15,10 @@ tags:
   - monitoring
   - simulation
 repository: https://github.com/labmonkeys-space/nl6
+build_ignore:
+  - tests
+  - .ansible
+  - .ansible-lint
+  - requirements-dev.txt
+dependencies:
+  ansible.posix: ">=2.0.0"

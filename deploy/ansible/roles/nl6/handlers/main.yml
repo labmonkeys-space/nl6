@@ -1,0 +1,11 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart nl6
+  ansible.builtin.systemd:
+    name: nl6.service
+    state: restarted
