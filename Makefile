@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -305,6 +305,18 @@ check-sbom-coverage: check-go
 	  exit 1; \
 	fi; \
 	echo "check-sbom-coverage: reconcile module set is a subset of the nl6 binary set"
+
+## check-ansible: Lint the labmonkeys.nl6 Ansible collection (ansible-lint in a pinned venv)
+ANSIBLE_VENV := build/ansible-venv
+ANSIBLE_PYTHON ?= python3
+
+$(ANSIBLE_VENV)/.stamp: deploy/ansible/requirements-dev.txt
+	$(ANSIBLE_PYTHON) -m venv $(ANSIBLE_VENV)
+	$(ANSIBLE_VENV)/bin/pip install --quiet -r deploy/ansible/requirements-dev.txt
+	touch $@
+
+check-ansible: $(ANSIBLE_VENV)/.stamp
+	cd deploy/ansible && ../../$(ANSIBLE_VENV)/bin/ansible-lint
 
 ## check-guard-file: Assert nl6#577's anti-test-deletion guard still exists
 # go/nl6/test_inventory_test.go carries the test-count floor, the load-bearing
