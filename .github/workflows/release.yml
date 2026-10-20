@@ -107,6 +107,9 @@ jobs:
           go-version-file: go/go.mod
           cache-dependency-path: go/go.sum
 
+      - name: Check Ansible collection version matches the tag
+        run: make check-ansible-version CHECK_RELEASE=1
+
       - name: Build release binaries and packages
         # `packages` depends on `dist`, so this builds the simulator (linux
         # amd64/arm64), the nl6-reconcile CLI (all OS/arch), and the .deb/.rpm.

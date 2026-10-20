@@ -69,7 +69,7 @@ WEB_DIR := go/nl6/web
 
 UNAME_S := $(shell uname -s)
 
-.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version nix-vendor-hash sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
+.PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
         docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
         check-release-integrity check-release-integrity-test \
@@ -254,6 +254,24 @@ set-nix-version:
 	@echo "set-nix-version: deploy/packages/nix/package.nix -> $(PKG_VERSION)"
 	@grep -nE 'version [?] "' $(PKG_DIR)/nix/package.nix
 
+## set-ansible-version: Write the release version (from APP_VERSION) into the Ansible collection
+# Keeps galaxy.yml `version` and the role default `nl6_version` in lockstep with
+# the nl6 release. Same input as set-nix-version:
+#   make set-ansible-version APP_VERSION=vX.Y.Z
+# then commit the change. Dev versions (vX.Y.Z-N-gSHA) are rejected.
+set-ansible-version:
+	@case '$(PKG_VERSION)' in \
+	  *-[0-9]*-g[0-9a-f]*) \
+	    echo "set-ansible-version: APP_VERSION '$(APP_VERSION)' is a dev version ($(PKG_VERSION))."; \
+	    echo "                     Pass an explicit release tag: make set-ansible-version APP_VERSION=vX.Y.Z"; \
+	    exit 1 ;; \
+	esac
+	@sed -E 's/^version:.*/version: $(PKG_VERSION)/' deploy/ansible/galaxy.yml > deploy/ansible/galaxy.yml.tmp \
+	  && mv deploy/ansible/galaxy.yml.tmp deploy/ansible/galaxy.yml
+	@sed -E 's/^nl6_version:.*/nl6_version: "$(PKG_VERSION)"/' deploy/ansible/roles/nl6/defaults/main.yml > deploy/ansible/roles/nl6/defaults/main.yml.tmp \
+	  && mv deploy/ansible/roles/nl6/defaults/main.yml.tmp deploy/ansible/roles/nl6/defaults/main.yml
+	@echo "set-ansible-version: galaxy.yml and nl6_version -> $(PKG_VERSION)"
+
 ## nix-vendor-hash: Print the correct buildGoModule vendorHash for package.nix
 # Required after ANY go.mod/go.sum change (Dependabot bumps included) — a
 # stale vendorHash makes the Nix build substitute the previous cached vendor
@@ -315,9 +333,13 @@ $(ANSIBLE_VENV)/.stamp: deploy/ansible/requirements-dev.txt
 	$(ANSIBLE_VENV)/bin/pip install --quiet -r deploy/ansible/requirements-dev.txt
 	touch $@
 
-check-ansible: $(ANSIBLE_VENV)/.stamp
+check-ansible: $(ANSIBLE_VENV)/.stamp check-ansible-version
 	cd deploy/ansible && ../../$(ANSIBLE_VENV)/bin/ansible-lint
 	bash deploy/ansible/tests/check-role.sh
+
+## check-ansible-version: Assert galaxy.yml and nl6_version agree (CHECK_RELEASE=1 also checks APP_VERSION)
+check-ansible-version:
+	bash deploy/ansible/tests/check-version.sh
 
 ## check-guard-file: Assert nl6#577's anti-test-deletion guard still exists
 # go/nl6/test_inventory_test.go carries the test-count floor, the load-bearing
