@@ -1,0 +1,25 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+# Keep in lockstep with the collection version in galaxy.yml.
+nl6_version: "0.36.0"
+
+# Override the .deb download URL (air-gapped host or local mirror). When set,
+# nl6_package_checksum is required, for example "sha256:<hex digest>".
+nl6_package_url: ""
+nl6_package_checksum: ""
+
+nl6_web_port: 8080
+
+# The gNMI dial-in listener on port 9339 is TLS-only unless this is false.
+nl6_gnmi_tls: true
+
+# Required. The host NIC that faces the simulated network.
+nl6_net_interface: ""
+
+# Push profiles to Pyroscope. The flag is emitted only when this is non-empty.
+nl6_pyroscope_url: ""
+
+# Extra CLI flags appended to NL6_OPTS. One flag or value per element. No
+# element may contain whitespace, a double quote, "$" or "%".
+nl6_extra_args: []

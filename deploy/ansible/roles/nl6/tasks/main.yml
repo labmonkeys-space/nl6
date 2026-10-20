@@ -1,0 +1,233 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+# A string would be split into one argument per character.
+- name: Assert nl6_extra_args is a list
+  ansible.builtin.assert:
+    that:
+      - nl6_extra_args is sequence
+      - nl6_extra_args is not string
+    fail_msg: >-
+      nl6_extra_args must be a YAML list, for example ["-auto-count", "5"].
+      A string would be split into one argument per character.
+    quiet: true
+
+# The unit runs "nl6 $NL6_OPTS". systemd splits $NL6_OPTS on whitespace and
+# has no quoting or escaping inside it, so these characters cannot be passed.
+- name: Assert nl6_extra_args elements are safe for NL6_OPTS
+  ansible.builtin.assert:
+    that:
+      - nl6_extra_args | map('string') | select('search', '[\\s"$%]') | list | length == 0
+      - nl6_pyroscope_url | string | regex_search('[\\s"$%]') is none
+    fail_msg: >-
+      Neither an element of nl6_extra_args nor nl6_pyroscope_url may contain whitespace, a double quote,
+      "$" or "%". systemd splits NL6_OPTS on whitespace and does not support
+      quoting there, and it expands "$" and "%". Pass one flag or value per
+      list element, for example ["-auto-count", "5"].
+    quiet: true
+
+# A wrong interface leaves device traffic unrouted, and it is dropped without
+# any error.
+- name: Assert the simulator network interface exists on this host
+  ansible.builtin.assert:
+    that:
+      - nl6_net_interface | length > 0
+      - nl6_net_interface in ansible_facts.interfaces
+    fail_msg: >-
+      nl6_net_interface must name an existing interface. Got
+      '{{ nl6_net_interface }}', host has {{ ansible_facts.interfaces | join(', ') }}.
+    quiet: true
+
+# Hosts set up by the Docker-based role have unit files in /etc that override
+# the packaged unit in /lib/systemd/system.
+- name: Check for legacy Docker-era unit files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/systemd/system/nl6-forward.service
+    - /etc/systemd/system/nl6.service
+  register: nl6_legacy_units
+
+- name: Stop and disable the legacy nl6-forward service
+  ansible.builtin.systemd:
+    name: nl6-forward.service
+    state: stopped
+    enabled: false
+  when: nl6_legacy_units.results[0].stat.exists
+
+# The legacy nl6.service runs the container, which would hold the ports.
+- name: Stop the legacy Docker-based nl6 service
+  ansible.builtin.systemd:
+    name: nl6.service
+    state: stopped
+  when: nl6_legacy_units.results[1].stat.exists
+
+- name: Remove the legacy unit files
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: absent
+  loop: "{{ nl6_legacy_units.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists
+  notify: Reload systemd daemon
+
+- name: Flush handlers after removing legacy units
+  ansible.builtin.meta: flush_handlers
+
+- name: Map the host architecture to the package architecture
+  ansible.builtin.set_fact:
+    nl6_deb_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"
+  when: ansible_facts.architecture in ['x86_64', 'aarch64']
+
+- name: Fail on an unsupported architecture
+  ansible.builtin.fail:
+    msg: >-
+      Unsupported architecture '{{ ansible_facts.architecture }}'. The nl6
+      package exists for x86_64 (amd64) and aarch64 (arm64) only.
+  when: nl6_deb_arch is not defined
+
+- name: Assert a checksum is given for a custom package URL
+  ansible.builtin.assert:
+    that:
+      - nl6_package_checksum | length > 0
+      - nl6_package_checksum is match('^sha256:[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      nl6_package_url is set, so nl6_package_checksum is required and must look
+      like "sha256:<64 hex digits>".
+    quiet: true
+  when: nl6_package_url | length > 0
+
+- name: Set the package file, URL and checksum
+  ansible.builtin.set_fact:
+    nl6_deb_file: "nl6_{{ nl6_version }}_{{ nl6_deb_arch }}.deb"
+    nl6_deb_url: >-
+      {{ nl6_package_url if nl6_package_url | length > 0 else
+      'https://github.com/labmonkeys-space/nl6/releases/download/v' ~ nl6_version
+      ~ '/nl6_' ~ nl6_version ~ '_' ~ nl6_deb_arch ~ '.deb' }}
+    nl6_deb_checksum: >-
+      {{ nl6_package_checksum if nl6_package_url | length > 0 else
+      'sha256:https://github.com/labmonkeys-space/nl6/releases/download/v'
+      ~ nl6_version ~ '/checksums.txt' }}
+
+- name: Read the installed nl6 package version
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${Version}' nl6
+  register: nl6_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether nl6.service is active
+  ansible.builtin.systemd:
+    name: nl6.service
+  register: nl6_unit
+  failed_when: false
+  check_mode: false
+
+# The package postinstall runs "systemctl try-restart nl6.service".
+- name: Warn that changing the version wipes the simulated fleet
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: nl6 {{ nl6_installed.stdout }} is installed and running, and
+      this play installs {{ nl6_version }}. The package upgrade restarts nl6
+      and nl6 keeps devices in memory only, so every simulated device
+      disappears. Recreate the fleet through the nl6 API afterwards.
+  when:
+    - nl6_installed.rc == 0
+    - nl6_unit.status.ActiveState | default('') == 'active'
+    - nl6_installed.stdout != nl6_version
+
+- name: Download the nl6 package
+  ansible.builtin.get_url:
+    url: "{{ nl6_deb_url }}"
+    dest: "/var/cache/{{ nl6_deb_file }}"
+    checksum: "{{ nl6_deb_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+# apt resolves iproute2, iptables and procps from the package dependencies.
+- name: Install the nl6 package
+  ansible.builtin.apt:
+    deb: "/var/cache/{{ nl6_deb_file }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: not ansible_check_mode
+
+# Replies from simulated devices arrive on a different path than the request
+# left on, and reverse-path filtering drops them.
+- name: Enable forwarding and disable reverse-path filtering
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-nl6.conf
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - { name: net.ipv4.ip_forward, value: "1" }
+    - { name: net.ipv4.conf.all.rp_filter, value: "0" }
+    - { name: "net.ipv4.conf.{{ nl6_net_interface }}.rp_filter", value: "0" }
+
+# nl6 inserts only an outbound FORWARD ACCEPT rule for its veth. Collector to
+# device traffic relies on the FORWARD policy.
+- name: Read the iptables FORWARD policy
+  ansible.builtin.command:
+    cmd: iptables -S FORWARD
+  register: nl6_forward_chain
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: Assert the FORWARD policy is ACCEPT
+  ansible.builtin.assert:
+    that:
+      - nl6_forward_chain.stdout_lines | first == '-P FORWARD ACCEPT'
+    fail_msg: >-
+      The iptables FORWARD policy is not ACCEPT ({{ nl6_forward_chain.stdout_lines | first }}).
+      nl6 only inserts an outbound ACCEPT rule for its own veth, so traffic from
+      a collector to the simulated devices is dropped. Docker and ufw set the
+      policy to DROP. Allow forwarding to and from the simulated network
+      (for example with a rule in DOCKER-USER or ufw route rules) or set the
+      policy to ACCEPT.
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Configure nl6 flags
+  ansible.builtin.template:
+    src: nl6.conf.j2
+    dest: /etc/nl6/nl6.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nl6
+
+- name: Flush handlers before enabling the service
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start nl6 service
+  ansible.builtin.systemd:
+    name: nl6.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# systemd reports the unit started as soon as the process is forked, and
+# Restart=on-failure turns a rejected argument into a restart loop, not a
+# failure. Ask the simulator itself.
+- name: Wait for the simulator to answer on its API
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ nl6_web_port }}/api/v1/version"
+    method: GET
+    status_code: 200
+  register: nl6_version_check
+  until: nl6_version_check.status | default(0) == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Report the simulator version that answered
+  ansible.builtin.debug:
+    msg: "nl6 {{ nl6_version_check.json.version }} answered"

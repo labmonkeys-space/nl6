@@ -1,0 +1,9 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+- name: Apply the nl6 role (syntax check only)
+  hosts: all
+  become: true
+  roles:
+    - role: nl6
+      nl6_net_interface: eth1

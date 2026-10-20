@@ -19,6 +19,20 @@ jobs:
   gates:
     uses: ./.github/workflows/gates.yml
 
+  ansible:
+    name: Ansible collection
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the labmonkeys.nl6 collection
+        run: make check-ansible
+
   docker:
     name: Publish RC image
     runs-on: ubuntu-24.04

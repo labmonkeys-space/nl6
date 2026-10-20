@@ -1,0 +1,18 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+galaxy_info:
+  author: Ronny Trommer
+  description: Install and run the nl6 network simulator from the native package under systemd.
+  license: Apache-2.0
+  min_ansible_version: "2.17"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+        - resolute
+  galaxy_tags:
+    - networking
+    - monitoring
+    - simulation
+dependencies: []

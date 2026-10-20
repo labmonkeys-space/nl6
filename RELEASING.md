@@ -103,6 +103,22 @@ with `workflow_dispatch`, or locally and read-only with
    pulls `nl6:<appVersion>` when `nl6.image.tag` is empty, and GHCR publishes
    only `v`-prefixed tags, so `X.Y.Z` pulls an image that does not exist.
    Nothing asserts this, and it drifted from v0.29.1 to v0.31.0 unnoticed.
+
+   Also in the same commit, bump the Ansible collection
+   ([`deploy/ansible`](deploy/ansible)) so it ships the same version:
+
+   ```sh
+   make set-ansible-version APP_VERSION=vX.Y.Z
+   git add deploy/ansible
+   ```
+
+   This writes `X.Y.Z` into `galaxy.yml` `version` and the role default
+   `nl6_version`. `make check-ansible` fails if the two differ. `release.yml`
+   also fails the release if either differs from the tag.
+
+   Move the `Unreleased` section of
+   [`deploy/ansible/CHANGELOG.md`](deploy/ansible/CHANGELOG.md) under a new
+   `X.Y.Z` heading in the same commit.
 5. **Optional: skim the auto-generated release notes.** On GitHub, draft a
    release against `main` without publishing to preview what
    `generate_release_notes: true` will produce. If the output is noisy (lots
