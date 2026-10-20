@@ -1,0 +1,8 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+#
+# GitHub-hosted runner labels newer than the pinned actionlint knows about.
+# Drop an entry once ACTIONLINT_VERSION lists it.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
