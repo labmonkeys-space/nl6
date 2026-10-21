@@ -7,7 +7,7 @@ version: 0.36.0
 readme: README.md
 authors:
   - Ronny Trommer <ronny@no42.org>
-description: Install and run the nl6 network simulator as a container under systemd.
+description: Install and run the nl6 network simulator from the native package under systemd.
 license:
   - Apache-2.0
 tags:

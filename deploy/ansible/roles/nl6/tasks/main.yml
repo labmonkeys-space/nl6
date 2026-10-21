@@ -38,43 +38,6 @@
       '{{ nl6_net_interface }}', host has {{ ansible_facts.interfaces | join(', ') }}.
     quiet: true
 
-# Hosts set up by the Docker-based role have unit files in /etc that override
-# the packaged unit in /lib/systemd/system.
-- name: Check for legacy Docker-era unit files
-  ansible.builtin.stat:
-    path: "{{ item }}"
-  loop:
-    - /etc/systemd/system/nl6-forward.service
-    - /etc/systemd/system/nl6.service
-  register: nl6_legacy_units
-
-- name: Stop and disable the legacy nl6-forward service
-  ansible.builtin.systemd:
-    name: nl6-forward.service
-    state: stopped
-    enabled: false
-  when: nl6_legacy_units.results[0].stat.exists
-
-# The legacy nl6.service runs the container, which would hold the ports.
-- name: Stop the legacy Docker-based nl6 service
-  ansible.builtin.systemd:
-    name: nl6.service
-    state: stopped
-  when: nl6_legacy_units.results[1].stat.exists
-
-- name: Remove the legacy unit files
-  ansible.builtin.file:
-    path: "{{ item.item }}"
-    state: absent
-  loop: "{{ nl6_legacy_units.results }}"
-  loop_control:
-    label: "{{ item.item }}"
-  when: item.stat.exists
-  notify: Reload systemd daemon
-
-- name: Flush handlers after removing legacy units
-  ansible.builtin.meta: flush_handlers
-
 - name: Map the host architecture to the package architecture
   ansible.builtin.set_fact:
     nl6_deb_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"

@@ -65,12 +65,6 @@ The role installs no firewall rules and no routes, so routing into the simulated
 Each run fetches `checksums.txt` from github.com, so the host needs internet access.
 Set `nl6_package_url` and `nl6_package_checksum` to use a mirror instead.
 
-### Upgrading from the Docker-based role
-
-The role removes `/etc/systemd/system/nl6.service` and `/etc/systemd/system/nl6-forward.service` when they exist, because they override the packaged unit.
-It stops the old services first, which also wipes the fleet.
-Remove the leftover container and image yourself if you want them gone.
-
 ### Check mode
 
 The package install, the FORWARD policy check and the assert are skipped in check mode.
