@@ -1,11 +1,18 @@
 # Install with Ansible
 
-The `labmonkeys.nl6` Ansible collection installs nl6 from its native `.deb` package and runs it under systemd.
-Its one role, `nl6`, downloads `nl6_<version>_<arch>.deb` from the GitHub release and verifies it against the release `checksums.txt`.
-It installs the package with apt, so `iproute2`, `iptables` and `procps` resolve as package dependencies.
+The `labmonkeys.nl6` Ansible collection installs nl6 from its native package and runs it under systemd.
+Its one role, `nl6`, downloads the `.deb` or `.rpm` for the host from the GitHub release and verifies it against the release `checksums.txt`.
+It installs the package with apt or dnf, so `ip`, `iptables` and `sysctl` resolve as package dependencies.
 It then sets the sysctls, writes `/etc/nl6/nl6.conf` and enables the packaged `nl6.service`.
 
-The role targets Ubuntu 24.04 and 26.04 on amd64 and arm64.
+| Platform | Package | Package manager |
+| --- | --- | --- |
+| Ubuntu 24.04, 26.04 | `nl6_<version>_<arch>.deb` | apt |
+| CentOS Stream 10, Rocky Linux 10, AlmaLinux 10 | `nl6-<version>-1.<arch>.rpm` | dnf |
+
+Both amd64 (x86_64) and arm64 (aarch64) are supported.
+Any Debian-family host gets the `.deb`.
+A RedHat-family host other than EL 10, or a host of any other family, fails before the role downloads anything.
 It installs the same package as [Install packages](./install-packages.md).
 It also sets the sysctls and runs the checks below, which the manual install leaves to you.
 
@@ -18,6 +25,9 @@ It also sets the sysctls and runs the checks below, which the manual install lea
   Traffic from a collector to the simulated devices needs the iptables FORWARD policy to be ACCEPT.
   Docker and ufw set it to DROP, and the role fails then.
   See [Firewall rules](#firewall-rules).
+- **Check firewalld.**
+  If firewalld is active, configure it to forward between the collector and the simulated network.
+  The role warns when firewalld is active but cannot check its policy.
 - **Allow internet access, or use a mirror.**
   Each run fetches `checksums.txt` from github.com.
   See [Internet access](#internet-access).
@@ -64,8 +74,8 @@ The play ends by polling the nl6 API and prints the version that answered.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `nl6_version` | the collection version | nl6 release without the `v`. |
-| `nl6_package_url` | `""` | Download URL of the `.deb`, for an air-gapped host or a local mirror. Replaces the GitHub release URL. |
-| `nl6_package_checksum` | `""` | `sha256:<hex digest>` of the `.deb`. Required when `nl6_package_url` is set, ignored otherwise. |
+| `nl6_package_url` | `""` | Download URL of the `.deb` or `.rpm`, for an air-gapped host or a local mirror. Replaces the GitHub release URL. |
+| `nl6_package_checksum` | `""` | `sha256:<hex digest>` of the package. Required when `nl6_package_url` is set, ignored otherwise. |
 | `nl6_web_port` | `8080` | REST API port. |
 | `nl6_gnmi_tls` | `true` | The gNMI dial-in listener (port 9339) is TLS-only. Set `false` for a plaintext collector. |
 | `nl6_net_interface` | `""` | Required. Host NIC facing the simulated network. The role fails if it does not exist. |
@@ -96,7 +106,7 @@ The play ends by polling the nl6 API and prints the version that answered.
 
 nl6 keeps devices in memory only.
 The package postinstall runs `systemctl try-restart nl6.service`, so installing a different version restarts nl6 and every simulated device disappears.
-The role reads the installed version with `dpkg-query` and prints a warning when nl6 is installed and active and the version differs from `nl6_version`.
+The role reads the installed version with `dpkg-query` or `rpm -q` and prints a warning when nl6 is installed and active and the version differs from `nl6_version`.
 To keep the fleet, save it with [`fleet.sh export`](./fleet.md) before you change `nl6_version`.
 Replay it with `fleet.sh import` after the play finishes.
 
@@ -113,6 +123,10 @@ Traffic from a collector to the devices relies on the FORWARD chain policy being
 Docker and ufw set the policy to DROP.
 The role reads `iptables -S FORWARD` and fails when the policy is not ACCEPT.
 On such a host, allow forwarding to and from the simulated network yourself, or set the policy, before running the role.
+
+firewalld filters forwarded traffic in its own nftables table, which `iptables -S FORWARD` does not show.
+On a firewalld host the FORWARD check can pass while firewalld still drops collector traffic.
+The role prints a WARNING when `firewalld.service` is active and continues.
 The role installs no firewall rules and no routes, so routing into the simulated network is up to you.
 
 ### Internet access

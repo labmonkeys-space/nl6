@@ -38,44 +38,16 @@
       '{{ nl6_net_interface }}', host has {{ ansible_facts.interfaces | join(', ') }}.
     quiet: true
 
-- name: Map the host architecture to the package architecture
-  ansible.builtin.set_fact:
-    nl6_deb_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"
-  when: ansible_facts.architecture in ['x86_64', 'aarch64']
-
-- name: Fail on an unsupported architecture
-  ansible.builtin.fail:
-    msg: >-
-      Unsupported architecture '{{ ansible_facts.architecture }}'. The nl6
-      package exists for x86_64 (amd64) and aarch64 (arm64) only.
-  when: nl6_deb_arch is not defined
-
-- name: Assert a checksum is given for a custom package URL
-  ansible.builtin.assert:
-    that:
-      - nl6_package_checksum | length > 0
-      - nl6_package_checksum is match('^sha256:[0-9a-fA-F]{64}$')
-    fail_msg: >-
-      nl6_package_url is set, so nl6_package_checksum is required and must look
-      like "sha256:<64 hex digits>".
-    quiet: true
-  when: nl6_package_url | length > 0
-
-- name: Set the package file, URL and checksum
-  ansible.builtin.set_fact:
-    nl6_deb_file: "nl6_{{ nl6_version }}_{{ nl6_deb_arch }}.deb"
-    nl6_deb_url: >-
-      {{ nl6_package_url if nl6_package_url | length > 0 else
-      'https://github.com/labmonkeys-space/nl6/releases/download/v' ~ nl6_version
-      ~ '/nl6_' ~ nl6_version ~ '_' ~ nl6_deb_arch ~ '.deb' }}
-    nl6_deb_checksum: >-
-      {{ nl6_package_checksum if nl6_package_url | length > 0 else
-      'sha256:https://github.com/labmonkeys-space/nl6/releases/download/v'
-      ~ nl6_version ~ '/checksums.txt' }}
+- name: Select the nl6 package for this platform
+  ansible.builtin.import_tasks: package.yml
 
 - name: Read the installed nl6 package version
   ansible.builtin.command:
-    cmd: dpkg-query -W -f='${Version}' nl6
+    cmd: "{{ nl6_version_cmd[nl6_pkg_format] }}"
+  vars:
+    nl6_version_cmd:
+      deb: dpkg-query -W -f='${Version}' nl6
+      rpm: rpm -q --queryformat '%{VERSION}' nl6
   register: nl6_installed
   changed_when: false
   failed_when: false
@@ -103,21 +75,37 @@
 
 - name: Download the nl6 package
   ansible.builtin.get_url:
-    url: "{{ nl6_deb_url }}"
-    dest: "/var/cache/{{ nl6_deb_file }}"
-    checksum: "{{ nl6_deb_checksum }}"
+    url: "{{ nl6_pkg_url }}"
+    dest: "/var/cache/{{ nl6_pkg_file }}"
+    checksum: "{{ nl6_pkg_checksum }}"
     owner: root
     group: root
     mode: "0644"
 
 # apt resolves iproute2, iptables and procps from the package dependencies.
-- name: Install the nl6 package
+- name: Install the nl6 deb package
   ansible.builtin.apt:
-    deb: "/var/cache/{{ nl6_deb_file }}"
+    deb: "/var/cache/{{ nl6_pkg_file }}"
     state: present
     update_cache: true
     cache_valid_time: 3600
-  when: not ansible_check_mode
+  when:
+    - nl6_pkg_format == 'deb'
+    - not ansible_check_mode
+
+# dnf resolves iproute, iptables and procps-ng. The rpm is unsigned, so the
+# GPG check is off; the download above already verified it against
+# checksums.txt, the same guarantee the deb path relies on.
+- name: Install the nl6 rpm package
+  ansible.builtin.dnf:
+    name: "/var/cache/{{ nl6_pkg_file }}"
+    state: present
+    disable_gpg_check: true
+    # A lower nl6_version must install, as it does on the deb path.
+    allow_downgrade: true
+  when:
+    - nl6_pkg_format == 'rpm'
+    - not ansible_check_mode
 
 # Replies from simulated devices arrive on a different path than the request
 # left on, and reverse-path filtering drops them.
@@ -133,6 +121,24 @@
     - { name: net.ipv4.ip_forward, value: "1" }
     - { name: net.ipv4.conf.all.rp_filter, value: "0" }
     - { name: "net.ipv4.conf.{{ nl6_net_interface }}.rp_filter", value: "0" }
+
+# firewalld filters forwarding in its own nftables table, which
+# "iptables -S FORWARD" does not show, so the FORWARD check below cannot see it.
+- name: Check whether firewalld is active
+  ansible.builtin.systemd:
+    name: firewalld.service
+  register: nl6_firewalld
+  failed_when: false
+  check_mode: false
+
+- name: Warn that firewalld may drop collector traffic
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: firewalld is active. It can drop traffic forwarded between a
+      collector and the simulated devices, and this role cannot check its
+      zones or policies. Allow forwarding to and from the simulated network
+      in firewalld yourself.
+  when: nl6_firewalld.status.ActiveState | default('') == 'active'
 
 # nl6 inserts only an outbound FORWARD ACCEPT rule for its veth. Collector to
 # device traffic relies on the FORWARD policy.

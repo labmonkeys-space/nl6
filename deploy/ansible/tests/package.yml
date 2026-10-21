@@ -1,0 +1,19 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+# Runs the role's package selection against facts passed with -e ansible_facts.
+- name: Select the nl6 package without a target host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../roles/nl6/defaults/main.yml
+  tasks:
+    - name: Run the role's package selection
+      ansible.builtin.import_tasks: ../roles/nl6/tasks/package.yml
+
+    - name: Write the selected format and URL
+      ansible.builtin.copy:
+        content: "{{ nl6_pkg_format }} {{ nl6_pkg_url }}"
+        dest: "{{ render_dest }}"
+        mode: "0644"

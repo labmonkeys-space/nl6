@@ -4,7 +4,7 @@
 # Keep in lockstep with the collection version in galaxy.yml.
 nl6_version: "0.36.0"
 
-# Override the .deb download URL (air-gapped host or local mirror). When set,
+# Override the .deb or .rpm download URL (air-gapped host or local mirror). When set,
 # nl6_package_checksum is required, for example "sha256:<hex digest>".
 nl6_package_url: ""
 nl6_package_checksum: ""

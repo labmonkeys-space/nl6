@@ -1,0 +1,65 @@
+# Copyright 2026 Ronny Trommer <ronny@no42.org>
+# SPDX-License-Identifier: Apache-2.0
+---
+# Each release ships a .deb for Debian and an .rpm smoke-tested on EL 10.
+# Set unconditionally, so a variable of the same name from the inventory
+# cannot skip the gate below.
+- name: Select the package format from the OS family
+  ansible.builtin.set_fact:
+    nl6_pkg_format: >-
+      {{ 'deb' if ansible_facts.os_family == 'Debian'
+      else 'rpm' if ansible_facts.os_family == 'RedHat' and ansible_facts.distribution_major_version == '10'
+      else '' }}
+
+- name: Fail on an unsupported platform
+  ansible.builtin.fail:
+    msg: >-
+      Unsupported platform '{{ ansible_facts.distribution | default(ansible_facts.os_family) }}
+      {{ ansible_facts.distribution_major_version }}'. The nl6 role supports
+      Ubuntu and EL 10 (CentOS Stream 10, Rocky Linux 10, AlmaLinux 10).
+  when: nl6_pkg_format | length == 0
+
+# The .deb uses Debian architecture names, the .rpm keeps the kernel's.
+- name: Map the host architecture to the package architecture
+  ansible.builtin.set_fact:
+    nl6_pkg_arch: >-
+      {{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture]
+      if nl6_pkg_format == 'deb' else ansible_facts.architecture }}
+  when: ansible_facts.architecture in ['x86_64', 'aarch64']
+
+- name: Fail on an unsupported architecture
+  ansible.builtin.fail:
+    msg: >-
+      Unsupported architecture '{{ ansible_facts.architecture }}'. The nl6
+      package exists for x86_64 (amd64) and aarch64 (arm64) only.
+  when: nl6_pkg_arch is not defined
+
+- name: Assert a checksum is given for a custom package URL
+  ansible.builtin.assert:
+    that:
+      - nl6_package_checksum | length > 0
+      - nl6_package_checksum is match('^sha256:[0-9a-fA-F]{64}$')
+    fail_msg: >-
+      nl6_package_url is set, so nl6_package_checksum is required and must look
+      like "sha256:<64 hex digits>".
+    quiet: true
+  when: nl6_package_url | length > 0
+
+# The "-1" is nfpm's default rpm release, which every published rpm carries.
+# Setting release: in deploy/packages/nfpm.yaml changes the file name.
+- name: Set the package file name
+  ansible.builtin.set_fact:
+    nl6_pkg_file: >-
+      {{ 'nl6_' ~ nl6_version ~ '_' ~ nl6_pkg_arch ~ '.deb' if nl6_pkg_format == 'deb'
+      else 'nl6-' ~ nl6_version ~ '-1.' ~ nl6_pkg_arch ~ '.rpm' }}
+
+- name: Set the package URL and checksum
+  ansible.builtin.set_fact:
+    nl6_pkg_url: >-
+      {{ nl6_package_url if nl6_package_url | length > 0 else
+      'https://github.com/labmonkeys-space/nl6/releases/download/v' ~ nl6_version
+      ~ '/' ~ nl6_pkg_file }}
+    nl6_pkg_checksum: >-
+      {{ nl6_package_checksum if nl6_package_url | length > 0 else
+      'sha256:https://github.com/labmonkeys-space/nl6/releases/download/v'
+      ~ nl6_version ~ '/checksums.txt' }}

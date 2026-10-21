@@ -11,6 +11,9 @@ galaxy_info:
       versions:
         - noble
         - resolute
+    - name: EL
+      versions:
+        - "10"
   galaxy_tags:
     - networking
     - monitoring

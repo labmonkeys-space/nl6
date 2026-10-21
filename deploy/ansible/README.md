@@ -1,7 +1,7 @@
 # labmonkeys.nl6
 
-Ansible collection to install and run the [nl6](https://github.com/labmonkeys-space/nl6) network simulator from its native `.deb` package under systemd.
-Its `nl6` role downloads and verifies the release package, installs it with apt, sets the sysctls, writes `/etc/nl6/nl6.conf` and runs `nl6.service`.
+Ansible collection to install and run the [nl6](https://github.com/labmonkeys-space/nl6) network simulator from its native `.deb` or `.rpm` package under systemd.
+Its `nl6` role downloads and verifies the release package, installs it with apt or dnf, sets the sysctls, writes `/etc/nl6/nl6.conf` and runs `nl6.service`.
 
 Install by git tag:
 
