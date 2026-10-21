@@ -22,7 +22,7 @@
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          # TEMPORARY toolchain override: go.mod requires Go >= 1.27.2
+          # TEMPORARY toolchain override: go.mod requires Go >= 1.27.3
           # (stdlib fixes govulncheck flags, html/template among them), but
           # nixpkgs still lags behind (1.27.0 at the lock, 1.27.1 on unstable as
           # of 2026-10-09). Build the toolchain from the official source tarball
@@ -30,14 +30,14 @@
           # override and pass plain pkgs.buildGo127Module to package.nix again.
           # The first build compiles Go itself (~10 min); Cachix caches it
           # afterwards.
-          go_1_27_2 = pkgs.go_1_27.overrideAttrs (old: {
-            version = "1.27.2";
+          go_1_27_3 = pkgs.go_1_27.overrideAttrs (old: {
+            version = "1.27.3";
             src = pkgs.fetchurl {
-              url = "https://go.dev/dl/go1.27.2.src.tar.gz";
-              hash = "sha256-A0ldorpkiU1A9cSZLklFT6eLUGkGBP+Stq//UIG3bmI=";
+              url = "https://go.dev/dl/go1.27.3.src.tar.gz";
+              hash = "sha256-bndJA1zzYPBrJXXRYup535/ajvZxiJ5cN1+OUHd/Jrs=";
             };
           });
-          buildGo127Module = pkgs.buildGo127Module.override { go = go_1_27_2; };
+          buildGo127Module = pkgs.buildGo127Module.override { go = go_1_27_3; };
         in {
           # The version lives in package.nix and is bumped per release (see
           # RELEASING.md), so the Nix build reports the same X.Y.Z as the
