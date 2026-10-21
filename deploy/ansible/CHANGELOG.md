@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.37.0
 
 - Add the `nl6` role. It installs nl6 from the release `.deb` (checksum verified against `checksums.txt`), sets the sysctls, writes `/etc/nl6/nl6.conf` and runs the packaged `nl6.service`.
 - The role fails when the iptables FORWARD policy is not ACCEPT. nl6 inserts a FORWARD ACCEPT rule for traffic leaving its veth and none for inbound traffic. Docker and ufw set the policy to DROP.
