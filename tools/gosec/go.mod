@@ -1,6 +1,6 @@
 module github.com/labmonkeys-space/nl6/tools/gosec
 
-go 1.27.2
+go 1.27.3
 
 tool github.com/securego/gosec/v2/cmd/gosec
 
