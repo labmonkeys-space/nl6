@@ -1,12 +1,7 @@
 # labmonkeys.nl6
 
 Ansible collection to install and run the [nl6](https://github.com/labmonkeys-space/nl6) network simulator from its native `.deb` package under systemd.
-
-## Roles
-
-- `nl6`: downloads and verifies the release package, installs it with apt, sets the sysctls, writes `/etc/nl6/nl6.conf` and runs `nl6.service`. See [roles/nl6/README.md](roles/nl6/README.md).
-
-## Install
+Its `nl6` role downloads and verifies the release package, installs it with apt, sets the sysctls, writes `/etc/nl6/nl6.conf` and runs `nl6.service`.
 
 Install by git tag:
 
@@ -14,16 +9,8 @@ Install by git tag:
 ansible-galaxy collection install 'git+https://github.com/labmonkeys-space/nl6.git#/deploy/ansible,vX.Y.Z'
 ```
 
-Or in `requirements.yml`:
-
-```yaml
-collections:
-  - name: https://github.com/labmonkeys-space/nl6.git#/deploy/ansible
-    type: git
-    version: vX.Y.Z
-```
-
-The collection version always equals the nl6 release. Collection `0.36.0` runs nl6 `v0.36.0` by default.
+The collection version always equals the nl6 release.
+For `requirements.yml`, the role variables, an example play and the caveats, see [Install with Ansible](https://nl6.eu/getting-started/ansible).
 
 ## Development
 

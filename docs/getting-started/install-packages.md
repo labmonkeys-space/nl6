@@ -183,6 +183,7 @@ It covers the layout, `nfpm.yaml`, the NixOS flake/module, the Cachix cache, and
 
 ## See also
 
+- [Install with Ansible](./ansible.md) to install the `.deb` and start the service from a playbook.
 - [Docker](./docker.md) to run the published container image instead.
 - [Quick start](./quick-start.md) to build and run from source.
 - [CLI flags](../reference/cli-flags.md) for everything you can put in `NL6_OPTS`.
