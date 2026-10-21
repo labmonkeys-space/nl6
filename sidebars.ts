@@ -10,11 +10,12 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'getting-started/quick-start',
-        'getting-started/snmp-set',
         'getting-started/install-packages',
+        'getting-started/ansible',
         'getting-started/docker',
         'getting-started/fleet',
         'getting-started/dns',
+        'getting-started/snmp-set',
       ],
     },
   ],

@@ -98,7 +98,7 @@ Deployment recipes & worked examples: [`examples/`](examples/), with Clos fabric
 
 The docs site has four top-level sections:
 
-- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/): build, first run, package install, Docker.
+- [Getting Started](https://labmonkeys-space.github.io/nl6/getting-started/quick-start/): build, first run, package install, Ansible, Docker.
 - [Operations](https://labmonkeys-space.github.io/nl6/ops/scaling/): scaling, network namespace, flow export, load-test scenarios, troubleshooting.
 - [Reference](https://labmonkeys-space.github.io/nl6/reference/cli-flags/): CLI flags, web API, device types, SNMP, flow export, resource files, GPU simulation.
 - [Explanation](https://labmonkeys-space.github.io/nl6/explanation/architecture/): architecture, why Kubernetes is out of scope, SNMP data fidelity, measuring a collector's ceiling.

@@ -1,4 +1,4 @@
-# Fleet inventory
+# Manage fleet inventory
 
 A *fleet* is the set of devices a running nl6 simulator hosts.
 The [`scripts/fleet.sh`](https://github.com/labmonkeys-space/nl6/blob/main/scripts/fleet.sh) helper captures a fleet to a JSON file (`export`) and replays it into another simulator (`import`).
