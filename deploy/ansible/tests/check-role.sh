@@ -11,6 +11,7 @@ cd "$ROOT" || exit 1
 VENV="$ROOT/build/ansible-venv"
 ROLE="$ROOT/deploy/ansible/roles/nl6"
 TASKS="$ROLE/tasks/main.yml"
+PKG="$ROLE/tasks/package.yml"
 COLL="$ROOT/build/ansible-collections"
 
 if [ ! -x "$VENV/bin/ansible-playbook" ]; then
@@ -68,8 +69,41 @@ t_forward_policy() {
     && grep -q 'changed_when: false' "$TASKS"
 }
 t_checksum() {
-  grep -q 'ansible.builtin.get_url' "$TASKS" && grep -q 'checksum: "{{ nl6_deb_checksum }}"' "$TASKS" \
-    && grep -q "'sha256:https://" "$TASKS" && grep -q 'sha256:\[0-9a-fA-F\]{64}' "$TASKS"
+  grep -q 'ansible.builtin.get_url' "$TASKS" && grep -q 'checksum: "{{ nl6_pkg_checksum }}"' "$TASKS" \
+    && grep -q "'sha256:https://" "$PKG" && grep -q 'sha256:\[0-9a-fA-F\]{64}' "$PKG"
+}
+t_el10() {
+  grep -q "rpm -q --queryformat '%{VERSION}' nl6" "$TASKS" && grep -q 'ansible.builtin.dnf' "$TASKS" \
+    && grep -q 'disable_gpg_check: true' "$TASKS" && grep -q "nl6_pkg_format == 'rpm'" "$TASKS"
+}
+t_firewalld() {
+  grep -q 'name: firewalld.service' "$TASKS" && grep -q 'WARNING: firewalld is active' "$TASKS" \
+    && grep -q "nl6_firewalld.status.ActiveState | default('') == 'active'" "$TASKS"
+}
+# Run the role's package selection with the facts of each supported platform.
+t_package() {
+  local dest="$ROOT/build/nl6.package.selected" ver base got case facts want
+  ver=$(sed -nE 's/^nl6_version:[[:space:]]*"?([^"[:space:]]+)"?.*/\1/p' "$ROLE/defaults/main.yml")
+  base="https://github.com/labmonkeys-space/nl6/releases/download/v$ver"
+  mkdir -p "$ROOT/build"
+  for case in \
+    "Debian 24 x86_64|deb $base/nl6_${ver}_amd64.deb" \
+    "Debian 24 aarch64|deb $base/nl6_${ver}_arm64.deb" \
+    "RedHat 10 x86_64|rpm $base/nl6-${ver}-1.x86_64.rpm" \
+    "RedHat 10 aarch64|rpm $base/nl6-${ver}-1.aarch64.rpm"; do
+    read -r fam major arch <<<"${case%%|*}"
+    want=${case#*|}
+    facts=$(printf '{"ansible_facts":{"os_family":"%s","distribution":"%s","distribution_major_version":"%s","architecture":"%s"}}' "$fam" "$fam" "$major" "$arch")
+    rm -f "$dest"
+    ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml >/dev/null \
+      || { echo "$fam $major $arch: play failed"; return 1; }
+    got=$(cat "$dest")
+    [ "$got" = "$want" ] || { echo "$fam $major $arch: got '$got', want '$want'"; return 1; }
+  done
+  facts='{"ansible_facts":{"os_family":"RedHat","distribution":"Rocky","distribution_major_version":"9","architecture":"x86_64"}}'
+  out=$(ansible-playbook -e "render_dest=$dest" -e "$facts" deploy/ansible/tests/package.yml 2>&1) \
+    && { echo "RedHat 9 was accepted"; return 1; }
+  echo "$out" | grep -q 'Unsupported platform' || { echo "RedHat 9 failed for another reason:"; echo "$out" | tail -5; return 1; }
 }
 t_extra_args() {
   grep -q 'nl6_extra_args is not string' "$TASKS" || return 1
@@ -120,6 +154,9 @@ check "interface assert" t_iface
 check "sysctl present" t_sysctl
 check "version change warns" t_version_warn
 check "package checksum" t_checksum
+check "EL 10 rpm install" t_el10
+check "firewalld warning" t_firewalld
+check "package selection per platform" t_package
 check "forward policy assert" t_forward_policy
 check "extra args list assert" t_extra_args
 check "extra args no whitespace assert" t_no_whitespace
