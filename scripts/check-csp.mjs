@@ -7,13 +7,13 @@
  * Content-Security-Policy, or carries one that does not cover what the page
  * actually contains.
  *
- * The policy is injected by src/plugins/csp-meta.ts at postBuild time. That
- * plugin derives the inline-script hashes from the same HTML it rewrites, so
- * it cannot disagree with itself — which is exactly why this check re-derives
- * them INDEPENDENTLY here rather than importing the plugin's helper. What it
- * catches is the plugin not running at all (a Docusaurus lifecycle change, a
- * dropped entry in the config), and any post-processing step that adds an
- * inline script to the output after the plugin has already hashed it.
+ * The policy is injected by scripts/inject-csp.mjs after `docusaurus build`
+ * exits. That script derives the inline-script hashes from the same HTML it
+ * rewrites, so it cannot disagree with itself. This check therefore
+ * re-derives them INDEPENDENTLY rather than importing the script's helper.
+ * What it catches is the injection not running at all (a bare `docusaurus
+ * build`, a dropped step in `npm run build`), a page it missed, and any
+ * post-processing step that adds an inline script after injection.
  *
  * Run against build/ after `npm run build`.
  */
@@ -40,8 +40,9 @@ const REQUIRED_DIRECTIVES = [
 
 // The content attribute must be double-quoted: every policy worth having
 // contains keyword sources like 'self', so single quotes cannot delimit it.
+// The lookahead keeps Content-Security-Policy-Report-Only from matching.
 const CSP_META_RE =
-  /<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*content="([^"]+)"/i;
+  /<meta[^>]+http-equiv=["']?Content-Security-Policy(?=["'\s>])["']?[^>]*content="([^"]+)"/i;
 // An end tag is `</` + name + anything up to `>`: the HTML parser accepts
 // `</script >` and also `</script foo="bar">`, discarding the attributes
 // (WHATWG §13.2.5.10). A regex that insists on `</script>` — or on `\s*>` —
@@ -80,6 +81,13 @@ for (const page of pages) {
   }
   const policy = meta[1];
 
+  // A browser enforces every policy it finds, so a second one can block what
+  // the first allows. Only the first is checked below, so count them here.
+  const metas = html.match(new RegExp(CSP_META_RE.source, 'gi')).length;
+  if (metas > 1) {
+    failures.push(`${page}: ${metas} Content-Security-Policy meta elements, expected 1`);
+  }
+
   for (const directive of REQUIRED_DIRECTIVES) {
     if (!new RegExp(`(^|;)\\s*${directive}\\s`, 'i').test(policy)) {
       failures.push(`${page}: policy is missing the ${directive} directive`);
@@ -90,8 +98,10 @@ for (const page of pages) {
     failures.push(`${page}: script-src allows 'unsafe-inline' — use hashes instead`);
   }
 
-  // The meta only governs what the parser reaches after it.
-  if (meta.index > html.search(/<script|<link[^>]+rel=["']?stylesheet/i)) {
+  // The meta only governs what the parser reaches after it. A page with no
+  // script and no stylesheet has nothing to govern (search returns -1).
+  const firstGoverned = html.search(/<script|<link[^>]+rel=["']?stylesheet/i);
+  if (firstGoverned !== -1 && meta.index > firstGoverned) {
     failures.push(`${page}: CSP meta appears after a script or stylesheet it should govern`);
   }
 
