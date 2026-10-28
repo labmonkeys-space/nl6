@@ -51,22 +51,26 @@
   "comments": {
     "overrides": "Force patched versions of transitive Docusaurus/webpack deps flagged by Dependabot. These are docs-site build/dev dependencies (not shipped in the nl6 binary or image). Every entry MUST be load-bearing (change resolution) and MUST have a removal condition in overrides-entries below; an inert entry is a version ceiling that blocks upgrades while delivering nothing. Run `make docs-audit-overrides` to find inert entries. Prefer a nested (per-consumer) override over a global one when only some consumers need the forced version.",
     "overrides-entries": {
-      "serialize-javascript": "Advisory fix. Forces 7.x on copy-webpack-plugin@11 and css-minimizer-webpack-plugin@5, both of which declare ^6.x -- a deliberate major-boundary crossing. Without it the tree drops to 6.0.2. REMOVE WHEN both plugins accept ^7.",
+      "serialize-javascript": "Advisory fix (GHSA-m5mm-p8h7-m29v, fixed in 7.1.3, hence the floor). Forces 7.x on copy-webpack-plugin@11 and css-minimizer-webpack-plugin@5, both of which declare ^6.x. That is a deliberate major-boundary crossing. Without it the tree drops to 6.0.2. REMOVE WHEN both plugins accept ^7.1.3.",
       "sockjs>uuid": "Advisory fix for uuid 8.3.2, reached only via sockjs under webpack-dev-server (npm run start) -- never in the production build or the shipped site. Scoped to sockjs so it does not cap mermaid, which accepts ^11 || ^12 || ^13 || ^14. Forces 11.1.1 on sockjs, whose declared range is ^8.3.2. REMOVE WHEN sockjs accepts a patched uuid.",
-      "express>qs": "Advisory fix (GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx) for qs 6.15.3, reached only via express and body-parser under webpack-dev-server (npm run start) -- never in the production build or the shipped site. express@4.22 pins ~6.15.1, so 6.16.0 is a deliberate range crossing. Scoped to express so nothing else is capped. REMOVE WHEN express accepts ^6.16."
+      "express>qs": "Advisory fix (GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx) for qs 6.15.3, reached only via express and body-parser under webpack-dev-server (npm run start) -- never in the production build or the shipped site. express@4.22 pins ~6.15.1, so 6.16.0 is a deliberate range crossing. Scoped to express so nothing else is capped. REMOVE WHEN express accepts ^6.16.",
+      "cheerio>undici": "Advisory fix (GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx, GHSA-qrxm-fqhp-jwvm, GHSA-xjj6-f33q-929c and four medium, fixed in 8.12.2). Forces 8.x on cheerio@1.2.0 under @easyops-cn/docusaurus-search-local (build-time search indexing), which declares ^7.19.0. That is a deliberate major-boundary crossing. 7.30.1 also fixes these GHSAs, but the 8.x line clears Aikido-reported undici findings that 7.x was not confirmed to fix. Scoped to cheerio so no other consumer is capped at 8.x. REMOVE WHEN cheerio accepts ^8.12.2.",
+      "katex": "Advisory fix (GHSA-238p-pmpm-9mq7, fixed in 0.18.2). Forces 0.18.x on the locked mermaid 11.16.1, which declares ^0.16.45. Without it mermaid gets 0.16.47. Mermaid 12 already asks for ^0.18.0. REMOVE WHEN the lockfile resolves mermaid >= 12.",
+      "tinypool": "Advisory fix (GHSA-5gmw-xhrv-c9v3, GHSA-85c8-ppgw-ccpr, both critical, fixed in 2.1.2). Forces 2.x on @docusaurus/core 3.10.2, which declares ^1.0.2 (its canary already asks for ^2.1.2). Without it the tree drops to 1.1.1. REMOVE WHEN a released @docusaurus/core accepts ^2.1.2."
     }
   },
   "overrides": {
-    "serialize-javascript": "^7.0.5",
+    "serialize-javascript": "^7.1.3",
     "sockjs": {
       "uuid": "^11.1.1"
     },
     "express": {
       "qs": "^6.16.0"
     },
-    "undici@>=5.15.0 <8.10.2": "8.10.2",
+    "cheerio": {
+      "undici": "^8.12.2"
+    },
     "katex": "^0.18.2",
-    "postcss-selector-parser": "^7.1.6",
     "tinypool": "^2.1.2"
   }
 }
