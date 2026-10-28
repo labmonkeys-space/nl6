@@ -139,6 +139,9 @@ It takes exactly one of five strings; any other value matches no device type and
 
 Device `sysLocation` values are drawn from a bundled world-cities dataset of about 47,000 rows so large fleets have plausible geographic spread.
 The dataset ships under `go/nl6/worldcities/` as 97 CSV shards plus a `header.csv`.
+It is the [simplemaps World Cities Basic database](https://simplemaps.com/data/world-cities) by Pareto Software, LLC, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Rows for Russia are removed. `go/nl6/worldcities/FILTER.md` records the filter.
+The container image and the OS packages ship it beside `resources/` and `web/`.
 
 Each entry's **latitude/longitude** are retained from the dataset and exposed per device via `GET /api/v1/devices` (`location` / `latitude` / `longitude`).
 See the [web API reference](web-api.md).

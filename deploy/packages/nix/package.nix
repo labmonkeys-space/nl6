@@ -48,14 +48,16 @@ buildGo127Module {
 
   nativeBuildInputs = [ makeWrapper ];
 
-  # nl6 loads resources/ and web/ relative to its working directory. Ship them
-  # under share/nl6 (the NixOS module sets WorkingDirectory there), and put
-  # `ip`, `iptables`, and `sysctl` on the binary's PATH.
+  # nl6 loads resources/, web/ and worldcities/ relative to its working
+  # directory. Ship them under share/nl6 (the NixOS module sets
+  # WorkingDirectory there), and put `ip`, `iptables`, and `sysctl` on the
+  # binary's PATH.
   # Paths are relative to modRoot (go/), which is the cwd in this phase.
   postInstall = ''
     mkdir -p $out/share/nl6
     cp -r nl6/resources $out/share/nl6/resources
     cp -r nl6/web $out/share/nl6/web
+    cp -r nl6/worldcities $out/share/nl6/worldcities
 
     wrapProgram $out/bin/nl6 \
       --prefix PATH : ${lib.makeBinPath [ iproute2 iptables procps ]}
@@ -64,7 +66,7 @@ buildGo127Module {
   meta = with lib; {
     description = "Network device simulator (SNMP/SSH/HTTPS/gNMI/NetFlow/syslog)";
     homepage = "https://nl6.eu";
-    license = licenses.asl20;
+    license = with licenses; [ asl20 cc-by-40 ];
     platforms = [ "x86_64-linux" "aarch64-linux" ];
     mainProgram = "nl6";
   };

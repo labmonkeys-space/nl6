@@ -79,11 +79,30 @@ case "$pkg" in
     if ! grep -q "^License: Apache-2.0" "$copyright"; then
       fail "copyright file has no License: Apache-2.0 field; the SBOM would report NOASSERTION"
     fi
+    # The shipped world-cities data is CC BY 4.0, not Apache-2.0. Without its
+    # own stanza, `Files: *` would claim it.
+    if ! grep -q "^Files: go/nl6/worldcities/\*" "$copyright"; then
+      fail "copyright file has no Files: stanza for the CC BY 4.0 world-cities dataset"
+    fi
+    ;;
+  *.rpm)
+    # rpm tooling reads no DEP-5 file. The License header is the declaration,
+    # and it must name the CC BY 4.0 world-cities dataset.
+    lic="$(rpm -q --qf "%{LICENSE}" nl6)"
+    case "$lic" in
+      *CC-BY-4.0*) ;;
+      *) fail "rpm License header ($lic) does not declare CC-BY-4.0 for the world-cities dataset" ;;
+    esac
     ;;
 esac
 json="$(find /usr/share/nl6/resources -name "*.json" 2>/dev/null | wc -l)"
 [ "$json" -gt 0 ] || fail "no resource JSON under /usr/share/nl6/resources"
-echo "    resources: $json JSON files, web/ present"
+# The binary falls back to 9 compiled-in cities when worldcities/ is missing,
+# so an absent or empty directory still starts. Count shards, not the directory.
+cities="$(find /usr/share/nl6/worldcities -name "[0-9]*.csv" 2>/dev/null | wc -l)"
+[ "$cities" -gt 0 ] || fail "no world-cities CSV shards under /usr/share/nl6/worldcities"
+[ -f /usr/share/nl6/worldcities/LICENSE.md ] || fail "world-cities CC BY 4.0 attribution (LICENSE.md) not installed"
+echo "    resources: $json JSON files, worldcities: $cities CSV shards, web/ present"
 
 # Best-effort unit-syntax check (systemd-analyze is absent on minimal images).
 if command -v systemd-analyze >/dev/null 2>&1; then

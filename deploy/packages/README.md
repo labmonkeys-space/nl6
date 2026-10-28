@@ -21,12 +21,11 @@ Each `.deb` / `.rpm` is built for both `amd64` and `arm64`.
 | `/usr/bin/nl6`                      | the simulator binary                                  |
 | `/usr/share/nl6/resources/`         | device resource JSON (SNMP/SSH/REST response data)    |
 | `/usr/share/nl6/web/`               | web console assets                                    |
+| `/usr/share/nl6/worldcities/`       | world-cities dataset for `sysLocation` (CC BY 4.0)    |
 | `/usr/lib/systemd/system/nl6.service` | systemd unit (runs as root, `WorkingDirectory` set) |
 | `/etc/nl6/nl6.conf`                 | `NL6_OPTS` flag file (preserved across upgrades)      |
 
-> **Why `/usr/share/nl6`?** nl6 loads `resources/` and `web/` from paths
-> relative to its working directory, so the unit sets
-> `WorkingDirectory=/usr/share/nl6`.
+> **Why `/usr/share/nl6`?** nl6 loads `resources/`, `web/` and `worldcities/` from paths relative to its working directory, so the unit sets `WorkingDirectory=/usr/share/nl6`.
 
 ### Runtime requirements
 
