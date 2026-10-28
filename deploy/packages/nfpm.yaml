@@ -21,7 +21,9 @@ priority: optional
 maintainer: No42.org <ronny@no42.org>
 vendor: No42.org
 homepage: https://nl6.eu
-license: Apache-2.0
+# The package ships the CC BY 4.0 world-cities dataset beside the Apache-2.0
+# binary, so the rpm License header names both.
+license: Apache-2.0 AND CC-BY-4.0
 description: |
   Network device simulator (SNMP / SSH / HTTPS / gNMI / NetFlow / syslog).
   nl6 simulates 30,000+ concurrent network devices, each with its own IP
@@ -53,13 +55,15 @@ contents:
     file_info:
       mode: 0755
 
-  # Runtime data. The binary loads `resources/` and `web/` via paths relative
-  # to its working directory, so the systemd unit sets
+  # Runtime data. The binary loads `resources/`, `web/` and `worldcities/` via
+  # paths relative to its working directory, so the systemd unit sets
   # WorkingDirectory=/usr/share/nl6.
   - src: ./go/nl6/resources
     dst: /usr/share/nl6/resources
   - src: ./go/nl6/web
     dst: /usr/share/nl6/web
+  - src: ./go/nl6/worldcities
+    dst: /usr/share/nl6/worldcities
 
   # systemd unit. /usr/lib/systemd/system is the usr-merged location honoured
   # by both modern Debian/Ubuntu and the RHEL family.

@@ -13,7 +13,7 @@ Type=simple
 # argument. The leading `-` makes a missing file non-fatal: nl6 then starts
 # on its built-in defaults instead of refusing to launch.
 EnvironmentFile=-/etc/nl6/nl6.conf
-# resources/ and web/ are resolved relative to the working directory.
+# resources/, web/ and worldcities/ are resolved relative to the working directory.
 WorkingDirectory=/usr/share/nl6
 ExecStart=/usr/bin/nl6 $NL6_OPTS
 Restart=on-failure

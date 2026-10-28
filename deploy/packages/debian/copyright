@@ -13,3 +13,18 @@ License: Apache-2.0
  .
  On Debian systems, the full text of the Apache License version 2.0 can be
  found in the file /usr/share/common-licenses/Apache-2.0
+
+Files: go/nl6/worldcities/*
+Copyright: Pareto Software, LLC (simplemaps.com)
+Comment: simplemaps "World Cities" Basic database, installed under
+ /usr/share/nl6/worldcities. The data is modified: rows for Russia are
+ removed, as recorded in /usr/share/nl6/worldcities/FILTER.md. The
+ attribution is in /usr/share/nl6/worldcities/LICENSE.md.
+ Source: https://simplemaps.com/data/world-cities
+License: CC-BY-4.0
+
+License: CC-BY-4.0
+ Creative Commons Attribution 4.0 International.
+ .
+ The full text of the licence is available at
+ https://creativecommons.org/licenses/by/4.0/legalcode

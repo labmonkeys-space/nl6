@@ -19,6 +19,7 @@ The `.deb`/`.rpm` packages are attached to each [GitHub Release](https://github.
 | `/usr/bin/nl6` | the simulator binary |
 | `/usr/share/nl6/resources/` | device resource data (SNMP/SSH/REST) |
 | `/usr/share/nl6/web/` | web console assets |
+| `/usr/share/nl6/worldcities/` | world-cities dataset for `sysLocation` (CC BY 4.0) |
 | `/usr/lib/systemd/system/nl6.service` | the systemd unit |
 | `/etc/nl6/nl6.conf` | flag file (`NL6_OPTS`), preserved across upgrades |
 

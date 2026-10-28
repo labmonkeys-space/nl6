@@ -32,6 +32,7 @@ WORKDIR /app
 COPY --from=build /nl6 /usr/local/bin/nl6
 COPY go/nl6/resources/ /app/resources/
 COPY go/nl6/web/ /app/web/
+COPY go/nl6/worldcities/ /app/worldcities/
 
 EXPOSE 8080/tcp 161/udp
 

@@ -38,7 +38,7 @@ in
       serviceConfig = {
         # Root is required for TUN interfaces, the nl6sim netns, and iptables.
         ExecStart = "${lib.getExe cfg.package} ${lib.escapeShellArgs cfg.extraFlags}";
-        # resources/ and web/ are resolved relative to the working directory.
+        # resources/, web/ and worldcities/ are resolved relative to the working directory.
         WorkingDirectory = "${cfg.package}/share/nl6";
         Restart = "on-failure";
         RestartSec = 5;
