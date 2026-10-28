@@ -71,7 +71,7 @@ UNAME_S := $(shell uname -s)
 
 .PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
-        docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-clean \
+        docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
         check-release-integrity check-release-integrity-test \
         tools-quality fmt-check lint vuln sec lint-actions check-check-run-names quality
 
@@ -718,6 +718,10 @@ docs-check-csp: check-node
 # rather than on the commit, so it can change without anyone touching the repo.
 docs-audit-overrides: check-node
 	node scripts/check-npm-overrides.mjs
+
+## docs-audit-overrides-test: Unit-test the overrides audit key parsing (no network)
+docs-audit-overrides-test: check-node
+	node scripts/check-npm-overrides.test.mjs
 
 ## check-release-integrity: Reconcile version tags against published releases (read-only; --dry-run touches no issue)
 check-release-integrity: check-node

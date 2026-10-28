@@ -19,11 +19,17 @@
  *
  * Two details that a naive implementation gets wrong:
  *
- *   - Both sides must be resolved fresh, in the same run. Reading the "with"
- *     side from the committed package-lock.json compares a lock resolved at
- *     some past date (possibly under a different overrides block) against a
- *     resolution done today, so ordinary registry drift reads as
- *     "load-bearing".
+ *   - Both sides must start from the same lockfile, in the same run. Reading
+ *     the "with" side straight from the committed package-lock.json compares a
+ *     lock resolved at some past date against a resolution done today, so
+ *     ordinary registry drift reads as "load-bearing". Resolving both sides
+ *     from no lockfile at all answers a different question: what a brand-new
+ *     install would pick. That tree can contain newer consumers than the
+ *     committed one. A fresh resolve picked mermaid 12, which already accepts a
+ *     patched katex, so the katex override read as inert while the committed
+ *     mermaid 11 still needed it. Seeding both sides with the committed lock
+ *     asks the real question: what happens to the shipped tree if the
+ *     overrides go.
  *
  *   - The diff must be per install *path*, not per package name. A scoped
  *     override (`"sockjs": {"uuid": …}`) only changes where a copy is placed:
@@ -40,37 +46,56 @@
  * than a broken build. Contrast check-doc-orphans.mjs, which *is* a hard gate
  * because an orphaned doc is a deterministic property of the commit.
  *
- * Always exits 0.
+ * Always exits 0. The pure parts are exported for check-npm-overrides.test.mjs.
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const NM = 'node_modules/';
-const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-const overrides = pkg.overrides ?? {};
+
+// An override key may carry a version selector ("undici@>=5 <8"). Matching the
+// raw key against install paths finds nothing on either side, and two empty
+// lists compare equal, so the entry read as inert while it was load-bearing.
+// The first `@` after position 0 starts the selector; position 0 is a scope.
+export function packageName(key) {
+  const at = key.indexOf('@', 1);
+  return at === -1 ? key : key.slice(0, at);
+}
 
 // Flatten to the leaf package whose version an entry forces:
-//   "uuid": "^11"                  -> { label: 'uuid',        name: 'uuid' }
-//   "sockjs": { "uuid": "^11" }    -> { label: 'sockjs>uuid', name: 'uuid' }
-const entries = [];
-for (const [key, value] of Object.entries(overrides)) {
-  if (typeof value === 'string') {
-    entries.push({ label: key, name: key, range: value });
-  } else {
-    for (const [child, range] of Object.entries(value)) {
-      if (typeof range === 'string') {
-        entries.push({ label: `${key}>${child}`, name: child, range });
+//   "uuid": "^11"                     -> { label: 'uuid',          name: 'uuid' }
+//   "sockjs": { "uuid": "^11" }       -> { label: 'sockjs>uuid',   name: 'uuid' }
+//   "undici@>=5 <8": "8.10.2"         -> { label: 'undici@>=5 <8', name: 'undici' }
+//   "cheerio": { ".": "1.2.1", … }    -> { label: 'cheerio>.',     name: 'cheerio' }
+// npm's "." child key overrides the parent package itself.
+export function overrideEntries(overrides) {
+  const entries = [];
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === 'string') {
+      entries.push({ label: key, name: packageName(key), range: value });
+    } else {
+      for (const [child, range] of Object.entries(value)) {
+        if (typeof range === 'string') {
+          const name = packageName(child === '.' ? key : child);
+          entries.push({ label: `${key}>${child}`, name, range });
+        }
       }
     }
   }
+  return entries;
 }
 
-if (entries.length === 0) {
-  console.log('no overrides declared — nothing to audit');
-  process.exit(0);
+/**
+ * Classify one entry from its install paths with and without overrides.
+ * Absent on both sides means the audit cannot see the package, not that the
+ * entry is harmless, so it is never offered for removal.
+ */
+export function classify(withPaths, withoutPaths) {
+  if (withPaths.length === 0 && withoutPaths.length === 0) return 'unresolved';
+  return withPaths.join('|') === withoutPaths.join('|') ? 'inert' : 'load-bearing';
 }
 
 /**
@@ -90,7 +115,7 @@ function resolvedPaths(lockPath) {
 }
 
 /** Install paths for one package name, as a sorted "path@version" list. */
-function pathsFor(all, name) {
+export function pathsFor(all, name) {
   const suffix = NM + name;
   return [...all.entries()]
     .filter(([path]) => path === suffix || path.endsWith('/' + suffix))
@@ -115,15 +140,17 @@ function fmt(list) {
 
 /**
  * Resolve the manifest in a temp dir, optionally with the overrides block
- * stripped, and return its install-path map. `--package-lock-only` runs npm's
- * resolver against the registry without downloading ~1400 tarballs.
+ * stripped, starting from the committed lockfile when there is one, and return
+ * its install-path map. `--package-lock-only` runs npm's resolver against the
+ * registry without downloading ~1400 tarballs.
  */
-function resolve(withOverrides) {
+function resolve(pkg, withOverrides) {
   const dir = mkdtempSync(join(tmpdir(), 'nl6-override-audit-'));
   try {
     const manifest = { ...pkg };
     if (!withOverrides) delete manifest.overrides;
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, null, 2));
+    if (existsSync('package-lock.json')) copyFileSync('package-lock.json', join(dir, 'package-lock.json'));
     execFileSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'], {
       cwd: dir,
       // Capture stderr so a malformed manifest, an auth failure or a missing
@@ -136,43 +163,62 @@ function resolve(withOverrides) {
   }
 }
 
-console.log('resolving twice (with and without overrides; network, no install)…\n');
+function main() {
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const entries = overrideEntries(pkg.overrides ?? {});
 
-let withOv;
-let withoutOv;
-try {
-  withOv = resolve(true);
-  withoutOv = resolve(false);
-} catch (err) {
-  // No process.exit() inside the try: it terminates synchronously without
-  // unwinding, so resolve()'s finally would never remove the temp dir.
-  console.error(`could not resolve: ${err.message}`);
-  const stderr = err.stderr?.toString().trim();
-  if (stderr) console.error(stderr);
-  console.error('\naudit skipped (report-only, not a failure)');
-  withOv = null;
-}
+  if (entries.length === 0) {
+    console.log('no overrides declared — nothing to audit');
+    return;
+  }
 
-if (withOv) {
+  console.log('resolving twice (with and without overrides; network, no install)…\n');
+
+  let withOv;
+  let withoutOv;
+  try {
+    withOv = resolve(pkg, true);
+    withoutOv = resolve(pkg, false);
+  } catch (err) {
+    // No process.exit() inside the try: it terminates synchronously without
+    // unwinding, so resolve()'s finally would never remove the temp dir.
+    console.error(`could not resolve: ${err.message}`);
+    const stderr = err.stderr?.toString().trim();
+    if (stderr) console.error(stderr);
+    console.error('\naudit skipped (report-only, not a failure)');
+    return;
+  }
+
   const inert = [];
+  const unresolved = [];
   const pad = Math.max(...entries.map((e) => e.label.length + e.range.length + 1));
+  const column = { 'load-bearing': 'load-bearing', inert: 'INERT       ', unresolved: 'UNRESOLVED  ' };
 
   for (const entry of entries) {
     const a = pathsFor(withOv, entry.name);
     const b = pathsFor(withoutOv, entry.name);
-    const same = a.join('|') === b.join('|');
-    if (same) inert.push(entry);
+    const cls = classify(a, b);
+    if (cls === 'inert') inert.push(entry);
+    if (cls === 'unresolved') unresolved.push(entry);
     const head = `${entry.label} ${entry.range}`.padEnd(pad);
-    console.log(
-      `  ${same ? 'INERT       ' : 'load-bearing'}  ${head}  with: ${fmt(a)}  without: ${fmt(b)}`
-    );
+    console.log(`  ${column[cls]}  ${head}  with: ${fmt(a)}  without: ${fmt(b)}`);
   }
 
   console.log();
-  if (inert.length === 0) {
+  const bearing = entries.length - inert.length - unresolved.length;
+  if (bearing === entries.length) {
     console.log(`✓ all ${entries.length} override(s) are load-bearing`);
-  } else {
-    console.log(`${inert.length} of ${entries.length} override(s) are inert and can be removed:`);
+    return;
+  }
+  console.log(
+    `${bearing} of ${entries.length} override(s) are load-bearing, ` +
+      `${inert.length} inert, ${unresolved.length} unresolved`
+  );
+  for (const e of unresolved) {
+    console.log(`  ? ${e.label}: package "${e.name}" resolved on neither side; check the key`);
+  }
+  if (inert.length > 0) {
+    console.log('\nInert, can be removed:');
     for (const e of inert) console.log(`    - ${e.label}`);
     console.log(
       '\nAfter removing one, regenerate the lockfile and confirm the resolved\n' +
@@ -180,3 +226,5 @@ if (withOv) {
     );
   }
 }
+
+if (import.meta.url === `file://${process.argv[1]}`) main();
