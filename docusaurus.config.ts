@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
-import cspMetaPlugin from './src/plugins/csp-meta';
 
 // Resolved at build time and exposed to the landing page via `customFields`.
 // Precedence: APP_VERSION env (CI override) > latest git tag > 'dev' (shallow
@@ -101,8 +100,10 @@ const config: Config = {
 
     // Old URLs from before the docs/explanation/ section existed. Each entry
     // emits a static HTML page at the old path that forwards to the new one,
-    // so bookmarks and search-engine results keep working. Must run BEFORE
-    // csp-meta (below), which hashes the inline script those pages carry.
+    // so bookmarks and search-engine results keep working. Each stub carries
+    // an inline redirect script. scripts/inject-csp.mjs hashes it into the
+    // CSP after `docusaurus build` exits, not in a postBuild hook: Docusaurus
+    // runs postBuild hooks concurrently, so a hook can miss these stubs.
     [
       '@docusaurus/plugin-client-redirects',
       {
@@ -118,14 +119,6 @@ const config: Config = {
         ],
       },
     ],
-
-    // Content-Security-Policy as a <meta http-equiv> on every built page.
-    // GitHub Pages serves the site and cannot be given custom response
-    // headers, so meta delivery is the only option. Must stay LAST: it
-    // rewrites the emitted HTML in postBuild and hashes the inline scripts it
-    // finds there, so any plugin that also touches the output has to run
-    // before it. See src/plugins/csp-meta.ts.
-    cspMetaPlugin,
   ],
 
   i18n: {
