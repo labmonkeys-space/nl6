@@ -437,14 +437,6 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 		}
 	}
 
-	// ON_CHANGE is not served on catalogue paths.
-	if s.catalog != nil && sl.GetMode() == gnmipb.SubscriptionList_STREAM {
-		for _, sub := range subs {
-			if sub.GetMode() == gnmipb.SubscriptionMode_ON_CHANGE && s.catalog.Match(sub.GetPath()) {
-				return status.Error(codes.Unimplemented, "ON_CHANGE is not supported for catalogue paths in this release")
-			}
-		}
-	}
 	cs := s.catalogStream(catEnc)
 
 	// Count both ONCE and STREAM streams in active_subscriptions (P16):
@@ -477,7 +469,7 @@ func (s *gnmiServer) subscribeLabelled(stream gnmipb.GNMI_SubscribeServer) error
 		return status.Error(codes.InvalidArgument,
 			"subscription_list mixes ON_CHANGE and SAMPLE/TARGET_DEFINED subscriptions; split into two separate SubscribeRequests")
 	case anyOnChange:
-		return runOnChangeSubscribe(stream, s.resolver, s.device, subs, enc, s.updatesSent)
+		return runOnChangeSubscribe(stream, s.resolver, cs, s.device, subs, enc, s.updatesSent)
 	default:
 		return runStreamSubscribe(stream, s.resolver, cs, subs, enc, s.updatesSent, s.updatesDropped)
 	}

@@ -407,7 +407,7 @@ func TestASR9902JSONIETFOnChangeUnchanged(t *testing.T) {
 		origin, path string
 		want         codes.Code
 	}{
-		{"openconfig-interfaces", "/interfaces/interface/state/counters", codes.Unimplemented},
+		{"openconfig-interfaces", "/interfaces/interface/state/counters", codes.InvalidArgument},
 		{"", "/interfaces/interface/state/oper-status", codes.OK},
 	} {
 		conn := dialTestGnmi(t, addr)

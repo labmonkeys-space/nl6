@@ -61,9 +61,15 @@ const maxSubsPerStream = 64
 // is nil (counters not initialised), every ON_CHANGE sub becomes a
 // permanently silent stream that only emits the initial snapshot —
 // matches the SAMPLE behavior on the same state.
+//
+// `cs` serves the catalogue paths of a catalogue device, per
+// subscription: admission by covered binding, the snapshot and heartbeat
+// through the catalogue resolver, and on an event the entry the change
+// names with the leaves that moved. nil on a legacy device.
 func runOnChangeSubscribe(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	device *DeviceSimulator,
 	subs []*gnmipb.Subscription,
 	enc gnmipb.Encoding,
@@ -88,6 +94,12 @@ func runOnChangeSubscribe(
 	// are rejected up-front with a named-leaf error so the client gets
 	// actionable feedback.
 	for _, sub := range subs {
+		if cs.serves(sub) {
+			if err := cs.admitOnChange(sub); err != nil {
+				return err
+			}
+			continue
+		}
 		leaves, err := resolver.ClassifyLeaves(sub.GetPath())
 		if err != nil {
 			return err
@@ -160,6 +172,16 @@ func runOnChangeSubscribe(
 	// responsibility.
 	now := time.Now()
 	for _, sub := range subs {
+		if cs.serves(sub) {
+			resps, err := cs.responses(sub, now)
+			if err != nil {
+				return err
+			}
+			if err := sendCatalogResponses(stream, resps, updatesSent); err != nil {
+				return err
+			}
+			continue
+		}
 		updates, err := resolver.Resolve(sub.GetPath(), now)
 		if err != nil {
 			return err
@@ -244,7 +266,7 @@ func runOnChangeSubscribe(
 			if !ok {
 				return nil
 			}
-			if err := emitMatchingForChange(stream, resolver, subs, evt, enc, updatesSent); err != nil {
+			if err := emitMatchingForChange(stream, resolver, cs, subs, evt, enc, updatesSent); err != nil {
 				cancel()
 				hbWg.Wait()
 				return err
@@ -256,6 +278,27 @@ func runOnChangeSubscribe(
 			// (don't cache) so the heartbeat carries the value at the
 			// tick instant, not a stale snapshot.
 			now := time.Now()
+			if sub := subs[hbEv.subIdx]; cs.serves(sub) {
+				// The same policy as the legacy heartbeat below: a path
+				// that no longer resolves is logged and skipped, anything
+				// else ends the stream.
+				resps, err := cs.responses(sub, now)
+				if err != nil {
+					if status.Code(err) == codes.NotFound {
+						log.Printf("gNMI ON_CHANGE: catalogue heartbeat path no longer resolvable: %v", err)
+						continue
+					}
+					cancel()
+					hbWg.Wait()
+					return err
+				}
+				if err := sendCatalogResponses(stream, resps, updatesSent); err != nil {
+					cancel()
+					hbWg.Wait()
+					return err
+				}
+				continue
+			}
 			updates, err := resolver.Resolve(subs[hbEv.subIdx].GetPath(), now)
 			if err != nil {
 				if status.Code(err) == codes.NotFound {
@@ -317,6 +360,7 @@ func runOnChangeSubscribe(
 func emitMatchingForChange(
 	stream gnmipb.GNMI_SubscribeServer,
 	resolver *pathResolver,
+	cs *catalogSubscription,
 	subs []*gnmipb.Subscription,
 	evt StateChange,
 	enc gnmipb.Encoding,
@@ -336,6 +380,19 @@ func emitMatchingForChange(
 	tSec := now.Sub(ic.startTime).Seconds()
 
 	for _, sub := range subs {
+		if cs.serves(sub) {
+			resps, err := cs.changeResponses(sub, evt, now)
+			if err != nil {
+				if status.Code(err) == codes.NotFound {
+					continue
+				}
+				return err
+			}
+			if err := sendCatalogResponses(stream, resps, updatesSent); err != nil {
+				return err
+			}
+			continue
+		}
 		// Filter the sub's path to the leaves affected by this change
 		// (shared with the dial-out ON_CHANGE exporter).
 		filtered, err := changedUpdatesForPath(resolver, ic, sub.GetPath(), evt, tSec)
@@ -356,6 +413,18 @@ func emitMatchingForChange(
 			return err
 		}
 		atomic.AddUint64(updatesSent, uint64(len(gnmiUpdates)))
+	}
+	return nil
+}
+
+// sendCatalogResponses sends catalogue responses in order and counts
+// their updates.
+func sendCatalogResponses(stream gnmipb.GNMI_SubscribeServer, resps []*gnmipb.SubscribeResponse, updatesSent *uint64) error {
+	for _, r := range resps {
+		if err := stream.Send(r); err != nil {
+			return err
+		}
+		atomic.AddUint64(updatesSent, uint64(len(r.GetUpdate().GetUpdate())))
 	}
 	return nil
 }
