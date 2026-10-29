@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.37.1
+
+- No role changes. The collection version follows the nl6 0.37.1 release.
+
 ## 0.37.0
 
 - Add the `nl6` role. It installs nl6 from the release `.deb` (checksum verified against `checksums.txt`), sets the sysctls, writes `/etc/nl6/nl6.conf` and runs the packaged `nl6.service`.
