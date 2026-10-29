@@ -38,16 +38,19 @@ type netconfEvents struct {
 	// holds no writer.
 	writing atomic.Bool
 
-	// wg counts the state listener and the writer, so the server can wait
-	// for them after the session ended.
+	// wg counts the writer, so the server can wait for it after the session
+	// ended.
 	wg sync.WaitGroup
 
-	// ready is closed once the state listener is registered.
+	// ready is closed once the session is registered with the device's
+	// dispatcher, or once registration was given up. disp is that
+	// dispatcher, set by startEvents and cleared by onEnd.
 	ready chan struct{}
+	disp  atomic.Pointer[netconfDispatcher]
 
 	// skip names the oper event that follows an admin event which moved
 	// oper too. The admin event already pushed the row, so its twin is
-	// dropped. Only the listener goroutine touches it.
+	// dropped. Only the dispatcher goroutine touches it.
 	skip struct {
 		ifIndex int
 		at      time.Time
@@ -116,6 +119,12 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 	}
 	s.ev = ev
 	s.onStart = s.startEvents
+	s.onEnd = func() {
+		if d := ev.disp.Swap(nil); d != nil {
+			d.unregister(s)
+			reg.releaseDispatcher(d)
+		}
+	}
 	s.onSubscribe = s.syncOnStart
 	s.onUnsubscribe = func(sub *netconfSub) {
 		sub.deleted.Store(true)
@@ -136,20 +145,19 @@ func netconfIfCounters(dev *DeviceSimulator) *IfCounterCycler {
 	return dev.metricsCycler.ifCounters.Load()
 }
 
-// startEvents starts the state listener. It returns once the listener is
-// registered, so no change after the hello is missed. The writer starts on
-// demand, in enqueue.
+// startEvents registers the session with the device's dispatcher and returns
+// once it is in, so every change from then on reaches it. A change in the
+// window between the hello and the registration goes to the sessions already
+// present, as it did when each session registered its own listener. The
+// writer starts on demand, in enqueue.
 func (s *netconfSession) startEvents(ctx context.Context) {
 	state := netconfIfCounters(s.dev).State()
-	if state == nil {
+	if state == nil || s.reg == nil {
 		return
 	}
-	s.ev.wg.Add(1)
-	go s.runStateListener(ctx, state)
-	select {
-	case <-s.ev.ready:
-	case <-ctx.Done():
-	}
+	d := s.reg.acquireDispatcher(state)
+	s.ev.disp.Store(d)
+	d.register(ctx, s)
 }
 
 // runWriter drains the send queue and exits when it is empty. It writes
@@ -192,8 +200,8 @@ func (s *netconfSession) runWriter() {
 	}
 }
 
-// waitEvents waits for the state listener and the writer. Call it after Serve
-// returned, so ctx is done and the channel closed.
+// waitEvents waits for the writer. Call it after Serve returned, so the
+// session has left the dispatcher and no push can be queued any more.
 func (s *netconfSession) waitEvents() {
 	if s.ev != nil {
 		s.ev.wg.Wait()
@@ -206,31 +214,175 @@ func (s *netconfSession) enqueue(sub *netconfSub, msg []byte) {
 		atomic.AddUint64(s.ev.dropped, 1)
 	}
 	if s.ev.writing.CompareAndSwap(false, true) {
-		// The listener, the only other caller, is counted while it runs,
-		// so this Add never races a Wait that finds the counter at zero.
+		// The dispatcher is the only caller, and teardown leaves it before
+		// Serve returns, so this Add never races the Wait in waitEvents.
 		s.ev.wg.Add(1)
 		go s.runWriter()
 	}
 }
 
-// runStateListener turns state-engine events into pushes until ctx ends.
-func (s *netconfSession) runStateListener(ctx context.Context, state *InterfaceState) {
-	defer s.ev.wg.Done()
-	ch := make(chan StateChange, netconfEventBufferDepth)
-	state.AddListener(ch)
-	defer state.RemoveListener(ch)
-	close(s.ev.ready)
+// netconfDispatcher is the one state-change listener of a device. It fans
+// every event out to the sessions registered on it, so an idle session costs
+// no listener goroutine of its own. Membership changes go through the run
+// loop, which is the only goroutine that touches sessions, so handleStateChange
+// runs under no lock and a session that has left never sees another event.
+//
+// The registry refcounts it: the first session starts it and the last one
+// stops it, so a device with no NETCONF client has no listener and no
+// goroutine. The channel is never closed: a Broadcast may still hold it from
+// its Range.
+type netconfDispatcher struct {
+	state *InterfaceState
+	ch    chan StateChange
+	join  chan netconfDispatchCmd
+	leave chan netconfDispatchCmd
+	stop  chan struct{}
+	wg    sync.WaitGroup
+
+	sessions []*netconfSession // owned by run
+}
+
+// netconfDispatchCmd is a join or leave request; ack is closed once applied.
+type netconfDispatchCmd struct {
+	sess *netconfSession
+	ack  chan struct{}
+}
+
+func newNetconfDispatcher(state *InterfaceState) *netconfDispatcher {
+	d := initNetconfDispatcher(state)
+	d.start()
+	return d
+}
+
+// initNetconfDispatcher builds a dispatcher without starting it, so a test
+// can seed its channel and session set first.
+func initNetconfDispatcher(state *InterfaceState) *netconfDispatcher {
+	return &netconfDispatcher{
+		state: state,
+		ch:    make(chan StateChange, netconfEventBufferDepth),
+		join:  make(chan netconfDispatchCmd),
+		leave: make(chan netconfDispatchCmd),
+		stop:  make(chan struct{}),
+	}
+}
+
+func (d *netconfDispatcher) start() {
+	d.wg.Add(1)
+	go d.run()
+}
+
+// register adds s and closes s.ev.ready once it is in. It returns without
+// registering when ctx ends first, and closes ready then too.
+func (d *netconfDispatcher) register(ctx context.Context, s *netconfSession) {
+	cmd := netconfDispatchCmd{sess: s, ack: make(chan struct{})}
+	select {
+	case d.join <- cmd:
+		<-cmd.ack
+	case <-ctx.Done():
+		close(s.ev.ready)
+	}
+}
+
+// unregister removes s. When it returns, no further event reaches s. A
+// stopped dispatcher dispatches nothing, so it returns at once then.
+func (d *netconfDispatcher) unregister(s *netconfSession) {
+	cmd := netconfDispatchCmd{sess: s, ack: make(chan struct{})}
+	select {
+	case d.leave <- cmd:
+		<-cmd.ack
+	case <-d.stop:
+	}
+}
+
+// close stops the run loop and waits for it.
+func (d *netconfDispatcher) close() {
+	close(d.stop)
+	d.wg.Wait()
+}
+
+func (d *netconfDispatcher) run() {
+	defer d.wg.Done()
+	d.state.AddListener(d.ch)
+	defer d.state.RemoveListener(d.ch)
 	for {
 		select {
-		case <-ctx.Done():
+		case <-d.stop:
 			return
-		case evt := <-ch:
-			s.handleStateChange(evt)
+		case evt := <-d.ch:
+			d.dispatch(evt)
+		case cmd := <-d.join:
+			// Events broadcast before this session's hello go to the
+			// sessions that were there, never to the new one.
+			d.drain()
+			d.sessions = append(d.sessions, cmd.sess)
+			close(cmd.sess.ev.ready)
+			close(cmd.ack)
+		case cmd := <-d.leave:
+			if i := slices.Index(d.sessions, cmd.sess); i >= 0 {
+				d.sessions = slices.Delete(d.sessions, i, i+1)
+			}
+			close(cmd.ack)
 		}
 	}
 }
 
+// drain dispatches every event already queued, without blocking.
+func (d *netconfDispatcher) drain() {
+	for {
+		select {
+		case evt := <-d.ch:
+			d.dispatch(evt)
+		default:
+			return
+		}
+	}
+}
+
+// dispatch hands one event to every session. The interface name and the
+// row are built at most once per event, not once per session: every
+// session on a device reads the same engine at the same instant.
+func (d *netconfDispatcher) dispatch(evt StateChange) {
+	if len(d.sessions) == 0 {
+		return
+	}
+	e := &netconfStateEvent{evt: evt, dev: d.sessions[0].dev}
+	for _, s := range d.sessions {
+		s.handleStateEvent(e)
+	}
+}
+
+// netconfStateEvent is one state change with the per-device derivations
+// shared across the sessions that render it. Only the dispatcher goroutine
+// touches it.
+type netconfStateEvent struct {
+	evt  StateChange
+	dev  *DeviceSimulator
+	name string
+	row  *iosxeRow // the whole row, built on first request
+}
+
+func (e *netconfStateEvent) ifName() string {
+	if e.name == "" {
+		e.name = devIfDescr(e.dev, e.evt.IfIndex)
+	}
+	return e.name
+}
+
+func (e *netconfStateEvent) fullRow() iosxeRow {
+	if e.row == nil {
+		row := buildIosxeRow(e.dev, netconfIfCounters(e.dev), e.evt.IfIndex, e.evt.At)
+		e.row = &row
+	}
+	return *e.row
+}
+
+// handleStateChange renders one event for this session alone.
 func (s *netconfSession) handleStateChange(evt StateChange) {
+	s.handleStateEvent(&netconfStateEvent{evt: evt, dev: s.dev})
+}
+
+func (s *netconfSession) handleStateEvent(e *netconfStateEvent) {
+	evt := e.evt
 	// A session closed after a write error renders nothing more.
 	if s.isClosed() {
 		return
@@ -249,7 +401,7 @@ func (s *netconfSession) handleStateChange(evt StateChange) {
 		return
 	}
 
-	name := devIfDescr(s.dev, evt.IfIndex)
+	name := e.ifName()
 	ev.mu.Lock()
 	var subs []*netconfSub
 	wholeRow := false
@@ -272,7 +424,7 @@ func (s *netconfSession) handleStateChange(evt StateChange) {
 	// carries. The counters are read only when a subscription shows the row.
 	row := iosxeRow{Name: name}
 	if wholeRow {
-		row = buildIosxeRow(s.dev, netconfIfCounters(s.dev), evt.IfIndex, evt.At)
+		row = e.fullRow()
 	}
 	row.Admin = iosxeAdminStatus(evt.Admin)
 	row.LastChange = "" // unknown after a clock rewind: the leaf is omitted

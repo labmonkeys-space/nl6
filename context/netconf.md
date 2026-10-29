@@ -9,7 +9,8 @@ Limitations: `go/nl6/resources/cisco_catalyst_9500_limitations.md`.
 
 One listener per `cisco_catalyst_9500` device on `-netconf-port`, bound inside the device netns.
 It reuses the device SSH login and `sharedSSHSigner`, and accepts only the `netconf` subsystem.
-A session is a hello, an RPC loop and one `InterfaceState` listener that turns `StateChange` events into pushes.
+A session is a hello and an RPC loop.
+One state-change dispatcher per device holds the single `InterfaceState` listener and calls every session's push handler for each event; the first session starts it and the last one stops it.
 RPC replies are written under the session write mutex.
 Pushes go through a 100-deep oldest-drop queue and one writer goroutine.
 The sync-on-start burst writes directly on the RPC goroutine so it is never dropped.
@@ -89,22 +90,28 @@ They are the parent's heap and goroutine growth after a forced GC, divided by N.
 | 5000 | 34.4 KB | 6 |
 
 Heap is about 1.04x the 2026-10-14 spike (33 KB, plain SSH sessions).
-An idle session holds 6 goroutines.
+An idle session held 6 goroutines when measured.
 Three belong to x/crypto/ssh: the mux loop, the kex loop and the transport read loop.
-Three are nl6's:
+Three were nl6's:
 
 - the connection's dispatch loop (`serveConn`), which refuses global requests, answers channel requests and waits for the subsystem;
 - the session reader (`serveChannel`), blocked in the framer's `ReadMessage`;
 - the state listener.
 
+The state listener has since moved into one dispatcher per device (`netconfDispatcher`), shared by every session on that device, so an idle session now holds 5 goroutines and a device with sessions holds one more.
+The dispatcher is refcounted by the session registry: the first session starts it and the last one stops it, so an idle device holds none.
+Membership changes go through the dispatcher goroutine; a join first drains the queued events to the sessions already present, so a session never receives an event broadcast before it registered.
+Registration happens right after the hello, so a change in that window goes to the older sessions only, as it did when each session registered its own listener.
+The interface name and the whole row are built once per event and shared by every session on the device.
+The 16-deep listener channel is now per device, not per session: one event costs one dispatch to N sessions, so the depth still bounds events, but a device with many sessions spends longer per event on the one goroutine and reaches the engine's drop-oldest sooner than N parallel listeners did.
+The benchmark has not been re-run on Linux after that change.
+
 No writer runs while the send queue is empty.
 The first push starts one and it exits once the queue drains.
 The ctx watch is a `context.AfterFunc`, not a goroutine.
-`TestNetconfIdleSessionGoroutines` pins the three nl6 goroutines per session, with and without a push.
+`TestNetconfIdleSessionGoroutines` pins two nl6 goroutines per session plus one per device, with and without a push.
 
 The first measurement was 10 per session, with one goroutine each for global request discard, channel requests, the ctx watch and the writer.
-Reaching 5 or fewer would need a per-device dispatcher that serves the state listener for every session of a device.
-That is not done.
 
 Run it with `NL6_NETCONF_BENCH_N=5000 go test ./nl6/ -run '^$' -bench NetconfIdleSessions -benchtime 1x` on Linux.
 Raise `ulimit -n` first.
