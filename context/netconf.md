@@ -71,4 +71,20 @@ When a session ends, the whole SSH connection closes.
 
 ## Scale
 
-Idle-session cost at 1k and 5k sessions on Linux: not measured yet. The design target is about 33 KB and 4 goroutines per idle session.
+Idle-session cost, measured with `BenchmarkNetconfIdleSessions` (2026-10-29, Linux 6.x aarch64 in a privileged OrbStack container, Go 1.27.3, one cisco_catalyst_9500 device on loopback).
+Each session is an SSH connect, hello and one keyless on-change subscription (`/interfaces-ios-xe-oper:interfaces/interface/oper-status`, dampening 0), then idle.
+The clients run in a child process, so the numbers are the server half only.
+They are the parent's heap and goroutine growth after a forced GC, divided by N.
+
+| Sessions | Heap per session | Goroutines per session |
+|---|---|---|
+| 1000 | 36.6 KB | 10 |
+| 5000 | 36.5 KB | 10 |
+
+Heap is about 1.1x the 2026-10-14 spike (33 KB, plain SSH sessions).
+Goroutines are 10, not the spike's 4.
+SSH itself holds about 4 per connection (mux loop, kex loop, transport read, channel buffer read).
+The session adds about 6: the connection accept wait, request discard, channel request handler, `Serve` input reader, writer and state listener.
+
+Run it with `NL6_NETCONF_BENCH_N=5000 go test ./nl6/ -run '^$' -bench NetconfIdleSessions -benchtime 1x` on Linux.
+Raise `ulimit -n` first.
