@@ -43,3 +43,15 @@ Do not paper over a union with a `types` override to `string`: that is how every
 The JSON_IETF fold casts a repeated list key's path value through the subtree's `state/<key>` leaf, never from whichever leaves the request covered.
 String-like members ignore YANG pattern and length restrictions.
 `TestASR9902ShapeMatchesCapture` requires each class of a union class (`integer|string`) to be served at least once, because admitting one member alone let this pass.
+
+## ON_CHANGE on catalogue paths
+
+`runOnChangeSubscribe` serves both path families on one stream with one engine listener; per subscription it branches on `cs.serves(sub)`.
+Admission for a catalogue subscription is by covered binding (`catalogResolver.CoveredBindings`, no key expansion) against `gnmiGenContinuous` next to the generator registry: `ifcounter` and `counter` get the legacy counter message, `sine` the sensor message; everything else is admitted. A new continuously varying generator must be added to that table or ON_CHANGE admits it as snapshot-only.
+On an event, `catalogResolver.ResolveChange` is `Resolve` with a change filter: a subtree with no leaf that fires is skipped before its entries are expanded, then only the entry whose `ifIndex` the event names, and only the `ifstate` leaves whose field moved (`firesOn`, through the legacy `subChangeMatch`), plus the entry's `always` leaves.
+The `always` pre-pass applies the alias-scope exclusion the emitting pass applies, so an out-of-scope leaf cannot make an entry render its identity leaves alone.
+A change that touches no entry or leaf of the request resolves to nothing without an error; `Resolve` without the filter still answers `NotFound` for an empty match.
+A subinterface entry carries its own `ifIndex`, so it fires for its own change and the parent does not.
+Heartbeat on a catalogue subscription re-sends the full snapshot through `cs.responses`.
+The pin is `gnmi_catalog_onchange_test.go`; removing the `fires` filter or the `ifIndex` filter each fails `TestCatalogServer_OnChangeDeliversStateChange`.
+

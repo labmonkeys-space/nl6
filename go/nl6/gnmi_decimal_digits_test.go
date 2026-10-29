@@ -74,7 +74,7 @@ func TestCatalogDecimal64ServedAtDeclaredDigits(t *testing.T) {
 			for step := 0; step < 37; step++ {
 				now := base.Add(time.Duration(step*25+7) * time.Second)
 				for _, st := range subtrees {
-					notifs, err := r.resolveSubtrees(&gnmipb.Path{}, st.Origin, nil, false, []*gnmiCatalogSubtree{st}, now)
+					notifs, err := r.resolveSubtrees(&gnmipb.Path{}, st.Origin, nil, false, []*gnmiCatalogSubtree{st}, now, nil)
 					if err != nil {
 						t.Fatalf("%s: %v", st.Path, err)
 					}

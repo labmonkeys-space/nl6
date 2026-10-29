@@ -337,6 +337,8 @@ type gnmiCatalogLeaf struct {
 
 	elems       []*gnmipb.PathElem // compiled from Name
 	gen         gnmiLeafGen        // compiled from Gen
+	genPrefix   string             // Gen's generator name, for classification without re-parsing
+	genArg      string             // Gen's argument
 	filterNames map[string]bool    // component names matching Filter; nil when unfiltered
 	decimalVal  bool               // from notification.decimal_encoding; the cast owns the wire form
 	aliasScoped bool               // rendered under an alias: at or below an alias_leaves entry, or every leaf when there is none
@@ -610,8 +612,8 @@ func (c *gnmiCatalog) validate(source string) error {
 			if err != nil {
 				return fail("subtree %d leaf %q: binding: %v", i, leaf.Name, err)
 			}
-			genPrefix, genArg, _ := strings.Cut(leaf.Gen, ":")
-			switch prefix, arg := genPrefix, genArg; {
+			leaf.genPrefix, leaf.genArg, _ = strings.Cut(leaf.Gen, ":")
+			switch prefix, arg := leaf.genPrefix, leaf.genArg; {
 			case prefix == "key":
 				if n, err := strconv.Atoi(arg); err != nil || n >= len(st.Keys) {
 					return fail("subtree %d leaf %q: key index %s is outside the subtree's %d key sources", i, leaf.Name, arg, len(st.Keys))
@@ -646,12 +648,12 @@ func (c *gnmiCatalog) validate(source string) error {
 			// resolver uses. Refusing it at load beats a leaf missing from
 			// every response and one log line per request. The cast treats
 			// an enumeration as a string, so its values are checked here.
-			if genPrefix == "const" {
-				if _, err := leaf.cast(genArg); err != nil {
+			if leaf.genPrefix == "const" {
+				if _, err := leaf.cast(leaf.genArg); err != nil {
 					return fail("subtree %d (%s) leaf %q: const binding: %v", i, st.Path, leaf.Name, err)
 				}
-				if leaf.Type == "enumeration" && len(leaf.Enum) > 0 && !slices.Contains(leaf.Enum, genArg) {
-					return fail("subtree %d (%s) leaf %q: const binding: %q is not one of the enumeration's values %q", i, st.Path, leaf.Name, genArg, leaf.Enum)
+				if leaf.Type == "enumeration" && len(leaf.Enum) > 0 && !slices.Contains(leaf.Enum, leaf.genArg) {
+					return fail("subtree %d (%s) leaf %q: const binding: %q is not one of the enumeration's values %q", i, st.Path, leaf.Name, leaf.genArg, leaf.Enum)
 				}
 			}
 			if leaf.Filter != "" {

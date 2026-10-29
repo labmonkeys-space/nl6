@@ -140,27 +140,6 @@ func TestCatalogServer_EncodingGateAndJsonVal(t *testing.T) {
 	}
 }
 
-func TestCatalogServer_OnChangeRefused(t *testing.T) {
-	_, addr, cleanup := startTestCatalogServer(t)
-	defer cleanup()
-	conn := dialTestGnmi(t, addr)
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	stream, err := gnmipb.NewGNMIClient(conn).Subscribe(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = stream.Send(&gnmipb.SubscribeRequest{Request: &gnmipb.SubscribeRequest_Subscribe{Subscribe: &gnmipb.SubscriptionList{
-		Mode: gnmipb.SubscriptionList_STREAM, Encoding: gnmipb.Encoding_PROTO,
-		Subscription: []*gnmipb.Subscription{{Path: pathFromString(t, "/components"), Mode: gnmipb.SubscriptionMode_ON_CHANGE}},
-	}}})
-	_, err = stream.Recv()
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("ON_CHANGE on catalogue path: %v", err)
-	}
-}
-
 func TestCatalogServer_GetAndCapabilities(t *testing.T) {
 	_, addr, cleanup := startTestCatalogServer(t)
 	defer cleanup()
