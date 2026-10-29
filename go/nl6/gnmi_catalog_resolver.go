@@ -152,11 +152,25 @@ func elemMatches(q, c *gnmipb.PathElem) bool {
 // pathCovers reports whether request elems q (possibly shorter) match
 // concrete leaf elems c element-wise.
 func pathCovers(q, c []*gnmipb.PathElem) bool {
-	if len(q) > len(c) {
+	return pathCoversSplit(q, nil, c)
+}
+
+// pathCoversSplit is pathCovers against the concatenation of prefix and
+// leaf, without building it. The resolver tests every leaf of every entry
+// on every tick, so the joined slice is allocated only for a leaf that is
+// covered and emitted with its full path.
+func pathCoversSplit(q, prefix, leaf []*gnmipb.PathElem) bool {
+	if len(q) > len(prefix)+len(leaf) {
 		return false
 	}
 	for i := range q {
-		if !elemMatches(q[i], c[i]) {
+		var c *gnmipb.PathElem
+		if i < len(prefix) {
+			c = prefix[i]
+		} else {
+			c = leaf[i-len(prefix)]
+		}
+		if !elemMatches(q[i], c) {
 			return false
 		}
 	}
@@ -167,8 +181,7 @@ func pathCovers(q, c []*gnmipb.PathElem) bool {
 // without expanding keys: wildcard entry keys match anything.
 func subtreeCandidate(q []*gnmipb.PathElem, st *gnmiCatalogSubtree) bool {
 	for _, leaf := range st.Leaves {
-		full := append(append([]*gnmipb.PathElem{}, st.elems...), leaf.elems...)
-		if pathCovers(q, full) {
+		if pathCoversSplit(q, st.elems, leaf.elems) {
 			return true
 		}
 	}
@@ -401,6 +414,10 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 		}
 		for _, e := range entries {
 			var updates []resolvedUpdate
+			// Every field of the generator context is per entry, so one
+			// serves every leaf of the entry.
+			ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex,
+				componentKey: st.componentKey, neighborKey: st.neighborKey, t: t, now: now}
 			// An `always` leaf rides along once any other leaf of the
 			// entry is covered, so a counters subscription carries the
 			// sensor's identity leaves without carrying the whole entry.
@@ -410,7 +427,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 					if leaf.Always || (leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]]) {
 						continue
 					}
-					if pathCovers(q, append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)) {
+					if pathCoversSplit(q, e.elems, leaf.elems) {
 						entryTouched = true
 						break
 					}
@@ -423,12 +440,9 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 				if leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]] {
 					continue
 				}
-				full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
-				if !pathCovers(q, full) && !(leaf.Always && entryTouched) {
+				if !pathCoversSplit(q, e.elems, leaf.elems) && !(leaf.Always && entryTouched) {
 					continue
 				}
-				ctx := &gnmiGenCtx{dev: r.dev, cat: r.cat, keys: e.keys, ifIndex: e.ifIndex,
-					componentKey: st.componentKey, neighborKey: st.neighborKey, t: t, now: now}
 				raw, ok := leaf.gen(ctx)
 				if !ok {
 					continue
@@ -442,6 +456,7 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 				if r.cat.Notification.Prefix == gnmiPrefixListEntry {
 					up = resolvedUpdate{Path: &gnmipb.Path{Elem: leaf.elems}, Value: v}
 				} else {
+					full := append(append([]*gnmipb.PathElem{}, e.elems...), leaf.elems...)
 					up = resolvedUpdate{Path: &gnmipb.Path{Origin: origin, Elem: full}, Value: v}
 				}
 				updates = append(updates, up)
