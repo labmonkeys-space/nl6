@@ -84,6 +84,7 @@ func TestParseGnmiCatalog_Rejects(t *testing.T) {
 		{"digits on a union without a decimal64 member", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "union", "members": ["uint32", "string"], "digits": 2, "gen": "sine:40,5,600"`, 1), "digits is for decimal64 leaves"},
 		{"digits out of range", strings.Replace(base, `"type": "uint64", "gen": "sine:40,5,600"`, `"type": "decimal64", "digits": 19, "gen": "sine:40,5,600"`, 1), "outside YANG's 1..18"},
 		{"duplicate component", strings.Replace(base, `{"name": "Chassis"`, `{"name": "FPC0", "type": "CHASSIS", "parent": "", "part_no": "x", "description": "x", "serial_no": "x", "temperature": false}, {"name": "Chassis"`, 1), `"FPC0" listed twice`},
+		{"empty component name", strings.Replace(base, `{"name": "Chassis"`, `{"name": ""`, 1), `entry 0 has an empty name`},
 		{"key index past the key sources", strings.Replace(base, `"gen": "inventory:serial_no"`, `"gen": "key:1"`, 1), "key index 1 is outside"},
 		{"bad decimal encoding", strings.Replace(base, `"prefix": "list-entry"`, `"decimal_encoding": "float", "prefix": "list-entry"`, 1), `decimal_encoding "float"`},
 		{"alias that is a canonical origin", strings.Replace(base, `"prefix": "list-entry"`, `"origin_aliases": {"openconfig": "openconfig"}, "prefix": "list-entry"`, 1), "is a canonical origin, not an alias"},
