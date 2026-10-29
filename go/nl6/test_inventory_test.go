@@ -119,6 +119,7 @@ import (
 //
 // Lower it ONLY when tests were removed on purpose, and say so in the commit.
 const minimumTestFunctions = 2094
+
 // minimumFuzzTargets is the same floor for `func FuzzXxx(*testing.F)`.
 const minimumFuzzTargets = 27
 
