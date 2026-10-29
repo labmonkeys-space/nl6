@@ -398,10 +398,14 @@ func (c *gnmiCatalog) validate(source string) error {
 	}
 	c.componentByName = make(map[string]*gnmiCatalogComponent, len(c.Components))
 	for i := range c.Components {
-		if _, dup := c.componentByName[c.Components[i].Name]; dup {
-			return fail("components: %q listed twice", c.Components[i].Name)
+		name := c.Components[i].Name
+		if name == "" {
+			return fail("components: entry %d has an empty name", i)
 		}
-		c.componentByName[c.Components[i].Name] = &c.Components[i]
+		if _, dup := c.componentByName[name]; dup {
+			return fail("components: %q listed twice", name)
+		}
+		c.componentByName[name] = &c.Components[i]
 	}
 	switch n.DecimalEncoding {
 	case "", gnmiDecimalDouble, gnmiDecimalVal:
@@ -477,13 +481,6 @@ func (c *gnmiCatalog) validate(source string) error {
 		}
 	default:
 		return fail("notification.json_ietf_layout %q: want %q or %q", n.JSONIETFLayout, gnmiJSONIETFLayoutLeaf, gnmiJSONIETFLayoutContainer)
-	}
-	names := map[string]bool{}
-	for _, comp := range c.Components {
-		if comp.Name == "" || names[comp.Name] {
-			return fail("components: empty or duplicate name %q", comp.Name)
-		}
-		names[comp.Name] = true
 	}
 	aliasOrigin := map[string]string{} // alias path -> origin of the subtrees listing it
 	for i, st := range c.Subtrees {
