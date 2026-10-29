@@ -160,6 +160,7 @@ go test ./nl6/ -run TestSomething
 | Continuous profiling | `context/profiling.md` |
 | Scenario drain barrier | `context/scenario-drain-barrier.md` |
 | Profile reload | `context/resource-reload.md` |
+| NETCONF serving, IOS XE on-change dialect, captures and decisions | `context/netconf.md` |
 
 **SNMP rules in one paragraph (the files above hold the reasoning).** Response size is a FRAME bound that tracks `-datagram-mtu`; GETBULK truncates, GET and GETNEXT answer `tooBig` with an empty binding list, and sizing is exact via `snmpMessageSizeFor`, never estimated. An absent OID is `noSuchObject`; exceptions travel as sentinel strings, which is why the load guard refuses a resource value spelled like one; SNMPv1 diverts a sentinel to `noSuchName`, and Counter64 under v1 is a GET error but a GETNEXT SKIP (RFC 3584 §4.2.2.1). SNMPv3 USM is RFC 3414 conformant and net-snmp verified (`make test-interop`); the engine ID is fleet-wide and `engineBoots` is always 1. The load guards (`validateSNMPResourceValues`, the typed-class rule, the bare-column and trap-versus-poll checks) prove ENCODABILITY, not SEMANTICS. Vendor-arc audits are quoted as MISS RATES; every vendor arc is audited, labelled `UNAUDITED-ARC(<pen>)` or excluded by name, and every profile serves its own PEN and no other. A data edit adds exactly ONE entry to `newestFirstReversals`. Deleting rows may legitimately empty a table: never restore a row to make a table non-empty.
 
