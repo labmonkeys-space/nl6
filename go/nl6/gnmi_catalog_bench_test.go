@@ -78,3 +78,26 @@ func BenchmarkASR9902ComponentsGet(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkCatalogComponentsTick is one SAMPLE tick of a /components
+// subscription per shipped catalogue, the resolver's hot path. The clock
+// is fixed so the op measures Resolve alone.
+func BenchmarkCatalogComponentsTick(b *testing.B) {
+	cats, err := loadEmbeddedGnmiCatalogs()
+	if err != nil {
+		b.Fatal(err)
+	}
+	req := &gnmipb.Path{Elem: []*gnmipb.PathElem{{Name: "components"}}}
+	now := time.Now()
+	for _, name := range []string{"juniper_mx10004", "cisco_asr9902"} {
+		r := newCatalogResolver(&DeviceSimulator{ID: "d", IP: net.IPv4(10, 0, 0, 1)}, cats[name])
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := r.Resolve(req, now); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
