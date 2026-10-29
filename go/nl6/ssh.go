@@ -30,7 +30,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const sshIdleTimeout = 5 * time.Minute
+// sshIdleTimeout is a variable only so tests can shorten it.
+var sshIdleTimeout = 5 * time.Minute
 
 // SSH Server implementation
 func (s *SSHServer) Start() error {

@@ -159,8 +159,12 @@ type DeviceSimulator struct {
 	// startup or because the device hasn't completed startGnmiServer.
 	gnmiServer   *grpc.Server
 	gnmiListener net.Listener
-	running      bool
-	mu           sync.RWMutex
+	// NETCONF over SSH listener and its sessions. Set by startNetconfServer
+	// on a catalyst 9500 when the NETCONF subsystem is enabled, else nil.
+	netconfListener net.Listener
+	netconfSessions *netconfSessionRegistry
+	running         bool
+	mu              sync.RWMutex
 }
 
 // SNMPv3 USM (User-based Security Model) configuration
@@ -722,6 +726,13 @@ type SimulatorManager struct {
 	// send queue.
 	netconfNotificationsSent    uint64
 	netconfNotificationsDropped uint64
+	// netconfSessionsOpened counts NETCONF sessions that got past the SSH
+	// handshake (atomic).
+	netconfSessionsOpened uint64
+	// netconfPort and netconfSubsystemActive are set once by
+	// StartNetconfSubsystem. The subsystem is off by default.
+	netconfPort            int
+	netconfSubsystemActive atomic.Bool
 
 	// gNMI dial-out subsystem state. Each dial-out device owns its own
 	// grpc.ClientConn + Publish stream on its gnmiDialoutExporter (no

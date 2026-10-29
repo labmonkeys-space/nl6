@@ -167,6 +167,11 @@ func main() {
 		gnmiDisable = flag.Bool("gnmi-disable", false, "Disable the gNMI subsystem; no device listens on the gNMI port. Default: false (subsystem on, TLS)")
 		gnmiTLS     = flag.Bool("gnmi-tls", true, "Serve gNMI dial-in over TLS with the simulator's shared self-signed cert (default: true; clients need --skip-verify). -gnmi-tls=false serves plaintext gRPC instead, for clients that dial without TLS")
 
+		// NETCONF over SSH (IOS XE dialect). Off by default; when enabled,
+		// only cisco_catalyst_9500 devices listen.
+		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF over SSH subsystem; cisco_catalyst_9500 devices listen on -netconf-port (default: false)")
+		netconfPort   = flag.Int("netconf-port", netconfDefaultPort, "TCP port for the per-device NETCONF over SSH listener (default: 830)")
+
 		// gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the
 		// auto-start batch; REST-created devices opt in via a per-device
 		// `gnmi_dialout` block. Dial-out is independent of dial-in; a device
@@ -601,6 +606,15 @@ func main() {
 		TLSDisabled: !*gnmiTLS,
 	}); err != nil {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
+	}
+
+	// Start the NETCONF subsystem before any device exists, so every
+	// catalyst 9500 created from here on binds -netconf-port.
+	if err := manager.StartNetconfSubsystem(NetconfSubsystemConfig{
+		Enabled: *netconfEnable,
+		Port:    *netconfPort,
+	}); err != nil {
+		log.Fatalf("Failed to initialize NETCONF subsystem: %v", err)
 	}
 
 	// Start the optical SD/SF alarm evaluator unconditionally, before any
