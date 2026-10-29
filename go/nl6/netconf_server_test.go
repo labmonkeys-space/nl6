@@ -232,10 +232,7 @@ func TestNetconfSessionOutlivesSSHIdleDeadline(t *testing.T) {
 	if err := ssh22.Start(); err != nil {
 		t.Fatalf("ssh start: %v", err)
 	}
-	// SSHServer.Stop writes its running flag without synchronisation while
-	// the accept loop reads it, so calling it here trips the race detector.
-	// The port-22 code is left as is and the server lives until the test
-	// binary exits.
+	t.Cleanup(func() { _ = ssh22.Stop() })
 	shellClient := dialNetconfTestSSH(t, ssh22.listener.Addr().String())
 	shell, err := shellClient.NewSession()
 	if err != nil {
@@ -383,10 +380,7 @@ func TestNetconfSSHPort22Unchanged(t *testing.T) {
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
-	// SSHServer.Stop writes its running flag without synchronisation while
-	// the accept loop reads it, so calling it here trips the race detector.
-	// The port-22 code is left as is and the server lives until the test
-	// binary exits.
+	t.Cleanup(func() { _ = srv.Stop() })
 	c := dialNetconfTestSSH(t, srv.listener.Addr().String())
 
 	// Port 22 does not serve NETCONF.
