@@ -291,7 +291,7 @@ func netconfSubResultReply(messageID string, result iosxeSubResult, subID uint32
 	return []byte(b.String())
 }
 
-// netconfTextEscaper escapes element text the way the device does.
+// netconfTextEscaper escapes the three characters element text needs.
 var netconfTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 // netconfErrorReply renders an rpc-error. An empty messageID omits the
@@ -308,8 +308,9 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 		fmt.Fprintf(&b, "<error-path%s>\n    %s\n  </error-path>", e.PathNS, e.Path)
 	}
 	if e.Message != "" {
-		// Quotes stay literal, as the device sends them; xml.EscapeText
-		// would turn them into &#34;.
+		// Quotes stay literal, matching the decoded captures (no raw wire
+		// bytes of this element were kept). &#34; would be equivalent XML;
+		// literal quotes keep the text readable.
 		b.WriteString(`<error-message xml:lang="en">` + netconfTextEscaper.Replace(e.Message) + "</error-message>")
 	}
 	if e.BadElement != "" || badAttr != "" {

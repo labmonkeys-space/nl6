@@ -270,8 +270,10 @@ class Probe:
             self.rpc(s, "sub-dampening-nonzero", self.sub(self.xp("oper-status"), damp="5"))
             self.rpc(s, "sub-rfc8639-namespace", self.sub(self.xp("oper-status"), ns=SN))
             self.rpc(s, "close-session", "<close-session/>", quiet=0)
-            self.emit("close-session", "closed" if s.closed_within(5) else "timeout")
-            s.done = True
+            gone = s.closed_within(5)
+            self.emit("close-session", "closed" if gone else "timeout")
+            # Only a session the device really closed may skip close().
+            s.done = gone
 
         # Requests the device accepts and nl6 refuses run on their own
         # sessions so what follows the acceptance cannot leak into a row
@@ -293,8 +295,9 @@ class Probe:
         self.phase = "kill"
         with Session(a) as victim, Session(a) as killer:
             self.rpc(killer, "kill-other", "<kill-session><session-id>" + victim.session_id + "</session-id></kill-session>")
-            self.emit("kill-other", "closed" if victim.closed_within(5) else "timeout")
-            victim.done = True
+            gone = victim.closed_within(5)
+            self.emit("kill-other", "closed" if gone else "timeout")
+            victim.done = gone
             self.rpc(killer, "kill-own", "<kill-session><session-id>" + killer.session_id + "</session-id></kill-session>")
 
         self.phase = "missing-message-id"
