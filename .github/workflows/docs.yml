@@ -15,6 +15,7 @@ on:
       - 'docs/**'
       - 'docusaurus.config.ts'
       - 'sidebars.ts'
+      - 'tsconfig.json'
       - 'src/**'
       - 'static/**'
       - 'package.json'

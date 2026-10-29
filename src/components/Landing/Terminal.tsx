@@ -37,7 +37,7 @@ function useTypewriter(lines: TerminalLine[], speed = 12, lineDelay = 140) {
   return {idx, chars};
 }
 
-export default function Terminal(): JSX.Element {
+export default function Terminal(): React.JSX.Element {
   const {idx, chars} = useTypewriter(TERMINAL_SCRIPT);
   const out: React.ReactNode[] = [];
 

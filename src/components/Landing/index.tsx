@@ -168,7 +168,7 @@ function DocLink({to, t, h}: {to: string; t: string; h: string}) {
   );
 }
 
-export default function Landing(): JSX.Element {
+export default function Landing(): React.JSX.Element {
   const quickStart = useBaseUrl('/getting-started/quick-start');
   const {siteConfig} = useDocusaurusContext();
   const {appVersion, license, goVersion, sponsorUrl, koFiUrl} = siteConfig.customFields as HeroMeta;

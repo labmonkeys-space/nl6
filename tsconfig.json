@@ -4,9 +4,15 @@
 {
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
+    // TypeScript 7 removed baseUrl; null clears the one the base config sets.
+    // Without baseUrl, paths resolve relative to the file that declares them,
+    // so @site/* is declared here to anchor it at the repo root.
+    "baseUrl": null,
+    "paths": {
+      "@site/*": ["./*"]
+    },
     "strict": true
   },
+  "include": ["src", "docusaurus.config.ts", "sidebars.ts"],
   "exclude": [".docusaurus", "build"]
 }
