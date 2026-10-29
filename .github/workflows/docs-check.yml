@@ -10,8 +10,9 @@ name: Docs check
 # the PR unmergeable.
 on:
   pull_request:
-    # The docs.yml push paths, plus tsconfig.json and the scripts that
-    # `make docs-build` runs (check-doc-orphans, inject-csp, check-csp).
+    # Keep in step with the docs.yml push paths: everything `make docs-build`
+    # reads (go/go.mod feeds the landing-page Go version, the three scripts
+    # run inside the build), plus both docs workflow files.
     paths:
       - 'docs/**'
       - 'docusaurus.config.ts'
@@ -19,11 +20,15 @@ on:
       - 'tsconfig.json'
       - 'src/**'
       - 'static/**'
-      - 'scripts/**'
+      - 'go/go.mod'
+      - 'scripts/check-doc-orphans.mjs'
+      - 'scripts/inject-csp.mjs'
+      - 'scripts/check-csp.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.nvmrc'
       - 'Makefile'
+      - '.github/workflows/docs.yml'
       - '.github/workflows/docs-check.yml'
 
 permissions:
