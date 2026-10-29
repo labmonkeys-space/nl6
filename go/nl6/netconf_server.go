@@ -200,63 +200,104 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(netconfKeepAlivePeriod)
 	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		ssh.DiscardRequests(reqs)
-	}()
+	s.dispatch(sc, chans, reqs)
+}
 
-	for nc := range chans {
-		if nc.ChannelType() != "session" {
-			_ = nc.Reject(ssh.UnknownChannelType, "unknown channel type")
-			continue
+// dispatch is the connection's one control loop. It refuses global requests,
+// accepts session channels and answers their requests, so no goroutine per
+// request stream is needed. Only the netconf subsystem is accepted, once per
+// channel. Every other request, shell and exec included, is refused, also
+// after the session started. A channel that does not ask for the subsystem
+// within netconfSubsystemWait is closed.
+//
+// One NETCONF session runs per connection, as on IOS XE. A session channel
+// that opens while another still waits for its subsystem replaces it. One
+// that opens after the session started is refused.
+func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
+	var (
+		pending     ssh.Channel // accepted, waiting for the subsystem
+		pendingReqs <-chan *ssh.Request
+		activeReqs  <-chan *ssh.Request // the running session's channel
+		started     bool
+	)
+	wait := time.NewTimer(netconfSubsystemWait)
+	wait.Stop()
+	defer wait.Stop()
+	dropPending := func() {
+		if pending != nil {
+			_ = pending.Close()
 		}
-		ch, creqs, err := nc.Accept()
-		if err != nil {
-			continue
+		pending, pendingReqs = nil, nil
+		wait.Stop()
+	}
+	defer dropPending()
+
+	for {
+		select {
+		case nc, ok := <-chans:
+			if !ok {
+				return
+			}
+			if nc.ChannelType() != "session" {
+				_ = nc.Reject(ssh.UnknownChannelType, "unknown channel type")
+				continue
+			}
+			if started {
+				_ = nc.Reject(ssh.Prohibited, "one NETCONF session per connection")
+				continue
+			}
+			ch, creqs, err := nc.Accept()
+			if err != nil {
+				continue
+			}
+			dropPending()
+			pending, pendingReqs = ch, creqs
+			wait.Reset(netconfSubsystemWait)
+		case req, ok := <-reqs:
+			if !ok {
+				reqs = nil
+				continue
+			}
+			_ = req.Reply(false, nil)
+		case req, ok := <-activeReqs:
+			if !ok {
+				activeReqs = nil
+				continue
+			}
+			_ = req.Reply(false, nil)
+		case req, ok := <-pendingReqs:
+			if !ok {
+				dropPending()
+				continue
+			}
+			if req.Type != "subsystem" || netconfSubsystemName(req.Payload) != "netconf" {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			_ = req.Reply(true, nil)
+			ch := pending
+			activeReqs, started = pendingReqs, true
+			pending, pendingReqs = nil, nil
+			wait.Stop()
+			// This goroutine is still counted, so the counter is positive and
+			// Add may run alongside Wait.
+			s.wg.Add(1)
+			go s.serveChannel(sc, ch)
+		case <-wait.C:
+			dropPending()
 		}
-		// This goroutine is still counted, so the counter is positive and
-		// Add may run alongside Wait.
-		s.wg.Add(1)
-		go s.serveChannel(sc, ch, creqs)
 	}
 }
 
-// serveChannel accepts only the netconf subsystem request. Every other
-// request, shell and exec included, is refused. When the NETCONF session
-// ends, by close-session, kill-session or EOF, the whole SSH connection is
-// closed: IOS XE runs one NETCONF session per connection.
-func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel, reqs <-chan *ssh.Request) {
+// serveChannel runs one NETCONF session. When it ends, by close-session,
+// kill-session or EOF, the whole SSH connection is closed: IOS XE runs one
+// NETCONF session per connection.
+func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel) {
 	defer s.wg.Done()
 	defer ch.Close()
-
-	start := make(chan struct{})
-	gone := make(chan struct{})
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		defer close(gone)
-		started := false
-		for req := range reqs {
-			ok := !started && req.Type == "subsystem" && netconfSubsystemName(req.Payload) == "netconf"
-			_ = req.Reply(ok, nil)
-			if ok {
-				started = true
-				close(start)
-			}
-		}
-	}()
-
-	select {
-	case <-start:
-	case <-gone:
-		return
-	case <-s.ctx.Done():
-		return
-	case <-time.After(netconfSubsystemWait):
+	if s.ctx.Err() != nil {
 		return
 	}
-
 	atomic.AddUint64(&s.mgr.netconfSessionsOpened, 1)
 	sess := newIOSXENetconfSession(s.sessionSeq.Add(1), s.dev, ch, s.reg)
 	if err := sess.Serve(s.ctx); err != nil {

@@ -12,7 +12,9 @@ import (
 	"io"
 	"net"
 	"net/http/httptest"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -459,4 +461,60 @@ func TestNetconfSessionEndClosesConnection(t *testing.T) {
 	if !waitSSHClosed(killer, 5*time.Second) {
 		t.Fatal("close-session left the SSH connection open")
 	}
+}
+
+// netconfAppGoroutines counts the goroutines running nl6 NETCONF server or
+// session code, the accept loop aside. The x/crypto/ssh goroutines are not
+// counted: the client half runs in this process too and shares their code.
+func netconfAppGoroutines() int {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	count := 0
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(g, ".(*netconfServer).acceptLoop(") {
+			continue
+		}
+		if strings.Contains(g, ".(*netconfServer).") || strings.Contains(g, ".(*netconfSession).") {
+			count++
+		}
+	}
+	return count
+}
+
+// An idle subscribed session costs three nl6 goroutines: the connection's
+// dispatch loop, the session reader and the state listener. A push starts a
+// writer that exits once the queue is empty.
+func TestNetconfIdleSessionGoroutines(t *testing.T) {
+	const sessions, perSession = 5, 3
+	mgr := useNetconfTestManager(t, true)
+	_, st, addr := newNetconfListenDevice(t, mgr)
+	base := netconfAppGoroutines()
+	for i := 0; i < sessions; i++ {
+		f, _ := openNetconfOverSSH(t, dialNetconfTestSSH(t, addr))
+		if r, err := netconfRPCWithin(f, "m1", netconfTestSub(iosxeTestIfaceNm+"/oper-status"), 5*time.Second); err != nil || !ncSubIDRe.MatchString(r) {
+			t.Fatalf("subscribe %d: %q %v", i, r, err)
+		}
+		go func() {
+			for {
+				if _, err := f.ReadMessage(); err != nil {
+					return
+				}
+			}
+		}()
+	}
+	want := base + sessions*perSession
+	waitNetconf(t, "idle goroutine count", func() bool { return netconfAppGoroutines() == want })
+
+	// Every session gets a push. Its writer must not outlive the queue.
+	ncLink(st, 24, OperDown)
+	ncLink(st, 24, OperUp)
+	waitNetconf(t, "every push sent", func() bool { return atomic.LoadUint64(&mgr.netconfNotificationsSent) >= 2*sessions })
+	waitNetconf(t, "idle goroutine count after pushes", func() bool { return netconfAppGoroutines() == want })
 }

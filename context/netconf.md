@@ -71,20 +71,33 @@ When a session ends, the whole SSH connection closes.
 
 ## Scale
 
-Idle-session cost, measured with `BenchmarkNetconfIdleSessions` (2026-10-29, Linux 6.x aarch64 in a privileged OrbStack container, Go 1.27.3, one cisco_catalyst_9500 device on loopback).
+Idle-session cost, measured with `BenchmarkNetconfIdleSessions` (2026-10-29, Linux 7.2.12-orbstack aarch64 in a privileged OrbStack container, Go 1.27.3, one cisco_catalyst_9500 device on loopback).
 Each session is an SSH connect, hello and one keyless on-change subscription (`/interfaces-ios-xe-oper:interfaces/interface/oper-status`, dampening 0), then idle.
 The clients run in a child process, so the numbers are the server half only.
 They are the parent's heap and goroutine growth after a forced GC, divided by N.
 
 | Sessions | Heap per session | Goroutines per session |
 |---|---|---|
-| 1000 | 36.6 KB | 10 |
-| 5000 | 36.5 KB | 10 |
+| 1000 | 34.5 KB | 6 |
+| 5000 | 34.4 KB | 6 |
 
-Heap is about 1.1x the 2026-10-14 spike (33 KB, plain SSH sessions).
-Goroutines are 10, not the spike's 4.
-SSH itself holds about 4 per connection (mux loop, kex loop, transport read, channel buffer read).
-The session adds about 6: the connection accept wait, request discard, channel request handler, `Serve` input reader, writer and state listener.
+Heap is about 1.04x the 2026-10-14 spike (33 KB, plain SSH sessions).
+An idle session holds 6 goroutines.
+Three belong to x/crypto/ssh: the mux loop, the kex loop and the transport read loop.
+Three are nl6's:
+
+- the connection's dispatch loop (`serveConn`), which refuses global requests, answers channel requests and waits for the subsystem;
+- the session reader (`serveChannel`), blocked in the framer's `ReadMessage`;
+- the state listener.
+
+No writer runs while the send queue is empty.
+The first push starts one and it exits once the queue drains.
+The ctx watch is a `context.AfterFunc`, not a goroutine.
+`TestNetconfIdleSessionGoroutines` pins the three nl6 goroutines per session, with and without a push.
+
+The first measurement was 10 per session, with one goroutine each for global request discard, channel requests, the ctx watch and the writer.
+Reaching 5 or fewer would need a per-device dispatcher that serves the state listener for every session of a device.
+That is not done.
 
 Run it with `NL6_NETCONF_BENCH_N=5000 go test ./nl6/ -run '^$' -bench NetconfIdleSessions -benchtime 1x` on Linux.
 Raise `ulimit -n` first.

@@ -33,6 +33,11 @@ type netconfEvents struct {
 	out           netconfOutbox
 	sent, dropped *uint64
 
+	// writing is true while a writer goroutine drains out. The writer starts
+	// on the first push and exits once out is empty, so an idle session
+	// holds no writer.
+	writing atomic.Bool
+
 	// ready is closed once the state listener is registered.
 	ready chan struct{}
 
@@ -53,13 +58,12 @@ type netconfPush struct {
 }
 
 // netconfOutbox is a bounded oldest-drop ring of rendered pushes. push never
-// blocks. One writer goroutine drains it.
+// blocks. At most one writer goroutine drains it.
 type netconfOutbox struct {
 	mu   sync.Mutex
 	buf  [netconfSendQueueDepth]netconfPush
 	head int
 	n    int
-	wake chan struct{}
 }
 
 // push queues msg and reports whether it displaced the oldest push.
@@ -74,10 +78,6 @@ func (o *netconfOutbox) push(p netconfPush) (dropped bool) {
 	o.buf[(o.head+o.n)%netconfSendQueueDepth] = p
 	o.n++
 	o.mu.Unlock()
-	select {
-	case o.wake <- struct{}{}:
-	default:
-	}
 	return dropped
 }
 
@@ -105,7 +105,6 @@ func (o *netconfOutbox) len() int {
 func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry) *netconfSession {
 	s := newNetconfSession(id, dev, rw, reg)
 	ev := &netconfEvents{ready: make(chan struct{})}
-	ev.out.wake = make(chan struct{}, 1)
 	if manager != nil {
 		ev.sent, ev.dropped = &manager.netconfNotificationsSent, &manager.netconfNotificationsDropped
 	} else {
@@ -133,10 +132,10 @@ func netconfIfCounters(dev *DeviceSimulator) *IfCounterCycler {
 	return dev.metricsCycler.ifCounters.Load()
 }
 
-// startEvents starts the writer and the state listener. It returns once the
-// listener is registered, so no change after the hello is missed.
+// startEvents starts the state listener. It returns once the listener is
+// registered, so no change after the hello is missed. The writer starts on
+// demand, in enqueue.
 func (s *netconfSession) startEvents(ctx context.Context) {
-	go s.runWriter(ctx)
 	state := netconfIfCounters(s.dev).State()
 	if state == nil {
 		return
@@ -148,42 +147,51 @@ func (s *netconfSession) startEvents(ctx context.Context) {
 	}
 }
 
-// runWriter drains the send queue. It writes under wmu, the mutex RPC replies
-// use, and discards a push whose subscription was deleted. onUnsubscribe sets
-// that flag before the delete reply is written, so no push for the
-// subscription follows the reply.
-func (s *netconfSession) runWriter(ctx context.Context) {
+// runWriter drains the send queue and exits when it is empty. It writes
+// under wmu, the mutex RPC replies use, and discards a push whose
+// subscription was deleted. onUnsubscribe sets that flag before the delete
+// reply is written, so no push for the subscription follows the reply.
+//
+// After a write error, or once the session is closed, it returns with
+// writing still set. No writer starts again and later pushes stay queued,
+// dropped oldest first, until the session goes away.
+func (s *netconfSession) runWriter() {
 	ev := s.ev
 	for {
-		select {
-		case <-ctx.Done():
+		if s.isClosed() {
 			return
-		case <-ev.out.wake:
 		}
-		for {
-			p, ok := ev.out.pop()
-			if !ok {
-				break
-			}
-			s.wmu.Lock()
-			if p.sub.deleted.Load() {
-				s.wmu.Unlock()
-				continue
-			}
-			err := s.framer.WriteMessage(p.msg)
-			s.wmu.Unlock()
-			if err != nil {
+		p, ok := ev.out.pop()
+		if !ok {
+			// A push that lands between the empty pop and the Store sees
+			// writing set and starts nothing, so look again after the Store.
+			ev.writing.Store(false)
+			if ev.out.len() == 0 || !ev.writing.CompareAndSwap(false, true) {
 				return
 			}
-			atomic.AddUint64(ev.sent, 1)
+			continue
 		}
+		s.wmu.Lock()
+		if p.sub.deleted.Load() {
+			s.wmu.Unlock()
+			continue
+		}
+		err := s.framer.WriteMessage(p.msg)
+		s.wmu.Unlock()
+		if err != nil {
+			return
+		}
+		atomic.AddUint64(ev.sent, 1)
 	}
 }
 
-// enqueue queues a push without blocking.
+// enqueue queues a push without blocking and starts the writer if none runs.
 func (s *netconfSession) enqueue(sub *netconfSub, msg []byte) {
 	if s.ev.out.push(netconfPush{sub: sub, msg: msg}) {
 		atomic.AddUint64(s.ev.dropped, 1)
+	}
+	if s.ev.writing.CompareAndSwap(false, true) {
+		go s.runWriter()
 	}
 }
 

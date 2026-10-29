@@ -25,7 +25,10 @@ import (
 const (
 	netconfBenchAddrEnv = "NL6_NETCONF_BENCH_ADDR"
 	netconfBenchNEnv    = "NL6_NETCONF_BENCH_N"
-	benchKeylessOperReq = `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><stream>yp:yang-push</stream><yp:xpath-filter>/interfaces-ios-xe-oper:interfaces/interface/oper-status</yp:xpath-filter><yp:dampening-period>0</yp:dampening-period></establish-subscription>`
+	// netconfBenchReadyWait bounds the client helper's setup. 5000 sessions
+	// took well under a minute on the reference host.
+	netconfBenchReadyWait = 5 * time.Minute
+	benchKeylessOperReq   = `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><stream>yp:yang-push</stream><yp:xpath-filter>/interfaces-ios-xe-oper:interfaces/interface/oper-status</yp:xpath-filter><yp:dampening-period>0</yp:dampening-period></establish-subscription>`
 )
 
 // BenchmarkNetconfIdleClients is the client half of
@@ -55,8 +58,16 @@ func BenchmarkNetconfIdleClients(b *testing.B) {
 			fmt.Printf("error session %d: %v\n", i, err)
 			os.Exit(1)
 		}
-		in, _ := s.StdinPipe()
-		out, _ := s.StdoutPipe()
+		in, err := s.StdinPipe()
+		if err != nil {
+			fmt.Printf("error stdin %d: %v\n", i, err)
+			os.Exit(1)
+		}
+		out, err := s.StdoutPipe()
+		if err != nil {
+			fmt.Printf("error stdout %d: %v\n", i, err)
+			os.Exit(1)
+		}
 		if err := s.RequestSubsystem("netconf"); err != nil {
 			fmt.Printf("error subsystem %d: %v\n", i, err)
 			os.Exit(1)
@@ -66,9 +77,15 @@ func BenchmarkNetconfIdleClients(b *testing.B) {
 			fmt.Printf("error hello %d: %v\n", i, err)
 			os.Exit(1)
 		}
-		_ = f.WriteMessage([]byte(hello))
+		if err := f.WriteMessage([]byte(hello)); err != nil {
+			fmt.Printf("error client hello %d: %v\n", i, err)
+			os.Exit(1)
+		}
 		rpc := `<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="1">` + benchKeylessOperReq + `</rpc>`
-		_ = f.WriteMessage([]byte(rpc))
+		if err := f.WriteMessage([]byte(rpc)); err != nil {
+			fmt.Printf("error rpc %d: %v\n", i, err)
+			os.Exit(1)
+		}
 		if _, err := f.ReadMessage(); err != nil {
 			fmt.Printf("error subscribe %d: %v\n", i, err)
 			os.Exit(1)
@@ -152,34 +169,57 @@ func BenchmarkNetconfIdleSessions(b *testing.B) {
 		heap0, gor0 := settle()
 		cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.bench=^BenchmarkNetconfIdleClients$", "-test.benchtime=1x")
 		cmd.Env = append(os.Environ(), netconfBenchAddrEnv+"="+dev.netconfListener.Addr().String(), netconfBenchNEnv+"="+strconv.Itoa(n))
-		stdin, _ := cmd.StdinPipe()
-		stdout, _ := cmd.StdoutPipe()
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			b.Fatal(err)
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			b.Fatal(err)
+		}
 		cmd.Stderr = os.Stderr
 		if err := cmd.Start(); err != nil {
 			b.Fatal(err)
 		}
-		ready := false
-		sc := bufio.NewScanner(stdout)
-		for sc.Scan() {
-			l := sc.Text()
-			if l == "ready" {
-				ready = true
-				break
+		// Kill and reap the child on every exit, a Fatal included. After a
+		// clean stdin close it has already exited and Kill is a no-op.
+		reaped := false
+		defer func() {
+			if !reaped {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
 			}
-			if strings.HasPrefix(l, "error") {
+		}()
+		// Wait for ready, bounded. The kill on timeout unblocks the scanner.
+		readyc := make(chan string, 1)
+		go func() {
+			sc := bufio.NewScanner(stdout)
+			for sc.Scan() {
+				if l := sc.Text(); l == "ready" || strings.HasPrefix(l, "error") {
+					readyc <- l
+					return
+				}
+			}
+			readyc <- "client helper exited before ready"
+		}()
+		select {
+		case l := <-readyc:
+			if l != "ready" {
 				b.Fatalf("client helper: %s", l)
 			}
-		}
-		if !ready {
-			b.Fatal("client helper exited before ready")
+		case <-time.After(netconfBenchReadyWait):
+			b.Fatalf("client helper not ready after %v", netconfBenchReadyWait)
 		}
 		heap1, gor1 := settle()
 		if got := netconfStateListeners(mc.ifCounters.Load().State()); got != n {
-			b.Logf("state listeners %d, want %d", got, n)
+			b.Fatalf("state listeners %d, want %d", got, n)
 		}
 		b.ReportMetric(float64(int64(heap1)-int64(heap0))/float64(n), "heap-B/session")
 		b.ReportMetric(float64(gor1-gor0)/float64(n), "goroutines/session")
 		_ = stdin.Close()
-		_ = cmd.Wait()
+		if err := cmd.Wait(); err != nil {
+			b.Fatalf("client helper: %v", err)
+		}
+		reaped = true
 	}
 }

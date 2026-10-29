@@ -119,15 +119,9 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 	defer cancel()
 	defer s.teardown()
 
-	stop := make(chan struct{})
-	defer close(stop)
-	go func() {
-		select {
-		case <-ctx.Done():
-			s.close()
-		case <-stop:
-		}
-	}()
+	// Closing the session unblocks the pending read when ctx ends.
+	stop := context.AfterFunc(ctx, s.close)
+	defer stop()
 
 	if err := s.writeMessage(netconfServerHello(s.id)); err != nil {
 		return err
