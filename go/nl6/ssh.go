@@ -21,6 +21,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -106,25 +107,31 @@ func (s *SSHServer) Start() error {
 
 	s.listener = listener
 	s.config = config
-	s.running = true
+	s.running.Store(true)
 
 	go s.handleConnections()
 	return nil
 }
 
+// Stop closes the listener and lets the accept loop exit. It is idempotent:
+// a second call, or a call before Start, returns nil.
 func (s *SSHServer) Stop() error {
-	if s.listener != nil {
-		s.running = false
-		return s.listener.Close()
+	if !s.running.Swap(false) {
+		return nil
 	}
-	return nil
+	return s.listener.Close()
 }
 
 func (s *SSHServer) handleConnections() {
-	for s.running {
+	for s.running.Load() {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.running {
+			if errors.Is(err, net.ErrClosed) {
+				// The listener is gone (Stop, or a torn-down netns); nothing
+				// to accept on, so leave instead of spinning on the error.
+				return
+			}
+			if s.running.Load() {
 				log.Printf("SSH server error accepting connection: %v", err)
 			}
 			continue

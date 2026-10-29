@@ -324,8 +324,10 @@ type SSHServer struct {
 	device   *DeviceSimulator
 	listener net.Listener
 	config   *ssh.ServerConfig
-	running  bool
-	signer   ssh.Signer // SSH host key signer
+	// running is written by Start and Stop and read by the accept loop on
+	// its own goroutine, so it is atomic, the same shape as SNMPServer.running.
+	running atomic.Bool
+	signer  ssh.Signer // SSH host key signer
 }
 
 type APIServer struct {
