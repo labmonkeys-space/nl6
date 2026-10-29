@@ -54,7 +54,7 @@ func decOf(t *testing.T, oc *OpticalCycler, component, leaf string, at float64) 
 	if !isDec {
 		t.Fatalf("GetDynamicAt(%s, %s) = %T, want gnmiDecimal", component, leaf, v)
 	}
-	return d.val
+	return d.val()
 }
 
 // TestOpticalComponentsSortedAndKeyed pins the ordering contract a

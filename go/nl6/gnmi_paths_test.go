@@ -52,7 +52,7 @@ func newTestPathResolver(t *testing.T, ifCount int) *pathResolver {
 
 // pathFromString turns "/interfaces/interface[name=*]/state/counters/in-octets"
 // into a *gnmi.Path. Lightweight; only handles the shapes used by the tests.
-func pathFromString(t *testing.T, s string) *gnmipb.Path {
+func pathFromString(t testing.TB, s string) *gnmipb.Path {
 	t.Helper()
 	p := &gnmipb.Path{}
 	if s == "" || s == "/" {

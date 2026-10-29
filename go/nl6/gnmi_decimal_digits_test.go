@@ -236,3 +236,30 @@ func checkDecimalForms(t *testing.T, what string, d gnmiDecimal) {
 		t.Fatalf("%s: decimal_val %v, JSON_IETF %q (want digits %d precision %d)", what, dv, s, wantUnits, d.digits)
 	}
 }
+
+// TestGnmiDecimalProtoEncodeAllocatesNoString: building a decimal and
+// encoding it as PROTO, as double_val or decimal_val, allocates the boxed
+// value, the TypedValue and its oneof (plus the Decimal64 message) and no
+// string. The ceiling relies on the compiler keeping round's buffer and
+// the non-escaping string([]byte) conversions in val and units on the
+// stack; a toolchain that stops doing so fails this test without an nl6
+// change, and that is the signal to look at the decimal path again.
+func TestGnmiDecimalProtoEncodeAllocatesNoString(t *testing.T) {
+	for _, decimalVal := range []bool{false, true} {
+		got := testing.AllocsPerRun(500, func() {
+			d := newGnmiDecimal(0.000599960161935, 14)
+			d.decimalVal = decimalVal
+			var v any = d // boxed once, as the resolver stores it
+			if _, err := gnmiEncodeTypedValue(v, gnmipb.Encoding_PROTO); err != nil {
+				t.Fatal(err)
+			}
+		})
+		want := 3.0
+		if decimalVal {
+			want = 4
+		}
+		if got > want {
+			t.Fatalf("decimalVal=%v: %v allocations per build and PROTO encode, want at most %v", decimalVal, got, want)
+		}
+	}
+}
