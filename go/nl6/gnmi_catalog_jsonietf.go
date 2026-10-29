@@ -292,12 +292,16 @@ func foldJSONIETFGet(request *gnmipb.Path, notifs []catalogNotification) ([]*gnm
 				}
 				continue
 			}
-			full := append(append([]*gnmipb.PathElem{}, pe...), u.Path.GetElem()...)
-			if !pathCovers(q, full) {
+			leaf := u.Path.GetElem()
+			if !pathCoversSplit(q, pe, leaf) {
 				continue
 			}
-			in := lookup(&gnmipb.Path{Origin: n.Prefix.GetOrigin(), Elem: full[:len(q)]})
-			if err := in.root.insert(full[len(q):], val); err != nil {
+			// Here len(q) > len(pe): the instance path is the prefix plus
+			// the covered head of the leaf, and the rest is inserted under it.
+			k := len(q) - len(pe)
+			head := append(append(make([]*gnmipb.PathElem, 0, len(q)), pe...), leaf[:k]...)
+			in := lookup(&gnmipb.Path{Origin: n.Prefix.GetOrigin(), Elem: head})
+			if err := in.root.insert(leaf[k:], val); err != nil {
 				return nil, err
 			}
 		}
