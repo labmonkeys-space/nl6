@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -121,9 +122,15 @@ func parseEstablishSubscription(body []byte) (sel iosxeSelection, result iosxeSu
 		return iosxeSelection{}, iosxeSubErrorOther, nil
 	}
 	if damp != "0" {
-		return iosxeSelection{}, "", &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period",
-			Path: "/rpc/notif-bis:establish-subscription/yp:dampening-period", PathNS: iosxeDampPathNS,
-			Message: `"` + damp + `" is out of range.`}
+		e := &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period",
+			Path: "/rpc/notif-bis:establish-subscription/yp:dampening-period", PathNS: iosxeDampPathNS}
+		// Both devices echo an integer as `"5" is out of range.` What they
+		// say for a non-integer was never captured, so nl6 sends no
+		// error-message then rather than invent one.
+		if _, err := strconv.ParseInt(damp, 10, 64); err == nil {
+			e.Message = `"` + damp + `" is out of range.`
+		}
+		return iosxeSelection{}, "", e
 	}
 	return sel, iosxeSubOK, nil
 }

@@ -20,14 +20,22 @@
 # send requests ncclient would refuse to build (no message-id, an unknown
 # namespace). Run it with:
 #
+#   NETCONF_PROBE_PASSWORD="$NL6_NETCONF_REF_PASSWORD" \
 #   uv run -q --with ncclient==0.7.1 python -I scripts/netconf-probe.py \
-#       --host "$NL6_NETCONF_REF" --user "$NL6_NETCONF_REF_USER" --password "$NL6_NETCONF_REF_PASSWORD" \
+#       --host "$NL6_NETCONF_REF" --user "$NL6_NETCONF_REF_USER" \
 #       --interface GigabitEthernet2 [--settle 30] run
+#
+# The password is read from NETCONF_PROBE_PASSWORD, never from argv.
+#
+# Every session ends with close-session on every exit path. The c8000v
+# keeps the subscriptions of a session that just drops, and pushing to them
+# crashed its telemetry process.
 #
 # The "admin up|down" command sets or removes native-config shutdown on the
 # interface instead (IOS XE only, used for the reference device).
 import argparse
 import json
+import os
 import re
 import socket
 import sys
@@ -71,20 +79,39 @@ def canon(text):
 
 
 class Session:
+    """One NETCONF session. Use it as a context manager so close() runs on
+    every exit path, exceptions and SystemExit included."""
+
     def __init__(self, a):
-        sock = socket.create_connection((a.host, a.port), timeout=30)
-        self.t = paramiko.Transport(sock)
-        self.t.connect(username=a.user, password=a.password)
-        self.ch = self.t.open_session()
-        self.ch.invoke_subsystem("netconf")
+        self.done = False
         self.buf = b""
         self.mid = 0
-        hello = self.read(30)
-        if hello is None:
-            raise SystemExit("no server hello")
-        self.session_id = re.search(r"<session-id>(\d+)<", hello).group(1)
-        self.send('<?xml version="1.0" encoding="UTF-8"?><hello xmlns="' + BASE + '"><capabilities>'
-                  "<capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>")
+        sock = socket.create_connection((a.host, a.port), timeout=30)
+        self.t = paramiko.Transport(sock)
+        try:
+            self.t.connect(username=a.user, password=a.password)
+            self.ch = self.t.open_session()
+            self.ch.invoke_subsystem("netconf")
+            hello = self.read(30)
+            if hello is None:
+                raise SystemExit("no server hello")
+            m = re.search(r"<session-id>(\d+)<", hello)
+            if m is None:
+                raise SystemExit("server hello without session-id")
+            self.session_id = m.group(1)
+            self.send('<?xml version="1.0" encoding="UTF-8"?><hello xmlns="' + BASE + '"><capabilities>'
+                      "<capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>")
+        except BaseException:
+            # No hello exchanged, so no subscription can exist yet.
+            self.t.close()
+            raise
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
 
     def send(self, s):
         self.ch.sendall(s.encode() + EOM)
@@ -119,7 +146,10 @@ class Session:
         """Ends the session with close-session before dropping the
         transport. The c8000v frees a subscription of a session that just
         disappears only after a long delay, and its subscription pool is
-        device-wide."""
+        device-wide. Safe to call more than once."""
+        if self.done:
+            return
+        self.done = True
         try:
             self.mid += 1
             self.send('<rpc xmlns="' + BASE + '" message-id="%d"><close-session/></rpc>' % self.mid)
@@ -219,74 +249,68 @@ class Probe:
     def run(self):
         a = self.a
         self.phase = "establish"
-        s = Session(a)
-        oper = self.rpc(s, "sub-oper", self.sub(self.xp("oper-status")))
-        self.rpc(s, "sub-admin", self.sub(self.xp("admin-status")))
-        self.rpc(s, "sub-row", self.sub(self.xp()))
-        self.rpc(s, "sub-nonexistent-interface", self.sub(self.xp("oper-status", "GigabitEthernet9/9/99")))
-        sid = self.sub_id(oper) or "0"
-        self.rpc(s, "delete-known", self.delete(sid))
-        self.rpc(s, "delete-again", self.delete(sid))
-        self.rpc(s, "delete-unknown", self.delete("12345"))
-        self.rpc(s, "sub-container", self.sub(XE))
-        name = a.interface
-        for leaf in ("oper-status", "admin-status", ""):
-            x = "/if:interfaces-state/interface[name='" + name + "']" + ("/" + leaf if leaf else "")
-            self.rpc(s, "sub-ietf-interfaces-state-" + (leaf or "row"), self.sub(x))
-        self.rpc(s, "sub-ietf-interfaces-nmda", self.sub("/if:interfaces/interface/oper-status"))
-        self.rpc(s, "sub-unknown-module", self.sub("/no-such-module:foo/bar"))
-        self.rpc(s, "sub-malformed-xpath", self.sub(XE + "/interface[name='Gi"))
-        self.rpc(s, "sub-no-stream", self.sub(XE + "/interface/oper-status", stream=False))
-        self.rpc(s, "sub-no-dampening", self.sub(XE + "/interface/oper-status", damp=None))
-        self.rpc(s, "sub-dampening-nonzero", self.sub(self.xp("oper-status"), damp="5"))
-        self.rpc(s, "sub-rfc8639-namespace", self.sub(self.xp("oper-status"), ns=SN))
-        self.rpc(s, "close-session", "<close-session/>", quiet=0)
-        self.emit("close-session", "closed" if s.closed_within(5) else "timeout")
+        with Session(a) as s:
+            oper = self.rpc(s, "sub-oper", self.sub(self.xp("oper-status")))
+            self.rpc(s, "sub-admin", self.sub(self.xp("admin-status")))
+            self.rpc(s, "sub-row", self.sub(self.xp()))
+            self.rpc(s, "sub-nonexistent-interface", self.sub(self.xp("oper-status", "GigabitEthernet9/9/99")))
+            sid = self.sub_id(oper) or "0"
+            self.rpc(s, "delete-known", self.delete(sid))
+            self.rpc(s, "delete-again", self.delete(sid))
+            self.rpc(s, "delete-unknown", self.delete("12345"))
+            self.rpc(s, "sub-container", self.sub(XE))
+            for leaf in ("oper-status", "admin-status", ""):
+                x = "/if:interfaces-state/interface[name='" + a.interface + "']" + ("/" + leaf if leaf else "")
+                self.rpc(s, "sub-ietf-interfaces-state-" + (leaf or "row"), self.sub(x))
+            self.rpc(s, "sub-ietf-interfaces-nmda", self.sub("/if:interfaces/interface/oper-status"))
+            self.rpc(s, "sub-unknown-module", self.sub("/no-such-module:foo/bar"))
+            self.rpc(s, "sub-malformed-xpath", self.sub(XE + "/interface[name='Gi"))
+            self.rpc(s, "sub-no-stream", self.sub(XE + "/interface/oper-status", stream=False))
+            self.rpc(s, "sub-no-dampening", self.sub(XE + "/interface/oper-status", damp=None))
+            self.rpc(s, "sub-dampening-nonzero", self.sub(self.xp("oper-status"), damp="5"))
+            self.rpc(s, "sub-rfc8639-namespace", self.sub(self.xp("oper-status"), ns=SN))
+            self.rpc(s, "close-session", "<close-session/>", quiet=0)
+            self.emit("close-session", "closed" if s.closed_within(5) else "timeout")
+            s.done = True
 
         # Requests the device accepts and nl6 refuses run on their own
         # sessions so what follows the acceptance cannot leak into a row
         # that is compared.
         self.phase = "period"
-        s = Session(a)
-        self.rpc(s, "sub-period", self.sub(self.xp("oper-status"), damp=None, period="1000"))
-        s.close()
+        with Session(a) as s:
+            self.rpc(s, "sub-period", self.sub(self.xp("oper-status"), damp=None, period="1000"))
         self.phase = "create-subscription"
-        s = Session(a)
-        self.rpc(s, "create-subscription", '<create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">'
-                 "<stream>NETCONF</stream></create-subscription>")
-        s.close()
+        with Session(a) as s:
+            self.rpc(s, "create-subscription", '<create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">'
+                     "<stream>NETCONF</stream></create-subscription>")
 
         self.phase = "keyless"
-        s = Session(a)
-        self.rpc(s, "sub-keyless-oper", self.sub(XE + "/interface/oper-status"))
-        self.rpc(s, "sub-keyless-admin", self.sub(XE + "/interface/admin-status"))
-        self.rpc(s, "sub-keyless-row", self.sub(XE + "/interface"))
-        s.close()
+        with Session(a) as s:
+            self.rpc(s, "sub-keyless-oper", self.sub(XE + "/interface/oper-status"))
+            self.rpc(s, "sub-keyless-admin", self.sub(XE + "/interface/admin-status"))
+            self.rpc(s, "sub-keyless-row", self.sub(XE + "/interface"))
 
         self.phase = "kill"
-        victim, killer = Session(a), Session(a)
-        self.rpc(killer, "kill-other", '<kill-session><session-id>' + victim.session_id + "</session-id></kill-session>")
-        self.emit("kill-other", "closed" if victim.closed_within(5) else "timeout")
-        self.rpc(killer, "kill-own", '<kill-session><session-id>' + killer.session_id + "</session-id></kill-session>")
-        victim.close()
-        killer.close()
+        with Session(a) as victim, Session(a) as killer:
+            self.rpc(killer, "kill-other", "<kill-session><session-id>" + victim.session_id + "</session-id></kill-session>")
+            self.emit("kill-other", "closed" if victim.closed_within(5) else "timeout")
+            victim.done = True
+            self.rpc(killer, "kill-own", "<kill-session><session-id>" + killer.session_id + "</session-id></kill-session>")
 
         self.phase = "missing-message-id"
-        s = Session(a)
-        self.rpc(s, "sub-without-message-id", self.sub(self.xp("oper-status")), with_id=False)
-        s.close()
+        with Session(a) as s:
+            self.rpc(s, "sub-without-message-id", self.sub(self.xp("oper-status")), with_id=False)
 
         # State changes. Creation order oper, admin, row: the device pushes
         # in reverse creation order, so row first.
         self.phase = "events"
-        s = Session(a)
-        self.rpc(s, "sub-oper", self.sub(self.xp("oper-status")))
-        self.rpc(s, "sub-admin", self.sub(self.xp("admin-status")))
-        self.rpc(s, "sub-row", self.sub(self.xp()))
-        for action in ("link-down", "link-up", "admin-down", "admin-up"):
-            self.toggle(action)
-            self.window(s, action, a.settle)
-        s.close()
+        with Session(a) as s:
+            self.rpc(s, "sub-oper", self.sub(self.xp("oper-status")))
+            self.rpc(s, "sub-admin", self.sub(self.xp("admin-status")))
+            self.rpc(s, "sub-row", self.sub(self.xp()))
+            for action in ("link-down", "link-up", "admin-down", "admin-up"):
+                self.toggle(action)
+                self.window(s, action, a.settle)
 
 
 def admin(a, down):
@@ -294,15 +318,15 @@ def admin(a, down):
     op = "create" if down else "remove"
     cfg = ('<config><native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native"><interface><' + kind + "><name>" + num +
            '</name><shutdown xmlns:nc="' + BASE + '" nc:operation="' + op + '"/></' + kind + "></interface></native></config>")
-    s = Session(a)
-    s.send('<rpc xmlns="' + BASE + '" message-id="1"><edit-config><target><running/></target>' + cfg + "</edit-config></rpc>")
-    while True:
-        m = s.read(30)
-        if m is None:
-            raise SystemExit("edit-config: no reply")
-        if "<rpc-reply" in m[:200]:
-            break
-    s.close()
+    with Session(a) as s:
+        s.mid += 1
+        s.send('<rpc xmlns="' + BASE + '" message-id="1"><edit-config><target><running/></target>' + cfg + "</edit-config></rpc>")
+        while True:
+            m = s.read(30)
+            if m is None:
+                raise SystemExit("edit-config: no reply")
+            if "<rpc-reply" in m[:200]:
+                break
     # "remove" of an absent shutdown is data-missing: the interface is
     # already up, which is the state asked for.
     if "<ok/>" not in m and not (not down and "data-missing" in m):
@@ -314,13 +338,15 @@ def main():
     p.add_argument("--host", required=True)
     p.add_argument("--port", type=int, default=830)
     p.add_argument("--user", required=True)
-    p.add_argument("--password", required=True)
     p.add_argument("--interface", required=True)
     p.add_argument("--quiet", type=float, default=2.0, help="seconds without a message that end a reply row")
     p.add_argument("--settle", type=float, default=30.0, help="seconds to collect after each toggle")
     p.add_argument("command", choices=["run", "admin"])
     p.add_argument("state", nargs="?", choices=["up", "down"])
     a = p.parse_args()
+    a.password = os.environ.get("NETCONF_PROBE_PASSWORD", "")
+    if not a.password:
+        p.error("set NETCONF_PROBE_PASSWORD")
     if a.command == "admin":
         if a.state is None:
             p.error("admin needs up or down")

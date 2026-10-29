@@ -156,6 +156,28 @@ func TestNetconfRFC8639NamespaceUnknown(t *testing.T) {
 	}
 }
 
+// TestNetconfDampeningErrorBytes pins the dampening-period rpc-error to the
+// c8000v's bytes: error-path with its prefix declarations, a message with
+// literal quotes, then error-info. A non-integer gets no message, because
+// the device's wording for it was never captured.
+func TestNetconfDampeningErrorBytes(t *testing.T) {
+	c, _ := startNetconfTestClient(t, 1, newNetconfSessionRegistry(), true)
+	r := c.rpc(string(iosxeSubReq("yp:yang-push", netconfTestOperXPath, `<yp:dampening-period>5</yp:dampening-period>`)))
+	want := `<rpc-error><error-type>protocol</error-type><error-tag>invalid-value</error-tag><error-severity>error</error-severity>` +
+		`<error-path xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push" xmlns:notif-bis="urn:ietf:params:xml:ns:yang:ietf-event-notifications">` +
+		"\n    /rpc/notif-bis:establish-subscription/yp:dampening-period\n  </error-path>" +
+		`<error-message xml:lang="en">"5" is out of range.</error-message>` +
+		`<error-info xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"><bad-element>dampening-period</bad-element>` +
+		"\n</error-info></rpc-error>"
+	if !strings.Contains(r, want) {
+		t.Errorf("dampening rpc-error:\n got %q\nwant %q", r, want)
+	}
+	r = c.rpc(string(iosxeSubReq("yp:yang-push", netconfTestOperXPath, `<yp:dampening-period>soon</yp:dampening-period>`)))
+	if !strings.Contains(r, "<bad-element>dampening-period</bad-element>") || strings.Contains(r, "<error-message") {
+		t.Errorf("non-integer dampening: want rpc-error without error-message: %s", r)
+	}
+}
+
 func TestNetconfDeleteSubscription(t *testing.T) {
 	c, sess := startNetconfTestClient(t, 1, newNetconfSessionRegistry(), true)
 	r := c.rpc(netconfTestSub(netconfTestOperXPath))

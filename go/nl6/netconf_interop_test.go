@@ -72,7 +72,9 @@ var netconfInteropAllow = []struct {
 	{"create-subscription", "create-subscription", true, "create-subscription refused by nl6"},
 	// (c) nl6 caps a session at 256 subscriptions (error-other on the
 	// 257th). The c8000v caps subscriptions at about 128 per DEVICE: it
-	// answered error-insufficient-resources from the 126th. A dropped
+	// answered error-insufficient-resources from the 126th. The Cat9300
+	// accepted 150 on one session (cat9k-sandbox edges.out, MANY_ACCEPTED
+	// 150), so the c8000v limit is not the IOS XE rule. A dropped
 	// session's subscriptions stay in that pool, and pushing to them
 	// crashed the device's telemetry process. This test must never send
 	// more than a handful of subscriptions per run, so the cap row is not
@@ -117,12 +119,15 @@ func netconfProbeScript(t *testing.T) string {
 	return p
 }
 
-// netconfProbeCmd runs the probe. The password travels in the environment
-// of the uv process only for the duration of the call.
+// netconfProbeCmd runs the probe. The password goes to the probe in its
+// environment (NETCONF_PROBE_PASSWORD), never on argv, where any local
+// user could read it from the process list.
 func netconfProbeCmd(script string, tg netconfProbeTarget, args ...string) *exec.Cmd {
 	base := []string{"run", "-q", "--with", "ncclient==0.7.1", "python", "-I", script,
-		"--host", tg.host, "--port", tg.port, "--user", tg.user, "--password", tg.password, "--interface", tg.iface}
-	return exec.Command("uv", append(base, args...)...)
+		"--host", tg.host, "--port", tg.port, "--user", tg.user, "--interface", tg.iface}
+	cmd := exec.Command("uv", append(base, args...)...)
+	cmd.Env = append(os.Environ(), "NETCONF_PROBE_PASSWORD="+tg.password)
+	return cmd
 }
 
 // runNetconfProbe runs the probe against one target, answers its toggle
@@ -596,6 +601,7 @@ func TestNetconfInteropAgainstReference(t *testing.T) {
 	var refLines []netconfProbeLine
 	if p := os.Getenv("NL6_NETCONF_REF_STREAM"); p != "" {
 		refLines = loadNetconfProbeLines(t, p)
+		t.Logf("reference replayed from %s, device not contacted", p)
 	} else {
 		refLines = runNetconfReference(t, script)
 		if p := os.Getenv("NL6_NETCONF_REF_SAVE"); p != "" {

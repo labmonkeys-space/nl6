@@ -291,6 +291,9 @@ func netconfSubResultReply(messageID string, result iosxeSubResult, subID uint32
 	return []byte(b.String())
 }
 
+// netconfTextEscaper escapes element text the way the device does.
+var netconfTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // netconfErrorReply renders an rpc-error. An empty messageID omits the
 // attribute, as for a request that carried none.
 func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr string) []byte {
@@ -305,9 +308,9 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 		fmt.Fprintf(&b, "<error-path%s>\n    %s\n  </error-path>", e.PathNS, e.Path)
 	}
 	if e.Message != "" {
-		b.WriteString(`<error-message xml:lang="en">`)
-		_ = xml.EscapeText(&b, []byte(e.Message))
-		b.WriteString("</error-message>")
+		// Quotes stay literal, as the device sends them; xml.EscapeText
+		// would turn them into &#34;.
+		b.WriteString(`<error-message xml:lang="en">` + netconfTextEscaper.Replace(e.Message) + "</error-message>")
 	}
 	if e.BadElement != "" || badAttr != "" {
 		fmt.Fprintf(&b, `<error-info xmlns="%s" xmlns:nc="%s">`, netconfBaseNS, netconfBaseNS)
