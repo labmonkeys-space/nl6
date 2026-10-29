@@ -28,7 +28,7 @@ import (
 // controls whether the INTERFACE engine is also initialised — false is the
 // interesting case, because it is what a resolver bug conflating the two
 // engines gets wrong.
-func newTestOpticalDevice(t *testing.T, withIfCounters bool) *DeviceSimulator {
+func newTestOpticalDevice(t testing.TB, withIfCounters bool) *DeviceSimulator {
 	t.Helper()
 	mc := &MetricsCycler{}
 	if withIfCounters {

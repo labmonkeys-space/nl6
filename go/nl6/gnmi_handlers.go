@@ -576,13 +576,13 @@ func gnmiEncodeTypedValue(v interface{}, enc gnmipb.Encoding) (*gnmipb.TypedValu
 			// a float64 significand), which JSON_IETF preserves. A
 			// catalogue that declares decimal_encoding: decimal_val gets
 			// gNMI's Decimal64 message instead, deprecated in gNMI but
-			// what Junos sends (nl6#772). Both come from the one rounding
-			// newGnmiDecimal did, so every encoding serves one reading at
-			// one instant (nl6#812).
+			// what Junos sends (nl6#772). Both derive from the one rounding
+			// gnmiDecimal.round does, so every encoding serves one reading
+			// at one instant (nl6#812).
 			if x.decimalVal {
-				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: x.units, Precision: uint32(x.digits)}}}, nil //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
+				return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DecimalVal{DecimalVal: &gnmipb.Decimal64{Digits: x.units(), Precision: uint32(x.digits)}}}, nil //nolint:staticcheck // gNMI deprecates Decimal64; Junos still sends it (nl6#772)
 			}
-			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val}}, nil
+			return &gnmipb.TypedValue{Value: &gnmipb.TypedValue_DoubleVal{DoubleVal: x.val()}}, nil
 		default:
 			return nil, status.Errorf(codes.Internal, "unsupported value type %T for PROTO encoding", v)
 		}

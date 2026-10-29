@@ -16,7 +16,7 @@ import (
 
 // buildTestResources constructs a minimal DeviceResources with HC counter and
 // speed OIDs for the given contiguous interface list (speeds in bps).
-func buildTestResources(t *testing.T, speeds []uint64) *DeviceResources {
+func buildTestResources(t testing.TB, speeds []uint64) *DeviceResources {
 	t.Helper()
 	res := &DeviceResources{
 		oidIndex: &sync.Map{},

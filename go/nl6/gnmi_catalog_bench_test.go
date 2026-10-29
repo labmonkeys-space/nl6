@@ -78,3 +78,22 @@ func BenchmarkASR9902ComponentsGet(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkOpticalSampleTick is one PROTO SAMPLE tick of the optical state
+// container on a two-channel Ciena device: every analog leaf is a decimal.
+func BenchmarkOpticalSampleTick(b *testing.B) {
+	dev := newTestOpticalDevice(b, false)
+	r := newPathResolver(dev)
+	req := pathFromString(b, "/components/component[name=*]/optical-channel/state")
+	now := time.Now()
+	b.ReportAllocs()
+	for b.Loop() {
+		ups, err := r.Resolve(req, now)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := encodeUpdates(ups, gnmipb.Encoding_PROTO); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

@@ -22,8 +22,9 @@ Vendor profile sources and captures are in `context/gnmi-vendor-sources.md`.
 **gNMI decimal values:** `resolvedUpdate.Value` carries a `gnmiDecimal`, a distinct type and not a pre-formatted string.
 JSON_IETF needs an RFC 7951 quoted decimal while PROTO needs `double_val`.
 A Go `string` would silently take the `string_val` branch and corrupt an advertised encoding.
-Build it ONLY with `newGnmiDecimal(v, digits)`, which rounds ONCE, half-to-even, to `digits` and stores the decimal string.
-JSON_IETF is that string, `double_val` its nearest float64, and `decimal_val` its digits without the point, so every encoding serves one reading (nl6#812).
+Build it ONLY with `newGnmiDecimal(v, digits)`, which stores the unrounded value and the digits; every wire form is derived on demand by one rounding function (`round`, half-to-even to `digits`, into a stack buffer), so the forms agree by construction and a PROTO stream pays for no string it does not send.
+JSON_IETF is that text, `double_val` its nearest float64, and `decimal_val` its digits without the point, so every encoding serves one reading (nl6#812).
+The stored value is the raw one, so two decimals that render alike are not `==`; compare readings through `text()`.
 Rounding per encoding disagreed at 14 to 18 digits, because `val*10^digits` and `FormatFloat` round differently there.
 A rounded zero is `+0` in every form.
 `castGnmiLeafDigits` refuses NaN, infinities and values whose scaled integer overflows int64, because `const:NaN` and `sine:Inf,...` parse; the resolver logs and skips the leaf.
