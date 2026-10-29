@@ -189,7 +189,7 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 	// The SSH idle deadline bounds the handshake only. A NETCONF session
 	// sits quiet between notifications for hours, so the deadline is
 	// cleared once the client is in and TCP keepalive takes over.
-	_ = conn.SetDeadline(time.Now().Add(sshIdleTimeout))
+	_ = conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 	sc, chans, reqs, err := ssh.NewServerConn(conn, s.cfg)
 	if err != nil {
 		return
@@ -200,7 +200,11 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(netconfKeepAlivePeriod)
 	}
-	go ssh.DiscardRequests(reqs)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ssh.DiscardRequests(reqs)
+	}()
 
 	for nc := range chans {
 		if nc.ChannelType() != "session" {
@@ -214,19 +218,23 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 		// This goroutine is still counted, so the counter is positive and
 		// Add may run alongside Wait.
 		s.wg.Add(1)
-		go s.serveChannel(ch, creqs)
+		go s.serveChannel(sc, ch, creqs)
 	}
 }
 
 // serveChannel accepts only the netconf subsystem request. Every other
-// request, shell and exec included, is refused.
-func (s *netconfServer) serveChannel(ch ssh.Channel, reqs <-chan *ssh.Request) {
+// request, shell and exec included, is refused. When the NETCONF session
+// ends, by close-session, kill-session or EOF, the whole SSH connection is
+// closed: IOS XE runs one NETCONF session per connection.
+func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	defer s.wg.Done()
 	defer ch.Close()
 
 	start := make(chan struct{})
 	gone := make(chan struct{})
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		defer close(gone)
 		started := false
 		for req := range reqs {
@@ -254,6 +262,7 @@ func (s *netconfServer) serveChannel(ch ssh.Channel, reqs <-chan *ssh.Request) {
 	if err := sess.Serve(s.ctx); err != nil {
 		log.Printf("NETCONF session on %s ended: %v", s.dev.IP, err)
 	}
+	_ = sc.Close()
 }
 
 // netconfSubsystemName decodes the SSH string in a subsystem request payload.

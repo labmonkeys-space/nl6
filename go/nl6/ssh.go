@@ -25,13 +25,26 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
-// sshIdleTimeout is a variable only so tests can shorten it.
-var sshIdleTimeout = 5 * time.Minute
+const sshIdleTimeoutDefault = 5 * time.Minute
+
+// sshIdleTimeoutOverride replaces the default when positive. Only tests set
+// it. It is atomic because connection goroutines read it.
+var sshIdleTimeoutOverride atomic.Int64
+
+// sshIdleTimeout returns the SSH idle deadline, 5 minutes unless a test
+// overrides it.
+func sshIdleTimeout() time.Duration {
+	if v := sshIdleTimeoutOverride.Load(); v > 0 {
+		return time.Duration(v)
+	}
+	return sshIdleTimeoutDefault
+}
 
 // SSH Server implementation
 func (s *SSHServer) Start() error {
@@ -114,7 +127,7 @@ func (s *SSHServer) handleConnections() {
 
 func (s *SSHServer) handleConnection(conn net.Conn) {
 	// Set initial idle timeout — if no activity within this window, the connection closes
-	conn.SetDeadline(time.Now().Add(sshIdleTimeout))
+	conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 	defer conn.Close()
 
 	sshConn, channels, requests, err := ssh.NewServerConn(conn, s.config)
@@ -210,7 +223,7 @@ func (s *SSHServer) interactiveLoop(channel ssh.Channel, conn net.Conn) {
 		}
 
 		// Reset idle timer on activity
-		conn.SetDeadline(time.Now().Add(sshIdleTimeout))
+		conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 
 		b := buf[0]
 

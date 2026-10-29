@@ -222,9 +222,8 @@ func TestNetconfRejectsShellAndExec(t *testing.T) {
 }
 
 func TestNetconfSessionOutlivesSSHIdleDeadline(t *testing.T) {
-	prevIdle := sshIdleTimeout
-	sshIdleTimeout = netconfTestIdleProbe
-	defer func() { sshIdleTimeout = prevIdle }()
+	sshIdleTimeoutOverride.Store(int64(netconfTestIdleProbe))
+	defer sshIdleTimeoutOverride.Store(0)
 
 	mgr := useNetconfTestManager(t, true)
 	dev, _, addr := newNetconfListenDevice(t, mgr)
@@ -420,5 +419,44 @@ func TestNetconfSSHPort22Unchanged(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no welcome on port 22")
+	}
+}
+
+// waitSSHClosed reports whether the server closed c's connection within d.
+func waitSSHClosed(c *ssh.Client, d time.Duration) bool {
+	done := make(chan struct{})
+	go func() { _ = c.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
+func TestNetconfSessionEndClosesConnection(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	_, _, addr := newNetconfListenDevice(t, mgr)
+
+	// Session ids are per device and start at 1, so the victim opened
+	// first is session 1.
+	victim := dialNetconfTestSSH(t, addr)
+	openNetconfOverSSH(t, victim)
+	killer := dialNetconfTestSSH(t, addr)
+	fk, _ := openNetconfOverSSH(t, killer)
+	r, err := netconfRPCWithin(fk, "m1", "<kill-session><session-id>1</session-id></kill-session>", 5*time.Second)
+	if err != nil || !strings.Contains(r, "<ok/>") {
+		t.Fatalf("kill-session: %q %v", r, err)
+	}
+	if !waitSSHClosed(victim, 5*time.Second) {
+		t.Fatal("killed session left its SSH connection open")
+	}
+
+	r, err = netconfRPCWithin(fk, "m2", "<close-session/>", 5*time.Second)
+	if err != nil || !strings.Contains(r, "<ok/>") {
+		t.Fatalf("close-session: %q %v", r, err)
+	}
+	if !waitSSHClosed(killer, 5*time.Second) {
+		t.Fatal("close-session left the SSH connection open")
 	}
 }
