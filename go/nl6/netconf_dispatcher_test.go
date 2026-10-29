@@ -151,7 +151,7 @@ func startIOSXETestClientReg(t *testing.T, dev *DeviceSimulator, reg *netconfSes
 func ncExpectNone(t *testing.T, c *iosxeTestClient, d time.Duration) {
 	t.Helper()
 	_ = c.conn.SetReadDeadline(time.Now().Add(d))
-	defer c.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	defer func() { _ = c.conn.SetReadDeadline(time.Now().Add(10 * time.Second)) }()
 	if raw, err := c.f.ReadMessage(); err == nil {
 		t.Fatalf("unexpected push: %s", raw)
 	} else if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
