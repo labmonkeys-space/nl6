@@ -1,0 +1,63 @@
+name: Docs check
+
+# Builds the docs site on pull requests, so a change that breaks
+# `make docs-build` (type errors, broken links, orphaned pages, missing CSP)
+# fails before merge. docs.yml still builds and deploys on main.
+#
+# A separate workflow, not a pull_request trigger on docs.yml: the deploy job
+# holds contents: write, and this one must not. Deliberately NOT a required
+# check: it is path-filtered, and a required check that never triggers leaves
+# the PR unmergeable.
+on:
+  pull_request:
+    # Keep in step with the docs.yml push paths: everything `make docs-build`
+    # reads (go/go.mod feeds the landing-page Go version, the three scripts
+    # run inside the build), plus both docs workflow files.
+    paths:
+      - 'docs/**'
+      - 'docusaurus.config.ts'
+      - 'sidebars.ts'
+      - 'tsconfig.json'
+      - 'src/**'
+      - 'static/**'
+      - 'go/go.mod'
+      - 'scripts/check-doc-orphans.mjs'
+      - 'scripts/inject-csp.mjs'
+      - 'scripts/check-csp.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - 'Makefile'
+      - '.github/workflows/docs.yml'
+      - '.github/workflows/docs-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Docs build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install docs toolchain
+        run: make docs-install
+
+      - name: Verify strict build
+        run: make docs-build
