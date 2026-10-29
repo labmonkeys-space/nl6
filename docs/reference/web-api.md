@@ -42,6 +42,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/scenarios/{id}/report` | GET | Scenario report. |
 | `/api/v1/scenarios/{id}/metrics` | GET | Scenario metrics. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
+| `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF reference](netconf.md#status-endpoint). |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |

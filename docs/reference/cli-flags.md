@@ -292,6 +292,16 @@ See [gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, an
 | `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
 | `-gnmi-tls` | bool | `true` | **global** | Serve dial-in over TLS with the simulator's shared self-signed certificate; clients need `--skip-verify` or `--tls-ca`. `false` serves plaintext gRPC instead. A client whose transport does not match the listener gets a completed TCP connection and no bytes. See [gNMI troubleshooting](gnmi.md#troubleshooting). |
 
+## NETCONF flags
+
+NETCONF over SSH is off by default and served only by `cisco_catalyst_9500` devices.
+See [NETCONF reference](netconf.md).
+
+| Flag | Type | Default | Scope | Purpose |
+|------|------|---------|-------|---------|
+| `-netconf-enable` | bool | `false` | **global** | Enable the NETCONF over SSH subsystem. |
+| `-netconf-port` | int | `830` | **global** | TCP port of the per-device NETCONF listener. |
+
 ## gNMI dial-out flags
 
 Dial-out reverses the connection direction: the device dials a collector and pushes telemetry over a `gNMIReverse.Publish` stream.
