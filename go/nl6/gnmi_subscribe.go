@@ -52,6 +52,11 @@ func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time)
 	if err != nil {
 		return nil, err
 	}
+	return c.build(sub, notifs, now)
+}
+
+// build turns resolved notifications into one response per list entry.
+func (c *catalogSubscription) build(sub *gnmipb.Subscription, notifs []catalogNotification, now time.Time) ([]*gnmipb.SubscribeResponse, error) {
 	subscribed := pathToString(sub.GetPath())
 	alias := len(c.resolver.aliasSubtrees(sub.GetPath())) > 0
 	out := make([]*gnmipb.SubscribeResponse, 0, len(notifs))
@@ -67,6 +72,35 @@ func (c *catalogSubscription) responses(sub *gnmipb.Subscription, now time.Time)
 		out = append(out, r...)
 	}
 	return out, nil
+}
+
+// changeResponses is responses narrowed to one state change: one
+// response for the entry the event names, carrying the leaves that moved.
+func (c *catalogSubscription) changeResponses(sub *gnmipb.Subscription, evt StateChange, now time.Time) ([]*gnmipb.SubscribeResponse, error) {
+	notifs, err := c.resolver.ResolveChange(sub.GetPath(), evt, now)
+	if err != nil {
+		return nil, err
+	}
+	return c.build(sub, notifs, now)
+}
+
+// admitOnChange refuses an ON_CHANGE subscription that covers a leaf
+// whose value varies continuously, per gnmiGenContinuous. The counter
+// message is the one the legacy resolver sends for the same class.
+func (c *catalogSubscription) admitOnChange(sub *gnmipb.Subscription) error {
+	for _, b := range c.resolver.CoveredBindings(sub.GetPath()) {
+		switch gnmiGenContinuous[b.prefix] {
+		case "counter":
+			return status.Errorf(codes.InvalidArgument,
+				"ON_CHANGE rejected for counter leaf %q; counters are continuously varying — use SAMPLE with sample_interval instead",
+				b.leaf)
+		case "sensor":
+			return status.Errorf(codes.InvalidArgument,
+				"ON_CHANGE rejected for sensor leaf %q, a reading that changes continuously. Use SAMPLE with sample_interval instead",
+				b.leaf)
+		}
+	}
+	return nil
 }
 
 // fold reports whether this stream answers in the JSON_IETF container
@@ -139,11 +173,8 @@ func runOnceSubscribe(
 			if err != nil {
 				return err
 			}
-			for _, r := range resps {
-				if err := stream.Send(r); err != nil {
-					return err
-				}
-				atomic.AddUint64(updatesSent, uint64(len(r.GetUpdate().GetUpdate())))
+			if err := sendCatalogResponses(stream, resps, updatesSent); err != nil {
+				return err
 			}
 			continue
 		}

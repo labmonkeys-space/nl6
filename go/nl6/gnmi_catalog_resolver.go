@@ -386,33 +386,118 @@ func (r *catalogResolver) expandEntries(st *gnmiCatalogSubtree) ([]catalogEntry,
 // touches, with leaves narrowed to the request. A request for a
 // subtree alias returns that whole subtree, or its alias_leaves scope.
 func (r *catalogResolver) Resolve(p *gnmipb.Path, now time.Time) ([]catalogNotification, error) {
+	return r.resolve(p, now, nil)
+}
+
+// ResolveChange is Resolve narrowed to one interface state change: only
+// the entry whose ifIndex the event names, and within it only the
+// ifstate leaves whose field moved (plus the entry's always leaves). It
+// serves ON_CHANGE on catalogue paths, where an update carries what
+// changed and nothing else.
+func (r *catalogResolver) ResolveChange(p *gnmipb.Path, evt StateChange, now time.Time) ([]catalogNotification, error) {
+	return r.resolve(p, now, &evt)
+}
+
+func (r *catalogResolver) resolve(p *gnmipb.Path, now time.Time, change *StateChange) ([]catalogNotification, error) {
 	if sts := r.aliasSubtrees(p); len(sts) > 0 {
-		return r.resolveSubtrees(p, sts[0].Origin, nil, true, sts, now)
+		return r.resolveSubtrees(p, sts[0].Origin, nil, true, sts, now, change)
 	}
 	origin, ok := r.originAccepted(p.GetOrigin())
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "origin %q not served by this device", p.GetOrigin())
 	}
-	return r.resolveSubtrees(p, origin, p.GetElem(), false, r.cat.Subtrees, now)
+	return r.resolveSubtrees(p, origin, p.GetElem(), false, r.cat.Subtrees, now, change)
+}
+
+// coveredBinding is one leaf a request covers, by its generator name.
+type coveredBinding struct {
+	leaf   string // the leaf name
+	prefix string // the generator name: ifstate, ifcounter, sine, ...
+}
+
+// CoveredBindings lists the leaves a request covers, without expanding
+// keys: wildcard entry keys match anything. It lets a caller classify a
+// subscription before any entry is resolved.
+func (r *catalogResolver) CoveredBindings(p *gnmipb.Path) []coveredBinding {
+	subtrees, origin, q, viaAlias := r.cat.Subtrees, "", p.GetElem(), false
+	if sts := r.aliasSubtrees(p); len(sts) > 0 {
+		subtrees, origin, q, viaAlias = sts, sts[0].Origin, nil, true
+	} else if o, ok := r.originAccepted(p.GetOrigin()); ok {
+		origin = o
+	} else {
+		return nil
+	}
+	var out []coveredBinding
+	for _, st := range subtrees {
+		if st.Origin != origin || (st.AliasOnly && !viaAlias) {
+			continue
+		}
+		for _, leaf := range st.Leaves {
+			if viaAlias && !leaf.aliasScoped {
+				continue
+			}
+			if pathCoversSplit(q, st.elems, leaf.elems) {
+				out = append(out, coveredBinding{leaf: leaf.Name, prefix: leaf.genPrefix})
+			}
+		}
+	}
+	return out
+}
+
+// firesOn reports whether a leaf's value moves with the given state
+// change. Only ifstate leaves do, under the same rule as the legacy
+// state leaves (subChangeMatch): oper on an oper-status change, admin on
+// an admin-status change, last-change on any change.
+func (leaf *gnmiCatalogLeaf) firesOn(changed StateLeafBits) bool {
+	if leaf.genPrefix != "ifstate" {
+		return false
+	}
+	name := leaf.genArg
+	switch name {
+	case "oper":
+		name = "oper-status"
+	case "admin":
+		name = "admin-status"
+	}
+	return subChangeMatch(name, changed)
+}
+
+// firesOn reports whether any leaf of the subtree moves with the change,
+// so a state event skips the subtrees that could never render it.
+func (st *gnmiCatalogSubtree) firesOn(changed StateLeafBits) bool {
+	for _, leaf := range st.Leaves {
+		if leaf.firesOn(changed) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveSubtrees resolves request elems q (nil for everything) against
 // the subtrees of the given origin. p is the client's path, for errors.
-// viaAlias limits each subtree to its alias_leaves scope.
-func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gnmipb.PathElem, viaAlias bool, subtrees []*gnmiCatalogSubtree, now time.Time) ([]catalogNotification, error) {
+// viaAlias limits each subtree to its alias_leaves scope. A non-nil
+// change keeps only the entry it names and the leaves that fire on it.
+func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gnmipb.PathElem, viaAlias bool, subtrees []*gnmiCatalogSubtree, now time.Time, change *StateChange) ([]catalogNotification, error) {
 	t := now.Sub(r.epoch()).Seconds()
 	var out []catalogNotification
 	touched := false
+	fires := func(leaf *gnmiCatalogLeaf) bool { return change == nil || leaf.firesOn(change.Changed) }
 	for _, st := range subtrees {
 		if st.Origin != origin || (st.AliasOnly && !viaAlias) || !subtreeCandidate(q, st) {
 			continue
 		}
 		touched = true
+		if change != nil && !st.firesOn(change.Changed) {
+			continue
+		}
 		entries, err := r.expandEntries(st)
 		if err != nil {
 			return nil, err
 		}
 		for _, e := range entries {
+			if change != nil && e.ifIndex != change.IfIndex {
+				continue
+			}
 			var updates []resolvedUpdate
 			// Every field of the generator context is per entry, so one
 			// serves every leaf of the entry.
@@ -424,7 +509,9 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 			entryTouched := !st.hasAlways
 			if st.hasAlways {
 				for _, leaf := range st.Leaves {
-					if leaf.Always || (leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]]) {
+					// The same exclusions as the emitting pass below, so a
+					// leaf outside the alias scope cannot touch the entry.
+					if leaf.Always || (viaAlias && !leaf.aliasScoped) || (leaf.filterNames != nil && !leaf.filterNames[e.keys[st.componentKey]]) || !fires(leaf) {
 						continue
 					}
 					if pathCoversSplit(q, e.elems, leaf.elems) {
@@ -441,6 +528,9 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 					continue
 				}
 				if !pathCoversSplit(q, e.elems, leaf.elems) && !(leaf.Always && entryTouched) {
+					continue
+				}
+				if !fires(leaf) && !(leaf.Always && entryTouched) {
 					continue
 				}
 				raw, ok := leaf.gen(ctx)
@@ -475,6 +565,11 @@ func (r *catalogResolver) resolveSubtrees(p *gnmipb.Path, origin string, q []*gn
 	}
 	if !touched {
 		return nil, status.Errorf(codes.NotFound, "path %s not served by catalogue", pathToString(p))
+	}
+	if len(out) == 0 && change != nil {
+		// A change the request's entries or leaves do not carry is not
+		// an error; the stream simply has nothing to say about it.
+		return nil, nil
 	}
 	if len(out) == 0 {
 		return nil, status.Errorf(codes.NotFound, "path %s matches no entry", pathToString(p))

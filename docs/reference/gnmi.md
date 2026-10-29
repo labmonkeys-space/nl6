@@ -245,7 +245,11 @@ The partial notifications with fewer leaves that the router also sends are not m
 A subscription to `/junos/system/linecard/environment/`, with origin `juniper`, `Native`, `junos-fpc-env` or none, returns, per FPC, one power record, one temperature record per sensor and five voltage rails near their nominal voltage, with the leaves of `junos-fpc-env.yang`.
 That subtree is YANG-derived: no capture exists, so the prefix depth, the sensor names and the values are nl6's reading of the model, not what an MX sends.
 The header extension carries the hostname and sensor name.
-ON_CHANGE is not available on catalogue paths in this release, and Subscribe returns `Unimplemented`.
+ON_CHANGE is served on catalogue paths.
+The stream starts with the snapshot of every covered leaf in the catalogue shape, then `sync_response`.
+On an interface state change it sends one notification for the entry whose interface moved, carrying the `ifstate` leaves whose field changed (`oper-status` on an oper change, `admin-status` on an admin change, `last-change` on any change) and the entry's `always` leaves.
+Every other leaf, whatever its binding (inventory, constants, keys, neighbours, IF-MIB columns, timestamps, device fields, `ifstate` name and ifindex), is sent in the snapshot and on heartbeat only.
+A subscription covering a counter leaf (`ifcounter` or `counter`) is refused with `InvalidArgument` and the counter message above; one covering a sensor leaf (a `sine` binding such as a temperature) is refused the same way, because a sensor reading changes continuously.
 
 ### IOS-XR interfaces
 
@@ -291,7 +295,7 @@ It is not verified on IOS-XR 24.2.2, because the reference capture is PROTO only
 | `Capabilities` | implemented; advertises `JSON_IETF`, `PROTO`, gNMI 0.10.0, `openconfig-interfaces`, plus `openconfig-terminal-device`, `openconfig-platform` and `openconfig-platform-transceiver` on optical transport types; catalogue types add their own models and encodings |
 | `Get` | implemented for any supported path |
 | `Subscribe` (STREAM/SAMPLE) | implemented |
-| `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths; rejected for counter paths |
+| `Subscribe` (STREAM/ON_CHANGE) | implemented for state-leaf paths, on legacy and catalogue devices; rejected for counter and sensor paths |
 | `Subscribe` (ONCE) | implemented; one batch + `sync_response` then close |
 | `Subscribe` (TARGET_DEFINED) | treated as SAMPLE |
 | `Subscribe` (mixed ON_CHANGE + SAMPLE) | rejected with `InvalidArgument`. Split into two SubscribeRequests |

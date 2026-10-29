@@ -65,6 +65,16 @@ var gnmiGenRegistry = map[string]gnmiGenFactory{
 	"device":    genDevice,
 }
 
+// gnmiGenContinuous names the generators whose value moves on every read
+// and which ON_CHANGE therefore refuses, by the class the refusal names.
+// Every other generator is admitted: ifstate oper, admin and last-change
+// fire on a state change, the rest are snapshot-only.
+var gnmiGenContinuous = map[string]string{
+	"ifcounter": "counter",
+	"counter":   "counter",
+	"sine":      "sensor",
+}
+
 func compileGnmiBinding(spec string) (gnmiLeafGen, error) {
 	if spec == "" {
 		return nil, errors.New("empty binding")
