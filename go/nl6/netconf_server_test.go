@@ -493,18 +493,20 @@ func netconfAppGoroutines() int {
 		if strings.Contains(g, ".(*netconfServer).acceptLoop(") {
 			continue
 		}
-		if strings.Contains(g, ".(*netconfServer).") || strings.Contains(g, ".(*netconfSession).") {
+		if strings.Contains(g, ".(*netconfServer).") || strings.Contains(g, ".(*netconfSession).") ||
+			strings.Contains(g, ".(*netconfDispatcher).") {
 			count++
 		}
 	}
 	return count
 }
 
-// An idle subscribed session costs three nl6 goroutines: the connection's
-// dispatch loop, the session reader and the state listener. A push starts a
-// writer that exits once the queue is empty.
+// An idle subscribed session costs two nl6 goroutines, the connection's
+// dispatch loop and the session reader, plus one state-change dispatcher per
+// device shared by every session. A push starts a writer that exits once the
+// queue is empty.
 func TestNetconfIdleSessionGoroutines(t *testing.T) {
-	const sessions, perSession = 5, 3
+	const sessions, perSession, perDevice = 5, 2, 1
 	mgr := useNetconfTestManager(t, true)
 	_, st, addr := newNetconfListenDevice(t, mgr)
 	base := netconfAppGoroutines()
@@ -521,7 +523,7 @@ func TestNetconfIdleSessionGoroutines(t *testing.T) {
 			}
 		}()
 	}
-	want := base + sessions*perSession
+	want := base + perDevice + sessions*perSession
 	waitNetconf(t, "idle goroutine count", func() bool { return netconfAppGoroutines() == want })
 
 	// Every session gets a push. Its writer must not outlive the queue.
