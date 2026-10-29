@@ -70,6 +70,9 @@ jobs:
       - name: Install docs toolchain
         run: make docs-install
 
+      - name: Type-check site sources
+        run: make docs-typecheck
+
       - name: Verify strict build
         run: make docs-build
 

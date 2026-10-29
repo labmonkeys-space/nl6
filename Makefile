@@ -71,7 +71,7 @@ UNAME_S := $(shell uname -s)
 
 .PHONY: all build reconcile yang-cache gen-gnmi-catalog test-gnmi-drift gen-junos-chassis gen-xr-chassis check-capture-leak run test test-race test-web check-guard-file tidy check-tidy dist packages smoke set-nix-version set-ansible-version nix-vendor-hash check-ansible-version sbom-curate check-sbom-coverage check-ansible clean docker-build docker-push docker-up docker-down help version \
         check-go check-docker check-buildx check-linux check-node check-node-runtime \
-        docs-install docs-serve docs-build docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
+        docs-install docs-serve docs-build docs-typecheck docs-check-orphans docs-check-csp docs-audit-overrides docs-audit-overrides-test docs-clean \
         check-release-integrity check-release-integrity-test \
         tools-quality fmt-check lint vuln sec lint-actions check-check-run-names quality
 
@@ -708,6 +708,10 @@ docs-check-orphans: check-node
 docs-build: node_modules/.package-lock.json docs-check-orphans
 	$(NPM) run build
 	node scripts/check-csp.mjs build
+
+## docs-typecheck: Type-check the docs site sources with tsc (fails on any type error)
+docs-typecheck: node_modules/.package-lock.json
+	$(NPM) run typecheck
 
 ## docs-check-csp: Verify every built page carries an enforceable CSP (needs a build in build/)
 docs-check-csp: check-node

@@ -7,7 +7,7 @@ import Landing from '@site/src/components/Landing';
 // Homepage — replaces the default doc-index at `/` (the docs preset has
 // `routeBasePath: '/'`, but `src/pages/index.tsx` wins for the exact `/`
 // route and Docusaurus emits the rest of the docs under their own slugs).
-export default function Home(): JSX.Element {
+export default function Home(): React.JSX.Element {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
