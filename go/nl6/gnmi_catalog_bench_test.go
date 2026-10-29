@@ -95,6 +95,9 @@ func BenchmarkOpticalSampleTick(b *testing.B) {
 		if _, err := encodeUpdates(ups, gnmipb.Encoding_PROTO); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
 // BenchmarkCatalogComponentsTick is one SAMPLE tick of a /components
 // subscription per shipped catalogue, the resolver's hot path. The clock
 // is fixed so the op measures Resolve alone.
