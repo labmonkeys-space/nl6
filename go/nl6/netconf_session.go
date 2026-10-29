@@ -29,6 +29,9 @@ const netconfFirstSubID = 2147483648
 type netconfSub struct {
 	id  uint32
 	sel iosxeSelection
+	// deleted is set when the subscription ends. A push still queued for it
+	// is discarded, checked under wmu right before the write.
+	deleted atomic.Bool
 }
 
 // netconfSession serves one NETCONF client. Replies and notifications share

@@ -341,7 +341,7 @@ func TestNetconfSlowReaderDropsOldestAndCounts(t *testing.T) {
 
 	// The client reads nothing from here on. A first push parks the writer
 	// on the pipe, so every later push stays in the queue or is dropped.
-	c.sess.enqueue([]byte("<parked/>"))
+	c.sess.enqueue(&netconfSub{}, []byte("<parked/>"))
 	for deadline := time.Now().Add(time.Second); ev.out.len() != 0; time.Sleep(time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("writer did not take the parked push")
@@ -381,8 +381,8 @@ func TestNetconfSlowReaderDropsOldestAndCounts(t *testing.T) {
 	}
 	// Oldest-drop: the newest push, carrying the final last-change, survived.
 	var last []byte
-	for msg, ok := ev.out.pop(); ok; msg, ok = ev.out.pop() {
-		last = msg
+	for p, ok := ev.out.pop(); ok; p, ok = ev.out.pop() {
+		last = p.msg
 	}
 	want := "<last-change>" + iosxeTimestamp(time.Unix(0, int64(st.Snapshot(24).LastChangeNs))) + "</last-change>"
 	if !strings.Contains(string(last), want) {
@@ -448,5 +448,113 @@ func TestNetconfOtherConsumersUnchanged(t *testing.T) {
 	}
 	if len(without) == 0 {
 		t.Fatal("the cycle fired no notify call, so the comparison proves nothing")
+	}
+}
+
+func TestNetconfNoShutdownGroupedPerSubscription(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sentinel := newNcSentinel(c, st)
+	const ifn = "GigabitEthernet1/0/5"
+	row := c.sub(ncXPath(ifn, ""))
+	oper := c.sub(ncXPath(ifn, "oper-status"))
+	admin := c.sub(ncXPath(ifn, "admin-status"))
+	ncAdmin(st, 5, AdminDown)
+	c.drain(3)
+
+	ncAdmin(st, 5, AdminUp)
+	const (
+		up    = "if-state-up"
+		inv   = iosxeOperInvalid
+		lld   = "if-oper-state-lower-layer-down"
+		ready = "if-oper-state-ready"
+	)
+	want := []ncNotif{
+		{sub: admin, admin: up}, {sub: admin, admin: up},
+		{sub: oper, oper: inv}, {sub: oper, oper: lld},
+		{sub: row, admin: up, oper: inv}, {sub: row, admin: up, oper: lld},
+		{sub: admin, admin: up}, {sub: oper, oper: ready}, {sub: row, admin: up, oper: ready},
+	}
+	for i, w := range want {
+		n := c.next()
+		if n.sub != w.sub || n.admin != w.admin || n.oper != w.oper {
+			t.Fatalf("push %d: got sub %d admin %q oper %q, want %+v", i, n.sub, n.admin, n.oper, w)
+		}
+	}
+	sentinel.expectNext()
+}
+
+func TestNetconfDeletedSubscriptionGetsNothing(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	sentinel := newNcSentinel(c, st)
+	id := c.sub(ncXPath("GigabitEthernet1/0/24", "oper-status"))
+	ev := c.sess.ev
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(time.Second); !cond(); time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+		}
+	}
+
+	// Park the writer on the pipe, then queue two pushes behind it.
+	c.sess.enqueue(&netconfSub{}, []byte("<parked/>"))
+	waitFor("the writer to take the parked push", func() bool { return ev.out.len() == 0 })
+	ncLink(st, 24, OperDown)
+	ncLink(st, 24, OperUp)
+	waitFor("two queued pushes", func() bool { return ev.out.len() == 2 })
+
+	c.msgSeq++
+	del := fmt.Sprintf(`<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="m%d">`+
+		`<delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"><subscription-id>%d</subscription-id></delete-subscription></rpc>`,
+		c.msgSeq, id)
+	if err := c.f.WriteMessage([]byte(del)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("the delete to reach the event set", func() bool {
+		ev.mu.Lock()
+		defer ev.mu.Unlock()
+		return len(ev.subs) == 1
+	})
+	// Both queued pushes belong to the deleted subscription: only the parked
+	// message and the reply may arrive.
+	if raw, err := c.f.ReadMessage(); err != nil || string(raw) != "<parked/>" {
+		t.Fatalf("parked message: %q %v", raw, err)
+	}
+	raw, err := c.f.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "<rpc-reply") || !strings.Contains(string(raw), "notif-bis:ok") {
+		t.Fatalf("want the delete reply, got: %s", raw)
+	}
+	sentinel.expectNext()
+
+	ncLink(st, 24, OperDown)
+	sentinel.expectNext()
+}
+
+func TestNetconfSyncBeforeChangePushes(t *testing.T) {
+	dev, st := newNetconfTestDevice(t)
+	c := startIOSXETestClient(t, dev)
+	id := c.subscribe(iosxeTestIfaceNm + "/oper-status")
+	// The first sync push proves the subscription is published. The other
+	// 47 are still being written when the change happens.
+	if n := c.next(); n.kind != "push-update" {
+		t.Fatalf("first sync push: %s", n.raw)
+	}
+	ncLink(st, 48, OperDown)
+	time.Sleep(20 * time.Millisecond) // let the writer reach the pipe
+	for i := 2; i <= 48; i++ {
+		n := c.next()
+		want := "/interfaces/interface=GigabitEthernet1%2F0%2F" + strconv.Itoa(i)
+		if n.target != want || n.sub != id {
+			t.Fatalf("message %d is not the sync push for %s: %s", i, want, n.raw)
+		}
+	}
+	if n := c.next(); n.target != "/interfaces/interface=GigabitEthernet1%2F0%2F48" || n.oper != "if-oper-state-lower-layer-down" {
+		t.Fatalf("change push after the sync: %s", n.raw)
 	}
 }

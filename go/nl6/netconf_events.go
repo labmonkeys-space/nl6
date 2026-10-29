@@ -46,26 +46,32 @@ type netconfEvents struct {
 	}
 }
 
+// netconfPush is one rendered push and the subscription it belongs to.
+type netconfPush struct {
+	sub *netconfSub
+	msg []byte
+}
+
 // netconfOutbox is a bounded oldest-drop ring of rendered pushes. push never
 // blocks. One writer goroutine drains it.
 type netconfOutbox struct {
 	mu   sync.Mutex
-	buf  [netconfSendQueueDepth][]byte
+	buf  [netconfSendQueueDepth]netconfPush
 	head int
 	n    int
 	wake chan struct{}
 }
 
 // push queues msg and reports whether it displaced the oldest push.
-func (o *netconfOutbox) push(msg []byte) (dropped bool) {
+func (o *netconfOutbox) push(p netconfPush) (dropped bool) {
 	o.mu.Lock()
 	if o.n == netconfSendQueueDepth {
-		o.buf[o.head] = nil
+		o.buf[o.head] = netconfPush{}
 		o.head = (o.head + 1) % netconfSendQueueDepth
 		o.n--
 		dropped = true
 	}
-	o.buf[(o.head+o.n)%netconfSendQueueDepth] = msg
+	o.buf[(o.head+o.n)%netconfSendQueueDepth] = p
 	o.n++
 	o.mu.Unlock()
 	select {
@@ -75,17 +81,17 @@ func (o *netconfOutbox) push(msg []byte) (dropped bool) {
 	return dropped
 }
 
-func (o *netconfOutbox) pop() ([]byte, bool) {
+func (o *netconfOutbox) pop() (netconfPush, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.n == 0 {
-		return nil, false
+		return netconfPush{}, false
 	}
-	msg := o.buf[o.head]
-	o.buf[o.head] = nil
+	p := o.buf[o.head]
+	o.buf[o.head] = netconfPush{}
 	o.head = (o.head + 1) % netconfSendQueueDepth
 	o.n--
-	return msg, true
+	return p, true
 }
 
 func (o *netconfOutbox) len() int {
@@ -107,13 +113,9 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 	}
 	s.ev = ev
 	s.onStart = s.startEvents
-	s.onSubscribe = func(sub *netconfSub) {
-		ev.mu.Lock()
-		ev.subs = append(ev.subs, sub)
-		ev.mu.Unlock()
-		s.syncOnStart(sub)
-	}
+	s.onSubscribe = s.syncOnStart
 	s.onUnsubscribe = func(sub *netconfSub) {
+		sub.deleted.Store(true)
 		ev.mu.Lock()
 		if i := slices.Index(ev.subs, sub); i >= 0 {
 			ev.subs = slices.Delete(ev.subs, i, i+1)
@@ -146,8 +148,10 @@ func (s *netconfSession) startEvents(ctx context.Context) {
 	}
 }
 
-// runWriter drains the send queue. It shares writeMessage, and so the write
-// mutex, with RPC replies.
+// runWriter drains the send queue. It writes under wmu, the mutex RPC replies
+// use, and discards a push whose subscription was deleted. onUnsubscribe sets
+// that flag before the delete reply is written, so no push for the
+// subscription follows the reply.
 func (s *netconfSession) runWriter(ctx context.Context) {
 	ev := s.ev
 	for {
@@ -157,11 +161,18 @@ func (s *netconfSession) runWriter(ctx context.Context) {
 		case <-ev.out.wake:
 		}
 		for {
-			msg, ok := ev.out.pop()
+			p, ok := ev.out.pop()
 			if !ok {
 				break
 			}
-			if err := s.writeMessage(msg); err != nil {
+			s.wmu.Lock()
+			if p.sub.deleted.Load() {
+				s.wmu.Unlock()
+				continue
+			}
+			err := s.framer.WriteMessage(p.msg)
+			s.wmu.Unlock()
+			if err != nil {
 				return
 			}
 			atomic.AddUint64(ev.sent, 1)
@@ -170,8 +181,8 @@ func (s *netconfSession) runWriter(ctx context.Context) {
 }
 
 // enqueue queues a push without blocking.
-func (s *netconfSession) enqueue(msg []byte) {
-	if s.ev.out.push(msg) {
+func (s *netconfSession) enqueue(sub *netconfSub, msg []byte) {
+	if s.ev.out.push(netconfPush{sub: sub, msg: msg}) {
 		atomic.AddUint64(s.ev.dropped, 1)
 	}
 }
@@ -223,12 +234,22 @@ func (s *netconfSession) handleStateChange(state *InterfaceState, evt StateChang
 	if evt.LastChangeNs != LastChangeRewindSentinel {
 		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	}
-	for _, oper := range iosxeOperSequence(evt) {
+	// Newest subscription first, as both captured devices do. A multi-step
+	// sequence goes out like the c8000v sent it: every step but the last,
+	// subscription by subscription, then the last step across all of them.
+	// A leaf subscription that does not show oper re-sends once per step.
+	push := func(sub *netconfSub, oper string) {
 		row.Oper = oper
-		// Newest subscription first, as both captured devices do.
-		for i := len(subs) - 1; i >= 0; i-- {
-			s.enqueue(renderPushChangeUpdate(subs[i].id, evt.At, subs[i].sel.Leaves, row))
+		s.enqueue(sub, renderPushChangeUpdate(sub.id, evt.At, sub.sel.Leaves, row))
+	}
+	seq := iosxeOperSequence(evt)
+	for i := len(subs) - 1; i >= 0; i-- {
+		for _, oper := range seq[:len(seq)-1] {
+			push(subs[i], oper)
 		}
+	}
+	for i := len(subs) - 1; i >= 0; i-- {
+		push(subs[i], seq[len(seq)-1])
 	}
 }
 
@@ -261,12 +282,23 @@ func iosxeOperSequence(evt StateChange) []string {
 	return []string{iosxeOperStatus(evt.Admin, evt.Oper)}
 }
 
-// syncOnStart sends the current state of every interface sub selects, in
-// ascending ifIndex. The device's first interface goes as push-update, every
-// other one as push-change-update. A name the device does not have gets one
-// empty push-update. It runs on the RPC goroutine and writes directly, like a
-// reply, so a large sync is never lost to the send queue.
+// syncOnStart publishes sub to the listener and sends the current state of
+// every interface it selects, in ascending ifIndex. The device's first
+// interface goes as push-update, every other one as push-change-update. A name
+// the device does not have gets one empty push-update.
+//
+// It runs on the RPC goroutine and writes directly, like a reply, so a large
+// sync is never lost to the send queue. It holds wmu from before the sub is
+// published until the last sync push is written. A change push queued for
+// the sub meanwhile waits for wmu in the writer, so it can never overtake the
+// sync. A change before publication is already in the state the sync reads.
 func (s *netconfSession) syncOnStart(sub *netconfSub) {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	s.ev.mu.Lock()
+	s.ev.subs = append(s.ev.subs, sub)
+	s.ev.mu.Unlock()
+
 	ic := netconfIfCounters(s.dev)
 	indices := slices.Clone(ic.IfIndices())
 	slices.Sort(indices)
@@ -296,8 +328,9 @@ func (s *netconfSession) syncOnStart(sub *netconfSub) {
 	}
 }
 
+// writePush writes one sync push. The caller holds wmu.
 func (s *netconfSession) writePush(msg []byte) {
-	if s.writeMessage(msg) == nil {
+	if s.framer.WriteMessage(msg) == nil {
 		atomic.AddUint64(s.ev.sent, 1)
 	}
 }
