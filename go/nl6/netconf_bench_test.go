@@ -130,6 +130,7 @@ func BenchmarkNetconfIdleSessions(b *testing.B) {
 	if err := mgr.StartNetconfSubsystem(NetconfSubsystemConfig{Enabled: true}); err != nil {
 		b.Fatal(err)
 	}
+	mgr.netconfPort = 0 // a free port
 	prev := manager
 	manager = mgr
 	defer func() { manager = prev }()
@@ -143,7 +144,7 @@ func BenchmarkNetconfIdleSessions(b *testing.B) {
 	dev := &DeviceSimulator{resources: res, metricsCycler: mc, ID: "cat9500-bench", IP: net.IPv4(127, 0, 0, 1), resourceFile: "cisco_catalyst_9500.json"}
 	mgr.devices[dev.ID] = dev
 	dev.mu.Lock()
-	err = dev.startNetconfServer(0)
+	err = dev.startNetconfServer()
 	dev.mu.Unlock()
 	if err != nil || dev.netconfListener == nil {
 		b.Fatalf("startNetconfServer: %v", err)

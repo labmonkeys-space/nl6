@@ -212,3 +212,22 @@ func filterChildren(t *testing.T, frag string, keep map[string]bool, rewrite fun
 	}
 	return out.String()
 }
+
+// TestNetconfRowOmitsUnknownLastChange: after a clock rewind last-change is
+// unknown. The row then carries no last-change leaf, not an empty one.
+func TestNetconfRowOmitsUnknownLastChange(t *testing.T) {
+	at := time.Date(2026, 10, 29, 11, 0, 0, 0, time.UTC)
+	row := iosxeRow{Name: "GigabitEthernet1/0/1", Admin: "if-state-up", Oper: "if-oper-state-ready"}
+	for _, msg := range [][]byte{
+		renderPushChangeUpdate(1, at, iosxeLeafRow, row),
+		renderPushUpdate(1, at, iosxeLeafRow, &row),
+	} {
+		if strings.Contains(string(msg), "last-change") {
+			t.Fatalf("unknown last-change rendered: %s", msg)
+		}
+	}
+	row.LastChange = iosxeTimestamp(at)
+	if msg := renderPushChangeUpdate(1, at, iosxeLeafRow, row); !strings.Contains(string(msg), "<last-change>"+row.LastChange+"</last-change>") {
+		t.Fatalf("known last-change missing: %s", msg)
+	}
+}

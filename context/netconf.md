@@ -60,6 +60,7 @@ When a session ends, the whole SSH connection closes.
 - The NETCONF listener has its own accept loop. The 5-minute deadline bounds the handshake and the wait for the `netconf` subsystem. It is cleared when the session starts, and TCP keepalive takes over.
 - `TestNetconfSessionOutlivesSSHIdleDeadline` and `TestNetconfDeadlineUntilSubsystem` pin this. `sshIdleTimeoutOverride` is atomic because port 22 goroutines read it.
 - The engine listener (`AddListener`) counts emitted and dropped events into the same `state_events_emitted` and `state_events_dropped` totals that `GET /api/v1/gnmi/status` reports, so those totals include NETCONF listeners.
+- So a drop on the 16-deep listener channel never reaches `notifications_dropped` in `GET /api/v1/netconf/status`. That stage shows only in the shared fan-out counter `state_events_dropped` of `GET /api/v1/gnmi/status`. The engine counters stay shared by design.
 - `RemoveListener` must run before the listener channel is closed.
 - `SetNotify` belongs to the Tier C traps and syslog. NETCONF never calls it.
 - The NETCONF subsystem does not apply `-fidelity` silencing.

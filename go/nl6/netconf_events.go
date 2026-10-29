@@ -157,9 +157,9 @@ func (s *netconfSession) startEvents(ctx context.Context) {
 // subscription was deleted. onUnsubscribe sets that flag before the delete
 // reply is written, so no push for the subscription follows the reply.
 //
-// After a write error, or once the session is closed, it returns with
-// writing still set. No writer starts again and later pushes stay queued,
-// dropped oldest first, until the session goes away.
+// A write error closes the session, so Serve ends and the listener
+// deregisters. Once the session is closed it returns with writing still
+// set, so no writer starts again and nothing more is written.
 func (s *netconfSession) runWriter() {
 	ev := s.ev
 	defer ev.wg.Done()
@@ -185,6 +185,7 @@ func (s *netconfSession) runWriter() {
 		err := s.framer.WriteMessage(p.msg)
 		s.wmu.Unlock()
 		if err != nil {
+			s.close()
 			return
 		}
 		atomic.AddUint64(ev.sent, 1)
@@ -224,12 +225,16 @@ func (s *netconfSession) runStateListener(ctx context.Context, state *InterfaceS
 		case <-ctx.Done():
 			return
 		case evt := <-ch:
-			s.handleStateChange(state, evt)
+			s.handleStateChange(evt)
 		}
 	}
 }
 
-func (s *netconfSession) handleStateChange(state *InterfaceState, evt StateChange) {
+func (s *netconfSession) handleStateChange(evt StateChange) {
+	// A session closed after a write error renders nothing more.
+	if s.isClosed() {
+		return
+	}
 	ev := s.ev
 	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
 		ev.skip.set = false
@@ -238,16 +243,24 @@ func (s *netconfSession) handleStateChange(state *InterfaceState, evt StateChang
 	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
 		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
 	}
-	if iosxeSuppress(evt, state.LinkState(evt.IfIndex)) {
+	// The event carries the link as it was when the change happened. The
+	// link read now may already have moved past a queued event.
+	if iosxeSuppress(evt) {
 		return
 	}
 
 	name := devIfDescr(s.dev, evt.IfIndex)
 	ev.mu.Lock()
 	var subs []*netconfSub
+	wholeRow := false
+	// Every subscription on the interface gets the push, whatever leaf it
+	// selects. An admin-status leaf subscription is re-sent on a link-only
+	// move: the c8000v capture shows the admin-status leaf re-sent on
+	// carrier loss.
 	for _, sub := range ev.subs {
 		if sub.sel.IfName == "" || sub.sel.IfName == name {
 			subs = append(subs, sub)
+			wholeRow = wholeRow || sub.sel.Leaves == iosxeLeafRow
 		}
 	}
 	ev.mu.Unlock()
@@ -255,8 +268,14 @@ func (s *netconfSession) handleStateChange(state *InterfaceState, evt StateChang
 		return
 	}
 
-	row := buildIosxeRow(s.dev, netconfIfCounters(s.dev), evt.IfIndex, evt.At)
+	// A leaf subscription renders only name, admin and oper, which the event
+	// carries. The counters are read only when a subscription shows the row.
+	row := iosxeRow{Name: name}
+	if wholeRow {
+		row = buildIosxeRow(s.dev, netconfIfCounters(s.dev), evt.IfIndex, evt.At)
+	}
 	row.Admin = iosxeAdminStatus(evt.Admin)
+	row.LastChange = "" // unknown after a clock rewind: the leaf is omitted
 	if evt.LastChangeNs != LastChangeRewindSentinel {
 		row.LastChange = iosxeTimestamp(time.Unix(0, int64(evt.LastChangeNs)))
 	}
@@ -283,8 +302,8 @@ func (s *netconfSession) handleStateChange(state *InterfaceState, evt StateChang
 // link is not up, the switch sends nothing when only admin moves, or when
 // oper moves only between no-pass and lower-layer-down. Link moves are
 // always reported.
-func iosxeSuppress(evt StateChange, link uint8) bool {
-	if link == OperUp || evt.Changed&LeafAdminStatus == 0 {
+func iosxeSuppress(evt StateChange) bool {
+	if evt.Link == OperUp || evt.Changed&LeafAdminStatus == 0 {
 		return false
 	}
 	if evt.PrevOper == evt.Oper {
@@ -340,25 +359,33 @@ func (s *netconfSession) syncOnStart(sub *netconfSub) {
 			}
 		}
 		if targets == nil {
-			s.writePush(renderPushUpdate(sub.id, now, sub.sel.Leaves, nil))
+			_ = s.writePush(renderPushUpdate(sub.id, now, sub.sel.Leaves, nil))
 			return
 		}
 	}
 	for _, i := range targets {
 		row := buildIosxeRow(s.dev, ic, i, now)
+		var msg []byte
 		if i == indices[0] {
-			s.writePush(renderPushUpdate(sub.id, now, sub.sel.Leaves, &row))
+			msg = renderPushUpdate(sub.id, now, sub.sel.Leaves, &row)
 		} else {
-			s.writePush(renderPushChangeUpdate(sub.id, now, sub.sel.Leaves, row))
+			msg = renderPushChangeUpdate(sub.id, now, sub.sel.Leaves, row)
+		}
+		if !s.writePush(msg) {
+			return
 		}
 	}
 }
 
-// writePush writes one sync push. The caller holds wmu.
-func (s *netconfSession) writePush(msg []byte) {
-	if s.framer.WriteMessage(msg) == nil {
-		atomic.AddUint64(s.ev.sent, 1)
+// writePush writes one sync push and reports whether it went out. A write
+// error closes the session, as in the writer. The caller holds wmu.
+func (s *netconfSession) writePush(msg []byte) bool {
+	if err := s.framer.WriteMessage(msg); err != nil {
+		s.close()
+		return false
 	}
+	atomic.AddUint64(s.ev.sent, 1)
+	return true
 }
 
 // iosxeIfTypes maps the IANA ifType numbers nl6 profiles carry to the

@@ -119,7 +119,10 @@ func iosxeLeaves(b *bytes.Buffer, leaves iosxeLeafSet, r iosxeRow) {
 		iosxeLeaf(b, "interface-type", r.InterfaceType)
 		iosxeLeaf(b, "admin-status", r.Admin)
 		iosxeLeaf(b, "oper-status", r.Oper)
-		iosxeLeaf(b, "last-change", r.LastChange)
+		// An unknown last-change (a clock rewind) omits the leaf.
+		if r.LastChange != "" {
+			iosxeLeaf(b, "last-change", r.LastChange)
+		}
 		iosxeLeaf(b, "if-index", strconv.Itoa(r.IfIndex))
 		iosxeLeaf(b, "phys-address", r.PhysAddress)
 		iosxeNum(b, "speed", r.Speed)

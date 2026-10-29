@@ -51,6 +51,8 @@ func useNetconfTestManager(t *testing.T, enabled bool) *SimulatorManager {
 	if err := mgr.StartNetconfSubsystem(NetconfSubsystemConfig{Enabled: enabled}); err != nil {
 		t.Fatalf("StartNetconfSubsystem: %v", err)
 	}
+	// Port 0 binds a free port, so tests never need the real 830.
+	mgr.netconfPort = 0
 	prev := manager
 	manager = mgr
 	t.Cleanup(func() { manager = prev })
@@ -67,7 +69,7 @@ func newNetconfListenDevice(t *testing.T, mgr *SimulatorManager) (*DeviceSimulat
 	dev.resourceFile = "cisco_catalyst_9500.json"
 	mgr.devices[dev.ID] = dev
 	dev.mu.Lock()
-	err := dev.startNetconfServer(0)
+	err := dev.startNetconfServer()
 	dev.mu.Unlock()
 	if err != nil {
 		t.Fatalf("startNetconfServer: %v", err)
@@ -175,7 +177,7 @@ func TestNetconfListenerOnlyOnCatalyst9500(t *testing.T) {
 	other, _ := newNetconfTestDevice(t)
 	other.ID, other.IP, other.resourceFile = "asr9k-test", net.IPv4(127, 0, 0, 1), "asr9k.json"
 	other.mu.Lock()
-	err := other.startNetconfServer(0)
+	err := other.startNetconfServer()
 	other.mu.Unlock()
 	if err != nil {
 		t.Fatalf("startNetconfServer on another type must be a no-op, got %v", err)
@@ -348,7 +350,7 @@ func TestNetconfDisabledByDefault(t *testing.T) {
 	dev.ID, dev.IP, dev.resourceFile = "cat", net.IPv4(127, 0, 0, 1), "cisco_catalyst_9500.json"
 	mgr.devices[dev.ID] = dev
 	dev.mu.Lock()
-	err := dev.startNetconfServer(0)
+	err := dev.startNetconfServer()
 	dev.mu.Unlock()
 	if err != nil || dev.netconfListener != nil {
 		t.Fatalf("disabled subsystem started a listener (err %v)", err)
@@ -569,5 +571,22 @@ func TestNetconfDroppedPendingChannelDoesNotStallClose(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("server Close hung: a dropped channel's requests stalled the SSH mux")
+	}
+}
+
+// TestNetconfPortCheckedWhenDisabled: a bad -netconf-port fails startup even
+// when -netconf-enable is not set.
+func TestNetconfPortCheckedWhenDisabled(t *testing.T) {
+	for _, port := range []int{-1, 65536} {
+		sm := &SimulatorManager{}
+		if err := sm.StartNetconfSubsystem(NetconfSubsystemConfig{Port: port}); err == nil {
+			t.Errorf("disabled subsystem accepted port %d", port)
+		}
+		if sm.netconfSubsystemActive.Load() {
+			t.Errorf("port %d activated the subsystem", port)
+		}
+	}
+	if err := (&SimulatorManager{}).StartNetconfSubsystem(NetconfSubsystemConfig{}); err != nil {
+		t.Fatalf("zero config refused: %v", err)
 	}
 }

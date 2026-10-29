@@ -148,6 +148,11 @@ An `admin-status` subscription re-sends its unchanged value when anything else i
 | `notifications_sent` | Notifications written to a client. |
 | `notifications_dropped` | Notifications dropped because a slow client let its queue of 100 fill. The oldest is dropped first. |
 
+A push can also be lost one stage earlier, before it is rendered.
+Each session listens to the interface state engine on a 16-deep channel.
+An event dropped there is not counted in `notifications_dropped`.
+It appears in `state_events_dropped` of `GET /api/v1/gnmi/status`, the counter that state-change fan-out to gNMI and NETCONF shares.
+
 ## Limitations
 
 nl6 emulates one real device, a Catalyst 9300, and serves less where it has no capture.

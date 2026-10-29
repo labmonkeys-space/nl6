@@ -63,6 +63,7 @@ type StateChange struct {
 	Oper         uint8         // current value after mutation
 	PrevOper     uint8         // derived oper-status before the mutation
 	Admin        uint8         // current value after mutation
+	Link         uint8         // link-state at mutation time (normalised)
 	LastChangeNs uint64        // absolute Unix nanos
 	Changed      StateLeafBits // which status leaves moved (last-change implied if non-zero)
 	At           time.Time
@@ -587,6 +588,7 @@ func (s *InterfaceState) SetLinkState(ifIndex int, newLink uint8) (LinkMutation,
 				Oper:         nowOper,
 				PrevOper:     wasOper,
 				Admin:        curAdmin,
+				Link:         newLink,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
@@ -647,6 +649,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 			Oper:         nowOper,
 			PrevOper:     wasOper,
 			Admin:        newVal,
+			Link:         curLink,
 			LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 			Changed:      LeafAdminStatus,
 			At:           nowAbs,
@@ -658,6 +661,7 @@ func (s *InterfaceState) setAdminLeaf(ifIndex int, newVal uint8) []StateChange {
 				Oper:         nowOper,
 				PrevOper:     wasOper,
 				Admin:        newVal,
+				Link:         curLink,
 				LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 				Changed:      LeafOperStatus,
 				At:           nowAbs,
@@ -698,6 +702,7 @@ func (s *InterfaceState) cascadeChildren(slot int, wasParent, nowParent uint8, a
 					Oper:         now,
 					PrevOper:     was,
 					Admin:        admin,
+					Link:         link,
 					LastChangeNs: lastChangeAbs(s.bootTimeUnixNs, relNs),
 					Changed:      LeafOperStatus,
 					At:           at,

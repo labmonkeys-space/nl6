@@ -38,15 +38,17 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	if sm.netconfSubsystemActive.Load() {
 		return fmt.Errorf("netconf: subsystem already started")
 	}
-	if !cfg.Enabled {
-		return nil
-	}
+	// The port is checked before the Enabled test, so a bad -netconf-port
+	// fails at startup even while the subsystem is off.
 	port := cfg.Port
 	if port == 0 {
 		port = netconfDefaultPort
 	}
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("netconf: invalid port %d (must be 1..65535)", port)
+	}
+	if !cfg.Enabled {
+		return nil
 	}
 	sm.netconfPort = port
 	sm.netconfSubsystemActive.Store(true)

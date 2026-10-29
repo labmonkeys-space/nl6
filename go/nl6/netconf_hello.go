@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/xml"
 	"fmt"
 	"strings"
 )
@@ -34,7 +35,18 @@ var netconfHelloCapabilities = []string{
 	"urn:ietf:params:xml:ns:yang:ietf-interfaces?module=ietf-interfaces&revision=2014-05-08&features=pre-provisioning,if-mib,arbitrary-names&deviations=cisco-xe-ietf-ip-deviation",
 }
 
-var netconfXMLEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
+// netconfEscape escapes s for element text or an attribute value.
+func netconfEscape(s string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
+// netconfErrorMessageEscaper is the one exception to netconfEscape, used
+// only for error-message text. Quotes stay literal there, matching the
+// decoded captures (no raw wire bytes of that element were kept). &#34;
+// would be equivalent XML; literal quotes keep the text readable.
+var netconfErrorMessageEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 // netconfServerHello renders the server hello for a session.
 func netconfServerHello(sessionID uint32) []byte {
@@ -42,7 +54,7 @@ func netconfServerHello(sessionID uint32) []byte {
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	fmt.Fprintf(&b, `<hello xmlns="%s"><capabilities>`, netconfBaseNS)
 	for _, c := range netconfHelloCapabilities {
-		fmt.Fprintf(&b, "<capability>%s</capability>", netconfXMLEscaper.Replace(c))
+		fmt.Fprintf(&b, "<capability>%s</capability>", netconfEscape(c))
 	}
 	fmt.Fprintf(&b, "</capabilities><session-id>%d</session-id></hello>", sessionID)
 	return []byte(b.String())

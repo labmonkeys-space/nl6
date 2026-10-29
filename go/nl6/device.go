@@ -1110,12 +1110,10 @@ func (d *DeviceSimulator) Start() error {
 		}
 	}
 
-	// Start the NETCONF listener. Off unless -netconf-enable is set, and
-	// then only on catalyst 9500 devices (startNetconfServer decides).
-	if manager != nil && manager.netconfSubsystemActive.Load() {
-		if err := d.startNetconfServer(manager.netconfPort); err != nil {
-			errors = append(errors, fmt.Sprintf("NETCONF: %v", err))
-		}
+	// Start the NETCONF listener. startNetconfServer decides: off unless
+	// -netconf-enable is set, and then only on catalyst 9500 devices.
+	if err := d.startNetconfServer(); err != nil {
+		errors = append(errors, fmt.Sprintf("NETCONF: %v", err))
 	}
 
 	// Start API server (if device has API resources)

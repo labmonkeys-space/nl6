@@ -287,7 +287,7 @@ func netconfChildText(op []byte, name string) (string, bool) {
 
 func netconfReplyOpen(messageID string) string {
 	return fmt.Sprintf(`<rpc-reply xmlns="%s" message-id="%s" xmlns:nc="%s">`,
-		netconfBaseNS, netconfXMLEscaper.Replace(messageID), netconfBaseNS)
+		netconfBaseNS, netconfEscape(messageID), netconfBaseNS)
 }
 
 func netconfOKReply(messageID string) []byte {
@@ -306,9 +306,6 @@ func netconfSubResultReply(messageID string, result iosxeSubResult, subID uint32
 	return []byte(b.String())
 }
 
-// netconfTextEscaper escapes the three characters element text needs.
-var netconfTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
-
 // netconfErrorReply renders an rpc-error. An empty messageID omits the
 // attribute, as for a request that carried none.
 func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr string) []byte {
@@ -323,10 +320,7 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 		fmt.Fprintf(&b, "<error-path%s>\n    %s\n  </error-path>", e.PathNS, e.Path)
 	}
 	if e.Message != "" {
-		// Quotes stay literal, matching the decoded captures (no raw wire
-		// bytes of this element were kept). &#34; would be equivalent XML;
-		// literal quotes keep the text readable.
-		b.WriteString(`<error-message xml:lang="en">` + netconfTextEscaper.Replace(e.Message) + "</error-message>")
+		b.WriteString(`<error-message xml:lang="en">` + netconfErrorMessageEscaper.Replace(e.Message) + "</error-message>")
 	}
 	if e.BadElement != "" || badAttr != "" {
 		fmt.Fprintf(&b, `<error-info xmlns="%s" xmlns:nc="%s">`, netconfBaseNS, netconfBaseNS)

@@ -46,6 +46,31 @@ func sshIdleTimeout() time.Duration {
 	return sshIdleTimeoutDefault
 }
 
+// newDeviceSSHConfig returns the SSH server config every device listener
+// uses: the simulator credentials and the given host key.
+func newDeviceSSHConfig(signer ssh.Signer) *ssh.ServerConfig {
+	config := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == USERNAME && string(pass) == PASSWORD {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("invalid credentials")
+		},
+	}
+	config.AddHostKey(signer)
+	return config
+}
+
+// deviceListenTCP binds a TCP listener for d, inside its network namespace
+// when it has one.
+func deviceListenTCP(d *DeviceSimulator, addr string) (net.Listener, error) {
+	if d.netNamespace != nil {
+		return d.netNamespace.ListenTCPInNamespace("tcp", addr)
+	}
+	lc := net.ListenConfig{Control: setSocketBufferSize}
+	return lc.Listen(context.Background(), "tcp", addr)
+}
+
 // SSH Server implementation
 func (s *SSHServer) Start() error {
 	// Use pre-generated host key if available, otherwise generate one
@@ -71,25 +96,10 @@ func (s *SSHServer) Start() error {
 		}
 	}
 
-	config := &ssh.ServerConfig{
-		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			if c.User() == USERNAME && string(pass) == PASSWORD {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("invalid credentials")
-		},
-	}
-	config.AddHostKey(signer)
+	config := newDeviceSSHConfig(signer)
 
 	addr := fmt.Sprintf("%s:%d", s.device.IP.String(), s.device.SSHPort)
-	var listener net.Listener
-	var err error
-	if s.device.netNamespace != nil {
-		listener, err = s.device.netNamespace.ListenTCPInNamespace("tcp", addr)
-	} else {
-		lc := net.ListenConfig{Control: setSocketBufferSize}
-		listener, err = lc.Listen(context.Background(), "tcp", addr)
-	}
+	listener, err := deviceListenTCP(s.device, addr)
 	if err != nil {
 		return err
 	}

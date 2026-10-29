@@ -49,11 +49,13 @@ type netconfServer struct {
 	closeOnce sync.Once
 }
 
-// startNetconfServer binds the device's NETCONF listener. It is a no-op
-// unless the subsystem is active and the device is a catalyst 9500.
+// startNetconfServer binds the device's NETCONF listener. It is the one
+// place that decides whether a device serves NETCONF: it is a no-op unless
+// the manager exists, the subsystem is active and the device is a
+// catalyst 9500.
 //
 // Caller MUST hold d.mu.
-func (d *DeviceSimulator) startNetconfServer(port int) error {
+func (d *DeviceSimulator) startNetconfServer() error {
 	if d == nil || d.netconfListener != nil {
 		return nil
 	}
@@ -65,28 +67,13 @@ func (d *DeviceSimulator) startNetconfServer(port int) error {
 		return fmt.Errorf("no shared SSH host key available for NETCONF on %s", d.IP)
 	}
 
-	addr := fmt.Sprintf("%s:%d", d.IP.String(), port)
-	var l net.Listener
-	var err error
-	if d.netNamespace != nil {
-		l, err = d.netNamespace.ListenTCPInNamespace("tcp", addr)
-	} else {
-		lc := net.ListenConfig{Control: setSocketBufferSize}
-		l, err = lc.Listen(context.Background(), "tcp", addr)
-	}
+	addr := fmt.Sprintf("%s:%d", d.IP.String(), mgr.netconfPort)
+	l, err := deviceListenTCP(d, addr)
 	if err != nil {
 		return fmt.Errorf("failed to start NETCONF server on %s: %v", addr, err)
 	}
 
-	cfg := &ssh.ServerConfig{
-		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			if c.User() == USERNAME && string(pass) == PASSWORD {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("invalid credentials")
-		},
-	}
-	cfg.AddHostKey(mgr.sharedSSHSigner)
+	cfg := newDeviceSSHConfig(mgr.sharedSSHSigner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	srv := &netconfServer{

@@ -6,8 +6,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"runtime"
@@ -44,8 +46,15 @@ type iosxeTestClient struct {
 
 func startIOSXETestClient(t *testing.T, dev *DeviceSimulator) *iosxeTestClient {
 	t.Helper()
+	return startIOSXETestClientRW(t, dev, func(c net.Conn) io.ReadWriter { return c })
+}
+
+// startIOSXETestClientRW is startIOSXETestClient with the server end of the
+// pipe wrapped, so a test can fail its writes.
+func startIOSXETestClientRW(t *testing.T, dev *DeviceSimulator, wrap func(net.Conn) io.ReadWriter) *iosxeTestClient {
+	t.Helper()
 	srv, cli := net.Pipe()
-	sess := newIOSXENetconfSession(1, dev, srv, newNetconfSessionRegistry())
+	sess := newIOSXENetconfSession(1, dev, wrap(srv), newNetconfSessionRegistry())
 	done := make(chan error, 1)
 	finished := make(chan struct{})
 	go func() { done <- sess.Serve(context.Background()); close(finished) }()
@@ -558,4 +567,121 @@ func TestNetconfSyncBeforeChangePushes(t *testing.T) {
 	if n := c.next(); n.target != "/interfaces/interface=GigabitEthernet1%2F0%2F48" || n.oper != "if-oper-state-lower-layer-down" {
 		t.Fatalf("change push after the sync: %s", n.raw)
 	}
+}
+
+// TestNetconfQueuedAdminEventUsesLinkAtMutation hands the session admin
+// events after the link already moved on, as when they wait in the listener
+// queue. Suppression must follow the link at mutation time, not the link
+// read at handling time.
+func TestNetconfQueuedAdminEventUsesLinkAtMutation(t *testing.T) {
+	t.Run("up link then link-down still pushes", func(t *testing.T) {
+		dev, st := newNetconfTestDevice(t)
+		c := startIOSXETestClient(t, dev)
+		sentinel := newNcSentinel(c, st)
+		oper := c.sub(ncXPath("GigabitEthernet1/0/24", "oper-status"))
+		admin := c.sub(ncXPath("GigabitEthernet1/0/24", "admin-status"))
+
+		evts := st.ApplyAdminStatus(24, AdminDown)
+		if res, _ := st.SetLinkState(24, OperDown); res != LinkMovedMasked {
+			t.Fatalf("link-down under admin-down: %v, want masked", res)
+		}
+		for _, e := range evts {
+			c.sess.handleStateChange(e)
+		}
+		if n := c.next(); n.sub != admin || n.admin != "if-state-down" {
+			t.Fatalf("admin leaf push: %s", n.raw)
+		}
+		if n := c.next(); n.sub != oper || n.oper != "if-oper-state-no-pass" {
+			t.Fatalf("oper leaf push: %s", n.raw)
+		}
+		sentinel.expectNext()
+	})
+	t.Run("down link then link-up stays silent", func(t *testing.T) {
+		dev, st := newNetconfTestDevice(t)
+		c := startIOSXETestClient(t, dev)
+		sentinel := newNcSentinel(c, st)
+		c.sub(ncXPath("GigabitEthernet1/0/24", "oper-status"))
+		c.sub(ncXPath("GigabitEthernet1/0/24", "admin-status"))
+		ncLink(st, 24, OperDown)
+		c.drain(2)
+
+		evts := st.ApplyAdminStatus(24, AdminDown)
+		if res, _ := st.SetLinkState(24, OperUp); res != LinkMovedMasked {
+			t.Fatalf("link-up under admin-down: %v, want masked", res)
+		}
+		for _, e := range evts {
+			c.sess.handleStateChange(e)
+		}
+		sentinel.expectNext()
+	})
+}
+
+// ncDeadClientRW passes reads through. Once a write contains failOn, that
+// write and every later one fail, as on a connection whose peer went away.
+type ncDeadClientRW struct {
+	net.Conn
+	failOn   string
+	failAll  atomic.Bool
+	failures atomic.Int64
+}
+
+func (w *ncDeadClientRW) Write(p []byte) (int, error) {
+	if w.failOn != "" && bytes.Contains(p, []byte(w.failOn)) {
+		w.failAll.Store(true)
+	}
+	if w.failAll.Load() {
+		w.failures.Add(1)
+		return 0, io.ErrClosedPipe
+	}
+	return w.Conn.Write(p)
+}
+
+func ncWaitServeEnd(t *testing.T, c *iosxeTestClient) {
+	t.Helper()
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a write error did not end the session")
+	}
+}
+
+// TestNetconfWriteErrorClosesSession: a client that goes away mid-stream
+// fails the server's write. The session must close at the first failed
+// write, on the sync path and on the writer path, and drop its listener.
+func TestNetconfWriteErrorClosesSession(t *testing.T) {
+	t.Run("sync", func(t *testing.T) {
+		dev, st := newNetconfTestDevice(t)
+		rw := &ncDeadClientRW{failOn: "GigabitEthernet1%2F0%2F5</target>"}
+		c := startIOSXETestClientRW(t, dev, func(conn net.Conn) io.ReadWriter { rw.Conn = conn; return rw })
+		c.subscribe(iosxeTestIfaceNm + "/oper-status")
+		c.drain(4)
+		ncWaitServeEnd(t, c)
+		c.sess.waitEvents()
+		if n := rw.failures.Load(); n != 1 {
+			t.Fatalf("%d failed writes, want 1: the sync went on after the first error", n)
+		}
+		if n := ncListenerCount(st); n != 0 {
+			t.Fatalf("%d listeners after the session ended", n)
+		}
+	})
+	t.Run("writer", func(t *testing.T) {
+		dev, st := newNetconfTestDevice(t)
+		rw := &ncDeadClientRW{}
+		c := startIOSXETestClientRW(t, dev, func(conn net.Conn) io.ReadWriter { rw.Conn = conn; return rw })
+		c.sub(ncXPath("GigabitEthernet1/0/24", "oper-status"))
+		rw.failAll.Store(true)
+		ncLink(st, 24, OperDown)
+		ncWaitServeEnd(t, c)
+		ncLink(st, 24, OperUp)
+		c.sess.waitEvents()
+		if n := rw.failures.Load(); n != 1 {
+			t.Fatalf("%d failed writes, want 1", n)
+		}
+		if n := ncListenerCount(st); n != 0 {
+			t.Fatalf("%d listeners after the session ended", n)
+		}
+		if n := c.sess.ev.out.len(); n != 0 {
+			t.Fatalf("%d pushes queued for a closed session", n)
+		}
+	})
 }
