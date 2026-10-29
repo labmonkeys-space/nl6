@@ -704,8 +704,8 @@ docs-serve: node_modules/.package-lock.json
 docs-check-orphans: check-node
 	node scripts/check-doc-orphans.mjs
 
-## docs-build: Build the docs site (onBrokenLinks=throw; fails on broken links / warnings / orphaned pages / missing CSP)
-docs-build: node_modules/.package-lock.json docs-check-orphans
+## docs-build: Build the docs site (onBrokenLinks=throw; fails on type errors / broken links / warnings / orphaned pages / missing CSP)
+docs-build: node_modules/.package-lock.json docs-typecheck docs-check-orphans
 	$(NPM) run build
 	node scripts/check-csp.mjs build
 
