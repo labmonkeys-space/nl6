@@ -55,6 +55,10 @@ type netconfSession struct {
 	onStart       func(ctx context.Context)
 	onSubscribe   func(sub *netconfSub)
 	onUnsubscribe func(sub *netconfSub)
+
+	// ev carries the state-change push machinery. Nil unless the session
+	// was built by newIOSXENetconfSession.
+	ev *netconfEvents
 }
 
 func newNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry) *netconfSession {

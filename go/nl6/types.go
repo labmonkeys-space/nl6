@@ -717,6 +717,12 @@ type SimulatorManager struct {
 	gnmiStateEventsEmitted uint64 // atomic; cumulative state-change events fanned out to ON_CHANGE subs
 	gnmiStateEventsDropped uint64 // atomic; per-channel oldest-drop overflow
 
+	// NETCONF notification counters (atomic). Sent counts pushes written to
+	// a session. Dropped counts pushes a slow session lost to its oldest-drop
+	// send queue.
+	netconfNotificationsSent    uint64
+	netconfNotificationsDropped uint64
+
 	// gNMI dial-out subsystem state. Each dial-out device owns its own
 	// grpc.ClientConn + Publish stream on its gnmiDialoutExporter (no
 	// shared connection pool — a single ClientConn caps at ~100 concurrent
