@@ -75,7 +75,7 @@ func TestNetconfTimeFormats(t *testing.T) {
 	if got := iosxeEventTime(time.Date(2026, 10, 29, 11, 10, 17, 420_000_000, time.UTC)); got != "2026-10-29T11:10:17.42Z" {
 		t.Errorf("iosxeEventTime = %q", got)
 	}
-	if got := iosxeTimestamp(time.Date(2026, 10, 28, 23, 52, 46, 271_000_000, time.UTC)); got != "2026-10-28T23:52:46.271+00:00" {
+	if got := iosxeTimestamp(time.Date(2026, 10, 28, 23, 52, 46, 271_000_000, time.UTC)); got != "2026-10-28T23:52:46.271000+00:00" {
 		t.Errorf("iosxeTimestamp = %q", got)
 	}
 }

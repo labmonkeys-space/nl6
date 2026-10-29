@@ -92,8 +92,10 @@ func iosxeEventTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.00Z")
 }
 
+// iosxeTimestamp formats last-change and discontinuity-time for pushes: UTC,
+// six fractional digits at millisecond precision, as the device sends them.
 func iosxeTimestamp(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000+00:00")
+	return t.UTC().Format("2006-01-02T15:04:05.000000+00:00")
 }
 
 func iosxeLeaf(b *bytes.Buffer, name, val string) {
