@@ -25,10 +25,13 @@ type netconfTestClient struct {
 	msgSeq int
 }
 
-func startNetconfTestClient(t *testing.T, id uint32, reg *netconfSessionRegistry, clientBase11 bool) (*netconfTestClient, *netconfSession) {
+func startNetconfTestClient(t *testing.T, id uint32, reg *netconfSessionRegistry, clientBase11 bool, cfg ...func(*netconfSession)) (*netconfTestClient, *netconfSession) {
 	t.Helper()
 	srv, cli := net.Pipe()
 	sess := newNetconfSession(id, nil, srv, reg)
+	for _, f := range cfg {
+		f(sess)
+	}
 	done := make(chan error, 1)
 	go func() { done <- sess.Serve(context.Background()) }()
 	t.Cleanup(func() { _ = cli.Close(); sess.close() })
@@ -102,9 +105,6 @@ func TestNetconfHelloAdvertisesCat9300Capabilities(t *testing.T) {
 	}
 	hello := string(netconfServerHello(7))
 	for _, c := range netconfHelloCapabilities {
-		if strings.HasPrefix(c, "http://cisco.com/ns/yang/Cisco-IOS-XE-interfaces-oper") {
-			continue // absent from the capture, see netconfHelloCapabilities
-		}
 		if !have[c] {
 			t.Errorf("capability not in the capture: %s", c)
 		}
@@ -112,8 +112,13 @@ func TestNetconfHelloAdvertisesCat9300Capabilities(t *testing.T) {
 			t.Errorf("capability missing from hello: %s", c)
 		}
 	}
-	if len(netconfHelloCapabilities) != 10 {
-		t.Errorf("hello advertises %d capabilities, want 10", len(netconfHelloCapabilities))
+	if len(netconfHelloCapabilities) != 9 {
+		t.Errorf("hello advertises %d capabilities, want 9", len(netconfHelloCapabilities))
+	}
+	for _, never := range []string{"interfaces-oper", "yang-library"} {
+		if strings.Contains(hello, never) {
+			t.Errorf("hello must not mention %s", never)
+		}
 	}
 	for _, want := range []string{
 		"urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1.1",
@@ -155,6 +160,10 @@ func TestNetconfDeleteSubscription(t *testing.T) {
 	r := c.rpc(netconfTestSub(netconfTestOperXPath))
 	if !strings.Contains(r, "notif-bis:ok</subscription-result>") || !strings.Contains(r, ">2147483648</subscription-id>") {
 		t.Fatalf("establish reply: %s", r)
+	}
+	// The sub is appended just after the reply is written.
+	for i := 0; i < 500 && len(sess.Subs()) != 1; i++ {
+		time.Sleep(10 * time.Millisecond)
 	}
 	if len(sess.Subs()) != 1 {
 		t.Fatalf("subs = %d", len(sess.Subs()))
@@ -205,7 +214,8 @@ func TestNetconfKillSession(t *testing.T) {
 	}
 	victim.waitDone()
 	r = killer.rpc(`<kill-session><session-id>2</session-id></kill-session>`)
-	for _, want := range []string{"<error-type>protocol</error-type>", "<error-tag>invalid-value</error-tag>", "<bad-element>session-id</bad-element>"} {
+	for _, want := range []string{"<error-type>protocol</error-type>", "<error-tag>invalid-value</error-tag>", "<bad-element>session-id</bad-element>\n</error-info>",
+		`<error-info xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">`} {
 		if !strings.Contains(r, want) {
 			t.Errorf("kill own lacks %s: %s", want, r)
 		}
@@ -288,5 +298,125 @@ func TestNetconfSubscriptionIDsStartAt2147483648(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("onSubscribe not called")
 		}
+	}
+}
+
+func TestNetconfOnUnsubscribeOnDelete(t *testing.T) {
+	got := make(chan uint32, 4)
+	c, _ := startNetconfTestClient(t, 1, newNetconfSessionRegistry(), true, func(s *netconfSession) {
+		s.onUnsubscribe = func(sub *netconfSub) { got <- sub.id }
+	})
+	c.rpc(netconfTestSub(netconfTestOperXPath))
+	c.rpc(`<delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"><subscription-id>2147483648</subscription-id></delete-subscription>`)
+	select {
+	case id := <-got:
+		if id != 2147483648 {
+			t.Errorf("unsubscribed %d", id)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("onUnsubscribe not called after delete")
+	}
+	// A failed delete must not call the hook.
+	c.rpc(`<delete-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"><subscription-id>9</subscription-id></delete-subscription>`)
+	select {
+	case id := <-got:
+		t.Errorf("unexpected unsubscribe %d", id)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestNetconfOnUnsubscribeOnExit(t *testing.T) {
+	for _, how := range []string{"close-session", "kill-session", "eof"} {
+		t.Run(how, func(t *testing.T) {
+			reg := newNetconfSessionRegistry()
+			got := make(chan uint32, 4)
+			c, _ := startNetconfTestClient(t, 1, reg, true, func(s *netconfSession) {
+				s.onUnsubscribe = func(sub *netconfSub) { got <- sub.id }
+			})
+			c.rpc(netconfTestSub(netconfTestOperXPath))
+			c.rpc(netconfTestSub(netconfTestOperXPath))
+			switch how {
+			case "close-session":
+				c.rpc(`<close-session/>`)
+			case "kill-session":
+				k, _ := startNetconfTestClient(t, 2, reg, true)
+				k.rpc(`<get/>`)
+				if r := k.rpc(`<kill-session><session-id>1</session-id></kill-session>`); !strings.Contains(r, "<ok/>") {
+					t.Fatalf("kill: %s", r)
+				}
+			case "eof":
+				_ = c.conn.Close()
+			}
+			c.waitDone()
+			for _, want := range []uint32{2147483648, 2147483649} {
+				select {
+				case id := <-got:
+					if id != want {
+						t.Errorf("unsubscribed %d, want %d", id, want)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatalf("onUnsubscribe missing for %d", want)
+				}
+			}
+		})
+	}
+}
+
+func TestNetconfOnStartContextEnds(t *testing.T) {
+	for _, how := range []string{"close-session", "kill-session"} {
+		t.Run(how, func(t *testing.T) {
+			reg := newNetconfSessionRegistry()
+			ctxCh := make(chan context.Context, 1)
+			c, _ := startNetconfTestClient(t, 1, reg, true, func(s *netconfSession) {
+				s.onStart = func(ctx context.Context) { ctxCh <- ctx }
+			})
+			c.rpc(`<get/>`) // the hook has run before the first RPC is handled
+			ctx := <-ctxCh
+			if ctx.Err() != nil {
+				t.Fatal("ctx done too early")
+			}
+			if how == "close-session" {
+				c.rpc(`<close-session/>`)
+			} else {
+				k, _ := startNetconfTestClient(t, 2, reg, true)
+				k.rpc(`<kill-session><session-id>1</session-id></kill-session>`)
+			}
+			c.waitDone()
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+				t.Fatal("onStart ctx not done after session end")
+			}
+		})
+	}
+}
+
+func TestNetconfSubscriptionVisibleAfterReply(t *testing.T) {
+	seen := make(chan int, 1)
+	var sess *netconfSession
+	c, s := startNetconfTestClient(t, 1, newNetconfSessionRegistry(), true, func(s *netconfSession) {
+		s.onSubscribe = func(*netconfSub) { seen <- len(sess.Subs()) }
+	})
+	sess = s
+	req := `<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="v1">` + netconfTestSub(netconfTestOperXPath) + `</rpc>`
+	if err := c.f.WriteMessage([]byte(req)); err != nil {
+		t.Fatal(err)
+	}
+	// net.Pipe blocks the server's reply write until we read it, so the
+	// subscription must not be visible yet.
+	time.Sleep(100 * time.Millisecond)
+	if n := len(sess.Subs()); n != 0 {
+		t.Fatalf("subscription visible before its reply was written (%d)", n)
+	}
+	if _, err := c.f.ReadMessage(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-seen:
+		if n != 1 {
+			t.Errorf("onSubscribe saw %d subs, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("onSubscribe not called")
 	}
 }

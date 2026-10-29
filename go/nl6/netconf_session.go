@@ -50,8 +50,11 @@ type netconfSession struct {
 
 	// onStart runs once after the hello exchange. onSubscribe runs right
 	// after an ok establish-subscription reply was written. Both may be nil.
-	onStart     func(ctx context.Context)
-	onSubscribe func(sub *netconfSub)
+	// onUnsubscribe runs after a successful delete-subscription and once for
+	// every subscription still held when Serve exits, on any path.
+	onStart       func(ctx context.Context)
+	onSubscribe   func(sub *netconfSub)
+	onUnsubscribe func(sub *netconfSub)
 }
 
 func newNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry) *netconfSession {
@@ -105,6 +108,9 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 		defer s.reg.remove(s)
 	}
 	defer s.close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	defer s.teardown()
 
 	stop := make(chan struct{})
 	defer close(stop)
@@ -146,6 +152,20 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 		if done := s.handleRPC(msg); done {
 			return nil
 		}
+	}
+}
+
+// teardown reports every remaining subscription as removed.
+func (s *netconfSession) teardown() {
+	s.mu.Lock()
+	subs := s.subs
+	s.subs = nil
+	s.mu.Unlock()
+	if s.onUnsubscribe == nil {
+		return
+	}
+	for _, sub := range subs {
+		s.onUnsubscribe(sub)
 	}
 }
 
@@ -275,14 +295,14 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 	}
 	fmt.Fprintf(&b, "<rpc-error><error-type>%s</error-type><error-tag>%s</error-tag><error-severity>error</error-severity>", e.Type, e.Tag)
 	if e.BadElement != "" || badAttr != "" {
-		b.WriteString("<error-info>")
+		fmt.Fprintf(&b, `<error-info xmlns="%s" xmlns:nc="%s">`, netconfBaseNS, netconfBaseNS)
 		if badAttr != "" {
 			fmt.Fprintf(&b, "<bad-attribute>%s</bad-attribute>", badAttr)
 		}
 		if e.BadElement != "" {
 			fmt.Fprintf(&b, "<bad-element>%s</bad-element>", e.BadElement)
 		}
-		b.WriteString("</error-info>")
+		b.WriteString("\n</error-info>")
 	}
 	b.WriteString("</rpc-error></rpc-reply>")
 	return []byte(b.String())
@@ -335,13 +355,17 @@ func (s *netconfSession) handleEstablish(r netconfRPC) bool {
 	if s.reg != nil {
 		subID = s.reg.nextSubID()
 	}
-	sub := &netconfSub{id: subID, sel: sel}
-	s.subs = append(s.subs, sub)
 	s.mu.Unlock()
 
+	// The subscription becomes visible only after its reply is on the wire.
+	// RPCs are handled by one goroutine, so the cap check cannot be raced.
 	if err := s.writeMessage(netconfSubResultReply(r.messageID, iosxeSubOK, subID, true)); err != nil {
 		return true
 	}
+	sub := &netconfSub{id: subID, sel: sel}
+	s.mu.Lock()
+	s.subs = append(s.subs, sub)
+	s.mu.Unlock()
 	if s.onSubscribe != nil {
 		s.onSubscribe(sub)
 	}
@@ -357,6 +381,9 @@ func (s *netconfSession) handleDelete(r netconfRPC) []byte {
 			if sub.id == uint32(n) {
 				s.subs = append(s.subs[:i], s.subs[i+1:]...)
 				s.mu.Unlock()
+				if s.onUnsubscribe != nil {
+					s.onUnsubscribe(sub)
+				}
 				return netconfSubResultReply(r.messageID, iosxeSubOK, 0, false)
 			}
 		}

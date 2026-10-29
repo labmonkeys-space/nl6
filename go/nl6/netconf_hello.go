@@ -20,10 +20,10 @@ const (
 	netconfYangPush = "urn:ietf:params:xml:ns:yang:ietf-yang-push"
 )
 
-// netconfHelloCapabilities is what the simulated switch advertises. The
-// module lines for the ietf-* and deviation modules are copied from a Catalyst
-// 9300 hello. The interfaces-oper line follows the same shape with the module
-// revision shipped in the YANG file.
+// netconfHelloCapabilities is what the simulated switch advertises. Every line
+// is byte-identical to the Catalyst 9300 hello. That hello has no line for
+// Cisco-IOS-XE-interfaces-oper (YANG 1.1 modules appear only through
+// yang-library), and nl6 serves no yang-library data, so it advertises neither.
 var netconfHelloCapabilities = []string{
 	netconfBase10,
 	netconfBase11,
@@ -33,7 +33,6 @@ var netconfHelloCapabilities = []string{
 	"urn:ietf:params:xml:ns:yang:ietf-yang-push?module=ietf-yang-push&revision=2021-03-01&features=on-change&deviations=cisco-xe-ietf-yang-push-deviation",
 	"http://cisco.com/ns/yang/cisco-xe-ietf-event-notifications-deviation?module=cisco-xe-ietf-event-notifications-deviation&revision=2018-12-03",
 	"http://cisco.com/ns/yang/cisco-xe-ietf-yang-push-deviation?module=cisco-xe-ietf-yang-push-deviation&revision=2018-12-03",
-	"http://cisco.com/ns/yang/Cisco-IOS-XE-interfaces-oper?module=Cisco-IOS-XE-interfaces-oper&revision=2026-08-01",
 	"urn:ietf:params:xml:ns:yang:ietf-interfaces?module=ietf-interfaces&revision=2014-05-08&features=pre-provisioning,if-mib,arbitrary-names&deviations=cisco-xe-ietf-ip-deviation",
 }
 
