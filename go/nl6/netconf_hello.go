@@ -11,13 +11,11 @@ import (
 )
 
 const (
-	netconfBaseNS   = "urn:ietf:params:xml:ns:netconf:base:1.0"
-	netconfBase10   = "urn:ietf:params:netconf:base:1.0"
-	netconfBase11   = "urn:ietf:params:netconf:base:1.1"
-	netconfDraftNS  = "urn:ietf:params:xml:ns:yang:ietf-event-notifications"
-	netconfRFC8639  = "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"
-	netconfNotifNS  = "urn:ietf:params:xml:ns:netconf:notification:1.0"
-	netconfYangPush = "urn:ietf:params:xml:ns:yang:ietf-yang-push"
+	netconfBaseNS  = "urn:ietf:params:xml:ns:netconf:base:1.0"
+	netconfBase10  = "urn:ietf:params:netconf:base:1.0"
+	netconfBase11  = "urn:ietf:params:netconf:base:1.1"
+	netconfDraftNS = "urn:ietf:params:xml:ns:yang:ietf-event-notifications"
+	netconfRFC8639 = "urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"
 )
 
 // netconfHelloCapabilities is what the simulated switch advertises. Every line

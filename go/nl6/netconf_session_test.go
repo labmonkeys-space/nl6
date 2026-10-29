@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -223,9 +224,16 @@ func TestNetconfCloseSession(t *testing.T) {
 	}
 }
 
+type netconfTestCloser struct{ closed atomic.Bool }
+
+func (c *netconfTestCloser) Close() error { c.closed.Store(true); return nil }
+
 func TestNetconfKillSession(t *testing.T) {
 	reg := newNetconfSessionRegistry()
-	victim, _ := startNetconfTestClient(t, 1, reg, true)
+	// conn stands in for the victim's SSH connection, which kill-session
+	// closes along with the channel.
+	conn := &netconfTestCloser{}
+	victim, _ := startNetconfTestClient(t, 1, reg, true, func(s *netconfSession) { s.conn = conn })
 	killer, _ := startNetconfTestClient(t, 2, reg, true)
 	// Registration happens in Serve, which races the helper return. A
 	// completed RPC on each session proves both are registered.
@@ -234,6 +242,9 @@ func TestNetconfKillSession(t *testing.T) {
 	r := killer.rpc(`<kill-session><session-id>1</session-id></kill-session>`)
 	if !strings.Contains(r, "<ok/>") {
 		t.Fatalf("kill other: %s", r)
+	}
+	if !conn.closed.Load() {
+		t.Fatal("kill-session left the victim's connection open")
 	}
 	victim.waitDone()
 	r = killer.rpc(`<kill-session><session-id>2</session-id></kill-session>`)
@@ -441,5 +452,53 @@ func TestNetconfSubscriptionVisibleAfterReply(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("onSubscribe not called")
+	}
+}
+
+// A client may bind the base namespace to a prefix. A hello in another
+// namespace ends the session.
+func TestNetconfAcceptsPrefixedHello(t *testing.T) {
+	for _, c := range []struct {
+		name, hello string
+		ok          bool
+	}{
+		{"prefixed", `<nc:hello xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"><nc:capabilities><nc:capability>urn:ietf:params:netconf:base:1.0</nc:capability></nc:capabilities></nc:hello>`, true},
+		{"default namespace", `<?xml version="1.0" encoding="UTF-8"?><hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>`, true},
+		{"no namespace", `<hello><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>`, false},
+		{"other element", `<nc:rpc xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="1"><nc:hello/></nc:rpc>`, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv, cli := net.Pipe()
+			sess := newNetconfSession(1, nil, srv, nil)
+			done := make(chan error, 1)
+			go func() { done <- sess.Serve(context.Background()) }()
+			t.Cleanup(func() { _ = cli.Close(); sess.close() })
+			_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+			f := newNetconfFramer(cli, cli)
+			if _, err := f.ReadMessage(); err != nil {
+				t.Fatalf("server hello: %v", err)
+			}
+			if err := f.WriteMessage([]byte(c.hello)); err != nil {
+				t.Fatalf("client hello: %v", err)
+			}
+			if !c.ok {
+				select {
+				case err := <-done:
+					if err == nil {
+						t.Fatal("session ended without an error")
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("session kept running after a bad hello")
+				}
+				return
+			}
+			if err := f.WriteMessage([]byte(`<rpc xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="m1"><close-session/></rpc>`)); err != nil {
+				t.Fatalf("write rpc: %v", err)
+			}
+			r, err := f.ReadMessage()
+			if err != nil || !strings.Contains(string(r), "<ok/>") {
+				t.Fatalf("close-session after the hello: %q %v", r, err)
+			}
+		})
 	}
 }

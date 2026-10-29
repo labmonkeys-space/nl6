@@ -186,21 +186,21 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 	defer s.untrack(conn)
 	defer conn.Close()
 
-	// The SSH idle deadline bounds the handshake only. A NETCONF session
-	// sits quiet between notifications for hours, so the deadline is
-	// cleared once the client is in and TCP keepalive takes over.
+	// The SSH idle deadline bounds the handshake and the wait for the
+	// netconf subsystem. A NETCONF session sits quiet between notifications
+	// for hours, so dispatch clears the deadline once the session starts
+	// and TCP keepalive takes over.
 	_ = conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 	sc, chans, reqs, err := ssh.NewServerConn(conn, s.cfg)
 	if err != nil {
 		return
 	}
 	defer sc.Close()
-	_ = conn.SetDeadline(time.Time{})
 	if tc, ok := conn.(*net.TCPConn); ok {
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(netconfKeepAlivePeriod)
 	}
-	s.dispatch(sc, chans, reqs)
+	s.dispatch(conn, sc, chans, reqs)
 }
 
 // dispatch is the connection's one control loop. It refuses global requests,
@@ -213,7 +213,7 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 // One NETCONF session runs per connection, as on IOS XE. A session channel
 // that opens while another still waits for its subsystem replaces it. One
 // that opens after the session started is refused.
-func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
+func (s *netconfServer) dispatch(conn net.Conn, sc *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) {
 	var (
 		pending     ssh.Channel // accepted, waiting for the subsystem
 		pendingReqs <-chan *ssh.Request
@@ -289,6 +289,7 @@ func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel
 			activeReqs, started = pendingReqs, true
 			pending, pendingReqs = nil, nil
 			wait.Stop()
+			_ = conn.SetDeadline(time.Time{})
 			// This goroutine is still counted, so the counter is positive and
 			// Add may run alongside Wait.
 			s.wg.Add(1)
@@ -319,8 +320,10 @@ func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel) {
 	if s.ctx.Err() != nil {
 		return
 	}
-	atomic.AddUint64(&s.mgr.netconfSessionsOpened, 1)
 	sess := newIOSXENetconfSession(s.sessionSeq.Add(1), s.dev, ch, s.reg)
+	// kill-session closes the victim's whole connection, not only its
+	// channel.
+	sess.conn = sc
 	if err := sess.Serve(s.ctx); err != nil {
 		log.Printf("NETCONF session on %s ended: %v", s.dev.IP, err)
 	}

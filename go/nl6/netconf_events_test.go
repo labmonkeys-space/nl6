@@ -546,7 +546,8 @@ func TestNetconfSyncBeforeChangePushes(t *testing.T) {
 		t.Fatalf("first sync push: %s", n.raw)
 	}
 	ncLink(st, 48, OperDown)
-	time.Sleep(20 * time.Millisecond) // let the writer reach the pipe
+	// The change is queued while the sync still holds the pipe.
+	waitNetconf(t, "change push queued", c.sess.ev.writing.Load)
 	for i := 2; i <= 48; i++ {
 		n := c.next()
 		want := "/interfaces/interface=GigabitEthernet1%2F0%2F" + strconv.Itoa(i)

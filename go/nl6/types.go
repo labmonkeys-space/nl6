@@ -726,9 +726,6 @@ type SimulatorManager struct {
 	// send queue.
 	netconfNotificationsSent    uint64
 	netconfNotificationsDropped uint64
-	// netconfSessionsOpened counts NETCONF sessions that got past the SSH
-	// handshake (atomic).
-	netconfSessionsOpened uint64
 	// netconfPort and netconfSubsystemActive are set once by
 	// StartNetconfSubsystem. The subsystem is off by default.
 	netconfPort            int

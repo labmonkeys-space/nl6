@@ -20,6 +20,8 @@ When a session ends, the whole SSH connection closes.
 - A c8000v on IOS XE 26.01.02 gave the dialect, the refusals, the all-interface subscriptions and the `no shutdown` sequence.
 - A Catalyst 9300 (C9300LM-24U-4Y, IOS XE 26.02.1) gave the hello, percent-encoded targets, row leaves, the RPC table and the silent admin change on an unplugged port.
 - Both live in the planning artifacts of the NETCONF design, not in this repo.
+- The silence rule for admin changes comes from an unplugged Cat9300 port and an up loopback. A cabled Cat9300 port was never captured. nl6 pushes admin changes on an interface with a link because the c8000v router showed it.
+- The `/rpc` error-path of the `unknown-namespace` reply to an RFC 8639 `establish-subscription` is confirmed on the c8000v only.
 - The golden fixtures in `go/nl6/testdata/netconf/` are the Cat9300 notifications.
 
 ## Decisions
@@ -48,14 +50,15 @@ When a session ends, the whole SSH connection closes.
 - R18: an admin and oper pair from `ApplyAdminStatus` merges into one push per subscription.
 - R19: the 9500 profile has no loopbacks or SVIs, so the no-invalid-step rule for loopbacks is not implemented. Add it if a profile gains loopbacks.
 - R21: one NETCONF session per SSH connection.
+- R17 ambiguity: the captures cannot tell the per-subscription grouping apart from an order by leaf type (row, admin leaf, oper leaf). Every captured sequence fits both. `netconf_events.go` implements the grouping: one push per affected subscription, newest first, every `no shutdown` step but the last per subscription, then `ready` across all.
 - R25: the live link-up and shutdown comparison against the c8000v is incomplete. Those sequences are pinned by unit tests built from the c8000v capture and the Cat9300 captures.
 
 ## Traps
 
 - `SSHServer.handleConnection` in `ssh.go` sets an absolute 5-minute connection deadline for the interactive shell.
 - A NETCONF session sits quiet for hours, so reusing that path would kill it at 5 minutes.
-- The NETCONF listener has its own accept loop. It uses the 5-minute deadline for the handshake only, clears it, and relies on TCP keepalive.
-- `TestNetconfSessionOutlivesSSHIdleDeadline` pins this. `sshIdleTimeoutOverride` is atomic because port 22 goroutines read it.
+- The NETCONF listener has its own accept loop. The 5-minute deadline bounds the handshake and the wait for the `netconf` subsystem. It is cleared when the session starts, and TCP keepalive takes over.
+- `TestNetconfSessionOutlivesSSHIdleDeadline` and `TestNetconfDeadlineUntilSubsystem` pin this. `sshIdleTimeoutOverride` is atomic because port 22 goroutines read it.
 - The engine listener (`AddListener`) counts emitted and dropped events into the same `state_events_emitted` and `state_events_dropped` totals that `GET /api/v1/gnmi/status` reports, so those totals include NETCONF listeners.
 - `RemoveListener` must run before the listener channel is closed.
 - `SetNotify` belongs to the Tier C traps and syslog. NETCONF never calls it.
@@ -65,6 +68,9 @@ When a session ends, the whole SSH connection closes.
 
 - `make test-interop-netconf` diffs normalised replies and notifications between an in-process 9500 and a reference IOS XE device.
 - The reference is a c8000v VM. Its subscription limit is about 128 per device.
+- The lab record: the c8000v at 192.168.11.71, VM 8601 on the Proxmox host `root@192.168.10.92`, second NIC `virtio=BC:24:11:55:44:BC,bridge=vmbr1`. The test has no defaults. Set `NL6_NETCONF_REF`, `NL6_NETCONF_REF_PASSWORD`, `NL6_NETCONF_REF_PVE`, `NL6_NETCONF_REF_VMID` and `NL6_NETCONF_REF_NIC`, or it skips.
+- Use the Proxmox host's IP, not its name. The Cisco VPN breaks `*.labmonkeys.tech` DNS.
+- The test restores the reference link and admin state on a normal exit and on a test failure. A `-timeout` or Ctrl-C leaves them as they were.
 - Its `pubd` process crashes after pushing interface changes on 26.01.02. It restarts on its own.
 - A dropped probe session leaks subscriptions on the VM, which then answers "application communication failure". Reboot the VM to clear it.
 - Do not run a 257-subscription cap probe against the c8000v.

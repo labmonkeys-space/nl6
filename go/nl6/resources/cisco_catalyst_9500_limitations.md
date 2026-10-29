@@ -12,7 +12,7 @@ Say an operator runs `shutdown` or `no shutdown` on an unplugged port.
 nl6 sends a trap and a syslog message.
 nl6 sends no NETCONF notification.
 A real Catalyst 9300 behaves the same way.
-The state still changes, so SNMP, gNMI and a NETCONF client that reads the state see the new value.
+The state still changes, so SNMP, gNMI and a NETCONF subscription opened afterwards see the new value in its initial push.
 Interfaces whose link is up push admin changes as usual.
 
 ## Fast flaps are reported
@@ -58,8 +58,7 @@ nl6 omits these leaves because it has no real source for them.
 
 Counter changes alone never trigger a push, as on the device.
 
-## Never captured
+## Interfaces with a link
 
-A cabled Catalyst 9300 port was never captured.
-The silence rule above comes from an unplugged port and an up loopback.
-nl6 pushes admin changes on an interface with a link because a router showed it.
+nl6 pushes admin changes on an interface whose link is up.
+A cabled Catalyst 9300 port was never checked, so a real switch may differ here.

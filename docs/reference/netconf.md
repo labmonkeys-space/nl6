@@ -29,7 +29,7 @@ A session lives as long as the client keeps it, and nl6 does not close idle sess
 ssh -s -p 830 simadmin@10.42.0.1 netconf
 ```
 
-The hello advertises base 1.0 and 1.1, `notification`, `interleave`, the draft `ietf-event-notifications`, `ietf-yang-push`, the two Cisco deviation modules and `ietf-interfaces`.
+The hello advertises base 1.0 and 1.1, `notification`, `interleave`, the draft `ietf-event-notifications`, `ietf-yang-push`, the two Cisco deviation modules `cisco-xe-ietf-event-notifications-deviation` and `cisco-xe-ietf-yang-push-deviation`, and `ietf-interfaces`.
 Framing switches to chunked after both sides advertise base 1.1.
 
 ## Subscribe
@@ -70,6 +70,7 @@ Statistics changes alone never push.
 | Container `/interfaces-ios-xe-oper:interfaces` | `notif-bis:error-no-such-option` |
 | Path under `/if:interfaces-state` (`ietf-interfaces`) | `notif-bis:error-other` |
 | Malformed XPath, or neither `dampening-period` nor `period` | `notif-bis:error-other` |
+| Missing `xpath-filter` | `notif-bis:error-other` |
 | Periodic subscription (`period`) | `notif-bis:error-no-such-option` |
 | `dampening-period` other than 0 | `rpc-error`, type `protocol`, tag `invalid-value`, `bad-element` `dampening-period` |
 | `establish-subscription` in the RFC 8639 namespace | `rpc-error`, tag `unknown-namespace` |
@@ -116,9 +117,11 @@ The interface name in `<target>` is percent-encoded, so `/` becomes `%2F`.
 | Link testing, admin up | `if-state-up` | `if-oper-state-test` |
 | Link unknown, dormant or not present | `if-state-up` | `if-oper-state-unknown`, `-dormant`, `-not-present` |
 
+A change pushes one notification per affected subscription, newest subscription first.
 `no shutdown` sends `if-oper-state-invalid`, then `if-oper-state-lower-layer-down`, then `if-oper-state-ready`.
-A change pushes one notification per affected subscription.
-Within one subscription the order is row, admin leaf, oper leaf.
+nl6 sends the first two steps to each subscription in turn, newest subscription first.
+Then it sends `if-oper-state-ready` to all of them, again newest first.
+The captures cannot tell this order apart from an order by leaf type (row, admin leaf, oper leaf).
 An `admin-status` subscription re-sends its unchanged value when anything else in the row changes.
 
 ## Status endpoint

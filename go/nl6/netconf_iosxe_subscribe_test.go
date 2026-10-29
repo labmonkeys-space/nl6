@@ -46,6 +46,12 @@ func TestNetconfParseEstablishSubscription(t *testing.T) {
 		{"no timing", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[name='X']", ""), iosxeSelection{}, iosxeSubErrorOther, nil},
 		{"dampening nonzero", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[name='X']", `<yp:dampening-period>500</yp:dampening-period>`), iosxeSelection{}, "", &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period",
 			Path: "/rpc/notif-bis:establish-subscription/yp:dampening-period", PathNS: iosxeDampPathNS, Message: `"500" is out of range.`}},
+		{"dampening 00", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[name='X']", `<yp:dampening-period>00</yp:dampening-period>`), iosxeSelection{"X", iosxeLeafRow}, iosxeSubOK, nil},
+		{"dampening non-integer", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[name='X']", `<yp:dampening-period>zero</yp:dampening-period>`), iosxeSelection{}, "", &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period",
+			Path: "/rpc/notif-bis:establish-subscription/yp:dampening-period", PathNS: iosxeDampPathNS}},
+		{"missing xpath-filter", []byte(`<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications" xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push"><stream>yp:yang-push</stream>` + iosxeTestDamp0 + `</establish-subscription>`), iosxeSelection{}, iosxeSubErrorOther, nil},
+		{"malformed XML body", []byte(`<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"><stream>yp:yang-push</stream><yp:xpath-filter>`), iosxeSelection{}, iosxeSubErrorOther, nil},
+		{"non-name predicate", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[if-index='24']/oper-status", iosxeTestDamp0), iosxeSelection{}, iosxeSubErrorOther, nil},
 		{"periodic", iosxeSubReq("yp:yang-push", iosxeTestIfaceNm+"[name='X']", `<yp:period>1000</yp:period>`), iosxeSelection{}, iosxeSubNoSuchOption, nil},
 	}
 	for _, c := range cases {

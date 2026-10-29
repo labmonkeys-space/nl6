@@ -29,21 +29,20 @@ import (
 // IOS XE device, normalises both streams and diffs them.
 //
 // Gated by NL6_NETCONF_INTEROP=1; run it with `make test-interop-netconf`.
-// The reference is NL6_NETCONF_REF (host, default the lab c8000v),
-// NL6_NETCONF_REF_USER (default admin) and NL6_NETCONF_REF_PASSWORD
-// (required). Its carrier is toggled through Proxmox (NL6_NETCONF_REF_PVE,
-// VM 8601, second NIC) and its admin state through native-config shutdown.
+// The reference is NL6_NETCONF_REF (host), NL6_NETCONF_REF_USER (default
+// admin) and NL6_NETCONF_REF_PASSWORD. Its carrier is toggled through
+// Proxmox: NL6_NETCONF_REF_PVE is the ssh target of the Proxmox host,
+// NL6_NETCONF_REF_VMID the VM and NL6_NETCONF_REF_NIC the `qm set --net1`
+// spec of its second NIC. Its admin state is toggled through native-config
+// shutdown. The test skips when any of these is unset. There are no lab
+// defaults.
 
 const (
 	netconfInteropNl6If = "GigabitEthernet1/0/24"
 	netconfInteropNl6Ix = 24
 	netconfInteropRefIf = "GigabitEthernet2"
 
-	netconfInteropRefHost = "192.168.11.71"
 	netconfInteropRefUser = "admin"
-	netconfInteropPVE     = "root@192.168.10.92"
-	netconfInteropVMID    = "8601"
-	netconfInteropVMNic   = "virtio=BC:24:11:55:44:BC,bridge=vmbr1"
 
 	// The c8000v reports a carrier change within about 10 s and needs
 	// 11 s after no shutdown to report ready. nl6 answers at once.
@@ -480,13 +479,16 @@ func netconfInteropEnv(key, def string) string {
 	return def
 }
 
-func netconfRefLink(pve string, down bool) error {
-	spec := netconfInteropVMNic
+// netconfInteropRefEnv lists the variables a live reference run needs.
+var netconfInteropRefEnv = []string{"NL6_NETCONF_REF", "NL6_NETCONF_REF_PASSWORD", "NL6_NETCONF_REF_PVE", "NL6_NETCONF_REF_VMID", "NL6_NETCONF_REF_NIC"}
+
+func netconfRefLink(pve, vmid, nic string, down bool) error {
+	spec := nic
 	if down {
 		spec += ",link_down=1"
 	}
 	out, err := exec.Command("ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", pve,
-		"qm set "+netconfInteropVMID+" --net1 "+spec).CombinedOutput()
+		"qm set "+vmid+" --net1 "+spec).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("qm set: %v: %s", err, out)
 	}
@@ -510,17 +512,14 @@ func netconfRefAdmin(script string, tg netconfProbeTarget, down bool) error {
 func runNetconfReference(t *testing.T, script string) []netconfProbeLine {
 	t.Helper()
 	ref := netconfProbeTarget{
-		name: "reference", host: netconfInteropEnv("NL6_NETCONF_REF", netconfInteropRefHost), port: "830",
+		name: "reference", host: os.Getenv("NL6_NETCONF_REF"), port: "830",
 		user:     netconfInteropEnv("NL6_NETCONF_REF_USER", netconfInteropRefUser),
 		password: os.Getenv("NL6_NETCONF_REF_PASSWORD"),
 		iface:    netconfInteropRefIf, quiet: netconfInteropRefQuiet, settle: netconfInteropRefSettle,
 	}
-	if ref.password == "" {
-		t.Fatal("NL6_NETCONF_REF_PASSWORD is not set")
-	}
-	pve := netconfInteropEnv("NL6_NETCONF_REF_PVE", netconfInteropPVE)
+	pve, vmid, nic := os.Getenv("NL6_NETCONF_REF_PVE"), os.Getenv("NL6_NETCONF_REF_VMID"), os.Getenv("NL6_NETCONF_REF_NIC")
 	restore := func() {
-		if err := netconfRefLink(pve, false); err != nil {
+		if err := netconfRefLink(pve, vmid, nic, false); err != nil {
 			t.Errorf("restore reference link: %v", err)
 		}
 		if err := netconfRefAdmin(script, ref, false); err != nil {
@@ -532,7 +531,7 @@ func runNetconfReference(t *testing.T, script string) []netconfProbeLine {
 	ref.toggle = func(action string) error {
 		switch action {
 		case "link-down", "link-up":
-			return netconfRefLink(pve, action == "link-down")
+			return netconfRefLink(pve, vmid, nic, action == "link-down")
 		case "admin-down", "admin-up":
 			return netconfRefAdmin(script, ref, action == "admin-down")
 		}
@@ -573,6 +572,17 @@ func saveNetconfProbeLines(t *testing.T, path string, lines []netconfProbeLine) 
 func TestNetconfInteropAgainstReference(t *testing.T) {
 	if os.Getenv("NL6_NETCONF_INTEROP") != "1" {
 		t.Skip("set NL6_NETCONF_INTEROP=1 (make test-interop-netconf) to diff nl6 against a real IOS XE device")
+	}
+	if os.Getenv("NL6_NETCONF_REF_STREAM") == "" {
+		var unset []string
+		for _, k := range netconfInteropRefEnv {
+			if os.Getenv(k) == "" {
+				unset = append(unset, k)
+			}
+		}
+		if len(unset) > 0 {
+			t.Skipf("no reference device: set %s, or replay a saved stream with NL6_NETCONF_REF_STREAM", strings.Join(unset, ", "))
+		}
 	}
 	if _, err := exec.LookPath("uv"); err != nil {
 		t.Fatal("uv not found: it runs scripts/netconf-probe.py")

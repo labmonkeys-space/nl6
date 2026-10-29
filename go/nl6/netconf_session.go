@@ -41,6 +41,9 @@ type netconfSession struct {
 	dev *DeviceSimulator
 	rw  io.ReadWriter
 	reg *netconfSessionRegistry
+	// conn is the transport under rw, closed with the session. Nil when
+	// rw is the whole transport.
+	conn io.Closer
 
 	framer *netconfFramer
 	wmu    sync.Mutex
@@ -81,6 +84,9 @@ func (s *netconfSession) close() {
 		close(s.closed)
 		if c, ok := s.rw.(io.Closer); ok {
 			_ = c.Close()
+		}
+		if s.conn != nil {
+			_ = s.conn.Close()
 		}
 	})
 }
@@ -130,7 +136,7 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 	if err != nil {
 		return s.endErr(err)
 	}
-	if !bytes.Contains(hello, []byte("<hello")) {
+	if !isNetconfHello(hello) {
 		return errors.New("netconf: first message is not a hello")
 	}
 	if bytes.Contains(hello, []byte(netconfBase11)) {
@@ -152,6 +158,21 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 		}
 		if done := s.handleRPC(msg); done {
 			return nil
+		}
+	}
+}
+
+// isNetconfHello reports whether the first element of msg is a hello in the
+// base:1.0 namespace, with or without a prefix.
+func isNetconfHello(msg []byte) bool {
+	dec := xml.NewDecoder(bytes.NewReader(msg))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			return se.Name.Local == "hello" && se.Name.Space == netconfBaseNS
 		}
 	}
 }

@@ -98,11 +98,6 @@ func dialNetconfTestSSH(t *testing.T, addr string) *ssh.Client {
 	return c
 }
 
-type netconfTestRW struct {
-	io.Reader
-	io.Writer
-}
-
 // openNetconfOverSSH opens the netconf subsystem and completes the hello.
 func openNetconfOverSSH(t *testing.T, c *ssh.Client) (*netconfFramer, *ssh.Session) {
 	t.Helper()
@@ -463,6 +458,27 @@ func TestNetconfSessionEndClosesConnection(t *testing.T) {
 	}
 }
 
+// An authenticated connection that never starts the netconf subsystem is
+// closed at the SSH idle deadline, with or without an open session channel.
+func TestNetconfDeadlineUntilSubsystem(t *testing.T) {
+	sshIdleTimeoutOverride.Store(int64(netconfTestIdleProbe))
+	defer sshIdleTimeoutOverride.Store(0)
+
+	mgr := useNetconfTestManager(t, true)
+	_, _, addr := newNetconfListenDevice(t, mgr)
+	idle := dialNetconfTestSSH(t, addr)
+	pending := dialNetconfTestSSH(t, addr)
+	if _, err := pending.NewSession(); err != nil {
+		t.Fatal(err)
+	}
+	// Well below netconfSubsystemWait, so only the deadline can close them.
+	for name, c := range map[string]*ssh.Client{"no channel": idle, "channel without subsystem": pending} {
+		if !waitSSHClosed(c, 10*netconfTestIdleProbe) {
+			t.Errorf("%s: connection outlived the SSH idle deadline", name)
+		}
+	}
+}
+
 // netconfAppGoroutines counts the goroutines running nl6 NETCONF server or
 // session code, the accept loop aside. The x/crypto/ssh goroutines are not
 // counted: the client half runs in this process too and shares their code.
@@ -541,7 +557,12 @@ func TestNetconfDroppedPendingChannelDoesNotStallClose(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	_ = c.Close()
 
+	// Detach the server first, so the cleanup does not call Close again
+	// and a hang fails here, not at the -timeout.
+	dev.mu.Lock()
 	srv := dev.netconfListener
+	dev.netconfListener, dev.netconfSessions = nil, nil
+	dev.mu.Unlock()
 	done := make(chan struct{})
 	go func() { _ = srv.Close(); close(done) }()
 	select {
