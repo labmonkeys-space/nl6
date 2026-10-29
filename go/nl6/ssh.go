@@ -25,12 +25,51 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
-const sshIdleTimeout = 5 * time.Minute
+const sshIdleTimeoutDefault = 5 * time.Minute
+
+// sshIdleTimeoutOverride replaces the default when positive. Only tests set
+// it. It is atomic because connection goroutines read it.
+var sshIdleTimeoutOverride atomic.Int64
+
+// sshIdleTimeout returns the SSH idle deadline, 5 minutes unless a test
+// overrides it.
+func sshIdleTimeout() time.Duration {
+	if v := sshIdleTimeoutOverride.Load(); v > 0 {
+		return time.Duration(v)
+	}
+	return sshIdleTimeoutDefault
+}
+
+// newDeviceSSHConfig returns the SSH server config every device listener
+// uses: the simulator credentials and the given host key.
+func newDeviceSSHConfig(signer ssh.Signer) *ssh.ServerConfig {
+	config := &ssh.ServerConfig{
+		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+			if c.User() == USERNAME && string(pass) == PASSWORD {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("invalid credentials")
+		},
+	}
+	config.AddHostKey(signer)
+	return config
+}
+
+// deviceListenTCP binds a TCP listener for d, inside its network namespace
+// when it has one.
+func deviceListenTCP(d *DeviceSimulator, addr string) (net.Listener, error) {
+	if d.netNamespace != nil {
+		return d.netNamespace.ListenTCPInNamespace("tcp", addr)
+	}
+	lc := net.ListenConfig{Control: setSocketBufferSize}
+	return lc.Listen(context.Background(), "tcp", addr)
+}
 
 // SSH Server implementation
 func (s *SSHServer) Start() error {
@@ -57,25 +96,10 @@ func (s *SSHServer) Start() error {
 		}
 	}
 
-	config := &ssh.ServerConfig{
-		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			if c.User() == USERNAME && string(pass) == PASSWORD {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("invalid credentials")
-		},
-	}
-	config.AddHostKey(signer)
+	config := newDeviceSSHConfig(signer)
 
 	addr := fmt.Sprintf("%s:%d", s.device.IP.String(), s.device.SSHPort)
-	var listener net.Listener
-	var err error
-	if s.device.netNamespace != nil {
-		listener, err = s.device.netNamespace.ListenTCPInNamespace("tcp", addr)
-	} else {
-		lc := net.ListenConfig{Control: setSocketBufferSize}
-		listener, err = lc.Listen(context.Background(), "tcp", addr)
-	}
+	listener, err := deviceListenTCP(s.device, addr)
 	if err != nil {
 		return err
 	}
@@ -113,7 +137,7 @@ func (s *SSHServer) handleConnections() {
 
 func (s *SSHServer) handleConnection(conn net.Conn) {
 	// Set initial idle timeout — if no activity within this window, the connection closes
-	conn.SetDeadline(time.Now().Add(sshIdleTimeout))
+	conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 	defer conn.Close()
 
 	sshConn, channels, requests, err := ssh.NewServerConn(conn, s.config)
@@ -209,7 +233,7 @@ func (s *SSHServer) interactiveLoop(channel ssh.Channel, conn net.Conn) {
 		}
 
 		// Reset idle timer on activity
-		conn.SetDeadline(time.Now().Add(sshIdleTimeout))
+		conn.SetDeadline(time.Now().Add(sshIdleTimeout()))
 
 		b := buf[0]
 

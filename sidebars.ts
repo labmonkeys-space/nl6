@@ -75,6 +75,7 @@ const sidebars: SidebarsConfig = {
         'reference/flow-export',
         'reference/gnmi',
         'reference/gnmi-dial-out',
+        'reference/netconf',
         'reference/optical-telemetry',
         'reference/optical-limitations',
         'reference/interface-state',

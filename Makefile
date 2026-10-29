@@ -501,6 +501,27 @@ test-interop-ipfix: check-go check-docker
 	docker exec nl6-interop-ipfixcol2 ipfixcol2 -V 2>&1 | head -1; \
 	( cd $(GO_DIR) && NL6_IPFIX_INTEROP=1 go test ./nl6/ -run 'TestIPFIXInterop' -count=1 -v -timeout 10m ) || fail "interop test failed"
 
+## test-interop-netconf: Diff nl6's NETCONF (IOS XE dialect) against a REAL IOS XE device (needs uv and a reference device)
+##
+## The NETCONF sibling of test-interop: every other NETCONF test reads nl6's
+## bytes with nl6's own client, so a shared misreading of the IOS XE draft
+## dialect passes all of them. scripts/netconf-probe.py (paramiko via uv)
+## sends the same requests and interface toggles to an in-process
+## cisco_catalyst_9500 and to the reference device, and the test diffs the
+## normalised replies and notifications. Needs NL6_NETCONF_REF (host),
+## NL6_NETCONF_REF_PASSWORD, NL6_NETCONF_REF_PVE (ssh target of the Proxmox
+## host), NL6_NETCONF_REF_VMID and NL6_NETCONF_REF_NIC (the qm --net1 spec);
+## NL6_NETCONF_REF_USER defaults to admin. There are no lab defaults: the
+## test skips when one is unset. It toggles the reference's carrier over ssh
+## to the Proxmox host and its admin state over NETCONF. It restores both on
+## a normal exit and on a test failure, but not on a -timeout or Ctrl-C.
+test-interop-netconf: check-go
+	@command -v uv >/dev/null 2>&1 || { \
+	  echo "uv not found. It runs scripts/netconf-probe.py with ncclient (paramiko):"; \
+	  echo "  https://docs.astral.sh/uv/getting-started/installation/"; \
+	  exit 1; }
+	cd $(GO_DIR) && NL6_NETCONF_INTEROP=1 go test ./nl6/ -run 'TestNetconfInteropAgainstReference' -count=1 -v -timeout 15m
+
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime
 	cd $(WEB_DIR) && for t in *.test.js; do \

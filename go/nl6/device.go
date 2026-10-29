@@ -1110,6 +1110,12 @@ func (d *DeviceSimulator) Start() error {
 		}
 	}
 
+	// Start the NETCONF listener. startNetconfServer decides: off unless
+	// -netconf-enable is set, and then only on catalyst 9500 devices.
+	if err := d.startNetconfServer(); err != nil {
+		errors = append(errors, fmt.Sprintf("NETCONF: %v", err))
+	}
+
 	// Start API server (if device has API resources)
 	if d.apiServer != nil && len(d.resources.API) > 0 {
 		if err := d.apiServer.Start(); err != nil {
@@ -1122,6 +1128,7 @@ func (d *DeviceSimulator) Start() error {
 		d.snmpServer.Stop()
 		d.sshServer.Stop()
 		d.stopGnmiServer()
+		d.stopNetconfServer()
 		if d.apiServer != nil {
 			d.apiServer.Stop()
 		}
@@ -1145,6 +1152,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.sshServer == nil &&
 		d.apiServer == nil &&
 		d.gnmiServer == nil &&
+		d.netconfListener == nil &&
 		d.flowExporter == nil &&
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&
@@ -1180,6 +1188,10 @@ func (d *DeviceSimulator) Stop() error {
 	// keeps simulator-wide totals atomically in gnmiUpdatesSent /
 	// gnmiUpdatesDropped, which survive device delete by design.
 	d.stopGnmiServer()
+
+	// NETCONF: close the listener and every session. Counters live on the
+	// manager and survive device delete.
+	d.stopNetconfServer()
 
 	if d.flowExporter != nil {
 		// Persist cumulative counters into the simulator-wide
@@ -1316,6 +1328,7 @@ func (d *DeviceSimulator) stopListenersOnly() {
 		d.apiServer.Stop()
 	}
 	d.stopGnmiServer()
+	d.stopNetconfServer()
 	if d.flowExporter != nil {
 		// Persist counters before Close (review decision D1.b). The
 		// `if !d.running` early-return above makes this single-shot.

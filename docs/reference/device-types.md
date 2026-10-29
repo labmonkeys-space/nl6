@@ -50,7 +50,7 @@ Each interface has a port entity at index 1000 + ifIndex, and `entAliasMappingTa
 
 | Device | Ports | Description |
 |--------|-------|-------------|
-| Cisco Catalyst 9500 | 48 | Enterprise core switch, Catalyst 9500-48Y4C |
+| Cisco Catalyst 9500 | 48 | Enterprise core switch, Catalyst 9500-48Y4C. Serves NETCONF over SSH when `-netconf-enable` is set, see the [limitations](https://github.com/labmonkeys-space/nl6/blob/main/go/nl6/resources/cisco_catalyst_9500_limitations.md) and the [NETCONF reference](netconf.md). |
 | Extreme VSP4450 | 48 | Campus switch |
 | D-Link DGS-3630 | 52 | L3 managed switch |
 | Cisco IOS | 4 | Access switch, Catalyst 2960-X (WS-C2960X-24TS-L) |
