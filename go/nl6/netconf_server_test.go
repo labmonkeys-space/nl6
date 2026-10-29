@@ -518,3 +518,35 @@ func TestNetconfIdleSessionGoroutines(t *testing.T) {
 	waitNetconf(t, "every push sent", func() bool { return atomic.LoadUint64(&mgr.netconfNotificationsSent) >= 2*sessions })
 	waitNetconf(t, "idle goroutine count after pushes", func() bool { return netconfAppGoroutines() == want })
 }
+
+// A client opens channel A, then B, which replaces A before A asked for the
+// subsystem, and keeps sending requests on A. The SSH mux blocks on a full
+// request stream, so A's stream must be drained after it is dropped, or
+// server Close never returns.
+func TestNetconfDroppedPendingChannelDoesNotStallClose(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	dev, _, addr := newNetconfListenDevice(t, mgr)
+	c := dialNetconfTestSSH(t, addr)
+	a, _, err := c.OpenChannel("session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _, _ = c.OpenChannel("session", nil) }()
+	env := ssh.Marshal(struct{ Name, Value string }{"x", "y"})
+	for i := 0; i < 200; i++ {
+		if _, err := a.SendRequest("env", false, env); err != nil {
+			break
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+	_ = c.Close()
+
+	srv := dev.netconfListener
+	done := make(chan struct{})
+	go func() { _ = srv.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server Close hung: a dropped channel's requests stalled the SSH mux")
+	}
+}

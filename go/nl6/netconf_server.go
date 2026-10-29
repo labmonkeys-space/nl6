@@ -223,9 +223,18 @@ func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel
 	wait := time.NewTimer(netconfSubsystemWait)
 	wait.Stop()
 	defer wait.Stop()
+	// dropPending closes the pending channel. A local Close only sends
+	// channel-close: its request stream stays open until the peer answers,
+	// and the SSH mux blocks on a full stream. So a stream that is still
+	// open is drained until it closes, or one client could stall the mux,
+	// and with it Close.
 	dropPending := func() {
 		if pending != nil {
 			_ = pending.Close()
+		}
+		if pendingReqs != nil {
+			s.wg.Add(1)
+			go s.refuseAll(pendingReqs)
 		}
 		pending, pendingReqs = nil, nil
 		wait.Stop()
@@ -267,6 +276,7 @@ func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel
 			_ = req.Reply(false, nil)
 		case req, ok := <-pendingReqs:
 			if !ok {
+				pendingReqs = nil
 				dropPending()
 				continue
 			}
@@ -289,6 +299,17 @@ func (s *netconfServer) dispatch(sc *ssh.ServerConn, chans <-chan ssh.NewChannel
 	}
 }
 
+// refuseAll refuses every request on reqs until the stream closes. It runs
+// only for a channel dropped before its session started, so an idle session
+// costs no goroutine here. The stream closes when the peer closes the
+// channel or the connection ends.
+func (s *netconfServer) refuseAll(reqs <-chan *ssh.Request) {
+	defer s.wg.Done()
+	for req := range reqs {
+		_ = req.Reply(false, nil)
+	}
+}
+
 // serveChannel runs one NETCONF session. When it ends, by close-session,
 // kill-session or EOF, the whole SSH connection is closed: IOS XE runs one
 // NETCONF session per connection.
@@ -304,6 +325,10 @@ func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel) {
 		log.Printf("NETCONF session on %s ended: %v", s.dev.IP, err)
 	}
 	_ = sc.Close()
+	// The connection is down, so a writer blocked on the channel window
+	// returns. Waiting here keeps Close from returning while the session's
+	// listener or writer still runs.
+	sess.waitEvents()
 }
 
 // netconfSubsystemName decodes the SSH string in a subsystem request payload.

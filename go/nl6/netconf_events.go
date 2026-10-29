@@ -38,6 +38,10 @@ type netconfEvents struct {
 	// holds no writer.
 	writing atomic.Bool
 
+	// wg counts the state listener and the writer, so the server can wait
+	// for them after the session ended.
+	wg sync.WaitGroup
+
 	// ready is closed once the state listener is registered.
 	ready chan struct{}
 
@@ -140,6 +144,7 @@ func (s *netconfSession) startEvents(ctx context.Context) {
 	if state == nil {
 		return
 	}
+	s.ev.wg.Add(1)
 	go s.runStateListener(ctx, state)
 	select {
 	case <-s.ev.ready:
@@ -157,6 +162,7 @@ func (s *netconfSession) startEvents(ctx context.Context) {
 // dropped oldest first, until the session goes away.
 func (s *netconfSession) runWriter() {
 	ev := s.ev
+	defer ev.wg.Done()
 	for {
 		if s.isClosed() {
 			return
@@ -185,18 +191,30 @@ func (s *netconfSession) runWriter() {
 	}
 }
 
+// waitEvents waits for the state listener and the writer. Call it after Serve
+// returned, so ctx is done and the channel closed.
+func (s *netconfSession) waitEvents() {
+	if s.ev != nil {
+		s.ev.wg.Wait()
+	}
+}
+
 // enqueue queues a push without blocking and starts the writer if none runs.
 func (s *netconfSession) enqueue(sub *netconfSub, msg []byte) {
 	if s.ev.out.push(netconfPush{sub: sub, msg: msg}) {
 		atomic.AddUint64(s.ev.dropped, 1)
 	}
 	if s.ev.writing.CompareAndSwap(false, true) {
+		// The listener, the only other caller, is counted while it runs,
+		// so this Add never races a Wait that finds the counter at zero.
+		s.ev.wg.Add(1)
 		go s.runWriter()
 	}
 }
 
 // runStateListener turns state-engine events into pushes until ctx ends.
 func (s *netconfSession) runStateListener(ctx context.Context, state *InterfaceState) {
+	defer s.ev.wg.Done()
 	ch := make(chan StateChange, netconfEventBufferDepth)
 	state.AddListener(ch)
 	defer state.RemoveListener(ch)
