@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,6 +62,9 @@ type netconfSession struct {
 	onStart       func(ctx context.Context)
 	onSubscribe   func(sub *netconfSub)
 	onUnsubscribe func(sub *netconfSub)
+	// onEnd runs once when Serve exits, after the last onUnsubscribe. It
+	// may be nil.
+	onEnd func()
 
 	// ev carries the state-change push machinery. Nil unless the session
 	// was built by newIOSXENetconfSession.
@@ -183,11 +187,13 @@ func (s *netconfSession) teardown() {
 	subs := s.subs
 	s.subs = nil
 	s.mu.Unlock()
-	if s.onUnsubscribe == nil {
-		return
+	if s.onUnsubscribe != nil {
+		for _, sub := range subs {
+			s.onUnsubscribe(sub)
+		}
 	}
-	for _, sub := range subs {
-		s.onUnsubscribe(sub)
+	if s.onEnd != nil {
+		s.onEnd()
 	}
 }
 
@@ -434,11 +440,52 @@ func (s *netconfSession) handleKill(r netconfRPC) []byte {
 }
 
 // netconfSessionRegistry tracks the sessions of one device so kill-session can
-// reach another session, and hands out subscription ids.
+// reach another session, hands out subscription ids, and owns the device's
+// state-change dispatcher.
 type netconfSessionRegistry struct {
 	mu       sync.Mutex
 	sessions map[uint32]*netconfSession
 	subSeq   atomic.Uint32
+	// disp is the device's state-change dispatcher, started by the first
+	// session that acquires it and stopped when the last one releases it.
+	disp     *netconfDispatcher
+	dispRefs int
+}
+
+// acquireDispatcher returns the device's dispatcher, starting it when no
+// session holds one, and counts the caller as a holder.
+func (g *netconfSessionRegistry) acquireDispatcher(state *InterfaceState) *netconfDispatcher {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.disp == nil {
+		g.disp = newNetconfDispatcher(state)
+	} else if g.disp.state != state {
+		// Every session of a device reads the same engine; the dispatcher
+		// listens on the first one it was given.
+		log.Printf("NETCONF: dispatcher state engine differs from the session's; events come from the first")
+	}
+	g.dispRefs++
+	return g.disp
+}
+
+// releaseDispatcher drops one holder of d and stops d once none is left.
+func (g *netconfSessionRegistry) releaseDispatcher(d *netconfDispatcher) {
+	g.mu.Lock()
+	if d != g.disp {
+		// Unreachable: a holder's dispatcher is replaced only after every
+		// holder released it. Say so instead of leaking a goroutine quietly.
+		g.mu.Unlock()
+		log.Printf("NETCONF: release of a dispatcher the registry no longer holds")
+		return
+	}
+	g.dispRefs--
+	if g.dispRefs > 0 {
+		g.mu.Unlock()
+		return
+	}
+	g.disp = nil
+	g.mu.Unlock()
+	d.close()
 }
 
 func newNetconfSessionRegistry() *netconfSessionRegistry {
