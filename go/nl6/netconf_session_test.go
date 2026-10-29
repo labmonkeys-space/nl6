@@ -148,7 +148,8 @@ func TestNetconfChunkedAfterBase11(t *testing.T) {
 func TestNetconfRFC8639NamespaceUnknown(t *testing.T) {
 	c, _ := startNetconfTestClient(t, 1, newNetconfSessionRegistry(), true)
 	r := c.rpc(`<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/>`)
-	for _, want := range []string{`message-id="m1"`, "<error-type>protocol</error-type>", "<error-tag>unknown-namespace</error-tag>", "<bad-element>establish-subscription</bad-element>"} {
+	for _, want := range []string{`message-id="m1"`, "<error-type>protocol</error-type>", "<error-tag>unknown-namespace</error-tag>", "<bad-element>establish-subscription</bad-element>",
+		"<error-path>\n    /rpc\n  </error-path>", "<bad-namespace>urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications</bad-namespace>"} {
 		if !strings.Contains(r, want) {
 			t.Errorf("reply lacks %s: %s", want, r)
 		}

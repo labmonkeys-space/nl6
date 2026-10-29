@@ -301,6 +301,14 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 		fmt.Fprintf(&b, `<rpc-reply xmlns="%s">`, netconfBaseNS)
 	}
 	fmt.Fprintf(&b, "<rpc-error><error-type>%s</error-type><error-tag>%s</error-tag><error-severity>error</error-severity>", e.Type, e.Tag)
+	if e.Path != "" {
+		fmt.Fprintf(&b, "<error-path%s>\n    %s\n  </error-path>", e.PathNS, e.Path)
+	}
+	if e.Message != "" {
+		b.WriteString(`<error-message xml:lang="en">`)
+		_ = xml.EscapeText(&b, []byte(e.Message))
+		b.WriteString("</error-message>")
+	}
 	if e.BadElement != "" || badAttr != "" {
 		fmt.Fprintf(&b, `<error-info xmlns="%s" xmlns:nc="%s">`, netconfBaseNS, netconfBaseNS)
 		if badAttr != "" {
@@ -308,6 +316,9 @@ func netconfErrorReply(messageID string, hasMsgID bool, e iosxeRPCError, badAttr
 		}
 		if e.BadElement != "" {
 			fmt.Fprintf(&b, "<bad-element>%s</bad-element>", e.BadElement)
+		}
+		if e.BadNamespace != "" {
+			fmt.Fprintf(&b, "\n<bad-namespace>%s</bad-namespace>", e.BadNamespace)
 		}
 		b.WriteString("\n</error-info>")
 	}
@@ -333,7 +344,7 @@ func (s *netconfSession) handleRPC(data []byte) (done bool) {
 	case r.op == "establish-subscription" && r.ns == netconfDraftNS:
 		return s.handleEstablish(r)
 	case r.op == "establish-subscription" && r.ns == netconfRFC8639:
-		return reply(netconfErrorReply(id, true, iosxeRPCError{Type: "protocol", Tag: "unknown-namespace", BadElement: "establish-subscription"}, ""))
+		return reply(netconfErrorReply(id, true, iosxeRPCError{Type: "protocol", Tag: "unknown-namespace", BadElement: "establish-subscription", Path: "/rpc", BadNamespace: netconfRFC8639}, ""))
 	case r.op == "delete-subscription" && r.ns == netconfDraftNS:
 		return reply(s.handleDelete(r))
 	case r.op == "close-session" && r.ns == netconfBaseNS:

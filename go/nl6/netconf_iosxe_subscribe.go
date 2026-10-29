@@ -28,10 +28,18 @@ const (
 	iosxeSubNoSuchOption iosxeSubResult = "notif-bis:error-no-such-option"
 )
 
-// iosxeRPCError is rendered as an rpc-error element.
+// iosxeRPCError is rendered as an rpc-error element. Path, Message and
+// BadNamespace are optional; the device fills them for some errors only.
 type iosxeRPCError struct {
 	Type, Tag, BadElement string
+	// Path is the error-path text. PathNS declares the prefixes it uses.
+	Path, PathNS string
+	Message      string
+	BadNamespace string
 }
+
+// iosxeDampPathNS declares the prefixes of the dampening-period error-path.
+const iosxeDampPathNS = ` xmlns:yp="urn:ietf:params:xml:ns:yang:ietf-yang-push" xmlns:notif-bis="urn:ietf:params:xml:ns:yang:ietf-event-notifications"`
 
 const (
 	iosxeOperModule  = "interfaces-ios-xe-oper:interfaces"
@@ -113,7 +121,9 @@ func parseEstablishSubscription(body []byte) (sel iosxeSelection, result iosxeSu
 		return iosxeSelection{}, iosxeSubErrorOther, nil
 	}
 	if damp != "0" {
-		return iosxeSelection{}, "", &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period"}
+		return iosxeSelection{}, "", &iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "dampening-period",
+			Path: "/rpc/notif-bis:establish-subscription/yp:dampening-period", PathNS: iosxeDampPathNS,
+			Message: `"` + damp + `" is out of range.`}
 	}
 	return sel, iosxeSubOK, nil
 }
