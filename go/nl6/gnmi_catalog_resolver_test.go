@@ -579,6 +579,49 @@ func TestCatalogResolver_DecimalWireForm(t *testing.T) {
 	}
 }
 
+// TestCatalogResolver_ValidConstantsServeAsBefore: the load-time cast of a
+// constant refuses only what the resolver would have skipped; a fitting
+// constant loads and serves its value unchanged.
+func TestCatalogResolver_ValidConstantsServeAsBefore(t *testing.T) {
+	cat, err := parseGnmiCatalog([]byte(`{
+  "comment": "consts", "vendor": "testvendor",
+  "notification": {"origin": "openconfig", "native_origin": "", "prefix": "list-entry", "encodings": ["PROTO"], "extension": "none"},
+  "models": [], "neighbors": [],
+  "components": [{"name": "FPC0", "type": "LINECARD", "parent": "", "part_no": "L", "description": "l", "serial_no": "1", "temperature": false}],
+  "subtrees": [{"path": "/components/component[name=*]", "origin": "openconfig", "keys": [{"source": "components"}],
+    "leaves": [
+      {"name": "state/allocated-power", "type": "uint64", "gen": "const:7"},
+      {"name": "state/removable", "type": "boolean", "gen": "const:true"},
+      {"name": "state/description", "type": "string", "gen": "const:ok"},
+      {"name": "state/oper-status", "type": "enumeration", "enum": ["UP", "DOWN"], "gen": "const:UP"}
+    ]}]
+}`), "consts.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newCatalogResolver(newTestGnmiDevice(t, 1), cat)
+	got, err := r.Resolve(pathFromString(t, "/components"), time.Now())
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%v %v", err, got)
+	}
+	ups, err := encodeUpdates(got[0].Updates, gnmipb.Encoding_PROTO)
+	if err != nil || len(ups) != 4 {
+		t.Fatalf("%v %v", err, ups)
+	}
+	if v, ok := ups[0].GetVal().GetValue().(*gnmipb.TypedValue_UintVal); !ok || v.UintVal != 7 {
+		t.Fatalf("uint64 const:7 = %v", ups[0].GetVal())
+	}
+	if v, ok := ups[1].GetVal().GetValue().(*gnmipb.TypedValue_BoolVal); !ok || !v.BoolVal {
+		t.Fatalf("boolean const:true = %v", ups[1].GetVal())
+	}
+	if v, ok := ups[2].GetVal().GetValue().(*gnmipb.TypedValue_StringVal); !ok || v.StringVal != "ok" {
+		t.Fatalf("string const:ok = %v", ups[2].GetVal())
+	}
+	if v, ok := ups[3].GetVal().GetValue().(*gnmipb.TypedValue_StringVal); !ok || v.StringVal != "UP" {
+		t.Fatalf("enumeration const:UP = %v", ups[3].GetVal())
+	}
+}
+
 // TestCatalogResolver_AlwaysLeaf: an always-leaf rides along whenever
 // another leaf of its entry is covered, and never on its own.
 func TestCatalogResolver_AlwaysLeaf(t *testing.T) {
