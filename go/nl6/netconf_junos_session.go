@@ -87,13 +87,18 @@ func (s *netconfSession) junosRPC(r netconfRPC) (done bool) {
 		s.junosSubscribe()
 		return reply(junosOKReply(version, id))
 	case r.op == "get" && r.ns == netconfBaseNS:
+		child, ok := junosFilterChild(r.opXML)
 		switch {
-		case junosHasElementNS(r.opXML, junosNetmodNS):
+		case !ok:
+			return reply(junosGetReply(s.dev, version, id, s.startedAt))
+		case child.Space == junosNetmodNS && child.Local == "netconf":
 			return reply(junosStreamsReply(version, id))
-		case junosHasElementNS(r.opXML, junosMonitoringNS):
+		case child.Space == junosMonitoringNS && child.Local == "netconf-state":
 			return reply(junosNetconfStateReply(version, id))
 		}
-		return reply(junosGetReply(s.dev, version, id, s.startedAt))
+		// Any other filtered subtree, such as ietf-interfaces
+		// interfaces-state, is refused naming that subtree.
+		return reply(junosSyntaxError(version, id, child.Local, 1))
 	case r.op == "get-configuration":
 		return reply(junosGetConfigurationReply(s.dev, version, id, s.startedAt))
 	case r.op == "establish-subscription" && (r.ns == netconfDraftNS || r.ns == junosRFC8639NS):
@@ -117,21 +122,30 @@ func (s *netconfSession) junosSubscribe() {
 	s.ev.mu.Unlock()
 }
 
-// junosHasElementNS reports whether any element below the root of op is in
-// the namespace ns.
-func junosHasElementNS(op []byte, ns string) bool {
+// junosFilterChild returns the first element inside the filter of a get.
+// ok is false for a get without a filter or with an empty one.
+func junosFilterChild(op []byte) (xml.Name, bool) {
 	dec := xml.NewDecoder(bytes.NewReader(op))
-	first := true
+	depth, inFilter := 0, false
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			return false
+			return xml.Name{}, false
 		}
-		if se, ok := tok.(xml.StartElement); ok {
-			if !first && se.Name.Space == ns {
-				return true
+		switch se := tok.(type) {
+		case xml.StartElement:
+			depth++
+			if inFilter {
+				return se.Name, true
 			}
-			first = false
+			if depth == 2 && se.Name.Local == "filter" {
+				inFilter = true
+			}
+		case xml.EndElement:
+			depth--
+			if inFilter && depth < 2 {
+				return xml.Name{}, false
+			}
 		}
 	}
 }

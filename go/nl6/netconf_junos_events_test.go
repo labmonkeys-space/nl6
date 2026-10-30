@@ -159,3 +159,25 @@ func TestJunosUnitLinkEvents(t *testing.T) {
 	c.junosPair("1", "xe-0/0/0", "SNMP_TRAP_LINK_UP", "NOTICE")
 	c.junosPair("73", "xe-0/0/0.0", "SNMP_TRAP_LINK_UP", "INFORMATIONAL")
 }
+
+// An admin change broadcasts an admin event and an oper event that both
+// carry the oper move. The session renders one pair per transition.
+func TestJunosAdminChangeRendersOnePair(t *testing.T) {
+	c, state := junosFlapClient(t, true)
+	ncAdmin(state, 1, AdminDown)
+	c.junosPair("1", "xe-0/0/0", "SNMP_TRAP_LINK_DOWN", "WARNING")
+	ncAdmin(state, 1, AdminUp)
+	c.junosPair("1", "xe-0/0/0", "SNMP_TRAP_LINK_UP", "NOTICE")
+	// What follows is the units' way up, never a second physical pair.
+	for _, unit := range []string{"73", "74", "75", "76"} {
+		for i := 0; i < 2; i++ {
+			if m := c.readFramed(); !strings.Contains(m, "ifIndex "+unit+",") {
+				t.Fatalf("want unit ifIndex %s, got:\n%s", unit, m)
+			}
+		}
+	}
+	_ = c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if b, err := c.br.ReadByte(); err == nil {
+		t.Fatalf("extra bytes after the pairs: %q", b)
+	}
+}

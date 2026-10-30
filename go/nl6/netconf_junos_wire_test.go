@@ -33,11 +33,12 @@ import (
 //	put("hello-p10.xml", hello("out-p10"))
 //	put("syntax-error-bogus.xml", reply("out-rpc-bogus"))
 //	put("syntax-error-estsub.xml", reply("out-rpc-estsub"))
+//	put("syntax-error-ietfif.xml", reply("out-rpc-ietfif"))
 //	put("get-streams-p11.xml", reply("out-p11"))
 //	put("get-ncstate.xml", reply("out-rpc-ncstate"))
 //	g = reply("out-rpc-get"); i = g.index("<configuration"); j = g.index("\n", i) + 1
 //	put("get-config-head.xml", g[:j])
-//	put("get-config-tail.xml", g[g.index("</data>\n</rpc-reply>\n"):])
+//	e = "</configuration>\n"; put("get-config-tail.xml", g[g.index(e) + len(e):])
 //	p = reply("out-p1-rsa"); i = p.index("<configuration"); j = p.index("\n", i) + 1
 //	put("get-configuration-head.xml", p[:j])
 //	put("get-configuration-tail.xml", p[p.index("</rpc-reply>\n"):])
@@ -85,6 +86,9 @@ func TestJunosSyntaxErrorBytes(t *testing.T) {
 	}
 	if got, want := string(junosSyntaxError(junosCaptureVersion, "101", "establish-subscription", 2)), junosFixture(t, "syntax-error-estsub.xml"); got != want {
 		t.Errorf("repeat 2 differs\n got: %q\nwant: %q", got, want)
+	}
+	if got, want := string(junosSyntaxError(junosCaptureVersion, "101", "interfaces-state", 1)), junosFixture(t, "syntax-error-ietfif.xml"); got != want {
+		t.Errorf("interfaces-state refusal differs\n got: %q\nwant: %q", got, want)
 	}
 }
 

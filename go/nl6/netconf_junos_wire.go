@@ -14,8 +14,9 @@ import (
 // Junos wire vocabulary, pinned byte for byte to a vJunos 25.4R1.12 capture.
 // Replies begin and end with a newline. The hello does not begin with one.
 
-// junosSessionEndFormat is what the device writes after a session closes.
-const junosSessionEndFormat = "<!-- session end at %s -->\n"
+// junosSessionEndFormat is what the device writes after the close-session
+// reply's end-of-message marker: a newline, the comment, a newline.
+const junosSessionEndFormat = "\n<!-- session end at %s -->\n"
 
 // junosTimeFormat is the layout of every Junos timestamp attribute.
 const junosTimeFormat = "2006-01-02 15:04:05 UTC"
@@ -142,9 +143,11 @@ func junosGetConfigurationReply(dev *DeviceSimulator, version, messageID string,
 		"</rpc-reply>\n")
 }
 
-// junosGetReply renders the reply of a NETCONF get.
+// junosGetReply renders the reply of a NETCONF get. The device follows the
+// configuration with an empty database-status-information element.
 func junosGetReply(dev *DeviceSimulator, version, messageID string, commitAt time.Time) []byte {
-	return []byte(junosReplyOpen(version, messageID) + "<data>\n" + junosConfiguration(dev, version, commitAt) + "</data>\n</rpc-reply>\n")
+	return []byte(junosReplyOpen(version, messageID) + "<data>\n" + junosConfiguration(dev, version, commitAt) +
+		"<database-status-information>\n</database-status-information>\n</data>\n</rpc-reply>\n")
 }
 
 // junosStreamsReply is the reply to a get of the streams subtree.

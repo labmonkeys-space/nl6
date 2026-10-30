@@ -86,7 +86,7 @@ func TestJunosSessionHelloAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read to EOF: %v", err)
 	}
-	if !regexp.MustCompile(`^<!-- session end at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC -->\n$`).Match(rest) {
+	if !regexp.MustCompile(`^\n<!-- session end at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC -->\n$`).Match(rest) {
 		t.Fatalf("trailer = %q", rest)
 	}
 }
@@ -110,6 +110,7 @@ func TestJunosSessionRPCTable(t *testing.T) {
 	const (
 		streamsGet = `<get><filter type="subtree"><netconf xmlns="urn:ietf:params:xml:ns:netmod:notification"><streams><stream/></streams></netconf></filter></get>`
 		stateGet   = `<get><filter type="subtree"><netconf-state xmlns="urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"><capabilities/></netconf-state></filter></get>`
+		ifStateGet = `<get><filter type="subtree"><interfaces-state xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces"/></filter></get>`
 	)
 	sub := func(stream string) string {
 		return `<create-subscription xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">` + stream + `</create-subscription>`
@@ -129,6 +130,7 @@ func TestJunosSessionRPCTable(t *testing.T) {
 		{"get-configuration", "<get-configuration/>", junosGetConfigurationReply(dev, v, "101", at)},
 		{"establish-subscription draft", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2)},
 		{"establish-subscription 8639", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2)},
+		{"get interfaces-state", ifStateGet, []byte(strings.ReplaceAll(junosFixture(t, "syntax-error-ietfif.xml"), junosCaptureVersion, v))},
 		{"unknown op", "<bogus-rpc/>", junosSyntaxError(v, "101", "bogus-rpc", 1)},
 	}
 	for _, row := range rows {
@@ -175,7 +177,7 @@ func TestJunosSessionKillSession(t *testing.T) {
 func TestJunosSessionCloseHasNoGapBeforeTrailer(t *testing.T) {
 	dev := newJunosTestDevice(t)
 	reply := string(junosOKReply(junosTestVersion, "101")) + netconfEOM
-	endRe := regexp.MustCompile(`^<!-- session end at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC -->\n$`)
+	endRe := regexp.MustCompile(`^\n<!-- session end at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC -->\n$`)
 	for i := 0; i < 50; i++ {
 		c := startJunosTestClient(t, dev, 1, newNetconfSessionRegistry(), junosClientHello10)
 		c.send(junosRPCXML("100", "<create-subscription xmlns=\"urn:ietf:params:xml:ns:netconf:notification:1.0\"/>"))

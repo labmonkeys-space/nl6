@@ -181,9 +181,10 @@ nl6 never switches to chunked framing, even when the client advertises base 1.1.
 | `create-subscription` with any other stream | `rpc-error` `syntax error`, `bad-element` `create-subscription` |
 | `get` with the RFC 5277 streams filter (`urn:ietf:params:xml:ns:netmod:notification`) | An empty `<data>`. |
 | `get` with a `netconf-state` filter (`ietf-netconf-monitoring`) | `<data>` with the hello capabilities under `netconf-state/capabilities`. |
-| `get` with any other filter, or none | `<data>` with a reduced `<configuration>`. |
+| `get` with no filter | `<data>` with a reduced `<configuration>`, then an empty `<database-status-information>`. |
+| `get` with any other filter, such as `interfaces-state` (`ietf-interfaces`) | `rpc-error` `syntax error` with the filtered element as `bad-element`. |
 | `get-configuration` | The same reduced `<configuration>` without the `<data>` wrapper. |
-| `close-session` | `<ok/>`, then the comment `<!-- session end at ... -->`, then the connection closes. |
+| `close-session` | `<ok/>`, then a newline, the comment `<!-- session end at ... -->` and a newline, then the connection closes. |
 | `kill-session` of another session | `<ok/>` and the other session closes. |
 | `establish-subscription` (draft or RFC 8639 namespace) | `rpc-error` `syntax error`, repeated twice in one reply. |
 | Anything else, including `get-interface-information` and `kill-session` of the own or an unknown ID | `rpc-error` `syntax error` with the request name as `bad-element`. |

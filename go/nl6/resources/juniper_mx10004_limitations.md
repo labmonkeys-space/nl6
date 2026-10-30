@@ -23,13 +23,14 @@ The vJunos reference lagged the event by about 20 seconds because its feed carri
 
 ## Reduced configuration
 
-`get` without a captured filter and `get-configuration` return a `<configuration>` with only `<version>` and `<system><host-name>`.
+Unfiltered `get` and `get-configuration` return a `<configuration>` with only `<version>` and `<system><host-name>`.
 The device sends its whole configuration.
-The `database-status-information` block of the device is absent too.
+The unfiltered `get` ends its `<data>` with the device's empty `database-status-information` element.
 
 ## Few RPCs
 
 nl6 serves `close-session`, `kill-session`, `create-subscription` on the `NETCONF` stream, `get` with the streams filter, `get` with the `netconf-state` capabilities filter, unfiltered `get` and `get-configuration`.
+A `get` with any other filter, such as `ietf-interfaces` `interfaces-state`, gets the `syntax error` refusal with the filtered element as `bad-element`.
 Every other RPC gets the Junos `syntax error` refusal.
 This includes `get-interface-information`, `get-schema` and replay.
 The reply shape of `kill-session` was not captured.

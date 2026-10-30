@@ -387,6 +387,21 @@ func (e *netconfStateEvent) fullRow() iosxeRow {
 	return *e.row
 }
 
+// twinOperEvent reports whether evt is the oper event that follows an admin
+// event which already moved oper. An admin change broadcasts both, with the
+// same ifIndex and instant, and only the first is rendered. Every dialect
+// calls it once per event, in order.
+func (ev *netconfEvents) twinOperEvent(evt StateChange) bool {
+	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
+		ev.skip.set = false
+		return true
+	}
+	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
+		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
+	}
+	return false
+}
+
 // handleStateChange renders one event for this session alone.
 func (s *netconfSession) handleStateChange(evt StateChange) {
 	s.handleStateEvent(&netconfStateEvent{evt: evt, dev: s.dev})
@@ -408,12 +423,8 @@ func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 		return
 	}
 	ev := s.ev
-	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
-		ev.skip.set = false
+	if ev.twinOperEvent(evt) {
 		return
-	}
-	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
-		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
 	}
 	// The event carries the link as it was when the change happened. The
 	// link read now may already have moved past a queued event.

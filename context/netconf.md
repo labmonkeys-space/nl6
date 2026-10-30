@@ -80,14 +80,17 @@ When a session ends, the whole SSH connection closes.
 - The Junos lab record: the `vj` containerlab on mad-monkey. From a workstation, forward the ports with `ssh -f -N -L 16513:172.20.20.2:6513 -L 10830:172.20.20.2:830 -L 10022:172.20.20.3:22 root@mad-monkey.labmonkeys.tech`. The client certificate, key and CA are in `/root/nc-lab/tls/` on mad-monkey. The reference maps the certificate to `ncuser`; its CLI and SSH NETCONF login is `admin`. Never commit the key.
 - The Junos test has no defaults. Set `NL6_NETCONF_JUNOS_REF`, `NL6_NETCONF_JUNOS_REF_SSH`, `NL6_NETCONF_JUNOS_CLI`, `NL6_NETCONF_JUNOS_CLI_USER`, `NL6_NETCONF_JUNOS_CLI_PASSWORD`, `NL6_NETCONF_JUNOS_CLIENT_CERT`, `NL6_NETCONF_JUNOS_CLIENT_KEY`, `NL6_NETCONF_JUNOS_CA` and `NL6_NETCONF_JUNOS_REF_IF`, or it skips. It enables the interface again on a normal exit and on a test failure. A `-timeout` or Ctrl-C leaves it as it was.
 - The reference feed carries about 1150 syslog notifications per 60 s window. The test keeps only `SNMP_TRAP_LINK_UP` and `SNMP_TRAP_LINK_DOWN` on the interface under test.
-- 2026-10-30 run: PASS over both transports in 258 s, 18 rows equal over TLS and 17 over SSH. The allow-listed divergences, each logged by the test:
-  - nl6 sends every link-event pair twice on an admin change. The admin event and the oper event of `ApplyAdminStatus` both carry the oper move, and the Junos session renders a pair for each; the IOS XE session skips the second. This is an nl6 defect. The test removes the repeat until it is fixed.
-  - A `get` with an `ietf-interfaces` `interfaces-state` filter: the reference answers one `syntax error` (`bad-element` `interfaces-state`), as the design table says. nl6 answers it as an unfiltered `get`.
-  - The reference's unfiltered `get` carries an empty `<database-status-information>` after the configuration. nl6 does not.
-  - The reference writes `\n` before the `<!-- session end ... -->` trailer. nl6 does not. The capture missed the newline: the probe read the trailer from the connection, and its buffered reader already held the newline.
-  - Configuration bodies: nl6's 3 element paths are a subset of the reference's 76.
-  - The reference's unit .0 `SNMP_TRAP_LINK_UP` (INFORMATIONAL) came on one subscription and not on the other in an earlier run of the same day. When it is absent, nl6's is not compared.
+- 2026-10-30, first run: the diff found four nl6 defects, all fixed the same day:
+  - nl6 sent every link-event pair twice on an admin change. `ApplyAdminStatus` broadcasts an admin event and an oper event that both carry the oper move. The Junos session now drops the twin oper event through `twinOperEvent`, as the IOS XE session always did.
+  - A `get` with an `ietf-interfaces` `interfaces-state` filter got the unfiltered reply. It now gets one `syntax error` with `bad-element` `interfaces-state`, as the reference sends.
+  - The unfiltered `get` lacked the empty `<database-status-information>` the reference sends after the configuration.
+  - The close-session trailer lacked its leading newline. The capture missed it: the probe read the trailer from the connection, and its buffered reader already held the newline.
+- 2026-10-30 re-run after the fixes: PASS over both transports in 258 s, 19 rows equal over TLS and 18 over SSH, every message compared raw with values normalised. The divergences that remain, each logged by the test:
+  - Configuration bodies: nl6's 3 element paths are a subset of the reference's 76, by decision.
+  - nl6's xe-0/0/0 has the VRF units .100, .200 and .999. Their link-up pairs are not compared.
+  - The reference's unit .0 `SNMP_TRAP_LINK_UP` (INFORMATIONAL) came on one subscription and not on the other in one earlier run. When it is absent, nl6's is not compared.
   - The reference sends its certificate and the CA, nl6 its leaf only. Both negotiated TLS 1.2 with `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`.
+  - Delivery lag: the reference sends link events seconds after the commit, nl6 at once. The sequence is compared.
 - The vJunos CLI over SSH sometimes prints nothing to a non-interactive session, while still committing. The test keeps stdin open until it sees `Exiting configuration mode`.
 
 ## Scale
@@ -165,7 +168,7 @@ The captures, the lab files and the probe client live in the planning artifacts 
 - The server sends its certificate and the CA.
 - A known fingerprint maps to its username. An unknown fingerprint with no default identity completes the handshake and then closes with no hello. With a default identity it maps to that user.
 - The hello is written at once, with two comment lines and 19 capabilities when `notification interleave` is set.
-- `close-session` replies `<ok/>`, then the comment `<!-- session end at ... -->`, then closes.
+- `close-session` replies `<ok/>`, then `\n<!-- session end at ... -->\n`, then closes. The first capture missed the leading newline; the interop test found it.
 - `establish-subscription`, in the draft or the RFC 8639 namespace, gets the `syntax error` `rpc-error` twice in one reply. Other unknown RPCs get it once.
 - With `system syslog file messages any notice` and `structured-data` configured, the mib2d link traps arrive over `create-subscription`. Without a syslog config the 2026-10-15 capture saw none.
 - Each link event arrives in both forms, with the same `eventTime`. Delivery lagged by 21 to 23 s on vJunos.

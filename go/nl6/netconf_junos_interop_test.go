@@ -56,8 +56,11 @@ import (
 // disable and one enable of the interface, collecting notifications for
 // netconfJunosRefSettle on the reference and netconfJunosNl6Settle on nl6.
 //
-// Normalisation (normaliseJunosInterop and junosInteropConfig): whitespace
-// between elements; session-id; the user named in the hello comment; the
+// Every message is compared RAW, whitespace included: the reference and nl6
+// both open a reply and a notification with a newline and end it with one,
+// indent alike, and end the close-session trailer with a newline after a
+// leading one. Normalisation (normaliseJunosInterop and junosInteropConfig)
+// replaces values only: session-id; the user named in the hello comment; the
 // junos version in the rpc-reply namespace; message-id is equal by
 // construction; eventTime, timestamp, seconds, microseconds, pid and
 // hostname of a notification; the session-end time of the close trailer;
@@ -94,64 +97,36 @@ const (
 	netconfJunosReplyWait = 30 * time.Second
 )
 
-// netconfJunosInteropAllow lists the known, documented divergences. A row
-// whose step matches an entry with skip set is logged, not compared. The
-// other entries name a rewrite that junosInteropReconcile or the
-// normalisation applies, and every application is logged.
+// netconfJunosInteropAllow documents the known divergences that remain.
+// The test reads none of its fields: it logs the table, and each rewrite is
+// applied by the code its entry names, which logs every use.
 var netconfJunosInteropAllow = []struct {
 	step string
-	skip bool
 	why  string
 }{
-	// The configuration nl6 serves is reduced to version and
-	// system/host-name, by decision. Compared by element names: nl6's must
-	// be a subset of the reference's.
-	{"rpc/get", false, "reduced configuration body"},
-	{"rpc/get-configuration", false, "reduced configuration body"},
-	// The reference's unfiltered get carries an empty
-	// <database-status-information/> after the configuration, inside
-	// <data>. nl6 does not send it. Removed from the reference row.
-	{"rpc/get", false, "empty database-status-information on the reference only"},
-	// The design's RPC table has the reference refuse a get with an
-	// ietf-interfaces interfaces-state filter with one syntax error, and it
-	// does (bad-element interfaces-state). nl6 has no row for that filter
-	// and answers it as an unfiltered get, with the reduced configuration.
-	{"rpc/get-interfaces-state", true, "nl6 answers the interfaces-state get as an unfiltered get"},
-	// The reference writes a newline between the close-session reply's EOM
-	// and the session-end comment; nl6 starts the comment right after the
-	// EOM. Whitespace outside elements is normalised, the raw bytes logged.
-	{"rpc/close-session-trailer", false, "newline before the session-end comment"},
-	// The reference sends its certificate and the CA, nl6 only its leaf.
-	// The cipher follows the server key type. Both are logged; the TLS
-	// version is compared.
-	{"tls/handshake", false, "server chain length and cipher logged, not compared"},
-	// The reference delivers link events 1 to 25 s after the commit, nl6 at
-	// once. The settle window outlasts the lag, so the sequence is compared.
-	{"events/disable", false, "delivery lag on the reference, immediate on nl6"},
-	{"events/enable", false, "delivery lag on the reference, immediate on nl6"},
-	// nl6's xe-0/0/0 has the units .0, .100, .200 and .999; the reference
-	// interface has .0 only. The other units' link-up pairs are logged by
-	// name, not compared.
-	{"events/enable", false, "units other than .0 exist on nl6 only"},
-	// The reference delivered the INFORMATIONAL link-up pair of unit .0 on
-	// one subscription and not on the other in the same run. When the
-	// reference sends none, nl6's .0 pair is logged, not compared.
-	{"events/enable", false, "unit .0 link-up pair absent on the reference"},
-	// nl6 DEFECT: an admin change broadcasts an admin event and an oper
-	// event, both carrying the oper move, and the Junos session renders a
-	// link-event pair for each. The IOS XE session skips the second one.
-	// So nl6 sends every pair twice on an admin change. The repeated pair
-	// is removed from nl6's rows and logged until the session is fixed.
-	{"events/*", false, "nl6 repeats the link-event pair on an admin change"},
-}
-
-func netconfJunosInteropSkipped(step string) bool {
-	for _, a := range netconfJunosInteropAllow {
-		if a.step == step {
-			return a.skip
-		}
-	}
-	return false
+	// junosInteropConfig: the configuration nl6 serves is reduced to
+	// version and system/host-name, by decision. Compared by element
+	// names: nl6's must be a subset of the reference's.
+	{"rpc/get", "reduced configuration body"},
+	{"rpc/get-configuration", "reduced configuration body"},
+	// The tls/handshake row: the reference sends its certificate and the
+	// CA, nl6 only its leaf, and the cipher follows the server key type.
+	// Both are logged; only the TLS version is compared.
+	{"tls/handshake", "server chain length and cipher logged, not compared"},
+	// run: the reference delivers link events 1 to 25 s after the commit,
+	// nl6 at once. The settle window outlasts the lag, so the sequence is
+	// compared and the timing is not.
+	{"events/disable", "delivery lag on the reference, immediate on nl6"},
+	{"events/enable", "delivery lag on the reference, immediate on nl6"},
+	// junosInteropClassify: nl6's xe-0/0/0 has the units .0, .100, .200 and
+	// .999; the reference interface has .0 only. The other units' link-up
+	// pairs are logged by name, not compared.
+	{"events/enable", "units other than .0 exist on nl6 only"},
+	// junosInteropReconcile: the reference delivered the INFORMATIONAL
+	// link-up pair of unit .0 on one subscription and not on the other in
+	// one run. When the reference sends none, nl6's .0 pair is logged, not
+	// compared.
+	{"events/enable", "unit .0 link-up pair absent on the reference"},
 }
 
 // netconfJunosInteropRPCs is the RPC table of the Junos session without
@@ -398,7 +373,6 @@ func junosInteropClassify(msg, iface string, reference bool) string {
 // ---- normalisation
 
 var (
-	ncjBetween     = regexp.MustCompile(`>\s+<`)
 	ncjSessionID   = regexp.MustCompile(`(<session-id>)\d+(</session-id>)`)
 	ncjHelloUser   = regexp.MustCompile(`(<!-- user )[^ ,]+(, class j-super-user -->)`)
 	ncjVersionNS   = regexp.MustCompile(`(xmlns:junos="http://xml\.juniper\.net/junos/)\d+\.\d+R\d+(?:-S\d+)?\.\d+(/junos")`)
@@ -407,7 +381,7 @@ var (
 	ncjHostname    = regexp.MustCompile(`(<hostname>)[^<]+(</hostname>)`)
 	ncjSessionEnd  = regexp.MustCompile(`(<!-- session end at )\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC( -->)`)
 	ncjIfIndexMsg  = regexp.MustCompile(`ifIndex \d+,`)
-	ncjIfIndexData = regexp.MustCompile(`(<(?:name|key)>snmp-interface-index</(?:name|key)><value>)\d+(</value>)`)
+	ncjIfIndexData = regexp.MustCompile(`(<(?:name|key)>snmp-interface-index</(?:name|key)>\s*<value>)\d+(</value>)`)
 	ncjCommitAttr  = regexp.MustCompile(` (junos:(?:commit|changed)-(?:seconds|localtime|user))="[^"]*"`)
 	ncjUnitName    = regexp.MustCompile(`ifName [^<]+`)
 	ncjConfig      = regexp.MustCompile(`(?s)(<configuration [^>]*>)(.*)(</configuration>)`)
@@ -417,7 +391,6 @@ var (
 // the reference with placeholders. A value is replaced only when it has the
 // device's shape, so a malformed value still shows up in the diff.
 func normaliseJunosInterop(s, iface string) string {
-	s = strings.TrimSpace(ncjBetween.ReplaceAllString(s, "><"))
 	s = ncjSessionID.ReplaceAllString(s, "${1}SESSIONID${2}")
 	s = ncjHelloUser.ReplaceAllString(s, "${1}USER${2}")
 	s = ncjVersionNS.ReplaceAllString(s, "${1}VERSION${2}")
@@ -475,11 +448,7 @@ type junosInteropComparable struct {
 	hasCfg   bool
 }
 
-func (c junosInteropComparable) same(o junosInteropComparable) bool {
-	return c.key == o.key && c.xml == o.xml
-}
-
-func junosInteropComparables(t *testing.T, rows []junosInteropRow, iface string) (out []junosInteropComparable, skipped []string) {
+func junosInteropComparables(t *testing.T, rows []junosInteropRow, iface string) (out []junosInteropComparable) {
 	t.Helper()
 	for _, r := range rows {
 		x := normaliseJunosInterop(r.xml, iface)
@@ -487,43 +456,19 @@ func junosInteropComparables(t *testing.T, rows []junosInteropRow, iface string)
 		if err != nil {
 			t.Fatalf("%s: configuration body: %v", r.step, err)
 		}
-		c := junosInteropComparable{key: r.step + " " + r.kind, xml: x, config: paths, hasCfg: hasCfg}
-		if netconfJunosInteropSkipped(r.step) {
-			skipped = append(skipped, c.key+" "+c.xml)
-			continue
-		}
-		out = append(out, c)
+		out = append(out, junosInteropComparable{key: r.step + " " + r.kind, xml: x, config: paths, hasCfg: hasCfg})
 	}
-	return out, skipped
+	return out
 }
 
-var (
-	ncjDBStatus = "<database-status-information></database-status-information>"
-	ncjUnitZero = "ifName IFNAME.0<"
-)
+const ncjUnitZero = "ifName IFNAME.0<"
 
-// junosInteropReconcile applies the allow-listed rewrites of
-// netconfJunosInteropAllow that need both sides, and returns a log line for
-// each rewrite it made.
-func junosInteropReconcile(nl6, ref []junosInteropComparable) (outNl6, outRef []junosInteropComparable, logs []string) {
-	for _, r := range ref {
-		if strings.HasPrefix(r.key, "rpc/get ") && strings.Contains(r.xml, ncjDBStatus) {
-			r.xml = strings.Replace(r.xml, ncjDBStatus, "", 1)
-			logs = append(logs, "rpc/get: removed the reference's empty database-status-information")
-		}
-		outRef = append(outRef, r)
-	}
-	for i := 0; i < len(nl6); i++ {
-		c := nl6[i]
-		if n := len(outNl6); strings.HasPrefix(c.key, "events/") && i+1 < len(nl6) && n >= 2 &&
-			outNl6[n-2].same(c) && outNl6[n-1].same(nl6[i+1]) {
-			logs = append(logs, c.key+": removed nl6's repeated link-event pair (nl6 defect)")
-			i++
-			continue
-		}
-		outNl6 = append(outNl6, c)
-	}
-	refUnit := slices.ContainsFunc(outRef, func(c junosInteropComparable) bool {
+// junosInteropReconcile drops nl6's unit .0 link-up pair when the reference
+// sent none (see netconfJunosInteropAllow), and returns a log line for each
+// row it dropped.
+func junosInteropReconcile(nl6, ref []junosInteropComparable) (outNl6 []junosInteropComparable, logs []string) {
+	outNl6 = nl6
+	refUnit := slices.ContainsFunc(ref, func(c junosInteropComparable) bool {
 		return strings.HasPrefix(c.key, "events/") && strings.Contains(c.xml, ncjUnitZero)
 	})
 	if !refUnit {
@@ -535,7 +480,7 @@ func junosInteropReconcile(nl6, ref []junosInteropComparable) (outNl6, outRef []
 			return false
 		})
 	}
-	return outNl6, outRef, logs
+	return outNl6, logs
 }
 
 // diffJunosInterop reports where the streams part. Empty means equal.
@@ -570,7 +515,7 @@ func diffJunosInterop(nl6, ref []junosInteropComparable) (diff string, extra []s
 			}
 			continue
 		}
-		fmt.Fprintf(&b, "row %d\n  nl6: %s %s\n  ref: %s %s\n", i, a.key, a.xml, r.key, r.xml)
+		fmt.Fprintf(&b, "row %d\n  nl6: %s %q\n  ref: %s %q\n", i, a.key, a.xml, r.key, r.xml)
 		shown++
 	}
 	if len(nl6) != len(ref) {
@@ -738,7 +683,7 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 	}
 
 	for _, a := range netconfJunosInteropAllow {
-		t.Logf("allow-list %s skip=%v: %s", a.step, a.skip, a.why)
+		t.Logf("allow-list %s: %s", a.step, a.why)
 	}
 	// nl6 first: it takes seconds, and a broken nl6 should not cost a round
 	// on the device.
@@ -759,18 +704,12 @@ func TestNetconfJunosInteropAgainstReference(t *testing.T) {
 	failed := false
 	for _, tr := range transports {
 		refRows := ref.run(t, tr)
-		a, aSkipped := junosInteropComparables(t, nl6Rows[tr], netconfJunosNl6If)
-		r, rSkipped := junosInteropComparables(t, refRows, refIf)
-		for _, s := range aSkipped {
-			t.Logf("%s skipped nl6: %s", tr, s)
-		}
-		for _, s := range rSkipped {
-			t.Logf("%s skipped ref: %s", tr, s)
-		}
+		a := junosInteropComparables(t, nl6Rows[tr], netconfJunosNl6If)
+		r := junosInteropComparables(t, refRows, refIf)
 		for _, c := range a {
-			t.Logf("%s row: %s %s", tr, c.key, c.xml)
+			t.Logf("%s row: %s %q", tr, c.key, c.xml)
 		}
-		a, r, logs := junosInteropReconcile(a, r)
+		a, logs := junosInteropReconcile(a, r)
 		for _, l := range logs {
 			t.Logf("%s allow-listed: %s", tr, l)
 		}
