@@ -116,7 +116,7 @@ nl6 serves both protocols, each on a narrow slice, and keeps the plain SSH CLI a
 | **Port** | `9339` | Collector's port | `830` | `22` |
 | **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Client dials the device |
 | **Auth** | Shared self-signed server cert, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login | Device SSH login |
-| **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | None, SSH is always encrypted | None, SSH is always encrypted |
+| **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | Not available | Not available |
 | **Devices** | All | Opt-in per device | `cisco_catalyst_9500` only | All |
 | **Default** | On | Off | Off | On |
 | **Writes** | No, `Set` is `Unimplemented` | No | No | No |
