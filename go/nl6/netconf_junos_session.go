@@ -24,7 +24,6 @@ const (
 // newJunosNetconfSession builds a session that speaks the Junos dialect:
 // the Junos hello, base:1.0 framing only, and the Junos replies. Its single
 // notification stream is fed by the same dispatcher as the IOS XE session.
-// onEvent stays nil until the Junos notification renderer is installed.
 func newJunosNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry, user string) *netconfSession {
 	s := newNetconfSession(id, dev, rw, reg)
 	s.startedAt = time.Now()
@@ -34,6 +33,7 @@ func newJunosNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 	} else {
 		ev.sent, ev.dropped = new(uint64), new(uint64)
 	}
+	ev.onEvent = (*netconfSession).junosStateEvent
 	s.ev = ev
 	s.onStart = s.startEvents
 	s.onEnd = func() {
