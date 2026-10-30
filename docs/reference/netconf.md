@@ -277,7 +277,7 @@ The second is the `syslog/junos/events/event` form.
 </notification>
 ```
 
-The wire form has the XML on fewer lines.
+The listing joins each `<parameter>` and `<attributes>` element onto one line. The wire form spreads them over more lines.
 `eventTime` is whole seconds with a `+00:00` offset.
 `hostname` is the device `sysName`.
 

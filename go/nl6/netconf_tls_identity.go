@@ -103,14 +103,19 @@ func (id *NetconfTLSIdentity) Validate() error {
 			return fmt.Errorf("ca_pem: no PEM certificates found")
 		}
 	}
+	if id.DefaultUsername != "" {
+		if err := validateNetconfUsername(id.DefaultUsername); err != nil {
+			return fmt.Errorf("default_username: %w", err)
+		}
+	}
 	seen := make(map[string]string, len(id.Identities))
 	for fp, user := range id.Identities {
 		norm, err := normaliseTLSFingerprint(fp)
 		if err != nil {
 			return err
 		}
-		if user == "" {
-			return fmt.Errorf("identities: empty username for %s", fp)
+		if err := validateNetconfUsername(user); err != nil {
+			return fmt.Errorf("identities: %s: %w", fp, err)
 		}
 		if prev, dup := seen[norm]; dup && prev != user {
 			return fmt.Errorf("identities: %s is listed twice with different usernames", norm)
@@ -165,4 +170,23 @@ func (id *NetconfTLSIdentity) userFor(c *x509.Certificate) (string, bool) {
 		return id.DefaultUsername, true
 	}
 	return "", false
+}
+
+// validateNetconfUsername refuses a name that is blank or holds a character
+// outside [A-Za-z0-9._-], so it can never break the XML comment of the hello.
+func validateNetconfUsername(u string) error {
+	if strings.TrimSpace(u) == "" {
+		return fmt.Errorf("empty username")
+	}
+	if strings.Contains(u, "--") {
+		return fmt.Errorf("username %q: '--' is not allowed", u)
+	}
+	for _, c := range u {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return fmt.Errorf("username %q: only letters, digits, '.', '_' and '-' are allowed", u)
+		}
+	}
+	return nil
 }

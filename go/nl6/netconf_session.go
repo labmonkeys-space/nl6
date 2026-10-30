@@ -77,8 +77,8 @@ type netconfSession struct {
 	rpc        func(r netconfRPC) (done bool)
 	hello      func(sessionID uint32) []byte
 
-	// startedAt is when the session was built. The Junos replies report it
-	// as the commit and change time.
+	// startedAt is the commit and change time the Junos replies report: the
+	// device registry's creation time, or the session's own without one.
 	startedAt time.Time
 
 	// ev carries the state-change push machinery. Nil for a bare
@@ -479,6 +479,9 @@ type netconfSessionRegistry struct {
 	// session that acquires it and stopped when the last one releases it.
 	disp     *netconfDispatcher
 	dispRefs int
+	// createdAt is when the device's registry was built. The Junos replies
+	// report it as the device's commit and change time.
+	createdAt time.Time
 }
 
 // acquireDispatcher returns the device's dispatcher, starting it when no
@@ -518,7 +521,7 @@ func (g *netconfSessionRegistry) releaseDispatcher(d *netconfDispatcher) {
 }
 
 func newNetconfSessionRegistry() *netconfSessionRegistry {
-	return &netconfSessionRegistry{sessions: make(map[uint32]*netconfSession)}
+	return &netconfSessionRegistry{sessions: make(map[uint32]*netconfSession), createdAt: time.Now()}
 }
 
 func (g *netconfSessionRegistry) add(s *netconfSession) {

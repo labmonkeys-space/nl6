@@ -27,6 +27,9 @@ const (
 func newJunosNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry, user string) *netconfSession {
 	s := newNetconfSession(id, dev, rw, reg)
 	s.startedAt = time.Now()
+	if reg != nil {
+		s.startedAt = reg.createdAt
+	}
 	ev := &netconfEvents{ready: make(chan struct{})}
 	if manager != nil {
 		ev.sent, ev.dropped = &manager.netconfNotificationsSent, &manager.netconfNotificationsDropped
@@ -81,6 +84,9 @@ func (s *netconfSession) junosRPC(r netconfRPC) (done bool) {
 		}
 		return reply(junosOKReply(version, id))
 	case r.op == "create-subscription" && r.ns == junosNotificationNS:
+		if bad := junosSubscribeRefusedChild(r.opXML); bad != "" {
+			return reply(junosSyntaxError(version, id, bad, 1))
+		}
 		if stream, ok := netconfChildText(r.opXML, "stream"); ok && stream != "NETCONF" {
 			return reply(junosSyntaxError(version, id, r.op, 1))
 		}
@@ -105,6 +111,31 @@ func (s *netconfSession) junosRPC(r netconfRPC) (done bool) {
 		return reply(junosSyntaxError(version, id, r.op, 2))
 	}
 	return reply(junosSyntaxError(version, id, r.op, 1))
+}
+
+// junosSubscribeRefusedChild returns the local name of the first direct child
+// of a create-subscription that asks for replay or a filter, or "".
+func junosSubscribeRefusedChild(op []byte) string {
+	dec := xml.NewDecoder(bytes.NewReader(op))
+	depth := 0
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			depth++
+			if depth == 2 {
+				switch t.Name.Local {
+				case "startTime", "stopTime", "filter":
+					return t.Name.Local
+				}
+			}
+		case xml.EndElement:
+			depth--
+		}
+	}
 }
 
 // junosSubscribe adds the session's one subscription. A second

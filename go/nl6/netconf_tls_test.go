@@ -519,7 +519,7 @@ func TestNetconfTLSIdleSessionGoroutines(t *testing.T) {
 func TestNetconfTLSEmptyTableUsesEmptyClientCAPool(t *testing.T) {
 	mgr := useNetconfTLSTestManager(t)
 	setNetconfTLSIdentity(mgr, nil, nil, "fallback")
-	base := mgr.netconfTLSConfig("127.0.0.1")
+	base := mgr.netconfTLSConfig()
 	if base.ClientAuth != tls.RequireAndVerifyClientCert || base.MinVersion != tls.VersionTLS12 || base.MaxVersion != tls.VersionTLS12 {
 		t.Fatalf("base config: ClientAuth %v, versions %x..%x", base.ClientAuth, base.MinVersion, base.MaxVersion)
 	}

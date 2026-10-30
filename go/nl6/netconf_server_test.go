@@ -685,3 +685,14 @@ func TestNetconfStatusCountsTransports(t *testing.T) {
 		t.Fatalf("subscriptions = %d, want 1", st.Subscriptions)
 	}
 }
+
+func TestNetconfSubsystemRefusesSamePorts(t *testing.T) {
+	sm := &SimulatorManager{}
+	err := sm.StartNetconfSubsystem(NetconfSubsystemConfig{Enabled: true, Port: 7000, TLSPort: 7000})
+	if err == nil || !strings.Contains(err.Error(), "-netconf-port") || !strings.Contains(err.Error(), "-netconf-tls-port") {
+		t.Fatalf("same ports error = %v", err)
+	}
+	if sm.netconfSubsystemActive.Load() {
+		t.Error("subsystem active after a refused start")
+	}
+}

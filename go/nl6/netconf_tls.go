@@ -20,9 +20,8 @@ import (
 // client CA is read from the identity table per handshake, so a REST PUT
 // applies to the next connection without touching the listener. With no CA
 // the pool is empty and every handshake fails verification, as on a device
-// with no CA configured. deviceIP is not used yet: every device serves the
-// shared certificate.
-func (sm *SimulatorManager) netconfTLSConfig(deviceIP string) *tls.Config {
+// with no CA configured. Every device serves the shared certificate.
+func (sm *SimulatorManager) netconfTLSConfig() *tls.Config {
 	base := &tls.Config{
 		Certificates: []tls.Certificate{*sm.sharedTLSCert},
 		MinVersion:   tls.VersionTLS12,
@@ -78,7 +77,7 @@ func (d *DeviceSimulator) startNetconfTLSServer() error {
 	}
 
 	srv := d.newNetconfServer(l, mgr, dia)
-	srv.tlsCfg = mgr.netconfTLSConfig(d.IP.String())
+	srv.tlsCfg = mgr.netconfTLSConfig()
 	d.netconfTLSListener = srv
 	srv.wg.Add(1)
 	go srv.acceptLoop()

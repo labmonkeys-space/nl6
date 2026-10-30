@@ -58,8 +58,7 @@ func TestNetconfTLSAPIRefusesBadPEM(t *testing.T) {
 	if mgr.netconfTLSIdentity.Load().CAPEM != "" {
 		t.Error("table changed by a refused PUT")
 	}
-	off := useNetconfTestManager(t, false)
-	_ = off
+	useNetconfTestManager(t, false)
 	if rec := netconfTLSDo(t, netconfTLSGetHandler, "GET", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("GET with subsystem off = %d", rec.Code)
 	}

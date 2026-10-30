@@ -121,21 +121,29 @@ func TestJunosSessionRPCTable(t *testing.T) {
 	rows := []struct {
 		name, body string
 		want       []byte
+		id         string
 	}{
-		{"create-subscription no stream", sub(""), junosOKReply(v, "101")},
-		{"create-subscription NETCONF", sub("<stream>NETCONF</stream>"), junosOKReply(v, "101")},
-		{"get streams", streamsGet, junosStreamsReply(v, "101")},
-		{"get netconf-state", stateGet, junosNetconfStateReply(v, "101")},
-		{"get no filter", "<get/>", junosGetReply(dev, v, "101", at)},
-		{"get-configuration", "<get-configuration/>", junosGetConfigurationReply(dev, v, "101", at)},
-		{"establish-subscription draft", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2)},
-		{"establish-subscription 8639", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2)},
-		{"get interfaces-state", ifStateGet, []byte(strings.ReplaceAll(junosFixture(t, "syntax-error-ietfif.xml"), junosCaptureVersion, v))},
-		{"unknown op", "<bogus-rpc/>", junosSyntaxError(v, "101", "bogus-rpc", 1)},
+		{"create-subscription no stream", sub(""), junosOKReply(v, "101"), ""},
+		{"create-subscription NETCONF", sub("<stream>NETCONF</stream>"), junosOKReply(v, "101"), ""},
+		{name: "create-subscription startTime", body: sub("<startTime>2026-01-01T00:00:00Z</startTime>"), want: junosSyntaxError(v, "101", "startTime", 1)},
+		{name: "create-subscription filter", body: sub(`<filter type="subtree"/>`), want: junosSyntaxError(v, "101", "filter", 1)},
+		{name: "message-id escaped", body: "<bogus-rpc/>", id: "a&amp;b", want: junosSyntaxError(v, "a&b", "bogus-rpc", 1)},
+		{"get streams", streamsGet, junosStreamsReply(v, "101"), ""},
+		{"get netconf-state", stateGet, junosNetconfStateReply(v, "101"), ""},
+		{"get no filter", "<get/>", junosGetReply(dev, v, "101", at), ""},
+		{"get-configuration", "<get-configuration/>", junosGetConfigurationReply(dev, v, "101", at), ""},
+		{"establish-subscription draft", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-event-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2), ""},
+		{"establish-subscription 8639", `<establish-subscription xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"/>`, junosSyntaxError(v, "101", "establish-subscription", 2), ""},
+		{"get interfaces-state", ifStateGet, []byte(strings.ReplaceAll(junosFixture(t, "syntax-error-ietfif.xml"), junosCaptureVersion, v)), ""},
+		{"unknown op", "<bogus-rpc/>", junosSyntaxError(v, "101", "bogus-rpc", 1), ""},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
-			c.send(junosRPCXML("101", row.body))
+			id := row.id
+			if id == "" {
+				id = "101"
+			}
+			c.send(junosRPCXML(id, row.body))
 			if got, want := c.readFramed(), string(row.want)+netconfEOM; got != want {
 				t.Fatalf("reply\n got: %q\nwant: %q", got, want)
 			}
@@ -157,6 +165,17 @@ func TestJunosSessionKillSession(t *testing.T) {
 	reg := newNetconfSessionRegistry()
 	victim := startJunosTestClient(t, dev, 1, reg, junosClientHello10)
 	killer := startJunosTestClient(t, dev, 2, reg, junosClientHello10)
+	// Commit time is per device: two sessions on one registry agree.
+	commitRe := regexp.MustCompile(`junos:commit-seconds="\d+"`)
+	victim.send(junosRPCXML("100", "<get/>"))
+	killer.send(junosRPCXML("100", "<get/>"))
+	vc, kc := commitRe.FindString(victim.readFramed()), commitRe.FindString(killer.readFramed())
+	if vc == "" || vc != kc {
+		t.Fatalf("commit-seconds differ between sessions: %q vs %q", vc, kc)
+	}
+	if !victim.sess.startedAt.Equal(killer.sess.startedAt) {
+		t.Fatal("sessions on one registry report different commit times")
+	}
 	// The victim's Serve registers before it reads the client hello, which
 	// the helper already sent, so the registry holds both.
 	killer.send(junosRPCXML("101", "<kill-session><session-id>1</session-id></kill-session>"))

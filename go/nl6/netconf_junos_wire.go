@@ -91,7 +91,7 @@ func junosServerHello(sessionID uint32, user string) []byte {
 }
 
 func junosReplyOpen(version, messageID string) string {
-	return fmt.Sprintf("\n<rpc-reply xmlns:junos=\"http://xml.juniper.net/junos/%s/junos\" xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"%s\">\n", version, messageID)
+	return fmt.Sprintf("\n<rpc-reply xmlns:junos=\"http://xml.juniper.net/junos/%s/junos\" xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\" message-id=\"%s\">\n", version, netconfEscape(messageID))
 }
 
 func junosOKReply(version, messageID string) []byte {

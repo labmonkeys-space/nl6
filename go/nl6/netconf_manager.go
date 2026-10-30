@@ -69,6 +69,9 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	if !cfg.Enabled {
 		return nil
 	}
+	if tlsPort == port {
+		return fmt.Errorf("netconf: -netconf-tls-port and -netconf-port are both %d", port)
+	}
 	id := &NetconfTLSIdentity{Identities: map[string]string{}}
 	if cfg.TLSIdentity != nil {
 		if err := cfg.TLSIdentity.Validate(); err != nil {
@@ -80,7 +83,7 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	sm.netconfTLSPort = tlsPort
 	sm.netconfPort = port
 	sm.netconfSubsystemActive.Store(true)
-	log.Printf("NETCONF subsystem enabled on port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port)
+	log.Printf("NETCONF subsystem enabled on SSH port %d and TLS port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port, tlsPort)
 	return nil
 }
 

@@ -94,6 +94,14 @@ func TestNetconfTLSIdentityValidate(t *testing.T) {
 	if err := (&NetconfTLSIdentity{Identities: map[string]string{"nonsense": "u"}}).Validate(); err == nil {
 		t.Error("a bad fingerprint was accepted")
 	}
+	for _, bad := range []string{" ", "a--b", "a-->b", "a b", "a<b", "a\"b"} {
+		if err := (&NetconfTLSIdentity{Identities: map[string]string{probeClientFingerprint: bad}}).Validate(); err == nil {
+			t.Errorf("table username %q was accepted", bad)
+		}
+		if err := (&NetconfTLSIdentity{DefaultUsername: bad}).Validate(); err == nil && bad != "" {
+			t.Errorf("default username %q was accepted", bad)
+		}
+	}
 	if err := (&NetconfTLSIdentity{CAPEM: caPEM, Identities: map[string]string{probeClientFingerprint: "alice"}, DefaultUsername: "bob"}).Validate(); err != nil {
 		t.Errorf("valid table refused: %v", err)
 	}
