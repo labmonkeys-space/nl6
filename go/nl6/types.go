@@ -447,6 +447,7 @@ type SimulatorManager struct {
 	resourcesCache   map[string]*DeviceResources // Cache for loaded resource files
 	sharedSSHSigner  ssh.Signer                  // Shared SSH host key for all devices
 	sharedTLSCert    *tls.Certificate            // Shared TLS certificate for all API servers
+	sharedTLSCAPEM   []byte                      // PEM of the CA that signed sharedTLSCert (public)
 
 	// Network namespace for device isolation (prevents systemd-networkd overhead)
 	netNamespace *NetNamespace // Network namespace for all simulated devices
@@ -732,6 +733,16 @@ type SimulatorManager struct {
 	// StartNetconfSubsystem. The subsystem is off by default.
 	netconfPort            int
 	netconfSubsystemActive atomic.Bool
+
+	// NETCONF over TLS. netconfTLSIdentity is the fleet-wide client identity
+	// table, never nil after StartNetconfSubsystem and replaced whole by PUT
+	// /api/v1/netconf/tls. netconfTLSPort is set once at startup.
+	// netconfTLSHandshakeFailures counts failed handshakes (atomic) and the
+	// Once logs the first error only.
+	netconfTLSIdentity              atomic.Pointer[NetconfTLSIdentity]
+	netconfTLSPort                  int
+	netconfTLSHandshakeFailures     uint64
+	netconfTLSFirstHandshakeErrOnce sync.Once
 
 	// gNMI dial-out subsystem state. Each dial-out device owns its own
 	// grpc.ClientConn + Publish stream on its gnmiDialoutExporter (no

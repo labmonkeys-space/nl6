@@ -20,6 +20,10 @@ const netconfDefaultPort = 830
 type NetconfSubsystemConfig struct {
 	Enabled bool
 	Port    int
+	// TLSPort 0 means 6513.
+	TLSPort int
+	// TLSIdentity is the initial client identity table, nil for an empty one.
+	TLSIdentity *NetconfTLSIdentity
 }
 
 // NetconfStatus is the body of GET /api/v1/netconf/status.
@@ -55,9 +59,25 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("netconf: invalid port %d (must be 1..65535)", port)
 	}
+	tlsPort := cfg.TLSPort
+	if tlsPort == 0 {
+		tlsPort = netconfTLSDefaultPort
+	}
+	if tlsPort < 1 || tlsPort > 65535 {
+		return fmt.Errorf("netconf: invalid TLS port %d (must be 1..65535)", tlsPort)
+	}
 	if !cfg.Enabled {
 		return nil
 	}
+	id := &NetconfTLSIdentity{Identities: map[string]string{}}
+	if cfg.TLSIdentity != nil {
+		if err := cfg.TLSIdentity.Validate(); err != nil {
+			return fmt.Errorf("netconf: TLS identity: %w", err)
+		}
+		id = cfg.TLSIdentity.normalised()
+	}
+	sm.netconfTLSIdentity.Store(id)
+	sm.netconfTLSPort = tlsPort
 	sm.netconfPort = port
 	sm.netconfSubsystemActive.Store(true)
 	log.Printf("NETCONF subsystem enabled on port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port)

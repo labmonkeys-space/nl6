@@ -236,6 +236,8 @@ func (sm *SimulatorManager) generateSharedTLSCert() {
 		return
 	}
 
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caBytes})
+
 	// Generate a server certificate signed by the CA
 	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -273,6 +275,7 @@ func (sm *SimulatorManager) generateSharedTLSCert() {
 	}
 
 	sm.sharedTLSCert = &tlsCert
+	sm.sharedTLSCAPEM = caPEM
 	elapsed := time.Since(startTime)
 	log.Printf("Shared TLS certificate generated in %v", elapsed)
 }
