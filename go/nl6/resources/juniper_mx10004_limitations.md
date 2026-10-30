@@ -32,8 +32,9 @@ The `database-status-information` block of the device is absent too.
 nl6 serves `close-session`, `kill-session`, `create-subscription` on the `NETCONF` stream, `get` with the streams filter, `get` with the `netconf-state` capabilities filter, unfiltered `get` and `get-configuration`.
 Every other RPC gets the Junos `syntax error` refusal.
 This includes `get-interface-information`, `get-schema` and replay.
-The reply to `kill-session` was never captured.
-nl6 answers it as RFC 6241 says.
+The reply shape of `kill-session` was not captured.
+nl6 closes another session and replies `ok`.
+The session's own ID or an unknown ID gets the `syntax error` refusal with `bad-element` `session-id`.
 
 ## Client identity
 

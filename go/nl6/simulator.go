@@ -169,7 +169,7 @@ func main() {
 
 		// NETCONF over SSH (IOS XE dialect). Off by default; when enabled,
 		// only cisco_catalyst_9500 devices listen.
-		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF over SSH subsystem; cisco_catalyst_9500 devices listen on -netconf-port (default: false)")
+		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF subsystem: cisco_catalyst_9500 over SSH on -netconf-port, juniper_mx10004 over SSH on -netconf-port and over TLS on -netconf-tls-port (default: false)")
 		netconfPort   = flag.Int("netconf-port", netconfDefaultPort, "TCP port for the per-device NETCONF over SSH listener (default: 830)")
 
 		// NETCONF over TLS client identity. [global]: one table for the whole fleet.
