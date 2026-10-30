@@ -29,6 +29,10 @@ type NetconfTLSIdentity struct {
 	CAPEM           string            `json:"ca_pem"`
 	Identities      map[string]string `json:"identities"`
 	DefaultUsername string            `json:"default_username"`
+
+	// caPool is CAPEM parsed once by normalised, so a handshake does no PEM
+	// parsing. A PUT replaces the whole table, so it never goes stale.
+	caPool *x509.CertPool
 }
 
 // normaliseTLSFingerprint returns the Junos spelling of a SHA-256
@@ -128,11 +132,20 @@ func (id *NetconfTLSIdentity) normalised() *NetconfTLSIdentity {
 		norm, _ := normaliseTLSFingerprint(fp)
 		out.Identities[norm] = user
 	}
+	out.caPool = out.parsePool()
 	return out
 }
 
-// pool returns the client CA pool, nil when no CA is set.
+// pool returns the client CA pool, nil when no CA is set. A table built by
+// normalised returns the pool it parsed then.
 func (id *NetconfTLSIdentity) pool() *x509.CertPool {
+	if id.caPool != nil {
+		return id.caPool
+	}
+	return id.parsePool()
+}
+
+func (id *NetconfTLSIdentity) parsePool() *x509.CertPool {
 	certs := certificateBlocksOnly([]byte(id.CAPEM))
 	if len(certs) == 0 {
 		return nil

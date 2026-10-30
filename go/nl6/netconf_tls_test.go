@@ -512,3 +512,61 @@ func TestNetconfTLSIdleSessionGoroutines(t *testing.T) {
 	waitNetconf(t, "every push sent", func() bool { return atomic.LoadUint64(&mgr.netconfNotificationsSent) >= 4*sessions })
 	waitNetconf(t, "idle goroutine count after pushes", func() bool { return netconfAppGoroutines() == want })
 }
+
+// With no CA in the table the client CA pool must be empty, not nil: a nil
+// ClientCAs makes crypto/tls verify client certificates against the system
+// roots.
+func TestNetconfTLSEmptyTableUsesEmptyClientCAPool(t *testing.T) {
+	mgr := useNetconfTLSTestManager(t)
+	setNetconfTLSIdentity(mgr, nil, nil, "fallback")
+	base := mgr.netconfTLSConfig("127.0.0.1")
+	if base.ClientAuth != tls.RequireAndVerifyClientCert || base.MinVersion != tls.VersionTLS12 || base.MaxVersion != tls.VersionTLS12 {
+		t.Fatalf("base config: ClientAuth %v, versions %x..%x", base.ClientAuth, base.MinVersion, base.MaxVersion)
+	}
+	c, err := base.GetConfigForClient(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ClientCAs == nil {
+		t.Fatal("no CA gives a nil ClientCAs; crypto/tls would fall back to the system roots")
+	}
+	if c.ClientAuth != tls.RequireAndVerifyClientCert || c.MinVersion != tls.VersionTLS12 || c.MaxVersion != tls.VersionTLS12 {
+		t.Fatalf("per-client config: ClientAuth %v, versions %x..%x", c.ClientAuth, c.MinVersion, c.MaxVersion)
+	}
+
+	ca := newNetconfTLSTestCA(t)
+	setNetconfTLSIdentity(mgr, ca, nil, "fallback")
+	c, err = base.GetConfigForClient(&tls.ClientHelloInfo{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ClientCAs == nil || c.ClientCAs != mgr.netconfTLSIdentity.Load().pool() {
+		t.Fatal("with a CA set the handshake does not use the table's cached pool")
+	}
+}
+
+// kill-session from an SSH session ends a TLS session on the same device.
+func TestNetconfTLSKillSessionAcrossTransports(t *testing.T) {
+	mgr := useNetconfTLSTestManager(t)
+	ca := newNetconfTLSTestCA(t)
+	cert, fp := ca.client(t, false)
+	setNetconfTLSIdentity(mgr, ca, map[string]string{fp: "ncuser"}, "")
+	dev, _, tlsAddr := newJunosTLSDevice(t, mgr)
+	dev.mu.Lock()
+	err := dev.startNetconfServer()
+	dev.mu.Unlock()
+	if err != nil || dev.netconfListener == nil {
+		t.Fatalf("SSH listener beside TLS: %v", err)
+	}
+
+	victim, _ := openNetconfOverTLS(t, tlsAddr, &cert, 1, "ncuser")
+	killer, _ := openNetconfOverSSH(t, dialNetconfTestSSH(t, dev.netconfListener.Addr().String()))
+	r, err := netconfRPCWithin(killer, "k1", "<kill-session><session-id>1</session-id></kill-session>", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := string(junosOKReply(junosVersion(dev), "k1")); r != want {
+		t.Fatalf("kill reply\n got: %q\nwant: %q", r, want)
+	}
+	expectNetconfTLSEOF(t, victim)
+}
