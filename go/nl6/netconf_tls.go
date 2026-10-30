@@ -22,7 +22,7 @@ import (
 // the pool is empty and every handshake fails verification, as on a device
 // with no CA configured. Every device serves the shared certificate.
 func (sm *SimulatorManager) netconfTLSConfig() *tls.Config {
-	base := &tls.Config{
+	base := &tls.Config{ // #nosec G402 -- the emulated Junos serves TLS 1.2 only; a 1.3 client is refused as the device refuses it
 		Certificates: []tls.Certificate{*sm.sharedTLSCert},
 		MinVersion:   tls.VersionTLS12,
 		MaxVersion:   tls.VersionTLS12,
