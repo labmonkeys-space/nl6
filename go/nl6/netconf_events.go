@@ -48,6 +48,10 @@ type netconfEvents struct {
 	ready chan struct{}
 	disp  atomic.Pointer[netconfDispatcher]
 
+	// onEvent renders one state change for the session. It is installed by
+	// the dialect constructor and may be nil.
+	onEvent func(s *netconfSession, e *netconfStateEvent)
+
 	// skip names the oper event that follows an admin event which moved
 	// oper too. The admin event already pushed the row, so its twin is
 	// dropped. Only the dispatcher goroutine touches it.
@@ -118,6 +122,7 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 		ev.sent, ev.dropped = new(uint64), new(uint64)
 	}
 	s.ev = ev
+	ev.onEvent = (*netconfSession).iosxeStateEvent
 	s.onStart = s.startEvents
 	s.onEnd = func() {
 		if d := ev.disp.Swap(nil); d != nil {
@@ -381,7 +386,16 @@ func (s *netconfSession) handleStateChange(evt StateChange) {
 	s.handleStateEvent(&netconfStateEvent{evt: evt, dev: s.dev})
 }
 
+// handleStateEvent renders one event through the dialect hook. A session
+// without one renders nothing.
 func (s *netconfSession) handleStateEvent(e *netconfStateEvent) {
+	if s.ev != nil && s.ev.onEvent != nil {
+		s.ev.onEvent(s, e)
+	}
+}
+
+// iosxeStateEvent is the IOS XE rendering of one state change.
+func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 	evt := e.evt
 	// A session closed after a write error renders nothing more.
 	if s.isClosed() {

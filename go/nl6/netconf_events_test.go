@@ -38,6 +38,23 @@ func newNetconfTestDevice(t *testing.T) (*DeviceSimulator, *InterfaceState) {
 	return &DeviceSimulator{resources: res, metricsCycler: mc}, ic.State()
 }
 
+// newJunosTestDevice builds a juniper_mx10004 device with a live interface
+// state engine and no protocol listeners.
+func newJunosTestDevice(t *testing.T) *DeviceSimulator {
+	t.Helper()
+	sm := &SimulatorManager{resourcesCache: make(map[string]*DeviceResources)}
+	res, err := sm.LoadSpecificResources("juniper_mx10004.json")
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	mc := &MetricsCycler{}
+	mc.InitIfCountersWithScenario(res, 1, IfErrorClean)
+	if ic := mc.ifCounters.Load(); ic == nil || ic.State() == nil {
+		t.Fatal("profile has no interface state engine")
+	}
+	return &DeviceSimulator{resources: res, metricsCycler: mc}
+}
+
 // iosxeTestClient drives a session built by newIOSXENetconfSession.
 type iosxeTestClient struct {
 	*netconfTestClient

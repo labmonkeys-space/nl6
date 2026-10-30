@@ -29,14 +29,10 @@ var netconfDialects = map[string]netconfDialect{
 		},
 	},
 	"juniper_mx10004": {
-		Name: "junos",
-		SSH:  true,
-		TLS:  true,
-		// Placeholder until the Junos session type exists. It builds the
-		// plain session and ignores user.
-		NewSession: func(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry, _ string) *netconfSession {
-			return newNetconfSession(id, dev, rw, reg)
-		},
+		Name:       "junos",
+		SSH:        true,
+		TLS:        true,
+		NewSession: newJunosNetconfSession,
 	},
 }
 
