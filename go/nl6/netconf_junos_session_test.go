@@ -144,7 +144,15 @@ func TestJunosSessionRPCTable(t *testing.T) {
 				id = "101"
 			}
 			c.send(junosRPCXML(id, row.body))
-			if got, want := c.readFramed(), string(row.want)+netconfEOM; got != want {
+			got := c.readFramed()
+			if row.id != "" {
+				// Hand-written literals: the decoded id is a&b, the wire
+				// spelling must be escaped.
+				if !strings.Contains(got, `message-id="a&amp;b"`) || strings.Contains(got, `message-id="a&b"`) {
+					t.Fatalf("message-id not escaped in reply: %q", got)
+				}
+			}
+			if want := string(row.want) + netconfEOM; got != want {
 				t.Fatalf("reply\n got: %q\nwant: %q", got, want)
 			}
 		})
