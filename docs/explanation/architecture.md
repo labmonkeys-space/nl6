@@ -107,17 +107,28 @@ See [gNMI dial-out reference](../reference/gnmi-dial-out.md).
 OpenConfig is a set of vendor-neutral YANG data models.
 gNMI and NETCONF are two protocols that carry YANG-modelled data; either can carry OpenConfig or a vendor's native model.
 nl6 serves both protocols, each on a narrow slice, and keeps the plain SSH CLI as a third surface.
-The table lists what each surface in nl6 is, on which transport, and in which direction the TCP connection is opened.
 
-| Surface | Model | Encoding | Transport | Who connects | Devices | Default | Scope in nl6 |
-|---------|-------|----------|-----------|--------------|---------|---------|--------------|
-| gNMI dial-in | OpenConfig `interfaces`, `components`; native origins (`juniper`, Cisco) where a type ships a catalogue | `JSON_IETF`, `PROTO` | gRPC over TLS on `:9339`, shared self-signed cert, no client cert or user auth; plaintext with `-gnmi-tls=false` | Collector dials the device | Every device; `cisco_asr9902` and `juniper_mx10004` serve a per-type catalogue | On | `Capabilities`, `Get`, `Subscribe` (SAMPLE, ON_CHANGE, ONCE). `Set` returns `Unimplemented`. See [gNMI dial-in](../reference/gnmi.md). |
-| gNMI dial-out | Same payload as dial-in | Same | gRPC over TLS to the collector (`ca_pem`, optional mTLS, `insecure_skip_verify`); plaintext with `tls.enabled=false` | Device dials the collector (Arista `gnmireverse` flavour only) | Per device, opt-in | Off | Telemetry push, drop on outage. See [gNMI dial-out](../reference/gnmi-dial-out.md). |
-| NETCONF | Cisco native `Cisco-IOS-XE-interfaces-oper` | XML | SSH `netconf` subsystem on `:830`, device SSH login, shared host key | Client dials the device | `cisco_catalyst_9500` only | Off (`-netconf-enable`) | IOS XE draft `establish-subscription` and `push-update` / `push-change-update` on interface state. No `get`, no `edit-config`, no RFC 8639. See [NETCONF](../reference/netconf.md). |
-| SSH CLI | Vendor CLI text, no model | Plain text | SSH shell on `:22`, device SSH login, shared host key | Client dials the device | Every device | On | Canned command output from the type's resource files. |
+| | gNMI dial-in | gNMI dial-out | NETCONF | SSH CLI |
+|---|---|---|---|---|
+| **Model** | OpenConfig, plus native origins from a per-type catalogue | Same as dial-in | Cisco native `Cisco-IOS-XE-interfaces-oper` | None, CLI text |
+| **Encoding** | `JSON_IETF`, `PROTO` | Same as dial-in | XML | Plain text |
+| **Transport** | gRPC over TLS | gRPC over TLS | SSH `netconf` subsystem | SSH shell |
+| **Port** | `9339` | Collector's port | `830` | `22` |
+| **Who connects** | Collector dials the device | Device dials the collector | Client dials the device | Client dials the device |
+| **Auth** | Shared self-signed server cert, no client auth | Collector verified by `ca_pem`, optional mTLS | Device SSH login | Device SSH login |
+| **Plaintext option** | `-gnmi-tls=false` | `tls.enabled=false` | No | n/a |
+| **Devices** | All | Opt-in per device | `cisco_catalyst_9500` only | All |
+| **Default** | On | Off | Off | On |
+| **Writes** | No, `Set` is `Unimplemented` | No | No | No |
+
+What each surface serves:
+
+- **gNMI dial-in**: `Capabilities`, `Get` and `Subscribe` in SAMPLE, ON_CHANGE and ONCE mode over `/interfaces` and `/components`. `cisco_asr9902` and `juniper_mx10004` add a per-type catalogue with native origins. See [gNMI dial-in](../reference/gnmi.md).
+- **gNMI dial-out**: the dial-in payload pushed to a collector over Arista `gnmireverse`, dropped on outage. See [gNMI dial-out](../reference/gnmi-dial-out.md).
+- **NETCONF**: the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state. No `get`, no `edit-config`, no RFC 8639. See [NETCONF](../reference/netconf.md).
+- **SSH CLI**: canned command output from the type's resource files.
 
 SSH appears twice because NETCONF reuses it as a transport: the same login and host key, a different subsystem, a different port.
-
 
 ### Resource loading
 
