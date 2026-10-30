@@ -401,3 +401,5 @@ The main points are these.
 - Only a fingerprint table plus a default username maps a client. There is no mapping by certificate name.
 - The framing is base 1.0 only.
 - The TLS alert bytes differ from Junos. The refusal is the same.
+
+`make test-interop-netconf-junos` diffs the Junos dialect against a real vJunos-router over TLS and SSH: the hello, the RPCs and the link events of one interface disable and enable.

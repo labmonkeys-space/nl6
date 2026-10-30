@@ -76,6 +76,19 @@ When a session ends, the whole SSH connection closes.
 - Its `pubd` process crashes after pushing interface changes on 26.01.02. It restarts on its own.
 - A dropped probe session leaks subscriptions on the VM, which then answers "application communication failure". Reboot the VM to clear it.
 - Do not run a 257-subscription cap probe against the c8000v.
+- `make test-interop-netconf-junos` diffs the Junos dialect between an in-process mx10004 and a reference vJunos-router 25.4R1.12, over TLS and over SSH, with one Go client. Phases: the hello, the Junos RPC table without `kill-session`, `close-session` and its trailer, then `create-subscription` across one `set interfaces <if> disable` and one `delete interfaces <if> disable`. nl6 moves the admin status of xe-0/0/0, because `disable` is an admin change and both report `ifAdminStatus down(2)`.
+- The Junos lab record: the `vj` containerlab on mad-monkey. From a workstation, forward the ports with `ssh -f -N -L 16513:172.20.20.2:6513 -L 10830:172.20.20.2:830 -L 10022:172.20.20.3:22 root@mad-monkey.labmonkeys.tech`. The client certificate, key and CA are in `/root/nc-lab/tls/` on mad-monkey. The reference maps the certificate to `ncuser`; its CLI and SSH NETCONF login is `admin`. Never commit the key.
+- The Junos test has no defaults. Set `NL6_NETCONF_JUNOS_REF`, `NL6_NETCONF_JUNOS_REF_SSH`, `NL6_NETCONF_JUNOS_CLI`, `NL6_NETCONF_JUNOS_CLI_USER`, `NL6_NETCONF_JUNOS_CLI_PASSWORD`, `NL6_NETCONF_JUNOS_CLIENT_CERT`, `NL6_NETCONF_JUNOS_CLIENT_KEY`, `NL6_NETCONF_JUNOS_CA` and `NL6_NETCONF_JUNOS_REF_IF`, or it skips. It enables the interface again on a normal exit and on a test failure. A `-timeout` or Ctrl-C leaves it as it was.
+- The reference feed carries about 1150 syslog notifications per 60 s window. The test keeps only `SNMP_TRAP_LINK_UP` and `SNMP_TRAP_LINK_DOWN` on the interface under test.
+- 2026-10-30 run: PASS over both transports in 258 s, 18 rows equal over TLS and 17 over SSH. The allow-listed divergences, each logged by the test:
+  - nl6 sends every link-event pair twice on an admin change. The admin event and the oper event of `ApplyAdminStatus` both carry the oper move, and the Junos session renders a pair for each; the IOS XE session skips the second. This is an nl6 defect. The test removes the repeat until it is fixed.
+  - A `get` with an `ietf-interfaces` `interfaces-state` filter: the reference answers one `syntax error` (`bad-element` `interfaces-state`), as the design table says. nl6 answers it as an unfiltered `get`.
+  - The reference's unfiltered `get` carries an empty `<database-status-information>` after the configuration. nl6 does not.
+  - The reference writes `\n` before the `<!-- session end ... -->` trailer. nl6 does not. The capture missed the newline: the probe read the trailer from the connection, and its buffered reader already held the newline.
+  - Configuration bodies: nl6's 3 element paths are a subset of the reference's 76.
+  - The reference's unit .0 `SNMP_TRAP_LINK_UP` (INFORMATIONAL) came on one subscription and not on the other in an earlier run of the same day. When it is absent, nl6's is not compared.
+  - The reference sends its certificate and the CA, nl6 its leaf only. Both negotiated TLS 1.2 with `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`.
+- The vJunos CLI over SSH sometimes prints nothing to a non-interactive session, while still committing. The test keeps stdin open until it sees `Exiting configuration mode`.
 
 ## Scale
 
