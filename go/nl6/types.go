@@ -159,12 +159,15 @@ type DeviceSimulator struct {
 	// startup or because the device hasn't completed startGnmiServer.
 	gnmiServer   *grpc.Server
 	gnmiListener net.Listener
-	// NETCONF over SSH listener and its sessions. Set by startNetconfServer
-	// on a catalyst 9500 when the NETCONF subsystem is enabled, else nil.
-	netconfListener net.Listener
-	netconfSessions *netconfSessionRegistry
-	running         bool
-	mu              sync.RWMutex
+	// NETCONF listeners and their sessions. netconfListener is set by
+	// startNetconfServer and netconfTLSListener by startNetconfTLSServer,
+	// each only when the NETCONF subsystem is enabled and the profile's
+	// dialect serves that transport, else nil. Both share netconfSessions.
+	netconfListener    net.Listener
+	netconfTLSListener net.Listener
+	netconfSessions    *netconfSessionRegistry
+	running            bool
+	mu                 sync.RWMutex
 }
 
 // SNMPv3 USM (User-based Security Model) configuration

@@ -1110,10 +1110,14 @@ func (d *DeviceSimulator) Start() error {
 		}
 	}
 
-	// Start the NETCONF listener. startNetconfServer decides: off unless
-	// -netconf-enable is set, and then only on catalyst 9500 devices.
+	// Start the NETCONF listeners. startNetconfServer and
+	// startNetconfTLSServer decide: off unless -netconf-enable is set, and
+	// then only on profiles whose dialect serves that transport.
 	if err := d.startNetconfServer(); err != nil {
 		errors = append(errors, fmt.Sprintf("NETCONF: %v", err))
+	}
+	if err := d.startNetconfTLSServer(); err != nil {
+		errors = append(errors, fmt.Sprintf("NETCONF TLS: %v", err))
 	}
 
 	// Start API server (if device has API resources)
@@ -1153,6 +1157,7 @@ func (d *DeviceSimulator) Stop() error {
 		d.apiServer == nil &&
 		d.gnmiServer == nil &&
 		d.netconfListener == nil &&
+		d.netconfTLSListener == nil &&
 		d.flowExporter == nil &&
 		d.trapExporter == nil &&
 		d.syslogExporter == nil &&

@@ -467,12 +467,14 @@ func (s *netconfSession) killTarget(r netconfRPC) bool {
 }
 
 // netconfSessionRegistry tracks the sessions of one device so kill-session can
-// reach another session, hands out subscription ids, and owns the device's
-// state-change dispatcher.
+// reach another session, hands out session and subscription ids, and owns
+// the device's state-change dispatcher. The SSH and TLS listeners of a
+// device share it.
 type netconfSessionRegistry struct {
-	mu       sync.Mutex
-	sessions map[uint32]*netconfSession
-	subSeq   atomic.Uint32
+	mu         sync.Mutex
+	sessions   map[uint32]*netconfSession
+	sessionSeq atomic.Uint32
+	subSeq     atomic.Uint32
 	// disp is the device's state-change dispatcher, started by the first
 	// session that acquires it and stopped when the last one releases it.
 	disp     *netconfDispatcher

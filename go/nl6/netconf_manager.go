@@ -90,6 +90,7 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 		SubsystemActive:      sm.netconfSubsystemActive.Load(),
 		NotificationsSent:    atomic.LoadUint64(&sm.netconfNotificationsSent),
 		NotificationsDropped: atomic.LoadUint64(&sm.netconfNotificationsDropped),
+		TLSHandshakeFailures: atomic.LoadUint64(&sm.netconfTLSHandshakeFailures),
 	}
 	if !st.SubsystemActive {
 		return st
@@ -97,10 +98,13 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 	sm.mu.RLock()
 	for _, d := range sm.devices {
 		d.mu.RLock()
-		hasListener, reg := d.netconfListener != nil, d.netconfSessions
+		hasListener, hasTLS, reg := d.netconfListener != nil, d.netconfTLSListener != nil, d.netconfSessions
 		d.mu.RUnlock()
 		if hasListener {
 			st.Listeners++
+		}
+		if hasTLS {
+			st.ListenersTLS++
 		}
 		if reg != nil {
 			sessions, tlsSessions, subs := reg.counts()

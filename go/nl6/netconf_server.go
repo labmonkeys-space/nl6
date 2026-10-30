@@ -7,12 +7,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -27,19 +27,20 @@ const (
 	netconfSubsystemWait = 10 * time.Second
 )
 
-// netconfServer is one device's NETCONF over SSH listener. It is stored as
-// the device's netconfListener. Close stops the accept loop, closes every
-// connection and session, and waits for all of their goroutines.
+// netconfServer is one device's NETCONF listener, over SSH (stored as the
+// device's netconfListener) or over TLS (netconfTLSListener, tlsCfg set).
+// Close stops the accept loop, closes every connection and session of this
+// listener, and waits for all of their goroutines.
 type netconfServer struct {
 	net.Listener
-	dev        *DeviceSimulator
-	mgr        *SimulatorManager
-	cfg        *ssh.ServerConfig
-	dia        netconfDialect
-	reg        *netconfSessionRegistry
-	ctx        context.Context
-	cancel     context.CancelFunc
-	sessionSeq atomic.Uint32
+	dev    *DeviceSimulator
+	mgr    *SimulatorManager
+	cfg    *ssh.ServerConfig // SSH only
+	tlsCfg *tls.Config       // TLS only, nil on the SSH listener
+	dia    netconfDialect
+	reg    *netconfSessionRegistry
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	mu        sync.Mutex
 	conns     map[net.Conn]struct{}
@@ -76,42 +77,62 @@ func (d *DeviceSimulator) startNetconfServer() error {
 		return fmt.Errorf("failed to start NETCONF server on %s: %v", addr, err)
 	}
 
-	cfg := newDeviceSSHConfig(mgr.sharedSSHSigner)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	srv := &netconfServer{
-		Listener: l,
-		dev:      d,
-		mgr:      mgr,
-		cfg:      cfg,
-		dia:      dia,
-		reg:      newNetconfSessionRegistry(),
-		ctx:      ctx,
-		cancel:   cancel,
-		conns:    make(map[net.Conn]struct{}),
-	}
+	srv := d.newNetconfServer(l, mgr, dia)
+	srv.cfg = newDeviceSSHConfig(mgr.sharedSSHSigner)
 	d.netconfListener = srv
-	d.netconfSessions = srv.reg
 	srv.wg.Add(1)
 	go srv.acceptLoop()
 	return nil
 }
 
-// stopNetconfServer closes the listener and every session. Idempotent.
+// newNetconfServer builds a listener's server on l. The device's session
+// registry is created by the first listener and shared by the second, so
+// session ids, kill-session and the state-change dispatcher span both
+// transports.
+//
+// Caller MUST hold d.mu.
+func (d *DeviceSimulator) newNetconfServer(l net.Listener, mgr *SimulatorManager, dia netconfDialect) *netconfServer {
+	if d.netconfSessions == nil {
+		d.netconfSessions = newNetconfSessionRegistry()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &netconfServer{
+		Listener: l,
+		dev:      d,
+		mgr:      mgr,
+		dia:      dia,
+		reg:      d.netconfSessions,
+		ctx:      ctx,
+		cancel:   cancel,
+		conns:    make(map[net.Conn]struct{}),
+	}
+}
+
+// stopNetconfServer closes the device's NETCONF listeners, SSH and TLS, and
+// every session. It is the one NETCONF stop for a device. Idempotent.
 //
 // Caller MUST hold d.mu. Holding it across the wait is safe because no
 // NETCONF session goroutine takes d.mu.
 func (d *DeviceSimulator) stopNetconfServer() {
-	if d == nil || d.netconfListener == nil {
+	if d == nil {
 		return
 	}
-	l := d.netconfListener
-	d.netconfListener = nil
-	d.netconfSessions = nil
-	_ = l.Close()
+	reg := d.netconfSessions
+	listeners := []net.Listener{d.netconfListener, d.netconfTLSListener}
+	d.netconfListener, d.netconfTLSListener, d.netconfSessions = nil, nil, nil
+	if reg != nil {
+		reg.closeAll()
+	}
+	for _, l := range listeners {
+		if l != nil {
+			_ = l.Close()
+		}
+	}
 }
 
-// Close stops the server and waits for its goroutines.
+// Close stops the server and waits for its goroutines. Cancelling ctx ends
+// this listener's sessions; the sessions of the device's other listener are
+// left alone.
 func (s *netconfServer) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
@@ -127,7 +148,6 @@ func (s *netconfServer) Close() error {
 		for _, c := range conns {
 			_ = c.Close()
 		}
-		s.reg.closeAll()
 		s.wg.Wait()
 	})
 	return err
@@ -176,6 +196,11 @@ func (s *netconfServer) serveConn(conn net.Conn) {
 	defer s.wg.Done()
 	defer s.untrack(conn)
 	defer conn.Close()
+
+	if s.tlsCfg != nil {
+		s.serveTLS(conn)
+		return
+	}
 
 	// The SSH idle deadline bounds the handshake and the wait for the
 	// netconf subsystem. A NETCONF session sits quiet between notifications
@@ -311,7 +336,7 @@ func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel) {
 	if s.ctx.Err() != nil {
 		return
 	}
-	sess := s.dia.NewSession(s.sessionSeq.Add(1), s.dev, ch, s.reg, USERNAME)
+	sess := s.dia.NewSession(s.reg.sessionSeq.Add(1), s.dev, ch, s.reg, USERNAME)
 	// kill-session closes the victim's whole connection, not only its
 	// channel.
 	sess.conn = sc
