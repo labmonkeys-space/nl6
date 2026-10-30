@@ -52,9 +52,6 @@ func newJunosNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 	}
 	s.base10Only = true
 	s.hello = func(sessionID uint32) []byte { return junosServerHello(sessionID, user) }
-	s.trailer = func() []byte {
-		return []byte(fmt.Sprintf(junosSessionEndFormat, time.Now().UTC().Format(junosTimeFormat)))
-	}
 	s.rpc = s.junosRPC
 	return s
 }
@@ -67,7 +64,16 @@ func (s *netconfSession) junosRPC(r netconfRPC) (done bool) {
 
 	switch {
 	case r.op == "close-session" && r.ns == netconfBaseNS:
-		_ = s.writeMessage(junosOKReply(version, id))
+		// The reply and the session-end trailer go out under one hold of wmu,
+		// so no push can land between them. The trailer follows only a
+		// reply that was written.
+		s.wmu.Lock()
+		defer s.wmu.Unlock()
+		// Closed under the lock, so a push waiting for wmu is dropped.
+		defer s.close()
+		if s.framer.WriteMessage(junosOKReply(version, id)) == nil {
+			_, _ = fmt.Fprintf(s.framer.w, junosSessionEndFormat, time.Now().UTC().Format(junosTimeFormat))
+		}
 		return true
 	case r.op == "kill-session" && r.ns == netconfBaseNS:
 		if !s.killTarget(r) {

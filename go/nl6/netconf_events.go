@@ -191,6 +191,12 @@ func (s *netconfSession) runWriter() {
 			continue
 		}
 		s.wmu.Lock()
+		// A session closed while this push waited for wmu writes nothing
+		// more, so nothing follows a Junos session-end trailer.
+		if s.isClosed() {
+			s.wmu.Unlock()
+			return
+		}
 		if p.sub.deleted.Load() {
 			s.wmu.Unlock()
 			continue

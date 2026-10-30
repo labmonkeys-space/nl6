@@ -70,19 +70,17 @@ type netconfSession struct {
 	// Dialect hooks. The zero values give the IOS XE behaviour.
 	// base10Only keeps the framing at end-of-message whatever the client
 	// advertises. rpc, when set, answers every request that passed the
-	// envelope checks. hello, when set, renders the server hello. trailer,
-	// when set, returns raw bytes written after the close-session reply.
+	// envelope checks. hello, when set, renders the server hello.
 	base10Only bool
 	rpc        func(r netconfRPC) (done bool)
 	hello      func(sessionID uint32) []byte
-	trailer    func() []byte
 
 	// startedAt is when the session was built. The Junos replies report it
 	// as the commit and change time.
 	startedAt time.Time
 
-	// ev carries the state-change push machinery. Nil unless the session
-	// was built by newIOSXENetconfSession.
+	// ev carries the state-change push machinery. Nil for a bare
+	// newNetconfSession.
 	ev *netconfEvents
 }
 
@@ -376,13 +374,7 @@ func (s *netconfSession) handleRPC(data []byte) (done bool) {
 		return false
 	}
 	if s.rpc != nil {
-		done = s.rpc(r)
-		if done && s.trailer != nil {
-			s.wmu.Lock()
-			_, _ = s.framer.w.Write(s.trailer())
-			s.wmu.Unlock()
-		}
-		return done
+		return s.rpc(r)
 	}
 	id := r.messageID
 	reply := func(b []byte) bool { return s.writeMessage(b) != nil }

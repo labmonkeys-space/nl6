@@ -172,6 +172,40 @@ func TestJunosSessionKillSession(t *testing.T) {
 	}
 }
 
+func TestJunosSessionCloseHasNoGapBeforeTrailer(t *testing.T) {
+	dev := newJunosTestDevice(t)
+	reply := string(junosOKReply(junosTestVersion, "101")) + netconfEOM
+	endRe := regexp.MustCompile(`^<!-- session end at \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC -->\n$`)
+	for i := 0; i < 50; i++ {
+		c := startJunosTestClient(t, dev, 1, newNetconfSessionRegistry(), junosClientHello10)
+		c.send(junosRPCXML("100", "<create-subscription xmlns=\"urn:ietf:params:xml:ns:netconf:notification:1.0\"/>"))
+		_ = c.readFramed()
+		sub := c.sess.Subs()[0]
+		push := "<notification>push</notification>"
+		go func() {
+			c.sess.enqueue(sub, []byte(push))
+		}()
+		c.send(junosRPCXML("101", "<close-session/>"))
+		rest, err := io.ReadAll(c.br)
+		if err != nil {
+			t.Fatalf("read to EOF: %v", err)
+		}
+		got := string(rest)
+		// The push may precede the reply or be dropped on close, never sit
+		// between the reply and the trailer.
+		k := strings.Index(got, reply)
+		if k < 0 {
+			t.Fatalf("iteration %d: no close-session reply in %q", i, got)
+		}
+		if pre := got[:k]; pre != "" && pre != push+netconfEOM {
+			t.Fatalf("iteration %d: unexpected bytes before the reply: %q", i, pre)
+		}
+		if !endRe.MatchString(got[k+len(reply):]) {
+			t.Fatalf("iteration %d: bytes after the reply are not exactly the trailer: %q", i, got[k+len(reply):])
+		}
+	}
+}
+
 func TestIOSXESessionUnchanged(t *testing.T) {
 	dev, _ := newNetconfTestDevice(t)
 	srv, cli := net.Pipe()
@@ -187,7 +221,7 @@ func TestIOSXESessionUnchanged(t *testing.T) {
 	if string(got) != string(netconfServerHello(1)) {
 		t.Fatalf("hello changed:\n%q", got)
 	}
-	if sess.base10Only || sess.rpc != nil || sess.hello != nil || sess.trailer != nil {
+	if sess.base10Only || sess.rpc != nil || sess.hello != nil {
 		t.Fatal("IOS XE session installed a Junos hook")
 	}
 }
