@@ -52,7 +52,7 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	}
 	sm.netconfPort = port
 	sm.netconfSubsystemActive.Store(true)
-	log.Printf("NETCONF subsystem enabled on port %d (SSH, %s devices only)", port, netconfDeviceType)
+	log.Printf("NETCONF subsystem enabled on port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port)
 	return nil
 }
 

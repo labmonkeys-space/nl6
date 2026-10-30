@@ -19,8 +19,6 @@ import (
 )
 
 const (
-	// netconfDeviceType is the one device type that serves NETCONF.
-	netconfDeviceType = "cisco_catalyst_9500"
 	// netconfKeepAlivePeriod replaces the SSH idle deadline once a
 	// connection is authenticated. It only detects dead peers.
 	netconfKeepAlivePeriod = 30 * time.Second
@@ -51,8 +49,8 @@ type netconfServer struct {
 
 // startNetconfServer binds the device's NETCONF listener. It is the one
 // place that decides whether a device serves NETCONF: it is a no-op unless
-// the manager exists, the subsystem is active and the device is a
-// catalyst 9500.
+// the manager exists, the subsystem is active and the device's profile has
+// a NETCONF dialect served over SSH.
 //
 // Caller MUST hold d.mu.
 func (d *DeviceSimulator) startNetconfServer() error {
@@ -60,7 +58,13 @@ func (d *DeviceSimulator) startNetconfServer() error {
 		return nil
 	}
 	mgr := manager
-	if mgr == nil || !mgr.netconfSubsystemActive.Load() || resourceDirName(d.resourceFile) != netconfDeviceType {
+	if mgr == nil || !mgr.netconfSubsystemActive.Load() {
+		return nil
+	}
+	dia, ok := netconfDialectFor(d)
+	// The Name check keeps Junos off the SSH listener until the Junos
+	// session is served; the next tasks lift it.
+	if !ok || !dia.SSH || dia.Name != "iosxe" {
 		return nil
 	}
 	if mgr.sharedSSHSigner == nil {
