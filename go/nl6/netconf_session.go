@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // netconfMaxSubsPerSession caps establish-subscription per session. The
@@ -45,6 +46,8 @@ type netconfSession struct {
 	// conn is the transport under rw, closed with the session. Nil when
 	// rw is the whole transport.
 	conn io.Closer
+	// tls is true when the session runs over the TLS transport.
+	tls bool
 
 	framer *netconfFramer
 	wmu    sync.Mutex
@@ -66,8 +69,20 @@ type netconfSession struct {
 	// may be nil.
 	onEnd func()
 
-	// ev carries the state-change push machinery. Nil unless the session
-	// was built by newIOSXENetconfSession.
+	// Dialect hooks. The zero values give the IOS XE behaviour.
+	// base10Only keeps the framing at end-of-message whatever the client
+	// advertises. rpc, when set, answers every request that passed the
+	// envelope checks. hello, when set, renders the server hello.
+	base10Only bool
+	rpc        func(r netconfRPC) (done bool)
+	hello      func(sessionID uint32) []byte
+
+	// startedAt is the commit and change time the Junos replies report: the
+	// device registry's creation time, or the session's own without one.
+	startedAt time.Time
+
+	// ev carries the state-change push machinery. Nil for a bare
+	// newNetconfSession.
 	ev *netconfEvents
 }
 
@@ -133,17 +148,21 @@ func (s *netconfSession) Serve(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, s.close)
 	defer stop()
 
-	if err := s.writeMessage(netconfServerHello(s.id)); err != nil {
+	hello := netconfServerHello(s.id)
+	if s.hello != nil {
+		hello = s.hello(s.id)
+	}
+	if err := s.writeMessage(hello); err != nil {
 		return err
 	}
-	hello, err := s.framer.ReadMessage()
+	clientHello, err := s.framer.ReadMessage()
 	if err != nil {
 		return s.endErr(err)
 	}
-	if !isNetconfHello(hello) {
+	if !isNetconfHello(clientHello) {
 		return errors.New("netconf: first message is not a hello")
 	}
-	if bytes.Contains(hello, []byte(netconfBase11)) {
+	if !s.base10Only && bytes.Contains(clientHello, []byte(netconfBase11)) {
 		// Both peers advertise base:1.1. The reader side needs no lock here
 		// because only this goroutine reads, and no notification writer
 		// exists before onStart.
@@ -356,6 +375,9 @@ func (s *netconfSession) handleRPC(data []byte) (done bool) {
 		_ = s.writeMessage(netconfErrorReply("", false, iosxeRPCError{Type: "rpc", Tag: "missing-attribute", BadElement: "rpc"}, "message-id"))
 		return false
 	}
+	if s.rpc != nil {
+		return s.rpc(r)
+	}
 	id := r.messageID
 	reply := func(b []byte) bool { return s.writeMessage(b) != nil }
 
@@ -430,26 +452,36 @@ func (s *netconfSession) handleDelete(r netconfRPC) []byte {
 }
 
 func (s *netconfSession) handleKill(r netconfRPC) []byte {
-	bad := netconfErrorReply(r.messageID, true, iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "session-id"}, "")
-	txt, _ := netconfChildText(r.opXML, "session-id")
-	n, err := strconv.ParseUint(txt, 10, 32)
-	if err != nil || uint32(n) == s.id || s.reg == nil || !s.reg.kill(uint32(n)) {
-		return bad
+	if !s.killTarget(r) {
+		return netconfErrorReply(r.messageID, true, iosxeRPCError{Type: "protocol", Tag: "invalid-value", BadElement: "session-id"}, "")
 	}
 	return netconfOKReply(r.messageID)
 }
 
+// killTarget closes the session a kill-session names. It reports false for a
+// missing id, the caller's own id and an id no session holds.
+func (s *netconfSession) killTarget(r netconfRPC) bool {
+	txt, _ := netconfChildText(r.opXML, "session-id")
+	n, err := strconv.ParseUint(txt, 10, 32)
+	return err == nil && uint32(n) != s.id && s.reg != nil && s.reg.kill(uint32(n))
+}
+
 // netconfSessionRegistry tracks the sessions of one device so kill-session can
-// reach another session, hands out subscription ids, and owns the device's
-// state-change dispatcher.
+// reach another session, hands out session and subscription ids, and owns
+// the device's state-change dispatcher. The SSH and TLS listeners of a
+// device share it.
 type netconfSessionRegistry struct {
-	mu       sync.Mutex
-	sessions map[uint32]*netconfSession
-	subSeq   atomic.Uint32
+	mu         sync.Mutex
+	sessions   map[uint32]*netconfSession
+	sessionSeq atomic.Uint32
+	subSeq     atomic.Uint32
 	// disp is the device's state-change dispatcher, started by the first
 	// session that acquires it and stopped when the last one releases it.
 	disp     *netconfDispatcher
 	dispRefs int
+	// createdAt is when the device's registry was built. The Junos replies
+	// report it as the device's commit and change time.
+	createdAt time.Time
 }
 
 // acquireDispatcher returns the device's dispatcher, starting it when no
@@ -489,7 +521,7 @@ func (g *netconfSessionRegistry) releaseDispatcher(d *netconfDispatcher) {
 }
 
 func newNetconfSessionRegistry() *netconfSessionRegistry {
-	return &netconfSessionRegistry{sessions: make(map[uint32]*netconfSession)}
+	return &netconfSessionRegistry{sessions: make(map[uint32]*netconfSession), createdAt: time.Now()}
 }
 
 func (g *netconfSessionRegistry) add(s *netconfSession) {

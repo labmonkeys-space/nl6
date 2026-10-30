@@ -20,9 +20,18 @@ const netconfDefaultPort = 830
 type NetconfSubsystemConfig struct {
 	Enabled bool
 	Port    int
+	// TLSPort 0 means 6513.
+	TLSPort int
+	// TLSIdentity is the initial client identity table, nil for an empty one.
+	TLSIdentity *NetconfTLSIdentity
 }
 
 // NetconfStatus is the body of GET /api/v1/netconf/status.
+//
+// Listeners and Sessions count every transport. ListenersTLS is the number
+// of devices that also serve the TLS transport, SessionsTLS the sessions
+// running over it, and TLSHandshakeFailures the TLS connections that failed
+// before a NETCONF session started.
 type NetconfStatus struct {
 	SubsystemActive      bool   `json:"subsystem_active"`
 	Listeners            int    `json:"listeners"`
@@ -30,6 +39,9 @@ type NetconfStatus struct {
 	Subscriptions        int    `json:"subscriptions"`
 	NotificationsSent    uint64 `json:"notifications_sent"`
 	NotificationsDropped uint64 `json:"notifications_dropped"`
+	ListenersTLS         int    `json:"listeners_tls"`
+	SessionsTLS          int    `json:"sessions_tls"`
+	TLSHandshakeFailures uint64 `json:"tls_handshake_failures"`
 }
 
 // StartNetconfSubsystem records the NETCONF settings. A disabled config
@@ -47,12 +59,31 @@ func (sm *SimulatorManager) StartNetconfSubsystem(cfg NetconfSubsystemConfig) er
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("netconf: invalid port %d (must be 1..65535)", port)
 	}
+	tlsPort := cfg.TLSPort
+	if tlsPort == 0 {
+		tlsPort = netconfTLSDefaultPort
+	}
+	if tlsPort < 1 || tlsPort > 65535 {
+		return fmt.Errorf("netconf: invalid TLS port %d (must be 1..65535)", tlsPort)
+	}
 	if !cfg.Enabled {
 		return nil
 	}
+	if tlsPort == port {
+		return fmt.Errorf("netconf: -netconf-tls-port and -netconf-port are both %d", port)
+	}
+	id := &NetconfTLSIdentity{Identities: map[string]string{}}
+	if cfg.TLSIdentity != nil {
+		if err := cfg.TLSIdentity.Validate(); err != nil {
+			return fmt.Errorf("netconf: TLS identity: %w", err)
+		}
+		id = cfg.TLSIdentity.normalised()
+	}
+	sm.netconfTLSIdentity.Store(id)
+	sm.netconfTLSPort = tlsPort
 	sm.netconfPort = port
 	sm.netconfSubsystemActive.Store(true)
-	log.Printf("NETCONF subsystem enabled on port %d (SSH, %s devices only)", port, netconfDeviceType)
+	log.Printf("NETCONF subsystem enabled on SSH port %d and TLS port %d (cisco_catalyst_9500 over SSH, juniper_mx10004 over SSH and TLS)", port, tlsPort)
 	return nil
 }
 
@@ -62,6 +93,7 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 		SubsystemActive:      sm.netconfSubsystemActive.Load(),
 		NotificationsSent:    atomic.LoadUint64(&sm.netconfNotificationsSent),
 		NotificationsDropped: atomic.LoadUint64(&sm.netconfNotificationsDropped),
+		TLSHandshakeFailures: atomic.LoadUint64(&sm.netconfTLSHandshakeFailures),
 	}
 	if !st.SubsystemActive {
 		return st
@@ -69,14 +101,18 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 	sm.mu.RLock()
 	for _, d := range sm.devices {
 		d.mu.RLock()
-		hasListener, reg := d.netconfListener != nil, d.netconfSessions
+		hasListener, hasTLS, reg := d.netconfListener != nil, d.netconfTLSListener != nil, d.netconfSessions
 		d.mu.RUnlock()
 		if hasListener {
 			st.Listeners++
 		}
+		if hasTLS {
+			st.ListenersTLS++
+		}
 		if reg != nil {
-			sessions, subs := reg.counts()
+			sessions, tlsSessions, subs := reg.counts()
 			st.Sessions += sessions
+			st.SessionsTLS += tlsSessions
 			st.Subscriptions += subs
 		}
 	}
@@ -84,8 +120,9 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 	return st
 }
 
-// counts returns the number of sessions and of their subscriptions.
-func (g *netconfSessionRegistry) counts() (sessions, subs int) {
+// counts returns the number of sessions, how many of them run over TLS, and
+// the number of their subscriptions.
+func (g *netconfSessionRegistry) counts() (sessions, tlsSessions, subs int) {
 	g.mu.Lock()
 	all := make([]*netconfSession, 0, len(g.sessions))
 	for _, s := range g.sessions {
@@ -94,8 +131,11 @@ func (g *netconfSessionRegistry) counts() (sessions, subs int) {
 	g.mu.Unlock()
 	for _, s := range all {
 		subs += len(s.Subs())
+		if s.tls {
+			tlsSessions++
+		}
 	}
-	return len(all), subs
+	return len(all), tlsSessions, subs
 }
 
 // netconfStatusHandler serves GET /api/v1/netconf/status.

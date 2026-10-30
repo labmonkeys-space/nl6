@@ -1,0 +1,4 @@
+
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/25.4R1.12/junos" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+<data>
+<configuration xmlns="http://xml.juniper.net/xnm/1.1/xnm" junos:commit-seconds="1793379138" junos:commit-localtime="2026-10-30 16:52:18 UTC" junos:commit-user="admin">

@@ -48,6 +48,10 @@ type netconfEvents struct {
 	ready chan struct{}
 	disp  atomic.Pointer[netconfDispatcher]
 
+	// onEvent renders one state change for the session. It is installed by
+	// the dialect constructor and may be nil.
+	onEvent func(s *netconfSession, e *netconfStateEvent)
+
 	// skip names the oper event that follows an admin event which moved
 	// oper too. The admin event already pushed the row, so its twin is
 	// dropped. Only the dispatcher goroutine touches it.
@@ -118,6 +122,7 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 		ev.sent, ev.dropped = new(uint64), new(uint64)
 	}
 	s.ev = ev
+	ev.onEvent = (*netconfSession).iosxeStateEvent
 	s.onStart = s.startEvents
 	s.onEnd = func() {
 		if d := ev.disp.Swap(nil); d != nil {
@@ -186,6 +191,12 @@ func (s *netconfSession) runWriter() {
 			continue
 		}
 		s.wmu.Lock()
+		// A session closed while this push waited for wmu writes nothing
+		// more, so nothing follows a Junos session-end trailer.
+		if s.isClosed() {
+			s.wmu.Unlock()
+			return
+		}
 		if p.sub.deleted.Load() {
 			s.wmu.Unlock()
 			continue
@@ -376,24 +387,44 @@ func (e *netconfStateEvent) fullRow() iosxeRow {
 	return *e.row
 }
 
+// twinOperEvent reports whether evt is the oper event that follows an admin
+// event which already moved oper. An admin change broadcasts both, with the
+// same ifIndex and instant, and only the first is rendered. Every dialect
+// calls it once per event, in order.
+func (ev *netconfEvents) twinOperEvent(evt StateChange) bool {
+	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
+		ev.skip.set = false
+		return true
+	}
+	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
+		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
+	}
+	return false
+}
+
 // handleStateChange renders one event for this session alone.
 func (s *netconfSession) handleStateChange(evt StateChange) {
 	s.handleStateEvent(&netconfStateEvent{evt: evt, dev: s.dev})
 }
 
+// handleStateEvent renders one event through the dialect hook. A session
+// without one renders nothing.
 func (s *netconfSession) handleStateEvent(e *netconfStateEvent) {
+	if s.ev != nil && s.ev.onEvent != nil {
+		s.ev.onEvent(s, e)
+	}
+}
+
+// iosxeStateEvent is the IOS XE rendering of one state change.
+func (s *netconfSession) iosxeStateEvent(e *netconfStateEvent) {
 	evt := e.evt
 	// A session closed after a write error renders nothing more.
 	if s.isClosed() {
 		return
 	}
 	ev := s.ev
-	if evt.Changed == LeafOperStatus && ev.skip.set && ev.skip.ifIndex == evt.IfIndex && ev.skip.at.Equal(evt.At) {
-		ev.skip.set = false
+	if ev.twinOperEvent(evt) {
 		return
-	}
-	if evt.Changed&LeafAdminStatus != 0 && evt.PrevOper != evt.Oper {
-		ev.skip.ifIndex, ev.skip.at, ev.skip.set = evt.IfIndex, evt.At, true
 	}
 	// The event carries the link as it was when the change happened. The
 	// link read now may already have moved past a queued event.

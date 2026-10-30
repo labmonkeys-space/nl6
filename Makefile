@@ -522,6 +522,25 @@ test-interop-netconf: check-go
 	  exit 1; }
 	cd $(GO_DIR) && NL6_NETCONF_INTEROP=1 go test ./nl6/ -run 'TestNetconfInteropAgainstReference' -count=1 -v -timeout 15m
 
+## test-interop-netconf-junos: Diff nl6's NETCONF (Junos dialect, TLS and SSH) against a REAL Junos device (needs a reference device)
+##
+## The Junos sibling of test-interop-netconf. One Go client drives an
+## in-process juniper_mx10004 and the reference over mutual TLS and over the
+## SSH netconf subsystem: the hello, the Junos RPC table, close-session and a
+## create-subscription across one disable and one enable of an interface.
+## The test diffs the normalised streams. Needs NL6_NETCONF_JUNOS_REF and
+## NL6_NETCONF_JUNOS_REF_SSH (host:port of TLS and SSH NETCONF),
+## NL6_NETCONF_JUNOS_CLI, NL6_NETCONF_JUNOS_CLI_USER and
+## NL6_NETCONF_JUNOS_CLI_PASSWORD (the CLI over SSH, also the NETCONF SSH
+## login), NL6_NETCONF_JUNOS_CLIENT_CERT, NL6_NETCONF_JUNOS_CLIENT_KEY and
+## NL6_NETCONF_JUNOS_CA (the TLS client identity, given to nl6 too) and
+## NL6_NETCONF_JUNOS_REF_IF (the interface to flap). There are no lab
+## defaults: the test skips when one is unset. It enables the interface
+## again on a normal exit and on a test failure, but not on a -timeout or
+## Ctrl-C.
+test-interop-netconf-junos: check-go
+	cd $(GO_DIR) && NL6_NETCONF_JUNOS_INTEROP=1 go test ./nl6/ -run 'TestNetconfJunosInteropAgainstReference' -count=1 -v -timeout 15m
+
 ## test-web: Run the framework-free web unit tests (pure JS, runs on any platform)
 test-web: check-node-runtime
 	cd $(WEB_DIR) && for t in *.test.js; do \

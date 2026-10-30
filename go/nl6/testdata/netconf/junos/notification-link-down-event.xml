@@ -1,0 +1,40 @@
+
+<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">
+<eventTime>2026-10-30T16:51:31+00:00</eventTime>
+<syslog>
+<junos>
+  <events>
+    <event>
+      <id>SNMP_TRAP_LINK_DOWN</id>
+      <type>2</type>
+      <priority>28</priority>
+      <facility>3</facility>
+      <timestamp>
+        <seconds>1793379091</seconds>
+        <microseconds>841089</microseconds>
+      </timestamp>
+      <pid>18896</pid>
+      <message>SNMP_TRAP_LINK_DOWN: ifIndex 529, ifAdminStatus down(2), ifOperStatus down(2), ifName ge-0/0/1</message>
+      <daemon>mib2d</daemon>
+      <hostname>r1</hostname>
+      <attributes>
+        <key>snmp-interface-index</key>
+        <value>529</value>
+      </attributes>
+      <attributes>
+        <key>admin-status</key>
+        <value>down(2)</value>
+      </attributes>
+      <attributes>
+        <key>operational-status</key>
+        <value>down(2)</value>
+      </attributes>
+      <attributes>
+        <key>interface-name</key>
+        <value>ge-0/0/1</value>
+      </attributes>
+    </event>
+  </events>
+</junos>
+</syslog>
+</notification>

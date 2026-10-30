@@ -169,8 +169,14 @@ func main() {
 
 		// NETCONF over SSH (IOS XE dialect). Off by default; when enabled,
 		// only cisco_catalyst_9500 devices listen.
-		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF over SSH subsystem; cisco_catalyst_9500 devices listen on -netconf-port (default: false)")
+		netconfEnable = flag.Bool("netconf-enable", false, "Enable the NETCONF subsystem: cisco_catalyst_9500 over SSH on -netconf-port, juniper_mx10004 over SSH on -netconf-port and over TLS on -netconf-tls-port (default: false)")
 		netconfPort   = flag.Int("netconf-port", netconfDefaultPort, "TCP port for the per-device NETCONF over SSH listener (default: 830)")
+
+		// NETCONF over TLS client identity. [global]: one table for the whole fleet.
+		netconfTLSPort     = flag.Int("netconf-tls-port", netconfTLSDefaultPort, "[global] TCP port for the per-device NETCONF over TLS listener (default: 6513)")
+		netconfTLSClientCA = flag.String("netconf-tls-client-ca", "", "[global] PEM file with the CA that must have signed NETCONF TLS client certificates; requires -netconf-enable. Also settable via PUT /api/v1/netconf/tls")
+		netconfTLSDefUser  = flag.String("netconf-tls-default-username", "", "[global] NETCONF user for a client certificate missing from the identity table (empty = refuse it); requires -netconf-enable")
+		netconfTLSIdents   []string
 
 		// gNMI dial-out (telemetry push) flags. [seed] flags apply ONLY to the
 		// auto-start batch; REST-created devices opt in via a per-device
@@ -225,6 +231,10 @@ func main() {
 		profilingTenant      = flag.String("profiling-pyroscope-tenant", "", "Pyroscope tenant ID (X-Scope-OrgID) for the push (flag-only)")
 	)
 
+	flag.Func("netconf-tls-client-identity", "[global] Repeatable fingerprint=username entry of the NETCONF TLS client identity table (SHA-256, with or without the 04: prefix); requires -netconf-enable", func(v string) error {
+		netconfTLSIdents = append(netconfTLSIdents, v)
+		return nil
+	})
 	flag.Parse()
 
 	// `-version` prints the baked-in Version and exits before any
@@ -608,11 +618,21 @@ func main() {
 		log.Fatalf("Failed to initialize gNMI subsystem: %v", err)
 	}
 
+	netconfTLSID, err := buildNetconfTLSIdentity(*netconfEnable, *netconfTLSClientCA, netconfTLSIdents, *netconfTLSDefUser)
+	if err != nil {
+		log.Fatalf("netconf: %v", err)
+	}
+	if *netconfEnable && (netconfTLSID == nil || netconfTLSID.CAPEM == "") {
+		log.Printf("NETCONF TLS: no client CA configured, every TLS handshake will be refused until one is set with -netconf-tls-client-ca or PUT /api/v1/netconf/tls")
+	}
+
 	// Start the NETCONF subsystem before any device exists, so every
 	// catalyst 9500 created from here on binds -netconf-port.
 	if err := manager.StartNetconfSubsystem(NetconfSubsystemConfig{
-		Enabled: *netconfEnable,
-		Port:    *netconfPort,
+		Enabled:     *netconfEnable,
+		Port:        *netconfPort,
+		TLSPort:     *netconfTLSPort,
+		TLSIdentity: netconfTLSID,
 	}); err != nil {
 		log.Fatalf("Failed to initialize NETCONF subsystem: %v", err)
 	}

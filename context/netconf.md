@@ -3,7 +3,7 @@
 Engineering record for the NETCONF subsystem.
 Files: `go/nl6/netconf_*.go`.
 Operator reference: `docs/reference/netconf.md`.
-Limitations: `go/nl6/resources/cisco_catalyst_9500_limitations.md`.
+Limitations: `go/nl6/resources/cisco_catalyst_9500_limitations.md` and `go/nl6/resources/juniper_mx10004_limitations.md`.
 
 ## Shape
 
@@ -76,6 +76,22 @@ When a session ends, the whole SSH connection closes.
 - Its `pubd` process crashes after pushing interface changes on 26.01.02. It restarts on its own.
 - A dropped probe session leaks subscriptions on the VM, which then answers "application communication failure". Reboot the VM to clear it.
 - Do not run a 257-subscription cap probe against the c8000v.
+- `make test-interop-netconf-junos` diffs the Junos dialect between an in-process mx10004 and a reference vJunos-router 25.4R1.12, over TLS and over SSH, with one Go client. Phases: the hello, the Junos RPC table without `kill-session`, `close-session` and its trailer, then `create-subscription` across one `set interfaces <if> disable` and one `delete interfaces <if> disable`. nl6 moves the admin status of xe-0/0/0, because `disable` is an admin change and both report `ifAdminStatus down(2)`.
+- The Junos lab record: the `vj` containerlab on mad-monkey. From a workstation, forward the ports with `ssh -f -N -L 16513:172.20.20.2:6513 -L 10830:172.20.20.2:830 -L 10022:172.20.20.3:22 root@mad-monkey.labmonkeys.tech`. The client certificate, key and CA are in `/root/nc-lab/tls/` on mad-monkey. The reference maps the certificate to `ncuser`; its CLI and SSH NETCONF login is `admin`. Never commit the key.
+- The Junos test has no defaults. Set `NL6_NETCONF_JUNOS_REF`, `NL6_NETCONF_JUNOS_REF_SSH`, `NL6_NETCONF_JUNOS_CLI`, `NL6_NETCONF_JUNOS_CLI_USER`, `NL6_NETCONF_JUNOS_CLI_PASSWORD`, `NL6_NETCONF_JUNOS_CLIENT_CERT`, `NL6_NETCONF_JUNOS_CLIENT_KEY`, `NL6_NETCONF_JUNOS_CA` and `NL6_NETCONF_JUNOS_REF_IF`, or it skips. It enables the interface again on a normal exit and on a test failure. A `-timeout` or Ctrl-C leaves it as it was.
+- The reference feed carries about 1150 syslog notifications per 60 s window. The test keeps only `SNMP_TRAP_LINK_UP` and `SNMP_TRAP_LINK_DOWN` on the interface under test.
+- 2026-10-30, first run: the diff found four nl6 defects, all fixed the same day:
+  - nl6 sent every link-event pair twice on an admin change. `ApplyAdminStatus` broadcasts an admin event and an oper event that both carry the oper move. The Junos session now drops the twin oper event through `twinOperEvent`, as the IOS XE session always did.
+  - A `get` with an `ietf-interfaces` `interfaces-state` filter got the unfiltered reply. It now gets one `syntax error` with `bad-element` `interfaces-state`, as the reference sends.
+  - The unfiltered `get` lacked the empty `<database-status-information>` the reference sends after the configuration.
+  - The close-session trailer lacked its leading newline. The capture missed it: the probe read the trailer from the connection, and its buffered reader already held the newline.
+- 2026-10-30 re-run after the fixes: PASS over both transports in 258 s, 19 rows equal over TLS and 18 over SSH, every message compared raw with values normalised. The divergences that remain, each logged by the test:
+  - Configuration bodies: nl6's 3 element paths are a subset of the reference's 76, by decision.
+  - nl6's xe-0/0/0 has the VRF units .100, .200 and .999. Their link-up pairs are not compared.
+  - The reference's unit .0 `SNMP_TRAP_LINK_UP` (INFORMATIONAL) came on one subscription and not on the other in one earlier run. When it is absent, nl6's is not compared.
+  - The reference sends its certificate and the CA, nl6 its leaf only. Both negotiated TLS 1.2 with `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`.
+  - Delivery lag: the reference sends link events seconds after the commit, nl6 at once. The sequence is compared.
+- The vJunos CLI over SSH sometimes prints nothing to a non-interactive session, while still committing. The test keeps stdin open until it sees `Exiting configuration mode`.
 
 ## Scale
 
@@ -115,3 +131,46 @@ The first measurement was 10 per session, with one goroutine each for global req
 
 Run it with `NL6_NETCONF_BENCH_N=5000 go test ./nl6/ -run '^$' -bench NetconfIdleSessions -benchtime 1x` on Linux.
 Raise `ulimit -n` first.
+
+## Junos dialect and TLS
+
+`juniper_mx10004` serves a Junos dialect over SSH on `-netconf-port` and over mutual TLS (RFC 7589) on `-netconf-tls-port`.
+The table in `netconf_dialect.go` is the contract: a dialect is a hello, an RPC handler and a push encoder, and a profile not in the table serves nothing.
+Files: `netconf_junos_wire.go`, `netconf_junos_session.go`, `netconf_junos_events.go`, `netconf_tls.go`, `netconf_tls_identity.go`, `netconf_tls_api.go`.
+The session takes any `io.ReadWriter`, so a `*tls.Conn` is the transport and the TLS path has no channel dispatch.
+The push path is the IOS XE one: the per-device dispatcher, the 100-deep oldest-drop queue and the writer goroutine.
+The Junos session holds one sentinel subscription, set by the first `create-subscription`.
+
+### Decisions
+
+- D13: the mx10004 serves both transports. Junos serves one dialect over both, and a TLS-only profile would be a device that does not exist.
+- D14: link events only. The device also sends its whole syslog stream, which was 2442 notifications in 150 s on vJunos and is an artefact of that image. nl6 sends `SNMP_TRAP_LINK_DOWN` and `SNMP_TRAP_LINK_UP` and nothing else.
+- D15: listeners are always bound. With `-netconf-enable` every mx10004 binds both listeners at start, CA or no CA. The client CA pool and the identity table are read per handshake through `GetConfigForClient`. A `PUT` of the table applies to the next connection and never walks the fleet, binds a listener or takes `createBatchGate`. With no CA every handshake is refused and the startup log says so.
+- D16: reduced configuration replies. Unfiltered `get` and `get-configuration` return `<version>` and `<system><host-name>` with the `junos:` commit attributes. The device sends its whole configuration. Add to it when a consumer needs more.
+- D17: the refusal, not the alert byte, is the handshake contract. Go's `crypto/tls` sends `protocol_version` for a TLS 1.3-only client and `bad_certificate` for a missing client certificate where Junos sends `handshake_failure`. Tests pin that the handshake fails and the connection closes. Hand-written alert records in front of `tls.Server` are not wanted.
+- Only the `specified` map type plus a default identity. A fingerprint that is unknown with no default completes the handshake and closes with no hello, as Junos does.
+- Framing stays base 1.0. The IOS XE base 1.1 switch is IOS XE only.
+- The shared server certificate (`sharedTLSCert`) has only a `0.0.0.0` IP SAN, so clients skip host-name verification and pin the CA from `GET /api/v1/tls/ca`. The same limit applies to gNMI dial-in. A fix is a per-device certificate.
+- The server presents its leaf only. Junos sends the leaf and the CA.
+- `tls_handshake_failures` also counts benign TCP probes and idle-deadline aborts, as the gNMI counter does.
+- A unit going down sends nothing, because no capture shows what the device sends.
+- The deadline rule above holds on TLS: the idle deadline bounds the handshake only, then TCP keepalive.
+
+### Junos probe record
+
+Reference: vJunos-router 25.4R1.12 in containerlab (`vj`) on mad-monkey, left running, the same role the c8000v lab plays for IOS XE.
+The lab has two links so the probe runs over ge-0/0/0 while ge-0/0/1 flaps.
+Port 6513 is reachable only over a data interface from the peer container, because vrnetlab forwards only fixed ports into the VM.
+The probe client is a small Go program, because ncclient has no TLS transport.
+The captures, the lab files and the probe client live in the planning artifacts of the design, not in this repo.
+
+- TLS 1.3 only: alert 40 `handshake_failure`, no ServerHello. Without a client certificate: ServerHello, then alert 40. From an unknown CA: alert 48 `unknown_ca`. An ECDSA client certificate signed by the trusted CA is accepted.
+- The server sends its certificate and the CA.
+- A known fingerprint maps to its username. An unknown fingerprint with no default identity completes the handshake and then closes with no hello. With a default identity it maps to that user.
+- The hello is written at once, with two comment lines and 19 capabilities when `notification interleave` is set.
+- `close-session` replies `<ok/>`, then `\n<!-- session end at ... -->\n`, then closes. The first capture missed the leading newline; the interop test found it.
+- `establish-subscription`, in the draft or the RFC 8639 namespace, gets the `syntax error` `rpc-error` twice in one reply. Other unknown RPCs get it once.
+- With `system syslog file messages any notice` and `structured-data` configured, the mib2d link traps arrive over `create-subscription`. Without a syslog config the 2026-10-15 capture saw none.
+- Each link event arrives in both forms, with the same `eventTime`. Delivery lagged by 21 to 23 s on vJunos.
+- A logical unit sends `SNMP_TRAP_LINK_UP` at INFORMATIONAL on enable. No unit down was seen on disable.
+- Not probed: `kill-session`, `version-1.1` framing, replay, `get-schema`, a cabled carrier loss (vrnetlab passes no carrier), unit down on disable, idle keepalive behaviour.

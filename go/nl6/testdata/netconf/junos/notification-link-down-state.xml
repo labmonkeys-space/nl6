@@ -1,0 +1,44 @@
+
+<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0">
+<eventTime>2026-10-30T16:51:31+00:00</eventTime>
+<state-system-syslog>
+<state>
+  <system>
+    <syslog>
+      <messages>
+        <message>
+          <timestamp>1793379091841089</timestamp>
+          <id>SNMP_TRAP_LINK_DOWN</id>
+          <severity>WARNING</severity>
+          <facility>DAEMON</facility>
+          <priority>28</priority>
+          <pid>18896</pid>
+          <log-message>SNMP_TRAP_LINK_DOWN: ifIndex 529, ifAdminStatus down(2), ifOperStatus down(2), ifName ge-0/0/1</log-message>
+          <application>mib2d</application>
+          <structured-data>
+            <parameters>
+              <parameter>
+                <name>snmp-interface-index</name>
+                <value>529</value>
+              </parameter>
+              <parameter>
+                <name>admin-status</name>
+                <value>down(2)</value>
+              </parameter>
+              <parameter>
+                <name>operational-status</name>
+                <value>down(2)</value>
+              </parameter>
+              <parameter>
+                <name>interface-name</name>
+                <value>ge-0/0/1</value>
+              </parameter>
+            </parameters>
+          </structured-data>
+        </message>
+      </messages>
+    </syslog>
+  </system>
+</state>
+</state-system-syslog>
+</notification>

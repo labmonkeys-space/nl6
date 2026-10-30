@@ -1,0 +1,5 @@
+
+<rpc-reply xmlns:junos="http://xml.juniper.net/junos/25.4R1.12/junos" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" message-id="101">
+<data>
+</data>
+</rpc-reply>
