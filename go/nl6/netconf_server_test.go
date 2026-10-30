@@ -333,8 +333,8 @@ func TestNetconfStatusEndpoint(t *testing.T) {
 			t.Errorf("status lacks %s", k)
 		}
 	}
-	if len(got) != 6 {
-		t.Errorf("status has %d keys, want 6: %s", len(got), rec.Body)
+	if len(got) != 9 {
+		t.Errorf("status has %d keys, want 9: %s", len(got), rec.Body)
 	}
 }
 
@@ -584,5 +584,104 @@ func TestNetconfPortCheckedWhenDisabled(t *testing.T) {
 	}
 	if err := (&SimulatorManager{}).StartNetconfSubsystem(NetconfSubsystemConfig{}); err != nil {
 		t.Fatalf("zero config refused: %v", err)
+	}
+}
+
+// newJunosListenDevice builds a juniper_mx10004 on 127.0.0.1, registers it
+// with mgr and starts its NETCONF listener on a free port.
+func newJunosListenDevice(t *testing.T, mgr *SimulatorManager) (*DeviceSimulator, *InterfaceState, string) {
+	t.Helper()
+	dev := newJunosTestDevice(t)
+	dev.ID = "mx10004-test"
+	dev.IP = net.IPv4(127, 0, 0, 1)
+	dev.resourceFile = "juniper_mx10004.json"
+	dev.sysName = "NY-CORE-01"
+	mgr.devices[dev.ID] = dev
+	dev.mu.Lock()
+	err := dev.startNetconfServer()
+	dev.mu.Unlock()
+	if err != nil {
+		t.Fatalf("startNetconfServer: %v", err)
+	}
+	if dev.netconfListener == nil {
+		t.Fatal("mx10004 has no NETCONF listener")
+	}
+	t.Cleanup(func() {
+		dev.mu.Lock()
+		dev.stopNetconfServer()
+		dev.mu.Unlock()
+	})
+	return dev, netconfIfCounters(dev).State(), dev.netconfListener.Addr().String()
+}
+
+func TestNetconfSSHServesJunosProfile(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	_, st, addr := newJunosListenDevice(t, mgr)
+	c := dialNetconfTestSSH(t, addr)
+	s, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, _ := s.StdinPipe()
+	out, _ := s.StdoutPipe()
+	if err := s.RequestSubsystem("netconf"); err != nil {
+		t.Fatalf("netconf subsystem refused: %v", err)
+	}
+	f := newNetconfFramer(out, in)
+	h, err := f.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(h), "<!-- user "+USERNAME+", class j-super-user -->") {
+		t.Fatalf("not the Junos hello for %s:\n%s", USERNAME, h)
+	}
+	hello := `<hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello>`
+	if err := f.WriteMessage([]byte(hello)); err != nil {
+		t.Fatal(err)
+	}
+	r, err := netconfRPCWithin(f, "1", `<create-subscription xmlns="`+junosNotificationNS+`"/>`, 5*time.Second)
+	if err != nil || !strings.Contains(r, "<ok/>") {
+		t.Fatalf("create-subscription: %q %v", r, err)
+	}
+	ncLink(st, 1, OperDown)
+	for i, want := range []string{"<state-system-syslog>", "<junos>"} {
+		m, err := f.ReadMessage()
+		if err != nil {
+			t.Fatalf("notification %d: %v", i, err)
+		}
+		if !strings.Contains(string(m), want) || !strings.Contains(string(m), "ifName xe-0/0/0") {
+			t.Fatalf("notification %d lacks %s or xe-0/0/0:\n%s", i, want, m)
+		}
+	}
+}
+
+func TestNetconfSSHStillRefusesOtherProfiles(t *testing.T) {
+	useNetconfTestManager(t, true)
+	other := newJunosTestDevice(t)
+	other.ID, other.IP, other.resourceFile = "mx960-test", net.IPv4(127, 0, 0, 1), "juniper_mx960.json"
+	other.mu.Lock()
+	err := other.startNetconfServer()
+	other.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.netconfListener != nil || other.netconfSessions != nil {
+		t.Fatal("juniper_mx960 got a NETCONF listener")
+	}
+}
+
+func TestNetconfStatusCountsTransports(t *testing.T) {
+	mgr := useNetconfTestManager(t, true)
+	_, _, addr := newJunosListenDevice(t, mgr)
+	f, _ := openNetconfOverSSH(t, dialNetconfTestSSH(t, addr))
+	if r, err := netconfRPCWithin(f, "1", `<create-subscription xmlns="`+junosNotificationNS+`"/>`, 5*time.Second); err != nil || !strings.Contains(r, "<ok/>") {
+		t.Fatalf("create-subscription: %q %v", r, err)
+	}
+	st := mgr.GetNetconfStatus()
+	if st.Listeners != 1 || st.Sessions != 1 || st.SessionsTLS != 0 || st.ListenersTLS != 0 || st.TLSHandshakeFailures != 0 {
+		t.Fatalf("status = %+v", st)
+	}
+	if st.Subscriptions != 1 {
+		t.Fatalf("subscriptions = %d, want 1", st.Subscriptions)
 	}
 }

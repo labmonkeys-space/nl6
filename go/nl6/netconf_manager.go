@@ -23,6 +23,11 @@ type NetconfSubsystemConfig struct {
 }
 
 // NetconfStatus is the body of GET /api/v1/netconf/status.
+//
+// Listeners and Sessions count every transport. ListenersTLS is the number
+// of devices that also serve the TLS transport, SessionsTLS the sessions
+// running over it, and TLSHandshakeFailures the TLS connections that failed
+// before a NETCONF session started.
 type NetconfStatus struct {
 	SubsystemActive      bool   `json:"subsystem_active"`
 	Listeners            int    `json:"listeners"`
@@ -30,6 +35,9 @@ type NetconfStatus struct {
 	Subscriptions        int    `json:"subscriptions"`
 	NotificationsSent    uint64 `json:"notifications_sent"`
 	NotificationsDropped uint64 `json:"notifications_dropped"`
+	ListenersTLS         int    `json:"listeners_tls"`
+	SessionsTLS          int    `json:"sessions_tls"`
+	TLSHandshakeFailures uint64 `json:"tls_handshake_failures"`
 }
 
 // StartNetconfSubsystem records the NETCONF settings. A disabled config
@@ -75,8 +83,9 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 			st.Listeners++
 		}
 		if reg != nil {
-			sessions, subs := reg.counts()
+			sessions, tlsSessions, subs := reg.counts()
 			st.Sessions += sessions
+			st.SessionsTLS += tlsSessions
 			st.Subscriptions += subs
 		}
 	}
@@ -84,8 +93,9 @@ func (sm *SimulatorManager) GetNetconfStatus() NetconfStatus {
 	return st
 }
 
-// counts returns the number of sessions and of their subscriptions.
-func (g *netconfSessionRegistry) counts() (sessions, subs int) {
+// counts returns the number of sessions, how many of them run over TLS, and
+// the number of their subscriptions.
+func (g *netconfSessionRegistry) counts() (sessions, tlsSessions, subs int) {
 	g.mu.Lock()
 	all := make([]*netconfSession, 0, len(g.sessions))
 	for _, s := range g.sessions {
@@ -94,8 +104,11 @@ func (g *netconfSessionRegistry) counts() (sessions, subs int) {
 	g.mu.Unlock()
 	for _, s := range all {
 		subs += len(s.Subs())
+		if s.tls {
+			tlsSessions++
+		}
 	}
-	return len(all), subs
+	return len(all), tlsSessions, subs
 }
 
 // netconfStatusHandler serves GET /api/v1/netconf/status.

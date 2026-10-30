@@ -35,6 +35,7 @@ type netconfServer struct {
 	dev        *DeviceSimulator
 	mgr        *SimulatorManager
 	cfg        *ssh.ServerConfig
+	dia        netconfDialect
 	reg        *netconfSessionRegistry
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -62,9 +63,7 @@ func (d *DeviceSimulator) startNetconfServer() error {
 		return nil
 	}
 	dia, ok := netconfDialectFor(d)
-	// The Name check keeps Junos off the SSH listener until the Junos
-	// session is served; the next tasks lift it.
-	if !ok || !dia.SSH || dia.Name != "iosxe" {
+	if !ok || !dia.SSH {
 		return nil
 	}
 	if mgr.sharedSSHSigner == nil {
@@ -85,6 +84,7 @@ func (d *DeviceSimulator) startNetconfServer() error {
 		dev:      d,
 		mgr:      mgr,
 		cfg:      cfg,
+		dia:      dia,
 		reg:      newNetconfSessionRegistry(),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -311,7 +311,7 @@ func (s *netconfServer) serveChannel(sc ssh.Conn, ch ssh.Channel) {
 	if s.ctx.Err() != nil {
 		return
 	}
-	sess := newIOSXENetconfSession(s.sessionSeq.Add(1), s.dev, ch, s.reg)
+	sess := s.dia.NewSession(s.sessionSeq.Add(1), s.dev, ch, s.reg, USERNAME)
 	// kill-session closes the victim's whole connection, not only its
 	// channel.
 	sess.conn = sc

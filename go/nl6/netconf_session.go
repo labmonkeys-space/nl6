@@ -46,6 +46,8 @@ type netconfSession struct {
 	// conn is the transport under rw, closed with the session. Nil when
 	// rw is the whole transport.
 	conn io.Closer
+	// tls is true when the session runs over the TLS transport.
+	tls bool
 
 	framer *netconfFramer
 	wmu    sync.Mutex
