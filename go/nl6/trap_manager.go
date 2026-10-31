@@ -872,15 +872,12 @@ func linkRoleFor(evt StateChange) (string, bool) {
 // transitioned ifIndex (vendor-wins-per-role via EntriesByRole), bypassing the
 // Poisson cap (FireForInterface does not consume a global-cap token).
 func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
-	if device == nil || device.metricsCycler == nil {
-		return
-	}
-	ic := device.metricsCycler.ifCounters.Load()
-	if ic == nil || ic.State() == nil {
+	st := deviceInterfaceState(device)
+	if st == nil {
 		return
 	}
 	ip := device.IP.String()
-	ic.State().SetNotify(func(evt StateChange) {
+	st.SetNotify(func(evt StateChange) {
 		role, ok := linkRoleFor(evt)
 		if !ok {
 			return
@@ -897,7 +894,7 @@ func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
 		if tx != nil {
 			if cat := sm.CatalogFor(ip); cat != nil {
 				for _, entry := range cat.EntriesByRole(role) {
-					tx.FireForInterface(entry, evt.IfIndex)
+					tx.FireForStateChange(entry, evt)
 				}
 			}
 		}
@@ -906,7 +903,7 @@ func (sm *SimulatorManager) wireStateNotify(device *DeviceSimulator) {
 				for _, entry := range cat.EntriesByRole(role) {
 					// Fire-and-forget: the exporter logs and counts send
 					// failures (SendFailures) internally.
-					_ = sx.FireForInterface(entry, evt.IfIndex)
+					_ = sx.FireForStateChange(entry, evt)
 				}
 			}
 		}

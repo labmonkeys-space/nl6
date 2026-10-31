@@ -105,7 +105,7 @@ var linkTrapOIDs = map[string]struct{}{
 	"1.3.6.1.6.3.1.1.5.4": {}, // linkUp
 }
 
-// allowedTemplateFields enumerates the eleven-field unified template
+// allowedTemplateFields enumerates the twelve-field unified template
 // vocabulary shared between trap and syslog catalogs. Any other
 // {{.Name}} reference in OID or value strings is rejected at catalog
 // load time.
@@ -141,7 +141,9 @@ var allowedTemplateFields = map[string]struct{}{
 	// per-quantity field explosion.
 	"Detail": {},
 	// IfAdminStatus is the state engine's admin status of IfIndex at fire
-	// time in the SNMP display form, up(1) or down(2).
+	// time as the IF-MIB integer, 1 or 2, so it can fill the typed
+	// ifAdminStatus varbind of a link trap. The syslog twin spells it
+	// up(1) or down(2).
 	"IfAdminStatus": {},
 }
 
@@ -297,7 +299,7 @@ type Catalog struct {
 }
 
 // TemplateCtx is the data handed to text/template when Resolve evaluates
-// per-fire. Matches the eleven-field vocabulary in allowedTemplateFields.
+// per-fire. Matches the twelve-field vocabulary in allowedTemplateFields.
 // Shared field set with SyslogTemplateCtx (design.md §D3 — unified vocab).
 type TemplateCtx struct {
 	IfIndex       int
@@ -311,7 +313,7 @@ type TemplateCtx struct {
 	ChassisID     string // MAC-style chassis ID synthesised from device IP
 	NowLocal      string // fire time, local "2006-01-02 15:04:05"
 	Detail        string // per-fire self-delimiting measurement suffix; empty unless overridden
-	IfAdminStatus string // admin status of IfIndex at fire time, up(1) or down(2)
+	IfAdminStatus string // admin status of IfIndex at fire time, 1 or 2
 }
 
 // Varbind is one resolved (templates evaluated) varbind ready for the encoder.
@@ -669,7 +671,7 @@ func (c *Catalog) ApplySizeBudgetWith(budget int, source string, size notificati
 		ChassisID:     "02:42:ff:ff:ff:ff",
 		NowLocal:      "2026-12-31 23:59:59",
 		Detail:        worstCaseDetail,
-		IfAdminStatus: "down(2)",
+		IfAdminStatus: "2",
 	}
 	var disabled []string
 	for _, e := range c.Entries {
@@ -1045,7 +1047,7 @@ func validateTemplateFields(s, entryName string, vbIdx int, which string) error 
 		}
 		if _, ok := allowedTemplateFields[field]; !ok {
 			return fmt.Errorf("trap catalog: entry %q varbind %d %s: unknown template field "+
-				"%q (allowed: IfIndex, IfName, Uptime, Now, DeviceIP, SysName, Model, Serial, ChassisID)",
+				"%q (allowed: IfIndex, IfName, Uptime, Now, DeviceIP, SysName, Model, Serial, ChassisID, NowLocal, Detail, IfAdminStatus)",
 				entryName, vbIdx, which, field)
 		}
 		rest = rest[open+close+2:]
@@ -1120,6 +1122,9 @@ func (e *CatalogEntry) Resolve(ctx TemplateCtx, overrides map[string]string) ([]
 			ctx.Detail = v
 		}
 		if v, ok := overrides["IfAdminStatus"]; ok {
+			if v != "1" && v != "2" {
+				return nil, fmt.Errorf("trap varbind override IfAdminStatus: expected 1 or 2, got %q", v)
+			}
 			ctx.IfAdminStatus = v
 		}
 		for k := range overrides {

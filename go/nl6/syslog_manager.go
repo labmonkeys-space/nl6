@@ -864,7 +864,9 @@ func (sm *SimulatorManager) newDeviceSyslogStreamTransport(
 
 // adminStatusDisplay spells an IF-MIB ifAdminStatus value the way an SNMP
 // display renders it, up(1) or down(2). Any other value is treated as up,
-// which is what the engine reports for an unseeded interface.
+// which is what the engine reports for an unseeded interface. The syslog
+// side of {{.IfAdminStatus}} carries this form; the trap side carries the
+// bare integer from adminStatusValue so it can feed a typed varbind.
 func adminStatusDisplay(admin uint8) string {
 	if admin == AdminDown {
 		return "down(2)"
@@ -872,18 +874,38 @@ func adminStatusDisplay(admin uint8) string {
 	return "up(1)"
 }
 
+// adminStatusValue spells an ifAdminStatus value as its IF-MIB integer,
+// 1 or 2, for the trap side of {{.IfAdminStatus}}.
+func adminStatusValue(admin uint8) string {
+	if admin == AdminDown {
+		return "2"
+	}
+	return "1"
+}
+
+// deviceInterfaceState returns the device's interface state engine, or nil
+// for a device without one (no cycler yet, or a type with no interfaces).
+func deviceInterfaceState(device *DeviceSimulator) *InterfaceState {
+	if device == nil || device.metricsCycler == nil {
+		return nil
+	}
+	ic := device.metricsCycler.ifCounters.Load()
+	if ic == nil {
+		return nil
+	}
+	return ic.State()
+}
+
 // deviceIfAdminStatusFn returns the `{{.IfAdminStatus}}` source for a
 // device: the state engine's admin status of the ifIndex at fire time. A
-// device without an engine reads up(1) for every interface.
-func deviceIfAdminStatusFn(device *DeviceSimulator) func(int) string {
-	return func(ifIndex int) string {
-		if device == nil || device.metricsCycler == nil {
-			return adminStatusDisplay(AdminUp)
+// device without an engine reads up for every interface. The exporter
+// spells the value for its side.
+func deviceIfAdminStatusFn(device *DeviceSimulator) func(int) uint8 {
+	return func(ifIndex int) uint8 {
+		st := deviceInterfaceState(device)
+		if st == nil {
+			return AdminUp
 		}
-		ic := device.metricsCycler.ifCounters.Load()
-		if ic == nil || ic.State() == nil {
-			return adminStatusDisplay(AdminUp)
-		}
-		return adminStatusDisplay(ic.State().AdminStatus(ifIndex))
+		return st.AdminStatus(ifIndex)
 	}
 }

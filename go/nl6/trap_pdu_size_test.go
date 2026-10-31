@@ -35,17 +35,18 @@ import (
 // already covers. See design D2.
 func worstCaseTrapCtx() TemplateCtx {
 	return TemplateCtx{
-		IfIndex:   2147483647,
-		IfName:    "GigabitEthernet0/2147483647",
-		Uptime:    4294967295,
-		Now:       time.Now().Unix(),
-		DeviceIP:  "255.255.255.255",
-		SysName:   "device-with-a-fairly-long-system-name-0000",
-		Model:     "Ciena Waveserver 5",
-		Serial:    "SNffffffff",
-		ChassisID: "02:42:ff:ff:ff:ff",
-		NowLocal:  "2026-12-31 23:59:59",
-		Detail:    "",
+		IfIndex:       2147483647,
+		IfName:        "GigabitEthernet0/2147483647",
+		Uptime:        4294967295,
+		Now:           time.Now().Unix(),
+		DeviceIP:      "255.255.255.255",
+		SysName:       "device-with-a-fairly-long-system-name-0000",
+		Model:         "Ciena Waveserver 5",
+		Serial:        "SNffffffff",
+		ChassisID:     "02:42:ff:ff:ff:ff",
+		NowLocal:      "2026-12-31 23:59:59",
+		Detail:        "",
+		IfAdminStatus: "2",
 	}
 }
 

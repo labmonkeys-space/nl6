@@ -75,7 +75,7 @@ var pduExtractionCtx = TemplateCtx{
 	IfIndex: 7, IfName: "GigabitEthernet0/7", Uptime: 123456, Now: 1770000000,
 	DeviceIP: "10.42.0.9", SysName: "sim-9", Model: "Cisco ISR 4451",
 	Serial: "SN0a2a0009", ChassisID: "02:42:0a:2a:00:09",
-	NowLocal: "2026-08-04 11:22:33", Detail: "OSNR=12.5dB",
+	NowLocal: "2026-08-04 11:22:33", Detail: "OSNR=12.5dB", IfAdminStatus: "1",
 }
 
 // notificationRow is one resolved catalog entry, ready to encode.
@@ -163,6 +163,13 @@ var syntheticRefusalRows = []notificationRow{
 // juniper_mx240's (12 effective entries). The three digests were re-measured at
 // 449280dd in a worktree by the header's recipe, against the new catalogs; the
 // same recipe reproduced the old three values before juniper_mx10004 was added.
+//
+// Re-measured again when the universal linkDown and linkUp entries started
+// rendering their ifAdminStatus varbind from {{.IfAdminStatus}} instead of a
+// literal 2 or 1. The census did not move (two templates were reworded, no
+// entry came or went), so the three digests moved without this line catching
+// it first; the fixed context renders the field as 1, so the linkDown row
+// now encodes ifAdminStatus 1 where it encoded 2.
 const shippedNotificationRows = 50
 
 // syntheticNotificationRows is the refusal set's size, pinned separately so a
@@ -304,7 +311,7 @@ func TestV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 			refused, want)
 	}
 
-	const want = "b8c7ce451d1fa482627ecb5893cf8a057d8464a8876539d02bac933a092ec8b9"
+	const want = "1506ee5eae29e2ac9c6b185336966348c6e81865f18650bf9b1755856e60327f"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv2c encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+
@@ -380,7 +387,7 @@ func TestFastV2cNotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d; the fault-parity arm is not being exercised", refused, want)
 	}
 
-	const want = "4ad6c613d1772d740f36705327e0b1b9de974d75bdfb3e6963e72b304b3b1162"
+	const want = "a1d7d4edf62345769815ece7ab39f4fb3ab8b54b7f9083602acadaf6b9db10e8"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the fast encoder's output over %d shipped notifications digests to %s, measured at "+
 			"the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a catalog DATA "+
@@ -425,7 +432,7 @@ func TestV1NotificationOutputUnchangedByPDUExtraction(t *testing.T) {
 		t.Errorf("%d refusals, want %d", refused, want)
 	}
 
-	const want = "bd59cab634778dc50b0b8239949af18a04fae376b8d718092b5d6f7b9a23cba7"
+	const want = "0833f0596ba606901f830ff7078c742c5962e291859c3cfcac04924c4ab2983c"
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		t.Errorf("the SNMPv1 encoding of %d shipped notifications (%d refusals) digests to %s, "+
 			"measured at the baseline commit as %s.\nshippedNotificationRows fires ahead of this on a "+

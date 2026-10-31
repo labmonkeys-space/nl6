@@ -98,7 +98,7 @@ type SyslogExporter struct {
 	// name (empty if no mapping exists).
 	ifIndexFn       func() int
 	ifNameFn        func(ifIndex int) string
-	ifAdminStatusFn func(ifIndex int) string
+	ifAdminStatusFn func(ifIndex int) uint8
 
 	startTime time.Time
 	stats     *SyslogStats
@@ -131,9 +131,10 @@ type SyslogExporterOptions struct {
 	ChassisID string
 	IfIndexFn func() int
 	IfNameFn  func(ifIndex int) string
-	// IfAdminStatusFn returns the admin status of ifIndex as up(1) or
-	// down(2). If nil every interface reads up(1).
-	IfAdminStatusFn func(ifIndex int) string
+	// IfAdminStatusFn returns the IF-MIB admin status of ifIndex (AdminUp
+	// or AdminDown); the context spells it up(1) or down(2). If nil every
+	// interface reads up(1).
+	IfAdminStatusFn func(ifIndex int) uint8
 }
 
 // NewSyslogExporter builds a SyslogExporter. The per-device conn is not
@@ -177,7 +178,7 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 		opts.IfNameFn = func(int) string { return "" }
 	}
 	if opts.IfAdminStatusFn == nil {
-		opts.IfAdminStatusFn = func(int) string { return adminStatusDisplay(AdminUp) }
+		opts.IfAdminStatusFn = func(int) uint8 { return AdminUp }
 	}
 	return &SyslogExporter{
 		deviceIP:        append(net.IP(nil), opts.DeviceIP...),
@@ -253,6 +254,14 @@ func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]st
 // the global cap (state-driven link syslog).
 func (e *SyslogExporter) FireForInterface(entry *SyslogCatalogEntry, ifIndex int) error {
 	return e.fireWithSource(entry, nil, sourceStateDriven, ifIndex)
+}
+
+// FireForStateChange is FireForInterface for the state-change hook: the
+// message carries the admin status the event itself reported, not a fresh
+// engine read, so an auto-revert or a concurrent SET landing between the
+// mutation and the fire cannot make the message contradict its event.
+func (e *SyslogExporter) FireForStateChange(entry *SyslogCatalogEntry, evt StateChange) error {
+	return e.fireWithSource(entry, map[string]string{"IfAdminStatus": adminStatusDisplay(evt.Admin)}, sourceStateDriven, evt.IfIndex)
 }
 
 // fireBackground is the background-scheduler entry point (wrapped at
@@ -351,7 +360,7 @@ func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
 		Serial:        e.serial,
 		ChassisID:     e.chassisID,
 		NowLocal:      time.Now().Format("2006-01-02 15:04:05"),
-		IfAdminStatus: e.ifAdminStatusFn(ifIndex),
+		IfAdminStatus: adminStatusDisplay(e.ifAdminStatusFn(ifIndex)),
 	}
 }
 

@@ -341,7 +341,7 @@ The same twelve fields work on both sides:
 | `{{.ChassisID}}` | Deterministic locally-administered MAC-style chassis ID synthesised from the device's IPv4 (`02:42:xx:xx:xx:xx`) |
 | `{{.NowLocal}}` | Fire time as local `2006-01-02 15:04:05`, for DisplayString date varbinds such as CIENA-WS `DateAndTime` |
 | `{{.Detail}}` | Per-fire free-form measurement suffix. Empty unless the firing site supplies it (the optical alarms carry the triggering OSNR this way) |
-| `{{.IfAdminStatus}}` | Admin status of `IfIndex` read from the interface state engine at fire time, spelled `up(1)` or `down(2)` as an SNMP display renders `ifAdminStatus`; `up(1)` on a device without an engine |
+| `{{.IfAdminStatus}}` | Admin status of `IfIndex` read from the interface state engine at fire time. Syslog spells it `up(1)` or `down(2)` as an SNMP display renders `ifAdminStatus`; a trap renders the IF-MIB integer `1` or `2` so it can fill a typed `ifAdminStatus` varbind. A state-driven link fire carries the admin value of its event. Up on a device without an engine |
 
 References to any other field are rejected at catalog load.
 The simulator refuses to start rather than silently emitting a trap with an empty OID component.

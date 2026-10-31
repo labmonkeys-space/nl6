@@ -154,7 +154,7 @@ type TrapExporter struct {
 	// IfIndex so it uses a callback (PR 3 swaps synthesis for live lookup).
 	ifIndexFn       func() int               // returns a random ifIndex from the device's set
 	ifNameFn        func(ifIndex int) string // returns ifName for a drawn ifIndex
-	ifAdminStatusFn func(ifIndex int) string // up(1) or down(2) for a drawn ifIndex
+	ifAdminStatusFn func(ifIndex int) uint8  // AdminUp or AdminDown for a drawn ifIndex
 	sysName         string
 	model           string
 	serial          string
@@ -191,9 +191,11 @@ type TrapExporterOptions struct {
 	// `GigabitEthernet0/<N>` is used.
 	IfNameFn func(ifIndex int) string
 
-	// IfAdminStatusFn returns the admin status of ifIndex as up(1) or
-	// down(2) for `{{.IfAdminStatus}}`. If nil every interface reads up(1).
-	IfAdminStatusFn func(ifIndex int) string
+	// IfAdminStatusFn returns the IF-MIB admin status of ifIndex (AdminUp
+	// or AdminDown); `{{.IfAdminStatus}}` renders it as the integer 1 or 2
+	// so it can fill a typed ifAdminStatus varbind. If nil every interface
+	// reads 1.
+	IfAdminStatusFn func(ifIndex int) uint8
 
 	// Class 1 device-context fields captured at exporter construction.
 	// Constant for the device's lifetime; consumed by `{{.SysName}}`,
@@ -231,7 +233,7 @@ func NewTrapExporter(opts TrapExporterOptions) *TrapExporter {
 		opts.IfNameFn = synthIfName
 	}
 	if opts.IfAdminStatusFn == nil {
-		opts.IfAdminStatusFn = func(int) string { return adminStatusDisplay(AdminUp) }
+		opts.IfAdminStatusFn = func(int) uint8 { return AdminUp }
 	}
 	fast, _ := opts.Encoder.(fastTrapEncoder)
 	return &TrapExporter{
@@ -423,6 +425,13 @@ func (e *TrapExporter) FireForInterface(entry *CatalogEntry, ifIndex int) uint32
 	return e.fireWithSource(entry, nil, sourceStateDriven, ifIndex)
 }
 
+// FireForStateChange is FireForInterface for the state-change hook: the
+// varbinds carry the admin status the event itself reported, not a fresh
+// engine read (see SyslogExporter.FireForStateChange).
+func (e *TrapExporter) FireForStateChange(entry *CatalogEntry, evt StateChange) uint32 {
+	return e.fireWithSource(entry, map[string]string{"IfAdminStatus": adminStatusValue(evt.Admin)}, sourceStateDriven, evt.IfIndex)
+}
+
 // buildCtx assembles the per-fire template context for a given ifIndex.
 //
 // pre, when non-nil, tells us which optional fields the entry's templates
@@ -443,7 +452,7 @@ func (e *TrapExporter) buildCtx(ifIndex int, pre *preEncodedEntry) TemplateCtx {
 		Model:         e.model,
 		Serial:        e.serial,
 		ChassisID:     e.chassisID,
-		IfAdminStatus: e.ifAdminStatusFn(ifIndex),
+		IfAdminStatus: adminStatusValue(e.ifAdminStatusFn(ifIndex)),
 	}
 	// nil pre means "unknown" (on-demand fires with a hand-built entry, tests):
 	// keep the old unconditional behaviour so a template can never see an empty

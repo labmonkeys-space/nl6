@@ -104,13 +104,27 @@ func TestMx10004LinkSyslogMatchesTheMib2dCapture(t *testing.T) {
 	if n := sx.Stats().Sent.Load(); n != 2 {
 		t.Errorf("syslog Sent = %d, want 2", n)
 	}
+
+	// The message reports the admin status its event carried, not the
+	// engine's value at fire time: an auto-revert that lands between the
+	// mutation and the fire must not make the message contradict the event.
+	evts := fx.state.ApplyAdminStatus(1, AdminDown)
+	fx.state.ApplyAdminStatus(1, AdminUp)
+	for _, evt := range evts {
+		fx.state.Broadcast(evt)
+	}
+	payload, _ := readNextDatagram(t, syslogColl, 500*time.Millisecond)
+	if got := string(payload); !strings.Contains(got, "ifAdminStatus down(2), ifOperStatus down(2)") || !strings.Contains(got, `admin-status="down(2)"`) {
+		t.Errorf("link-down fired after a revert reports the engine, not its event: %q", got)
+	}
 }
 
 // TestIfAdminStatusFieldOnBothSides pins the shared field: both catalogs
-// accept {{.IfAdminStatus}}, both exporters fill it from their option,
-// both override paths take it, and a device without an engine reads up(1).
+// accept {{.IfAdminStatus}}, both exporters fill it from their option in
+// their own spelling (syslog down(2), trap 2), both override paths take
+// only that spelling, and a device without an engine reads up.
 func TestIfAdminStatusFieldOnBothSides(t *testing.T) {
-	down := func(int) string { return adminStatusDisplay(AdminDown) }
+	down := func(int) uint8 { return AdminDown }
 
 	syslogCat, err := parseSyslogCatalog([]byte(`{"entries":[{"name":"a","weight":1,"facility":"daemon","severity":"notice","appName":"t","msgId":"M","structuredData":{"admin-status":"{{.IfAdminStatus}}"},"template":"admin {{.IfAdminStatus}}"}]}`), "<test>")
 	if err != nil {
@@ -133,8 +147,11 @@ func TestIfAdminStatusFieldOnBothSides(t *testing.T) {
 	if err != nil || res.Message != "admin up(1)" {
 		t.Errorf("syslog override: %q, %v", res.Message, err)
 	}
+	if _, err := syslogCat.Entries[0].Resolve(sx.buildCtx(1), map[string]string{"IfAdminStatus": "testing(3)"}); err == nil {
+		t.Error("syslog override accepted a spelling the engine never produces")
+	}
 
-	trapCat, err := parseCatalog([]byte(`{"traps":[{"name":"a","weight":1,"snmpTrapOID":"1.3.6.1.6.3.1.1.5.1","varbinds":[{"oid":"1.3.6.1.2.1.2.2.1.7.1","type":"octet-string","value":"{{.IfAdminStatus}}"}]}]}`), "<test>")
+	trapCat, err := parseCatalog([]byte(`{"traps":[{"name":"a","weight":1,"snmpTrapOID":"1.3.6.1.6.3.1.1.5.1","varbinds":[{"oid":"1.3.6.1.2.1.2.2.1.7.1","type":"integer","value":"{{.IfAdminStatus}}"}]}]}`), "<test>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,19 +168,22 @@ func TestIfAdminStatusFieldOnBothSides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(vbs) != 1 || fmt.Sprint(vbs[0].Value) != "down(2)" {
-		t.Errorf("trap resolve = %+v, want down(2)", vbs)
+	if len(vbs) != 1 || fmt.Sprint(vbs[0].Value) != "2" {
+		t.Errorf("trap resolve = %+v, want 2", vbs)
 	}
-	vbs, err = trapCat.Entries[0].Resolve(tx.buildCtx(1, nil), map[string]string{"IfAdminStatus": "up(1)"})
-	if err != nil || len(vbs) != 1 || fmt.Sprint(vbs[0].Value) != "up(1)" {
+	vbs, err = trapCat.Entries[0].Resolve(tx.buildCtx(1, nil), map[string]string{"IfAdminStatus": "1"})
+	if err != nil || len(vbs) != 1 || fmt.Sprint(vbs[0].Value) != "1" {
 		t.Errorf("trap override: %+v, %v", vbs, err)
 	}
-
-	if got := deviceIfAdminStatusFn(nil)(1); got != "up(1)" {
-		t.Errorf("no device: %q, want up(1)", got)
+	if _, err := trapCat.Entries[0].Resolve(tx.buildCtx(1, nil), map[string]string{"IfAdminStatus": "down(2)"}); err == nil {
+		t.Error("trap override accepted the display spelling, which cannot fill an integer varbind")
 	}
-	if got := deviceIfAdminStatusFn(&DeviceSimulator{})(1); got != "up(1)" {
-		t.Errorf("no engine: %q, want up(1)", got)
+
+	if got := deviceIfAdminStatusFn(nil)(1); got != AdminUp {
+		t.Errorf("no device: %d, want AdminUp", got)
+	}
+	if got := deviceIfAdminStatusFn(&DeviceSimulator{})(1); got != AdminUp {
+		t.Errorf("no engine: %d, want AdminUp", got)
 	}
 	// Default option: an exporter built without the function reads up(1).
 	plain := NewSyslogExporter(SyslogExporterOptions{

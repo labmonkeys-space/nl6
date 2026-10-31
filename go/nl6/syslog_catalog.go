@@ -62,7 +62,7 @@ const embeddedSyslogCatalogPath = "resources/_common/syslog.json"
 // load time. Nothing knows that today: devices attach after catalogs load.
 const maxSyslogMessageBytes = 1400
 
-// allowedSyslogTemplateFields enumerates the eleven-field unified template
+// allowedSyslogTemplateFields enumerates the twelve-field unified template
 // vocabulary shared with the trap subsystem (design.md §D3 unified vocab
 // decision). Any other {{.Name}} reference in `template` / `hostname` /
 // `structuredData` value strings is rejected at catalog load time.
@@ -282,7 +282,7 @@ type SyslogCatalog struct {
 }
 
 // SyslogTemplateCtx is the data passed to text/template at fire time.
-// Matches the nine-field unified vocabulary in
+// Matches the twelve-field unified vocabulary in
 // `allowedSyslogTemplateFields` exactly.
 type SyslogTemplateCtx struct {
 	DeviceIP      string
@@ -834,6 +834,9 @@ func (e *SyslogCatalogEntry) Resolve(ctx SyslogTemplateCtx, overrides map[string
 			ctx.Detail = v
 		}
 		if v, ok := overrides["IfAdminStatus"]; ok {
+			if v != "up(1)" && v != "down(2)" {
+				return SyslogResolved{}, fmt.Errorf("syslog template override IfAdminStatus: expected up(1) or down(2), got %q", v)
+			}
 			ctx.IfAdminStatus = v
 		}
 		for k := range overrides {
