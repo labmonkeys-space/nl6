@@ -212,8 +212,10 @@ func BenchmarkNetconfIdleSessions(b *testing.B) {
 			b.Fatalf("client helper not ready after %v", netconfBenchReadyWait)
 		}
 		heap1, gor1 := settle()
-		if got := netconfStateListeners(mc.ifCounters.Load().State()); got != n {
-			b.Fatalf("state listeners %d, want %d", got, n)
+		// One dispatcher per device holds the only state listener, however
+		// many sessions share it.
+		if got := netconfStateListeners(mc.ifCounters.Load().State()); got != 1 {
+			b.Fatalf("state listeners %d, want 1", got)
 		}
 		b.ReportMetric(float64(int64(heap1)-int64(heap0))/float64(n), "heap-B/session")
 		b.ReportMetric(float64(gor1-gor0)/float64(n), "goroutines/session")

@@ -182,7 +182,7 @@ nl6 never switches to chunked framing, even when the client advertises base 1.1.
 | `get` with the RFC 5277 streams filter (`urn:ietf:params:xml:ns:netmod:notification`) | An empty `<data>`. |
 | `get` with a `netconf-state` filter (`ietf-netconf-monitoring`) | `<data>` with the hello capabilities under `netconf-state/capabilities`. |
 | `get` with no filter | `<data>` with a reduced `<configuration>`, then an empty `<database-status-information>`. |
-| `get` with any other filter, such as `interfaces-state` (`ietf-interfaces`) | `rpc-error` `syntax error` with the filtered element as `bad-element`. |
+| `get` with any other subtree filter, such as `interfaces-state` (`ietf-interfaces`) | `rpc-error` `syntax error` with the filtered element as `bad-element`. An xpath filter carries no child element and gets the unfiltered reply; the device's xpath behaviour was not captured. |
 | `get-configuration` | The same reduced `<configuration>` without the `<data>` wrapper. |
 | `close-session` | `<ok/>`, then a newline, the comment `<!-- session end at ... -->` and a newline, then the connection closes. |
 | `kill-session` of another session | `<ok/>` and the other session closes. |

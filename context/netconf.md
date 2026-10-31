@@ -95,18 +95,19 @@ When a session ends, the whole SSH connection closes.
 
 ## Scale
 
-Idle-session cost, measured with `BenchmarkNetconfIdleSessions` (2026-10-29, Linux 7.2.12-orbstack aarch64 in a privileged OrbStack container, Go 1.27.3, one cisco_catalyst_9500 device on loopback).
+Idle-session cost, measured with `BenchmarkNetconfIdleSessions` (2026-10-31, Linux 7.2.12-orbstack aarch64 in a privileged OrbStack container, Go 1.27.3, one cisco_catalyst_9500 device on loopback; first measured 2026-10-29 before the shared dispatcher).
 Each session is an SSH connect, hello and one keyless on-change subscription (`/interfaces-ios-xe-oper:interfaces/interface/oper-status`, dampening 0), then idle.
 The clients run in a child process, so the numbers are the server half only.
 They are the parent's heap and goroutine growth after a forced GC, divided by N.
 
 | Sessions | Heap per session | Goroutines per session |
 |---|---|---|
-| 1000 | 34.5 KB | 6 |
-| 5000 | 34.4 KB | 6 |
+| 1000 | 31.9 KB | 5 |
+| 5000 | 31.8 KB | 5 |
 
-Heap is about 1.04x the 2026-10-14 spike (33 KB, plain SSH sessions).
-An idle session held 6 goroutines when measured.
+Heap is about 0.97x the 2026-10-14 spike (33 KB, plain SSH sessions).
+Before the shared dispatcher (2026-10-29) a session cost 34.5 KB and 6 goroutines.
+An idle session held 6 goroutines when first measured.
 Three belong to x/crypto/ssh: the mux loop, the kex loop and the transport read loop.
 Three were nl6's:
 
@@ -120,7 +121,7 @@ Membership changes go through the dispatcher goroutine; a join first drains the 
 Registration happens right after the hello, so a change in that window goes to the older sessions only, as it did when each session registered its own listener.
 The interface name and the whole row are built once per event and shared by every session on the device.
 The 16-deep listener channel is now per device, not per session: one event costs one dispatch to N sessions, so the depth still bounds events, but a device with many sessions spends longer per event on the one goroutine and reaches the engine's drop-oldest sooner than N parallel listeners did.
-The benchmark has not been re-run on Linux after that change.
+The table above is the re-run after that change; the benchmark asserts one state listener for the device, however many sessions it carries.
 
 No writer runs while the send queue is empty.
 The first push starts one and it exits once the queue drains.

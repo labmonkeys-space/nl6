@@ -216,15 +216,16 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 	}
 
 	ctx := SyslogTemplateCtx{
-		DeviceIP:  "10.42.0.2",
-		SysName:   "rtr-core-01",
-		IfIndex:   48,
-		IfName:    "xe-0/1/23",
-		Now:       1700000000,
-		Uptime:    98765,
-		Model:     "Juniper MX10004",
-		Serial:    synthSerial(net.IPv4(10, 42, 0, 2)),
-		ChassisID: synthChassisID(net.IPv4(10, 42, 0, 2)),
+		DeviceIP:      "10.42.0.2",
+		SysName:       "rtr-core-01",
+		IfIndex:       48,
+		IfName:        "xe-0/1/23",
+		Now:           1700000000,
+		Uptime:        98765,
+		Model:         "Juniper MX10004",
+		Serial:        synthSerial(net.IPv4(10, 42, 0, 2)),
+		ChassisID:     synthChassisID(net.IPv4(10, 42, 0, 2)),
+		IfAdminStatus: "up(1)",
 	}
 
 	// SNMP_TRAP_LINK_UP renders ifIndex + ifName in Junos's canonical form.
@@ -271,27 +272,27 @@ func TestJuniperMx10004_SyslogCatalog_ResolveEndToEnd(t *testing.T) {
 		t.Errorf("temp-critical message should contain Model: got %q", resolved.Message)
 	}
 
-	// Structured-data on juniper-snmp-link-down should carry all three
-	// declared SD-pairs (ifIndex, ifName, model).
+	// Structured-data on juniper-snmp-link-down carries the four parameters
+	// mib2d logs; the capture pin is in syslog_if_admin_status_test.go.
 	linkDown := jnx.ByName["juniper-snmp-link-down"]
 	resolved, err = linkDown.Resolve(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var hasIfName, hasModel bool
+	var hasIfName, hasAdmin bool
 	for _, sd := range resolved.StructuredData {
-		if sd.Key == "ifName" && sd.Value == "xe-0/1/23" {
+		if sd.Key == "interface-name" && sd.Value == "xe-0/1/23" {
 			hasIfName = true
 		}
-		if sd.Key == "model" && sd.Value == "Juniper MX10004" {
-			hasModel = true
+		if sd.Key == "admin-status" && sd.Value == "up(1)" {
+			hasAdmin = true
 		}
 	}
 	if !hasIfName {
-		t.Error("juniper-snmp-link-down structuredData missing ifName=xe-0/1/23")
+		t.Error("juniper-snmp-link-down structuredData missing interface-name=xe-0/1/23")
 	}
-	if !hasModel {
-		t.Error("juniper-snmp-link-down structuredData missing model=Juniper MX10004")
+	if !hasAdmin {
+		t.Error("juniper-snmp-link-down structuredData missing admin-status=up(1)")
 	}
 }
 

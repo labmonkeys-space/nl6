@@ -10,7 +10,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"slices"
 	"time"
 )
 
@@ -30,29 +29,7 @@ func newJunosNetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 	if reg != nil {
 		s.startedAt = reg.createdAt
 	}
-	ev := &netconfEvents{ready: make(chan struct{})}
-	if manager != nil {
-		ev.sent, ev.dropped = &manager.netconfNotificationsSent, &manager.netconfNotificationsDropped
-	} else {
-		ev.sent, ev.dropped = new(uint64), new(uint64)
-	}
-	ev.onEvent = (*netconfSession).junosStateEvent
-	s.ev = ev
-	s.onStart = s.startEvents
-	s.onEnd = func() {
-		if d := ev.disp.Swap(nil); d != nil {
-			d.unregister(s)
-			reg.releaseDispatcher(d)
-		}
-	}
-	s.onUnsubscribe = func(sub *netconfSub) {
-		sub.deleted.Store(true)
-		ev.mu.Lock()
-		if i := slices.Index(ev.subs, sub); i >= 0 {
-			ev.subs = slices.Delete(ev.subs, i, i+1)
-		}
-		ev.mu.Unlock()
-	}
+	s.wireEvents((*netconfSession).junosStateEvent)
 	s.base10Only = true
 	s.hello = func(sessionID uint32) []byte { return junosServerHello(sessionID, user) }
 	s.rpc = s.junosRPC

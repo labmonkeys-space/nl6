@@ -115,22 +115,30 @@ func (o *netconfOutbox) len() int {
 // the way an IOS XE switch does.
 func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, reg *netconfSessionRegistry) *netconfSession {
 	s := newNetconfSession(id, dev, rw, reg)
+	s.wireEvents((*netconfSession).iosxeStateEvent)
+	s.onSubscribe = s.syncOnStart
+	return s
+}
+
+// wireEvents gives a session its notification machinery: the counters,
+// the dialect's renderer, the start hook, the dispatcher release at end
+// and the unsubscribe bookkeeping. Both dialects share all of it.
+func (s *netconfSession) wireEvents(onEvent func(*netconfSession, *netconfStateEvent)) {
 	ev := &netconfEvents{ready: make(chan struct{})}
 	if manager != nil {
 		ev.sent, ev.dropped = &manager.netconfNotificationsSent, &manager.netconfNotificationsDropped
 	} else {
 		ev.sent, ev.dropped = new(uint64), new(uint64)
 	}
+	ev.onEvent = onEvent
 	s.ev = ev
-	ev.onEvent = (*netconfSession).iosxeStateEvent
 	s.onStart = s.startEvents
 	s.onEnd = func() {
 		if d := ev.disp.Swap(nil); d != nil {
 			d.unregister(s)
-			reg.releaseDispatcher(d)
+			s.reg.releaseDispatcher(d)
 		}
 	}
-	s.onSubscribe = s.syncOnStart
 	s.onUnsubscribe = func(sub *netconfSub) {
 		sub.deleted.Store(true)
 		ev.mu.Lock()
@@ -139,7 +147,6 @@ func newIOSXENetconfSession(id uint32, dev *DeviceSimulator, rw io.ReadWriter, r
 		}
 		ev.mu.Unlock()
 	}
-	return s
 }
 
 // netconfIfCounters returns the device's counter cycler, or nil.

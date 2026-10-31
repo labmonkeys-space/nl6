@@ -922,7 +922,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `name` | string | yes | Catalog entry name (e.g. `linkDown`, `ciscoConfigManEvent`). Must match an entry in the **device's resolved catalog** (per-type overlay if present, universal otherwise), not the universal catalog globally. |
-| `varbindOverrides` | object | no | Map of template-field → string-value overrides. Only fields from the eleven-field unified vocabulary are accepted (`IfIndex`, `IfName`, `Uptime`, `Now`, `NowLocal`, `DeviceIP`, `SysName`, `Model`, `Serial`, `ChassisID`, `Detail`). See [SNMP trap reference → Template vocabulary](snmp-traps.md#template-vocabulary). |
+| `varbindOverrides` | object | no | Map of template-field → string-value overrides. Only fields from the twelve-field unified vocabulary are accepted (`IfIndex`, `IfName`, `Uptime`, `Now`, `NowLocal`, `DeviceIP`, `SysName`, `Model`, `Serial`, `ChassisID`, `Detail`, `IfAdminStatus`). See [SNMP trap reference → Template vocabulary](snmp-traps.md#template-vocabulary). |
 
 Response:
 

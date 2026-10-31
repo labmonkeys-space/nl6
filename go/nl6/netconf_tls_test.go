@@ -18,6 +18,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http/httptest"
@@ -569,4 +570,43 @@ func TestNetconfTLSKillSessionAcrossTransports(t *testing.T) {
 		t.Fatalf("kill reply\n got: %q\nwant: %q", r, want)
 	}
 	expectNetconfTLSEOF(t, victim)
+}
+
+// TestNetconfTLSLogsFirstHandshakeFailureOnce pins the once-per-process
+// log line: three refusals for three reasons produce one line, and that
+// line names the client certificate as one example cause, since a TCP
+// probe or an idle-deadline abort can be the first failure.
+func TestNetconfTLSLogsFirstHandshakeFailureOnce(t *testing.T) {
+	sink := &syncLogSink{}
+	prevOut, prevFlags := log.Writer(), log.Flags()
+	log.SetOutput(sink)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}()
+
+	mgr := useNetconfTLSTestManager(t)
+	trusted := newNetconfTLSTestCA(t)
+	good, fp := trusted.client(t, false)
+	stranger, _ := newNetconfTLSTestCA(t).client(t, false)
+	setNetconfTLSIdentity(mgr, trusted, map[string]string{fp: "ncuser"}, "")
+	_, _, addr := newJunosTLSDevice(t, mgr)
+
+	netconfTLSRefused(t, mgr, addr, nil, nil)
+	netconfTLSRefused(t, mgr, addr, &stranger, nil)
+	netconfTLSRefused(t, mgr, addr, &good, func(c *tls.Config) { c.MinVersion = tls.VersionTLS13 })
+
+	var lines []string
+	for _, l := range strings.Split(sink.String(), "\n") {
+		if strings.Contains(l, "NETCONF TLS handshake failed") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("handshake-failure log lines = %d, want 1:\n%s", len(lines), sink.String())
+	}
+	if !strings.Contains(lines[0], "for example, the client needs a certificate") {
+		t.Errorf("log line does not present the certificate as one example: %s", lines[0])
+	}
 }

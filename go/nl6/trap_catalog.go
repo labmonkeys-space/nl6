@@ -105,7 +105,7 @@ var linkTrapOIDs = map[string]struct{}{
 	"1.3.6.1.6.3.1.1.5.4": {}, // linkUp
 }
 
-// allowedTemplateFields enumerates the eleven-field unified template
+// allowedTemplateFields enumerates the twelve-field unified template
 // vocabulary shared between trap and syslog catalogs. Any other
 // {{.Name}} reference in OID or value strings is rejected at catalog
 // load time.
@@ -140,6 +140,11 @@ var allowedTemplateFields = map[string]struct{}{
 	// can thus carry the measurement that triggered it without a
 	// per-quantity field explosion.
 	"Detail": {},
+	// IfAdminStatus is the state engine's admin status of IfIndex at fire
+	// time as the IF-MIB integer, 1 or 2, so it can fill the typed
+	// ifAdminStatus varbind of a link trap. The syslog twin spells it
+	// up(1) or down(2).
+	"IfAdminStatus": {},
 }
 
 // TrapVarbindType identifies the ASN.1 application type used when encoding
@@ -294,20 +299,21 @@ type Catalog struct {
 }
 
 // TemplateCtx is the data handed to text/template when Resolve evaluates
-// per-fire. Matches the eleven-field vocabulary in allowedTemplateFields.
+// per-fire. Matches the twelve-field vocabulary in allowedTemplateFields.
 // Shared field set with SyslogTemplateCtx (design.md §D3 — unified vocab).
 type TemplateCtx struct {
-	IfIndex   int
-	IfName    string // ifDescr.<IfIndex> or synthesised `GigabitEthernet0/<N>`
-	Uptime    uint32 // 1/100s ticks since device start
-	Now       int64  // Unix epoch seconds
-	DeviceIP  string // dotted-quad
-	SysName   string // device's sysName.0
-	Model     string // human-readable model from slug → label
-	Serial    string // `SN<hex>` synthesised from device IP
-	ChassisID string // MAC-style chassis ID synthesised from device IP
-	NowLocal  string // fire time, local "2006-01-02 15:04:05"
-	Detail    string // per-fire self-delimiting measurement suffix; empty unless overridden
+	IfIndex       int
+	IfName        string // ifDescr.<IfIndex> or synthesised `GigabitEthernet0/<N>`
+	Uptime        uint32 // 1/100s ticks since device start
+	Now           int64  // Unix epoch seconds
+	DeviceIP      string // dotted-quad
+	SysName       string // device's sysName.0
+	Model         string // human-readable model from slug → label
+	Serial        string // `SN<hex>` synthesised from device IP
+	ChassisID     string // MAC-style chassis ID synthesised from device IP
+	NowLocal      string // fire time, local "2006-01-02 15:04:05"
+	Detail        string // per-fire self-delimiting measurement suffix; empty unless overridden
+	IfAdminStatus string // admin status of IfIndex at fire time, 1 or 2
 }
 
 // Varbind is one resolved (templates evaluated) varbind ready for the encoder.
@@ -654,17 +660,18 @@ func (c *Catalog) ApplySizeBudgetWith(budget int, source string, size notificati
 		return nil
 	}
 	ctx := TemplateCtx{
-		IfIndex:   2147483647,
-		IfName:    "GigabitEthernet0/2147483647",
-		Uptime:    4294967295,
-		Now:       time.Now().Unix(),
-		DeviceIP:  "255.255.255.255",
-		SysName:   "device-with-a-fairly-long-system-name-0000",
-		Model:     "Ciena Waveserver 5",
-		Serial:    "SNffffffff",
-		ChassisID: "02:42:ff:ff:ff:ff",
-		NowLocal:  "2026-12-31 23:59:59",
-		Detail:    worstCaseDetail,
+		IfIndex:       2147483647,
+		IfName:        "GigabitEthernet0/2147483647",
+		Uptime:        4294967295,
+		Now:           time.Now().Unix(),
+		DeviceIP:      "255.255.255.255",
+		SysName:       "device-with-a-fairly-long-system-name-0000",
+		Model:         "Ciena Waveserver 5",
+		Serial:        "SNffffffff",
+		ChassisID:     "02:42:ff:ff:ff:ff",
+		NowLocal:      "2026-12-31 23:59:59",
+		Detail:        worstCaseDetail,
+		IfAdminStatus: "2",
 	}
 	var disabled []string
 	for _, e := range c.Entries {
@@ -1040,7 +1047,7 @@ func validateTemplateFields(s, entryName string, vbIdx int, which string) error 
 		}
 		if _, ok := allowedTemplateFields[field]; !ok {
 			return fmt.Errorf("trap catalog: entry %q varbind %d %s: unknown template field "+
-				"%q (allowed: IfIndex, IfName, Uptime, Now, DeviceIP, SysName, Model, Serial, ChassisID)",
+				"%q (allowed: IfIndex, IfName, Uptime, Now, DeviceIP, SysName, Model, Serial, ChassisID, NowLocal, Detail, IfAdminStatus)",
 				entryName, vbIdx, which, field)
 		}
 		rest = rest[open+close+2:]
@@ -1113,6 +1120,12 @@ func (e *CatalogEntry) Resolve(ctx TemplateCtx, overrides map[string]string) ([]
 		}
 		if v, ok := overrides["Detail"]; ok {
 			ctx.Detail = v
+		}
+		if v, ok := overrides["IfAdminStatus"]; ok {
+			if v != "1" && v != "2" {
+				return nil, fmt.Errorf("trap varbind override IfAdminStatus: expected 1 or 2, got %q", v)
+			}
+			ctx.IfAdminStatus = v
 		}
 		for k := range overrides {
 			if _, ok := allowedTemplateFields[k]; !ok {

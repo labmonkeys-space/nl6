@@ -96,8 +96,9 @@ type SyslogExporter struct {
 	// ifIndexFn may be nil — in that case IfIndex = 0. ifNameFn receives
 	// the index returned by ifIndexFn and yields the matching interface
 	// name (empty if no mapping exists).
-	ifIndexFn func() int
-	ifNameFn  func(ifIndex int) string
+	ifIndexFn       func() int
+	ifNameFn        func(ifIndex int) string
+	ifAdminStatusFn func(ifIndex int) uint8
 
 	startTime time.Time
 	stats     *SyslogStats
@@ -130,6 +131,10 @@ type SyslogExporterOptions struct {
 	ChassisID string
 	IfIndexFn func() int
 	IfNameFn  func(ifIndex int) string
+	// IfAdminStatusFn returns the IF-MIB admin status of ifIndex (AdminUp
+	// or AdminDown); the context spells it up(1) or down(2). If nil every
+	// interface reads up(1).
+	IfAdminStatusFn func(ifIndex int) uint8
 }
 
 // NewSyslogExporter builds a SyslogExporter. The per-device conn is not
@@ -172,21 +177,25 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 	if opts.IfNameFn == nil {
 		opts.IfNameFn = func(int) string { return "" }
 	}
+	if opts.IfAdminStatusFn == nil {
+		opts.IfAdminStatusFn = func(int) uint8 { return AdminUp }
+	}
 	return &SyslogExporter{
-		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
-		encoder:       opts.Encoder,
-		collectorStr:  opts.CollectorStr,
-		format:        opts.Format,
-		transport:     transport,
-		transportKind: kind,
-		sysName:       opts.SysName,
-		model:         opts.Model,
-		serial:        opts.Serial,
-		chassisID:     opts.ChassisID,
-		ifIndexFn:     opts.IfIndexFn,
-		ifNameFn:      opts.IfNameFn,
-		startTime:     time.Now(),
-		stats:         &SyslogStats{},
+		deviceIP:        append(net.IP(nil), opts.DeviceIP...),
+		encoder:         opts.Encoder,
+		collectorStr:    opts.CollectorStr,
+		format:          opts.Format,
+		transport:       transport,
+		transportKind:   kind,
+		sysName:         opts.SysName,
+		model:           opts.Model,
+		serial:          opts.Serial,
+		chassisID:       opts.ChassisID,
+		ifIndexFn:       opts.IfIndexFn,
+		ifNameFn:        opts.IfNameFn,
+		ifAdminStatusFn: opts.IfAdminStatusFn,
+		startTime:       time.Now(),
+		stats:           &SyslogStats{},
 	}
 }
 
@@ -245,6 +254,14 @@ func (e *SyslogExporter) Fire(entry *SyslogCatalogEntry, overrides map[string]st
 // the global cap (state-driven link syslog).
 func (e *SyslogExporter) FireForInterface(entry *SyslogCatalogEntry, ifIndex int) error {
 	return e.fireWithSource(entry, nil, sourceStateDriven, ifIndex)
+}
+
+// FireForStateChange is FireForInterface for the state-change hook: the
+// message carries the admin status the event itself reported, not a fresh
+// engine read, so an auto-revert or a concurrent SET landing between the
+// mutation and the fire cannot make the message contradict its event.
+func (e *SyslogExporter) FireForStateChange(entry *SyslogCatalogEntry, evt StateChange) error {
+	return e.fireWithSource(entry, map[string]string{"IfAdminStatus": adminStatusDisplay(evt.Admin)}, sourceStateDriven, evt.IfIndex)
 }
 
 // fireBackground is the background-scheduler entry point (wrapped at
@@ -333,16 +350,17 @@ func (e *SyslogExporter) fireWithSourceLabelled(entry *SyslogCatalogEntry, overr
 // buildCtx assembles the per-fire template context for a given ifIndex.
 func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
 	return SyslogTemplateCtx{
-		DeviceIP:  e.deviceIP.String(),
-		SysName:   e.sysName,
-		IfIndex:   ifIndex,
-		IfName:    e.ifNameFn(ifIndex),
-		Now:       time.Now().Unix(),
-		Uptime:    e.uptimeHundredths(),
-		Model:     e.model,
-		Serial:    e.serial,
-		ChassisID: e.chassisID,
-		NowLocal:  time.Now().Format("2006-01-02 15:04:05"),
+		DeviceIP:      e.deviceIP.String(),
+		SysName:       e.sysName,
+		IfIndex:       ifIndex,
+		IfName:        e.ifNameFn(ifIndex),
+		Now:           time.Now().Unix(),
+		Uptime:        e.uptimeHundredths(),
+		Model:         e.model,
+		Serial:        e.serial,
+		ChassisID:     e.chassisID,
+		NowLocal:      time.Now().Format("2006-01-02 15:04:05"),
+		IfAdminStatus: adminStatusDisplay(e.ifAdminStatusFn(ifIndex)),
 	}
 }
 

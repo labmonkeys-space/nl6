@@ -30,12 +30,13 @@ The unfiltered `get` ends its `<data>` with the device's empty `database-status-
 ## Few RPCs
 
 nl6 serves `close-session`, `kill-session`, `create-subscription` on the `NETCONF` stream, `get` with the streams filter, `get` with the `netconf-state` capabilities filter, unfiltered `get` and `get-configuration`.
-A `get` with any other filter, such as `ietf-interfaces` `interfaces-state`, gets the `syntax error` refusal with the filtered element as `bad-element`.
+A `get` with any other subtree filter, such as `ietf-interfaces` `interfaces-state`, gets the `syntax error` refusal with the filtered element as `bad-element`.
+A `get` with an xpath filter carries no child element and gets the unfiltered reply; the device's xpath behaviour was not captured.
 Every other RPC gets the Junos `syntax error` refusal.
 This includes `get-interface-information`, `get-schema` and replay.
 The reply shape of `kill-session` was not captured.
-nl6 closes another session and replies `ok`.
-The session's own ID or an unknown ID gets the `syntax error` refusal with `bad-element` `session-id`.
+nl6 closes another session and replies `<ok/>`.
+The session's own ID, an unknown ID, a missing `session-id` or a non-numeric one all get the `syntax error` refusal with `bad-element` `session-id`.
 
 ## Client identity
 

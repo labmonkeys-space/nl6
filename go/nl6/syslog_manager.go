@@ -544,20 +544,21 @@ func (sm *SimulatorManager) startDeviceSyslogExporter(device *DeviceSimulator) e
 	}
 
 	opts := SyslogExporterOptions{
-		DeviceIP:      device.IP,
-		Encoder:       encoder,
-		Collector:     collectorAddr,
-		CollectorStr:  canonicalCollector,
-		Format:        format,
-		SharedConn:    sharedConn,
-		Transport:     transport,
-		TransportKind: SyslogTransportKind(cfg.Transport),
-		SysName:       device.sysName,
-		Model:         modelLabel,
-		Serial:        synthSerial(device.IP),
-		ChassisID:     synthChassisID(device.IP),
-		IfIndexFn:     deviceIfIndexFn(device),
-		IfNameFn:      deviceIfNameFn(device),
+		DeviceIP:        device.IP,
+		Encoder:         encoder,
+		Collector:       collectorAddr,
+		CollectorStr:    canonicalCollector,
+		Format:          format,
+		SharedConn:      sharedConn,
+		Transport:       transport,
+		TransportKind:   SyslogTransportKind(cfg.Transport),
+		SysName:         device.sysName,
+		Model:           modelLabel,
+		Serial:          synthSerial(device.IP),
+		ChassisID:       synthChassisID(device.IP),
+		IfIndexFn:       deviceIfIndexFn(device),
+		IfNameFn:        deviceIfNameFn(device),
+		IfAdminStatusFn: deviceIfAdminStatusFn(device),
 	}
 
 	exporter := NewSyslogExporter(opts)
@@ -859,4 +860,52 @@ func (sm *SimulatorManager) newDeviceSyslogStreamTransport(
 	t := newTCPTransport(device.IP, canonicalCollector, framing, dialer)
 	t.start()
 	return t, nil
+}
+
+// adminStatusDisplay spells an IF-MIB ifAdminStatus value the way an SNMP
+// display renders it, up(1) or down(2). Any other value is treated as up,
+// which is what the engine reports for an unseeded interface. The syslog
+// side of {{.IfAdminStatus}} carries this form; the trap side carries the
+// bare integer from adminStatusValue so it can feed a typed varbind.
+func adminStatusDisplay(admin uint8) string {
+	if admin == AdminDown {
+		return "down(2)"
+	}
+	return "up(1)"
+}
+
+// adminStatusValue spells an ifAdminStatus value as its IF-MIB integer,
+// 1 or 2, for the trap side of {{.IfAdminStatus}}.
+func adminStatusValue(admin uint8) string {
+	if admin == AdminDown {
+		return "2"
+	}
+	return "1"
+}
+
+// deviceInterfaceState returns the device's interface state engine, or nil
+// for a device without one (no cycler yet, or a type with no interfaces).
+func deviceInterfaceState(device *DeviceSimulator) *InterfaceState {
+	if device == nil || device.metricsCycler == nil {
+		return nil
+	}
+	ic := device.metricsCycler.ifCounters.Load()
+	if ic == nil {
+		return nil
+	}
+	return ic.State()
+}
+
+// deviceIfAdminStatusFn returns the `{{.IfAdminStatus}}` source for a
+// device: the state engine's admin status of the ifIndex at fire time. A
+// device without an engine reads up for every interface. The exporter
+// spells the value for its side.
+func deviceIfAdminStatusFn(device *DeviceSimulator) func(int) uint8 {
+	return func(ifIndex int) uint8 {
+		st := deviceInterfaceState(device)
+		if st == nil {
+			return AdminUp
+		}
+		return st.AdminStatus(ifIndex)
+	}
 }

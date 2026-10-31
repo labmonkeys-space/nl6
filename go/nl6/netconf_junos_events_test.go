@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/xml"
 	"strings"
 	"testing"
 	"time"
@@ -179,5 +181,34 @@ func TestJunosAdminChangeRendersOnePair(t *testing.T) {
 	_ = c.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
 	if b, err := c.br.ReadByte(); err == nil {
 		t.Fatalf("extra bytes after the pairs: %q", b)
+	}
+}
+
+// TestJunosLinkEventEscapesDeviceText pins that the interface name and the
+// hostname are escaped once when the event is built, so both renderings
+// carry well-formed XML in the body, the parameter and the hostname.
+func TestJunosLinkEventEscapesDeviceText(t *testing.T) {
+	at := time.Date(2026, 10, 30, 16, 51, 31, 841089000, time.UTC)
+	evt := StateChange{IfIndex: 1, PrevOper: OperUp, Oper: OperDown, Admin: AdminUp}
+	got, ok := junosLinkEventFor(evt, "ge-0/0/1 <a&b>", false, at, junosMib2dPID, "r1 & co")
+	if !ok {
+		t.Fatal("no event")
+	}
+	if got.IfName != "ge-0/0/1 &lt;a&amp;b&gt;" || got.Hostname != "r1 &amp; co" {
+		t.Fatalf("event = %+v, want escaped name and hostname", got)
+	}
+	for name, rendered := range map[string][]byte{
+		"state": renderJunosStateSyslog(got),
+		"event": renderJunosEventSyslog(got),
+	} {
+		if bytes.Contains(rendered, []byte("<a&b>")) || bytes.Contains(rendered, []byte("r1 & co")) {
+			t.Errorf("%s rendering carries raw text: %s", name, rendered)
+		}
+		if bytes.Contains(rendered, []byte("&amp;amp;")) {
+			t.Errorf("%s rendering escaped twice: %s", name, rendered)
+		}
+		if err := xml.Unmarshal(rendered, new(struct{})); err != nil {
+			t.Errorf("%s rendering is not well-formed: %v", name, err)
+		}
 	}
 }
