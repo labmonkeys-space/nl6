@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -107,6 +108,15 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 	case "8", "16", "24":
 	default:
 		sendErrorResponse(w, "netmask must be 8, 16, or 24", http.StatusBadRequest)
+		return
+	}
+
+	// start_ip is caller data like the fields above, so it is refused here with
+	// 400 (nl6#940). The batch's own check in createDevicesWithOptionsLocked
+	// returns a plain error that createDevicesErrorResponse maps to 500, and it
+	// runs after the gate. Same predicate, so nothing accepted before is refused.
+	if net.ParseIP(req.StartIP) == nil {
+		sendErrorResponse(w, fmt.Sprintf("invalid start IP address: %s", req.StartIP), http.StatusBadRequest)
 		return
 	}
 
