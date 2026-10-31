@@ -96,8 +96,9 @@ type SyslogExporter struct {
 	// ifIndexFn may be nil — in that case IfIndex = 0. ifNameFn receives
 	// the index returned by ifIndexFn and yields the matching interface
 	// name (empty if no mapping exists).
-	ifIndexFn func() int
-	ifNameFn  func(ifIndex int) string
+	ifIndexFn       func() int
+	ifNameFn        func(ifIndex int) string
+	ifAdminStatusFn func(ifIndex int) string
 
 	startTime time.Time
 	stats     *SyslogStats
@@ -130,6 +131,9 @@ type SyslogExporterOptions struct {
 	ChassisID string
 	IfIndexFn func() int
 	IfNameFn  func(ifIndex int) string
+	// IfAdminStatusFn returns the admin status of ifIndex as up(1) or
+	// down(2). If nil every interface reads up(1).
+	IfAdminStatusFn func(ifIndex int) string
 }
 
 // NewSyslogExporter builds a SyslogExporter. The per-device conn is not
@@ -172,21 +176,25 @@ func NewSyslogExporter(opts SyslogExporterOptions) *SyslogExporter {
 	if opts.IfNameFn == nil {
 		opts.IfNameFn = func(int) string { return "" }
 	}
+	if opts.IfAdminStatusFn == nil {
+		opts.IfAdminStatusFn = func(int) string { return adminStatusDisplay(AdminUp) }
+	}
 	return &SyslogExporter{
-		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
-		encoder:       opts.Encoder,
-		collectorStr:  opts.CollectorStr,
-		format:        opts.Format,
-		transport:     transport,
-		transportKind: kind,
-		sysName:       opts.SysName,
-		model:         opts.Model,
-		serial:        opts.Serial,
-		chassisID:     opts.ChassisID,
-		ifIndexFn:     opts.IfIndexFn,
-		ifNameFn:      opts.IfNameFn,
-		startTime:     time.Now(),
-		stats:         &SyslogStats{},
+		deviceIP:        append(net.IP(nil), opts.DeviceIP...),
+		encoder:         opts.Encoder,
+		collectorStr:    opts.CollectorStr,
+		format:          opts.Format,
+		transport:       transport,
+		transportKind:   kind,
+		sysName:         opts.SysName,
+		model:           opts.Model,
+		serial:          opts.Serial,
+		chassisID:       opts.ChassisID,
+		ifIndexFn:       opts.IfIndexFn,
+		ifNameFn:        opts.IfNameFn,
+		ifAdminStatusFn: opts.IfAdminStatusFn,
+		startTime:       time.Now(),
+		stats:           &SyslogStats{},
 	}
 }
 
@@ -333,16 +341,17 @@ func (e *SyslogExporter) fireWithSourceLabelled(entry *SyslogCatalogEntry, overr
 // buildCtx assembles the per-fire template context for a given ifIndex.
 func (e *SyslogExporter) buildCtx(ifIndex int) SyslogTemplateCtx {
 	return SyslogTemplateCtx{
-		DeviceIP:  e.deviceIP.String(),
-		SysName:   e.sysName,
-		IfIndex:   ifIndex,
-		IfName:    e.ifNameFn(ifIndex),
-		Now:       time.Now().Unix(),
-		Uptime:    e.uptimeHundredths(),
-		Model:     e.model,
-		Serial:    e.serial,
-		ChassisID: e.chassisID,
-		NowLocal:  time.Now().Format("2006-01-02 15:04:05"),
+		DeviceIP:      e.deviceIP.String(),
+		SysName:       e.sysName,
+		IfIndex:       ifIndex,
+		IfName:        e.ifNameFn(ifIndex),
+		Now:           time.Now().Unix(),
+		Uptime:        e.uptimeHundredths(),
+		Model:         e.model,
+		Serial:        e.serial,
+		ChassisID:     e.chassisID,
+		NowLocal:      time.Now().Format("2006-01-02 15:04:05"),
+		IfAdminStatus: e.ifAdminStatusFn(ifIndex),
 	}
 }
 

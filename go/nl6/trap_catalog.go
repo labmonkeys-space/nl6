@@ -140,6 +140,9 @@ var allowedTemplateFields = map[string]struct{}{
 	// can thus carry the measurement that triggered it without a
 	// per-quantity field explosion.
 	"Detail": {},
+	// IfAdminStatus is the state engine's admin status of IfIndex at fire
+	// time in the SNMP display form, up(1) or down(2).
+	"IfAdminStatus": {},
 }
 
 // TrapVarbindType identifies the ASN.1 application type used when encoding
@@ -297,17 +300,18 @@ type Catalog struct {
 // per-fire. Matches the eleven-field vocabulary in allowedTemplateFields.
 // Shared field set with SyslogTemplateCtx (design.md §D3 — unified vocab).
 type TemplateCtx struct {
-	IfIndex   int
-	IfName    string // ifDescr.<IfIndex> or synthesised `GigabitEthernet0/<N>`
-	Uptime    uint32 // 1/100s ticks since device start
-	Now       int64  // Unix epoch seconds
-	DeviceIP  string // dotted-quad
-	SysName   string // device's sysName.0
-	Model     string // human-readable model from slug → label
-	Serial    string // `SN<hex>` synthesised from device IP
-	ChassisID string // MAC-style chassis ID synthesised from device IP
-	NowLocal  string // fire time, local "2006-01-02 15:04:05"
-	Detail    string // per-fire self-delimiting measurement suffix; empty unless overridden
+	IfIndex       int
+	IfName        string // ifDescr.<IfIndex> or synthesised `GigabitEthernet0/<N>`
+	Uptime        uint32 // 1/100s ticks since device start
+	Now           int64  // Unix epoch seconds
+	DeviceIP      string // dotted-quad
+	SysName       string // device's sysName.0
+	Model         string // human-readable model from slug → label
+	Serial        string // `SN<hex>` synthesised from device IP
+	ChassisID     string // MAC-style chassis ID synthesised from device IP
+	NowLocal      string // fire time, local "2006-01-02 15:04:05"
+	Detail        string // per-fire self-delimiting measurement suffix; empty unless overridden
+	IfAdminStatus string // admin status of IfIndex at fire time, up(1) or down(2)
 }
 
 // Varbind is one resolved (templates evaluated) varbind ready for the encoder.
@@ -654,17 +658,18 @@ func (c *Catalog) ApplySizeBudgetWith(budget int, source string, size notificati
 		return nil
 	}
 	ctx := TemplateCtx{
-		IfIndex:   2147483647,
-		IfName:    "GigabitEthernet0/2147483647",
-		Uptime:    4294967295,
-		Now:       time.Now().Unix(),
-		DeviceIP:  "255.255.255.255",
-		SysName:   "device-with-a-fairly-long-system-name-0000",
-		Model:     "Ciena Waveserver 5",
-		Serial:    "SNffffffff",
-		ChassisID: "02:42:ff:ff:ff:ff",
-		NowLocal:  "2026-12-31 23:59:59",
-		Detail:    worstCaseDetail,
+		IfIndex:       2147483647,
+		IfName:        "GigabitEthernet0/2147483647",
+		Uptime:        4294967295,
+		Now:           time.Now().Unix(),
+		DeviceIP:      "255.255.255.255",
+		SysName:       "device-with-a-fairly-long-system-name-0000",
+		Model:         "Ciena Waveserver 5",
+		Serial:        "SNffffffff",
+		ChassisID:     "02:42:ff:ff:ff:ff",
+		NowLocal:      "2026-12-31 23:59:59",
+		Detail:        worstCaseDetail,
+		IfAdminStatus: "down(2)",
 	}
 	var disabled []string
 	for _, e := range c.Entries {
@@ -1113,6 +1118,9 @@ func (e *CatalogEntry) Resolve(ctx TemplateCtx, overrides map[string]string) ([]
 		}
 		if v, ok := overrides["Detail"]; ok {
 			ctx.Detail = v
+		}
+		if v, ok := overrides["IfAdminStatus"]; ok {
+			ctx.IfAdminStatus = v
 		}
 		for k := range overrides {
 			if _, ok := allowedTemplateFields[k]; !ok {

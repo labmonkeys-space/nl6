@@ -152,12 +152,13 @@ type TrapExporter struct {
 	// Model, Serial, ChassisID) are captured once at exporter construction
 	// because they're stable for the device's lifetime; IfName varies with
 	// IfIndex so it uses a callback (PR 3 swaps synthesis for live lookup).
-	ifIndexFn func() int               // returns a random ifIndex from the device's set
-	ifNameFn  func(ifIndex int) string // returns ifName for a drawn ifIndex
-	sysName   string
-	model     string
-	serial    string
-	chassisID string
+	ifIndexFn       func() int               // returns a random ifIndex from the device's set
+	ifNameFn        func(ifIndex int) string // returns ifName for a drawn ifIndex
+	ifAdminStatusFn func(ifIndex int) string // up(1) or down(2) for a drawn ifIndex
+	sysName         string
+	model           string
+	serial          string
+	chassisID       string
 
 	// Lifecycle
 	closing  atomic.Bool
@@ -189,6 +190,10 @@ type TrapExporterOptions struct {
 	// `{{.IfName}}` template resolution. If nil a synthesised
 	// `GigabitEthernet0/<N>` is used.
 	IfNameFn func(ifIndex int) string
+
+	// IfAdminStatusFn returns the admin status of ifIndex as up(1) or
+	// down(2) for `{{.IfAdminStatus}}`. If nil every interface reads up(1).
+	IfAdminStatusFn func(ifIndex int) string
 
 	// Class 1 device-context fields captured at exporter construction.
 	// Constant for the device's lifetime; consumed by `{{.SysName}}`,
@@ -225,32 +230,36 @@ func NewTrapExporter(opts TrapExporterOptions) *TrapExporter {
 	if opts.IfNameFn == nil {
 		opts.IfNameFn = synthIfName
 	}
+	if opts.IfAdminStatusFn == nil {
+		opts.IfAdminStatusFn = func(int) string { return adminStatusDisplay(AdminUp) }
+	}
 	fast, _ := opts.Encoder.(fastTrapEncoder)
 	return &TrapExporter{
-		deviceIP:      append(net.IP(nil), opts.DeviceIP...),
-		deviceIPStr:   opts.DeviceIP.String(),
-		fastEnc:       fast,
-		community:     opts.Community,
-		encoder:       opts.Encoder,
-		mode:          opts.Mode,
-		collector:     opts.Collector,
-		collectorStr:  opts.CollectorStr,
-		limiter:       opts.Limiter,
-		sharedConn:    opts.SharedConn,
-		startTime:     time.Now(),
-		informTimeout: opts.InformTimeout,
-		informRetries: opts.InformRetries,
-		pendingCap:    opts.PendingCap,
-		pending:       make(map[uint32]*pendingInform),
-		pendingOrder:  make([]uint32, 0, opts.PendingCap+1),
-		stats:         &TrapStats{},
-		ifIndexFn:     opts.IfIndexFn,
-		ifNameFn:      opts.IfNameFn,
-		sysName:       opts.SysName,
-		model:         opts.Model,
-		serial:        opts.Serial,
-		chassisID:     opts.ChassisID,
-		stopCh:        make(chan struct{}),
+		deviceIP:        append(net.IP(nil), opts.DeviceIP...),
+		deviceIPStr:     opts.DeviceIP.String(),
+		fastEnc:         fast,
+		community:       opts.Community,
+		encoder:         opts.Encoder,
+		mode:            opts.Mode,
+		collector:       opts.Collector,
+		collectorStr:    opts.CollectorStr,
+		limiter:         opts.Limiter,
+		sharedConn:      opts.SharedConn,
+		startTime:       time.Now(),
+		informTimeout:   opts.InformTimeout,
+		informRetries:   opts.InformRetries,
+		pendingCap:      opts.PendingCap,
+		pending:         make(map[uint32]*pendingInform),
+		pendingOrder:    make([]uint32, 0, opts.PendingCap+1),
+		stats:           &TrapStats{},
+		ifIndexFn:       opts.IfIndexFn,
+		ifNameFn:        opts.IfNameFn,
+		ifAdminStatusFn: opts.IfAdminStatusFn,
+		sysName:         opts.SysName,
+		model:           opts.Model,
+		serial:          opts.Serial,
+		chassisID:       opts.ChassisID,
+		stopCh:          make(chan struct{}),
 	}
 }
 
@@ -425,15 +434,16 @@ func (e *TrapExporter) FireForInterface(entry *CatalogEntry, ifIndex int) uint32
 func (e *TrapExporter) buildCtx(ifIndex int, pre *preEncodedEntry) TemplateCtx {
 	now := time.Now()
 	ctx := TemplateCtx{
-		IfIndex:   ifIndex,
-		IfName:    e.ifNameFn(ifIndex),
-		Uptime:    e.uptimeHundredths(),
-		Now:       now.Unix(),
-		DeviceIP:  e.deviceIPStr,
-		SysName:   e.sysName,
-		Model:     e.model,
-		Serial:    e.serial,
-		ChassisID: e.chassisID,
+		IfIndex:       ifIndex,
+		IfName:        e.ifNameFn(ifIndex),
+		Uptime:        e.uptimeHundredths(),
+		Now:           now.Unix(),
+		DeviceIP:      e.deviceIPStr,
+		SysName:       e.sysName,
+		Model:         e.model,
+		Serial:        e.serial,
+		ChassisID:     e.chassisID,
+		IfAdminStatus: e.ifAdminStatusFn(ifIndex),
 	}
 	// nil pre means "unknown" (on-demand fires with a hand-built entry, tests):
 	// keep the old unconditional behaviour so a template can never see an empty

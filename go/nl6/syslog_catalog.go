@@ -82,6 +82,10 @@ var allowedSyslogTemplateFields = map[string]struct{}{
 	"ChassisID": {},
 	"NowLocal":  {}, // fire time as local "2006-01-02 15:04:05"
 	"Detail":    {}, // per-fire self-delimiting measurement suffix (see trap side)
+	// IfAdminStatus is the state engine's admin status of IfIndex at fire
+	// time in the SNMP display form, up(1) or down(2), which is also how
+	// mib2d spells it in a Junos link event.
+	"IfAdminStatus": {},
 }
 
 // SyslogFacility is an RFC 5424 facility value (0..23). We store the numeric
@@ -281,17 +285,18 @@ type SyslogCatalog struct {
 // Matches the nine-field unified vocabulary in
 // `allowedSyslogTemplateFields` exactly.
 type SyslogTemplateCtx struct {
-	DeviceIP  string
-	SysName   string
-	IfIndex   int
-	IfName    string
-	Now       int64  // Unix epoch seconds
-	Uptime    uint32 // 1/100s ticks since device start
-	Model     string // human-readable model from slug → label
-	Serial    string // `SN<hex>` synthesised from device IP
-	ChassisID string // MAC-style chassis ID synthesised from device IP
-	NowLocal  string // fire time, local "2006-01-02 15:04:05"
-	Detail    string // per-fire self-delimiting measurement suffix; empty unless overridden
+	DeviceIP      string
+	SysName       string
+	IfIndex       int
+	IfName        string
+	Now           int64  // Unix epoch seconds
+	Uptime        uint32 // 1/100s ticks since device start
+	Model         string // human-readable model from slug → label
+	Serial        string // `SN<hex>` synthesised from device IP
+	ChassisID     string // MAC-style chassis ID synthesised from device IP
+	NowLocal      string // fire time, local "2006-01-02 15:04:05"
+	Detail        string // per-fire self-delimiting measurement suffix; empty unless overridden
+	IfAdminStatus string // admin status of IfIndex at fire time, up(1) or down(2)
 }
 
 // SyslogResolved is a catalog entry rendered against a concrete context. It
@@ -703,7 +708,7 @@ func validateSyslogTemplateFields(s, entryName, which string) error {
 		}
 		if _, ok := allowedSyslogTemplateFields[field]; !ok {
 			return fmt.Errorf("syslog catalog: entry %q %s: unknown template field %q "+
-				"(allowed: DeviceIP, SysName, IfIndex, IfName, Now, Uptime, Model, Serial, ChassisID)",
+				"(allowed: DeviceIP, SysName, IfIndex, IfName, Now, Uptime, Model, Serial, ChassisID, NowLocal, Detail, IfAdminStatus)",
 				entryName, which, field)
 		}
 		rest = rest[open+closeIdx+2:]
@@ -718,15 +723,16 @@ func validateSyslogTemplateFields(s, entryName, which string) error {
 // detail the encoder performs.
 func validateSyslogEntrySize(entry *SyslogCatalogEntry, source string) error {
 	worst := SyslogTemplateCtx{
-		DeviceIP:  "255.255.255.255",
-		SysName:   strings.Repeat("H", 64),
-		IfIndex:   65535,
-		IfName:    strings.Repeat("X", 32),
-		Now:       9999999999,
-		Uptime:    0xFFFFFFFF,
-		Model:     strings.Repeat("M", 48), // longest realistic: "NVIDIA DGX A100" → 15 chars; 48 is a comfortable upper bound
-		Serial:    "SNFFFFFFFF",            // max-width synthesised format
-		ChassisID: "02:42:ff:ff:ff:ff",     // max-width synthesised format
+		DeviceIP:      "255.255.255.255",
+		SysName:       strings.Repeat("H", 64),
+		IfIndex:       65535,
+		IfName:        strings.Repeat("X", 32),
+		Now:           9999999999,
+		Uptime:        0xFFFFFFFF,
+		Model:         strings.Repeat("M", 48), // longest realistic: "NVIDIA DGX A100" → 15 chars; 48 is a comfortable upper bound
+		Serial:        "SNFFFFFFFF",            // max-width synthesised format
+		ChassisID:     "02:42:ff:ff:ff:ff",     // max-width synthesised format
+		IfAdminStatus: "down(2)",               // the longer of the two spellings
 	}
 	resolved, err := entry.resolveAgainst(worst, nil)
 	if err != nil {
@@ -826,6 +832,9 @@ func (e *SyslogCatalogEntry) Resolve(ctx SyslogTemplateCtx, overrides map[string
 		}
 		if v, ok := overrides["Detail"]; ok {
 			ctx.Detail = v
+		}
+		if v, ok := overrides["IfAdminStatus"]; ok {
+			ctx.IfAdminStatus = v
 		}
 		for k := range overrides {
 			if _, ok := allowedSyslogTemplateFields[k]; !ok {

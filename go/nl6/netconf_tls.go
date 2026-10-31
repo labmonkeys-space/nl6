@@ -130,7 +130,7 @@ func (sm *SimulatorManager) countNetconfTLSHandshakeFailure(d *DeviceSimulator, 
 	atomic.AddUint64(&sm.netconfTLSHandshakeFailures, 1)
 	sm.netconfTLSFirstHandshakeErrOnce.Do(func() {
 		log.Printf("NETCONF TLS handshake failed on %s from %s: %v "+
-			"(the client needs a certificate signed by the client CA; with no client CA set, "+
+			"(for example, the client needs a certificate signed by the client CA; with no client CA set, "+
 			"every handshake is refused. Further handshake errors are suppressed; see "+
 			"tls_handshake_failures on GET /api/v1/netconf/status)", d.IP, conn.RemoteAddr(), err)
 	})

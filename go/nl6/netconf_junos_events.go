@@ -43,15 +43,17 @@ func junosStatus(up bool) string {
 
 // junosLinkEventFor maps one state change to the link event mib2d logs for
 // it. An event that did not move the derived oper status logs nothing. A
-// logical unit logs only its way up.
+// logical unit logs only its way up. The interface name and the hostname
+// are XML-escaped here, once, because both renderings embed them in the
+// body and in an element of their own.
 func junosLinkEventFor(evt StateChange, ifName string, unit bool, at time.Time, pid int, hostname string) (junosLinkEvent, bool) {
 	if evt.PrevOper == evt.Oper {
 		return junosLinkEvent{}, false
 	}
 	e := junosLinkEvent{
-		IfIndex: evt.IfIndex, IfName: ifName,
+		IfIndex: evt.IfIndex, IfName: netconfEscape(ifName),
 		Admin: junosStatus(evt.Admin == AdminUp), Oper: junosStatus(evt.Oper == OperUp),
-		At: at, PID: pid, Hostname: hostname,
+		At: at, PID: pid, Hostname: netconfEscape(hostname),
 	}
 	switch {
 	case evt.Oper == OperUp && unit:

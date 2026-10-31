@@ -6,7 +6,7 @@
       "role": "link-up",
       "weight": 25,
       "facility": "local7",
-      "severity": "notice",
+      "severity": "error",
       "appName": "IOS",
       "msgId": "LINK-3-UPDOWN",
       "structuredData": {
@@ -50,7 +50,7 @@
       "role": "link-down",
       "weight": 10,
       "facility": "local7",
-      "severity": "error",
+      "severity": "notice",
       "appName": "IOS",
       "msgId": "LINEPROTO-5-UPDOWN",
       "structuredData": {
