@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 ---
 # Keep in lockstep with the collection version in galaxy.yml.
-nl6_version: "0.37.1"
+nl6_version: "0.38.0"
 
 # Override the .deb or .rpm download URL (air-gapped host or local mirror). When set,
 # nl6_package_checksum is required, for example "sha256:<hex digest>".
