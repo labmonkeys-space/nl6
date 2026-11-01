@@ -26,10 +26,10 @@ The Juniper MX10004 also serves a gNMI catalogue: interface state and counters w
 The fabric sensor's shape comes from a hardware capture; the environment sensor is YANG-derived from `junos-fpc-env.yang` and may differ from what hardware renders.
 The Cisco ASR 9902 serves a gNMI catalogue for interface and subinterface counters, platform components, system CPUs and system memory.
 Its interface counters cover the physical ports and the logical interfaces.
-Its subinterface counters cover only the VLAN subinterfaces, as [gNMI](gnmi.md#ios-xr-interfaces) describes.
+Its subinterface counters cover only the VLAN subinterfaces, as [gNMI catalogue files](gnmi-catalogue.md#ios-xr-interfaces) describes.
 Its leaf sets, prefix depths and per-component leaf groups are shape-verified against a gnmic capture of an ASR 9902 on IOS-XR 24.2.2; values are synthetic.
 Responses carry the subtree's YANG module as prefix origin, as IOS-XR does.
-JSON_IETF answers with one update per requested node, its leaves nested as IOS-XR documents it; see [gNMI](gnmi.md#ios-xr-json_ietf-layout).
+JSON_IETF answers with one update per requested node, its leaves nested as IOS-XR documents it; see [gNMI catalogue files](gnmi-catalogue.md#ios-xr-json_ietf-layout).
 
 The MX10004 and the ASR 9902 are not in the round-robin list.
 Request them by name.

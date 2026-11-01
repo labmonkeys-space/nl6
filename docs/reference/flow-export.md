@@ -339,93 +339,10 @@ An item is fixed when a consumer needs it.
 | Template ids and option widths | Interface table under 256 with 33-byte name, 65-byte description and egressInterface. Application table under 257. Data under 258. | Interface table under 257 with 32 and 32 and no egressInterface. Application table under 259. Data under 258. | The option-table ids collide with Cisco's numbering. Decode by template content, not by id. |
 
 
-## Per-device source IP
-
-By default (`-flow-source-per-device=true`), each device binds its own UDP socket inside the `nl6sim` namespace so the collector observes flow packets with the **device's IP as the source address**, not the simulator host's.
-This makes per-device attribution work out of the box on collectors that key on the exporter source IP (OpenNMS, Elastiflow, nfcapd, …).
-
-Set the flag to `false` to fall back to a shared socket bound in the host namespace, one per `(collector, protocol)` pair.
-
-See [Flow export how-to](../ops/flow-export.md#prerequisites-for-per-device-source-ip) for the prerequisites (iptables `FORWARD` rule, route to the collector from the namespace, collector-side `rp_filter` tuning).
-
 ## Starting flow export
 
-Flow export is opt-in per device.
-There are two ways to configure it:
-
-### 1. CLI seed (auto-start batch)
-
-The `-flow-*` flags seed auto-created devices.
-Each device in the batch gets the same collector, protocol, and timeouts.
-
-```bash
-# NetFlow v9 → 192.168.1.10:2055, 100 auto-created devices
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 100 \
-  -flow-collector 192.168.1.10:2055 \
-  -flow-protocol netflow9
-
-# Mixed fleet isn't achievable via CLI. Use the REST body.
-```
-
-### 2. REST body (per-device)
-
-`POST /api/v1/devices` accepts an optional `flow` block on each request.
-Devices in different requests can point at different collectors or emit different protocols.
-
-```bash
-# One batch of 50 emitting IPFIX to collector A
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.0.1",
-    "device_count": 50,
-    "flow": {
-      "collector": "192.168.1.10:4739",
-      "protocol": "ipfix",
-      "active_timeout": "30s"
-    }
-  }'
-
-# Second batch of 20 emitting sFlow to collector B. Same process,
-# /api/v1/flows/status reports both as separate collector records.
-# sub_agent_id tags this group's datagram headers (default 0).
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.1.1",
-    "device_count": 20,
-    "flow": {
-      "collector": "192.168.1.20:6343",
-      "protocol": "sflow",
-      "sub_agent_id": 2
-    }
-  }'
-```
-
-The `flow` block is **optional** on every request.
-Omit it and the device doesn't export.
-
-| Name | Type | Default | Description |
-|------|------|---------|-------------|
-| `collector` | string | required | Collector `host:port`. |
-| `protocol` | string | `netflow9` | `netflow9`, `ipfix`, `netflow5` or `sflow`. Aliases `nf9`, `ipfix10`, `nf5` and `sflow5` are accepted and canonicalised to those names. |
-| `active_timeout` | duration | `30s` | Mean cap on a still-running flow's cache residency. Each flow's deadline carries ±25 % jitter. |
-| `inactive_timeout` | duration | `15s` | Idle time after a flow's last packet before export. |
-| `sub_agent_id` | uint | `0` | sFlow `sub_agent_id` in every datagram header. Ignored by other protocols. |
-| `options_interface_table` | string | empty (off) | `if-scoped` or `system-scoped` interface option records. `netflow9` and `ipfix` only; other protocols are rejected with 400. |
-| `nbar2` | bool | `false` | Cisco AVC (NBAR2) records. `ipfix` only, on an NBAR2-capable type. See [NBAR2 application records](#nbar2-application-records-ipfix-only). |
-| `tick_interval` | n/a | n/a | Rejected with 400. Use `-flow-tick-interval`. |
-
-The REST defaults are fixed.
-A REST-created device does not inherit the `-flow-*` seed flags.
-
-**Duration fields** (`active_timeout`, `inactive_timeout`) require **Go duration strings** (`"30s"`, `"1m30s"`).
-Integer seconds (`"active_timeout": 30`) are rejected with 400.
-The matching `-flow-*-timeout` CLI flags accept the same duration strings, and also a bare integer as seconds.
-A per-device `tick_interval` is rejected with 400; the fleet-wide cadence is `-flow-tick-interval`.
-
-See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
+Starting export, per-device source IPs and their prerequisites are covered in the [flow export how-to](../ops/flow-export.md#start-flow-export).
+The per-device `flow` block of `POST /api/v1/devices` is in [Web API → Per-device export blocks](web-api.md#per-device-export-blocks).
 
 ## How much flow a device emits
 
@@ -469,35 +386,15 @@ Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 re
 Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
 
 The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers.
-At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu` (below).
+At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu`.
 nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented.
 That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
 
 **NetFlow v5 does not scale with the MTU.** Cisco v5 caps a datagram at 30 records regardless of how much space is available, so a v5 exporter stays at 30 records and roughly 1464 bytes whatever `-datagram-mtu` is set to.
 Raising the MTU for a jumbo path increases v9 and IPFIX datagram size but leaves v5 emitting the same number of the same-sized datagrams.
-That cap is also why v5 fit inside the old, incorrect budget by accident rather than by design.
 
-The MTU defaults to 1500 and is set with `-datagram-mtu`.
-That default holds for nl6's own TUN and veth interfaces, which take the kernel default, but it is an assumption about the **egress** path to the collector rather than a fact nl6 controls.
-
-**Lower it when the collector path is not standard Ethernet.** A Docker overlay or VXLAN network is typically 1450 and a tunnelled path lower still.
-Measured at 1450 against a 1500-derived build, NetFlow v9 (1480 B frame), IPFIX (1484) and NetFlow v5 (1492) all fragment, as does an SNMP GETBULK at OpenNMS's default collector settings (1464).
-Only sFlow and SNMP traps fit.
-
-**The flag governs flow export, SNMP trap notifications and SNMP responses.** The SNMP response bound is recomputed from the same value, so a GETBULK truncates to the frame and a GET or GETNEXT that cannot fit answers `tooBig`; see [SNMP → Response size](snmp.md#response-size-max-repetitions-and-truncation).
-Syslog is deliberately excluded and keeps its own 1400-byte ceiling.
-
-On the trap side, lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them.
-They are disabled at catalog load and named in the startup log with the MTU that would admit them.
-
-The value is validated at startup and an out-of-range one is fatal, so a misconfiguration surfaces immediately rather than as per-datagram encode failures across the fleet.
-
-nl6 does not discover the MTU, deliberately.
-Reading the route's interface MTU would work for flow, traps and syslog, which each have a configured collector known when the exporter attaches.
-It would not work for SNMP, which answers whoever polls it and knows the destination only per request.
-Since one value has to cover every subsystem, discovery cannot be the mechanism.
-There is no path-MTU discovery either: a route lookup sees only the first hop, so a tunnel further along the path is invisible either way.
-If you see fragments, check the egress interface MTU and set the flag to match.
+The MTU defaults to 1500.
+What it governs beyond flow, when to lower it and why nl6 does not discover it are in [CLI flags → Datagram MTU](cli-flags.md#datagram-mtu).
 
 Setting the tick close to or above the mean flow lifetime is not useful.
 Every flow then lives about one tick and the cache turns over wholesale.
@@ -668,12 +565,20 @@ Returns an array-of-collectors aggregated by `(collector, protocol)`:
 ```
 
 The body is the standard `{success, message, data}` envelope.
-`sent_packets`, `sent_bytes` and `sent_records` count datagrams that reached the kernel.
-A datagram the kernel refused is counted once in `send_failures` and in none of the `sent_*` fields.
+
+| Field | Meaning |
+|-------|---------|
+| `collectors[]` | One record per `(collector, protocol)` tuple that ever had a device. Deleted-device counters persist in the aggregate until process exit. |
+| `collectors[].devices` | Count of live exporters for this tuple. `0` means no live device but the aggregate remembers prior fires. |
+| `collectors[].sent_packets` / `sent_bytes` / `sent_records` | Cumulative across live and deleted exporters for this tuple, monotonic within the subsystem lifecycle. `sent_*` means the datagram **reached the kernel**. |
+| `collectors[].send_failures` | Datagrams the kernel refused. A refused datagram is counted here once and in none of the `sent_*` fields, so a down collector shows up here. |
+| `devices_exporting` | Total live exporters across all tuples. |
+| `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 and IPFIX only). |
+| `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Read from what the ticker latched, not from the flag. See [Fleet arrival shape](#fleet-arrival-shape). |
+| `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized; `0` only if the ticker has not started, which the HTTP endpoint cannot observe). |
+| `nbar2_catalogs_by_type` | Resolved NBAR2 application catalogs, keyed by `_universal` and per-type slug. Each value carries `entries`, `oversized` (entries the load-time dry render disabled, omitted when zero) and `source`. Absent when no NBAR2 catalog loaded. |
 
 An NBAR2 device and a plain IPFIX device to the same collector share one `ipfix` row; the collector tells them apart by template id.
-`nbar2_catalogs_by_type` is absent when no catalog loaded, and each row carries `oversized` when the load-time dry render disabled any entry.
 
 Flow status has no `subsystem_active` field.
 `collectors: []` means no device with a `flow` block has attached yet.
-See [Web API → Flow export status](web-api.md#flow-export-status) for the full field reference.

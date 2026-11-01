@@ -132,16 +132,8 @@ snmpset -v3 -l authNoPriv -u simadmin -a MD5 -A simadmin \
   192.168.200.1 1.3.6.1.2.1.2.2.1.7.2 i 2
 ```
 
-:::warning[REST devices do not inherit the CLI flags]
-
-A device created over REST takes its admission from the request body alone.
-Omit `write_community` there and that device refuses every v1/v2c `SET`, even on a fleet started with `-snmp-write-community`.
-The startup log describes the auto-start batch only.
-
-The write community is write-only.
-`GET /api/v1/devices` never echoes it, so there is no way to read back what a device was configured with.
-
-:::
+A REST-created device does not inherit `-snmp-write-community`, and its write community is never echoed back.
+The rules are in [SNMP → Write admission for a `SET`](../reference/snmp.md#write-admission-for-a-set).
 
 ## Disable a network interface
 
@@ -218,18 +210,11 @@ sudo ./nl6 -auto-start-ip 192.168.100.1 -auto-count 5 \
 
 Shutting an interface then sends `linkDown`, and unshutting it sends `linkUp`.
 
-**Re-enabling does not always bring the interface back up.** `ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and the rule is asymmetric:
-
-| `SET ifAdminStatus` | `ifOperStatus` becomes |
-|---|---|
-| `down(2)` | `down(2)`, forced |
-| `testing(3)` | `testing(3)`, forced |
-| `up(1)` | whatever the link state is, released rather than forced |
-
-So on an interface whose link is down, a `SET` of `up(1)` succeeds and `ifOperStatus` still reads `2`.
-That is not a rejected write.
-`ifAdminStatus` reads back `1`, and an administrative bounce does not repair a simulated cable fault.
+**Re-enabling does not always bring the interface back up.**
+`ifOperStatus` is derived from `ifAdminStatus` and a modelled link state, and a `SET` of `up(1)` releases it to the link rather than forcing it up.
+On an interface whose link is down, the write succeeds and `ifOperStatus` still reads `2`.
 A fleet started with `-if-scenario 3` behaves this way on every interface.
+The derivation rule is in [SNMP → The writable set](../reference/snmp.md#the-writable-set).
 
 ## When a write is refused
 
@@ -273,6 +258,6 @@ It is not a setting to carry into a shared environment.
 
 ## Next steps
 
-- [SNMP reference](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
+- [SNMP reference](../reference/snmp.md#setrequest) for the full `SetRequest` error ladder and the write-admission rules.
 - [CLI flags](../reference/cli-flags.md) for every flag used above.
 - [Web API](../reference/web-api.md) for the REST control plane, including `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`, which does the same job over HTTP.

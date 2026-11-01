@@ -80,43 +80,38 @@ The top-level blocks always serialize in the order `summary`, `counters`, `appli
 | `emitted` … `dropped` | number | Fleet-wide sums of the per-device **identity** buckets below. |
 | `informational` | object | Fleet-wide sum of the disclosure counters (see `counters[].informational`). Outside the identity. |
 | `sub_windows` | array | Fleet-wide **loss localization**: in-window sends per time bucket, as the element-wise sum of the `counters[].sub_windows` rows. Length `metadata.sub_window_count`; sums to `in_window`. See [Loss localization](#loss-localization). |
-| `excluded` | array | Arm-time exclusions, each `{device, reason, remediation_hint}`. **Capped at 1,000 rows** (900 for arm-time exclusions + 100 reserved for start-time ones). Uncapped, one row per unresolved participant would be ~14 MB at the participant ceiling. |
-| `excluded_truncated` | bool | Present (`true`) only when the row cap dropped rows, i.e. `participants_excluded > len(excluded)`. Absent otherwise, so the common case is unchanged. |
-| `excluded_by_reason` | object | `reason → count` over **every** exclusion, capped or not. This is where the complete disclosure lives when `excluded` is a sample. Absent when there are no exclusions. |
+| `excluded` | array | Exclusions, each `{device, reason, remediation_hint}`, capped at 1,000 rows. The cap and the two fields below are described under [arm](./loadtest-api.md#post-apiv1scenariosidarm-arm). |
+| `excluded_truncated` | bool | Present (`true`) only when the row cap dropped rows. |
+| `excluded_by_reason` | object | `reason → count` over every exclusion. Absent when there are none. |
 
 ### `summary.metadata`
 
 The reproducibility fingerprint plus the timestamps the run actually observed.
 Copy the `(config_sha256, seed)` back into a resubmit on the same `nl6_version` to re-run a scenario exactly.
 
-**Resubmitting an archived body:** if it carries a `drain` key, strip it.
-That field is refused with a `400`, because it configured nothing.
-A body that never carried one hashes to the same `config_sha256` as it always did, so baselines stay comparable.
+To resubmit an archived body that carries a `drain` key, strip it first; see [Removed request fields](./loadtest-api.md#removed-request-fields).
 
-Two fingerprints appear here and they answer **different questions**.
-`config_sha256` pins what you *declared*.
-It is the submit-time idempotency key.
-`resolved_participants_sha256` pins what actually *ran*.
-They diverge as soon as membership is derived rather than enumerated: a `participants_cidr` scenario resolves against the live fleet, so one `config_sha256` legitimately produces different participant sets on different days, or against a half-built fleet.
-When two runs share a config fingerprint but disagree on counts, comparing the resolved digest tells you in one step whether you are looking at a pipeline change or a different fleet.
+`config_sha256` pins what you *declared*, and `resolved_participants_sha256` pins what actually *ran*.
+A `participants_cidr` scenario resolves against the live fleet, so one config fingerprint can produce different participant sets.
+When two runs share a config fingerprint but disagree on counts, the resolved digest tells you whether the fleet or the pipeline changed.
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | `config_sha256` | string | SHA-256 over the canonicalized submit config, which is the **declared intent**. |
-| `resolved_participants_sha256` | string | SHA-256 identifying the devices that **actually participated**. Computed over post-prune membership (the same set `counters[]` serializes and `participants_armed` counts), so a run that lost devices between arm and start cannot digest identically to a whole one. Independent of *how* membership was declared: an explicit list and a prefix selector resolving to the same live devices agree, which is what keeps a baseline comparable to a re-declared repeat. |
+| `resolved_participants_sha256` | string | SHA-256 identifying the devices that **actually participated**. Computed over the set `counters[]` serializes, after devices lost between arm and start are pruned. An explicit list and a prefix selector resolving to the same devices agree. |
 | `seed` | number | The seed that pinned every random draw. |
 | `nl6_version` | string | Simulator version that produced the report. Reproduction is guaranteed only on the same version. |
 | `t0` | RFC3339-ms | Actual window open (emission start). |
 | `t1` | RFC3339-ms | Actual window close. This is the planned `T1`, or the abort instant for an early abort (never later than planned `T1`). |
-| `drain_end` | RFC3339-ms | When the drain barrier finished and the report was finalized. **Observed, not configured**: the barrier returns as soon as the writes admitted before `T1` return, typically single-digit milliseconds after `t1`. It is also **bounded**: if those writes have not returned within the ceiling, the barrier gives up and `drain_end` is the give-up instant. See `drain_stragglers`. |
-| `incomplete_joins` | array | **Absent on a healthy run.** Names the finalize waits that did not complete within the budget: `syslog-scheduler`, `trap-ticker`, `flow-ticker`. These run *ahead of* the drain barrier, and the goroutines behind them are not cancelled, so they may have moved counters after this report was taken. Same lower-bound caveat as `drain_stragglers`, for the same reason. |
-| `drain_stragglers` | number | **Absent on a healthy run.** Present only when the drain barrier hit its ceiling and gave up, and then it is an **upper bound** on the sends still in flight at that moment (a send completing while the barrier reads the counter is still counted). One unit is one **admission**, not one record: the syslog and trap paths admit a single write, while the flow paths admit a whole paginated `Tick` batch, so one flow straggler can stand for hundreds of records. A run that reports it was **finalized while its counters were still moving**, so the totals are a lower bound rather than a settled figure and an **unidentified subset** of participants may not satisfy the ledger identity. The count is fleet-wide and carries no attribution, so the report cannot say which participants those are. Deliberately its own field and never folded into `dropped`: a straggler was admitted and may still have reached the collector, so calling it dropped would assert an outcome nothing observed. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
+| `drain_end` | RFC3339-ms | When the [drain barrier](#the-drain-barrier-is-bounded) finished and the report was finalized. Observed, not configured: typically milliseconds after `t1`, or the give-up instant if the barrier hit its ceiling. |
+| `incomplete_joins` | array | **Absent on a healthy run.** Names the finalize waits that did not complete within the budget: `syslog-scheduler`, `trap-ticker`, `flow-ticker`. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
+| `drain_stragglers` | number | **Absent on a healthy run.** An upper bound on the admissions still in flight when the barrier gave up. Fleet-wide, never folded into `dropped`. See [The drain barrier is bounded](#the-drain-barrier-is-bounded). |
 | `sub_window_count` | number | Loss-localization granularity: the number of equal time buckets `[T0,T1)` is sliced into (currently `10`). |
-| `sub_window_duration` | string | Width of one bucket as a Go duration, computed as the **planned** window `/ sub_window_count` (the basis fires were bucketed against). Bucket `i` covers `[T0 + i·d, T0 + (i+1)·d)`. For an **aborted** run the buckets after the abort instant are empty (bucketing uses the planned t1, not the shortened actual one). |
+| `sub_window_duration` | string | Width of one bucket as a Go duration, computed as the **planned** window `/ sub_window_count` (the basis fires were bucketed against). See [Loss localization](#loss-localization). |
 | `rate` | object | **Rate disclosure**: `{requested_per_device, paced, achieved_per_device}`. `paced=false` means this protocol's emission cadence is not driven by the scenario rate at all (gnmi-dial-out streams at its own SAMPLE interval), so `achieved_per_device` still reports what happened but the request explains none of it. `achieved_per_device` counts **in-window records only**, so a capture it is compared against must be bounded to `[t0, t1)`. See [`achieved_per_device` is an in-window rate](#achieved_per_device-is-an-in-window-rate). |
-| `fidelity` | object | **Fleet-silence disclosure**, always present: `{silent_at_start, changed_during_window}`. `silent_at_start` is the fidelity value in force at `t0`. `changed_during_window` is true when fidelity was toggled, or a timed revert fired, between `t0` and finalize. A true there means non-participant devices resumed or ceased autonomous push part-way through the window, so the collector-side accept rate covers a mixture. The ledger stays exact either way, which is why this needs saying out loud. |
-| `rate_cap` | object | **Shared-cap disclosure**, present only when this run's protocol has a fleet-wide ceiling in force (`{per_second, shared_with}`). Rate limiters are **per protocol** (syslog and SNMP trap each own one, flow protocols and gNMI dial-out have none), so only *same-protocol* runs contend. `shared_with` names the same-protocol *scenarios* whose windows overlapped this one, sequence-ordered. An empty list means no peer scenario overlapped. It does **not** mean the bucket was uncontended: the scenario scheduler shares the fleet limiter, and background firing spends a token per pop even for fires the scenario gate suppresses, so on a busy non-`-fidelity` fleet a solo run is still throttled by background traffic. The cap is the one in force when the run **began**, not when the report was fetched. Currently emitted for `syslog` only, because it is the one protocol whose scenario emission provably passes through the fleet limiter. `-trap-global-cap` governs background trap firing, which the scenario trap path does not go through. A run that shared its bucket did not measure what it would have measured alone, and this is what makes that visible in the artifact instead of silently changing the numbers. Overlaps are recorded as they begin, not reconstructed at finalize, so a peer stopped and deleted before this run finishes is still named. |
-| `run_tags` | object | **Run tagging**: how this run's traffic is isolated from background noise per its protocol's lever, as `{protocol, mechanism, value, pen, pen_required, degraded, note}`. See [Run tagging](../ops/loadtest-scenarios.md#isolate-experiment-traffic-with-run-tags). `mechanism` is one of `syslog_sd_param`, `snmp_enterprise_varbind`, `netflow9_source_id`, `ipfix_odid`, `sflow_sub_agent_id`, `gnmi_synthetic_path`, `window_source_ip`. `degraded=true` means a PEN-dependent lever fell back to `window_source_ip` because no `-scenario-pen` was set. |
+| `fidelity` | object | **Fleet-silence disclosure**, always present: `{silent_at_start, changed_during_window}`. `silent_at_start` is the fidelity value in force at `t0`. `changed_during_window` is true when fidelity was toggled, or a timed revert fired, between `t0` and finalize. A true there means non-participant push started or stopped mid-window, so the collector-side rate covers a mixture. |
+| `rate_cap` | object | **Shared-cap disclosure** `{per_second, shared_with}`, emitted for `syslog` only and only when `-syslog-global-cap` is in force at the run's start. `shared_with` names the syslog scenarios whose windows overlapped this one, recorded as they begin, so a peer deleted before finalize is still named. An empty list does **not** mean the bucket was uncontended: background firing spends a token per pop even when the gate suppresses the fire, so a solo run on a busy fleet without `-fidelity` is still throttled. |
+| `run_tags` | object | How this run's traffic can be isolated, as `{protocol, mechanism, value, pen, pen_required, degraded, note}`. `mechanism` values are listed under [Run-tag levers](#run-tag-levers). |
 
 #### `achieved_per_device` is an in-window rate
 
@@ -124,84 +119,35 @@ When two runs share a config fingerprint but disagree on counts, comparing the r
 achieved_per_device = sum(counters[].in_window) / (t1 - t0) / len(counters)
 ```
 
-Both halves of that are deliberate.
 `in_window` counts the records whose socket write returned inside `[t0, t1)`, and the denominator is that same window.
-Nothing else belongs in either half.
-
-`in_window` excludes records that were produced during the window but written after it.
-Those are counted under `drain` instead.
-Attributing them to the window would divide them by the window's own duration, which inflates the rate by exactly the records the window did not have time to emit.
-So the exclusion is correct, and it is also tiny: post-`T1` fires are suppressed at *generation*, so the `drain` bucket can only catch work already admitted at the `T1` instant.
-That is one write on the syslog and trap paths, or one paginated batch on the flow paths (the flow exporter admits around a whole `Tick`).
-On syslog, with a 30 s drain configured on the then-existing knob, `drain_end` landed 9 ms after `t1` and `drain` was 0.
+Records written after `T1` count under `drain` instead.
+That bucket is tiny, because post-`T1` fires are suppressed at generation and only work admitted at `T1` can land in it.
 
 **To compare against a capture, bound the capture to `[t0, t1)`.** That is the whole correction.
-Do not adjust the figure by a drain: the tail is bounded by that admitted work rather than by any duration, so it cannot move a 120 s window by percent.
-`drain` is not a configurable field, and submitting one is a 400.
+Do not adjust the figure by a drain, and do not divide `sent` by the window plus a drain.
+The tail is bounded by admitted work, not by a duration.
+The rate is comparable across runs of different window lengths.
+A short window costs precision, not bias.
+For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
 
 ### The drain barrier is bounded
 
-The barrier that produces `drain_end` waits for every send admitted before `T1` to return, and the shutdown path runs it, so the wait is capped.
-Uncapped, one admitted send that never returned would hold shutdown open indefinitely.
-Two cases reach that state.
-A stream transport whose write sets no deadline blocks for as long as it blocks.
-And an admitted send that never completes at all, because its write path panicked or a callback was dropped, would never return no matter what deadline the transport carried.
+At `T1` no new fire initiates.
+Finalize joins the scenario's scheduler and its trap and flow tickers, then the drain barrier waits for every send admitted before `T1` to return from its write.
+On a healthy run this takes milliseconds.
+A syslog TCP or TLS device bounds one write at 2 s and serialises the fires queued behind it, so a stalled collector can hold finalize for 2 s per queued fire.
 
-That second case is why the **barrier** is bounded rather than the transports.
-A per-transport write deadline cannot see it, and it could not bound the total anyway: syslog TCP serialises behind a per-connection mutex, so a device's worst case is its own 2 s write timeout times the sends queued behind it.
+All four waits share one **60 s budget**.
+A wait that does not finish in it is named in `incomplete_joins`.
+If the barrier itself gives up, `drain_stragglers` is an upper bound on the admissions still outstanding.
+One admission is one write on the syslog and trap paths, or a whole paginated batch on the flow paths, so one flow straggler can stand for hundreds of records.
+The barrier logs one warning at 30 s and a give-up line at 60 s.
+Those two fields are the reliable signature of a give-up; a `drain_end` about 60 s past `t1` is not.
 
-**The whole waiting phase shares one budget.** Finalize joins the scenario's scheduler and its trap and flow tickers before it reaches the barrier, and every one of those joins is bounded too: the syslog and trap schedulers fire inline, so a stalled *scheduler-driven* write parked finalize with the barrier ceiling never armed.
-All four waits share a single 60 s budget, and whatever did not complete is named in `incomplete_joins`.
-Nothing is cancelled in either case, so a report carrying `incomplete_joins` or `drain_stragglers` is a lower bound over a set that was still moving.
-
-The barrier now gives up after a fixed ceiling of **60 s** and records how many sends were still outstanding in `drain_stragglers`.
-**The reliable signatures of a give-up are the fields `drain_stragglers` and `incomplete_joins`.**
-A `drain_end` about 60 s past `t1` is not sufficient.
-The budget starts when finalize begins, and the joins ahead of the barrier spend from it.
-A run whose joins used up the budget also ends there, and reports `incomplete_joins` without `drain_stragglers`.
-**The stragglers are not cancelled**, because nothing can interrupt a write parked in the kernel.
-They keep running and keep moving ledger counters after the report was snapshotted.
-
-So a report carrying `drain_stragglers` should be read as a **lower bound taken over a set that was still moving**, not as a settled measurement.
-The counters are atomics, so nothing is corrupted and no participant's row is invalid on its own; what is lost is the guarantee that a participant's buckets add up, because `emitted` is incremented when a record is generated and `sent` only when its write returns.
-A straggler sits between those two increments at the instant of the snapshot.
-On a healthy run the field is absent and none of this applies.
-
-Do not divide `sent` by the window plus the drain.
-`sent` already includes the drain bucket, and that bucket is ~0, so lengthening the denominator by a drain that nothing emitted into deflates the result by `drain ÷ (window + drain)`.
-On a 120 s window with a 5 s drain that is 5/125 = **4.0 %** of pure, self-inflicted error.
-
-Setup for both parts: netflow9, five participants, 120 s window, capture taken on the emitting node over a **veth** (loopback would not fragment).
-Template FlowSets subtracted, non-first fragments skipped.
-
-Part one ran at rate 4/device, seed 42, with capture and report taken on the same clock.
-It found **2349 wire data records against 2349 ledger records in `[t0, t1)`, zero ledger error**, with 0 records in `[t1, drain_end)` and 0 after it.
-
-Part two re-analysed the four original cells that had produced the −3 % to −8 % figures.
-Every one of them lands on its published `achieved_per_device` at published precision once three measurement-side terms are removed.
-Take the rate-8 cell.
-Its capture holds **4327 data records**, the denominator for both percentages below:
-
-| term | records | share of the 4327 captured |
-|---|---|---|
-| template FlowSets counted as data records ("phantoms") | 10 | 0.23 % |
-| emission after the window, counted as wire¹ | 320 | 7.4 % |
-| **ledger error** | **0** | **0 %** |
-
-¹ Those 320 were separated by a rule fixed before the comparison (records after the largest inter-datagram gap past 80 % of the window), because these older captures have no report JSON alongside them, so `t1` is inferred rather than read.
-Four independent cells landing on four different published values is what carries the conclusion, not the rule.
-
-The third term is not a record count and so is not a row above: the capture *span* was used as the denominator instead of the window.
-That is 121.2 s against 120 s, a further 1 % deflation.
-
-The post-window burst is not drain.
-It is traffic emitted after the scenario stopped and the gate came off, which the ledger never counts and should not: it belongs to no window.
-
-**What this means in practice.** `achieved_per_device` answers "did pacing hit its target" directly, and it is comparable across runs of *different* window lengths: it is an in-window count over its own window, and with the drain model gone no term in it scales with window length.
-What a short window still costs is precision, not bias.
-With fewer records, first-fire alignment and scheduler jitter are a larger share of the total.
-For an absolute rate, measure on the wire with the capture bounded to `[t0, t1)` and template records excluded.
-
+**Nothing is cancelled**, because a write parked in the kernel cannot be interrupted.
+Abandoned work keeps moving counters after the report is taken.
+So a report carrying either field is a lower bound over a set that was still moving, and an unidentified subset of participants may not satisfy the ledger identity.
+The 60 s ceiling exceeds `docker stop`'s default 10 s grace, so raise `stop_grace_period` if a containerised abort must finish its report.
 
 #### Reproducing `resolved_participants_sha256`
 
@@ -241,11 +187,16 @@ A PEN-dependent lever needs `-scenario-pen`.
 Without it, `mechanism` is `window_source_ip` and `degraded` is `true`.
 How to use the levers when reconciling is in [Scenarios → Run tagging](../ops/loadtest-scenarios.md#isolate-experiment-traffic-with-run-tags).
 
-## `counters[]` (per participant)
+## `counters[]` (per participant) \{#counters-per-participant}
 
 One row per participant, keyed by the **join tuple** `(protocol, source_ip, collector)`.
 This is the same tuple a collector groups its received counts by, so the two sides line up row-for-row.
 Every ledger field is always present (explicit zeros, never omitted), so a zero-valued row still diffs cleanly.
+
+What one record means differs for two protocols:
+
+- **sFlow** counts raw `flow_sample` records, never `samples × sampling_rate`, so the synthetic sampling rate cannot manufacture phantom loss. The periodic `counters_sample` is a keepalive. It flows continuously, including before `T0`, and is never counted. So the datagram sequence number is not 0 at `T0`; key on the sample sequence instead.
+- **gNMI dial-out** gates both SAMPLE and ON_CHANGE. Arming needs a live Publish stream, otherwise the device is `excluded`. In the window a notification counts `sent` when written to a live stream and `send_failures` when the stream is down.
 
 | Field | Meaning |
 |-------|---------|
@@ -357,8 +308,7 @@ emitted = in_window + drain + send_failures + dropped + suppressed_pre_window
 sent    = in_window + drain
 ```
 
-`informational.background_suppressed` sits **outside** this identity by design.
-It counts generation-suppressed background fires that were never generated as scenario records, which is exactly why it lives in its own sub-object rather than as a flat sibling.
+The `informational` counters sit outside it by design.
 Use `sent` (`in_window + drain`) as the number to reconcile against a collector's received count.
 
 ## Field / semver evolution policy
@@ -373,14 +323,11 @@ Consumers should tolerate unknown fields.
   It is called out under Upgrade notes in the release notes.
 - The **ledger identity** above is a stability guarantee. It holds in every version that ships these fields.
 - `config_sha256` covers only the **submit config**, not the report shape; the report contract is tracked by `nl6_version`.
-- The **submit config** has no separate version of its own; it moves with `nl6_version` too, and a removed request field is a breaking change for harnesses. Removals are listed in the API reference's [Removed request fields](./loadtest-api.md#removed-request-fields) with the release that removed them, so a reader on an older binary can tell which one changed. So far: `drain`, refused with a `400`.
+- The **submit config** has no separate version of its own; it moves with `nl6_version` too, and a removed request field is a breaking change for harnesses. Removals are listed in [Removed request fields](./loadtest-api.md#removed-request-fields).
 
 Future projections (additional protocols in `counters`, richer loss-localization blocks) are **additive** under this policy.
 
-One assumption a consumer may have held is now false, and is called out rather than left to be discovered: **`participants_excluded == len(excluded)` no longer holds** once the 1,000-row exclusion cap bites.
-`excluded_truncated` marks exactly that case and `excluded_by_reason` carries the complete breakdown.
-The field names, types and order are unchanged, so this is minor under the policy above.
-Still, read the count from `participants_excluded`, never from the array length.
+Read the exclusion count from `participants_excluded`, never from `len(excluded)`, which is capped.
 
 ## Loss localization
 
@@ -391,10 +338,8 @@ Buckets past the abort instant are empty.
 
 - **Bucketing choice.** A fixed *count* (10), not a fixed duration, so the report stays bounded and window-length-independent (a 10 s window → 1 s buckets; a 10 min window → 60 s buckets).
 - **Scope.** Localizes **in-window** sends only: `sum(sub_windows) == in_window` for every row and the summary. Drain-tail sends are post-`T1` by definition and carry no sub-window (reconcile them via the `drain` total).
-- **How to use it.** Bucket your collector's *received* records the same way (receive-time relative to `T0`, same bucket width) and diff per bucket: *"1,204 records lost, all from `[T0+30s, T0+45s]`"* points at a time window, not just a fleet total. Combined with the per-row `source_ip`, loss narrows to a device-set **and** a time span.
-- **JSON only.** The flat [CSV projection](#csv-projection) is unchanged, so index-keyed CSV parsers keep working; localization lives in the JSON report.
-
-Additive under the [semver policy](#field--semver-evolution-policy), which explicitly anticipates "richer loss-localization blocks."
+- **How to use it.** Bucket your collector's received records by receive-time relative to the report's `t0`, with the same width, and diff per bucket. The hosts need [synced clocks](../ops/loadtest-scenarios.md#sync-clocks-for-time-localization-chronyntp).
+- **JSON only.** The [CSV projection](#csv-projection) does not carry it.
 
 ## CSV projection
 

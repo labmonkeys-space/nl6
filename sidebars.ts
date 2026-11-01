@@ -51,6 +51,7 @@ const sidebars: SidebarsConfig = {
         'ops/scaling',
         'ops/network-namespace',
         'ops/troubleshooting',
+        'ops/validate-gnmi-collector',
         'ops/profiling',
         {
           type: 'category',
@@ -87,6 +88,7 @@ const sidebars: SidebarsConfig = {
           items: [
             'reference/device-types',
             'reference/resource-files',
+            'reference/gnmi-catalogue',
             'reference/snmp-data-validation',
             {
               type: 'category',

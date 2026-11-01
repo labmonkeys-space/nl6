@@ -7,16 +7,11 @@ description: "Copy-paste recipes for common load tests, from a fixed-rate syslog
 
 Worked, copy-pasteable recipes, one per use case.
 Each is complete: how to start nl6 so the target protocol is exporting, the scenario to submit, and what to read back.
-They build on the operating guide: the [lifecycle](./loadtest-scenarios.md#run-a-fidelity-check) and [fidelity mode](./loadtest-scenarios.md#fidelity-mode).
+They build on the [operating guide](./loadtest-scenarios.md).
 All assume `NL6=http://localhost:8080`, that every `POST` sends `Content-Type: application/json`, and that nl6 runs as root (TUN / network namespace).
 For a clean window with no background noise, add [`-fidelity`](./loadtest-scenarios.md#fidelity-mode) to the launch line.
 
-**A long per-device `interval` will not silence a fleet.**
-The per-device `interval` / `tick_interval` fields are **rejected with `400`**: every device fires at the simulator-wide `-syslog-interval` / `-trap-interval` cadence, and a flow device ticks at `-flow-tick-interval`.
-Before that rejection the fields were accepted, echoed back and ignored, so `"interval": "24h"` on 500 devices left ~50 events/s of background running while every surface reported success.
-`-fidelity` is the supported way.
-Set it at launch, or toggle it at runtime with `POST /api/v1/fidelity` (optional `duration` auto-reverts, capped at 24h), which is what you want when bracketing a measurement on a fleet you do not wish to rebuild.
-`GET /api/v1/fidelity` reports the value in force alongside the startup flag, because once the value is mutable the flag is only a default.
+A long per-device `interval` will not silence a fleet; use [fidelity mode](./loadtest-scenarios.md#fidelity-mode).
 
 A scenario **gates an export that already exists**.
 It never configures the wire.
@@ -46,8 +41,13 @@ ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' 
   "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
   "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42
 }' | jq -r .id)
-curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm | jq   # check excluded[] is empty
+# Arm: resolve participants; check excluded[] is empty before starting.
+curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm | jq
+
+# Start: freezes the fleet and opens the window at T0. Refused at 0/N armed.
 curl -sf -X POST $NL6/api/v1/scenarios/$ID/start
+
+# The window self-closes at T1. stop is idempotent and returns the report.
 sleep 33
 curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq .summary
 ```
@@ -77,10 +77,7 @@ See [Run tagging](./loadtest-scenarios.md#isolate-experiment-traffic-with-run-ta
 
 Ramp 5 → 200 msg/s over 5 minutes and see **where** loss lands, not just how much.
 
-**Flow rate is per device and capped.**
-Flow protocols are paced by sizing each device's flow cache, which bounds the per-device rate at roughly 8.1 to 9.2 records/s at the default 5s tick (lower on a longer one).
-A rate above a participant's ceiling excludes it at arm.
-Scale a run with participants rather than per-device rate.
+Flow protocols refuse a `rate_profile` and have a per-device rate ceiling; see [Choose participant cardinality and rate](./loadtest-scenarios.md#choose-participant-cardinality-and-rate).
 
 ```bash
 curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
@@ -126,18 +123,7 @@ A past timestamp is rejected `400`.
 
 ## 6. Diff the report in one command
 
-Skip the manual join.
-Feed the report and your collector's counts to [`nl6-reconcile`](./loadtest-scenarios.md#reconcile-with-nl6-reconcile):
-
-```bash
-curl -sf $NL6/api/v1/scenarios/$ID/report > report.json
-nl6-reconcile -report report.json -received collector.csv
-# exit 1 (and a RESIDUAL / PHANTOM row) if anything is off. Drop it into CI.
-
-# A shortfall is RESIDUAL until you assert the collector's queue has drained.
-# Backlog resolves itself; loss does not. Re-run once the queue is empty:
-nl6-reconcile -report report.json -received collector.csv -drained
-```
+Skip the manual join: save the report and run [`nl6-reconcile`](./loadtest-scenarios.md#reconcile-with-nl6-reconcile) against your collector's counts, which exits non-zero for a CI gate.
 
 ## 7. Check IPFIX-only fidelity
 
@@ -161,7 +147,7 @@ Reconcile per `metadata.run_tags` (mechanism `ipfix_odid`): filter the collector
 ## 8. Measure a mixed flow-protocol fleet (20% v5 / 20% v9 / 60% IPFIX)
 
 A scenario targets **one protocol**, so a mixed fleet is measured with **one scenario per protocol** over that protocol's device subset.
-The three device subsets are disjoint, so the scenarios could run concurrently; this runbook runs them **back-to-back** so each report stands alone.
+The three device subsets are disjoint, so the scenarios could [run concurrently](../reference/loadtest-api.md#post-apiv1scenarios-submit); this runbook runs them **back-to-back** so each report stands alone.
 The 20 / 20 / 60 split is how many devices you configure for each protocol.
 Seed flags apply a single protocol to the whole auto-start batch, so build the mix with per-device `flow` blocks instead.
 
@@ -183,7 +169,7 @@ done
 ```
 
 Then run one scenario per protocol, in sequence.
-Each finalizes before the next submits, and finished scenarios stay listed and queryable (the 8 most recent are retained):
+Each finalizes before the next submits:
 
 ```bash
 run() { # $1=protocol  $2=participants-csv
@@ -192,8 +178,7 @@ run() { # $1=protocol  $2=participants-csv
   }" | jq -r .id)
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm   >/dev/null
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/start >/dev/null
-  sleep 66   # the window, plus margin: the run self-closes at T1 and the
-             # drain barrier returns as soon as the in-flight writes do
+  sleep 66   # the window plus margin; the run self-closes at T1
   curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop > "report-$1.json"
 }
 run netflow5 '"10.0.2.1","10.0.2.2"'
@@ -204,7 +189,4 @@ run ipfix    '"10.0.4.1","10.0.4.2","10.0.4.3","10.0.4.4","10.0.4.5","10.0.4.6"'
 Each run produces its own report keyed by `(protocol, source_ip, collector)`; reconcile the three independently (`nl6-reconcile -report report-ipfix.json …` per protocol).
 The fleet exports all three protocols the whole time.
 A scenario measures one subset's window at a time.
-To weight the mix by **traffic** rather than device count, change the device split rather than the `rate`.
-A flow participant has a hard per-device rate ceiling of roughly 8 to 9 records/s at the default tick, so scaling `rate` up in proportion soon passes it.
-A participant above its ceiling is excluded at arm.
-See [Choose participant cardinality and rate](loadtest-scenarios.md#choose-participant-cardinality-and-rate) for the formula.
+To weight the mix by **traffic**, change the device split rather than the `rate`, because a flow participant has a [per-device rate ceiling](./loadtest-scenarios.md#choose-participant-cardinality-and-rate).

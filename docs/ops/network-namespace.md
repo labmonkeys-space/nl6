@@ -77,14 +77,7 @@ Reverse-path filtering in the kernel can silently drop packets whose source IP i
 Two sides are relevant:
 
 - **Simulator side.** At namespace setup the simulator sets, on the **host**, `net.ipv4.ip_forward=1`, `rp_filter=0` on `all` and on `veth-sim-host`, and `forwarding=1` on `veth-sim-host`. Nothing is set inside `nl6sim`. No user action needed.
-- **Collector side.** On the machine receiving flow packets, `rp_filter` may need to be relaxed per-interface because the packets carry simulator-device source IPs (e.g. `10.0.0.x`) that the collector has no route back to:
-
-```bash
-sudo sysctl -w net.ipv4.conf.all.rp_filter=2
-sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
-```
-
-`2` is loose mode; `0` disables filtering entirely.
+- **Collector side.** The collector host may need `rp_filter` relaxed, because packets carry simulated device source IPs it has no route back to. See [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
 
 ## When bring-up fails
 

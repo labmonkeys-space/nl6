@@ -34,6 +34,7 @@ Every path is keyed by the optical-channel (OCH) **component name**:
 
 A stock `ciena_waveserver5` device has two channels, `OCH-1-1` and `OCH-1-2`, one per WaveLogic 5 Extreme modem.
 Enumerate them with a wildcard (`name=*`), which expands in sorted order.
+Subtree subscribes flatten as on the interface side (see [gNMI dial-in](gnmi.md#supported-paths)).
 
 ## Served paths
 
@@ -60,10 +61,11 @@ Statistics containers expose `{instant, avg, min, max}`.
 
 Pinned model revisions, advertised in `Capabilities` by optical devices only: `openconfig-terminal-device` 2026-01-14, `openconfig-platform` 2025-07-15, `openconfig-platform-transceiver` 2026-03-25. The transceiver model is required rather than decorative: `optical-channel/state` reuses its `optical-power-state` grouping for input power, output power and laser bias.
 
-Three shapes worth knowing before you write a subscription:
+Four shapes worth knowing before you write a subscription:
 
 - **`fec-uncorrectable-blocks` is a bare counter.** It has no statistics container in the pinned model, so `.../fec-uncorrectable-blocks/instant` returns `NotFound`. That is the mistake most collector authors make here, by analogy with the leaves around it.
 - **The measured leaves are state-only.** Only the four scalars have a `config/` twin.
+- **`GetRequest.type` follows the `config/` subtree.** Because the optical surface has a real `config/` subtree, `CONFIG` returns only the four config scalars, `STATE`/`OPERATIONAL` only state leaves, and `ALL` (the default) everything. The interface surface is state-only, so it is unaffected.
 - **Precision is model-mandated.** Statistics leaves carry 2 fraction digits; `pre-fec-ber` carries 18. Ciena's native model uses 3-digit decimals and a scientific-notation string, but nl6 serves OpenConfig, whose types govern.
 
 ## Value model: two dials, one cascade

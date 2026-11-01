@@ -85,19 +85,9 @@ See [Fidelity mode](loadtest-scenarios.md#fidelity-mode).
 
 ## Prerequisites inherited from flow export
 
-Per-device source IP binding reuses the same `nl6sim` network namespace plumbing as flow export.
-It adds no new `iptables` rules and no new netns setup.
-In TRAP mode, a per-device bind failure for any device is survivable: the simulator logs a warning and that device falls back to the shared UDP socket (its traps arrive at the collector with the simulator host's IP as the source).
-In INFORM mode, the same failure is fatal for that device, because acks cannot be demultiplexed without a per-device socket.
-The same three conditions apply:
-
-- **`iptables FORWARD` rule.** At startup the simulator inserts `FORWARD -i veth-sim-host -j ACCEPT` so Docker-present hosts (which default FORWARD to drop) allow per-device egress. Walkthrough: [Flow export → Prerequisites](flow-export.md#prerequisites-for-per-device-source-ip).
-- **Route to the collector from inside the namespace.** Same default route via `veth-sim-host` (`10.254.0.1`); if you've customised host routing, verify with `sudo ip netns exec nl6sim ip route get <collector-ip>`.
-- **Collector-side `rp_filter`.** Reverse-path filtering on the collector host may drop UDP/162 packets whose source IP (`10.0.0.x`, `10.42.0.x`, whatever subnet your devices live in) isn't reachable back through the receiving interface. Loose mode fixes it:
-  ```bash
-  sudo sysctl -w net.ipv4.conf.all.rp_filter=2
-  sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
-  ```
+Per-device source IP binding reuses the flow-export namespace plumbing, so the same [prerequisites](flow-export.md#prerequisites-for-per-device-source-ip) apply: the `FORWARD` rule, a route to the collector from the namespace, and a relaxed `rp_filter` on the collector host.
+In TRAP mode, a per-device bind failure is survivable: the simulator logs a warning and that device falls back to the shared UDP socket, so its traps carry the simulator host's IP as the source.
+In INFORM mode the same failure is fatal for that device, because acks cannot be demultiplexed without a per-device socket.
 
 ## Run a smoke test with snmptrapd
 
@@ -130,8 +120,9 @@ You do not have to compute it.
 
 ```bash
 # 1. A scratch persistent dir. net-snmp MOVES each createUser line into its own
-#    store on first read and DELETES it from your file, so a second run with a
-#    corrected password silently keeps the stale user.
+#    store (/var/lib/snmp/snmptrapd.conf by default) on first read and DELETES it
+#    from your file, so a second run with a corrected password silently keeps
+#    the stale user. Clear the dir between attempts.
 export SNMP_PERSISTENT_DIR=/tmp/nl6-trapd
 rm -rf "$SNMP_PERSISTENT_DIR" && mkdir -p "$SNMP_PERSISTENT_DIR"
 
@@ -156,8 +147,10 @@ sudo ./nl6 -auto-start-ip 1.0.0.1 -auto-count 1 \
 :::danger[The USM passwords are visible in `ps`]
 
 `-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the only secrets nl6 takes on the command line.
-They are readable by every user on the host via `ps` and `/proc/<pid>/cmdline`, land in shell history, and are echoed by `docker inspect`.
-Use lab credentials only.
+The polling side has none.
+They are readable by every user on the host via `ps` and `/proc/<pid>/cmdline`, land in shell history, and are echoed by `docker inspect` and `kubectl describe pod`.
+There is no environment-variable or file form, so there is no private way to pass them.
+Use lab credentials only, and never a password that protects anything else.
 :::
 
 For vendor-flavoured content (e.g., Cisco `ciscoConfigManEvent` or Juniper `jnxPowerSupplyFailure`), select a device type with a per-type overlay.
@@ -175,7 +168,7 @@ curl -X POST http://localhost:8080/api/v1/devices/127.0.0.1/trap \
   -d '{"name":"linkDown","varbindOverrides":{"IfIndex":"3"}}'
 ```
 
-See [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand) for the full request / response shape.
+See [SNMP trap reference → Fire a trap on demand](../reference/snmp-traps.md#fire-a-trap-on-demand) for the full request / response shape.
 
 ## Troubleshooting
 
@@ -202,4 +195,4 @@ For generic bring-up failures (TUN module missing, `sudo` required, port conflic
 - [CLI flags → SNMP trap / INFORM export flags](../reference/cli-flags.md#snmp-trap--inform-export-flags)
 - [Syslog export how-to](syslog-export.md), the sibling feature that shares the overlay loader and template vocabulary
 - [Flow export how-to](flow-export.md), which shares the `nl6sim` namespace plumbing
-- [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)
+- [SNMP trap reference → Fire a trap on demand](../reference/snmp-traps.md#fire-a-trap-on-demand)

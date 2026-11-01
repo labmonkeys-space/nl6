@@ -239,81 +239,8 @@ Their realistic content depends on Class 2 random fields, which are not supporte
 
 ## Starting syslog export
 
-Syslog export is opt-in per device.
-There are two ways to configure it:
-
-### 1. CLI seed (auto-start batch)
-
-The `-syslog-*` flags seed auto-created devices.
-Every device in the auto-start batch gets the same collector, format, and interval.
-
-```bash
-# RFC 5424 → 192.168.1.10:514, 100 auto-created devices
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 100 \
-  -syslog-collector 192.168.1.10:514
-
-# RFC 3164 legacy BSD format for downstream parsers that don't grok 5424
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 50 \
-  -syslog-collector 192.168.1.10:514 \
-  -syslog-format 3164
-```
-
-### 2. REST body (per-device)
-
-`POST /api/v1/devices` accepts an optional `syslog` block per request.
-Different batches can target different collectors or mix formats (5424 and 3164 streams never interleave on the same socket, because the shared-socket pool is keyed by `(collector, format)`).
-
-```bash
-# A: 50 devices emitting 5424 to collector A
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.0.1",
-    "device_count": 50,
-    "syslog": {
-      "collector": "192.168.1.10:514",
-      "format": "5424"
-    }
-  }'
-
-# B: 20 devices emitting 3164 to the SAME collector (different socket,
-# separate status record)
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.1.1",
-    "device_count": 20,
-    "syslog": {
-      "collector": "192.168.1.10:514",
-      "format": "3164"
-    }
-  }'
-```
-
-A per-device `interval` in the `syslog` block is **rejected with 400**.
-Every device fires at the simulator-wide `-syslog-interval` cadence, which the device read-back reports under `effective_intervals`.
-To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
-
-`/api/v1/syslog/status` reports both batches as separate records keyed by `(collector, format, transport)`.
-
-The `syslog` block is **optional** on every request.
-Omit it and the device doesn't emit syslog.
-
-| Name | Type | Default | Description |
-|------|------|---------|-------------|
-| `collector` | string | required | Collector `host:port`. A bare host gets port 514, or 6514 under `tls`. |
-| `format` | string | `5424` | `5424` or `3164`. |
-| `transport` | string | `udp` | `udp`, `tcp` (RFC 6587) or `tls` (RFC 5425). |
-| `framing` | string | `octet-counting` under `tcp` and `tls` | `octet-counting` or `non-transparent` under `tcp`. Under `tls` only `octet-counting` is accepted; anything else is rejected with 400. Rejected with 400 under `udp`. |
-| `tls` | object | absent (verify against the host's root store) | Collector verification under `tls`: `ca_pem` (inline PEM) and `insecure_skip_verify`. `mtls` is rejected with 400. See [TLS](#tls-rfc-5425). |
-| `interval` | n/a | n/a | Rejected with 400. Use `-syslog-interval`. |
-
-On the command line, `-syslog-transport` seeds the transport, `-syslog-framing` the framing, and `-syslog-tls-ca` and `-syslog-tls-insecure` the `tls` block.
-See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
-
-The `-syslog-interval` CLI flag takes a Go duration string (`10s`, `1m30s`), not integer seconds.
+Starting export, per-device source IPs and TCP or TLS collector setup are covered in the [syslog export how-to](../ops/syslog-export.md#enable-syslog-export).
+The per-device `syslog` block of `POST /api/v1/devices` is in [Web API → Per-device export blocks](web-api.md#per-device-export-blocks).
 
 ## TCP transport (RFC 6587)
 
@@ -422,12 +349,7 @@ A path in the per-device config is settable over REST, which would let any API c
 That is an arbitrary-file-read primitive, where even the error message distinguishes "could not read" from "no certificates here".
 Certificate authorities are small and pasteable, so a path bought nothing worth that.
 
-A path survives on the command line, where the operator who started the process names it:
-
-```sh
-nl6 -syslog-transport tls -syslog-tls-ca /etc/ssl/certs/collector-ca.pem
-```
-
+A path survives on the command line, where the operator who started the process names it with `-syslog-tls-ca`.
 That file is read once at startup and its contents stamped into the seed config, so the trusted read happens in exactly one place.
 
 Whatever the source, **only `CERTIFICATE` blocks are kept**.
@@ -448,10 +370,7 @@ So the per-device cost is higher than the plaintext figure, and a fleet-scale es
 
 ### Collector-side caveats
 
-- `rp_filter` may need relaxing (`net.ipv4.conf.*.rp_filter=0` or `2`) to accept connections whose source addresses are in the simulated range. This is the same caveat already documented for flow, trap and UDP syslog.
-- A fleet means **one connection per device**. A collector accepting 30,000 concurrent connections from 30,000 distinct source addresses is a different proposition from receiving datagrams, and file-descriptor and accept-backlog limits are usually what bites first.
-- TLS moves the same caveats to port 6514, and adds handshake cost per reconnect. A collector that bounces makes a fleet renegotiate, not only reconnect.
-- **OpenNMS's classic Syslogd is UDP-only.** `syslogd-configuration.xml` has no transport attribute. The documented pattern is to terminate TCP in rsyslog or syslog-ng and relay onward. Measured, rsyslog's `imtcp` absorbs roughly 262,000 frames/s, comfortably above what a simulated fleet produces, so a realistic deployment does not approach backpressure.
+Collector sizing, `rp_filter` and the relay pattern for collectors without TCP are in [Send syslog over TCP or TLS](../ops/syslog-export.md#send-syslog-over-tcp-or-tls).
 
 ## HTTP endpoints
 
@@ -473,6 +392,7 @@ Body:
 `name` is required and must match an entry in the **device's resolved catalog** (per-type overlay if present, universal otherwise).
 `templateOverrides` is optional.
 Supplied keys pin the corresponding template field for this fire only.
+Only the twelve fields of the [template vocabulary](#template-vocabulary) are accepted.
 
 Responses:
 

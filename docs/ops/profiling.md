@@ -69,8 +69,8 @@ curl -s -X POST localhost:8080/api/v1/profiling -H 'Content-Type: application/js
 
 ### The request
 
-`enabled` is required.
-A body without it is a `400`, and so is a `server_address` on an `enabled:false` request, because validated-then-ignored is worse than refused.
+The request fields and status codes are in [Web API → Continuous profiling](../reference/web-api.md#continuous-profiling).
+A `server_address` on an `enabled:false` request is refused rather than ignored, because validated-then-ignored is worse than refused.
 
 `server_address` has three shapes:
 
@@ -80,7 +80,9 @@ A body without it is a `400`, and so is a `server_address` on an `enabled:false`
 | `""` | Pull-only, even when the flag is set. This is the only way to reach pull-only on a process booted with `-profiling-pyroscope`. |
 | a value | Re-targets. The same address twice is a no-op; a different one stops the old push and starts a new one. |
 
-A push the SDK refuses to start answers `500` with the state attached (`enabled:true`, `pushing:false`, `last_error`); the pull surface still serves.
+A push the SDK refuses to start answers `500` with the state attached; the pull surface still serves.
+
+A `duration` revert restores the gate and the push address together, following the same chain rule as [fidelity mode](../reference/web-api.md#fidelity-mode).
 
 ### What the status means
 

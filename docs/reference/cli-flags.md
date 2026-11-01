@@ -53,65 +53,18 @@ A fleet booted with neither flag below answers no `SET` at any version.
 | `-snmp-write-community` | string | empty | **seed** | SNMPv1/v2c community required to **write**. Empty admits no v1/v2c `SET`. A mismatch is **discarded**. No datagram comes back, which `snmpset` reports as a timeout, and the cause is logged once per device. Reads are unaffected: nl6 checks no community on a poll, at any version. REST-created devices set `write_community` on the create body. |
 | `-snmp-set-min-security-level` | `none` \| `auth` \| `priv` | `auth` | **seed** | Lowest SNMPv3 security level a `SetRequest` may carry (`noAuthNoPriv` / `authNoPriv` / `authPriv`). Below it, the request is answered with a `usmStatsUnsupportedSecLevels` Report (RFC 3414 §3.2 step 5). On a fleet run with `-snmpv3-auth none` nothing can reach the default, so no v3 `SET` is admitted. The startup log says so. REST-created devices set `snmpv3.set_min_security_level`. |
 
-An unrecognised `-snmp-set-min-security-level` is fatal at startup, after `-help` and `-version` and before any subsystem starts.
-
-To restore the earlier admission, where any manager that could reach the port could write:
-
-```bash
-sudo ./nl6 -snmp-write-community public -snmp-set-min-security-level none
-```
-
+An unrecognised `-snmp-set-min-security-level` is fatal at startup.
+The admission rules, the refusal shapes and the startup policy line are in [SNMP → Write admission for a `SET`](snmp.md#write-admission-for-a-set).
 
 ## Interface-state scenarios
 
-The `-if-scenario` flag sets the **initial** admin/oper status of every simulated interface, so you can reproduce common network conditions without editing resource files.
-It is applied once per device, when the interface-state engine is built, to every device the process creates: the auto-start batch and REST-created devices alike.
-From then on the engine is the single source every reader agrees on, so an SNMP `SET`, a REST `oper-status` or `admin-status` POST, or a link flap moves what `GET`, a walk, gNMI and the REST view all report.
-A value outside 1..4, or an `-if-failure-pct` outside 0..100, is refused at startup rather than ignored.
+`-if-scenario` sets the **initial** admin and link state of every simulated interface.
+What each scenario seeds, and how it interacts with flaps and SETs, is in [Interface state → Interface-state scenarios](interface-state.md#interface-state-scenarios).
 
 | Flag | Type | Default | Purpose |
 |------|------|---------|---------|
-| `-if-scenario` | int | `2` | Interface state scenario: 1=all-shutdown, 2=all-normal, 3=all-failure, 4=pct-failure. |
-| `-if-failure-pct` | int | `10` | Percentage of interfaces with oper-down (used with `-if-scenario 4`, 0 to 100). |
-
-| Scenario | Name | `ifAdminStatus` | `ifOperStatus` | Use case |
-|----------|------|-----------------|----------------|----------|
-| 1 | all-shutdown | down (2) | down (2) *(derived)* | Planned maintenance, device decommission |
-| 2 | all-normal *(default)* | as shipped | as shipped | Normal steady-state operations |
-| 3 | all-failure | up (1) | down (2) | Link failures, SFP issues, cable pull |
-| 4 | pct-failure | up (1) | down for n% | Partial outage, staged rollout testing |
-
-Scenario 2 does not force anything up.
-It leaves both values exactly as the device's resource files declare them, and most shipped profiles declare up.
-Four do not: `cisco_nexus_9500`, `juniper_mx960`, `asr9k` and `palo_alto_pa3220` ship some interfaces oper-down, so those boot down under the default scenario.
-Use scenario 3 if you want every interface down regardless of profile.
-
-Scenario 4 uses a deterministic rule (`ifIndex % 100 < n`) so test runs are reproducible across restarts.
-
-Three consequences worth knowing before you pick a scenario.
-
-The seed is initial state, not a transition, so it fires no link traps, no syslog and no gNMI `ON_CHANGE` updates, and `ifLastChange` reads `0` until something actually changes.
-
-`lldpRemTable` only emits a row when both ends of a link are oper-up, so scenarios 1 and 3 empty every device's neighbour table and scenario 4 drops the rows whose local or remote port it put down.
-`ifAlias` reflects configured intent and stays.
-
-Scenario 1 shuts the port and **preserves the link underneath it**.
-`ifOperStatus` is derived from `ifAdminStatus` and the link state, so admin-down forces it to `down(2)` while the link keeps whatever the profile declared.
-Interfaces come back the ordinary way, through a `SET` of `ifAdminStatus` to `up(1)` or a REST `admin-status` POST, and each one returns to the value its link had reached, which for most profiles is up.
-
-Scenario 3 seeds the **link** down, which is why it survives an admin bounce.
-Shutting and unshutting a port under `-if-scenario 3` leaves `ifOperStatus = 2`: the flag models a cable pull, and an administrative bounce does not repair a cable.
-This is the behaviour RFC 2863 describes: admin-up releases `ifOperStatus` to the physical layer rather than forcing it up.
-
-**Pairing a non-default scenario with a link-flap scenario now behaves.** The flap scheduler moves the **link**, not `ifOperStatus` directly:
-
-- Under scenario 1 every flap is **masked**. The link moves beneath the shut port, nothing observable changes, `ifLastChange` does not advance, and no trap, syslog or `ON_CHANGE` update fires. Unshutting a port then shows whatever its link had reached. The fleet can no longer report `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`, which RFC 2863 does not allow. That state is now unrepresentable rather than merely discouraged.
-- Under scenarios 3 and 4 the first up-flap still brings a failed interface back, because those scenarios leave the port administratively up and a flap is a real link event. If you want a fleet that stays down, leave `-if-flap-scenario` at `clean` or use scenario 1.
-
-The REST `oper-status` endpoint sets the link too, so the same masking applies: a POST to an admin-down interface is accepted, moves the link, and reports `"masked": true` in its `202` body.
-
-The scenario reaches the interfaces the counter engine knows, which are those with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
-An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from the resource file unchanged.
+| `-if-scenario` | int | `2` | Interface state scenario: 1=all-shutdown, 2=all-normal, 3=all-failure, 4=pct-failure. A value outside 1..4 is refused at startup. |
+| `-if-failure-pct` | int | `10` | Percentage of interfaces with oper-down (used with `-if-scenario 4`, 0 to 100). A value outside 0..100 is refused at startup. |
 
 ### Error / discard scenario
 
@@ -138,21 +91,13 @@ See [`if-counters` reference](snmp.md#dynamic-if-mib-counters).
 ### Link-flap scenario
 
 `-if-flap-scenario` drives Poisson-distributed link flaps per `(device, ifIndex)`.
-Mutations go through the interface state engine that powers SNMP `ifOperStatus` / `ifAdminStatus` / `ifLastChange` and gNMI ON_CHANGE subscribers, so all three surfaces see the same value at the same instant.
 
 | Flag | Values | Default | Scope | Purpose |
 |------|--------|---------|-------|---------|
 | `-if-flap-scenario` | `clean` \| `rare` \| `typical` \| `aggressive` | `clean` | **seed** | Auto-start-batch per-device link-flap scenario. REST devices default to `clean`; opt in via `if_flap_scenario` POST body. |
 | `-if-flap-global-cap` | int (events/sec) | `0` | **global** | Simulator-wide rate ceiling on flap events. `0` is unlimited. |
 
-| Scenario | Mean inter-flap | Down duration | Use case |
-|----------|-----------------|---------------|----------|
-| `clean` *(default)* | ∞ (no flaps) | n/a | Steady-state regression testing |
-| `rare` | ~6 hours / interface | uniform 1 to 10 s | Long-running fleets, background variance |
-| `typical` | ~15 minutes / interface | uniform 1 to 30 s | Collector alarm-pipeline stress |
-| `aggressive` | ~1 minute / interface | uniform 1 to 5 s | Chaos / churn measurement |
-
-See [interface state engine reference](interface-state.md) for the REST control plane (`POST /api/v1/devices/{ip}/interfaces/{ifIndex}/{oper,admin}-status`), auto-revert semantics, and the cross-protocol consistency contract.
+The scenario rates, the masking rule and the REST control plane are in [Interface state → Link-flap scenarios](interface-state.md#link-flap-scenarios).
 
 ### Optical health band
 
@@ -220,7 +165,37 @@ See [Flow export how-to](../ops/flow-export.md) for prerequisites and collector 
 | `-nbar2-catalog` | path | empty (embedded) | global | Replace the embedded universal NBAR2 application catalog (`resources/_common/nbar2.json`) and suppress every per-type overlay (`resources/<type>/nbar2.json`). Read once at startup; not reloaded by `POST /api/v1/resources/reload`. Entries too large for the `-datagram-mtu` budget are disabled and named at startup, never a boot failure. |
 | `-flow-tick-sync` | bool | `false` | **global** | Sweep every device on the same ticker firing, so the fleet exports in one burst per tick interval (the restart-storm pattern). Off by default: each device keeps the tick cadence but is swept at its own phase within the period, so the collector sees a near-flat arrival rate. Applied at construction and not runtime-mutable. Reported as `tick_synchronized` on `GET /api/v1/flows/status`. See [Flow export → fleet arrival shape](flow-export.md#fleet-arrival-shape). |
 | `-flow-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. |
-| `-datagram-mtu` | int (bytes) | `1500` | **global** | Assumed MTU of the egress path to collectors. Every UDP-emitting subsystem derives its budget from it: flow datagrams, trap PDUs and the SNMP response bound, GETBULK included. Validated at startup (`576..65535`); an out-of-range value is fatal, after `-help` / `-version`. Lower it when the collector path is not standard Ethernet (a Docker overlay is typically `1450`). Lowering it far enough disables shipped optical trap entries, which are named in the startup log. |
+| `-datagram-mtu` | int (bytes) | `1500` | **global** | Assumed MTU of the egress path to collectors. Every UDP-emitting subsystem derives its budget from it: flow datagrams, trap PDUs and the SNMP response bound, GETBULK included. Validated at startup (`576..65535`); an out-of-range value is fatal, after `-help` / `-version`. Lower it when the collector path is not standard Ethernet (a Docker overlay is typically `1450`). Lowering it far enough disables shipped optical trap entries, which are named in the startup log. See [Datagram MTU](#datagram-mtu). |
+
+### Datagram MTU
+
+`-datagram-mtu` is the one MTU every UDP-emitting subsystem sizes its datagrams to.
+It governs flow export, SNMP trap notifications and SNMP responses.
+Syslog is excluded and keeps its own 1400-byte ceiling.
+
+The 1500 default holds for nl6's own TUN and veth interfaces, which take the kernel default.
+It is an assumption about the **egress** path to the collector, which nl6 does not control.
+
+**Lower it when the collector path is not standard Ethernet.**
+A Docker overlay or VXLAN network is typically 1450, and a tunnelled path lower still.
+At 1450, a default-sized NetFlow v9 (1480-byte frame), IPFIX (1484) or NetFlow v5 (1492) datagram fragments, as does an SNMP GETBULK at OpenNMS's default collector settings (1464).
+Only sFlow and SNMP traps fit.
+
+What each subsystem does with the value:
+
+- **Flow.** The payload budget is the MTU minus the IP and UDP headers. The per-protocol effect, including the NetFlow v5 30-record cap, is in [Flow export → How much flow a device emits](flow-export.md#how-much-flow-a-device-emits).
+- **SNMP responses.** A GETBULK truncates to the frame, and a GET or GETNEXT that cannot fit answers `tooBig`. See [SNMP → Response size](snmp.md#response-size-max-repetitions-and-truncation).
+- **SNMP traps.** Lowering the MTU far enough stops shipped optical alarm entries from firing rather than shrinking them. They are disabled at catalog load and named in the startup log with the MTU that would admit them.
+
+The value is validated at startup, and an out-of-range one is fatal.
+A misconfiguration therefore surfaces at once rather than as per-datagram encode failures across the fleet.
+
+nl6 does not discover the MTU.
+Reading the route's interface MTU would work for flow, traps and syslog, which each know their collector when the exporter attaches.
+It would not work for SNMP, which answers whoever polls it and learns the destination only per request.
+One value has to cover every subsystem, so discovery cannot be the mechanism.
+There is no path-MTU discovery either: a route lookup sees only the first hop, so a tunnel further along the path is invisible.
+If you see fragments, check the egress interface MTU and set the flag to match.
 
 **Tick interval sets batching, not volume.** It is natural to reach for `-flow-tick-interval` to turn flow volume up or down.
 It is not that knob.
@@ -262,21 +237,14 @@ See [SNMP trap export how-to](../ops/snmp-traps.md) for prerequisites and `snmpt
 | `-trap-snmpv3-user` | string | empty | **seed** | USM user name carried in `msgUserName`. Required when `-trap-snmp-version=v3`; USM has no anonymous identity. |
 | `-trap-snmpv3-auth` | `none` \| `md5` \| `sha1` | `none` | **seed** | USM authentication protocol for notifications. Also selects the hash that localizes the privacy key (RFC 3414 §2.6). **Strict**: an unrecognised value is fatal at startup, unlike `-snmpv3-auth`, which logs and falls back to MD5. |
 | `-trap-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | **seed** | USM privacy protocol for notifications. Requires an authentication protocol. USM defines no privacy-without-authentication security level. |
-| `-trap-snmpv3-password` | string | empty | **seed** | USM authentication password. Required when `-trap-snmpv3-auth` is not `none`. **Visible in `ps`. See the warning below.** |
-| `-trap-snmpv3-priv-password` | string | empty | **seed** | USM privacy password. Empty reuses `-trap-snmpv3-password`, matching the poll path's own fallback. **Visible in `ps`. See the warning below.** |
-| `-trap-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. **Required** when a device is configured `mode=inform`, and enforced at device-attach time. The attach fails per-device and the device's `trapConfig` is cleared. |
+| `-trap-snmpv3-password` | string | empty | **seed** | USM authentication password. Required when `-trap-snmpv3-auth` is not `none`. **Visible in `ps`.** |
+| `-trap-snmpv3-priv-password` | string | empty | **seed** | USM privacy password. Empty reuses `-trap-snmpv3-password`, matching the poll path's own fallback. **Visible in `ps`.** |
+| `-trap-source-per-device` | bool | `true` | **global** | Use each device's IP as the UDP source address. **Required** in INFORM mode. An auto-start device fails its trap attach and its `traps` block is cleared; a REST `traps` block with `mode: inform` is rejected with 400. |
 | `-trap-inform-timeout` | duration | `5s` | **seed** | Per-retry timeout in INFORM mode. |
 | `-trap-inform-retries` | int | `2` | **seed** | Maximum retransmissions per INFORM before it's declared failed. |
 
-:::danger[These are the only secrets on nl6's command line]
-
-`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the first credentials nl6 accepts as flags.
-The polling side deliberately has none.
-A command line is not private: it is readable by every user on the host through `ps` and `/proc/<pid>/cmdline`, recorded in shell history, and echoed verbatim by `docker inspect` and `kubectl describe pod`.
-
-Use lab credentials only, and never a password that protects anything else.
-There is no environment-variable or file form, so there is no private way to pass these.
-:::
+The two password flags are the only secrets nl6 takes on the command line, and every local user can read them.
+See the warning in [Receive SNMPv3 notifications](../ops/snmp-traps.md#receive-snmpv3-notifications).
 
 **There is no `-trap-snmpv3-engine-id`, and that is deliberate.** Each device derives its own authoritative engine ID from its IPv4 address, so two devices sharing a user and password still localize **different** keys.
 A configured engine ID would be shared by the whole fleet, which is a shared-identity defect: each notification originator derives its own engine ID from its own IPv4.
@@ -297,8 +265,8 @@ See [gNMI dial-in reference](gnmi.md) for path coverage, subscribe semantics, an
 |------|------|---------|-------|---------|
 | `-gnmi-port` | int | `9339` | **global** | TCP port for the gNMI dial-in listener on each device. The listener serves **TLS** unless `-gnmi-tls=false`. |
 | `-gnmi-disable` | bool | `false` | **global** | Disable the subsystem; no device listens on the gNMI port. |
-| `-gnmi-tls` | bool | `true` | **global** | Serve dial-in over TLS with the simulator's shared self-signed certificate; clients need `--skip-verify` or `--tls-ca`. `false` serves plaintext gRPC instead. A client whose transport does not match the listener gets a completed TCP connection and no bytes. See [gNMI troubleshooting](gnmi.md#troubleshooting). |
-| `-gnmi-catalog` | path | empty (shipped catalogues) | **global** | JSON gNMI path catalogue that replaces the catalogue of every device type that carries one (`resources/<type>/gnmi.json`). Types without a catalogue keep none. Read once at startup; a file that fails to load is fatal. See [gNMI → Catalogue-driven paths](gnmi.md#catalogue-driven-paths). |
+| `-gnmi-tls` | bool | `true` | **global** | Serve dial-in over TLS with the simulator's shared self-signed certificate; clients need `--skip-verify` or `--tls-ca`. `false` serves plaintext gRPC instead. A client whose transport does not match the listener gets a completed TCP connection and no bytes. See [gNMI troubleshooting](../ops/validate-gnmi-collector.md#troubleshooting). |
+| `-gnmi-catalog` | path | empty (shipped catalogues) | **global** | JSON gNMI path catalogue that replaces the catalogue of every device type that carries one (`resources/<type>/gnmi.json`). Types without a catalogue keep none. Read once at startup; a file that fails to load is fatal. See [gNMI catalogue files → Overrides](gnmi-catalogue.md#overrides). |
 
 ## NETCONF flags
 

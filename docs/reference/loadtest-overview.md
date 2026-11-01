@@ -26,7 +26,7 @@ A shortfall is real wire/collector loss, not measurement noise.
 
 - **Bounded window.** A scenario suppresses background telemetry for its participants, emits only during `[T0,T1)`, then finalizes an immutable report.
 - **A sent-ledger, not a guess.** Every record is counted at the send site into exactly one bucket (`in_window` / `drain` / `send_failures` / `dropped` / `suppressed_pre_window`); `sent = in_window + drain` is the reconciliation denominator.
-- **Seven protocols, one shape.** Any one of **syslog · SNMP trap/inform · NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out**. Up to 8 scenarios run concurrently, with exclusivity per device. Each device opts in via its own export config; the scenario gates whichever protocol it targets.
+- **Seven protocols, one shape.** Any one of **syslog · SNMP trap/inform · NetFlow v5/v9 · IPFIX · sFlow · gNMI dial-out**. Each device opts in via its own export config; the scenario gates whichever protocol it targets.
 - **Localize, don't just total.** The report splits in-window sends into equal time sub-windows (loss localization) and tags each run per protocol so you can isolate it on a shared collector.
 
 ## Where to go next
@@ -46,5 +46,5 @@ It holds a compose stack (nl6 + a counting collector) and a `run.sh` that reprod
 
 ## Limits
 
-- **Up to 8 concurrent scenarios**, each over one protocol. Exclusivity is per device: a device claimed by one scenario is refused at another scenario's `arm`. The 8 most recent terminal scenarios stay listed and queryable; older ones are reaped.
-- **In-memory only.** A scenario, its ledger, and its report do not survive a restart; fetch the report before restarting. See [Scenarios → Fetch the report before restarting](../ops/loadtest-scenarios.md#fetch-the-report-before-restarting).
+- **Concurrency.** Up to 8 scenarios run at once, each device in at most one; see the [submit reference](./loadtest-api.md#post-apiv1scenarios-submit).
+- **In-memory only.** [Fetch the report before restarting](../ops/loadtest-scenarios.md#fetch-the-report-before-restarting).

@@ -10,37 +10,14 @@ New to the feature?
 Start with the [overview](../reference/loadtest-overview.md).
 For copy-pasteable recipes by use case, see the [runbooks](./loadtest-runbooks.md); for endpoints and shapes, the [REST API](../reference/loadtest-api.md) and [report schema](../reference/loadtest-report-schema.md).
 
-Scope: **up to 8 concurrent scenarios**, each over any one of the seven shipped push protocols: **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**, **sFlow**, and **gNMI dial-out**.
+Each scenario targets one of the seven push protocols: **syslog**, **SNMP trap/inform**, **NetFlow v5/v9**, **IPFIX**, **sFlow**, and **gNMI dial-out**.
 Each protocol opts a device in via its own export config; the scenario gates whichever protocol it targets.
+Concurrency limits are in the [submit reference](../reference/loadtest-api.md#post-apiv1scenarios-submit).
 
 ## Run a fidelity check
 
 The lifecycle is `submit → arm → start → (window elapses) → stop → report`.
-
-```bash
-NL6=http://localhost:8080
-
-# 1. Submit: validate + fingerprint. Returns the scenario id.
-ID=$(curl -sf -X POST $NL6/api/v1/scenarios -H 'Content-Type: application/json' -d '{
-  "participants": ["10.42.0.1","10.42.0.2","10.42.0.3"],
-  "protocol": "syslog", "rate": 10, "window": "30s", "seed": 42
-}' | jq -r .id)
-
-# 2. Arm: resolve participants; check the excluded list before starting.
-curl -sf -X POST $NL6/api/v1/scenarios/$ID/arm | jq
-
-# 3. Start: freezes the fleet, opens the window at T0. Refused at 0/N armed.
-curl -sf -X POST $NL6/api/v1/scenarios/$ID/start | jq
-
-# 4. Wait for the window (it self-closes at T1), then finalize + fetch report.
-sleep 33
-curl -sf -X POST $NL6/api/v1/scenarios/$ID/stop | jq
-
-# 5. Reconcile: report `sent` (in_window + drain) vs your collector's received.
-```
-
-`stop` is idempotent, so it is safe to call after the window has already auto-closed.
-You get the same report back.
+[Runbook 1](./loadtest-runbooks.md#1-check-syslog-fidelity-at-a-fixed-rate-the-baseline) walks it with `curl`, one command per step.
 
 To **reconcile**, sum `in_window + drain` per `counters[]` row and compare to your monitor's received count for the same `(protocol, source_ip, collector)` tuple.
 `send_failures` vs `dropped` separates "nl6 could not send" from "nl6 sent but the wire lost it".
@@ -76,7 +53,8 @@ curl -s $NL6/api/v1/fidelity   # value in force, startup flag, pending revert
 
 - Devices still answer **polls** (SNMP / SSH / HTTPS) normally. Fidelity mutes only autonomous *push* telemetry.
 - Explicit **on-demand** fires (`POST /api/v1/devices/{ip}/{trap,syslog}`) still go through. They are a deliberate action, not background chatter.
-- Fleet-wide, **off by default**. Set at startup with `-fidelity` or toggled at runtime via `POST /api/v1/fidelity`.
+- Fleet-wide, **off by default**. Set at startup with `-fidelity` or toggled at runtime via `POST /api/v1/fidelity`. A `duration` auto-reverts and is capped at 24h.
+- It is **the** way to silence a fleet. A per-device `interval` or `tick_interval` is rejected with `400`, because every device fires at the simulator-wide `-syslog-interval`, `-trap-interval` or `-flow-tick-interval` cadence.
 - It mutes **autonomous** push. A gNMI **dial-in** subscription is client-initiated (the collector `Subscribe`d), so it keeps streaming. Cancel the subscription if you need the gNMI path quiet too.
 
 The payoff is the cleanest possible measurement environment: a report you can diff against a collector with zero background contamination on either side.
@@ -84,11 +62,8 @@ Add `-fidelity` to any launch command in the [runbooks](./loadtest-runbooks.md).
 
 ## Isolate a NetFlow v5 run (time window and source IP only)
 
-NetFlow v5 is a fixed-format protocol.
-It has no templates, no option records, and no in-band field a scenario could tag.
-So a v5 fidelity run is isolated purely by **the measurement window `[T0,T1)` and the participant source IPs**: the collector attributes scenario traffic by `(source_ip, arrival time)`, not by any per-flow marker.
-When reconciling, filter the collector's v5 records to the participant IPs **and** the window before diffing against the report's `sent`.
-(The other protocols carry richer identity, such as v9/IPFIX templates, sFlow agent/sub-agent and trap varbinds, but the report's join tuple `(protocol, source_ip, collector)` is the same across all of them.)
+NetFlow v5 has no in-band field a scenario could tag.
+Filter the collector's v5 records to the participant source IPs **and** the window `[T0,T1)` before diffing against the report's `sent`.
 
 ## Isolate experiment traffic with run tags
 
@@ -100,7 +75,6 @@ The table of levers, one row per protocol, is [Run-tag levers](../reference/load
 
 - **In every case** the measurement window `[T0,T1)` plus the participant source IPs already narrow the traffic; the per-protocol lever adds a second, in-band discriminator where one exists.
 - **PEN-dependent levers degrade gracefully.** Syslog SD-PARAM and the SNMP enterprise varbind need an IANA **Private Enterprise Number**. Without one (`-scenario-pen` unset, the default), `run_tags.mechanism` is `window_source_ip` and `run_tags.degraded` is `true`, and you fall back to window + source-IP isolation, which is always available. Set `-scenario-pen <n>` once your PEN is registered to activate the clean levers; `run_tags.value` then carries the `runId` a receiver keys on.
-- `nl6-reconcile`'s `PHANTOM` status flags received traffic that is **not** in the report. This is usually background noise that leaked past your filter. Tighten the filter using the `run_tags` mechanism above.
 
 ## Reconcile the report
 
@@ -140,7 +114,7 @@ nl6-reconcile -report report.json -received collector.csv
 - **Tolerance.** `-tolerance 0.005` (default 0.5 %) is the in-flight band: `|loss_ratio|` within it is `OK`. Records still on the wire at `T1` cause a tiny delta that is not real loss. Widen it for lossy paths, tighten to `0` for an exact check.
 - **Statuses.** `OK` · `RESIDUAL` (received < sent, queue state unknown) · `LOSS` (received < sent **and** you passed `-drained`) · `DUP` (received > sent, meaning duplication) · `MISSING` (in the report, no received row: a join gap, or the 100 % case of the same shortfall ambiguity, so it is unclassified without `-drained` too) · `PHANTOM` (received but not in the report, meaning background noise leaked into your export; see the run-tagging notes to isolate it).
 - **`-drained`: classify the shortfall.** A shortfall measured while the collector's input queue is still draining is **backlog**, and backlog resolves itself. The same shortfall measured after the queue has emptied is **loss**, and loss does not. They have opposite remedies, so `nl6-reconcile` will not guess: it cannot see your collector's queue, and by default reports a shortfall as `RESIDUAL`. Pass `-drained` once the queue has emptied to assert the run is over and get `LOSS`. Reporting a single unclassified residual as loss is the defect this flag exists to prevent. See [Collector ceiling](../explanation/loadtest-collector-ceiling.md).
-- **Compatibility note.** `-drained` changed the DEFAULT output: a shortfall that previously printed `LOSS` now prints `RESIDUAL`, in text, CSV and JSON alike, and the summary reads `fleet_residual` (or `fleet_delta` when the figure is zero or negative). Exit codes are unchanged, so CI gates still fire as before, but a pipeline grepping for the literal `LOSS` or `fleet_loss=` needs either `-drained` or an updated pattern.
+- **Summary line.** Without `-drained` it reads `fleet_residual`, or `fleet_delta` when the figure is zero or negative.
 - **Exit code.** `0` when every key is `OK`, `1` when any key is flagged, so `nl6-reconcile` drops straight into a CI gate. Use `-format csv|json` for a machine-readable diff.
 
 #### Get nl6-reconcile
@@ -164,14 +138,14 @@ To reconcile **by hand** instead:
 
 1. **Join** the report's `counters[]` (or the [CSV projection](../reference/loadtest-report-schema.md#csv-projection)) against your monitor's received-counts export **on `(protocol, source_ip, collector)`**. The report is keyed by exactly that tuple so the join is 1:1.
 2. **Per row**, compute `loss_ratio`. `0` = perfect fidelity. A positive ratio localizes to that `source_ip`; a *negative* ratio (received > sent) means **duplication** in the path (retransmits, a misconfigured fan-out).
-3. **Loss model.** `sent` is the authoritative denominator. It is exact and, with a fixed `seed`, reproducible. Any shortfall is real wire/collector loss, **not** measurement noise. The simulator proves this: an injected X% drop is recovered by this arithmetic within ±1 pp (0 % exactly). See the `examples/scenario-syslog-fidelity` "injecting known loss" section.
+3. **Loss model.** `sent` is the exact denominator, so any shortfall is real wire or collector loss. The `examples/scenario-syslog-fidelity` "injecting known loss" section shows an injected drop recovered by this arithmetic.
 
 ### Diagnose numbers that don't add up
 
 - **`received` < `sent` but the network is fine** → the collector host is dropping datagrams before your monitor counts them. Check the kernel UDP drop counters: `nstat -az | grep -i Udp` or `cat /proc/net/snmp | grep Udp:`. A rising **`UdpRcvbufErrors`** / **`InErrors`** means the receive buffer overflowed under burst. Raise the collector's `SO_RCVBUF` (or `net.core.rmem_max`) and re-run; that loss is on the collector, not the wire.
 - **`received` == 0 despite `sent` > 0** → almost always the collector host's **`rp_filter`** dropping `10.42.0.0/16` source IPs (see *Fix an unreachable collector* below), not real loss.
 - Always confirm the join tuple matches: a mismatched `collector` column means you are diffing against the wrong receiver.
-- **`sent` far below `informational.requested`** → the shared global cap throttled the run: the shortfall is in `informational.deferred` (fires the cap had no token for: **not fired, not lost**). Deferral is *not* loss and is excluded from `sent` (the loss denominator), so `loss_ratio` stays honest. Raise the cap, lower the profile rate, or accept the throttle, but don't read it as pipeline loss.
+- **`sent` far below `informational.requested`** → the shared global cap throttled the run, and the shortfall is in `informational.deferred`. Deferred fires were not fired and are not loss. Raise the cap, lower the rate, or accept the throttle.
 
 ## Validating a collector against the report
 
@@ -179,11 +153,9 @@ For flow scenarios (`netflow5` / `netflow9` / `ipfix`) the report's [`applicatio
 To validate a collector's per-application view (a "Top Applications" dashboard or equivalent) against it:
 
 1. **Reconcile on totals, not time buckets.** nl6 attributes a flow's bytes at the moment its record hits the wire; collectors **interpolate** each flow's bytes across its `[flowStart, flowEnd]` interval (shipped-profile flow durations run up to 300 s). Per-bucket series will never line up. `sub_window_bytes` is a sanity curve, not a reconciliation target.
-2. **Pad the collector-side query window** to `[t0 − max profile flow duration, drain_end + slack]` so interpolated bytes that the collector attributes before `t0` are captured, and so the tail is not cut off. Generation stops at `t1`, but you are reconciling against `sent = in_window + drain`, and a `drain` record is *by definition* one whose write returned at or after `t1`. Bounding the query at exactly `t1` would drop it from the collector side while the report still counts it, inventing a loss in the number this step exists to reconcile. `metadata.drain_end` is the honest upper bound (milliseconds past `t1` on a healthy run); add a slack of a second or two for collector-side timestamping and clock skew. There is nothing beyond it: no fire initiates after `t1`. Filter by the scenario's exporter IPs (the `counters[].source_ip` set).
+2. **Pad the collector-side query window** to `[t0 − max profile flow duration, drain_end + slack]`. The lower pad captures bytes the collector interpolates before `t0`. The upper bound must reach `drain_end`, because `sent` includes `drain` records written at or after `t1`. Add a second or two of slack for collector timestamping and clock skew. Filter by the `counters[].source_ip` set.
 
-   **The exception is a report carrying `drain_stragglers`.** There, `drain_end` is the instant the barrier gave up rather than the instant the last write returned, and the uncancelled sends land *after* it.
-   `drain_end` is then not an upper bound at all, and a query bounded by it invents exactly the loss this step exists to rule out.
-   Reconcile such a run only for what it can support, or re-run it.
+   A report carrying `drain_stragglers` has no such bound, because its uncancelled sends land after `drain_end` ([drain barrier](../reference/loadtest-report-schema.md#the-drain-barrier-is-bounded)); re-run it.
 3. **Join on `(l4_proto, dst_port, application_id)`, not on names.** Collector classification is user-configurable; `app_hint` and `application_name` are convenience labels only. `application_id` is the wire `applicationId` (IE 95) as an integer and is absent on plain rows, so a mixed NBAR2 and plain fleet reports two rows for one port; sum them if your collector does not separate AVC records from plain ones. Generated source ports sit in the IANA dynamic range (≥ 49152), so a collector rule matching registered ports on either side of the flow cannot reclassify nl6 traffic away from its destination-port application.
 4. In **fidelity mode** the fleet is silent outside the window, so the block is the *complete* record of what the trusted sender emitted. Any collector-side surplus is foreign traffic, any deficit is loss or misclassification.
 
@@ -193,10 +165,9 @@ To validate a collector's per-application view (a "Top Applications" dashboard o
 
 ## Sync clocks for time localization (chrony/NTP)
 
-Reconciliation totals (`sent` vs `received`) need **no** clock agreement.
-A counter is a counter.
-But **time localization** ([`sub_windows`](../reference/loadtest-report-schema.md#loss-localization)) does: nl6 buckets each send by its write-return time relative to `T0`, and to line your received data up against those buckets you must bucket **your** records by receive-time relative to the **same** `T0`.
-If nl6's host and the collector's host disagree on the wall clock, the two bucketings shear and a loss that is really in `[T0+30s, T0+45s]` appears smeared across neighbours.
+Reconciliation totals need no clock agreement.
+[Time localization](../reference/loadtest-report-schema.md#loss-localization) does, because you bucket your received records against nl6's `T0`.
+If the two hosts disagree on the wall clock, a loss in one bucket appears smeared across its neighbours.
 
 - Run **chrony** (or ntpd) on both the simulator host and every collector host, disciplined to the **same** upstream sources. Confirm with `chronyc tracking`, and keep the estimated offset well under one `sub_window_duration` (a 30 s window → 3 s buckets → sub-second sync is ample; tighten for shorter windows).
 - The report's `metadata.t0`/`t1` are the simulator's clock. Bucket your received records against **that** `t0`, not your own start time.
@@ -205,12 +176,9 @@ If nl6's host and the collector's host disagree on the wall clock, the two bucke
 ## Troubleshoot arm failures
 
 `arm` never fails wholesale for a bad participant.
-It accounts for every one of them in the readiness response and reports up to 900 individually in the `excluded[]` list as `{device, reason, remediation_hint}` (100 of the 1,000-row budget is reserved for exclusions found at `start`).
+It lists each one in `excluded[]` as `{device, reason, remediation_hint}`.
 Check that list before `start`.
-
-Above 900 arm-time exclusions the list is a **sample**: `excluded_truncated` is set, `excluded_total` holds the true count, and `excluded_by_reason` gives the full `reason → count` breakdown.
-Read the counts from those, never from `len(excluded)`.
-Fix what the sample shows, re-arm, and the next batch surfaces.
+On a large run the list is a sample; read the counts as described under [arm](../reference/loadtest-api.md#post-apiv1scenariosidarm-arm).
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -222,9 +190,7 @@ Fix what the sample shows, re-arm, and the next batch surfaces.
 | `POST /scenarios` → `400 … is covered by …; a nested prefix adds nothing` | One prefix contains another (or repeats it). | Remove the narrower prefix. The wider one already selects every address in it. (An explicit `participants` entry inside a prefix is fine: that is the loud-miss assertion form.) |
 | `arm` → `409 selectors resolve to N live devices, exceeding the 100000 participant cap` | The prefix selector matched more of the fleet than a scenario may hold. | Narrow the selector or shrink the fleet, then re-arm; a refused re-arm leaves the previous arm intact. |
 | Armed count is lower than the prefix "should" match | Addresses inside a prefix with no live device are silently skipped. A typo'd prefix can half-match without any error. | Declare `expect_participants` so the shortfall is refused instead of measured. Without it, compare `participants_armed` against your expected fleet size by hand. |
-| `start` → `409 expected N participants, M armed: … nothing was excluded` | The selectors matched fewer live devices than declared, and nothing was rejected, so the shortfall is entirely silent. | Almost always a prefix one bit too narrow (`/19` for `/18`), or a fleet smaller than you think. Check the prefix, then `GET /api/v1/devices` for the real count. |
-| `start` → `409 expected N participants, M armed: … see excluded_by_reason` | Devices were found but rejected, so the shortfall has enumerable causes. | Fix what `excluded_by_reason` reports (usually a missing exporter), re-arm, and the count recovers. |
-| `start` → `409 expected N participants, M armed: M−N more than declared` | The fleet holds devices your selectors match but your expectation omits. | Either the fleet grew or the expectation is stale. Update `expect_participants`. An over-sized run is refused because it is no longer comparable to the baseline it would be measured against. |
+| `start` → `409 expected N participants, M armed` | The armed count differs from `expect_participants`. | Read the readiness `expectation_mismatch`; the [arm reference](../reference/loadtest-api.md#post-apiv1scenariosidarm-arm) explains each direction. Fix the selectors, the fleet or the expectation, then re-arm. |
 | `POST /scenarios` → `409 too many active scenarios` | 8 scenarios are already non-terminal. | Stop / abort / `DELETE` one first (`GET /api/v1/scenarios` lists them with their phases). |
 | `arm` → `409 … participant(s) are claimed by scenario …` | Those devices belong to another non-terminal scenario. A device participates in at most one scenario at a time. | Stop or delete the named scenario, or narrow this one's participants. Note an **armed** scenario already holds its fleet, even when it is not running, so cancelling it releases the devices. |
 | `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](../reference/loadtest-api.md#phase--verb-matrix). |
@@ -270,59 +236,33 @@ The two dimensions have separate ceilings and the interesting one is usually car
 
 - **`rate_profile` is not supported for flow protocols** and is refused at submit. Resizing the cache moves the rate with a lag of about one mean flow lifetime (~29s at the shipped defaults, measured at 1.03x), so a ramp shorter than that would be smeared into a shape that is neither the profile requested nor a constant. Use a constant rate for flow, or drive the shape with `syslog`.
 
-- **`rate` does not set the flow tick cadence.** It did before: the scenario ticker ran at `1s/rate`, which set *batching* rather than volume, so the requested rate was never what the wire carried. The cadence now follows `-flow-tick-interval` (clamped so a short window is still divided into enough batches to report a rate), and `rate` sets the cache population, which is what determines volume.
+- **`rate` does not set the flow tick cadence.** The cadence follows `-flow-tick-interval`, clamped so a short window still gets enough batches to report a rate. Ticking faster makes bigger datagrams, not more records. `rate` sets the cache population, which determines volume.
 
 So high-cardinality runs are best driven at **low per-device rates**: 30,000 participants at `rate: 0.5` is a comfortable 15k events/s, while the same fleet at `rate: 10` asks for 300k/s and will likely be scheduler-bound rather than collector-bound.
 That run measures nl6 instead of the system under test.
 
 If a `syslog` or `snmp-trap` run's `sent` total comes in low, check these in order before suspecting the collector:
 
-1. **The arm-time exclusions.** Participants are not existence-checked at submit, so the expected total is `participants_armed × rate × window`, not `participants × rate × window`. Use `participants_armed` (or `excluded_total`), **not** `len(excluded)`, which is capped (900 arm-time rows, 1,000 in the report) and understates the exclusions on a large run. Long participant lists make this the most common cause by far.
+1. **The arm-time exclusions.** Participants are not existence-checked at submit, so the expected total is `participants_armed × rate × window`, not `participants × rate × window`. Use `participants_armed` (or `excluded_total`), **not** `len(excluded)`, which is capped. Long participant lists make this the most common cause by far.
 2. **The scheduler ceiling above**, if the remaining participants × rate is in the hundreds of thousands per second.
 
-This arithmetic applies to **`syslog` and `snmp-trap` only**, the protocols where one scheduled fire is one event.
-Do not apply it exactly to flow protocols.
-There `rate` sizes the device's flow cache, and the ledger counts flow **records**.
-The tick cadence follows `-flow-tick-interval`, and a tick emits the records that expired since the last one.
-The achieved rate lands near the request, not on it, because the cache holds an integer number of flows and the rate follows with a lag of about one mean flow lifetime.
-Read `metadata.rate.achieved_per_device` for what the run did, and reconcile the report's `sent` against the collector directly rather than against a predicted total.
+This arithmetic applies to `syslog` and `snmp-trap` only, where one scheduled fire is one event.
+A flow run lands near its requested rate, not on it, so read `metadata.rate.achieved_per_device` and reconcile `sent` against the collector directly.
 
 ## Read the report from a graceful abort
 
-A SIGTERM/SIGINT during a *running* scenario does **not** silently discard the run.
-The shutdown path aborts the scenario through the same drain-and-finalize pipeline a normal stop uses, so:
+A SIGTERM or SIGINT during a *running* scenario does not discard the run.
+Shutdown aborts it through the same finalize pipeline a stop uses.
 
-**How long that takes.** The abort publishes the terminal gate, so no new fire initiates.
-It then waits for the fires already admitted to return from their writes.
-There is **no configurable grace**.
-On a healthy run the wait is milliseconds.
-The worst case an operator can observe is set by the slowest transport in the run: a UDP write parks only while the socket buffer is full, while a syslog **TCP/TLS** device bounds one write at 2 s and serialises the fires queued behind it, so a stalled collector can hold shutdown for 2 s × those queued fires.
+- The report has `phase: "aborted"` and is served exactly like a `stopped` one, with the same schema and ledger identity.
+- `metadata.t1` and `duration` reflect the abort instant, always earlier than the planned `T1`.
+- The fleet freeze is released.
 
-**The drain barrier itself is bounded**, at 60 s: past that it gives up, reports how many sends were still outstanding in `drain_stragglers`, and lets finalize proceed.
-At the shipped constants it logs exactly one warning, at the 30 s mark, and then the give-up line at 60 s.
-The reported count is an upper bound on outstanding **admissions**, not on records: the syslog and trap paths admit one write, while the flow paths admit a whole paginated batch, so one flow straggler can stand for hundreds of records.
+Finalize waits for admitted sends with no configurable grace, bounded by one 60 s budget; see [the drain barrier](../reference/loadtest-report-schema.md#the-drain-barrier-is-bounded).
+That exceeds `docker stop`'s default 10 s grace, so raise `stop_grace_period` if the report matters.
 
-**Finalize as a whole is bounded by one budget**.
-Before it, only the barrier was: finalize joins the scenario's scheduler and its trap and flow tickers *before* it reaches the barrier, every one of those was an unbounded channel receive, and the syslog and trap schedulers fire inline, so a stalled **scheduler-driven** write parked finalize with the barrier ceiling never armed.
-That was the common case, which meant the ceiling reached only sends admitted outside the scheduler.
-
-All four waits now share a single 60 s budget, so the number an operator is told is the number finalize can actually take, rather than one ceiling per wait summing to four times it.
-Whatever did not finish is named in `metadata.incomplete_joins`.
-
-**Nothing is cancelled.** A goroutine parked in a write cannot be interrupted, so an abandoned join keeps running and can still move counters after the report is taken, exactly as a drain straggler can.
-A report carrying either `incomplete_joins` or `drain_stragglers` should be read as a lower bound.
-
-Note also that 60 s exceeds `docker stop`'s default 10 s grace, so on a containerised deployment the process may be killed before the ceiling fires and no report is written.
-Raise `stop_grace_period` if a truncated report is worth more to you than a fast stop.
-
-- The report is **finalized and marked `phase: "aborted"`**, with `metadata.t0` and a `metadata.t1` equal to the **abort instant** (the window that actually ran, always earlier than the planned `T1`). `duration` reflects the truncated window.
-- It is **immutable** and served by `GET /api/v1/scenarios/{id}/report` **exactly like a `stopped` report**, with the same schema, ledger identity and `counters[]`. Only the `phase` differs.
-- The fleet freeze is released as part of the abort, so device CRUD works again.
-
-The catch is timing: the report lives in memory (see the non-goal below), so a graceful abort finalizes it but the process still exits.
-**If you need the abort report, fetch it before the process is fully gone**, or drive the abort by other means and read the report while nl6 is still up.
-
-**SIGKILL** (or a crash / OOM) makes **no promise** beyond the in-memory-loss non-goal below: there is no abort pipeline, so no report is produced.
+The report lives in memory, so [fetch it](#fetch-the-report-before-restarting) before the process exits.
+SIGKILL, a crash or an OOM produce no report.
 
 ## Fetch the report before restarting
 

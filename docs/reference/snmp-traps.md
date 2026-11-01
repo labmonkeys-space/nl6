@@ -104,16 +104,7 @@ Only what wraps it changes:
 `-trap-community` is ignored under v3: there is no community string anywhere in an SNMPv3 message.
 nl6 says so at startup if you set it explicitly.
 
-:::danger[The USM passwords are on the command line]
-
-`-trap-snmpv3-password` and `-trap-snmpv3-priv-password` are the **first secrets nl6 accepts as CLI flags**.
-The polling side deliberately has none.
-A command line is not private: it is visible to every user on the host through `ps`, readable at `/proc/<pid>/cmdline`, recorded in your shell history, and echoed verbatim by `docker inspect` and `kubectl describe pod`.
-
-Treat these as test credentials for a lab collector.
-Do not reuse a password that protects anything else.
-There is no environment-variable or file form, so there is no way to pass these privately.
-:::
+The USM passwords are command-line flags that every local user can read; see the warning in [Receive SNMPv3 notifications](../ops/snmp-traps.md#receive-snmpv3-notifications).
 
 ### Every device is its own SNMP engine
 
@@ -142,32 +133,8 @@ There is no discovery on the trap path and nothing to echo.
 
 ### Configuring a receiver
 
-`snmptrapd` needs the engine ID up front, because a trap carries no discovery exchange for it to learn one from:
-
-```
-disableAuthorization yes
-createUser -e 0x80007ed90302420a2a0009 trapuser SHA "authpass" AES "privpass"
-authUser log trapuser priv
-```
-
-`0x80007ed9 03 0242<ip-in-hex>` is the device's derived engine ID: for `10.42.0.9` that is `0a2a0009`.
-You do not have to compute it.
-`GET /api/v1/traps/status` reports `snmpv3.engine_ids_by_device` for every exporting device, along with the user name, security level and protocols.
-
-**`createUser` is consumed on first read.**
-net-snmp **rewrites its own config**: on startup `snmptrapd` moves each `createUser` line into its persistent store (`/var/lib/snmp/snmptrapd.conf` by default) and deletes it from yours.
-A second run with a corrected password therefore keeps the **stale** user and silently drops every trap.
-
-Point the daemon at a scratch directory while you are iterating, and clear it between attempts:
-
-```bash
-export SNMP_PERSISTENT_DIR=/tmp/nl6-trapd
-rm -rf "$SNMP_PERSISTENT_DIR" && mkdir -p "$SNMP_PERSISTENT_DIR"
-snmptrapd -f -Lo -On -C -c ./snmptrapd.conf udp:127.0.0.1:1162
-```
-
-`-C -c` makes it read only your file, so a host `/etc/snmp/snmptrapd.conf` cannot change the result, and `-On` prints numeric OIDs so no MIBs are needed.
-nl6's own interop test does exactly this.
+Receiver setup, with the `snmptrapd` configuration and the `createUser` pitfall, is in [Receive SNMPv3 notifications](../ops/snmp-traps.md#receive-snmpv3-notifications).
+`GET /api/v1/traps/status` reports each device's engine ID under `snmpv3.engine_ids_by_device`.
 
 ### Restart resets every engine, and traps have no discovery
 
@@ -179,7 +146,7 @@ So after nl6 restarts, a collector that cached `(boots=1, time=T)` sees notifica
 The trap path is worse than the poll path here precisely because it cannot re-synchronise itself.
 
 Two consequences worth planning around: restarting nl6 mid-run can silently stop notification delivery to a long-lived collector, and `snmpEngineBoots` never increments, so a collector cannot distinguish a restart from a clock anomaly.
-Clear the receiver's persistent USM state (see [Configuring a receiver](#configuring-a-receiver)) after restarting nl6, or wait the window out.
+Clear the receiver's persistent USM state (see [Receive SNMPv3 notifications](../ops/snmp-traps.md#receive-snmpv3-notifications)) after restarting nl6, or wait the window out.
 
 ### No SNMPv3 INFORM
 
@@ -380,101 +347,8 @@ Their realistic content depends on Class 2 random fields, which are not supporte
 
 ## Starting trap export
 
-Trap export is opt-in per device.
-There are two ways to configure it:
-
-### 1. CLI seed (auto-start batch)
-
-The `-trap-*` flags seed auto-created devices.
-Every device in the auto-start batch gets the same collector, mode, community, and interval.
-
-```bash
-# SNMPv2c TRAP → 192.168.1.10:162, 100 auto-created devices, default
-# interval=30s / community=public
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 100 \
-  -trap-collector 192.168.1.10:162
-
-# INFORM mode (acknowledged). Requires -trap-source-per-device=true
-# (the default). The check is enforced at device-attach time: if it's
-# disabled, attach fails per-device and trapConfig is cleared.
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 50 \
-  -trap-collector 192.168.1.10:162 \
-  -trap-mode inform \
-  -trap-inform-timeout 3s -trap-inform-retries 5
-
-# SNMPv3 authPriv notifications. The engine ID is derived per device and is
-# not configurable; -trap-community is ignored. INFORM is not available here.
-sudo ./nl6 \
-  -auto-start-ip 10.0.0.1 -auto-count 100 \
-  -trap-collector 192.168.1.10:162 \
-  -trap-snmp-version v3 \
-  -trap-snmpv3-user trapuser \
-  -trap-snmpv3-auth sha1 -trap-snmpv3-password authpass \
-  -trap-snmpv3-priv aes128 -trap-snmpv3-priv-password privpass
-```
-
-### 2. REST body (per-device)
-
-`POST /api/v1/devices` accepts an optional `traps` block per request.
-Different batches can target different collectors or mix TRAP and INFORM.
-
-```bash
-# A: 50 TRAP-mode devices → collector A, community public
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.0.1",
-    "device_count": 50,
-    "traps": {
-      "collector": "192.168.1.10:162",
-      "mode": "trap",
-      "community": "public"
-    }
-  }'
-
-# B: 20 INFORM-mode devices → collector B, tight retry budget
-curl -X POST http://localhost:8080/api/v1/devices \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "start_ip": "10.0.1.1",
-    "device_count": 20,
-    "traps": {
-      "collector": "192.168.1.20:162",
-      "mode": "inform",
-      "community": "private",
-      "inform_timeout": "2s",
-      "inform_retries": 3
-    }
-  }'
-```
-
-A per-device `interval` in the `traps` block is **rejected with 400**.
-Every device fires at the simulator-wide `-trap-interval` cadence, which the device read-back reports under `effective_intervals`.
-To silence a fleet use `-fidelity`, or `POST /api/v1/fidelity` to toggle it at runtime, not a long interval.
-
-`/api/v1/traps/status` reports both batches as separate records keyed by `(collector, mode)`.
-
-The `traps` block is **optional** on every request.
-Omit it and the device doesn't fire traps.
-
-| Name | Type | Default | Description |
-|------|------|---------|-------------|
-| `collector` | string | required | Collector `host:port`. |
-| `mode` | string | `trap` | `trap` (fire-and-forget) or `inform` (acknowledged). `inform` requires `-trap-source-per-device=true`. |
-| `community` | string | `public` | SNMPv2c community. |
-| `inform_timeout` | duration | `5s` | Per-retry timeout in INFORM mode. |
-| `inform_retries` | int | `2` | Maximum retransmissions per INFORM. `0` or omitted uses the default. A negative value is rejected with 400. |
-| `interval` | n/a | n/a | Rejected with 400. Use `-trap-interval`. |
-
-The wire version and the SNMPv3 settings are fleet-wide.
-Set them with `-trap-snmp-version` and the `-trap-snmpv3-*` flags.
-See [Web API → POST /api/v1/devices](web-api.md#create-devices) for the full per-device schema.
-
-**Duration fields** (`inform_timeout`) require **Go duration strings** (`"2s"`, `"5s"`, `"1m30s"`).
-Integer seconds (`"inform_timeout": 5`) are rejected with 400.
-The `-trap-interval` and `-trap-inform-timeout` CLI flags take the same Go duration syntax.
+Starting export, INFORM mode and per-device source IPs are covered in the [trap export how-to](../ops/snmp-traps.md#enable-trap-export).
+The per-device `traps` block of `POST /api/v1/devices` is in [Web API → Per-device export blocks](web-api.md#per-device-export-blocks).
 
 ## HTTP endpoints
 
@@ -492,9 +366,10 @@ Body:
 }
 ```
 
-`name` is required and must match a catalog entry.
+`name` is required and must match an entry in the **device's resolved catalog** (the per-type overlay if present, the universal catalog otherwise).
 `varbindOverrides` is optional.
 Supplied keys pin the corresponding template field for this fire only.
+Only the twelve fields of the [template vocabulary](#template-vocabulary) are accepted.
 
 Responses:
 
@@ -584,6 +459,12 @@ A `devices=0` record therefore means "no live devices for this tuple, but histor
 `catalogs_by_type` is present whenever `subsystem_active=true`.
 Keys are device-type slugs with the reserved `_universal` entry for the fallback catalog.
 Values include the merged entry count and the catalog's provenance: `"embedded"` (compiled-in universal), `"file:<path>"` (per-type overlay on disk), or `"override:<path>"` when `-trap-catalog` was supplied (in which case `catalogs_by_type` contains a single `_universal` entry).
+
+When the subsystem is stopped or never started:
+
+```json
+{"subsystem_active": false, "collectors": [], "devices_exporting": 0}
+```
 
 `rate_limiter_tokens_available` is present only when `-trap-global-cap` is set; it's a best-effort instantaneous snapshot, not synchronised with concurrent rate-limiter waits.
 

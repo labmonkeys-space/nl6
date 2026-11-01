@@ -49,23 +49,72 @@ Out of scope:
 
 - **`InterfaceState` (`interface_state.go`).** Per-device state engine. Slot table: one `atomic.Uint64` per ifIndex, packed as `[lastChangeNs:58, admin:3, link:3]`. `ifOperStatus` is derived from `(admin, link)` on read, not stored, so the word is unchanged in width. A single atomic word guarantees a reader never sees a torn `(link, admin, lastChange)` tuple, and the derived `oper-status` comes from the same load. Reads are lock-free; writes are CAS-loop. `lastChangeNs` is wall-relative to the engine's construction time; mid-stream clock rewinds surface as a `LastChangeRewindSentinel` value in the public API and log a warning.
 - **IF-MIB integration (`if_counters.go`).** The `IfCounterCycler` owns the `InterfaceState` and dispatches the three state OIDs through it. `GetDynamicAt` for `.7` (admin) / `.8` (oper) / `.9` (last-change) reads atomically from the slot table; the SNMP wire encoding (decimal enum for `.7`/`.8`, TimeTicks for `.9`) is computed without locking.
-- **Initial state (`if_counters.go`, `if_state.go`).** Each slot is seeded once at engine construction from the device's `ifAdminStatus.<N>` / `ifOperStatus.<N>` resource rows, where the latter seeds the **link**. The seed is overlaid by the process-wide [`-if-scenario`](cli-flags.md#interface-state-scenarios). The seed stores `lastChangeNs = 0` and broadcasts nothing, so a scenario costs no link trap, no syslog and no ON_CHANGE update at fleet start. The scenario is applied here and nowhere else: there is no read-time override on the SNMP path, so every later mutation is what readers see.
+- **Initial state (`if_counters.go`, `if_state.go`).** Each slot is seeded once at engine construction from the device's `ifAdminStatus.<N>` / `ifOperStatus.<N>` resource rows, where the latter seeds the **link**. The seed is overlaid by the process-wide [`-if-scenario`](#interface-state-scenarios). The seed stores `lastChangeNs = 0` and broadcasts nothing, so a scenario costs no link trap, no syslog and no ON_CHANGE update at fleet start. The scenario is applied here and nowhere else: there is no read-time override on the SNMP path, so every later mutation is what readers see.
 - **Flap scheduler (`flap_scheduler.go`).** Single shared min-heap goroutine driving Poisson-distributed flaps per `(device, ifIndex)`. Mirrors `trap_scheduler.go` exactly. Mutates the **link state** directly; each `SetLinkState` call broadcasts a `StateChange` event only when the derived `ifOperStatus` moves.
 - **REST control plane (`interface_state_api.go`).** `setOperStatusHandler` / `setAdminStatusHandler` for explicit test-harness transitions. Supports optional `duration` for time-bounded transitions with snapshot-based auto-revert.
 - **ON_CHANGE fan-out.** Each Subscribe stream registers a depth-16 listener channel on `InterfaceState`; mutators call `Broadcast` after every state transition. See [gNMI reference](gnmi.md#subscribe-semantics) for the subscribe path.
 
 ## CLI flags
 
-The ranges and defaults of `-if-scenario` and `-if-failure-pct` are in [Interface-state scenarios](cli-flags.md#interface-state-scenarios).
+The flag tables for `-if-scenario`, `-if-failure-pct`, `-if-flap-scenario` and `-if-flap-global-cap` are in [CLI flags → Interface-state scenarios](cli-flags.md#interface-state-scenarios).
+The flap scheduler is **always started**, so REST-created devices with a non-`clean` `if_flap_scenario` register and flap regardless of the CLI default.
 
-| Flag | Type | Default | Scope | Purpose |
-|------|------|---------|-------|---------|
-| `-if-flap-scenario` | `clean` \| `rare` \| `typical` \| `aggressive` | `clean` | **seed** | Per-device flap scenario for the auto-start batch. REST-created devices default to `clean`; opt in via `if_flap_scenario` POST body. |
-| `-if-flap-global-cap` | int (events/sec) | `0` | **global** | Simulator-wide rate ceiling on flap events. `0` is unlimited. |
+## Interface-state scenarios
 
-The scheduler is **always started** so REST-created devices with a non-`clean` scenario will register and flap regardless of the CLI default.
+`-if-scenario` seeds the **initial** `ifAdminStatus` and link state of every simulated interface, so you can reproduce common network conditions without editing resource files.
+`ifOperStatus` is never seeded; it is derived from admin and link.
+The seed is applied once per device, when the engine is built, to every device the process creates: the auto-start batch and REST-created devices alike.
+There is no read-time override, so a `SET`, a REST POST or a flap is read back by the next `GET`, walk, gNMI read or REST view under every scenario.
 
-## Scenarios
+| Scenario | Name | `ifAdminStatus` | Link | `ifOperStatus` | Use case |
+|----------|------|-----------------|------|----------------|----------|
+| 1 | all-shutdown | down (2) | as shipped | down (2), derived | Planned maintenance, device decommission |
+| 2 | all-normal *(default)* | as shipped | as shipped | as shipped | Normal steady-state operations |
+| 3 | all-failure | up (1) | down | down (2) | Link failures, SFP issues, cable pull |
+| 4 | pct-failure | up (1) | down where `ifIndex % 100 < n`, else up | down for n% | Partial outage, staged rollout testing |
+
+`n` is `-if-failure-pct`, default `10`.
+Scenario 4's rule is deterministic, so results are reproducible across restarts.
+
+Scenario 2 does not force anything up.
+It serves both values exactly as the device's resource files declare them, and most shipped profiles declare up.
+Four do not.
+`cisco_nexus_9500` ships ifIndex 33 to 64 administratively down.
+`juniper_mx960`, `asr9k` and `palo_alto_pa3220` ship some interfaces oper-down.
+Those interfaces boot down under the default scenario.
+Use scenario 3 if you want every interface down regardless of profile.
+
+The seed is initial state, not a transition.
+It fires no link trap, no syslog and no gNMI `ON_CHANGE` update, and `ifLastChange` reads `0` until something changes.
+
+`lldpRemTable` only emits a row when both ends of a link are oper-up.
+Scenarios 1 and 3 therefore empty every device's neighbour table, and scenario 4 drops the rows whose local or remote port it put down.
+`ifAlias` reflects configured intent and stays.
+
+Scenario 1 shuts the port and **preserves the link underneath it**.
+Admin-down forces `ifOperStatus` to `down(2)` while the link keeps whatever the profile declared.
+A `SET` of `ifAdminStatus` to `up(1)` or a REST `admin-status` POST brings an interface back to the value its link had reached, which for most profiles is up.
+
+Scenario 3 seeds the **link** down, so it survives an admin bounce.
+Shutting and unshutting a port under scenario 3 leaves `ifOperStatus = 2`: the scenario models a cable pull, and an administrative bounce does not repair a cable.
+RFC 2863 describes this: admin-up releases `ifOperStatus` to the physical layer rather than forcing it up.
+
+Paired with a link-flap scenario:
+
+- Under scenario 1 every flap is masked (see [Link-flap scenarios](#link-flap-scenarios)). Unshutting a port shows whatever its link had reached.
+- Under scenarios 3 and 4 the first up-flap brings a failed interface back, because the port is administratively up and a flap is a real link event. For a fleet that stays down, leave `-if-flap-scenario` at `clean` or use scenario 1.
+
+The scenario reaches the interfaces the counter engine knows: those with an `ifXTable` `.6` (`ifHCInOctets`) row in the device's resource files.
+An `ifAdminStatus` or `ifOperStatus` row for any other ifIndex is served from the resource file unchanged.
+
+To spot-check a scenario, walk the two columns:
+
+```bash
+snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.7   # ifAdminStatus
+snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.8   # ifOperStatus
+```
+
+## Link-flap scenarios
 
 | Scenario | Mean inter-flap (per interface) | Down duration | Use case |
 |----------|---------------------------------|---------------|----------|
@@ -84,7 +133,8 @@ When a flap fires:
 
 A flap on an interface whose `ifAdminStatus` is `DOWN` or `TESTING` is **masked**: the link moves, nothing observable changes, `ifLastChange` does not advance, and no trap, syslog or ON_CHANGE update fires.
 The link is still there when the port is unshut.
-This is what the hardware does, and it is why `-if-scenario 1 -if-flap-scenario aggressive` no longer produces a fleet reporting `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`.
+This is what the hardware does, so `-if-scenario 1 -if-flap-scenario aggressive` never reports `ifAdminStatus = down(2)` with `ifOperStatus = up(1)`.
+The REST `oper-status` endpoint sets the link too, so the same masking applies and its `202` body reports `"masked": true`.
 
 The down-up pair is atomic per `(device, ifIndex)`.
 A new flap is not scheduled while the interface is already down.

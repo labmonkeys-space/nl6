@@ -17,15 +17,10 @@ See the [scenarios guide](../ops/loadtest-scenarios.md) for how to use these end
 - **Success** returns the resource directly. **Errors** return `{"error": "<message>"}`, plus `"field": "<json.key>"` for `400` validation failures (fail-fast, so only the first offending field). `409` bodies name the current phase, the scenario ID, and the verb that could not resolve.
 - Timestamps are **RFC 3339 with millisecond precision** (`2006-01-02T15:04:05.000Z07:00`).
 - Request bodies are decoded with `DisallowUnknownFields` (a typo'd or unknown key is a `400`). `POST /api/v1/scenarios` caps its body at **1,865,536 bytes** (≈1.78 MiB); `POST /api/v1/scenarios/{id}/start` reads at most 1 KiB.
-- The submit cap is derived, not chosen: it holds a ceiling-sized participant list (100,000 entries × 18 bytes, the worst-case cost of `"255.255.255.255",`) plus a **shared** 64 KiB allowance for all other fields.
-
-  Two caveats, because the byte cap and the participant ceiling are independent limits and neither implies the other:
-
-    - **The 18-byte figure assumes compact JSON.** Pretty-printed bodies cost more per entry (27 bytes for a `jq`-default body, where a participant sits two levels deep at 8 spaces of indent), so a ceiling-sized list can exceed the byte cap purely through whitespace. Send participant lists compact. No per-entry constant can prevent this in general, because JSON allows unbounded insignificant whitespace.
-    - **The 64 KiB allowance is shared.** A ceiling-sized list plus a large `rate_profile` or `abort_predicate` can exceed the cap.
-
-  An over-cap body returns a `400` naming the cap and the participant ceiling.
-  It carries **no** `"field"` key: the limit trips during transport decoding, which cannot attribute the excess to a particular field.
+- The submit cap holds a ceiling-sized participant list (100,000 entries × 18 bytes for `"255.255.255.255",`) plus a **shared** 64 KiB allowance for all other fields.
+  Send participant lists as compact JSON, because pretty-printing adds bytes per entry and can exceed the cap on its own.
+  A large `rate_profile` or `abort_predicate` on a ceiling-sized list can exceed it too.
+  An over-cap body returns a `400` naming the cap, with no `"field"` key, because the limit trips during transport decoding.
 
 ## Endpoints
 
@@ -65,10 +60,10 @@ Request body:
 
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
-| `participants` | `[]string` | yes¹ | Device management IPs, as a **set**. At most **100,000** entries, **no repeats** (a duplicate is a `400`, because a device named twice is still one source on the report's join tuple, so the second entry has no meaning). Each must be an **IPv4 dotted quad**: IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are rejected at submit, because the fleet is IPv4 throughout and such an entry could only ever become a `device not found` exclusion. Existence is **not** checked here. That is an arm-time concern (see readiness `excluded`). |
-| `participants_cidr` | `[]string` | yes¹ | Compact prefix selector: IPv4 CIDR prefixes in **canonical (masked) form**, at most **1,024** entries. The participant set is the **union** of `participants` and every live device whose IP falls inside any prefix, resolved at arm time. `400` at submit for: a non-canonical prefix (`10.42.1.5/16`, and the error names the canonical form), an IPv6 or IPv4-mapped prefix, a duplicate prefix, or a prefix nested inside another (it adds nothing to the union). An **explicit `participants` entry covered by a prefix is allowed**. It upgrades that address from the prefix's silent miss to the list's loud `excluded` row, a per-device existence assertion. `["0.0.0.0/0"]` spells whole-fleet. |
+| `participants` | `[]string` | yes¹ | Device management IPs, as a **set**. At most **100,000** entries, **no repeats** (a duplicate is a `400`). Each must be an **IPv4 dotted quad**; IPv6 and IPv4-mapped IPv6 (`::ffff:10.42.0.1`) are a `400`. Existence is checked at arm, not here. |
+| `participants_cidr` | `[]string` | yes¹ | Compact prefix selector: IPv4 CIDR prefixes in **canonical (masked) form**, at most **1,024** entries. The participant set is the **union** of `participants` and every live device whose IP falls inside any prefix, resolved at arm time. `400` at submit for: a non-canonical prefix (`10.42.1.5/16`, and the error names the canonical form), an IPv6 or IPv4-mapped prefix, a duplicate prefix, or a prefix nested inside another (it adds nothing to the union). An explicit `participants` entry covered by a prefix is allowed and makes that address's absence loud. `["0.0.0.0/0"]` spells whole-fleet. |
 | `protocol` | `string` | yes | Participating push protocol: `"syslog"`, `"netflow9"`, `"ipfix"`, `"gnmi-dialout"`, `"snmp-trap"`, `"sflow"`, or `"netflow5"`. |
-| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).<br/><br/>For **flow protocols** it sets the RECORD rate, by sizing each participant's flow cache to `rate x residency` for the window, where residency is the mean flow lifetime plus half the tick interval (the sweep delay). It no longer sets the flow-tick cadence: ticking faster produces bigger datagrams, not more records, so the old `1/rate` ticker never delivered the requested rate.<br/><br/>Flow protocols have a per-device ceiling of roughly **8.1 to 9.2 records/s** at the default 5s tick (`MaxFlows / residency`, lowest on the GPU-server profile). Residency includes half the tick interval, so a longer `-flow-tick-interval` lowers the ceiling proportionally. A rate above a participant's ceiling excludes that participant at arm, with the ceiling in the reason. Fleet throughput scales with participant count; per-device rate does not.<br/><br/>For `gnmi-dialout`, `rate` does **not** control emission, because the stream runs at its dial-out SAMPLE interval. No `nl6_scenario_target_rate` gauge is published for such a run.<br/><br/>Always required and fingerprinted. |
+| `rate` | `number` | yes | Per-device events/second. Finite, `> 0`, `≤ 1000` (the scheduler's 1 ms floor). Drives the emission cadence for `syslog` and `snmp-trap` (one event per scheduler pop).<br/><br/>For **flow protocols** it sets the record rate by sizing each participant's flow cache, and it has a per-device ceiling; see [Choose participant cardinality and rate](../ops/loadtest-scenarios.md#choose-participant-cardinality-and-rate).<br/><br/>For `gnmi-dialout`, `rate` does **not** control emission, because the stream runs at its dial-out SAMPLE interval. No `nl6_scenario_target_rate` gauge is published for such a run.<br/><br/>Always required and fingerprinted. |
 | `window` | `string` | yes | Measurement window length as a Go duration (`"2s"`, `"5m"`). `> 0`, `≤ 24h`. `T1 = T0 + window`; the window is half-open `[T0, T1)`. |
 | `seed` | `number` | no | Pins every random draw the scenario makes (determinism / reproducibility). |
 | `rate_profile` | `object` | no | Time-varying intensity λ(t) (see below). Omitted or `{"kind":"constant"}` keeps the flat `rate`. |
@@ -84,7 +79,7 @@ The submit config carries no version of its own, so it moves with `nl6_version` 
 
 | Field | Why |
 |-------|-----|
-| `drain` | It configured nothing. The post-window phase is a **barrier, not a duration**: at `T1` no new fire initiates, and finalize waits for the work already admitted to return from its write. On a healthy run that takes milliseconds. The refusal keys on the key's *presence*, so `""`, `null`, `0s` and a non-string value are all `400` with the same message; the fix is to delete the key. The `drain` ledger bucket and the `drain_end` timestamp are **unaffected**. Both are observed, not configured. |
+| `drain` | It configured nothing: the post-window phase is a [barrier, not a duration](./loadtest-report-schema.md#the-drain-barrier-is-bounded). The refusal keys on the key's *presence*, so `""`, `null`, `0s` and a non-string value are all `400`; delete the key. A body that never carried it keeps its `config_sha256`, so baselines stay comparable. The `drain` ledger bucket and the `drain_end` timestamp are unaffected. |
 
 
 #### Abort predicate (`abort_predicate`)
@@ -145,26 +140,14 @@ Response `202`:
 
 ### `POST /api/v1/scenarios/{id}/arm` (arm)
 
-Resolves participants against the live fleet, installs the per-device participation handles, and publishes the armed gate (which suppresses the fleet's ordinary background cadence for participants).
+Resolves participants against the live fleet, installs the per-device participation handles, and publishes the armed gate, which suppresses background telemetry for participants.
 Unknown or ineligible devices are reported in `excluded` rather than failing the arm.
 
-**Re-arming is supported and re-resolves membership from scratch**.
-That is what the `device not found` remediation hint asks you to do once the fleet is stable.
-Each arm returns the *current* answer, not an accumulation of previous attempts:
-
-- the `excluded` set is rebuilt, so it never grows across repeated arms;
-- a participant that resolved before and does not now is dropped and its participation handle released, so the armed count can go **down**;
-- counters already accrued for a participant that stays armed (pre-`T0` `suppressed_pre_window`, `background_suppressed`) are **carried forward**, so they stay monotonic for a metrics scraper.
-
-**Re-arming cancels a pending absolute-`T0` start.** That start was authorised against the membership the previous arm resolved; re-resolving membership withdraws the authorisation rather than letting `T0` fire against a set you did not approve.
-The response carries `"scheduled_start_cancelled": true` (present only when there was something to cancel) and `scheduled_start` disappears from the status.
-Reschedule with another `POST .../start {"at": …}` once you are happy with the readiness.
-
-A scheduled start can also fail on its own, without a re-arm.
-The most obvious case is every armed participant being deleted before `T0` (the fire is refused `0/N`).
-It also fails if the fleet is busy with a device-creation batch at that instant.
-Whatever the cause, the scenario stays `armed`, the failure is logged, and the schedule is **released** rather than left pinned, so you can fix the condition, re-arm and reschedule.
-A released schedule is not retried automatically.
+**Re-arming re-resolves membership from scratch.**
+The `excluded` set is rebuilt and the armed count can go down.
+Counters already accrued for a participant that stays armed carry forward.
+Re-arming also cancels a pending absolute-`T0` start, reported as `"scheduled_start_cancelled": true`.
+A scheduled start that fails on its own (every participant deleted, or a device-creation batch in progress at `T0`) leaves the scenario `armed`, logs the failure and releases the schedule without retrying.
 
 Response `200` (readiness):
 
@@ -177,62 +160,34 @@ Response `200` (readiness):
     {"device": "10.42.0.9", "reason": "device not found",
      "remediation_hint": "create the device before arming, or remove it from the scenario"}
   ],
-  "excluded_total": 1,
-  "scheduled_start_cancelled": true
+  "excluded_total": 1
 }
 ```
 
-**The `excluded` rows are capped at 1,000; the counts are not.** One row costs ~145 bytes and there is one per unresolved participant, so at the participant ceiling an uncapped list would be a ~14 MB control-plane response.
+**The `excluded` rows are capped at 1,000; the counts are not.**
+Arm-time exclusions get 900 rows and 100 are reserved for devices deleted between arm and start, whose identity you cannot recover otherwise.
+So readiness carries at most 900 rows and the report up to 1,000.
+`excluded_total` is always present (including `0`) and is the authoritative count; the report's `participants_excluded` derives from it.
+`excluded_by_reason` gives `reason → count` over every exclusion whenever there is one.
+`excluded_truncated: true` appears only when rows were dropped.
+Fix what the rows show, re-arm, and the next batch surfaces.
 
-`excluded_total` is always present.
-`excluded_by_reason` appears whenever there is at least one exclusion, **truncated or not**, and always accounts for every exclusion.
-`excluded_truncated` appears only when rows were actually dropped, and it is the sole signal for that.
-Do not treat the presence of `excluded_by_reason` as meaning the list was sampled.
+**Prefix selectors silence only "not found".**
+An address inside a `participants_cidr` prefix that matches no device produces no `excluded` row, while a matched device that cannot participate still gets one.
+List an address in `participants` as well to make its absence loud.
+Prefix matches resolve in address order, so re-arming an unchanged fleet returns a byte-identical response.
 
-Of the 1,000-row budget, 900 are available to arm-time exclusions and 100 are reserved for exclusions found later, when `start` re-checks the fleet.
-Otherwise a large arm-time set would crowd out the `device deleted between arm and start` rows, the only ones whose device identity you cannot recover from (participants − fleet).
-So a **readiness** response carries at most **900** rows; the **report** can carry up to 1,000 (900 arm-time + 100 start-time).
-The reserve is itself finite: more than 100 gap deletions retain only the first 100 rows, with the rest visible in the counts only.
-
-When the cap bites:
-
-```json
-{
-  "participants_armed": 0,
-  "excluded": [ "…900 rows (the arm-time share)…" ],
-  "excluded_total": 20000,
-  "excluded_truncated": true,
-  "excluded_by_reason": {"device not found": 20000}
-}
-```
-
-`excluded_total` is the authoritative count (and `participants_excluded` in the report is derived from it, never from the row count).
-Remediation stays iterative: fix what the sample shows, re-arm, and the next batch surfaces.
-
-Compatibility: these three fields are additive, but `excluded_total` is present on **every** readiness response including the clean case (`0`).
-A consumer validating against a closed schema needs to allow it.
-
-**Prefix selectors silence only "not found", never "found but unfit".** A `participants_cidr` prefix is an open-world predicate over the live fleet: an address inside it that matches no device produces **no** `excluded` row (a `/16` has 65,534 candidates, so non-matches are not enumerable), while a matched device that exists but cannot participate (no exporter for the protocol) still gets its loud row.
-To make one specific address loud, list it in `participants` as well.
-A covered explicit entry is an assertion, not a duplicate.
-Prefix-matched devices resolve in address order, so re-arming against an unchanged fleet returns a byte-identical readiness response, including which rows appear in a truncated `excluded[]` sample.
-
-**Declared expectation.** When the scenario declared `expect_participants`, the readiness response echoes it as `participants_expected` alongside `participants_armed`, and adds `expectation_mismatch`, a one-line diagnosis, whenever the two disagree.
-Both fields are omitted when no expectation was declared.
-The mismatch is *disclosed* here and *enforced* at `start`, so arming stays a read-only look at the fleet and the re-arm loop is the fix path.
-Every arm recomputes it, which is all "re-arm re-evaluates the expectation" means.
-
-The diagnosis names the direction, and distinguishes the two kinds of shortfall, because they have different causes:
+**Declared expectation.** With `expect_participants` set, readiness echoes it as `participants_expected` and adds an `expectation_mismatch` diagnosis when the counts disagree.
+Arm discloses the mismatch; `start` enforces it.
 
 | Situation | What it means |
 |---|---|
-| short, and exclusions account for it | Devices were found and rejected. The `excluded_by_reason` breakdown has the causes. |
-| short, with **no** exclusions | Nothing was rejected. The selectors matched fewer live devices than you expected. This is the signature of a prefix one bit too narrow, or a fleet smaller than you believe. |
-| more than declared | The fleet holds devices your selectors match but your expectation omits. Never has an `excluded[]` explanation. |
+| short, and exclusions account for it | Devices were found and rejected; see `excluded_by_reason`. |
+| short, with **no** exclusions | The selectors matched fewer live devices than expected, typically a prefix one bit too narrow. |
+| more than declared | The fleet holds matching devices your expectation omits. |
 
-**Resolved-set ceiling (`409`).** The resolved union (explicit hits + prefix matches) is bounded by the same 100,000 cap as the explicit list, checked at arm time because a compact prefix can select an arbitrarily large fleet.
-This is arm's only participant-related wholesale refusal, and it is decided **before** any state changes, the phase transition included: a refused re-arm leaves the previous arm (its armed set, ledgers, and any pending schedule) exactly as it was, and a refused *first* arm leaves the scenario `submitted`, so a following `start` is refused with "arm first" rather than "0/N armed".
-Shrink the selector or the fleet and re-arm.
+**Resolved-set ceiling (`409`).** The resolved union is bounded by the same 100,000 cap, checked before any state changes.
+A refused re-arm leaves the previous arm intact, and a refused first arm leaves the scenario `submitted`.
 
 ### `POST /api/v1/scenarios/{id}/start` (start)
 
@@ -263,14 +218,7 @@ Returns the [report](./loadtest-report-schema.md).
 Returns the finalized [report](./loadtest-report-schema.md).
 `409` while the scenario has not reached a terminal phase (`submitted` / `armed` / `running`).
 
-**sFlow** (`sflow`) counts **raw samples** (`flow_sample` flow-records, **never** `samples × sampling_rate`), so the synthetic sampling-rate extrapolation can't manufacture phantom loss.
-The `flow_sample` data path is gated (suppressed pre-T0/post-window, counted in-window).
-The periodic **`counters_sample` is a keepalive**.
-It flows continuously (including before T0) to signal agent liveness and is **never counted** as scenario `sent`.
-Consequence: because counters_sample keeps advancing the agent's datagram sequence number pre-T0, the sequence is **not 0 at T0** (expected; the collector should key on sample sequence, not datagram sequence, for the measured window).
-
-**gNMI dial-out** (`gnmi-dialout`) is gated at both producers (SAMPLE + ON_CHANGE): arming requires a **live Publish stream** (a device whose stream is not established is `excluded`, because the collector is unreachable); no updates flow before T0 (silent arming); in-window a notification counts `sent` when written to a live stream, or `send_failures` when the stream is down (a collector blip is visible, never masked).
-`rate` is not used for dial-out (its SAMPLE cadence comes from the device's dial-out config), but is still required + fingerprinted.
+What each protocol counts as one record, including sFlow and gNMI dial-out, is in the [report schema](./loadtest-report-schema.md#counters-per-participant).
 
 The `format` query parameter selects the representation (default JSON):
 
@@ -347,7 +295,7 @@ The finalized [report](./loadtest-report-schema.md) is the exact record.
 ```
 
 Lists every registered scenario with its phase, in ID order.
-That is up to 8 non-terminal scenarios plus up to 8 retained terminal ones.
+That is up to 8 non-terminal scenarios plus the 8 most recent terminal ones; older terminal scenarios are reaped.
 Empty `scenarios: []` when none.
 
 ### `DELETE /api/v1/scenarios/{id}` (cancel / release)

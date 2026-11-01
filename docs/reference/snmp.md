@@ -486,6 +486,9 @@ If `snmpset` times out against a device that answers `snmpget`, that log line is
 | `-snmp-set-min-security-level none\|auth\|priv` | seeds the `-auto-start-ip` batch, default `auth` |
 | `snmpv3.set_min_security_level` | the `snmpv3` block of the `POST /api/v1/devices` body |
 
+An unrecognised `-snmp-set-min-security-level` is fatal at startup, after `-help` and `-version` and before any subsystem starts.
+An unrecognised `set_min_security_level` on the create body is rejected with 400.
+
 `none` is `noAuthNoPriv`, `auth` is `authNoPriv`, `priv` is `authPriv`.
 A `SET` below the minimum is answered with a `usmStatsUnsupportedSecLevels` Report, which is what RFC 3414 §3.2 step 5 prescribes and the same Report a privacy-flagged request to a no-privacy device already receives.
 
@@ -782,7 +785,7 @@ The `ifInErrors` / `ifOutErrors` / `ifInDiscards` / `ifOutDiscards` rates are dr
 | `failing` | `10 000 to 100 000` | `20 000 to 200 000` | Link-flap / bad-cable alarms (1 to 10 %) |
 
 Set for the auto-start batch via the CLI flag `-if-error-scenario <name>`, or per-device via `if_error_scenario` in the `POST /api/v1/devices` body.
-See [CLI flags reference](cli-flags.md#interface-state-scenarios) and [Web API reference](web-api.md#create-devices).
+See [CLI flags reference](cli-flags.md#error--discard-scenario) and [Web API reference](web-api.md#create-devices).
 
 ### Example walks
 
@@ -817,29 +820,10 @@ See `device_profiles.go`.
 GPU servers add per-GPU metric cycling on top of this.
 See [GPU simulation](gpu/index.md).
 
-## Interface-state scenarios
+## Interface state
 
-The [`-if-scenario`](cli-flags.md#interface-state-scenarios) flag seeds the state engine's `ifAdminStatus` and link state once per interface.
-`ifOperStatus` is never seeded; it is derived from admin and link.
-Scenario 1 seeds admin `down(2)` and preserves the link the profile declares, so unshutting a port restores it.
-Scenario 2 is the identity and serves whatever the profile declares.
-Scenario 3 seeds admin `up(1)` and link down on every interface.
-Scenario 4 seeds admin `up(1)` on every interface, with link down where `ifIndex % 100 < n` and link up elsewhere, so results are reproducible across restarts.
-`n` is [`-if-failure-pct`](cli-flags.md#interface-state-scenarios), default `10`.
-
-The scenario is applied once per device, when the state engine below is built, and there is no read-time override anywhere on the SNMP path.
-So a `SET`, a REST POST or a flap is read back by the next `GET` or walk under every scenario, and a seeded interface reports `ifLastChange = 0` because a seed is not a transition.
-
-```bash
-# Spot-check admin status. All "1" under scenarios 3 and 4, which force it.
-# Scenario 2 is the identity and serves whatever the profile ships, so a "2"
-# here is not a fault: cisco_nexus_9500 ships 32 of its 64 interfaces
-# administratively down (ifIndex 33-64).
-snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.7
-
-# Verify oper status after scenario 3 (all-failure)
-snmpwalk -v2c -c public 10.42.0.1 1.3.6.1.2.1.2.2.1.8
-```
+`-if-scenario` seeds `ifAdminStatus` and the link state once per interface.
+What each scenario seeds is in [Interface state → Interface-state scenarios](interface-state.md#interface-state-scenarios).
 
 **Dynamic state engine.** `ifOperStatus.<N>` (`.8`), `ifAdminStatus.<N>` (`.7`), and `ifLastChange.<N>` (`.9`) are served from the per-device interface state engine.
 The JSON rows are read once as the engine's seed.
