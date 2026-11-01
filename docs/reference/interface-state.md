@@ -23,6 +23,7 @@ For the gNMI subscribe semantics see [gNMI reference](gnmi.md#subscribe-semantic
 - **No gNMI `Set`.**
 - Every derived `ifOperStatus` transition fires the role-tagged `linkDown` / `linkUp` trap and `interface-down` / `interface-up` syslog entries of the device's catalog for that ifIndex.
 - Per-interface bandwidth does not scale with admin-status changes, and gNMI SAMPLE subscriptions do not support `suppress_redundant`.
+- For an ifIndex the device does not own, the engine reports `ifAdminStatus` up(1) but `ifOperStatus` unknown(4). IF-MIB has no unknown admin value. SNMP does not serve such an ifIndex from the engine, but a template that reads it does: `{{.IfAdminStatus}}` on an on-demand fire with a pinned `IfIndex` reads up(1). Check the device's interface list before trusting the admin value.
 
 ## Counter hold
 

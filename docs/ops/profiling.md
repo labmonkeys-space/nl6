@@ -91,7 +91,7 @@ While a revert is pending, `GET` reports it in four fields:
 | `revert_pending` | `true` while a `duration` revert is scheduled. Always present. |
 | `revert_at` | When the revert fires, RFC 3339 in UTC. Omitted when nothing is pending. |
 | `revert_to` | The gate value the revert restores. This is the value before the first timed request of a chain, so it cannot be inferred from `enabled`. Omitted when nothing is pending. |
-| `revert_to_address` | The push address the revert restores with it. Empty when the restored state is pull-only or off. |
+| `revert_to_address` | The push address the revert restores with it. Omitted when nothing is pending, and when the restored state is pull-only or off. |
 
 ### What the status means
 
@@ -116,6 +116,9 @@ They are bound to the flag's address, compared normalised (scheme and host case-
 A `server_address` supplied over REST that differs from the flag is pushed to without them, and the transition log says `credentials withheld: address differs from -profiling-pyroscope`.
 Otherwise an unauthenticated `POST` could redirect the operator's credentials, and the profiles, to any host.
 A Go heap profile carries allocation sites and sizes, not object contents; a CPU profile carries stack traces.
+
+The push presents no client certificate (no mTLS) and pins no CA.
+An `https` address is verified against the system roots only.
 
 ### Refused inputs
 
@@ -201,7 +204,8 @@ The default is `true` because one forced GC, extrapolated to 30,000 devices, sta
 
 Linear from the N=5000 median (4.8 ms): **~29 ms at 30,000 devices**.
 The devices in this measurement have no sockets, TUN interfaces or namespace, so a real fleet's heap is larger and its GC slower.
-If a forced GC on your fleet approaches 150 ms, run with `-profiling-force-gc=false`.
+Check it on your fleet: time one forced GC on a host running 30,000 real devices.
+If it crosses 150 ms (1% of the 15 s window), flip the default and its constant, or run with `-profiling-force-gc=false`.
 
 ## Web console
 

@@ -179,6 +179,8 @@ Everything after the auto-prepended varbinds is the catalog entry's body varbind
 The collector replies to an INFORM with a GetResponse-PDU (`0xA2`) whose `request-id` matches the INFORM's.
 The simulator demultiplexes acks via each device's per-device UDP socket, so there is no global request-id table.
 Acks without a matching pending entry (duplicates, stale responses) are silently ignored.
+The reader does not check the source address of an ack.
+Any host that can reach a device's per-device UDP socket can mark a pending INFORM acked by sending a GetResponse-PDU with its `request-id`.
 
 ## Catalog JSON schema
 

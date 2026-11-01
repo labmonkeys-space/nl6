@@ -196,7 +196,7 @@ On a large run the list is a sample; read the counts as described under [arm](..
 | `arm` → `409 … participant(s) are claimed by scenario …` | Those devices belong to another non-terminal scenario. A device participates in at most one scenario at a time. | Stop or delete the named scenario, or narrow this one's participants. Note an **armed** scenario already holds its fleet, even when it is not running, so cancelling it releases the devices. |
 | `start` / `stop` → `409 cannot … in phase …` | Illegal lifecycle transition. | The `409` body names the current phase and the resolving verb; follow the [phase/verb matrix](../reference/loadtest-api.md#phase--verb-matrix). |
 | `report` → `409 … available only after stop or abort` | The scenario has not finalized yet. | Stop it (or wait for the window to auto-close at `T1`), then re-request the report. |
-| Device create/delete → `409 fleet … frozen by running scenario` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |
+| Device create or delete-all → `500`, single-device delete → `404`, message `fleet membership is frozen by running scenario(s) …` | Membership is frozen while a scenario runs, so counter deltas can't be corrupted mid-window. | Wait for the scenario to finish, or stop it. |
 
 ### Fix an unreachable collector
 

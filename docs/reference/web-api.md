@@ -424,6 +424,7 @@ Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
 A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message.
+On a frozen fleet, `DELETE /api/v1/devices/{id}` answers `404` and `DELETE /api/v1/devices` answers `500`, both with the freeze message.
 On this endpoint `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
 ### `resource_file` failures

@@ -343,7 +343,8 @@ Each flow gets a duration sampled from the device profile.
 A flow still running when it reaches the **active timeout** is exported and restarted.
 A flow that has ended and then sat idle for the **inactive timeout** is exported then.
 Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one.
-The mean cached lifetime is near 29s, which is about 4.2 records/s per device.
+The mean cached lifetime is near 29s.
+The periodic sweep adds about half a tick of residency, so at the 5s default tick the edge-router profile (128 concurrent flows) exports about 4.1 records/s per device.
 
 To raise or lower volume, change the concurrent-flow count or the timeouts.
 

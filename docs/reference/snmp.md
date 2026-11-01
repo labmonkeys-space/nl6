@@ -24,7 +24,8 @@ See [Architecture](../explanation/architecture.md) for the component map.
   The auto-start batch uses the v3 user `simadmin`, with `simadmin` as both the authentication and the privacy password.
   A REST-created device takes its user and passwords from the `snmpv3` block of the request (`username`, `password`, `priv_password`).
 
-A version integer that is neither 0 nor 1 is served with SNMPv2c semantics rather than discarded.
+A request whose version is 3 takes the SNMPv3 path above.
+A request with any other version than 0, 1 or 3 is served as SNMPv2c rather than discarded.
 
 ### Verified against net-snmp, not only against nl6's own parser
 
@@ -190,6 +191,10 @@ Two bounds keep a wide request cheap:
 
 - The binding count is capped at what a response could ever fit (`maxSNMPResponseSize / minVarbindSize`, 98 at the default MTU). A request with more bindings is answered `tooBig` without walking at all. The 1024-byte read buffer is a second bound on the binding count.
 - The SNMPv1 Counter64 skip steps of one datagram share one budget, `maxGetNextBindings × longestShippedCounter64Run`. `longestShippedCounter64Run` is 1152, eight `ifHC*` columns across 144 interfaces on `cisco_crs_x`, so the budget cannot truncate a shipped table. An operator resource file with a wider Counter64 run is truncated and logged once per device.
+
+The two bounds contain the cost of a wide request; they do not remove it.
+A multi-binding GETNEXT still runs inline on the shared UDP handler.
+A 40-binding SNMPv1 GETNEXT on `cisco_crs_x` takes about 104 ms, and a 68-binding one about 177 ms.
 
 One request sees one LLDP topology generation across all its bindings.
 

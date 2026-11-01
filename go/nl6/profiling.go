@@ -121,8 +121,8 @@ var (
 // (4.8 ms): ~29 ms at 30,000, worst run ~35 ms. Well under the 150 ms line,
 // so the SDK default stands. It is an in-process proxy (no sockets, TUN or
 // namespace on the heap); the figures and the extrapolation are recorded in
-// docs/ops/profiling.md, and the fleet-scale VM measurement is listed in that
-// page's "Follow-ups" section.
+// docs/ops/profiling.md, and the fleet-scale re-check is described in
+// context/profiling.md.
 const profilingForceGCDefault = true
 
 // profilingUploadTimeout bounds one profile upload. A profile is ~100 KB;
