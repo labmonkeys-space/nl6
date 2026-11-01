@@ -37,6 +37,70 @@ func makeDeviceID(ip net.IP, typeSlug string) string {
 	return fmt.Sprintf("%s-%s", typeSlug, ip.String())
 }
 
+// The three ways a start IP is refused. Each is a sentinel so a test can
+// errors.Is the kind without matching message text.
+var (
+	errStartIPRequired = errors.New("start_ip is required")
+	errStartIPInvalid  = errors.New("invalid start IP address")
+	errStartIPNotIPv4  = errors.New("start IP address must be IPv4")
+)
+
+// startIPError is the classified refusal of a creation batch's start IP. It is
+// the one error type both creation paths (REST and -auto-start-ip) produce for
+// a bad start_ip, and the REST boundary maps it to 400 with one errors.As
+// (nl6#942). It mirrors resourceFileError: Error() is the log rendering,
+// PublicMessage() the HTTP one, and the two differ only in the length cap.
+type startIPError struct {
+	Value string // the caller's start_ip, verbatim
+	kind  error  // one of the errStartIP* sentinels
+}
+
+// Error renders for the log: the kind, then the value %q-quoted so a trailing
+// space, a tab or a pasted file name is visible. %q escapes every control and
+// bidi formatting rune (so "\t" reads as \t and a newline cannot forge a log
+// line); sanitiseForMessage runs over the quoted form as the belt to that
+// brace. Not length-capped.
+func (e *startIPError) Error() string {
+	if e.kind == errStartIPRequired {
+		return e.kind.Error()
+	}
+	return e.kind.Error() + ": " + sanitiseForMessage(fmt.Sprintf("%q", e.Value))
+}
+
+// PublicMessage renders for an HTTP 400 body: Error() under the same cap as
+// the resource_file 400 class, because the value is caller data of up to the
+// request body limit.
+func (e *startIPError) PublicMessage() string {
+	return truncateForMessage(e.Error(), maxResourceMessageBytes)
+}
+
+func (e *startIPError) Unwrap() error { return e.kind }
+
+// parseStartIP is THE start_ip predicate. It accepts an IPv4 address only and
+// returns it in its 4-byte form, the shape nextHost and PreAllocateTunInterfaces
+// work on.
+//
+// IPv4 only because the simulator is: TUN addressing, host routes, the DNS
+// reverse zone and the chassis MAC all derive from an IPv4. net.ParseIP alone
+// accepted "2001:db8::1", and the batch then walked ONE address: nextHost
+// returns a non-IPv4 input unchanged, pre-allocation refused it but the batch
+// only logged that, and every iteration after the first found the address in
+// deviceIPs and counted it as a success (nl6#942).
+func parseStartIP(s string) (net.IP, error) {
+	if s == "" {
+		return nil, &startIPError{Value: s, kind: errStartIPRequired}
+	}
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return nil, &startIPError{Value: s, kind: errStartIPInvalid}
+	}
+	v4 := ip.To4()
+	if v4 == nil {
+		return nil, &startIPError{Value: s, kind: errStartIPNotIPv4}
+	}
+	return v4, nil
+}
+
 func (sm *SimulatorManager) CreateDevices(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, roundRobin bool, category string, snmpPort int, seed *ExportSeed) error {
 	_, err := sm.CreateDevicesWithOptions(startIP, count, netmask, resourceFile, v3Config, true, 0, roundRobin, category, snmpPort, seed)
 	return err
@@ -362,12 +426,19 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 	// Both of these used to sit below pre-allocation, so a request for 10+
 	// devices naming a bad resource_file allocated the whole TUN pool and only
 	// then answered 400 — and never released it, leaving sm.tunPoolSize
-	// non-zero for the next call. A malformed start_ip had the same shape.
-	// There is no ordering dependency the other way: resolveCreateResources
-	// reads only the filesystem and the resource cache.
-	ip := net.ParseIP(startIP)
-	if ip == nil {
-		return 0, fmt.Errorf("invalid start IP address: %s", startIP)
+	// non-zero for the next call. There is no ordering dependency the other
+	// way: resolveCreateResources reads only the filesystem and the resource
+	// cache.
+	//
+	// This is the ONLY start_ip check, for both callers (the REST handler and
+	// the -auto-start-ip batch). It sits here and not in the handler so the
+	// create gate above is judged first: a concurrency verdict must not depend
+	// on caller data (context/device-creation-batching.md). nl6#941 briefly
+	// added a handler copy that answered 400 before the gate; nl6#942 replaced
+	// both copies with the typed error createDevicesErrorResponse maps to 400.
+	ip, err := parseStartIP(startIP)
+	if err != nil {
+		return 0, err
 	}
 
 	resources, roundRobinResources, roundRobinResourceFiles, err := sm.resolveCreateResources(roundRobin, category, resourceFile)

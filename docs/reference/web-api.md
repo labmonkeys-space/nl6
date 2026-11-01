@@ -147,7 +147,10 @@ Any other value matches no device type and is rejected with 400.
 `netmask` is optional and **defaults to `/16`**.
 Only the `/16` network and broadcast are reserved, so `.x.0` and `.x.255` are assigned as ordinary hosts.
 An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic per-`/24` semantics (which skip `.0`/`.255`).
-A `start_ip` that does not parse as an IP address is rejected with 400 (`invalid start IP address: <value>`) before the batch starts, as an unsupported `netmask` is.
+`start_ip` must be an IPv4 address.
+It is refused with 400 and one of three messages: `start_ip is required` (missing or empty), `invalid start IP address: "<value>"` (does not parse) or `start IP address must be IPv4: "<value>"` (an IPv6 address).
+The value is echoed in Go `%q` form, so a trailing space or tab that caused the refusal is visible.
+Up to v0.38.0 an IPv6 `start_ip` was accepted and the batch walked a single address, reporting every requested device as created.
 
 ```bash
 # Round-robin across all device types
@@ -414,6 +417,12 @@ So a create that overlaps a delete-all, or that follows a batch which timed out 
 
 The gate sits above every other check in the batch, the `resource_file` validation below and the privilege check included: a concurrency verdict must not depend on caller data.
 When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
+
+**Which checks run before the gate.** The handler refuses malformed request *shape* before it asks for the gate: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
+These need no server state, answer 400 and write no server log line.
+Everything that reads server state or belongs to the batch runs inside the gate, in this order: the fleet freeze check, `start_ip`, `resource_file`, the privilege check.
+Those are logged as `create devices: rejected with <status>: ...`.
+So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
 **One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](../ops/loadtest-scenarios.md) documents it as a `409`.
 That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
