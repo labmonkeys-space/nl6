@@ -10,7 +10,7 @@ Each device generates flows appropriate to its role.
 An edge router emits different traffic shapes than a firewall or a data-center switch.
 
 This page is the operator-facing setup guide.
-For the CLI flags see [CLI flags → Flow export](../reference/cli-flags.md#flow-export-flags); for protocol-level details and the sFlow caveat see [Flow export](../reference/flow-export.md).
+For the CLI flags see [CLI flags → Flow export](../reference/cli-flags.md#flow-export-flags); for protocol-level details and the sFlow caveat see [Flow export reference](../reference/flow-export.md).
 
 ## Per-device source IPs
 
@@ -126,7 +126,7 @@ A datagram the kernel refused lands in `send_failures` instead.
 When `-flow-source-per-device` is enabled (the default), flow packets originate from inside the `nl6sim` namespace and must traverse the `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector.
 Three things have to be in place:
 
-- **`iptables` installed on the simulator host.** At startup the simulator inserts `iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT` so that hosts with a default-DROP `FORWARD` policy (common when Docker is installed) allow per-device egress. The rule is removed on clean shutdown. Without `iptables` a warning is logged and flows are silently dropped on such hosts. See [Manage the network namespace](network-namespace.md).
+- **`iptables` installed on the simulator host.** At startup the simulator inserts `iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT` so that hosts with a default-DROP `FORWARD` policy (common when Docker is installed) allow per-device egress. The rule is removed on clean shutdown. Without `iptables` a warning is logged and flows are silently dropped on such hosts. See [Network namespace](network-namespace.md).
 - **Route to the collector from the namespace.** The namespace has a default route via `veth-sim-host` (`10.254.0.1`), so any collector reachable from the host via its normal routing table is reachable from the namespace. If you've customised host routing verify with:
   ```bash
   sudo ip netns exec nl6sim ip route get <collector-ip>
@@ -161,4 +161,4 @@ If the collector isn't seeing flows, walk through these in order:
 4. **Sniff on the collector host.** If packets arrive but the collector doesn't count them, the problem is `rp_filter` or a firewall rule on that host, not the simulator.
 5. **As a diagnostic, restart with `-flow-source-per-device=false`.** That uses the host IP as the source and rules out namespace / forwarding issues entirely. If that works and per-device doesn't, the problem is somewhere in the netns bridge.
 
-For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshoot the simulator](troubleshooting.md).
+For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).

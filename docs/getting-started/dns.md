@@ -23,7 +23,7 @@ No custom CoreDNS plugin.
 
 ## Prerequisites
 
-- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup. See [Install with Docker](./docker.md).
+- Docker with Compose v2 (`docker compose`). The sidecar stack runs nl6 in a container, so you don't need host TUN/netns setup. See [Docker](./docker.md).
 - `dig` (or any DNS client) and `curl` on the host to verify.
 
 ## Run the stack

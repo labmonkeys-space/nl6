@@ -16,7 +16,7 @@ sudo ./nl6 [options]
 ```
 
 Root is required because the simulator creates TUN interfaces and manages the `nl6sim` network namespace.
-See [Manage the network namespace](../ops/network-namespace.md) for the namespace details and [Run a fleet from source](../getting-started/quick-start.md) for a minimal invocation.
+See [Network namespace](../ops/network-namespace.md) for the namespace details and [Quick start](../getting-started/quick-start.md) for a minimal invocation.
 
 ## Core flags
 
@@ -41,7 +41,7 @@ Omit the engine-id flag to run in v2c-only mode.
 | `-snmpv3-auth` | `none` \| `md5` \| `sha1` | `md5` | SNMPv3 authentication protocol (RFC 3414 USM). Verified against net-snmp: the key is derived by §A.2 password-to-key plus localization, and the HMAC is truncated to 12 octets. It also selects the hash used to localize the **privacy** key (§2.6). Inbound messages are verified, so a wrong password is answered with a `usmStatsWrongDigests` Report. |
 | `-snmpv3-priv` | `none` \| `des` \| `aes128` | `none` | SNMPv3 privacy protocol. Requires `-snmpv3-auth`, since USM defines no privacy-without-authentication level. The key comes from the per-device `snmpv3.priv_password` REST field, falling back to the auth password. A CLI-started fleet has no separate privacy-password flag and reuses the shared password. DES builds `IV = salt XOR pre-IV` (RFC 3414 §8.1.1.1) and AES128 builds its IV from the advertised engine boots and time (RFC 3826 §3.1.2.1). Both conformant. |
 
-See [SNMP](snmp.md) for the auth/priv compatibility matrix.
+See [SNMP reference](snmp.md) for the auth/priv compatibility matrix.
 
 ### Write admission (`SetRequest`)
 
@@ -204,7 +204,7 @@ See [Web API](web-api.md) for the per-device block schema.
 
 ## Flow export flags
 
-See [Export flows](../ops/flow-export.md) for prerequisites and collector setup, and [Flow export](flow-export.md) for protocol details.
+See [Flow export how-to](../ops/flow-export.md) for prerequisites and collector setup, and [Flow export reference](flow-export.md) for protocol details.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -244,11 +244,11 @@ Omitting it sized every paced cache short and ran every paced run a few percent 
 To change volume, change the device profile's concurrent-flow count or the timeouts.
 
 Volume does not step with cadence: the ticker is a batching knob, not a volume knob.
-See [Flow export](./flow-export.md).
+See [Flow export reference](./flow-export.md).
 
 ## SNMP trap / INFORM export flags
 
-See [Export SNMP traps and INFORMs](../ops/snmp-traps.md) for prerequisites and `snmptrapd` smoke-test, and [SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
+See [SNMP trap export how-to](../ops/snmp-traps.md) for prerequisites and `snmptrapd` smoke-test, and [SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -306,7 +306,7 @@ NETCONF is off by default.
 When enabled, two device types serve it.
 `cisco_catalyst_9500` serves it over SSH.
 `juniper_mx10004` serves it over SSH and over TLS (TLS 1.2, mutual authentication).
-See [NETCONF](netconf.md).
+See [NETCONF reference](netconf.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -338,7 +338,7 @@ See [gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes, TLS, a
 
 ## UDP syslog export flags
 
-See [Export syslog](../ops/syslog-export.md) for prerequisites and `netcat` smoke-test, and [Syslog export](syslog-export.md) for wire format and catalog JSON.
+See [Syslog export how-to](../ops/syslog-export.md) for prerequisites and `netcat` smoke-test, and [Syslog export reference](syslog-export.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -392,13 +392,13 @@ See [DNS service-discovery reference](dns-service-discovery.md).
 
 Off by default: with none of these set and no `POST /api/v1/profiling`, no profiler runs and `/debug/pprof/` answers `503`.
 The gate is also switchable at runtime (`POST /api/v1/profiling`), so `-profiling-pyroscope` is the startup **default** rather than the value in force.
-See [Profile the simulator](../ops/profiling.md).
+See [Continuous profiling](../ops/profiling.md).
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
 | `-profiling-pyroscope` | string | empty | **global** | Pyroscope push URL (`http://host:4040` or `https://`). Starts the `pyroscope-go` SDK at boot (CPU, goroutines, four heap views, tagged `service_name=nl6`, `version`, `hostname`) and opens the gated `/debug/pprof/` surface. An unparseable URL, a scheme other than `http`/`https`, or embedded credentials are fatal at startup, after `-help` and `-version` and before any subsystem starts. A Pyroscope that is down at boot is not a start failure (the SDK never touches the network at start); it shows as `sdk_errors` and `last_error` on `GET /api/v1/profiling` and as one log line per push. With this flag set, startup also refuses to run while `PYROSCOPE_ADHOC_SERVER_ADDRESS` is set, which the SDK would silently honour over the flag (without the flag, a runtime push refuses it instead). |
 | `-profiling-force-gc` | bool | `true` | **global** | Let the SDK force a `runtime.GC()` before a heap snapshot when no collection ran during the upload interval. The default is set from a measurement (~29 ms per GC extrapolated to 30,000 devices, under the 150 ms rule); see [the measurement](../ops/profiling.md#the-forced-gc-default-measured). `false` sets the SDK's `DisableGCRuns`. |
-| `-profiling-pyroscope-basic-auth` | string | empty | **global** | HTTP basic auth for the push as `user:pass`, both parts non-empty (the SDK sends no `Authorization` header when either is empty, so `user:` is refused rather than pushing unauthenticated). Requires `-profiling-pyroscope` and is sent only to that address (compared normalised): a REST-supplied `server_address` that differs is pushed to without it. Flag-only, never settable or echoed over REST. The value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is a listed follow-up in [Profile the simulator](../ops/profiling.md#follow-ups). |
+| `-profiling-pyroscope-basic-auth` | string | empty | **global** | HTTP basic auth for the push as `user:pass`, both parts non-empty (the SDK sends no `Authorization` header when either is empty, so `user:` is refused rather than pushing unauthenticated). Requires `-profiling-pyroscope` and is sent only to that address (compared normalised): a REST-supplied `server_address` that differs is pushed to without it. Flag-only, never settable or echoed over REST. The value is visible to every local user through the process arguments (`/proc/<pid>/cmdline`, `docker inspect`, shell history); a file or environment form is a listed follow-up in [Continuous profiling](../ops/profiling.md#follow-ups). |
 | `-profiling-pyroscope-tenant` | string | empty | **global** | Pyroscope tenant ID (`X-Scope-OrgID`) for the push. Requires `-profiling-pyroscope`; flag-only, bound to the flag's address like the basic auth. |
 
 ## Examples

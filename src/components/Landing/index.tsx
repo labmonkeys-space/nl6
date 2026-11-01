@@ -2,7 +2,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Terminal from './Terminal';
-import {FEATURES, CATEGORIES, DOCS, STATUS} from './data';
+import {FEATURES, CATEGORIES, DOCS, STATUS, TYPE_COUNT, CATEGORY_COUNT} from './data';
 
 type HeroMeta = {
   appVersion: string;
@@ -305,7 +305,7 @@ export default function Landing(): React.JSX.Element {
           <div className="nl6-sec__hd">
             <span className="nl6-sec__num">03</span>
             <h2 className="nl6-sec__title">device catalog</h2>
-            <span className="nl6-sec__sub">31 types · 9 categories · 414 resource files</span>
+            <span className="nl6-sec__sub">{TYPE_COUNT} types · {CATEGORY_COUNT} categories</span>
           </div>
           <div className="nl6-grid-4">
             {CATEGORIES.map(cat => (

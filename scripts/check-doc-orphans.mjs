@@ -68,13 +68,17 @@ if (orphans.length > 0) {
 }
 
 // Front matter is the block between a leading `---` line and the next one.
+// CRLF files are normalised first, and a description must hold text once its
+// quotes are stripped, so `description: ""` does not pass.
 const frontMatter = (text) => {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n/);
+  const m = text.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---\n/);
   return m ? m[1] : '';
 };
-const undescribed = files.filter(
-  (f) => !/^description:\s*\S/m.test(frontMatter(readFileSync(f, 'utf8')))
-);
+const hasDescription = (fm) => {
+  const m = fm.match(/^description:[ \t]*(.*)$/m);
+  return m !== null && /[A-Za-z0-9]/.test(m[1].replace(/^["']|["']$/g, ''));
+};
+const undescribed = files.filter((f) => !hasDescription(frontMatter(readFileSync(f, 'utf8'))));
 if (undescribed.length > 0) {
   console.error(
     `\n✗ ${undescribed.length} doc page(s) have no \`description\` front matter:`

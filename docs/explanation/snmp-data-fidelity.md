@@ -17,7 +17,7 @@ They say nothing about whether an OID means what the vendor's MIB says it means.
 Five vendor subtrees have been read against a MIB.
 Fourteen have not, and are labelled as such in the files themselves.
 
-For how the agent answers a request, see the [SNMP](../reference/snmp.md).
+For how the agent answers a request, see the [SNMP reference](../reference/snmp.md).
 For writing your own profiles, see [resource files](../reference/resource-files.md).
 
 ## Resource values are validated at load

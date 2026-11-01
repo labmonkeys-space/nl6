@@ -888,4 +888,4 @@ One thing that reads as a defect and is not: a polled device and a trap from tha
 The poll path's engine ID is fleet-wide.
 Each notification originator derives its own from its IPv4, per RFC 3411 §5.
 
-See [SNMP trap reference](snmp-traps.md) for wire format, the JSON catalog schema, and the HTTP endpoints, and [Export SNMP traps and INFORMs](../ops/snmp-traps.md) for enabling the feature and the `snmptrapd` smoke test.
+See [SNMP trap reference](snmp-traps.md) for wire format, the JSON catalog schema, and the HTTP endpoints, and [SNMP trap export how-to](../ops/snmp-traps.md) for enabling the feature and the `snmptrapd` smoke test.

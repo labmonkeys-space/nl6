@@ -35,7 +35,7 @@ A shortfall is real wire/collector loss, not measurement noise.
 |------|----------------|
 | [REST API](./loadtest-api.md) | Every endpoint, request/response shape, and error code. |
 | [Scenarios](../ops/loadtest-scenarios.md) | The operating guide: lifecycle, fidelity mode, run tagging, reconciliation, troubleshooting. |
-| [Load-test runbooks](../ops/loadtest-runbooks.md) | Copy-pasteable worked recipes, one per use case. |
+| [Runbooks](../ops/loadtest-runbooks.md) | Copy-pasteable worked recipes, one per use case. |
 | [Report schema](./loadtest-report-schema.md) | Every field, the ledger identity, loss localization, and the semver policy. |
 | [Collector ceiling](../explanation/loadtest-collector-ceiling.md) | Method for measuring what a collector actually accepts, and not mistaking a drain rate for a capacity. |
 

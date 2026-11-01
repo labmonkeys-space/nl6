@@ -401,6 +401,6 @@ And the 320/s configuration is disqualified anyway on ordering grounds ([the che
 
 ## Related
 
-- [Load-test runbooks](../ops/loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
+- [Runbooks](../ops/loadtest-runbooks.md) for the scenario mechanics each run is built from, including how the offered rate is set
 - [Scenarios](../ops/loadtest-scenarios.md) for the lifecycle and fidelity mode
 - [Report schema](../reference/loadtest-report-schema.md) for `sent` versus `emitted`, and what nl6 reports about its own side of the measurement

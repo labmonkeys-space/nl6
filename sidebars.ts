@@ -60,8 +60,9 @@ const sidebars: SidebarsConfig = {
         {
           type: 'category',
           label: 'Load-test scenarios',
-          // Both load-test categories land on the same overview page.
-          link: {type: 'doc', id: 'reference/loadtest-overview'},
+          // No landing link here: a doc can be the link of one category only,
+          // or its breadcrumbs and prev/next follow the wrong one. The
+          // overview page is the Reference load-test landing.
           items: ['ops/loadtest-scenarios', 'ops/loadtest-runbooks'],
         },
       ],

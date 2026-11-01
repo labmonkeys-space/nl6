@@ -47,7 +47,7 @@ The mode is simulator-wide: every device serves the same transport, and there is
 The two modes do not coexist on one port, by design.
 A client that dialed the wrong one could not tell from the port which it got.
 A transport mismatch in either direction looks the same from the client: TCP connects, the server sends nothing, and the connection closes.
-See [Troubleshoot the simulator](#troubleshooting).
+See [Troubleshooting](#troubleshooting).
 
 ## Supported paths
 
@@ -609,7 +609,7 @@ curl -s http://localhost:8080/api/v1/gnmi/status | jq
 `listeners` equals the device count when active.
 Every counter is cumulative since process start; `updates_dropped` increments per backpressure-discard event.
 `updates_sent` counts gNMI Updates, not leaves: under the [IOS-XR JSON_IETF layout](#ios-xr-json_ietf-layout) one Update carries a whole list entry, so the same traffic counts fewer Updates than in PROTO.
-The TLS counters are explained under [Troubleshoot the simulator](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
+The TLS counters are explained under [Troubleshooting](#troubleshooting), the state-engine counters in the [interface state engine reference](interface-state.md#status-endpoint).
 
 ## Known limitations
 
@@ -636,6 +636,6 @@ The TLS counters are explained under [Troubleshoot the simulator](#troubleshooti
 
 ## See also
 
-- [SNMP](snmp.md) covers the IF-MIB counter source, including the analytical sine-wave model.
+- [SNMP reference](snmp.md) covers the IF-MIB counter source, including the analytical sine-wave model.
 - [Architecture](../explanation/architecture.md) shows where the gNMI dial-in server sits in the simulator's component map.
 - [CLI flags](cli-flags.md) is the canonical flag catalog.

@@ -15,7 +15,7 @@ UDP is the default transport.
 Under tls a bare collector hostname defaults to port 6514 instead of 514. See [Syslog reference → TCP transport](../reference/syslog-export.md#tcp-transport-rfc-6587) and [TLS](../reference/syslog-export.md#tls-rfc-5425).
 
 This page is the operator-facing setup guide.
-For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export](../reference/syslog-export.md).
+For the CLI flags see [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags); for wire format, catalog JSON, and HTTP endpoints see [Syslog export reference](../reference/syslog-export.md).
 
 ## Enable syslog export
 
@@ -168,12 +168,12 @@ See [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a
 | No `syslog` config on a `tcp` or `tls` device, log says `requires -syslog-source-per-device` | Started with `-syslog-source-per-device=false` | Remove the flag. A stream transport has no shared-socket fallback |
 | Catalog load fails at startup naming a `resources/<slug>/syslog.json` | Malformed per-type JSON or a reserved template field | See [Syslog reference → Per-type catalogs](../reference/syslog-export.md#per-type-catalog-overlays) for the schema and vocabulary |
 
-For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshoot the simulator](troubleshooting.md).
+For generic bring-up failures (TUN module missing, `sudo` required, port conflicts) see [Troubleshooting](troubleshooting.md).
 
 ## Related
 
-- [Syslog export](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
+- [Syslog export reference](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
-- [Export SNMP traps and INFORMs](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
-- [Export flows](flow-export.md), which shares the `nl6sim` namespace plumbing
+- [SNMP trap export how-to](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Flow export how-to](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)

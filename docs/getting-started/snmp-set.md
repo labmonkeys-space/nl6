@@ -273,6 +273,6 @@ It is not a setting to carry into a shared environment.
 
 ## Next steps
 
-- [SNMP](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
+- [SNMP reference](../reference/snmp.md) for the full `SetRequest` error ladder and the write-admission rules.
 - [CLI flags](../reference/cli-flags.md) for every flag used above.
 - [Web API](../reference/web-api.md) for the REST control plane, including `POST /api/v1/devices/{ip}/interfaces/{ifIndex}/admin-status`, which does the same job over HTTP.
