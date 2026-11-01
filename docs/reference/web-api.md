@@ -152,7 +152,6 @@ An explicit `"netmask": "24"` (or `"8"`) is still honored if you want classic pe
 It is refused with 400 and one of three messages: `start_ip is required` (missing or empty), `invalid start IP address: "<value>"` (does not parse) or `start IP address must be IPv4: "<value>"` (any IPv6 literal, the IPv4-mapped `::ffff:10.42.0.3` included).
 The value is echoed quoted, so a trailing space or tab that caused the refusal is visible.
 The same check runs on `-auto-start-ip` at startup, where a refusal is fatal.
-Up to v0.38.0 an IPv6 `start_ip` was accepted and the batch walked a single address, reporting every requested device as created.
 
 ```bash
 # Round-robin across all device types
@@ -271,7 +270,7 @@ A successful batch answers `200` with the counts in `data`:
 | `created` | int | n/a | Devices that started. |
 | `requested` | int | n/a | `device_count` from the request. |
 | `failed` | int | n/a | `requested - created`. Devices can fail to start under resource pressure at scale. Reconcile against `requested`. |
-| `warnings` | array | omitted | Reserved for settings that were accepted but are not honoured. Nothing populates it today, so it is omitted. |
+| `warnings` | array | omitted | Reserved for settings that were accepted but are not honoured. Currently always omitted. |
 
 When `failed` is not zero, `message` reads `Created 8 of 10 devices (2 failed to start) starting from 192.168.100.1`.
 
@@ -288,11 +287,9 @@ Neither field is inherited from the CLI seed, and `write_community` is never ech
 The admission rules are in [SNMP → Write admission for a `SET`](snmp.md#write-admission-for-a-set).
 
 A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a password is rejected with **400**.
-Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which has no defined result for an empty one, so the block is checked at creation rather than at the first encrypted request.
-A 200 followed by every encrypted poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when both are set **on the DES path only**.
 The AES128 path ignores `priv_password` and always derives from `password`, so a device configured with two distinct passwords and `"priv_protocol": 2` encrypts under a key no RFC 3414 manager derives.
-`Validate` accepts the configuration regardless.
+That configuration is accepted without a warning.
 
 The `if_error_scenario` field controls the per-device ppm bands used to derive `ifInErrors`, `ifOutErrors`, `ifInDiscards`, and `ifOutDiscards` from live packet counters.
 Accepted values: `clean` (default, no error growth), `typical`, `degraded`, `failing`.
@@ -318,12 +315,10 @@ curl -X POST http://localhost:8080/api/v1/devices \
 ### On-demand optical degradation
 
 `POST /api/v1/devices/{ip}/optical/{component}/degrade` drives one named optical channel across the SD-FEC threshold on demand.
-Use it to validate threshold and alarm logic without waiting for a health band to wander there.
+What each knob moves, and the four diagnostic quadrants, are in [Optical telemetry → On-demand degradation](optical-telemetry.md#on-demand-degradation).
 
 ```bash
 # Drive OCH-1-1 past the FEC threshold for 30 seconds, then back automatically.
-# Crossing the threshold is an OSNR phenomenon, so it takes a noise rise:
-# attenuation alone drops power without moving OSNR (see the quadrant table).
 curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degrade \
   -H "Content-Type: application/json" \
   -d '{"noise_rise_db": 8, "duration": "30s"}'
@@ -335,28 +330,11 @@ curl -X POST http://localhost:8080/api/v1/devices/10.42.0.1/optical/OCH-1-1/degr
 | `noise_rise_db` | number | Raises accumulated ASE only. Power holds while OSNR falls. This models a sick amplifier. |
 | `duration` | Go duration string | Optional. Omitted means open-ended; capped at 24 h. |
 
-Two knobs rather than one severity dial because they select which diagnostic quadrant the fault lands in, and collector correlation rules key on exactly that difference.
 Both are optional; **a request with neither (or an empty body) clears** active degradation on that channel.
-
-The whole receive cascade follows (`input-power`, `osnr`, `esnr`, `q-value`, `pre-fec-ber` and `fec-uncorrectable-blocks`), while the off-spine leaves (`output-power`, `laser-bias-current`, `chromatic-dispersion`, `polarization-mode-dispersion`, `polarization-dependent-loss`) stay flat.
-That asymmetry *is* the fibre-vs-transponder diagnostic; a simulator that moved every needle together would teach a collector nothing.
-
-**Revert needs no timer.** A degradation window is frozen at publish, and the value engine is a pure function of elapsed time, so the channel returns to its band by arithmetic when the window ends.
-There is no scheduled mutation to cancel.
 A second POST on the same channel supersedes the first.
-
-**`fec-uncorrectable-blocks` never decreases** across a degrade → revert cycle.
-The counter is the time integral of an above-threshold indicator, and degradation is stored as append-only immutable episodes precisely so that reverting cannot remove already-elapsed degradation from that integral.
-A counter that walked backwards would be read as a device reboot.
-
-Because attenuation leaves OSNR untouched, **crossing the FEC threshold takes `noise_rise_db`**.
-A pure power sag models a lossy span, not a failing one.
-Use both together for the fourth quadrant (power down *and* OSNR down).
-
-Scope of the attenuation model: `input_power_drop_db` holds OSNR *exactly* constant, which is loss **downstream of the amplifier chain** (a dirty receive connector, a patch-panel fault).
-Loss *upstream* of an amplifier is different in reality.
-The amplifier then adds ASE against a weaker signal, so OSNR degrades too.
-Model that case with both knobs rather than expecting `input_power_drop_db` alone to produce it.
+**Crossing the FEC threshold takes `noise_rise_db`**, because attenuation alone leaves OSNR unchanged.
+`input_power_drop_db` models loss downstream of the amplifier chain; for loss upstream of an amplifier, set both knobs.
+The channel returns to its band when the window ends, and `fec-uncorrectable-blocks` never decreases across a degrade and revert cycle.
 
 Query what is in force with `GET /api/v1/devices/{ip}/optical`:
 
@@ -415,7 +393,7 @@ Do not re-send the request while the batch runs; it is refused with `409` (next 
 ### One creation batch at a time (`409`)
 
 **Only one device-creation batch runs at a time.** A `POST /api/v1/devices` that arrives while another batch is in flight is answered **`409 Conflict`** and creates nothing.
-Two such requests used to interleave.
+The refusal is fail-fast, not a queue.
 
 The response carries `Retry-After: 5`, and a body naming the batch in the way:
 
@@ -426,44 +404,27 @@ The response carries `Retry-After: 5`, and a body naming the batch in the way:
 }
 ```
 
-The refusal is fail-fast, not a queue.
-A large batch would otherwise make a small one wait minutes with no feedback, and an HTTP client that times out mid-wait cannot tell whether its batch ran.
+**How to wait.** Poll `GET /api/v1/status` until both `create_batch_in_progress` and `resource_reload_in_progress` are `false`, then retry.
+`create_batch_requested` reports the running batch's requested device count.
+A [profile reload](#reload-device-profiles) holds the same gate briefly; a create refused during one is told so in its `409` body.
+Do not poll `is_creating_devices`: it can read `false` while a create would still be refused.
+`Retry-After` is always 5 seconds.
 
-**How to wait properly.** `GET /api/v1/status` reports `create_batch_in_progress` (and `create_batch_requested`, the running batch's requested device count) and `resource_reload_in_progress`.
-The gate is held exactly when either is true: poll both until both are false, then retry.
-The second holder is a [profile reload](#reload-device-profiles), which borrows the same gate for microseconds; a create refused during one is told so in its `409` body rather than told a batch is running.
-`is_creating_devices` is a proxy, not the gate.
-It is published just after the gate is taken and cleared just before it is released, so it can read `false` while a create would still be refused.
-`Retry-After` is a fixed, deliberately short 5 seconds; the handler has no way to estimate the remaining work of a batch whose rate it does not know.
+**The auto-start batch counts as a batch.** A REST create issued while the `-auto-start-ip` batch runs gets the `409` until that batch completes, even though `GET /api/v1/status` already answers `200`.
 
-Why the refusal is needed: device IPs come from a shared cursor, not a reservation.
-A batch rewinds that cursor to its own start address after pre-allocating TUN interfaces, because the devices have to land on the addresses the pool carries.
-Two overlapping batches therefore walked overlapping address ranges, the duplicate IPs were absorbed as "already exists", and the second batch silently created fewer devices than requested while reporting success.
+- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). A client of your own should do the same.
+- The web console's Clos-fabric wizard does **not** retry. A `409` from another batch aborts it and leaves a **half-built fabric**: the devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe, because existing addresses are absorbed as successes.
 
-**The auto-start batch counts as a batch.** `-auto-start-ip` runs on the same code path alongside the HTTP server, so a REST create issued during fleet startup gets the `409` until the startup batch completes.
-That is intended (the fleet is mid-construction), and it is reachable on a normal boot: the container is healthy and `GET /api/v1/status` answers `200` while the startup batch still holds the gate.
-The shipped clients behave as follows, and a client of your own should do the first:
+**What the gate does not cover.** `DELETE /api/v1/devices`, shutdown, and the detached pre-allocation workers of a batch that timed out in pre-allocation (5-minute timeout) do not take the gate.
+A create that overlaps a delete-all, or follows such a timed-out batch, is not protected.
 
-- `scripts/fleet.sh import` treats a `409` as a wait: it retries the entry (`RETRY_409_LIMIT` attempts, default 60, `RETRY_409_DELAY` seconds apart, default 5). This is what keeps `compose up`'s bootstrapper working with `-auto-start-ip` set.
-- The web console's Clos-fabric wizard does **not** retry. Its per-tier POSTs are sequential, so it never conflicts with itself, but a `409` from another batch (an auto-start batch, another operator, a script) aborts it and leaves a **half-built fabric**. The devices created so far stay, and the topology links are not loaded. Re-running the wizard on the same subnet is safe: existing addresses are absorbed as successes.
-
-**What "one batch at a time" does and does not cover.** It excludes one creation batch from another creation batch, and from a profile reload, and nothing more.
-Three paths still mutate creation state without holding the gate, all pre-existing: a previous batch's **detached pre-allocation workers** (the pre-allocator's 5-minute timeout returns while its workers keep writing the interface pool), `DELETE /api/v1/devices` (which clears the device and interface maps), and shutdown.
-So a create that overlaps a delete-all, or that follows a batch which timed out in pre-allocation, is not protected by this gate.
-
-The gate sits above every other check in the batch, the `resource_file` validation below and the privilege check included: a concurrency verdict must not depend on caller data.
-When no batch is in flight, nothing about a single batch changes, the `400` and `500` answers documented next included.
-
-**Which checks run before the gate.** The handler refuses malformed request *shape* before it asks for the gate: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
-These need no server state, answer 400 and write no server log line.
+**Check order.** Malformed request *shape* is refused with 400 before the gate, with no server log line: `device_count`, `max_workers`, `netmask`, `snmp_port`, the SNMPv3 block and the export blocks.
 Everything else runs inside the gate, in this order: `start_ip`, then the batch publishes its progress state (`is_creating_devices`, `create_batch_in_progress`), then the fleet freeze check, `resource_file` and the privilege check.
-`start_ip` goes first so a malformed request never shows up as a batch on `GET /api/v1/status` or refuses a concurrent freeze.
 Those are logged as `create devices: rejected with <status>: ...`.
 So with a batch in flight, a request with a bad `start_ip` or `resource_file` gets 409, not 400.
 
-**One neighbouring status is inconsistent, and this change did not fix it.** A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message, while [`loadtest-scenarios.md`](../ops/loadtest-scenarios.md) documents it as a `409`.
-That divergence predates this change and was left alone deliberately: the freeze check is shared with the delete endpoints, so aligning it is a change to those too.
-Today `409` on this endpoint means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
+A create against a fleet frozen by a running load-test scenario is answered `500` with the freeze message.
+On this endpoint `409` means a concurrent creation batch or a concurrent profile reload, and nothing else; the body says which.
 
 ### `resource_file` failures
 
@@ -494,15 +455,14 @@ The full path goes to the **server log** instead.
 That guarantee covers the `400` class only; the `500` class returns the raw error.
 
 `resource_file` is validated **before** TUN pre-allocation and before the privilege check, so a request naming a bad device type gets this `400` without allocating anything, whether or not the simulator runs as root.
-A request naming a good one proceeds, and without root gets the pre-existing `500` `root privileges required to create TUN interfaces`.
+A request naming a good one proceeds, and without root gets `500` `root privileges required to create TUN interfaces`.
 
 ### Per-device export blocks
 
 `POST /api/v1/devices` accepts four optional top-level blocks (`flow`, `traps`, `syslog`, `gnmi_dialout`) that attach export configuration to every device created by the request.
 Any block can be omitted; omitted blocks mean "this batch does not participate in that export subsystem."
 
-The subsystems are always-on after `main()`.
-Flow / trap / syslog / gNMI dial-out scheduler goroutines and catalog loaders run regardless of whether any CLI seed was supplied, so REST-created devices can opt in to any combination.
+The export subsystems run whether or not any CLI seed was supplied, so REST-created devices can opt in to any combination.
 
 **`flow` block:**
 
@@ -520,7 +480,7 @@ Flow / trap / syslog / gNMI dial-out scheduler goroutines and catalog loaders ru
 
 No per-device override exists for `source_per_device`.
 The `-flow-source-per-device` CLI flag is simulator-wide (see [CLI flags → Flow export](cli-flags.md#flow-export-flags)).
-Setting `"source_per_device"` in the REST body is rejected by `DisallowUnknownFields`.
+Setting `"source_per_device"` in the REST body is rejected with 400 as an unknown field.
 
 **`traps` block:**
 
@@ -567,7 +527,6 @@ flow: tick_interval is not supported per device — one simulator-wide ticker dr
 
 The syslog and trap schedulers fire every device at their simulator-wide mean (`-syslog-interval`, `-trap-interval`).
 Flow drives every device from one simulator-wide ticker (`-flow-tick-interval`).
-No `warnings` entry is emitted for these fields any more; the request fails instead.
 
 `GET /api/v1/devices` still reports the cadence in force in a sibling object, `effective_intervals`, present only on devices that export something.
 It carries one key per block the device has: `syslog_interval`, `traps_interval` and `flow_tick_interval`.
@@ -586,16 +545,11 @@ It carries one key per block the device has: `syslog_interval`, `traps_interval`
 `-syslog-global-cap` / `-trap-global-cap` throttle by blocking, `-fidelity` suppresses background emission entirely, and a running scenario drives its participants at its own rate.
 None of those change the reported value.
 
-The effective values sit in a sibling object, deliberately not inside the config blocks.
-A block that carried a read-only field would stop being a valid `POST` body, since `POST /api/v1/devices` rejects unknown fields, and that would break every read-modify-write client, `scripts/fleet.sh import` included.
-
 ### A GET block is a valid POST block
 
 Config blocks round-trip: take a `flow` / `traps` / `syslog` object from `GET /api/v1/devices`, change what you like, and POST it back.
 Nothing needs stripping.
-
-That is why the effective cadences live in a sibling object rather than inside the blocks.
-Strict decoding is retained, so a genuine typo is still caught:
+Strict decoding still catches a typo:
 
 ```console
 # 400 Invalid JSON: unknown field "intervl"
@@ -618,9 +572,8 @@ POST /api/v1/devices  {"syslog": {"collector": "x:514", "intervl": "24h"}}
     "enabled": true,
     "insecure_skip_verify": false,                                  // dev only
     "ca_pem": "",                                                   // PEM CA bundle INLINE; empty = system roots.
-                                                                    // Not a path: this block is REST-settable, and a path
-                                                                    // would let a caller name any file to open. Use
-                                                                    // -gnmi-dialout-tls-ca for a file. "ca_file" is rejected.
+                                                                    // Not a path; use -gnmi-dialout-tls-ca for a file.
+                                                                    // "ca_file" is rejected.
     "mtls": false                                                   // present the shared cert as a client cert
   }
 }
@@ -656,7 +609,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 To point batches at different collectors or protocols, send one request per batch, as in [Run a heterogeneous fleet](../ops/flow-export.md#run-a-heterogeneous-fleet-multiple-collectors--protocols).
 
 **Validation failures return `400` with the underlying error** (e.g. `unknown protocol`, `invalid collector address`, unresolvable host, explicitly invalid syslog format, i.e. non-`5424` / non-`3164`); no device from the batch is created (atomic batch failure).
-Unknown / typo'd JSON fields at any level are also rejected via `DisallowUnknownFields`.
+Unknown JSON fields at any level are also rejected with 400.
 For example, `"interval_ms": 10000` lands as a 400, not a silent drop.
 
 ## List devices
@@ -681,7 +634,7 @@ Blocks are omitted (`omitempty`) for devices that don't participate in that subs
 
 Each record also carries the device's geolocation: `location` (the world-city string also served as SNMP `sysLocation.0`), and `latitude` / `longitude` (decimal degrees, drawn from the same world-cities dataset).
 The coordinates are emitted as a **pair**: both present or both omitted.
-They are `omitempty` on a nullable type so that an *unresolved* location omits them entirely rather than reporting a misleading `0`; a device whose true coordinates are `0.0,0.0` still reports them as present.
+An *unresolved* location omits them; a device whose true coordinates are `0.0,0.0` still reports them.
 `location` is omitted when empty.
 
 ```json
@@ -713,16 +666,15 @@ curl -X POST http://localhost:8080/api/v1/resources/reload \
 ```
 
 **What a reload does and does not change.** A profile is read from disk the first time a device of that type is created and cached.
-Every device built from it holds a pointer to that cached set and serves from indexes built on it, so rewriting the set in place would change what 30,000 devices answer mid-walk.
-A reload therefore drops the cache entry and nothing else: a device created **before** the reload serves exactly what it served before, and a device created **after** it serves the file as it is now.
+A reload drops the cache entry and nothing else: a device created **before** the reload serves exactly what it served before, and a device created **after** it serves the file as it is now.
 `devices_on_old_snapshot` counts, per evicted key, how many running devices still serve a pre-reload set (any earlier generation, not only the one evicted now).
-It is a snapshot taken under the gate: `DELETE /api/v1/devices/{id}` is not gated, so the number can already be lower by the time the response is read.
+A concurrent delete can make it lower by the time the response is read.
 To move devices onto the edited profile, delete and recreate them.
 `present_on_disk` says whether the profile still exists on disk at the time of the reload, so a renamed or removed directory is reported now rather than at the next create.
 
-**The default profile is covered.** The profile a device gets with no `resource_file` (`asr9k`, the same one the whole `-auto-start-ip` fleet serves) is read from `resources/asr9k/` at startup through the same cache under the key `asr9k.json`, so a device created with `"resource_file":"asr9k.json"` and one created without it share one object, and reloading `asr9k.json` covers both.
-Devices created without a `resource_file` are counted under that key.
-The only default that stays outside the cache is the compiled-in one the simulator synthesises when no `asr9k` directory or file exists at all.
+**The default profile is covered.** The profile a device gets with no `resource_file` (`asr9k`, the one the `-auto-start-ip` fleet serves) is cached under the key `asr9k.json`.
+Reloading `asr9k.json` covers devices created with and without a `resource_file`, and both are counted under that key.
+The exception is the compiled-in default used when no `asr9k` directory or file exists at all; it is never reloaded.
 
 **Not reloaded: trap and syslog catalogs.** `resources/<type>/traps.json` and `syslog.json` are loaded when the trap and syslog subsystems start and are never re-read.
 Editing one and calling this endpoint gets a `200` that evicts the profile and leaves the catalog as it was; the `note` says so.
@@ -739,11 +691,8 @@ A profile that fails to load after the edit is answered by that create with the 
 | `409` | A device-creation batch, or another reload, holds the gate. Same `Retry-After: 5` and body as the [create endpoint's `409`](#one-creation-batch-at-a-time-409). |
 | `413` | The body exceeds 4 KiB. |
 
-**Why a reload is refused during a batch.** Every profile load runs inside a creation batch, and the cache keeps the **first** entry published for a key (two goroutines may both miss and both load; only one set is retained).
-An evict that raced a load already in flight would clear the slot and then watch that load publish the *old* file's contents into it.
-The reload takes the same one-batch-at-a-time gate as creation, so that ordering cannot happen.
-It is fail-fast, never queued, for the reasons given for the create endpoint; poll `create_batch_in_progress` and `resource_reload_in_progress` on `GET /api/v1/status` and retry.
-While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true` and `create_batch_in_progress: false`, and a create refused in that window is told a reload holds the gate, not that a batch is running.
+**A reload is refused during a batch**, because evicting while a load is in flight could republish the old file.
+While a reload holds the gate, `GET /api/v1/status` reports `resource_reload_in_progress: true`; poll it as for the [create endpoint's `409`](#one-creation-batch-at-a-time-409).
 
 There is no file watcher.
 Reload is explicit.
@@ -755,11 +704,9 @@ curl http://localhost:8080/api/v1/devices/export -o devices.csv
 ```
 
 The CSV columns are, in order: `Device ID`, `IP Address`, `Interface`, `SNMP Port`, `SSH Port`, `Status`, `Resource File`.
-`Resource File` is appended at the end so any downstream consumer that indexes columns positionally (`awk -F, '{print $2}'`, spreadsheet macros) is unaffected by the new column.
 Devices without a known resource file emit `N/A` in that column, matching the `Interface` convention.
 
-Note: `N/A` is a display sentinel, not a valid resource filename.
-A re-import tool that POSTs each row back must translate `N/A` to an omitted `resource_file` field, not pass it through as a literal value (POST would reject `"N/A"` as a non-existent file).
+A re-import tool must translate `N/A` to an omitted `resource_file` field; POST rejects `"N/A"`.
 
 ## Generate a route script
 
@@ -783,12 +730,11 @@ curl -X DELETE http://localhost:8080/api/v1/devices
 ## Version
 
 Report the running simulator's version.
-The value is baked into the binary at build time via the Makefile's `APP_VERSION` variable (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`) and passed to `go build` as `-ldflags "-X main.Version=…"`.
+The value is set at build time from the Makefile's `APP_VERSION` (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`).
 It never changes for the lifetime of the process, so the endpoint sets `Cache-Control: private, max-age=3600`.
-Reloads of the web UI within a browser session will reuse the cached value.
 
 Release binaries report the clean tag (e.g., `vX.Y.Z`).
-A `make build` from a HEAD that is ahead of the last tag reports the commit-distance form (e.g., `vX.Y.Z-11-g0356c42`), so a post-release dev binary never masquerades as the tagged release.
+A `make build` from a HEAD ahead of the last tag reports the commit-distance form (e.g., `vX.Y.Z-11-g0356c42`).
 
 ```bash
 curl http://localhost:8080/api/v1/version
@@ -798,8 +744,8 @@ curl http://localhost:8080/api/v1/version
 {"version": "vX.Y.Z"}
 ```
 
-For an untagged development build (or any build produced by `go build` directly, bypassing the Makefile), the reported version is the literal string `dev`.
-Operators troubleshooting a version mismatch can call the same string from the CLI without starting the server:
+A build without tags, or one made by `go build` directly, reports `dev`.
+`-version` prints the same string without starting the server:
 
 ```bash
 ./nl6 -version

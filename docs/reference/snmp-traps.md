@@ -7,7 +7,6 @@ description: "The trap and INFORM wire format for SNMP v1, v2c and v3, the catal
 
 nl6 emits notifications in **all three SNMP versions**, one per fleet, selected with `-trap-snmp-version`: SNMPv2c (default), SNMPv1 Trap-PDUs, and SNMPv3 with RFC 3414 USM authentication and privacy.
 INFORM is SNMPv2c only.
-This page covers the wire format, the JSON catalog schema, the HTTP endpoints, and the status JSON shape.
 For enabling the feature, CLI flags, and troubleshooting see [SNMP trap export how-to](../ops/snmp-traps.md) and [CLI flags → SNMP trap / INFORM export](cli-flags.md#snmp-trap--inform-export-flags).
 
 ## Scope and security posture
@@ -19,18 +18,16 @@ Polls over SNMPv3 are authenticated: nl6's USM implementation is RFC 3414 confor
 
 Under `-trap-snmp-version v2c` (the default) or `v1`, notifications carry no authentication at all.
 The SNMPv2c community string (`-trap-community`, default `public`) rides in the clear on every trap and inform.
-This is a property of SNMPv2c itself, not a simulator choice, and matches how the simulator's polling side treats v2c.
 Do not select a production-like community secret.
 The simulator is for testing collector plumbing, not for ingesting confidential data.
 
 ## Architecture
 
-- **Central scheduler goroutine** (`trap_scheduler.go`) owns a min-heap of `(nextFire, deviceIP)` entries. Single goroutine regardless of device count, with no 30k `time.Ticker`s.
-- **Per-device `TrapExporter`** (`trap_exporter.go`) owns the device's UDP socket, request-id counter, pending-inform map, and stats.
-- **Shared `TrapEncoder` interface** (`trap_v2c.go`) has a narrow surface (`EncodeTrap`, `EncodeInform`, `ParseAck`). The SNMPv1 and SNMPv3 encoders implement it without changing the scheduler or exporter; each ignores the argument its wire format has no field for (v1 the request-id, v3 the community).
-- **Embedded catalog** loaded via `go:embed` from `resources/_common/traps.json` at startup. The out-of-box experience has no filesystem dependency. `-trap-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single user-supplied JSON file.
-- **Per-device-type catalog overlays** loaded from `resources/<slug>/traps.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
-- **Global rate limiter** (`golang.org/x/time/rate`) gates both fresh fires and INFORM retransmissions so a collector outage cannot amplify wire traffic past the operator-configured ceiling.
+- **One central scheduler** fires every device, whatever the device count.
+- **Each device** owns its UDP socket, request-id counter, pending-inform map and stats.
+- **The universal catalog** is compiled in from `resources/_common/traps.json`. `-trap-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single JSON file.
+- **Per-type catalog overlays** load from `resources/<slug>/traps.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
+- **The global rate limiter** (`-trap-global-cap`) gates both fresh fires and INFORM retransmissions, so a collector outage cannot push wire traffic past the ceiling.
 
 ## Wire format
 
@@ -59,7 +56,6 @@ See [SNMPv3 notifications](#snmpv3-notifications).
 ## SNMPv1 traps
 
 `-trap-snmp-version v1` switches the whole fleet to the RFC 1157 Trap-PDU, for exercising a collector's v1 path (OpenNMS `trapd` handles both).
-The default is `v2c` and is unchanged.
 
 The v1 message carries `version` `0` and a differently shaped PDU: `enterprise` (OBJECT IDENTIFIER), `agent-addr` (IpAddress, the device's own IPv4), `generic-trap` and `specific-trap` (INTEGER), `time-stamp` (TimeTicks), then the variable-bindings.
 
@@ -72,7 +68,7 @@ The v1 message carries `version` `0` and a differently shaped PDU: `enterprise` 
 
 **A declared `snmpTrapEnterprise` is not an override.** RFC 3584 honours it only for a standard trap.
 Across the shipped catalogs that means it is used by the v1 path in *zero* cases: the five standard entries declare none, and every vendor entry is enterprise-specific and therefore derives.
-It is still emitted as a varbind under v2c, which is unchanged.
+It is still emitted as a varbind under v2c.
 
 **A v1 trap carries none of the three varbinds v2c prepends.** `sysUpTime.0` becomes `time-stamp`, `snmpTrapOID.0` becomes the identity above, and `snmpTrapEnterprise.0` becomes `enterprise`.
 Only the entry's body varbinds appear in the variable-bindings list.
@@ -80,16 +76,14 @@ Only the entry's body varbinds appear in the variable-bindings list.
 **There is no v1 INFORM.** RFC 1157 defines no acknowledged notification, so `-trap-snmp-version v1` with `-trap-mode inform` is refused at startup rather than silently downgraded.
 A device that requests `inform` over REST while the fleet runs v1 is refused at attach for the same reason.
 
-One consequence worth expecting: several catalog entries can collapse to one v1 identity.
-`ciena_waveserver5`'s four optical alarm entries share a trap OID, so under v1 they differ only in their varbinds.
-That is how v1 works and what the real device does; it is not a mapping defect.
+Several catalog entries can collapse to one v1 identity.
+`ciena_waveserver5`'s four optical alarm entries share a trap OID, so under v1 they differ only in their varbinds, as on the real device.
 
 [RFC 3584]: https://www.rfc-editor.org/rfc/rfc3584.txt
 
 ## SNMPv3 notifications
 
 `-trap-snmp-version v3` switches the whole fleet to RFC 3414 USM-secured notifications, for exercising a collector's SNMPv3 trap path.
-The default is `v2c` and is unchanged.
 
 **The PDU is identical to v2c**, `0xA7` and all three auto-prepended varbinds included.
 Only what wraps it changes:
@@ -116,18 +110,14 @@ The USM passwords are command-line flags that every local user can read; see the
 ```
 
 PEN 32473 is [RFC 5612]'s documentation number, held by IANA.
-nl6 has no PEN of its own and claims nobody else's, the same call made for `sysObjectID`.
-The MAC is the device's synthesized chassis ID, the same value `{{.ChassisID}}` renders and the LLDP provider advertises, so the engine identity is the identity the device already asserts elsewhere.
-
-Deriving it is what makes **two devices sharing a user and password localize different keys**, because RFC 3414 localization is `H(Ku || engineID || Ku)`.
-A configured, fleet-wide engine ID would give every simulated device the same notification identity and the same key.
-
-A device whose address is not IPv4 is **refused at attach** rather than falling back to a default engine ID, for the same reason.
+The MAC is the device's synthesized chassis ID, the same value `{{.ChassisID}}` renders and the LLDP provider advertises.
+Two devices sharing a user and password therefore localize different keys.
+A device whose address is not IPv4 is **refused at attach**.
 
 **A polled device and a trap from it report different engine IDs.**
-This looks like a bug and is not.
-The polling engine's ID is fleet-wide (`-snmpv3-engine-id`), while a notification originator is authoritative for its own engine (RFC 3414 §2.1) and supplies its own `msgAuthoritativeEngineID`, `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime`.
-There is no discovery on the trap path and nothing to echo.
+The polling engine's ID is fleet-wide (`-snmpv3-engine-id`).
+A notification originator is authoritative for its own engine (RFC 3414 §2.1) and supplies its own `msgAuthoritativeEngineID`, `msgAuthoritativeEngineBoots` and `msgAuthoritativeEngineTime`.
+There is no discovery on the trap path.
 
 `msgAuthoritativeEngineTime` is seconds since **that device's engine** booted, not a Unix epoch, so a collector applying RFC 3414 §3.2's 150-second window accepts it.
 
@@ -143,45 +133,26 @@ Receiver setup, with the `snmptrapd` configuration and the `createUser` pitfall,
 On the **poll** path a manager recovers by re-running discovery.
 On the **trap** path there is no discovery: the receiver keeps whatever `(boots, time)` it last saw and applies RFC 3414 §3.2's 150-second window to it.
 So after nl6 restarts, a collector that cached `(boots=1, time=T)` sees notifications claiming `(boots=1, time≈0)` and **rejects them as outside the time window** until its own estimate ages past T.
-The trap path is worse than the poll path here precisely because it cannot re-synchronise itself.
 
-Two consequences worth planning around: restarting nl6 mid-run can silently stop notification delivery to a long-lived collector, and `snmpEngineBoots` never increments, so a collector cannot distinguish a restart from a clock anomaly.
+Restarting nl6 mid-run can therefore silently stop notification delivery to a long-lived collector.
+`snmpEngineBoots` never increments, so a collector cannot distinguish a restart from a clock anomaly.
 Clear the receiver's persistent USM state (see [Receive SNMPv3 notifications](../ops/snmp-traps.md#receive-snmpv3-notifications)) after restarting nl6, or wait the window out.
 
 ### No SNMPv3 INFORM
 
-An SNMPv3 InformRequest is authoritative at the **receiver** (RFC 3414 §3.1): the originator must first discover the *collector's* engine ID, boots and time, localize a second key against that engine, and track its time window per collector.
-nl6 has none of that state, so `-trap-snmp-version v3` with `-trap-mode inform` is refused at startup, at per-device attach, and at fire.
+An SNMPv3 InformRequest is authoritative at the **receiver** (RFC 3414 §3.1), and nl6 does not discover the collector's engine.
+`-trap-snmp-version v3` with `-trap-mode inform` is refused at startup, at per-device attach, and at fire.
 It is never silently downgraded.
 
-### Throughput cost
-
-v3 is the most expensive format per fire, and unavoidably so: it skips the allocation-free fast encoder (a v2c-only path by decision, exactly as SNMPv1 does), adds an HMAC over the whole message, and at `authPriv` adds a cipher pass plus 8 bytes of `crypto/rand` salt.
-Measured on an Apple M1 Max with four body varbinds:
-
-| Format | allocations / fire | bytes / fire |
-|--------|-------------------:|-------------:|
-| v2c, fast encoder (what a v2c fleet runs) | 33 | 1,232 |
-| v1 | 102 | 3,448 |
-| v2c, reference encoder | 144 | 4,715 |
-| v3 `noAuthNoPriv` | 207 | 6,002 |
-| v3 `authNoPriv` | 215 | 6,754 |
-| v3 `authPriv` (AES128) | 227 | 7,994 |
-| v3 `authPriv` (DES) | 231 | 7,898 |
-
-Roughly **6 to 7× the allocations of the shipped v2c fast path**, and about 1.5× the reference encoder's.
-Allocation counts are stable across runs and machines, which is why the table quotes those and not nanoseconds: on the M1 Max above a v3 `authPriv` fire measured 9 to 12 µs against 2.6 to 4.6 µs for the v2c fast path, but the spread within a single run was wide enough that the ratio is not worth quoting as a number.
-Run the benchmark on the hardware you care about.
-
-Per-device *setup* is cheap and deliberately so: about 0.7 µs and 15 allocations to build one device's encoder, because RFC 3414 §A.2's password-to-key step (a megabyte of hashing) is cached fleet-wide on the password, and only the short localization hash is per device.
-A 30,000-device v3 fleet therefore pays that megabyte once.
+### Envelope size and the datagram budget
 
 The USM envelope adds **91 bytes** to each shipped notification at `authPriv`/SHA1+AES (88 to 91 across the whole shipped corpus).
 That matters only near the datagram budget: `ciena_waveserver5`'s 39-varbind optical alarms encode to 989 to 1000 bytes under v2c and 1080 to 1091 under v3, so **a low `-datagram-mtu` disables them sooner under v3 than under v2c**.
 Between roughly MTU 1028 and 1119 they fire on a v2c fleet and are disabled on a v3 one.
+The load-time budget check measures the fleet's own wire format, so the startup log names those entries with their v3 size and the MTU that would admit them.
 
-The load-time budget check is measured at the fleet's **own** wire format, so those entries are named in the startup log with their v3 size and the MTU that would admit them, exactly as they are under v2c.
-(That check always measured v2c, so a v3 fleet in that band disabled nothing and failed at every fire instead.)
+v3 is the most expensive format per fire: about 6 to 7 times the allocations of the v2c path.
+Benchmark on your own hardware if fire rate matters.
 
 [RFC 5612]: https://www.rfc-editor.org/rfc/rfc5612.txt
 
@@ -189,7 +160,7 @@ The load-time budget check is measured at the fleet's **own** wire format, so th
 
 RFC 3416 §4.2.6 mandates the first two varbinds of every SNMPv2 notification.
 The encoder always prepends them automatically.
-Catalog authors supply only body varbinds, and the catalog loader rejects entries that list any of the three reserved OIDs below:
+Catalog authors supply only body varbinds; an entry listing any of the three reserved OIDs below as a body varbind fails catalog load:
 
 | Position | OID | Type | Source |
 |----------|-----|------|--------|
@@ -199,8 +170,7 @@ Catalog authors supply only body varbinds, and the catalog loader rejects entrie
 
 Positions 1 and 2 are unconditional per RFC 3416 §4.2.6.
 Position 3 is emitted only when the catalog entry declares a non-empty `snmpTrapEnterprise` field.
-Per SNMPv2-MIB §10 this additional-info varbind aids v1↔v2c cross-compatibility on collectors that expect the enterprise OID, and RFC 3584 §4.1 pins the positional ordering.
-All three reserved OIDs (`sysUpTime.0`, `snmpTrapOID.0`, `snmpTrapEnterprise.0`) are rejected when they appear as body varbind OIDs, because the encoder emits them automatically.
+RFC 3584 §4.1 pins the positional ordering.
 
 Everything after the auto-prepended varbinds is the catalog entry's body varbinds with templates resolved to concrete values.
 
@@ -264,13 +234,12 @@ Per-varbind object:
 Every dotted OID in this file, whether a varbind name, `snmpTrapOID` or `snmpTrapEnterprise`, must satisfy the rules the encoder can actually represent (X.690 §8.19):
 
 - The first arc is `0`, `1` or `2`.
-- When the first arc is `0` or `1`, the second arc is at most `39`. A wider one would be indistinguishable on the wire from a higher first arc, since `1.40` and `2.0` both encode to the same value. Only a first arc of `2` may carry a large second arc, which is how OIDs such as the ITU test arc `2.999` exist.
+- When the first arc is `0` or `1`, the second arc is at most `39`. Only a first arc of `2` may carry a large second arc, such as the ITU test arc `2.999`.
 - Every arc, and the combined value of the first two, is at most `4294967295`.
 - Every component is a number. A non-numeric component is not treated as zero.
 
 An OID that breaks any of these is **rejected when the catalog loads**, naming the entry and the field.
 That covers `snmpTrapOID`, `snmpTrapEnterprise` and literal body-varbind OIDs.
-Whether a value qualifies is decided by asking the encoder itself, so the catalog can never load an OID the encoder then refuses.
 The load check is slightly stricter than the encoder on spelling and length: a signed component such as `+1.3` and an OID over 256 characters are refused at load even though the encoder could carry them.
 A rejected entry fails its catalog file at load, like every other catalog validation error.
 
@@ -316,8 +285,7 @@ The same twelve fields work on both sides:
 | `{{.Detail}}` | Per-fire free-form measurement suffix. Empty unless the firing site supplies it (the optical alarms carry the triggering OSNR this way) |
 | `{{.IfAdminStatus}}` | Admin status of `IfIndex` read from the interface state engine at fire time. Syslog spells it `up(1)` or `down(2)` as an SNMP display renders `ifAdminStatus`; a trap renders the IF-MIB integer `1` or `2` so it can fill a typed `ifAdminStatus` varbind. A state-driven link fire carries the admin value of its event. Up on a device without an engine |
 
-References to any other field are rejected at catalog load.
-The simulator refuses to start rather than silently emitting a trap with an empty OID component.
+References to any other field fail catalog load, and the simulator refuses to start.
 Class 2 random-per-fire fields (`PeerIP`, `User`, `SourceIP`, `RuleName`, `NeighborRouterID`, `PeerAS`) are not supported.
 
 ## Per-type catalog overlays
@@ -376,9 +344,9 @@ Responses:
 | Status | Body | When |
 |--------|------|------|
 | `202 Accepted` | `{"requestId": <uint32>}` | Success; the trap has been enqueued. For INFORM mode the `requestId` is the INFORM PDU's `request-id`. Correlate with `/api/v1/traps/status` to watch its lifecycle. |
-| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for the device. The enriched body tells the caller which catalog the device resolved to (`cisco_ios`, `_universal`, etc.) and lists its entries alphabetically so a scripted caller can self-service when it targeted the wrong vendor. For malformed JSON or missing `name`, the legacy envelope form `{"success": false, "message": "..."}` applies. |
+| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for the device. The body names the catalog the device resolved to (`cisco_ios`, `_universal`, etc.) and lists its entries alphabetically. For malformed JSON or missing `name`, the legacy envelope form `{"success": false, "message": "..."}` applies. |
 | `404 Not Found` | `{"success": false, "message": "..."}` | Unknown device IP. |
-| `500 Internal Server Error` | `{"success": false, "message": "..."}` | `Fire` failed for a non-lookup reason: template resolve error, catalog resolution returned nil despite feature active (pathological manager state), or write failure. Logs on the simulator side carry the detail. |
+| `500 Internal Server Error` | `{"success": false, "message": "..."}` | The fire failed for a non-lookup reason, such as a template resolve error or a write failure. The simulator log carries the detail. |
 | `503 Service Unavailable` | `{"success": false, "message": "..."}` | The trap subsystem has not started **or** the target device has no trap config (i.e. it was created without a `traps` block and didn't inherit the CLI seed). |
 
 The endpoint is fire-and-forget.
@@ -437,34 +405,23 @@ Unlike `/api/v1/flows/status`, this endpoint does **not** wrap its body in the `
 
 The **four `informs_*` fields appear only on records whose `mode == inform`**.
 TRAP-mode records omit them.
-`send_failures` counts fires that did not reach the kernel: a resolve or encode failure, a refused write, or a failed INFORM retransmission.
+`sent` means the datagram reached the kernel.
+`send_failures` counts fires that did not: a template that resolves or renders to something unencodable, a refused write, or a failed INFORM retransmission.
+It moves on every occurrence, though the matching log line is emitted once per exporter.
 `snmp_version` (`v2c`, `v1` or `v3`) is present once the subsystem is active.
 `snmpv3` is present only under `-trap-snmp-version v3` and reports what a receiver needs: `user`, `security_level`, `auth_protocol`, `priv_protocol`, `engine_id_format` and `engine_ids_by_device` (device IP to lowercase hex engine ID, the string `createUser -e 0x...` wants).
 No password or localized key is reported.
 
-`sent` means the datagram reached the kernel; a fire that did not lands in `send_failures` instead: a template that resolves or renders to something unencodable, a refused write, or a failed INFORM retransmission.
-The counter moves on every occurrence even though the matching log line is emitted only once per exporter.
-This is the same split flow and syslog status use.
+`subsystem_active` is `true` whenever the HTTP server is answering.
+Branch on it rather than length-checking `collectors`.
+`subsystem_active=true` with `collectors=[]` means no device has opted in.
 
-`subsystem_active` is the authoritative "is the feature live?" signal.
-It is `true` after `StartTrapSubsystem` runs.
-During normal operation of the HTTP server this value is always `true`: the subsystem initialises in `main()` and the only path that flips it to `false` is `StopTrapExport`, which runs at process exit alongside the HTTP server.
-A `false` value is therefore only observable programmatically (test harness, embedded use).
-Clients should still branch on `subsystem_active` rather than length-checking `collectors`.
-`subsystem_active=true` with `collectors=[]` means the subsystem is running but no device has opted in.
-
-Counters are **monotonic within a subsystem lifecycle**: deleting a device does not zero its collector's `sent` counter; the aggregate persists via `sm.trapAggregates` until `StopTrapExport` (which is today's process-exit path).
+Counters are **monotonic until process exit**: deleting a device does not zero its collector's `sent` counter.
 A `devices=0` record therefore means "no live devices for this tuple, but historical fires still counted."
 
 `catalogs_by_type` is present whenever `subsystem_active=true`.
 Keys are device-type slugs with the reserved `_universal` entry for the fallback catalog.
 Values include the merged entry count and the catalog's provenance: `"embedded"` (compiled-in universal), `"file:<path>"` (per-type overlay on disk), or `"override:<path>"` when `-trap-catalog` was supplied (in which case `catalogs_by_type` contains a single `_universal` entry).
-
-When the subsystem is stopped or never started:
-
-```json
-{"subsystem_active": false, "collectors": [], "devices_exporting": 0}
-```
 
 `rate_limiter_tokens_available` is present only when `-trap-global-cap` is set; it's a best-effort instantaneous snapshot, not synchronised with concurrent rate-limiter waits.
 
@@ -479,9 +436,8 @@ For INFORM mode, the four disjoint terminal states of every originated INFORM sa
 informs_pending + informs_acked + informs_failed + informs_dropped == informs_originated
 ```
 
-`informs_originated` isn't exposed in the status JSON.
-It's an internal counter.
-If the four exposed counters don't add up across two successive polls (after allowing for newly-originated informs between reads), something is miscounted or a retransmit path is skipping a state transition.
+`informs_originated` is not exposed in the status JSON.
+If the four exposed counters do not add up across two successive polls, after allowing for informs originated between reads, report it as a bug.
 
 ## CLI flags
 

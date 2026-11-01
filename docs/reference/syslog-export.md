@@ -7,24 +7,22 @@ description: "The RFC 5424 and RFC 3164 wire formats, the UDP, TCP and TLS trans
 
 nl6 emits syslog messages in either **RFC 5424** (modern, structured) or **RFC 3164** (legacy BSD) format, over UDP, TCP (RFC 6587) or TLS (RFC 5425).
 Format and transport are per device.
-The two encoders sit behind a shared `SyslogEncoder` interface; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
-This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape.
 For enabling the feature, CLI flags, and troubleshooting see [Syslog export how-to](../ops/syslog-export.md) and [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
 
 ## Architecture
 
-- **Central scheduler goroutine** (`syslog_scheduler.go`) owns a min-heap of `(nextFire, deviceIP)` entries. Single goroutine regardless of device count, the same design as [trap export](snmp-traps.md#architecture).
-- **Per-device `SyslogExporter`** (`syslog_exporter.go`) owns the device's transport and stats. Class 1 device-context fields (`SysName`, `Model`, `Serial`, `ChassisID`) are captured at exporter construction and stay stable for the device's lifetime.
-- **Shared `SyslogEncoder` interface** (`syslog_wire.go`) with two implementations: `RFC5424Encoder` and `RFC3164Encoder`. Both produce one message per fire, which the transport sends as one datagram or one framed stream record.
-- **Embedded catalog** loaded via `go:embed` from `resources/_common/syslog.json` at startup. `-syslog-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single user-supplied JSON file.
-- **Per-device-type catalog overlays** loaded from `resources/<slug>/syslog.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
-- **Global rate limiter** (`golang.org/x/time/rate`) gates scheduled fires. On-demand fires via the HTTP endpoint **bypass** the cap. They're for fault injection, not load shaping.
+- **One central scheduler** fires every device at Poisson-drawn times, the same design as [trap export](snmp-traps.md#architecture).
+- **Each device** owns its transport and stats. `SysName`, `Model`, `Serial` and `ChassisID` are captured when the device's exporter is built and stay stable for the device's lifetime.
+- **Each fire** produces one message, sent as one datagram or one framed stream record.
+- **The universal catalog** is compiled in from `resources/_common/syslog.json`. `-syslog-catalog <path>` replaces the entire catalog surface (universal + per-type overlays) with a single JSON file.
+- **Per-type catalog overlays** load from `resources/<slug>/syslog.json` when present. Each device of type `<slug>` fires from the merged catalog (universal + per-type). See [Per-type catalog overlays](#per-type-catalog-overlays).
+- **The global rate limiter** (`-syslog-global-cap`) gates scheduled fires. On-demand fires via the HTTP endpoint **bypass** the cap. They're for fault injection, not load shaping.
 
 ## Scope
 
-UDP is the default transport and the one most collector tests exercise.
+UDP is the default transport.
 TCP (RFC 6587) and TLS (RFC 5425) are documented under [TCP transport](#tcp-transport-rfc-6587) below.
-They are deliberately not symmetric with UDP: a TCP or TLS device owns one connection and has no shared-socket fallback.
+A TCP or TLS device owns one connection and has no shared-socket fallback.
 
 ## RFC 5424 wire format
 
@@ -246,10 +244,7 @@ The per-device `syslog` block of `POST /api/v1/devices` is in [Web API → Per-d
 
 Syslog is UDP by default.
 Setting `-syslog-transport tcp`, or a per-device `"transport": "tcp"`, carries the same messages over a per-device TCP connection instead.
-
-The message does not change.
-Catalog, template vocabulary, wire format and the resolved bytes are properties of the message; the transport only decides how those bytes reach the collector.
-Moving a deployment between transports gives you the same bytes, framed differently.
+The message bytes do not change; only the framing differs.
 
 ### Framing
 
@@ -258,115 +253,66 @@ Moving a deployment between transports gives you the same bytes, framed differen
 | `octet-counting` (default) | `<byteCount> SP <msg>` | RFC 6587 §3.4.1. What rsyslog emits, and unambiguous for any payload. |
 | `non-transparent` | `<msg> LF` | RFC 6587 §3.4.2. Some Cisco platforms speak only this. |
 
-Octet-counting is the default because it is safe by construction.
-LF framing is only unambiguous because the message body cannot contain a bare line feed, and that guarantee comes from a control-byte replacement added to prevent injection of a forged `<PRI>` line.
-It holds today, but it is a precondition, and the default should not depend on one.
-
 Setting `framing` while the transport is `udp` is **rejected**, not ignored.
 The CLI equivalent, `-syslog-framing`, seeds the auto-start batch and is rejected at startup under `udp` in the same way.
 
 ### TCP refuses where UDP degrades
 
 Under UDP a device that cannot bind its own socket falls back to a shared one, losing source-address attribution and nothing else.
-A datagram socket is stateless, so one socket can serve any number of devices.
+TCP has no shared connection, because one stream carries no field to tell devices apart.
 
-There is no equivalent for TCP.
-A shared connection would multiplex several devices into **one framed byte stream carrying no field to demultiplex on**, so the collector would see a single client and per-device identity would be destroyed rather than degraded.
-
-Two consequences:
-
-- A device never shares a connection with another device.
-- `-syslog-source-per-device=false` makes a TCP attach **fail**, because the fallback it selects does not exist for a stream transport.
-
-The dial itself is asynchronous: attach succeeds once the reconnect loop is running.
-Requiring the collector to be up at attach time would make fleet startup depend on collector availability, which is the condition the reconnect loop exists to ride out.
-
-### Connection handling
-
-One connection per device, dialled from inside the device's network namespace so the source address is the device's own.
-Reconnect uses capped backoff, and the backoff only resets once a connection has survived long enough to count as working.
-A collector that accepts and immediately closes (an ACL reject) backs off instead of being re-dialled every second by every device.
-
-TCP keepalives are on.
-Without them a collector that dies **without closing** (host crash, network partition) is undetectable on an idle connection: the read that would notice never returns, and the device is silently gone.
+| Rule | Behaviour |
+|---|---|
+| Connections | One per device, never shared, dialled from inside the device's network namespace so the source address is the device's own. |
+| `-syslog-source-per-device=false` | A TCP or TLS attach **fails**. |
+| Attach | Succeeds once the reconnect loop is running. The collector does not need to be up. |
+| Reconnect | Capped backoff. The backoff resets only after a connection has survived long enough to count as working, so a collector that accepts and immediately closes is not re-dialled every second. |
+| Keepalives | On, so a collector that dies without closing (host crash, partition) is detected on an idle connection. |
+| Send buffer | Capped per connection rather than auto-tuned, so a stalled collector is noticed in seconds. |
+| Stalled write | Dropped after a short bound and the connection replaced. A write never blocks the scheduler. |
 
 ### What `sent` means under TCP
 
 `GET /api/v1/syslog/status` rows carry a `transport` field, so TCP and UDP devices sending the same format to the same collector do not merge into one row.
-
 On the datagram path `sent` approximates "on the wire".
 **On TCP it means "handed to the kernel"**, and under load those differ by however deep the send buffer is.
-
-The per-connection send buffer is capped deliberately rather than inherited.
-Linux auto-tunes it to roughly 4 MiB against a collector that has stopped reading; at 30,000 devices that would be ~117 GiB of kernel buffer, so the default is the difference between the feature existing at fleet scale and not.
-The cap also means a stalled collector is noticed in seconds rather than minutes.
-
-A write that cannot complete within a short bound is dropped and the connection replaced.
-Blocking is not an option: the syslog scheduler fires inline for the whole fleet, so one stalled collector would stop every device.
 
 ### TLS (RFC 5425)
 
 `transport: "tls"` carries the same stream inside a TLS session.
-Everything the plaintext stream transport does is unchanged: per-device connection, reconnection, keepalives, the write bound, the refusal to share a connection.
-
+Every TCP rule above applies.
 Three things differ:
 
 | | |
 |---|---|
 | **framing** | only octet-counting is accepted. An empty framing defaults to it. RFC 5425 §4.3.1 mandates it, so any other framing is rejected with 400 at configuration rather than overridden. |
 | **default port** | **6514** where the other transports use 514 (RFC 5425 §4.1). |
-| **verification** | the collector's certificate is verified. |
+| **verification** | the collector's certificate is verified. TLS 1.2 is the floor and is not configurable. |
 
 **A bare hostname changes port when you change transport.**
 `"collector": "logs.example"` means `logs.example:514` under `udp` and `tcp`, and `logs.example:6514` under `tls`.
-That is what the RFC assigns, and it means switching a portless collector to TLS silently moves which port it talks to.
 Give the collector an explicit port if you do not want that.
 
 #### What is verified, and by whom
 
 nl6 is the **client** here.
-It verifies the *collector*; it presents no certificate of its own.
-
-```
-        nl6 (client)                     collector (server)
-             │──── dial, handshake ─────────▶│
-   verifies the collector ◀──── presents its server cert
-```
-
-This is worth stating because it is the opposite of what the rest of the simulator does with TLS: the HTTPS API and the gNMI dial-in listener present nl6's shared certificate as *servers*.
-That certificate is irrelevant on this path.
-It answers "who is connecting", which nothing here asks.
+It verifies the *collector* and presents no certificate of its own.
+The shared certificate the HTTPS API and gNMI dial-in present is not used on this path.
 
 | field | effect |
 |---|---|
-| `tls.ca_pem` | PEM bundle used to verify the collector, **inline** |
+| `tls.ca_pem` | PEM bundle used to verify the collector, **inline**. Capped at 64 KiB. |
 | *(omitted)* | verify against the host's root store |
 | `tls.insecure_skip_verify` | disable verification (development only). The CLI seed equivalent is `-syslog-tls-insecure`. |
 | `tls.mtls` | **not implemented**, rejected at configuration rather than ignored |
 
-The CA is inline PEM rather than a file path, and that is deliberate.
-A path in the per-device config is settable over REST, which would let any API caller name a file for the simulator to open.
-That is an arbitrary-file-read primitive, where even the error message distinguishes "could not read" from "no certificates here".
-Certificate authorities are small and pasteable, so a path bought nothing worth that.
+The REST field takes inline PEM, never a file path.
+On the command line `-syslog-tls-ca` names a file, read once at startup.
+Whatever the source, **only `CERTIFICATE` blocks are kept**; a private key in the bundle is discarded, because `GET /api/v1/devices` echoes this config.
 
-A path survives on the command line, where the operator who started the process names it with `-syslog-tls-ca`.
-That file is read once at startup and its contents stamped into the seed config, so the trusted read happens in exactly one place.
+With no `ca_pem` and no explicit `insecure_skip_verify`, a collector the host does not trust fails to connect.
 
-Whatever the source, **only `CERTIFICATE` blocks are kept**.
-A bundle that also carries a private key has the key discarded rather than stored, because this config is echoed back by `GET /api/v1/devices`.
-`ca_pem` is capped at 64 KiB.
-
-Verification cannot be lost by omission: with no `ca_pem` and no explicit `insecure_skip_verify`, a collector the host does not trust fails to connect.
-
-TLS 1.2 is the floor and is not configurable.
-
-#### Memory at fleet scale
-
-The socket send-buffer cap applies as it does for plaintext, and is applied to the underlying socket *before* the TLS wrap.
-After wrapping, the connection is no longer a raw TCP socket and the setting is unreachable.
-
-TLS adds record buffers **per connection**, on top of the socket buffer.
-So the per-device cost is higher than the plaintext figure, and a fleet-scale estimate should not reuse it.
+TLS adds record buffers per connection on top of the capped socket buffer, so size a TLS fleet above the plaintext per-device cost.
 
 ### Collector-side caveats
 
@@ -399,10 +345,10 @@ Responses:
 | Status | Body | When |
 |--------|------|------|
 | `202 Accepted` | `{}` | Success; the message was emitted. |
-| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for the device. The enriched body tells the caller which catalog the device resolved to and lists its entries so a scripted caller can self-service. |
+| `400 Bad Request` | `{"error": "...", "catalog": "<slug>", "availableEntries": [...]}` | Unknown catalog entry for the device. The body names the catalog the device resolved to and lists its entries. |
 | `404 Not Found` | error JSON | Unknown device IP. |
 | `503 Service Unavailable` | error JSON | The syslog subsystem has not started **or** the target device has no syslog config (i.e. it was created without a `syslog` block and didn't inherit the CLI seed). |
-| `500 Internal Server Error` | error JSON | Pathological: catalog resolution returned nil while the feature reports active. Indicates a broken manager invariant, not a transient issue. |
+| `500 Internal Server Error` | error JSON | Internal error; report it as a bug. |
 
 On-demand fires **do not** consume global rate-cap tokens.
 
@@ -447,25 +393,17 @@ Fields:
 
 | Field | Meaning |
 |-------|---------|
-| `subsystem_active` | `true` after `StartSyslogSubsystem` runs. During normal operation of the HTTP server this value is always `true`: the subsystem initialises in `main()` and the only path that flips it to `false` is `StopSyslogExport`, which runs at process exit alongside the HTTP server. A `false` value is therefore only observable programmatically (e.g. a test harness calling `GetSyslogStatus` without starting the subsystem). |
+| `subsystem_active` | `true` whenever the HTTP server is answering. Branch on it, or on `len(collectors) > 0` to learn whether any device has opted in. |
 | `collectors[]` | One record per `(collector, format, transport)` tuple that ever had a device. |
 | `collectors[].collector` | Target `host:port` (canonicalised). |
 | `collectors[].format` | `"5424"` or `"3164"`. |
-| `collectors[].transport` | `"udp"`, `"tcp"` or `"tls"`. Keeps a TCP outage from merging into a row of healthy UDP devices sending the same format to the same collector. |
-| `collectors[].devices` | Count of LIVE devices emitting to this tuple. `0` means no live device but the aggregate remembers prior fires (monotonic within subsystem lifecycle). |
+| `collectors[].transport` | `"udp"`, `"tcp"` or `"tls"`. |
+| `collectors[].devices` | Count of LIVE devices emitting to this tuple. `0` means no live device but the aggregate remembers prior fires until process exit. |
 | `collectors[].sent` | Cumulative wire emissions across all devices (live + deleted) for this tuple. |
 | `collectors[].send_failures` | Fires that did not reach the transport, on every transport: a resolve or encode error, a refused write, or a `tcp` or `tls` device with no connection. |
 | `devices_exporting` | Total count of LIVE devices with a `SyslogExporter` across all tuples. |
 | `rate_limiter_tokens_available` | Present only when `-syslog-global-cap` is set; instantaneous snapshot, not synchronised with concurrent waits. |
 | `catalogs_by_type` | Map of `<slug>` → `{entries, source}` showing the merged-catalog state. `_universal` key is always present when the subsystem is running. `source` is `"embedded"`, `"file:<path>"`, or `"override:<path>"` when `-syslog-catalog` was supplied. |
-
-When the subsystem is stopped (or never started):
-
-```json
-{"subsystem_active": false, "collectors": [], "devices_exporting": 0}
-```
-
-Clients that previously branched on the retired `enabled` scalar should branch on `subsystem_active` (primary) or `len(collectors) > 0` (secondary, true only when at least one device has opted in).
 
 ## CLI flags
 

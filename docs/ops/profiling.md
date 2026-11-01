@@ -19,13 +19,12 @@ The gate is runtime-switchable in the same shape as [fidelity mode](../reference
 | Pull (`/debug/pprof/`) | gate open | `net/http/pprof`'s index, `profile`, `symbol`, `trace`, the named runtime profiles (`heap`, `allocs`, `goroutine`, `threadcreate`, `block`, `mutex`), and `godeltaprof`'s `delta_heap`, `delta_block`, `delta_mutex` |
 
 Mutex and block profiles are served but **empty**: nl6 does not set `runtime.SetMutexProfileFraction` or `runtime.SetBlockProfileRate`, because their cost has not been measured.
-A test pins both at 0 across an on/off/on cycle, so a change that sets them has to restore them on stop.
 
 The pull surface is mounted on the root router, not under `/api/v1`, so Alloy's default `pyroscope.scrape` paths resolve without configuration.
 `/debug/pprof/cmdline` is deliberately not served: it prints the process arguments, which carry `-profiling-pyroscope-basic-auth`, and Alloy never scrapes it.
 `/debug/pprof` without the trailing slash redirects onto the gated prefix.
 `profile?seconds=N` and `trace?seconds=N` are refused by `net/http/pprof` when `N` reaches the HTTP server's 30 s `WriteTimeout`, so Alloy's `delta_profiling_duration` (14 s by default) must stay under it.
-`trace` is served for completeness; a trace records every scheduling event and costs far more than the sampled profiles, so keep its `seconds` short.
+A `trace` records every scheduling event and costs far more than the sampled profiles, so keep its `seconds` short.
 
 ## The gate
 
@@ -82,7 +81,17 @@ A `server_address` on an `enabled:false` request is refused rather than ignored,
 
 A push the SDK refuses to start answers `500` with the state attached; the pull surface still serves.
 
+`duration` is a Go duration such as `30m`.
+It must be positive and at most `24h`; a longer one is refused with `400`.
 A `duration` revert restores the gate and the push address together, following the same chain rule as [fidelity mode](../reference/web-api.md#fidelity-mode).
+While a revert is pending, `GET` reports it in four fields:
+
+| Field | Meaning |
+|---|---|
+| `revert_pending` | `true` while a `duration` revert is scheduled. Always present. |
+| `revert_at` | When the revert fires, RFC 3339 in UTC. Omitted when nothing is pending. |
+| `revert_to` | The gate value the revert restores. This is the value before the first timed request of a chain, so it cannot be inferred from `enabled`. Omitted when nothing is pending. |
+| `revert_to_address` | The push address the revert restores with it. Empty when the restored state is pull-only or off. |
 
 ### What the status means
 
@@ -132,21 +141,15 @@ To scrape CPU with Alloy, open the gate **pull-only** (`"server_address":""`); t
 ## Subsystem labels
 
 Every profile carries a `subsystem` pprof label with one of `snmp`, `trap`, `syslog`, `flow`, `gnmi`, `gnmi-dialout`, `scenario`.
-Set once at goroutine birth: the per-device SNMP read loop, the trap INFORM reader and retry loops, the syslog TCP reconnect loop, the gNMI dial-out loop, the fleet flow ticker (`flow`) and the scenario flow ticker (`scenario`).
-Set through `pprof.Do` for the call's duration: per fire on the trap and syslog funnels, per tick on the flow funnel (skipped when the caller already carries `flow`, so the fleet ticker allocates nothing per exporter), per RPC on gNMI `Get` and `Subscribe`, and around a scenario start and finish.
 In Pyroscope, filter with `{service_name="nl6",subsystem="trap"}`.
-Labels nest by the runtime's rule: `pprof.Do` restores the labels of the context it was given, so a goroutine labelled at birth keeps its label across a funnel because it hands the funnel its birth context (the scenario ticker carries `scenario` between ticks and `flow` inside one).
-A label merely **inherited** by a goroutine, such as the scenario syslog scheduler spawned under a scenario start, does not survive a trap or syslog funnel, by design: those fires are trap and syslog work.
-What is pinned **behaviourally** (read back from the goroutine profile or from inside the funnel) for: the SNMP read loop, the trap fire funnel, the trap INFORM loops, the syslog fire funnel, the flow tick funnel, the fleet flow ticker, gNMI `Get` and `Subscribe`, the dial-out loop, the scenario flow ticker (between ticks, after ticks ran), the scenario `finish`, a scheduled start's inherited label, and the nesting rule itself.
-Not pinned behaviourally: the syslog TCP reconnect loop and `startLocked` on the non-scheduled path (the same helper, covered by the helper's own test).
-The interop test proves only that a label set through the helper reaches Pyroscope and is filterable, over both the push and the Alloy scrape.
+A long-lived goroutine (the SNMP read loop, the trap INFORM loops, the syslog TCP reconnect loop, the gNMI dial-out loop and the two flow tickers) is labelled once at birth.
+A trap or syslog fire, a flow tick, a gNMI `Get` or `Subscribe`, and a scenario start or finish are labelled for the call's duration.
+A trap or syslog fire is always labelled `trap` or `syslog`, even when a scenario started it.
 
 **What "off by default pays nothing" means.** The labels are set whether or not profiling is on.
-A goroutine label is a pointer swap set once per long-lived goroutine, from a context built once per subsystem; `pprof.Do` on a shared scheduler goroutine allocates one small map per fire.
-The delta on a syslog-fire benchmark (CI runner class, `main` versus this branch): **+3 allocs, +104 B, about +6% wall time** per fire (23 allocs / 2662 B / 8835 ns on `main` against 26 / 2766 / 9428 ns).
-Re-labelling live goroutines on toggle would need every long-lived loop to poll the gate, which costs more than the label, so that cost is paid unconditionally and this sentence is the disclosure.
+They cost about 3 allocations and 104 bytes per trap or syslog fire.
 Everything else, the SDK, its goroutines, the forced GC, the upload connection, and the pull handlers, exists only while the gate is open.
-The feature opens no listener of its own by construction: the two files that implement it never call anything that opens a socket, and a test scans them for that.
+The feature opens no listener of its own.
 
 ## Scrape with Alloy
 
@@ -180,48 +183,27 @@ In production, disable them when the delta variants are on, so each profile is s
   }
 ```
 
-`make test-interop-pyroscope` runs this exact file against real `grafana/pyroscope` and `grafana/alloy` containers and asserts, through Pyroscope's query API, that the pushed CPU and `alloc_space` profiles and the scraped `process_cpu` and `goroutine` series arrive, that the `subsystem` label filters on both the pushed and the scraped service, and that a `service_name` nothing pushed under returns nothing (the control without which the other rows prove reachability, not ingestion).
-It is a CI gate.
+`make test-interop-pyroscope` runs this exact file against real `grafana/pyroscope` and `grafana/alloy` containers in CI.
 
 **Do pprof labels survive an Alloy scrape?** Yes.
-A pprof label is a sample label inside the pprof body, so a scrape carries it exactly as a push does; the interop test's second row runs a labelled CPU burn while Alloy scrapes and requires `{service_name="nl6-interop-scrape",subsystem="interop-probe"}` to return ticks and a bogus label to return none.
+A pprof label is a sample label inside the pprof body, so a scrape carries it exactly as a push does.
 
 ## The forced-GC default, measured
 
 Before each heap snapshot the SDK forces a `runtime.GC()` if no collection ran during the upload interval, so the heap profile is fresh.
 `-profiling-force-gc` controls it (`false` sets the SDK's `DisableGCRuns`).
-Its default was **set from a measurement, not chosen**, by a rule registered before the number was known: if one `runtime.GC()` on a heap built from N=5000 TUN-less devices, extrapolated linearly to 30,000, exceeds 150 ms (1% of one core per 15 s upload window), default `false`; otherwise default `true`.
+The default is `true` because one forced GC, extrapolated to 30,000 devices, stays under 150 ms (1% of one core per 15 s upload window).
 
 | N devices | live heap | ms per `runtime.GC()` (3 runs of `-benchtime=5x`) |
 |-----------|-----------|----------------------------------------------------|
 | 1000 | 16.7 MiB | 1.0, 1.0, 1.5 |
 | 5000 | 78.5 MiB | 4.3, 4.8, 5.8 |
 
-Linear from the N=5000 median (4.8 ms): **~29 ms at 30,000 devices**, ~35 ms from the worst run.
-Machine: Apple M1 Max, darwin/arm64, Go 1.27.0, `asr9k` profile, measured with a forced-GC benchmark over a fleet-sized heap.
-Under the 150 ms line by a factor of five, so **the default is `true`** (the SDK default), and `simulator.go`'s flag default reads from the same constant.
-
-This is an **in-process proxy**.
-The benchmark's devices carry their value engines and resource pointers but no sockets, TUN interfaces or namespace, so a real 30,000-device fleet's heap is larger and its GC slower than the extrapolation.
-The check is to time one forced GC on a host running 30,000 real devices and compare it with the 15 s upload cadence, against the same 150 ms line (1% of that window).
-If a fleet-scale measurement crosses the line, flip the constant and this table.
-
-## Go version coupling
-
-`godeltaprof` forks `runtime/pprof` internals and reaches into the runtime with `go:linkname`.
-It has broken on Go major releases before.
-Upstream once had to cut a release because the published `godeltaprof` did not build with Go 1.21, and its tests later failed against Go tip after a runtime change.
-`github.com/grafana/pyroscope-go/godeltaprof` is pinned to the newest tag that declares support for the Go version in `go.mod` (`v0.1.12` carries a `go1.27` build file).
-**When bumping Go**: check that a `godeltaprof` tag declares the new major before bumping `go.mod`, then rebuild with `CGO_ENABLED=0 GOOS=linux` (the Dockerfile's shape).
-If no tag does, the Go bump waits; do not pin an older Go and do not vendor a fork.
+Linear from the N=5000 median (4.8 ms): **~29 ms at 30,000 devices**.
+The devices in this measurement have no sockets, TUN interfaces or namespace, so a real fleet's heap is larger and its GC slower.
+If a forced GC on your fleet approaches 150 ms, run with `-profiling-force-gc=false`.
 
 ## Web console
 
 The console's "heap profile" and "CPU profile" buttons fetch `/debug/pprof/heap` and `/debug/pprof/profile?seconds=5`.
 With the gate closed they show the server's `503` message instead of a silent empty download.
-
-## Not built, by decision
-
-- No eBPF profiling (`pyroscope.ebpf`, a privileged Alloy sidecar). It is the only way to get kernel frames and off-CPU time, it is CPU-only and blind to goroutines, and Grafana's own pages disagree on its kernel floor (4.9 versus 5.10).
-- No span profiles or OpenTelemetry bridge.
-- No mTLS or CA pinning for the push; the address is a plain `http://` or `https://` URL.

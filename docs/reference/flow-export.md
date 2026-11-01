@@ -6,16 +6,14 @@ description: "The NetFlow v5, NetFlow v9, IPFIX and sFlow formats nl6 emits, wit
 # Flow export
 
 nl6 emits synthetic flow telemetry in four protocols: **NetFlow v5** (Cisco), **NetFlow v9** (RFC 3954), **IPFIX** (RFC 7011), and **sFlow v5** (`sflow_version_5.txt`).
-This page covers the protocol-level details.
 For deployment, collector setup, and `rp_filter` tuning see [Flow export how-to](../ops/flow-export.md); for the CLI flags see [CLI flags → Flow export](cli-flags.md#flow-export-flags).
 
 ## Architecture
 
 - Per-device UDP sockets when `-flow-source-per-device=true` (the default).
   Otherwise a pool of **shared UDP sockets** keyed by `(collector, protocol)`.
-  A single ticker goroutine in `flow_exporter.go` drives both.
-- Each simulated device owns a `FlowCache` populated with role-appropriate synthetic flows (edge router, DC switch, firewall, …).
-- `FlowEncoder` is a protocol-agnostic interface; `netflow5.go`, `netflow9.go`, `ipfix.go`, and `sflow.go` implement it.
+  One ticker drives both.
+- Each simulated device owns a flow cache populated with role-appropriate synthetic flows (edge router, DC switch, firewall, …).
 - Batch pagination is protocol-aware (different header sizes, different record limits per UDP datagram).
 - Template refresh is handled in v9 / IPFIX via the [`-flow-template-interval`](cli-flags.md#flow-export-flags) flag.
 
@@ -71,9 +69,9 @@ Each device emits **one** shape; run two device groups with different shapes to 
 String fields are fixed 32-byte NUL-padded values.
 The options datagram advances the sequence counter per its protocol's rule: NetFlow v9 by 1 (RFC 3954 counts export packets), IPFIX by the number of Options Data Records it carries (RFC 7011 §3.1 counts Data Records, and an Options Data Record is one).
 It counts toward `sent_packets` / `sent_bytes` but not `sent_records` (option records are metadata, not flows).
-`send_failures` counts refused datagrams and, for an AVC device, records dropped because they fit no datagram; the drop is logged once per exporter through its own gate, separate from encoder errors.
+`send_failures` counts refused datagrams and, for an AVC device, records dropped because they fit no datagram; the drop is logged once per exporter.
 Valid only under `netflow9` / `ipfix`; combining it with `netflow5` / `sflow` is rejected at validation.
-Default off; devices without the field emit byte-identical output to previous releases.
+Default off.
 
 ```bash
 # 20 devices emitting NetFlow v9 + an if-scoped option interface-table
@@ -94,9 +92,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 NBAR2 export adds Cisco layer-7 application fields to a device's IPFIX records.
 Cisco calls the classifier NBAR2 and the export format AVC.
-This section uses NBAR2 for the feature and AVC for the record layout.
-NBAR2 is a record format carried inside the IPFIX protocol.
-It is not a separate `protocol` value.
+NBAR2 is a record format inside IPFIX, not a separate `protocol` value.
 The status API and the socket pool report an NBAR2 device as `ipfix`.
 
 Only two device types have NBAR2.
@@ -119,8 +115,7 @@ Any other protocol, including the `netflow9` default, is rejected with a 400.
 | `asr9k` | IOS-XR | no |
 | `cisco_asr9902` | IOS-XR | no |
 
-The set is curated by name in `nbar2_capability.go`, with a reason per row.
-It is never derived from a slug prefix.
+The set is curated by type name, not derived from a slug prefix.
 A request whose whole resolved type set lacks NBAR2 is rejected with a 400 naming the type and its OS.
 
 A mixed round-robin batch is accepted.
@@ -159,8 +154,6 @@ curl -X POST http://localhost:8080/api/v1/devices \
 The seed flag `-flow-nbar2` exists for the auto-start batch but is refused at startup on every boot today.
 The auto-start batch is always built as `asr9k`, which has no NBAR2, and no flag selects another type.
 The error names the REST remedy.
-Refusing is deliberate.
-A batch that booted and silently emitted plain IPFIX under an NBAR2 flag would look configured while doing nothing.
 
 There is no per-device catalog path on the REST surface.
 The catalog is chosen per device type, see [The catalog](#the-catalog).
@@ -217,8 +210,6 @@ Without one, only 259 is sent.
 
 The IPFIX Sequence Number counts Data Records, options records included, per RFC 7011 §3.1. That is the same rule the plain IPFIX encoder follows.
 
-All AVC constants and field lengths derive from `testdata/cisco-avc/elements.tsv`.
-
 ### Application-first generation
 
 For an NBAR2 device the catalog decides protocol and destination port, not the `FlowProfile`.
@@ -228,7 +219,7 @@ The flow then draws a host and a URI by weight from that application's lists.
 The exporter therefore never emits a record on port 443 tagged as an application that runs elsewhere.
 
 The profile's volume knobs still apply.
-Concurrent flows, lifetimes and per-device record ceilings come from the `FlowProfile` as before.
+Concurrent flows, lifetimes and per-device record ceilings come from the `FlowProfile`.
 Only the port and protocol distribution comes from the catalog.
 
 The host and URI draws happen on every flow, even for an entry with no host or URI list.
@@ -236,7 +227,6 @@ A seeded device therefore reproduces its stream exactly.
 Adding a host list to one entry does not shift any other entry's stream.
 
 Enabling NBAR2 on one device does not change what any other device emits.
-A digest over every shipped type and protocol pins that.
 
 ### The catalog
 
@@ -311,24 +301,20 @@ The remedy is a larger `-datagram-mtu` or shorter hosts and URIs, followed by a 
 
 No shipped entry is disabled at any legal MTU.
 At the 576-byte floor the IPv6 budget is 528 bytes, and every shipped entry fits it.
-The disable path is exercised only by a load-time test with a planted 1400-byte URI.
 
 ### Interoperability
 
 `make test-interop-ipfix` decodes nl6's AVC records with CESNET IPFIXcol2 using libfds's own Cisco element definitions.
-It requires the two PEN 9 fields to resolve by name, as `cisco:appHTTPHost` and `cisco:appHTTPUriStatistics`.
-It decodes `applicationId` to a catalog entry, receives the application table, and reconciles a scenario report against the collector's records with no tolerance.
-The gate runs in CI and fails rather than skips when docker is missing.
-An `en9:idNNNN` field name in the collector's output is the failure signal.
+The two PEN 9 fields resolve by name, as `cisco:appHTTPHost` and `cisco:appHTTPUriStatistics`.
+An `en9:idNNNN` field name in a collector's output means its element definitions lack them.
+The gate reconciles a scenario report against the collector's records with no tolerance.
 
 ### Differences from IOS-XE 26.01.02
 
-A Cisco Catalyst 8000V running IOS-XE 26.01.02 exported AVC records through containerlab on 2026-09-21. The capture is checked in and each row below is pinned by a test that decodes it.
-The capture confirmed the IE 9357 layout, the application table string lengths, the `http` id and the sequence arithmetic.
-It also showed that the HTTP host carries a constant prefix. nl6 emits that prefix.
-
-Five differences remain and are recorded rather than fixed. nl6 exists so collectors can be tested against layer-7 records at scale, and every open decoder tried reads its records correctly.
-An item is fixed when a consumer needs it.
+The reference is a Cisco Catalyst 8000V running IOS-XE 26.01.02.
+nl6 matches its IE 9357 layout, application table string lengths, `http` id, sequence arithmetic and HTTP host prefix.
+Five differences remain.
+Every open decoder tried reads nl6's records correctly.
 
 | | IOS-XE 26.01.02 | nl6 | What a collector sees |
 |---|---|---|---|
@@ -337,7 +323,6 @@ An item is fixed when a consumer needs it.
 | URI depth | First path segment only. `/api/v1` arrives as `/api`. | Full catalog value, such as `/api/v1/items`. | Longer URIs than a router produces. |
 | Application table | 1560 rows, two-thirds engine 13. Reclassifies HTTP mid-connection to `binary-over-http` and emits a second record. | Every entry is engine 3. One record per flow with a stable id. | Fewer applications and no mid-flow reclassification. |
 | Template ids and option widths | Interface table under 256 with 33-byte name, 65-byte description and egressInterface. Application table under 257. Data under 258. | Interface table under 257 with 32 and 32 and no egressInterface. Application table under 259. Data under 258. | The option-table ids collide with Cisco's numbering. Decode by template content, not by id. |
-
 
 ## Starting flow export
 
@@ -354,186 +339,66 @@ records/s  ≈  ConcurrentFlows / mean-flow-lifetime
 mean-flow-lifetime = mean of  min(active-timeout, flow-duration + inactive-timeout)
 ```
 
-Each synthetic flow is given a duration sampled from the device profile.
-A flow still running when it reaches the **active timeout** is exported and restarted; a flow that has ended and then sat idle for the **inactive timeout** is exported then.
-Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one, giving a mean cached lifetime near 29s.
+Each flow gets a duration sampled from the device profile.
+A flow still running when it reaches the **active timeout** is exported and restarted.
+A flow that has ended and then sat idle for the **inactive timeout** is exported then.
+Under the shipped edge-router profile (durations U(0.2s, 120s), 30s active, 15s inactive) about 92 % leave by the active timeout and 8 % by the inactive one.
+The mean cached lifetime is near 29s, which is about 4.2 records/s per device.
+
+To raise or lower volume, change the concurrent-flow count or the timeouts.
+
+### Emission shape
 
 The **active timeout is jittered per flow**, by ±25 % of its configured value.
 A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s.
-The jitter is symmetric, but symmetric in the deadline is not symmetric in the lifetime: the lifetime is a **minimum** of that deadline and another, and a minimum is concave, so a spread lowers it slightly.
-Measured across the shipped profiles the mean lifetime falls by 0.05 % to **1.18 %**, largest on the campus-switch profile whose sampled durations cluster near the timeout.
-So the jitter changes when records leave, and how many by about a percent.
-See [Emission shape](#emission-shape) for why.
+`-flow-active-timeout` sets a mean, not an exact deadline.
+A collector rule keyed on flows arriving at exactly the configured active timeout sees a spread instead of a spike.
+The jitter lowers the mean lifetime by 0.05 % to 1.18 % across the shipped profiles, most on the campus-switch profile.
 
 Expiry is noticed by a periodic sweep.
-A flow's real residency is therefore the mean lifetime **plus about half a tick interval**, because it waits for the sweep that notices its deadline.
-That term matters for pacing.
+A flow's residency is therefore the mean lifetime **plus about half a tick interval**.
 A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
+The per-device scenario ceiling is about 8.1 to 9.2 records/s at the 5s default tick.
 
-`-flow-tick-interval` sets how finely that stream is cut into datagrams, not how much of it there is.
-Because export polls, a flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat.
+### Tick interval and datagrams
+
+`-flow-tick-interval` sets how finely the stream is cut into datagrams, not how much of it there is.
+A flow can sit cached up to one interval past its deadline, so a slower tick reduces the rate somewhat.
 The reduction is bounded by the interval rather than proportional to it.
-Measured across a 30x cadence range:
+Treat rate predictions at a coarse cadence as approximate.
+Setting the tick close to or above the mean flow lifetime is not useful: every flow then lives about one tick and the cache turns over wholesale.
+A value of zero or less is refused at startup.
+A value above 1h is not rejected: nl6 logs `flow export: ignoring out-of-range tick interval` at startup and runs at the 5s default.
 
-| tick | records/s | mean records per tick |
-|---|---|---|
-| 1s | 4.37 | 4 |
-| 5s | 4.24 | 21 |
-| 15s | 3.94 | 59 |
-| 30s | 3.63 | 109 |
-
-Note "more records per datagram" holds only up to the MTU: NetFlow v9 fits 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams rather than one large one.
-Cadence therefore controls burst *size* at the collector, which is the quantity a collector's capacity actually responds to.
+A slower tick puts more records in each tick, up to the MTU.
+NetFlow v9 fits 31 records per datagram, so a 128-record tick is emitted as roughly five back-to-back datagrams.
+Cadence therefore controls burst *size* at the collector.
 
 The per-datagram record count follows from the payload budget, which is the MTU minus the IP and UDP headers.
 At the default 1500 MTU that is 1472 bytes for an IPv4 collector and 1452 for IPv6; both move with `-datagram-mtu`.
 nl6 paginates so the whole frame fits the MTU and no export datagram is IP-fragmented.
-That matters on a real path because a single lost fragment discards the entire datagram, taking all 31 records with it, and some collectors and middleboxes drop fragments outright.
+A single lost fragment discards the entire datagram, and some collectors and middleboxes drop fragments outright.
 
 **NetFlow v5 does not scale with the MTU.** Cisco v5 caps a datagram at 30 records regardless of how much space is available, so a v5 exporter stays at 30 records and roughly 1464 bytes whatever `-datagram-mtu` is set to.
 Raising the MTU for a jumbo path increases v9 and IPFIX datagram size but leaves v5 emitting the same number of the same-sized datagrams.
 
 The MTU defaults to 1500.
-What it governs beyond flow, when to lower it and why nl6 does not discover it are in [CLI flags → Datagram MTU](cli-flags.md#datagram-mtu).
-
-Setting the tick close to or above the mean flow lifetime is not useful.
-Every flow then lives about one tick and the cache turns over wholesale.
-A value of zero or less is refused at startup.
-A value above 1h is not rejected: nl6 logs `flow export: ignoring out-of-range tick interval` at startup and runs at the 5s default.
-
-To raise or lower volume, change the concurrent-flow count or the timeouts.
-
-### Cadence and volume
-
-**Measured on the wire.** The emission model here was derived by reading the code and simulating the loop.
-Two of its predictions were then checked against a packet capture, and the rest were not.
-The distinction matters, so it is drawn explicitly below.
-
-The capture ran on a **simulated** fleet: one nl6 device of type `cisco_ios` (a simulated device type, not a physical router) on a KVM virtual machine, 300s per cell, netflow9, comparing binaries built from the two commits either side of this change.
-
-| cell | measured | model | delta |
-|---|---|---|---|
-| pre-change, 5s cadence | 6.07 rec/s, **40 of 54 ticks silent** | 6.40 | −5.2 % |
-| post-change, 5s cadence | 4.12 rec/s, **0 of 58 silent** | 4.24 | −2.8 % |
-| pre-change, 30s cadence | 6.09 rec/s | n/a | flag inert, confirmed |
-| post-change, 30s cadence | 3.03 rec/s | 3.63 | **−16.5 %** |
-
-The rows of the cadence table above at 1s and 15s were **not** captured; they are model output.
-
-What the capture establishes: the flag really was inert (5s and 30s gave the same rate before the change), the cohort sawtooth really existed (roughly 3 of every 4 ticks emitted nothing, the emitting ones carrying the whole cache), and the volume ratio is 0.679 against the 0.66 stated here.
-
-The model runs about 5 % hot in every cell, which is expected.
-It advances time in exact tick increments with no scheduling jitter or warm-up truncation, so it counts expiries the wire narrowly misses.
-
-**The 30s cell is the exception and is not explained by that.**
-A 16.5 % shortfall is larger than jitter accounts for.
-Capture-side packet loss was the leading alternative and is **excluded**: NetFlow v9 carries a per-exporter datagram sequence number, and all four captures are sequence-continuous with zero gaps, so nothing was dropped between the exporter and the measurement.
-The remaining candidate is the model's own quantisation.
-At a 30s cadence against a ~29s mean lifetime the cache turns over wholesale each tick, so a flow whose lifetime lands slightly past a boundary slips a whole period, which the model resolves identically every time and real timing does not.
-That is a hypothesis, not a finding.
-Treat coarse-cadence rate predictions as approximate, which is a further reason to keep the tick well below the mean flow lifetime.
-
-Two independent corrections landed together.
-**Both change the load a given configuration offers**, so measurements taken across this boundary are not comparable on the flow axis.
-Reports carry `nl6_version`, so the boundary stays identifiable.
-
-| | before | after |
-|---|---|---|
-| **cadence**, for deployments setting `-flow-tick-interval` | flag inert; every deployment ticked at 5s | the configured cadence applies |
-| **volume**, for **every** flow deployment, flag or not | ~6.4 records/s per device | **~4.2 records/s** (about 0.66x) |
-| **shape** | whole cache exported on one tick, then several silent ticks | records on every tick, at every cadence |
-
-The volume change reaches deployments that set no flag at all, which makes it the wider-reaching of the two.
-
-It happened because a flow's "last seen" time was pinned to its creation instant, so every flow looked idle from birth.
-Expiry collapsed to whichever timeout was smaller, `-flow-active-timeout` could not bind above `-flow-inactive-timeout`, and because a cache refill created every flow at one instant, the whole cache expired together.
-The result was a burst followed by silence that no real exporter produces.
-Flow lifetimes now derive from the duration the profile already sampled.
-
-### Emission shape
-
-Volume is unchanged.
-**Timing is not**, and it moves for every flow deployment whether or not a scenario runs.
-
-| | before | after |
-|---|---|---|
-| **volume** | ~4.2 records/s per device | unchanged |
-| **active-timeout deadline** | exactly the configured value | uniform over ±25 % of it |
-| **shape** | a disturbance repeats every flow lifetime, indefinitely | it fades within about four lifetimes |
-| **per-device scenario ceiling** | ~8.5 to 9.7 records/s | ~8.1 to 9.2 records/s at the 5s default tick |
-
-**Why the deadline was a problem.** Flow creation is driven by expiry.
-The cache refills exactly what it lost.
-When the expiry offset is also deterministic, the creation profile becomes a pure delay of itself:
-
-```
-expiries at t  →  refills at t  →  expiries at t+30s  →  refills at t+30s  →  …
-```
-
-There is no mixing term, so nothing damps.
-Any irregularity is re-emitted every lifetime forever.
-A scenario arming, a re-pacing, a scheduling hiccup: all of them persist.
-Real exporters do not behave this way, and the reason is exactly the coupling.
-Their flows are created by arriving traffic, a process independent of what the cache happens to be releasing.
-
-Measured in-process as autocorrelation of per-tick record counts across multiples of the flow lifetime, after re-pacing a device:
-
-| | 1 lifetime | 2 | 3 | 4 |
-|---|---|---|---|---|
-| before, GPU-server profile | +0.96 | +0.94 | +0.91 | **+0.89** |
-| before, edge-router profile | +0.87 | +0.77 | +0.68 | **+0.59** |
-| after, edge-router profile | +0.23 | +0.18 | +0.08 | **+0.01** |
-
-**On the wire the same defect shows up as dispersion rather than periodicity**, and the distinction is worth stating because the table above overstates what a capture sees.
-Five devices, 20-minute windows, three paced rates:
-
-| requested | before: CV / r(1 lifetime) | after: CV / r(1 lifetime) |
-|---|---|---|
-| 2 rec/s | 0.98 / +0.22 | **0.57** / +0.08 |
-| 4 rec/s | 0.78 / +0.29 | **0.49** / −0.00 |
-| 8 rec/s | 0.99 / +0.15 | **0.20** / +0.18 |
-
-Autocorrelation at one lifetime never exceeded +0.29 on the wire, so the repetition an in-process probe sees at +0.96 is not what a collector was receiving.
-What a collector was receiving is over-dispersion: before the change, per-tick counts scattered three to six times wider than Poisson counting noise allows; after it, the 8 rec/s case sits essentially at the Poisson floor.
-
-Both symptoms come from the same deterministic deadline.
-Flows created in one tick expire in one tick, which lumps each tick's output immediately (variance) and repeats the lump a lifetime later (periodicity).
-The warm first fill already staggered creation ages enough to blunt the repetition on real timing, leaving the variance as the dominant wire symptom.
-
-**What this means for a collector.** A rule keyed on flows arriving at exactly the configured active timeout will now see a spread instead of a spike.
-`-flow-active-timeout` sets a mean, not an exact deadline.
-
-**Why the ceiling moved.** The stated per-device scenario ceiling was `MaxFlows / mean-flow-lifetime`, which omitted the sweep delay described above.
-Pacing now divides by the real residency.
-The ceiling is about 5 % lower, and a paced rate is actually achieved.
-Before this, pacing ran a few percent low at every rate, which is what the sweep-residency correction was reporting.
-
-The old figure was not wrong by accident.
-With a deterministic deadline, flows created on a tick boundary expired on a tick boundary, so the sweep genuinely cost nothing.
-That alignment was an artifact of synthetic timing, and the jitter removed it.
+What it governs beyond flow and when to lower it are in [CLI flags → Datagram MTU](cli-flags.md#datagram-mtu).
 
 ### Fleet arrival shape
 
-Per-device jitter spreads when one device's flows expire.
-It does not spread when the fleet exports, because expiry is only noticed by the sweep, and one ticker used to sweep every device on the same firing.
-Every device then emitted everything that had come due in the last tick interval, at the same instant as every other device.
-At 13,600 flows/s on the 5s default that is about 68,000 records arriving at the collector at once, then nothing for 5s.
-A capacity test against that pattern measures burst absorption, not sustained throughput.
+Each device is swept once per tick interval, at its own phase within the period, so a collector sees a near-flat stream of small bursts.
 
-Real exporters run independent cache timers whose phases are random across the fleet, so a collector sees a near-flat stream of small bursts.
-nl6 models that by giving each device a phase within the tick period.
-The ticker fires 50 times per period (100ms at the 5s default) and each firing sweeps only the devices whose phase falls in that slot.
-Each device is still swept exactly once per period, so its batching, its datagram sizes and the sweep term above are unchanged.
-Only the fleet-wide alignment is gone.
+| Rule | Value |
+|---|---|
+| Phase slots per tick interval | 50 (100ms each at the 5s default) |
+| Sub-period floor | 50ms. A sub-second `-flow-tick-interval` gets fewer slots; a period at or under 50ms is a single slot. |
+| Phase source | Derived from the device IP, so consecutive IPs spread across the slots and a seeded device reproduces its stream. |
+| Scenario-owned ticker | Follows the same rule. |
+| `-flow-tick-sync` | Sweeps every device on one firing, so the fleet exports in one burst per interval. |
 
-The phase is derived from the device IP, not drawn from the device RNG, so a seeded device still reproduces its stream and the flow digest does not move.
-Consecutive IPs, which is what an auto-start batch is, land spread across the slots.
-The sub-period is floored at 50ms, so a sub-second `-flow-tick-interval` gets fewer slots and a period at or under 50ms is a single slot.
-
-`-flow-tick-sync` restores the synchronized sweep.
-Keep it for the case it models: a restart storm or a traffic event, where many real routers flush their caches together.
-Label a run taken under it as that scenario rather than as the headline capacity figure.
-The scenario-owned ticker follows the same rule, so a load-test window is spread the same way as the fleet.
+Use `-flow-tick-sync` only to model a restart storm or a traffic event, where many routers flush their caches together.
+Under it a capacity test measures burst absorption, not sustained throughput, so label such a run as that scenario.
 
 ## Status API
 
@@ -574,8 +439,8 @@ The body is the standard `{success, message, data}` envelope.
 | `collectors[].send_failures` | Datagrams the kernel refused. A refused datagram is counted here once and in none of the `sent_*` fields, so a down collector shows up here. |
 | `devices_exporting` | Total live exporters across all tuples. |
 | `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 and IPFIX only). |
-| `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Read from what the ticker latched, not from the flag. See [Fleet arrival shape](#fleet-arrival-shape). |
-| `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized; `0` only if the ticker has not started, which the HTTP endpoint cannot observe). |
+| `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Reports the running ticker, not the flag. See [Fleet arrival shape](#fleet-arrival-shape). |
+| `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized). |
 | `nbar2_catalogs_by_type` | Resolved NBAR2 application catalogs, keyed by `_universal` and per-type slug. Each value carries `entries`, `oversized` (entries the load-time dry render disabled, omitted when zero) and `source`. Absent when no NBAR2 catalog loaded. |
 
 An NBAR2 device and a plain IPFIX device to the same collector share one `ipfix` row; the collector tells them apart by template id.
