@@ -119,7 +119,11 @@ case "$cmd" in
                         snmp_port,
                         flow,
                         traps,
-                        syslog
+                        syslog,
+                        gnmi_dialout,
+                        if_error_scenario,
+                        if_flap_scenario,
+                        optical_scenario
                       }
                 ' "$FILE")"
                 ;;

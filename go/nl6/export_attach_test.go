@@ -373,3 +373,40 @@ func TestStartTrapSubsystem_PostStopShape(t *testing.T) {
 		t.Errorf("CatalogsByType = %+v, want nil after Stop", st.CatalogsByType)
 	}
 }
+
+// TestStartDeviceSyslogExporter_BareHostGetsDefaultPort pins that a collector
+// given as a bare host attaches on the transport's default port. Validate
+// accepts a bare host by checking it with the default port appended, so the
+// attach must resolve it the same way, or the create succeeds while the device
+// silently exports nothing.
+func TestStartDeviceSyslogExporter_BareHostGetsDefaultPort(t *testing.T) {
+	sm := newTestSyslogManager()
+	if err := sm.StartSyslogSubsystem(SyslogSubsystemConfig{
+		SourcePerDevice:       false,
+		MeanSchedulerInterval: time.Hour,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sm.StopSyslogExport)
+
+	device := setupTestDeviceForAttach(t, sm, "dev-syslog-barehost", net.IPv4(127, 0, 0, 5))
+	device.syslogConfig = &DeviceSyslogConfig{Collector: "127.0.0.1", Format: "5424"}
+	device.syslogConfig.ApplyDefaults()
+	if err := device.syslogConfig.Validate(); err != nil {
+		t.Fatalf("Validate rejected a bare host: %v", err)
+	}
+	if err := sm.startDeviceSyslogExporter(device); err != nil {
+		t.Fatalf("attach failed for a bare host that Validate accepted: %v", err)
+	}
+	t.Cleanup(func() { _ = device.syslogExporter.Close() })
+
+	found := false
+	for _, c := range sm.GetSyslogStatus().Collectors {
+		if c.Collector == "127.0.0.1:514" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("status has no collector row for 127.0.0.1:514: %+v", sm.GetSyslogStatus().Collectors)
+	}
+}
