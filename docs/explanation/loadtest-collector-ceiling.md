@@ -108,6 +108,8 @@ Without them you are measuring a black box and guessing at the mechanism.
 | **accepted count**, point (3) | windowed, filtered count of the run's events |
 
 The OpenNMS names are one deployment's rendering, not canonical.
+The lowercase forms such as `dispatchtime` and `messagesize` appear only when the Prometheus JMX exporter runs with `lowercaseOutputName: true`.
+Check that setting first if the names do not match.
 Confirm them on your build before trusting a run, since a rename between versions invalidates a whole session silently.
 
 The accepted count must be **windowed and filtered**.
@@ -188,8 +190,10 @@ Where the collector aggregates **per source** and flushes on an interval, batch 
 ```
 
 The [worked example](#worked-example) shows this at a fixed aggregate rate.
-**More devices at the same aggregate rate makes the collector slower**, because it shreds the batches.
+**More devices at the same aggregate rate made the collector slower** in that example.
 That is the opposite of the intuition that a fleet is only a rate.
+Smaller batches are one candidate cause, but not an established one.
+The measured service-time fit gives batching about 12 to 30 percent, against a 2.2x difference between the two rows.
 
 Two consequences for any result:
 
@@ -297,6 +301,7 @@ Load shape changed the work.
 At a fixed aggregate of about 3,000/s, 500 devices at 6/s gave 4 messages per work unit, and 63 devices at 47/s gave 24.
 On 500 devices at 4 partitions, the drain was about 144/s at 1.8/s per device and about 320/s at 6/s per device.
 The identity reproduces neither row, so that mechanism is not understood.
+Batching explains about 12 to 30 percent of the 2.2x gap by the G1 fit, so most of it has another cause.
 The shape is measured: capacity depends on per-device rate, not only on the fleet total.
 Size against what the busiest devices send during an incident, and report the device count and per-device rate beside any figure.
 

@@ -107,7 +107,9 @@ The response fields are in [Flow export reference → Status API](../reference/f
 ## Prerequisites for per-device source IP
 
 Trap and syslog export use the same namespace plumbing, so this section applies to them too.
-When `-flow-source-per-device` is enabled (the default), flow packets originate from inside the `nl6sim` namespace and must traverse the `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector.
+Each export has its own flag: `-flow-source-per-device` for flow, `-trap-source-per-device` for traps and `-syslog-source-per-device` for syslog.
+All three default to on.
+When an export's flag is on, its packets originate from inside the `nl6sim` namespace and must traverse the `veth-sim-host` ↔ `veth-sim-ns` pair to reach the collector.
 Three things have to be in place:
 
 - **`iptables` installed on the simulator host.** At startup the simulator inserts `iptables -I FORWARD 1 -i veth-sim-host -j ACCEPT` so that hosts with a default-DROP `FORWARD` policy (common when Docker is installed) allow per-device egress. The rule is removed on clean shutdown. Without `iptables` a warning is logged and flows are silently dropped on such hosts. See [Network namespace](network-namespace.md).

@@ -5,7 +5,7 @@ description: "The gnmi.json catalogue format a device type uses to serve extra g
 
 # gNMI catalogue files
 
-A gNMI catalogue, `resources/<type>/gnmi.json`, lists the subtrees a device type serves beyond the interface and optical paths every device shares.
+A gNMI catalogue, `resources/<type>/gnmi.json`, lists the subtrees a device type serves beyond the shared interface paths every device serves and the optical paths only optical transport types (`ciena_waveserver5`) serve.
 This page describes the file for profile authors.
 For what a running device serves and how to subscribe, see [gNMI dial-in](gnmi.md).
 
@@ -95,6 +95,9 @@ A subscription to `/components/component/transceiver/state/` also carries `oper-
 That path is an alias carried by four subtrees; the two `oper-status` subtrees are `alias_only`, so `/components/component/state` does not repeat them.
 A `/components/component/transceiver` path on a device type without a catalogue is refused with `NotFound` naming the path.
 Each interface's out-queues carry exactly `queue-number`, `queued-bytes`, `queued-pkts`, `hp-red-drop-pkts` and `lp-red-drop-pkts`.
+The out-queue and fabric leaves follow MX10004 hardware, not vJunos.
+vJunos sends eleven more buffer and drop leaves.
+Do not add them to make the catalogue match vJunos.
 A counters subscription also carries `name`, `init-time`, `state/high-speed` and `state/parent-ae-name`, because those leaves are marked `always`, and nothing else from the interface entry.
 The router's ONCE chunking of one interface into several notifications is not modelled.
 The subinterfaces are the device's five logical units: unit 0 (`xe-0/0/0.0`) and the VRF units `xe-0/0/0.100`, `xe-0/0/0.200` and `xe-0/0/0.999` on `xe-0/0/0`, which `show route instance detail` names, and `fxp0.0` on the management port `fxp0`.

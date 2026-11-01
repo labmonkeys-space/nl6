@@ -65,7 +65,7 @@ There is no read-time override, so a `SET`, a REST POST or a flap is read back b
 | Scenario | Name | `ifAdminStatus` | Link | `ifOperStatus` | Use case |
 |----------|------|-----------------|------|----------------|----------|
 | 1 | all-shutdown | down (2) | as shipped | down (2), derived | Planned maintenance, device decommission |
-| 2 | all-normal *(default)* | as shipped | as shipped | as shipped | Normal steady-state operations |
+| 2 | all-normal *(default)* | as shipped | shipped `ifOperStatus` | derived; down (2) where shipped admin is down | Normal steady-state operations |
 | 3 | all-failure | up (1) | down | down (2) | Link failures, SFP issues, cable pull |
 | 4 | pct-failure | up (1) | down where `ifIndex % 100 < n`, else up | down for n% | Partial outage, staged rollout testing |
 
@@ -73,10 +73,18 @@ There is no read-time override, so a `SET`, a REST POST or a flap is read back b
 Scenario 4's rule is deterministic, so results are reproducible across restarts.
 
 Scenario 2 does not force anything up.
-It serves both values exactly as the device's resource files declare them, and most shipped profiles declare up.
-Four do not.
-`cisco_nexus_9500` ships ifIndex 33 to 64 administratively down.
-`juniper_mx960`, `asr9k` and `palo_alto_pa3220` ship some interfaces oper-down.
+It seeds admin from the shipped `ifAdminStatus` and the link from the shipped `ifOperStatus`, and most shipped profiles declare both up.
+`ifOperStatus` is still derived, so a row shipped admin-down with `ifOperStatus` 1 reads down (2).
+Five profiles ship interfaces down:
+
+| Profile | `ifAdminStatus` down (2) | `ifOperStatus` down (2) |
+|---------|--------------------------|-------------------------|
+| `asr9k` | none | ifIndex 44 and 45 |
+| `cisco_asr9902` | none | ifIndex 15 to 24, 35 and 36, 41 to 48 |
+| `cisco_nexus_9500` | ifIndex 33 to 64 | ifIndex 3 to 10, 21 to 30, 41 to 50, 61 to 64 |
+| `juniper_mx960` | none | 27 interfaces, ifIndex 2, 5, 7 and every third ifIndex from 10 to 79 |
+| `palo_alto_pa3220` | none | ifIndex 2 |
+
 Those interfaces boot down under the default scenario.
 Use scenario 3 if you want every interface down regardless of profile.
 
