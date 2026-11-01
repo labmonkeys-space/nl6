@@ -6,7 +6,9 @@ For deployment, collector setup, and `rp_filter` tuning see [Flow export (operat
 
 ## Architecture
 
-- One **shared UDP socket** per host (or per-device sockets when `-flow-source-per-device=true`, the default), driven by a single ticker goroutine in `flow_exporter.go`.
+- Per-device UDP sockets when `-flow-source-per-device=true` (the default).
+  Otherwise a pool of **shared UDP sockets** keyed by `(collector, protocol)`.
+  A single ticker goroutine in `flow_exporter.go` drives both.
 - Each simulated device owns a `FlowCache` populated with role-appropriate synthetic flows (edge router, DC switch, firewall, …).
 - `FlowEncoder` is a protocol-agnostic interface; `netflow5.go`, `netflow9.go`, `ipfix.go`, and `sflow.go` implement it.
 - Batch pagination is protocol-aware (different header sizes, different record limits per UDP datagram).
@@ -337,7 +339,7 @@ An item is fixed when a consumer needs it.
 By default (`-flow-source-per-device=true`), each device binds its own UDP socket inside the `nl6sim` namespace so the collector observes flow packets with the **device's IP as the source address**, not the simulator host's.
 This makes per-device attribution work out of the box on collectors that key on the exporter source IP (OpenNMS, Elastiflow, nfcapd, …).
 
-Set the flag to `false` to fall back to a single shared socket bound in the host namespace.
+Set the flag to `false` to fall back to a shared socket bound in the host namespace, one per `(collector, protocol)` pair.
 
 See [Flow export (operator guide)](../ops/flow-export.md#prerequisites-for-per-device-source-ip) for the prerequisites (iptables `FORWARD` rule, route to the collector from the namespace, collector-side `rp_filter` tuning).
 
@@ -398,6 +400,20 @@ curl -X POST http://localhost:8080/api/v1/devices \
 
 The `flow` block is **optional** on every request.
 Omit it and the device doesn't export.
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `collector` | string | required | Collector `host:port`. |
+| `protocol` | string | `netflow9` | `netflow9`, `ipfix`, `netflow5` or `sflow`. Aliases `nf9`, `ipfix10`, `nf5` and `sflow5` are accepted and canonicalised to those names. |
+| `active_timeout` | duration | `30s` | Mean cap on a still-running flow's cache residency. Each flow's deadline carries ±25 % jitter. |
+| `inactive_timeout` | duration | `15s` | Idle time after a flow's last packet before export. |
+| `sub_agent_id` | uint | `0` | sFlow `sub_agent_id` in every datagram header. Ignored by other protocols. |
+| `options_interface_table` | string | empty (off) | `if-scoped` or `system-scoped` interface option records. `netflow9` and `ipfix` only; other protocols are rejected with 400. |
+| `nbar2` | bool | `false` | Cisco AVC (NBAR2) records. `ipfix` only, on an NBAR2-capable type. See [NBAR2 application records](#nbar2-application-records-ipfix-only). |
+| `tick_interval` | n/a | n/a | Rejected with 400. Use `-flow-tick-interval`. |
+
+The REST defaults are fixed.
+A REST-created device does not inherit the `-flow-*` seed flags.
 
 **Duration fields** (`active_timeout`, `inactive_timeout`) require **Go duration strings** (`"30s"`, `"1m30s"`).
 Integer seconds (`"active_timeout": 30`) are rejected with 400.
@@ -480,7 +496,8 @@ If you see fragments, check the egress interface MTU and set the flag to match.
 
 Setting the tick close to or above the mean flow lifetime is not useful.
 Every flow then lives about one tick and the cache turns over wholesale.
-A value of zero or above 1h is not rejected: nl6 logs `flow export: ignoring out-of-range tick interval` at startup and runs at the 5s default.
+A value of zero or less is refused at startup.
+A value above 1h is not rejected: nl6 logs `flow export: ignoring out-of-range tick interval` at startup and runs at the 5s default.
 
 To raise or lower volume, change the concurrent-flow count or the timeouts.
 

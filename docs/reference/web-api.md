@@ -17,7 +17,7 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/resources/reload` | POST | Evict cached device profiles so the next creation re-reads them from disk. Existing devices keep their snapshot. `409` during a creation batch. |
 | `/api/v1/status` | GET | Manager status. |
 | `/api/v1/system-stats` | GET | System stats (file descriptors, memory). |
-| `/api/v1/version` | GET | Running simulator version string. Immutable per process; response carries `Cache-Control: max-age=3600`. |
+| `/api/v1/version` | GET | Running simulator version string. Immutable per process; response carries `Cache-Control: private, max-age=3600`. |
 | `/api/v1/flows/status` | GET | Flow export status and cumulative counters. |
 | `/api/v1/traps/status` | GET | SNMP trap export status, INFORM counters, and per-type catalog map. |
 | `/api/v1/devices/{ip}/trap` | POST | Fire a named catalog trap on a specific device. |
@@ -43,6 +43,9 @@ The same port also serves the management web UI at `/`.
 | `/api/v1/scenarios/{id}/metrics` | GET | Scenario metrics. |
 | `/api/v1/gnmi/status` | GET | gNMI (dial-in) subsystem status: listeners, subscriptions, update/state-event counters. |
 | `/api/v1/netconf/status` | GET | NETCONF subsystem status: listeners, sessions, subscriptions, notification counters. See [NETCONF reference](netconf.md#status-endpoint). |
+| `/api/v1/netconf/tls` | GET | NETCONF over TLS client trust: the client CA PEM, the identity table and the default username. `404` when the NETCONF subsystem is off. See [NETCONF reference](netconf.md#rest). |
+| `/api/v1/netconf/tls` | PUT | Replace the whole NETCONF over TLS client trust. An omitted field clears it. `404` when the subsystem is off, `400` for a bad body. |
+| `/api/v1/tls/ca` | GET | PEM of the CA that signed the shared server certificate, as `application/x-pem-file`. `404` when no shared TLS certificate exists. |
 | `/api/v1/gnmi/dialout/status` | GET | gNMI dial-out status: per-(collector, flavor) streams, updates sent/dropped, reconnects, send failures. |
 | `/api/v1/dns/status` | GET | DNS service-discovery status: zones + serials, publish counters, NOTIFY tallies. |
 | `/api/v1/prometheus/sd` | GET | Prometheus HTTP service discovery: one target group per running device, for snmp_exporter. See [Prometheus service discovery](prometheus-sd.md). |
@@ -231,6 +234,49 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
+### Request fields
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `start_ip` | string | required | First IPv4 address of the batch. See **Addressing** above. |
+| `device_count` | int | required | Number of devices to create, `1` to `100000`. A value outside that range is rejected with 400. |
+| `netmask` | string | `16` | Prefix length: `8`, `16` or `24`. Any other value is rejected with 400. |
+| `resource_file` | string | empty (`asr9k.json`) | Device type to create, as a resource file name. See [`resource_file` failures](#resource_file-failures). |
+| `round_robin` | bool | `false` | Cycle through every device type. |
+| `category` | string | empty | Filter a `round_robin` batch to one category. |
+| `snmp_port` | int | `161` | UDP port of each device's SNMP listener, `1` to `65535`. |
+| `snmpv3` | object | absent | SNMPv3 settings for the batch. |
+| `pre_allocate` | bool | `false` | Accepted and ignored. A batch of 10 or more devices always pre-allocates its TUN interfaces. |
+| `max_workers` | int | `0` (adaptive) | Worker count for TUN pre-allocation, `0` to `1000`. A value outside that range is rejected with 400. |
+| `if_error_scenario` | string | `clean` | Per-device error and discard scenario. See below. |
+| `if_flap_scenario` | string | `clean` | Per-device link-flap scenario: `clean`, `rare`, `typical` or `aggressive`. Not inherited from `-if-flap-scenario`. An unknown value is rejected with 400. |
+| `optical_scenario` | string | `clean` | Optical health band. See [Optical health band](#optical-health-band). |
+| `write_community` | string | empty | SNMPv1/v2c write community. See [Write admission](#write-admission). |
+| `flow`, `traps`, `syslog`, `gnmi_dialout` | object | absent | Per-device export blocks. See [Per-device export blocks](#per-device-export-blocks). |
+
+An unknown field anywhere in the body is rejected with 400.
+
+### Response
+
+A successful batch answers `200` with the counts in `data`:
+
+```json
+{
+  "success": true,
+  "message": "Created 10 devices starting from 192.168.100.1",
+  "data": {"created": 10, "requested": 10, "failed": 0}
+}
+```
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `created` | int | n/a | Devices that started. |
+| `requested` | int | n/a | `device_count` from the request. |
+| `failed` | int | n/a | `requested - created`. Devices can fail to start under resource pressure at scale. Reconcile against `requested`. |
+| `warnings` | array | omitted | Reserved for settings that were accepted but are not honoured. Nothing populates it today, so it is omitted. |
+
+When `failed` is not zero, `message` reads `Created 8 of 10 devices (2 failed to start) starting from 192.168.100.1`.
+
 ### Write admission
 
 Writes are **opt-in**.
@@ -254,7 +300,7 @@ Reads are not gated at any version, and that asymmetry is deliberate; see the [S
 
 A `snmpv3` block that enables a privacy protocol (`des` / `aes128`) without a password is rejected with **400**.
 Key localisation repeats the password to fill a buffer (RFC 3414 §A.2), which has no defined result for an empty one, so the block is checked at creation rather than at the first encrypted request.
-A 201 followed by every encrypted poll to that device failing gives the operator nothing to act on.
+A 200 followed by every encrypted poll to that device failing gives the operator nothing to act on.
 Either `password` or `priv_password` satisfies it; `priv_password` wins when both are set **on the DES path only**.
 The AES128 path ignores `priv_password` and always derives from `password`, so a device configured with two distinct passwords and `"priv_protocol": 2` encrypts under a key no RFC 3414 manager derives.
 `Validate` accepts the configuration regardless.
@@ -508,10 +554,18 @@ INFORM without per-device binding is a runtime attach failure, not a 400.
 
 ```json
 "syslog": {
-  "collector": "192.168.1.10:514",              // required; host:port
-  "format":    "5424"                            // optional; "5424" | "3164"; default "5424"
+  "collector": "192.168.1.10:514",              // required; host:port (default port 514, 6514 under tls)
+  "format":    "5424",                           // optional; "5424" | "3164"; default "5424"
+  "transport": "udp",                            // optional; "udp" | "tcp" | "tls"; default "udp"
+  "framing":   "octet-counting",                 // optional; "octet-counting" | "non-transparent"; default "octet-counting" under tcp and tls; tls accepts only "octet-counting" (400 otherwise); rejected under udp
+  "tls": {                                       // optional; read under transport tls
+    "ca_pem": "",                                // PEM CA bundle INLINE verifying the collector; empty = system roots
+    "insecure_skip_verify": false                // dev only
+  }
 }
 ```
+
+`tls.mtls` is rejected with 400 under `tls`: client-certificate authentication is not implemented.
 
 ### No per-device cadence
 
@@ -528,7 +582,8 @@ The syslog and trap schedulers fire every device at their simulator-wide mean (`
 Flow drives every device from one simulator-wide ticker (`-flow-tick-interval`).
 No `warnings` entry is emitted for these fields any more; the request fails instead.
 
-`GET /api/v1/devices` still reports the cadence in force in a sibling object, `effective_intervals`, present only on devices that export something:
+`GET /api/v1/devices` still reports the cadence in force in a sibling object, `effective_intervals`, present only on devices that export something.
+It carries one key per block the device has: `syslog_interval`, `traps_interval` and `flow_tick_interval`.
 
 ```json
 "syslog": {
@@ -642,7 +697,7 @@ curl -X POST http://localhost:8080/api/v1/devices \
   }'
 ```
 
-`GET /api/v1/syslog/status` then reports three collector records keyed by `(collector, format)`.
+`GET /api/v1/syslog/status` then reports three collector records keyed by `(collector, format, transport)`.
 See [Syslog export status](#syslog-export-status).
 
 **Validation failures return `400` with the underlying error** (e.g. `unknown protocol`, `invalid collector address`, unresolvable host, explicitly invalid syslog format, i.e. non-`5424` / non-`3164`); no device from the batch is created (atomic batch failure).
@@ -774,18 +829,18 @@ curl -X DELETE http://localhost:8080/api/v1/devices
 
 Report the running simulator's version.
 The value is baked into the binary at build time via the Makefile's `APP_VERSION` variable (resolution order: `APP_VERSION` env > `git describe --tags` > `dev`) and passed to `go build` as `-ldflags "-X main.Version=…"`.
-It never changes for the lifetime of the process, so the endpoint sets `Cache-Control: max-age=3600`.
+It never changes for the lifetime of the process, so the endpoint sets `Cache-Control: private, max-age=3600`.
 Reloads of the web UI within a browser session will reuse the cached value.
 
-Release binaries report the clean tag (e.g., `v0.5.0`).
-A `make build` from a HEAD that is ahead of the last tag reports the commit-distance form (e.g., `v0.4.1-11-g0356c42`), so a post-release dev binary never masquerades as the tagged release.
+Release binaries report the clean tag (e.g., `vX.Y.Z`).
+A `make build` from a HEAD that is ahead of the last tag reports the commit-distance form (e.g., `vX.Y.Z-11-g0356c42`), so a post-release dev binary never masquerades as the tagged release.
 
 ```bash
 curl http://localhost:8080/api/v1/version
 ```
 
 ```json
-{"version": "v0.5.0"}
+{"version": "vX.Y.Z"}
 ```
 
 For an untagged development build (or any build produced by `go build` directly, bypassing the Makefile), the reported version is the literal string `dev`.
@@ -793,7 +848,7 @@ Operators troubleshooting a version mismatch can call the same string from the C
 
 ```bash
 ./nl6 -version
-# → v0.5.0
+# → vX.Y.Z
 ```
 
 ## Flow export status
@@ -809,7 +864,6 @@ When flow export is enabled:
   "success": true,
   "message": "Success",
   "data": {
-    "subsystem_active": true,
     "collectors": [
       {"collector": "192.168.1.10:4739", "protocol": "ipfix",    "devices": 50, "sent_packets": 8123, "send_failures": 0, "sent_bytes": 12123456, "sent_records": 243690},
       {"collector": "192.168.1.20:6343", "protocol": "sflow",    "devices": 20, "sent_packets": 3100, "send_failures": 2, "sent_bytes":  5560000, "sent_records":  62000}
@@ -826,7 +880,6 @@ Response fields:
 
 | Field | Meaning |
 |-------|---------|
-| `subsystem_active` | `true` after `main()` boots the flow ticker goroutine. It is always-on. Not reachable as `false` via the HTTP endpoint during normal operation: the subsystem initialises with the rest of the process and only stops at process exit, alongside the HTTP server itself. |
 | `collectors[]` | One record per `(collector, protocol)` tuple that ever had a device. Deleted-device counters persist in the aggregate until process exit. |
 | `collectors[].devices` | Count of LIVE exporters for this tuple. `0` means no live device but the aggregate remembers prior fires. |
 | `collectors[].sent_packets` / `sent_bytes` / `sent_records` | Cumulative across live + historical exporters for this tuple (monotonic within subsystem lifecycle). `sent_*` means the datagram **reached the kernel**; a refused write counts in `send_failures` instead. |
@@ -835,6 +888,7 @@ Response fields:
 | `last_template_send` | ISO-8601 timestamp of the most recent template emission (NetFlow v9 / IPFIX only). |
 | `tick_synchronized` | `true` when the running ticker sweeps every device on one firing (`-flow-tick-sync`, or a tick interval at or under the 50ms sub-period floor), so the fleet exports in one burst per interval. `false` when devices are spread over `tick_phase_slots` phase slots within the interval. Read from what the ticker latched, not from the flag. See [Flow export → fleet arrival shape](flow-export.md#fleet-arrival-shape). |
 | `tick_phase_slots` | Number of phase slots the tick interval is divided into (`50` at the 5s default; `1` when synchronized; `0` only if the ticker has not started, which the HTTP endpoint cannot observe). |
+| `nbar2_catalogs_by_type` | Resolved NBAR2 application catalogs, keyed by `_universal` and per-type slug. Each value carries `entries`, `oversized` (entries the load-time dry render disabled, omitted when zero) and `source`. Absent when no NBAR2 catalog loaded. |
 
 Clients detect "no flow export configured" via `len(collectors) == 0`.
 The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.
@@ -974,10 +1028,12 @@ When syslog export is enabled:
 }
 ```
 
-Tuples are keyed by `(collector, format)`: a single collector receiving 5424 from some devices and 3164 from others surfaces as two separate records.
-Each record also carries its `transport` (`udp`, `tcp` or `tls`), so a TCP outage is not hidden inside a row of healthy UDP devices.
-Per-device bind failures are non-fatal.
+Tuples are keyed by `(collector, format, transport)`: a single collector receiving 5424 from some devices and 3164 from others surfaces as two separate records.
+`transport` is `udp`, `tcp` or `tls`, so a TCP outage is not hidden inside a row of healthy UDP devices.
+Under `udp`, per-device bind failures are non-fatal.
 The exporter falls back to the shared-pool socket with a warning and the `sent` counter still increments.
+Under `tcp` and `tls` there is no shared socket, so the attach fails when `-syslog-source-per-device` is `false`.
+A collector that is down does not fail the attach: the connection reconnects with capped backoff.
 
 `subsystem_active` has the same semantics as on the trap status endpoint; `len(collectors) == 0` is **not** sufficient on its own to imply "feature off."
 When disabled:
@@ -1011,7 +1067,7 @@ Request body:
 | Field | Type | Required | Meaning |
 |-------|------|----------|---------|
 | `name` | string | yes | Catalog entry name. Same device's-catalog resolution rule as the trap endpoint. |
-| `templateOverrides` | object | no | Eleven-field unified vocabulary (same set as `varbindOverrides` on the trap side). |
+| `templateOverrides` | object | no | Twelve-field unified vocabulary (same set as `varbindOverrides` on the trap side). |
 
 Response:
 
