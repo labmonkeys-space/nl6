@@ -351,14 +351,12 @@ To raise or lower volume, change the concurrent-flow count or the timeouts.
 ### Emission shape
 
 The **active timeout is jittered per flow**, by ±25 % of its configured value.
-A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s rather than landing on exactly 30s.
+A 30s active timeout therefore produces deadlines spread over 22.5s to 37.5s.
 `-flow-active-timeout` sets a mean, not an exact deadline.
 A collector rule keyed on flows arriving at exactly the configured active timeout sees a spread instead of a spike.
 The jitter lowers the mean lifetime by 0.05 % to 1.18 % across the shipped profiles, most on the campus-switch profile.
 
-Expiry is noticed by a periodic sweep.
-A flow's residency is therefore the mean lifetime **plus about half a tick interval**.
-A scenario sizing a cache to hit a requested rate divides by the residency, not the lifetime.
+A scenario sizing a cache to hit a requested rate divides by the residency (lifetime plus half a tick), not the lifetime.
 The per-device scenario ceiling is about 8.1 to 9.2 records/s at the 5s default tick.
 
 ### Tick interval and datagrams
