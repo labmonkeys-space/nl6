@@ -47,7 +47,7 @@ Values come from the resource file and do not change.
 | 1 | GPU name | `NVIDIA H100 80GB HBM3` |
 | 2 | GPU UUID | `GPU-a1b2c3d4-...` |
 | 3 | GPU serial | `1234567890ABC` |
-| 4 | PCI bus ID | `0000:07:00.0` |
+| 4 | PCI bus ID | `00000000:07:00.0` |
 | 13 | Driver version | `535.129.03` |
 | 14 | CUDA version | `12.2` |
 | 15 | ECC errors, corrected | `0` |

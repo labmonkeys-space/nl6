@@ -277,14 +277,22 @@ The `format` query parameter selects the representation (default JSON):
 Returns the scenario's live state in **Prometheus text-exposition format** (`text/plain; version=0.0.4`).
 It needs no third-party client dependency. Scrape it directly.
 Deterministic ordering (participants sorted by source IP).
-`404` for an unknown id; valid in every phase (a `submitted` scenario has no participant rows yet, only the two gauges).
+`404` for an unknown id.
+It is valid in every phase.
+A `submitted` scenario has no participant rows yet.
+It shows only `nl6_scenario_phase` and `nl6_scenario_target_rate`, or only `nl6_scenario_phase` for `gnmi-dialout`.
 
 | Metric | Type | Labels | Meaning |
 |--------|------|--------|---------|
 | `nl6_scenario_phase` | gauge | `id`, `phase` | `1` on the active phase label (info-style) |
-| `nl6_scenario_target_rate` | gauge | `id` | configured base rate (events/s); for a `rate_profile` scenario this is the constant base rate, **not** the instantaneous λ(t) |
+| `nl6_scenario_target_rate` | gauge | `id` | configured base rate (events/s); for a `rate_profile` scenario this is the constant base rate, **not** the instantaneous λ(t); absent for `gnmi-dialout`, which paces to its SAMPLE interval, not to a rate |
 | `nl6_scenario_sent_total` | counter | `id`, `protocol`, `source_ip`, `collector` | records sent (`in_window + drain`) per participant |
-| `nl6_scenario_emitted_total` … `nl6_scenario_dropped_total` | counter | (same tuple) | the remaining ledger-identity buckets, per participant |
+| `nl6_scenario_emitted_total` | counter | (same tuple) | records emitted (identity total) per participant |
+| `nl6_scenario_in_window_total` | counter | (same tuple) | records sent inside the measurement window per participant |
+| `nl6_scenario_drain_total` | counter | (same tuple) | records sent during the drain tail per participant |
+| `nl6_scenario_suppressed_pre_window_total` | counter | (same tuple) | fires suppressed before `T0` per participant |
+| `nl6_scenario_send_failures_total` | counter | (same tuple) | transport send failures per participant |
+| `nl6_scenario_dropped_total` | counter | (same tuple) | records dropped after the drain end per participant |
 
 Every counter is labeled on the report join tuple `(protocol, source_ip, collector)`, so **summing a family reproduces the matching report summary total**.
 For example, `sum(nl6_scenario_sent_total)` equals `summary.sent`.
@@ -352,7 +360,7 @@ After a successful `DELETE`, the ID returns `404`.
 | Phase | `arm` | `start` | `stop` | `report` | `DELETE` |
 |-------|-------|---------|--------|----------|----------|
 | `submitted` | → armed | 409 | 409 | 409 | drop |
-| `armed` | idempotent | → running (409 if 0/N) | 409 | 409 | cancel |
+| `armed` | → armed (re-resolves membership) | → running (409 if 0/N) | 409 | 409 | cancel |
 | `running` | 409 | 409 | → stopped (report) | 409 | 409 |
 | `stopped` / `aborted` | 409 | 409 | 200 (idempotent) | 200 | drop |
 | `canceled` | 409 | 409 | 409 | 409 | drop |

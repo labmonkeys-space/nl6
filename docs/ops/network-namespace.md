@@ -83,4 +83,5 @@ sudo sysctl -w net.ipv4.conf.<iface>.rp_filter=2
 
 ## When bring-up fails
 
-See [Troubleshooting](troubleshooting.md) for common failures: missing `iptables` binary, TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
+See [Troubleshooting](troubleshooting.md) for common failures: TUN module not loaded, namespace already present from a previous run, and veth-pair cleanup edge cases.
+A missing `iptables` binary is covered under [iptables FORWARD rule](#iptables-forward-rule) above.

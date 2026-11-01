@@ -21,7 +21,10 @@ Out of the box the simulator needs:
 
 - `CAP_NET_ADMIN` for TUN device creation, link configuration and route installation.
 - `CAP_SYS_ADMIN` for `setns(CLONE_NEWNET)` to enter the `nl6sim` namespace, plus the `ip netns` operations that depend on it.
-- `CAP_NET_BIND_SERVICE` (or root) to bind UDP/161, TCP/22, TCP/9339 and the HTTPS REST port on every device IP. Trap and syslog export bind an ephemeral source port; 162 and 514 are the collector's ports, not nl6's.
+- `CAP_NET_BIND_SERVICE` (or root) to bind UDP/161 and TCP/22 on every device IP.
+  With `-netconf-enable` it also binds TCP/830 on `cisco_catalyst_9500` and `juniper_mx10004` devices.
+  gNMI on TCP/9339, NETCONF over TLS on TCP/6513 and HTTPS REST on TCP/8443 are above 1024 and need no capability.
+  Trap and syslog export bind an ephemeral source port; 162 and 514 are the collector's ports, not nl6's.
 - `/dev/net/tun` mounted into the container.
 
 `CAP_SYS_ADMIN` is effectively the "new root".

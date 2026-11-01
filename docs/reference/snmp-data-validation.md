@@ -33,8 +33,8 @@ See [Web API → `resource_file` failures](web-api.md#resource_file-failures).
 | Surface | Status |
 |---|---|
 | OID keys | unchecked; only values are validated |
-| Bare table columns and wrong INDEX arity | no rule; needs the MIB. A hand audit deleted 61 entries |
-| Semantic faithfulness to the MIB | no rule; five arcs audited by hand, fourteen labelled `UNAUDITED-ARC(<pen>)` |
+| Bare table columns and wrong INDEX arity | no load rule; needs the MIB. A hand audit deleted 61 entries. Two corpus guards, `TestBareColumnCensusHasNotGrown` and `TestNoShippedWalkEmitsABareColumnOID`, fail the test suite on a bare column that another shipped OID extends. A bare column nothing extends, and wrong INDEX arity in general, have no check |
+| Semantic faithfulness to the MIB | no rule; five arcs audited by hand plus NVIDIA, which has no MIB to audit against (six rows under [Audited arcs](#audited-arcs)), fourteen labelled `UNAUDITED-ARC(<pen>)` |
 | MAX-ACCESS (`write-only`, `not-accessible`) | no rule; one confirmed `write-only` object (`writeMem`) deleted |
 | Leaves the type table does not type | served as INTEGER or OCTET STRING, whatever the value parses as |
 | Vendor 64-bit counters | untyped, served as INTEGER, not diverted for SNMPv1 |

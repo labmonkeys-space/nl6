@@ -200,4 +200,7 @@ run ipfix    '"10.0.4.1","10.0.4.2","10.0.4.3","10.0.4.4","10.0.4.5","10.0.4.6"'
 Each run produces its own report keyed by `(protocol, source_ip, collector)`; reconcile the three independently (`nl6-reconcile -report report-ipfix.json …` per protocol).
 The fleet exports all three protocols the whole time.
 A scenario measures one subset's window at a time.
-To weight the mix by **traffic** rather than device count, keep the device split and give each protocol's scenario a proportional `rate`.
+To weight the mix by **traffic** rather than device count, change the device split rather than the `rate`.
+A flow participant has a hard per-device rate ceiling of roughly 8 to 9 records/s at the default tick, so scaling `rate` up in proportion soon passes it.
+A participant above its ceiling is excluded at arm.
+See [Choose participant cardinality and rate](loadtest-scenarios.md#choose-participant-cardinality-and-rate) for the formula.

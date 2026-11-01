@@ -34,6 +34,8 @@ Dial-in responses are unaffected (servers echo a client-set target; they don't i
 | `on-change` | Push on interface-state transitions via the same `InterfaceState` fan-out dial-in ON_CHANGE uses. Only `oper-status`, `admin-status`, and `last-change` fire on a change; `name` and `ifindex` are static and appear in the initial snapshot only. Any counter leaves a path covers are ignored, so a subtree path like the default `/interfaces/interface[name=*]/state` works (counters are filtered at emit). A path that covers *only* counters (e.g. `.../state/counters/in-octets`) is rejected at attach, since it could never fire on-change. |
 
 Paths are gNMI paths under `/interfaces/interface[name=*]/state/...`.
+On optical transport types, a `sample` subscription also accepts the optical-channel paths under `/components/component[name=*]/optical-channel/` (see [Optical telemetry](optical-telemetry.md)).
+An `on-change` subscription refuses an optical path at attach, because optical values change continuously.
 The default path is the full state subtree (`/interfaces/interface[name=*]/state`).
 A subinterface, such as the `juniper_mx10004` unit `xe-0/0/0.0`, is not an interface of that list, so dial-out lists the same interfaces dial-in does.
 The one difference is a loopback: this resolver has no `ifType` filter, so the `juniper_mx10004` dial-out list carries `lo0`, which the dial-in catalogue leaves out.

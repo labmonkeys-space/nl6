@@ -5,9 +5,19 @@ See [Architecture](../explanation/architecture.md) for the component map.
 
 ## Protocol coverage
 
-- **SNMP v2c**: `GET`, `GETNEXT`, `GETBULK` against the full per-device OID table, and `SET` on one writable object, `ifAdminStatus.<N>` (see [SetRequest](#setrequest)). Community string is `public` by default.
-- **SNMPv1**: `GET`, `GETNEXT` and `SET`. No `GETBULK`, no Counter64 and no exceptions: where v2c returns an exception, v1 returns `noSuchName`, and a `GETNEXT` skips Counter64 columns rather than failing. See [SNMPv1 never returns a Counter64](#snmpv1-never-returns-a-counter64).
-- **SNMPv3**: enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags). Auth protocols: `none`, `md5`, `sha1`. Privacy protocols: `none`, `des`, `aes128`. All three security levels work and are verified against net-snmp, see below.
+- **SNMP v2c**: `GET`, `GETNEXT`, `GETBULK` against the full per-device OID table, and `SET` on one writable object, `ifAdminStatus.<N>` (see [SetRequest](#setrequest)).
+  A read answers any community string and echoes it back (see [On a read, the community string is echoed and never checked](#on-a-read-the-community-string-is-echoed-and-never-checked)).
+  The examples on this page use `public`.
+- **SNMPv1**: `GET`, `GETNEXT` and `SET`.
+  The protocol has no `GETBULK`, but nl6 still answers a version-0 `GETBULK` as it answers v2c, unmapped.
+  Apart from that `GETBULK`, no Counter64 and no exceptions: where v2c returns an exception, v1 returns `noSuchName`, and a `GETNEXT` skips Counter64 columns rather than failing.
+  See [SNMPv1 never returns a Counter64](#snmpv1-never-returns-a-counter64).
+- **SNMPv3**: enable with [`-snmpv3-engine-id`](cli-flags.md#snmpv3-flags).
+  Auth protocols: `none`, `md5`, `sha1`.
+  Privacy protocols: `none`, `des`, `aes128`.
+  All three security levels work and are verified against net-snmp, see below.
+  The auto-start batch uses the v3 user `simadmin`, with `simadmin` as both the authentication and the privacy password.
+  A REST-created device takes its user and passwords from the `snmpv3` block of the request (`username`, `password`, `priv_password`).
 
 ### Verified against net-snmp, not only against nl6's own parser
 
@@ -700,7 +710,8 @@ A ledger records every deleted row and reverses it to reproduce the parent corpu
 
 **`ifAdminStatus` `.7` and `ifOperStatus` `.8` are NOT dead and must not be deleted.** They look exactly like the other shadows, and the cycler answers both.
 But `InitIfCountersWithScenario` reads them out of `oidIndex` to *seed* the interface-state engine.
-They are live input, and deleting them would change every device's initial state. 887 rows each, across 28 profiles, and the census carries them as a named carve-out rather than a magic number.
+They are live input, and deleting them would change every device's initial state.
+There are 1035 rows each, across 30 profiles, and the census carries them as a named carve-out rather than a magic number.
 
 A guard builds a real device per profile and requires the serve path to answer all 742 deleted OIDs.
 That is the test that fires on the defect.
@@ -809,6 +820,7 @@ Scenario 1 seeds admin `down(2)` and preserves the link the profile declares, so
 Scenario 2 is the identity and serves whatever the profile declares.
 Scenario 3 seeds admin `up(1)` and link down on every interface.
 Scenario 4 seeds admin `up(1)` on every interface, with link down where `ifIndex % 100 < n` and link up elsewhere, so results are reproducible across restarts.
+`n` is [`-if-failure-pct`](cli-flags.md#interface-state-scenarios), default `10`.
 
 The scenario is applied once per device, when the state engine below is built, and there is no read-time override anywhere on the SNMP path.
 So a `SET`, a REST POST or a flap is read back by the next `GET` or walk under every scenario, and a seeded interface reports `ifLastChange = 0` because a seed is not a transition.

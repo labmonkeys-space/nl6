@@ -26,8 +26,8 @@ Its leaf sets, prefix depths and per-component leaf groups are shape-verified ag
 Responses carry the subtree's YANG module as prefix origin, as IOS-XR does.
 JSON_IETF answers with one update per requested node, its leaves nested as IOS-XR documents it; see [gNMI](gnmi.md#ios-xr-json_ietf-layout).
 
-The MX10004 is not in the round-robin list.
-Request it by name.
+The MX10004 and the ASR 9902 are not in the round-robin list.
+Request them by name.
 
 The MX10004's ENTITY-MIB `entPhysicalTable` lists the same boards, serials, part numbers and revisions as its gNMI components and `show chassis hardware`, the chassis (entity 1) included.
 Each interface has a port entity at index 1000 + ifIndex, and `entAliasMappingTable` maps it to that ifIndex.
@@ -130,7 +130,9 @@ It takes exactly one of five strings; any other value matches no device type and
 - **`entAliasMappingTable`.** Physical-to-logical port mappings.
 - **Dynamic metrics.** CPU, memory, and temperature cycle through a 100-point sine-wave pattern per device. See [Architecture](../explanation/architecture.md).
 - **Dynamic HC interface counters.** `ifHCInOctets` / `ifHCOutOctets` are computed on-demand as monotonically increasing Counter64 values, with per-interface phase offsets. See [SNMP reference](snmp.md).
-- **GPU metrics via NVIDIA DCGM OIDs.** Per-GPU utilization, VRAM, temperature, power, fan, and clocks. See [GPU simulation](gpu/index.md).
+- **GPU metrics via NVIDIA DCGM OIDs, on GPU servers only.**
+  Per-GPU utilization, VRAM, temperature, power, fan, and clocks.
+  See [GPU simulation](gpu/index.md).
 - **SNMPv3 support.** Engine ID, MD5/SHA1 authentication and DES/AES128 privacy, RFC 3414 USM, verified against net-snmp. See [SNMP reference](snmp.md).
 - **Per-category baselines.** CPU / memory / temperature ranges and spike amplitudes are driven by per-category device profiles.
 - **Interface stats and operational status**, **system information**, **vendor-specific OIDs**, **CDP & LLDP**, and **OSPF / BGP / VRF** via SSH.

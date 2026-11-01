@@ -51,6 +51,8 @@ Out of scope:
 
 ## CLI flags
 
+The ranges and defaults of `-if-scenario` and `-if-failure-pct` are in [Interface-state scenarios](cli-flags.md#interface-state-scenarios).
+
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
 | `-if-flap-scenario` | `clean` \| `rare` \| `typical` \| `aggressive` | `clean` | **seed** | Per-device flap scenario for the auto-start batch. REST-created devices default to `clean`; opt in via `if_flap_scenario` POST body. |

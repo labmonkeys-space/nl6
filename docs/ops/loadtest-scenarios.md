@@ -254,7 +254,14 @@ The two dimensions have separate ceilings and the interesting one is usually car
   **That ceiling has not been measured.** A per-event cost estimate of ~3 to 5 µs puts it somewhere around 200k to 350k events/s per subsystem, but this is an *estimate from code inspection*, not a benchmark.
   Treat it as an order of magnitude, and measure on your own hardware before designing a run that depends on the exact number.
 
-- **Flow protocols have a hard per-device rate ceiling, around 8.1 to 9.2 records/s at the default 5s tick.** A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / residency`: roughly 8.1/s for the GPU-server profile up to 9.2/s for the campus-switch one. Residency is `mean-flow-lifetime + half the tick interval`, so **the ceiling falls as the tick lengthens**: at `-flow-tick-interval 60` residency is about 59s and the ceiling roughly 4.3/s, half the figure above. Compute it from the formula rather than quoting the number when the tick is not the default. The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes. A rate above a participant's ceiling is **refused at arm**, with the ceiling in the message, rather than silently under-delivered. Fleet throughput scales with participant count; per-device rate does not scale past the cache. Flow is not a protocol to drive hard per device.
+- **Flow protocols have a hard per-device rate ceiling, around 8.1 to 9.2 records/s at the default 5s tick.**
+  A flow scenario is paced by sizing the device's flow cache, and the cache cannot exceed `MaxFlows` (256), so the reachable rate is `MaxFlows / residency`: roughly 8.1/s for the GPU-server profile up to 9.2/s for the campus-switch one.
+  Residency is `mean-flow-lifetime + half the tick interval`, so **the ceiling falls as the tick lengthens**: at `-flow-tick-interval 60` residency is about 59s and the ceiling roughly 4.3/s, half the figure above.
+  Compute it from the formula rather than quoting the number when the tick is not the default.
+  The second term is the sweep delay, because expiry is noticed by a poll rather than at the instant a deadline passes.
+  A rate above a participant's ceiling **excludes that participant at arm**, with the ceiling in its `excluded` reason, rather than silently under-delivering.
+  Fleet throughput scales with participant count; per-device rate does not scale past the cache.
+  Flow is not a protocol to drive hard per device.
 
 - **`rate_profile` is not supported for flow protocols** and is refused at submit. Resizing the cache moves the rate with a lag of about one mean flow lifetime (~29s at the shipped defaults, measured at 1.03x), so a ramp shorter than that would be smeared into a shape that is neither the profile requested nor a constant. Use a constant rate for flow, or drive the shape with `syslog`.
 

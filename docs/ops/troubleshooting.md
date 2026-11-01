@@ -7,7 +7,8 @@ Flow-export-specific issues live on their own page, [Flow export (operator guide
 
 ### Permission denied
 The simulator creates TUN interfaces and manages the `nl6sim` network namespace; both require privileges.
-Run with `sudo` or use a container that grants `CAP_NET_ADMIN` plus access to `/dev/net/tun`.
+Run with `sudo` or use a container that grants `CAP_NET_ADMIN`, `CAP_SYS_ADMIN` and access to `/dev/net/tun`.
+`CAP_SYS_ADMIN` lets the simulator enter the `nl6sim` namespace with `setns`.
 See [Docker](../getting-started/docker.md).
 
 ### Port conflicts
@@ -67,7 +68,6 @@ htop
 
 - **Application logs** go to stdout / stderr. Redirect with shell plumbing when daemonising.
 - **System logs** are in `journalctl -u <service-name>` when run under systemd.
-- **Web access logs** are built into the application and visible in the stdout stream.
 
 ## When the namespace is stuck
 
