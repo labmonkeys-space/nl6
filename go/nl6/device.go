@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,76 @@ func makeDeviceID(ip net.IP, typeSlug string) string {
 		return ip.String()
 	}
 	return fmt.Sprintf("%s-%s", typeSlug, ip.String())
+}
+
+// The three ways a start IP is refused. Each is a sentinel so a test can
+// errors.Is the kind without matching message text.
+var (
+	errStartIPRequired = errors.New("start_ip is required")
+	errStartIPInvalid  = errors.New("invalid start IP address")
+	errStartIPNotIPv4  = errors.New("start IP address must be IPv4")
+)
+
+// startIPError is the classified refusal of a creation batch's start IP. It is
+// the one error type both creation paths (REST and -auto-start-ip) produce for
+// a bad start_ip, and the REST boundary maps it to 400 through the
+// PublicMessage interface arm in createDevicesErrorResponse (nl6#942).
+//
+// Unlike resourceFileError it has ONE rendering for log and HTTP body, capped.
+// A resource fault's log line needs the whole resolved path; nothing in a bad
+// start_ip beyond the first few hundred bytes is diagnostic, and the value is
+// caller data of up to the request body limit, so an uncapped log rendering
+// was a ~360 KiB log line per unauthenticated request.
+type startIPError struct {
+	Value string // the caller's start_ip, verbatim
+	kind  error  // one of the errStartIP* sentinels
+}
+
+// Error renders the kind, then the value strconv.Quote'd so a trailing space,
+// a tab or a pasted file name is visible, and capped like the resource_file
+// 400 class. Quote escapes every non-printable rune, the bidi and zero-width
+// formatting runes included, so a newline cannot forge a log line and U+202E
+// cannot reorder the rendered text.
+func (e *startIPError) Error() string {
+	if e.kind == errStartIPRequired {
+		return e.kind.Error()
+	}
+	return truncateForMessage(e.kind.Error()+": "+strconv.Quote(e.Value), maxResourceMessageBytes)
+}
+
+// PublicMessage is Error(): the rendering is already safe for an HTTP body.
+func (e *startIPError) PublicMessage() string { return e.Error() }
+
+func (e *startIPError) Unwrap() error { return e.kind }
+
+// parseStartIP is THE start_ip predicate. It accepts an IPv4 address only and
+// returns it in its 4-byte form, the shape nextHost and PreAllocateTunInterfaces
+// work on.
+//
+// IPv4 only because the simulator is: TUN addressing, host routes, the DNS
+// reverse zone and the chassis MAC all derive from an IPv4. net.ParseIP alone
+// accepted "2001:db8::1", and the batch then walked ONE address: nextHost
+// returns a non-IPv4 input unchanged, pre-allocation refused it but the batch
+// only logged that, and every iteration after the first found the address in
+// deviceIPs and counted it as a success (nl6#942).
+//
+// netip and not net.ParseIP(s).To4(): To4 also accepts the IPv4-mapped IPv6
+// literal "::ffff:10.42.0.3", which would then be logged and echoed as the
+// batch's start IP in a form no other part of the simulator spells. Addr.Is4
+// is false for it, so every IPv6 literal is refused the same way.
+func parseStartIP(s string) (net.IP, error) {
+	if s == "" {
+		return nil, &startIPError{Value: s, kind: errStartIPRequired}
+	}
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return nil, &startIPError{Value: s, kind: errStartIPInvalid}
+	}
+	if !addr.Is4() {
+		return nil, &startIPError{Value: s, kind: errStartIPNotIPv4}
+	}
+	v4 := addr.As4()
+	return net.IP(v4[:]), nil
 }
 
 func (sm *SimulatorManager) CreateDevices(startIP string, count int, netmask string, resourceFile string, v3Config *SNMPv3Config, roundRobin bool, category string, snmpPort int, seed *ExportSeed) error {
@@ -341,6 +413,24 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 		snmpPort = DEFAULT_SNMP_PORT
 	}
 
+	// start_ip is judged HERE, under the gate but before the batch publishes
+	// itself: it reads no server state, and a refused request must not flicker
+	// a batch of `count` devices (isCreatingDevices, deviceCreateTotal,
+	// create_batch_in_progress on GET /api/v1/status) that never existed, nor
+	// refuse a concurrent freezeFleet for the duration of its own 400.
+	//
+	// This is the ONLY start_ip check, for both callers (the REST handler and
+	// the -auto-start-ip batch, which also fails fast on it at flag time). It
+	// sits in the batch and not in the handler so the create gate is judged
+	// first: a concurrency verdict must not depend on caller data
+	// (context/device-creation-batching.md). nl6#941 briefly added a handler
+	// copy that answered 400 before the gate; nl6#942 replaced both copies with
+	// the typed error createDevicesErrorResponse maps to 400.
+	ip, err := parseStartIP(startIP)
+	if err != nil {
+		return 0, err
+	}
+
 	// Publish creation-in-progress BEFORE the freeze check (FR35/FR38
 	// interlock): freezeFleet refuses while isCreatingDevices is set, so
 	// whichever of {batch, freeze} commits first wins and the other side
@@ -359,17 +449,11 @@ func (sm *SimulatorManager) createDevicesWithOptionsLocked(batch *createBatchInf
 
 	// EVERY caller-data check runs before ANY resource is committed (nl6#538).
 	//
-	// Both of these used to sit below pre-allocation, so a request for 10+
-	// devices naming a bad resource_file allocated the whole TUN pool and only
-	// then answered 400 — and never released it, leaving sm.tunPoolSize
-	// non-zero for the next call. A malformed start_ip had the same shape.
-	// There is no ordering dependency the other way: resolveCreateResources
-	// reads only the filesystem and the resource cache.
-	ip := net.ParseIP(startIP)
-	if ip == nil {
-		return 0, fmt.Errorf("invalid start IP address: %s", startIP)
-	}
-
+	// This used to sit below pre-allocation, so a request for 10+ devices
+	// naming a bad resource_file allocated the whole TUN pool and only then
+	// answered 400 — and never released it, leaving sm.tunPoolSize non-zero for
+	// the next call. There is no ordering dependency the other way:
+	// resolveCreateResources reads only the filesystem and the resource cache.
 	resources, roundRobinResources, roundRobinResourceFiles, err := sm.resolveCreateResources(roundRobin, category, resourceFile)
 	if err != nil {
 		return 0, err

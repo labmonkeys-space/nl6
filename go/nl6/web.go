@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -111,14 +110,10 @@ func createDevicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// start_ip is caller data like the fields above, so it is refused here with
-	// 400 (nl6#940). The batch's own check in createDevicesWithOptionsLocked
-	// returns a plain error that createDevicesErrorResponse maps to 500, and it
-	// runs after the gate. Same predicate, so nothing accepted before is refused.
-	if net.ParseIP(req.StartIP) == nil {
-		sendErrorResponse(w, fmt.Sprintf("invalid start IP address: %s", req.StartIP), http.StatusBadRequest)
-		return
-	}
+	// start_ip is NOT checked here. The checks above are field-SHAPE checks
+	// that need no server state; start_ip's verdict (parseStartIP) lives inside
+	// the batch, below the create gate, and reaches this handler as a typed
+	// error that createDevicesErrorResponse maps to 400 (nl6#942, nl6#943).
 
 	snmpPort := req.SNMPPort
 	if snmpPort == 0 {
@@ -820,9 +815,19 @@ func createDevicesErrorResponse(err error) (string, int) {
 	if errors.Is(err, errCreateBatchInProgress) {
 		return err.Error(), http.StatusConflict
 	}
-	var rerr *resourceFileError
-	if errors.As(err, &rerr) {
-		return rerr.PublicMessage(), http.StatusBadRequest
+	// Every caller-data refusal the batch produces (resourceFileError,
+	// startIPError) carries a PublicMessage rendering that is safe for an HTTP
+	// body, so ONE interface arm maps them all to 400: a new caller-data error
+	// type gets its 400 by implementing PublicMessage, with no arm to forget
+	// (the nl6#940 failure mode, where a plain error here read as a 500). After
+	// the 409 arm because the gate is judged before any caller-data check, so a
+	// 409 never carries one of these.
+	var perr interface {
+		error
+		PublicMessage() string
+	}
+	if errors.As(err, &perr) {
+		return perr.PublicMessage(), http.StatusBadRequest
 	}
 	return err.Error(), http.StatusInternalServerError
 }
