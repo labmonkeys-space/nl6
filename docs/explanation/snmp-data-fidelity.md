@@ -1,3 +1,8 @@
+---
+sidebar_label: "SNMP data fidelity"
+description: "What the load-time checks prove about the SNMP data nl6 serves, and which vendor subtrees a human has checked against a published MIB."
+---
+
 # SNMP data fidelity
 
 How trustworthy is the SNMP data nl6 actually serves?

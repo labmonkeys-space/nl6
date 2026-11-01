@@ -1,3 +1,8 @@
+---
+sidebar_label: "Optical telemetry"
+description: "The Ciena Waveserver 5 optical state served over gNMI, what each value means, and how to drive a channel across the FEC threshold."
+---
+
 # Optical telemetry
 
 nl6 simulates a **Ciena Waveserver 5** (WaveLogic 5 Extreme) coherent DWDM transport platform and serves its optical state over **gNMI**, using the pinned OpenConfig model.

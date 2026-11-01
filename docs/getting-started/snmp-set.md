@@ -1,3 +1,8 @@
+---
+sidebar_label: "SNMP SET"
+description: "Turn on SNMP SET with a write community or a v3 security level, then shut and unshut a simulated interface from a collector."
+---
+
 # Enable SNMP SET
 
 nl6 serves `SetRequest` at SNMPv1, v2c and v3, on one writable object: `ifAdminStatus`.

@@ -1,4 +1,9 @@
-# SNMP trap / INFORM export (operator guide)
+---
+sidebar_label: "Export traps"
+description: "Send SNMP v1, v2c or v3 traps and v2c INFORMs from every simulated device to a trap collector, and tune the rate and catalog."
+---
+
+# Export SNMP traps and INFORMs
 
 nl6 emits notifications from every simulated device to a single collector such as `snmptrapd` or an NMS trap daemon, in the SNMP version that `-trap-snmp-version` selects: **v2c** (the default), **v1** RFC 1157 Trap-PDUs, or **v3** with RFC 3414 USM authentication and privacy.
 One version per fleet.
@@ -195,6 +200,6 @@ For generic bring-up failures (TUN module missing, `sudo` required, port conflic
 
 - [SNMP trap reference](../reference/snmp-traps.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → SNMP trap / INFORM export flags](../reference/cli-flags.md#snmp-trap--inform-export-flags)
-- [Syslog export (operator guide)](syslog-export.md), the sibling feature that shares the overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md), which shares the `nl6sim` namespace plumbing
+- [Syslog export how-to](syslog-export.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Flow export how-to](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a trap on demand](../reference/web-api.md#fire-a-trap-on-demand)

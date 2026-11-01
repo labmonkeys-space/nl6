@@ -1,7 +1,12 @@
-# Troubleshooting
+---
+sidebar_label: "Troubleshooting"
+description: "Recover from common bring-up failures such as permission errors, port conflicts, a missing TUN module and file descriptor limits."
+---
+
+# Troubleshoot the simulator
 
 Common failures during bring-up and how to recover.
-Flow-export-specific issues live on their own page, [Flow export (operator guide) → Flow troubleshooting](flow-export.md#flow-troubleshooting), because they cross into collector-side `rp_filter` and FORWARD-chain territory.
+Flow-export-specific issues live on their own page, [Export flows: troubleshooting](flow-export.md#flow-troubleshooting), because they cross into collector-side `rp_filter` and FORWARD-chain territory.
 
 ## Common issues
 

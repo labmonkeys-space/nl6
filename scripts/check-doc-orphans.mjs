@@ -14,6 +14,10 @@
  * `docs/` minus the extension — which is exactly how sidebars.ts references
  * it (`'reference/x'` or `link: {id: 'reference/x'}`). We check that each
  * tracked doc's id appears as a quoted string in sidebars.ts.
+ *
+ * It also fails a page without a `description` in its front matter. Docusaurus
+ * otherwise falls back to the first paragraph for the meta description and the
+ * generated section index, which is often a warning or a code lead-in.
  */
 
 import { execSync } from 'node:child_process';
@@ -63,4 +67,27 @@ if (orphans.length > 0) {
   process.exit(1);
 }
 
-console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts`);
+// Front matter is the block between a leading `---` line and the next one.
+// CRLF files are normalised first, and a description must hold text once its
+// quotes are stripped, so `description: ""` does not pass.
+const frontMatter = (text) => {
+  const m = text.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---\n/);
+  return m ? m[1] : '';
+};
+const hasDescription = (fm) => {
+  const m = fm.match(/^description:[ \t]*(.*)$/m);
+  return m !== null && /[A-Za-z0-9]/.test(m[1].replace(/^["']|["']$/g, ''));
+};
+const undescribed = files.filter((f) => !hasDescription(frontMatter(readFileSync(f, 'utf8'))));
+if (undescribed.length > 0) {
+  console.error(
+    `\n✗ ${undescribed.length} doc page(s) have no \`description\` front matter:`
+  );
+  for (const f of undescribed) console.error(`    - ${f}`);
+  console.error(
+    `\nAdd a one-sentence \`description:\` to the page's front matter.\n`
+  );
+  process.exit(1);
+}
+
+console.log(`✓ all ${files.length} doc page(s) are referenced in sidebars.ts and carry a description`);

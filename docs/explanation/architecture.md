@@ -1,3 +1,8 @@
+---
+sidebar_label: "Architecture"
+description: "How nl6 runs thousands of simulated devices in one Go process, the components inside it, and the host network setup it depends on."
+---
+
 # Architecture
 
 nl6 is a single Go program that stands up thousands of simulated devices inside a dedicated Linux network namespace.
@@ -64,7 +69,7 @@ SSH appears twice because NETCONF reuses it as a transport: the same login and h
 - **NETCONF**: on `cisco_catalyst_9500`, the IOS XE draft `establish-subscription` with `push-update` and `push-change-update` on interface state.
   No `get`, no `edit-config`, no RFC 8639.
   On `juniper_mx10004`, the Junos dialect over SSH and TLS: `get`, `get-configuration` and `create-subscription` on the `NETCONF` stream, which carries mib2d link events.
-  See [NETCONF](../reference/netconf.md).
+  See [NETCONF reference](../reference/netconf.md).
 
 ## Package layout
 
@@ -81,19 +86,19 @@ The [`Makefile`](https://github.com/labmonkeys-space/nl6/blob/main/Makefile) is 
 | Component | Responsibility | Files | Reference |
 |-----------|----------------|-------|-----------|
 | Device lifecycle | CLI entry, `SimulatorManager` with shared keys and certs, per-device startup and protocol server lifecycle | `simulator.go`, `manager.go`, `device.go` | |
-| SNMP stack | Request handling, OID lookup via `sync.Map`, response building, ASN.1 BER/DER | `snmp_server.go`, `snmp.go`, `snmp_handlers.go`, `snmp_response.go`, `snmp_encoding.go` | [SNMP](../reference/snmp.md) |
-| SNMPv3 | Message framing, DES / AES128 privacy, RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96 and inbound verification, verified against net-snmp | `snmpv3.go`, `snmpv3_crypto.go`, `snmpv3_usm.go` | [SNMP](../reference/snmp.md) |
+| SNMP stack | Request handling, OID lookup via `sync.Map`, response building, ASN.1 BER/DER | `snmp_server.go`, `snmp.go`, `snmp_handlers.go`, `snmp_response.go`, `snmp_encoding.go` | [SNMP reference](../reference/snmp.md) |
+| SNMPv3 | Message framing, DES / AES128 privacy, RFC 3414 USM key derivation, HMAC-MD5-96 / HMAC-SHA-96 and inbound verification, verified against net-snmp | `snmpv3.go`, `snmpv3_crypto.go`, `snmpv3_usm.go` | [SNMP reference](../reference/snmp.md) |
 | SNMP SET | `SetRequest` on `ifAdminStatus` through the RFC 3416 ladder, gated by a write community (v1/v2c) and a minimum security level (v3) | `snmp_set.go` | [Enable SNMP SET](../getting-started/snmp-set.md) |
 | Interface state | Link and admin state per ifIndex, flap scheduler, REST control, link traps and syslog | `interface_state.go`, `if_counters.go` | [Interface state](../reference/interface-state.md) |
 | Metrics engine | 100-point pre-generated sine-wave patterns per device, per-GPU metrics, per-category baselines | `metrics_cycler.go`, `gpu_metrics.go`, `device_profiles.go` | [GPU simulation](../reference/gpu/index.md) |
 | Network infrastructure | TUN interfaces, the `nl6sim` namespace, parallel pre-allocation (100 to 200 workers by default, sized by batch; `max_workers` overrides it, clamped to 500) | `tun.go`, `netns.go`, `prealloc.go` | [Network namespace](../ops/network-namespace.md) |
 | Web API | The control plane: routes, handlers, Linux route script generation | `web.go`, `api.go`, `web_routes*.go` | [Web API](../reference/web-api.md) |
-| Flow export | NetFlow v5 / v9, IPFIX, sFlow v5 encoders behind one `FlowEncoder` interface; a socket per collector and protocol, or per device under `-flow-source-per-device` (the default); one ticker goroutine | `flow_exporter.go`, `netflow5.go`, `netflow9.go`, `ipfix.go`, `sflow.go` | [Flow export](../reference/flow-export.md) |
+| Flow export | NetFlow v5 / v9, IPFIX, sFlow v5 encoders behind one `FlowEncoder` interface; a socket per collector and protocol, or per device under `-flow-source-per-device` (the default); one ticker goroutine | `flow_exporter.go`, `netflow5.go`, `netflow9.go`, `ipfix.go`, `sflow.go` | [Flow export reference](../reference/flow-export.md) |
 | Trap export | Catalog-driven SNMP traps and informs, central Poisson scheduler with a global rate cap | `trap_*.go` | [SNMP traps](../reference/snmp-traps.md) |
-| Syslog export | Catalog-driven RFC 5424 / 3164 messages over UDP, TCP or TLS, same scheduler shape as traps | `syslog_*.go` | [Syslog export](../reference/syslog-export.md) |
+| Syslog export | Catalog-driven RFC 5424 / 3164 messages over UDP, TCP or TLS, same scheduler shape as traps | `syslog_*.go` | [Syslog export reference](../reference/syslog-export.md) |
 | gNMI dial-in | Path resolver, `Capabilities` / `Get` / `Subscribe` handlers, per-stream ticker with a bounded send buffer, per-device gRPC listener | `gnmi_paths.go`, `gnmi_handlers.go`, `gnmi_subscribe.go`, `gnmi_server.go`, `gnmi_manager.go` | [gNMI dial-in](../reference/gnmi.md) |
 | gNMI dial-out | Per-device gRPC client: one `ClientConn` and one `Publish` stream, reconnect with backoff, the same payload as dial-in with `Prefix.Target` set to the device IP | `gnmi_dialout_*.go` | [gNMI dial-out](../reference/gnmi-dial-out.md) |
-| NETCONF | Per-device SSH `netconf` subsystem on `cisco_catalyst_9500` and `juniper_mx10004`, plus a mutual-TLS listener on `juniper_mx10004`; IOS XE draft subscriptions and Junos link events pushed from the interface state engine | `netconf_*.go` | [NETCONF](../reference/netconf.md) |
+| NETCONF | Per-device SSH `netconf` subsystem on `cisco_catalyst_9500` and `juniper_mx10004`, plus a mutual-TLS listener on `juniper_mx10004`; IOS XE draft subscriptions and Junos link events pushed from the interface state engine | `netconf_*.go` | [NETCONF reference](../reference/netconf.md) |
 | Optical engine | Received power, OSNR, pre-FEC BER and FEC block counters per OCH component, health bands and degradation episodes | `optical_*.go` | [Optical telemetry](../reference/optical-telemetry.md) |
 | Load-test scenarios | Armed, windowed experiments that gate push protocols and write a sent-ledger report | `scenario_*.go` | [Load-test scenarios](../reference/loadtest-overview.md) |
 | Continuous profiling | Runtime-togglable Pyroscope push and the gated `/debug/pprof/` surface, off by default | `profiling.go`, `profiling_api.go` | [Profiling](../ops/profiling.md) |
@@ -112,7 +117,7 @@ Counter values for SNMP, gNMI and sFlow come from one dispatcher, `IfCounterCycl
 | Pre-computed next-OID mappings | `GETNEXT` and `WALK` without scanning the table | Memory per loaded device type |
 | Buffer pool on the SNMP path | Less GC pressure at high request rates | Every handler path must return its buffer to the pool |
 | Shared SSH and TLS keys across all devices | No per-device key generation, so 30,000 devices start in minutes | Every device presents the same host key and certificate; nl6 does not model PKI |
-| Analytic IF-MIB counters | Every `ifTable` and `ifXTable` counter is computed on demand from a per-direction sine wave, with no polling loop | Traffic shapes other than the sine wave. See [SNMP](../reference/snmp.md#dynamic-if-mib-counters) |
+| Analytic IF-MIB counters | Every `ifTable` and `ifXTable` counter is computed on demand from a per-direction sine wave, with no polling loop | Traffic shapes other than the sine wave. See [SNMP reference](../reference/snmp.md#dynamic-if-mib-counters) |
 | Network namespace isolation | The `nl6sim` namespace keeps systemd-networkd off the TUN interfaces | Linux only, and root is required |
 | Per-device flow egress | A `FORWARD -i veth-sim-host -j ACCEPT` rule lets per-device exporters send out of the namespace on Docker hosts that default `FORWARD` to `DROP` | An iptables dependency in the image; the rule is removed in `NetNamespace.Close` |
 

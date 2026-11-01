@@ -1,4 +1,9 @@
-# Docker
+---
+sidebar_label: "Docker"
+description: "Pull and run the nl6 container image from GHCR with the privileges it needs, build the image locally, or run the stack with Compose."
+---
+
+# Install with Docker
 
 The simulator is published as a single container image at `ghcr.io/labmonkeys-space/nl6`, built from the root `Dockerfile` and pushed to the GitHub Container Registry.
 A release tag pushes `:<version>` and moves `:latest`; every push to `main` refreshes the floating `:rc` tag.

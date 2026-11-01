@@ -1,3 +1,8 @@
+---
+sidebar_label: "DCGM simulation"
+description: "How the simulator models DCGM-style GPU metrics, with OID types, the GPU cycler, device profiles, resource layout and REST endpoints."
+---
+
 # NVIDIA DCGM simulation
 
 **Simulator side of the GPU story.**

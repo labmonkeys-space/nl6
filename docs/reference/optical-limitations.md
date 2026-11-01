@@ -1,3 +1,8 @@
+---
+sidebar_label: "Waveserver limits"
+description: "Where the Waveserver 5 simulation stops matching real hardware, so a monitoring use case built on nl6 does not pass falsely."
+---
+
 # Waveserver 5 limitations
 
 **Read this before building anything against `ciena_waveserver5` that you intend to run against real hardware.**

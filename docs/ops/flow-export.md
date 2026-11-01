@@ -1,4 +1,9 @@
-# Flow export (operator guide)
+---
+sidebar_label: "Export flows"
+description: "Send NetFlow v5, NetFlow v9, IPFIX or sFlow from simulated devices to a collector, and fix rp_filter and FORWARD issues on the way."
+---
+
+# Export flows
 
 nl6 can emit synthetic flow telemetry to any NetFlow v5 (Cisco), NetFlow v9 (RFC 3954), IPFIX (RFC 7011), or sFlow v5 collector.
 Each device generates flows appropriate to its role.

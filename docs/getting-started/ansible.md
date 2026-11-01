@@ -1,3 +1,8 @@
+---
+sidebar_label: "Ansible"
+description: "Use the labmonkeys.nl6 Ansible collection to install the nl6 package, set the sysctls, write the config and enable the service."
+---
+
 # Install with Ansible
 
 The `labmonkeys.nl6` Ansible collection installs nl6 from its native package and runs it under systemd.

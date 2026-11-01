@@ -1,10 +1,15 @@
-# Syslog export reference
+---
+sidebar_label: "Syslog export"
+description: "The RFC 5424 and RFC 3164 wire formats, the UDP, TCP and TLS transports, the catalog JSON schema, the endpoints and the status JSON."
+---
+
+# Syslog export
 
 nl6 emits syslog messages in either **RFC 5424** (modern, structured) or **RFC 3164** (legacy BSD) format, over UDP, TCP (RFC 6587) or TLS (RFC 5425).
 Format and transport are per device.
 The two encoders sit behind a shared `SyslogEncoder` interface; the per-device `SyslogExporter` writes through a `SyslogTransport` (a UDP socket, per-device or shared, or one TCP/TLS connection per device) and fires messages at times drawn by a central Poisson scheduler.
 This page covers the wire formats, the transports, the catalog JSON schema, the HTTP endpoints, and the status JSON shape.
-For enabling the feature, CLI flags, and troubleshooting see [Syslog export (operator guide)](../ops/syslog-export.md) and [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
+For enabling the feature, CLI flags, and troubleshooting see [Syslog export how-to](../ops/syslog-export.md) and [CLI flags → UDP syslog export](cli-flags.md#udp-syslog-export-flags).
 
 ## Architecture
 
@@ -550,6 +555,6 @@ Documented with types, defaults, and purposes at [CLI flags → UDP syslog expor
 
 ## Related
 
-- [Syslog export (operator guide)](../ops/syslog-export.md) for enabling, per-device source binding, and the smoke test
+- [Syslog export how-to](../ops/syslog-export.md) for enabling, per-device source binding, and the smoke test
 - [SNMP trap reference](snmp-traps.md) for the sibling feature, with the unified template vocabulary and catalog overlay semantics
 - [Web API](web-api.md) for the control-plane REST surface

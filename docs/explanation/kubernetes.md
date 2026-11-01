@@ -1,3 +1,8 @@
+---
+sidebar_label: "Kubernetes"
+description: "Why nl6 ships no supported Kubernetes deployment, what it would take to support one, and what to run instead today."
+---
+
 # Kubernetes (not supported)
 
 nl6 does not currently ship a supported Kubernetes deployment.

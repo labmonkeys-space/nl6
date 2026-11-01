@@ -1,3 +1,8 @@
+---
+sidebar_label: "Web API"
+description: "The REST control plane on port 8080, with device CRUD, CSV and route-script export, subsystem status endpoints and runtime switches."
+---
+
 # Web API
 
 The simulator exposes a REST control-plane on port 8080 (override with [`-port`](cli-flags.md#core-flags)) for device CRUD, CSV / route-script export, system stats, and flow-export status.
@@ -893,7 +898,7 @@ Response fields:
 Clients detect "no flow export configured" via `len(collectors) == 0`.
 The retired scalar fields (`enabled`, `protocol`, `collector`, `total_flows_exported`, `total_packets_sent`, `total_bytes_sent`) were removed in phase 3; callers that depended on them must migrate to the array-of-collectors shape.
 
-See [Flow export (operator guide)](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
+See [Flow export how-to](../ops/flow-export.md) and [Flow export reference](flow-export.md) for protocol-specific details.
 
 ## Trap export status
 
@@ -973,7 +978,7 @@ The `sent` counter increments on **every wire emission including INFORM retransm
 
 Counters are **monotonic within a subsystem lifecycle**: deleting a device does not zero its collector's `sent`; the aggregate survives.
 
-See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
+See [SNMP trap export how-to](../ops/snmp-traps.md) and [SNMP trap reference](snmp-traps.md) for the full feature details.
 
 ## Fire a trap on demand
 
@@ -1046,7 +1051,7 @@ When disabled:
 `catalogs_by_type` follows the same shape as the trap endpoint.
 `rate_limiter_tokens_available` is present only when `-syslog-global-cap` is set.
 
-See [UDP syslog export (operator guide)](../ops/syslog-export.md) and [Syslog export reference](syslog-export.md) for the full feature details.
+See [Syslog export how-to](../ops/syslog-export.md) and [Syslog export reference](syslog-export.md) for the full feature details.
 
 ## Fire a syslog message on demand
 

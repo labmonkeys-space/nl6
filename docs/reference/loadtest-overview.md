@@ -1,3 +1,8 @@
+---
+sidebar_label: "Scenario overview"
+description: "What a load-test scenario is, how it measures telemetry fidelity against your monitor, and which protocols and limits it covers."
+---
+
 # Load-test scenarios
 
 The load-test scenario subsystem is a **telemetry-fidelity instrument**.

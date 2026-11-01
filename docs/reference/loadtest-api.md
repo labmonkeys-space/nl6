@@ -1,4 +1,9 @@
-# Load-test scenario REST API
+---
+sidebar_label: "Scenario API"
+description: "The /api/v1/scenarios endpoints that submit, arm, start, stop and report a load-test scenario, with their request and response shapes."
+---
+
+# Load-test scenario API
 
 The load-test scenario subsystem is driven entirely over REST under `/api/v1/scenarios`.
 A scenario moves through the fixed lifecycle `submitted → armed → running → stopped`, with `armed → canceled` and `running → aborted` branches.

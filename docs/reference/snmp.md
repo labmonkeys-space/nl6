@@ -1,4 +1,9 @@
-# SNMP reference
+---
+sidebar_label: "SNMP"
+description: "What nl6 answers over SNMP v1, v2c and v3, with operations, community and USM handling, GETBULK sizing, exceptions and SET."
+---
+
+# SNMP
 
 nl6 answers SNMP v1, v2c and v3 queries on UDP port 161 (override with [`-snmp-port`](cli-flags.md#core-flags)) for every simulated device.
 See [Architecture](../explanation/architecture.md) for the component map.
@@ -883,4 +888,4 @@ One thing that reads as a defect and is not: a polled device and a trap from tha
 The poll path's engine ID is fleet-wide.
 Each notification originator derives its own from its IPv4, per RFC 3411 §5.
 
-See [SNMP trap reference](snmp-traps.md) for wire format, the JSON catalog schema, and the HTTP endpoints, and [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for enabling the feature and the `snmptrapd` smoke test.
+See [SNMP trap reference](snmp-traps.md) for wire format, the JSON catalog schema, and the HTTP endpoints, and [SNMP trap export how-to](../ops/snmp-traps.md) for enabling the feature and the `snmptrapd` smoke test.

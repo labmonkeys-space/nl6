@@ -1,4 +1,9 @@
-# NETCONF reference
+---
+sidebar_label: "NETCONF"
+description: "The NETCONF dialects served by the Catalyst 9500 and MX10004 profiles, their transports, supported RPCs and link-event notifications."
+---
+
+# NETCONF
 
 nl6 serves NETCONF on two device profiles.
 `cisco_catalyst_9500` serves the IOS XE dialect over SSH.

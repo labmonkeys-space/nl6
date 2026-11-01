@@ -1,3 +1,8 @@
+---
+sidebar_label: "Packages"
+description: "Install nl6 from the .deb or .rpm package with apt or dnf and run it as a systemd service, with no Go toolchain needed."
+---
+
 # Install packages
 
 Prebuilt native packages let you install nl6 with your system package manager and run it as a managed `systemd` service.

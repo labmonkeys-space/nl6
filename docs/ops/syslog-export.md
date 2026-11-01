@@ -1,4 +1,9 @@
-# Syslog export (operator guide)
+---
+sidebar_label: "Export syslog"
+description: "Send RFC 5424 or RFC 3164 syslog from simulated devices to a collector over UDP, TCP or TLS, and tune the rate and catalog."
+---
+
+# Export syslog
 
 nl6 can emit syslog messages in either **RFC 5424** (the modern structured format with `[SD-PARAM]` blocks) or **RFC 3164** (the legacy BSD format most network gear still defaults to) from every simulated device to a single collector such as `rsyslog`, `syslog-ng`, or an NMS syslog daemon.
 Each device uses its own IP as the source address by default, so collectors that key on source-IP → node mapping attribute messages correctly without extra work.
@@ -169,6 +174,6 @@ For generic bring-up failures (TUN module missing, `sudo` required, port conflic
 
 - [Syslog export reference](../reference/syslog-export.md) for wire format, catalog JSON, HTTP endpoints and per-type catalog overlays
 - [CLI flags → UDP syslog export](../reference/cli-flags.md#udp-syslog-export-flags)
-- [SNMP trap export (operator guide)](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
-- [Flow export (operator guide)](flow-export.md), which shares the `nl6sim` namespace plumbing
+- [SNMP trap export how-to](snmp-traps.md), the sibling feature that shares the overlay loader and template vocabulary
+- [Flow export how-to](flow-export.md), which shares the `nl6sim` namespace plumbing
 - [Web API → Fire a syslog message on demand](../reference/web-api.md#fire-a-syslog-message-on-demand)

@@ -1,3 +1,8 @@
+---
+sidebar_label: "gNMI dial-in"
+description: "The read-only gNMI server each device runs on port 9339, with its served paths, catalogue subtrees, TLS, subscribe modes and encodings."
+---
+
 # gNMI dial-in
 
 Every simulated device exposes a read-only [gNMI](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md) gRPC server on TCP port 9339.

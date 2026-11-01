@@ -1,3 +1,8 @@
+---
+sidebar_label: "CLI flags"
+description: "Every command-line flag the simulator accepts, grouped by subsystem, with defaults and which flags apply to the auto-start batch only."
+---
+
 # CLI flags
 
 The `simulator` binary is driven entirely by command-line flags.
@@ -199,7 +204,7 @@ See [Web API](web-api.md) for the per-device block schema.
 
 ## Flow export flags
 
-See [Flow export (operator guide)](../ops/flow-export.md) for prerequisites and collector setup, and [Flow export reference](flow-export.md) for protocol details.
+See [Flow export how-to](../ops/flow-export.md) for prerequisites and collector setup, and [Flow export reference](flow-export.md) for protocol details.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -239,11 +244,11 @@ Omitting it sized every paced cache short and ran every paced run a few percent 
 To change volume, change the device profile's concurrent-flow count or the timeouts.
 
 Volume does not step with cadence: the ticker is a batching knob, not a volume knob.
-See [Flow export](./flow-export.md).
+See [Flow export reference](./flow-export.md).
 
 ## SNMP trap / INFORM export flags
 
-See [SNMP trap / INFORM export (operator guide)](../ops/snmp-traps.md) for prerequisites and `snmptrapd` smoke-test, and [SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
+See [SNMP trap export how-to](../ops/snmp-traps.md) for prerequisites and `snmptrapd` smoke-test, and [SNMP trap reference](snmp-traps.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|
@@ -333,7 +338,7 @@ See [gNMI dial-out reference](gnmi-dial-out.md) for wire protocol, modes, TLS, a
 
 ## UDP syslog export flags
 
-See [UDP syslog export (operator guide)](../ops/syslog-export.md) for prerequisites and `netcat` smoke-test, and [Syslog export reference](syslog-export.md) for wire format and catalog JSON.
+See [Syslog export how-to](../ops/syslog-export.md) for prerequisites and `netcat` smoke-test, and [Syslog export reference](syslog-export.md) for wire format and catalog JSON.
 
 | Flag | Type | Default | Scope | Purpose |
 |------|------|---------|-------|---------|

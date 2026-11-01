@@ -1,3 +1,8 @@
+---
+sidebar_label: "Device types"
+description: "The 31 simulated device types across 9 categories, with their resource directories and the category filter the REST API uses."
+---
+
 # Device types
 
 nl6 ships resource files for **31 device types across 9 categories**.

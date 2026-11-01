@@ -1,3 +1,8 @@
+---
+sidebar_label: "DNS names"
+description: "Run a CoreDNS secondary next to nl6 so simulated devices resolve by name, with forward A records and reverse PTRs kept current."
+---
+
 # Resolve devices with DNS
 
 Out of the box you address simulated devices by their `10.42.x.x` management IPs.

@@ -1,4 +1,9 @@
-# Quick start
+---
+sidebar_label: "Quick start"
+description: "Build nl6 from source, start a handful of simulated devices on a Linux host, and query them over SNMP and SSH."
+---
+
+# Run a fleet from source
 
 Get a small fleet of simulated devices running on a Linux host in three commands.
 For full flag docs see [CLI flags](../reference/cli-flags.md); for container workflows see [Docker](docker.md).
@@ -59,5 +64,5 @@ See [SNMP reference](../reference/snmp.md) for the protocol coverage and the dyn
 
 - **Change device state**: [Enable SNMP SET](snmp-set.md) to shut and unshut an interface over SNMP. Writes are off by default.
 - **Scale up**: [Scaling](../ops/scaling.md) covers the 30k-device tuning.
-- **Flow export**: [Flow export (operator guide)](../ops/flow-export.md) to plug nl6 into a NetFlow / IPFIX / sFlow collector.
+- **Flow export**: [Flow export how-to](../ops/flow-export.md) to plug nl6 into a NetFlow / IPFIX / sFlow collector.
 - **Device types**: [Device types](../reference/device-types.md) lists the 31 simulated device types across 9 categories.

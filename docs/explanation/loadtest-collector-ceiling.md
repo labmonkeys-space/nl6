@@ -1,3 +1,8 @@
+---
+sidebar_label: "Collector ceiling"
+description: "A method for finding how much telemetry a collector actually accepts, worked through on OpenNMS Horizon syslog ingest."
+---
+
 # Measuring a collector's ingest ceiling
 
 nl6 can tell you what it put on the wire.
